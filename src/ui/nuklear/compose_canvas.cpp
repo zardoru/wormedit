@@ -1456,6 +1456,50 @@ static void draw_compose_cursor(const ComposePaintContext& paint) {
                    nk_rgb(255, 243, 174), 5);
 }
 
+static nk_color compose_dead_span_color(std::uint8_t kind, std::uint8_t alpha) {
+    switch (kind) {
+    case 0: return nk_rgba(226, 110, 84, alpha);  // stop
+    case 1: return nk_rgba(232, 184, 82, alpha);  // delay
+    default: return nk_rgba(168, 128, 232, alpha); // warp
+    }
+}
+
+// Diagonal hatch clipped to the rectangle: a row of 45 degree strokes whose ends are cut at the
+// rectangle edges, so time that cannot hold a note reads as struck out.
+static void draw_compose_dead_span_hatch(const ComposePaintContext& paint, struct nk_rect rect,
+                                         nk_color color) {
+    constexpr float spacing = 12.0f;
+    const auto reach = rect.h;
+    for (float offset = -reach; offset < rect.w; offset += spacing) {
+        const auto x0 = std::max(rect.x, rect.x + offset);
+        const auto x1 = std::min(rect.x + rect.w, rect.x + offset + reach);
+        if (x1 <= x0) continue;
+        const auto y0 = rect.y + rect.h - (x0 - (rect.x + offset));
+        const auto y1 = rect.y + rect.h - (x1 - (rect.x + offset));
+        field_line(paint, x0, y0, x1, y1, 1.0f, color, 10);
+    }
+}
+
+static void draw_compose_dead_spans(const ComposePaintContext& paint) {
+    for (size_t index = 0; index < paint.view->dead_span_count; ++index) {
+        const auto& span = paint.view->dead_spans[index];
+        const auto rect = compose_screen_rect(&span.bounds, paint.view, paint.viewport);
+        if (rect.w <= 0.0f || rect.h <= 0.0f) continue;
+        field_rect(paint, rect, 0.0f, nk_rgba(14, 16, 22, 150), 10);
+        draw_compose_dead_span_hatch(paint, rect, compose_dead_span_color(span.kind, 70));
+        field_line(paint, rect.x, rect.y, rect.x + rect.w, rect.y, 1.0f,
+                   compose_dead_span_color(span.kind, 200), 10);
+        field_line(paint, rect.x, rect.y + rect.h, rect.x + rect.w, rect.y + rect.h, 1.0f,
+                   compose_dead_span_color(span.kind, 200), 10);
+        if (rect.h >= 12.0f && rect.w >= 60.0f) {
+            const auto text = nk_rect(rect.x + rect.w - 120.0f, rect.y, 116.0f, std::min(rect.h, 16.0f));
+            field_text(paint, text, span.label, static_cast<int>(strlen(span.label)),
+                       paint.context->style.font, nk_rgba(18, 21, 29, 215),
+                       compose_dead_span_color(span.kind, 255), 10);
+        }
+    }
+}
+
 static void draw_compose_foreground_markers(const ComposePaintContext& paint) {
     draw_compose_timing_preview_rects(paint);
     draw_compose_playhead(paint);
@@ -1902,6 +1946,7 @@ void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* vie
         draw_compose_waveform_layer(paint, timing_layout);
         draw_compose_cached_pass(paint,5,true,view->beat_fit_drag_active ||
             view->selected_bms_measure_number_plus_one!=0,[&](const ComposePaintContext& cached) { draw_compose_grid_lines(cached); });
+        draw_compose_dead_spans(paint);
         draw_compose_area_band(paint);
         draw_compose_timing_layer(paint, timing_layout);
         const bool active_notes=compose_notes_require_direct(*view);

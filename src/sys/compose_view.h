@@ -3,6 +3,7 @@
 #include "sys/workspace_projection.h"
 #include "common/static_interval_index.h"
 #include "sys/compose_bgm_bar.h"
+#include "sys/compose_dead_spans.h"
 #include "sys/compose_quantize_preview.h"
 #include "sys/compose_scroll_geometry.h"
 #include "ui/compose_mode.h"
@@ -105,6 +106,7 @@ struct compose_scene_cache_t {
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
     std::shared_ptr<const wormedit::editor_area_geometry_snapshot_t> area_object_geometry;
     std::optional<wormedit::timing_index_t> marker_timing_index;
+    std::optional<dead_span_projection_t> dead_spans;
     std::optional<wormedit::timing_index_t> proposed_offset_timing_index;
     std::optional<wormedit::signed_rational_t> proposed_offset_seconds;
     std::optional<wormedit::beat_interval_drag_t> beat_fit_drag;

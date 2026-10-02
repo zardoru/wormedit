@@ -48,4 +48,31 @@ struct dead_span_projection_t {
 [[nodiscard]] auto row_is_in_warp(const dead_span_projection_t& projection, std::uint64_t row)
     -> bool;
 
+// Height of the band a stop or delay gets beside its row.
+inline constexpr double dead_span_pause_band_pixels = 14.0;
+
+// A dead span in viewport pixels. Warps cover their own rows; a stop or delay has no rows, so it
+// gets a band of `pause_band_pixels` beside its row: a delay sits before the row (notes on the
+// row come after the delay) and a stop after it (notes on the row come before the stop).
+struct dead_span_band_t {
+    dead_span_kind_t kind{dead_span_kind_t::stop};
+    object_id_t object;
+    // Screen space, top < bottom, in the same orientation the field is drawn.
+    double top{};
+    double bottom{};
+    // Elapsed seconds the span adds, for the label; zero for a warp.
+    signed_rational_t seconds;
+};
+
+// Bands intersecting [0, viewport_height], in span order.
+[[nodiscard]] auto project_dead_span_bands(const dead_span_projection_t& projection,
+                                           double pixels_per_row, double scroll_pixels,
+                                           double viewport_height, bool downscroll,
+                                           double pause_band_pixels)
+    -> std::vector<dead_span_band_t>;
+
+// True when a pointer at `y_pixels` (screen space) is inside any band.
+[[nodiscard]] auto pointer_in_dead_span(const std::vector<dead_span_band_t>& bands, double y_pixels)
+    -> bool;
+
 } // namespace wormedit::sys

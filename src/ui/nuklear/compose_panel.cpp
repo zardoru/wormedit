@@ -174,6 +174,7 @@ static bool compose_geometry_arrays_valid(const WormUiComposeView* view) {
            (view->audio_bookmark_count == 0 || view->audio_bookmarks) &&
            (view->audio_section_count == 0 || view->audio_sections) &&
            (view->timing_marker_count == 0 || view->timing_markers) &&
+           (view->dead_span_count == 0 || view->dead_spans) &&
            (view->resource_count == 0 || view->resources) &&
            (view->output_group_count == 0 || view->output_groups);
 }
@@ -213,7 +214,17 @@ static bool compose_geometry_grid_elements_valid(const WormUiComposeView* view) 
     return true;
 }
 
-static bool compose_geometry_timing_elements_valid(const WormUiComposeView* view) {    for (size_t index = 0; index < view->timing_preview_rect_count; ++index) {
+static bool compose_dead_spans_valid(const WormUiComposeView* view) {
+    for (size_t index = 0; index < view->dead_span_count; ++index) {
+        const auto& span = view->dead_spans[index];
+        if (!compose_rect_valid(&span.bounds) || span.kind > 2 || !span.label) return false;
+    }
+    return true;
+}
+
+static bool compose_geometry_timing_elements_valid(const WormUiComposeView* view) {
+    if (!compose_dead_spans_valid(view)) return 0;
+    for (size_t index = 0; index < view->timing_preview_rect_count; ++index) {
         if (!compose_rect_valid(&view->timing_preview_rects[index].bounds) ||
             view->timing_preview_rects[index].kind > 2)
             return 0;

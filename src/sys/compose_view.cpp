@@ -1012,6 +1012,8 @@ bool initialize_compose_view_state(
     view.timing_preview_rect_count = 0;
     view.timing_preview_markers = nullptr;
     view.timing_preview_marker_count = 0;
+    view.dead_spans = nullptr;
+    view.dead_span_count = 0;
     view.waveform_proposed_beat_zero_visible = false;
     view.waveform_proposed_beat_zero_fraction = 0.0;
     view.waveform_proposed_audio_offset_numerator = 0;
@@ -1793,6 +1795,46 @@ void populate_compose_timing_markers(
     }
 }
 
+std::string dead_span_label(const wormedit::sys::dead_span_band_t& band) {
+    using wormedit::sys::dead_span_kind_t;
+    if (band.kind == dead_span_kind_t::warp) return "WARP";
+    const auto seconds = static_cast<double>(band.seconds.numerator) /
+                         static_cast<double>(band.seconds.denominator);
+    char text[48]{};
+    std::snprintf(text, sizeof(text), "%s %.3fs", band.kind == dead_span_kind_t::stop ? "STOP" : "DELAY",
+                  seconds);
+    return text;
+}
+
+void populate_compose_dead_spans(flattened_workspace_t& flattened, const compose_scene_cache_t& cache,
+                                 const wormedit::editor_interaction_view_model_t& interaction_view,
+                                 WormUiComposeView& view, bool downscroll, double pixels_per_row) {
+    flattened.compose.dead_span.clear();
+    flattened.compose.dead_span_labels.clear();
+    view.dead_spans = nullptr;
+    view.dead_span_count = 0;
+    if (!cache.dead_spans) return;
+    const auto bands = wormedit::sys::project_dead_span_bands(
+        *cache.dead_spans, pixels_per_row, interaction_view.viewport_scroll_pixels,
+        view.viewport_height_pixels, downscroll,
+        wormedit::sys::dead_span_pause_band_pixels);
+    const auto count = std::min<std::size_t>(bands.size(), WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY);
+    flattened.compose.dead_span.reserve(count);
+    flattened.compose.dead_span_labels.reserve(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& band = bands[index];
+        const auto& label = flattened.compose.dead_span_labels.emplace_back(dead_span_label(band));
+        flattened.compose.dead_span.push_back({
+            .bounds = {0.0, band.top, view.viewport_width_pixels, band.bottom},
+            .kind = static_cast<std::uint8_t>(band.kind),
+            .object_id = band.object.value,
+            .label = label.c_str()});
+    }
+    view.dead_spans = flattened.compose.dead_span.data();
+    view.dead_span_count = flattened.compose.dead_span.size();
+    if (bands.size() > count) view.truncated = true;
+}
+
 void populate_compose_selection_preview(
     const compose_scene_cache_t& cache,
     std::optional<wormedit::editor_interaction_state_t>& retained_state,
@@ -2038,6 +2080,7 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         cache.bgm_rows_by_id.clear();
         cache.hit_test_index.reset();
         cache.marker_timing_index.reset();
+        cache.dead_spans.reset();
         cache.proposed_offset_timing_index.reset();
         cache.proposed_offset_seconds.reset();
         cache.beat_fit_drag.reset();
@@ -2074,6 +2117,8 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         }
         auto timing = wormedit::build_timing_index(chart);
         if (timing) {
+            cache.dead_spans = wormedit::sys::project_dead_spans(
+                chart, cache.index->measures, *timing.index, WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY);
             cache.marker_timing_index = std::move(*timing.index);
         }
     }
@@ -2868,6 +2913,8 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
                                 static_cast<double>(chart.divisions_per_standard_measure);
     populate_compose_timing_markers(flattened, chart, cache, interaction_view, view,
                                     downscroll, pixels_per_row, canvas_rows, timing_stage);
+    populate_compose_dead_spans(flattened, cache, interaction_view, view, downscroll,
+                                pixels_per_row);
     const auto maximum_bgm_scroll = std::max(
         0.0, static_cast<double>(chart.bgm_source_lanes.size()) * compose_bgm_lane_width_pixels -
                  bgm_pane_width);

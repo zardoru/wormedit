@@ -1097,9 +1097,31 @@ struct compose_input_context_t {
         return compose_source_y(y, state.viewport_height_pixels,
                                 input_chart && compose_field_downscroll(*input_chart, application_state.editor_preferences));
     }
+    // Notes cannot sit in a Stop, Delay or Warp: a pointer there targets nothing to place on.
+    auto in_dead_span(const wormedit::chart_document_t& chart,
+                      const wormedit::editor_interaction_view_model_t& view, double y_pixels) const
+        -> bool {
+        if (!scene_cache.dead_spans || chart.divisions_per_standard_measure == 0) return false;
+        const auto pixels_per_row = view.pixels_per_standard_measure /
+                                    static_cast<double>(chart.divisions_per_standard_measure);
+        const auto bands = project_dead_span_bands(
+            *scene_cache.dead_spans, pixels_per_row, view.viewport_scroll_pixels,
+            view.viewport_height_pixels,
+            compose_field_downscroll(chart, application_state.editor_preferences),
+            dead_span_pause_band_pixels);
+        return pointer_in_dead_span(bands, y_pixels);
+    }
     auto hit_target_at(const wormedit::chart_document_t& chart,
                        const wormedit::editor_interaction_view_model_t& view, double x_pixels,
                        double y_pixels) -> std::optional<wormedit::editor_hit_target_t> {
+        auto target = hit_target_unrestricted(chart, view, x_pixels, y_pixels);
+        if (target && !target->note && in_dead_span(chart, view, y_pixels)) return std::nullopt;
+        return target;
+    }
+    auto hit_target_unrestricted(const wormedit::chart_document_t& chart,
+                                 const wormedit::editor_interaction_view_model_t& view,
+                                 double x_pixels, double y_pixels)
+        -> std::optional<wormedit::editor_hit_target_t> {
         if (!scene_cache.hit_test_index) {
             auto built = wormedit::build_editor_hit_test_index(chart, history.document.revision);
             if (!std::holds_alternative<wormedit::editor_hit_test_index_t>(built))
@@ -1118,6 +1140,13 @@ struct compose_input_context_t {
     auto position_at_compose_y(const wormedit::chart_document_t& chart,
                                const wormedit::editor_interaction_view_model_t& view,
                                double y_pixels) const -> std::optional<wormedit::local_position_t> {
+        if (in_dead_span(chart, view, y_pixels)) return std::nullopt;
+        return position_at_compose_y_unrestricted(chart, view, y_pixels);
+    }
+    auto position_at_compose_y_unrestricted(const wormedit::chart_document_t& chart,
+                                            const wormedit::editor_interaction_view_model_t& view,
+                                            double y_pixels) const
+        -> std::optional<wormedit::local_position_t> {
         return wormedit::editor_position_at_y_pixels(
             chart, view,
             compose_source_y(y_pixels, view.viewport_height_pixels,
@@ -1984,7 +2013,7 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
         return "Select the timing marker before dragging it.";
     const auto y = std::clamp(input.y_pixels, 0.0,
                               std::max(0.0, view->viewport_height_pixels - 0.001));
-    const auto position = context.position_at_compose_y(*chart, *view, y);
+    const auto position = context.position_at_compose_y_unrestricted(*chart, *view, y);
     const auto measures = build_measure_index(*chart);
     const auto* index = std::get_if<measure_index_t>(&measures);
     const auto target_row = position && index ? absolute_row(*index, *position) : std::nullopt;

@@ -52,6 +52,7 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_COMPOSE_MARKER_LABEL_BYTES 4096
 #define WORM_UI_COMPOSE_MARKER_TIME_BYTES 32
 #define WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY 16
+#define WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY 512
 #define WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY 16
 #define WORM_UI_SHORTCUT_EVENT_CAPACITY 64
 #define WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY 96
@@ -402,6 +403,15 @@ typedef struct WormUiComposeTimingPreviewRectView {
     WormUiComposeRect bounds;
     uint8_t kind; // 0 note endpoint, 1 BGM event, 2 hold body
 } WormUiComposeTimingPreviewRectView;
+
+/* A Stop, Delay or Warp as a dead span: time the audio spends where notes cannot sit. Bounds are
+   viewport pixels in drawn orientation. */
+typedef struct WormUiComposeDeadSpanView {
+    WormUiComposeRect bounds;
+    uint8_t kind; /* 0 stop, 1 delay, 2 warp */
+    uint64_t object_id;
+    const char* label;
+} WormUiComposeDeadSpanView;
 
 typedef struct WormUiComposeDifferenceView {
     WormUiComposeRect bounds;
@@ -835,6 +845,8 @@ typedef struct WormUiComposeView {
     size_t timing_preview_marker_count;
     const WormUiTimingMarkerView* timing_markers;
     size_t timing_marker_count;
+    const WormUiComposeDeadSpanView* dead_spans;
+    size_t dead_span_count;
     uint8_t timing_lane_visibility_mask;
     // Compose mode specialization; see ui/compose_mode.h. The mask above is
     // already the effective one for this mode.

@@ -444,3 +444,46 @@ TEST_CASE("waveform range projection rejects invalid spans and capacity",
     waveform_t empty;
     CHECK(project_waveform_range(empty, 0.0, 1.0, 10).status == aligned_waveform_status_t::invalid_waveform);
 }
+
+TEST_CASE("aligned waveform leaves a blank gap where a warp consumes no time",
+          "[unit][audio][waveform][aligned][warp]") {
+    using namespace wormedit;
+    auto waveform = pulse_waveform();
+    for (auto& bin : waveform.bins) {
+        bin.minimum = {-0.5f, -0.5f};
+        bin.maximum = {0.5f, 0.5f};
+        bin.absolute_peak = {0.5f, 0.5f};
+        bin.rms = {0.25f, 0.25f};
+    }
+    chart_document_t chart{.id = chart_id_t{1}, .divisions_per_standard_measure = 960};
+    chart.measures = {{.id = measure_id_t{1}, .definition = {{1, 1}, meter_t{4, 4}}},
+                      {.id = measure_id_t{2}, .definition = {{1, 1}, meter_t{4, 4}}}};
+    chart.bpms = {{.id = object_id_t{10},
+                   .position = {measure_id_t{1}, 0},
+                   .beats_per_minute = {120, 1}}};
+    const audio::aligned_waveform_request_t request{.viewport_scroll_pixels = 0.0,
+                                                    .viewport_height_pixels = 1920.0,
+                                                    .pixels_per_standard_measure = 960.0};
+    const auto count_rows_between = [&](const audio::aligned_waveform_result_t& result,
+                                        double begin, double end) {
+        return std::ranges::count_if(result.rows, [&](const auto& row) {
+            return row.y_pixels >= begin && row.y_pixels < end && row.absolute_peak[0] > 0.0f;
+        });
+    };
+
+    const auto plain_timing = build_timing_index(chart);
+    REQUIRE(plain_timing);
+    const auto plain = audio::project_aligned_waveform(waveform, *plain_timing.index, request);
+    REQUIRE(plain);
+    CHECK(count_rows_between(plain, 480.0, 960.0) > 0);
+
+    chart.warps.push_back(
+        {.id = object_id_t{30}, .span = {{measure_id_t{1}, 480}, {measure_id_t{2}, 0}}});
+    const auto warped_timing = build_timing_index(chart);
+    REQUIRE(warped_timing);
+    const auto warped = audio::project_aligned_waveform(waveform, *warped_timing.index, request);
+    REQUIRE(warped);
+    CHECK(count_rows_between(warped, 0.0, 479.0) > 0);
+    CHECK(count_rows_between(warped, 482.0, 958.0) == 0);
+    CHECK(count_rows_between(warped, 962.0, 1900.0) > 0);
+}

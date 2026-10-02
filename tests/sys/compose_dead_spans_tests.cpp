@@ -113,3 +113,33 @@ TEST_CASE("a pause inside a warp adds no dead span of its own", "[unit][sys][dea
     REQUIRE(result.spans.size() == 1);
     CHECK(result.spans[0].kind == dead_span_kind_t::warp);
 }
+
+TEST_CASE("pause bands sit on their time side of the row and warps cover their rows",
+          "[unit][sys][dead-spans]") {
+    dead_span_projection_t projection;
+    projection.spans = {{.kind = dead_span_kind_t::delay, .object = object_id_t{1},
+                         .begin_row = 100, .end_row = 100, .seconds = {1, 1}},
+                        {.kind = dead_span_kind_t::stop, .object = object_id_t{2},
+                         .begin_row = 200, .end_row = 200, .seconds = {1, 1}},
+                        {.kind = dead_span_kind_t::warp, .object = object_id_t{3},
+                         .begin_row = 300, .end_row = 400, .seconds = {0, 1}}};
+    const auto up = project_dead_span_bands(projection, 1.0, 0.0, 1000.0, false, 10.0);
+    REQUIRE(up.size() == 3);
+    CHECK(up[0].top == 90.0);
+    CHECK(up[0].bottom == 100.0);
+    CHECK(up[1].top == 200.0);
+    CHECK(up[1].bottom == 210.0);
+    CHECK(up[2].top == 300.0);
+    CHECK(up[2].bottom == 400.0);
+    CHECK(pointer_in_dead_span(up, 95.0));
+    CHECK_FALSE(pointer_in_dead_span(up, 100.0));
+    CHECK(pointer_in_dead_span(up, 399.0));
+    const auto down = project_dead_span_bands(projection, 1.0, 0.0, 1000.0, true, 10.0);
+    CHECK(down[1].top == 790.0);
+    CHECK(down[1].bottom == 800.0);
+    CHECK(down[0].top == 900.0);
+    CHECK(down[0].bottom == 910.0);
+    const auto scrolled = project_dead_span_bands(projection, 1.0, 250.0, 100.0, false, 10.0);
+    REQUIRE(scrolled.size() == 1);
+    CHECK(scrolled[0].top == 50.0);
+}

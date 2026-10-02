@@ -113,6 +113,36 @@ auto project_dead_spans(const chart_document_t& chart, const measure_index_t& me
     return result;
 }
 
+auto project_dead_span_bands(const dead_span_projection_t& projection, double pixels_per_row,
+                             double scroll_pixels, double viewport_height, bool downscroll,
+                             double pause_band_pixels) -> std::vector<dead_span_band_t> {
+    std::vector<dead_span_band_t> bands;
+    if (!(pixels_per_row > 0.0)) return bands;
+    const auto source_y = [&](std::uint64_t row) {
+        return static_cast<double>(row) * pixels_per_row - scroll_pixels;
+    };
+    for (const auto& span : projection.spans) {
+        double begin = source_y(span.begin_row);
+        double end = source_y(span.end_row);
+        if (span.kind == dead_span_kind_t::stop) end = begin + pause_band_pixels;
+        if (span.kind == dead_span_kind_t::delay) {
+            end = begin;
+            begin -= pause_band_pixels;
+        }
+        if (end < 0.0 || begin > viewport_height) continue;
+        const auto top = downscroll ? viewport_height - end : begin;
+        const auto bottom = downscroll ? viewport_height - begin : end;
+        bands.push_back({span.kind, span.object, top, bottom, span.seconds});
+    }
+    return bands;
+}
+
+auto pointer_in_dead_span(const std::vector<dead_span_band_t>& bands, double y_pixels) -> bool {
+    return std::ranges::any_of(bands, [y_pixels](const dead_span_band_t& band) {
+        return y_pixels >= band.top && y_pixels < band.bottom;
+    });
+}
+
 auto row_is_in_warp(const dead_span_projection_t& projection, std::uint64_t row) -> bool {
     return std::ranges::any_of(projection.spans, [row](const dead_span_t& span) {
         return span.kind == dead_span_kind_t::warp && row >= span.begin_row && row < span.end_row;

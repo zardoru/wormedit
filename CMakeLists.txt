@@ -320,6 +320,8 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_measure_commands.cpp
         src/sys/compose_selection_transform.cpp
         src/sys/compose_label_search.cpp
+        src/sys/compose_dead_spans.cpp
+        src/sys/compose_kiai_spans.cpp
         src/sys/compose_quantize_preview.cpp
         src/sys/application_command_dispatch.cpp
         src/sys/compose_resource_presenter.cpp

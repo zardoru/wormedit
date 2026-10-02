@@ -32,6 +32,8 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_measure_commands.cpp
     ../src/sys/compose_selection_transform.cpp
     ../src/sys/compose_label_search.cpp
+    ../src/sys/compose_dead_spans.cpp
+    ../src/sys/compose_kiai_spans.cpp
     ../src/sys/compose_quantize_preview.cpp
     ../src/sys/application_defaults.cpp
     ../src/sys/project_open.cpp
@@ -55,6 +57,8 @@ add_executable(wormedit_core_tests
     sys/compose_measure_commands_tests.cpp
     sys/compose_selection_transform_tests.cpp
     sys/compose_label_search_tests.cpp
+    sys/compose_dead_spans_tests.cpp
+    sys/compose_kiai_spans_tests.cpp
     sys/compose_quantize_preview_tests.cpp
     sys/project_view_tests.cpp
     sys/tap_timing_runtime_tests.cpp

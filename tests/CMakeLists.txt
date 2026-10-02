@@ -28,6 +28,8 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_minimap_navigation.cpp
     ../src/sys/compose_bookmark_commands.cpp
     ../src/sys/compose_playhead_skip.cpp
+    ../src/sys/compose_label_search.cpp
+    ../src/sys/compose_quantize_preview.cpp
     ../src/sys/application_defaults.cpp
     ../src/sys/project_open.cpp
     ../src/sys/project_save_paths.cpp
@@ -46,6 +48,8 @@ add_executable(wormedit_core_tests
     sys/application_commands_tests.cpp
     sys/compose_bookmark_commands_tests.cpp
     sys/compose_playhead_skip_tests.cpp
+    sys/compose_label_search_tests.cpp
+    sys/compose_quantize_preview_tests.cpp
     sys/project_view_tests.cpp
     sys/tap_timing_runtime_tests.cpp
     sys/application_defaults_tests.cpp

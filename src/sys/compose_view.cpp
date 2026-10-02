@@ -1853,6 +1853,26 @@ void populate_compose_selection_preview(
     view.selected_object_count = retained_state->selected_objects.size();
 }
 
+// Fills the quantize dry-run counts; the cache recomputes only when the selection, snap or
+// document changes, so idle frames copy three integers.
+static void populate_quantize_preview(compose_scene_cache_t& cache,
+                                      const wormedit::chart_document_t& chart,
+                                      std::uint64_t revision,
+                                      const wormedit::editor_interaction_state_t& state,
+                                      WormUiComposeView& view) {
+    view.quantize_preview_moved = view.quantize_preview_unchanged = 0;
+    view.quantize_preview_blocked = 0;
+    view.quantize_preview_message[0] = '\0';
+    if (state.selected_notes.empty()) return;
+    const auto& preview = cache.quantize_preview.get(chart, revision, state.selected_notes,
+                                                     state.active_snap_denominator);
+    view.quantize_preview_moved = preview.moved;
+    view.quantize_preview_unchanged = preview.unchanged;
+    view.quantize_preview_blocked = preview.blocked;
+    std::snprintf(view.quantize_preview_message, sizeof(view.quantize_preview_message), "%s",
+                  preview.message.c_str());
+}
+
 void populate_compose_staged_draft(flattened_workspace_t& flattened,
                                    application_command_state_t& application_state,
                                    WormUiComposeView& view);
@@ -2792,6 +2812,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     view.bgm_column_count = static_cast<std::uint32_t>(chart.bgm_source_lanes.size());
     view.bgm_column_count_editable = view.bms_measure_labels;
     populate_lane_profile_choices(view, chart, interaction_view.cursor);
+    populate_quantize_preview(cache, chart, history.document.revision, *retained_state, view);
     view.compose_measure_count = chart.measures.size();
     view.selected_bms_measure_number_plus_one =
         interaction_view.selected_canvas_measure

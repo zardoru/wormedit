@@ -1,4 +1,5 @@
 #include "sys/compose_actions.h"
+#include "sys/compose_label_search.h"
 #include "sys/compose_area_actions.h"
 #include "sys/application_edit_helpers.h"
 #include "sys/compose_resource_presenter.h"
@@ -1322,8 +1323,24 @@ std::string navigate_audio_marker(compose_action_context_t& context) {
     return app.transport_seek_audio_milliseconds(*marker.item->audio_milliseconds);
 }
 
+std::string search_selected_note_labels(compose_action_context_t& context) {
+    if (editor_interaction_has_pending_gesture(context.state))
+        return "Finish or cancel the active Compose gesture before searching labels.";
+    const auto step = context.action.compose_action == WORM_UI_COMPOSE_ACTION_SEARCH_NEXT_NOTE_LABEL
+                          ? label_search_step_t::next
+                      : context.action.compose_action ==
+                              WORM_UI_COMPOSE_ACTION_SEARCH_PREVIOUS_NOTE_LABEL
+                          ? label_search_step_t::previous
+                          : label_search_step_t::first;
+    return run_label_search(context.history, context.state, context.action.compose_note_label, step);
+}
+
 std::optional<std::string> dispatch_compose_marker_action(compose_action_context_t& context) {
     switch (context.action.compose_action) {
+    case WORM_UI_COMPOSE_ACTION_SEARCH_NOTE_LABEL:
+    case WORM_UI_COMPOSE_ACTION_SEARCH_NEXT_NOTE_LABEL:
+    case WORM_UI_COMPOSE_ACTION_SEARCH_PREVIOUS_NOTE_LABEL:
+        return search_selected_note_labels(context);
     case WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL:
     case WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL:
         return edit_selected_note_labels(context);

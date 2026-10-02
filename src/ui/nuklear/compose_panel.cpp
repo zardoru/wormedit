@@ -1041,6 +1041,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
 
     const ComposeInspectorContext inspector{context, view, timing_view, action};
     render_compose_note_label_editor(inspector);
+    render_compose_label_search(inspector);
+    render_compose_quantize_section(inspector);
 
     const auto visible_layer_count = view->semantic_layer_count;
     const bool semantic_target_active = semantic_layer_target_active(view);

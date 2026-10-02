@@ -242,6 +242,64 @@ void render_compose_note_label_editor(const ComposeInspectorContext& inspector) 
     if (disabled) nk_widget_disable_end(context);
 }
 
+void render_compose_label_search(const ComposeInspectorContext& inspector) {
+    const auto* view = inspector.view;
+    auto* context = inspector.context;
+    auto* action = inspector.action;
+    nk_layout_row_dynamic(context, 18, 1);
+    nk_label(context, "Find label", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 25, 1);
+    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.label_search.data(),
+                                         state.label_search.size(), nk_filter_default);
+    const auto disabled = !view->scene_available || state.label_search[0] == '\0';
+    if (disabled) nk_widget_disable_begin(context);
+    nk_layout_row_dynamic(context, 25, 3);
+    const auto submit = [&](const char* title, WormUiComposeActionKind kind) {
+        if (!nk_button_label(context, title) ||
+            action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+            return;
+        memcpy(action->compose_note_label, state.label_search.data(),
+               state.label_search.size());
+        action->compose_action = kind;
+        action->compose_input_chart_id = view->chart_id;
+        action->compose_input_document_revision = view->document_revision;
+    };
+    submit("Select", WORM_UI_COMPOSE_ACTION_SEARCH_NOTE_LABEL);
+    submit("Previous", WORM_UI_COMPOSE_ACTION_SEARCH_PREVIOUS_NOTE_LABEL);
+    submit("Next", WORM_UI_COMPOSE_ACTION_SEARCH_NEXT_NOTE_LABEL);
+    if (disabled) nk_widget_disable_end(context);
+}
+
+void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
+    const auto* view = inspector.view;
+    auto* context = inspector.context;
+    auto* action = inspector.action;
+    nk_layout_row_dynamic(context, 18, 1);
+    nk_labelf(context, NK_TEXT_LEFT, "Quantize (%zu)", view->selected_note_count);
+    nk_layout_row_dynamic(context, 18, 1);
+    if (view->selected_note_count == 0) {
+        nk_label(context, "Select notes first", NK_TEXT_LEFT);
+    } else if (view->quantize_preview_blocked != 0) {
+        nk_labelf(context, NK_TEXT_LEFT, "Blocked: %zu issue(s)", view->quantize_preview_blocked);
+        nk_layout_row_dynamic(context, 32, 1);
+        nk_label_wrap(context, view->quantize_preview_message);
+    } else {
+        nk_labelf(context, NK_TEXT_LEFT, "%zu would move, %zu unchanged",
+                  view->quantize_preview_moved, view->quantize_preview_unchanged);
+    }
+    const auto enabled = view->scene_available && view->selected_note_count != 0 &&
+                         view->quantize_preview_blocked == 0 && view->quantize_preview_moved != 0;
+    if (!enabled) nk_widget_disable_begin(context);
+    nk_layout_row_dynamic(context, 25, 1);
+    const auto clicked = nk_button_label(context, "Quantize to snap");
+    if (!enabled) nk_widget_disable_end(context);
+    if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->compose_action = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
+        action->compose_input_chart_id = view->chart_id;
+        action->compose_input_document_revision = view->document_revision;
+    }
+}
+
 auto semantic_layer_target_active(const WormUiComposeView* view) -> bool {
     for (size_t index = 0; index < view->semantic_layer_count; ++index)
         if (view->semantic_layers[index].selected) return true;

@@ -9,6 +9,8 @@ struct ComposeInspectorContext;
 void render_compose_timing_inspector(const ComposeInspectorContext& inspector);
 
 void render_compose_note_label_editor(const ComposeInspectorContext& inspector);
+void render_compose_label_search(const ComposeInspectorContext& inspector);
+void render_compose_quantize_section(const ComposeInspectorContext& inspector);
 
 auto semantic_layer_target_active(const WormUiComposeView* view) -> bool;
 

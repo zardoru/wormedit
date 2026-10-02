@@ -291,6 +291,7 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t label_document_revision{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t label_note_id{std::numeric_limits<std::uint64_t>::max()};
     std::array<char, WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1> note_label{};
+    std::array<char, 129> label_search{};
     std::array<char, WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY> semantic_layer_name{};
     std::uint64_t semantic_layer_name_id{};
     std::uint64_t semantic_layer_name_revision{std::numeric_limits<std::uint64_t>::max()};

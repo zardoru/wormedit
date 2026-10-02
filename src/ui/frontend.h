@@ -1644,6 +1644,9 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE,
     WORM_UI_COMPOSE_ACTION_AREA_DELETE,
     WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE,
+    /* Sets the cursor measure's time signature from timing_meter_numerator_text and
+       timing_meter_denominator_text. */
+    WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER,
     WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE,
     WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT,
     WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE,

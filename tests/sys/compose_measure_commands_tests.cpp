@@ -80,3 +80,33 @@ TEST_CASE("removing a nonempty measure reports the core rejection", "[sys][measu
     CHECK(fixture.measures().size() == 2);
     CHECK(fixture.state.cursor.measure == measure_id_t{3});
 }
+
+TEST_CASE("setting the meter of the cursor measure is one undoable command", "[sys][measure-commands]") {
+    fixture_t fixture({measure_id_t{4}, 0});
+    CHECK(apply_cursor_measure_meter(fixture.history, fixture.state, "3", "4") == "Meter updated.");
+    const auto& definition = fixture.measures()[1].definition;
+    CHECK(definition.length == rational_t{3, 4});
+    REQUIRE(definition.meter.has_value());
+    CHECK(definition.meter->numerator == 3);
+    CHECK(definition.meter->denominator == 4);
+    CHECK(fixture.history.undo.size() == 1);
+    // The other measure keeps its signature.
+    CHECK(fixture.measures()[0].definition.length == rational_t{1, 1});
+
+    CHECK(apply_cursor_measure_meter(fixture.history, fixture.state, "3", "4") == "Meter was unchanged.");
+    CHECK(fixture.history.undo.size() == 1);
+    REQUIRE(undo_document_command(fixture.history));
+    CHECK(fixture.measures()[1].definition.length == rational_t{1, 1});
+}
+
+TEST_CASE("a meter rejects text that is not a bounded non-zero number", "[sys][measure-commands]") {
+    fixture_t fixture({measure_id_t{4}, 0});
+    const auto revision = fixture.history.document.revision;
+    for (const auto* bad : {"", "0", "x", "-3", "3.5", "4294967296", "99999999999"}) {
+        CHECK(apply_cursor_measure_meter(fixture.history, fixture.state, bad, "4") ==
+              "A meter needs a non-zero numerator and denominator.");
+        CHECK(apply_cursor_measure_meter(fixture.history, fixture.state, "4", bad) ==
+              "A meter needs a non-zero numerator and denominator.");
+    }
+    CHECK(fixture.history.document.revision == revision);
+}

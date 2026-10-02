@@ -330,6 +330,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ui/nuklear_metadata_state_tests.cpp
         ui/nuklear_setup_state_tests.cpp
         ui/nuklear_timing_state_tests.cpp
+        ui/nuklear_meter_state_tests.cpp
         ../src/ui/nuklear/audio_state.cpp
         ../src/ui/nuklear/arrow_glyph.cpp
         ../src/ui/nuklear/compose_bookmark_label.cpp
@@ -337,6 +338,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/metadata_state.cpp
         ../src/ui/nuklear/setup_state.cpp
         ../src/ui/nuklear/timing_state.cpp
+        ../src/ui/nuklear/meter_state.cpp
     )
     target_include_directories(wormedit_frontend_state_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
     target_link_libraries(wormedit_frontend_state_tests

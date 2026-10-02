@@ -208,6 +208,9 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t kiai_drag_head_id{};
     double kiai_drag_anchor_y{};
     double kiai_drag_current_y{};
+    // Typed time signature for the cursor measure (Measure at cursor section).
+    std::array<char, 32> meter_numerator{'4'};
+    std::array<char, 32> meter_denominator{'4'};
     // SV recipe edge or whole-span drag; edge 0 is the begin edge, 1 the end edge, 2 the body.
     bool recipe_drag_active{};
     bool recipe_drag_moved{};

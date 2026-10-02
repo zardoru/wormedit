@@ -124,7 +124,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 ## T-320 Audit the Timing screen and port the remaining functions to Compose
 
-- **Status:** blocked-on T-314, T-315, T-317, T-319
+- **Status:** done (SPEEDS and recipe curve editing split into T-322 and T-323 at the user's request)
 - **Outcome:** A checked list maps every control of the Timing screen (tap tempo, BPM table, anchors, SPEEDS, recipe form, anchors) to a Compose location; each missing one is ported or explicitly removed.
 - **Read first:** `src/ui/nuklear/timing_panel.cpp`, `src/ui/nuklear/tap_timing_panel.cpp`, `src/ui/compose_mode.h`, `src/ui/nuklear/compose_inspector.cpp`.
 - **Files owned:** `docs/chart-editor-plan/tasks/compose-timing.md`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/compose_mode.h`, `tests/ui/nuklear_compose_state_tests.cpp`.
@@ -134,14 +134,55 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; `ctest --test-dir build -R '^documentation\.'`; isolated Xvfb check of Compose when UI changes.
 - **Out of scope:** the other cards in this file and unrelated rendering work.
 
+- **Result (2026-10-02):** Audit of every control of the Timing screen (`timing_panel.cpp`, `tap_timing_panel.cpp`) and where it lives in Compose:
+
+  | Timing screen control | In Compose |
+  | --- | --- |
+  | Tap tempo panel | Unchanged: a global modeless panel from the Edit menu, independent of the Timing tab. |
+  | Active grid, Previous/Next grid | The Compose snap selector and its shortcuts (status line shows the active snap). |
+  | Initial BPM and Set initial BPM | Double-click the initial BPM marker in the BPM lane; the Timing section of the inspector keeps its Set initial BPM button. |
+  | Counts summary | Two summary lines at the top of the inspector's Timing section. |
+  | Meter at measure, Apply meter, Suggest | **Ported:** the Meter row and Suggest buttons in the inspector's "Measure at cursor" section (`WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER`, `apply_cursor_measure_meter`), applied to the cursor measure. Suggestion logic and its test moved to `meter_state.*` / `nuklear_meter_state_tests.cpp`. |
+  | Marker drag, double-click edit or insert, staged event editor, delete event | Already in Compose (lane markers, inline editor, inspector Timing event section). |
+  | BPM, SV, stop, delay, warp, kiai, anchor lanes | Already in Compose; Kiai is now an area (T-316/T-317), SV has the step graph (T-318), stop/delay/warp are dead spans (T-313/T-314/T-315). |
+  | New SV recipe, Cancel selection, range drag, curve drawing | Compose: Add SV recipe in the area menu, recipe areas with value graphs and range drag (T-319). |
+  | SV recipe form (output, curve, values, sampling, Apply/Cancel) | **Not ported: T-323.** |
+  | SPEEDS markers, hover span, transition fields | **Not ported: T-322** (the staged event editor already offers the SPEEDS transition fields). |
+
+  Tests: 2 new core tests for the meter command (set, no-op, undo, rejected text) and the suggestion test moved to its own file. Full app suite 1469/1469; no new complexity warnings (the existing `dispatch_compose_view_action_group` warning predates this card).
+
 ## T-321 Remove the Timing screen
 
-- **Status:** blocked-on T-320
+- **Status:** blocked-on T-322, T-323
 - **Outcome:** The Timing tab, `timing_panel.*`, `timing_state.*` and their tests are gone; the app builds and Compose timing focus still works.
 - **Read first:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/timing_panel.h`, `src/ui/nuklear/timing_state.h`, `CMakeLists.txt`.
 - **Files owned:** `src/ui/nuklear/timing_panel.*`, `src/ui/nuklear/timing_state.*`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/ui/*timing*`, `docs/chart-editor-plan/tasks/*.md`, `memory/chart-editor-status/resume.md`.
-- **Steps:** 1. Confirm T-320 is done. 2. Remove the tab and its code. Tests that still apply to behavior now in Compose must exist before deletion (ported per T-320); delete only tests of the removed screen itself. 3. Update plan and docs links that name the screen. 4. Full build, `documentation.` tests and Compose smoke.
+- **Steps:** 1. Confirm T-320, T-322 and T-323 are done. `timing_panel.cpp` also owns shared pieces Compose still calls (`worm_ui_nuklear_render_timing_stage_editor`, the recipe form): move them into Compose files before deleting the screen. 2. Remove the tab and its code. Tests that still apply to behavior now in Compose must exist before deletion (ported per T-320); delete only tests of the removed screen itself. 3. Update plan and docs links that name the screen. 4. Full build, `documentation.` tests and Compose smoke.
 - **Invariants:** Document, formats and Compose timing focus are byte-identical in behavior.
 - **Reject/failure behavior:** If any check fails, stop and report; do not delete tests to get green.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; `ctest --test-dir build -R '^documentation\.'`; isolated Xvfb check of Compose when UI changes.
 - **Out of scope:** the other cards in this file and unrelated rendering work.
+
+## T-322 Show and edit SPEEDS in Compose
+
+- **Status:** ready
+- **Outcome:** StepMania SPEEDS appear in the SPD lane as spans with their exact extent and transition, can be inserted, dragged and edited from Compose, and SPEEDS-output recipes keep their areas there.
+- **Read first:** `src/ui/nuklear/timing_panel.cpp` (`draw_speed_markers`, `draw_hovered_speed_span`, stage editor transition fields), `include/wormedit/core/timing_lane_controller.h`, `src/sys/timing_view.cpp` (speed projection), `src/ui/nuklear/compose_canvas.cpp`.
+- **Files owned:** `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `tests/sys/frame_timing_tests.cpp`, new `src/sys/compose_speed_spans.h/.cpp` and its test, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Steps:** 1. Project each SPEEDS event to its affected span (from its row to the next event, with the transition length) as a pure, tested function. 2. Draw spans in the SPD lane with hover detail. 3. Make markers and the staged editor accept transition seconds/beats exactly as the Timing screen does. 4. State and projection tests; Xvfb capture.
+- **Invariants:** exact rational multipliers and transitions; StepMania export unchanged.
+- **Reject/failure behavior:** invalid transitions reject without a revision.
+- **Verify:** standard build/test; configured clang-tidy on changed C++; `ctest --test-dir build -R '^documentation\.'`; isolated Xvfb check.
+- **Out of scope:** recipe curve editing (T-323), removing the Timing screen (T-321).
+
+## T-323 Edit SV recipe curve, values and sampling in Compose
+
+- **Status:** ready
+- **Outcome:** selecting a recipe in Compose opens an editor for its output, curve (constant, linear, exponential, bump), exact values, sampling mode and counts, with a live preview of the raw and composed value, Apply as one undo step and Cancel.
+- **Read first:** `src/ui/nuklear/timing_panel.cpp` (`render_timing_recipe_form`, recipe draft handling), `include/wormedit/core/sv_recipe.h` (`sv_recipe_draft_t`, `preview_sv_recipe_draft`, `update_sv_recipe_action_t`), `src/sys/main.cpp` (`dispatch_timing_recipe_action`), `src/ui/nuklear/compose_inspector.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_inspector.cpp`, new `src/ui/nuklear/compose_recipe_form.cpp/.h`, `src/ui/frontend.h`, `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `CMakeLists.txt`.
+- **Steps:** 1. Reuse the core draft and preview API (no new model). 2. Port the form fields (exact rationals typed as text, validation messages) into a Compose inspector section for the selected recipe (`application.recipe_selected`). 3. Show the raw candidate and composed preview in the lane while editing. 4. A `lua_expression` recipe shows its source read-only until T-189. 5. Tests for form state and the apply/cancel/stale paths; Xvfb capture.
+- **Invariants:** exact rational values; Apply is one undoable command; Cancel and stale revisions leave the document unchanged.
+- **Reject/failure behavior:** invalid parameter combinations stay editable and are reported by preview and Apply.
+- **Verify:** standard build/test; configured clang-tidy on changed C++; `ctest --test-dir build -R '^documentation\.'`; isolated Xvfb check.
+- **Out of scope:** the Lua evaluator (T-189), SPEEDS (T-322), removing the Timing screen (T-321).

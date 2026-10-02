@@ -402,6 +402,7 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/setup_state.cpp
         src/ui/nuklear/timing_panel.cpp
         src/ui/nuklear/timing_state.cpp
+        src/ui/nuklear/meter_state.cpp
         src/ui/nuklear/theme.cpp
     )
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/assets/fonts")

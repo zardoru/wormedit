@@ -1401,7 +1401,21 @@ std::string edit_cursor_measure(compose_action_context_t& context, cursor_measur
     return rebound ? status : "Measure edited, but workspace rebinding failed.";
 }
 
+std::string set_cursor_measure_meter(compose_action_context_t& context) {
+    if (editor_interaction_has_pending_gesture(context.state))
+        return "Finish or cancel the active Compose gesture before editing measures.";
+    if (context.history.document.revision != context.action.compose_input_document_revision)
+        return "Meter edit ignored because the document changed.";
+    auto status = apply_cursor_measure_meter(context.history, context.state,
+                                             context.action.timing_meter_numerator_text,
+                                             context.action.timing_meter_denominator_text);
+    const auto rebound = rebind_workspace(context.workspace, context.history);
+    return rebound ? status : "Meter edited, but workspace rebinding failed.";
+}
+
 std::optional<std::string> dispatch_compose_marker_action(compose_action_context_t& context) {
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER)
+        return set_cursor_measure_meter(context);
     if (const auto measure_command = cursor_measure_command_for(context.action.compose_action))
         return edit_cursor_measure(context, *measure_command);
     if (const auto transform = selection_transform_for(context.action.compose_action))

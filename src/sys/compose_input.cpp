@@ -1,5 +1,6 @@
 #include "sys/compose_input.h"
 #include "sys/compose_minimap_navigation.h"
+#include "sys/compose_playhead_skip.h"
 #include "sys/compose_scroll_geometry.h"
 
 #include <wormedit/audio/decoder.h>
@@ -70,13 +71,42 @@ auto compose_navigation_action(WormUiComposeNavigationAction action)
     return std::nullopt;
 }
 
+namespace {
+
+// While the preview plays, navigation skips the playhead instead of moving the edit cursor.
+auto skip_playhead_for_navigation(wormedit::editor_navigation_action_t action,
+                                  const wormedit::document_history_t& history,
+                                  const wormedit::editor_interaction_state_t& state,
+                                  application_command_state_t& application) -> std::string {
+    using namespace wormedit;
+    const auto found =
+        std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    if (found == history.document.charts.end())
+        return "The selected difficulty is no longer available.";
+    const auto forward = action == editor_navigation_action_t::cursor_forward ||
+                         action == editor_navigation_action_t::page_forward;
+    const auto paged = action == editor_navigation_action_t::page_backward ||
+                       action == editor_navigation_action_t::page_forward;
+    return skip_playing_playhead(application, *found, state.active_snap_denominator,
+                                 paged ? playhead_skip_unit_t::measure : playhead_skip_unit_t::snap,
+                                 forward ? 1.0 : -1.0)
+        .status;
+}
+
+} // namespace
+
 auto dispatch_compose_navigation_actions(const wormedit::editor_navigation_action_batch_t& actions,
                                          wormedit::document_history_t& history,
-                                         wormedit::editor_interaction_state_t& state)
+                                         wormedit::editor_interaction_state_t& state,
+                                         application_command_state_t* application)
     -> std::string {
     using namespace wormedit;
     auto status = std::string{};
     for (std::size_t index = 0; index < actions.count; ++index) {
+        if (application && is_preview_playing(*application)) {
+            status = skip_playhead_for_navigation(actions[index], history, state, *application);
+            continue;
+        }
         editor_interaction_result_t result;
         std::string_view accepted;
         switch (actions[index]) {
@@ -442,7 +472,8 @@ struct compose_input_family_result_t {
 auto dispatch_compose_navigation_input(const WormUiComposeInputAction&,
                                        wormedit::document_history_t&,
                                        wormedit::editor_interaction_state_t&,
-                                       wormedit::editor_navigation_input_controller_t&)
+                                       wormedit::editor_navigation_input_controller_t&,
+                                       application_command_state_t&)
     -> compose_input_family_result_t;
 auto dispatch_compose_cursor_input(const WormUiComposeInputAction&, wormedit::document_history_t&,
                                    wormedit::editor_interaction_state_t&,
@@ -463,8 +494,8 @@ auto dispatch_compose_keyboard_input(
     const WormUiComposeInputAction& input, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace, wormedit::editor_interaction_state_t& state,
     wormedit::editor_navigation_input_controller_t& navigation_input,
-    wormedit::editor_interaction_result_t& result, std::string_view& accepted)
-    -> compose_input_family_result_t {
+    application_command_state_t& application, wormedit::editor_interaction_result_t& result,
+    std::string_view& accepted) -> compose_input_family_result_t {
     switch (input.kind) {
     case WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND:
         result = wormedit::arm_note_kind(history, state,
@@ -475,7 +506,8 @@ auto dispatch_compose_keyboard_input(
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS:
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE:
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL:
-        return dispatch_compose_navigation_input(input, history, state, navigation_input);
+        return dispatch_compose_navigation_input(input, history, state, navigation_input,
+                                                 application);
     case WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD:
     case WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD:
     case WORM_UI_COMPOSE_INPUT_DELETE_SELECTION:
@@ -493,8 +525,8 @@ auto dispatch_compose_keyboard_input(
 auto dispatch_compose_navigation_input(
     const WormUiComposeInputAction& input, wormedit::document_history_t& history,
     wormedit::editor_interaction_state_t& state,
-    wormedit::editor_navigation_input_controller_t& navigation_input)
-    -> compose_input_family_result_t {
+    wormedit::editor_navigation_input_controller_t& navigation_input,
+    application_command_state_t& application) -> compose_input_family_result_t {
     using namespace wormedit;
     switch (input.kind) {
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP: {
@@ -505,7 +537,7 @@ auto dispatch_compose_navigation_input(
         editor_navigation_action_batch_t batch;
         batch.actions[batch.count++] = *navigation;
         return compose_input_family_result_t::continue_batch(
-            dispatch_compose_navigation_actions(batch, history, state));
+            dispatch_compose_navigation_actions(batch, history, state, &application));
     }
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS: {
         const auto navigation = compose_navigation_action(input.navigation_action);
@@ -514,7 +546,7 @@ auto dispatch_compose_navigation_input(
         }
         const auto status = dispatch_compose_navigation_actions(
             navigation_input.press(*navigation, static_cast<std::uint64_t>(SDL_GetTicks())),
-            history, state);
+            history, state, &application);
         return compose_input_family_result_t::continue_batch(status);
     }
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE: {
@@ -2470,7 +2502,8 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
                                      std::string_view& accepted) -> compose_input_family_result_t {
     const auto keyboard =
         dispatch_compose_keyboard_input(input, context.history, context.workspace, context.state,
-                                        context.navigation_input, result, accepted);
+                                        context.navigation_input, context.application_state,
+                                        result, accepted);
     if (keyboard.handled)
         return keyboard;
     const auto position = [&context](const auto& chart, const auto& view, double y) {
@@ -2602,6 +2635,17 @@ void apply_compose_viewport_scroll(const wormedit::viewport_scroll_action_t& scr
         return;
     if (!context.input_chart) {
         status = "The selected difficulty is no longer available.";
+        return;
+    }
+    if (is_preview_playing(context.application_state)) {
+        // Wheel notches skip by the active snap; scrolling up goes back in time on an upscroll.
+        const auto downscroll = compose_field_downscroll(
+            *context.input_chart, context.application_state.editor_preferences);
+        const auto toward_later = (scroll.delta_y_pixels < 0.0) != downscroll;
+        status = skip_playing_playhead(context.application_state, *context.input_chart,
+                                       context.state.active_snap_denominator,
+                                       playhead_skip_unit_t::snap, toward_later ? 1.0 : -1.0)
+                     .status;
         return;
     }
     const auto downscroll = compose_field_downscroll(*context.input_chart, context.application_state.editor_preferences);

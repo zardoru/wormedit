@@ -315,6 +315,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/application_commands.cpp
         src/sys/compose_minimap_navigation.cpp
         src/sys/compose_bookmark_commands.cpp
+        src/sys/compose_playhead_skip.cpp
         src/sys/application_command_dispatch.cpp
         src/sys/compose_resource_presenter.cpp
         src/sys/compose_view.cpp

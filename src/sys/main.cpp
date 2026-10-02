@@ -2366,7 +2366,8 @@ auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& actio
         const auto repeated = dispatch_compose_navigation_actions(
             context.compose_navigation_input_ref.advance(
                 static_cast<std::uint64_t>(SDL_GetTicks())),
-            context.history_ref, *context.compose_interaction_state_ref);
+            context.history_ref, *context.compose_interaction_state_ref,
+            &context.application_command_state_ref);
         if (!repeated.empty()) {
             context.status_ref = repeated;
         }

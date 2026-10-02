@@ -250,6 +250,7 @@ struct application_command_state_t {
     std::function<std::string(external_player_action_t)> external_player;
     std::function<std::string()> transport_cancel_restore;
     std::optional<double> preview_playhead_absolute_row;
+    // Wheel rows gathered during one input frame while playing; flushed as a single seek.
 };
 
 inline auto toggle_transport_metronome(application_command_state_t& state) -> bool {

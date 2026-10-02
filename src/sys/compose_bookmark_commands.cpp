@@ -25,16 +25,6 @@ auto is_playing(const application_command_state_t& application) -> bool {
     return application.transport_preview_playing && application.transport_preview_playing();
 }
 
-auto local_position_for_row(const measure_index_t& index, std::uint64_t row)
-    -> std::optional<local_position_t> {
-    if (row >= index.total_rows) return std::nullopt;
-    const auto after = std::ranges::upper_bound(index.entries, row, {},
-                                                &measure_index_entry_t::absolute_begin_row);
-    if (after == index.entries.begin()) return std::nullopt;
-    const auto& measure = *std::prev(after);
-    return local_position_t{measure.id, row - measure.absolute_begin_row};
-}
-
 auto seek_playhead_to(const chart_document_t& chart, application_command_state_t& application,
                       local_position_t position, std::string& status) -> bool {
     const auto built = build_measure_index(chart);
@@ -56,6 +46,16 @@ auto seek_playhead_to(const chart_document_t& chart, application_command_state_t
 }
 
 } // namespace
+
+auto local_position_for_row(const measure_index_t& index, std::uint64_t row)
+    -> std::optional<local_position_t> {
+    if (row >= index.total_rows) return std::nullopt;
+    const auto after = std::ranges::upper_bound(index.entries, row, {},
+                                                &measure_index_entry_t::absolute_begin_row);
+    if (after == index.entries.begin()) return std::nullopt;
+    const auto& measure = *std::prev(after);
+    return local_position_t{measure.id, row - measure.absolute_begin_row};
+}
 
 auto nearest_snap_row(double absolute_row, std::uint64_t divisions_per_measure,
                       std::uint64_t snap_denominator, std::uint64_t total_rows)

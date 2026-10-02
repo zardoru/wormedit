@@ -55,7 +55,8 @@ later covering more bmhelper functions.
 
 ## T-326 Model the "Import as…" dialog and drop handling
 
-- **Status:** blocked-on T-325
+- **Status:** done
+- **Implementation notes (2026-10-02):** `src/ui/nuklear/sound_import_state.h/.cpp` holds the pending list and phases (`choose_kind`, `review_list`, `ready`); the 8 cases in `tests/ui/sound_import_state_tests.cpp` are registered in the frontend-state target, which needs SDL3 and was not built here. They passed compiled standalone against Catch2 (50 assertions); run `ctest -R '^frontend-state\.'` on your build to confirm. Also done: flac accepted as a stem-friendly extension; mp3 and any single file when the chart has BGM go straight to `ready`.
 - **Outcome:** dropped or picked files produce a pending import list (name, kind, remove, reorder) that the user confirms or cancels; a single wav/ogg with no BGM asks "stem or sound"; a single mp3 defaults to sound; several files always show the list.
 - **Read first:** `src/sys/metadata_drop_state.cpp`, `src/ui/nuklear/compose_resources.cpp` (file dialog callback), `src/ui/nuklear/audio_state.h`, `src/sys/audio_project_import.h`.
 - **Files owned:** new `src/ui/nuklear/sound_import_state.cpp/.h`, new `tests/ui/sound_import_state_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -80,7 +81,7 @@ later covering more bmhelper functions.
 
 ## T-328 Project the sound list and selected-sound properties
 
-- **Status:** blocked-on T-324
+- **Status:** ready
 - **Outcome:** the audio-slices view exposes bounded sound rows (name, kind, tags, duration, sample rate, use count, missing flag) filtered by search text and tag, plus the selected sound's properties and its viewport; rows are built only for the visible range.
 - **Read first:** `src/sys/workspace_frame_view.cpp`, `src/sys/waveform_view_projection.cpp`, `src/sys/compose_resource_presenter.cpp`, `src/ui/frontend.h` (`WormUiAudioSlicesView`).
 - **Files owned:** new `src/sys/sound_list_projection.cpp/.h`, new `tests/sys/sound_list_projection_tests.cpp`, `src/sys/workspace_frame_view.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -129,7 +130,7 @@ later covering more bmhelper functions.
 
 ## T-334 Render slice ranges to WAV files in a background job
 
-- **Status:** blocked-on T-331
+- **Status:** ready
 - **Outcome:** a bounded job decodes the source once and writes each `audio_slice_range_t` as a 16-bit stereo WAV file into the project, reporting progress and honoring cancellation.
 - **Read first:** `include/wormedit/core/audio_slicer.h`, `include/wormedit/audio/decoder.h`, `include/wormedit/core/resource_file_copy.h`, `src/audio/waveform_job.cpp`.
 - **Files owned:** new `include/wormedit/audio/wav_writer.h`, new `src/audio/wav_writer.cpp`, new `include/wormedit/audio/slice_render_job.h`, new `src/audio/slice_render_job.cpp`, new `tests/core/audio_slice_render_tests.cpp`, `cmake/dependencies/miniaudio.cmake`, `CMakeLists.txt`, `tests/CMakeLists.txt`.

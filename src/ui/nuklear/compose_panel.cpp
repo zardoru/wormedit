@@ -1249,12 +1249,15 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     const auto compose_body_height = std::max(
         64.0f, compose_body_bounds.y + compose_body_bounds.h - body_top -
                    context->style.window.spacing.y);
-    const auto inspector_drawn = state.inspector_visible && compose_body_bounds.w >= 540.0f;
+    const auto inspector_drawn = state.inspector_visible && compose_body_bounds.w >= 540.0f &&
+        wormedit::ui::compose_inspector_available(compose_mode_of(*view));
     const auto inspector_width = inspector_drawn
                                      ? std::clamp(compose_body_bounds.w * 0.24f, 280.0f, 380.0f)
                                      : 0.0f;
     const auto editor_width = compose_body_bounds.w;
-    const auto palette_drawn = compose_note_palette_has_buttons(*view);
+    const auto palette_drawn =
+        wormedit::ui::compose_note_palette_visible(compose_mode_of(*view)) &&
+        compose_note_palette_has_buttons(*view);
     constexpr float palette_width = 36.0f;
     const auto editor_left = palette_drawn ? palette_width : 0.0f;
     nk_layout_space_begin(context, NK_STATIC, compose_body_height,

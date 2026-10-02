@@ -6,6 +6,7 @@
 #include "sys/application_edit_helpers.h"
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose_scroll_geometry.h"
+#include "sys/transport_player_actions.h"
 #include "ui/frontend.h"
 #include "wormedit/audio.h"
 
@@ -233,6 +234,8 @@ std::optional<std::string> dispatch_compose_view_action_group(compose_action_con
         break;
     }
     case WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE:
+        if (!wormedit::ui::compose_notes_editable(compose_mode_of(application_state)))
+            return "Note painting is unavailable in Timing focus.";
         if (editor_interaction_has_pending_gesture(state)) {
             result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
             if (!result.accepted) {
@@ -246,6 +249,25 @@ std::optional<std::string> dispatch_compose_view_action_group(compose_action_con
         status = application_state.note_paint_mode_active ? "Note-paint mode enabled."
                                                           : "Note-paint mode disabled.";
         return status;
+    case WORM_UI_COMPOSE_ACTION_RATE_SLOWER:
+    case WORM_UI_COMPOSE_ACTION_RATE_FASTER: {
+        const auto stepped = step_transport_rate_status(
+            application_state, action.compose_action == WORM_UI_COMPOSE_ACTION_RATE_FASTER);
+        return stepped ? *stepped : "Playback output rejected the rate change.";
+    }
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before changing the Compose mode.";
+        }
+        application_state.compose_timing_focus = !application_state.compose_timing_focus;
+        if (application_state.compose_timing_focus) {
+            // Timing focus never edits notes, so leave any note tool.
+            application_state.note_paint_mode_active = false;
+            application_state.semantic_layer_paint_mode_active = false;
+        }
+        return application_state.compose_timing_focus ? "Timing focus on."
+                                                      : "Timing focus off.";
+    }
     case WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY: {
         if (action.compose_timing_lane >= compose_timing_lane_count) {
             return "The requested timing lane does not exist.";

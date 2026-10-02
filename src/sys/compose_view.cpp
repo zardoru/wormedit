@@ -957,13 +957,16 @@ bool initialize_compose_view_state(
     view.pixels_per_standard_measure = retained_state
                                            ? retained_state->pixels_per_standard_measure
                                            : wormedit::default_pixels_per_standard_measure;
-    view.note_paint_mode_active = application_state.note_paint_mode_active;
-    view.semantic_layer_paint_mode_active = application_state.semantic_layer_paint_mode_active;
+    const auto notes_editable = wormedit::ui::compose_notes_editable(compose_mode_of(application_state));
+    view.note_paint_mode_active = notes_editable && application_state.note_paint_mode_active;
+    view.semantic_layer_paint_mode_active =
+        notes_editable && application_state.semantic_layer_paint_mode_active;
     view.timing_stage_active = false;
     view.timing_stage_valid = false;
     view.timing_stage_lane = WORM_UI_TIMING_LANE_BPM;
     view.timing_stage_y_pixels = 0.0;
-    view.timing_lane_visibility_mask = application_state.compose_timing_lane_visibility_mask;
+    view.timing_lane_visibility_mask = effective_compose_timing_lane_mask(application_state);
+    view.timing_focus = application_state.compose_timing_focus;
     view.selected_note_count = 0;
     view.selected_assigned_resource_id = 0;
     view.selected_bgm_event_id = 0;
@@ -2446,6 +2449,7 @@ auto compose_static_source_layout_matches(const WormUiComposeView& source,
         source.playable_field_right_pixels==view.playable_field_right_pixels &&
         source.bgm_horizontal_scroll_pixels==view.bgm_horizontal_scroll_pixels &&
         source.timing_lane_visibility_mask==view.timing_lane_visibility_mask &&
+        source.timing_focus==view.timing_focus &&
         source.downscroll==view.downscroll && source.lane_key_legend_visible==view.lane_key_legend_visible;
 }
 void clear_static_source_selection(flattened_workspace_t& storage) {
@@ -2490,6 +2494,7 @@ auto make_compose_static_view(const WormUiComposeView& view,
     retained.playable_field_left_pixels = view.playable_field_left_pixels;
     retained.playable_field_right_pixels = view.playable_field_right_pixels;
     retained.timing_lane_visibility_mask = view.timing_lane_visibility_mask;
+    retained.timing_focus = view.timing_focus;
     retained.pixels_per_standard_measure = view.pixels_per_standard_measure;
     retained.viewport_height_pixels = expanded.viewport_height_pixels;
     retained.area_scroll_pixels = expanded.viewport_scroll_pixels;
@@ -2852,7 +2857,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
         compose_horizontal_layout(view.viewport_width_pixels, maximum_layout_lane_count(chart),
                                   !chart.bgm_source_lanes.empty(),
                                   std::popcount(
-                                      application_state.compose_timing_lane_visibility_mask));
+                                      effective_compose_timing_lane_mask(application_state)));
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
     const auto playable_field_width = horizontal_layout.playable_field_width_pixels;
     const auto field_left_pixels = horizontal_layout.field_left_pixels;

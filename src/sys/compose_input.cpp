@@ -2069,6 +2069,15 @@ auto finish_virtual_hold_at_authored_row(compose_input_context_t& context,
     return true;
 }
 
+// A plain click only selects unless the paint tool is active (or a hold is awaiting its end
+// click); the Select tool and Timing focus never place notes.
+auto pointer_click_places_notes(const compose_input_context_t& context) -> bool {
+    if (!wormedit::ui::compose_notes_editable(compose_mode_of(context.application_state)))
+        return false;
+    return context.application_state.note_paint_mode_active || context.state.pending_hold ||
+           context.state.pending_virtual_lane_key;
+}
+
 auto select_or_place_virtual_pointer(const WormUiComposeInputAction& input,
                                   compose_input_context_t& context,
                                   const wormedit::chart_document_t& chart,
@@ -2081,7 +2090,7 @@ auto select_or_place_virtual_pointer(const WormUiComposeInputAction& input,
         context.virtual_bms_hit_at(chart, view, input.x_pixels, input.y_pixels);
     if (!virtual_hit)
         return "Click inside an editable lane to select a note or position.";
-    if (mode == editor_area_selection_mode_t::replace) {
+    if (mode == editor_area_selection_mode_t::replace && pointer_click_places_notes(context)) {
         place_virtual_note_from_pointer(context, virtual_hit->first, virtual_hit->second, result, accepted);
         return std::nullopt;
     }
@@ -2115,14 +2124,16 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
     const auto target = context.hit_target_at(*chart, *view, input.x_pixels, input.y_pixels);
     if (!target)
         return select_or_place_virtual_pointer(input, context, *chart, *view, *mode, result, accepted);
-    if (*mode == editor_area_selection_mode_t::replace &&
+    const auto places_notes = pointer_click_places_notes(context);
+    if (*mode == editor_area_selection_mode_t::replace && places_notes &&
         finish_virtual_hold_at_authored_row(context, *chart, target->position, target->lane, result, accepted))
         return std::nullopt;
     context.state.active_lane = target->lane;
     place_cursor_at(context.state, target->position);
     const bool clicked_hold_end = context.state.pending_hold &&
                                   !context.state.pending_hold->gesture_source;
-    if (*mode == editor_area_selection_mode_t::replace && (!target->note || clicked_hold_end)) {
+    if (*mode == editor_area_selection_mode_t::replace && places_notes &&
+        (!target->note || clicked_hold_end)) {
         place_note_from_pointer(context, *target, result, accepted);
         return std::nullopt;
     }
@@ -2496,10 +2507,38 @@ auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
     }
 }
 
+// Inputs that create, move, or reassign notes; Timing focus rejects them.
+auto compose_input_edits_notes(WormUiComposeInputKind kind) -> bool {
+    switch (kind) {
+    case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN:
+    case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE:
+    case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE:
+    case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN:
+    case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE:
+    case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE:
+    case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN:
+    case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE:
+    case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE:
+    case WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS:
+    case WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN:
+    case WORM_UI_COMPOSE_INPUT_ALT_POINTER_UPDATE:
+    case WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE:
+    case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE:
+    case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE:
+        return true;
+    default:
+        return false;
+    }
+}
+
 auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
                                      compose_input_context_t& context,
                                      wormedit::editor_interaction_result_t& result,
                                      std::string_view& accepted) -> compose_input_family_result_t {
+    if (compose_input_edits_notes(input.kind) &&
+        !wormedit::ui::compose_notes_editable(compose_mode_of(context.application_state)))
+        return compose_input_family_result_t::continue_batch(
+            "Note editing is unavailable in Timing focus.");
     const auto keyboard =
         dispatch_compose_keyboard_input(input, context.history, context.workspace, context.state,
                                         context.navigation_input, context.application_state,
@@ -2794,7 +2833,7 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
     const auto horizontal_layout = compose_horizontal_layout(
         ui_action.compose_input_viewport_width_pixels,
         input_chart == history.document.charts.end() ? 0 : maximum_layout_lane_count(*input_chart),
-        bgm_lane_count != 0, std::popcount(application_state.compose_timing_lane_visibility_mask));
+        bgm_lane_count != 0, std::popcount(effective_compose_timing_lane_mask(application_state)));
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
     const auto field_left_pixels = horizontal_layout.field_left_pixels;
     const auto field_width_pixels = horizontal_layout.playable_field_width_pixels;

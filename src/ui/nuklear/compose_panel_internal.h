@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ui/compose_mode.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/panel_input.h"
 #include "wormedit/nuklear_config.h"
@@ -8,6 +9,12 @@
 
 static auto& state = worm_ui_nuklear_compose_state();
 static constexpr double compose_measure_rail_width = 42.0;
+
+[[nodiscard]] inline auto compose_mode_of(const WormUiComposeView& view)
+    -> wormedit::ui::compose_mode_t {
+    return view.timing_focus ? wormedit::ui::compose_mode_t::timing_focus
+                             : wormedit::ui::compose_mode_t::full;
+}
 
 struct ComposePaintContext {
     struct nk_context* context;

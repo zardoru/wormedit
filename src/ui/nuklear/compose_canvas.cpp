@@ -260,6 +260,7 @@ static auto compose_tile_request(const ComposePaintContext& paint, unsigned pass
         (static_cast<std::uint64_t>(view.waveform_row_count!=0)<<1) |
         (static_cast<std::uint64_t>(view.waveform_timing_locked)<<2) |
         (static_cast<std::uint64_t>(view.lane_key_legend_visible)<<3) |
+        (static_cast<std::uint64_t>(view.timing_focus)<<4) |
         // Snap changes the grid lines without bumping the document revision.
         (view.area_snap_denominator<<8)};
     request.key.identity={view.project_id,view.chart_id,view.document_revision,
@@ -1397,6 +1398,17 @@ static void draw_compose_notes(const ComposePaintContext& paint) {
     }
 }
 
+// Timing focus mutes each note without touching what lies behind it, so the
+// waveform stays fully opaque.
+static void draw_compose_notes_veil(const ComposePaintContext& paint) {
+    for (size_t index = 0; index < paint.view->note_endpoint_count; ++index) {
+        const auto rect = compose_screen_rect(&paint.view->note_endpoints[index].bounds,
+                                              paint.view, paint.viewport);
+        if (rect.w <= 0.0f || rect.h <= 0.0f) continue;
+        field_rect(paint, rect, 0.0f, nk_rgba(22, 25, 33, 150), 10);
+    }
+}
+
 static void draw_compose_timing_preview_rects(const ComposePaintContext& paint) {
     for (size_t index = 0; index < paint.view->timing_preview_rect_count; ++index) {
         const auto& preview = paint.view->timing_preview_rects[index];
@@ -1909,6 +1921,8 @@ void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* vie
         draw_compose_cached_pass(paint,9,true,active_notes || !note_holes,
             [&](const ComposePaintContext& cached) { draw_compose_notes(cached); },
             note_holes ? std::span<const SDL_FRect>(*note_holes) : std::span<const SDL_FRect>{});
+        if (wormedit::ui::compose_notes_dimmed(compose_mode_of(*paint.view)))
+            draw_compose_notes_veil(paint);
         draw_compose_foreground_markers(paint);
         draw_compose_editor_overlays(paint, hovered_bgm);
     }

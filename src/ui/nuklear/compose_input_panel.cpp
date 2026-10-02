@@ -653,6 +653,7 @@ static bool process_compose_escape(const auto& key_event,
 
 static void process_compose_lane_key(const auto& key_event, const WormUiComposeView* view,
                                     WormUiWorkspaceAction* action) {
+    if (!wormedit::ui::compose_notes_editable(compose_mode_of(*view))) return;
     for (size_t binding_index = 0; binding_index < view->lane_key_binding_count;
          ++binding_index) {
         const auto& binding = view->lane_key_bindings[binding_index];
@@ -1483,6 +1484,26 @@ void process_compose_overview_input(const ComposeOverviewInput& input) {
     update_waveform_overview_seek(input);
 }
 
+// Timing lane under a horizontal pixel position, honoring the lane mask in force.
+static auto compose_timing_lane_at_x(const WormUiComposeView& view, double x,
+                                     double field_left) -> std::optional<WormUiTimingLaneKind> {
+    const auto visible_lane_count =
+        static_cast<std::size_t>(std::popcount(view.timing_lane_visibility_mask));
+    if (visible_lane_count == 0) return std::nullopt;
+    const auto lane_width = (field_left - compose_measure_rail_width) /
+                            static_cast<double>(visible_lane_count);
+    if (lane_width <= 0.0) return std::nullopt;
+    const auto visible_slot = std::min(
+        static_cast<std::size_t>((x - compose_measure_rail_width) / lane_width),
+        visible_lane_count - 1);
+    std::size_t slot = 0;
+    for (std::size_t candidate = 0; candidate < WORM_UI_TIMING_LANE_COUNT; ++candidate) {
+        if ((view.timing_lane_visibility_mask & (1U << candidate)) == 0) continue;
+        if (slot++ == visible_slot) return static_cast<WormUiTimingLaneKind>(candidate);
+    }
+    return std::nullopt;
+}
+
 static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& input,
                                                double click_x, double click_y) {
     const auto& view = *input.view;
@@ -1492,25 +1513,9 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
         click_x >= input.note_field_left ||
         action.timing_stage_action != WORM_UI_TIMING_STAGE_NONE)
         return false;
-    const auto visible_lane_count = static_cast<std::size_t>(
-        std::popcount(view.timing_lane_visibility_mask));
-    const auto lane_width = visible_lane_count == 0
-                                ? 0.0
-                                : (input.note_field_left - compose_measure_rail_width) /
-                                      visible_lane_count;
-    if (lane_width <= 0.0 || visible_lane_count == 0) return false;
-    const auto visible_slot = std::min(
-        static_cast<std::size_t>((click_x - compose_measure_rail_width) / lane_width),
-        visible_lane_count - 1);
-    std::size_t clicked_timing_lane_ordinal = 0;
-    for (std::size_t candidate = 0, slot = 0; candidate < WORM_UI_TIMING_LANE_COUNT;
-         ++candidate) {
-        if ((view.timing_lane_visibility_mask & (1U << candidate)) == 0) continue;
-        if (slot++ == visible_slot) {
-            clicked_timing_lane_ordinal = candidate;
-            break;
-        }
-    }
+    const auto clicked_lane = compose_timing_lane_at_x(view, click_x, input.note_field_left);
+    if (!clicked_lane) return false;
+    const auto clicked_timing_lane_ordinal = static_cast<std::size_t>(*clicked_lane);
     const auto* clicked_marker = compose_timing_marker_at(view, click_x, click_y);
     const auto existing_object_id = clicked_marker ? clicked_marker->object_id : 0;
     action.timing_stage_action = WORM_UI_TIMING_STAGE_BEGIN;
@@ -1647,6 +1652,7 @@ static auto resource_pointer_can_start(const ComposePointerEventContext& input,
                                        bool paint_pointer_consumed) -> bool {
     const auto& view = *input.view;
     return !paint_pointer_consumed &&
+           wormedit::ui::compose_notes_editable(compose_mode_of(view)) &&
            state.resource_pointer_mode != worm_ui_nuklear_compose_resource_pointer_mode_t::off &&
            view.scene_available && input.pointer_started_in_view && input.window_focused &&
            input.shortcut_event_count == 0 &&
@@ -2133,7 +2139,8 @@ static auto handle_compose_alt_pointer(const ComposePointerEventContext& input,
     auto* action = input.action;
     if (!state.action_overflowed && !paint_pointer_consumed && input.view->scene_available &&
         input.pointer_started_in_note_field && input.alt_down && !state.pointer_hold_active &&
-        input.window_focused && !input.compose_note_double_click_in_view) {
+        input.window_focused && !input.compose_note_double_click_in_view &&
+        wormedit::ui::compose_notes_editable(compose_mode_of(*input.view))) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN,
                              input.pointer_x, input.pointer_y);
         state.pointer_hold_active = !state.action_overflowed;
@@ -2189,6 +2196,40 @@ static auto update_compose_timing_marker_drag(const ComposePointerEventContext& 
     return true;
 }
 
+// Timing focus: Ctrl+click on empty BPM lane space inserts a BPM equal to the one
+// in force; Alt+click on empty Anchor lane space inserts an anchor. Both skip the
+// inline editor and leave modifier-clicks on existing markers to selection.
+static auto begin_timing_quick_insert(const ComposePointerEventContext& input) -> bool {
+    const auto& view = *input.view;
+    const auto& timing = *input.timing_view;
+    const auto mode = compose_mode_of(view);
+    constexpr auto other_modifiers = SDL_KMOD_SHIFT | SDL_KMOD_GUI;
+    const auto ctrl = (input.pointer_modifiers & SDL_KMOD_CTRL) != 0;
+    const auto alt = (input.pointer_modifiers & SDL_KMOD_ALT) != 0;
+    if ((input.pointer_modifiers & other_modifiers) != 0 || ctrl == alt) return false;
+    const auto wanted = ctrl ? WORM_UI_TIMING_LANE_BPM : WORM_UI_TIMING_LANE_ANCHOR;
+    const auto allowed = ctrl ? wormedit::ui::compose_ctrl_click_inserts_matching_bpm(mode)
+                              : wormedit::ui::compose_alt_click_inserts_anchor(mode);
+    const auto lane = compose_timing_lane_at_x(view, input.pointer_started_x,
+                                               input.note_field_left);
+    if (!allowed || !lane || *lane != wanted || !timing.initial_bpm_editable ||
+        timing.stage_active || input.action->timing_stage_action != WORM_UI_TIMING_STAGE_NONE)
+        return false;
+    const auto viewport_fraction =
+        std::clamp(input.pointer_started_y / view.viewport_height_pixels, 0.0, 1.0);
+    auto& action = *input.action;
+    action.timing_stage_action = WORM_UI_TIMING_STAGE_QUICK_INSERT;
+    action.timing_chart_id = timing.chart_id;
+    action.timing_document_revision = timing.document_revision;
+    action.timing_lane = wanted;
+    action.timing_object_id = 0;
+    action.timing_has_target_y = true;
+    action.timing_target_y_fraction =
+        view.timing_document_begin_fraction +
+        viewport_fraction * (view.timing_document_end_fraction - view.timing_document_begin_fraction);
+    return true;
+}
+
 static auto begin_compose_timing_marker_drag(const ComposePointerEventContext& input,
                                              bool paint_pointer_consumed) -> bool {
     if (paint_pointer_consumed || !input.view->scene_available || !input.window_focused ||
@@ -2199,7 +2240,7 @@ static auto begin_compose_timing_marker_drag(const ComposePointerEventContext& i
         return false;
     const auto* marker = compose_timing_marker_at(*input.view, input.pointer_started_x,
                                                    input.pointer_started_y);
-    if (!marker) return false;
+    if (!marker) return begin_timing_quick_insert(input);
     const auto has_modifier = (input.pointer_modifiers & input.any_pointer_modifier) != 0;
     if (marker->object_id == 0) {
         state.timing_missing_initial_selected = true;
@@ -2243,11 +2284,12 @@ static bool compose_pointer_start_hits_element(const ComposePointerEventContext&
 }
 
 static void start_compose_note_move_candidate(const ComposePointerEventContext& input) {
-    if (!compose_point_hits_selected_note(input.view, input.pointer_started_x,
-                                          input.pointer_started_y))
+    const auto can_move = wormedit::ui::compose_notes_editable(compose_mode_of(*input.view));
+    if (!can_move || !compose_point_hits_selected_note(input.view, input.pointer_started_x,
+                                                       input.pointer_started_y))
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
                              input.pointer_started_x, input.pointer_started_y);
-    state.note_move_candidate_active = !state.action_overflowed;
+    state.note_move_candidate_active = can_move && !state.action_overflowed;
     state.note_move_anchor_x = input.pointer_started_x;
     state.note_move_anchor_y = input.pointer_started_y;
     state.note_move_anchor_screen_x = input.left_clicked_screen_x;

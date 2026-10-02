@@ -365,7 +365,8 @@ auto initial_timing_value_for_stage(const wormedit::chart_document_t& chart,
     using namespace wormedit;
     switch (kind) {
     case timing_lane_kind_t::bpm:
-        return timing_bpm_value_t{{120, 1}};
+        return timing_bpm_value_t{
+            effective_bpm_at(chart, position).value_or(signed_rational_t{120, 1})};
     case timing_lane_kind_t::scroll:
         return timing_scroll_value_t{{1, 1}};
     case timing_lane_kind_t::speed:
@@ -1840,7 +1841,10 @@ void refresh_application_command_states(
     for (const auto& [id, tab] : tabs) {
         set(std::string{id}, tab != workspace_tab_t::storyboard, workspace.active_tab == tab);
     }
-    set("timing.toggle_lock", workspace.active_tab == workspace_tab_t::timing,
+    set("timing.toggle_lock",
+        workspace.active_tab == workspace_tab_t::timing ||
+            (workspace.active_tab == workspace_tab_t::compose &&
+             application_state.compose_timing_focus),
         application_state.timing_locked);
     set("timing.insert_bpm", false);
     set("timing.insert_sv", false);
@@ -2073,6 +2077,25 @@ void dispatch_active_timing_stage_action(
     }
 }
 
+// Timing focus: begin a new event with its default value and confirm it at once.
+void quick_insert_timing_event(const WormUiWorkspaceAction& action,
+                               wormedit::document_history_t& history,
+                               const wormedit::workspace_controller_t& workspace,
+                               bool timing_locked, std::uint64_t active_snap_denominator,
+                               std::string& status) {
+    auto candidate = begin_timing_stage(action, history, workspace, timing_locked,
+                                        active_snap_denominator);
+    if (candidate.status != wormedit::timing_lane_pseudonote_status_t::editing) {
+        status = candidate.diagnostics.empty() ? "Timing event could not be inserted at that row."
+                                               : candidate.diagnostics.front().message;
+        return;
+    }
+    const auto result = wormedit::confirm_timing_lane_pseudonote(history, candidate, timing_locked);
+    status = result ? "Timing event inserted."
+             : result.diagnostics.empty() ? "Timing event insertion was rejected."
+                                          : result.diagnostics.front().message;
+}
+
 void dispatch_timing_stage_action(
     const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace, bool timing_locked,
@@ -2097,6 +2120,13 @@ void dispatch_timing_stage_action(
             } else {
                 status = "Timing event could not be staged at that row.";
             }
+        }
+    } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_QUICK_INSERT) {
+        if (recipe_edit_pending || timing_stage) {
+            status = "Confirm or cancel the open timing edit before inserting another event.";
+        } else {
+            quick_insert_timing_event(action, history, workspace, timing_locked,
+                                      active_snap_denominator, status);
         }
     } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CANCEL) {
         if (timing_stage) {

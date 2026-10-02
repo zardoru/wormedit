@@ -58,6 +58,10 @@ using wormedit::ui::lucide::Glyph;
 
 static bool g_frame_timing_visible;
 static bool g_compose_area_shortcuts_active;
+// Layout-independent Compose hotkeys read from typed text: [ ] { } change the
+// playback rate and + - zoom, wherever the layout puts those characters.
+static std::array<char, 8> g_compose_text_hotkeys{};
+static std::size_t g_compose_text_hotkey_count{};
 static SDL_Window* g_window;
 static SDL_Renderer* g_renderer;
 static struct nk_context* g_context;
@@ -339,6 +343,35 @@ static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_la
 
     g_shortcut_event_count = 0;
     g_shortcut_events_overflowed = false;
+}
+
+static bool notification_editor_text_owned();
+
+static void queue_compose_text_hotkeys(const char* text) {
+    if (!text || !g_compose_area_shortcuts_active || !g_window_focused ||
+        notification_editor_text_owned())
+        return;
+    for (const char* character = text; *character != '\0'; ++character) {
+        if (std::strchr("+-[]{}", *character) == nullptr ||
+            g_compose_text_hotkey_count == g_compose_text_hotkeys.size())
+            continue;
+        g_compose_text_hotkeys[g_compose_text_hotkey_count++] = *character;
+    }
+}
+
+// Turns the first queued hotkey into a Compose action; the rest are dropped.
+static void consume_compose_text_hotkeys(WormUiWorkspaceAction& action) {
+    const auto count = std::exchange(g_compose_text_hotkey_count, std::size_t{});
+    if (count == 0 || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    switch (g_compose_text_hotkeys[0]) {
+    case '+': action.compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_IN; break;
+    case '-': action.compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_OUT; break;
+    case '[':
+    case '{': action.compose_action = WORM_UI_COMPOSE_ACTION_RATE_SLOWER; break;
+    case ']':
+    case '}': action.compose_action = WORM_UI_COMPOSE_ACTION_RATE_FASTER; break;
+    default: break;
+    }
 }
 
 static void queue_compose_wheel_event(const SDL_MouseWheelEvent* event) {
@@ -802,6 +835,7 @@ static bool handle_workspace_frontend_event(const SDL_Event* event) {
     } else if (event->type == SDL_EVENT_TEXT_INPUT && g_window && event->text.windowID != 0 &&
                event->text.windowID == SDL_GetWindowID(g_window)) {
         g_ime_composition_active = false;
+        queue_compose_text_hotkeys(event->text.text);
     } else if (event->type == SDL_EVENT_MOUSE_WHEEL) {
         queue_compose_wheel_event(&event->wheel);
     } else if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.down &&
@@ -2109,6 +2143,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
     const bool compose_lane_focused =
         worm_ui_nuklear_compose_lane_focused(&view->compose, compose_tab_active, g_window_focused);
+    if (compose_tab_active) consume_compose_text_hotkeys(action);
+    else g_compose_text_hotkey_count = 0;
     expose_shortcut_input(&action, compose_lane_focused,
                           compose_lane_focused ? view->compose.cursor->lane_id : 0);
     g_audio.offset_escape_pending = false;

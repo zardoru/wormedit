@@ -659,6 +659,33 @@ auto apply_timing_lane_preview(document_history_t& history,
 
 } // namespace
 
+auto effective_bpm_at(const chart_document_t& chart, local_position_t position)
+    -> std::optional<signed_rational_t> {
+    const auto measures_result = build_measure_index(chart);
+    const auto* measures = std::get_if<measure_index_t>(&measures_result);
+    const auto target = measures ? absolute_row(*measures, position) : std::nullopt;
+    if (!target) {
+        return std::nullopt;
+    }
+    const bpm_event_t* best = nullptr;
+    std::uint64_t best_row = 0;
+    for (const auto& bpm : chart.bpms) {
+        if (bpm.beats_per_minute.numerator <= 0 || bpm.beats_per_minute.denominator == 0) {
+            continue;
+        }
+        const auto row = absolute_row(*measures, bpm.position);
+        if (!row || *row > *target) {
+            continue;
+        }
+        if (best == nullptr || *row > best_row ||
+            (*row == best_row && bpm.provenance.source_order >= best->provenance.source_order)) {
+            best = &bpm;
+            best_row = *row;
+        }
+    }
+    return best ? std::optional{best->beats_per_minute} : std::nullopt;
+}
+
 auto begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart,
                                   timing_lane_kind_t kind, local_position_t exact_snapped_position,
                                   timing_lane_value_t initial_value,

@@ -27,6 +27,16 @@ inline auto step_transport_rate(application_command_state_t& state, bool faster)
                                            : state.transport_rate_index - 1);
 }
 
+// Steps the rate one notch and returns the status text; nullopt when the output
+// rejected the change. Already at the slowest or fastest rate is not an error.
+inline auto step_transport_rate_status(application_command_state_t& state, bool faster)
+    -> std::optional<const char*> {
+    const bool boundary = (faster && state.transport_rate_index == audio::playback_rates.size() - 1) ||
+                          (!faster && state.transport_rate_index == 0);
+    if (!boundary && !step_transport_rate(state, faster)) return std::nullopt;
+    return boundary ? "Playback rate unchanged." : "Playback rate changed.";
+}
+
 // Plain Space uses hard Stop while playing, and starts/resumes only otherwise.
 inline auto play_stop_transport(application_command_state_t& state)
     -> std::optional<std::string> {

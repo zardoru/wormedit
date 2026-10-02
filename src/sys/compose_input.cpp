@@ -2442,7 +2442,8 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
         finish_virtual_hold_at_authored_row(context, *chart, target->position, target->lane, result, accepted))
         return std::nullopt;
     context.state.active_lane = target->lane;
-    place_cursor_on_picked_row(context.state, target->position);
+    // A click never moves the cursor: it keeps its fixed station and only keys and the
+    // transport move it.
     const bool clicked_hold_end = context.state.pending_hold &&
                                   !context.state.pending_hold->gesture_source;
     if (*mode == editor_area_selection_mode_t::replace && places_notes &&
@@ -2458,14 +2459,7 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
                                              true}
             : select_editor_objects_action_t{{}, *mode, false};
     result = dispatch_editor_action(context.history, context.state, selection);
-    accepted = target->note ? "Note selected." : "Edit cursor moved to the clicked row.";
-    if (result.accepted) {
-        // The cursor lives at its fixed screen station: the view scrolls to the clicked row.
-        auto anchored = dispatch_editor_action(
-            context.history, context.state,
-            jump_edit_cursor_action_t{target->position, context.history.document.revision});
-        if (anchored.accepted) result = std::move(anchored);
-    }
+    accepted = target->note ? "Note selected." : "Selection cleared.";
     return std::nullopt;
 }
 

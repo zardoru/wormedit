@@ -653,6 +653,7 @@ static bool process_compose_escape(const auto& key_event,
 
 static void process_compose_lane_key(const auto& key_event, const WormUiComposeView* view,
                                     WormUiWorkspaceAction* action) {
+    if (!wormedit::ui::compose_notes_editable(compose_mode_of(*view))) return;
     for (size_t binding_index = 0; binding_index < view->lane_key_binding_count;
          ++binding_index) {
         const auto& binding = view->lane_key_bindings[binding_index];
@@ -1651,6 +1652,7 @@ static auto resource_pointer_can_start(const ComposePointerEventContext& input,
                                        bool paint_pointer_consumed) -> bool {
     const auto& view = *input.view;
     return !paint_pointer_consumed &&
+           wormedit::ui::compose_notes_editable(compose_mode_of(view)) &&
            state.resource_pointer_mode != worm_ui_nuklear_compose_resource_pointer_mode_t::off &&
            view.scene_available && input.pointer_started_in_view && input.window_focused &&
            input.shortcut_event_count == 0 &&
@@ -2281,11 +2283,12 @@ static bool compose_pointer_start_hits_element(const ComposePointerEventContext&
 }
 
 static void start_compose_note_move_candidate(const ComposePointerEventContext& input) {
-    if (!compose_point_hits_selected_note(input.view, input.pointer_started_x,
-                                          input.pointer_started_y))
+    const auto can_move = wormedit::ui::compose_notes_editable(compose_mode_of(*input.view));
+    if (!can_move || !compose_point_hits_selected_note(input.view, input.pointer_started_x,
+                                                       input.pointer_started_y))
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
                              input.pointer_started_x, input.pointer_started_y);
-    state.note_move_candidate_active = !state.action_overflowed;
+    state.note_move_candidate_active = can_move && !state.action_overflowed;
     state.note_move_anchor_x = input.pointer_started_x;
     state.note_move_anchor_y = input.pointer_started_y;
     state.note_move_anchor_screen_x = input.left_clicked_screen_x;

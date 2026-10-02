@@ -957,8 +957,10 @@ bool initialize_compose_view_state(
     view.pixels_per_standard_measure = retained_state
                                            ? retained_state->pixels_per_standard_measure
                                            : wormedit::default_pixels_per_standard_measure;
-    view.note_paint_mode_active = application_state.note_paint_mode_active;
-    view.semantic_layer_paint_mode_active = application_state.semantic_layer_paint_mode_active;
+    const auto notes_editable = wormedit::ui::compose_notes_editable(compose_mode_of(application_state));
+    view.note_paint_mode_active = notes_editable && application_state.note_paint_mode_active;
+    view.semantic_layer_paint_mode_active =
+        notes_editable && application_state.semantic_layer_paint_mode_active;
     view.timing_stage_active = false;
     view.timing_stage_valid = false;
     view.timing_stage_lane = WORM_UI_TIMING_LANE_BPM;

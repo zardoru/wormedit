@@ -2496,10 +2496,35 @@ auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
     }
 }
 
+// Inputs that create, move, or reassign notes; Timing focus rejects them.
+auto compose_input_edits_notes(WormUiComposeInputKind kind) -> bool {
+    switch (kind) {
+    case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN:
+    case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE:
+    case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE:
+    case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN:
+    case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE:
+    case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE:
+    case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN:
+    case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE:
+    case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE:
+    case WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS:
+    case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE:
+    case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE:
+        return true;
+    default:
+        return false;
+    }
+}
+
 auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
                                      compose_input_context_t& context,
                                      wormedit::editor_interaction_result_t& result,
                                      std::string_view& accepted) -> compose_input_family_result_t {
+    if (compose_input_edits_notes(input.kind) &&
+        !wormedit::ui::compose_notes_editable(compose_mode_of(context.application_state)))
+        return compose_input_family_result_t::continue_batch(
+            "Note editing is unavailable in Timing focus.");
     const auto keyboard =
         dispatch_compose_keyboard_input(input, context.history, context.workspace, context.state,
                                         context.navigation_input, context.application_state,

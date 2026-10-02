@@ -162,12 +162,11 @@ auto transport_command(command_context_t& context) -> std::optional<command_resu
     const auto kind = context.command.kind;
     auto& app = context.application_state;
     if (kind == command_kind_t::transport_rate_slower || kind == command_kind_t::transport_rate_faster) {
-        const bool faster = kind == command_kind_t::transport_rate_faster;
-        const bool boundary = (faster && app.transport_rate_index == 8) ||
-                              (!faster && app.transport_rate_index == 0);
-        if (!boundary && !step_transport_rate(app, faster))
+        const auto stepped =
+            step_transport_rate_status(app, kind == command_kind_t::transport_rate_faster);
+        if (!stepped)
             return reject_application_command(context.status, "Playback output rejected the rate change.");
-        context.status = boundary ? "Playback rate unchanged." : "Playback rate changed.";
+        context.status = *stepped;
         return command_result_t{.accepted = true};
     }
     if (kind == command_kind_t::transport_play_stop) {

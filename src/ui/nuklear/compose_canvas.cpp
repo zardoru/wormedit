@@ -1398,14 +1398,15 @@ static void draw_compose_notes(const ComposePaintContext& paint) {
     }
 }
 
-// Timing focus mutes the notes without hiding them.
+// Timing focus mutes each note without touching what lies behind it, so the
+// waveform stays fully opaque.
 static void draw_compose_notes_veil(const ComposePaintContext& paint) {
-    const WormUiComposeRect field{paint.view->playable_field_left_pixels, 0.0,
-                                  paint.view->playable_field_right_pixels,
-                                  paint.view->viewport_height_pixels};
-    const auto rect = compose_screen_rect(&field, paint.view, paint.viewport);
-    if (rect.w <= 0.0f || rect.h <= 0.0f) return;
-    field_rect(paint, rect, 0.0f, nk_rgba(22, 25, 33, 150), 10);
+    for (size_t index = 0; index < paint.view->note_endpoint_count; ++index) {
+        const auto rect = compose_screen_rect(&paint.view->note_endpoints[index].bounds,
+                                              paint.view, paint.viewport);
+        if (rect.w <= 0.0f || rect.h <= 0.0f) continue;
+        field_rect(paint, rect, 0.0f, nk_rgba(22, 25, 33, 150), 10);
+    }
 }
 
 static void draw_compose_timing_preview_rects(const ComposePaintContext& paint) {

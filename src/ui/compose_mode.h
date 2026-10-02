@@ -15,12 +15,13 @@ enum class compose_mode_t : std::uint8_t {
 struct compose_mode_profile_t {
     // Notes keep drawing in every mode; focus mode only mutes them.
     bool notes_dimmed;
+    // Placing, painting, and resource-assigning notes with the pointer or lane keys.
+    bool notes_editable;
     bool note_palette_visible;
     // Timing lanes ignore the per-lane visibility mask and all draw.
     bool timing_lanes_forced_visible;
-    // Inspector: Compose-only sections versus the timing-centered set.
-    bool note_inspector_sections;
-    bool timing_inspector_sections;
+    // The inspector column; timing focus works from the canvas and toolbar alone.
+    bool inspector_available;
     // Gestures on a timing lane.
     bool ctrl_click_inserts_matching_bpm;
     bool alt_click_inserts_anchor;
@@ -28,20 +29,20 @@ struct compose_mode_profile_t {
 
 inline constexpr compose_mode_profile_t compose_mode_full_profile{
     .notes_dimmed = false,
+    .notes_editable = true,
     .note_palette_visible = true,
     .timing_lanes_forced_visible = false,
-    .note_inspector_sections = true,
-    .timing_inspector_sections = true,
+    .inspector_available = true,
     .ctrl_click_inserts_matching_bpm = false,
     .alt_click_inserts_anchor = false,
 };
 
 inline constexpr compose_mode_profile_t compose_mode_timing_focus_profile{
     .notes_dimmed = true,
+    .notes_editable = false,
     .note_palette_visible = false,
     .timing_lanes_forced_visible = true,
-    .note_inspector_sections = false,
-    .timing_inspector_sections = true,
+    .inspector_available = false,
     .ctrl_click_inserts_matching_bpm = true,
     .alt_click_inserts_anchor = true,
 };
@@ -55,6 +56,9 @@ inline constexpr compose_mode_profile_t compose_mode_timing_focus_profile{
 [[nodiscard]] constexpr auto compose_notes_dimmed(compose_mode_t mode) noexcept -> bool {
     return compose_mode_profile(mode).notes_dimmed;
 }
+[[nodiscard]] constexpr auto compose_notes_editable(compose_mode_t mode) noexcept -> bool {
+    return compose_mode_profile(mode).notes_editable;
+}
 [[nodiscard]] constexpr auto compose_note_palette_visible(compose_mode_t mode) noexcept -> bool {
     return compose_mode_profile(mode).note_palette_visible;
 }
@@ -62,12 +66,8 @@ inline constexpr compose_mode_profile_t compose_mode_timing_focus_profile{
     -> bool {
     return compose_mode_profile(mode).timing_lanes_forced_visible;
 }
-[[nodiscard]] constexpr auto compose_note_inspector_sections(compose_mode_t mode) noexcept -> bool {
-    return compose_mode_profile(mode).note_inspector_sections;
-}
-[[nodiscard]] constexpr auto compose_timing_inspector_sections(compose_mode_t mode) noexcept
-    -> bool {
-    return compose_mode_profile(mode).timing_inspector_sections;
+[[nodiscard]] constexpr auto compose_inspector_available(compose_mode_t mode) noexcept -> bool {
+    return compose_mode_profile(mode).inspector_available;
 }
 [[nodiscard]] constexpr auto compose_ctrl_click_inserts_matching_bpm(compose_mode_t mode) noexcept
     -> bool {

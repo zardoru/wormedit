@@ -122,6 +122,25 @@ struct IconButton {
     }
 };
 
+// Icon button whose glyph is drawn by a callback, for shapes outside the Lucide raster pack.
+struct DrawnIconButton {
+    void (*draw)(struct nk_command_buffer*, struct nk_rect, struct nk_color);
+    const char* tooltip;
+    bool selected{false};
+
+    auto render(nk_context* context) const -> bool {
+        const auto bounds = nk_widget_bounds(context);
+        auto style = button_style(context, selected);
+        const bool clicked = nk_button_label_styled(context, &style, "") != 0;
+        const auto tint = (context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0
+                              ? color(UiColor::text_bright)
+                              : selected ? color(UiColor::selected_text) : color(UiColor::text);
+        draw(nk_window_get_canvas(context), bounds, tint);
+        button_feedback(context, bounds, selected, tooltip);
+        return clicked;
+    }
+};
+
 inline auto mode_button(nk_context* context, const char* label, const char* tooltip,
                         bool selected) -> bool {
     const auto bounds = nk_widget_bounds(context);

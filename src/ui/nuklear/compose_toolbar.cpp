@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_toolbar.h"
+#include "ui/nuklear/vector_icons.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/chrome.h"
 
@@ -79,11 +80,19 @@ static void render_compose_view_controls(const ComposeToolbarContext& toolbar) {
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW;
     nk_label(context, "", NK_TEXT_LEFT);
-    if (!view->scene_available) nk_widget_disable_begin(context);
+    const auto paint_disabled = !view->scene_available || view->timing_focus;
+    if (paint_disabled) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::IconButton{Glyph::paintbrush, "Toggle note paint mode",
                                          view->note_paint_mode_active}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
+    if (paint_disabled) nk_widget_disable_end(context);
+    if (!view->scene_available) nk_widget_disable_begin(context);
+    if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::timer,
+                                              "Timing focus: edit timing only",
+                                              view->timing_focus}.render(context) &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS;
     if (!view->scene_available) nk_widget_disable_end(context);
     if (wormedit::ui::chrome::IconButton{compose_inspector_icon(state.inspector_visible),
                                          state.inspector_visible ? "Hide inspector" : "Show inspector",
@@ -256,6 +265,7 @@ static void render_compose_offset_toolbar(const ComposeToolbarContext& toolbar) 
     const auto* view = toolbar.view;
     const bool show_offset = nk_window_get_bounds(toolbar.context).w >= 900.0f;
     render_offset_padlock(toolbar);
+    nk_spacing(toolbar.context, 1);
     render_compose_audio_offset(toolbar, show_offset);
     nk_label(toolbar.context, "", NK_TEXT_LEFT);
     render_compose_snap_controls(toolbar.context);
@@ -286,6 +296,14 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
     static constexpr const char* labels[]{"Tap (Alt+1)", "Hold (Alt+2; click to begin hold gesture)",
         "Mine (Alt+3)", "Invisible (Alt+4)", "Lift (Alt+5)", "Fake (Alt+6)",
         "Roll (Alt+7; click to begin hold gesture)"};
+    // Select tool: the pointer selects instead of painting notes.
+    nk_layout_row_static(toolbar.context, 30, 30, 1);
+    if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::select_cursor,
+            "Select (leave note paint mode)", !toolbar.view->note_paint_mode_active}
+            .render(toolbar.context) &&
+        toolbar.view->note_paint_mode_active &&
+        toolbar.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
     for (std::size_t index = 0; index < std::size(note_palette_kinds); ++index) {
         const auto kind = note_palette_kinds[index];
         if (!note_palette_kind_allowed(*toolbar.view, kind)) continue;
@@ -305,14 +323,15 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     nk_layout_row_template_begin(context, 27);
     wormedit::ui::chrome::IconButton::layout_columns(context, 3);
     nk_layout_row_template_push_static(context, 12);
-    wormedit::ui::chrome::IconButton::layout_columns(context, 3);
+    wormedit::ui::chrome::IconButton::layout_columns(context, 4);
     // Offset padlock, nudges and optional readout, then the BPM snap controls.
     wormedit::ui::chrome::IconButton::layout_columns(context);
+    nk_layout_row_template_push_static(context, 10);
     wormedit::ui::chrome::IconButton::layout_columns(context, 2);
     if (nk_window_get_bounds(context).w >= 900.0f)
-        nk_layout_row_template_push_static(context, 150);
+        nk_layout_row_template_push_static(context, 104);
     wormedit::ui::chrome::IconButton::layout_columns(context, 2);
-    nk_layout_row_template_push_static(context, 12);
+    nk_layout_row_template_push_static(context, 16);
     wormedit::ui::chrome::IconButton::layout_columns(context);
     nk_layout_row_template_push_static(context, 70);
     nk_layout_row_template_push_static(context, 12);

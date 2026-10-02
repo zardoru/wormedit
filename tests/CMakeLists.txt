@@ -1,3 +1,10 @@
+# Windows binaries run under Wine see the host filesystem through the Z: drive, so compile-time
+# host paths need that prefix to be absolute for them.
+set(WORMEDIT_TEST_PATH_PREFIX "")
+if(CMAKE_CROSSCOMPILING AND WIN32 AND CMAKE_CROSSCOMPILING_EMULATOR MATCHES "wine")
+    set(WORMEDIT_TEST_PATH_PREFIX "Z:")
+endif()
+
 include(Catch)
 
 if(UNIX)
@@ -110,8 +117,8 @@ add_executable(wormedit_core_tests
 )
 target_include_directories(wormedit_core_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
 target_compile_definitions(wormedit_core_tests
-    PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
-            WORMEDIT_SOURCE_DIR="${CMAKE_SOURCE_DIR}/src"
+    PRIVATE WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+            WORMEDIT_SOURCE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}/src"
 )
 if(Iconv_FOUND)
     target_compile_definitions(wormedit_core_tests PRIVATE WORMEDIT_TEST_HAS_ICONV=1)
@@ -159,7 +166,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         core/audio_waveform_job_tests.cpp
     )
     target_compile_definitions(wormedit_audio_tests
-        PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+        PRIVATE WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
                 WORMEDIT_HAS_AUDIO_DECODER=1
     )
     target_include_directories(wormedit_audio_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
@@ -184,7 +191,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
             ../src/sys/sdl_preview_output.cpp
         )
         target_compile_definitions(wormedit_sdl_audio_tests
-            PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+            PRIVATE WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
         )
         target_include_directories(wormedit_sdl_audio_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
         target_link_libraries(wormedit_sdl_audio_tests
@@ -224,7 +231,7 @@ if(TARGET wormedit_video_decoder)
         visual/video_job_tests.cpp
     )
     target_compile_definitions(wormedit_video_tests
-        PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+        PRIVATE WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
     )
     target_link_libraries(wormedit_video_tests
         PRIVATE
@@ -244,7 +251,7 @@ if(TARGET wormedit_video_decoder AND TARGET wormedit_visual_decoder)
         ../src/sys/player_preview_presenter.cpp
     )
     target_compile_definitions(wormedit_player_preview_delivery_tests PRIVATE
-        WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+        WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
         WORMEDIT_HAS_IMAGE_DECODER=1
         WORMEDIT_HAS_VIDEO_DECODER=1
     )
@@ -327,7 +334,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     target_include_directories(wormedit_nuklear_popup_combo_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
     target_compile_definitions(wormedit_nuklear_popup_combo_tests PRIVATE
-        WORMEDIT_SOURCE_ROOT="${CMAKE_SOURCE_DIR}")
+        WORMEDIT_SOURCE_ROOT="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}")
     target_link_libraries(wormedit_nuklear_popup_combo_tests PRIVATE
         wormedit::ui_frontend Catch2::Catch2WithMain)
     catch_discover_tests(wormedit_nuklear_popup_combo_tests
@@ -491,7 +498,7 @@ endif()
 add_executable(wormedit_convert_tests tools/wormedit_convert_tests.cpp)
 target_compile_definitions(wormedit_convert_tests
     PRIVATE
-        WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+        WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
         WORMEDIT_CONVERT_EXE="$<TARGET_FILE:wormedit-convert>"
 )
 target_include_directories(wormedit_convert_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")

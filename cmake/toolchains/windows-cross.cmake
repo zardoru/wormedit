@@ -37,3 +37,15 @@ endif()
 if(WORMEDIT_CROSS_EMULATOR)
     set(CMAKE_CROSSCOMPILING_EMULATOR "${WORMEDIT_CROSS_EMULATOR}")
 endif()
+
+# try_compile re-reads this file without the cache, so forward the inputs.
+list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES
+    WORMEDIT_WINDOWS_C_COMPILER WORMEDIT_WINDOWS_CXX_COMPILER
+    WORMEDIT_WINDOWS_RC_COMPILER WORMEDIT_WINDOWS_SYSROOT
+    WORMEDIT_WINDOWS_TARGET WORMEDIT_CROSS_EMULATOR)
+
+# GNU (mingw) targets: link the C++/winpthread runtime statically so the executables run under
+# Wine without the toolchain's DLL directory on the search path.
+if(CMAKE_CXX_COMPILER MATCHES "mingw")
+    set(CMAKE_EXE_LINKER_FLAGS_INIT "-static")
+endif()

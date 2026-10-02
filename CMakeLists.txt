@@ -126,6 +126,9 @@ find_package(Threads REQUIRED)
 target_link_libraries(wormedit_core PUBLIC Threads::Threads)
 
 if(WIN32)
+    # No iconv on Windows: legacy BMS code pages go through the Win32 NLS API.
+    target_sources(wormedit_core PRIVATE src/formats/win32_codepage.cpp)
+    target_include_directories(wormedit_core PRIVATE "${CMAKE_SOURCE_DIR}/src/formats")
     # Keep <windows.h> from defining min/max macros that break std::min/std::max.
     target_compile_definitions(wormedit_core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()

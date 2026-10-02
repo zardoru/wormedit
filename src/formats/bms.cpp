@@ -21,6 +21,8 @@
 
 #if defined(WORMEDIT_HAS_ICONV)
 #include <iconv.h>
+#elif defined(_WIN32)
+#include "win32_codepage.h"
 #endif
 
 namespace wormedit {
@@ -224,6 +226,13 @@ auto decode_line(std::string_view input, text_encoding_t encoding) -> decode_res
     iconv_close(converter);
     output.resize(written);
     return {.text = std::move(output)};
+#elif defined(_WIN32)
+    const auto code_page = win32_codepage::code_page_for(encoding);
+    if (!code_page.has_value()) {
+        return {.unsupported = true};
+    }
+    auto converted = win32_codepage::to_utf8(*code_page, input);
+    return {.text = std::move(converted.text), .error_offset = converted.error_offset};
 #else
     return {.unsupported = true};
 #endif
@@ -1700,6 +1709,8 @@ auto is_bms_text_encoding_supported(text_encoding_t encoding) -> bool {
     }
     iconv_close(converter);
     return true;
+#elif defined(_WIN32)
+    return win32_codepage::code_page_for(encoding).has_value();
 #else
     return false;
 #endif

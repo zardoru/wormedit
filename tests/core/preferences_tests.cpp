@@ -199,7 +199,7 @@ TEST_CASE("Program preferences migrate legacy players once and retain the legacy
 "One" "/tmp/player one" "\"<filename>\"" "-N<measure> \"<filename>\"" "-S"
 "Two" "/tmp/player two" "start" "here" "stop"
 )";
-    { std::ofstream stream(legacy); stream << old; }
+    { std::ofstream stream(legacy, std::ios::binary); stream << old; }
     const auto migrated = load_program_preferences_for_startup(current, legacy);
     expect_preference(migrated.migrated && migrated.contents.warnings.empty());
     expect_preference(migrated.contents.preferences.players.selected == 1);
@@ -207,7 +207,7 @@ TEST_CASE("Program preferences migrate legacy players once and retain the legacy
     expect_preference(migrated.contents.preferences.players.players[0].start_arguments == "\"<filename>\"");
     expect_preference(std::filesystem::file_size(legacy) == old.size());
     require_preference(std::filesystem::is_regular_file(current));
-    { std::ofstream stream(legacy); stream << "now corrupt"; }
+    { std::ofstream stream(legacy, std::ios::binary); stream << "now corrupt"; }
     const auto second = load_program_preferences_for_startup(current, legacy);
     expect_preference(!second.migrated && second.contents.parsed && second.contents.warnings.empty());
     expect_preference(second.contents.preferences == migrated.contents.preferences);
@@ -216,7 +216,7 @@ TEST_CASE("Program preferences migrate legacy players once and retain the legacy
 TEST_CASE("Program preferences migration save failure retains accepted player values", "[unit][core][preferences]") {
     const preferences_test_directory_t directory;
     const auto legacy = directory.path / "external-players.conf";
-    { std::ofstream stream(legacy); stream << "wormedit-external-players-v1 0 1\n\"Custom\" \"/tmp/player\" \"start\" \"here\" \"stop\"\n"; }
+    { std::ofstream stream(legacy, std::ios::binary); stream << "wormedit-external-players-v1 0 1\n\"Custom\" \"/tmp/player\" \"start\" \"here\" \"stop\"\n"; }
     const auto loaded = load_program_preferences_for_startup(directory.path / "missing" / "preferences.json", legacy);
     expect_preference(loaded.migrated && !loaded.contents.warnings.empty());
     expect_preference(loaded.contents.preferences.players.players[0].name == "Custom");
@@ -227,7 +227,7 @@ TEST_CASE("Program preferences never replace an existing corrupt file with legac
     const preferences_test_directory_t directory;
     const auto legacy = directory.path / "external-players.conf";
     const auto current = directory.path / "preferences.json";
-    { std::ofstream stream(legacy); stream << "wormedit-external-players-v1 0 1\n\"Custom\" \"/tmp/player\" \"start\" \"here\" \"stop\"\n"; }
+    { std::ofstream stream(legacy, std::ios::binary); stream << "wormedit-external-players-v1 0 1\n\"Custom\" \"/tmp/player\" \"start\" \"here\" \"stop\"\n"; }
     { std::ofstream stream(current); stream << "{bad}"; }
     const auto loaded = load_program_preferences_for_startup(current, legacy);
     expect_preference(!loaded.migrated && !loaded.contents.parsed && !loaded.contents.warnings.empty());

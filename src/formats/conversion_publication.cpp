@@ -19,7 +19,7 @@ auto reject(conversion_publication_plan_t plan, std::string message)
 }
 
 auto valid_relative(const std::filesystem::path& path) -> bool {
-    if (path.empty() || path.is_absolute() || path.has_root_name() ||
+    if (path.empty() || path.is_absolute() || path.has_root_name() || path.has_root_directory() ||
         path != path.lexically_normal())
         return false;
     for (const auto& part : path) {

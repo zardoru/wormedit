@@ -332,8 +332,34 @@ auto sync_tree_directories(const fs::path& root) -> bool {
     return !error && sync_directory(root);
 }
 
+#if defined(_WIN32)
+// Windows has no directory exchange primitive. Park the old output beside the staging directory,
+// move the new one in, then put the old files where the staging directory was; every step rolls
+// back to the original layout, so a failure never leaves the destination missing.
+auto move_directory(const fs::path& from, const fs::path& to) -> bool {
+    return MoveFileExW(from.c_str(), to.c_str(), MOVEFILE_WRITE_THROUGH) != 0;
+}
+
+auto exchange_directories_windows(const fs::path& staging, const fs::path& destination) -> bool {
+    auto parked = staging;
+    parked += L".swap";
+    if (!move_directory(destination, parked)) {
+        return false;
+    }
+    if (!move_directory(staging, destination)) {
+        move_directory(parked, destination);
+        return false;
+    }
+    // The new output is live; if the old files cannot move back they stay parked beside it.
+    move_directory(parked, staging);
+    return true;
+}
+#endif
+
 auto exchange_directories(const fs::path& staging, const fs::path& destination) -> bool {
-#if defined(__APPLE__)
+#if defined(_WIN32)
+    return exchange_directories_windows(staging, destination);
+#elif defined(__APPLE__)
 #ifndef RENAME_SWAP
 #define RENAME_SWAP 0x00000002
 #endif

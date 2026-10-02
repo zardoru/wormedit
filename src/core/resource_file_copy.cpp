@@ -30,7 +30,7 @@ auto failure(project_asset_copy_status_t status, std::string message)
 }
 
 auto valid_relative(const std::filesystem::path& path) -> bool {
-    if (path.empty() || path.is_absolute() || path.has_root_name()) {
+    if (path.empty() || path.is_absolute() || path.has_root_name() || path.has_root_directory()) {
         return false;
     }
     return std::ranges::none_of(path, [](const auto& part) { return part == ".."; });

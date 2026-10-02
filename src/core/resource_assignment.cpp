@@ -849,6 +849,7 @@ auto validate_import_source_paths(const import_resource_asset_action_t& action,
         const auto candidate = action.copied_project_relative_path->lexically_normal();
         const auto copied_text = candidate.generic_string();
         if (candidate.empty() || candidate.is_absolute() || candidate.has_root_name() ||
+            candidate.has_root_directory() ||
             candidate.filename().empty() || copied_text.size() > 4096 ||
             copied_text.find('\0') != std::string::npos ||
             std::ranges::any_of(candidate, [](const auto& part) { return part == ".."; }) ||

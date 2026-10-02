@@ -7,6 +7,13 @@
 
 using namespace wormedit;
 
+// Windows only treats a path with a drive letter as absolute.
+#if defined(_WIN32)
+#define TEST_ROOT "C:/tmp"
+#else
+#define TEST_ROOT "/tmp"
+#endif
+
 namespace {
 
 auto assignment_song() -> song_document_t {
@@ -321,7 +328,7 @@ TEST_CASE("resource import registers decoded asset and catalog entry in one hist
     auto history = make_document_history(assignment_song());
     const auto imported =
         apply_resource_asset_import(history, 4,
-                                    {.source_path = "/tmp/new-audio.wav",
+                                    {.source_path = TEST_ROOT "/new-audio.wav",
                                      .role = resource_role_t::sample,
                                      .name = "New audio",
                                      .allocate_bms_identifier = true,
@@ -340,7 +347,7 @@ TEST_CASE("resource import registers decoded asset and catalog entry in one hist
 
     const auto reused =
         apply_resource_asset_import(history, history.document.revision,
-                                    {.source_path = "/tmp/new-audio.wav",
+                                    {.source_path = TEST_ROOT "/new-audio.wav",
                                      .role = resource_role_t::bgm,
                                      .audio_stream = audio_stream_info_t{48'000, 2, 48'000, true}});
     REQUIRE(reused);
@@ -356,7 +363,7 @@ TEST_CASE("BGM import extends native chart measures in the same undo command",
     song.charts.front().source_family = format_family_t::native_project;
     auto history = make_document_history(song);
     REQUIRE(apply_resource_asset_import(history, song.revision,
-        {.source_path = "/tmp/track.mp3", .role = resource_role_t::bgm,
+        {.source_path = TEST_ROOT "/track.mp3", .role = resource_role_t::bgm,
          .audio_stream = audio_stream_info_t{44'100, 2, 44'100 * 13, true}}));
     REQUIRE(history.document.charts.front().measures.size() == 7);
     check_import_extent(history.document.charts.front().measures.front().notes.front().position ==
@@ -381,12 +388,12 @@ TEST_CASE("setting song audio without a music resource imports one Music+BGM res
           "[unit][core][resources][song-audio]") {
     auto history = make_document_history(assignment_song());
     REQUIRE(apply_primary_music_set(history, 4,
-        {.source_path = "/tmp/song.mp3", .name = "song.mp3",
+        {.source_path = TEST_ROOT "/song.mp3", .name = "song.mp3",
          .audio_stream = audio_stream_info_t{44'100, 2, 44'100 * 3, true}}));
     CHECK(music_resources(history.document) == 1);
     const auto& added = history.document.resources.back();
     CHECK(std::ranges::find(added.roles, resource_role_t::bgm) != added.roles.end());
-    CHECK(history.document.audio_assets.back().source_path == "/tmp/song.mp3");
+    CHECK(history.document.audio_assets.back().source_path == TEST_ROOT "/song.mp3");
     CHECK(history.undo.size() == 1);
 }
 
@@ -399,7 +406,7 @@ TEST_CASE("setting song audio again repoints the music asset instead of adding a
     const auto assets = history.document.audio_assets.size();
     const auto resources = history.document.resources.size();
     REQUIRE(apply_primary_music_set(history, 4,
-        {.source_path = "/tmp/replacement.mp3", .name = "replacement.mp3",
+        {.source_path = TEST_ROOT "/replacement.mp3", .name = "replacement.mp3",
          .audio_stream = audio_stream_info_t{44'100, 2, 44'100 * 13, true}}));
     CHECK(history.document.audio_assets.size() == assets);
     CHECK(history.document.resources.size() == resources);
@@ -408,14 +415,14 @@ TEST_CASE("setting song audio again repoints the music asset instead of adding a
     const auto asset = std::ranges::find(history.document.audio_assets, music.asset,
                                          &audio_asset_t::id);
     REQUIRE(asset != history.document.audio_assets.end());
-    CHECK(asset->source_path == "/tmp/replacement.mp3");
+    CHECK(asset->source_path == TEST_ROOT "/replacement.mp3");
     CHECK(asset->stream.frame_count == 44'100U * 13U);
     CHECK(music.name == "replacement.mp3");
     CHECK(history.document.charts.front().measures.size() == 7);
     CHECK(validate_document(history.document).empty());
 
     CHECK_FALSE(apply_primary_music_set(history, history.document.revision,
-        {.source_path = "/tmp/replacement.mp3",
+        {.source_path = TEST_ROOT "/replacement.mp3",
          .audio_stream = audio_stream_info_t{44'100, 2, 44'100 * 13, true}}));
     CHECK(history.undo.size() == 1);
     REQUIRE(undo_document_command(history));
@@ -427,10 +434,10 @@ TEST_CASE("setting song audio rejects stale revisions and missing stream geometr
           "[unit][core][resources][song-audio]") {
     auto history = make_document_history(assignment_song());
     CHECK(has_code(apply_primary_music_set(history, 3,
-                       {.source_path = "/tmp/song.mp3",
+                       {.source_path = TEST_ROOT "/song.mp3",
                         .audio_stream = audio_stream_info_t{44'100, 2, 44'100, true}}),
                    diagnostic_code_t::invalid_id));
-    CHECK(has_code(apply_primary_music_set(history, 4, {.source_path = "/tmp/song.mp3"}),
+    CHECK(has_code(apply_primary_music_set(history, 4, {.source_path = TEST_ROOT "/song.mp3"}),
                    diagnostic_code_t::invalid_id));
     CHECK(history.undo.empty());
 }
@@ -439,7 +446,7 @@ TEST_CASE("resource import rejects path and decoded-type errors without partial 
           "[unit][core][resources]") {
     auto history = make_document_history(assignment_song());
     CHECK(has_code(apply_resource_asset_import(history, 3,
-                                               {.source_path = "/tmp/new.png",
+                                               {.source_path = TEST_ROOT "/new.png",
                                                 .role = resource_role_t::bga,
                                                 .image_geometry = std::pair{640U, 480U}}),
                    diagnostic_code_t::invalid_id));
@@ -450,7 +457,7 @@ TEST_CASE("resource import rejects path and decoded-type errors without partial 
                    diagnostic_code_t::invalid_id));
     CHECK(has_code(
         apply_resource_asset_import(history, 4,
-                                    {.source_path = "/tmp/new.png",
+                                    {.source_path = TEST_ROOT "/new.png",
                                      .role = resource_role_t::bga,
                                      .audio_stream = audio_stream_info_t{48'000, 2, 100, true}}),
         diagnostic_code_t::unsupported_feature));
@@ -466,7 +473,7 @@ TEST_CASE("copied resource import binds a reserved project path in one undo comm
     REQUIRE(reserved);
     const auto relative =
         std::filesystem::path{"assets"} / (std::to_string(reserved->value) + "-new-audio.wav");
-    const import_resource_asset_action_t action{.source_path = "/tmp/new-audio.wav",
+    const import_resource_asset_action_t action{.source_path = TEST_ROOT "/new-audio.wav",
                                                 .copied_project_relative_path = relative,
                                                 .expected_new_asset_id = *reserved,
                                                 .role = resource_role_t::bgm,
@@ -500,7 +507,7 @@ TEST_CASE("export-staged import reserves a new asset while retaining its externa
     auto history = make_document_history(assignment_song());
     const auto reserved = next_resource_asset_id(history.document);
     REQUIRE(reserved);
-    const import_resource_asset_action_t action{.source_path = "/tmp/export-audio.ogg",
+    const import_resource_asset_action_t action{.source_path = TEST_ROOT "/export-audio.ogg",
                                                 .expected_new_asset_id = *reserved,
                                                 .role = resource_role_t::bgm,
                                                 .audio_stream =
@@ -518,7 +525,7 @@ TEST_CASE("visual resource import records decoded geometry and BMP identity",
     auto history = make_document_history(assignment_song());
     const auto imported = apply_resource_asset_import(
         history, 4,
-        {.source_path = "/tmp/new-background.png",
+        {.source_path = TEST_ROOT "/new-background.png",
          .role = resource_role_t::bga,
          .allocate_bms_identifier = true,
          .image_geometry = std::pair{640U, 480U}});

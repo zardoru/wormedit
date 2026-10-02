@@ -3,8 +3,10 @@
 #include <miniaudio.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <limits>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -21,6 +23,52 @@ auto decoder_init_file(const std::filesystem::path& path, const ma_decoder_confi
     const auto native_path = path.string();
     return ma_decoder_init_file(native_path.c_str(), config, decoder);
 #endif
+}
+
+// miniaudio reports a length of 0 for Ogg Vorbis opened through its VFS path (every wide-character
+// open on Windows), because stb_vorbis then runs in push mode. Count the frames by decoding to the
+// end, then rewind; real zero-length sources count as zero either way.
+auto count_frames_by_decoding(ma_decoder& decoder) -> std::optional<ma_uint64> {
+    ma_format format{};
+    ma_uint32 channels{};
+    if (ma_decoder_get_data_format(&decoder, &format, &channels, nullptr, nullptr, 0) !=
+            MA_SUCCESS ||
+        channels == 0) {
+        return std::nullopt;
+    }
+    const auto frame_bytes = ma_get_bytes_per_frame(format, channels);
+    if (frame_bytes == 0 || ma_decoder_seek_to_pcm_frame(&decoder, 0) != MA_SUCCESS) {
+        return std::nullopt;
+    }
+    constexpr ma_uint64 chunk_frames = 4096;
+    std::vector<std::byte> scratch(static_cast<std::size_t>(chunk_frames * frame_bytes));
+    ma_uint64 total = 0;
+    while (true) {
+        ma_uint64 frames_read = 0;
+        const auto result =
+            ma_decoder_read_pcm_frames(&decoder, scratch.data(), chunk_frames, &frames_read);
+        total += frames_read;
+        if (result == MA_AT_END || (result == MA_SUCCESS && frames_read == 0)) {
+            break;
+        }
+        if (result != MA_SUCCESS) {
+            return std::nullopt;
+        }
+    }
+    if (ma_decoder_seek_to_pcm_frame(&decoder, 0) != MA_SUCCESS) {
+        return std::nullopt;
+    }
+    return total;
+}
+
+auto decoder_length_in_frames(ma_decoder& decoder, ma_uint64& frames) -> ma_result {
+    const auto result = ma_decoder_get_length_in_pcm_frames(&decoder, &frames);
+    if (result == MA_SUCCESS && frames == 0) {
+        if (const auto counted = count_frames_by_decoding(decoder); counted.has_value()) {
+            frames = *counted;
+        }
+    }
+    return result;
 }
 
 void set_error(std::string* destination, std::string message) {
@@ -117,7 +165,7 @@ auto decoder_t::open(const std::filesystem::path& path, std::string* error_messa
     result = ma_decoder_get_data_format(&source_decoder, nullptr, &source_channels, &source_rate,
                                         nullptr, 0);
     if (result == MA_SUCCESS) {
-        result = ma_decoder_get_length_in_pcm_frames(&source_decoder, &source_frames);
+        result = decoder_length_in_frames(source_decoder, source_frames);
     }
     if (result == MA_SUCCESS) {
         stream_info.source_sample_rate = source_rate;
@@ -146,7 +194,7 @@ auto decoder_t::open(const std::filesystem::path& path, std::string* error_messa
     candidate->initialized = true;
 
     ma_uint64 output_frames{};
-    result = ma_decoder_get_length_in_pcm_frames(&candidate->decoder, &output_frames);
+    result = decoder_length_in_frames(candidate->decoder, output_frames);
     if (result != MA_SUCCESS) {
         set_error(error_message, "could not determine normalized audio length (miniaudio result " +
                                      std::to_string(static_cast<int>(result)) + ")");

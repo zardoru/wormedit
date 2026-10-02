@@ -51,8 +51,12 @@ auto run_tool(const scratch_directory_t& scratch, json request) -> tool_run_t {
     const auto request_path = scratch.path() / "request.json";
     const auto result_path = scratch.path() / "result.json";
     std::ofstream(request_path) << request.dump();
-    const auto command = "\"" + std::string(WORMEDIT_CONVERT_EXE) + "\" \"" +
-                         request_path.string() + "\" > \"" + result_path.string() + "\"";
+    auto command = "\"" + std::string(WORMEDIT_CONVERT_EXE) + "\" \"" + request_path.string() +
+                   "\" > \"" + result_path.string() + "\"";
+#if defined(_WIN32)
+    // cmd.exe /c strips the first and last quote of a command that starts with a quote.
+    command = "\"" + command + "\"";
+#endif
     const auto raw = std::system(command.c_str());
 #if defined(_WIN32)
     const auto status = raw;

@@ -14,6 +14,13 @@
 #include <string>
 #include <vector>
 
+// Windows only treats a path with a drive letter as absolute.
+#if defined(_WIN32)
+#define TEST_ABSOLUTE_ROOT "C:"
+#else
+#define TEST_ABSOLUTE_ROOT ""
+#endif
+
 namespace {
 
 auto read_binary(const std::filesystem::path& path) -> std::vector<std::byte> {
@@ -270,7 +277,7 @@ TEST_CASE("StepMania conversion writes a staged music path for SM and SSC",
     song.charts.front().scrolls.clear();
     song.charts.front().speeds.clear();
     song.charts.front().warps.clear();
-    const auto source = std::filesystem::path{"/external/music.ogg"};
+    const auto source = std::filesystem::path{TEST_ABSOLUTE_ROOT "/external/music.ogg"};
     song.audio_assets.push_back({.id = wormedit::asset_id_t{900001}, .source_path = source});
     song.resources.push_back({.id = wormedit::resource_id_t{900002},
                               .name = "music.ogg",

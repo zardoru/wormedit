@@ -39,6 +39,7 @@
       "binaryDir": "${sourceDir}/build/windows-cross-headless",
       "toolchainFile": "${sourceDir}/cmake/toolchains/windows-cross.cmake",
       "cacheVariables": {
+        "WORMEDIT_ENABLE_VIDEO_DECODER": "OFF",
         "WORMEDIT_WINDOWS_C_COMPILER": "$env{WORMEDIT_WINDOWS_C_COMPILER}",
         "WORMEDIT_WINDOWS_CXX_COMPILER": "$env{WORMEDIT_WINDOWS_CXX_COMPILER}",
         "WORMEDIT_WINDOWS_RC_COMPILER": "$env{WORMEDIT_WINDOWS_RC_COMPILER}",

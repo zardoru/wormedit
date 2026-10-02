@@ -1502,6 +1502,17 @@ void process_compose_overview_input(const ComposeOverviewInput& input) {
     update_waveform_overview_seek(input);
 }
 
+// Document fraction under a screen-space y. The document fractions run in source order, so a
+// downscroll field (source row 0 at the bottom) reads the viewport from the other end.
+static auto compose_timing_target_fraction(const WormUiComposeView& view, double screen_y)
+    -> double {
+    auto viewport_fraction = std::clamp(screen_y / view.viewport_height_pixels, 0.0, 1.0);
+    if (view.downscroll) viewport_fraction = 1.0 - viewport_fraction;
+    return view.timing_document_begin_fraction +
+           viewport_fraction * (view.timing_document_end_fraction -
+                                view.timing_document_begin_fraction);
+}
+
 // Timing lane under a horizontal pixel position, honoring the lane mask in force.
 static auto compose_timing_lane_at_x(const WormUiComposeView& view, double x,
                                      double field_left) -> std::optional<WormUiTimingLaneKind> {
@@ -1543,13 +1554,9 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
     action.timing_object_id = existing_object_id;
     if (existing_object_id == 0) {
         action.timing_has_target_y = true;
-        const auto viewport_fraction =
-            std::clamp(click_y / view.viewport_height_pixels, 0.0, 1.0);
         action.timing_target_y_fraction = clicked_marker && clicked_marker->fixed_initial
             ? 0.0
-            : view.timing_document_begin_fraction +
-                  viewport_fraction * (view.timing_document_end_fraction -
-                                       view.timing_document_begin_fraction);
+            : compose_timing_target_fraction(view, click_y);
     }
     if (clicked_marker && existing_object_id != 0) {
         append_compose_input(&action, WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT, click_x,
@@ -1618,18 +1625,13 @@ static void update_active_timing_stage_drag(const ComposePointerEventContext& in
         state.timing_stage_drag_active = false;
     } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input) &&
                action.timing_stage_action == WORM_UI_TIMING_STAGE_NONE) {
-        const auto viewport_fraction =
-            std::clamp(input.pointer_y / view.viewport_height_pixels, 0.0, 1.0);
         action.timing_stage_action = WORM_UI_TIMING_STAGE_MOVE;
         action.timing_chart_id = timing.chart_id;
         action.timing_document_revision = timing.document_revision;
         action.timing_object_id = timing.stage_existing_object_id;
         action.timing_lane = timing.stage_lane;
         action.timing_has_target_y = true;
-        action.timing_target_y_fraction =
-            view.timing_document_begin_fraction +
-            viewport_fraction * (view.timing_document_end_fraction -
-                                 view.timing_document_begin_fraction);
+        action.timing_target_y_fraction = compose_timing_target_fraction(view, input.pointer_y);
     }
 }
 
@@ -2429,8 +2431,6 @@ static auto begin_timing_quick_insert(const ComposePointerEventContext& input) -
     if (!allowed || !lane || *lane != wanted || !timing.initial_bpm_editable ||
         timing.stage_active || input.action->timing_stage_action != WORM_UI_TIMING_STAGE_NONE)
         return false;
-    const auto viewport_fraction =
-        std::clamp(input.pointer_started_y / view.viewport_height_pixels, 0.0, 1.0);
     auto& action = *input.action;
     action.timing_stage_action = WORM_UI_TIMING_STAGE_QUICK_INSERT;
     action.timing_chart_id = timing.chart_id;
@@ -2439,8 +2439,7 @@ static auto begin_timing_quick_insert(const ComposePointerEventContext& input) -
     action.timing_object_id = 0;
     action.timing_has_target_y = true;
     action.timing_target_y_fraction =
-        view.timing_document_begin_fraction +
-        viewport_fraction * (view.timing_document_end_fraction - view.timing_document_begin_fraction);
+        compose_timing_target_fraction(view, input.pointer_started_y);
     return true;
 }
 

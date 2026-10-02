@@ -2459,6 +2459,13 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
             : select_editor_objects_action_t{{}, *mode, false};
     result = dispatch_editor_action(context.history, context.state, selection);
     accepted = target->note ? "Note selected." : "Edit cursor moved to the clicked row.";
+    if (result.accepted) {
+        // The cursor lives at its fixed screen station: the view scrolls to the clicked row.
+        auto anchored = dispatch_editor_action(
+            context.history, context.state,
+            jump_edit_cursor_action_t{target->position, context.history.document.revision});
+        if (anchored.accepted) result = std::move(anchored);
+    }
     return std::nullopt;
 }
 

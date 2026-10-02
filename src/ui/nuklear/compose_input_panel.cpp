@@ -2139,7 +2139,8 @@ static auto handle_compose_alt_pointer(const ComposePointerEventContext& input,
     auto* action = input.action;
     if (!state.action_overflowed && !paint_pointer_consumed && input.view->scene_available &&
         input.pointer_started_in_note_field && input.alt_down && !state.pointer_hold_active &&
-        input.window_focused && !input.compose_note_double_click_in_view) {
+        input.window_focused && !input.compose_note_double_click_in_view &&
+        wormedit::ui::compose_notes_editable(compose_mode_of(*input.view))) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN,
                              input.pointer_x, input.pointer_y);
         state.pointer_hold_active = !state.action_overflowed;

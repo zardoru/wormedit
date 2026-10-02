@@ -330,7 +330,6 @@ auto compose_field_downscroll(const wormedit::chart_document_t& chart,
     const wormedit::editor_preferences_t& preferences) -> bool;
 auto compose_project_y(long double row, double pixels_per_row, double scroll,
                        double viewport_height, bool downscroll) -> double;
-auto compose_source_y(double viewport_y, double viewport_height, bool downscroll) -> double;
 auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_count,
                                bool has_bgm_lanes, std::size_t visible_timing_lane_count)
     -> compose_horizontal_layout_t;

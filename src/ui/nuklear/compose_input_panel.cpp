@@ -1506,8 +1506,8 @@ void process_compose_overview_input(const ComposeOverviewInput& input) {
 // downscroll field (source row 0 at the bottom) reads the viewport from the other end.
 static auto compose_timing_target_fraction(const WormUiComposeView& view, double screen_y)
     -> double {
-    auto viewport_fraction = std::clamp(screen_y / view.viewport_height_pixels, 0.0, 1.0);
-    if (view.downscroll) viewport_fraction = 1.0 - viewport_fraction;
+    const auto viewport_fraction = wormedit::sys::compose_source_fraction(
+        screen_y, view.viewport_height_pixels, view.downscroll);
     return view.timing_document_begin_fraction +
            viewport_fraction * (view.timing_document_end_fraction -
                                 view.timing_document_begin_fraction);

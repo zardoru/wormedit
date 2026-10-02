@@ -62,6 +62,7 @@ add_executable(wormedit_core_tests
     sys/compose_selection_transform_tests.cpp
     sys/compose_label_search_tests.cpp
     sys/compose_dead_spans_tests.cpp
+    sys/compose_scroll_geometry_tests.cpp
     sys/compose_kiai_spans_tests.cpp
     sys/compose_sv_graph_tests.cpp
     sys/compose_recipe_areas_tests.cpp

@@ -271,10 +271,6 @@ auto compose_project_y(long double row, double pixels_per_row, double scroll,
     return static_cast<double>(downscroll ? viewport_height - offset : offset);
 }
 
-auto compose_source_y(double viewport_y, double viewport_height, bool downscroll) -> double {
-    return downscroll ? viewport_height - viewport_y : viewport_y;
-}
-
 auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::size_t {
     std::size_t result{};
     for (const auto& segment : chart.lane_layouts)

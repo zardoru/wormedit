@@ -21,4 +21,19 @@ inline auto compose_visual_navigation_direction(bool downscroll, bool visual_up)
                                    : interaction_direction_t::backward;
 }
 
+// The one place a screen-space y (top-down, as the field is drawn) becomes a source-order y:
+// downscroll mirrors the viewport. Every pointer-to-row path goes through these two helpers.
+inline auto compose_source_y(double viewport_y, double viewport_height, bool downscroll)
+    -> double {
+    return downscroll ? viewport_height - viewport_y : viewport_y;
+}
+
+// Fraction of the viewport, in source order and clamped to [0, 1], under a screen-space y.
+inline auto compose_source_fraction(double viewport_y, double viewport_height, bool downscroll)
+    -> double {
+    if (!(viewport_height > 0.0)) return 0.0;
+    const auto source = compose_source_y(viewport_y, viewport_height, downscroll);
+    return source <= 0.0 ? 0.0 : (source >= viewport_height ? 1.0 : source / viewport_height);
+}
+
 } // namespace wormedit::sys

@@ -70,7 +70,6 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_TIMING_SPEED_CAPACITY 4096
 #define WORM_UI_TIMING_MARKER_CAPACITY 16384
 #define WORM_UI_TIMING_GRID_CAPACITY 16384
-#define WORM_UI_TIMING_RECIPE_POINT_CAPACITY 4096
 #define WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES 64
 #define WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES 32
 #define WORM_UI_AUDIO_ASSET_CAPACITY 128
@@ -500,14 +499,6 @@ typedef struct WormUiTimingRecipeRationalText {
     char numerator[WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES];
     char denominator[WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES];
 } WormUiTimingRecipeRationalText;
-
-// The frontend uses fractions already normalized by the application. Row
-// fraction runs top-to-bottom through the chart; value fraction maps left-to-
-// right across the Scroll/SV lane. Both coordinates must be finite in [0, 1].
-typedef struct WormUiTimingRecipePoint {
-    double row_fraction;
-    double value_fraction;
-} WormUiTimingRecipePoint;
 
 typedef struct WormUiTimingRecipeForm {
     WormUiTimingRecipeOutput output;
@@ -1135,23 +1126,6 @@ typedef enum WormUiTimingPauseUnit {
 } WormUiTimingPauseUnit;
 
 
-typedef struct WormUiTimingRecipeDraftView {
-    bool selection_armed;
-    bool active;
-    bool valid;
-    uint64_t chart_id;
-    uint64_t document_revision;
-    uint64_t recipe_id;
-    double range_begin_fraction;
-    double range_end_fraction;
-    WormUiTimingRecipeForm form;
-    const WormUiTimingRecipePoint* candidate_points;
-    size_t candidate_point_count;
-    const WormUiTimingRecipePoint* composed_points;
-    size_t composed_point_count;
-    const char* status_text;
-} WormUiTimingRecipeDraftView;
-
 // Renderer-neutral scalar projection of the timing pane. SPEEDS spans are
 // evaluated by the timing core before crossing this private C boundary.
 typedef struct WormUiTimingView {
@@ -1186,7 +1160,6 @@ typedef struct WormUiTimingView {
     size_t marker_count;
     const WormUiTimingGridLineView* grid_lines;
     size_t grid_line_count;
-    WormUiTimingRecipeDraftView sv_recipe;
     bool stage_active;
     bool stage_valid;
     uint64_t stage_existing_object_id;
@@ -1206,28 +1179,6 @@ typedef struct WormUiTimingView {
     const char* stage_status_text;
 } WormUiTimingView;
 
-typedef enum WormUiTimingRecipeActionKind {
-    WORM_UI_TIMING_RECIPE_ACTION_NONE = 0,
-    WORM_UI_TIMING_RECIPE_ACTION_ARM_SELECTION,
-    WORM_UI_TIMING_RECIPE_ACTION_BEGIN,
-    WORM_UI_TIMING_RECIPE_ACTION_UPDATE,
-    WORM_UI_TIMING_RECIPE_ACTION_UPDATE_RANGE,
-    WORM_UI_TIMING_RECIPE_ACTION_APPLY,
-    WORM_UI_TIMING_RECIPE_ACTION_CANCEL,
-} WormUiTimingRecipeActionKind;
-
-// BEGIN and UPDATE_RANGE carry normalized chart-time fractions. The app snaps
-// them to its active exact grid and returns the current preview through the
-// view above. UPDATE carries form data only; Apply is the only durable action.
-typedef struct WormUiTimingRecipeAction {
-    WormUiTimingRecipeActionKind kind;
-    uint64_t chart_id;
-    uint64_t document_revision;
-    double range_begin_fraction;
-    double range_end_fraction;
-    WormUiTimingRecipeForm form;
-} WormUiTimingRecipeAction;
-
 typedef enum WormUiTimingStageAction {
     WORM_UI_TIMING_STAGE_NONE = 0,
     WORM_UI_TIMING_STAGE_BEGIN,
@@ -1242,16 +1193,6 @@ typedef enum WormUiTimingStageAction {
     // to the one in force, or an anchor) and confirms it in one step.
     WORM_UI_TIMING_STAGE_QUICK_INSERT,
 } WormUiTimingStageAction;
-
-typedef enum WormUiTimingGridAction {
-    WORM_UI_TIMING_GRID_ACTION_NONE = 0,
-    WORM_UI_TIMING_GRID_ACTION_SELECT,
-} WormUiTimingGridAction;
-
-typedef enum WormUiTimingMeterAction {
-    WORM_UI_TIMING_METER_ACTION_NONE = 0,
-    WORM_UI_TIMING_METER_ACTION_APPLY,
-} WormUiTimingMeterAction;
 
 typedef enum WormUiPlayerPreviewSkin {
     WORM_UI_PLAYER_PREVIEW_SKIN_NEUTRAL = 0,
@@ -2040,16 +1981,8 @@ typedef struct WormUiWorkspaceAction {
     size_t compose_input_count;
     WormUiComposeViewportInput compose_viewport_inputs[WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY];
     size_t compose_viewport_input_count;
-    WormUiTimingGridAction timing_grid_action;
-    uint64_t timing_grid_chart_id;
-    uint64_t timing_grid_document_revision;
-    uint64_t timing_grid_denominator;
     WormUiTimingRecipeForm compose_recipe_form;
     uint64_t compose_recipe_id;
-    WormUiTimingMeterAction timing_meter_action;
-    uint64_t timing_meter_chart_id;
-    uint64_t timing_meter_document_revision;
-    char timing_meter_measure_text[32];
     char timing_meter_numerator_text[32];
     char timing_meter_denominator_text[32];
     WormUiTimingStageAction timing_stage_action;
@@ -2071,7 +2004,6 @@ typedef struct WormUiWorkspaceAction {
     char timing_primary_denominator_text[64];
     char timing_secondary_numerator_text[64];
     char timing_secondary_denominator_text[64];
-    WormUiTimingRecipeAction timing_recipe_action;
     WormUiShortcutEvent shortcut_events[WORM_UI_SHORTCUT_EVENT_CAPACITY];
     size_t shortcut_event_count;
     bool shortcut_overflowed;

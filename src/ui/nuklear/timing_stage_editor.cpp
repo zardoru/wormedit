@@ -77,62 +77,6 @@ static auto valid_timing_grid(const WormUiTimingView& view) -> bool {
     return true;
 }
 
-static auto terminated(const char* value, size_t size) -> bool {
-    return std::memchr(value, '\0', size) != nullptr;
-}
-
-static auto valid_timing_recipe_form(const WormUiTimingRecipeForm& form) -> bool {
-    const WormUiTimingRecipeRationalText* rationals[] = {
-        &form.value_from, &form.value_to, &form.shape, &form.bump_start, &form.bump_length,
-        &form.bump_x, &form.bump_y, &form.tolerance, &form.transition_duration};
-    for (const auto* rational : rationals)
-        if (!terminated(rational->numerator, sizeof(rational->numerator)) ||
-            !terminated(rational->denominator, sizeof(rational->denominator))) return false;
-    return terminated(form.fixed_point_count, sizeof(form.fixed_point_count)) &&
-        terminated(form.fixed_step_rows, sizeof(form.fixed_step_rows)) &&
-        terminated(form.adaptive_max_points, sizeof(form.adaptive_max_points)) &&
-        form.output >= WORM_UI_TIMING_RECIPE_OUTPUT_SV &&
-        form.output <= WORM_UI_TIMING_RECIPE_OUTPUT_SPEEDS &&
-        form.curve >= WORM_UI_TIMING_RECIPE_CURVE_CONSTANT &&
-        form.curve <= WORM_UI_TIMING_RECIPE_CURVE_LUA_EXPRESSION &&
-        form.sampling_mode >= WORM_UI_TIMING_RECIPE_SAMPLING_FIXED &&
-        form.sampling_mode <= WORM_UI_TIMING_RECIPE_SAMPLING_ADAPTIVE &&
-        form.fixed_extent >= WORM_UI_TIMING_RECIPE_FIXED_POINT_COUNT &&
-        form.fixed_extent <= WORM_UI_TIMING_RECIPE_FIXED_STEP_ROWS;
-}
-
-static auto valid_timing_recipe_points(const WormUiTimingRecipePoint* points, size_t count)
-    -> bool {
-    double previous = 0.0;
-    for (size_t index = 0; index < count; ++index) {
-        const auto& point = points[index];
-        if (!std::isfinite(point.row_fraction) || !std::isfinite(point.value_fraction) ||
-            point.row_fraction < 0.0 || point.row_fraction > 1.0 ||
-            point.value_fraction < 0.0 || point.value_fraction > 1.0 ||
-            (index != 0 && point.row_fraction < previous)) return false;
-        previous = point.row_fraction;
-    }
-    return true;
-}
-
-static auto valid_timing_recipe(const WormUiTimingView& view) -> bool {
-    const auto& recipe = view.sv_recipe;
-    if (recipe.candidate_point_count > WORM_UI_TIMING_RECIPE_POINT_CAPACITY ||
-        (recipe.candidate_point_count != 0 && !recipe.candidate_points) ||
-        recipe.composed_point_count > WORM_UI_TIMING_RECIPE_POINT_CAPACITY ||
-        (recipe.composed_point_count != 0 && !recipe.composed_points) ||
-        !valid_timing_recipe_form(recipe.form)) return false;
-    const auto identity_matches = recipe.chart_id != 0 &&
-        recipe.document_revision == view.document_revision && recipe.chart_id == view.chart_id;
-    if (recipe.selection_armed && !identity_matches) return false;
-    if (recipe.active && (!identity_matches || !std::isfinite(recipe.range_begin_fraction) ||
-        !std::isfinite(recipe.range_end_fraction) || recipe.range_begin_fraction < 0.0 ||
-        recipe.range_end_fraction <= recipe.range_begin_fraction ||
-        recipe.range_end_fraction > 1.0 || recipe.selection_armed)) return false;
-    return valid_timing_recipe_points(recipe.candidate_points, recipe.candidate_point_count) &&
-        valid_timing_recipe_points(recipe.composed_points, recipe.composed_point_count);
-}
-
 static auto valid_timing_stage(const WormUiTimingView& view) -> bool {
     if (!view.stage_active) return true;
     return std::isfinite(view.stage_marker_y_pixels) && view.stage_marker_y_pixels >= 0.0 &&
@@ -146,7 +90,7 @@ static auto valid_timing_stage(const WormUiTimingView& view) -> bool {
 
 int worm_ui_nuklear_timing_view_valid(const WormUiTimingView* view) {
     if (!view || !valid_timing_view_header(*view) || !valid_timing_grid(*view) ||
-        !valid_timing_recipe(*view) || !valid_timing_stage(*view) ||
+        !valid_timing_stage(*view) ||
         !valid_timing_markers(*view)) return 0;
     for (size_t index = 0; index < view->speed_count; ++index)
         if (!valid_speed_marker(*view, view->speeds[index])) return 0;

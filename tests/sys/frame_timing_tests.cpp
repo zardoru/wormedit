@@ -242,7 +242,6 @@ void check_inline_timing_fields(const WormUiTimingView& view, std::uint64_t revi
     CHECK(view.stage_valid);
 }
 void check_slim_timing_geometry(const WormUiTimingView& view, const timing_scene_cache_t& cache) {
-    CHECK(view.sv_recipe.selection_armed);
     CHECK(view.grid_line_count == 0);
     CHECK(view.marker_count == 0);
     CHECK(view.speed_count == 0);
@@ -268,14 +267,14 @@ TEST_CASE("Compose timing projection skips whole-chart geometry and preserves in
     stage.position = {measure_id_t{1}, 0};
     stage.valid = true;
     populate_timing_view_for_compose(flattened, history, workspace, cache, 1280, 980,
-                                    grid, &stage, nullptr, nullptr, true);
+                                    grid, &stage);
     const auto& view = flattened.view.timing;
     check_inline_timing_fields(view, history.document.revision);
     check_slim_timing_geometry(view, cache);
     REQUIRE(cache.measures);
     const auto* entries = cache.measures->entries.data();
     populate_timing_view_for_compose(flattened, history, workspace, cache, 1280, 980,
-                                    grid, &stage, nullptr, nullptr, true);
+                                    grid, &stage);
     CHECK(cache.measures->entries.data() == entries);
 }
 
@@ -287,7 +286,7 @@ TEST_CASE("Idle Compose timing projection does not build a measure index", "[sys
     flattened_workspace_t flattened;
     timing_scene_cache_t cache;
     populate_timing_view_for_compose(flattened, history, *binding.workspace, cache,
-                                    1280, 980, {}, nullptr, nullptr, nullptr, false);
+                                    1280, 980, {}, nullptr);
     CHECK_FALSE(cache.measure_attempted);
     CHECK_FALSE(cache.measures);
     CHECK(flattened.view.timing.scene_available);

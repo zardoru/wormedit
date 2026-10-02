@@ -26,8 +26,6 @@ static void render_initial_bpm_control(const ComposeInspectorContext& inspector)
         nk_label(context, "BPM: unset", NK_TEXT_LEFT);
     nk_layout_row_push(context, 1.0f - wormedit::ui::chrome::property_label_ratio);
     const auto can_edit_initial_bpm = timing_view->initial_bpm_editable &&
-        !timing_view->stage_active && !timing_view->sv_recipe.active &&
-        !timing_view->sv_recipe.selection_armed &&
         action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE;
     if (!can_edit_initial_bpm) nk_widget_disable_begin(context);
     const auto clicked = nk_button_label(context, "Set BPM");

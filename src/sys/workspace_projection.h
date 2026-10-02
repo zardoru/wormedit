@@ -109,13 +109,6 @@ struct flattened_workspace_t {
         } output_group;
     } metadata;
     struct {
-        frame_span<WormUiTimingSpeedView> speed;
-        frame_span<WormUiTimingMarkerView> marker;
-        frame_span<WormUiTimingGridLineView> grid;
-        frame_span<WormUiTimingRecipePoint> recipe_candidate;
-        frame_span<WormUiTimingRecipePoint> recipe_composed;
-    } timing;
-    struct {
         std::string status;
         std::string hover_tooltip;
         std::string selected_note_label;

@@ -137,7 +137,7 @@ auto project_application_frame(application_frame_projection_context_t context)
         if (flattened.view.compose.visible && !flattened.view.timing.visible) {
             populate_timing_view_for_compose(flattened, context.history, context.workspace,
                 context.timing_scene_cache, compose_window_width, compose_window_height, context.timing_grid,
-                context.timing_edit.stage_view(), nullptr, nullptr, false);
+                context.timing_edit.stage_view());
         }
         flattened.view.timing.initial_bpm_editable =
             flattened.view.timing.scene_available && !context.application_command_state.timing_locked;

@@ -152,7 +152,6 @@ using wormedit::sys::flattened_workspace_t;
 using wormedit::sys::initial_document;
 using wormedit::sys::new_session_project_id;
 using wormedit::sys::parse_application_command;
-using wormedit::sys::populate_timing_view;
 using wormedit::sys::timing_grid_state_t;
 using wormedit::sys::timing_scene_cache_t;
 using wormedit::sys::runtime::timing_edit_t;
@@ -192,13 +191,6 @@ using wormedit::sys::selected_bmson_waveform_source;
 using wormedit::sys::stage_bmson_bgm_marker;
 using wormedit::sys::selected_chart;
 using wormedit::sys::visible_semantic_layer_by_id;
-
-auto rational_as_long_double(wormedit::signed_rational_t value) -> long double {
-    if (value.denominator == 0) {
-        return 0.0L;
-    }
-    return static_cast<long double>(value.numerator) / static_cast<long double>(value.denominator);
-}
 
 void remember_snap_denominator(application_command_state_t& application_state,
                                wormedit::chart_id_t chart, std::uint64_t denominator) {
@@ -682,39 +674,6 @@ auto timing_stage_value(const wormedit::timing_lane_pseudonote_preview_t& previe
     }
     return std::nullopt;
 }
-
-auto timing_recipe_range_hits(const wormedit::chart_document_t& chart, double begin_fraction,
-                              double end_fraction)
-    -> std::optional<std::pair<wormedit::local_position_t, wormedit::local_position_t>> {
-    if (!std::isfinite(begin_fraction) || !std::isfinite(end_fraction) || begin_fraction < 0.0 ||
-        begin_fraction > 1.0 || end_fraction < 0.0 || end_fraction > 1.0) {
-        return std::nullopt;
-    }
-    const auto built = wormedit::build_measure_index(chart);
-    const auto* index = std::get_if<wormedit::measure_index_t>(&built);
-    if (!index || index->total_rows < 2) {
-        return std::nullopt;
-    }
-    const auto row_at = [&](double fraction) {
-        if (fraction >= 1.0) {
-            return index->total_rows;
-        }
-        const auto scaled = std::floor(static_cast<long double>(fraction) *
-                                       static_cast<long double>(index->total_rows));
-        return std::min(static_cast<std::uint64_t>(std::max(0.0L, scaled)), index->total_rows - 1);
-    };
-    const auto position_at = [&](std::uint64_t row) -> std::optional<wormedit::local_position_t> {
-        if (row == index->total_rows && !index->entries.empty()) {
-            const auto& last = index->entries.back();
-            return wormedit::local_position_t{last.id, last.row_capacity};
-        }
-        return timing_position_at_row(*index, row);
-    };
-    const auto begin = position_at(row_at(begin_fraction));
-    const auto end = position_at(row_at(end_fraction));
-    return begin && end ? std::optional{std::pair{*begin, *end}} : std::nullopt;
-}
-
 auto first_recovery_diagnostic(
     const wormedit::native_project_recovery_controller_dispatch_result_t& result) -> std::string {
     if (!result.diagnostics.empty()) {

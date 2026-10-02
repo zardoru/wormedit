@@ -124,6 +124,9 @@ namespace {
 auto hash_value(std::uint64_t hash, std::uint64_t value) -> std::uint64_t {
     return (hash ^ value) * 1099511628211ULL;
 }
+// Rows the projection did not produce hash to this sentinel, never to the
+// value a present row of zeros would give.
+constexpr std::uint64_t absent_envelope_hash = 0x9E3779B97F4A7C15ULL;
 auto envelope_hash(const envelope_row_t& row) -> std::uint64_t {
     std::uint64_t hash = 1469598103934665603ULL;
     for (const auto value : {row.rms[0], row.rms[1], row.peak[0], row.peak[1]})
@@ -174,7 +177,7 @@ void collect_envelope_rows(envelope_cache_t& cache, std::span<const envelope_row
     const auto count = static_cast<std::size_t>(cache.height);
     cache.rows.assign(count + 1, {});
     cache.world_rows.assign(count + 1, std::numeric_limits<std::int64_t>::min());
-    cache.row_hashes.assign(count + 1, 0);
+    cache.row_hashes.assign(count + 1, absent_envelope_hash);
     cache.fingerprints.resize(count);
     for (const auto& row : rows) {
         if (!valid_envelope_row(row)) continue;
@@ -189,7 +192,11 @@ void collect_envelope_rows(envelope_cache_t& cache, std::span<const envelope_row
         const auto world = first + static_cast<std::int64_t>(index);
         const auto current = envelope_slot(world, static_cast<int>(cache.rows.size()));
         const auto previous = envelope_slot(world - 1, static_cast<int>(cache.rows.size()));
-        cache.fingerprints[index] = hash_value(cache.row_hashes[current], cache.row_hashes[previous]);
+        // A scanline draws rows world-1 and world. Chain the hashes so the pair is
+        // ordered: xor-combining them collapses every plateau of equal rows to
+        // zero, hiding changed data from the ring and leaving stale or blank rows.
+        cache.fingerprints[index] = hash_value(
+            hash_value(1469598103934665603ULL, cache.row_hashes[current]), cache.row_hashes[previous]);
     }
 }
 void envelope_scanline(renderer_t& geometry, const envelope_cache_t& cache,

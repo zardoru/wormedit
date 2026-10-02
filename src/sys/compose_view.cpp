@@ -1123,58 +1123,84 @@ bool populate_semantic_layer_palette(
     return true;
 }
 
-bool populate_compose_bookmark_storage(
-    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
-    const wormedit::measure_index_t& measures, WormUiComposeView& view) {
-    for (const auto& bookmark : chart.bookmarks) {
-        if (bookmark.anchor == wormedit::marker_anchor_t::audio_time) {
-            if (!bookmark.audio_milliseconds || bookmark.position) {
-                flattened.compose.status =
-                    "An audio-time bookmark has inconsistent position data.";
-                view.status_text = flattened.compose.status.c_str();
-                return false;
-            }
-            if (view.audio_bookmark_count >= WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY) {
-                view.audio_bookmarks_truncated = true;
-                continue;
-            }
-            const auto index = view.audio_bookmark_count++;
-            flattened.compose.audio_marker.bookmark_label[index] = bookmark.label;
-            flattened.compose.audio_marker.bookmark[index] = {
+template<class T>
+struct compose_marker_storage_t {
+    flattened_workspace_t& flattened;
+    frame_span<T>& rows;
+    std::size_t& published_count;
+    bool& truncated;
+    std::size_t limit;
+    std::size_t processed{};
+    bool failed{};
+};
+template<class T>
+void prepare_compose_marker_storage(compose_marker_storage_t<T>& storage, std::size_t candidates) {
+    const auto count = std::min(candidates, storage.limit);
+    storage.rows = {};
+    if (count == 0) return;
+    auto* arena = storage.flattened.arena();
+    storage.rows = arena ? arena_array<T>(*arena, count) : frame_span<T>{};
+    storage.failed = storage.rows.capacity() != count;
+    storage.truncated = storage.truncated || storage.failed;
+}
+template<class T>
+auto compose_marker_at_capacity(compose_marker_storage_t<T>& storage) -> bool {
+    if (storage.processed >= storage.limit) {
+        storage.truncated = true;
+        return true;
+    }
+    ++storage.processed;
+    return false;
+}
+template<class T>
+void append_compose_marker(compose_marker_storage_t<T>& storage, std::string_view label, T value) {
+    if (storage.failed) return;
+    auto* arena = storage.flattened.arena();
+    value.label = arena ? arena_string(*arena, label) : nullptr;
+    if (!value.label || !storage.rows.push_back(value)) {
+        storage.failed = true;
+        storage.truncated = true;
+        return;
+    }
+    storage.published_count = storage.rows.size();
+}
+
+auto populate_compose_audio_bookmark(compose_marker_storage_t<WormUiComposeAudioBookmarkView>& storage,
+                                     const wormedit::bookmark_t& bookmark, WormUiComposeView& view) -> bool {
+    if (!bookmark.audio_milliseconds || bookmark.position) {
+        storage.flattened.compose.status = "An audio-time bookmark has inconsistent position data.";
+        view.status_text = storage.flattened.compose.status.c_str();
+        return false;
+    }
+    if (compose_marker_at_capacity(storage)) return true;
+    append_compose_marker(storage, bookmark.label, WormUiComposeAudioBookmarkView{
                 .bookmark_id = bookmark.id.value,
-                .label = flattened.compose.audio_marker.bookmark_label[index].c_str(),
+                .label = nullptr,
                 .audio_milliseconds = *bookmark.audio_milliseconds,
                 .projection_visible = false,
                 .projected_y_pixels = 0.0,
-            };
-            continue;
-        }
-        if (bookmark.anchor != wormedit::marker_anchor_t::beat) {
-            continue;
-        }
-        if (!bookmark.position) {
-            flattened.compose.status =
-                "A beat-anchored bookmark has no valid chart position.";
-            view.status_text = flattened.compose.status.c_str();
-            return false;
-        }
-        if (view.beat_bookmark_count >= WORM_UI_COMPOSE_BOOKMARK_CAPACITY) {
-            view.beat_bookmarks_truncated = true;
-            continue;
-        }
-        const auto measure = std::ranges::find(measures.entries, bookmark.position->measure,
-                                               &wormedit::measure_index_entry_t::id);
-        if (measure == measures.entries.end() || bookmark.position->row >= measure->row_capacity) {
-            flattened.compose.status =
-                "A beat-anchored bookmark is outside the chart measure geometry.";
-            view.status_text = flattened.compose.status.c_str();
-            return false;
-        }
-        const auto index = view.beat_bookmark_count++;
-        flattened.compose.bookmark_label[index] = bookmark.label;
-        flattened.compose.bookmark[index] = {
+            });
+    return true;
+}
+auto populate_compose_beat_bookmark(compose_marker_storage_t<WormUiComposeBookmarkView>& storage,
+                                    const wormedit::bookmark_t& bookmark,
+                                    const wormedit::measure_index_t& measures, WormUiComposeView& view) -> bool {
+    if (!bookmark.position) {
+        storage.flattened.compose.status = "A beat-anchored bookmark has no valid chart position.";
+        view.status_text = storage.flattened.compose.status.c_str();
+        return false;
+    }
+    if (compose_marker_at_capacity(storage)) return true;
+    const auto measure = std::ranges::find(measures.entries, bookmark.position->measure,
+                                          &wormedit::measure_index_entry_t::id);
+    if (measure == measures.entries.end() || bookmark.position->row >= measure->row_capacity) {
+        storage.flattened.compose.status = "A beat-anchored bookmark is outside the chart measure geometry.";
+        view.status_text = storage.flattened.compose.status.c_str();
+        return false;
+    }
+    append_compose_marker(storage, bookmark.label, WormUiComposeBookmarkView{
             .bookmark_id = bookmark.id.value,
-            .label = flattened.compose.bookmark_label[index].c_str(),
+            .label = nullptr,
             .measure_number =
                 static_cast<std::uint64_t>(std::distance(measures.entries.begin(), measure) + 1),
             .row = bookmark.position->row,
@@ -1183,32 +1209,44 @@ bool populate_compose_bookmark_storage(
             .projected_y_pixels = 0.0,
             .proposed_projection_visible = false,
             .proposed_y_pixels = 0.0,
-        };
+        });
+    return true;
+}
+bool populate_compose_bookmark_storage(
+    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    const wormedit::measure_index_t& measures, WormUiComposeView& view) {
+    compose_marker_storage_t beat{flattened, flattened.compose.bookmark, view.beat_bookmark_count,
+        view.beat_bookmarks_truncated, WORM_UI_COMPOSE_BOOKMARK_CAPACITY};
+    compose_marker_storage_t audio{flattened, flattened.compose.audio_marker.bookmark, view.audio_bookmark_count,
+        view.audio_bookmarks_truncated, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY};
+    prepare_compose_marker_storage(beat, static_cast<std::size_t>(std::ranges::count(
+        chart.bookmarks, wormedit::marker_anchor_t::beat, &wormedit::bookmark_t::anchor)));
+    prepare_compose_marker_storage(audio, static_cast<std::size_t>(std::ranges::count(
+        chart.bookmarks, wormedit::marker_anchor_t::audio_time, &wormedit::bookmark_t::anchor)));
+    view.beat_bookmarks = flattened.compose.bookmark.data();
+    view.audio_bookmarks = flattened.compose.audio_marker.bookmark.data();
+    for (const auto& bookmark : chart.bookmarks) {
+        if (bookmark.anchor == wormedit::marker_anchor_t::audio_time) {
+            if (!populate_compose_audio_bookmark(audio, bookmark, view)) return false;
+        } else if (bookmark.anchor == wormedit::marker_anchor_t::beat) {
+            if (!populate_compose_beat_bookmark(beat, bookmark, measures, view)) return false;
+        }
     }
     return true;
 }
 
-bool populate_compose_section_storage(
-    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
-    const wormedit::measure_index_t& measures, WormUiComposeView& view) {
-    for (const auto& section : chart.sections) {
-        if (section.anchor == wormedit::marker_anchor_t::audio_time) {
-            if (!section.audio_millisecond_span || section.beat_span ||
-                section.audio_millisecond_span->second <= section.audio_millisecond_span->first) {
-                flattened.compose.status =
-                    "An audio-time section has inconsistent span data.";
-                view.status_text = flattened.compose.status.c_str();
-                return false;
-            }
-            if (view.audio_section_count >= WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY) {
-                view.audio_sections_truncated = true;
-                continue;
-            }
-            const auto index = view.audio_section_count++;
-            flattened.compose.audio_marker.section_label[index] = section.label;
-            flattened.compose.audio_marker.section[index] = {
+auto populate_compose_audio_section(compose_marker_storage_t<WormUiComposeAudioSectionView>& storage,
+                                    const wormedit::section_t& section, WormUiComposeView& view) -> bool {
+    if (!section.audio_millisecond_span || section.beat_span ||
+        section.audio_millisecond_span->second <= section.audio_millisecond_span->first) {
+        storage.flattened.compose.status = "An audio-time section has inconsistent span data.";
+        view.status_text = storage.flattened.compose.status.c_str();
+        return false;
+    }
+    if (compose_marker_at_capacity(storage)) return true;
+    append_compose_marker(storage, section.label, WormUiComposeAudioSectionView{
                 .section_id = section.id.value,
-                .label = flattened.compose.audio_marker.section_label[index].c_str(),
+                .label = nullptr,
                 .begin_audio_milliseconds = section.audio_millisecond_span->first,
                 .end_audio_milliseconds = section.audio_millisecond_span->second,
                 .begin_projection_visible = false,
@@ -1218,39 +1256,32 @@ bool populate_compose_section_storage(
                 .projected_end_y_pixels = 0.0,
                 .projected_span_top_y_pixels = 0.0,
                 .projected_span_bottom_y_pixels = 0.0,
-            };
-            continue;
-        }
-        if (section.anchor != wormedit::marker_anchor_t::beat) {
-            continue;
-        }
-        if (!section.beat_span) {
-            flattened.compose.status = "A beat-anchored section has no valid chart span.";
-            view.status_text = flattened.compose.status.c_str();
-            return false;
-        }
-        if (view.beat_section_count >= WORM_UI_COMPOSE_SECTION_CAPACITY) {
-            view.beat_sections_truncated = true;
-            continue;
-        }
-        const auto begin_measure =
-            std::ranges::find(measures.entries, section.beat_span->begin.measure,
-                              &wormedit::measure_index_entry_t::id);
-        const auto end_measure = std::ranges::find(measures.entries, section.beat_span->end.measure,
-                                                   &wormedit::measure_index_entry_t::id);
-        if (begin_measure == measures.entries.end() || end_measure == measures.entries.end() ||
-            section.beat_span->begin.row >= begin_measure->row_capacity ||
-            section.beat_span->end.row >= end_measure->row_capacity) {
-            flattened.compose.status =
-                "A beat-anchored section is outside the chart measure geometry.";
-            view.status_text = flattened.compose.status.c_str();
-            return false;
-        }
-        const auto index = view.beat_section_count++;
-        flattened.compose.section_label[index] = section.label;
-        flattened.compose.section[index] = {
+            });
+    return true;
+}
+auto populate_compose_beat_section(compose_marker_storage_t<WormUiComposeSectionView>& storage,
+                                   const wormedit::section_t& section,
+                                   const wormedit::measure_index_t& measures, WormUiComposeView& view) -> bool {
+    if (!section.beat_span) {
+        storage.flattened.compose.status = "A beat-anchored section has no valid chart span.";
+        view.status_text = storage.flattened.compose.status.c_str();
+        return false;
+    }
+    if (compose_marker_at_capacity(storage)) return true;
+    const auto begin_measure = std::ranges::find(measures.entries, section.beat_span->begin.measure,
+                                                &wormedit::measure_index_entry_t::id);
+    const auto end_measure = std::ranges::find(measures.entries, section.beat_span->end.measure,
+                                              &wormedit::measure_index_entry_t::id);
+    if (begin_measure == measures.entries.end() || end_measure == measures.entries.end() ||
+        section.beat_span->begin.row >= begin_measure->row_capacity ||
+        section.beat_span->end.row >= end_measure->row_capacity) {
+        storage.flattened.compose.status = "A beat-anchored section is outside the chart measure geometry.";
+        view.status_text = storage.flattened.compose.status.c_str();
+        return false;
+    }
+    append_compose_marker(storage, section.label, WormUiComposeSectionView{
             .section_id = section.id.value,
-            .label = flattened.compose.section_label[index].c_str(),
+            .label = nullptr,
             .begin_measure_number = static_cast<std::uint64_t>(
                 std::distance(measures.entries.begin(), begin_measure) + 1),
             .begin_row = section.beat_span->begin.row,
@@ -1273,7 +1304,28 @@ bool populate_compose_section_storage(
             .proposed_end_y_pixels = 0.0,
             .proposed_span_top_y_pixels = 0.0,
             .proposed_span_bottom_y_pixels = 0.0,
-        };
+        });
+    return true;
+}
+bool populate_compose_section_storage(
+    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    const wormedit::measure_index_t& measures, WormUiComposeView& view) {
+    compose_marker_storage_t beat{flattened, flattened.compose.section, view.beat_section_count,
+        view.beat_sections_truncated, WORM_UI_COMPOSE_SECTION_CAPACITY};
+    compose_marker_storage_t audio{flattened, flattened.compose.audio_marker.section, view.audio_section_count,
+        view.audio_sections_truncated, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY};
+    prepare_compose_marker_storage(beat, static_cast<std::size_t>(std::ranges::count(
+        chart.sections, wormedit::marker_anchor_t::beat, &wormedit::section_t::anchor)));
+    prepare_compose_marker_storage(audio, static_cast<std::size_t>(std::ranges::count(
+        chart.sections, wormedit::marker_anchor_t::audio_time, &wormedit::section_t::anchor)));
+    view.beat_sections = flattened.compose.section.data();
+    view.audio_sections = flattened.compose.audio_marker.section.data();
+    for (const auto& section : chart.sections) {
+        if (section.anchor == wormedit::marker_anchor_t::audio_time) {
+            if (!populate_compose_audio_section(audio, section, view)) return false;
+        } else if (section.anchor == wormedit::marker_anchor_t::beat) {
+            if (!populate_compose_beat_section(beat, section, measures, view)) return false;
+        }
     }
     return true;
 }

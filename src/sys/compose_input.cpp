@@ -2,6 +2,7 @@
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_playhead_skip.h"
 #include "sys/compose_scroll_geometry.h"
+#include "sys/compose_timing_delete.h"
 
 #include <wormedit/core/snap.h>
 #include <wormedit/audio/decoder.h>
@@ -2211,24 +2212,14 @@ auto delete_selected_compose_kiai_span(compose_input_context_t& context,
 auto delete_selected_compose_timing_markers(compose_input_context_t& context,
                                             wormedit::editor_interaction_result_t& result,
                                             std::string_view& accepted) -> bool {
-    using namespace wormedit;
-    const auto* chart = context.chart();
-    if (!chart) return false;
-    std::vector<timing_lane_event_ref_t> selected;
-    for (const auto& object : context.state.selected_objects) {
-        if (const auto lane = compose_timing_lane_for_selection(object.kind))
-            selected.push_back({*lane, object.id});
-    }
-    if (selected.empty()) return false;
-    const auto deleted = delete_timing_lane_event_group(
-        context.history, chart->id, selected, context.history.document.revision,
-        context.application_state.timing_locked);
-    result.accepted = deleted.applied;
-    result.document_changed = deleted.applied;
-    result.diagnostics = deleted.diagnostics;
-    if (deleted.applied) (void)dispatch_editor_action(context.history, context.state,
-                                                      select_editor_notes_action_t{});
-    accepted = deleted.applied ? "Selected timing markers deleted." : "Timing markers were not deleted.";
+    const auto outcome = wormedit::sys::delete_selected_timing_markers(
+        context.history, context.state, context.application_state.timing_locked);
+    if (!outcome.handled) return false;
+    result.accepted = outcome.command.applied;
+    result.document_changed = outcome.command.applied;
+    result.diagnostics = outcome.command.diagnostics;
+    accepted = outcome.command.applied ? "Selected timing markers deleted."
+                                       : "Timing markers were not deleted.";
     return true;
 }
 

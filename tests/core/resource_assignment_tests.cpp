@@ -369,6 +369,72 @@ TEST_CASE("BGM import extends native chart measures in the same undo command",
     check_import_extent(history.document.charts.front().measures.size() == 7);
 }
 
+namespace {
+auto music_resources(const song_document_t& song) -> std::size_t {
+    return static_cast<std::size_t>(std::ranges::count_if(song.resources, [](const auto& r) {
+        return std::ranges::find(r.roles, resource_role_t::music) != r.roles.end();
+    }));
+}
+} // namespace
+
+TEST_CASE("setting song audio without a music resource imports one Music+BGM resource",
+          "[unit][core][resources][song-audio]") {
+    auto history = make_document_history(assignment_song());
+    REQUIRE(apply_primary_music_set(history, 4,
+        {.source_path = "/tmp/song.mp3", .name = "song.mp3",
+         .audio_stream = audio_stream_info_t{44'100, 2, 44'100 * 3, true}}));
+    CHECK(music_resources(history.document) == 1);
+    const auto& added = history.document.resources.back();
+    CHECK(std::ranges::find(added.roles, resource_role_t::bgm) != added.roles.end());
+    CHECK(history.document.audio_assets.back().source_path == "/tmp/song.mp3");
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("setting song audio again repoints the music asset instead of adding another",
+          "[unit][core][resources][song-audio]") {
+    auto song = assignment_song();
+    song.charts.front().source_family = format_family_t::native_project;
+    song.resources.front().roles.push_back(resource_role_t::music);
+    auto history = make_document_history(song);
+    const auto assets = history.document.audio_assets.size();
+    const auto resources = history.document.resources.size();
+    REQUIRE(apply_primary_music_set(history, 4,
+        {.source_path = "/tmp/replacement.mp3", .name = "replacement.mp3",
+         .audio_stream = audio_stream_info_t{44'100, 2, 44'100 * 13, true}}));
+    CHECK(history.document.audio_assets.size() == assets);
+    CHECK(history.document.resources.size() == resources);
+    CHECK(music_resources(history.document) == 1);
+    const auto& music = history.document.resources.front();
+    const auto asset = std::ranges::find(history.document.audio_assets, music.asset,
+                                         &audio_asset_t::id);
+    REQUIRE(asset != history.document.audio_assets.end());
+    CHECK(asset->source_path == "/tmp/replacement.mp3");
+    CHECK(asset->stream.frame_count == 44'100U * 13U);
+    CHECK(music.name == "replacement.mp3");
+    CHECK(history.document.charts.front().measures.size() == 7);
+    CHECK(validate_document(history.document).empty());
+
+    CHECK_FALSE(apply_primary_music_set(history, history.document.revision,
+        {.source_path = "/tmp/replacement.mp3",
+         .audio_stream = audio_stream_info_t{44'100, 2, 44'100 * 13, true}}));
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(std::ranges::find(history.document.audio_assets, music.asset, &audio_asset_t::id)
+              ->source_path == "one.wav");
+}
+
+TEST_CASE("setting song audio rejects stale revisions and missing stream geometry",
+          "[unit][core][resources][song-audio]") {
+    auto history = make_document_history(assignment_song());
+    CHECK(has_code(apply_primary_music_set(history, 3,
+                       {.source_path = "/tmp/song.mp3",
+                        .audio_stream = audio_stream_info_t{44'100, 2, 44'100, true}}),
+                   diagnostic_code_t::invalid_id));
+    CHECK(has_code(apply_primary_music_set(history, 4, {.source_path = "/tmp/song.mp3"}),
+                   diagnostic_code_t::invalid_id));
+    CHECK(history.undo.empty());
+}
+
 TEST_CASE("resource import rejects path and decoded-type errors without partial assets",
           "[unit][core][resources]") {
     auto history = make_document_history(assignment_song());

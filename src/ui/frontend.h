@@ -653,6 +653,8 @@ typedef enum WormUiComposeResourceRole {
     WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE = 1 << 0,
     WORM_UI_COMPOSE_RESOURCE_ROLE_BGM = 1 << 1,
     WORM_UI_COMPOSE_RESOURCE_ROLE_BGA = 1 << 2,
+    /* Import-only: sets or replaces the song's main audio. */
+    WORM_UI_COMPOSE_RESOURCE_ROLE_MUSIC = 1 << 3,
 } WormUiComposeResourceRole;
 
 typedef struct WormUiComposeResourceView {

@@ -297,6 +297,7 @@ auto import_resource_role(const WormUiWorkspaceAction& action)
     case WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE: return resource_role_t::sample;
     case WORM_UI_COMPOSE_RESOURCE_ROLE_BGM: return resource_role_t::bgm;
     case WORM_UI_COMPOSE_RESOURCE_ROLE_BGA: return resource_role_t::bga;
+    case WORM_UI_COMPOSE_RESOURCE_ROLE_MUSIC: return resource_role_t::music;
     default: return std::nullopt;
     }
 }
@@ -333,10 +334,40 @@ auto inspect_imported_resource(const std::filesystem::path& path, wormedit::reso
     return metadata;
 }
 
+std::optional<std::string> commit_primary_music(compose_action_context_t& context,
+                                                const std::filesystem::path& path,
+                                                const imported_resource_metadata_t& metadata) {
+    using namespace wormedit;
+    const auto chart = std::ranges::find(context.history.document.charts, context.state.chart,
+                                         &chart_document_t::id);
+    auto name = path.filename().generic_string();
+    if (name.size() > 255) name.clear();
+    const auto applied = apply_primary_music_set(
+        context.history, context.action.compose_input_document_revision,
+        {.source_path = path, .name = std::move(name),
+         .allocate_bms_identifier = chart != context.history.document.charts.end() &&
+                                    chart->source_family == format_family_t::bms,
+         .audio_stream = metadata.audio});
+    if (!applied.diagnostics.empty()) return applied.diagnostics.front().message;
+    if (!applied.applied) return "That file is already the song audio.";
+    const auto rebound = rebind_workspace(context.workspace, context.history);
+    if (!rebound)
+        return rebound.diagnostics.empty() ? "Song audio set, but workspace rebinding failed."
+                                           : rebound.diagnostics.front().message;
+    const auto music = std::ranges::find_if(context.history.document.resources, [](const auto& r) {
+        return std::ranges::find(r.roles, resource_role_t::music) != r.roles.end();
+    });
+    if (music != context.history.document.resources.end())
+        (void)apply_workspace_action(context.workspace, context.history.document,
+            context.history.document.revision, workspace_select_audio_asset_action_t{music->asset});
+    return "Song audio set to " + path.filename().string() + ".";
+}
+
 std::optional<std::string> commit_resource_import(
     compose_action_context_t& context, wormedit::resource_role_t role,
     const std::filesystem::path& path, imported_resource_metadata_t metadata) {
     using namespace wormedit;
+    if (role == resource_role_t::music) return commit_primary_music(context, path, metadata);
     const auto chart = std::ranges::find(context.history.document.charts, context.state.chart,
                                          &chart_document_t::id);
     auto name = path.filename().generic_string();

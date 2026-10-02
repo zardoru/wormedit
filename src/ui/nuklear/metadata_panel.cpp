@@ -840,19 +840,22 @@ static void metadata_read_only_path(struct nk_context* context, const char* labe
         buffer.data(), buffer.size(), nk_filter_default);
 }
 
-static void set_metadata_music_import_action(WormUiWorkspaceAction* action,
-                                             const WormUiMetadataView* metadata, const char* path) {
+// Requests setting or replacing the song audio; false when the action slot is busy.
+static auto set_metadata_music_import_action(WormUiWorkspaceAction* action,
+                                             const WormUiMetadataView* metadata, const char* path)
+    -> bool {
     if (!metadata->has_chart || !path || !path[0] ||
         std::strlen(path) > WORM_UI_COMPOSE_IMPORT_PATH_BYTES ||
         action->compose_action != WORM_UI_COMPOSE_ACTION_NONE ||
         action->metadata_import_copy_project || action->metadata_import_copy_export ||
         metadata->import_copy_pending)
-        return;
+        return false;
     std::snprintf(action->compose_import_path, sizeof(action->compose_import_path), "%s", path);
-    action->compose_resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
+    action->compose_resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_MUSIC;
     action->compose_input_chart_id = metadata->chart_id;
     action->compose_input_document_revision = metadata->document_revision;
     action->compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET;
+    return true;
 }
 
 static void metadata_copy_inspection_button(struct nk_context* context,
@@ -1035,23 +1038,45 @@ static void open_metadata_file_dialog() {
                            nullptr, 0, nullptr, false);
 }
 
+// Applies a picked file as the song audio as soon as an action slot is free.
+static void apply_picked_music(const MetadataPanel& panel) {
+    if (!state.external_music_path[0]) return;
+    if (!panel.metadata->has_chart) {
+        std::snprintf(state.external_music_error.data(), state.external_music_error.size(),
+                      "Open a chart before choosing its audio.");
+        state.external_music_path.fill('\0');
+        return;
+    }
+    if (set_metadata_music_import_action(panel.action, panel.metadata,
+                                         state.external_music_path.data()))
+        state.external_music_path.fill('\0');
+}
+
+static auto current_music_filename(const WormUiMetadataView& metadata) -> std::string {
+    if (state.external_music_path[0])
+        return std::filesystem::path{state.external_music_path.data()}.filename().string();
+    if (metadata.selected_music_source && metadata.selected_music_source[0])
+        return std::filesystem::path{metadata.selected_music_source}.filename().string();
+    return {};
+}
+
 static void render_metadata_audio_picker(const MetadataPanel& panel) {
     auto* context = panel.context;
     consume_metadata_file_dialog_result();
+    apply_picked_music(panel);
     const auto dialog_open = worm_ui_nuklear_metadata_file_dialog_open();
-    const auto filename = state.external_music_path[0]
-        ? std::filesystem::path{state.external_music_path.data()}.filename().string()
-        : std::string{"None"};
+    const auto filename = current_music_filename(*panel.metadata);
     nk_layout_row_begin(context, NK_DYNAMIC, 25, 3);
     nk_layout_row_push(context, 0.28f);
     nk_label(context, "Audio file", NK_TEXT_LEFT);
     nk_layout_row_push(context, 0.13f);
-    if (dialog_open) nk_widget_disable_begin(context);
+    const auto disabled = dialog_open || panel.metadata->import_copy_pending;
+    if (disabled) nk_widget_disable_begin(context);
     const auto browse = nk_button_label(context, dialog_open ? "Choosing..." : "Choose...");
-    if (dialog_open) nk_widget_disable_end(context);
-    if (browse && !dialog_open) open_metadata_file_dialog();
+    if (disabled) nk_widget_disable_end(context);
+    if (browse && !disabled) open_metadata_file_dialog();
     nk_layout_row_push(context, 0.59f);
-    if (state.external_music_path[0])
+    if (!filename.empty())
         nk_label(context, filename.c_str(), NK_TEXT_LEFT);
     else
         nk_label_colored(context, "None", NK_TEXT_LEFT,
@@ -1061,17 +1086,6 @@ static void render_metadata_audio_picker(const MetadataPanel& panel) {
         nk_layout_row_dynamic(context, 19, 1);
         nk_label(context, state.external_music_error.data(), NK_TEXT_LEFT);
     }
-    if (!state.external_music_path[0]) return;
-    const auto& metadata = *panel.metadata;
-    nk_layout_row_dynamic(context, 25, 1);
-    const auto enabled = metadata.has_chart && !metadata.import_copy_pending;
-    if (!enabled) nk_widget_disable_begin(context);
-    const auto link = nk_button_label(context, "Link as BGM");
-    if (!enabled) nk_widget_disable_end(context);
-    if (link) set_metadata_music_import_action(panel.action, &metadata,
-                                               state.external_music_path.data());
-    metadata_external_copy_button(context, &metadata, panel.action,
-                                  state.external_music_path.data());
 }
 
 static auto find_output_group(const WormUiMetadataView& metadata, std::size_t index)
@@ -1164,10 +1178,11 @@ static void render_dropped_music_link(const MetadataPanel& panel,
         std::strlen(metadata.dropped_music_path) <= WORM_UI_COMPOSE_IMPORT_PATH_BYTES;
     nk_layout_row_dynamic(panel.context, 25, 1);
     if (!can_link) nk_widget_disable_begin(panel.context);
-    const auto link = nk_button_label(panel.context, "Link as BGM");
+    const auto link = nk_button_label(panel.context, "Use as song audio");
     if (!can_link) nk_widget_disable_end(panel.context);
     if (link && can_link)
-        set_metadata_music_import_action(panel.action, &metadata, metadata.dropped_music_path);
+        (void)set_metadata_music_import_action(panel.action, &metadata,
+                                               metadata.dropped_music_path);
     const auto destination = metadata.dropped_music_target.destination;
     if (destination == WORM_UI_METADATA_DROP_PROJECT)
         metadata_external_copy_button(panel.context, &metadata, panel.action,
@@ -1374,9 +1389,6 @@ static void render_export_copy_info(const MetadataPanel& panel,
         (info.project / std::filesystem::path{selected.relative_asset_directory}.parent_path())
             .lexically_normal().generic_string(),
         {WORM_UI_METADATA_DROP_EXPORT, selected.document_index});
-    if (state.external_music_path[0])
-        metadata_external_copy_button(context, &metadata, panel.action,
-                                      state.external_music_path.data(), &selected);
     if (!info.has_music) return;
     metadata_read_only_path(context, "Export copy destination",
         (info.project / selected.relative_asset_directory / info.destination_name)

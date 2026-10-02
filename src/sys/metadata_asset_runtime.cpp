@@ -61,14 +61,13 @@ auto link_imported_metadata_audio(
     auto name = request.source_path.filename().generic_string();
     if (name.size() > 255)
         name.clear();
-    const auto applied = wormedit::apply_resource_asset_import(
+    const auto applied = wormedit::apply_primary_music_set(
         history, request.revision,
         {.source_path = request.source_path,
          .copied_project_relative_path =
              request.export_copy ? std::optional<std::filesystem::path>{}
                                  : std::optional{imported.copy.relative_path},
          .expected_new_asset_id = request.asset,
-         .role = wormedit::resource_role_t::bgm,
          .name = std::move(name),
          .allocate_bms_identifier = request.allocate_bms_identifier,
          .audio_stream = imported.stream,
@@ -87,12 +86,18 @@ auto link_imported_metadata_audio(
                      ? "Audio imported, but workspace rebinding failed."
                      : rebound.diagnostics.front().message;
     } else {
+        const auto& resources = history.document.resources;
+        const auto music = std::ranges::find_if(resources, [](const auto& resource) {
+            return std::ranges::find(resource.roles, wormedit::resource_role_t::music) !=
+                   resource.roles.end();
+        });
         (void)wormedit::apply_workspace_action(
             workspace, history.document, history.document.revision,
-            wormedit::workspace_select_audio_asset_action_t{request.asset});
+            wormedit::workspace_select_audio_asset_action_t{
+                music != resources.end() ? music->asset : request.asset});
         status = request.export_copy
-                     ? "Audio staged in export assets and linked as BGM."
-                     : "Audio copied into project assets and linked as BGM.";
+                     ? "Audio staged in export assets and set as the song audio."
+                     : "Audio copied into project assets and set as the song audio.";
     }
     return true;
 }

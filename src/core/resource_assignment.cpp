@@ -939,6 +939,66 @@ auto append_imported_asset(song_document_t& document, const import_resource_asse
     return true;
 }
 
+auto extend_native_charts_to_audio(song_document_t& document, const audio_stream_info_t& stream,
+                                   document_command_result_t& result) -> bool {
+    for (auto& chart : document.charts) {
+        if (chart.source_family == format_family_t::native_project &&
+            !extend_chart_to_audio_end(chart, stream)) {
+            reject(result, diagnostic_code_t::invalid_measure,
+                   "imported audio exceeds the chart's timing or measure limits");
+            return false;
+        }
+    }
+    return true;
+}
+
+// The first catalog entry with the Music role whose asset is audio; exports and
+// the transport treat it as the song's main audio.
+auto find_primary_music_resource(const song_document_t& document)
+    -> std::vector<resource_entry_t>::const_iterator {
+    return std::ranges::find_if(document.resources, [&](const resource_entry_t& resource) {
+        return std::ranges::find(resource.roles, resource_role_t::music) != resource.roles.end() &&
+               std::ranges::find(document.audio_assets, resource.asset, &audio_asset_t::id) !=
+                   document.audio_assets.end();
+    });
+}
+
+auto import_primary_music(document_history_t& history,
+                          const import_resource_asset_action_t& action)
+    -> document_command_result_t {
+    auto draft = make_document_history(history.document, 1, false);
+    auto imported = apply_resource_asset_import(draft, draft.document.revision, action);
+    if (!imported.applied) {
+        imported.revision = history.document.revision;
+        return imported;
+    }
+    auto& roles = draft.document.resources.back().roles;
+    if (std::ranges::find(roles, resource_role_t::music) == roles.end())
+        roles.insert(roles.begin(), resource_role_t::music);
+    return commit_document_command(history, std::move(draft.document), "Set song audio");
+}
+
+// Repoints the existing music asset so every resource and event that plays the
+// song keeps its reference.
+auto relink_primary_music(document_history_t& history, const resource_entry_t& music,
+                          const std::filesystem::path& source,
+                          const import_resource_asset_action_t& action)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    auto proposed = history.document;
+    const auto asset = std::ranges::find(proposed.audio_assets, music.asset, &audio_asset_t::id);
+    if (asset->source_path.lexically_normal() == source) return result;
+    asset->source_path = source;
+    asset->stream = *action.audio_stream;
+    asset->waveform_cache_path.reset();
+    if (!action.name.empty()) {
+        const auto resource = std::ranges::find(proposed.resources, music.id, &resource_entry_t::id);
+        resource->name = action.name;
+    }
+    if (!extend_native_charts_to_audio(proposed, *action.audio_stream, result)) return result;
+    return commit_document_command(history, std::move(proposed), "Replace song audio");
+}
+
 auto apply_resource_asset_import(document_history_t& history, std::uint64_t expected_revision,
                                  const import_resource_asset_action_t& action)
     -> document_command_result_t {
@@ -976,17 +1036,30 @@ auto apply_resource_asset_import(document_history_t& history, std::uint64_t expe
         result.diagnostics = created.diagnostics;
         return result;
     }
-    if (action.role == resource_role_t::bgm) {
-        for (auto& chart : draft.document.charts) {
-            if (chart.source_family == format_family_t::native_project &&
-                !extend_chart_to_audio_end(chart, *action.audio_stream)) {
-                reject(result, diagnostic_code_t::invalid_measure,
-                       "imported audio exceeds the chart's timing or measure limits");
-                return result;
-            }
-        }
-    }
+    if (action.role == resource_role_t::bgm &&
+        !extend_native_charts_to_audio(draft.document, *action.audio_stream, result))
+        return result;
     return commit_document_command(history, std::move(draft.document), "Import resource asset");
+}
+
+auto apply_primary_music_set(document_history_t& history, std::uint64_t expected_revision,
+                             import_resource_asset_action_t action)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id, "song audio document revision is stale");
+        return result;
+    }
+    if (!action.audio_stream) {
+        reject(result, diagnostic_code_t::invalid_id, "song audio requires probed stream geometry");
+        return result;
+    }
+    action.role = resource_role_t::bgm;
+    const auto music = find_primary_music_resource(history.document);
+    if (music == history.document.resources.end()) return import_primary_music(history, action);
+    const auto paths = validate_import_source_paths(action, result);
+    if (!paths) return result;
+    return relink_primary_music(history, *music, paths->second.value_or(paths->first), action);
 }
 
 auto apply_resource_asset_relink(document_history_t& history, std::uint64_t expected_revision,

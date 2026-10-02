@@ -192,6 +192,20 @@ static void render_lane_profile_section(const ComposeInspectorContext& inspector
     nk_tree_pop(context);
 }
 
+void render_compose_timing_mode_toggle(const ComposeInspectorContext& inspector) {
+    auto* context = inspector.context;
+    const auto* view = inspector.view;
+    auto* action = inspector.action;
+    nk_layout_row_dynamic(context, 25, 1);
+    const auto disabled = !view->scene_available;
+    if (disabled) nk_widget_disable_begin(context);
+    const auto clicked = nk_button_label(
+        context, view->timing_focus ? "Timing focus: On" : "Timing focus: Off");
+    if (disabled) nk_widget_disable_end(context);
+    if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS;
+}
+
 void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
     render_lane_profile_section(inspector);
     render_initial_bpm_control(inspector);

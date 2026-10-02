@@ -819,6 +819,9 @@ typedef struct WormUiComposeView {
     const WormUiTimingMarkerView* timing_markers;
     size_t timing_marker_count;
     uint8_t timing_lane_visibility_mask;
+    // Compose mode specialization; see ui/compose_mode.h. The mask above is
+    // already the effective one for this mode.
+    bool timing_focus;
     bool timing_stage_active;
     bool timing_stage_valid;
     WormUiTimingLaneKind timing_stage_lane;
@@ -1105,6 +1108,9 @@ typedef enum WormUiTimingStageAction {
     WORM_UI_TIMING_STAGE_CONFIRM,
     WORM_UI_TIMING_STAGE_CANCEL,
     WORM_UI_TIMING_STAGE_DELETE,
+    // Begins a new event at the target row with its default value (a BPM equal
+    // to the one in force, or an anchor) and confirms it in one step.
+    WORM_UI_TIMING_STAGE_QUICK_INSERT,
 } WormUiTimingStageAction;
 
 typedef enum WormUiTimingGridAction {
@@ -1550,6 +1556,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_RESET_VIEW,
     WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE,
     WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY,
+    WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS,
     WORM_UI_COMPOSE_ACTION_SELECT_RESOURCE_USES,
     WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION,
     WORM_UI_COMPOSE_ACTION_CREATE_RESOURCE,

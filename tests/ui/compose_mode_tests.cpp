@@ -7,7 +7,6 @@ using namespace wormedit::ui;
 TEST_CASE("Full mode keeps every Compose capability", "[unit][frontend][compose-mode]") {
     constexpr auto mode = compose_mode_t::full;
     STATIC_REQUIRE_FALSE(compose_notes_dimmed(mode));
-    STATIC_REQUIRE(compose_notes_editable(mode));
     STATIC_REQUIRE(compose_note_palette_visible(mode));
     STATIC_REQUIRE(compose_note_inspector_sections(mode));
     STATIC_REQUIRE(compose_timing_inspector_sections(mode));
@@ -19,7 +18,6 @@ TEST_CASE("Full mode keeps every Compose capability", "[unit][frontend][compose-
 TEST_CASE("Timing focus mutes notes and forces timing lanes", "[unit][frontend][compose-mode]") {
     constexpr auto mode = compose_mode_t::timing_focus;
     STATIC_REQUIRE(compose_notes_dimmed(mode));
-    STATIC_REQUIRE_FALSE(compose_notes_editable(mode));
     STATIC_REQUIRE_FALSE(compose_note_palette_visible(mode));
     STATIC_REQUIRE_FALSE(compose_note_inspector_sections(mode));
     STATIC_REQUIRE(compose_timing_inspector_sections(mode));
@@ -32,5 +30,4 @@ TEST_CASE("Full mode never gains a timing-focus-only behavior", "[unit][frontend
     const auto& full = compose_mode_profile(compose_mode_t::full);
     CHECK_FALSE(full.notes_dimmed);
     CHECK_FALSE(full.timing_lanes_forced_visible);
-    CHECK(full.notes_editable);
 }

@@ -1016,7 +1016,9 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                      ? std::clamp(compose_body_bounds.w * 0.24f, 280.0f, 380.0f)
                                      : 0.0f;
     const auto editor_width = compose_body_bounds.w;
-    const auto palette_drawn = compose_note_palette_has_buttons(*view);
+    const auto palette_drawn =
+        wormedit::ui::compose_note_palette_visible(compose_mode_of(*view)) &&
+        compose_note_palette_has_buttons(*view);
     constexpr float palette_width = 36.0f;
     const auto editor_left = palette_drawn ? palette_width : 0.0f;
     nk_layout_space_begin(context, NK_STATIC, compose_body_height,
@@ -1040,22 +1042,27 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         if (nk_group_begin(context, "Compose inspector", NK_WINDOW_BORDER)) {
 
     const ComposeInspectorContext inspector{context, view, timing_view, action};
-    render_compose_note_label_editor(inspector);
-    render_compose_label_search(inspector);
-    render_compose_quantize_section(inspector);
-    render_compose_transform_section(inspector);
-    render_compose_measure_section(inspector);
+    const auto mode = compose_mode_of(*view);
+    render_compose_timing_mode_toggle(inspector);
+    if (wormedit::ui::compose_note_inspector_sections(mode)) {
+        render_compose_note_label_editor(inspector);
+        render_compose_label_search(inspector);
+        render_compose_quantize_section(inspector);
+        render_compose_transform_section(inspector);
+        render_compose_measure_section(inspector);
 
-    const auto visible_layer_count = view->semantic_layer_count;
-    const bool semantic_target_active = semantic_layer_target_active(view);
-    if (render_semantic_layer_palette_panel(inspector)) {
-        render_semantic_layer_selected_panel(inspector, visible_layer_count);
-        render_semantic_layer_membership_buttons(inspector, semantic_target_active);
-        render_semantic_layer_target_buttons(inspector, semantic_target_active);
-        nk_tree_pop(context);
+        const auto visible_layer_count = view->semantic_layer_count;
+        const bool semantic_target_active = semantic_layer_target_active(view);
+        if (render_semantic_layer_palette_panel(inspector)) {
+            render_semantic_layer_selected_panel(inspector, visible_layer_count);
+            render_semantic_layer_membership_buttons(inspector, semantic_target_active);
+            render_semantic_layer_target_buttons(inspector, semantic_target_active);
+            nk_tree_pop(context);
+        }
     }
 
-    render_compose_timing_inspector(inspector);
+    if (wormedit::ui::compose_timing_inspector_sections(mode))
+        render_compose_timing_inspector(inspector);
 
     worm_ui_nuklear_render_bms_branch_panel(context, view, action);
     nk_group_end(context);

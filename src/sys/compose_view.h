@@ -4,6 +4,7 @@
 #include "common/static_interval_index.h"
 #include "sys/compose_quantize_preview.h"
 #include "sys/compose_scroll_geometry.h"
+#include "ui/compose_mode.h"
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/bpm_editor.h>
@@ -220,6 +221,7 @@ struct application_command_state_t {
     std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;
     std::unordered_map<std::uint64_t, double> bgm_horizontal_scroll_pixels;
     std::uint8_t compose_timing_lane_visibility_mask{0xff};
+    bool compose_timing_focus{};
     bool player_preview_visible{};
     wormedit::player_preview_skin_t player_preview_skin{wormedit::player_preview_skin_t::neutral};
     std::size_t transport_rate_index{8};
@@ -254,6 +256,19 @@ struct application_command_state_t {
     std::optional<double> preview_playhead_absolute_row;
     // Wheel rows gathered during one input frame while playing; flushed as a single seek.
 };
+
+[[nodiscard]] inline auto compose_mode_of(const application_command_state_t& state)
+    -> wormedit::ui::compose_mode_t {
+    return state.compose_timing_focus ? wormedit::ui::compose_mode_t::timing_focus
+                                      : wormedit::ui::compose_mode_t::full;
+}
+
+// Timing lane mask in force for drawing, hit testing, and geometry.
+[[nodiscard]] inline auto effective_compose_timing_lane_mask(
+    const application_command_state_t& state) -> std::uint8_t {
+    return wormedit::ui::compose_effective_timing_lane_mask(
+        compose_mode_of(state), state.compose_timing_lane_visibility_mask);
+}
 
 inline auto toggle_transport_metronome(application_command_state_t& state) -> bool {
     if (!state.transport_metronome_available || !state.transport_set_metronome) return false;

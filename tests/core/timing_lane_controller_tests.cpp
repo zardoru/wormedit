@@ -958,3 +958,20 @@ TEST_CASE("effective BPM at a position is the latest preceding BPM event", "[tim
     CHECK(effective_bpm_at(chart, {measure_id_t{3}, 480}) == signed_rational_t{150, 1});
     CHECK(effective_bpm_at(chart, {measure_id_t{4}, 0}) == signed_rational_t{150, 1});
 }
+
+TEST_CASE("quick insert copies the BPM in force without changing the effective tempo",
+          "[unit][core][timing-lane-controller]") {
+    auto history = make_document_history(timing_song());
+    const auto position = pos(480);
+    const auto inherited = effective_bpm_at(history.document.charts.front(), position);
+    REQUIRE(inherited.has_value());
+    auto preview = begin(history, timing_lane_kind_t::bpm, 480,
+                         timing_bpm_value_t{*inherited},
+                         timing_lane_initial_value_source_t::effective_at_position);
+    REQUIRE(preview.status == timing_lane_pseudonote_status_t::editing);
+    REQUIRE(confirm_timing_lane_pseudonote(history, preview, false));
+    const auto& bpms = history.document.charts.front().bpms;
+    REQUIRE(bpms.size() == 2);
+    CHECK(bpms.back().position == position);
+    CHECK(bpms.back().beats_per_minute == signed_rational_t{120, 1});
+}

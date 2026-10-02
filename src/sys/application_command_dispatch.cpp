@@ -380,8 +380,10 @@ auto timing_lock_command(command_context_t& context) -> std::optional<command_re
     if (context.command.kind != command_kind_t::timing_toggle_lock) return std::nullopt;
     using namespace wormedit;
     auto& app = context.application_state;
-    if (context.workspace.active_tab != workspace_tab_t::timing)
-        return reject_application_command(context.status, "Timing Lock requires the active Timing tab.");
+    if (context.workspace.active_tab != workspace_tab_t::timing &&
+        !(context.workspace.active_tab == workspace_tab_t::compose && app.compose_timing_focus))
+        return reject_application_command(
+            context.status, "Timing Lock requires the Timing tab or Compose with Timing focus.");
     app.timing_locked = !app.timing_locked;
     if (app.timing_locked && context.timing_stage) {
         cancel_timing_lane_pseudonote(*context.timing_stage);

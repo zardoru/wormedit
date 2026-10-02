@@ -246,6 +246,14 @@ std::optional<std::string> dispatch_compose_view_action_group(compose_action_con
         status = application_state.note_paint_mode_active ? "Note-paint mode enabled."
                                                           : "Note-paint mode disabled.";
         return status;
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before changing the Compose mode.";
+        }
+        application_state.compose_timing_focus = !application_state.compose_timing_focus;
+        return application_state.compose_timing_focus ? "Timing focus on."
+                                                      : "Timing focus off.";
+    }
     case WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY: {
         if (action.compose_timing_lane >= compose_timing_lane_count) {
             return "The requested timing lane does not exist.";

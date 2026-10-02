@@ -5,6 +5,7 @@
 #include "sys/compose_timing_delete.h"
 
 #include <wormedit/core/snap.h>
+#include <wormedit/core/span_manipulation.h>
 #include <wormedit/audio/decoder.h>
 #include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/bmson_sound_channel_editor.h>
@@ -2067,12 +2068,21 @@ auto kiai_pointer_row(compose_input_context_t& context, const wormedit::chart_do
     return snapped ? snapped : row;
 }
 
-// Rows an edge drag proposes: the dragged edge goes to the pointer's row, the other edge stays,
-// and crossing the fixed edge swaps them. An empty range proposes nothing.
-auto kiai_dragged_rows(std::uint64_t fixed, std::uint64_t dragged)
+// The Kiai rows a drag proposes, through the shared span geometry (span_manipulation.h). Edge 2
+// creates an area between the press row and the pointer row.
+auto kiai_manipulated_rows(const wormedit::kiai_span_t* span, std::uint8_t edge,
+                           std::uint64_t anchor_row, std::uint64_t pointer_row,
+                           std::uint64_t total_rows)
     -> std::optional<std::pair<std::uint64_t, std::uint64_t>> {
-    if (fixed == dragged) return std::nullopt;
-    return std::pair{std::min(fixed, dragged), std::max(fixed, dragged)};
+    using namespace wormedit;
+    const auto handle = edge == WORM_UI_SPAN_HANDLE_BEGIN ? span_handle_t::begin
+                        : edge == WORM_UI_SPAN_HANDLE_END ? span_handle_t::end : span_handle_t::body;
+    const auto original = span ? span_rows_t{span->begin_row, span->end_row}
+                               : span_rows_t{anchor_row, anchor_row};
+    const auto moved = manipulate_span(original, span ? handle : span_handle_t::end, anchor_row,
+                                       pointer_row, total_rows);
+    if (!moved || (span && *moved == original)) return std::nullopt;
+    return std::pair{moved->begin, moved->end};
 }
 
 auto edit_compose_kiai_span(const WormUiComposeInputAction& input,
@@ -2092,16 +2102,19 @@ auto edit_compose_kiai_span(const WormUiComposeInputAction& input,
                            : std::nullopt;
     if (!row) return "Kiai edit has no valid destination row.";
     kiai_span_edit_t edit;
-    if (input.span_edge == 2) {
-        const auto anchor = kiai_pointer_row(context, *chart, *view, *index, input.span_anchor_y_pixels);
-        edit.rows = anchor ? kiai_dragged_rows(*anchor, *row) : std::nullopt;
-    } else {
-        const auto spans = kiai_spans_of(*chart, *index);
+    const auto anchor = kiai_pointer_row(context, *chart, *view, *index, input.span_anchor_y_pixels);
+    // Edges 0 and 1 drag the begin and end edge, 3 the body; 2 creates a new area.
+    const kiai_span_t* span = nullptr;
+    std::vector<kiai_span_t> spans;
+    if (input.span_edge != WORM_UI_SPAN_HANDLE_CREATE) {
+        spans = kiai_spans_of(*chart, *index);
         const auto found = std::ranges::find(spans, object_id_t{input.object_id}, &kiai_span_t::head);
         if (found == spans.end()) return "The Kiai area no longer exists.";
+        span = &*found;
         edit.head = found->head;
-        edit.rows = kiai_dragged_rows(input.span_edge == 0 ? found->end_row : found->begin_row, *row);
     }
+    edit.rows = anchor ? kiai_manipulated_rows(span, input.span_edge, *anchor, *row, index->total_rows)
+                       : std::nullopt;
     if (!edit.rows) {
         result.accepted = true;
         accepted = "Kiai area unchanged.";
@@ -2165,16 +2178,35 @@ auto edit_compose_speed_span(const WormUiComposeInputAction& input,
     const auto row = kiai_pointer_row(context, *chart, *view, *index, input.y_pixels);
     const auto begin_row = absolute_row(*index, speed->position);
     if (!row || !begin_row) return "Speed edit has no valid destination row.";
-    speed_span_edit_t edit;
-    if (input.span_edge == 0) {
-        edit.position = position_at_absolute_row(*index, *row);
-        if (!edit.position) return "Speed edit has no valid destination row.";
-    } else {
-        const auto* timing = context.scene_cache.marker_timing_index
-                                 ? &*context.scene_cache.marker_timing_index : nullptr;
-        edit.transition = speed_transition_between(*chart, timing, *speed, *begin_row, *row);
-        if (!edit.transition) return "The Speed transition length cannot be measured there.";
+    // The span as drawn: from the event to the end of its transition.
+    const auto& projected = context.scene_cache.speed_spans;
+    const auto span = projected ? std::ranges::find(projected->spans, speed->id, &speed_span_t::object)
+                                : std::vector<speed_span_t>::const_iterator{};
+    if (!projected || span == projected->spans.end())
+        return "The Speed span is unavailable.";
+    const auto anchor = kiai_pointer_row(context, *chart, *view, *index, input.span_anchor_y_pixels);
+    if (!anchor) return "Speed edit has no valid destination row.";
+    const auto original = span_rows_t{*begin_row, std::max<std::uint64_t>(
+        *begin_row, static_cast<std::uint64_t>(std::llround(span->end_row)))};
+    const auto handle = input.span_edge == WORM_UI_SPAN_HANDLE_BEGIN ? span_handle_t::begin
+                        : input.span_edge == WORM_UI_SPAN_HANDLE_END ? span_handle_t::end
+                                                                      : span_handle_t::body;
+    const auto moved = manipulate_span(original, handle, *anchor, *row, index->total_rows,
+                                       {.allow_empty = true});
+    if (!moved || *moved == original) {
+        result.accepted = true;
+        accepted = "Speed span unchanged.";
+        return std::nullopt;
     }
+    speed_span_edit_t edit;
+    if (moved->begin != original.begin) {
+        edit.position = position_at_absolute_row(*index, moved->begin);
+        if (!edit.position) return "Speed edit has no valid destination row.";
+    }
+    const auto timing = context.scene_cache.marker_timing_index
+                            ? &*context.scene_cache.marker_timing_index : nullptr;
+    edit.transition = speed_transition_between(*chart, timing, *speed, moved->begin, moved->end);
+    if (!edit.transition) return "The Speed transition length cannot be measured there.";
     const auto edited = edit_speed_event_span(context.history, chart->id, speed->id, edit,
                                               context.application_state.timing_locked);
     result.accepted = edited.applied;
@@ -2211,8 +2243,8 @@ auto edit_compose_recipe_range(const WormUiComposeInputAction& input,
     const auto release = context.position_at_compose_y_unrestricted(
         *chart, *view, std::clamp(input.y_pixels, 0.0, view->viewport_height_pixels - 0.001));
     if (!press || !release) return "SV recipe edit has no valid destination.";
-    const auto handle = input.span_edge == 0   ? sv_recipe_range_handle_t::begin
-                        : input.span_edge == 1 ? sv_recipe_range_handle_t::end
+    const auto handle = input.span_edge == WORM_UI_SPAN_HANDLE_BEGIN ? sv_recipe_range_handle_t::begin
+                        : input.span_edge == WORM_UI_SPAN_HANDLE_END ? sv_recipe_range_handle_t::end
                                                : sv_recipe_range_handle_t::whole_span;
     auto drag = begin_sv_recipe_range_drag(context.history, chart->id, recipe_id_t{input.object_id},
                                            handle, *press, edit_snap_denominator(*chart, context.state),

@@ -1214,14 +1214,29 @@ static void draw_compose_kiai_drag_preview(const ComposePaintContext& paint,
                                            const std::pair<double, double>& extent) {
     if (!state.kiai_drag_active || !state.kiai_drag_moved || state.kiai_drag_speed) return;
     double fixed_y = state.kiai_drag_anchor_y;
-    if (state.kiai_drag_edge != 2) {
+    if (state.kiai_drag_edge == WORM_UI_SPAN_HANDLE_BODY) {
+        // The whole area follows the pointer's travel.
+        const std::span spans(paint.view->kiai_spans, paint.view->kiai_span_count);
+        const auto found = std::ranges::find_if(
+            spans, [](const auto& value) { return value.head_object_id == state.kiai_drag_head_id; });
+        if (found == spans.end()) return;
+        const auto travel = state.kiai_drag_current_y - state.kiai_drag_anchor_y;
+        const WormUiComposeRect moved{extent.first, found->bounds.top + travel, extent.second,
+                                      found->bounds.bottom + travel};
+        const auto rect = compose_screen_rect(&moved, paint.view, paint.viewport);
+        if (rect.w <= 0.0f || rect.h <= 0.0f) return;
+        field_rect(paint, rect, 0.0f, nk_rgba(255, 236, 170, 70), 10);
+        field_stroke_rect(paint, rect, 0.0f, 1.5f, nk_rgb(255, 236, 170), 10);
+        return;
+    }
+    if (state.kiai_drag_edge != WORM_UI_SPAN_HANDLE_CREATE) {
         const std::span spans(paint.view->kiai_spans, paint.view->kiai_span_count);
         const auto found = std::ranges::find_if(
             spans, [](const auto& value) { return value.head_object_id == state.kiai_drag_head_id; });
         if (found == spans.end()) return;
         const auto* span = &*found;
         const bool head_is_top = !paint.view->downscroll;
-        const bool fixed_is_top = state.kiai_drag_edge == 0 ? !head_is_top : head_is_top;
+        const bool fixed_is_top = state.kiai_drag_edge == WORM_UI_SPAN_HANDLE_BEGIN ? !head_is_top : head_is_top;
         fixed_y = fixed_is_top ? span->bounds.top : span->bounds.bottom;
     }
     const WormUiComposeRect bounds{extent.first, std::min(fixed_y, state.kiai_drag_current_y),
@@ -1344,9 +1359,20 @@ static void draw_compose_speed_drag_preview(const ComposePaintContext& paint,
     const auto found = std::ranges::find_if(
         spans, [](const auto& value) { return value.object_id == state.kiai_drag_head_id; });
     if (found == spans.end()) return;
+    if (state.kiai_drag_edge == WORM_UI_SPAN_HANDLE_BODY) {
+        // The whole span follows the pointer's travel.
+        const auto travel = state.kiai_drag_current_y - state.kiai_drag_anchor_y;
+        const WormUiComposeRect moved{extent.first, found->bounds.top + travel, extent.second,
+                                      found->bounds.bottom + travel};
+        const auto rect = compose_screen_rect(&moved, paint.view, paint.viewport);
+        if (rect.w <= 0.0f || rect.h <= 0.0f) return;
+        field_rect(paint, rect, 0.0f, nk_rgba(136, 203, 238, 70), 10);
+        field_stroke_rect(paint, rect, 0.0f, 1.5f, nk_rgb(137, 207, 239), 10);
+        return;
+    }
     // The edge that is not dragged stays; an instant Speed grows from its single edge.
     const bool head_is_top = !paint.view->downscroll;
-    const bool fixed_is_top = state.kiai_drag_edge == 0 ? !head_is_top : head_is_top;
+    const bool fixed_is_top = state.kiai_drag_edge == WORM_UI_SPAN_HANDLE_BEGIN ? !head_is_top : head_is_top;
     const auto fixed_y = fixed_is_top ? found->bounds.top : found->bounds.bottom;
     const WormUiComposeRect bounds{extent.first, std::min(fixed_y, state.kiai_drag_current_y),
                                    extent.second, std::max(fixed_y, state.kiai_drag_current_y)};

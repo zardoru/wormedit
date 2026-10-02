@@ -1694,7 +1694,7 @@ static void begin_kiai_drag(const ComposePointerEventContext& input) {
     if (!extent || x < extent->first || x >= extent->second ||
         compose_timing_marker_at(view, x, y) != nullptr) return;
     const auto tolerance = span_edge_tolerance_pixels * view.viewport_height_pixels / input.viewport.h;
-    state.kiai_drag_edge = 2;
+    state.kiai_drag_edge = WORM_UI_SPAN_HANDLE_CREATE;
     state.kiai_drag_head_id = 0;
     std::uint64_t body_head = 0;
     for (std::size_t index = 0; index < view.kiai_span_count; ++index) {
@@ -1702,10 +1702,10 @@ static void begin_kiai_drag(const ComposePointerEventContext& input) {
         const auto head_y = view.downscroll ? span.bounds.bottom : span.bounds.top;
         const auto tail_y = view.downscroll ? span.bounds.top : span.bounds.bottom;
         if (span.head_visible && std::abs(y - head_y) <= tolerance) {
-            state.kiai_drag_edge = 0;
+            state.kiai_drag_edge = WORM_UI_SPAN_HANDLE_BEGIN;
             state.kiai_drag_head_id = span.head_object_id;
         } else if (span.tail_visible && std::abs(y - tail_y) <= tolerance) {
-            state.kiai_drag_edge = 1;
+            state.kiai_drag_edge = WORM_UI_SPAN_HANDLE_END;
             state.kiai_drag_head_id = span.head_object_id;
         } else if (y > span.bounds.top && y < span.bounds.bottom) {
             body_head = span.head_object_id;
@@ -1716,7 +1716,9 @@ static void begin_kiai_drag(const ComposePointerEventContext& input) {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_SELECT, x, y, 0, false,
                              WORM_UI_COMPOSE_SELECTION_REPLACE,
                              WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, body_head);
-        return;
+        // The body is selected on press and moves the whole area if it is then dragged.
+        state.kiai_drag_edge = WORM_UI_SPAN_HANDLE_BODY;
+        state.kiai_drag_head_id = body_head;
     }
     state.kiai_drag_active = true;
     state.kiai_drag_moved = false;
@@ -1830,8 +1832,11 @@ static void begin_speed_drag(const ComposePointerEventContext& input) {
         const auto end_y = view.downscroll ? span.bounds.top : span.bounds.bottom;
         // Of two coincident edges (an instant Speed) the end wins: it is the one that can grow.
         const bool on_end = std::abs(y - end_y) <= tolerance;
-        if (!on_end && std::abs(y - begin_y) > tolerance) continue;
-        state.kiai_drag_edge = on_end ? 1 : 0;
+        const bool on_body = y > span.bounds.top && y < span.bounds.bottom;
+        if (!on_end && std::abs(y - begin_y) > tolerance && !on_body) continue;
+        state.kiai_drag_edge = on_end ? WORM_UI_SPAN_HANDLE_END
+            : on_body && std::abs(y - begin_y) > tolerance ? WORM_UI_SPAN_HANDLE_BODY
+                                                            : WORM_UI_SPAN_HANDLE_BEGIN;
         state.kiai_drag_head_id = span.object_id;
         state.kiai_drag_speed = true;
         state.kiai_drag_active = true;
@@ -1857,7 +1862,7 @@ static void begin_speed_stretch(const ComposePointerEventContext& input) {
     if (!marker || marker->lane != WORM_UI_TIMING_LANE_SPEED || marker->object_id == 0 ||
         marker->fixed_initial)
         return;
-    state.kiai_drag_edge = 1;
+    state.kiai_drag_edge = WORM_UI_SPAN_HANDLE_END;
     state.kiai_drag_head_id = marker->object_id;
     state.kiai_drag_speed = true;
     state.kiai_drag_active = true;

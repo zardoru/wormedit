@@ -1837,12 +1837,22 @@ typedef struct WormUiComposeInputAction {
     int64_t beat_fit_snap_step_numerator;
     uint64_t beat_fit_snap_step_denominator;
     /* RECIPE_COMMAND: span_edge is 0 toggle enabled, 1 materialize, 2 delete; object_id is the recipe.
-       KIAI_SPAN_EDIT and RECIPE_RANGE_EDIT: 0 drags the head/begin edge, 1 the tail/end edge, 2 creates (Kiai)
-       or moves the whole span (recipe) by the pointer travel from span_anchor_y_pixels to y_pixels.
+       KIAI_SPAN_EDIT, SPEED_SPAN_EDIT and RECIPE_RANGE_EDIT: span_edge is a WormUiSpanHandle; the body
+       moves by the pointer travel from span_anchor_y_pixels to y_pixels.
        object_id is the area's head event (0 when creating). */
     uint8_t span_edge;
     double span_anchor_y_pixels;
 } WormUiComposeInputAction;
+
+/* Which part of a span (Kiai area, Speed transition, SV recipe) a drag holds; carried in
+   WormUiComposeInputAction::span_edge by KIAI_SPAN_EDIT, SPEED_SPAN_EDIT and RECIPE_RANGE_EDIT.
+   CREATE only applies to Kiai: a new area from the press row to the pointer row. */
+typedef enum WormUiSpanHandle {
+    WORM_UI_SPAN_HANDLE_BEGIN = 0,
+    WORM_UI_SPAN_HANDLE_END = 1,
+    WORM_UI_SPAN_HANDLE_BODY = 2,
+    WORM_UI_SPAN_HANDLE_CREATE = 3,
+} WormUiSpanHandle;
 
 typedef enum WormUiComposeViewportInputKind {
     WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL = 0,

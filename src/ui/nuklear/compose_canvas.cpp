@@ -1193,8 +1193,67 @@ static void draw_compose_unbound_lane_keys_hint(const ComposePaintContext& paint
         paint.context->style.font, nk_rgba(18, 21, 29, 255), nk_rgb(255, 221, 108), 4);
 }
 
+// The inner horizontal extent of a visible timing lane in document pixels; empty when the lane is
+// hidden. Same slot arithmetic as the marker rectangles.
+static auto compose_timing_lane_inner_extent(const WormUiComposeView& view, WormUiTimingLaneKind lane)
+    -> std::optional<std::pair<double, double>> {
+    const auto ordinal = static_cast<unsigned>(lane);
+    const auto bit = static_cast<std::uint8_t>(1U << ordinal);
+    const auto visible_count = std::popcount(view.timing_lane_visibility_mask);
+    if (ordinal >= WORM_UI_TIMING_LANE_COUNT || visible_count == 0 ||
+        (view.timing_lane_visibility_mask & bit) == 0) return std::nullopt;
+    const auto slot = std::popcount(static_cast<std::uint8_t>(view.timing_lane_visibility_mask & (bit - 1)));
+    const auto width = (view.playable_field_left_pixels - compose_measure_rail_width) / visible_count;
+    const auto left = compose_measure_rail_width + width * slot + 2.0;
+    return std::pair{left, left + std::max(0.0, width - 4.0)};
+}
+
+static void draw_compose_kiai_spans(const ComposePaintContext& paint) {
+    const auto extent = compose_timing_lane_inner_extent(*paint.view, WORM_UI_TIMING_LANE_KIAI);
+    if (!extent) return;
+    for (size_t index = 0; index < paint.view->kiai_span_count; ++index) {
+        const auto& span = paint.view->kiai_spans[index];
+        const WormUiComposeRect bounds{extent->first, span.bounds.top, extent->second, span.bounds.bottom};
+        const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
+        if (rect.w <= 0.0f || rect.h <= 0.0f) continue;
+        field_rect(paint, rect, 0.0f, nk_rgba(250, 204, 92, 60), 10);
+        field_stroke_rect(paint, rect, 0.0f, 1.0f, nk_rgba(250, 204, 92, 170), 10);
+        // Head (opening edge) and tail (closing edge) handles, solid so they read as grabbable.
+        const auto head_y = paint.view->downscroll ? rect.y + rect.h : rect.y;
+        const auto tail_y = paint.view->downscroll ? rect.y : rect.y + rect.h;
+        if (span.head_visible)
+            field_line(paint, rect.x, head_y, rect.x + rect.w, head_y, 4.0f, nk_rgb(250, 204, 92), 10);
+        if (span.tail_visible)
+            field_line(paint, rect.x, tail_y, rect.x + rect.w, tail_y, 4.0f, nk_rgb(214, 160, 46), 10);
+    }
+}
+
+static void draw_compose_sv_graph(const ComposePaintContext& paint) {
+    const auto extent = compose_timing_lane_inner_extent(*paint.view, WORM_UI_TIMING_LANE_SCROLL);
+    if (!extent || paint.view->sv_graph_point_count < 2) return;
+    const auto x_of = [&](double fraction) {
+        const WormUiComposeRect probe{extent->first + (extent->second - extent->first) * fraction, 0.0,
+                                      extent->first + (extent->second - extent->first) * fraction, 1.0};
+        return compose_screen_rect(&probe, paint.view, paint.viewport).x;
+    };
+    if (paint.view->sv_graph_one_fraction >= 0.0) {
+        const auto x = x_of(paint.view->sv_graph_one_fraction);
+        field_line(paint, x, paint.viewport.y, x, paint.viewport.y + paint.viewport.h, 1.0f,
+                   nk_rgba(160, 170, 190, 70), 10);
+    }
+    for (size_t index = 1; index < paint.view->sv_graph_point_count; ++index) {
+        const auto& from = paint.view->sv_graph_points[index - 1];
+        const auto& to = paint.view->sv_graph_points[index];
+        field_line(paint, x_of(from.x_fraction), compose_projected_y(paint, from.y_pixels),
+                   x_of(to.x_fraction), compose_projected_y(paint, to.y_pixels), 1.5f,
+                   nk_rgb(110, 222, 236), 10);
+    }
+}
+
 static void draw_compose_timing_layer(const ComposePaintContext& paint,
                                       const ComposeTimingLaneLayout& layout) {
+    draw_compose_kiai_spans(paint);
+    draw_compose_sv_graph(paint);
     draw_compose_proposed_grid(paint);
     draw_compose_beat_fit_overlay(paint);
     draw_compose_offset_fit_overlay(paint);

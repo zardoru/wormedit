@@ -175,6 +175,8 @@ static bool compose_geometry_arrays_valid(const WormUiComposeView* view) {
            (view->audio_section_count == 0 || view->audio_sections) &&
            (view->timing_marker_count == 0 || view->timing_markers) &&
            (view->dead_span_count == 0 || view->dead_spans) &&
+           (view->kiai_span_count == 0 || view->kiai_spans) &&
+           (view->sv_graph_point_count == 0 || view->sv_graph_points) &&
            (view->resource_count == 0 || view->resources) &&
            (view->output_group_count == 0 || view->output_groups);
 }
@@ -222,8 +224,22 @@ static bool compose_dead_spans_valid(const WormUiComposeView* view) {
     return true;
 }
 
+static bool compose_kiai_and_sv_valid(const WormUiComposeView* view) {
+    for (size_t index = 0; index < view->kiai_span_count; ++index) {
+        const auto& span = view->kiai_spans[index];
+        if (!compose_rect_valid(&span.bounds) || span.head_object_id == 0 ||
+            span.end_row <= span.begin_row) return false;
+    }
+    for (size_t index = 0; index < view->sv_graph_point_count; ++index) {
+        const auto& point = view->sv_graph_points[index];
+        if (!std::isfinite(point.x_fraction) || point.x_fraction < 0.0 || point.x_fraction > 1.0 ||
+            !std::isfinite(point.y_pixels)) return false;
+    }
+    return true;
+}
+
 static bool compose_geometry_timing_elements_valid(const WormUiComposeView* view) {
-    if (!compose_dead_spans_valid(view)) return 0;
+    if (!compose_dead_spans_valid(view) || !compose_kiai_and_sv_valid(view)) return 0;
     for (size_t index = 0; index < view->timing_preview_rect_count; ++index) {
         if (!compose_rect_valid(&view->timing_preview_rects[index].bounds) ||
             view->timing_preview_rects[index].kind > 2)

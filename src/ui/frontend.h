@@ -53,6 +53,8 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_COMPOSE_MARKER_TIME_BYTES 32
 #define WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY 16
 #define WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY 512
+#define WORM_UI_COMPOSE_KIAI_SPAN_CAPACITY 512
+#define WORM_UI_COMPOSE_SV_GRAPH_CAPACITY 8192
 #define WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY 16
 #define WORM_UI_SHORTCUT_EVENT_CAPACITY 64
 #define WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY 96
@@ -412,6 +414,26 @@ typedef struct WormUiComposeDeadSpanView {
     uint64_t object_id;
     const char* label;
 } WormUiComposeDeadSpanView;
+
+/* One merged Kiai area. Only top/bottom of bounds are meaningful: the area is drawn inside the
+   Kiai timing lane. Head is the opening edge in chart order, tail the closing edge. */
+typedef struct WormUiComposeKiaiSpanView {
+    WormUiComposeRect bounds;
+    uint64_t head_object_id;
+    uint64_t tail_object_id; /* 0 when the area runs to the end of the chart */
+    uint64_t begin_row;
+    uint64_t end_row;
+    bool open_ended;
+    bool head_visible;
+    bool tail_visible;
+} WormUiComposeKiaiSpanView;
+
+/* One vertex of the SV graph. x is normalized to the visible value range in [0, 1] and drawn
+   inside the SV timing lane; y is a viewport pixel row. */
+typedef struct WormUiComposeSvGraphPointView {
+    double x_fraction;
+    double y_pixels;
+} WormUiComposeSvGraphPointView;
 
 typedef struct WormUiComposeDifferenceView {
     WormUiComposeRect bounds;
@@ -847,6 +869,13 @@ typedef struct WormUiComposeView {
     size_t timing_marker_count;
     const WormUiComposeDeadSpanView* dead_spans;
     size_t dead_span_count;
+    const WormUiComposeKiaiSpanView* kiai_spans;
+    size_t kiai_span_count;
+    const WormUiComposeSvGraphPointView* sv_graph_points;
+    size_t sv_graph_point_count;
+    double sv_graph_minimum;
+    double sv_graph_maximum;
+    double sv_graph_one_fraction; /* negative when 1.0x is outside the visible range */
     uint8_t timing_lane_visibility_mask;
     // Compose mode specialization; see ui/compose_mode.h. The mask above is
     // already the effective one for this mode.

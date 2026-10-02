@@ -1014,6 +1014,11 @@ bool initialize_compose_view_state(
     view.timing_preview_marker_count = 0;
     view.dead_spans = nullptr;
     view.dead_span_count = 0;
+    view.kiai_spans = nullptr;
+    view.kiai_span_count = 0;
+    view.sv_graph_points = nullptr;
+    view.sv_graph_point_count = 0;
+    view.sv_graph_one_fraction = -1.0;
     view.waveform_proposed_beat_zero_visible = false;
     view.waveform_proposed_beat_zero_fraction = 0.0;
     view.waveform_proposed_audio_offset_numerator = 0;
@@ -1835,6 +1840,64 @@ void populate_compose_dead_spans(flattened_workspace_t& flattened, const compose
     if (bands.size() > count) view.truncated = true;
 }
 
+// Kiai areas and the SV step graph as they sit in the current viewport. Both draw inside their
+// timing lane, so only vertical geometry is projected here.
+void populate_compose_kiai_and_sv(flattened_workspace_t& flattened, const compose_scene_cache_t& cache,
+                                  const wormedit::editor_interaction_view_model_t& interaction_view,
+                                  WormUiComposeView& view, bool downscroll, double pixels_per_row,
+                                  std::uint64_t total_rows) {
+    flattened.compose.kiai_span.clear();
+    flattened.compose.sv_graph_point.clear();
+    view.kiai_spans = nullptr;
+    view.kiai_span_count = 0;
+    view.sv_graph_points = nullptr;
+    view.sv_graph_point_count = 0;
+    view.sv_graph_one_fraction = -1.0;
+    if (!(pixels_per_row > 0.0)) return;
+    const auto scroll = interaction_view.viewport_scroll_pixels;
+    const auto height = view.viewport_height_pixels;
+    const auto row_to_y = [&](std::uint64_t row) {
+        return compose_project_y(static_cast<long double>(row), pixels_per_row, scroll, height,
+                                 downscroll);
+    };
+    if (cache.kiai_spans) {
+        for (const auto& span : cache.kiai_spans->spans) {
+            const auto begin_y = row_to_y(span.begin_row);
+            const auto end_y = row_to_y(span.end_row);
+            const auto top = std::min(begin_y, end_y);
+            const auto bottom = std::max(begin_y, end_y);
+            if (bottom < 0.0 || top > height) continue;
+            flattened.compose.kiai_span.push_back({
+                .bounds = {0.0, top, 0.0, bottom},
+                .head_object_id = span.head.value,
+                .tail_object_id = span.tail.value,
+                .begin_row = span.begin_row,
+                .end_row = span.end_row,
+                .open_ended = span.open_ended,
+                .head_visible = begin_y >= 0.0 && begin_y <= height,
+                .tail_visible = !span.open_ended && end_y >= 0.0 && end_y <= height});
+            if (flattened.compose.kiai_span.size() >= WORM_UI_COMPOSE_KIAI_SPAN_CAPACITY) break;
+        }
+        view.kiai_spans = flattened.compose.kiai_span.data();
+        view.kiai_span_count = flattened.compose.kiai_span.size();
+    }
+    if (cache.sv_steps && !cache.sv_steps->steps.empty()) {
+        const auto first = static_cast<std::uint64_t>(std::max(0.0, std::floor(scroll / pixels_per_row)));
+        const auto last = std::min<std::uint64_t>(
+            total_rows, static_cast<std::uint64_t>(std::ceil((scroll + height) / pixels_per_row)));
+        const auto graph = wormedit::sys::build_sv_graph(*cache.sv_steps, first, last, row_to_y);
+        for (const auto& point : graph.points) {
+            if (flattened.compose.sv_graph_point.size() >= WORM_UI_COMPOSE_SV_GRAPH_CAPACITY) break;
+            flattened.compose.sv_graph_point.push_back({point.x, point.y});
+        }
+        view.sv_graph_points = flattened.compose.sv_graph_point.data();
+        view.sv_graph_point_count = flattened.compose.sv_graph_point.size();
+        view.sv_graph_minimum = graph.minimum;
+        view.sv_graph_maximum = graph.maximum;
+        view.sv_graph_one_fraction = graph.one_x;
+    }
+}
+
 void populate_compose_selection_preview(
     const compose_scene_cache_t& cache,
     std::optional<wormedit::editor_interaction_state_t>& retained_state,
@@ -2081,6 +2144,8 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         cache.hit_test_index.reset();
         cache.marker_timing_index.reset();
         cache.dead_spans.reset();
+        cache.kiai_spans.reset();
+        cache.sv_steps.reset();
         cache.proposed_offset_timing_index.reset();
         cache.proposed_offset_seconds.reset();
         cache.beat_fit_drag.reset();
@@ -2114,6 +2179,12 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
             const auto& diagnostics = std::get<wormedit::diagnostic_list_t>(built);
             cache.status = diagnostics.empty() ? "The field layout could not be indexed."
                                                : diagnostics.front().message;
+        }
+        if (cache.index) {
+            cache.kiai_spans = wormedit::sys::project_kiai_spans(
+                chart, cache.index->measures, WORM_UI_COMPOSE_KIAI_SPAN_CAPACITY);
+            cache.sv_steps = wormedit::sys::project_sv_steps(
+                chart, cache.index->measures, WORM_UI_COMPOSE_SV_GRAPH_CAPACITY);
         }
         auto timing = wormedit::build_timing_index(chart);
         if (timing) {
@@ -2915,6 +2986,8 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
                                     downscroll, pixels_per_row, canvas_rows, timing_stage);
     populate_compose_dead_spans(flattened, cache, interaction_view, view, downscroll,
                                 pixels_per_row);
+    populate_compose_kiai_and_sv(flattened, cache, interaction_view, view, downscroll,
+                                 pixels_per_row, canvas_rows);
     const auto maximum_bgm_scroll = std::max(
         0.0, static_cast<double>(chart.bgm_source_lanes.size()) * compose_bgm_lane_width_pixels -
                  bgm_pane_width);

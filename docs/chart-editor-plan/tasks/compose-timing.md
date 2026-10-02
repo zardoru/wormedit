@@ -84,7 +84,8 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Out of scope:** the other cards in this file and unrelated rendering work.
 
 - **Progress (2026-10-02):** Core done and tested headless: `kiai_spans_of` and `apply_kiai_span_edit` (`include/wormedit/core/kiai_spans.h`, `src/core/kiai_spans.cpp`) and the revision-checked `edit_kiai_span_action_t` in `apply_marker_edit` (create, resize, move, delete; overlaps and touching areas merge in the same command; a dragged head or tail keeps its event, id and effect bits; redundant events are dropped; stale revision, empty or out-of-chart rows, unknown head and cap overflow reject without a revision; re-applying the same area is a no-op; one undo step). The T-316 projection now delegates to the same core function. 4 core tests in `tests/core/marker_editor_tests.cpp`.
-- **Remaining:** the `frontend.h` view struct, canvas rectangle with head and tail handles in the Kiai lane, and the drag gesture (preview while dragging, merge applied on release through this command), with state tests and an Xvfb check.
+- **Drawn (2026-10-02):** `WormUiComposeKiaiSpanView` (`frontend.h`), per-frame projection in `compose_view.cpp`, validation in `compose_panel.cpp`, and the amber area with solid head and tail edges inside the Kiai lane in `compose_canvas.cpp`. An Xvfb capture of the osu! kiai fixture shows the area between its On and Off markers.
+- **Remaining:** the drag gesture on the head and tail edges (preview while dragging, merge applied on release through this command), with state tests and an Xvfb check.
 
 ## T-318 Add SV impulses in Compose and show a step graph of relative values
 
@@ -99,7 +100,8 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Out of scope:** the other cards in this file and unrelated rendering work.
 
 - **Progress (2026-10-02):** Pure projection done and tested headless: `project_sv_steps` (latched scroll steps by row, last event on a row wins, bounded) and `build_sv_graph` (horizontal holds with vertical jumps, normalized to the values in force in the visible window, a single value centers, 1.0x reference position) in `src/sys/compose_sv_graph.*`; 3 tests in `tests/sys/compose_sv_graph_tests.cpp`.
-- **Remaining:** SV impulse insertion from the Compose SV lane (reuse the Timing screen's scroll command), the `frontend.h` view struct, drawing the graph inside the SV lane, and an Xvfb check.
+- **Drawn (2026-10-02):** `WormUiComposeSvGraphPointView` (`frontend.h`), per-frame projection, validation and the cyan step line with the 1.0x reference inside the SV lane. An Xvfb capture of the osu! fixture (SV 2x then 1x) shows the jump, hold and return. Full app suite 1454/1454.
+- **Remaining:** SV impulse insertion from the Compose SV lane (reuse the Timing screen's scroll command) and its state test.
 
 ## T-319 Keep unmaterialized SV recipes as areas that can be materialized later
 

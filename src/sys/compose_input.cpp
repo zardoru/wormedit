@@ -1228,7 +1228,7 @@ auto begin_alt_pointer_gesture(const WormUiComposeInputAction& input,
     if (target->note && target->note_kind &&
         (*target->note_kind == note_kind_t::tap || *target->note_kind == note_kind_t::hold)) {
         state.active_lane = target->lane;
-        place_cursor_at(state, target->position);
+        place_cursor_on_picked_row(state, target->position);
         result = dispatch_editor_action(history, state,
                                         begin_note_duration_gesture_action_t{*target->note});
         accepted = "Note resize started; drag to change duration and release to finish.";
@@ -1450,7 +1450,7 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
             std::ranges::find(state.selected_notes, *target->note) == state.selected_notes.end())
             return "Begin a note move by dragging a selected playable note.";
         state.active_lane = target->lane;
-        place_cursor_at(state, target->position);
+        place_cursor_on_picked_row(state, target->position);
         result =
             dispatch_editor_action(history, state, begin_note_move_gesture_action_t{*target->note});
         accepted = "Selected-note move started.";
@@ -2342,7 +2342,7 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
         finish_virtual_hold_at_authored_row(context, *chart, target->position, target->lane, result, accepted))
         return std::nullopt;
     context.state.active_lane = target->lane;
-    place_cursor_at(context.state, target->position);
+    place_cursor_on_picked_row(context.state, target->position);
     const bool clicked_hold_end = context.state.pending_hold &&
                                   !context.state.pending_hold->gesture_source;
     if (*mode == editor_area_selection_mode_t::replace && places_notes &&

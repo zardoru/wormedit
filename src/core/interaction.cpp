@@ -2312,14 +2312,21 @@ auto update_note_move_gesture(note_gesture_context_t& context,
 auto release_note_move_gesture(note_gesture_context_t& context,
                                local_position_t requested_position,
                                lane_id_t requested_lane) -> editor_interaction_result_t {
-    const auto updated = update_note_move_gesture(context, requested_position, requested_lane);
+    // A release that cannot commit ends the gesture: leaving it pending would keep drawing the
+    // last valid preview as a ghost note.
+    const auto reject = [&](diagnostic_list_t diagnostics) {
+        context.state.pending_note_move_gesture.reset();
+        return diagnostic_result(context.history, context.state, std::move(diagnostics));
+    };
+    auto updated = update_note_move_gesture(context, requested_position, requested_lane);
     if (!updated)
-        return updated;
+        return context.state.pending_note_move_gesture ? reject(std::move(updated.diagnostics))
+                                                       : updated;
     const auto pending = *context.state.pending_note_move_gesture;
     auto planned = context.make_move_plan(pending.notes, pending.reference_note,
                                           pending.preview_position, requested_lane, true);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
-        return diagnostic_result(context.history, context.state, *diagnostics);
+    if (auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
+        return reject(std::move(*diagnostics));
     return context.apply_move_plan(std::get<note_move_plan_t>(planned));
 }
 

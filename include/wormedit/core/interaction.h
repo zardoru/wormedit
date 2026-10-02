@@ -759,6 +759,14 @@ inline void place_cursor_at(editor_interaction_state_t& state, const local_posit
     state.virtual_bms_cursor_row.reset();
 }
 
+// Move the cursor to the row a pointer picked. Unlike place_cursor_at, the drawn sub-row offset
+// (left by a fixed-cursor scroll) is dropped so the cursor is drawn on the clicked row.
+inline void place_cursor_on_picked_row(editor_interaction_state_t& state,
+                                       const local_position_t& position) {
+    place_cursor_at(state, position);
+    state.cursor_subrow = 0.0;
+}
+
 // Clamp the viewport scroll without moving the cursor.
 inline void set_viewport_scroll_pixels(editor_interaction_state_t& state, double pixels) {
     state.viewport_scroll_pixels = pixels;

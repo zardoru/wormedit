@@ -4669,3 +4669,29 @@ TEST_CASE("a fake hold keeps its kind and may begin inside a warp",
     CHECK(note.kind == note_kind_t::fake);
     CHECK(note.end.has_value());
 }
+
+TEST_CASE("a rejected note move into a warp ends the gesture without a ghost",
+          "[unit][core][interaction][dead-span]") {
+    auto history = warp_history();
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{2}, 0}}));
+    const auto id = history.document.charts.front().measures.back().notes.front().id;
+    REQUIRE(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{id}));
+    const auto released = dispatch_editor_action(
+        history, state,
+        release_note_move_gesture_action_t{{measure_id_t{2}, 480}, lane_id_t{1}});
+    CHECK_FALSE(released);
+    CHECK_FALSE(state.pending_note_move_gesture.has_value());
+    CHECK(history.document.charts.front().measures.back().notes.front().position ==
+          local_position_t{measure_id_t{2}, 0});
+}
+
+TEST_CASE("picking a row drops the sub-row offset a fixed-cursor scroll left",
+          "[unit][core][interaction][cursor_write_guard]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.cursor_subrow = 2.25;
+    place_cursor_on_picked_row(state, {measure_id_t{2}, 240});
+    CHECK(state.cursor_subrow == 0.0);
+    CHECK((state.cursor == local_position_t{measure_id_t{2}, 240}));
+}

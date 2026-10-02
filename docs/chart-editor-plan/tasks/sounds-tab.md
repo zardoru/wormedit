@@ -38,7 +38,8 @@ later covering more bmhelper functions.
 
 ## T-325 Import many sounds in one history step
 
-- **Status:** ready
+- **Status:** done
+- **Implementation notes (2026-10-02):** `apply_bulk_sound_import` (`include/wormedit/core/sound_import.h`) runs on a draft history and commits once. Stems in a BMSON chart get a sound channel, a restart event at the first row, their own BGM lane and a linked marker, plus a `sound_channel` target identity and `$.sound_channels[N]` provenance so the BMSON writer re-exports them (round trip tested). Stems in other chart families, or with no chart, become catalog sounds only. The caller must pass project-relative copies with consecutive reserved asset IDs (BMSON export rejects absolute paths). The Compose rendering of the new lane is untested here (SDL3).
 - **Outcome:** `apply_bulk_sound_import` registers N probed audio files as assets and resources of a chosen kind in one command; stems also create a BMSON sound channel with a restart event at position 0 and its semantic BGM marker (via the `insert_bmson_bgm_marker` path), so they appear in Compose; undo removes all of it at once.
 - **Read first:** `include/wormedit/core/resource_assignment.h` (`apply_resource_asset_import`, `next_resource_asset_id`), `include/wormedit/core/bmson_sound_channel_editor.h`, `include/wormedit/core/resource_file_copy.h`, `src/sys/audio_project_import.cpp`.
 - **Files owned:** new `include/wormedit/core/sound_import.h`, new `src/core/sound_import.cpp`, new `tests/core/sound_import_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.

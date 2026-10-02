@@ -1,0 +1,185 @@
+#include <wormedit/core/sound_import.h>
+
+#include <algorithm>
+#include <charconv>
+#include <limits>
+#include <unordered_set>
+
+namespace wormedit {
+namespace {
+
+constexpr std::size_t maximum_chart_objects = 1'000'000;
+
+void reject(document_command_result_t& result, std::string message) {
+    result.applied = false;
+    result.diagnostics.push_back({.severity = diagnostic_severity_t::error,
+                                  .code = diagnostic_code_t::invalid_id,
+                                  .message = std::move(message),
+                                  .object = std::nullopt});
+}
+
+struct object_id_scan_t {
+    std::uint64_t largest{};
+    std::size_t count{};
+};
+
+auto scan_chart_objects(const chart_document_t& chart) -> object_id_scan_t {
+    object_id_scan_t scan;
+    const auto visit = [&](const auto& values) {
+        for (const auto& value : values) {
+            scan.largest = std::max(scan.largest, value.id.value);
+            ++scan.count;
+        }
+    };
+    visit(chart.bgm_source_lanes); visit(chart.lane_layouts); visit(chart.bpms);
+    visit(chart.pauses); visit(chart.warps); visit(chart.scrolls); visit(chart.speeds);
+    visit(chart.kiai); visit(chart.timing_anchors); visit(chart.bookmarks);
+    visit(chart.sections); visit(chart.bga_events); visit(chart.sound_channels);
+    for (const auto& channel : chart.sound_channels) visit(channel.events);
+    for (const auto& measure : chart.measures) {
+        visit(measure.notes);
+        visit(measure.bgm_events);
+    }
+    return scan;
+}
+
+auto validate_batch(const bulk_sound_import_action_t& action, document_command_result_t& result)
+    -> bool {
+    if (action.entries.empty() || action.entries.size() > maximum_bulk_sound_import) {
+        reject(result, "sound import needs between 1 and 1000 files");
+        return false;
+    }
+    std::unordered_set<std::string> paths;
+    for (const auto& entry : action.entries) {
+        if (!paths.insert(entry.asset.source_path.lexically_normal().generic_string()).second) {
+            reject(result, "sound import lists the same source file twice");
+            return false;
+        }
+    }
+    return true;
+}
+
+// The BMSON writer pairs a retained channel with its resource through the
+// "sound_channel" identity and the "$.sound_channels[N]" event provenance, so a
+// new stem takes the next unused N like an imported one.
+auto next_channel_source_index(const song_document_t& document, const chart_document_t& chart)
+    -> std::size_t {
+    std::size_t next = chart.sound_channels.size();
+    for (const auto& resource : document.resources) {
+        for (const auto& identity : resource.target_identities) {
+            if (identity.family != format_family_t::bmson || identity.namespace_name != "sound_channel")
+                continue;
+            std::size_t value{};
+            const auto* end = identity.identifier.data() + identity.identifier.size();
+            const auto parsed = std::from_chars(identity.identifier.data(), end, value);
+            if (parsed.ec == std::errc{} && parsed.ptr == end) next = std::max(next, value + 1);
+        }
+    }
+    return next;
+}
+
+// Adds the BMSON channel, restart event, BGM lane and linked marker for a stem.
+auto append_stem(chart_document_t& chart, resource_entry_t& resource, std::size_t source_index,
+                 object_id_scan_t& ids, document_command_result_t& result) -> bool {
+    if (chart.measures.empty() || ids.count > maximum_chart_objects - 4 ||
+        ids.largest > std::numeric_limits<std::uint64_t>::max() - 4) {
+        reject(result, "chart cannot hold another stem (no measure or object IDs exhausted)");
+        return false;
+    }
+    const auto first = chart.measures.front().id;
+    const local_position_t position{first, 0};
+    resource.target_identities.push_back(
+        {format_family_t::bmson, std::to_string(source_index), "sound_channel"});
+    source_provenance_t provenance;
+    provenance.family = format_family_t::bmson;
+    provenance.source_field = "$.sound_channels[" + std::to_string(source_index) + "].notes[0]";
+    const object_id_t channel_id{++ids.largest};
+    const object_id_t event_id{++ids.largest};
+    const object_id_t lane_id{++ids.largest};
+    const object_id_t marker_id{++ids.largest};
+    ids.count += 4;
+    std::size_t order = 0;
+    for (const auto& lane : chart.bgm_source_lanes) order = std::max(order, lane.source_order + 1);
+    chart.bgm_source_lanes.push_back({.id = lane_id, .name = resource.name, .source_order = order});
+    chart.sound_channels.push_back(
+        {.id = channel_id,
+         .name = resource.name,
+         .source_clip = {.id = clip_id_t{channel_id.value}, .source = resource.asset},
+         .events = {{.id = event_id, .position = position, .end = std::nullopt, .lane = lane_id_t{},
+                     .continuation = false, .playable = false, .provenance = provenance}}});
+    chart.measures.front().bgm_events.push_back({.id = marker_id,
+                                                  .position = position,
+                                                  .source_lane = lane_id,
+                                                  .sound = resource.id,
+                                                  .sound_channel_event = event_id,
+                                                  .structural_slot = 0,
+                                                  .branch = std::nullopt,
+                                                  .provenance = {}});
+    return true;
+}
+
+auto import_entry(document_history_t& draft, const bulk_sound_import_entry_t& entry,
+                  chart_id_t stem_chart, object_id_scan_t& ids,
+                  document_command_result_t& result) -> bool {
+    auto asset = entry.asset;
+    asset.role = resource_role_t::sample;
+    const auto imported = apply_resource_asset_import(draft, draft.document.revision, asset);
+    if (!imported.applied) {
+        result.diagnostics.insert(result.diagnostics.end(), imported.diagnostics.begin(),
+                                  imported.diagnostics.end());
+        return false;
+    }
+    const auto resource_id = draft.document.resources.back().id;
+    const auto metadata = apply_resource_sound_metadata(
+        draft, draft.document.revision,
+        {.resource = resource_id, .kind = entry.kind, .tags = entry.tags});
+    if (!metadata.diagnostics.empty()) {
+        result.diagnostics.insert(result.diagnostics.end(), metadata.diagnostics.begin(),
+                                  metadata.diagnostics.end());
+        return false;
+    }
+    if (entry.kind != sound_kind_t::stem) return true;
+    auto& resource = draft.document.resources.back();
+    if (std::ranges::find(resource.roles, resource_role_t::bgm) == resource.roles.end())
+        resource.roles.push_back(resource_role_t::bgm);
+    if (!stem_chart) return true;
+    // Each command replaces the draft document, so resolve the chart afresh.
+    const auto chart = std::ranges::find(draft.document.charts, stem_chart, &chart_document_t::id);
+    return chart != draft.document.charts.end() &&
+           append_stem(*chart, resource, next_channel_source_index(draft.document, *chart), ids,
+                       result);
+}
+
+} // namespace
+
+auto apply_bulk_sound_import(document_history_t& history, std::uint64_t expected_revision,
+                             const bulk_sound_import_action_t& action)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, "sound import document revision is stale");
+        return result;
+    }
+    if (!validate_batch(action, result)) return result;
+    auto draft = make_document_history(history.document, 1, false);
+    chart_id_t stem_chart{};
+    object_id_scan_t ids;
+    if (action.chart) {
+        const auto found = std::ranges::find(draft.document.charts, action.chart,
+                                             &chart_document_t::id);
+        if (found == draft.document.charts.end()) {
+            reject(result, "sound import chart is unknown");
+            return result;
+        }
+        if (found->source_family == format_family_t::bmson) {
+            stem_chart = found->id;
+            ids = scan_chart_objects(*found);
+        }
+    }
+    for (const auto& entry : action.entries) {
+        if (!import_entry(draft, entry, stem_chart, ids, result)) return result;
+    }
+    return commit_document_command(history, std::move(draft.document), "Import sounds");
+}
+
+} // namespace wormedit

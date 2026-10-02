@@ -4,14 +4,18 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
 
+# A label event gets its own group so it never cancels the code run for the same ref.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event.action == 'labeled' && 'label' || 'code' }}
   cancel-in-progress: true
 
 jobs:
   headless:
     name: headless (${{ matrix.name }})
+    # Adding a label only needs to (re)start the Windows job.
+    if: github.event.action != 'labeled'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -29,10 +33,6 @@ jobs:
             os: macos-latest
             cc: clang
             cxx: clang++
-          - name: windows-msvc
-            os: windows-latest
-            cc: cl
-            cxx: cl
     steps:
       - uses: actions/checkout@v4
 
@@ -44,10 +44,6 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja
 
-      - name: Set up MSVC (Windows)
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
       - name: Configure
         env:
           CC: ${{ matrix.cc }}
@@ -57,5 +53,33 @@ jobs:
       - name: Build
         run: cmake --build --preset headless -- -k 0
 
+      # Serial on purpose: some tests assert wall-clock ceilings. The timeout turns a
+      # hung test into a quick failure instead of ctest's 25 minute default.
       - name: Test
-        run: ctest --preset headless --output-on-failure
+        run: ctest --preset headless --output-on-failure --timeout 120
+
+  # Windows is slow, so on pull requests it runs only when the PR has the `windows`
+  # label (and on every push to main). Release avoids MSVC's very slow debug runtime.
+  windows:
+    name: headless (windows-msvc)
+    if: >-
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.labels.*.name, 'windows')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        env:
+          CC: cl
+          CXX: cl
+        run: cmake --preset headless -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build --preset headless -- -k 0
+
+      - name: Test
+        run: ctest --preset headless --output-on-failure --timeout 120

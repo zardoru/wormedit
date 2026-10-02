@@ -309,10 +309,15 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
         if (!note_palette_kind_allowed(*toolbar.view, kind)) continue;
         nk_layout_row_static(toolbar.context, 30, 30, 1);
         if (wormedit::ui::chrome::IconButton{icons[index], labels[index],
-                toolbar.view->armed_note_kind == kind}.render(toolbar.context) &&
+                toolbar.view->note_paint_mode_active &&
+                    toolbar.view->armed_note_kind == kind}.render(toolbar.context) &&
             toolbar.action->compose_input_count < WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {
             toolbar.action->compose_inputs[toolbar.action->compose_input_count++] = {
                 .kind = WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND, .note_kind = kind};
+            // Picking a note kind selects the paint tool, mirroring Select above.
+            if (!toolbar.view->note_paint_mode_active &&
+                toolbar.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+                toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
         }
     }
 }

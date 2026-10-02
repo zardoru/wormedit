@@ -2638,3 +2638,316 @@ TEST_CASE("Compose waveform arena preserves every row at the maximum output capa
         expect_waveform_arena(std::ranges::equal(row.samples, expected.samples));
     }
 }
+
+namespace {
+auto marker_arena_song(std::size_t count = 2) -> song_document_t {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    for (std::size_t index = 0; index < count; ++index) {
+        chart.bookmarks.push_back({.id = object_id_t{10000 + index * 2},
+            .label = std::string(100, 'b') + std::to_string(index), .anchor = marker_anchor_t::beat,
+            .position = local_position_t{measure_id_t{1}, 96 + index % 100}});
+        chart.bookmarks.push_back({.id = object_id_t{10001 + index * 2},
+            .label = std::string(100, 'a') + std::to_string(index), .anchor = marker_anchor_t::audio_time,
+            .audio_milliseconds = static_cast<std::int64_t>(500 + index)});
+        chart.sections.push_back({.id = object_id_t{20000 + index * 2},
+            .label = std::string(100, 's') + std::to_string(index), .anchor = marker_anchor_t::beat,
+            .beat_span = position_span_t{{measure_id_t{1}, 96}, {measure_id_t{1}, 480}}});
+        chart.sections.push_back({.id = object_id_t{20001 + index * 2},
+            .label = std::string(100, 't') + std::to_string(index), .anchor = marker_anchor_t::audio_time,
+            .audio_millisecond_span = std::pair<std::int64_t, std::int64_t>{200, 1600}});
+    }
+    return song;
+}
+void check_marker_frame_spans(const flattened_workspace_t& frame) {
+    const auto& view = frame.view.compose;
+    expect_compose_test(view.beat_bookmarks == frame.compose.bookmark.data() && view.beat_bookmark_count == frame.compose.bookmark.size());
+    expect_compose_test(view.audio_bookmarks == frame.compose.audio_marker.bookmark.data() && view.audio_bookmark_count == frame.compose.audio_marker.bookmark.size());
+    expect_compose_test(view.beat_sections == frame.compose.section.data() && view.beat_section_count == frame.compose.section.size());
+    expect_compose_test(view.audio_sections == frame.compose.audio_marker.section.data() && view.audio_section_count == frame.compose.audio_marker.section.size());
+    expect_compose_test(view.beat_bookmark_count <= WORM_UI_COMPOSE_BOOKMARK_CAPACITY);
+    expect_compose_test(view.beat_section_count <= WORM_UI_COMPOSE_SECTION_CAPACITY);
+    expect_compose_test(view.audio_bookmark_count <= WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY);
+    expect_compose_test(view.audio_section_count <= WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY);
+}
+void check_marker_prefix(const flattened_workspace_t& frame, const chart_document_t& chart) {
+    check_marker_frame_spans(frame);
+    for (std::size_t index = 0; index < frame.compose.bookmark.size(); ++index) {
+        const auto& row = frame.compose.bookmark[index]; const auto& source = chart.bookmarks[index * 2];
+        expect_compose_test(row.bookmark_id == source.id.value && row.measure_number == 1 && row.row == source.position->row);
+        expect_compose_test(row.chart_row == source.position->row && std::string_view(row.label) == source.label);
+    }
+    for (std::size_t index = 0; index < frame.compose.audio_marker.bookmark.size(); ++index) {
+        const auto& row = frame.compose.audio_marker.bookmark[index]; const auto& source = chart.bookmarks[index * 2 + 1];
+        expect_compose_test(row.bookmark_id == source.id.value && row.audio_milliseconds == *source.audio_milliseconds);
+        expect_compose_test(std::string_view(row.label) == source.label);
+    }
+    for (std::size_t index = 0; index < frame.compose.section.size(); ++index) {
+        const auto& row = frame.compose.section[index]; const auto& source = chart.sections[index * 2];
+        expect_compose_test(row.section_id == source.id.value && std::string_view(row.label) == source.label);
+        expect_compose_test(row.begin_measure_number == 1 && row.end_measure_number == 1 && row.begin_row == 96 && row.end_row == 480);
+        expect_compose_test(row.begin_chart_row == 96 && row.end_chart_row == 480);
+    }
+    for (std::size_t index = 0; index < frame.compose.audio_marker.section.size(); ++index) {
+        const auto& row = frame.compose.audio_marker.section[index]; const auto& source = chart.sections[index * 2 + 1];
+        expect_compose_test(row.section_id == source.id.value && std::string_view(row.label) == source.label);
+        expect_compose_test(row.begin_audio_milliseconds == 200 && row.end_audio_milliseconds == 1600);
+    }
+}
+void check_marker_visible_geometry(const WormUiComposeView& view, bool downscroll, double scroll) {
+    const auto y = [&](double up) { return downscroll ? view.viewport_height_pixels - (up - scroll) : up - scroll; };
+    expect_compose_test(view.beat_bookmarks[0].projection_visible && view.audio_bookmarks[0].projection_visible);
+    expect_compose_test(view.beat_bookmarks[0].projected_y_pixels == Catch::Approx(y(19.2)));
+    expect_compose_test(view.audio_bookmarks[0].projected_y_pixels == Catch::Approx(y(48.0)));
+    const auto& beat = view.beat_sections[0]; const auto& audio = view.audio_sections[0];
+    expect_compose_test(beat.begin_projection_visible && beat.end_projection_visible && beat.span_projection_visible);
+    expect_compose_test(audio.begin_projection_visible && audio.end_projection_visible && audio.span_projection_visible);
+    expect_compose_test(beat.projected_begin_y_pixels == Catch::Approx(y(19.2)) && beat.projected_end_y_pixels == Catch::Approx(y(96.0)));
+    expect_compose_test(audio.projected_begin_y_pixels == Catch::Approx(y(19.2)) && audio.projected_end_y_pixels == Catch::Approx(y(153.6)));
+    expect_compose_test(beat.projected_span_top_y_pixels == Catch::Approx(std::min(y(19.2), y(96.0))));
+    expect_compose_test(beat.projected_span_bottom_y_pixels == Catch::Approx(std::max(y(19.2), y(96.0))));
+    expect_compose_test(!beat.proposed_begin_projection_visible && !beat.proposed_end_projection_visible && !beat.proposed_span_projection_visible);
+}
+void check_marker_text_addresses(const auto& rows, std::uintptr_t begin, std::uintptr_t end) {
+    check_geometry_between(rows, begin, end);
+    for (const auto& row : rows) {
+        const auto address = reinterpret_cast<std::uintptr_t>(row.label);
+        expect_compose_test(address >= begin && address + std::strlen(row.label) + 1 <= end);
+    }
+}
+}
+
+TEST_CASE("Compose marker arenas preserve anchors labels source order and projected geometry", "[sys][frame-arena][compose-markers]") {
+    for (const auto direction : {1U, 2U}) {
+        compose_test_fixture_t fixture(marker_arena_song());
+        fixture.application.editor_preferences.scroll_directions.fill(direction);
+        wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+        project_geometry_arena(fixture, arena);
+        REQUIRE(fixture.flattened.view.compose.beat_bookmark_count == 2);
+        REQUIRE(fixture.flattened.view.compose.audio_bookmark_count == 2);
+        REQUIRE(fixture.flattened.view.compose.beat_section_count == 2);
+        REQUIRE(fixture.flattened.view.compose.audio_section_count == 2);
+        check_marker_prefix(fixture.flattened, fixture.history.document.charts.front());
+        check_marker_visible_geometry(fixture.flattened.view.compose, direction == 2, fixture.interaction->viewport_scroll_pixels);
+    }
+}
+
+TEST_CASE("Compose marker arrays and strings belong to the supplied arena through move", "[sys][frame-arena][compose-markers]") {
+    compose_test_fixture_t fixture(marker_arena_song());
+    const auto chart = fixture.history.document.charts.front();
+    wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    const auto begin = arena.allocate_bytes(1, 1);
+    project_geometry_arena(fixture, arena);
+    const auto end = arena.allocate_bytes(1, 1);
+    REQUIRE((begin && end));
+    const auto first = reinterpret_cast<std::uintptr_t>(begin.data), last = reinterpret_cast<std::uintptr_t>(end.data);
+    check_marker_text_addresses(fixture.flattened.compose.bookmark, first, last);
+    check_marker_text_addresses(fixture.flattened.compose.section, first, last);
+    check_marker_text_addresses(fixture.flattened.compose.audio_marker.bookmark, first, last);
+    check_marker_text_addresses(fixture.flattened.compose.audio_marker.section, first, last);
+    fixture.history.document.charts.front().bookmarks[0].label.assign(200, 'x');
+    fixture.history.document.charts.front().sections[1].label.assign(200, 'y');
+    auto moved = std::move(fixture.flattened);
+    moved.rebind_view_pointers();
+    check_marker_prefix(moved, chart);
+    moved = {}; arena.reset();
+    ++fixture.history.document.revision;
+    project_geometry_arena(fixture, arena);
+    check_marker_prefix(fixture.flattened, fixture.history.document.charts.front());
+}
+
+TEST_CASE("Standalone Compose markers retain owned label text across source destruction", "[sys][frame-arena][compose-markers]") {
+    flattened_workspace_t owned;
+    const auto song = marker_arena_song();
+    {
+        compose_test_fixture_t fixture(song);
+        fixture.project();
+        owned = std::move(fixture.flattened);
+    }
+    owned.rebind_view_pointers();
+    check_marker_prefix(owned, song.charts.front());
+}
+
+TEST_CASE("Compose marker spans preserve all four caps and empty-array flags", "[sys][frame-arena][compose-markers]") {
+    compose_test_fixture_t fixture(marker_arena_song(65));
+    fixture.project();
+    const auto& view = fixture.flattened.view.compose;
+    expect_compose_test(view.beat_bookmark_count == 64 && view.audio_bookmark_count == 64);
+    expect_compose_test(view.beat_section_count == 64 && view.audio_section_count == 64);
+    expect_compose_test(view.beat_bookmarks_truncated && view.audio_bookmarks_truncated && view.beat_sections_truncated && view.audio_sections_truncated);
+    check_marker_prefix(fixture.flattened, fixture.history.document.charts.front());
+    compose_test_fixture_t empty(marker_arena_song(0));
+    empty.project();
+    const auto& none = empty.flattened.view.compose;
+    check_marker_frame_spans(empty.flattened);
+    expect_compose_test(none.beat_bookmark_count == 0 && none.audio_bookmark_count == 0 && none.beat_section_count == 0 && none.audio_section_count == 0);
+    expect_compose_test(!none.beat_bookmarks_truncated && !none.audio_bookmarks_truncated && !none.beat_sections_truncated && !none.audio_sections_truncated);
+}
+
+TEST_CASE("Compose marker arena exhaustion publishes complete per-anchor prefixes", "[sys][frame-arena][compose-markers]") {
+    bool beat_prefix = false, audio_prefix = false, section_prefix = false, audio_section_prefix = false;
+    for (std::size_t limit = 128; limit <= 4096; limit += 16) {
+        compose_test_fixture_t fixture(marker_arena_song());
+        wormedit::frame_arena_t arena({.chunk_bytes = limit, .maximum_bytes = limit});
+        project_geometry_arena(fixture, arena);
+        const auto& view = fixture.flattened.view.compose;
+        check_marker_prefix(fixture.flattened, fixture.history.document.charts.front());
+        if (view.beat_bookmark_count < 2) expect_compose_test(view.beat_bookmarks_truncated);
+        if (view.audio_bookmark_count < 2) expect_compose_test(view.audio_bookmarks_truncated);
+        if (view.beat_section_count < 2) expect_compose_test(view.beat_sections_truncated);
+        if (view.audio_section_count < 2) expect_compose_test(view.audio_sections_truncated);
+        beat_prefix = beat_prefix || view.beat_bookmark_count == 1;
+        audio_prefix = audio_prefix || view.audio_bookmark_count == 1;
+        section_prefix = section_prefix || view.beat_section_count == 1;
+        audio_section_prefix = audio_section_prefix || view.audio_section_count == 1;
+    }
+    expect_compose_test(beat_prefix && audio_prefix && section_prefix && audio_section_prefix);
+}
+
+TEST_CASE("Warmed Compose markers keep stable bytes and allocations for 1000 cached frames", "[sys][frame-arena][compose-markers]") {
+    compose_test_fixture_t fixture(marker_arena_song());
+    wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    project_geometry_arena(fixture, arena);
+    arena.reset(); project_geometry_arena(fixture, arena);
+    const auto used = arena.used_bytes(), committed = arena.committed_bytes();
+    const auto source = fixture.cache.static_scene_storage;
+    arena.reset(); allocations = 0; count_allocations = true;
+    project_geometry_arena(fixture, arena);
+    count_allocations = false;
+    const auto remaining = allocations;
+    bool stable = true;
+    for (int iteration = 0; iteration < 1000; ++iteration) {
+        arena.reset(); allocations = 0; count_allocations = true;
+        project_geometry_arena(fixture, arena);
+        count_allocations = false;
+        stable = stable && allocations == remaining && arena.used_bytes() == used &&
+            arena.committed_bytes() == committed && fixture.cache.static_scene_storage == source &&
+            fixture.flattened.view.compose.beat_bookmark_count == 2 && fixture.flattened.view.compose.audio_section_count == 2;
+    }
+    INFO("Remaining actual projection allocations=" << remaining << ", used=" << used << ", committed=" << committed);
+    expect_compose_test(stable);
+    expect_compose_test(fixture.cache.static_projection_reused_frames > 0);
+}
+
+namespace {
+auto corrupt_marker_anchor(chart_document_t& chart, int kind) -> const char* {
+    switch (kind) {
+    case 0:
+        chart.bookmarks[0].position.reset();
+        return "A beat-anchored bookmark has no valid chart position.";
+    case 1:
+        chart.bookmarks[0].position->row = 960;
+        return "A beat-anchored bookmark is outside the chart measure geometry.";
+    case 2:
+        chart.bookmarks[1].audio_milliseconds.reset();
+        return "An audio-time bookmark has inconsistent position data.";
+    case 3:
+        chart.sections[0].beat_span.reset();
+        return "A beat-anchored section has no valid chart span.";
+    case 4:
+        chart.sections[0].beat_span->end.measure = measure_id_t{999};
+        return "A beat-anchored section is outside the chart measure geometry.";
+    default:
+        chart.sections[1].audio_millisecond_span = std::pair<std::int64_t, std::int64_t>{1600, 200};
+        return "An audio-time section has inconsistent span data.";
+    }
+}
+void check_marker_rejection(int kind, std::size_t limit) {
+    compose_test_fixture_t fixture(marker_arena_song());
+    const auto expected = corrupt_marker_anchor(fixture.history.document.charts.front(), kind);
+    wormedit::frame_arena_t arena({.chunk_bytes = limit, .maximum_bytes = limit});
+    project_geometry_arena(fixture, arena);
+    const auto& view = fixture.flattened.view.compose;
+    expect_compose_test(!view.scene_available);
+    REQUIRE(view.status_text);
+    INFO(view.status_text);
+    expect_compose_test(std::string_view(view.status_text) == expected);
+    expect_compose_test(fixture.history.document.revision == 1 && fixture.history.undo.empty());
+}
+void check_marker_capacity_validation_order() {
+    compose_test_fixture_t fixture(marker_arena_song(65));
+    auto& chart = fixture.history.document.charts.front();
+    chart.bookmarks[128].position->measure = measure_id_t{999};
+    chart.sections[128].beat_span->end.measure = measure_id_t{999};
+    fixture.project(); // Geometry outside the published cap was already skipped by the original producer.
+    expect_compose_test(fixture.flattened.view.compose.beat_bookmarks_truncated);
+    chart.bookmarks[128].position.reset();
+    ++fixture.history.document.revision;
+    fixture.flattened = {};
+    fixture.flattened.view.compose.visible = true;
+    populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.workspace,
+        fixture.cache, 1280, 980, fixture.interaction, fixture.application, nullptr);
+    const auto& view = fixture.flattened.view.compose;
+    expect_compose_test(!view.scene_available);
+    REQUIRE(view.status_text);
+    expect_compose_test(std::string_view(view.status_text) == "A beat-anchored bookmark has no valid chart position.");
+}
+}
+TEST_CASE("Compose marker validation precedes arena exhaustion and preserves cap ordering", "[sys][frame-arena][compose-markers]") {
+    for (int kind = 0; kind < 6; ++kind) {
+        check_marker_rejection(kind, 8);
+        check_marker_rejection(kind, 1024 * 1024);
+    }
+    check_marker_capacity_validation_order();
+}
+
+namespace {
+void compare_marker_bookmarks(const auto& actual, const auto& expected) {
+    expect_compose_test(actual.size() == expected.size());
+    for (std::size_t index = 0; index < actual.size(); ++index) {
+        const auto& a = actual[index]; const auto& b = expected[index];
+        expect_compose_test(std::tie(a.bookmark_id, a.projection_visible, a.projected_y_pixels) ==
+                            std::tie(b.bookmark_id, b.projection_visible, b.projected_y_pixels));
+        expect_compose_test(std::string_view(a.label) == std::string_view(b.label));
+        if constexpr (requires { a.proposed_projection_visible; })
+            expect_compose_test(std::tie(a.proposed_projection_visible, a.proposed_y_pixels) ==
+                                std::tie(b.proposed_projection_visible, b.proposed_y_pixels));
+    }
+}
+void compare_marker_sections(const auto& actual, const auto& expected) {
+    expect_compose_test(actual.size() == expected.size());
+    for (std::size_t index = 0; index < actual.size(); ++index) {
+        const auto& a = actual[index]; const auto& b = expected[index];
+        expect_compose_test(std::tie(a.section_id, a.begin_projection_visible, a.end_projection_visible,
+            a.span_projection_visible, a.projected_begin_y_pixels, a.projected_end_y_pixels,
+            a.projected_span_top_y_pixels, a.projected_span_bottom_y_pixels) ==
+            std::tie(b.section_id, b.begin_projection_visible, b.end_projection_visible,
+            b.span_projection_visible, b.projected_begin_y_pixels, b.projected_end_y_pixels,
+            b.projected_span_top_y_pixels, b.projected_span_bottom_y_pixels));
+        expect_compose_test(std::string_view(a.label) == std::string_view(b.label));
+        if constexpr (requires { a.proposed_span_projection_visible; })
+            expect_compose_test(std::tie(a.proposed_begin_projection_visible, a.proposed_end_projection_visible,
+                a.proposed_span_projection_visible, a.proposed_begin_y_pixels, a.proposed_end_y_pixels,
+                a.proposed_span_top_y_pixels, a.proposed_span_bottom_y_pixels) ==
+                std::tie(b.proposed_begin_projection_visible, b.proposed_end_projection_visible,
+                b.proposed_span_projection_visible, b.proposed_begin_y_pixels, b.proposed_end_y_pixels,
+                b.proposed_span_top_y_pixels, b.proposed_span_bottom_y_pixels));
+    }
+}
+void check_marker_reused_frame(std::uint32_t direction) {
+    compose_test_fixture_t reused(marker_arena_song()), fresh(marker_arena_song());
+    reused.application.editor_preferences.scroll_directions.fill(direction);
+    fresh.application.editor_preferences.scroll_directions.fill(direction);
+    wormedit::frame_arena_t arena, reference;
+    project_geometry_arena(reused, arena); project_geometry_arena(fresh, reference);
+    const auto source = reused.cache.static_scene_storage;
+    REQUIRE(source);
+    arena.reset(); reference.reset();
+    reused.interaction->viewport_scroll_pixels = 0.5;
+    fresh.interaction->viewport_scroll_pixels = 0.5;
+    fresh.cache = {};
+    project_geometry_arena(reused, arena); project_geometry_arena(fresh, reference);
+    expect_compose_test(reused.cache.static_scene_storage == source && reused.cache.static_projection_reused_frames > 0);
+    const auto& a = reused.flattened.compose; const auto& b = fresh.flattened.compose;
+    compare_marker_bookmarks(a.bookmark, b.bookmark);
+    compare_marker_bookmarks(a.audio_marker.bookmark, b.audio_marker.bookmark);
+    compare_marker_sections(a.section, b.section);
+    compare_marker_sections(a.audio_marker.section, b.audio_marker.section);
+    expect_compose_test(source->view.compose.beat_bookmark_count == 0 && !source->view.compose.beat_bookmarks);
+    expect_compose_test(source->view.compose.audio_section_count == 0 && !source->view.compose.audio_sections);
+}
+}
+TEST_CASE("Compose marker arena views agree across fresh and reused scene windows", "[sys][frame-arena][compose-markers]") {
+    check_marker_reused_frame(1);
+    check_marker_reused_frame(2);
+}

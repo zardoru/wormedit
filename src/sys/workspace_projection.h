@@ -119,17 +119,11 @@ struct flattened_workspace_t {
         std::string status;
         std::string hover_tooltip;
         std::string selected_note_label;
-        std::array<WormUiComposeBookmarkView, WORM_UI_COMPOSE_BOOKMARK_CAPACITY> bookmark{};
-        std::array<std::string, WORM_UI_COMPOSE_BOOKMARK_CAPACITY> bookmark_label;
-        std::array<WormUiComposeSectionView, WORM_UI_COMPOSE_SECTION_CAPACITY> section{};
-        std::array<std::string, WORM_UI_COMPOSE_SECTION_CAPACITY> section_label;
+        frame_span<WormUiComposeBookmarkView> bookmark;
+        frame_span<WormUiComposeSectionView> section;
         struct {
-            std::array<WormUiComposeAudioBookmarkView, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY>
-                bookmark{};
-            std::array<std::string, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY> bookmark_label;
-            std::array<WormUiComposeAudioSectionView, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY>
-                section{};
-            std::array<std::string, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY> section_label;
+            frame_span<WormUiComposeAudioBookmarkView> bookmark;
+            frame_span<WormUiComposeAudioSectionView> section;
         } audio_marker;
         frame_span<WormUiComposeBandView> band;
         frame_span<WormUiComposeLaneView> lane;

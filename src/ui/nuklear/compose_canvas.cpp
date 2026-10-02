@@ -1253,6 +1253,85 @@ static void draw_compose_kiai_spans(const ComposePaintContext& paint) {
     }
 }
 
+// Stored SV recipes: a translucent area over the recipe's rows with its relative value as a
+// continuous line, grabbable begin and end edges, and a muted look when disabled.
+// While a recipe edge or body is dragged, the span it would become follows the pointer.
+static void draw_compose_recipe_drag_preview(const ComposePaintContext& paint) {
+    if (!state.recipe_drag_active || !state.recipe_drag_moved) return;
+    const std::span areas(paint.view->recipe_areas, paint.view->recipe_area_count);
+    const auto found = std::ranges::find_if(
+        areas, [](const auto& area) { return area.recipe_id == state.recipe_drag_id; });
+    if (found == areas.end()) return;
+    const auto extent = compose_timing_lane_inner_extent(
+        *paint.view, static_cast<WormUiTimingLaneKind>(found->lane));
+    if (!extent) return;
+    double top = found->bounds.top, bottom = found->bounds.bottom;
+    const bool begin_is_top = !paint.view->downscroll;
+    if (state.recipe_drag_edge == 2) {
+        const auto travel = state.recipe_drag_current_y - state.recipe_drag_anchor_y;
+        top += travel;
+        bottom += travel;
+    } else {
+        const bool moving_top = (state.recipe_drag_edge == 0) == begin_is_top;
+        const auto fixed = moving_top ? bottom : top;
+        top = std::min(fixed, state.recipe_drag_current_y);
+        bottom = std::max(fixed, state.recipe_drag_current_y);
+    }
+    const WormUiComposeRect bounds{extent->first, top, extent->second, bottom};
+    const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
+    if (rect.w <= 0.0f || rect.h <= 0.0f) return;
+    field_rect(paint, rect, 0.0f, nk_rgba(214, 226, 255, 60), 10);
+    field_stroke_rect(paint, rect, 0.0f, 1.5f, nk_rgb(214, 226, 255), 10);
+}
+
+// The line of one recipe's relative value inside its area rectangle.
+static void draw_compose_recipe_graph(const ComposePaintContext& paint,
+                                      const WormUiComposeRecipeAreaView& area, struct nk_rect rect) {
+    const auto x_of = [&](double fraction) {
+        return rect.x + 2.0f + static_cast<float>(fraction) * std::max(0.0f, rect.w - 4.0f);
+    };
+    const auto color = area.enabled ? nk_rgb(214, 226, 255) : nk_rgb(150, 156, 170);
+    for (size_t vertex = 1; vertex < area.graph_count; ++vertex) {
+        const auto& from = paint.view->recipe_graph_points[area.graph_first + vertex - 1];
+        const auto& to = paint.view->recipe_graph_points[area.graph_first + vertex];
+        field_line(paint, x_of(from.x_fraction), compose_projected_y(paint, from.y_pixels),
+                   x_of(to.x_fraction), compose_projected_y(paint, to.y_pixels), 1.5f, color, 10);
+    }
+}
+
+// Area fill, outline and the grabbable begin and end edges of one recipe.
+static void draw_compose_recipe_frame(const ComposePaintContext& paint,
+                                      const WormUiComposeRecipeAreaView& area, struct nk_rect rect) {
+    const auto base = area.enabled ? nk_rgb(150, 170, 255) : nk_rgb(120, 126, 142);
+    field_rect(paint, rect, 0.0f, nk_rgba(base.r, base.g, base.b, area.selected ? 70 : 38), 10);
+    field_stroke_rect(paint, rect, 0.0f, area.selected ? 2.0f : 1.0f,
+                      nk_rgba(base.r, base.g, base.b, area.enabled ? 210 : 140), 10);
+    const auto begin_y = paint.view->downscroll ? rect.y + rect.h : rect.y;
+    const auto end_y = paint.view->downscroll ? rect.y : rect.y + rect.h;
+    if (area.begin_visible) field_line(paint, rect.x, begin_y, rect.x + rect.w, begin_y, 3.0f, base, 10);
+    if (area.end_visible) field_line(paint, rect.x, end_y, rect.x + rect.w, end_y, 3.0f, base, 10);
+    if (!area.evaluable) {
+        // No graph to draw (a Lua expression, for now): a diagonal says "not evaluated".
+        field_line(paint, rect.x, rect.y, rect.x + rect.w, rect.y + rect.h, 1.0f,
+                   nk_rgba(base.r, base.g, base.b, 120), 10);
+    }
+}
+
+static void draw_compose_recipe_areas(const ComposePaintContext& paint) {
+    draw_compose_recipe_drag_preview(paint);
+    for (size_t index = 0; index < paint.view->recipe_area_count; ++index) {
+        const auto& area = paint.view->recipe_areas[index];
+        const auto extent = compose_timing_lane_inner_extent(
+            *paint.view, static_cast<WormUiTimingLaneKind>(area.lane));
+        if (!extent) continue;
+        const WormUiComposeRect bounds{extent->first, area.bounds.top, extent->second, area.bounds.bottom};
+        const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
+        if (rect.w <= 0.0f || rect.h <= 0.0f) continue;
+        draw_compose_recipe_frame(paint, area, rect);
+        if (area.evaluable) draw_compose_recipe_graph(paint, area, rect);
+    }
+}
+
 static void draw_compose_sv_graph(const ComposePaintContext& paint) {
     const auto extent = compose_timing_lane_inner_extent(*paint.view, WORM_UI_TIMING_LANE_SCROLL);
     if (!extent || paint.view->sv_graph_point_count < 2) return;
@@ -1278,6 +1357,7 @@ static void draw_compose_sv_graph(const ComposePaintContext& paint) {
 static void draw_compose_timing_layer(const ComposePaintContext& paint,
                                       const ComposeTimingLaneLayout& layout) {
     draw_compose_kiai_spans(paint);
+    draw_compose_recipe_areas(paint);
     draw_compose_sv_graph(paint);
     draw_compose_proposed_grid(paint);
     draw_compose_beat_fit_overlay(paint);

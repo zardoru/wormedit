@@ -5,6 +5,7 @@
 #include "sys/compose_bgm_bar.h"
 #include "sys/compose_dead_spans.h"
 #include "sys/compose_kiai_spans.h"
+#include "sys/compose_recipe_areas.h"
 #include "sys/compose_sv_graph.h"
 #include "sys/compose_quantize_preview.h"
 #include "sys/compose_scroll_geometry.h"
@@ -111,6 +112,7 @@ struct compose_scene_cache_t {
     std::optional<dead_span_projection_t> dead_spans;
     std::optional<kiai_projection_t> kiai_spans;
     std::optional<sv_steps_t> sv_steps;
+    std::optional<recipe_areas_t> recipe_areas;
     std::optional<wormedit::timing_index_t> proposed_offset_timing_index;
     std::optional<wormedit::signed_rational_t> proposed_offset_seconds;
     std::optional<wormedit::beat_interval_drag_t> beat_fit_drag;
@@ -223,6 +225,8 @@ struct application_command_state_t {
     bool timing_locked{};
     // Head event of the Kiai area selected on the canvas (0 when none); Delete removes it.
     std::uint64_t kiai_selected_head{};
+    // SV recipe selected on the canvas (0 when none).
+    std::uint64_t recipe_selected{};
     bool audio_offset_locked{};
     [[nodiscard]] bool audio_offset_edits_locked() const noexcept {
         return timing_locked || audio_offset_locked;

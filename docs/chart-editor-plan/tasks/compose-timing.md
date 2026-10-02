@@ -109,7 +109,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 ## T-319 Keep unmaterialized SV recipes as areas that can be materialized later
 
-- **Status:** blocked-on T-318
+- **Status:** done (recipe parameter editing moves to T-320; Lua evaluation is T-189)
 - **Outcome:** A recipe applied without materializing persists as a Compose area (range, parameters, sampling) that can be edited and materialized into SV events by an explicit command.
 - **Read first:** `include/wormedit/core/document.h`, `src/ui/nuklear/timing_panel.cpp`, `src/sys/timing_edit_runtime.h`, `src/sys/compose_sv_graph.h` (T-318).
 - **Files owned:** `src/sys/compose_recipe_areas.h/.cpp` (new), `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `CMakeLists.txt`, `tests/sys/compose_recipe_areas_tests.cpp` (new), `tests/CMakeLists.txt`.
@@ -118,6 +118,9 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Reject/failure behavior:** A stale revision or overlap policy violation rejects atomically.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; `ctest --test-dir build -R '^documentation\.'`; isolated Xvfb check of Compose when UI changes.
 - **Out of scope:** the other cards in this file and unrelated rendering work.
+
+- **Result (2026-10-02):** Recipes were already persistent document entities (`chart.sv_recipes`, native project, undo history); what was missing was the Compose side. Now each stored recipe is an area in the SV lane (SPD lane for SPEEDS output) with its own relative value drawn as a continuous line normalized to the visible range (`project_recipe_areas`, `build_recipe_graph`; disabled recipes are muted, an unevaluable one shows a diagonal instead of a graph). Dragging an edge resizes and dragging the body moves the whole span, both through the core snapped range drag as one undo step with a live preview; clicking selects and Delete removes; right-click opens Disable/Enable, Materialize into events, Delete. The area menu's "Add SV recipe" now creates a linear 1x to 2x recipe over the retained area. New core command `materialize_sv_recipe_action_t` replaces a recipe with the ordinary scroll/speed events export baking would emit for it alone (disabled recipes included, other recipes keep composing, one undo step, a non-evaluable recipe rejects). **Native schema is now 2**: `migrate_v1_to_v2` adds `expression_source` to every recipe, schema 1 files load and recovery payloads of either schema load. **Lua design hook:** `sv_recipe_curve_t::lua_expression` plus an inline `expression_source` (1 to 16384 bytes, no NUL, empty for every other curve) are stored, validated, round-tripped and shown, while sampling, materialization and export reject them as unsupported until T-189; the spec and T-189 describe the additive schema 3 that adds API version, entry point, parameters, hashes and seed. Tests: 4 core materialize/Lua tests, native schema/migration/round-trip tests, 4 projection tests, 2 sys input tests; Xvfb captures show the areas and graphs, the edge drag, the context menu and the materialized events. Full app suite 1467/1467; no new complexity warnings.
+- **Remaining:** editing a recipe's curve, values and sampling from Compose (the Timing screen's recipe form is ported by T-320), drag preview for recipes in both lanes is drawn only for the lane under the pointer.
 
 ## T-320 Audit the Timing screen and port the remaining functions to Compose
 

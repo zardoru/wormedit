@@ -6,6 +6,7 @@
 #include "sys/bmson_waveform_projection.h"
 #include "sys/compose_view.h"
 #include "sys/compose_input.h"
+#include "sys/compose_area_actions.h"
 #include "sys/compose_playhead_cursor.h"
 #include <wormedit/core/command.h>
 #include <wormedit/core/rational.h>
@@ -1472,7 +1473,7 @@ auto kiai_input(compose_test_fixture_t& fixture, WormUiComposeInputKind kind, st
     action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
     action.compose_inputs[0] = {.kind = kind, .object_id = head, .timing_chart_id = chart.id.value,
                                 .timing_document_revision = fixture.history.document.revision,
-                                .y_pixels = y, .kiai_edge = edge};
+                                .y_pixels = y, .span_edge = edge};
     action.compose_input_count = 1;
     return action;
 }
@@ -1536,7 +1537,7 @@ TEST_CASE("A Kiai creation drag adds a merged area and is one undo step", "[sys]
     fixture.project();
     auto create = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 0, 2,
                              kiai_screen_y(fixture, 120));
-    create.compose_inputs[0].kiai_anchor_y_pixels = kiai_screen_y(fixture, 360);
+    create.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 360);
     CHECK(dispatch_paste_action(fixture, create) == "Kiai area edited.");
     // 120..360 overlaps the existing 240..720 area: one merged area.
     const auto areas = kiai_areas(fixture);
@@ -1546,6 +1547,128 @@ TEST_CASE("A Kiai creation drag adds a merged area and is one undo step", "[sys]
     CHECK(fixture.history.undo.size() == 1);
     REQUIRE(undo_document_command(fixture.history));
     CHECK(kiai_areas(fixture).front().begin_row == 240);
+}
+
+namespace {
+auto recipe_test_song() -> song_document_t {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    sv_recipe_t recipe{.id = recipe_id_t{7001},
+                       .name = "rise",
+                       .range = {{chart.measures.front().id, 240}, {chart.measures.front().id, 720}},
+                       .output = sv_recipe_output_t::sv,
+                       .curve = sv_recipe_curve_t::linear,
+                       .parameters = {.value_from = {1, 1}, .value_to = {3, 1}}};
+    recipe.sampling.fixed_point_count = 3;
+    chart.sv_recipes.push_back(recipe);
+    return song;
+}
+auto recipe_range_rows(compose_test_fixture_t& fixture) -> std::pair<std::uint64_t, std::uint64_t> {
+    const auto& range = fixture.history.document.charts.front().sv_recipes.front().range;
+    return {range.begin.row, range.end.row};
+}
+}
+TEST_CASE("SV recipe inputs select, resize and move the span, run commands and reject stale input",
+          "[sys][recipe-areas]") {
+    compose_test_fixture_t fixture{recipe_test_song()};
+    fixture.project();
+    REQUIRE(fixture.flattened.view.compose.recipe_area_count == 1);
+
+    auto select = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_SELECT, 7001);
+    CHECK(dispatch_paste_action(fixture, select) == "SV recipe selected.");
+    CHECK(fixture.application.recipe_selected == 7001);
+    fixture.project();
+    CHECK(fixture.flattened.view.compose.recipe_areas[0].selected);
+
+    auto stale = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 1,
+                            kiai_screen_y(fixture, 480));
+    stale.compose_inputs[0].timing_document_revision += 1;
+    CHECK(dispatch_paste_action(fixture, stale) == "SV recipe edit is stale or invalid.");
+
+    // End edge dragged to row 480; the span stays ordered when an edge crosses the other.
+    auto end_drag = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 1,
+                               kiai_screen_y(fixture, 480));
+    end_drag.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 720);
+    CHECK(dispatch_paste_action(fixture, end_drag) == "SV recipe moved.");
+    CHECK(recipe_range_rows(fixture) == std::pair<std::uint64_t, std::uint64_t>{240, 480});
+    CHECK(fixture.history.undo.size() == 1);
+
+    fixture.project();
+    auto cross = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 0,
+                            kiai_screen_y(fixture, 720));
+    cross.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 240);
+    CHECK(dispatch_paste_action(fixture, cross) == "SV recipe moved.");
+    CHECK(recipe_range_rows(fixture) == std::pair<std::uint64_t, std::uint64_t>{480, 720});
+
+    // The body dragged by the pointer travel moves the whole span, keeping its length.
+    fixture.project();
+    auto body = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 2,
+                           kiai_screen_y(fixture, 240));
+    body.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 480);
+    CHECK(dispatch_paste_action(fixture, body) == "SV recipe moved.");
+    CHECK(recipe_range_rows(fixture) == std::pair<std::uint64_t, std::uint64_t>{240, 480});
+
+    // A locked timeline rejects edits and commands without a revision.
+    fixture.project();
+    fixture.application.timing_locked = true;
+    const auto revision = fixture.history.document.revision;
+    auto locked_edit = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 1,
+                                  kiai_screen_y(fixture, 720));
+    locked_edit.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 480);
+    CHECK(dispatch_paste_action(fixture, locked_edit) != "SV recipe moved.");
+    auto locked_command = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7001, 0);
+    CHECK(dispatch_paste_action(fixture, locked_command) == "Timing is locked.");
+    CHECK(fixture.history.document.revision == revision);
+    fixture.application.timing_locked = false;
+
+    auto toggle = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7001, 0);
+    CHECK(dispatch_paste_action(fixture, toggle) == "SV recipe disabled.");
+    CHECK_FALSE(fixture.history.document.charts.front().sv_recipes.front().enabled);
+
+    fixture.project();
+    auto materialize = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7001, 1);
+    CHECK(dispatch_paste_action(fixture, materialize) == "SV recipe materialized into events.");
+    CHECK(fixture.history.document.charts.front().sv_recipes.empty());
+    CHECK_FALSE(fixture.history.document.charts.front().scrolls.empty());
+    CHECK(fixture.application.recipe_selected == 0);
+    auto missing = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7001, 2);
+    CHECK(dispatch_paste_action(fixture, missing) == "The SV recipe no longer exists.");
+}
+
+TEST_CASE("Delete removes the selected SV recipe and the area menu adds one over the retained area",
+          "[sys][recipe-areas]") {
+    compose_test_fixture_t fixture{recipe_test_song()};
+    fixture.project();
+    fixture.application.recipe_selected = 7001;
+    auto remove = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_DELETE_SELECTION, 0);
+    CHECK(dispatch_paste_action(fixture, remove) == "SV recipe deleted.");
+    CHECK(fixture.history.document.charts.front().sv_recipes.empty());
+    CHECK(fixture.application.recipe_selected == 0);
+    REQUIRE(undo_document_command(fixture.history));
+    CHECK(fixture.history.document.charts.front().sv_recipes.size() == 1);
+
+    fixture.project();
+    const auto measure = fixture.history.document.charts.front().measures.front().id;
+    fixture.interaction->retained_selection_range =
+        position_span_t{{measure, 0}, {measure, 240}};
+    WormUiWorkspaceAction action{};
+    action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE;
+    action.compose_input_chart_id = fixture.history.document.charts.front().id.value;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    const auto status = dispatch_compose_area_action(action, fixture.history, *fixture.interaction);
+    REQUIRE(status.has_value());
+    CHECK(*status == "SV recipe added over the selected area.");
+    const auto& recipes = fixture.history.document.charts.front().sv_recipes;
+    REQUIRE(recipes.size() == 2);
+    CHECK(recipes.back().range.begin.row == 0);
+    CHECK(recipes.back().range.end.row == 240);
+    CHECK(recipes.back().curve == sv_recipe_curve_t::linear);
+
+    action.compose_input_document_revision += 1;
+    const auto stale = dispatch_compose_area_action(action, fixture.history, *fixture.interaction);
+    REQUIRE(stale.has_value());
+    CHECK(stale->find("ignored") != std::string::npos);
+    CHECK(fixture.history.document.charts.front().sv_recipes.size() == 2);
 }
 
 TEST_CASE("Pointer paste retains cursor and viewport and FIFO release commits that anchor",

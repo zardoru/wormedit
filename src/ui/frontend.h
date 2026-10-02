@@ -54,6 +54,8 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY 16
 #define WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY 512
 #define WORM_UI_COMPOSE_KIAI_SPAN_CAPACITY 512
+#define WORM_UI_COMPOSE_RECIPE_AREA_CAPACITY 256
+#define WORM_UI_COMPOSE_RECIPE_GRAPH_CAPACITY 16384
 #define WORM_UI_COMPOSE_SV_GRAPH_CAPACITY 8192
 #define WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY 16
 #define WORM_UI_SHORTCUT_EVENT_CAPACITY 64
@@ -435,6 +437,25 @@ typedef struct WormUiComposeSvGraphPointView {
     double x_fraction;
     double y_pixels;
 } WormUiComposeSvGraphPointView;
+
+/* One stored SV recipe, shown as an area in its timing lane (SV for sv/scrolls output, SPD for
+   speeds). Only top/bottom of bounds are meaningful. The recipe's own relative value is drawn as a
+   continuous line normalized to the visible range: graph_count vertices starting at graph_first
+   in the view's recipe_graph_points. */
+typedef struct WormUiComposeRecipeAreaView {
+    WormUiComposeRect bounds;
+    uint64_t recipe_id;
+    const char* label;
+    uint8_t lane; /* WormUiTimingLaneKind */
+    uint8_t curve;
+    bool enabled;
+    bool selected;
+    bool evaluable;
+    bool begin_visible;
+    bool end_visible;
+    size_t graph_first;
+    size_t graph_count;
+} WormUiComposeRecipeAreaView;
 
 typedef struct WormUiComposeDifferenceView {
     WormUiComposeRect bounds;
@@ -872,6 +893,10 @@ typedef struct WormUiComposeView {
     size_t dead_span_count;
     const WormUiComposeKiaiSpanView* kiai_spans;
     size_t kiai_span_count;
+    const WormUiComposeRecipeAreaView* recipe_areas;
+    size_t recipe_area_count;
+    const WormUiComposeSvGraphPointView* recipe_graph_points;
+    size_t recipe_graph_point_count;
     const WormUiComposeSvGraphPointView* sv_graph_points;
     size_t sv_graph_point_count;
     double sv_graph_minimum;
@@ -1618,6 +1643,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR,
     WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE,
     WORM_UI_COMPOSE_ACTION_AREA_DELETE,
+    WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE,
     WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE,
     WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT,
     WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE,
@@ -1775,6 +1801,9 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE,
     WORM_UI_COMPOSE_INPUT_KIAI_SPAN_SELECT,
     WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT,
+    WORM_UI_COMPOSE_INPUT_RECIPE_SELECT,
+    WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT,
+    WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND,
     WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP,
     // BGM bar view: audio_fraction anchors a zoom of x_pixels steps, x_pixels pans by a
     // fraction of the song, and reset shows the whole song again.
@@ -1814,10 +1843,12 @@ typedef struct WormUiComposeInputAction {
     bool beat_fit_ctrl_held;
     int64_t beat_fit_snap_step_numerator;
     uint64_t beat_fit_snap_step_denominator;
-    /* KIAI_SPAN_EDIT: 0 drags the head, 1 the tail, 2 creates from kiai_anchor_y_pixels to y_pixels.
+    /* RECIPE_COMMAND: span_edge is 0 toggle enabled, 1 materialize, 2 delete; object_id is the recipe.
+       KIAI_SPAN_EDIT and RECIPE_RANGE_EDIT: 0 drags the head/begin edge, 1 the tail/end edge, 2 creates (Kiai)
+       or moves the whole span (recipe) by the pointer travel from span_anchor_y_pixels to y_pixels.
        object_id is the area's head event (0 when creating). */
-    uint8_t kiai_edge;
-    double kiai_anchor_y_pixels;
+    uint8_t span_edge;
+    double span_anchor_y_pixels;
 } WormUiComposeInputAction;
 
 typedef enum WormUiComposeViewportInputKind {

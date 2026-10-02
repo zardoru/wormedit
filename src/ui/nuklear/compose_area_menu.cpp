@@ -53,8 +53,9 @@ void render_menu(nk_context* context, const WormUiComposeView& view,
                view.area_range_virtual ? "Materialize the selected measures first"
                                        : "Area deletion supports notes and BGM only",
                WORM_UI_COMPOSE_ACTION_AREA_DELETE, action);
-    menu_entry(context, "Add SV recipe", false, "Recipe creation from an area is not available yet",
-               WORM_UI_COMPOSE_ACTION_NONE, action);
+    menu_entry(context, "Add SV recipe", !view.area_range_virtual,
+               "Materialize the selected measures first", WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE,
+               action);
     menu_entry(context, "Add SPEEDS span", false,
                "Speed span creation from an area is not available yet", WORM_UI_COMPOSE_ACTION_NONE,
                action);

@@ -1016,6 +1016,10 @@ bool initialize_compose_view_state(
     view.dead_span_count = 0;
     view.kiai_spans = nullptr;
     view.kiai_span_count = 0;
+    view.recipe_areas = nullptr;
+    view.recipe_area_count = 0;
+    view.recipe_graph_points = nullptr;
+    view.recipe_graph_point_count = 0;
     view.sv_graph_points = nullptr;
     view.sv_graph_point_count = 0;
     view.sv_graph_one_fraction = -1.0;
@@ -1896,6 +1900,71 @@ void populate_compose_kiai_and_sv(flattened_workspace_t& flattened, const compos
     }
 }
 
+std::string recipe_area_label(const wormedit::sys::recipe_area_t& area) {
+    std::string label = area.name;
+    if (area.curve == wormedit::sv_recipe_curve_t::lua_expression) label += " (Lua)";
+    if (!area.enabled) label += " (off)";
+    return label;
+}
+
+// Stored SV recipes as areas in the SV (sv/scrolls output) or SPD (speeds output) lane, each with
+// its relative value as a line graph normalized to what is visible.
+void populate_compose_recipe_areas(flattened_workspace_t& flattened, const compose_scene_cache_t& cache,
+                                   const wormedit::editor_interaction_view_model_t& interaction_view,
+                                   WormUiComposeView& view, bool downscroll, double pixels_per_row,
+                                   std::uint64_t total_rows, std::uint64_t selected_recipe) {
+    flattened.compose.recipe_area.clear();
+    flattened.compose.recipe_graph_point.clear();
+    flattened.compose.recipe_area_labels.clear();
+    view.recipe_areas = nullptr;
+    view.recipe_area_count = 0;
+    view.recipe_graph_points = nullptr;
+    view.recipe_graph_point_count = 0;
+    if (!cache.recipe_areas || !(pixels_per_row > 0.0)) return;
+    const auto scroll = interaction_view.viewport_scroll_pixels;
+    const auto height = view.viewport_height_pixels;
+    const auto row_to_y = [&](std::uint64_t row) {
+        return compose_project_y(static_cast<long double>(row), pixels_per_row, scroll, height,
+                                 downscroll);
+    };
+    const auto first = static_cast<std::uint64_t>(std::max(0.0, std::floor(scroll / pixels_per_row)));
+    const auto last = std::min<std::uint64_t>(
+        total_rows, static_cast<std::uint64_t>(std::ceil((scroll + height) / pixels_per_row)));
+    flattened.compose.recipe_area_labels.reserve(cache.recipe_areas->areas.size());
+    for (const auto& area : cache.recipe_areas->areas) {
+        if (area.end_row <= first || area.begin_row >= last) continue;
+        if (flattened.compose.recipe_area.size() >= WORM_UI_COMPOSE_RECIPE_AREA_CAPACITY) break;
+        const auto begin_y = row_to_y(area.begin_row);
+        const auto end_y = row_to_y(area.end_row);
+        const auto graph = wormedit::sys::build_recipe_graph(area, first, last, row_to_y);
+        const auto graph_first = flattened.compose.recipe_graph_point.size();
+        for (const auto& point : graph.points) {
+            if (flattened.compose.recipe_graph_point.size() >= WORM_UI_COMPOSE_RECIPE_GRAPH_CAPACITY) break;
+            flattened.compose.recipe_graph_point.push_back({point.x, point.y});
+        }
+        const auto& label = flattened.compose.recipe_area_labels.emplace_back(recipe_area_label(area));
+        flattened.compose.recipe_area.push_back({
+            .bounds = {0.0, std::min(begin_y, end_y), 0.0, std::max(begin_y, end_y)},
+            .recipe_id = area.recipe.value,
+            .label = label.c_str(),
+            .lane = static_cast<std::uint8_t>(area.output == wormedit::sv_recipe_output_t::speeds
+                                                  ? WORM_UI_TIMING_LANE_SPEED
+                                                  : WORM_UI_TIMING_LANE_SCROLL),
+            .curve = static_cast<std::uint8_t>(area.curve),
+            .enabled = area.enabled,
+            .selected = area.recipe.value == selected_recipe,
+            .evaluable = area.evaluable,
+            .begin_visible = begin_y >= 0.0 && begin_y <= height,
+            .end_visible = end_y >= 0.0 && end_y <= height,
+            .graph_first = graph_first,
+            .graph_count = flattened.compose.recipe_graph_point.size() - graph_first});
+    }
+    view.recipe_areas = flattened.compose.recipe_area.data();
+    view.recipe_area_count = flattened.compose.recipe_area.size();
+    view.recipe_graph_points = flattened.compose.recipe_graph_point.data();
+    view.recipe_graph_point_count = flattened.compose.recipe_graph_point.size();
+}
+
 void populate_compose_selection_preview(
     const compose_scene_cache_t& cache,
     std::optional<wormedit::editor_interaction_state_t>& retained_state,
@@ -2144,6 +2213,7 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         cache.dead_spans.reset();
         cache.kiai_spans.reset();
         cache.sv_steps.reset();
+        cache.recipe_areas.reset();
         cache.proposed_offset_timing_index.reset();
         cache.proposed_offset_seconds.reset();
         cache.beat_fit_drag.reset();
@@ -2183,6 +2253,8 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
                 chart, cache.index->measures, WORM_UI_COMPOSE_KIAI_SPAN_CAPACITY);
             cache.sv_steps = wormedit::sys::project_sv_steps(
                 chart, cache.index->measures, WORM_UI_COMPOSE_SV_GRAPH_CAPACITY);
+            cache.recipe_areas = wormedit::sys::project_recipe_areas(
+                chart, cache.index->measures, WORM_UI_COMPOSE_RECIPE_AREA_CAPACITY);
         }
         auto timing = wormedit::build_timing_index(chart);
         if (timing) {
@@ -2986,6 +3058,8 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
                                 pixels_per_row);
     populate_compose_kiai_and_sv(flattened, cache, interaction_view, view, downscroll,
                                  pixels_per_row, canvas_rows, application_state.kiai_selected_head);
+    populate_compose_recipe_areas(flattened, cache, interaction_view, view, downscroll,
+                                  pixels_per_row, canvas_rows, application_state.recipe_selected);
     const auto maximum_bgm_scroll = std::max(
         0.0, static_cast<double>(chart.bgm_source_lanes.size()) * compose_bgm_lane_width_pixels -
                  bgm_pane_width);

@@ -3,6 +3,7 @@
 #include <ranges>
 #include <utility>
 #include <wormedit/core/grid.h>
+#include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/virtual_canvas.h>
 
 namespace wormedit::sys {
@@ -69,6 +70,26 @@ std::string quantize_compose_area_selection(area_action_context_t& context,
         return result.command.diagnostics.front().message;
     return result.command.applied ? "Selected notes quantized."
                                   : "Selection quantization rejected.";
+}
+
+// A new SV recipe over the retained area: linear 1x to 2x on the generic SV output, so it is
+// visible and editable straight away. Its values and sampling are edited afterwards.
+std::string add_sv_recipe_over_area(area_action_context_t& context,
+                                    const wormedit::chart_document_t& chart) {
+    using namespace wormedit;
+    if (!context.state.retained_selection_range)
+        return "Select an area first.";
+    sv_recipe_t recipe{.name = "Recipe " + std::to_string(chart.sv_recipes.size() + 1),
+                       .range = *context.state.retained_selection_range,
+                       .output = sv_recipe_output_t::sv,
+                       .curve = sv_recipe_curve_t::linear,
+                       .parameters = {.value_from = {1, 1}, .value_to = {2, 1}}};
+    const auto inserted = apply_sv_recipe_edit(context.history, context.history.document.revision,
+                                               insert_sv_recipe_action_t{chart.id, std::move(recipe)});
+    if (inserted.applied)
+        return "SV recipe added over the selected area.";
+    return inserted.diagnostics.empty() ? "SV recipe rejected."
+                                        : inserted.diagnostics.front().message;
 }
 
 auto select_compose_area_contents(wormedit::document_history_t& history,
@@ -183,7 +204,8 @@ std::optional<std::string> dispatch_compose_area_action(area_action_context_t& c
     }
     if (kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_DELETE && kind != WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE)
+        kind != WORM_UI_COMPOSE_ACTION_AREA_DELETE && kind != WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE &&
+        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE)
         return std::nullopt;
     const auto chart = std::ranges::find(context.history.document.charts, context.state.chart,
                                          &chart_document_t::id);
@@ -195,6 +217,8 @@ std::optional<std::string> dispatch_compose_area_action(area_action_context_t& c
         return "The selected area has invalid measure geometry.";
     if (kind == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE)
         return quantize_compose_area_selection(context, *chart);
+    if (kind == WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE)
+        return add_sv_recipe_over_area(context, *chart);
     if (kind == WORM_UI_COMPOSE_ACTION_AREA_DELETE)
         return delete_compose_area_contents(context, *measures);
     return resize_compose_area(context, *chart, *measures);
@@ -261,7 +285,8 @@ auto dispatch_compose_area_action(const WormUiWorkspaceAction& action,
     if (!action.compose_area_clear_requested && kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_DELETE && kind != WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE)
+        kind != WORM_UI_COMPOSE_ACTION_AREA_DELETE && kind != WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE &&
+        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE)
         return std::nullopt;
     if (state.chart.value != action.compose_input_chart_id ||
         history.document.revision != action.compose_input_document_revision)

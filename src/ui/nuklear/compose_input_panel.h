@@ -39,6 +39,8 @@ bool process_compose_double_clicks(const ComposeDoubleClickContext& input,
 
 void update_timing_stage_drag(const ComposePointerEventContext& input);
 
+void update_kiai_span_drag(const ComposePointerEventContext& input);
+
 auto begin_compose_resource_pointer(const ComposePointerEventContext& input,
                                            bool paint_pointer_consumed) -> bool;
 

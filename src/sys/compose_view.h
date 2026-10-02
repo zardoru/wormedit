@@ -221,6 +221,8 @@ struct application_command_state_t {
     };
     std::optional<bmson_marker_move_preview_t> bmson_marker_move_preview;
     bool timing_locked{};
+    // Head event of the Kiai area selected on the canvas (0 when none); Delete removes it.
+    std::uint64_t kiai_selected_head{};
     bool audio_offset_locked{};
     [[nodiscard]] bool audio_offset_edits_locked() const noexcept {
         return timing_locked || audio_offset_locked;

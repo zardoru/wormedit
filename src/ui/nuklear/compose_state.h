@@ -201,6 +201,13 @@ struct worm_ui_nuklear_compose_state_t {
     bool note_move_candidate_active{};
     bool note_move_active{};
     bool timing_stage_drag_active{};
+    // Kiai area edge or creation drag on the canvas; y values are viewport pixels.
+    bool kiai_drag_active{};
+    bool kiai_drag_moved{};
+    std::uint8_t kiai_drag_edge{};
+    std::uint64_t kiai_drag_head_id{};
+    double kiai_drag_anchor_y{};
+    double kiai_drag_current_y{};
     bool timing_marker_candidate_active{};
     bool timing_marker_drag_active{};
     bool timing_missing_initial_selected{};

@@ -1511,11 +1511,8 @@ void append_compose_chart_timing_markers(const wormedit::chart_document_t& chart
                chart.warps[index].provenance.source_order, index, WORM_UI_TIMING_LANE_WARP,
                std::to_string(rows), "Warp " + std::to_string(rows) + " rows", false);
     }
-    for (std::size_t index = 0; index < chart.kiai.size(); ++index)
-        append(chart.kiai[index].position, chart.kiai[index].id.value,
-               chart.kiai[index].provenance.source_order, index, WORM_UI_TIMING_LANE_KIAI,
-               chart.kiai[index].enabled ? "On" : "Off",
-               chart.kiai[index].enabled ? "Kiai on" : "Kiai off", false);
+    // Kiai events are not markers: Compose draws each merged Kiai area instead (see
+    // populate_compose_kiai_and_sv), and edits it as one area.
     for (std::size_t index = 0; index < chart.timing_anchors.size(); ++index)
         append(chart.timing_anchors[index].position, chart.timing_anchors[index].id.value,
                index, index, WORM_UI_TIMING_LANE_ANCHOR,
@@ -1845,7 +1842,7 @@ void populate_compose_dead_spans(flattened_workspace_t& flattened, const compose
 void populate_compose_kiai_and_sv(flattened_workspace_t& flattened, const compose_scene_cache_t& cache,
                                   const wormedit::editor_interaction_view_model_t& interaction_view,
                                   WormUiComposeView& view, bool downscroll, double pixels_per_row,
-                                  std::uint64_t total_rows) {
+                                  std::uint64_t total_rows, std::uint64_t kiai_selected_head) {
     flattened.compose.kiai_span.clear();
     flattened.compose.sv_graph_point.clear();
     view.kiai_spans = nullptr;
@@ -1875,7 +1872,8 @@ void populate_compose_kiai_and_sv(flattened_workspace_t& flattened, const compos
                 .end_row = span.end_row,
                 .open_ended = span.open_ended,
                 .head_visible = begin_y >= 0.0 && begin_y <= height,
-                .tail_visible = !span.open_ended && end_y >= 0.0 && end_y <= height});
+                .tail_visible = !span.open_ended && end_y >= 0.0 && end_y <= height,
+                .selected = span.head.value == kiai_selected_head});
             if (flattened.compose.kiai_span.size() >= WORM_UI_COMPOSE_KIAI_SPAN_CAPACITY) break;
         }
         view.kiai_spans = flattened.compose.kiai_span.data();
@@ -2987,7 +2985,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     populate_compose_dead_spans(flattened, cache, interaction_view, view, downscroll,
                                 pixels_per_row);
     populate_compose_kiai_and_sv(flattened, cache, interaction_view, view, downscroll,
-                                 pixels_per_row, canvas_rows);
+                                 pixels_per_row, canvas_rows, application_state.kiai_selected_head);
     const auto maximum_bgm_scroll = std::max(
         0.0, static_cast<double>(chart.bgm_source_lanes.size()) * compose_bgm_lane_width_pixels -
                  bgm_pane_width);

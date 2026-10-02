@@ -73,7 +73,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 ## T-317 Edit Kiai areas by dragging head and tail
 
-- **Status:** ready
+- **Status:** done (Esc cancel of an in-flight drag not implemented; releasing outside the lane still commits)
 - **Outcome:** Dragging the head or tail of a Kiai area, or creating one with the Kiai gesture, issues one undoable command that rewrites the on/off events and merges overlapped neighbors.
 - **Read first:** `src/core/marker_editor.cpp`, `include/wormedit/core/marker_editor.h`, `src/sys/compose_kiai_spans.h` (T-316), `src/sys/compose_input.cpp`.
 - **Files owned:** `src/core/marker_editor.cpp`, `include/wormedit/core/marker_editor.h`, `src/sys/compose_input.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `tests/core/marker_editor_tests.cpp`.
@@ -87,9 +87,11 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Drawn (2026-10-02):** `WormUiComposeKiaiSpanView` (`frontend.h`), per-frame projection in `compose_view.cpp`, validation in `compose_panel.cpp`, and the amber area with solid head and tail edges inside the Kiai lane in `compose_canvas.cpp`. An Xvfb capture of the osu! kiai fixture shows the area between its On and Off markers.
 - **Remaining:** the drag gesture on the head and tail edges (preview while dragging, merge applied on release through this command), with state tests and an Xvfb check.
 
+- **Result:** Kiai is edited as one area in the Kiai lane. Pressing a head or tail edge and dragging shows the resulting area while dragging; releasing sends one `KIAI_SPAN_EDIT` that calls the core command (overlaps merge at that point, the dragged edge crossing the fixed one swaps them, snapping follows the pointer row). Dragging on empty lane creates an area (movement under 4 px is a click), a click on an area body selects it and Delete removes it (`kiai_selected_head`). Stale revision/chart and locked timing reject with a status line. The individual On/Off timing markers are no longer drawn or hit-tested in Compose. Tests: 4 core tests plus 2 sys tests in `tests/sys/frame_timing_tests.cpp` (tail drag, head drag crossing the tail, select and Delete, stale, locked, creation merging into an existing area and undo). An Xvfb capture shows the preview following the pointer and the area shrunk after release (status "Kiai area edited.", document dirty). Full app suite 1456/1456; no new complexity warnings.
+
 ## T-318 Add SV impulses in Compose and show a step graph of relative values
 
-- **Status:** ready
+- **Status:** done (impulse insertion already implemented: double-click on the SV lane stages an event with an inline value field)
 - **Outcome:** The Compose SV lane inserts impulse events and draws a line graph of the relative value that keeps the discrete step shape (horizontal hold, vertical jump) for non-recipes, with the 1.0x line marked.
 - **Read first:** `src/sys/timing_view.cpp`, `src/ui/nuklear/timing_panel.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `include/wormedit/core/timing_lane_controller.h`.
 - **Files owned:** `src/sys/compose_sv_graph.h/.cpp` (new), `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_input.cpp`, `CMakeLists.txt`, `tests/sys/compose_sv_graph_tests.cpp` (new), `tests/CMakeLists.txt`.
@@ -102,6 +104,8 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Progress (2026-10-02):** Pure projection done and tested headless: `project_sv_steps` (latched scroll steps by row, last event on a row wins, bounded) and `build_sv_graph` (horizontal holds with vertical jumps, normalized to the values in force in the visible window, a single value centers, 1.0x reference position) in `src/sys/compose_sv_graph.*`; 3 tests in `tests/sys/compose_sv_graph_tests.cpp`.
 - **Drawn (2026-10-02):** `WormUiComposeSvGraphPointView` (`frontend.h`), per-frame projection, validation and the cyan step line with the 1.0x reference inside the SV lane. An Xvfb capture of the osu! fixture (SV 2x then 1x) shows the jump, hold and return. Full app suite 1454/1454.
 - **Remaining:** SV impulse insertion from the Compose SV lane (reuse the Timing screen's scroll command) and its state test.
+
+- **Result:** The SV lane shows the latched step graph (horizontal holds, vertical jumps, normalized to the visible range, 1.0x reference) and inserting an impulse already works from Compose: a double-click on the lane stages the event and shows an inline value field ("Enter to apply · Esc to cancel"), confirmed by Xvfb capture. The graph was confirmed in a capture of the osu! kiai fixture (2x then 1x). 3 projection tests. Recipe areas, their persistence and their graph are T-319.
 
 ## T-319 Keep unmaterialized SV recipes as areas that can be materialized later
 

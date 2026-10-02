@@ -9,6 +9,7 @@
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/grid.h>
+#include <wormedit/core/kiai_spans.h>
 #include <wormedit/core/marker_editor.h>
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/note_label_editor.h>
@@ -2044,6 +2045,86 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
     return std::nullopt;
 }
 
+// The absolute row under a pointer, clamped into the chart's rows.
+auto kiai_pointer_row(compose_input_context_t& context, const wormedit::chart_document_t& chart,
+                      const wormedit::editor_interaction_view_model_t& view,
+                      const wormedit::measure_index_t& index, double y_pixels)
+    -> std::optional<std::uint64_t> {
+    if (!std::isfinite(y_pixels)) return std::nullopt;
+    const auto y = std::clamp(y_pixels, 0.0, std::max(0.0, view.viewport_height_pixels - 0.001));
+    const auto position = context.position_at_compose_y_unrestricted(chart, view, y);
+    return position ? wormedit::absolute_row(index, *position) : std::nullopt;
+}
+
+// Rows an edge drag proposes: the dragged edge goes to the pointer's row, the other edge stays,
+// and crossing the fixed edge swaps them. An empty range proposes nothing.
+auto kiai_dragged_rows(std::uint64_t fixed, std::uint64_t dragged)
+    -> std::optional<std::pair<std::uint64_t, std::uint64_t>> {
+    if (fixed == dragged) return std::nullopt;
+    return std::pair{std::min(fixed, dragged), std::max(fixed, dragged)};
+}
+
+auto edit_compose_kiai_span(const WormUiComposeInputAction& input,
+                            compose_input_context_t& context,
+                            wormedit::editor_interaction_result_t& result,
+                            std::string_view& accepted) -> std::optional<std::string> {
+    using namespace wormedit;
+    const auto* chart = context.chart();
+    const auto view = compose_view_for_state(context.history, context.state);
+    if (!chart || !view || input.timing_chart_id != chart->id.value ||
+        input.timing_document_revision != context.history.document.revision)
+        return "Kiai edit is stale or invalid.";
+    if (context.application_state.timing_locked) return "Timing is locked.";
+    const auto measures = build_measure_index(*chart);
+    const auto* index = std::get_if<measure_index_t>(&measures);
+    const auto row = index ? kiai_pointer_row(context, *chart, *view, *index, input.y_pixels)
+                           : std::nullopt;
+    if (!row) return "Kiai edit has no valid destination row.";
+    kiai_span_edit_t edit;
+    if (input.kiai_edge == 2) {
+        const auto anchor = kiai_pointer_row(context, *chart, *view, *index, input.kiai_anchor_y_pixels);
+        edit.rows = anchor ? kiai_dragged_rows(*anchor, *row) : std::nullopt;
+    } else {
+        const auto spans = kiai_spans_of(*chart, *index);
+        const auto found = std::ranges::find(spans, object_id_t{input.object_id}, &kiai_span_t::head);
+        if (found == spans.end()) return "The Kiai area no longer exists.";
+        edit.head = found->head;
+        edit.rows = kiai_dragged_rows(input.kiai_edge == 0 ? found->end_row : found->begin_row, *row);
+    }
+    if (!edit.rows) {
+        result.accepted = true;
+        accepted = "Kiai area unchanged.";
+        return std::nullopt;
+    }
+    const auto edited = apply_marker_edit(
+        context.history, context.history.document.revision,
+        edit_kiai_span_action_t{.chart = chart->id, .edit = edit});
+    result.accepted = edited.applied;
+    result.document_changed = edited.applied;
+    result.diagnostics = edited.diagnostics;
+    accepted = edited.applied ? "Kiai area edited." : "Kiai area unchanged.";
+    return std::nullopt;
+}
+
+// Deletes the selected Kiai area. Returns false when no area is selected.
+auto delete_selected_compose_kiai_span(compose_input_context_t& context,
+                                       wormedit::editor_interaction_result_t& result,
+                                       std::string_view& accepted) -> bool {
+    using namespace wormedit;
+    const auto head = context.application_state.kiai_selected_head;
+    const auto* chart = context.chart();
+    if (head == 0 || !chart || context.application_state.timing_locked) return false;
+    const auto edited = apply_marker_edit(
+        context.history, context.history.document.revision,
+        edit_kiai_span_action_t{.chart = chart->id, .edit = {.head = object_id_t{head}}});
+    context.application_state.kiai_selected_head = 0;
+    result.accepted = edited.applied;
+    result.document_changed = edited.applied;
+    result.diagnostics = edited.diagnostics;
+    accepted = edited.applied ? "Kiai area deleted." : "No Kiai area to delete.";
+    return true;
+}
+
 auto place_note_from_pointer(compose_input_context_t& context,
                               const auto& target,
                               wormedit::editor_interaction_result_t& result,
@@ -2514,6 +2595,15 @@ auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
         if (const auto error = move_compose_timing_selection(input, context, result, accepted))
             return *error;
         return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_KIAI_SPAN_SELECT:
+        context.application_state.kiai_selected_head = input.object_id;
+        result.accepted = true;
+        accepted = input.object_id != 0 ? "Kiai area selected." : "Kiai selection cleared.";
+        return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT:
+        if (const auto error = edit_compose_kiai_span(input, context, result, accepted))
+            return *error;
+        return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_POINTER_CLICK:
         if (const auto error = select_compose_pointer_target(input, context, result, accepted))
             return *error;
@@ -2568,6 +2658,9 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
         !wormedit::ui::compose_notes_editable(compose_mode_of(context.application_state)))
         return compose_input_family_result_t::continue_batch(
             "Note editing is unavailable in Timing focus.");
+    if (input.kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION &&
+        delete_selected_compose_kiai_span(context, result, accepted))
+        return compose_input_family_result_t::continue_with_result();
     const auto keyboard =
         dispatch_compose_keyboard_input(input, context.history, context.workspace, context.state,
                                         context.navigation_input, context.application_state,

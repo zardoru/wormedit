@@ -1442,6 +1442,112 @@ auto dispatch_paste_pointer(compose_test_fixture_t& fixture, bool commit) -> std
     return dispatch_paste_action(fixture, action);
 }
 }
+namespace {
+auto kiai_test_song() -> song_document_t {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    const auto measure = chart.measures.front().id;
+    chart.kiai = {{.id = object_id_t{9001}, .position = {measure, 240}, .enabled = true,
+                   .provenance = {.source_order = 1}},
+                  {.id = object_id_t{9002}, .position = {measure, 720}, .enabled = false,
+                   .provenance = {.source_order = 2}}};
+    return song;
+}
+auto kiai_screen_y(compose_test_fixture_t& fixture, std::uint64_t row) -> double {
+    const auto& chart = fixture.history.document.charts.front();
+    const auto inspected = inspect_editor_interaction(fixture.history, *fixture.interaction);
+    const auto* view = std::get_if<editor_interaction_view_model_t>(&inspected);
+    expect_compose_test(view != nullptr);
+    const auto y = editor_position_y_pixels(chart, *view, {chart.measures.front().id, row});
+    expect_compose_test(y.has_value());
+    const bool downscroll = compose_field_downscroll(chart, fixture.application.editor_preferences);
+    return compose_source_y(*y, view->viewport_height_pixels, downscroll);
+}
+auto kiai_input(compose_test_fixture_t& fixture, WormUiComposeInputKind kind, std::uint64_t head,
+                std::uint8_t edge = 0, double y = 0.0) -> WormUiWorkspaceAction {
+    const auto& chart = fixture.history.document.charts.front();
+    WormUiWorkspaceAction action{};
+    action.compose_input_chart_id = chart.id.value;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    action.compose_inputs[0] = {.kind = kind, .object_id = head, .timing_chart_id = chart.id.value,
+                                .timing_document_revision = fixture.history.document.revision,
+                                .y_pixels = y, .kiai_edge = edge};
+    action.compose_input_count = 1;
+    return action;
+}
+auto kiai_areas(compose_test_fixture_t& fixture) -> std::vector<kiai_span_t> {
+    const auto& chart = fixture.history.document.charts.front();
+    const auto built = build_measure_index(chart);
+    return kiai_spans_of(chart, std::get<measure_index_t>(built));
+}
+}
+TEST_CASE("Kiai edge drags edit the area, Delete removes the selected area and stale input is rejected",
+          "[sys][kiai-spans]") {
+    compose_test_fixture_t fixture{kiai_test_song()};
+    fixture.project();
+    REQUIRE(kiai_areas(fixture).size() == 1);
+
+    auto stale = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 9001, 1,
+                            kiai_screen_y(fixture, 480));
+    stale.compose_inputs[0].timing_document_revision += 1;
+    CHECK(dispatch_paste_action(fixture, stale) == "Kiai edit is stale or invalid.");
+    CHECK(fixture.history.undo.empty());
+
+    fixture.application.timing_locked = true;
+    auto locked = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 9001, 1,
+                             kiai_screen_y(fixture, 480));
+    CHECK(dispatch_paste_action(fixture, locked) == "Timing is locked.");
+    fixture.application.timing_locked = false;
+
+    auto tail_drag = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 9001, 1,
+                                kiai_screen_y(fixture, 480));
+    CHECK(dispatch_paste_action(fixture, tail_drag) == "Kiai area edited.");
+    auto areas = kiai_areas(fixture);
+    REQUIRE(areas.size() == 1);
+    CHECK(areas[0].begin_row == 240);
+    CHECK(areas[0].end_row == 480);
+    CHECK(areas[0].head == object_id_t{9001});
+    CHECK(fixture.history.undo.size() == 1);
+
+    // Dragging the head past the fixed tail swaps the edges.
+    fixture.project();
+    auto head_drag = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 9001, 0,
+                                kiai_screen_y(fixture, 600));
+    CHECK(dispatch_paste_action(fixture, head_drag) == "Kiai area edited.");
+    areas = kiai_areas(fixture);
+    REQUIRE(areas.size() == 1);
+    CHECK(areas[0].begin_row == 480);
+    CHECK(areas[0].end_row == 600);
+
+    fixture.project();
+    auto select = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_SELECT, 9001);
+    CHECK(dispatch_paste_action(fixture, select) == "Kiai area selected.");
+    CHECK(fixture.application.kiai_selected_head == 9001);
+    auto remove = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_DELETE_SELECTION, 0);
+    CHECK(dispatch_paste_action(fixture, remove) == "Kiai area deleted.");
+    CHECK(kiai_areas(fixture).empty());
+    CHECK(fixture.application.kiai_selected_head == 0);
+    CHECK(fixture.history.undo.size() == 3);
+}
+
+TEST_CASE("A Kiai creation drag adds a merged area and is one undo step", "[sys][kiai-spans]") {
+    compose_test_fixture_t fixture{kiai_test_song()};
+    fixture.project();
+    auto create = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 0, 2,
+                             kiai_screen_y(fixture, 120));
+    create.compose_inputs[0].kiai_anchor_y_pixels = kiai_screen_y(fixture, 360);
+    CHECK(dispatch_paste_action(fixture, create) == "Kiai area edited.");
+    // 120..360 overlaps the existing 240..720 area: one merged area.
+    const auto areas = kiai_areas(fixture);
+    REQUIRE(areas.size() == 1);
+    CHECK(areas[0].begin_row == 120);
+    CHECK(areas[0].end_row == 720);
+    CHECK(fixture.history.undo.size() == 1);
+    REQUIRE(undo_document_command(fixture.history));
+    CHECK(kiai_areas(fixture).front().begin_row == 240);
+}
+
 TEST_CASE("Pointer paste retains cursor and viewport and FIFO release commits that anchor",
           "[sys][clipboard][paste-preview]") {
     compose_test_fixture_t fixture{paste_preview_song()};

@@ -426,6 +426,7 @@ typedef struct WormUiComposeKiaiSpanView {
     bool open_ended;
     bool head_visible;
     bool tail_visible;
+    bool selected;
 } WormUiComposeKiaiSpanView;
 
 /* One vertex of the SV graph. x is normalized to the visible value range in [0, 1] and drawn
@@ -1772,6 +1773,8 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_OFFSET_FIT_CANCEL,
     WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT,
     WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE,
+    WORM_UI_COMPOSE_INPUT_KIAI_SPAN_SELECT,
+    WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT,
     WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP,
     // BGM bar view: audio_fraction anchors a zoom of x_pixels steps, x_pixels pans by a
     // fraction of the song, and reset shows the whole song again.
@@ -1811,6 +1814,10 @@ typedef struct WormUiComposeInputAction {
     bool beat_fit_ctrl_held;
     int64_t beat_fit_snap_step_numerator;
     uint64_t beat_fit_snap_step_denominator;
+    /* KIAI_SPAN_EDIT: 0 drags the head, 1 the tail, 2 creates from kiai_anchor_y_pixels to y_pixels.
+       object_id is the area's head event (0 when creating). */
+    uint8_t kiai_edge;
+    double kiai_anchor_y_pixels;
 } WormUiComposeInputAction;
 
 typedef enum WormUiComposeViewportInputKind {

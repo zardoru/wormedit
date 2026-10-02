@@ -107,6 +107,7 @@ void append_compose_input(
         state.note_move_candidate_active = false;
         state.note_move_active = false;
         state.timing_stage_drag_active = false;
+        state.kiai_drag_active = false;
         state.beat_fit_drag_active = false;
         state.area_selection_candidate_active = false;
         state.area_selection_active = false;
@@ -281,6 +282,7 @@ void queue_compose_key_input(std::uint32_t keycode, std::uint32_t scancode,
         state.note_move_candidate_active = false;
         state.note_move_active = false;
         state.timing_stage_drag_active = false;
+        state.kiai_drag_active = false;
         state.area_selection_candidate_active = false;
         state.area_selection_active = false;
         state.keyboard_focus = false;
@@ -319,6 +321,7 @@ void queue_compose_wheel_input(double delta_x, double delta_y, double mouse_x,
         state.note_move_candidate_active = false;
         state.note_move_active = false;
         state.timing_stage_drag_active = false;
+        state.kiai_drag_active = false;
         state.area_selection_candidate_active = false;
         state.area_selection_active = false;
         state.keyboard_focus = false;
@@ -369,6 +372,7 @@ void compose_handle_focus_lost_input() {
     state.note_move_candidate_active = false;
     state.note_move_active = false;
     state.timing_stage_drag_active = false;
+    state.kiai_drag_active = false;
     reset_timing_marker_drag_capture();
     // Deliver the timing cancellation through prepare_compose_panel_input.
     state.area_selection_candidate_active = false;
@@ -867,6 +871,7 @@ static void cancel_pending_compose_panel_actions(WormUiWorkspaceAction* action) 
     state.note_move_candidate_active = false;
     state.note_move_active = false;
     state.timing_stage_drag_active = false;
+    state.kiai_drag_active = false;
     reset_timing_marker_drag_capture();
     state.inline_timing_open = false;
 }
@@ -893,6 +898,7 @@ static void reset_compose_revision_state(bool chart_changed, WormUiWorkspaceActi
     state.note_move_candidate_active = false;
     state.note_move_active = false;
     state.timing_stage_drag_active = false;
+    state.kiai_drag_active = false;
     reset_timing_marker_drag_capture();
     state.inline_timing_open = false;
     state.timing_missing_initial_selected = false;
@@ -924,6 +930,7 @@ static void clear_inactive_compose_panel(WormUiWorkspaceAction* action) {
     state.area_selection_candidate_active = false;
     state.area_selection_active = false;
     state.timing_stage_drag_active = false;
+    state.kiai_drag_active = false;
     reset_timing_marker_drag_capture();
     state.inline_timing_open = false;
     state.timing_missing_initial_selected = false;
@@ -1648,6 +1655,95 @@ void update_timing_stage_drag(const ComposePointerEventContext& input) {
         start_timing_stage_drag(input);
 }
 
+// A press in the Kiai lane either grabs an edge (head or tail), selects an area by its body, or
+// starts a new area on empty lane; releasing after a drag commits one edit. Timing markers keep
+// priority wherever they sit, and the gesture stays out of any other active pointer capture.
+static constexpr double kiai_edge_tolerance_pixels = 6.0;
+static constexpr double kiai_drag_threshold_pixels = 4.0;
+
+static auto kiai_gesture_blocked(const ComposePointerEventContext& input) -> bool {
+    return !input.window_focused || !input.view->scene_available || input.shortcut_event_count != 0 ||
+           (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
+           input.timing_view->stage_active || state.timing_stage_drag_active ||
+           state.inline_timing_open || state.timing_marker_candidate_active ||
+           state.timing_marker_drag_active || compose_area_pointer_consumed();
+}
+
+static void begin_kiai_drag(const ComposePointerEventContext& input) {
+    const auto& view = *input.view;
+    const auto extent = compose_timing_lane_inner_extent(view, WORM_UI_TIMING_LANE_KIAI);
+    const auto x = input.pointer_started_x;
+    const auto y = input.pointer_started_y;
+    if (!extent || x < extent->first || x >= extent->second ||
+        compose_timing_marker_at(view, x, y) != nullptr) return;
+    const auto tolerance = kiai_edge_tolerance_pixels * view.viewport_height_pixels / input.viewport.h;
+    state.kiai_drag_edge = 2;
+    state.kiai_drag_head_id = 0;
+    std::uint64_t body_head = 0;
+    for (std::size_t index = 0; index < view.kiai_span_count; ++index) {
+        const auto& span = view.kiai_spans[index];
+        const auto head_y = view.downscroll ? span.bounds.bottom : span.bounds.top;
+        const auto tail_y = view.downscroll ? span.bounds.top : span.bounds.bottom;
+        if (span.head_visible && std::abs(y - head_y) <= tolerance) {
+            state.kiai_drag_edge = 0;
+            state.kiai_drag_head_id = span.head_object_id;
+        } else if (span.tail_visible && std::abs(y - tail_y) <= tolerance) {
+            state.kiai_drag_edge = 1;
+            state.kiai_drag_head_id = span.head_object_id;
+        } else if (y > span.bounds.top && y < span.bounds.bottom) {
+            body_head = span.head_object_id;
+        }
+        if (state.kiai_drag_head_id != 0) break;
+    }
+    if (state.kiai_drag_head_id == 0 && body_head != 0) {
+        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_SELECT, x, y, 0, false,
+                             WORM_UI_COMPOSE_SELECTION_REPLACE,
+                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, body_head);
+        return;
+    }
+    state.kiai_drag_active = true;
+    state.kiai_drag_moved = false;
+    state.kiai_drag_anchor_y = y;
+    state.kiai_drag_current_y = y;
+}
+
+static void commit_kiai_drag(const ComposePointerEventContext& input) {
+    append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT,
+                         input.pointer_started_x, state.kiai_drag_current_y, 0, false,
+                         WORM_UI_COMPOSE_SELECTION_REPLACE,
+                         WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.kiai_drag_head_id, 0,
+                         false, WORM_UI_TIMING_LANE_KIAI, input.timing_view->chart_id,
+                         input.timing_view->document_revision);
+    if (input.action->compose_input_count == 0) return;
+    auto& queued = input.action->compose_inputs[input.action->compose_input_count - 1];
+    queued.kiai_edge = state.kiai_drag_edge;
+    queued.kiai_anchor_y_pixels = state.kiai_drag_anchor_y;
+}
+
+static void continue_kiai_drag(const ComposePointerEventContext& input) {
+    if (!input.window_focused || (!input.left_down && !input.left_released)) {
+        state.kiai_drag_active = false;
+        return;
+    }
+    state.kiai_drag_current_y = std::clamp(input.pointer_y, 0.0, input.view->viewport_height_pixels);
+    const auto threshold = kiai_drag_threshold_pixels * input.view->viewport_height_pixels / input.viewport.h;
+    if (std::abs(state.kiai_drag_current_y - state.kiai_drag_anchor_y) > threshold)
+        state.kiai_drag_moved = true;
+    if (!input.left_released) return;
+    state.kiai_drag_active = false;
+    if (state.kiai_drag_moved) commit_kiai_drag(input);
+}
+
+void update_kiai_span_drag(const ComposePointerEventContext& input) {
+    if (state.kiai_drag_active) {
+        continue_kiai_drag(input);
+        return;
+    }
+    if (input.pointer_started_in_view && input.left_down && !input.left_released &&
+        !kiai_gesture_blocked(input))
+        begin_kiai_drag(input);
+}
+
 static auto resource_pointer_can_start(const ComposePointerEventContext& input,
                                        bool paint_pointer_consumed) -> bool {
     const auto& view = *input.view;
@@ -2302,7 +2398,8 @@ static auto handle_compose_note_field_pointer_start(const ComposePointerEventCon
     if (state.action_overflowed || paint_pointer_consumed || !view.scene_available ||
         !input.pointer_started_in_view || !input.window_focused || input.alt_down ||
         state.note_move_active || state.note_move_candidate_active || state.area_selection_active ||
-        state.area_selection_candidate_active || input.compose_note_double_click_in_view)
+        state.area_selection_candidate_active || state.kiai_drag_active ||
+        input.compose_note_double_click_in_view)
         return false;
     const auto selection_mode = compose_selection_mode(input.pointer_modifiers);
     const bool note_hit = input.pointer_started_in_note_field &&

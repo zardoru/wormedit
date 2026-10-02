@@ -1136,12 +1136,13 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         left_down, left_released, alt_down, false, false};
     if (!state.inline_timing_open && !state.timing_marker_candidate_active)
         update_timing_stage_drag(pointer_event);
+    update_kiai_span_drag(pointer_event);
     const auto compose_pointer_captured =
         state.inline_timing_open || state.note_paint_pointer_active ||
         state.bmson_razor_pointer_active ||
         state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
         state.pointer_hold_active || state.lane_hold_active || state.note_move_active ||
-        state.area_selection_active || state.timing_stage_drag_active ||
+        state.area_selection_active || state.timing_stage_drag_active || state.kiai_drag_active ||
         state.timing_marker_candidate_active || state.timing_marker_drag_active ||
         state.waveform_beat_zero_drag_active || state.waveform_overview_drag_active ||
         beat_fit_pointer_consumed;

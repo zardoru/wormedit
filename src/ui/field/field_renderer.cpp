@@ -342,9 +342,16 @@ void renderer_t::envelope_quad(layer_t layer, const envelope_cache_t& cache,
     const auto origin = cache.origin + (y_scale == 1 ? 0 : 1.0 / (64 * y_scale));
     const auto width = cache.width;
     const auto height = cache.height;
-    const auto y = bounds.y + static_cast<float>(static_cast<double>(world) - origin) * y_scale;
+    // Adjacent spans of the ring must share one computed edge. Deriving the
+    // bottom from `count * y_scale` rounds differently from the next span's
+    // top and can leave a one-pixel blank seam between the two quads.
+    const auto edge = [&](std::int64_t row) {
+        return static_cast<float>(static_cast<double>(bounds.y) +
+                                  (static_cast<double>(row) - origin) * y_scale);
+    };
+    const auto y = edge(world);
     const SDL_FRect destination{std::round(bounds.x), y, static_cast<float>(width),
-                                static_cast<float>(span.count) * y_scale};
+                                edge(world + static_cast<std::int64_t>(span.count)) - y};
     const auto left_x = std::max(destination.x, viewport_.x);
     const auto top_y = std::max(destination.y, viewport_.y);
     const auto right_x = std::min(destination.x + destination.w, viewport_.x + viewport_.w);
@@ -353,7 +360,7 @@ void renderer_t::envelope_quad(layer_t layer, const envelope_cache_t& cache,
     // Derive clipped UVs from canonical rows, not a second floating bounds ratio.
     const auto top_row = top_y == destination.y ? static_cast<double>(span.first)
         : span.first + (static_cast<double>(top_y) - bounds.y) / y_scale + origin - world;
-    const auto bottom_row = bottom_y == destination.y + destination.h
+    const auto bottom_row = bottom_y == edge(world + static_cast<std::int64_t>(span.count))
         ? static_cast<double>(span.first + span.count)
         : span.first + (static_cast<double>(bottom_y) - bounds.y) / y_scale + origin - world;
     const SDL_FPoint first_uv{(left_x - destination.x) / destination.w,

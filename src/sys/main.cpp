@@ -2391,6 +2391,21 @@ auto can_offer_audio_project_drop(bool session_loaded, bool fresh_blank_project,
            !wormedit::is_document_dirty(history);
 }
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+// Registers audio assets added or removed by document edits (linking, undo, redo) so
+// playback and the waveform see them without a save or reload.
+void reconcile_audition_sources_after_edit(
+    const wormedit::sys::audition_source_reconciliation_context_t& reconciliation,
+    std::uint64_t revision, std::uint64_t& reconciled_revision, std::string& status) {
+    if (revision == reconciled_revision) return;
+    reconciled_revision = revision;
+    const auto unavailable = wormedit::sys::reconcile_audition_sources(reconciliation, true);
+    if (unavailable && *unavailable != 0) {
+        status = std::to_string(*unavailable) + " audio asset(s) are unavailable for preview.";
+    }
+}
+#endif
+
 auto requested_project_lane_count(std::uint8_t index) -> std::optional<std::uint32_t> {
     constexpr std::array<std::uint32_t, 8> choices{4, 5, 6, 7, 8, 9, 10, 14};
     if (index >= choices.size()) return std::nullopt;
@@ -3477,6 +3492,7 @@ int main(int argc, char** argv) {
         &resident_loader,
     };
     const auto initial_unavailable_audio_assets = wormedit::sys::reconcile_audition_sources(audition_reconciliation, false).value_or(0);
+    auto audition_reconciled_revision = history.document.revision;
     if (initial_unavailable_audio_assets != 0) {
         status += " " + std::to_string(initial_unavailable_audio_assets) +
                   " audio asset(s) are unavailable for preview.";
@@ -3707,6 +3723,8 @@ int main(int argc, char** argv) {
         wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::audio_service);
+        reconcile_audition_sources_after_edit(audition_reconciliation, history.document.revision,
+                                              audition_reconciled_revision, status);
         if (const auto failed = wormedit::sys::drain_audition_probe_failures(audition_sources)) {
             status = *failed;
         }

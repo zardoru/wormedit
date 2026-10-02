@@ -111,6 +111,35 @@ TEST_CASE("reconciling an unchanged audio inventory does not register or probe a
     CHECK(sources.pending_count() == 0);
 }
 
+TEST_CASE("reconciling after linking an absolute asset into an unsaved project registers it",
+          "[integration][sys][audio-source-registration][lazy]") {
+    wormedit::song_document_t document;
+    document.id = wormedit::song_id_t{76};
+    const std::filesystem::path unsaved_asset_base;
+    wormedit::audio::decoded_source_registry_t sources;
+    std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
+    std::optional<wormedit::song_id_t> source_project;
+    std::vector<wormedit::sys::audition_asset_entry_t> inventory;
+    std::uint64_t generation{};
+    wormedit::task_scheduler_t scheduler(1, 4);
+    const auto reconcile = [&] {
+        return wormedit::sys::reconcile_audition_sources(
+            {document, unsaved_asset_base, source_project, inventory, generation, sources,
+             metronome, [] {}, [] {}, [] {}, &scheduler},
+            true);
+    };
+
+    CHECK(reconcile() == std::optional<std::size_t>{0});
+    document.audio_assets.push_back(
+        {.id = wormedit::asset_id_t{9},
+         .source_path = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio" /
+                        "sliced-seek-source.mp3"});
+    CHECK(reconcile() == std::optional<std::size_t>{0});
+    sources.await_pending();
+    CHECK(sources.binding(wormedit::asset_id_t{9}));
+    CHECK(generation == 2);
+}
+
 TEST_CASE("first-use asset order follows the chart before unused assets",
           "[unit][sys][audio-source-registration][resident]") {
     using namespace wormedit;

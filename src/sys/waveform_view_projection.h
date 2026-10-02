@@ -23,7 +23,8 @@ void populate_audio_waveform_views(
     const wormedit::editor_interaction_state_t* interaction_state,
     const audio::waveform_analysis_result_t* detail_analysis = nullptr,
     audio::decoded_block_cache_t* decoded_blocks = nullptr,
-    const audio::aligned_waveform_style_t* stable_style = nullptr) -> bool;
+    const audio::aligned_waveform_style_t* stable_style = nullptr,
+    bgm_bar_range_t bgm_bar_range = {}) -> bool;
 
 } // namespace wormedit::sys
 #endif

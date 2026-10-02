@@ -1148,7 +1148,7 @@ static void render_minimap_preferences(const WormUiWorkspaceView& view,
 
 static void render_status_minimap(const WormUiWorkspaceView& view,
                                   WormUiWorkspaceAction* action, bool available) {
-    if (available && view.compose.waveform_overview_row_count == 0) {
+    if (available && view.compose.bgm_bar_row_count == 0) {
         nk_widget_disable_begin(g_context);
         nk_label(g_context, "Overview unavailable", NK_TEXT_CENTERED);
         nk_widget_disable_end(g_context);
@@ -1163,7 +1163,7 @@ static void render_status_minimap(const WormUiWorkspaceView& view,
     const bool focused = g_window_focused && interactive && !readonly &&
         !g_new_project_wizard.open && !project_dialog_active() &&
         (!view.pending_bms_encoding_path || !view.pending_bms_encoding_path[0]);
-    worm_ui_nuklear_render_compose_minimap(g_context, &view.compose, action, bounds, focused);
+    worm_ui_nuklear_render_compose_bgm_bar(g_context, &view.compose, action, bounds, focused);
     if (available && g_window_focused && !g_new_project_wizard.open && !project_dialog_active())
         render_minimap_preferences(view, action, bounds);
 }
@@ -1554,19 +1554,17 @@ static auto workspace_validation_error(const WormUiWorkspaceView& view) -> const
     return nullptr;
 }
 
-// One fixed-height row under the mode tabs, so the layout never shifts between tabs: the
-// chart minimap when the chart has BGM audio, otherwise the transport seek bar.
+// Two rows under the mode tabs: the transport seek bar, always, and below it the song-length
+// BGM bar when the chart has BGM audio. Stopped or paused, the seek bar shows the Compose cursor
+// (or the paused point) as the playhead; only playing or paused transports can be dragged.
 static constexpr float preview_row_height = 24.0f;
+static constexpr float bgm_bar_row_height = 48.0f;
 
-static void render_transport_seek_control(const WormUiWorkspaceView& view,
-                                         WormUiWorkspaceAction& action) {
-    nk_layout_row_dynamic(g_context, preview_row_height, 1);
-    if (status_minimap_available(view.compose)) {
-        render_status_minimap(view, &action, true);
-        return;
-    }
+static void render_transport_seek_bar(const WormUiWorkspaceView& view,
+                                      WormUiWorkspaceAction& action) {
     constexpr nk_size seek_steps = 10'000;
-    if (!view.transport_available || view.transport_end_frame == 0) {
+    nk_layout_row_dynamic(g_context, preview_row_height, 1);
+    if (view.transport_end_frame == 0) {
         nk_size unavailable_position = 0;
         nk_widget_disable_begin(g_context);
         nk_progress(g_context, &unavailable_position, seek_steps, NK_FIXED);
@@ -1577,12 +1575,40 @@ static void render_transport_seek_control(const WormUiWorkspaceView& view,
     nk_size seek_position = static_cast<nk_size>(
         static_cast<long double>(bounded_frame) /
         static_cast<long double>(view.transport_end_frame) * seek_steps);
-    if (nk_progress(g_context, &seek_position, seek_steps, NK_MODIFIABLE)) {
+    const bool draggable = view.transport_available && (view.transport_playing || view.transport_paused);
+    if (nk_progress(g_context, &seek_position, seek_steps, draggable ? NK_MODIFIABLE : NK_FIXED) &&
+        draggable) {
         action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK;
         action.transport_seek_frame =
             (view.transport_end_frame / seek_steps) * seek_position +
             ((view.transport_end_frame % seek_steps) * seek_position) / seek_steps;
     }
+}
+
+// Flat stand-in for the BGM bar on tabs and charts without BGM audio.
+static void render_bgm_bar_placeholder() {
+    struct nk_rect bounds{};
+    if (nk_widget(&bounds, g_context) == NK_WIDGET_INVALID) return;
+    auto* canvas = nk_window_get_canvas(g_context);
+    nk_fill_rect(canvas, bounds, 0.0f,
+                 wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::overview));
+    const auto* font = g_context->style.font;
+    constexpr char text[] = "BGM bar: available in Compose with BGM audio";
+    if (!font) return;
+    const auto width = font->width(font->userdata, font->height, text, sizeof(text) - 1);
+    nk_draw_text(canvas, nk_rect(bounds.x + (bounds.w - width) * 0.5f,
+                                 bounds.y + (bounds.h - font->height) * 0.5f, width, font->height),
+                 text, sizeof(text) - 1, font, nk_rgba(0, 0, 0, 0),
+                 wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::text_muted));
+}
+
+static void render_transport_seek_control(const WormUiWorkspaceView& view,
+                                         WormUiWorkspaceAction& action) {
+    render_transport_seek_bar(view, action);
+    // The row is always reserved so the layout never shifts between tabs or charts.
+    nk_layout_row_dynamic(g_context, bgm_bar_row_height, 1);
+    if (status_minimap_available(view.compose)) render_status_minimap(view, &action, true);
+    else render_bgm_bar_placeholder();
 }
 
 static void render_empty_project_content(const WormUiWorkspaceView& view,
@@ -1893,7 +1919,8 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
         render_transport_seek_control(view, action);
         const float recovery_height = render_recovery_above_content(view, action);
         float content_height = frame.height > 300
-                                  ? static_cast<float>(frame.height) - 140.0f - recovery_height
+                                  ? static_cast<float>(frame.height) - 140.0f - WORM_UI_BGM_BAR_CHROME_HEIGHT -
+                                        recovery_height
                                   : 80.0f;
         if (content_height < 80.0f) content_height = 80.0f;
         nk_layout_row_dynamic(g_context, content_height, 1);

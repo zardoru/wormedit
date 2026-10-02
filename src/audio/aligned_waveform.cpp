@@ -524,4 +524,49 @@ auto project_waveform_overview(const waveform_t& waveform, const timing_index_t&
     return result;
 }
 
+auto project_waveform_range(const waveform_t& waveform, double begin_fraction,
+                            double end_fraction, std::size_t maximum_rows)
+    -> waveform_overview_result_t {
+    waveform_overview_result_t result;
+    if (!std::isfinite(begin_fraction) || !std::isfinite(end_fraction) || begin_fraction < 0.0 ||
+        end_fraction > 1.0 || begin_fraction >= end_fraction || maximum_rows == 0)
+        return result;
+    if (maximum_rows > maximum_waveform_range_rows) {
+        result.status = aligned_waveform_status_t::capacity_exceeded;
+        return result;
+    }
+    if (waveform.sample_rate == 0 || waveform.total_frames == 0) {
+        result.status = aligned_waveform_status_t::invalid_waveform;
+        return result;
+    }
+    const auto total = static_cast<long double>(waveform.total_frames);
+    const auto begin_frame = static_cast<std::uint64_t>(std::floor(begin_fraction * total));
+    const auto end_frame = std::min<std::uint64_t>(
+        waveform.total_frames, static_cast<std::uint64_t>(std::ceil(end_fraction * total)));
+    if (begin_frame >= end_frame) {
+        result.status = aligned_waveform_status_t::invalid_waveform;
+        return result;
+    }
+    const auto projection = project_waveform(waveform, {.begin_frame = begin_frame,
+                                                        .end_frame = end_frame,
+                                                        .pixel_width = maximum_rows,
+                                                        .maximum_columns = maximum_rows});
+    if (!projection) {
+        result.status = projection.status == waveform_projection_status_t::capacity_exceeded
+                            ? aligned_waveform_status_t::capacity_exceeded
+                            : aligned_waveform_status_t::invalid_waveform;
+        return result;
+    }
+    result.visible_begin_fraction = begin_fraction;
+    result.visible_end_fraction = end_fraction;
+    result.rows.reserve(projection.columns.size());
+    for (const auto& column : projection.columns) {
+        const auto midpoint = column.begin_frame + (column.end_frame - column.begin_frame) / 2U;
+        result.rows.push_back({static_cast<double>(midpoint) / waveform.total_frames,
+                               std::max(column.absolute_peak[0], column.absolute_peak[1])});
+    }
+    result.status = aligned_waveform_status_t::projected;
+    return result;
+}
+
 } // namespace wormedit::audio

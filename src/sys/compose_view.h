@@ -2,6 +2,7 @@
 
 #include "sys/workspace_projection.h"
 #include "common/static_interval_index.h"
+#include "sys/compose_bgm_bar.h"
 #include "sys/compose_quantize_preview.h"
 #include "sys/compose_scroll_geometry.h"
 #include <wormedit/core/bmson_sound_channel_editor.h>
@@ -135,6 +136,19 @@ struct compose_scene_cache_t {
     std::uint64_t waveform_overview_revision{};
     std::uint64_t waveform_overview_generation{};
     std::vector<WormUiComposeWaveformOverviewRowView> waveform_overview_rows;
+    // BGM bar rows re-project only when the song window or the source changes; measure
+    // marks also follow the document revision (tempo and offset edits move them).
+    struct bgm_bar_cache_t {
+        std::optional<audio::waveform_key_t> key;
+        const void* identity{};
+        bgm_bar_range_t rows_range;
+        std::vector<WormUiComposeWaveformOverviewRowView> rows;
+        std::uint64_t marks_revision{};
+        std::uint64_t marks_total_frames{};
+        bgm_bar_range_t marks_range;
+        bool marks_valid{};
+        std::vector<WormUiComposeBgmBarMarkView> marks;
+    } bgm_bar;
 #endif
     std::uint64_t waveform_overview_total_frames{};
     std::uint32_t waveform_overview_sample_rate{};
@@ -233,6 +247,8 @@ struct application_command_state_t {
     std::function<bool()> transport_preview_paused;
     std::function<std::optional<std::uint64_t>()> transport_preview_end_frame;
     bool minimap_click_moves_paused_playhead{};
+    // Session-only window of the BGM bar; zoom and pan never touch the chart.
+    bgm_bar_range_t bgm_bar_range;
     struct minimap_start_frame_t {
         wormedit::chart_id_t chart;
         std::uint64_t revision{};

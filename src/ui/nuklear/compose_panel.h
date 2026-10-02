@@ -44,3 +44,9 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
 void worm_ui_nuklear_render_compose_minimap(struct nk_context* context,
     const WormUiComposeView* view, WormUiWorkspaceAction* action,
     struct nk_rect bounds, bool window_focused);
+
+// The song-length bar under the transport seek bar: waveform of the zoomed window, measure
+// grid, playhead and the Compose viewport. Seeking and the beat-zero drag follow the window.
+void worm_ui_nuklear_render_compose_bgm_bar(struct nk_context* context,
+    const WormUiComposeView* view, WormUiWorkspaceAction* action,
+    struct nk_rect bounds, bool window_focused);

@@ -12,6 +12,7 @@ namespace wormedit::audio {
 
 inline constexpr std::size_t maximum_aligned_waveform_rows = 4'096;
 inline constexpr std::size_t maximum_waveform_overview_rows = 512;
+inline constexpr std::size_t maximum_waveform_range_rows = 1'024;
 
 struct aligned_waveform_request_t {
     double viewport_scroll_pixels{};
@@ -102,6 +103,14 @@ struct waveform_overview_result_t {
 [[nodiscard]] auto project_waveform_overview(
     const waveform_t& waveform, const timing_index_t& timing, aligned_waveform_request_t viewport,
     std::size_t maximum_rows = maximum_waveform_overview_rows) -> waveform_overview_result_t;
+
+// Projects the audio span [begin_fraction, end_fraction] of the whole source into at most
+// `maximum_rows` rows, each placed by its absolute audio fraction. The visible fractions of the
+// result echo the requested span; beat zero is not reported.
+[[nodiscard]] auto project_waveform_range(const waveform_t& waveform, double begin_fraction,
+                                          double end_fraction,
+                                          std::size_t maximum_rows = maximum_waveform_range_rows)
+    -> waveform_overview_result_t;
 
 [[nodiscard]] auto project_aligned_waveform_samples(const waveform_t& waveform,
     const timing_index_t& timing, aligned_waveform_request_t request, decoded_block_cache_t& cache)

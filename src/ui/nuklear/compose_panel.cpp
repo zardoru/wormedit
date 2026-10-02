@@ -527,6 +527,23 @@ static bool compose_waveform_overview_valid(const WormUiComposeView* view) {
              view->waveform_audio_offset_denominator != 0));
 }
 
+static bool compose_bgm_bar_valid(const WormUiComposeView* view) {
+    if (view->bgm_bar_row_count > WORM_UI_COMPOSE_BGM_BAR_ROW_CAPACITY ||
+        view->bgm_bar_mark_count > WORM_UI_COMPOSE_BGM_BAR_MARK_CAPACITY ||
+        (view->bgm_bar_row_count != 0 && !view->bgm_bar_rows) ||
+        (view->bgm_bar_mark_count != 0 && !view->bgm_bar_marks))
+        return false;
+    if (view->bgm_bar_row_count == 0) return view->bgm_bar_mark_count == 0;
+    if (!std::isfinite(view->bgm_bar_begin_fraction) || !std::isfinite(view->bgm_bar_end_fraction) ||
+        view->bgm_bar_begin_fraction < 0.0 || view->bgm_bar_end_fraction > 1.0 ||
+        view->bgm_bar_begin_fraction >= view->bgm_bar_end_fraction)
+        return false;
+    return std::all_of(view->bgm_bar_marks, view->bgm_bar_marks + view->bgm_bar_mark_count,
+                       [](const WormUiComposeBgmBarMarkView& mark) {
+                           return std::isfinite(mark.audio_fraction);
+                       });
+}
+
 static bool compose_scene_arrays_present(const WormUiComposeView* view) {
     return (view->band_count == 0 || view->bands) && (view->lane_count == 0 || view->lanes) &&
            (view->grid_line_count == 0 || view->grid_lines) &&
@@ -582,6 +599,7 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            view->channel_waveform_row_count <= WORM_UI_COMPOSE_CHANNEL_WAVEFORM_ROW_CAPACITY &&
            view->waveform_overview_row_count <= WORM_UI_COMPOSE_WAVEFORM_OVERVIEW_CAPACITY &&
            compose_waveform_overview_valid(view) &&
+           compose_bgm_bar_valid(view) &&
            view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY &&
            view->lane_key_binding_count <= WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY &&
            view->branch_row_count <= WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY &&
@@ -659,6 +677,190 @@ void worm_ui_nuklear_render_compose_minimap(
     if (pressed) state.keyboard_focus = true;
     process_compose_overview_input({context, view, action, bounds, available, pressed,
         window_focused && available, state.waveform_beat_zero_drag_active});
+}
+
+namespace {
+
+constexpr float bgm_bar_line_spacing_pixels = 5.0f;
+constexpr float bgm_bar_label_spacing_pixels = 48.0f;
+constexpr double bgm_bar_wheel_pan_fraction = 0.1;
+
+struct BgmBarGeometry {
+    struct nk_rect bounds;
+    double begin;
+    double end;
+    [[nodiscard]] float x_of(double fraction) const {
+        return bounds.x + static_cast<float>((fraction - begin) / (end - begin)) * bounds.w;
+    }
+    [[nodiscard]] double fraction_at(float x) const {
+        return begin + std::clamp(static_cast<double>((x - bounds.x) / bounds.w), 0.0, 1.0) *
+                           (end - begin);
+    }
+};
+
+// Smallest 1-2-5 measure step whose marks keep `spacing` pixels apart.
+std::uint32_t bgm_bar_measure_step(double pixels_per_measure, float spacing) {
+    if (!(pixels_per_measure > 0.0)) return 1U << 30;
+    const double needed = spacing / pixels_per_measure;
+    std::uint32_t scale = 1;
+    for (;;) {
+        for (const std::uint32_t factor : {1U, 2U, 5U})
+            if (static_cast<double>(factor) * scale >= needed) return factor * scale;
+        if (scale > (1U << 27)) return 1U << 30;
+        scale *= 10;
+    }
+}
+
+// Average on-screen width of one measure, from the first and last published marks.
+double bgm_bar_pixels_per_measure(const WormUiComposeView& view, const BgmBarGeometry& geometry) {
+    if (view.bgm_bar_mark_count < 2) return 0.0;
+    const auto& first = view.bgm_bar_marks[0];
+    const auto& last = view.bgm_bar_marks[view.bgm_bar_mark_count - 1];
+    const auto measures = static_cast<double>(last.measure) - first.measure;
+    if (measures <= 0.0) return 0.0;
+    return (last.audio_fraction - first.audio_fraction) / (geometry.end - geometry.begin) *
+           geometry.bounds.w / measures;
+}
+
+void draw_bgm_bar_waveform(struct nk_command_buffer* canvas, const WormUiComposeView& view,
+                           const BgmBarGeometry& geometry) {
+    const auto center = geometry.bounds.y + geometry.bounds.h * 0.5f;
+    const auto half_height = geometry.bounds.h * 0.43f;
+    const auto width = std::max(1.0f, geometry.bounds.w / static_cast<float>(view.bgm_bar_row_count));
+    const auto color = nk_rgba(114, 222, 239, 190);
+    for (size_t index = 0; index < view.bgm_bar_row_count; ++index) {
+        const auto& row = view.bgm_bar_rows[index];
+        const auto x = geometry.x_of(row.audio_fraction);
+        nk_stroke_line(canvas, x, center - row.absolute_peak * half_height,
+                       x, center + row.absolute_peak * half_height, width, color);
+    }
+}
+
+void draw_bgm_bar_grid(struct nk_context* context, struct nk_command_buffer* canvas,
+                       const WormUiComposeView& view, const BgmBarGeometry& geometry) {
+    const auto* font = context->style.font;
+    const auto per_measure = bgm_bar_pixels_per_measure(view, geometry);
+    const auto line_step = bgm_bar_measure_step(per_measure, bgm_bar_line_spacing_pixels);
+    const auto label_step = bgm_bar_measure_step(per_measure, bgm_bar_label_spacing_pixels);
+    const auto& bounds = geometry.bounds;
+    for (size_t index = 0; index < view.bgm_bar_mark_count; ++index) {
+        const auto& mark = view.bgm_bar_marks[index];
+        if (mark.measure % line_step != 0) continue;
+        const auto x = geometry.x_of(mark.audio_fraction);
+        const bool labeled = font && mark.measure % label_step == 0;
+        nk_stroke_line(canvas, x, bounds.y, x, bounds.y + (labeled ? bounds.h : bounds.h * 0.35f),
+                       1.0f, nk_rgba(255, 255, 255, labeled ? 70 : 36));
+        if (!labeled) continue;
+        char text[16];
+        const int length = std::snprintf(text, sizeof(text), "%u", mark.measure);
+        if (length <= 0) continue;
+        const auto width = font->width(font->userdata, font->height, text, length);
+        if (x + 3.0f + width > bounds.x + bounds.w) continue;
+        nk_draw_text(canvas, nk_rect(x + 3.0f, bounds.y + 1.0f, width, font->height), text, length,
+                     font, nk_rgba(0, 0, 0, 0), nk_rgba(210, 220, 230, 200));
+    }
+}
+
+void draw_bgm_bar_markers(struct nk_command_buffer* canvas, const WormUiComposeView& view,
+                          const BgmBarGeometry& geometry) {
+    const auto& bounds = geometry.bounds;
+    const auto clamp_x = [&](double fraction) {
+        return std::clamp(geometry.x_of(fraction), bounds.x, bounds.x + bounds.w - 1.0f);
+    };
+    const auto left = clamp_x(std::max(view.waveform_overview_visible_begin_fraction, geometry.begin));
+    const auto right = clamp_x(std::min(view.waveform_overview_visible_end_fraction, geometry.end));
+    if (view.waveform_overview_visible_end_fraction >= geometry.begin &&
+        view.waveform_overview_visible_begin_fraction <= geometry.end) {
+        const auto thumb = nk_rect(left, bounds.y + 1.0f, std::max(2.0f, right - left), bounds.h - 2.0f);
+        nk_fill_rect(canvas, thumb, 0.0f, nk_rgba(99, 173, 221, 55));
+        nk_stroke_rect(canvas, thumb, 0.0f, 1.0f, nk_rgba(139, 210, 255, 180));
+    }
+    if (const auto fraction = worm_ui_nuklear_overview_source_fraction(view);
+        fraction && *fraction >= geometry.begin && *fraction <= geometry.end) {
+        const auto x = clamp_x(*fraction);
+        nk_stroke_line(canvas, x, bounds.y + 1.0f, x, bounds.y + bounds.h - 1.0f, 2.0f,
+                       nk_rgb(255, 110, 92));
+    }
+    if (view.waveform_beat_zero_visible && view.waveform_beat_zero_fraction >= geometry.begin &&
+        view.waveform_beat_zero_fraction <= geometry.end) {
+        const auto x = clamp_x(view.waveform_beat_zero_fraction);
+        nk_stroke_line(canvas, x, bounds.y, x, bounds.y + bounds.h,
+                       view.waveform_offset_drag_active ? 1.0f : 2.0f,
+                       view.waveform_offset_drag_active ? nk_rgba(255, 207, 104, 110)
+                                                        : nk_rgb(255, 207, 104));
+    }
+}
+
+void append_bgm_bar_input(WormUiWorkspaceAction* action, WormUiComposeInputKind kind,
+                          double amount, double audio_fraction) {
+    append_compose_input(action, kind, amount);
+    if (action->compose_input_count == 0) return;
+    auto& input = action->compose_inputs[action->compose_input_count - 1];
+    if (input.kind == kind) input.audio_fraction = audio_fraction;
+}
+
+// Wheel zooms around the pointer, Shift+wheel or the horizontal wheel pans, a middle drag pans,
+// and a middle click shows the whole song again.
+void process_bgm_bar_view_input(struct nk_context* context, WormUiWorkspaceAction* action,
+                                const BgmBarGeometry& geometry) {
+    static bool middle_dragged = false;
+    auto& input = context->input;
+    const auto span = geometry.end - geometry.begin;
+    if (nk_input_is_mouse_released(&input, NK_BUTTON_MIDDLE)) {
+        if (!middle_dragged && nk_input_is_mouse_hovering_rect(&input, geometry.bounds))
+            append_bgm_bar_input(action, WORM_UI_COMPOSE_INPUT_BGM_BAR_RESET, 0.0, 0.0);
+        middle_dragged = false;
+    }
+    if (!nk_input_is_mouse_hovering_rect(&input, geometry.bounds) &&
+        !(middle_dragged && input.mouse.buttons[NK_BUTTON_MIDDLE].down))
+        return;
+    if (input.mouse.buttons[NK_BUTTON_MIDDLE].down && input.mouse.delta.x != 0.0f) {
+        middle_dragged = true;
+        append_bgm_bar_input(action, WORM_UI_COMPOSE_INPUT_BGM_BAR_PAN,
+                             -static_cast<double>(input.mouse.delta.x) / geometry.bounds.w * span, 0.0);
+    }
+    const bool shift = (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
+    const auto wheel_x = static_cast<double>(input.mouse.scroll_delta.x);
+    const auto wheel_y = static_cast<double>(input.mouse.scroll_delta.y);
+    if (shift || wheel_x != 0.0) {
+        const auto amount = wheel_x != 0.0 ? wheel_x : wheel_y;
+        if (amount != 0.0)
+            append_bgm_bar_input(action, WORM_UI_COMPOSE_INPUT_BGM_BAR_PAN,
+                                 -amount * span * bgm_bar_wheel_pan_fraction, 0.0);
+    } else if (wheel_y != 0.0) {
+        append_bgm_bar_input(action, WORM_UI_COMPOSE_INPUT_BGM_BAR_ZOOM, wheel_y,
+                             geometry.fraction_at(input.mouse.pos.x));
+    }
+}
+
+} // namespace
+
+void worm_ui_nuklear_render_compose_bgm_bar(
+    struct nk_context* context, const WormUiComposeView* view,
+    WormUiWorkspaceAction* action, struct nk_rect bounds, bool window_focused) {
+    if (!context || !view || !action) return;
+    const bool available = view->visible && worm_ui_nuklear_compose_view_valid(view) &&
+        view->scene_available && view->bgm_bar_row_count != 0 && bounds.w > 1.0f && bounds.h > 1.0f;
+    auto* canvas = nk_window_get_canvas(context);
+    const BgmBarGeometry geometry{bounds, view->bgm_bar_begin_fraction, view->bgm_bar_end_fraction};
+    if (available && canvas) {
+        nk_fill_rect(canvas, bounds, 0.0f,
+                     wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::overview));
+        draw_bgm_bar_waveform(canvas, *view, geometry);
+        draw_bgm_bar_grid(context, canvas, *view, geometry);
+        draw_bgm_bar_markers(canvas, *view, geometry);
+        if (window_focused && nk_input_is_mouse_hovering_rect(&context->input, bounds))
+            nk_tooltip(context, "Wheel: zoom   Shift+wheel or middle-drag: pan   "
+                                "Middle-click: whole song");
+    }
+    const auto& button = context->input.mouse.buttons[NK_BUTTON_LEFT];
+    const bool pressed = available && window_focused && button.clicked && button.down &&
+        nk_input_is_mouse_click_down_in_rect(&context->input, NK_BUTTON_LEFT, bounds, nk_true);
+    if (pressed) state.keyboard_focus = true;
+    if (available && window_focused) process_bgm_bar_view_input(context, action, geometry);
+    process_compose_overview_input({context, view, action, bounds, available, pressed,
+        window_focused && available, state.waveform_beat_zero_drag_active,
+        view->bgm_bar_begin_fraction, view->bgm_bar_end_fraction});
 }
 
 struct ComposePanelRenderContext {

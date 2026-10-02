@@ -28,6 +28,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_minimap_navigation.cpp
     ../src/sys/compose_bookmark_commands.cpp
     ../src/sys/compose_playhead_skip.cpp
+    ../src/sys/compose_bgm_bar.cpp
     ../src/sys/compose_measure_commands.cpp
     ../src/sys/compose_selection_transform.cpp
     ../src/sys/compose_label_search.cpp
@@ -50,6 +51,7 @@ add_executable(wormedit_core_tests
     sys/application_commands_tests.cpp
     sys/compose_bookmark_commands_tests.cpp
     sys/compose_playhead_skip_tests.cpp
+    sys/compose_bgm_bar_tests.cpp
     sys/compose_measure_commands_tests.cpp
     sys/compose_selection_transform_tests.cpp
     sys/compose_label_search_tests.cpp
@@ -467,7 +469,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_input.cpp
             ../src/sys/compose_minimap_navigation.cpp
             ../src/sys/compose_bookmark_commands.cpp
-            ../src/sys/compose_playhead_skip.cpp)
+            ../src/sys/compose_playhead_skip.cpp
+            ../src/sys/compose_bgm_bar.cpp)
         target_compile_definitions(wormedit_frame_timing_tests PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1)
         target_link_libraries(wormedit_frame_timing_tests PRIVATE wormedit::audio_decoder)
     endif()

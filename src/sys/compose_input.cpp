@@ -2853,6 +2853,9 @@ auto dispatch_compose_input_action(WormUiWorkspaceAction& ui_action,
                                    application_command_state_t& application_state,
                                    compose_scene_cache_t& scene_cache,
                                    double viewport_delta_seconds) -> std::string {
+    // View-only BGM bar inputs never reach the editor dispatcher.
+    (void)consume_bgm_bar_inputs(ui_action, application_state.bgm_bar_range,
+                                 scene_cache.waveform_overview_total_frames);
     const bool preference_changed = consume_minimap_preferences(ui_action, application_state);
     if (preference_changed && ui_action.compose_input_count == 0)
         return "Minimap paused-click preference changed for this session.";

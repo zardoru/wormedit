@@ -11,6 +11,40 @@
 #include <wormedit/window.h>
 
 namespace wormedit::sys {
+namespace {
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+// While stopped, the seek bar shows the Compose cursor as the playhead. Uses the previous
+// frame's cached indexes, so it is absent until Compose has built a scene.
+struct stopped_playhead_t {
+    std::uint64_t frame{};
+    std::uint64_t end_frame{};
+};
+
+auto stopped_playhead(const application_frame_projection_context_t& context)
+    -> std::optional<stopped_playhead_t> {
+    const auto& cache = context.compose_scene_cache;
+    const auto* state = context.compose_interaction_state ? &*context.compose_interaction_state : nullptr;
+    if (!state || !context.workspace.selected_chart || state->chart != *context.workspace.selected_chart ||
+        state->virtual_bms_cursor_row || !cache.marker_timing_index || !cache.cached_measure_index ||
+        cache.chart != state->chart)
+        return std::nullopt;
+    const auto at = timing_at(*cache.marker_timing_index, *cache.cached_measure_index, state->cursor);
+    const auto end = timing_at(*cache.marker_timing_index, cache.marker_timing_index->total_rows);
+    if (!at.seconds || !end.seconds) return std::nullopt;
+    // Times before the audio start clamp to frame zero, as the preview start does.
+    const auto to_frame = [](signed_rational_t seconds) -> std::optional<std::uint64_t> {
+        if (seconds.numerator < 0) return std::uint64_t{0};
+        return sample_frame_at(seconds, audio::output_sample_rate).frame;
+    };
+    const auto frame = to_frame(*at.seconds);
+    const auto end_frame = to_frame(*end.seconds);
+    if (!frame || !end_frame) return std::nullopt;
+    return stopped_playhead_t{*frame, std::max(*end_frame, *frame)};
+}
+#endif
+
+} // namespace
 
 
 auto project_application_frame(application_frame_projection_context_t context)
@@ -45,6 +79,12 @@ auto project_application_frame(application_frame_projection_context_t context)
                                                 : context.preview_state.resume_frame;
         frame_transport.end_frame = context.preview_state.end_frame;
         frame_transport.sample_rate = audio::output_sample_rate;
+        if (!frame_transport.playing && !frame_transport.paused) {
+            if (const auto stopped = stopped_playhead(context)) {
+                frame_transport.frame = stopped->frame;
+                frame_transport.end_frame = std::max(frame_transport.end_frame, stopped->end_frame);
+            }
+        }
 #endif
         populate_workspace_frame_view(
             flattened,
@@ -158,7 +198,8 @@ auto project_application_frame(application_frame_projection_context_t context)
             context.workspace.transport.audio_asset.has_value(),
             context.compose_interaction_state ? &*context.compose_interaction_state : nullptr,
             context.waveform_runtime.detail_analysis().get(),
-            &context.waveform_runtime.decoded_blocks(), context.waveform_runtime.playback_style());
+            &context.waveform_runtime.decoded_blocks(), context.waveform_runtime.playback_style(),
+            context.application_command_state.bgm_bar_range);
     }
     {
         frame_phase_scope_t overlays(frame_phase_t::workspace_waveform_overlays);

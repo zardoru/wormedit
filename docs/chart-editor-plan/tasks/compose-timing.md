@@ -153,7 +153,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 ## T-321 Remove the Timing screen
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** The Timing tab, `timing_panel.*`, `timing_state.*` and their tests are gone; the app builds and Compose timing focus still works.
 - **Read first:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/timing_panel.h`, `src/ui/nuklear/timing_state.h`, `CMakeLists.txt`.
 - **Files owned:** `src/ui/nuklear/timing_panel.*`, `src/ui/nuklear/timing_state.*`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/ui/*timing*`, `docs/chart-editor-plan/tasks/*.md`, `memory/chart-editor-status/resume.md`.
@@ -162,6 +162,8 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Reject/failure behavior:** If any check fails, stop and report; do not delete tests to get green.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; `ctest --test-dir build -R '^documentation\.'`; isolated Xvfb check of Compose when UI changes.
 - **Out of scope:** the other cards in this file and unrelated rendering work.
+- **Results (2026-10-02):** `timing_panel.*` is gone; the shared stage editor and view validation live in `src/ui/nuklear/timing_stage_editor.*`, and `timing_state.*` keeps only the stage-editor buffers (its reset test remains). The Timing tab is hidden (`workspace_tab_enabled(timing)` is false, so core rejects switching to it; the `workspace_tab_t::timing` enumerator stays so saved state and the command registry ids keep their numbering). `workspace.open_timing` (F3) now opens Compose with timing focus. Removed from `main.cpp`: the SV recipe draft, meter and grid dispatches and the recipe draft state in `timing_edit_t`. `workspace_tests` and `sv_recipe_tests` now use Metadata/Compose where they used the Timing tab; the Timing-only meter, grid and recipe-draft behavior is covered by the Compose tests added in T-318..T-320. `scripts/smoke-compose-virtual-x.sh` lost its `recipe` modes and clicks Compose in the six-tab row; `timing` mode presses F3. Full app suite 1482/1482; no cognitive-complexity warnings in `main.cpp`, `frontend.cpp`, `timing_stage_editor.cpp` or `application_command_dispatch.cpp`; Xvfb capture shows five tabs and timing focus lanes after F3.
+- **Remaining:** the legacy Timing-tab projection (`populate_timing_view` recipe/draft parameters in `timing_view.*`, the unused `WORM_UI_TIMING_RECIPE_ACTION_*`, meter and grid action fields in `frontend.h`) is dead but still tested by `frame_projection_arena_tests`; delete it with those tests in a follow-up.
 
 ## T-322 Show and edit SPEEDS in Compose
 

@@ -768,7 +768,9 @@ auto make_branch_outline(const chart_document_t& chart, const workspace_limits_t
 } // namespace
 
 auto workspace_tab_enabled(workspace_tab_t tab) noexcept -> bool {
-    return index_of(tab).has_value() && tab != workspace_tab_t::storyboard;
+    // The Timing screen is retired: Compose's timing focus mode carries its functions.
+    return index_of(tab).has_value() && tab != workspace_tab_t::storyboard &&
+           tab != workspace_tab_t::timing;
 }
 
 auto make_workspace_controller(const song_document_t& document, workspace_limits_t limits)

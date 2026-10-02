@@ -8,8 +8,8 @@ root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 app="$root_dir/build/wormedit"
 output=${1:-/tmp/wormedit-compose-smoke.png}
 mode=${2:-compose}
-if [[ $mode != landing && $mode != wizard && $mode != compose && $mode != timing && $mode != recipe && $mode != recipe_apply ]]; then
-    echo "Usage: $0 [capture.png] [landing|wizard|compose|timing|recipe|recipe_apply]" >&2
+if [[ $mode != landing && $mode != wizard && $mode != compose && $mode != timing ]]; then
+    echo "Usage: $0 [capture.png] [landing|wizard|compose|timing]" >&2
     exit 1
 fi
 temp_dir=$(mktemp -d /tmp/wormedit-compose-smoke.XXXXXX)
@@ -123,26 +123,13 @@ fi
 if [[ $mode != landing && $mode != wizard ]]; then
     # The centered, 204-pixel wizard puts Create 46 pixels below the window midpoint.
     click_at "$((window_width / 2 + 160))" "$((window_height / 2 + 46))"
-    # Compose is the middle of seven equal-width tabs.
-    click_at "$((window_width / 2))" 55
-    if [[ $mode == timing || $mode == recipe || $mode == recipe_apply ]]; then
-        # Timing is the third tab in the same seven-column row.
-        click_at "$((window_width * 5 / 14))" 55
-    fi
+    # Compose is the third of six equal-width tabs (the Timing screen is retired).
+    click_at "$((window_width * 5 / 12))" 55
 fi
-if [[ $mode == recipe || $mode == recipe_apply ]]; then
-    # Empty test data keeps the recipe button at this fixed toolbar row.
-    click_at "$((window_width / 5))" 290
-    # Choose a nonempty interval in the Scroll / SV lane.
-    xdotool mousemove --window "$window_id" "$((window_width / 5))" 350 mousedown 1
-    sleep 0.12
-    xdotool mousemove --window "$window_id" "$((window_width / 5))" 550
-    sleep 0.12
-    xdotool mouseup 1
-    sleep 0.25
-    if [[ $mode == recipe_apply ]]; then
-        click_at "$((window_width / 4))" 665
-    fi
+if [[ $mode == timing ]]; then
+    # Timing focus is a Compose mode, reached through the workspace.open_timing shortcut.
+    xdotool key --window "$window_id" F3
+    sleep 0.3
 fi
 if ! kill -0 "$app_pid" 2>/dev/null; then
     cat "$temp_dir/wormedit.log" >&2
@@ -150,9 +137,4 @@ if ! kill -0 "$app_pid" 2>/dev/null; then
     exit 1
 fi
 import -window "$window_id" "$output"
-if [[ $mode == recipe_apply ]] &&
-    ! tesseract "$output" stdout 2>/dev/null | rg -qi 'SV recipe added'; then
-    echo "The applied SV recipe did not leave a visible success frame: $output" >&2
-    exit 1
-fi
 echo "$output"

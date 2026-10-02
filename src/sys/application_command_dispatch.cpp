@@ -360,7 +360,11 @@ auto workspace_tab_command(command_context_t& context) -> std::optional<command_
     switch (context.command.kind) {
     case command_kind_t::workspace_open_setup: tab = workspace_tab_t::setup; break;
     case command_kind_t::workspace_open_metadata: tab = workspace_tab_t::metadata; break;
-    case command_kind_t::workspace_open_timing: tab = workspace_tab_t::timing; break;
+    case command_kind_t::workspace_open_timing:
+        // The Timing screen is retired; its command opens Compose in timing focus.
+        tab = workspace_tab_t::compose;
+        context.application_state.compose_timing_focus = true;
+        break;
     case command_kind_t::workspace_open_compose: tab = workspace_tab_t::compose; break;
     case command_kind_t::workspace_open_storyboard: tab = workspace_tab_t::storyboard; break;
     case command_kind_t::workspace_open_audio_slices: tab = workspace_tab_t::audio_slices; break;
@@ -379,10 +383,9 @@ auto timing_lock_command(command_context_t& context) -> std::optional<command_re
     if (context.command.kind != command_kind_t::timing_toggle_lock) return std::nullopt;
     using namespace wormedit;
     auto& app = context.application_state;
-    if (context.workspace.active_tab != workspace_tab_t::timing &&
-        !(context.workspace.active_tab == workspace_tab_t::compose && app.compose_timing_focus))
-        return reject_application_command(
-            context.status, "Timing Lock requires the Timing tab or Compose with Timing focus.");
+    if (!(context.workspace.active_tab == workspace_tab_t::compose && app.compose_timing_focus))
+        return reject_application_command(context.status,
+                                          "Timing Lock requires Compose with Timing focus.");
     app.timing_locked = !app.timing_locked;
     if (app.timing_locked && context.timing_stage) {
         cancel_timing_lane_pseudonote(*context.timing_stage);

@@ -436,7 +436,7 @@ TEST_CASE("applying an SV recipe requires rebinding the workspace before its nex
     auto binding = make_workspace_controller(history);
     REQUIRE(binding.workspace);
     auto workspace = *binding.workspace;
-    workspace.active_tab = workspace_tab_t::timing;
+    workspace.active_tab = workspace_tab_t::compose;
     REQUIRE(make_workspace_view(workspace, history.document));
 
     auto candidate = make_constant_recipe({}, measure_id_t{11}, measure_id_t{12}, {2, 1});
@@ -449,7 +449,7 @@ TEST_CASE("applying an SV recipe requires rebinding the workspace before its nex
     REQUIRE(rebind_workspace(workspace, history));
     const auto next_frame = make_workspace_view(workspace, history.document);
     REQUIRE(next_frame);
-    CHECK(next_frame.view->active_tab == workspace_tab_t::timing);
+    CHECK(next_frame.view->active_tab == workspace_tab_t::compose);
     CHECK(next_frame.view->document_revision == history.document.revision);
 }
 

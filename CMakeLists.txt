@@ -403,7 +403,7 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/player_preview_texture.cpp
         src/ui/nuklear/setup_panel.cpp
         src/ui/nuklear/setup_state.cpp
-        src/ui/nuklear/timing_panel.cpp
+        src/ui/nuklear/timing_stage_editor.cpp
         src/ui/nuklear/timing_state.cpp
         src/ui/nuklear/meter_state.cpp
         src/ui/nuklear/theme.cpp

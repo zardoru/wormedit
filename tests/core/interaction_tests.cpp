@@ -4625,7 +4625,11 @@ TEST_CASE("a warp refuses playable heads but takes fakes and mines",
     CHECK(note_count(history) == 2);
 
     state.armed_note_kind = note_kind_t::tap;
+    // The warp's own first and last rows take playable notes.
     CHECK(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{2}, 720}}));
+    auto edge = warp_history();
+    auto edge_state = make_state(edge);
+    CHECK(dispatch_editor_action(edge, edge_state, place_tap_action_t{{measure_id_t{2}, 240}}));
     CHECK(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{2}, 0}}));
 }
 

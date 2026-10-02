@@ -14,7 +14,7 @@ auto row_in_warp(const chart_document_t& chart, const measure_index_t& index,
     return std::ranges::any_of(chart.warps, [&](const auto& warp) {
         const auto begin = absolute_row(index, warp.span.begin);
         const auto end = absolute_row(index, warp.span.end);
-        return begin && end && absolute >= *begin && absolute < *end;
+        return begin && end && absolute > *begin && absolute < *end;
     });
 }
 

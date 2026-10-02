@@ -1332,6 +1332,26 @@ static void draw_compose_recipe_areas(const ComposePaintContext& paint) {
     }
 }
 
+// SPEEDS transitions: a faint band over the span a SPEEDS event interpolates across, stronger
+// under the pointer, with its target and length written next to it when there is room.
+static void draw_compose_speed_spans(const ComposePaintContext& paint) {
+    const auto extent = compose_timing_lane_inner_extent(*paint.view, WORM_UI_TIMING_LANE_SPEED);
+    if (!extent) return;
+    for (size_t index = 0; index < paint.view->speed_span_count; ++index) {
+        const auto& span = paint.view->speed_spans[index];
+        const WormUiComposeRect bounds{extent->first, span.bounds.top, extent->second, span.bounds.bottom};
+        auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
+        if (rect.w <= 0.0f) continue;
+        if (rect.h < 3.0f) rect.h = 3.0f;
+        const bool hovered = nk_input_is_mouse_hovering_rect(&paint.context->input, rect);
+        field_rect(paint, rect, 0.0f, nk_rgba(136, 203, 238, hovered ? 84 : 34), 10);
+        field_line(paint, rect.x, rect.y, rect.x + rect.w, rect.y, 1.0f,
+                   hovered ? nk_rgb(137, 207, 239) : nk_rgba(137, 207, 239, 120), 10);
+        field_line(paint, rect.x, rect.y + rect.h, rect.x + rect.w, rect.y + rect.h, 1.0f,
+                   hovered ? nk_rgb(91, 145, 177) : nk_rgba(91, 145, 177, 120), 10);
+    }
+}
+
 static void draw_compose_sv_graph(const ComposePaintContext& paint) {
     const auto extent = compose_timing_lane_inner_extent(*paint.view, WORM_UI_TIMING_LANE_SCROLL);
     if (!extent || paint.view->sv_graph_point_count < 2) return;
@@ -1357,6 +1377,7 @@ static void draw_compose_sv_graph(const ComposePaintContext& paint) {
 static void draw_compose_timing_layer(const ComposePaintContext& paint,
                                       const ComposeTimingLaneLayout& layout) {
     draw_compose_kiai_spans(paint);
+    draw_compose_speed_spans(paint);
     draw_compose_recipe_areas(paint);
     draw_compose_sv_graph(paint);
     draw_compose_proposed_grid(paint);

@@ -1018,6 +1018,8 @@ bool initialize_compose_view_state(
     view.kiai_span_count = 0;
     view.recipe_areas = nullptr;
     view.recipe_area_count = 0;
+    view.speed_spans = nullptr;
+    view.speed_span_count = 0;
     view.recipe_graph_points = nullptr;
     view.recipe_graph_point_count = 0;
     view.sv_graph_points = nullptr;
@@ -1432,6 +1434,15 @@ auto compose_timing_decimal_detail(wormedit::signed_rational_t value) -> std::st
     return decimal + " (exact " + exact + ")";
 }
 
+// " · transition 2 beats" (or seconds) for a SPEEDS event that interpolates; empty when instant.
+auto compose_speed_transition_detail(const wormedit::speed_event_t& event) -> std::string {
+    if (event.transition_beats.numerator == 0 || event.transition_beats.denominator == 0) return {};
+    std::string text = " · transition " + std::to_string(event.transition_beats.numerator);
+    if (event.transition_beats.denominator != 1)
+        text += "/" + std::to_string(event.transition_beats.denominator);
+    return text + (event.transition_is_seconds ? " s" : " beats");
+}
+
 auto compose_pause_unit_label(wormedit::pause_unit_t unit) -> std::string_view {
     switch (unit) {
     case wormedit::pause_unit_t::seconds: return "s";
@@ -1495,7 +1506,8 @@ void append_compose_chart_timing_markers(const wormedit::chart_document_t& chart
         append(chart.speeds[index].position, chart.speeds[index].id.value,
                chart.speeds[index].provenance.source_order, index, WORM_UI_TIMING_LANE_SPEED,
                compose_timing_short_number(chart.speeds[index].multiplier),
-               "Speed " + compose_timing_decimal_detail(chart.speeds[index].multiplier), false);
+               "Speed " + compose_timing_decimal_detail(chart.speeds[index].multiplier) +
+                   compose_speed_transition_detail(chart.speeds[index]), false);
     for (std::size_t index = 0; index < chart.pauses.size(); ++index)
         append(chart.pauses[index].position, chart.pauses[index].id.value,
                chart.pauses[index].provenance.source_order, index,
@@ -1965,6 +1977,34 @@ void populate_compose_recipe_areas(flattened_workspace_t& flattened, const compo
     view.recipe_graph_point_count = flattened.compose.recipe_graph_point.size();
 }
 
+// SPEEDS transitions as spans in the SPD lane, those that reach the viewport.
+void populate_compose_speed_spans(flattened_workspace_t& flattened, const compose_scene_cache_t& cache,
+                                  const wormedit::editor_interaction_view_model_t& interaction_view,
+                                  WormUiComposeView& view, bool downscroll, double pixels_per_row) {
+    flattened.compose.speed_span.clear();
+    view.speed_spans = nullptr;
+    view.speed_span_count = 0;
+    if (!cache.speed_spans || !(pixels_per_row > 0.0)) return;
+    const auto scroll = interaction_view.viewport_scroll_pixels;
+    const auto height = view.viewport_height_pixels;
+    for (const auto& span : cache.speed_spans->spans) {
+        const auto begin_y = compose_project_y(span.begin_row, pixels_per_row, scroll, height, downscroll);
+        const auto end_y = compose_project_y(span.end_row, pixels_per_row, scroll, height, downscroll);
+        const auto top = std::min(begin_y, end_y);
+        const auto bottom = std::max(begin_y, end_y);
+        if (bottom < 0.0 || top > height) continue;
+        if (flattened.compose.speed_span.size() >= WORM_UI_COMPOSE_SPEED_SPAN_CAPACITY) break;
+        flattened.compose.speed_span.push_back({.bounds = {0.0, top, 0.0, bottom},
+                                                .object_id = span.object.value,
+                                                .multiplier = span.multiplier,
+                                                .transition_length = span.transition_length,
+                                                .transition_is_seconds = span.transition_is_seconds,
+                                                .clipped = span.clipped});
+    }
+    view.speed_spans = flattened.compose.speed_span.data();
+    view.speed_span_count = flattened.compose.speed_span.size();
+}
+
 void populate_compose_selection_preview(
     const compose_scene_cache_t& cache,
     std::optional<wormedit::editor_interaction_state_t>& retained_state,
@@ -2214,6 +2254,7 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         cache.kiai_spans.reset();
         cache.sv_steps.reset();
         cache.recipe_areas.reset();
+        cache.speed_spans.reset();
         cache.proposed_offset_timing_index.reset();
         cache.proposed_offset_seconds.reset();
         cache.beat_fit_drag.reset();
@@ -2260,6 +2301,8 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         if (timing) {
             cache.dead_spans = wormedit::sys::project_dead_spans(
                 chart, cache.index->measures, *timing.index, WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY);
+            cache.speed_spans = wormedit::sys::project_speed_spans(
+                chart, *timing.index, WORM_UI_COMPOSE_SPEED_SPAN_CAPACITY);
             cache.marker_timing_index = std::move(*timing.index);
         }
     }
@@ -3058,6 +3101,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
                                 pixels_per_row);
     populate_compose_kiai_and_sv(flattened, cache, interaction_view, view, downscroll,
                                  pixels_per_row, canvas_rows, application_state.kiai_selected_head);
+    populate_compose_speed_spans(flattened, cache, interaction_view, view, downscroll, pixels_per_row);
     populate_compose_recipe_areas(flattened, cache, interaction_view, view, downscroll,
                                   pixels_per_row, canvas_rows, application_state.recipe_selected);
     const auto maximum_bgm_scroll = std::max(

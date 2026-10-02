@@ -6,6 +6,7 @@
 #include "sys/compose_dead_spans.h"
 #include "sys/compose_kiai_spans.h"
 #include "sys/compose_recipe_areas.h"
+#include "sys/compose_speed_spans.h"
 #include "sys/compose_sv_graph.h"
 #include "sys/compose_quantize_preview.h"
 #include "sys/compose_scroll_geometry.h"
@@ -113,6 +114,7 @@ struct compose_scene_cache_t {
     std::optional<kiai_projection_t> kiai_spans;
     std::optional<sv_steps_t> sv_steps;
     std::optional<recipe_areas_t> recipe_areas;
+    std::optional<speed_spans_t> speed_spans;
     std::optional<wormedit::timing_index_t> proposed_offset_timing_index;
     std::optional<wormedit::signed_rational_t> proposed_offset_seconds;
     std::optional<wormedit::beat_interval_drag_t> beat_fit_drag;

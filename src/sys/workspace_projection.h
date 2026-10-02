@@ -138,6 +138,7 @@ struct flattened_workspace_t {
         std::vector<WormUiComposeDeadSpanView> dead_span;
         std::vector<WormUiComposeKiaiSpanView> kiai_span;
         std::vector<WormUiComposeRecipeAreaView> recipe_area;
+        std::vector<WormUiComposeSpeedSpanView> speed_span;
         std::vector<WormUiComposeSvGraphPointView> recipe_graph_point;
         std::vector<std::string> recipe_area_labels;
         std::vector<WormUiComposeSvGraphPointView> sv_graph_point;

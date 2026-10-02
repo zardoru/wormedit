@@ -55,6 +55,7 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY 512
 #define WORM_UI_COMPOSE_KIAI_SPAN_CAPACITY 512
 #define WORM_UI_COMPOSE_RECIPE_AREA_CAPACITY 256
+#define WORM_UI_COMPOSE_SPEED_SPAN_CAPACITY 4096
 #define WORM_UI_COMPOSE_RECIPE_GRAPH_CAPACITY 16384
 #define WORM_UI_COMPOSE_SV_GRAPH_CAPACITY 8192
 #define WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY 16
@@ -456,6 +457,17 @@ typedef struct WormUiComposeRecipeAreaView {
     size_t graph_first;
     size_t graph_count;
 } WormUiComposeRecipeAreaView;
+
+/* The transition extent of one StepMania SPEEDS event, drawn in the SPD lane (top/bottom of bounds
+   only). transition_length is in beats, or seconds when transition_is_seconds. */
+typedef struct WormUiComposeSpeedSpanView {
+    WormUiComposeRect bounds;
+    uint64_t object_id;
+    double multiplier;
+    double transition_length;
+    bool transition_is_seconds;
+    bool clipped;
+} WormUiComposeSpeedSpanView;
 
 typedef struct WormUiComposeDifferenceView {
     WormUiComposeRect bounds;
@@ -893,6 +905,8 @@ typedef struct WormUiComposeView {
     size_t dead_span_count;
     const WormUiComposeKiaiSpanView* kiai_spans;
     size_t kiai_span_count;
+    const WormUiComposeSpeedSpanView* speed_spans;
+    size_t speed_span_count;
     const WormUiComposeRecipeAreaView* recipe_areas;
     size_t recipe_area_count;
     const WormUiComposeSvGraphPointView* recipe_graph_points;

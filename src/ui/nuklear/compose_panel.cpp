@@ -177,6 +177,7 @@ static bool compose_geometry_arrays_valid(const WormUiComposeView* view) {
            (view->dead_span_count == 0 || view->dead_spans) &&
            (view->kiai_span_count == 0 || view->kiai_spans) &&
            (view->recipe_area_count == 0 || view->recipe_areas) &&
+           (view->speed_span_count == 0 || view->speed_spans) &&
            (view->recipe_graph_point_count == 0 || view->recipe_graph_points) &&
            (view->sv_graph_point_count == 0 || view->sv_graph_points) &&
            (view->resource_count == 0 || view->resources) &&
@@ -240,6 +241,15 @@ static bool compose_kiai_and_sv_valid(const WormUiComposeView* view) {
     return true;
 }
 
+static bool compose_speed_spans_valid(const WormUiComposeView* view) {
+    for (size_t index = 0; index < view->speed_span_count; ++index) {
+        const auto& span = view->speed_spans[index];
+        if (!compose_rect_valid(&span.bounds) || span.object_id == 0 ||
+            !std::isfinite(span.multiplier) || !std::isfinite(span.transition_length)) return false;
+    }
+    return true;
+}
+
 static bool compose_recipe_areas_valid(const WormUiComposeView* view) {
     for (size_t index = 0; index < view->recipe_area_count; ++index) {
         const auto& area = view->recipe_areas[index];
@@ -258,7 +268,7 @@ static bool compose_recipe_areas_valid(const WormUiComposeView* view) {
 
 static bool compose_geometry_timing_elements_valid(const WormUiComposeView* view) {
     if (!compose_dead_spans_valid(view) || !compose_kiai_and_sv_valid(view) ||
-        !compose_recipe_areas_valid(view)) return 0;
+        !compose_recipe_areas_valid(view) || !compose_speed_spans_valid(view)) return 0;
     for (size_t index = 0; index < view->timing_preview_rect_count; ++index) {
         if (!compose_rect_valid(&view->timing_preview_rects[index].bounds) ||
             view->timing_preview_rects[index].kind > 2)

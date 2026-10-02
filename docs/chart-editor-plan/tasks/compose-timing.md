@@ -165,7 +165,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 ## T-322 Show and edit SPEEDS in Compose
 
-- **Status:** ready
+- **Status:** done (the focus-mode inline editor changes the multiplier only; transitions are edited in the full-mode inspector)
 - **Outcome:** StepMania SPEEDS appear in the SPD lane as spans with their exact extent and transition, can be inserted, dragged and edited from Compose, and SPEEDS-output recipes keep their areas there.
 - **Read first:** `src/ui/nuklear/timing_panel.cpp` (`draw_speed_markers`, `draw_hovered_speed_span`, stage editor transition fields), `include/wormedit/core/timing_lane_controller.h`, `src/sys/timing_view.cpp` (speed projection), `src/ui/nuklear/compose_canvas.cpp`.
 - **Files owned:** `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `tests/sys/frame_timing_tests.cpp`, new `src/sys/compose_speed_spans.h/.cpp` and its test, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -174,6 +174,9 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Reject/failure behavior:** invalid transitions reject without a revision.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; `ctest --test-dir build -R '^documentation\.'`; isolated Xvfb check.
 - **Out of scope:** recipe curve editing (T-323), removing the Timing screen (T-321).
+
+- **Result (2026-10-02):** `project_speed_spans` (`src/sys/compose_speed_spans.*`) evaluates SPEEDS through the exact core evaluator and returns each event's transition extent in absolute rows (fractional for seconds transitions), its target multiplier, transition length and unit, and whether the next event clips it; 3 tests. Compose draws every span as a faint band in the SPD lane, stronger under the pointer, and the SPD marker tooltip now reads "Speed 2 · transition 2 beats" (or seconds). Inserting and dragging SPEEDS markers already worked through the lane gestures (a double-click stages the event with the inline value field, confirmed by an Xvfb capture), and the staged event editor in the full-mode inspector already has the transition fields (T-320 audit). Tests: 3 projection tests and one sys test checking the view spans and the marker detail; full app suite 1473/1473; no new complexity warnings.
+- **Remaining:** the focus-mode inline editor shows only the multiplier, so a transition is set from the inspector (full mode).
 
 ## T-323 Edit SV recipe curve, values and sampling in Compose
 

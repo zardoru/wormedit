@@ -1671,6 +1671,42 @@ TEST_CASE("Delete removes the selected SV recipe and the area menu adds one over
     CHECK(fixture.history.document.charts.front().sv_recipes.size() == 2);
 }
 
+TEST_CASE("Compose projects SPEEDS transitions as spans and names the transition on the marker",
+          "[sys][speed-spans]") {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    const auto measure = chart.measures.front().id;
+    chart.speeds = {{.id = object_id_t{8001},
+                     .position = {measure, 0},
+                     .multiplier = {2, 1},
+                     .transition_beats = {2, 1},
+                     .provenance = {.source_order = 0}},
+                    {.id = object_id_t{8002},
+                     .position = {measure, 720},
+                     .multiplier = {1, 1},
+                     .transition_beats = {1, 2},
+                     .transition_is_seconds = true,
+                     .provenance = {.source_order = 1}}};
+    compose_test_fixture_t fixture{song};
+    fixture.project();
+    const auto& view = fixture.flattened.view.compose;
+    REQUIRE(view.speed_span_count == 2);
+    for (size_t index = 0; index < view.speed_span_count; ++index) {
+        CHECK(view.speed_spans[index].bounds.bottom > view.speed_spans[index].bounds.top);
+        CHECK(view.speed_spans[index].object_id != 0);
+    }
+    CHECK(view.speed_spans[0].multiplier == Catch::Approx(2.0));
+    CHECK_FALSE(view.speed_spans[0].transition_is_seconds);
+    CHECK(view.speed_spans[0].transition_length == Catch::Approx(2.0));
+    CHECK(view.speed_spans[1].transition_is_seconds);
+    bool named = false;
+    for (size_t index = 0; index < view.timing_marker_count; ++index)
+        if (view.timing_markers[index].lane == WORM_UI_TIMING_LANE_SPEED &&
+            std::string(view.timing_markers[index].detail).find("transition 2 beats") != std::string::npos)
+            named = true;
+    CHECK(named);
+}
+
 TEST_CASE("Pointer paste retains cursor and viewport and FIFO release commits that anchor",
           "[sys][clipboard][paste-preview]") {
     compose_test_fixture_t fixture{paste_preview_song()};

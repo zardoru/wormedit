@@ -36,6 +36,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_kiai_spans.cpp
     ../src/sys/compose_sv_graph.cpp
     ../src/sys/compose_recipe_areas.cpp
+    ../src/sys/compose_speed_spans.cpp
     ../src/sys/compose_quantize_preview.cpp
     ../src/sys/application_defaults.cpp
     ../src/sys/project_open.cpp
@@ -63,6 +64,7 @@ add_executable(wormedit_core_tests
     sys/compose_kiai_spans_tests.cpp
     sys/compose_sv_graph_tests.cpp
     sys/compose_recipe_areas_tests.cpp
+    sys/compose_speed_spans_tests.cpp
     sys/compose_quantize_preview_tests.cpp
     sys/project_view_tests.cpp
     sys/tap_timing_runtime_tests.cpp
@@ -460,6 +462,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/compose_kiai_spans.cpp
         ../src/sys/compose_sv_graph.cpp
         ../src/sys/compose_recipe_areas.cpp
+        ../src/sys/compose_speed_spans.cpp
         ../src/sys/compose_quantize_preview.cpp
         ../src/common/static_interval_index.cpp
         ../src/ui/nuklear/arrow_glyph.cpp

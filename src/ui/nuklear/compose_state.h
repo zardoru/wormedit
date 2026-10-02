@@ -256,6 +256,7 @@ struct worm_ui_nuklear_compose_state_t {
     float waveform_beat_zero_drag_anchor_x{};
     float waveform_beat_zero_drag_width{};
     float waveform_beat_zero_drag_left{};
+    double waveform_beat_zero_drag_span{1.0};
     std::uint64_t waveform_beat_zero_drag_total_frames{};
     std::uint64_t waveform_beat_zero_drag_chart_id{};
     std::uint64_t waveform_beat_zero_drag_revision{};

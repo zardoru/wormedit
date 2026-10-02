@@ -151,6 +151,9 @@ void worm_ui_nuklear_render_setup_panel(struct nk_context* context,
     nk_labelf(context, NK_TEXT_LEFT, "Charts: %zu · Audio assets: %zu · Visual assets: %zu",
               view->chart_count, view->audio_asset_count, view->visual_asset_count);
     render_project_charts(context, *view, *action);
+    // Breathing room so the policy form reads as its own section, not as chart-list rows.
+    nk_layout_row_dynamic(context, 18, 1);
+    nk_spacing(context, 1);
     nk_layout_row_dynamic(context, 26, 1);
     nk_label(context, "StepMania export policy", NK_TEXT_LEFT);
 

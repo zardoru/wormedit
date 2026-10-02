@@ -57,7 +57,9 @@ auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) 
         }
     }
     const auto content_height =
-        window_height > 300 ? static_cast<float>(window_height) - 165.0f - recovery_height : 80.0f;
+        window_height > 300 ? static_cast<float>(window_height) - 165.0f -
+                                  (view.compose.bgm_bar_reserved ? WORM_UI_BGM_BAR_CHROME_HEIGHT : 0.0f) -
+                                  recovery_height : 80.0f;
     const auto& compose = view.compose;
     const auto rows_shown = std::min<std::size_t>(compose.branch_row_count, 4);
     const auto diagnostics_shown = std::min<std::size_t>(compose.branch_diagnostic_count, 2);

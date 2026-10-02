@@ -37,6 +37,11 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY 4096
 #define WORM_UI_COMPOSE_CHANNEL_WAVEFORM_ROW_CAPACITY 4096
 #define WORM_UI_COMPOSE_WAVEFORM_OVERVIEW_CAPACITY 512
+#define WORM_UI_COMPOSE_BGM_BAR_ROW_CAPACITY 1024
+// Window chrome taken by the BGM bar row under the transport seek bar (48 px row + 4 px spacing).
+#define WORM_UI_BGM_BAR_CHROME_HEIGHT 52.0f
+#define WORM_UI_COMPOSE_BGM_BAR_MARK_CAPACITY 1024
+#define WORM_UI_COMPOSE_BGM_BAR_BOOKMARK_CAPACITY 128
 #define WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY 32768
 #define WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY 128
 #define WORM_UI_COMPOSE_NOTE_LABEL_BYTES 4096
@@ -486,6 +491,18 @@ typedef struct WormUiComposeWaveformOverviewRowView {
     float absolute_peak;
 } WormUiComposeWaveformOverviewRowView;
 
+typedef struct WormUiComposeBgmBarMarkView {
+    double audio_fraction;
+    uint32_t measure;
+} WormUiComposeBgmBarMarkView;
+
+// A beat or audio bookmark placed on the BGM bar; the label is owned by the bookmark view.
+typedef struct WormUiComposeBgmBarBookmarkView {
+    double audio_fraction;
+    const char* label;
+    bool audio;
+} WormUiComposeBgmBarBookmarkView;
+
 typedef struct WormUiComposeBgmMovePreviewView {
     WormUiComposeRect bounds;
     bool valid;
@@ -856,6 +873,19 @@ typedef struct WormUiComposeView {
     double waveform_beat_zero_fraction;
     uint64_t waveform_overview_total_frames;
     uint32_t waveform_overview_sample_rate;
+    // The BGM bar shows [begin, end] of the song at full row resolution, with measure starts.
+    const WormUiComposeWaveformOverviewRowView* bgm_bar_rows;
+    size_t bgm_bar_row_count;
+    double bgm_bar_begin_fraction;
+    double bgm_bar_end_fraction;
+    const WormUiComposeBgmBarMarkView* bgm_bar_marks;
+    size_t bgm_bar_mark_count;
+    const WormUiComposeBgmBarBookmarkView* bgm_bar_bookmarks;
+    size_t bgm_bar_bookmark_count;
+    // The bar row exists only for songs with audio and while the toolbar toggle keeps it on:
+    // available = the song has audio, reserved = the row is laid out (and takes vertical space).
+    bool bgm_bar_available;
+    bool bgm_bar_reserved;
     bool source_playhead_available;
     uint64_t source_playhead_asset_id;
     uint64_t source_playhead_frame;
@@ -1693,6 +1723,13 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT,
     WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE,
     WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP,
+    // BGM bar view: audio_fraction anchors a zoom of x_pixels steps, x_pixels pans by a
+    // fraction of the song, and reset shows the whole song again.
+    WORM_UI_COMPOSE_INPUT_BGM_BAR_ZOOM,
+    WORM_UI_COMPOSE_INPUT_BGM_BAR_PAN,
+    WORM_UI_COMPOSE_INPUT_BGM_BAR_RESET,
+    // Toolbar toggle: show or hide the whole bar row to win vertical space.
+    WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE,
 } WormUiComposeInputKind;
 
 typedef enum WormUiComposeNavigationAction {

@@ -363,6 +363,69 @@ TEST_CASE("measure index preserves exact variable-length prefixes", "[unit][core
     CHECK_FALSE(absolute_row(index, {measure_id_t{99}, 0}));
 }
 
+namespace {
+
+auto chart_with_measure_ids(std::initializer_list<std::uint64_t> ids) -> chart_document_t {
+    auto chart = make_valid_song().charts.front();
+    const auto prototype = chart.measures.front();
+    chart.measures.clear();
+    for (const auto id : ids) {
+        auto measure = prototype;
+        measure.id = measure_id_t{id};
+        chart.measures.push_back(measure);
+    }
+    return chart;
+}
+
+} // namespace
+
+TEST_CASE("measure index keeps document order for unsorted unique IDs", "[unit][core][document]") {
+    const auto result = build_measure_index(chart_with_measure_ids({7, 3, 9}));
+    REQUIRE(std::holds_alternative<measure_index_t>(result));
+    const auto& index = std::get<measure_index_t>(result);
+    REQUIRE(index.entries.size() == 3);
+    CHECK(index.entries[0].id == measure_id_t{7});
+    CHECK(index.entries[1].id == measure_id_t{3});
+    CHECK(index.entries[2].id == measure_id_t{9});
+    CHECK(index.entries[2].absolute_begin_row == index.entries[1].absolute_begin_row +
+                                                     index.entries[1].row_capacity);
+}
+
+TEST_CASE("measure index diagnoses each later duplicate by its measure number",
+          "[unit][core][document]") {
+    for (const auto& ids : {std::initializer_list<std::uint64_t>{1, 1},
+                            std::initializer_list<std::uint64_t>{2, 5, 2},
+                            std::initializer_list<std::uint64_t>{4, 4, 9, 4}}) {
+        const auto chart = chart_with_measure_ids(ids);
+        const auto result = build_measure_index(chart);
+        REQUIRE(std::holds_alternative<diagnostic_list_t>(result));
+        const auto& diagnostics = std::get<diagnostic_list_t>(result);
+        std::size_t expected = 0;
+        std::vector<std::uint64_t> seen;
+        for (std::size_t position = 0; position < ids.size(); ++position) {
+            const auto id = *(ids.begin() + position);
+            if (std::ranges::find(seen, id) != seen.end()) {
+                ++expected;
+                CHECK(has_message(diagnostics, "measure " + std::to_string(position + 1) +
+                                                   " ID is duplicated"));
+            }
+            seen.push_back(id);
+        }
+        CHECK(std::ranges::count_if(diagnostics, [](const auto& diagnostic) {
+                  return diagnostic.code == diagnostic_code_t::duplicate_id;
+              }) == static_cast<std::ptrdiff_t>(expected));
+    }
+}
+
+TEST_CASE("measure index still rejects zero IDs without calling them duplicates",
+          "[unit][core][document]") {
+    const auto result = build_measure_index(chart_with_measure_ids({0, 0, 3}));
+    REQUIRE(std::holds_alternative<diagnostic_list_t>(result));
+    const auto& diagnostics = std::get<diagnostic_list_t>(result);
+    CHECK(has_code(diagnostics, diagnostic_code_t::invalid_id));
+    CHECK_FALSE(has_code(diagnostics, diagnostic_code_t::duplicate_id));
+}
+
 TEST_CASE("loss-aware document aggregates validate as one graph", "[unit][core][document]") {
     const auto song = make_valid_song();
     const auto diagnostics = validate_document(song);

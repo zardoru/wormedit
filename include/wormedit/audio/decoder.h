@@ -14,6 +14,13 @@ inline constexpr std::uint32_t output_sample_rate = 44'100;
 inline constexpr std::uint32_t output_channel_count = 2;
 inline constexpr std::size_t maximum_read_frames = 16'384;
 
+// Sources at least this long are streamed rather than held resident. Their decoders are
+// kept open and, for MP3, indexed once so that a seek never rescans the file.
+inline constexpr std::uint64_t long_source_frames = 30ULL * output_sample_rate;
+
+// Whether open() builds the MP3 seek table of a long source. Probing only needs geometry.
+enum class decoder_index_t { build, skip };
+
 struct stream_info_t {
     std::uint32_t source_sample_rate{};
     std::uint32_t source_channel_count{};
@@ -49,8 +56,8 @@ class decoder_t {
     decoder_t(decoder_t&&) noexcept;
     auto operator=(decoder_t&&) noexcept -> decoder_t&;
 
-    [[nodiscard]] auto open(const std::filesystem::path& path, std::string* error_message = nullptr)
-        -> bool;
+    [[nodiscard]] auto open(const std::filesystem::path& path, std::string* error_message = nullptr,
+                            decoder_index_t index = decoder_index_t::build) -> bool;
     // Owns a normalized 44.1 kHz stereo PCM copy for generated internal
     // sources such as metronome clicks.
     [[nodiscard]] auto open_pcm(std::span<const float> interleaved_stereo,

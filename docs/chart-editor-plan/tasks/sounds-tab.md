@@ -19,7 +19,7 @@ sample). Users can tag sounds. A Woslicer/bmhelper-style slicer lives here
 (a long DAW export cut at BPM, beat division and offset), with the aim of
 later covering more bmhelper functions.
 
-## T-313 Add sound kind and free tags to the resource catalog
+## T-324 Add sound kind and free tags to the resource catalog
 
 - **Status:** done
 - **Implementation notes (2026-10-02):** `sound_kind_t` and `tags` live on `resource_entry_t`; `apply_resource_sound_metadata` normalizes tags (trim, ASCII-case de-duplication, 32 tags of 64 bytes) and a no-op returns not-applied with no diagnostics, like the relink command. `native_project.cpp` writes `sound_kind`/`tags` only when set, so no schema bump was needed; older files load with the defaults. Core, format and full headless suites pass.
@@ -34,9 +34,9 @@ later covering more bmhelper functions.
 - **Invariants:** BMS identifiers, asset IDs and conversion output are unchanged; tags never reach exported BMS/BMSON/osu! files.
 - **Reject/failure behavior:** invalid tags leave the document and revision unchanged.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^core\.|^formats\.|^documentation\.'`; `clang-tidy -p build` on each changed `.cpp`.
-- **Out of scope:** tag UI (T-319), export of tags.
+- **Out of scope:** tag UI (T-330), export of tags.
 
-## T-314 Import many sounds in one history step
+## T-325 Import many sounds in one history step
 
 - **Status:** ready
 - **Outcome:** `apply_bulk_sound_import` registers N probed audio files as assets and resources of a chosen kind in one command; stems also create a BMSON sound channel with a restart event at position 0 and its semantic BGM marker (via the `insert_bmson_bgm_marker` path), so they appear in Compose; undo removes all of it at once.
@@ -49,12 +49,12 @@ later covering more bmhelper functions.
   4. Tests: 1 and 50 files, mixed kinds, capacity failure, undo, a stem visible in the BGM projection.
 - **Invariants:** list order is the catalog order; file copying stays outside the command (caller reserves IDs as `import_resource_asset_action_t` already does).
 - **Reject/failure behavior:** one invalid entry rejects the whole batch with all diagnostics.
-- **Verify:** as T-313 plus `-R 'sound_import'`.
-- **Out of scope:** dialog and drag-drop (T-315, T-318), extracting a stem into slices (T-320).
+- **Verify:** as T-324 plus `-R 'sound_import'`.
+- **Out of scope:** dialog and drag-drop (T-326, T-329), extracting a stem into slices (T-331).
 
-## T-315 Model the "Import as…" dialog and drop handling
+## T-326 Model the "Import as…" dialog and drop handling
 
-- **Status:** blocked-on T-314
+- **Status:** blocked-on T-325
 - **Outcome:** dropped or picked files produce a pending import list (name, kind, remove, reorder) that the user confirms or cancels; a single wav/ogg with no BGM asks "stem or sound"; a single mp3 defaults to sound; several files always show the list.
 - **Read first:** `src/sys/metadata_drop_state.cpp`, `src/ui/nuklear/compose_resources.cpp` (file dialog callback), `src/ui/nuklear/audio_state.h`, `src/sys/audio_project_import.h`.
 - **Files owned:** new `src/ui/nuklear/sound_import_state.cpp/.h`, new `tests/ui/sound_import_state_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -62,9 +62,9 @@ later covering more bmhelper functions.
 - **Invariants:** no filesystem access in the state; plain C types at the `frontend.h` boundary.
 - **Reject/failure behavior:** cancel leaves the pending list empty and the document untouched.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^frontend-state\.|^documentation\.'`.
-- **Out of scope:** drawing the dialog (T-318), background copy and probe jobs.
+- **Out of scope:** drawing the dialog (T-329), background copy and probe jobs.
 
-## T-316 Share a zoomable waveform viewport
+## T-327 Share a zoomable waveform viewport
 
 - **Status:** done
 - **Implementation notes (2026-10-02):** `waveform_viewport_t` with `fit`, `clamp`, `zoom` (anchored, 1/16 to whole-source frames per pixel), `pan` and `project_waveform_viewport` is in `include/wormedit/audio/waveform_viewport.h`; the 6 cases in `tests/core/audio_waveform_viewport_tests.cpp` pass (audio.* 137/137), including an 80-minute source. clang-tidy could not be run on the new file (include path missing for the new unit in the compile database); the functions are small.
@@ -75,11 +75,11 @@ later covering more bmhelper functions.
 - **Invariants:** deterministic, no allocation beyond the output span, no decoder calls.
 - **Reject/failure behavior:** invalid inputs return an empty projection and leave the viewport unchanged.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.|^documentation\.'`.
-- **Out of scope:** Compose razor integration (T-322), sample-level PCM rendering.
+- **Out of scope:** Compose razor integration (T-333), sample-level PCM rendering.
 
-## T-317 Project the sound list and selected-sound properties
+## T-328 Project the sound list and selected-sound properties
 
-- **Status:** blocked-on T-313
+- **Status:** blocked-on T-324
 - **Outcome:** the audio-slices view exposes bounded sound rows (name, kind, tags, duration, sample rate, use count, missing flag) filtered by search text and tag, plus the selected sound's properties and its viewport; rows are built only for the visible range.
 - **Read first:** `src/sys/workspace_frame_view.cpp`, `src/sys/waveform_view_projection.cpp`, `src/sys/compose_resource_presenter.cpp`, `src/ui/frontend.h` (`WormUiAudioSlicesView`).
 - **Files owned:** new `src/sys/sound_list_projection.cpp/.h`, new `tests/sys/sound_list_projection_tests.cpp`, `src/sys/workspace_frame_view.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -87,23 +87,23 @@ later covering more bmhelper functions.
 - **Invariants:** existing `WormUiAudioSlicesView` fields keep their meaning so the offset drag still works.
 - **Reject/failure behavior:** an invalid view fails `worm_ui_nuklear_audio_slices_view_valid`, never undefined reads.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^sys\.|^frontend-state\.|^documentation\.'`.
-- **Out of scope:** drawing (T-318).
+- **Out of scope:** drawing (T-329).
 
-## T-318 Redraw the Sounds tab: listbox, waveform column, properties column
+## T-329 Redraw the Sounds tab: listbox, waveform column, properties column
 
-- **Status:** blocked-on T-317
-- **Outcome:** the tab shows a searchable listbox (click, Up/Down, double click or Space audition), a central zoomable waveform (wheel zoom about the pointer, drag pan, offset drag kept), and a right column with properties and side margins; dropping files opens the T-315 dialog.
+- **Status:** blocked-on T-328
+- **Outcome:** the tab shows a searchable listbox (click, Up/Down, double click or Space audition), a central zoomable waveform (wheel zoom about the pointer, drag pan, offset drag kept), and a right column with properties and side margins; dropping files opens the T-326 dialog.
 - **Read first:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/theme.cpp`, `src/ui/nuklear/metadata_panel.cpp` (margin pattern), `src/ui/nuklear/compose_resources.cpp`.
 - **Files owned:** `src/ui/nuklear/audio_panel.cpp/.h`, `src/ui/nuklear/audio_state.cpp/.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`.
-- **Steps:** 1. Three-column layout with theme tokens. 2. Listbox with keyboard model. 3. Waveform with the T-316 viewport. 4. Property fields and the import dialog. 5. Action wiring through the standard pattern.
+- **Steps:** 1. Three-column layout with theme tokens. 2. Listbox with keyboard model. 3. Waveform with the T-327 viewport. 4. Property fields and the import dialog. 5. Action wiring through the standard pattern.
 - **Invariants:** Nuklear code is not compiled in the cloud; state logic stays in the tested state files.
 - **Reject/failure behavior:** a missing file shows a row marker, not an empty crash.
 - **Verify:** headless tests, then on the user's SDL3 build `scripts/smoke-compose-virtual-x.sh /tmp/out.png audio` and open the PNG.
-- **Out of scope:** slicer controls (T-321), tag editing (T-319).
+- **Out of scope:** slicer controls (T-332), tag editing (T-330).
 
-## T-319 Edit and filter sound tags
+## T-330 Edit and filter sound tags
 
-- **Status:** blocked-on T-318
+- **Status:** blocked-on T-329
 - **Outcome:** the properties column edits tags as chips plus a text field, and the list filters by tag.
 - **Read first:** `src/ui/nuklear/audio_panel.cpp`, `include/wormedit/core/resource_assignment.h`.
 - **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/sys/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`.
@@ -113,10 +113,10 @@ later covering more bmhelper functions.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^frontend-state\.'`.
 - **Out of scope:** autocomplete.
 
-## T-320 Compute slice boundaries for a long audio export (Woslicer-style)
+## T-331 Compute slice boundaries for a long audio export (Woslicer-style)
 
 - **Status:** done
-- **Implementation notes (2026-10-02):** `compute_audio_slices` (`include/wormedit/core/audio_slicer.h`) returns contiguous exact ranges using portable `wide_math` (no `__int128`), with floor/ceil/nearest-even rounding, lead-in option and a slice cap; 7 cases pass. No WAV writer exists in the repo, so the render job moved to T-323.
+- **Implementation notes (2026-10-02):** `compute_audio_slices` (`include/wormedit/core/audio_slicer.h`) returns contiguous exact ranges using portable `wide_math` (no `__int128`), with floor/ceil/nearest-even rounding, lead-in option and a slice cap; 7 cases pass. No WAV writer exists in the repo, so the render job moved to T-334.
 - **Outcome:** a pure function takes BPM (exact rational), beat division, start offset, source frame count and sample rate and returns exact, non-overlapping frame ranges.
 - **Read first:** `include/wormedit/core/timing.h`, `include/wormedit/core/sound_slice.h`, `include/wormedit/audio/decoder.h`, `src/core/sound_slice.cpp`.
 - **Files owned:** new `include/wormedit/core/audio_slicer.h`, new `src/core/audio_slicer.cpp`, new `tests/core/audio_slicer_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -124,11 +124,11 @@ later covering more bmhelper functions.
 - **Invariants:** no drift: boundary N is computed from N, never accumulated.
 - **Reject/failure behavior:** zero or negative BPM, division or offset past the source returns diagnostics and no ranges.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.|^documentation\.'`.
-- **Out of scope:** MIDI-driven cutting and other bmhelper functions (later cards), UI (T-321).
+- **Out of scope:** MIDI-driven cutting and other bmhelper functions (later cards), UI (T-332).
 
-## T-323 Render slice ranges to WAV files in a background job
+## T-334 Render slice ranges to WAV files in a background job
 
-- **Status:** blocked-on T-320
+- **Status:** blocked-on T-331
 - **Outcome:** a bounded job decodes the source once and writes each `audio_slice_range_t` as a 16-bit stereo WAV file into the project, reporting progress and honoring cancellation.
 - **Read first:** `include/wormedit/core/audio_slicer.h`, `include/wormedit/audio/decoder.h`, `include/wormedit/core/resource_file_copy.h`, `src/audio/waveform_job.cpp`.
 - **Files owned:** new `include/wormedit/audio/wav_writer.h`, new `src/audio/wav_writer.cpp`, new `include/wormedit/audio/slice_render_job.h`, new `src/audio/slice_render_job.cpp`, new `tests/core/audio_slice_render_tests.cpp`, `cmake/dependencies/miniaudio.cmake`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -136,23 +136,23 @@ later covering more bmhelper functions.
 - **Invariants:** the source file is never modified; output names are deterministic (`<name>_001.wav`).
 - **Reject/failure behavior:** a failed or cancelled job removes every file it created.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.|^core\.|^documentation\.'`.
-- **Out of scope:** UI (T-321), MIDI-driven cuts.
+- **Out of scope:** UI (T-332), MIDI-driven cuts.
 
-## T-321 Add the slicer controls to the Sounds tab
+## T-332 Add the slicer controls to the Sounds tab
 
-- **Status:** blocked-on T-318, T-323
-- **Outcome:** with a sound selected the user enters BPM, division and offset, sees the cut lines on the zoomable waveform, and "Slice" creates the resulting sounds in one bulk import (T-314) as keysounds.
+- **Status:** blocked-on T-329, T-334
+- **Outcome:** with a sound selected the user enters BPM, division and offset, sees the cut lines on the zoomable waveform, and "Slice" creates the resulting sounds in one bulk import (T-325) as keysounds.
 - **Read first:** `src/ui/nuklear/audio_panel.cpp`, `include/wormedit/core/audio_slicer.h`, `include/wormedit/core/sound_import.h`.
 - **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/sys/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`.
 - **Steps:** 1. Fields and cut-line preview. 2. Background slicing job with progress. 3. Bulk import of the outputs. 4. Tests for field validation.
 - **Invariants:** the source sound is never modified.
 - **Reject/failure behavior:** a failed job imports nothing and reports the first error.
-- **Verify:** headless tests plus the visual check from T-318 on the user's build.
+- **Verify:** headless tests plus the visual check from T-329 on the user's build.
 - **Out of scope:** automatic placement of slices in Compose.
 
-## T-322 Use the shared waveform viewport in the Compose stem-cut editor
+## T-333 Use the shared waveform viewport in the Compose stem-cut editor
 
-- **Status:** deferred (was: blocked-on T-316)
+- **Status:** deferred (was: blocked-on T-327)
 - **Outcome:** Compose's BMSON razor editing zooms the stem waveform with the same viewport semantics.
 - **Read first:** `src/sys/bmson_waveform_projection.cpp`, `include/wormedit/audio/waveform_viewport.h`.
 - **Files owned:** to be listed when un-deferred; touches Compose files owned by other threads.
@@ -160,4 +160,4 @@ later covering more bmhelper functions.
 - **Invariants:** the shared mobile-head viewport contract in Compose stays unchanged.
 - **Reject/failure behavior:** not applicable until planned.
 - **Verify:** to be planned.
-- **Out of scope:** everything in T-313–T-321.
+- **Out of scope:** everything in T-324–T-332.

@@ -20,6 +20,10 @@ struct bookmark_command_outcome_t {
     diagnostic_list_t diagnostics;
 };
 
+// The local position of an absolute row, or nothing past the last row.
+[[nodiscard]] auto local_position_for_row(const measure_index_t& index, std::uint64_t row)
+    -> std::optional<local_position_t>;
+
 // The active-snap row nearest `absolute_row` among rows 0 .. total_rows-1; ties go to the
 // earlier row. Returns nothing when the snap does not divide the measure or there are no rows.
 [[nodiscard]] auto nearest_snap_row(double absolute_row, std::uint64_t divisions_per_measure,

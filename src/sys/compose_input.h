@@ -17,7 +17,8 @@ auto compose_result_status(const wormedit::editor_interaction_result_t& result,
                            std::string_view accepted) -> std::string;
 auto dispatch_compose_navigation_actions(const wormedit::editor_navigation_action_batch_t& actions,
                                          wormedit::document_history_t& history,
-                                         wormedit::editor_interaction_state_t& state)
+                                         wormedit::editor_interaction_state_t& state,
+                                         application_command_state_t* application = nullptr)
     -> std::string;
 auto stage_bmson_bgm_marker(const wormedit::document_history_t& history,
                             const wormedit::editor_interaction_state_t& state,

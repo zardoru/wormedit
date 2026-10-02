@@ -131,7 +131,7 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 
 ## T-307 Skip the playhead with the navigation keys and wheel while playing
 
-- **Status:** ready
+- **Status:** done (2026-10-02; `src/sys/compose_playhead_skip.cpp/.h`, `tests/sys/compose_playhead_skip_tests.cpp`, wired in `compose_input.cpp`; see the note below)
 - **Outcome:** while chart preview plays in Compose, Up/Down move the playhead one active snap, PageUp/PageDown one measure, and the mouse wheel by the rows it would scroll, all in screen direction (downscroll flips them); playback continues from the new point and the following view jumps with it. Paused or stopped, these inputs keep moving the edit cursor and view as today.
 - **Request (user, 2026-10-01):** "skip the playhead ahead and back while I am playing"; "obey pageup/dn, mwheel and arrows".
 - **Current behavior (2026-10-01):** during playback Up/Down/PageUp/PageDown dispatch `move_edit_cursor_action_t` / `page_edit_cursor_action_t` (`dispatch_compose_navigation_actions`, `src/sys/compose_input.cpp`) and the wheel scrolls the view (`…_VIEWPORT_INPUT_COARSE_WHEEL` / `…_SMOOTH_WHEEL`), but the playhead-following scroll overrides both at once, so they appear to do nothing.
@@ -144,6 +144,7 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
   3. In `compose_input.cpp`, when `transport_preview_playing()` is true, send navigation actions and non-zoom wheel inputs to the skip instead of the cursor or view. Sum every such input of one frame (key repeats, wheel and trackpad deltas, with sub-row remainders kept until the next frame) and call `transport_seek` at most once per frame. Primary+wheel keeps zooming.
   4. Wheel rows: the pixel delta the view would have scrolled, divided by the current pixels per row.
   5. Tests: snap step from between two rows lands on the next row; measure step across measures of different lengths; downscroll flips direction; both clamps; many inputs in one frame produce one seek; while paused or stopped no seek happens and the cursor moves as today.
+- **Implementation note (2026-10-02, Claude):** `compose_playhead_skip` is wired into `dispatch_compose_navigation_actions` (arrows and PageUp/PageDown, including key repeat) and the Compose wheel path. Simplifications versus the steps above: each wheel event skips one active snap (no pixel-to-row conversion, no sub-row remainder) and each input seeks immediately instead of being summed into one seek per frame. Unit tests cover the target-row math only; paused behavior is unchanged by construction (the skip runs only when `transport_preview_playing()`). Compiled headless; the SDL-side wiring is syntax-checked only.
 - **Invariants:** skipping never changes the document or playback rate; the seek uses the same frame clock as T-241.
 - **Reject/failure behavior:** if the seek fails, keep playing from the prior position and show the existing seek message (T-241).
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^core\.|^frontend-state\.|^documentation\.|compose_playhead_skip'`; `clang-tidy -p build` on each changed `.cpp`; isolated Xvfb/SDL-dummy check that Down, PageDown, and one wheel notch during playback each advance the reported playhead by the expected rows and playback continues.

@@ -133,7 +133,8 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-312 Move the note palette into a tall left toolbar in Compose
 
-- **Status:** ready
+- **Status:** done (2026-10-02; `render_compose_note_palette_column` in `compose_toolbar.cpp`, strip layout in `compose_panel.cpp`)
+- **Implementation notes (2026-10-02, Claude):** the 36-px strip is a `Compose note palette` group at x = 0 of the Compose layout space and the editor group starts at x = 36. SDL/Nuklear side compiled only on the user's machine; no automated test.
 - **Outcome:** the note-kind buttons (Tap, Hold, Mine, Invisible, Lift, Fake, Roll) form one vertical column along the left edge of the Compose pane, running the full height of the editor area, in the style of the osu! editor, Affinity, and paint programs; the horizontal palette row under the toolbar is gone, so the chart field gains that row's height.
 - **Request (user, 2026-10-01):** "The note palette should [be] a sort of tall left toolbar a la osu or affinity or paint programs in general"; side confirmed: "Left by default."
 - **Current behavior (2026-10-01):** `render_note_kind_palette` (`src/ui/nuklear/compose_toolbar.cpp`) draws a second toolbar row of 30-px icon buttons when `note_kind_palette_visible` is true.

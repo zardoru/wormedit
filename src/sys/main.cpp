@@ -275,8 +275,9 @@ auto audio_milliseconds_to_frame(std::int64_t milliseconds, std::uint32_t sample
 
 auto timing_stage_grid_step(const wormedit::chart_document_t& chart,
                             std::uint64_t active_denominator) -> std::uint64_t {
+    // A snap the chart's resolution cannot represent falls back to one standard measure.
     if (active_denominator == 0 || chart.divisions_per_standard_measure % active_denominator != 0) {
-        return 0;
+        return chart.divisions_per_standard_measure;
     }
     return chart.divisions_per_standard_measure / active_denominator;
 }
@@ -2366,7 +2367,8 @@ auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& actio
         const auto repeated = dispatch_compose_navigation_actions(
             context.compose_navigation_input_ref.advance(
                 static_cast<std::uint64_t>(SDL_GetTicks())),
-            context.history_ref, *context.compose_interaction_state_ref);
+            context.history_ref, *context.compose_interaction_state_ref,
+            &context.application_command_state_ref);
         if (!repeated.empty()) {
             context.status_ref = repeated;
         }

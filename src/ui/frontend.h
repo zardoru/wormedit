@@ -427,7 +427,7 @@ typedef struct WormUiComposeNoteView {
     const char* sound_label;
     const char* sound_detail;
     uint8_t glyph;
-    uint8_t snap_class; // 4, 8, 12, 16, 24, 32; 0 = other.
+    uint8_t snap_class; // 4, 8, 12, 16, 24, 32, 48, 64; 0 = other.
     uint8_t kind;
     bool tail;
     bool selected;
@@ -710,6 +710,9 @@ typedef struct WormUiComposeView {
     bool note_paint_mode_active;
     bool semantic_layer_paint_mode_active;
     size_t selected_note_count;
+    // Dry-run of quantizing the selection to the active snap (counts are of selected notes).
+    size_t quantize_preview_moved, quantize_preview_unchanged, quantize_preview_blocked;
+    char quantize_preview_message[96];
     size_t selected_object_count;
     uint64_t selected_assigned_resource_id;
     uint64_t selected_bgm_event_id;
@@ -1569,6 +1572,18 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET,
     WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK,
     WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL,
+    // Search text travels in compose_note_label.
+    WORM_UI_COMPOSE_ACTION_SEARCH_NOTE_LABEL,
+    WORM_UI_COMPOSE_ACTION_SEARCH_NEXT_NOTE_LABEL,
+    WORM_UI_COMPOSE_ACTION_SEARCH_PREVIOUS_NOTE_LABEL,
+    WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_BEFORE,
+    WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_AFTER,
+    WORM_UI_COMPOSE_ACTION_REMOVE_EMPTY_MEASURE,
+    WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR,
+    WORM_UI_COMPOSE_ACTION_TRANSFORM_ROTATE_LEFT,
+    WORM_UI_COMPOSE_ACTION_TRANSFORM_ROTATE_RIGHT,
+    WORM_UI_COMPOSE_ACTION_TRANSFORM_SHIFT_EARLIER,
+    WORM_UI_COMPOSE_ACTION_TRANSFORM_SHIFT_LATER,
     WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK,
     WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK,
     WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION,

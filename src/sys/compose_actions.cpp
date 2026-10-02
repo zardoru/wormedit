@@ -1,4 +1,7 @@
 #include "sys/compose_actions.h"
+#include "sys/compose_label_search.h"
+#include "sys/compose_measure_commands.h"
+#include "sys/compose_selection_transform.h"
 #include "sys/compose_area_actions.h"
 #include "sys/application_edit_helpers.h"
 #include "sys/compose_resource_presenter.h"
@@ -1322,8 +1325,70 @@ std::string navigate_audio_marker(compose_action_context_t& context) {
     return app.transport_seek_audio_milliseconds(*marker.item->audio_milliseconds);
 }
 
+std::string search_selected_note_labels(compose_action_context_t& context) {
+    if (editor_interaction_has_pending_gesture(context.state))
+        return "Finish or cancel the active Compose gesture before searching labels.";
+    const auto step = context.action.compose_action == WORM_UI_COMPOSE_ACTION_SEARCH_NEXT_NOTE_LABEL
+                          ? label_search_step_t::next
+                      : context.action.compose_action ==
+                              WORM_UI_COMPOSE_ACTION_SEARCH_PREVIOUS_NOTE_LABEL
+                          ? label_search_step_t::previous
+                          : label_search_step_t::first;
+    return run_label_search(context.history, context.state, context.action.compose_note_label, step);
+}
+
+auto selection_transform_for(WormUiComposeActionKind kind) -> std::optional<selection_transform_t> {
+    switch (kind) {
+    case WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR: return selection_transform_t::mirror;
+    case WORM_UI_COMPOSE_ACTION_TRANSFORM_ROTATE_LEFT: return selection_transform_t::rotate_left;
+    case WORM_UI_COMPOSE_ACTION_TRANSFORM_ROTATE_RIGHT: return selection_transform_t::rotate_right;
+    case WORM_UI_COMPOSE_ACTION_TRANSFORM_SHIFT_EARLIER: return selection_transform_t::shift_earlier;
+    case WORM_UI_COMPOSE_ACTION_TRANSFORM_SHIFT_LATER: return selection_transform_t::shift_later;
+    default: return std::nullopt;
+    }
+}
+
+std::string transform_selected_notes(compose_action_context_t& context,
+                                     selection_transform_t transform) {
+    if (editor_interaction_has_pending_gesture(context.state))
+        return "Finish or cancel the active Compose gesture before transforming notes.";
+    if (context.history.document.revision != context.action.compose_input_document_revision)
+        return "Transform ignored because the document changed.";
+    auto status = apply_selection_transform(context.history, context.state, transform);
+    const auto rebound = rebind_workspace(context.workspace, context.history);
+    return rebound ? status : "Transform applied, but workspace rebinding failed.";
+}
+
+auto cursor_measure_command_for(WormUiComposeActionKind kind)
+    -> std::optional<cursor_measure_command_t> {
+    switch (kind) {
+    case WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_BEFORE: return cursor_measure_command_t::insert_before;
+    case WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_AFTER: return cursor_measure_command_t::insert_after;
+    case WORM_UI_COMPOSE_ACTION_REMOVE_EMPTY_MEASURE: return cursor_measure_command_t::remove_empty;
+    default: return std::nullopt;
+    }
+}
+
+std::string edit_cursor_measure(compose_action_context_t& context, cursor_measure_command_t command) {
+    if (editor_interaction_has_pending_gesture(context.state))
+        return "Finish or cancel the active Compose gesture before editing measures.";
+    if (context.history.document.revision != context.action.compose_input_document_revision)
+        return "Measure edit ignored because the document changed.";
+    auto status = apply_cursor_measure_command(context.history, context.state, command);
+    const auto rebound = rebind_workspace(context.workspace, context.history);
+    return rebound ? status : "Measure edited, but workspace rebinding failed.";
+}
+
 std::optional<std::string> dispatch_compose_marker_action(compose_action_context_t& context) {
+    if (const auto measure_command = cursor_measure_command_for(context.action.compose_action))
+        return edit_cursor_measure(context, *measure_command);
+    if (const auto transform = selection_transform_for(context.action.compose_action))
+        return transform_selected_notes(context, *transform);
     switch (context.action.compose_action) {
+    case WORM_UI_COMPOSE_ACTION_SEARCH_NOTE_LABEL:
+    case WORM_UI_COMPOSE_ACTION_SEARCH_NEXT_NOTE_LABEL:
+    case WORM_UI_COMPOSE_ACTION_SEARCH_PREVIOUS_NOTE_LABEL:
+        return search_selected_note_labels(context);
     case WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL:
     case WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL:
         return edit_selected_note_labels(context);

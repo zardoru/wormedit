@@ -1016,8 +1016,20 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                      ? std::clamp(compose_body_bounds.w * 0.24f, 280.0f, 380.0f)
                                      : 0.0f;
     const auto editor_width = compose_body_bounds.w;
-    nk_layout_space_begin(context, NK_STATIC, compose_body_height, inspector_drawn ? 2 : 1);
-    nk_layout_space_push(context, nk_rect(0.0f, 0.0f, editor_width, compose_body_height));
+    const auto palette_drawn = compose_note_palette_has_buttons(*view);
+    constexpr float palette_width = 36.0f;
+    const auto editor_left = palette_drawn ? palette_width : 0.0f;
+    nk_layout_space_begin(context, NK_STATIC, compose_body_height,
+                          1 + (inspector_drawn ? 1 : 0) + (palette_drawn ? 1 : 0));
+    if (palette_drawn) {
+        nk_layout_space_push(context, nk_rect(0.0f, 0.0f, palette_width, compose_body_height));
+        if (nk_group_begin(context, "Compose note palette", NK_WINDOW_NO_SCROLLBAR)) {
+            render_compose_note_palette_column({context, view, action});
+            nk_group_end(context);
+        }
+    }
+    nk_layout_space_push(context, nk_rect(editor_left, 0.0f, editor_width - editor_left,
+                                          compose_body_height));
     if (nk_group_begin(context, "Compose editor", NK_WINDOW_NO_SCROLLBAR)) {
     render_compose_editor_canvas(panel, inspector_drawn, inspector_width);
     nk_group_end(context);
@@ -1029,6 +1041,10 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
 
     const ComposeInspectorContext inspector{context, view, timing_view, action};
     render_compose_note_label_editor(inspector);
+    render_compose_label_search(inspector);
+    render_compose_quantize_section(inspector);
+    render_compose_transform_section(inspector);
+    render_compose_measure_section(inspector);
 
     const auto visible_layer_count = view->semantic_layer_count;
     const bool semantic_target_active = semantic_layer_target_active(view);

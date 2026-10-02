@@ -2,6 +2,7 @@
 
 #include "sys/workspace_projection.h"
 #include "common/static_interval_index.h"
+#include "sys/compose_quantize_preview.h"
 #include "sys/compose_scroll_geometry.h"
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/editor_scene.h>
@@ -97,6 +98,7 @@ struct compose_scene_cache_t {
         static_projection_extracted{}, static_projection_reused_frames{};
 
     std::optional<wormedit::measure_index_t> cached_measure_index;
+    quantize_preview_cache_t quantize_preview;
     std::unordered_map<std::uint64_t, std::uint64_t> bgm_rows_by_id;
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
     std::shared_ptr<const wormedit::editor_area_geometry_snapshot_t> area_object_geometry;
@@ -250,6 +252,7 @@ struct application_command_state_t {
     std::function<std::string(external_player_action_t)> external_player;
     std::function<std::string()> transport_cancel_restore;
     std::optional<double> preview_playhead_absolute_row;
+    // Wheel rows gathered during one input frame while playing; flushed as a single seek.
 };
 
 inline auto toggle_transport_metronome(application_command_state_t& state) -> bool {

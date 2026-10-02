@@ -923,6 +923,26 @@ static void render_meter_control(const TimingPanel& panel) {
                      state.meter_denominator.data());
 }
 
+// Candidate signatures for the typed length; picking one rewrites numerator and denominator
+// to an equal length, so the measure keeps its duration.
+static void render_meter_suggestions(const TimingPanel& panel) {
+    auto* context = panel.context;
+    const auto suggestions =
+        worm_ui_nuklear_suggest_meters(state.meter_numerator.data(), state.meter_denominator.data());
+    if (suggestions.count == 0 || !timing_meter_editable(*panel.view)) return;
+    nk_layout_row_dynamic(context, 24, static_cast<int>(suggestions.count) + 1);
+    nk_label(context, "Suggest", NK_TEXT_LEFT);
+    for (std::size_t index = 0; index < suggestions.count; ++index) {
+        const auto& item = suggestions.items[index];
+        std::array<char, 16> label{};
+        std::snprintf(label.data(), label.size(), "%u/%u", item.numerator, item.denominator);
+        if (!nk_button_label(context, label.data())) continue;
+        std::snprintf(state.meter_numerator.data(), state.meter_numerator.size(), "%u", item.numerator);
+        std::snprintf(state.meter_denominator.data(), state.meter_denominator.size(), "%u",
+                      item.denominator);
+    }
+}
+
 static void render_timing_summary(const TimingPanel& panel) {
     const auto& view = *panel.view;
     auto* context = panel.context;
@@ -978,6 +998,7 @@ static void render_timing_controls(const TimingPanel& panel) {
     render_grid_control(panel);
     render_initial_bpm_control(panel);
     render_meter_control(panel);
+    render_meter_suggestions(panel);
     render_timing_summary(panel);
     render_recipe_selection_controls(panel);
 }

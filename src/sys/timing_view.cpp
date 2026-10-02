@@ -91,8 +91,9 @@ auto rational_as_double(wormedit::rational_t value) -> double {
 
 auto timing_stage_grid_step(const wormedit::chart_document_t& chart,
                             std::uint64_t active_denominator) -> std::uint64_t {
+    // A snap the chart's resolution cannot represent falls back to one standard measure.
     if (active_denominator == 0 || chart.divisions_per_standard_measure % active_denominator != 0) {
-        return 0;
+        return chart.divisions_per_standard_measure;
     }
     return chart.divisions_per_standard_measure / active_denominator;
 }

@@ -956,24 +956,6 @@ static void render_project_menu_files(const WormUiWorkspaceView* view,
         action->options.kind = WORM_UI_OPTIONS_OPEN;
 }
 
-static void render_project_menu_navigation(const WormUiWorkspaceView* view,
-                                           WormUiWorkspaceAction* action) {
-    if (!view->project_loaded) return;
-    for (int tab = 0; tab < WORM_UI_WORKSPACE_TAB_COUNT; ++tab) {
-        if (tab == WORM_UI_WORKSPACE_TAB_TIMING || tab == WORM_UI_WORKSPACE_TAB_COMPOSE)
-            continue;
-        const auto& item = view->tabs[tab];
-        if (!item.label) continue;
-        if (!item.enabled) nk_widget_disable_begin(g_context);
-        const bool chosen = nk_menu_item_label(g_context, item.label, NK_TEXT_LEFT) != 0;
-        if (!item.enabled) nk_widget_disable_end(g_context);
-        if (chosen && item.enabled && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
-            action->kind = WORM_UI_WORKSPACE_ACTION_SWITCH_TAB;
-            action->tab = static_cast<WormUiWorkspaceTab>(tab);
-        }
-    }
-}
-
 static void render_external_player_menu(const WormUiWorkspaceView& view,
                                          WormUiWorkspaceAction& action) {
     nk_layout_row_dynamic(g_context, 25, 1);
@@ -1000,9 +982,20 @@ static bool begin_menu_sized(const char* title, float width, float height) {
     return true;
 }
 
-static bool begin_menu(const char* title, float rows) {
-    return begin_menu_sized(title, 210.0f,
-                            rows * 25.0f + (rows - 1.0f) * 4.0f + 2.0f * wormedit::ui::chrome::menu_padding);
+// `rows` rows of 25 px plus `extra` px for separators and the like.
+static bool begin_menu(const char* title, float rows, float width = 210.0f, float extra = 0.0f) {
+    return begin_menu_sized(title, width,
+                            rows * 25.0f + (rows - 1.0f) * 4.0f +
+                                2.0f * wormedit::ui::chrome::menu_padding + extra);
+}
+
+static void menu_separator() {
+    nk_layout_row_dynamic(g_context, 6, 1);
+    struct nk_rect bounds{};
+    if (nk_widget(&bounds, g_context) == NK_WIDGET_INVALID) return;
+    const auto y = bounds.y + bounds.h * 0.5f;
+    nk_stroke_line(nk_window_get_canvas(g_context), bounds.x + 4.0f, y, bounds.x + bounds.w - 4.0f, y,
+                   1.0f, wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::border));
 }
 
 static void end_menu() {
@@ -1012,10 +1005,8 @@ static void end_menu() {
 
 static void render_project_menu(const WormUiWorkspaceView* view,
                                 WormUiWorkspaceAction* action) {
-    if (!begin_menu_sized("File", 250.0f, 556.0f)) return;
+    if (!begin_menu("File", view->project_loaded ? 7.0f : 4.0f, 250.0f)) return;
     render_project_menu_files(view, action);
-    render_project_menu_navigation(view, action);
-    render_external_player_menu(*view, *action);
     nk_layout_row_dynamic(g_context, 25, 1);
     if (nk_menu_item_label(g_context, "Quit", NK_TEXT_LEFT))
         action->kind = WORM_UI_WORKSPACE_ACTION_QUIT;
@@ -1041,12 +1032,17 @@ static void render_clipboard_menu(const WormUiWorkspaceView* view,
 
 static void render_preview_menu(const WormUiWorkspaceView* view,
                                 WormUiWorkspaceAction* action) {
-    if (!view->project_loaded || !begin_menu("Preview", 1.0f)) return;
-    nk_layout_row_dynamic(g_context, 25, 1);
-    if (nk_menu_item_label(g_context, view->player_preview.visible ? "Hide preview" : "Show preview",
-                           NK_TEXT_LEFT) &&
-        action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
-        action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
+    const bool loaded = view->project_loaded;
+    if (!begin_menu("Preview", loaded ? 5.0f : 1.0f, 250.0f, loaded ? 10.0f : 0.0f)) return;
+    if (loaded) {
+        nk_layout_row_dynamic(g_context, 25, 1);
+        if (nk_menu_item_label(g_context, view->player_preview.visible ? "Hide preview" : "Show preview",
+                               NK_TEXT_LEFT) &&
+            action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
+            action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
+        menu_separator();
+    }
+    render_external_player_menu(*view, *action);
     end_menu();
 }
 

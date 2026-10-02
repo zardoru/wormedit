@@ -141,7 +141,14 @@ inline void menu_panel(nk_context* context) {
     auto* canvas = &popup->buffer;
     const auto body = popup->bounds;
     const auto clip = popup->layout->clip;
-    nk_push_scissor(canvas, nk_rect(body.x - 24, body.y - 16, body.w + 48, body.h + 48));
+    // Keep the widened clip inside the parent window: backends reject scissors that reach
+    // outside the render target, which would drop the whole panel.
+    const auto outer = popup->parent->bounds;
+    const auto left = std::max(body.x - 24.0f, outer.x);
+    const auto top = std::max(body.y - 16.0f, outer.y);
+    const auto right = std::min(body.x + body.w + 24.0f, outer.x + outer.w);
+    const auto bottom = std::min(body.y + body.h + 32.0f, outer.y + outer.h);
+    nk_push_scissor(canvas, nk_rect(left, top, std::max(0.0f, right - left), std::max(0.0f, bottom - top)));
     for (int step = 1; step <= 8; ++step) {
         const auto grow = static_cast<float>(step);
         nk_fill_rect(canvas,

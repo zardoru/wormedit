@@ -1,5 +1,6 @@
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/snap.h>
+#include <wormedit/core/dead_span_rules.h>
 
 #include "interaction_cursor.h"
 
@@ -707,7 +708,8 @@ auto hold_placement_preview(const hold_placement_plan_t& plan) -> pending_hold_p
 }
 
 auto plan_hold_placement(const chart_document_t& chart, const measure_index_t& index,
-                         lane_id_t lane, local_position_t anchor, local_position_t moving)
+                         lane_id_t lane, local_position_t anchor, local_position_t moving,
+                         std::optional<note_kind_t> committed_kind = std::nullopt)
     -> std::variant<hold_placement_plan_t, diagnostic_list_t> {
     const auto anchor_row = absolute_row(index, anchor);
     const auto moving_row = absolute_row(index, moving);
@@ -720,6 +722,13 @@ auto plan_hold_placement(const chart_document_t& chart, const measure_index_t& i
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return *diagnostics;
     auto rows = std::get<hold_row_plan_t>(std::move(planned));
+    // A real hold has a playable head; a single row is judged by the kind about to be committed
+    // (previews pass none, so a gesture may start inside a warp and end on a row outside it).
+    const auto head_kind = rows.head_row == rows.tail_row ? committed_kind
+                                                          : std::optional{note_kind_t::hold};
+    if (head_kind && head_blocked_by_warp(chart, index, rows.head_row, *head_kind))
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
+                                       "playable note heads cannot sit inside a warp")};
     const auto head = position_at(index, rows.head_row);
     const auto tail = position_at(index, rows.tail_row);
     if (!head.has_value() || !tail.has_value()) {
@@ -873,6 +882,11 @@ auto plan_note_paint(const chart_document_t& chart, const measure_index_t& index
                                 .ending = {}, .active = {}};
     for (const auto& row : rows) {
         if (auto failure = sweep.process(row, plan, kind)) return diagnostic_list_t{*failure};
+    }
+    for (const auto& addition : plan.additions) {
+        const auto row = absolute_row(index, addition.position);
+        if (row && head_blocked_by_warp(chart, index, *row, kind))
+            return diagnostic_list_t{error(diagnostic_code_t::invalid_hold, "playable note heads cannot sit inside a warp")};
     }
     return plan;
 }
@@ -1414,6 +1428,12 @@ auto plan_note_move(const chart_document_t& chart, const measure_index_t& index,
         if (auto failure = move_one_note(context, id, plan)) return diagnostic_list_t{*failure};
     if (auto failure = validate_move_collisions(collected.collisions))
         return diagnostic_list_t{*failure};
+    for (const auto& moved : plan.moved) {
+        const auto* source = find_note(chart, moved.id);
+        const auto row = absolute_row(index, moved.position);
+        if (source && row && head_blocked_by_warp(chart, index, *row, source->kind))
+            return diagnostic_list_t{error(diagnostic_code_t::invalid_hold, "playable note heads cannot sit inside a warp")};
+    }
     return plan;
 }
 
@@ -3000,7 +3020,7 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position)
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_hold, "Move to a different row to finish the Hold or Roll gesture.")});
     const auto plan = plan_hold_placement(context.chart, context.index, pending.lane,
-                                          pending.position, *snapped);
+                                          pending.position, *snapped, state.armed_note_kind);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
         return diagnostic_result(history, state, *diagnostics);
     auto proposed = history.document;
@@ -3450,7 +3470,8 @@ auto commit_virtual_hold(virtual_note_context_t& context,
                                  {error(diagnostic_code_t::unknown_lane,
                                         "virtual hold lane is unavailable at an endpoint")});
     }
-    const auto planned = plan_hold_placement(*chart, index, action.lane, *anchor, *end);
+    const auto planned = plan_hold_placement(*chart, index, action.lane, *anchor, *end,
+                                         context.state.armed_note_kind);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, context.state, *diagnostics);
     const auto& placement = std::get<hold_placement_plan_t>(planned);
@@ -3717,6 +3738,9 @@ auto place_tap(tap_placement_context_t& context, const place_tap_action_t& actio
         return note.position == *snapped && note.lane == state.active_lane;
     });
     const auto target_absolute = *absolute_row(context.index, *snapped);
+    if (existing == measure->notes.end() &&
+        head_blocked_by_warp(*chart, context.index, target_absolute, state.armed_note_kind))
+        return diagnostic_result(history, state, {error(diagnostic_code_t::invalid_hold, "playable note heads cannot sit inside a warp")});
     const auto existing_id = existing == measure->notes.end()
         ? std::nullopt
         : std::optional{existing->id};

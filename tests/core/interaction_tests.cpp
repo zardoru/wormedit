@@ -4596,3 +4596,58 @@ TEST_CASE("Cursor pose helpers round-trip every cursor field",
     CHECK_FALSE(state.virtual_bms_cursor_row);
     CHECK(state.cursor_subrow == 2.25);
 }
+
+namespace {
+
+auto warp_history() -> document_history_t {
+    auto song = make_song();
+    song.charts.front().warps.push_back(
+        {.id = object_id_t{900}, .span = {{measure_id_t{2}, 240}, {measure_id_t{2}, 720}}});
+    return make_document_history(std::move(song));
+}
+
+} // namespace
+
+TEST_CASE("a warp refuses playable heads but takes fakes and mines",
+          "[unit][core][interaction][dead-span]") {
+    auto history = warp_history();
+    auto state = make_state(history);
+    const local_position_t inside{measure_id_t{2}, 480};
+
+    CHECK_FALSE(dispatch_editor_action(history, state, place_tap_action_t{inside}));
+    CHECK(note_count(history) == 0);
+
+    state.armed_note_kind = note_kind_t::fake;
+    CHECK(dispatch_editor_action(history, state, place_tap_action_t{inside}));
+    state.armed_note_kind = note_kind_t::mine;
+    CHECK(dispatch_editor_action(history, state,
+                                 place_tap_action_t{{measure_id_t{2}, 240}}));
+    CHECK(note_count(history) == 2);
+
+    state.armed_note_kind = note_kind_t::tap;
+    CHECK(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{2}, 720}}));
+    CHECK(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{2}, 0}}));
+}
+
+TEST_CASE("a hold may end inside a warp but not begin there",
+          "[unit][core][interaction][dead-span]") {
+    auto history = warp_history();
+    auto state = make_state(history);
+    state.armed_note_kind = note_kind_t::hold;
+
+    REQUIRE(dispatch_editor_action(history, state, begin_hold_action_t{{measure_id_t{2}, 0}}));
+    const auto ended = dispatch_editor_action(
+        history, state, commit_hold_action_t{{measure_id_t{2}, 480}});
+    REQUIRE(ended);
+    REQUIRE(note_count(history) == 1);
+    CHECK(history.document.charts.front().measures.back().notes.front().end.has_value());
+
+    auto fresh = warp_history();
+    auto fresh_state = make_state(fresh);
+    fresh_state.armed_note_kind = note_kind_t::hold;
+    REQUIRE(dispatch_editor_action(fresh, fresh_state,
+                                   begin_hold_action_t{{measure_id_t{2}, 480}}));
+    CHECK_FALSE(dispatch_editor_action(fresh, fresh_state,
+                                       commit_hold_action_t{{measure_id_t{2}, 720}}));
+    CHECK(note_count(fresh) == 0);
+}

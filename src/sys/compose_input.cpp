@@ -1096,18 +1096,23 @@ struct compose_input_context_t {
         return compose_source_y(y, state.viewport_height_pixels,
                                 input_chart && compose_field_downscroll(*input_chart, application_state.editor_preferences));
     }
-    // Notes cannot sit in a Stop, Delay or Warp: a pointer there targets nothing to place on.
+    // Nothing sits inside a Stop or Delay band, so a pointer there targets nothing to place on.
+    // Warp rows take fakes, mines and hold bodies or tails; the core placement rules refuse
+    // playable heads there, so warps do not block the pointer.
     auto in_dead_span(const wormedit::chart_document_t& chart,
                       const wormedit::editor_interaction_view_model_t& view, double y_pixels) const
         -> bool {
         if (!scene_cache.dead_spans || chart.divisions_per_standard_measure == 0) return false;
         const auto pixels_per_row = view.pixels_per_standard_measure /
                                     static_cast<double>(chart.divisions_per_standard_measure);
-        const auto bands = project_dead_span_bands(
+        auto bands = project_dead_span_bands(
             *scene_cache.dead_spans, pixels_per_row, view.viewport_scroll_pixels,
             view.viewport_height_pixels,
             compose_field_downscroll(chart, application_state.editor_preferences),
             dead_span_pause_band_pixels);
+        std::erase_if(bands, [](const dead_span_band_t& band) {
+            return band.kind == dead_span_kind_t::warp;
+        });
         return pointer_in_dead_span(bands, y_pixels);
     }
     auto hit_target_at(const wormedit::chart_document_t& chart,

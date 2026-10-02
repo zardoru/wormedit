@@ -1,4 +1,6 @@
 #include "sys/compose_actions.h"
+#include "sys/recipe_form.h"
+#include <wormedit/core/sv_recipe.h>
 #include "sys/compose_label_search.h"
 #include "sys/compose_measure_commands.h"
 #include "sys/compose_selection_transform.h"
@@ -1401,6 +1403,54 @@ std::string edit_cursor_measure(compose_action_context_t& context, cursor_measur
     return rebound ? status : "Measure edited, but workspace rebinding failed.";
 }
 
+// The form's recipe and the stored recipe it edits, when the action still matches the document.
+struct recipe_form_target_t {
+    const chart_document_t* chart{};
+    const sv_recipe_t* recipe{};
+};
+
+auto recipe_form_target(compose_action_context_t& context) -> std::optional<recipe_form_target_t> {
+    if (context.history.document.revision != context.action.compose_input_document_revision)
+        return std::nullopt;
+    const auto chart = std::ranges::find(context.history.document.charts, context.state.chart,
+                                         &chart_document_t::id);
+    if (chart == context.history.document.charts.end() ||
+        chart->id.value != context.action.compose_input_chart_id)
+        return std::nullopt;
+    const auto recipe = std::ranges::find(chart->sv_recipes,
+                                          recipe_id_t{context.action.compose_recipe_id},
+                                          &sv_recipe_t::id);
+    if (recipe == chart->sv_recipes.end()) return std::nullopt;
+    return recipe_form_target_t{&*chart, &*recipe};
+}
+
+// Shows the unapplied form candidate in the lane. A malformed form or a candidate the core
+// validator rejects keeps its message for the form and draws no graph.
+std::string preview_recipe_form_action(compose_action_context_t& context) {
+    const auto target = recipe_form_target(context);
+    if (!target) return "SV recipe form ignored because the recipe or the document changed.";
+    auto preview = wormedit::sys::preview_recipe_form(
+        *target->chart, context.history.document.revision, *target->recipe,
+        context.action.compose_recipe_form);
+    const auto status = preview.error.empty() ? std::string{"SV recipe preview updated."} : preview.error;
+    context.application_state.recipe_preview = std::move(preview);
+    return status;
+}
+
+std::string apply_recipe_form_action(compose_action_context_t& context) {
+    const auto target = recipe_form_target(context);
+    if (!target) return "SV recipe form ignored because the recipe or the document changed.";
+    if (context.application_state.timing_locked) return "Timing is locked.";
+    bool applied = false;
+    auto status = wormedit::sys::apply_recipe_form(context.history, target->chart->id,
+                                                   target->recipe->id,
+                                                   context.action.compose_recipe_form, applied);
+    if (!applied) return status;
+    context.application_state.recipe_preview.reset();
+    const auto rebound = rebind_workspace(context.workspace, context.history);
+    return rebound ? status : "SV recipe updated, but workspace rebinding failed.";
+}
+
 std::string set_cursor_measure_meter(compose_action_context_t& context) {
     if (editor_interaction_has_pending_gesture(context.state))
         return "Finish or cancel the active Compose gesture before editing measures.";
@@ -1416,6 +1466,14 @@ std::string set_cursor_measure_meter(compose_action_context_t& context) {
 std::optional<std::string> dispatch_compose_marker_action(compose_action_context_t& context) {
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER)
         return set_cursor_measure_meter(context);
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM)
+        return preview_recipe_form_action(context);
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM)
+        return apply_recipe_form_action(context);
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_SV_RECIPE_PREVIEW) {
+        context.application_state.recipe_preview.reset();
+        return std::string{"SV recipe preview cleared."};
+    }
     if (const auto measure_command = cursor_measure_command_for(context.action.compose_action))
         return edit_cursor_measure(context, *measure_command);
     if (const auto transform = selection_transform_for(context.action.compose_action))

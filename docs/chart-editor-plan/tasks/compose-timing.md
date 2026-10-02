@@ -153,11 +153,11 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 ## T-321 Remove the Timing screen
 
-- **Status:** blocked-on T-322, T-323
+- **Status:** ready
 - **Outcome:** The Timing tab, `timing_panel.*`, `timing_state.*` and their tests are gone; the app builds and Compose timing focus still works.
 - **Read first:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/timing_panel.h`, `src/ui/nuklear/timing_state.h`, `CMakeLists.txt`.
 - **Files owned:** `src/ui/nuklear/timing_panel.*`, `src/ui/nuklear/timing_state.*`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/ui/*timing*`, `docs/chart-editor-plan/tasks/*.md`, `memory/chart-editor-status/resume.md`.
-- **Steps:** 1. Confirm T-320, T-322 and T-323 are done. `timing_panel.cpp` also owns shared pieces Compose still calls (`worm_ui_nuklear_render_timing_stage_editor`, the recipe form): move them into Compose files before deleting the screen. 2. Remove the tab and its code. Tests that still apply to behavior now in Compose must exist before deletion (ported per T-320); delete only tests of the removed screen itself. 3. Update plan and docs links that name the screen. 4. Full build, `documentation.` tests and Compose smoke.
+- **Steps:** 1. T-320, T-322 and T-323 are done. `timing_panel.cpp` also owns shared pieces Compose still calls (`worm_ui_nuklear_render_timing_stage_editor`, the recipe form): move them into Compose files before deleting the screen. 2. Remove the tab and its code. Tests that still apply to behavior now in Compose must exist before deletion (ported per T-320); delete only tests of the removed screen itself. 3. Update plan and docs links that name the screen. 4. Full build, `documentation.` tests and Compose smoke.
 - **Invariants:** Document, formats and Compose timing focus are byte-identical in behavior.
 - **Reject/failure behavior:** If any check fails, stop and report; do not delete tests to get green.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; `ctest --test-dir build -R '^documentation\.'`; isolated Xvfb check of Compose when UI changes.
@@ -180,7 +180,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 ## T-323 Edit SV recipe curve, values and sampling in Compose
 
-- **Status:** ready
+- **Status:** done (full-mode inspector; the focus mode has no inspector)
 - **Outcome:** selecting a recipe in Compose opens an editor for its output, curve (constant, linear, exponential, bump), exact values, sampling mode and counts, with a live preview of the raw and composed value, Apply as one undo step and Cancel.
 - **Read first:** `src/ui/nuklear/timing_panel.cpp` (`render_timing_recipe_form`, recipe draft handling), `include/wormedit/core/sv_recipe.h` (`sv_recipe_draft_t`, `preview_sv_recipe_draft`, `update_sv_recipe_action_t`), `src/sys/main.cpp` (`dispatch_timing_recipe_action`), `src/ui/nuklear/compose_inspector.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_inspector.cpp`, new `src/ui/nuklear/compose_recipe_form.cpp/.h`, `src/ui/frontend.h`, `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `CMakeLists.txt`.
@@ -189,3 +189,6 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Reject/failure behavior:** invalid parameter combinations stay editable and are reported by preview and Apply.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; `ctest --test-dir build -R '^documentation\.'`; isolated Xvfb check.
 - **Out of scope:** the Lua evaluator (T-189), SPEEDS (T-322), removing the Timing screen (T-321).
+
+- **Result (2026-10-02):** Selecting a recipe in Compose (click its area) shows an "SV recipe" form at the top of the inspector: output (SV, Scrolls, Speeds), curve (constant, linear, exponential, bump) with its exact fractions, sampling (fixed by point count or step rows, or adaptive with tolerance and max points) and, for Speeds, the transition length and unit. Every change previews the candidate in the lane as an amber line without writing; Apply stores it as one undo step through `update_sv_recipe_action_t` (the core validator's message is shown for invalid values and nothing is written), Revert drops the edits and the preview. A Lua expression recipe shows its source read-only and keeps its source and parameters; only its sampling and transition can change. The text/recipe conversion that lived in `main.cpp` and `timing_view.cpp` is now `src/sys/recipe_form.*` (`recipe_form_from_recipe`, `recipe_from_form`, `preview_recipe_form`, `apply_recipe_form`), shared by both screens. `WormUiTimingRecipeCurve` gained `LUA_EXPRESSION` so a Lua recipe can cross the frontend boundary. Tests: 8 core tests (round trip, edits, SPEEDS transition, step rows, malformed text, Lua keeps its source, preview without writing, apply/undo/reject) and one sys test for the form view, the preview graph and dropping a stale preview. Xvfb captures show the form for a selected recipe, the amber bump preview after cycling the curve, and the applied recipe (document dirty, graph now stored).
+- **Remaining:** none for this card. The form lives in the inspector, which the timing focus mode hides; focus mode still selects, drags, materializes and deletes recipes.

@@ -7,6 +7,7 @@
 #include "sys/compose_kiai_spans.h"
 #include "sys/compose_recipe_areas.h"
 #include "sys/compose_speed_spans.h"
+#include "sys/recipe_form.h"
 #include "sys/compose_sv_graph.h"
 #include "sys/compose_quantize_preview.h"
 #include "sys/compose_scroll_geometry.h"
@@ -229,6 +230,9 @@ struct application_command_state_t {
     std::uint64_t kiai_selected_head{};
     // SV recipe selected on the canvas (0 when none).
     std::uint64_t recipe_selected{};
+    // The unapplied form candidate of the selected recipe, drawn in the lane. It is dropped when
+    // the selection or the document revision changes.
+    std::optional<recipe_form_preview_t> recipe_preview;
     bool audio_offset_locked{};
     [[nodiscard]] bool audio_offset_edits_locked() const noexcept {
         return timing_locked || audio_offset_locked;

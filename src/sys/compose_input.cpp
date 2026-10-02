@@ -2657,6 +2657,8 @@ auto dispatch_timing_lane_area_input(const WormUiComposeInputAction& input,
             return *error;
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_RECIPE_SELECT:
+        if (context.application_state.recipe_selected != input.object_id)
+            context.application_state.recipe_preview.reset();
         context.application_state.recipe_selected = input.object_id;
         result.accepted = true;
         accepted = input.object_id != 0 ? "SV recipe selected." : "SV recipe selection cleared.";

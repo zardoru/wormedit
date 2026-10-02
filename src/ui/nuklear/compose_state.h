@@ -208,6 +208,12 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t kiai_drag_head_id{};
     double kiai_drag_anchor_y{};
     double kiai_drag_current_y{};
+    // Edit buffers of the selected SV recipe's form (see compose_recipe_form.cpp).
+    WormUiTimingRecipeForm recipe_edit_form{};
+    std::uint64_t recipe_edit_id{};
+    std::uint64_t recipe_edit_revision{};
+    bool recipe_edit_dirty{};
+    bool recipe_edit_apply_pending{};
     // Typed time signature for the cursor measure (Measure at cursor section).
     std::array<char, 32> meter_numerator{'4'};
     std::array<char, 32> meter_denominator{'4'};

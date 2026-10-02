@@ -1,5 +1,7 @@
 #include "sys/frame_timing.h"
 #include "sys/compose_view.h"
+#include "sys/recipe_form.h"
+#include <wormedit/core/sv_recipe.h>
 #include "ui/nuklear/arrow_glyph.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_resource_presenter.h"
@@ -1921,10 +1923,12 @@ std::string recipe_area_label(const wormedit::sys::recipe_area_t& area) {
 
 // Stored SV recipes as areas in the SV (sv/scrolls output) or SPD (speeds output) lane, each with
 // its relative value as a line graph normalized to what is visible.
-void populate_compose_recipe_areas(flattened_workspace_t& flattened, const compose_scene_cache_t& cache,
+void populate_compose_recipe_areas(flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+                                   const compose_scene_cache_t& cache,
                                    const wormedit::editor_interaction_view_model_t& interaction_view,
                                    WormUiComposeView& view, bool downscroll, double pixels_per_row,
-                                   std::uint64_t total_rows, std::uint64_t selected_recipe) {
+                                   std::uint64_t total_rows, std::uint64_t selected_recipe,
+                                   const recipe_form_preview_t* preview) {
     flattened.compose.recipe_area.clear();
     flattened.compose.recipe_graph_point.clear();
     flattened.compose.recipe_area_labels.clear();
@@ -1943,7 +1947,21 @@ void populate_compose_recipe_areas(flattened_workspace_t& flattened, const compo
     const auto last = std::min<std::uint64_t>(
         total_rows, static_cast<std::uint64_t>(std::ceil((scroll + height) / pixels_per_row)));
     flattened.compose.recipe_area_labels.reserve(cache.recipe_areas->areas.size());
-    for (const auto& area : cache.recipe_areas->areas) {
+    for (const auto& stored_area : cache.recipe_areas->areas) {
+        const auto* shown = &stored_area;
+        wormedit::sys::recipe_area_t previewed;
+        const bool previewing = preview && preview->candidate.id == stored_area.recipe;
+        if (previewing) {
+            // The unapplied candidate replaces the stored values in this area's graph.
+            previewed = stored_area;
+            const auto sampled = wormedit::sample_sv_recipe(chart, preview->candidate);
+            previewed.evaluable = static_cast<bool>(sampled) && !sampled.points.empty();
+            previewed.points.clear();
+            for (const auto& point : sampled.points)
+                previewed.points.push_back({point.absolute_row, point.value});
+            shown = &previewed;
+        }
+        const auto& area = *shown;
         if (area.end_row <= first || area.begin_row >= last) continue;
         if (flattened.compose.recipe_area.size() >= WORM_UI_COMPOSE_RECIPE_AREA_CAPACITY) break;
         const auto begin_y = row_to_y(area.begin_row);
@@ -1968,6 +1986,7 @@ void populate_compose_recipe_areas(flattened_workspace_t& flattened, const compo
             .evaluable = area.evaluable,
             .begin_visible = begin_y >= 0.0 && begin_y <= height,
             .end_visible = end_y >= 0.0 && end_y <= height,
+            .previewing = previewing,
             .graph_first = graph_first,
             .graph_count = flattened.compose.recipe_graph_point.size() - graph_first});
     }
@@ -2003,6 +2022,43 @@ void populate_compose_speed_spans(flattened_workspace_t& flattened, const compos
     }
     view.speed_spans = flattened.compose.speed_span.data();
     view.speed_span_count = flattened.compose.speed_span.size();
+}
+
+// A preview belongs to one selected recipe at one document revision; anything else drops it.
+void drop_stale_recipe_preview(application_command_state_t& application_state,
+                               const wormedit::chart_document_t& chart, std::uint64_t revision) {
+    auto& preview = application_state.recipe_preview;
+    if (!preview) return;
+    const bool current = preview->chart == chart.id && preview->revision == revision &&
+                         preview->candidate.id.value == application_state.recipe_selected &&
+                         std::ranges::any_of(chart.sv_recipes, [&](const auto& recipe) {
+                             return recipe.id == preview->candidate.id;
+                         });
+    if (!current) preview.reset();
+}
+
+// The form of the selected recipe as stored; the frontend keeps its own edit buffers on top.
+void populate_compose_recipe_form(flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+                                  const application_command_state_t& application_state,
+                                  WormUiComposeView& view) {
+    flattened.compose.recipe_form_text.clear();
+    view.recipe_form = {};
+    const auto recipe = std::ranges::find(chart.sv_recipes,
+                                          wormedit::recipe_id_t{application_state.recipe_selected},
+                                          &wormedit::sv_recipe_t::id);
+    if (application_state.recipe_selected == 0 || recipe == chart.sv_recipes.end()) return;
+    flattened.compose.recipe_form_text.reserve(3);
+    const auto& name = flattened.compose.recipe_form_text.emplace_back(recipe->name);
+    const auto& source = flattened.compose.recipe_form_text.emplace_back(recipe->expression_source);
+    const auto& status = flattened.compose.recipe_form_text.emplace_back(
+        application_state.recipe_preview ? application_state.recipe_preview->error : std::string{});
+    view.recipe_form.visible = true;
+    view.recipe_form.recipe_id = recipe->id.value;
+    view.recipe_form.enabled = recipe->enabled;
+    view.recipe_form.name = name.c_str();
+    view.recipe_form.expression_source = source.c_str();
+    view.recipe_form.status_text = status.empty() ? nullptr : status.c_str();
+    view.recipe_form.form = wormedit::sys::recipe_form_from_recipe(*recipe);
 }
 
 void populate_compose_selection_preview(
@@ -3102,8 +3158,12 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     populate_compose_kiai_and_sv(flattened, cache, interaction_view, view, downscroll,
                                  pixels_per_row, canvas_rows, application_state.kiai_selected_head);
     populate_compose_speed_spans(flattened, cache, interaction_view, view, downscroll, pixels_per_row);
-    populate_compose_recipe_areas(flattened, cache, interaction_view, view, downscroll,
-                                  pixels_per_row, canvas_rows, application_state.recipe_selected);
+    drop_stale_recipe_preview(application_state, chart, history.document.revision);
+    populate_compose_recipe_areas(flattened, chart, cache, interaction_view, view, downscroll,
+                                  pixels_per_row, canvas_rows, application_state.recipe_selected,
+                                  application_state.recipe_preview ? &*application_state.recipe_preview
+                                                                   : nullptr);
+    populate_compose_recipe_form(flattened, chart, application_state, view);
     const auto maximum_bgm_scroll = std::max(
         0.0, static_cast<double>(chart.bgm_source_lanes.size()) * compose_bgm_lane_width_pixels -
                  bgm_pane_width);

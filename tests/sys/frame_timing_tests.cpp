@@ -7,6 +7,7 @@
 #include "sys/compose_view.h"
 #include "sys/compose_input.h"
 #include "sys/compose_area_actions.h"
+#include "sys/recipe_form.h"
 #include "sys/compose_playhead_cursor.h"
 #include <wormedit/core/command.h>
 #include <wormedit/core/rational.h>
@@ -1705,6 +1706,53 @@ TEST_CASE("Compose projects SPEEDS transitions as spans and names the transition
             std::string(view.timing_markers[index].detail).find("transition 2 beats") != std::string::npos)
             named = true;
     CHECK(named);
+}
+
+TEST_CASE("the selected recipe's form and its unapplied preview reach the Compose view",
+          "[sys][recipe-areas][recipe-form]") {
+    compose_test_fixture_t fixture{recipe_test_song()};
+    fixture.project();
+    CHECK_FALSE(fixture.flattened.view.compose.recipe_form.visible);
+    CHECK_FALSE(fixture.flattened.view.compose.recipe_areas[0].previewing);
+
+    fixture.application.recipe_selected = 7001;
+    fixture.project();
+    const auto& form_view = fixture.flattened.view.compose.recipe_form;
+    REQUIRE(form_view.visible);
+    CHECK(form_view.recipe_id == 7001);
+    CHECK(std::string(form_view.name) == "rise");
+    CHECK(form_view.form.curve == WORM_UI_TIMING_RECIPE_CURVE_LINEAR);
+    CHECK(std::string(form_view.form.value_to.numerator) == "3");
+    CHECK(form_view.status_text == nullptr);
+
+    // A preview replaces that recipe's graph until the selection or the document moves on.
+    const auto& chart = fixture.history.document.charts.front();
+    auto form = wormedit::sys::recipe_form_from_recipe(chart.sv_recipes.front());
+    std::snprintf(form.value_to.numerator, sizeof(form.value_to.numerator), "9");
+    fixture.application.recipe_preview = wormedit::sys::preview_recipe_form(
+        chart, fixture.history.document.revision, chart.sv_recipes.front(), form);
+    fixture.project();
+    CHECK(fixture.flattened.view.compose.recipe_areas[0].previewing);
+    CHECK(fixture.flattened.view.compose.recipe_areas[0].graph_count >= 2);
+
+    form.curve = WORM_UI_TIMING_RECIPE_CURVE_EXPONENTIAL;
+    std::snprintf(form.shape.numerator, sizeof(form.shape.numerator), "99");
+    fixture.application.recipe_preview = wormedit::sys::preview_recipe_form(
+        chart, fixture.history.document.revision, chart.sv_recipes.front(), form);
+    fixture.project();
+    REQUIRE(fixture.flattened.view.compose.recipe_form.status_text != nullptr);
+    CHECK_FALSE(std::string(fixture.flattened.view.compose.recipe_form.status_text).empty());
+
+    fixture.application.recipe_selected = 0;
+    fixture.project();
+    CHECK_FALSE(fixture.application.recipe_preview.has_value());
+    CHECK_FALSE(fixture.flattened.view.compose.recipe_form.visible);
+
+    fixture.application.recipe_selected = 7001;
+    fixture.application.recipe_preview = wormedit::sys::preview_recipe_form(
+        chart, fixture.history.document.revision + 5, chart.sv_recipes.front(), form);
+    fixture.project();
+    CHECK_FALSE(fixture.application.recipe_preview.has_value());
 }
 
 TEST_CASE("Pointer paste retains cursor and viewport and FIFO release commits that anchor",

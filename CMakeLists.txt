@@ -326,6 +326,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_sv_graph.cpp
         src/sys/compose_recipe_areas.cpp
         src/sys/compose_speed_spans.cpp
+        src/sys/recipe_form.cpp
         src/sys/compose_quantize_preview.cpp
         src/sys/application_command_dispatch.cpp
         src/sys/compose_resource_presenter.cpp
@@ -381,6 +382,7 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/compose_markers.cpp
         src/ui/nuklear/compose_area_menu.cpp
         src/ui/nuklear/compose_recipe_menu.cpp
+        src/ui/nuklear/compose_recipe_form.cpp
         src/ui/nuklear/compose_canvas.cpp
         src/ui/nuklear/compose_toolbar.cpp
         src/ui/nuklear/compose_inspector.cpp

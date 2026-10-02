@@ -11,6 +11,7 @@
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_recipe_form.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/timing_panel.h"
 
@@ -1339,6 +1340,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         if (nk_group_begin(context, "Compose inspector", NK_WINDOW_BORDER)) {
 
     const ComposeInspectorContext inspector{context, view, timing_view, action};
+    render_compose_recipe_form(inspector);
     render_compose_note_label_editor(inspector);
     render_compose_label_search(inspector);
     render_compose_quantize_section(inspector);

@@ -1,4 +1,5 @@
 #include "sys/timing_view.h"
+#include "sys/recipe_form.h"
 
 #include <wormedit/core/grid.h>
 #include <wormedit/core/measure.h>
@@ -138,21 +139,6 @@ auto timing_pause_unit_to_ui(wormedit::pause_unit_t unit) -> WormUiTimingPauseUn
     return WORM_UI_TIMING_PAUSE_SECONDS;
 }
 
-void set_recipe_rational_text(WormUiTimingRecipeRationalText& target,
-                              wormedit::signed_rational_t value) {
-    (void)std::snprintf(target.numerator, sizeof(target.numerator), "%lld",
-                        static_cast<long long>(value.numerator));
-    (void)std::snprintf(target.denominator, sizeof(target.denominator), "%llu",
-                        static_cast<unsigned long long>(value.denominator));
-}
-
-void set_recipe_rational_text(WormUiTimingRecipeRationalText& target, wormedit::rational_t value) {
-    (void)std::snprintf(target.numerator, sizeof(target.numerator), "%llu",
-                        static_cast<unsigned long long>(value.numerator));
-    (void)std::snprintf(target.denominator, sizeof(target.denominator), "%llu",
-                        static_cast<unsigned long long>(value.denominator));
-}
-
 struct recipe_point_projection_t {
     std::uint64_t total_rows{};
     long double minimum{};
@@ -256,32 +242,7 @@ void populate_timing_recipe_view(flattened_workspace_t& flattened,
             static_cast<long double>(*end_row) / static_cast<long double>(measures->total_rows));
     }
 
-    const auto& candidate = draft->candidate;
-    auto& form = view.form;
-    form.output = static_cast<WormUiTimingRecipeOutput>(candidate.output);
-    form.curve = static_cast<WormUiTimingRecipeCurve>(candidate.curve);
-    form.sampling_mode = static_cast<WormUiTimingRecipeSamplingMode>(candidate.sampling.mode);
-    form.fixed_extent = candidate.sampling.fixed_step_rows
-                            ? WORM_UI_TIMING_RECIPE_FIXED_STEP_ROWS
-                            : WORM_UI_TIMING_RECIPE_FIXED_POINT_COUNT;
-    set_recipe_rational_text(form.value_from, candidate.parameters.value_from);
-    set_recipe_rational_text(form.value_to, candidate.parameters.value_to);
-    set_recipe_rational_text(form.shape, candidate.parameters.shape);
-    set_recipe_rational_text(form.bump_start, candidate.parameters.bump_start);
-    set_recipe_rational_text(form.bump_length, candidate.parameters.bump_length);
-    set_recipe_rational_text(form.bump_x, candidate.parameters.bump_x);
-    set_recipe_rational_text(form.bump_y, candidate.parameters.bump_y);
-    set_recipe_rational_text(form.tolerance, candidate.sampling.tolerance);
-    set_recipe_rational_text(form.transition_duration,
-                             candidate.transition_duration.value_or(wormedit::rational_t{}));
-    form.transition_is_seconds = candidate.transition_is_seconds.value_or(false);
-    (void)std::snprintf(form.fixed_point_count, sizeof(form.fixed_point_count), "%u",
-                        candidate.sampling.fixed_point_count.value_or(2));
-    (void)std::snprintf(
-        form.fixed_step_rows, sizeof(form.fixed_step_rows), "%llu",
-        static_cast<unsigned long long>(candidate.sampling.fixed_step_rows.value_or(1)));
-    (void)std::snprintf(form.adaptive_max_points, sizeof(form.adaptive_max_points), "%u",
-                        candidate.sampling.max_points);
+    view.form = wormedit::sys::recipe_form_from_recipe(draft->candidate);
 
     if (!preview) {
         view.status_text = timing_display_text(flattened,

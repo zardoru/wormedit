@@ -111,7 +111,7 @@ static auto valid_timing_recipe_form(const WormUiTimingRecipeForm& form) -> bool
         form.output >= WORM_UI_TIMING_RECIPE_OUTPUT_SV &&
         form.output <= WORM_UI_TIMING_RECIPE_OUTPUT_SPEEDS &&
         form.curve >= WORM_UI_TIMING_RECIPE_CURVE_CONSTANT &&
-        form.curve <= WORM_UI_TIMING_RECIPE_CURVE_BUMP &&
+        form.curve <= WORM_UI_TIMING_RECIPE_CURVE_LUA_EXPRESSION &&
         form.sampling_mode >= WORM_UI_TIMING_RECIPE_SAMPLING_FIXED &&
         form.sampling_mode <= WORM_UI_TIMING_RECIPE_SAMPLING_ADAPTIVE &&
         form.fixed_extent >= WORM_UI_TIMING_RECIPE_FIXED_POINT_COUNT &&
@@ -344,6 +344,8 @@ static auto timing_recipe_curve_label(WormUiTimingRecipeCurve curve) -> const ch
         return "Exponential";
     case WORM_UI_TIMING_RECIPE_CURVE_BUMP:
         return "Bump";
+    case WORM_UI_TIMING_RECIPE_CURVE_LUA_EXPRESSION:
+        return "Lua expression";
     }
     return "Linear";
 }

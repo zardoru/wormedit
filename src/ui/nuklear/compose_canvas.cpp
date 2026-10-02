@@ -1290,7 +1290,8 @@ static void draw_compose_recipe_graph(const ComposePaintContext& paint,
     const auto x_of = [&](double fraction) {
         return rect.x + 2.0f + static_cast<float>(fraction) * std::max(0.0f, rect.w - 4.0f);
     };
-    const auto color = area.enabled ? nk_rgb(214, 226, 255) : nk_rgb(150, 156, 170);
+    const auto color = area.previewing ? nk_rgb(255, 196, 98)
+                       : area.enabled ? nk_rgb(214, 226, 255) : nk_rgb(150, 156, 170);
     for (size_t vertex = 1; vertex < area.graph_count; ++vertex) {
         const auto& from = paint.view->recipe_graph_points[area.graph_first + vertex - 1];
         const auto& to = paint.view->recipe_graph_points[area.graph_first + vertex];

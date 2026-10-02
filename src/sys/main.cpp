@@ -15,6 +15,7 @@
 #include "sys/compose_input.h"
 #include "sys/compose_actions.h"
 #include "sys/application_edit_helpers.h"
+#include "sys/recipe_form.h"
 #include "sys/workspace_projection.h"
 #include "sys/workspace_frame_view.h"
 #include "sys/transport_player_actions.h"
@@ -684,146 +685,6 @@ auto timing_stage_value(const wormedit::timing_lane_pseudonote_preview_t& previe
     return std::nullopt;
 }
 
-auto parse_recipe_rational(const WormUiTimingRecipeRationalText& text)
-    -> std::optional<wormedit::signed_rational_t> {
-    const auto numerator = parse_timing_signed(text.numerator);
-    const auto denominator = parse_timing_unsigned(text.denominator);
-    if (!numerator || !denominator || *denominator == 0) {
-        return std::nullopt;
-    }
-    return wormedit::signed_rational_t{*numerator, *denominator};
-}
-
-auto parse_recipe_unsigned_rational(const WormUiTimingRecipeRationalText& text)
-    -> std::optional<wormedit::rational_t> {
-    const auto numerator = parse_timing_unsigned(text.numerator);
-    const auto denominator = parse_timing_unsigned(text.denominator);
-    if (!numerator || !denominator || *denominator == 0) {
-        return std::nullopt;
-    }
-    return wormedit::rational_t{*numerator, *denominator};
-}
-
-auto timing_recipe_form_valid(const WormUiTimingRecipeForm& form) -> bool {
-    return form.output >= WORM_UI_TIMING_RECIPE_OUTPUT_SV &&
-           form.output <= WORM_UI_TIMING_RECIPE_OUTPUT_SPEEDS &&
-           form.curve >= WORM_UI_TIMING_RECIPE_CURVE_CONSTANT &&
-           form.curve <= WORM_UI_TIMING_RECIPE_CURVE_BUMP &&
-           form.sampling_mode >= WORM_UI_TIMING_RECIPE_SAMPLING_FIXED &&
-           form.sampling_mode <= WORM_UI_TIMING_RECIPE_SAMPLING_ADAPTIVE &&
-           form.fixed_extent >= WORM_UI_TIMING_RECIPE_FIXED_POINT_COUNT &&
-           form.fixed_extent <= WORM_UI_TIMING_RECIPE_FIXED_STEP_ROWS;
-}
-
-auto set_timing_recipe_curve_parameters(wormedit::sv_recipe_t& candidate,
-                                        const WormUiTimingRecipeForm& form) -> bool {
-    using namespace wormedit;
-    const auto set_parameter = [](signed_rational_t& target,
-                                  const WormUiTimingRecipeRationalText& source) {
-        const auto parsed = parse_recipe_rational(source);
-        if (parsed) {
-            target = *parsed;
-        }
-        return parsed.has_value();
-    };
-    switch (candidate.curve) {
-    case sv_recipe_curve_t::constant:
-        return set_parameter(candidate.parameters.value_from, form.value_from);
-    case sv_recipe_curve_t::linear:
-        return set_parameter(candidate.parameters.value_from, form.value_from) &&
-               set_parameter(candidate.parameters.value_to, form.value_to);
-    case sv_recipe_curve_t::exponential:
-        return set_parameter(candidate.parameters.value_from, form.value_from) &&
-               set_parameter(candidate.parameters.value_to, form.value_to) &&
-               set_parameter(candidate.parameters.shape, form.shape);
-    case sv_recipe_curve_t::bump:
-        return set_parameter(candidate.parameters.bump_start, form.bump_start) &&
-               set_parameter(candidate.parameters.bump_length, form.bump_length) &&
-               set_parameter(candidate.parameters.bump_x, form.bump_x) &&
-               set_parameter(candidate.parameters.bump_y, form.bump_y);
-    case sv_recipe_curve_t::lua_expression:
-        return false;  // the Timing form has no expression editor
-    }
-    return false;
-}
-
-auto set_fixed_timing_recipe_sampling(wormedit::sv_recipe_t& candidate,
-                                      const WormUiTimingRecipeForm& form) -> bool {
-    if (form.fixed_extent == WORM_UI_TIMING_RECIPE_FIXED_POINT_COUNT) {
-        const auto count = parse_timing_unsigned(form.fixed_point_count);
-        if (!count || *count > std::numeric_limits<std::uint32_t>::max()) {
-            return false;
-        }
-        candidate.sampling.fixed_point_count = static_cast<std::uint32_t>(*count);
-        candidate.sampling.fixed_step_rows.reset();
-        return true;
-    }
-    const auto rows = parse_timing_unsigned(form.fixed_step_rows);
-    if (!rows) {
-        return false;
-    }
-    candidate.sampling.fixed_point_count.reset();
-    candidate.sampling.fixed_step_rows = *rows;
-    return true;
-}
-
-auto set_adaptive_timing_recipe_sampling(wormedit::sv_recipe_t& candidate,
-                                         const WormUiTimingRecipeForm& form) -> bool {
-    const auto tolerance = parse_recipe_rational(form.tolerance);
-    const auto max_points = parse_timing_unsigned(form.adaptive_max_points);
-    if (!tolerance || !max_points || *max_points > std::numeric_limits<std::uint32_t>::max()) {
-        return false;
-    }
-    candidate.sampling.fixed_point_count.reset();
-    candidate.sampling.fixed_step_rows.reset();
-    candidate.sampling.tolerance = *tolerance;
-    candidate.sampling.max_points = static_cast<std::uint32_t>(*max_points);
-    return true;
-}
-
-auto set_timing_recipe_sampling(wormedit::sv_recipe_t& candidate,
-                                const WormUiTimingRecipeForm& form) -> bool {
-    candidate.sampling.mode =
-        static_cast<wormedit::sv_recipe_sampling_mode_t>(form.sampling_mode);
-    return candidate.sampling.mode == wormedit::sv_recipe_sampling_mode_t::fixed
-               ? set_fixed_timing_recipe_sampling(candidate, form)
-               : set_adaptive_timing_recipe_sampling(candidate, form);
-}
-
-auto set_timing_recipe_transition(wormedit::sv_recipe_t& candidate,
-                                  const WormUiTimingRecipeForm& form) -> bool {
-    if (candidate.output == wormedit::sv_recipe_output_t::speeds) {
-        const auto transition = parse_recipe_unsigned_rational(form.transition_duration);
-        if (!transition) {
-            return false;
-        }
-        candidate.transition_duration = *transition;
-        candidate.transition_is_seconds = form.transition_is_seconds;
-    } else {
-        candidate.transition_duration.reset();
-        candidate.transition_is_seconds.reset();
-    }
-    return true;
-}
-
-auto recipe_candidate_from_ui(const WormUiTimingRecipeForm& form,
-                              const wormedit::sv_recipe_t& current)
-    -> std::optional<wormedit::sv_recipe_t> {
-    using namespace wormedit;
-    if (!timing_recipe_form_valid(form)) {
-        return std::nullopt;
-    }
-    auto candidate = current;
-    candidate.output = static_cast<sv_recipe_output_t>(form.output);
-    candidate.curve = static_cast<sv_recipe_curve_t>(form.curve);
-    if (!set_timing_recipe_curve_parameters(candidate, form) ||
-        !set_timing_recipe_sampling(candidate, form) ||
-        !set_timing_recipe_transition(candidate, form)) {
-        return std::nullopt;
-    }
-    return candidate;
-}
-
 auto timing_recipe_range_hits(const wormedit::chart_document_t& chart, double begin_fraction,
                               double end_fraction)
     -> std::optional<std::pair<wormedit::local_position_t, wormedit::local_position_t>> {
@@ -968,7 +829,7 @@ auto reject_invalid_timing_recipe_form(const TimingRecipeDispatchContext& contex
 
 auto update_timing_recipe_draft(const TimingRecipeDispatchContext& context) -> bool {
     auto& draft = *context.edit.recipe_draft;
-    const auto candidate = recipe_candidate_from_ui(context.action.form, draft.candidate);
+    const auto candidate = wormedit::sys::recipe_from_form(context.action.form, draft.candidate);
     if (!candidate) {
         reject_invalid_timing_recipe_form(context);
         return false;

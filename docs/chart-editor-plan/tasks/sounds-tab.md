@@ -115,19 +115,32 @@ later covering more bmhelper functions.
 
 ## T-320 Compute slice boundaries for a long audio export (Woslicer-style)
 
-- **Status:** ready
-- **Outcome:** a pure function takes BPM (exact rational), beat division, start offset, source frame count and sample rate and returns exact, non-overlapping frame ranges; a second function renders each range to a WAV file in a bounded background job.
+- **Status:** done
+- **Implementation notes (2026-10-02):** `compute_audio_slices` (`include/wormedit/core/audio_slicer.h`) returns contiguous exact ranges using portable `wide_math` (no `__int128`), with floor/ceil/nearest-even rounding, lead-in option and a slice cap; 7 cases pass. No WAV writer exists in the repo, so the render job moved to T-323.
+- **Outcome:** a pure function takes BPM (exact rational), beat division, start offset, source frame count and sample rate and returns exact, non-overlapping frame ranges.
 - **Read first:** `include/wormedit/core/timing.h`, `include/wormedit/core/sound_slice.h`, `include/wormedit/audio/decoder.h`, `src/core/sound_slice.cpp`.
 - **Files owned:** new `include/wormedit/core/audio_slicer.h`, new `src/core/audio_slicer.cpp`, new `tests/core/audio_slicer_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
-- **Steps:** 1. Boundary math with the same rounding as `sample_rounding_t`. 2. A WAV writer helper (check first whether one exists; reuse it). 3. Tests: 120 BPM 1/4 over 10 s, negative offset, non-integer BPM, a tail shorter than one slice, slice-count limit (default 10,000).
+- **Steps:** 1. Boundary math with the same rounding as `sample_rounding_t`. 2. Tests: 120 BPM sixteenths over 10 s, negative offset, non-integer BPM, a tail shorter than one slice, slice-count limit (default 10,000).
 - **Invariants:** no drift: boundary N is computed from N, never accumulated.
 - **Reject/failure behavior:** zero or negative BPM, division or offset past the source returns diagnostics and no ranges.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.|^documentation\.'`.
 - **Out of scope:** MIDI-driven cutting and other bmhelper functions (later cards), UI (T-321).
 
+## T-323 Render slice ranges to WAV files in a background job
+
+- **Status:** blocked-on T-320
+- **Outcome:** a bounded job decodes the source once and writes each `audio_slice_range_t` as a 16-bit stereo WAV file into the project, reporting progress and honoring cancellation.
+- **Read first:** `include/wormedit/core/audio_slicer.h`, `include/wormedit/audio/decoder.h`, `include/wormedit/core/resource_file_copy.h`, `src/audio/waveform_job.cpp`.
+- **Files owned:** new `include/wormedit/audio/wav_writer.h`, new `src/audio/wav_writer.cpp`, new `include/wormedit/audio/slice_render_job.h`, new `src/audio/slice_render_job.cpp`, new `tests/core/audio_slice_render_tests.cpp`, `cmake/dependencies/miniaudio.cmake`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Steps:** 1. Write the WAV writer (RIFF header, little-endian PCM, atomic publish like `resource_file_copy`). 2. Stream-decode and cut at the exact frames. 3. Tests: round trip through the decoder, sample-exact boundaries, cancellation leaves no partial files.
+- **Invariants:** the source file is never modified; output names are deterministic (`<name>_001.wav`).
+- **Reject/failure behavior:** a failed or cancelled job removes every file it created.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.|^core\.|^documentation\.'`.
+- **Out of scope:** UI (T-321), MIDI-driven cuts.
+
 ## T-321 Add the slicer controls to the Sounds tab
 
-- **Status:** blocked-on T-318, T-320
+- **Status:** blocked-on T-318, T-323
 - **Outcome:** with a sound selected the user enters BPM, division and offset, sees the cut lines on the zoomable waveform, and "Slice" creates the resulting sounds in one bulk import (T-314) as keysounds.
 - **Read first:** `src/ui/nuklear/audio_panel.cpp`, `include/wormedit/core/audio_slicer.h`, `include/wormedit/core/sound_import.h`.
 - **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/sys/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`.

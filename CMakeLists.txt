@@ -87,6 +87,7 @@ add_library(wormedit_core
     src/core/preferences.cpp
     src/core/shortcut_profile_startup.cpp
     src/core/sound_slice.cpp
+    src/core/audio_slicer.cpp
     src/core/arena.cpp
     src/core/notifications.cpp
     src/core/storyboard.cpp

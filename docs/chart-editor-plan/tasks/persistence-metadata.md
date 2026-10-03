@@ -107,11 +107,14 @@ Verified 2026-10-03: fourteen core regression cases cover confirmed drops and un
 
 ## T-127 Add the key-count/profile selector to Metadata
 
-- **Status:** ready
+- **Status:** blocked-on-user
 - **Outcome:** per-chart selector showing only counts supported by the chart's format family plus "Custom", with the preview counts and a confirm button.
 - **Read first:** `include/wormedit/core/lane_migration.h`, `src/ui/nuklear/metadata_panel.cpp`, `src/sys/metadata_actions.cpp`.
 - **Files owned:** `src/sys/metadata_actions.cpp`, `src/sys/metadata_view_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp`.
-- **Steps:** standard pattern.
+- **Implementation audit (2026-10-03):** no migration selector exists. Family choices and a real generic Custom target can be built in owned files; Custom must not reuse the osu!mania 1–18 factory or become a no-op for the current layout. The sealed migration preview/count/conflict state needs shared dispatch/projection access declared in unowned `src/sys/metadata_actions.h`, the same ownership gap as T-96. Approval is pending; no implementation was started.
+- **Steps:**
+  0. STOP until the user extends ownership to `src/sys/metadata_actions.h` for shared sealed-preview access.
+  1. Wire the complete selector/preview/confirmation through the standard pattern.
 - **Invariants:** as T-126.
 - **Reject/failure behavior:** as T-126.
 - **Verify:** standard build/test.

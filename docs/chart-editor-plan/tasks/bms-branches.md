@@ -42,11 +42,15 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-92 Add block create/remove and leaf reorder to the outline
 
-- **Status:** ready
+- **Status:** blocked-on-user
 - **Outcome:** outline buttons create a block from the current selection, remove an empty block, and move a leaf up/down.
 - **Read first:** `include/wormedit/core/bms_branch_editor.h`, `src/ui/nuklear/bms_branch_panel.cpp`.
 - **Files owned:** `src/ui/nuklear/bms_branch_panel.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `src/core/bms_branch_editor.cpp` (leaf reorder command), `tests/core/bms_branch_editor_tests.cpp`.
-- **Steps:** 1. Core leaf-reorder command with test. 2. Wire three buttons through the standard pattern.
+- **Implementation audit (2026-10-03):** create/remove commands now exist, but no public leaf-reorder command is declared. Its typed request and callable declaration require `include/wormedit/core/bms_branch_editor.h`, which this card omits. Header ownership approval is pending; no implementation was started.
+- **Steps:**
+  0. STOP until the user extends ownership to `include/wormedit/core/bms_branch_editor.h` for the leaf-reorder API.
+  1. Core leaf-reorder command with test.
+  2. Wire three buttons through the standard pattern.
 - **Invariants:** reordering leaves renumbers `#IF` values consistently.
 - **Reject/failure behavior:** reordering a leaf that is the active selection keeps the same leaf selected.
 - **Verify:** standard build/test.
@@ -54,7 +58,8 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-93 Move or copy selected notes into another branch leaf
 
-- **Status:** ready
+- **Status:** blocked-on-user
+- **Implementation audit (2026-10-03):** step 1 has concrete STOP cases. Fresh authored notes have default native provenance and no retained statement identity (`include/wormedit/core/document.h:104`); imported holds retain distinct start/end source statements (`src/formats/bms.cpp:557`, `src/formats/bms_writer.cpp:2082`). Imported taps can identify one line/slot, but limiting the command to those would narrow the outcome. Approval is pending to reconstruct ownership from current serialized BMS and cover fresh notes plus both hold endpoints. No implementation was started.
 - **Outcome:** selected notes that belong to one leaf (or root) can be moved or copied into another leaf as one command.
 - **Read first:** `include/wormedit/core/bms_branch_editor.h`, `include/wormedit/formats/bms_branch_selection.h` (`rematerialize_bms_branch_selection`), `docs/chart-editor-plan/editing/metadata-interop.md` (branch paragraphs).
 - **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_branch_editor_tests.cpp`.
@@ -97,11 +102,15 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-96 Edit channel maps in Metadata
 
-- **Status:** ready
+- **Status:** blocked-on-user
 - **Outcome:** Metadata's chart section lists lanes with their four channel strings, lets the user edit them, shows the preview count, and applies once.
 - **Read first:** `include/wormedit/core/channel_map_editor.h`, `src/ui/nuklear/metadata_panel.cpp`, `src/sys/metadata_actions.cpp`.
 - **Files owned:** `src/sys/metadata_actions.cpp`, `src/sys/metadata_view_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp` (or the section unit from T-42).
-- **Steps:** 1. Project lanes. 2. Editable table plus Preview/Apply through the standard pattern.
+- **Implementation audit (2026-10-03):** no channel-map form exists. Owned projection/section files can provide a layout-segment selector and editable lane table, but the sealed preview must persist between dispatch and projection so conflicts disable Apply and confirmation uses exactly the reviewed proposal. The shared declaration belongs in unowned `src/sys/metadata_actions.h`; approval is pending.
+- **Steps:**
+  0. STOP until the user extends ownership to `src/sys/metadata_actions.h` for shared sealed-preview access.
+  1. Project lanes.
+  2. Editable table plus Preview/Apply through the standard pattern.
 - **Invariants:** shown only for BMS-family charts.
 - **Reject/failure behavior:** conflicts disable Apply.
 - **Verify:** standard build/test; smoke PNG of `metadata`.

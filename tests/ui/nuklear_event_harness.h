@@ -4,16 +4,31 @@
 
 #include <SDL3/SDL.h>
 
+#include <memory>
 #include <span>
 #include <vector>
 
 struct event_step_t {
     std::vector<SDL_Event> events;
+    // Complete state for this frame; never inherited from previous steps.
+    SDL_Keymod modifiers{SDL_KMOD_NONE};
+};
+
+// Immutable owning copy of every borrowed action payload. Copies share immutable
+// storage; get() remains valid while an owning snapshot exists. A moved-from
+// snapshot must be reassigned before calling get().
+class workspace_action_snapshot_t {
+  public:
+    explicit workspace_action_snapshot_t(const WormUiWorkspaceAction& action);
+    [[nodiscard]] auto get() const -> const WormUiWorkspaceAction&;
+  private:
+    struct storage_t;
+    std::shared_ptr<const storage_t> storage_;
 };
 
 // Runs the production frontend event and compose entry points against its
-// headless Nuklear context. Views and their pointed-to values live with this
-// fixture for the full test frame.
+// headless Nuklear context. Caller-supplied view pointers must remain valid for
+// each synchronous frame. Only one fixture may exist in a process at a time.
 class nuklear_event_harness_t {
   public:
     explicit nuklear_event_harness_t(int width = 960, int height = 720);
@@ -25,12 +40,14 @@ class nuklear_event_harness_t {
     [[nodiscard]] auto ready() const noexcept -> bool { return initialized_ && view_valid_; }
     [[nodiscard]] auto view() noexcept -> WormUiWorkspaceView& { return view_; }
     // Event objects are consumed synchronously and never retained. Any pointer
-    // payload inside an SDL_Event must remain valid for this call.
-    [[nodiscard]] auto frame(std::span<const SDL_Event> events = {}) -> WormUiWorkspaceAction;
+    // payload inside an SDL_Event must remain valid for this call. The explicit
+    // modifier state overrides key.mod and SDL state, then restores SDL state.
+    [[nodiscard]] auto frame(std::span<const SDL_Event> events = {},
+                             SDL_Keymod modifiers = SDL_KMOD_NONE) -> workspace_action_snapshot_t;
     // Each step is one frontend frame; SDL event payload pointers in every step
     // must remain valid until this synchronous call returns.
     [[nodiscard]] auto run_script(std::span<const event_step_t> steps)
-        -> std::vector<WormUiWorkspaceAction>;
+        -> std::vector<workspace_action_snapshot_t>;
 
   private:
     int width_{};

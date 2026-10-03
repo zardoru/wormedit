@@ -17,10 +17,6 @@ ctest --preset headless
 
 Omit the source-directory options when network-backed FetchContent is acceptable. nlohmann/json is pinned to the v3.12.0 release archive and SHA-256, uses its MIT license, and is built with diagnostic byte positions enabled. Catch2 is pinned to commit `2b60af89e23d28eefc081bc930831ee9d45ea58b` (v3.8.1 source), and Lua is pinned to `6e22fedb74cf0c9b6656e9fce8b7331db847c605` (Lua 5.4.8 source).
 
-## Frontend tests without a window
-
-Scripted SDL input against the real Nuklear frontend runs headless; see [frontend event harness](frontend-event-harness.md).
-
 ## UI frontend selection
 
 Application builds select exactly one frontend with
@@ -87,3 +83,9 @@ cmake --build --preset windows-cross-headless
 `WORMEDIT_WINDOWS_RC_COMPILER`, `WORMEDIT_WINDOWS_SYSROOT`, and `WORMEDIT_WINDOWS_TARGET` are optional when the compiler prefix already supplies them. Set `WORMEDIT_CROSS_EMULATOR` to a Wine executable if the build host can run the generated test programs; otherwise execute CTest on Windows and treat the Linux job as a compile gate.
 
 As with Linux cross-builds, enable the full application only after its Windows-target SDL3 GPU, decoder, and packaging dependencies are supplied as target packages/source builds. Host package discovery must never satisfy a Windows dependency.
+
+## Frontend event harness
+
+See [the frontend event harness guide](frontend-event-harness.md) for windowless
+input-to-action tests, owning snapshots, explicit modifier steps, and the
+`headless-events` preset used by the existing Linux/GCC CI lane.

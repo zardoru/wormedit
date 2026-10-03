@@ -19,6 +19,18 @@
       }
     },
     {
+      "name": "headless-events",
+      "displayName": "Headless core and windowless frontend event tests",
+      "inherits": "headless",
+      "binaryDir": "${sourceDir}/build/headless-events",
+      "cacheVariables": {
+        "WORMEDIT_BUILD_EVENT_HARNESS": "ON",
+        "SDL_X11": "OFF",
+        "SDL_WAYLAND": "OFF",
+        "SDL_UNIX_CONSOLE_BUILD": "ON"
+      }
+    },
+    {
       "name": "linux-cross-headless",
       "displayName": "Cross-compile headless core for Linux",
       "inherits": "headless",
@@ -55,6 +67,10 @@
       "configurePreset": "headless"
     },
     {
+      "name": "headless-events",
+      "configurePreset": "headless-events"
+    },
+    {
       "name": "linux-cross-headless",
       "configurePreset": "linux-cross-headless"
     },
@@ -67,6 +83,13 @@
     {
       "name": "headless",
       "configurePreset": "headless",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "headless-events",
+      "configurePreset": "headless-events",
       "output": {
         "outputOnFailure": true
       }

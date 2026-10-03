@@ -13,7 +13,7 @@
 - Build: `cmake --build build`. Run everything: `ctest --test-dir build --output-on-failure`. Filter by prefix: `-R '^core\.'`, `'^frontend-state\.'`, `'^audio\.'`, `'^documentation\.'`.
 - Visual check of the real window: `scripts/smoke-compose-virtual-x.sh /tmp/out.png compose`, then open the PNG.
 - Keep automated visual checks inside isolated Xvfb; do not open test windows on the user's Niri desktop.
-- Input-routing and UI workflow checks without a window: use the [frontend event harness](docs/frontend-event-harness.md) (`frontend-state.Headless*`), not Xvfb.
+- Input-routing and UI workflow checks without a window: use the [frontend event harness](docs/frontend-event-harness.md) (`ctest --preset headless-events -L event-harness`, or `-L event-harness` in the app build), not Xvfb.
 - Never report a test as passing without running it and reading its output.
 
 ## Delegating from Claude to Codex implementers

@@ -3,8 +3,18 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <string>
+#include <utility>
 
 namespace {
+
+struct sdl_event_scope_t {
+    SDL_Keymod previous{SDL_GetModState()};
+    ~sdl_event_scope_t() {
+        SDL_SetModState(previous);
+        SDL_QuitSubSystem(SDL_INIT_EVENTS);
+    }
+};
 
 auto key_event(SDL_EventType type, SDL_Keycode key, SDL_Scancode scancode, bool repeat = false)
     -> SDL_Event {
@@ -43,7 +53,7 @@ auto motion_event(float x, float y) -> SDL_Event {
 }
 
 auto click_at(nuklear_event_harness_t& harness, float x, float y)
-    -> std::vector<WormUiWorkspaceAction> {
+    -> std::vector<workspace_action_snapshot_t> {
     std::array<event_step_t, 2> script{};
     script[0].events = {motion_event(x, y), button_event(true, x, y)};
     script[1].events = {motion_event(x, y), button_event(false, x, y)};
@@ -61,11 +71,11 @@ auto delete_shortcut_has_compose_context(const WormUiWorkspaceAction& action) ->
 } // namespace
 
 TEST_CASE("Headless frontend routes a wheel event over Compose to viewport input",
-          "[frontend-state][frontend][event-harness]") {
+          "[unit][frontend-state][frontend][event-harness]") {
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
     CHECK((SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO) == 0);
-    REQUIRE(harness.frame().kind == WORM_UI_WORKSPACE_ACTION_NONE);
+    REQUIRE(harness.frame().get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
 
     SDL_Event wheel{};
     wheel.type = SDL_EVENT_MOUSE_WHEEL;
@@ -78,46 +88,46 @@ TEST_CASE("Headless frontend routes a wheel event over Compose to viewport input
     const std::array events{wheel};
     const auto action = harness.frame(events);
 
-    REQUIRE(action.compose_viewport_input_count == 1);
-    CHECK(action.compose_viewport_inputs[0].kind ==
+    REQUIRE(action.get().compose_viewport_input_count == 1);
+    CHECK(action.get().compose_viewport_inputs[0].kind ==
           WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL);
-    CHECK(action.compose_viewport_inputs[0].delta_y != 0.0);
+    CHECK(action.get().compose_viewport_inputs[0].delta_y != 0.0);
 }
 
 TEST_CASE("Headless frontend emits Delete shortcut press with focused Compose context",
-          "[frontend-state][frontend][event-harness]") {
+          "[unit][frontend-state][frontend][event-harness]") {
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
     static_cast<void>(harness.frame());
 
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_DELETE, SDL_SCANCODE_DELETE);
     const auto pressed = harness.frame(std::span{&press, 1});
-    CHECK(delete_shortcut_has_compose_context(pressed));
+    CHECK(delete_shortcut_has_compose_context(pressed.get()));
 }
 
 TEST_CASE("Headless frontend ignores Delete shortcut release",
-          "[frontend-state][frontend][event-harness]") {
+          "[unit][frontend-state][frontend][event-harness]") {
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
     static_cast<void>(harness.frame());
     const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_DELETE, SDL_SCANCODE_DELETE);
     const auto released = harness.frame(std::span{&release, 1});
-    CHECK(released.shortcut_event_count == 0);
+    CHECK(released.get().shortcut_event_count == 0);
 }
 
 TEST_CASE("Headless frontend marks repeated Delete shortcut press",
-          "[frontend-state][frontend][event-harness]") {
+          "[unit][frontend-state][frontend][event-harness]") {
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
     static_cast<void>(harness.frame());
     const auto repeat = key_event(SDL_EVENT_KEY_DOWN, SDLK_DELETE, SDL_SCANCODE_DELETE, true);
     const auto repeated = harness.frame(std::span{&repeat, 1});
-    REQUIRE(repeated.shortcut_event_count == 1);
-    CHECK(repeated.shortcut_events[0].repeat);
+    REQUIRE(repeated.get().shortcut_event_count == 1);
+    CHECK(repeated.get().shortcut_events[0].repeat);
 }
 
 TEST_CASE("Headless frontend tab click emits a workspace tab action",
-          "[frontend-state][frontend][event-harness]") {
+          "[unit][frontend-state][frontend][event-harness]") {
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
     static_cast<void>(harness.frame());
@@ -132,12 +142,12 @@ TEST_CASE("Headless frontend tab click emits a workspace tab action",
     const auto actions = harness.run_script(script);
 
     REQUIRE(actions.size() == script.size());
-    CHECK(actions[0].kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB);
-    CHECK(actions[0].tab == WORM_UI_WORKSPACE_TAB_SETUP);
+    CHECK(actions[0].get().kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB);
+    CHECK(actions[0].get().tab == WORM_UI_WORKSPACE_TAB_SETUP);
 }
 
 TEST_CASE("Headless frontend suppresses Delete shortcut while new-project wizard is open",
-          "[frontend-state][frontend][event-harness]") {
+          "[unit][frontend-state][frontend][event-harness]") {
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
     static_cast<void>(harness.frame());
@@ -146,11 +156,11 @@ TEST_CASE("Headless frontend suppresses Delete shortcut while new-project wizard
     static_cast<void>(harness.frame());
     const auto delete_key = key_event(SDL_EVENT_KEY_DOWN, SDLK_DELETE, SDL_SCANCODE_DELETE);
     const auto modal_key_action = harness.frame(std::span{&delete_key, 1});
-    CHECK(modal_key_action.shortcut_event_count == 0);
+    CHECK(modal_key_action.get().shortcut_event_count == 0);
 }
 
 TEST_CASE("Headless frontend new-project wizard cancel closes and permits reopening",
-          "[frontend-state][frontend][event-harness]") {
+          "[unit][frontend-state][frontend][event-harness]") {
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
     static_cast<void>(harness.frame());
@@ -161,12 +171,12 @@ TEST_CASE("Headless frontend new-project wizard cancel closes and permits reopen
     // the button centers are in the two 242px columns at y=406.
     constexpr float button_y = 406.0f;
     const auto cancel_actions = click_at(harness, 350.0f, button_y);
-    CHECK(cancel_actions[0].kind == WORM_UI_WORKSPACE_ACTION_NONE);
+    CHECK(cancel_actions[0].get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
     CHECK(worm_ui_frontend_request_new_project());
 }
 
 TEST_CASE("Headless frontend new-project wizard creates the default 7K layout",
-          "[frontend-state][frontend][event-harness]") {
+          "[unit][frontend-state][frontend][event-harness]") {
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
     static_cast<void>(harness.frame());
@@ -174,6 +184,173 @@ TEST_CASE("Headless frontend new-project wizard creates the default 7K layout",
     static_cast<void>(harness.frame());
 
     const auto create_actions = click_at(harness, 610.0f, 406.0f);
-    CHECK(create_actions[0].kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
-    CHECK(create_actions[0].new_project_layout_index == 3);
+    CHECK(create_actions[0].get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
+    CHECK(create_actions[0].get().new_project_layout_index == 3);
+}
+
+namespace {
+
+void check_wheel_zoom(const workspace_action_snapshot_t& snapshot, bool zoom) {
+    const auto& action = snapshot.get();
+    REQUIRE(action.compose_viewport_input_count == 1);
+    CHECK(action.compose_viewport_inputs[0].zoom_modifier == zoom);
+    CHECK(action.compose_viewport_inputs[0].delta_y != 0.0);
+}
+
+void check_modifier_fixture_isolation() {
+    CHECK(SDL_GetModState() == SDL_KMOD_ALT);
+    nuklear_event_harness_t next;
+    REQUIRE(next.ready());
+    static_cast<void>(next.frame());
+    CHECK(SDL_GetModState() == SDL_KMOD_ALT);
+}
+
+void check_snapshot_tags(const WormUiWorkspaceAction& action) {
+    REQUIRE(action.metadata_search_tag_count == 3);
+    CHECK(std::string{action.metadata_search_tags[0]} == "original tag");
+    CHECK(std::string{action.metadata_search_tags[1]}.empty());
+    CHECK(action.metadata_search_tags[2] == nullptr);
+}
+
+} // namespace
+
+TEST_CASE("Headless frontend isolates scripted Ctrl wheel zoom and release",
+          "[unit][frontend-state][frontend][event-harness]") {
+    REQUIRE(SDL_Init(SDL_INIT_EVENTS));
+    const sdl_event_scope_t restore;
+    SDL_SetModState(SDL_KMOD_ALT);
+    {
+        nuklear_event_harness_t harness;
+        REQUIRE(harness.ready());
+        static_cast<void>(harness.frame());
+        SDL_Event wheel{};
+        wheel.type = SDL_EVENT_MOUSE_WHEEL;
+        wheel.wheel.y = 1.0f;
+        wheel.wheel.mouse_x = 480.0f;
+        wheel.wheel.mouse_y = 400.0f;
+        const std::array<event_step_t, 4> script{{
+            {{key_event(SDL_EVENT_KEY_DOWN, SDLK_LCTRL, SDL_SCANCODE_LCTRL)}, SDL_KMOD_LCTRL},
+            {{wheel}, SDL_KMOD_LCTRL},
+            {{key_event(SDL_EVENT_KEY_UP, SDLK_LCTRL, SDL_SCANCODE_LCTRL)}, SDL_KMOD_NONE},
+            {{wheel}, SDL_KMOD_NONE},
+        }};
+        const auto actions = harness.run_script(script);
+        check_wheel_zoom(actions[1], true);
+        check_wheel_zoom(actions[3], false);
+        CHECK(SDL_GetModState() == SDL_KMOD_ALT);
+        const auto normal = harness.frame(std::span{&wheel, 1});
+        check_wheel_zoom(normal, false);
+        CHECK(SDL_GetModState() == SDL_KMOD_ALT);
+    }
+    check_modifier_fixture_isolation();
+}
+
+TEST_CASE("Action snapshots own every borrowed payload across copies moves and destruction",
+          "[unit][frontend-state][frontend][event-harness]") {
+    using text_member_t = const char* WormUiWorkspaceAction::*;
+    constexpr std::array<text_member_t, 11> fields{
+        &WormUiWorkspaceAction::metadata_chart_rating_numerator_text,
+        &WormUiWorkspaceAction::metadata_chart_rating_denominator_text,
+        &WormUiWorkspaceAction::metadata_audio_offset_numerator_text,
+        &WormUiWorkspaceAction::metadata_audio_offset_denominator_text,
+        &WormUiWorkspaceAction::metadata_title,
+        &WormUiWorkspaceAction::metadata_artist,
+        &WormUiWorkspaceAction::metadata_chart_name,
+        &WormUiWorkspaceAction::metadata_chart_author,
+        &WormUiWorkspaceAction::metadata_format_name,
+        &WormUiWorkspaceAction::metadata_format_value,
+        &WormUiWorkspaceAction::metadata_output_path,
+    };
+    const auto make_snapshot = [&] {
+        WormUiWorkspaceAction action{};
+        std::array<std::string, 11> strings;
+        for (std::size_t i = 0; i < fields.size(); ++i) {
+            strings[i] = std::to_string(i) + std::string(100, 'x');
+            action.*fields[i] = strings[i].c_str();
+        }
+        std::string tag = "original tag";
+        const char* tags[]{tag.c_str(), "", nullptr};
+        action.metadata_search_tags = tags;
+        action.metadata_search_tag_count = 3;
+        action.compose_viewport_input_count = 1;
+        action.compose_viewport_inputs[0].zoom_modifier = true;
+        auto snapshot = workspace_action_snapshot_t{action};
+        strings.fill("overwritten");
+        tag.assign("changed");
+        return snapshot;
+    };
+    auto original = make_snapshot();
+    auto copy = original;
+    auto moved = std::move(copy);
+    auto assigned = workspace_action_snapshot_t{{}};
+    assigned = moved;
+    auto move_assigned = workspace_action_snapshot_t{{}};
+    move_assigned = std::move(assigned);
+    std::vector<workspace_action_snapshot_t> history;
+    history.push_back(std::move(move_assigned));
+    original = workspace_action_snapshot_t{{}};
+    moved = workspace_action_snapshot_t{{}};
+    for (int i = 0; i < 32; ++i) history.push_back(workspace_action_snapshot_t{{}});
+    const auto& action = history.front().get();
+    for (std::size_t i = 0; i < fields.size(); ++i)
+        CHECK(std::string{action.*fields[i]} == std::to_string(i) + std::string(100, 'x'));
+    check_snapshot_tags(action);
+    CHECK(action.compose_viewport_inputs[0].zoom_modifier);
+    CHECK(history.back().get().metadata_title == nullptr);
+    CHECK(history.back().get().metadata_search_tags == nullptr);
+}
+
+namespace {
+
+auto edit_metadata_title(nuklear_event_harness_t& harness, const char* value)
+    -> std::vector<workspace_action_snapshot_t> {
+    // At 960x720 the title field is (287,135,631,26); Apply is (822,224,96,23).
+    static_cast<void>(click_at(harness, 450.0f, 148.0f));
+    SDL_Event text{};
+    text.type = SDL_EVENT_TEXT_INPUT;
+    // These ASCII fixture strings use one codepoint per backend text event.
+    for (const char* next = value; *next; ++next) {
+        const char codepoint[]{*next, '\0'};
+        text.text.text = codepoint;
+        static_cast<void>(harness.frame(std::span{&text, 1}));
+    }
+    auto actions = click_at(harness, 870.0f, 235.0f);
+    REQUIRE(actions[0].get().metadata_edit == WORM_UI_METADATA_EDIT_SONG);
+    return actions;
+}
+
+} // namespace
+
+TEST_CASE("Headless metadata text history survives later compose and frontend shutdown",
+          "[unit][frontend-state][frontend][event-harness]") {
+    std::vector<workspace_action_snapshot_t> history;
+    {
+        nuklear_event_harness_t harness;
+        REQUIRE(harness.ready());
+        auto& view = harness.view();
+        view.compose.visible = false;
+        view.active_tab = WORM_UI_WORKSPACE_TAB_METADATA;
+        view.metadata.visible = true;
+        view.metadata.song_fields_editable = true;
+        view.metadata.search_tags_editable = true;
+        view.metadata.title = "";
+        view.metadata.artist = "Artist";
+        view.metadata.artist_bytes = 6;
+        static_cast<void>(harness.frame());
+        history = edit_metadata_title(harness, "First");
+        REQUIRE(std::string{history[0].get().metadata_title} == "First");
+        // Simulate the next projected view, then edit the same frontend buffer.
+        view.metadata.title = "First";
+        view.metadata.title_bytes = 5;
+        ++view.metadata.document_revision;
+        static_cast<void>(harness.frame());
+        const auto later = edit_metadata_title(harness, "Second");
+        CHECK(std::string{later[0].get().metadata_title} == "FirstSecond");
+        CHECK(std::string{history[0].get().metadata_title} == "First");
+    }
+    auto copied = history;
+    history.clear();
+    auto moved = std::move(copied);
+    CHECK(std::string{moved[0].get().metadata_title} == "First");
+    CHECK(std::string{moved[0].get().metadata_artist} == "Artist");
 }

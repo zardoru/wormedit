@@ -29,7 +29,12 @@ SDL_HitTestResult SDLCALL window_hit_test(SDL_Window* window, const SDL_Point* p
         if (top) return SDL_HITTEST_RESIZE_TOP;
         if (bottom) return SDL_HITTEST_RESIZE_BOTTOM;
     }
-    if (point->y >= 6 && point->y < 34 && point->x < width * 35 / 100)
+    // Drag only the bare title bar: the menu buttons on the left and the window
+    // controls on the right must receive their own clicks.
+    constexpr int menu_end = 288;
+    constexpr int controls_width = 130;
+    if (point->y >= 6 && point->y < 34 && point->x >= menu_end &&
+        point->x < width - controls_width)
         return SDL_HITTEST_DRAGGABLE;
     return SDL_HITTEST_NORMAL;
 }

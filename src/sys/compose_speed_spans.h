@@ -80,9 +80,11 @@ template <typename RowToY>
         return value;
     };
     std::vector<std::pair<double, double>> window{{first_row, value_at(first_row)}};
+    // Vertices on the last row belong to the window too: value_at(last_row) already includes the
+    // jump there, so leaving them out would draw that jump as a slanted ramp.
     for (const auto& vertex : curve)
-        if (vertex.first > first_row && vertex.first < last_row) window.push_back(vertex);
-    window.emplace_back(last_row, value_at(last_row));
+        if (vertex.first > first_row && vertex.first <= last_row) window.push_back(vertex);
+    if (window.back().first < last_row) window.emplace_back(last_row, value_at(last_row));
     graph.minimum = graph.maximum = window.front().second;
     for (const auto& [row, value] : window) {
         graph.minimum = std::min(graph.minimum, value);

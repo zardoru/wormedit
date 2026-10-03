@@ -119,3 +119,24 @@ TEST_CASE("a speed ramp cut short by the next event ends at the value that event
     CHECK(graph.maximum == 2.0);
     CHECK(graph.minimum == 1.0);
 }
+
+TEST_CASE("two instantaneous speeds back to back never draw a slanted segment",
+          "[unit][sys][speed-spans]") {
+    auto chart = base_chart();
+    chart.speeds = {speed(20, 1, 240, 2, {0, 1}, false), speed(21, 1, 241, 3, {0, 1}, false)};
+    const auto spans = project(chart);
+    REQUIRE(spans.spans.size() == 2);
+    const auto y_of = [](double row) { return row; };
+    // Windows that put either event just inside or just outside the edge.
+    for (double first = 0.0; first < 300.0; first += 1.0) {
+        for (double last = first + 1.0; last < 320.0; last += 1.0) {
+            const auto graph = build_speed_graph(spans, first, last, y_of);
+            for (std::size_t index = 1; index < graph.points.size(); ++index) {
+                const auto& from = graph.points[index - 1];
+                const auto& to = graph.points[index];
+                INFO("window " << first << ".." << last << " point " << index);
+                REQUIRE((from.x == to.x || from.y == to.y));
+            }
+        }
+    }
+}

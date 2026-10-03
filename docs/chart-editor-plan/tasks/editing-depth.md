@@ -46,11 +46,12 @@ other unless a card says otherwise. Apply the stale-plan check (rule 9) first.
 
 ## T-143 Save quantization presets and show a report
 
-- **Status:** blocked-on T-56
+- **Status:** blocked-on-user
 - **Outcome:** named quantization settings (grid, tie policy, hold scope) persist in the native project; applying one shows a per-row report of moved and colliding objects.
 - **Read first:** `include/wormedit/core/quantize.h`, `src/formats/native_project.cpp`, `src/ui/nuklear/compose_inspector.cpp`.
 - **Files owned:** `include/wormedit/core/document.h`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `src/ui/nuklear/compose_inspector.cpp`, `src/sys/compose_actions.cpp`, `tests/formats/native_project_tests.cpp`.
-- **Steps:** 1. Add preset list to the song document (schema migration via T-122). 2. Preset picker + Save/Delete. 3. Report list (bounded 256 rows).
+- **Implementation audit (2026-10-03):** T-56 is complete, so the prerequisite is satisfied. No persisted quantization presets exist. The document and native-project files can store presets and migrate old projects, but the UI needs preset settings/actions in unowned `src/ui/frontend.h` and moved/colliding row projection in unowned `src/sys/compose_view.cpp`. Existing projection exposes only aggregate counts. Scope approval for those files and `tests/sys/compose_quantize_preview_tests.cpp` is pending; no implementation was started.
+- **Steps:** 0. STOP until the user extends ownership to the frontend contract, Compose view projection, and quantization preview tests listed above. 1. Add preset list to the song document (schema migration via T-122). 2. Preset picker + Save/Delete. 3. Report list (bounded 256 rows).
 - **Invariants:** older projects load with an empty list.
 - **Reject/failure behavior:** duplicate preset names reject.
 - **Verify:** standard build/test.

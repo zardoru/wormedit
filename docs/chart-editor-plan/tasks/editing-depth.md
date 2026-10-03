@@ -88,11 +88,12 @@ Release reference (2026-10-02, GCC 14.2, AMD EPYC 9V74 cloud VM, five vCPUs, no 
 
 ## T-146 Report progress and allow cancel for chart import
 
-- **Status:** ready
+- **Status:** blocked-on-user
+- **Stale-plan audit (2026-10-03):** Project opening is synchronous (`src/sys/project_open.cpp:427` and `src/sys/main.cpp:2381`); the existing Cancel only dismisses BMS encoding selection. Worker and frontend changes fit their owned files, but the owned main slice permits only status wiring. Actual progress/cancel needs job submission, persistent per-open state, cancel dispatch, frame polling, and success-only document publication in main/application services. Do not hide lifecycle/publication changes behind a global callback to evade that qualifier.
 - **Outcome:** opening a large chart shows a progress bar and a Cancel button; cancel leaves the previous document open.
 - **Read first:** `src/sys/project_open.cpp`, `include/wormedit/core/async_job.h`, `docs/async-task-scheduling.md`.
 - **Files owned:** `src/sys/project_open.cpp/.h`, `src/sys/main.cpp` (status wiring), `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `tests/sys/project_open_tests.cpp`.
-- **Steps:** 1. Run parse off the frame thread with a stop token and coarse progress (bytes read / total). 2. Publish only on success for the current generation. 3. Test that a cancelled open publishes nothing.
+- **Steps:** 0. **STOP:** wait for explicit ownership expansion covering main/application job lifecycle, dispatch, polling, and publication. 1. Run parse off the frame thread with a stop token and coarse progress (bytes read / total). 2. Publish only on success for the current generation. 3. Test that a cancelled open publishes nothing.
 - **Invariants:** current document untouched until publication.
 - **Reject/failure behavior:** errors shown; previous document kept.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'project_open'`.

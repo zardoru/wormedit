@@ -20,6 +20,9 @@ struct speed_span_t {
     double begin_row{};
     double end_row{};
     double multiplier{1.0};
+    // The value in force where the span begins: the previous span's value at that row, which is
+    // only partway to its target when this event cut it short.
+    double initial_multiplier{1.0};
     // Length of the transition in beats, or in seconds when `transition_is_seconds`.
     double transition_length{};
     bool transition_is_seconds{false};
@@ -51,11 +54,14 @@ template <typename RowToY>
     if (!(last_row > first_row)) return graph;
     // The curve as (row, value) vertices; vertical jumps repeat a row.
     std::vector<std::pair<double, double>> curve;
-    double current = 1.0;
-    for (const auto& span : spans.spans) {
-        curve.emplace_back(span.begin_row, current);
-        curve.emplace_back(span.end_row, span.multiplier);
-        current = span.multiplier;
+    // A span cut short by a replacement ends at the value the replacement starts from, which is
+    // partway to the target; a span that ran its course ends at its target.
+    for (std::size_t index = 0; index < spans.spans.size(); ++index) {
+        const auto& span = spans.spans[index];
+        const bool cut_short = span.clipped && index + 1 < spans.spans.size();
+        curve.emplace_back(span.begin_row, span.initial_multiplier);
+        curve.emplace_back(span.end_row,
+                           cut_short ? spans.spans[index + 1].initial_multiplier : span.multiplier);
     }
     const auto value_at = [&](double row) {
         double value = 1.0;
@@ -74,9 +80,11 @@ template <typename RowToY>
         return value;
     };
     std::vector<std::pair<double, double>> window{{first_row, value_at(first_row)}};
+    // Vertices on the last row belong to the window too: value_at(last_row) already includes the
+    // jump there, so leaving them out would draw that jump as a slanted ramp.
     for (const auto& vertex : curve)
-        if (vertex.first > first_row && vertex.first < last_row) window.push_back(vertex);
-    window.emplace_back(last_row, value_at(last_row));
+        if (vertex.first > first_row && vertex.first <= last_row) window.push_back(vertex);
+    if (window.back().first < last_row) window.emplace_back(last_row, value_at(last_row));
     graph.minimum = graph.maximum = window.front().second;
     for (const auto& [row, value] : window) {
         graph.minimum = std::min(graph.minimum, value);

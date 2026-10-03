@@ -200,3 +200,45 @@ TEST_CASE("Chart clipboard paste reports every unavailable target lane") {
     expect(!proposal.valid);
     expect(proposal.missing_lane_count == 3);
 }
+
+TEST_CASE("Chart clipboard copies and pastes timing objects at a new anchor") {
+    auto song = clipboard_song();
+    auto& chart = song.charts.front();
+    chart.measures[0].notes[0].sound.reset();
+    chart.measures[1].bgm_events.clear();
+    chart.bpms.push_back({.id = object_id_t{50}, .position = {measure_id_t{1}, 0},
+                          .beats_per_minute = {120, 1}});
+    chart.pauses.push_back({.id = object_id_t{51}, .position = {measure_id_t{1}, 120},
+                            .kind = pause_kind_t::stop, .duration = {1, 2}});
+    chart.warps.push_back({.id = object_id_t{52},
+                           .span = {{measure_id_t{1}, 240}, {measure_id_t{1}, 360}}});
+    chart.speeds.push_back({.id = object_id_t{53}, .position = {measure_id_t{1}, 480},
+                            .multiplier = {2, 1}});
+    editor_interaction_state_t state;
+    state.chart = chart_id_t{1};
+    state.selected_objects = {
+        {editor_selection_object_kind_t::bpm_event, object_id_t{50}},
+        {editor_selection_object_kind_t::stop_event, object_id_t{51}},
+        {editor_selection_object_kind_t::warp_event, object_id_t{52}},
+        {editor_selection_object_kind_t::speed_event, object_id_t{53}}};
+    const auto copied = copy_chart_selection(song, state, 7);
+    expect(static_cast<bool>(copied));
+    expect(copied.clipboard->objects.size() == 4);
+    expect(copied.clipboard->objects[2].duration == rational_t{1, 8});
+
+    auto history = make_document_history(song);
+    const auto pasted = paste_chart_clipboard(history, chart_id_t{1}, *copied.clipboard,
+                                              {measure_id_t{2}, 0}, history.document.revision);
+    const std::string reason = pasted.diagnostics.empty() ? "" : pasted.diagnostics.front().message;
+    INFO(reason);
+    expect(pasted.diagnostics.empty());
+    const auto& after = history.document.charts.front();
+    expect(after.bpms.size() == 2 && after.pauses.size() == 2 && after.warps.size() == 2 &&
+           after.speeds.size() == 2);
+    expect(after.bpms.back().position == local_position_t{measure_id_t{2}, 0});
+    expect(after.pauses.back().duration == signed_rational_t{1, 2});
+    expect(after.warps.back().span.begin == local_position_t{measure_id_t{2}, 240});
+    expect(after.warps.back().span.end == local_position_t{measure_id_t{2}, 360});
+    expect(after.speeds.back().position == local_position_t{measure_id_t{2}, 480});
+    expect(after.bpms.back().id != after.bpms.front().id);
+}

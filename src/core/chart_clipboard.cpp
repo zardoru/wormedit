@@ -70,6 +70,65 @@ auto append_bgm(chart_clipboard_t& clipboard, const chart_document_t& chart,
     return true;
 }
 
+template <typename Event>
+auto append_timing(chart_clipboard_t& clipboard, const chart_document_t& chart,
+                   const measure_index_t& index, const Event& event) -> bool {
+    std::optional<std::uint64_t> row;
+    std::optional<std::uint64_t> end;
+    if constexpr (std::is_same_v<Event, warp_event_t>) {
+        row = absolute_row(index, event.span.begin);
+        end = absolute_row(index, event.span.end);
+    } else {
+        row = absolute_row(index, event.position);
+        end = row;
+    }
+    if (!row || !end || *end < *row) return false;
+    clipboard.objects.push_back({fraction(*row, chart.divisions_per_standard_measure),
+        fraction(*end - *row, chart.divisions_per_standard_measure), 0, event});
+    return true;
+}
+
+template <typename Event>
+auto collect_timing_events(chart_clipboard_t& clipboard, const chart_document_t& chart,
+                           const measure_index_t& index, const std::vector<Event>& events,
+                           std::set<editor_selection_object_t>& selected,
+                           editor_selection_object_kind_t kind) -> bool {
+    for (const auto& event : events) {
+        if (selected.erase({kind, event.id}) && !append_timing(clipboard, chart, index, event))
+            return false;
+    }
+    return true;
+}
+
+auto collect_pauses(chart_clipboard_t& clipboard, const chart_document_t& chart,
+                    const measure_index_t& index, std::set<editor_selection_object_t>& selected)
+    -> bool {
+    for (const auto& event : chart.pauses) {
+        const auto kind = event.kind == pause_kind_t::stop
+            ? editor_selection_object_kind_t::stop_event
+            : editor_selection_object_kind_t::delay_event;
+        if (selected.erase({kind, event.id}) && !append_timing(clipboard, chart, index, event))
+            return false;
+    }
+    return true;
+}
+
+auto collect_timing(chart_clipboard_t& clipboard, const chart_document_t& chart,
+                    const measure_index_t& index, std::set<editor_selection_object_t>& selected)
+    -> bool {
+    using kind_t = editor_selection_object_kind_t;
+    return collect_timing_events(clipboard, chart, index, chart.bpms, selected, kind_t::bpm_event) &&
+           collect_pauses(clipboard, chart, index, selected) &&
+           collect_timing_events(clipboard, chart, index, chart.warps, selected, kind_t::warp_event) &&
+           collect_timing_events(clipboard, chart, index, chart.scrolls, selected,
+                                 kind_t::scroll_event) &&
+           collect_timing_events(clipboard, chart, index, chart.speeds, selected,
+                                 kind_t::speed_event) &&
+           collect_timing_events(clipboard, chart, index, chart.kiai, selected, kind_t::kiai_event) &&
+           collect_timing_events(clipboard, chart, index, chart.timing_anchors, selected,
+                                 kind_t::timing_anchor);
+}
+
 auto collect(chart_clipboard_t& clipboard, const chart_document_t& chart,
              const measure_index_t& index, std::set<editor_selection_object_t>& selected)
     -> bool {
@@ -83,7 +142,7 @@ auto collect(chart_clipboard_t& clipboard, const chart_document_t& chart,
                 !append_bgm(clipboard, chart, index, event)) return false;
         }
     }
-    return selected.empty();
+    return collect_timing(clipboard, chart, index, selected) && selected.empty();
 }
 } // namespace
 
@@ -94,7 +153,7 @@ auto copy_chart_selection(const song_document_t& document,
     const auto chart = std::ranges::find(document.charts, state.chart, &chart_document_t::id);
     if (chart == document.charts.end()) return {{}, "The selected chart no longer exists."};
     auto selected = selected_objects(state);
-    if (selected.empty()) return {{}, "Select notes or BGM events to copy."};
+    if (selected.empty()) return {{}, "Select notes, BGM events or timing objects to copy."};
     if (selected.size() > maximum_objects) return {{}, "The clipboard object limit was exceeded."};
     const auto indexed = build_measure_index(*chart);
     const auto* index = std::get_if<measure_index_t>(&indexed);
@@ -195,9 +254,30 @@ auto place_note(note_t note, const chart_clipboard_object_t& object,
     return note;
 }
 
+auto place_timing_object(const chart_clipboard_object_t& object, const chart_document_t& chart,
+                         const measure_index_t& index, local_position_t position,
+                         std::uint64_t row) -> std::optional<chart_clipboard_payload_t> {
+    const auto duration = exact_rows(object.duration, chart.divisions_per_standard_measure);
+    if (!duration) return std::nullopt;
+    auto payload = object.payload;
+    if (auto* warp = std::get_if<warp_event_t>(&payload)) {
+        if (!*duration || *duration > std::numeric_limits<std::uint64_t>::max() - row)
+            return std::nullopt;
+        const auto end = paste_position(index, row + *duration);
+        if (!end) return std::nullopt;
+        warp->span = {position, *end};
+        return payload;
+    }
+    if (*duration) return std::nullopt;
+    std::visit([&position](auto& value) {
+        if constexpr (requires { value.position; }) value.position = position;
+    }, payload);
+    return payload;
+}
+
 auto place_object(const chart_clipboard_object_t& object, const chart_document_t& chart,
                   const measure_index_t& index, std::uint64_t anchor)
-    -> std::optional<std::variant<note_t, bgm_event_t>> {
+    -> std::optional<chart_clipboard_payload_t> {
     const auto offset = exact_rows(object.offset, chart.divisions_per_standard_measure);
     if (!offset || *offset > std::numeric_limits<std::uint64_t>::max() - anchor)
         return std::nullopt;
@@ -209,6 +289,8 @@ auto place_object(const chart_clipboard_object_t& object, const chart_document_t
         if (!placed) return std::nullopt;
         return *placed;
     }
+    if (!std::holds_alternative<bgm_event_t>(object.payload))
+        return place_timing_object(object, chart, index, *position, row);
     if (object.lane_index >= chart.bgm_source_lanes.size()) return std::nullopt;
     if (!object.duration.denominator || object.duration.numerator) return std::nullopt;
     auto event = std::get<bgm_event_t>(object.payload);
@@ -228,6 +310,10 @@ struct paste_interval_t {
 template <typename Payload>
 auto append_interval(std::vector<paste_interval_t>& intervals, const Payload& payload,
                      const measure_index_t& index, bool proposed) -> bool {
+    // Timing objects are checked by whole-document validation, not by lane intervals.
+    if constexpr (!std::is_same_v<Payload, note_t> && !std::is_same_v<Payload, bgm_event_t>) {
+        return true;
+    } else {
     const auto row = absolute_row(index, payload.position);
     if (!row) return false;
     paste_interval_t interval{.begin = *row, .end = *row, .proposed = proposed};
@@ -244,6 +330,7 @@ auto append_interval(std::vector<paste_interval_t>& intervals, const Payload& pa
     }
     intervals.push_back(interval);
     return true;
+    }
 }
 
 auto collect_existing_intervals(std::vector<paste_interval_t>& intervals,
@@ -292,13 +379,30 @@ auto paste_collides(const chart_document_t& chart, const chart_paste_proposal_t&
     return overlapping_paste_intervals(std::move(intervals));
 }
 
-void append_paste_object(chart_document_t& chart, std::variant<note_t, bgm_event_t> object) {
+void append_paste_object(chart_document_t& chart, chart_clipboard_payload_t object) {
     std::visit([&chart](auto payload) {
-        const auto measure = std::ranges::find(chart.measures, payload.position.measure,
-                                               &measure_chunk_t::id);
         using payload_t = decltype(payload);
-        if constexpr (std::is_same_v<payload_t, note_t>) measure->notes.push_back(std::move(payload));
-        else measure->bgm_events.push_back(std::move(payload));
+        if constexpr (std::is_same_v<payload_t, note_t> || std::is_same_v<payload_t, bgm_event_t>) {
+            const auto measure = std::ranges::find(chart.measures, payload.position.measure,
+                                                   &measure_chunk_t::id);
+            if constexpr (std::is_same_v<payload_t, note_t>)
+                measure->notes.push_back(std::move(payload));
+            else measure->bgm_events.push_back(std::move(payload));
+        } else if constexpr (std::is_same_v<payload_t, bpm_event_t>) {
+            chart.bpms.push_back(std::move(payload));
+        } else if constexpr (std::is_same_v<payload_t, pause_event_t>) {
+            chart.pauses.push_back(std::move(payload));
+        } else if constexpr (std::is_same_v<payload_t, warp_event_t>) {
+            chart.warps.push_back(std::move(payload));
+        } else if constexpr (std::is_same_v<payload_t, scroll_event_t>) {
+            chart.scrolls.push_back(std::move(payload));
+        } else if constexpr (std::is_same_v<payload_t, speed_event_t>) {
+            chart.speeds.push_back(std::move(payload));
+        } else if constexpr (std::is_same_v<payload_t, kiai_event_t>) {
+            chart.kiai.push_back(std::move(payload));
+        } else {
+            chart.timing_anchors.push_back(std::move(payload));
+        }
     }, std::move(object));
 }
 } // namespace
@@ -312,6 +416,7 @@ auto missing_paste_lanes(const chart_clipboard_t& clipboard, const chart_documen
             missing += object.lane_index >= chart.bgm_source_lanes.size();
             continue;
         }
+        if (!std::holds_alternative<note_t>(object.payload)) continue;
         const auto offset = exact_rows(object.offset, chart.divisions_per_standard_measure);
         if (!offset || *offset > std::numeric_limits<std::uint64_t>::max() - anchor) continue;
         const auto position = paste_position(index, anchor + *offset);

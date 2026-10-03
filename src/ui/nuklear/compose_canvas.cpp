@@ -2090,13 +2090,31 @@ static bool draw_compose_paste_arrow(const ComposePaintContext& paint,
     return true;
 }
 
+// A pasted timing object fills its lane slot; a warp keeps its full span, other objects use the
+// usual marker height.
+static auto compose_timing_ghost_rect(const ComposePaintContext& paint,
+                                      const WormUiComposePasteGhostView& ghost) -> struct nk_rect {
+    WormUiTimingMarkerView marker{};
+    marker.lane = static_cast<WormUiTimingLaneKind>(ghost.glyph);
+    marker.marker_y_pixels = (ghost.bounds.top + ghost.bounds.bottom) * 0.5;
+    marker.marker_left_fraction = 0.0;
+    marker.marker_right_fraction = 1.0;
+    auto bounds = compose_timing_marker_document_rect(*paint.view, marker);
+    if (ghost.bounds.bottom - ghost.bounds.top > bounds.bottom - bounds.top) {
+        bounds.top = ghost.bounds.top;
+        bounds.bottom = ghost.bounds.bottom;
+    }
+    return compose_screen_rect(&bounds, paint.view, paint.viewport);
+}
+
 static void draw_compose_paste_ghosts(const ComposePaintContext& paint) {
     const auto& view = *paint.view;
     const auto color = view.paste_valid ? nk_rgba(240, 171, 71, 130)
                                        : nk_rgba(242, 70, 83, 155);
     for (size_t index = 0; index < view.paste_ghost_count; ++index) {
         const auto& ghost = view.paste_ghosts[index];
-        const auto rect = compose_screen_rect(&ghost.bounds, &view, paint.viewport);
+        const auto rect = ghost.kind == 3 ? compose_timing_ghost_rect(paint, ghost)
+                                          : compose_screen_rect(&ghost.bounds, &view, paint.viewport);
         if (draw_compose_paste_arrow(paint, ghost, rect, color)) continue;
         field_rect(paint, rect, 0.0f, color, 5);
         field_stroke_rect(paint, rect, 0.0f, 2.0f, color, 5);

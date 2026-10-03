@@ -31,6 +31,7 @@ auto project_speed_spans(const chart_document_t& chart, const timing_index_t& ti
                                 .begin_row = as_double(span.begin_row),
                                 .end_row = as_double(span.end_row),
                                 .multiplier = as_double(segment.target_multiplier),
+                                .initial_multiplier = as_double(segment.initial_multiplier),
                                 .transition_length = as_double(segment.transition_duration),
                                 .transition_is_seconds = segment.transition_is_seconds,
                                 .clipped = span.clipped});

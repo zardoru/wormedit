@@ -1,6 +1,7 @@
 #include "sys/application_command_dispatch.h"
 
 #include "sys/compose_bookmark_commands.h"
+#include "sys/compose_clipboard_selection.h"
 #include "sys/compose_input.h"
 #include "sys/compose_scroll_geometry.h"
 #include "sys/compose_timing_delete.h"
@@ -214,11 +215,17 @@ auto clipboard_commands(command_context_t& context) -> std::optional<command_res
     auto* state = context.compose();
     if (!state)
         return reject_application_command(context.status, "Clipboard requires the active Compose chart.");
-    auto copied = kind == command_kind_t::edit_cut
-        ? wormedit::cut_chart_selection(context.history, *state, context.history.document.revision)
-        : wormedit::copy_chart_selection(context.history.document, *state,
-                                         context.history.document.revision);
+    const auto widened = wormedit::sys::with_kiai_span_selection(
+        context.history, *state, context.application_state.kiai_selected_head);
+    auto copied = wormedit::copy_chart_selection(context.history.document, widened,
+                                                 context.history.document.revision);
     if (!copied) return reject_application_command(context.status, std::move(copied.error));
+    if (kind == command_kind_t::edit_cut) {
+        const auto error = wormedit::sys::delete_cut_selection(
+            context.history, *state, context.application_state.kiai_selected_head,
+            context.application_state.timing_locked);
+        if (!error.empty()) return reject_application_command(context.status, error);
+    }
     context.application_state.chart_clipboard = std::move(copied.clipboard);
     context.status = kind == command_kind_t::edit_cut ? "Selection cut." : "Selection copied.";
     if (kind == command_kind_t::edit_cut) return context.rebind();

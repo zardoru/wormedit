@@ -79,7 +79,8 @@ TEST_CASE("speed graph interpolates across each span and then holds the target",
           "[unit][sys][speed-spans]") {
     speed_spans_t spans;
     spans.spans = {{.object = object_id_t{1}, .begin_row = 100.0, .end_row = 200.0, .multiplier = 2.0},
-                   {.object = object_id_t{2}, .begin_row = 400.0, .end_row = 400.0, .multiplier = 0.5}};
+                   {.object = object_id_t{2}, .begin_row = 400.0, .end_row = 400.0, .multiplier = 0.5,
+                    .initial_multiplier = 2.0}};
     const auto y_of = [](double row) { return row; };
     const auto graph = build_speed_graph(spans, 0.0, 600.0, y_of);
     CHECK(graph.minimum == 0.5);
@@ -102,4 +103,40 @@ TEST_CASE("speed graph interpolates across each span and then holds the target",
     CHECK(inside.maximum == 2.0);
 
     CHECK(build_speed_graph(spans, 10.0, 10.0, y_of).points.empty());
+}
+
+TEST_CASE("a speed ramp cut short by the next event ends at the value that event starts from",
+          "[unit][sys][speed-spans]") {
+    speed_spans_t spans;
+    // 1.0 -> 3.0 over rows 100..300, but the next event at row 200 interrupts at 2.0.
+    spans.spans = {{.object = object_id_t{1}, .begin_row = 100.0, .end_row = 200.0,
+                    .multiplier = 3.0, .initial_multiplier = 1.0, .clipped = true},
+                   {.object = object_id_t{2}, .begin_row = 200.0, .end_row = 200.0,
+                    .multiplier = 1.0, .initial_multiplier = 2.0}};
+    const auto y_of = [](double row) { return row; };
+    const auto graph = build_speed_graph(spans, 0.0, 400.0, y_of);
+    // The ramp never reaches its 3.0 target.
+    CHECK(graph.maximum == 2.0);
+    CHECK(graph.minimum == 1.0);
+}
+
+TEST_CASE("two instantaneous speeds back to back never draw a slanted segment",
+          "[unit][sys][speed-spans]") {
+    auto chart = base_chart();
+    chart.speeds = {speed(20, 1, 240, 2, {0, 1}, false), speed(21, 1, 241, 3, {0, 1}, false)};
+    const auto spans = project(chart);
+    REQUIRE(spans.spans.size() == 2);
+    const auto y_of = [](double row) { return row; };
+    // Windows that put either event just inside or just outside the edge.
+    for (double first = 0.0; first < 300.0; first += 1.0) {
+        for (double last = first + 1.0; last < 320.0; last += 1.0) {
+            const auto graph = build_speed_graph(spans, first, last, y_of);
+            for (std::size_t index = 1; index < graph.points.size(); ++index) {
+                const auto& from = graph.points[index - 1];
+                const auto& to = graph.points[index];
+                INFO("window " << first << ".." << last << " point " << index);
+                REQUIRE((from.x == to.x || from.y == to.y));
+            }
+        }
+    }
 }

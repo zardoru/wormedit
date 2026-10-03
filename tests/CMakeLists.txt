@@ -67,6 +67,7 @@ add_executable(wormedit_core_tests
     sys/compose_sv_graph_tests.cpp
     sys/compose_recipe_areas_tests.cpp
     sys/compose_speed_spans_tests.cpp
+    sys/compose_clipboard_selection_tests.cpp
     sys/recipe_form_tests.cpp
     sys/compose_quantize_preview_tests.cpp
     sys/project_view_tests.cpp

@@ -61,13 +61,18 @@ auto paste_geometry(const wormedit::chart_document_t& source,
     for (const auto& measure : source.measures)
         chart.measures.push_back({.id = measure.id, .definition = measure.definition});
     for (const auto& object : proposal.objects) {
+        // Ghost previews draw notes and BGM events; pasted timing objects have no ghost.
         std::visit([&chart](const auto& value) {
-            const auto found = std::ranges::find(chart.measures, value.position.measure,
-                                                 &wormedit::measure_chunk_t::id);
-            if (found == chart.measures.end()) return;
             using value_t = std::decay_t<decltype(value)>;
-            if constexpr (std::is_same_v<value_t, wormedit::note_t>) found->notes.push_back(value);
-            else found->bgm_events.push_back(value);
+            if constexpr (std::is_same_v<value_t, wormedit::note_t> ||
+                          std::is_same_v<value_t, wormedit::bgm_event_t>) {
+                const auto found = std::ranges::find(chart.measures, value.position.measure,
+                                                     &wormedit::measure_chunk_t::id);
+                if (found == chart.measures.end()) return;
+                if constexpr (std::is_same_v<value_t, wormedit::note_t>)
+                    found->notes.push_back(value);
+                else found->bgm_events.push_back(value);
+            }
         }, object);
     }
     return chart;
@@ -3326,6 +3331,59 @@ void cache_area_object_geometry(const compose_final_projection_context_t& input)
     cache.area_object_geometry = std::move(snapshot);
 }
 
+// Pasted timing objects have no scene geometry; they are projected straight onto their lane.
+auto paste_timing_ghost_lane(const wormedit::chart_clipboard_payload_t& object)
+    -> std::optional<WormUiTimingLaneKind> {
+    using namespace wormedit;
+    if (std::holds_alternative<bpm_event_t>(object)) return WORM_UI_TIMING_LANE_BPM;
+    if (const auto* pause = std::get_if<pause_event_t>(&object))
+        return pause->kind == pause_kind_t::stop ? WORM_UI_TIMING_LANE_STOP
+                                                 : WORM_UI_TIMING_LANE_DELAY;
+    if (std::holds_alternative<warp_event_t>(object)) return WORM_UI_TIMING_LANE_WARP;
+    if (std::holds_alternative<scroll_event_t>(object)) return WORM_UI_TIMING_LANE_SCROLL;
+    if (std::holds_alternative<speed_event_t>(object)) return WORM_UI_TIMING_LANE_SPEED;
+    if (std::holds_alternative<kiai_event_t>(object)) return WORM_UI_TIMING_LANE_KIAI;
+    if (std::holds_alternative<timing_anchor_t>(object)) return WORM_UI_TIMING_LANE_ANCHOR;
+    return std::nullopt;
+}
+
+auto paste_timing_ghost_span(const wormedit::chart_clipboard_payload_t& object)
+    -> std::pair<wormedit::local_position_t, wormedit::local_position_t> {
+    using namespace wormedit;
+    if (const auto* warp = std::get_if<warp_event_t>(&object))
+        return {warp->span.begin, warp->span.end};
+    return std::visit([](const auto& value) -> std::pair<local_position_t, local_position_t> {
+        if constexpr (requires { value.position; }) return {value.position, value.position};
+        else return {};
+    }, object);
+}
+
+void append_paste_timing_ghosts(const compose_final_projection_context_t& input,
+                                application_command_state_t::paste_session_t& session) {
+    const auto pixels_per_row = input.interaction_view.pixels_per_standard_measure /
+                                static_cast<double>(input.chart.divisions_per_standard_measure);
+    if (!(pixels_per_row > 0.0)) return;
+    const auto height = input.view.viewport_height_pixels;
+    const auto project = [&](wormedit::local_position_t position) -> std::optional<double> {
+        const auto row = wormedit::absolute_row(input.measures, position);
+        if (!row) return std::nullopt;
+        return compose_project_y(*row, pixels_per_row, input.interaction_view.viewport_scroll_pixels,
+                                 height, input.downscroll);
+    };
+    for (const auto& object : session.proposal.objects) {
+        const auto lane = paste_timing_ghost_lane(object);
+        if (!lane) continue;
+        const auto [begin, end] = paste_timing_ghost_span(object);
+        const auto begin_y = project(begin);
+        const auto end_y = project(end);
+        if (!begin_y || !end_y) continue;
+        const auto top = std::min(*begin_y, *end_y);
+        const auto bottom = std::max(*begin_y, *end_y);
+        if (bottom < 0.0 || top > height) continue;
+        session.ghosts.push_back({{0.0, top, 0.0, bottom}, 3, static_cast<std::uint8_t>(*lane)});
+    }
+}
+
 void populate_compose_paste_projection(const compose_final_projection_context_t& input) {
     auto& application = input.application_state;
     if (!input.retained_state || !application.paste_session) return;
@@ -3350,6 +3408,7 @@ void populate_compose_paste_projection(const compose_final_projection_context_t&
     for (const auto& note : composed.scene->note_endpoints)
         append(note, 0, static_cast<std::uint8_t>(note.glyph));
     for (const auto& event : composed.scene->bgm_events) append(event, 2);
+    append_paste_timing_ghosts(input, session);
     view.paste_ghosts = session.ghosts.data();
     view.paste_ghost_count = session.ghosts.size();
 }
@@ -3357,7 +3416,9 @@ void populate_compose_paste_projection(const compose_final_projection_context_t&
 void populate_compose_final_projection(const compose_final_projection_context_t& input) {
     input.view.clipboard_copy_available = input.retained_state &&
         !editor_interaction_has_pending_gesture(*input.retained_state) &&
-        (!input.retained_state->selected_objects.empty() || !input.retained_state->selected_notes.empty());
+        (!input.retained_state->selected_objects.empty() ||
+         !input.retained_state->selected_notes.empty() ||
+         input.application_state.kiai_selected_head != 0);
     input.view.clipboard_paste_available = input.application_state.chart_clipboard.has_value() &&
         input.retained_state && !editor_interaction_has_pending_gesture(*input.retained_state);
     const auto rows = prepare_compose_projection_state(input);

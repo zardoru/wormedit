@@ -102,6 +102,15 @@ auto commit_document_command(document_history_t& history, song_document_t propos
     return result;
 }
 
+void merge_recent_undo_records(document_history_t& history, std::size_t count, std::string label) {
+    if (count < 2 || history.undo.size() < count) return;
+    const auto first = history.undo.end() - static_cast<std::ptrdiff_t>(count);
+    document_command_record_t merged{.label = std::move(label), .before = std::move(first->before),
+                                     .after = std::move(history.undo.back().after)};
+    history.undo.erase(first, history.undo.end());
+    history.undo.push_back(std::move(merged));
+}
+
 auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
                             const quantize_request_t& request) -> quantize_command_result_t {
     quantize_command_result_t result;

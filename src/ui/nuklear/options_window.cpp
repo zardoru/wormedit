@@ -59,6 +59,8 @@ void scroll_directions(nk_context* context, const WormUiOptionsView& view, WormU
     }
 }
 void editor_page(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
+    edit_toggle(context, *view, *action, "Play sounds on note clicks",
+        WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK, view->audition_on_click);
     edit_integer(context, *view, *action, "Default snap denominator", WORM_UI_OPTIONS_FIELD_SNAP, view->default_snap, 1, 1920);
     scroll_directions(context, *view, *action);
     edit_integer(context, *view, *action, "Following anchor (%)", WORM_UI_OPTIONS_FIELD_ANCHOR, view->playhead_anchor_percent, 0, 100);

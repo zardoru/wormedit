@@ -1,5 +1,6 @@
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/semantic_layer_editor.h>
+#include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -1268,4 +1269,61 @@ TEST_CASE("sound layer membership rejects locked additions and unknown targets",
                    diagnostic_code_t::invalid_id));
     CHECK(history.undo.empty());
     CHECK(history.document.charts.front().sound_layer_defaults.empty());
+}
+
+namespace {
+auto sound_note_layers_history() -> document_history_t {
+    auto song = layered_sound_song();
+    auto& notes = song.charts.front().measures.front().notes;
+    notes.push_back({.id = object_id_t{30}, .position = {measure_id_t{3}, 480},
+        .lane = lane_id_t{1}, .sound = resource_id_t{1}, .semantic_layers = {layer_id_t{8}}});
+    notes.push_back({.id = object_id_t{31}, .position = {measure_id_t{3}, 720},
+        .lane = lane_id_t{1}, .sound = resource_id_t{2}});
+    return make_document_history(std::move(song));
+}
+
+void check_sound_note_assignment(bool overwrite) {
+    auto history = sound_note_layers_history();
+    REQUIRE(apply_sound_layer_membership(history, 4,
+        {.chart = chart_id_t{2}, .resources = {resource_id_t{1}}, .layer = layer_id_t{7},
+         .overwrite_note_layers = overwrite}));
+    const auto& notes = history.document.charts.front().measures.front().notes;
+    const auto expected = std::vector{layer_id_t{overwrite ? 7U : 8U}};
+    CHECK(notes[0].semantic_layers == std::vector{layer_id_t{7}});
+    CHECK(notes[1].semantic_layers == expected);
+    CHECK(notes[2].semantic_layers.empty());
+    CHECK(history.undo.size() == 1);
+}
+
+void check_sound_note_assignment_undo_and_paint() {
+    auto history = sound_note_layers_history();
+    const auto original = write_native_project(history.document).bytes;
+    REQUIRE(apply_sound_layer_membership(history, 4,
+        {.chart = chart_id_t{2}, .resources = {resource_id_t{1}}, .layer = layer_id_t{7}}));
+    REQUIRE(place_at(history, 240, resource_id_t{1}));
+    CHECK(history.document.charts.front().measures.front().notes.back().semantic_layers ==
+          std::vector{layer_id_t{7}});
+    REQUIRE(undo_document_command(history));
+    REQUIRE(undo_document_command(history));
+    CHECK(write_native_project(history.document).bytes == original);
+}
+} // namespace
+
+TEST_CASE("sound layers tag matching notes and optionally overwrite existing layers",
+          "[unit][core][resources][sound-note-layers]") {
+    check_sound_note_assignment(false);
+    check_sound_note_assignment(true);
+    check_sound_note_assignment_undo_and_paint();
+}
+
+TEST_CASE("sound layer overwrite rejects locked note memberships atomically",
+          "[unit][core][resources][sound-note-layers]") {
+    auto history = sound_note_layers_history();
+    history.document.charts.front().measures.front().notes[1].semantic_layers = {layer_id_t{9}};
+    const auto original = write_native_project(history.document).bytes;
+    CHECK_FALSE(apply_sound_layer_membership(history, 4,
+        {.chart = chart_id_t{2}, .resources = {resource_id_t{1}}, .layer = layer_id_t{7},
+         .overwrite_note_layers = true}));
+    CHECK(write_native_project(history.document).bytes == original);
+    CHECK(history.undo.empty());
 }

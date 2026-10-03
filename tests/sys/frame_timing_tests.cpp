@@ -3346,6 +3346,111 @@ TEST_CASE("Imported five-key BMS materializes a Compose field that responds to t
     expect_compose_test(fixture.history.undo.empty());
 }
 
+namespace {
+auto cursor_placement_song() -> song_document_t {
+    const std::string source = "#PLAYER 1\n#BPM 154\n#WAV01 synth.wav\n"
+        "#00011:01\n#00012:01\n#00013:01\n#00014:01\n#00015:01\n#00016:01\n#04011:01\n";
+    auto parsed = parse_bms_bytes(std::as_bytes(std::span(source.data(), source.size())),
+        {.file_extension = ".bms"});
+    expect_compose_test(parsed.song.has_value());
+    return std::move(*parsed.song);
+}
+
+auto cursor_placement_action(compose_test_fixture_t& fixture) -> WormUiWorkspaceAction {
+    WormUiWorkspaceAction action{};
+    action.shortcut_window_focused = true;
+    action.compose_input_chart_id = fixture.interaction->chart.value;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    return action;
+}
+
+void place_pointer_test_note(compose_test_fixture_t& fixture, int mode) {
+    const auto resource = mode == 1;
+    auto& state = *fixture.interaction;
+    state.fixed_cursor_screen_y_pixels = 48;
+    state.cursor_subrow = 7;
+    const auto cursor_before = capture_cursor_pose(state);
+    const local_position_t position{fixture.history.document.charts.front().measures.front().id, 240};
+    const auto& chart = fixture.history.document.charts.front();
+    const auto view = inspect_editor_interaction(fixture.history, state);
+    const auto y = editor_position_y_pixels(chart,
+        std::get<editor_interaction_view_model_t>(view), position);
+    expect_compose_test(y.has_value());
+    auto action = cursor_placement_action(fixture);
+    action.compose_input_count = 1;
+    fixture.application.note_paint_mode_active = !resource;
+    action.compose_inputs[0] = {.kind = resource ? WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE
+                                               : WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
+        .object_id = fixture.history.document.resources.front().id.value,
+        .resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE,
+        .x_pixels = fixture.flattened.view.compose.playable_field_left_pixels + 20,
+        .y_pixels = compose_source_y(*y, state.viewport_height_pixels,
+            compose_field_downscroll(chart, fixture.application.editor_preferences))};
+    if (mode == 2) {
+        action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN;
+        action.compose_inputs[1] = action.compose_inputs[0];
+        action.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE;
+        action.compose_input_count = 2;
+    }
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        state, viewport, navigation, fixture.application, fixture.cache, 0);
+    expect_compose_test(fixture.history.undo.size() == 1);
+    expect_compose_test(capture_cursor_pose(state) == cursor_before);
+}
+
+void check_note_placement_preserves_cursor(int mode, bool downscroll) {
+    INFO("Mode " << mode << ", downscroll " << downscroll);
+    compose_test_fixture_t fixture{cursor_placement_song()};
+    fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
+    fixture.application.editor_preferences.scroll_directions[0] = downscroll ? 2U : 1U;
+    fixture.project();
+    place_pointer_test_note(fixture, mode);
+    expect_compose_test(fixture.interaction->fixed_cursor_screen_y_pixels == 48);
+    expect_compose_test(fixture.interaction->cursor_subrow == 7);
+    fixture.project();
+    const auto scroll = fixture.interaction->viewport_scroll_pixels;
+    auto action = cursor_placement_action(fixture);
+    action.compose_viewport_input_count = 1;
+    action.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
+        .delta_y = downscroll ? -1.0 : 1.0, .cursor_x_pixels = 200, .cursor_y_pixels = 300};
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    const auto status = dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0.016);
+    INFO(status << ", scroll " << scroll << " -> " << fixture.interaction->viewport_scroll_pixels);
+    expect_compose_test(fixture.interaction->fixed_cursor_screen_y_pixels ==
+        compose_cursor_screen_anchor(fixture.interaction->viewport_height_pixels, downscroll));
+    expect_compose_test(fixture.interaction->viewport_scroll_pixels > scroll);
+    expect_compose_test(fixture.history.undo.size() == 1);
+}
+} // namespace
+
+TEST_CASE("Pointer note placement preserves the yellow cursor and normal scrolling",
+          "[sys][compose][cursor-placement][regression]") {
+    check_note_placement_preserves_cursor(0, false);
+    check_note_placement_preserves_cursor(0, true);
+    check_note_placement_preserves_cursor(1, false);
+    check_note_placement_preserves_cursor(1, true);
+    check_note_placement_preserves_cursor(2, false);
+    check_note_placement_preserves_cursor(2, true);
+}
+
+TEST_CASE("Compose BMS layout picker includes DP5 without free zones",
+          "[sys][compose][dp5-standard]") {
+    compose_test_fixture_t fixture{cursor_placement_song()};
+    fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
+    fixture.project();
+    const auto& view = fixture.flattened.view.compose;
+    const auto names = std::span(view.lane_layout_profile_names,
+                                 view.lane_layout_profile_choice_count);
+    CHECK(std::ranges::any_of(names, [](const auto& name) {
+        return std::string_view{name} == "BMS DP5 / 10K";
+    }));
+}
+
 TEST_CASE("Stopped BMS transport seek moves cursor and viewport without editing",
           "[sys][compose][seek-bar][regression]") {
     const std::string source = "#PLAYER 1\n#BPM 154\n#WAV01 synth.wav\n"
@@ -3368,4 +3473,35 @@ TEST_CASE("Stopped BMS transport seek moves cursor and viewport without editing"
     ++fixture.history.document.revision;
     (void)seek_stopped_compose_transport(fixture.history, *fixture.interaction, fixture.cache, 0);
     expect_compose_test(fixture.interaction->cursor == sought);
+}
+
+namespace {
+void check_click_audition_preference(bool enabled) {
+    compose_test_fixture_t fixture;
+    fixture.application.editor_preferences.audition_on_click = enabled;
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.note_endpoint_count > 0);
+    const auto& bounds = fixture.flattened.view.compose.note_endpoints[0].bounds;
+    WormUiWorkspaceAction action{};
+    action.shortcut_window_focused = true;
+    action.compose_input_chart_id = fixture.interaction->chart.value;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    action.compose_input_count = 1;
+    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
+        .x_pixels = (bounds.left + bounds.right) / 2,
+        .y_pixels = (bounds.top + bounds.bottom) / 2};
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0.016);
+    expect_compose_test(!fixture.interaction->selected_notes.empty());
+    expect_compose_test(fixture.cache.audition_request.has_value() == enabled);
+    expect_compose_test(fixture.history.undo.empty());
+}
+}
+TEST_CASE("Note click audition can be disabled without suppressing selection",
+          "[sys][compose][audition][regression]") {
+    check_click_audition_preference(true);
+    check_click_audition_preference(false);
 }

@@ -117,6 +117,7 @@ auto edit_editor(program_preferences_t& p, const WormUiOptionsAction& a) -> bool
     case WORM_UI_OPTIONS_FIELD_AREA_ALPHA: p.editor.area_band_alpha = static_cast<std::uint32_t>(a.integer); return true;
     case WORM_UI_OPTIONS_FIELD_NOTE_PALETTE: p.editor.note_kind_palette_visible = a.boolean; return true;
     case WORM_UI_OPTIONS_FIELD_LANE_LEGEND: p.editor.lane_key_legend_visible = a.boolean; return true;
+    case WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK: p.editor.audition_on_click = a.boolean; return true;
     case WORM_UI_OPTIONS_FIELD_MINIMAP_CLICK: p.minimap.click_moves_paused_playhead = a.boolean; return true;
     default: return false;
     }
@@ -227,6 +228,7 @@ auto options_view(options_runtime_t& r) -> WormUiOptionsView {
             p.editor.scroll_directions[5]},
         .playhead_anchor_percent = p.editor.playhead_anchor_percent, .area_band_alpha = p.editor.area_band_alpha,
         .note_kind_palette_visible = p.editor.note_kind_palette_visible, .lane_key_legend_visible = p.editor.lane_key_legend_visible,
+        .audition_on_click = p.editor.audition_on_click,
         .confirm_unsaved_close = p.general.confirm_unsaved_close, .keep_pitch = p.audio.keep_pitch,
         .frame_timing_overlay = p.display.frame_timing_overlay,
         .minimap_click_moves_paused_playhead = p.minimap.click_moves_paused_playhead,

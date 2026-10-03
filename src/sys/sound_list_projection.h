@@ -91,6 +91,7 @@ struct keysound_row_t {
     bool missing{};
     // Bit i is set when the sound's default layers include keysound_list_t::layers[i].
     std::uint64_t layer_mask{};
+    std::uint64_t note_layer_conflict_mask{};
 };
 
 struct keysound_list_t {

@@ -15,6 +15,7 @@ BME-style fixtures deliberately overlap BME channel families while retaining but
 | `bms-5k-foot-pedal.bms` | `bms-5k-outside-scratch-foot-pedal` | 7 |
 | `bme-7k.bme` | `bme-7k-outside-scratch` | 8 |
 | `bme-7k-foot-pedal.bme` | `bme-7k-outside-scratch-foot-pedal` | 9 |
+| `bms-10k-standard.bms` | `bms-10k-left-outside-right-outside` | 12 |
 | `bms-10k-free-zone.bms` | `bms-10k-left-outside-right-outside-free-zone` | 14 |
 | `bms-10k-foot-pedal.bms` | `bms-10k-left-outside-right-outside-foot-pedal` | 14 |
 | `bms-10k-scratchless.bms` | `bms-10k-scratchless` | 10 |
@@ -29,7 +30,7 @@ BME-style fixtures deliberately overlap BME channel families while retaining but
 | `project2dx-7k.bms` | `project2dx-7k` | 8 |
 
 These fixtures prove explicit semantic import through Wormedit's supported profile catalog. Dense
-standard BME 7K/14K and PMS 5/9-button maps also pin conservative automatic selection when one
+standard BMS DP5, BME 7K/14K and PMS 5/9-button maps also pin conservative automatic selection when one
 complete observed channel family, extension, and `#PLAYER` evidence separates the profile from
 compatible supersets. PMS 18-button additionally pins `.pms` plus `#PLAYER 3`, and the octave case
 pins the named `#OCT/FP` header. The parser exposes the full ranked detection result in every case.

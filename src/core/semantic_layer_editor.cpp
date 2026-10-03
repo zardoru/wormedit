@@ -916,6 +916,30 @@ auto write_sound_layer_membership(chart_document_t& chart,
 
 } // namespace
 
+namespace {
+auto paint_sound_layer_notes(chart_document_t& chart,
+                            const sound_layer_membership_action_t& action,
+                            document_command_result_t& result) -> std::optional<bool> {
+    std::unordered_map<std::uint64_t, std::vector<layer_id_t>> defaults;
+    for (const auto resource : action.resources)
+        defaults.emplace(resource.value, sound_default_layers_for_placement(chart, resource));
+    const auto layers = membership_layer_index(chart);
+    bool changed{};
+    for (auto& measure : chart.measures) {
+        for (auto& note : measure.notes) {
+            if (!note.sound) continue;
+            const auto desired = defaults.find(note.sound->value);
+            if (desired == defaults.end() || note.semantic_layers == desired->second) continue;
+            if (!note.semantic_layers.empty() && !action.overwrite_note_layers) continue;
+            if (!validate_clear_note_layers(layers, note, result)) return std::nullopt;
+            note.semantic_layers = desired->second;
+            changed = true;
+        }
+    }
+    return changed;
+}
+} // namespace
+
 auto apply_sound_layer_membership(document_history_t& history, std::uint64_t expected_revision,
                                   const sound_layer_membership_action_t& action)
     -> document_command_result_t {
@@ -944,7 +968,13 @@ auto apply_sound_layer_membership(document_history_t& history, std::uint64_t exp
                "sound layer membership refers to an unknown layer");
         return result;
     }
-    if (!write_sound_layer_membership(*chart, action)) return result;
+    auto changed = write_sound_layer_membership(*chart, action);
+    if (action.member) {
+        const auto painted = paint_sound_layer_notes(*chart, action, result);
+        if (!painted) return result;
+        changed = changed || *painted;
+    }
+    if (!changed) return result;
     return commit_document_command(history, std::move(proposed),
                                    action.member ? "Add layer to sounds" : "Remove layer from sounds");
 }

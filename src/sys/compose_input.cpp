@@ -1947,7 +1947,7 @@ auto select_compose_bgm_event(const WormUiComposeInputAction& input,
         select_editor_objects_action_t{
             .objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{input.object_id}}},
             .mode = *mode,
-            .request_audition = true});
+            .request_audition = context.application_state.editor_preferences.audition_on_click});
     accepted = "BGM event selected.";
     return std::nullopt;
 }
@@ -2460,7 +2460,7 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
             ? select_editor_objects_action_t{{{editor_selection_object_kind_t::note,
                                                *target->note}},
                                              *mode,
-                                             true}
+                                             context.application_state.editor_preferences.audition_on_click}
             : select_editor_objects_action_t{{}, *mode, false};
     result = dispatch_editor_action(context.history, context.state, selection);
     accepted = target->note ? "Note selected." : "Selection cleared.";
@@ -2997,6 +2997,33 @@ auto dispatch_compose_input_event(const WormUiComposeInputAction& input,
                           : dispatch_unhandled_compose_input(input, context, result, accepted);
 }
 
+auto pointer_placement_keeps_cursor(const WormUiComposeInputAction& input,
+                                   const wormedit::editor_interaction_result_t& result) -> bool {
+    if (!result.accepted) return false;
+    switch (input.kind) {
+    case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN:
+    case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE:
+    case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE:
+        return true;
+    case WORM_UI_COMPOSE_INPUT_POINTER_CLICK:
+        return result.document_changed;
+    case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE:
+    case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE:
+        return input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE;
+    default: return false;
+    }
+}
+
+void restore_pointer_placement_cursor(compose_input_context_t& context,
+                                     const wormedit::cursor_pose_t& cursor,
+                                     wormedit::editor_interaction_result_t& result) {
+    wormedit::restore_cursor_pose(context.state, cursor);
+    if (result.view) {
+        const auto view = compose_view_for_state(context.history, context.state);
+        if (view) result.view = *view;
+    }
+}
+
 auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::string {
     using namespace wormedit;
     auto status = std::string{};
@@ -3006,7 +3033,10 @@ auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::stri
         const auto& input = context.ui_action.compose_inputs[index];
         editor_interaction_result_t result;
         std::string_view accepted = "Compose interaction applied.";
+        const auto cursor = capture_cursor_pose(context.state);
         const auto dispatched = dispatch_compose_input_event(input, context, result, accepted);
+        if (pointer_placement_keeps_cursor(input, result))
+            restore_pointer_placement_cursor(context, cursor, result);
         if (!dispatched.handled)
             continue;
         if (dispatched.stop_batch)

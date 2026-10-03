@@ -179,7 +179,8 @@ auto change_sound_layers(const WormUiWorkspaceAction& action, document_history_t
                                                          .layers = {}})
         : apply_sound_layer_membership(history, revision,
               {.chart = chart, .resources = ids,
-               .layer = layer_id_t{action.compose_semantic_layer_id}, .member = add});
+               .layer = layer_id_t{action.compose_semantic_layer_id}, .member = add,
+               .overwrite_note_layers = action.compose_sound_overwrite_note_layers});
     const auto subject = sound_count_text(ids.size());
     return finish_sound_edit(workspace, history, applied,
                              clear ? "Cleared the layers of " + subject + "."

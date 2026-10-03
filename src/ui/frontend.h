@@ -873,6 +873,8 @@ typedef struct WormUiComposeKeysoundRowView {
     bool missing;
     /* Bit i is set when the sound's default layers include keysound_layers[i]. */
     uint64_t layer_mask;
+    /* Bit i means adding keysound_layers[i] conflicts with existing note layers. */
+    uint64_t note_layer_conflict_mask;
 } WormUiComposeKeysoundRowView;
 
 typedef struct WormUiComposeKeysoundLayerView {
@@ -1580,7 +1582,7 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_PLAYER_ADD, WORM_UI_OPTIONS_FIELD_PLAYER_REMOVE,
     WORM_UI_OPTIONS_FIELD_SCROLL_DIRECTION, WORM_UI_OPTIONS_FIELD_ANCHOR,
     WORM_UI_OPTIONS_FIELD_NOTE_PALETTE, WORM_UI_OPTIONS_FIELD_LANE_LEGEND,
-    WORM_UI_OPTIONS_FIELD_AREA_ALPHA
+    WORM_UI_OPTIONS_FIELD_AREA_ALPHA, WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK
 } WormUiOptionsField;
 typedef struct WormUiOptionsDiagnostic {
     WormUiOptionsField field;
@@ -1596,6 +1598,7 @@ typedef struct WormUiOptionsView {
     uint32_t scroll_directions[6];
     uint32_t playhead_anchor_percent, area_band_alpha;
     bool note_kind_palette_visible, lane_key_legend_visible;
+    bool audition_on_click;
     bool confirm_unsaved_close, keep_pitch, frame_timing_overlay;
     bool minimap_click_moves_paused_playhead;
     uint64_t rate_numerator, rate_denominator;
@@ -2183,6 +2186,7 @@ typedef struct WormUiWorkspaceAction {
     /* Frontend-owned staging; valid through immediate workspace-action dispatch. */
     const uint64_t* compose_sound_resource_ids;
     size_t compose_sound_resource_count;
+    bool compose_sound_overwrite_note_layers;
     const char* const* compose_import_paths;
     size_t compose_import_path_count;
     size_t compose_output_group_index;

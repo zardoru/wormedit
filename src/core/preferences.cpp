@@ -90,12 +90,13 @@ void read_editor(preference_reader_t& reader, const json_t& root) {
     const auto& section = reader.section(root, "editor");
     auto& value = reader.result.preferences.editor;
     reader.check_keys(section, {"default_snap", "scroll_directions", "playhead_anchor_percent",
-        "note_kind_palette_visible", "lane_key_legend_visible", "area_band_alpha"});
+        "note_kind_palette_visible", "lane_key_legend_visible", "area_band_alpha", "audition_on_click"});
     reader.integer(section, "default_snap", value.default_snap, 1, 1920);
     reader.integer(section, "playhead_anchor_percent", value.playhead_anchor_percent, 0, 100);
     reader.integer(section, "area_band_alpha", value.area_band_alpha, 0, 255);
     reader.boolean(section, "note_kind_palette_visible", value.note_kind_palette_visible);
     reader.boolean(section, "lane_key_legend_visible", value.lane_key_legend_visible);
+    reader.boolean(section, "audition_on_click", value.audition_on_click);
     const auto& scroll = reader.section(section, "scroll_directions");
     reader.check_keys(scroll, {"beatmania", "popn", "dance", "pump", "keyboard", "other"});
     for (std::size_t index = 0; index < scroll_keys.size(); ++index)
@@ -113,7 +114,8 @@ auto editor_json(const editor_preferences_t& value) -> json_t {
     return {{"default_snap", value.default_snap}, {"scroll_directions", std::move(scroll)},
         {"playhead_anchor_percent", value.playhead_anchor_percent},
         {"note_kind_palette_visible", value.note_kind_palette_visible},
-        {"lane_key_legend_visible", value.lane_key_legend_visible}, {"area_band_alpha", value.area_band_alpha}};
+        {"lane_key_legend_visible", value.lane_key_legend_visible}, {"area_band_alpha", value.area_band_alpha},
+        {"audition_on_click", value.audition_on_click}};
 }
 void read_editor_audio(preference_reader_t& reader, const json_t& root) {
     read_editor(reader, root);

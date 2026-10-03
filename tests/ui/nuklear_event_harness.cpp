@@ -113,6 +113,7 @@ struct workspace_action_snapshot_t::storage_t {
     WormUiWorkspaceAction action;
     std::deque<std::string> strings;
     std::vector<const char*> tags;
+    std::vector<std::uint64_t> sound_resources;
 
     auto own(const char* text) -> const char* {
         if (!text) return nullptr;
@@ -121,6 +122,11 @@ struct workspace_action_snapshot_t::storage_t {
     }
 
     explicit storage_t(const WormUiWorkspaceAction& source) : action{source} {
+        if (source.compose_sound_resource_ids) {
+            sound_resources.assign(source.compose_sound_resource_ids,
+                source.compose_sound_resource_ids + source.compose_sound_resource_count);
+            action.compose_sound_resource_ids = sound_resources.data();
+        }
         action.project_chart.author = own(source.project_chart.author);
         action.project_chart.rating_numerator = own(source.project_chart.rating_numerator);
         action.project_chart.rating_denominator = own(source.project_chart.rating_denominator);

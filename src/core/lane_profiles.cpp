@@ -274,23 +274,26 @@ auto placement_name(scratch_placement_t placement) -> std::string_view {
 }
 
 auto make_bms_10k(scratch_placement_t left_scratch, scratch_placement_t right_scratch,
-                  lane_role_t auxiliary_role) -> lane_input_profile_t {
+                  std::optional<lane_role_t> auxiliary_role) -> lane_input_profile_t {
     constexpr std::array<std::string_view, 5> channels_left{"11", "12", "13", "14", "15"};
     constexpr std::array<std::string_view, 5> channels_right{"21", "22", "23", "24", "25"};
     auto left = make_side_lanes(0, left_scratch, channels_left, "16",
-                                std::pair{std::string_view{"17"}, auxiliary_role});
+        auxiliary_role ? std::optional{std::pair{std::string_view{"17"}, *auxiliary_role}}
+                       : std::nullopt);
     auto right = make_side_lanes(1, right_scratch, channels_right, "26",
-                                 std::pair{std::string_view{"27"}, auxiliary_role});
+        auxiliary_role ? std::optional{std::pair{std::string_view{"27"}, *auxiliary_role}}
+                       : std::nullopt);
     const auto profile_id =
         std::string("bms-10k-left-") + std::string(placement_name(left_scratch)) + "-right-" +
         std::string(placement_name(right_scratch)) +
-        (auxiliary_role == lane_role_t::free_zone ? "-free-zone" : "-foot-pedal");
+        (!auxiliary_role ? "" : auxiliary_role == lane_role_t::free_zone ? "-free-zone" : "-foot-pedal");
     const auto split_after = static_cast<std::uint32_t>(left.size());
     left.insert(left.end(), std::make_move_iterator(right.begin()),
                 std::make_move_iterator(right.end()));
     auto input = make_two_stage_row_input(left, "bms-10k-stage-rows");
     const auto display_name =
-        auxiliary_role == lane_role_t::free_zone ? "BMS DP5 / 10K (free zone)"
+        !auxiliary_role ? "BMS DP5 / 10K"
+        : auxiliary_role == lane_role_t::free_zone ? "BMS DP5 / 10K (free zone)"
                                                  : "BMS DP5 / 10K (foot pedal)";
     return make_profile(profile_id, display_name, std::move(left), std::move(input), true,
                         split_after);
@@ -452,6 +455,11 @@ auto make_bms_10k_profile(scratch_placement_t left_scratch, scratch_placement_t 
 auto make_bms_10k_free_zone_profile(scratch_placement_t left_scratch,
                                     scratch_placement_t right_scratch) -> lane_input_profile_t {
     return make_bms_10k(left_scratch, right_scratch, lane_role_t::free_zone);
+}
+
+auto make_bms_10k_standard_profile(scratch_placement_t left_scratch,
+                                  scratch_placement_t right_scratch) -> lane_input_profile_t {
+    return make_bms_10k(left_scratch, right_scratch, std::nullopt);
 }
 
 auto make_bms_10k_foot_pedal_profile(scratch_placement_t left_scratch,
@@ -631,6 +639,8 @@ auto built_in_bms_lane_profiles() -> std::span<const bms_lane_profile_descriptor
         bms_lane_profile_descriptor_t{make_bme_7k_foot_pedal_profile(),
                                       bms_lane_profile_family_t::bme_seven_or_fourteen_key, false,
                                       false},
+        bms_lane_profile_descriptor_t{make_bms_10k_standard_profile(),
+                                      bms_lane_profile_family_t::bms_five_or_ten_key, true, false},
         bms_lane_profile_descriptor_t{make_bms_10k_free_zone_profile(),
                                       bms_lane_profile_family_t::bms_five_or_ten_key, true, false},
         bms_lane_profile_descriptor_t{make_bms_10k_foot_pedal_profile(),

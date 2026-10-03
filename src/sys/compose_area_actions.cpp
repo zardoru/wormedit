@@ -248,7 +248,7 @@ auto compose_area_delete_supported(const wormedit::chart_document_t& chart,
         return false;
     const auto point_inside = [&](local_position_t position) {
         const auto row = absolute_row(index, position);
-        return row && *row >= *begin && *row <= *end;
+        return row && *row >= *begin && *row < *end;
     };
     const auto positioned = [&](const auto& values) {
         return std::ranges::any_of(values,
@@ -257,7 +257,7 @@ auto compose_area_delete_supported(const wormedit::chart_document_t& chart,
     const auto span_inside = [&](position_span_t span) {
         const auto first = absolute_row(index, span.begin);
         const auto last = absolute_row(index, span.end);
-        return first && last && *first <= *end && *last >= *begin;
+        return first && last && *first < *end && *last >= *begin;
     };
     const auto warp = std::ranges::any_of(
         chart.warps, [&](const auto& value) { return span_inside(value.span); });

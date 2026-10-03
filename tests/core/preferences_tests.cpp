@@ -250,6 +250,7 @@ TEST_CASE("Editor preference fields round trip and invalid individual values ret
     value.editor.scroll_directions = {1, 2, 1, 2, 1, 2};
     value.editor.playhead_anchor_percent = 35;
     value.editor.note_kind_palette_visible = false;
+    value.editor.audition_on_click = false;
     value.editor.lane_key_legend_visible = false;
     value.editor.area_band_alpha = 0;
     const auto bytes = serialize_program_preferences(value);

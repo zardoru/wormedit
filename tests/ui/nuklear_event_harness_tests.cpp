@@ -10,6 +10,27 @@
 #include <string>
 #include <utility>
 
+TEST_CASE("Sound layer confirmation waits for a choice and rejects stale documents",
+          "[unit][frontend-state][event-harness][sound-note-layers]") {
+    nuklear_event_harness_t harness{1280, 900};
+    auto& view = harness.view().compose;
+    view.keysounds_available = true;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.sound_layer_confirmation_open = true;
+    state.sound_layer_confirmation_project = view.project_id;
+    state.sound_layer_confirmation_chart = view.chart_id;
+    state.sound_layer_confirmation_revision = view.document_revision;
+    state.sound_layer_confirmation_layer = 7;
+    state.sound_layer_confirmation_resources = {1};
+    CHECK(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(harness.drawn_text().find("Keep existing layers") != std::string::npos);
+    CHECK(harness.drawn_text().find("Overwrite") != std::string::npos);
+    ++view.document_revision;
+    CHECK(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK_FALSE(state.sound_layer_confirmation_open);
+}
+
 namespace {
 
 struct sdl_event_scope_t {
@@ -64,6 +85,30 @@ auto click_at(nuklear_event_harness_t& harness, float x, float y)
     return harness.run_script(script);
 }
 
+void check_sound_layer_confirmation_choice(bool overwrite) {
+    nuklear_event_harness_t harness{1280, 900};
+    auto& view = harness.view().compose;
+    view.keysounds_available = true;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.sound_layer_confirmation_open = true;
+    state.sound_layer_confirmation_project = view.project_id;
+    state.sound_layer_confirmation_chart = view.chart_id;
+    state.sound_layer_confirmation_revision = view.document_revision;
+    state.sound_layer_confirmation_layer = 7;
+    state.sound_layer_confirmation_resources = {1, 2};
+    (void)harness.frame();
+    const auto frames = click_at(harness, 760, overwrite ? 330 : 298);
+    const auto found = std::ranges::find_if(frames, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER;
+    });
+    REQUIRE(found != frames.end());
+    CHECK(found->get().compose_sound_overwrite_note_layers == overwrite);
+    CHECK(found->get().compose_semantic_layer_id == 7);
+    CHECK(found->get().compose_sound_resource_count == 2);
+    CHECK_FALSE(state.sound_layer_confirmation_open);
+}
+
 auto check_no_toolbar_document_actions(const std::vector<workspace_action_snapshot_t>& frames)
     -> void {
     for (const auto& snapshot : frames)
@@ -79,6 +124,12 @@ auto delete_shortcut_has_compose_context(const WormUiWorkspaceAction& action) ->
 }
 
 } // namespace
+
+TEST_CASE("Sound layer popup buttons dispatch keep and overwrite choices",
+          "[unit][frontend-state][event-harness][sound-note-layers]") {
+    check_sound_layer_confirmation_choice(false);
+    check_sound_layer_confirmation_choice(true);
+}
 
 TEST_CASE("Headless frontend routes a wheel event over Compose to viewport input",
           "[unit][frontend-state][frontend][event-harness]") {
@@ -926,4 +977,37 @@ TEST_CASE("Stopped Compose seek bar emits navigation and drag seeks",
     const auto dragged = harness.frame(moved);
     CHECK(dragged.get().kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK);
     CHECK(dragged.get().transport_seek_frame > 3'000'000);
+}
+
+namespace {
+void check_note_click_emitted_once(bool selected) {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    const std::array motion{motion_event(300, 400)};
+    const auto hovered = harness.frame(motion);
+    REQUIRE(hovered.get().compose_has_pointer_hover);
+    const auto x = hovered.get().compose_pointer_hover_x_pixels;
+    const auto y = hovered.get().compose_pointer_hover_y_pixels;
+    WormUiComposeNoteView note{};
+    note.bounds = {x - 15, y - 5, x + 15, y + 5};
+    note.note_id = 1;
+    note.lane_id = 1;
+    note.sound_label = "01";
+    note.sound_detail = "keysound.ogg";
+    note.selected = selected;
+    harness.view().compose.note_endpoints = &note;
+    harness.view().compose.note_endpoint_count = 1;
+    (void)harness.frame(motion);
+    const auto clicked = click_at(harness, 300, 400);
+    size_t count = 0;
+    for (const auto& frame : clicked)
+        for (size_t index = 0; index < frame.get().compose_input_count; ++index)
+            count += frame.get().compose_inputs[index].kind == WORM_UI_COMPOSE_INPUT_POINTER_CLICK;
+    CHECK(count == 1);
+}
+}
+TEST_CASE("Clicking selected and unselected notes emits one audition selection",
+          "[unit][frontend-state][event-harness][audition][regression]") {
+    check_note_click_emitted_once(false);
+    check_note_click_emitted_once(true);
 }

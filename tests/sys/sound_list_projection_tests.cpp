@@ -150,3 +150,17 @@ TEST_CASE("keysound list is bounded and reports the full count",
     CHECK(list.rows.front().name == "Resource 1");
     CHECK(list.rows.front().slot.empty());
 }
+
+TEST_CASE("sound layer conflicts distinguish matching layers from unlayered notes",
+          "[unit][sys][sounds][sound-note-layers]") {
+    auto song = catalog();
+    auto& chart = song.charts.front();
+    chart.semantic_layers = {{.id = layer_id_t{7}}, {.id = layer_id_t{8}}};
+    CHECK(project_keysound_list(song, &chart, 100).rows.front().note_layer_conflict_mask == 0);
+    chart.measures.front().notes.front().semantic_layers = {layer_id_t{7}};
+    CHECK(project_keysound_list(song, &chart, 100).rows.front().note_layer_conflict_mask == 0b10);
+    chart.sound_layer_defaults = {{.resource = resource_id_t{2}, .layers = {layer_id_t{7}}}};
+    CHECK(project_keysound_list(song, &chart, 100).rows.front().note_layer_conflict_mask == 0b10);
+    chart.measures.front().notes.front().semantic_layers.push_back(layer_id_t{8});
+    CHECK(project_keysound_list(song, &chart, 100).rows.front().note_layer_conflict_mask == 0b01);
+}

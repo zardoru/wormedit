@@ -160,11 +160,15 @@ struct sound_layer_membership_action_t {
     layer_id_t layer;
     // true adds the layer to every listed sound, false removes it.
     bool member{true};
+    // Adding also tags existing notes. Preserve assigned layers unless requested.
+    bool overwrite_note_layers{};
 };
 
 // Adds or removes one layer from the defaults of a group of sounds while the
 // other layers of each sound stay as they are. Adding needs an unlocked layer;
 // removing works on locked ones. Same atomic rules as apply_sound_layer_defaults.
+// Adding tags matching unlayered notes in the same history step. Overwrite also
+// replaces assigned memberships; locked memberships reject the whole request.
 [[nodiscard]] auto apply_sound_layer_membership(document_history_t& history,
                                                 std::uint64_t expected_revision,
                                                 const sound_layer_membership_action_t& action)

@@ -23,7 +23,7 @@ auto has_code(const diagnostic_list_t& diagnostics, diagnostic_code_t code) -> b
 TEST_CASE("built-in BMS profile registry is complete unique and frontend-neutral",
           "[unit][core][lane-profile][bms][registry]") {
     const auto profiles = built_in_bms_lane_profiles();
-    REQUIRE(profiles.size() == 16);
+    REQUIRE(profiles.size() == 17);
 
     std::set<std::string> ids;
     for (const auto& descriptor : profiles) {
@@ -41,8 +41,8 @@ TEST_CASE("built-in BMS profile registry is complete unique and frontend-neutral
     }
 
     CHECK(std::ranges::count_if(profiles, [](const auto& descriptor) {
-              return descriptor.family == bms_lane_profile_family_t::bms_five_or_ten_key;
-          }) == 4);
+        return descriptor.family == bms_lane_profile_family_t::bms_five_or_ten_key;
+    }) == 5);
     CHECK(std::ranges::count_if(profiles, [](const auto& descriptor) {
               return descriptor.family == bms_lane_profile_family_t::bme_seven_or_fourteen_key;
           }) == 4);
@@ -128,6 +128,10 @@ TEST_CASE("BMS, BME, PMS, and named compatibility profiles preserve memo channel
         channel_case_t{"BMS 5K foot-pedal",
                        make_bms_5k_foot_pedal_profile(),
                        {"16", "11", "12", "13", "14", "15", "17"}},
+        channel_case_t{
+            "BMS DP5 without free zones",
+            make_bms_10k_standard_profile(),
+            {"16", "11", "12", "13", "14", "15", "21", "22", "23", "24", "25", "26"}},
         channel_case_t{
             "BMS 10K free-zone",
             make_bms_10k_free_zone_profile(),
@@ -402,6 +406,30 @@ TEST_CASE("double-play profiles are named DP5 and DP7 with outside scratches by 
         });
         CHECK(right_keys == 0);
     }
+}
+
+namespace {
+void check_standard_dp5_layout(scratch_placement_t left, scratch_placement_t right) {
+    const auto profile = make_bms_10k_standard_profile(left, right);
+    CHECK(profile.layout.lanes.size() == 12);
+    CHECK(std::ranges::count(profile.layout.lanes, lane_role_t::playable,
+                            &lane_definition_t::role) == 10);
+    CHECK(std::ranges::count(profile.layout.lanes, lane_role_t::scratch,
+                            &lane_definition_t::role) == 2);
+    CHECK(profile.layout.split_after_column == 6);
+    CHECK(profile.input.bindings.size() == 12);
+    CHECK(validate_input_profile(profile.layout, profile.input).empty());
+}
+} // namespace
+
+TEST_CASE("DP5 offers a twelve-lane layout without free zones",
+          "[unit][core][lane-profile][dp5-standard]") {
+    const auto profile = make_bms_10k_standard_profile();
+    CHECK(profile.layout.profile_id == "bms-10k-left-outside-right-outside");
+    CHECK(profile.layout.display_name == "BMS DP5 / 10K");
+    for (const auto left : {scratch_placement_t::outside, scratch_placement_t::inside})
+        for (const auto right : {scratch_placement_t::outside, scratch_placement_t::inside})
+            check_standard_dp5_layout(left, right);
 }
 
 TEST_CASE("scratchless 10K has ten playable keys and keeps the 10K lane ids",

@@ -61,6 +61,11 @@ make_bms_5k_foot_pedal_profile(scratch_placement_t scratch = scratch_placement_t
 make_bms_10k_profile(scratch_placement_t left_scratch = scratch_placement_t::outside,
                      scratch_placement_t right_scratch = scratch_placement_t::outside)
     -> lane_input_profile_t;
+// DP5: five playable keys and one scratch per side, without auxiliary lanes.
+[[nodiscard]] auto
+make_bms_10k_standard_profile(scratch_placement_t left_scratch = scratch_placement_t::outside,
+                              scratch_placement_t right_scratch = scratch_placement_t::outside)
+    -> lane_input_profile_t;
 [[nodiscard]] auto
 make_bms_10k_free_zone_profile(scratch_placement_t left_scratch = scratch_placement_t::outside,
                                scratch_placement_t right_scratch = scratch_placement_t::outside)

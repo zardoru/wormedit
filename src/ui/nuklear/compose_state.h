@@ -217,6 +217,7 @@ struct worm_ui_nuklear_compose_state_t {
     bool space_range_hold_moved{};
     std::uint8_t shift_range_keys{};
     bool note_move_candidate_active{};
+    bool note_move_select_on_release{};
     bool note_move_active{};
     bool timing_stage_drag_active{};
     // Kiai area edge or creation drag on the canvas; y values are viewport pixels.
@@ -390,6 +391,10 @@ struct worm_ui_nuklear_compose_state_t {
     std::vector<worm_ui_keysound_mask_t> keysound_masks;
     // Frontend-owned staging that actions point at until their immediate dispatch.
     std::vector<std::uint64_t> keysound_staged_ids;
+    bool sound_layer_confirmation_open{};
+    std::uint64_t sound_layer_confirmation_project{}, sound_layer_confirmation_chart{};
+    std::uint64_t sound_layer_confirmation_revision{}, sound_layer_confirmation_layer{};
+    std::vector<std::uint64_t> sound_layer_confirmation_resources;
     std::vector<std::string> keysound_staged_paths;
     std::vector<const char*> keysound_staged_path_pointers;
     // Window rectangle of the list (for dropped files); valid only on frames that draw it.

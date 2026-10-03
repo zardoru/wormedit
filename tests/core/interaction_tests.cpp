@@ -588,7 +588,7 @@ TEST_CASE("area selection in virtual BMS space excludes authored boundary events
     REQUIRE(empty);
     CHECK(state.selected_objects.empty());
     CHECK_FALSE(state.retained_selection_range);
-    CHECK((state.retained_canvas_selection_range == canvas_row_span_t{2'170, 2'420}));
+    CHECK((state.retained_canvas_selection_range == canvas_row_span_t{2'160, 2'400}));
 
     state.viewport_scroll_pixels = 360.0;
     REQUIRE(dispatch_editor_action(
@@ -602,7 +602,7 @@ TEST_CASE("area selection in virtual BMS space excludes authored boundary events
     CHECK((state.selected_objects == std::vector<editor_selection_object_t>{
                                          {editor_selection_object_kind_t::bgm_event,
                                           object_id_t{201}}}));
-    CHECK((state.retained_canvas_selection_range == canvas_row_span_t{1'800, 2'050}));
+    CHECK((state.retained_canvas_selection_range == canvas_row_span_t{1'680, 2'160}));
     CHECK(history.document.charts.front().measures.size() == 2);
 }
 
@@ -1321,7 +1321,7 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
         CHECK(committed.view->selected_notes ==
               std::vector<object_id_t>{object_id_t{101}, object_id_t{102}});
         CHECK(committed.view->retained_selection_range ==
-              position_span_t{{measure_id_t{1}, 225}, {measure_id_t{1}, 500}});
+              position_span_t{{measure_id_t{1}, 240}, {measure_id_t{1}, 480}});
         CHECK_FALSE(committed.view->pending_editor_area_selection.has_value());
         CHECK_FALSE(committed.document_changed);
         CHECK(history.document.revision == 1);
@@ -1360,7 +1360,7 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
     CHECK(state.selected_notes.empty());
 }
 
-TEST_CASE("Space range selection previews inclusive cross-measure heads, tails, and bodies",
+TEST_CASE("Space range selection excludes its ending row across measures and drag directions",
           "[unit][core][interaction][selection][space]") {
     auto song = make_song();
     auto& chart = song.charts.front();
@@ -1404,7 +1404,7 @@ TEST_CASE("Space range selection previews inclusive cross-measure heads, tails, 
     CHECK(armed.view->pending_space_range_selection->anchor ==
           local_position_t{measure_id_t{1}, 480});
     CHECK(*armed.view->pending_space_range_selection->notes ==
-          std::vector<object_id_t>{object_id_t{102}, object_id_t{105}});
+          std::vector<object_id_t>{});
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
     CHECK(history.document.revision == 1);
 
@@ -1416,22 +1416,21 @@ TEST_CASE("Space range selection previews inclusive cross-measure heads, tails, 
     CHECK(extended.view->pending_space_range_selection->first_row == 480);
     CHECK(extended.view->pending_space_range_selection->last_row == 720);
     CHECK(*extended.view->pending_space_range_selection->notes ==
-          std::vector<object_id_t>{object_id_t{102}, object_id_t{103}, object_id_t{105}});
+          std::vector<object_id_t>{object_id_t{102}, object_id_t{105}});
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
     const auto committed = dispatch_editor_action(
         history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
     REQUIRE(committed);
     CHECK(committed.view->selected_notes ==
-          std::vector<object_id_t>{object_id_t{102}, object_id_t{103}, object_id_t{105}});
+          std::vector<object_id_t>{object_id_t{102}, object_id_t{105}});
     CHECK(committed.view->retained_selection_range ==
           position_span_t{{measure_id_t{1}, 480}, {measure_id_t{1}, 720}});
     CHECK_FALSE(committed.view->pending_space_range_selection.has_value());
     CHECK_FALSE(committed.document_changed);
     CHECK(history.document.revision == 1);
 
-    // Start later in the chart and move backward. The inclusive reversed range
-    // touches both short hold tails, the long hold body, and a tap head.
+    // Move backward: hold bodies remain selected, but the tap at the end is excluded.
     REQUIRE(dispatch_editor_action(history, state,
                                    move_edit_cursor_action_t{interaction_direction_t::forward}));
     REQUIRE(dispatch_editor_action(history, state,
@@ -1441,7 +1440,7 @@ TEST_CASE("Space range selection previews inclusive cross-measure heads, tails, 
         history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
     REQUIRE(reverse_armed);
     CHECK(*reverse_armed.view->pending_space_range_selection->notes ==
-          std::vector<object_id_t>{object_id_t{102}, object_id_t{104}, object_id_t{105}});
+          std::vector<object_id_t>{});
     const auto reversed = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
     REQUIRE(reversed);
@@ -1449,13 +1448,11 @@ TEST_CASE("Space range selection previews inclusive cross-measure heads, tails, 
     CHECK(reversed.view->pending_space_range_selection->first_row == 960);
     CHECK(reversed.view->pending_space_range_selection->last_row == 1200);
     CHECK(*reversed.view->pending_space_range_selection->notes ==
-          std::vector<object_id_t>{object_id_t{102}, object_id_t{103}, object_id_t{104},
-                                   object_id_t{105}});
+          std::vector<object_id_t>{object_id_t{102}, object_id_t{103}, object_id_t{105}});
     const auto reverse_committed = dispatch_editor_action(
         history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
     REQUIRE(reverse_committed);
-    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{102}, object_id_t{103},
-                                                           object_id_t{104}, object_id_t{105}});
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{102}, object_id_t{103}, object_id_t{105}});
     CHECK(state.retained_selection_range ==
           position_span_t{{measure_id_t{2}, 0}, {measure_id_t{2}, 240}});
 }
@@ -1634,7 +1631,7 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
     REQUIRE(moved.view->pending_space_range_selection.has_value());
     const auto preview = moved.view->pending_space_range_selection->objects;
     REQUIRE(preview != nullptr);
-    CHECK(std::ranges::any_of(*preview, [](const auto& object) {
+    CHECK(std::ranges::none_of(*preview, [](const auto& object) {
         return object.kind == editor_selection_object_kind_t::warp_event &&
                object.id == object_id_t{204};
     }));
@@ -1809,11 +1806,11 @@ TEST_CASE("Space range selection supports add and toggle and cancels safely",
     REQUIRE(second_step);
     CHECK(second_step.view->cursor == local_position_t{measure_id_t{1}, 480});
     CHECK(*second_step.view->pending_space_range_selection->notes ==
-          std::vector<object_id_t>{object_id_t{101}, object_id_t{102}});
+          std::vector<object_id_t>{object_id_t{101}});
     const auto added = dispatch_editor_action(
         history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
     REQUIRE(added);
-    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}, object_id_t{102}});
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
     REQUIRE(dispatch_editor_action(
         history, state, space_range_selection_action_t{editor_area_selection_mode_t::toggle}));
@@ -1853,6 +1850,16 @@ TEST_CASE("Space range selection supports add and toggle and cancels safely",
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 }
 
+namespace {
+auto advance_sparse_space_selection(document_history_t& history, editor_interaction_state_t& state)
+    -> editor_interaction_result_t {
+    REQUIRE(dispatch_editor_action(history, state,
+        space_range_selection_action_t{editor_area_selection_mode_t::replace}));
+    return dispatch_editor_action(history, state,
+        jump_edit_cursor_action_t{{measure_id_t{1}, 24'002}, history.document.revision});
+}
+}
+
 TEST_CASE("Space range selection uses span indexes for a sparse 50k-note chart",
           "[unit][core][interaction][selection][space][stress]") {
     auto song = make_song();
@@ -1873,8 +1880,7 @@ TEST_CASE("Space range selection uses span indexes for a sparse 50k-note chart",
                                          {measure_id_t{1}, 24'000}, snaps, 4, 1200.0);
     REQUIRE(setup);
     auto state = std::move(*setup.state);
-    const auto selected = dispatch_editor_action(
-        history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
+    const auto selected = advance_sparse_space_selection(history, state);
     REQUIRE(selected);
     REQUIRE(selected.view->pending_space_range_selection.has_value());
     CHECK(*selected.view->pending_space_range_selection->notes ==
@@ -4747,4 +4753,43 @@ TEST_CASE("DP hit testing and area selection keep stage-local lanes together",
     REQUIRE(dispatch_editor_action(
         history, state, commit_editor_area_selection_action_t{199.0, 50.0, true}));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{201}, object_id_t{202}});
+}
+
+namespace {
+void check_exact_drag_preview(const editor_interaction_result_t& result) {
+    REQUIRE(result.view->pending_editor_area_selection);
+    CHECK(result.view->pending_editor_area_selection->top_pixels == 45.0);
+    CHECK(result.view->pending_editor_area_selection->bottom_pixels == 100.0);
+}
+void check_retained_drag_range(const document_history_t& history,
+                              const editor_interaction_state_t& state, bool snap) {
+    CHECK(state.retained_selection_range ==
+        position_span_t{{measure_id_t{1}, snap ? 240U : 225U},
+                        {measure_id_t{1}, snap ? 480U : 500U}});
+    CHECK(history.document.revision == 1);
+    CHECK(history.undo.empty());
+}
+void check_retained_area_snap(bool snap) {
+    auto history = make_document_history(make_song());
+    constexpr std::array snaps{std::uint64_t{4}};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+        {measure_id_t{1}, 0}, snaps, 4, 192.0);
+    REQUIRE(setup);
+    auto state = *setup.state;
+    state.snap_enabled = snap;
+    REQUIRE(dispatch_editor_action(history, state, begin_editor_area_selection_action_t{
+        110.0, 45.0, 100.0, 200.0, editor_area_selection_mode_t::replace, true}));
+    const auto moved = dispatch_editor_action(history, state,
+        update_editor_area_selection_action_t{190.0, 100.0, true});
+    REQUIRE(moved);
+    check_exact_drag_preview(moved);
+    REQUIRE(dispatch_editor_action(history, state,
+        commit_editor_area_selection_action_t{190.0, 100.0, true}));
+    check_retained_drag_range(history, state, snap);
+}
+}
+TEST_CASE("Mouse box stays exact while its retained area follows the active snap",
+          "[unit][core][interaction][selection][area][regression]") {
+    check_retained_area_snap(true);
+    check_retained_area_snap(false);
 }

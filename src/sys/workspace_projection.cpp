@@ -691,7 +691,8 @@ auto append_keysound_row(flattened_workspace_t& result, frame_arena_t& arena,
     const auto* name = arena_string(arena, row.name);
     if (!slot || !name) return false;
     return result.compose.keysound.row.push_back({.resource_id = row.resource.value, .slot = slot,
-        .name = name, .missing = row.missing, .layer_mask = row.layer_mask});
+        .name = name, .missing = row.missing, .layer_mask = row.layer_mask,
+        .note_layer_conflict_mask = row.note_layer_conflict_mask});
 }
 
 auto append_keysound_layer(flattened_workspace_t& result, frame_arena_t& arena,

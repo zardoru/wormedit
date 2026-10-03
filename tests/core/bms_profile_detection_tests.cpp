@@ -332,6 +332,23 @@ TEST_CASE("Unused auxiliary defaults do not resolve sparse or observed pedal amb
     CHECK_FALSE(seven_key_hint.selected_profile);
 }
 
+TEST_CASE("Complete DP5 channels choose the layout without unused free zones",
+          "[unit][core][bms-detection][dp5-standard]") {
+    const auto result = detect_bms_lane_profile({.file_extension = ".bms", .player_header = 2,
+        .used_channels = {"11", "12", "13", "14", "15", "16",
+                          "21", "22", "23", "24", "25", "26"}});
+    require_detected_standard(result, "bms-10k-left-outside-right-outside");
+}
+
+TEST_CASE("DP5 auxiliary notes require an explicit free zone or pedal interpretation",
+          "[unit][core][bms-detection][dp5-standard]") {
+    const auto result = detect_bms_lane_profile({.file_extension = ".bms", .player_header = 2,
+        .used_channels = {"11", "12", "13", "14", "15", "16", "17",
+                          "21", "22", "23", "24", "25", "26", "27"}});
+    CHECK_FALSE(result.selected_profile);
+    CHECK(result.status == bms_profile_detection_status_t::ambiguous);
+}
+
 TEST_CASE("Complete nine-button channels survive the long-note BML extension",
           "[unit][core][bms-detection][regression]") {
     const auto result = detect_bms_lane_profile({.file_extension = ".bml", .player_header = 3,

@@ -265,6 +265,68 @@ void draw_tri_state(struct nk_command_buffer* canvas, struct nk_rect box, worm_u
                      0.0f, tint);
 }
 
+void assign_sound_layer(const SoundsPanel& panel, std::size_t index) {
+    const auto& layer = panel.view->keysound_layers[index];
+    const auto mask = std::uint64_t{1} << index;
+    const auto conflicts = std::ranges::any_of(panel.state->keysound_selection.selected,
+        [&](auto id) {
+            const auto* row = find_row(*panel.view, id);
+            return row && (row->note_layer_conflict_mask & mask) != 0;
+        });
+    if (!conflicts) {
+        raise_on_selection(panel, WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER, layer.layer_id);
+        return;
+    }
+    auto& state = *panel.state;
+    state.sound_layer_confirmation_open = true;
+    state.sound_layer_confirmation_project = panel.view->project_id;
+    state.sound_layer_confirmation_chart = panel.view->chart_id;
+    state.sound_layer_confirmation_revision = panel.view->document_revision;
+    state.sound_layer_confirmation_layer = layer.layer_id;
+    state.sound_layer_confirmation_resources = state.keysound_selection.selected;
+}
+
+void confirm_sound_layer(const SoundsPanel& panel, bool overwrite) {
+    if (!raise(panel, WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER)) return;
+    auto& state = *panel.state;
+    state.keysound_staged_ids = state.sound_layer_confirmation_resources;
+    panel.action->compose_sound_resource_ids = state.keysound_staged_ids.data();
+    panel.action->compose_sound_resource_count = state.keysound_staged_ids.size();
+    panel.action->compose_semantic_layer_id = state.sound_layer_confirmation_layer;
+    panel.action->compose_sound_overwrite_note_layers = overwrite;
+    state.sound_layer_confirmation_open = false;
+}
+
+void render_sound_layer_confirmation(const SoundsPanel& panel) {
+    auto& state = *panel.state;
+    if (!state.sound_layer_confirmation_open) return;
+    const auto& view = *panel.view;
+    auto* context = panel.context;
+    const auto region = nk_window_get_content_region(context);
+    const auto bounds = nk_rect(0, 60, std::min(360.0f, region.w), 204);
+    if (state.sound_layer_confirmation_project != view.project_id ||
+        state.sound_layer_confirmation_chart != view.chart_id ||
+        state.sound_layer_confirmation_revision != view.document_revision) {
+        state.sound_layer_confirmation_open = false;
+        wormedit::ui::chrome::dismiss_popup(context, "Sound note layers", bounds);
+        return;
+    }
+    if (!nk_popup_begin(context, NK_POPUP_STATIC, "Sound note layers",
+                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) {
+        state.sound_layer_confirmation_open = false;
+        return;
+    }
+    nk_layout_row_dynamic(context, 66, 1);
+    nk_label_wrap(context, "Some notes using these sounds have different layers. Keep their "
+                           "layers, or replace them with the sounds' layers?");
+    nk_layout_row_dynamic(context, 28, 1);
+    if (nk_button_label(context, "Keep existing layers")) confirm_sound_layer(panel, false);
+    if (nk_button_label(context, "Overwrite")) confirm_sound_layer(panel, true);
+    if (nk_button_label(context, "Cancel")) state.sound_layer_confirmation_open = false;
+    if (!state.sound_layer_confirmation_open) nk_popup_close(context);
+    nk_popup_end(context);
+}
+
 void render_layer_row(const SoundsPanel& panel, std::size_t index) {
     auto* context = panel.context;
     const auto& layer = panel.view->keysound_layers[index];
@@ -295,10 +357,10 @@ void render_layer_row(const SoundsPanel& panel, std::size_t index) {
                             : layer.locked && adding ? "Locked layers cannot gain sounds"
                             : adding ? "Add this layer to the selected sounds"
                                      : "Remove this layer from the selected sounds");
-    if (clicked && enabled)
-        raise_on_selection(panel, adding ? WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER
-                                         : WORM_UI_COMPOSE_ACTION_REMOVE_SOUND_LAYER,
-                           layer.layer_id);
+    if (clicked && enabled) {
+        if (adding) assign_sound_layer(panel, index);
+        else raise_on_selection(panel, WORM_UI_COMPOSE_ACTION_REMOVE_SOUND_LAYER, layer.layer_id);
+    }
 }
 
 void render_layer_section(const SoundsPanel& panel) {
@@ -483,4 +545,5 @@ void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
     const auto remaining = region.y + region.h - nk_widget_position(context).y -
                            context->style.window.spacing.y;
     render_list(panel, std::max(remaining, 60.0f));
+    render_sound_layer_confirmation(panel);
 }

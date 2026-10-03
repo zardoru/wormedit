@@ -406,13 +406,6 @@ auto absolute_row_at_y_pixels(const chart_document_t& chart, const measure_index
     return static_cast<std::uint64_t>(nearest);
 }
 
-auto position_at_row_y_pixels(const chart_document_t& chart, const measure_index_t& index,
-                              const editor_interaction_view_model_t& view, double y_pixels)
-    -> std::optional<local_position_t> {
-    const auto row = absolute_row_at_y_pixels(chart, index, view, y_pixels);
-    return row ? position_at(index, *row) : std::nullopt;
-}
-
 struct view_geometry_t {
     const chart_document_t* chart{};
     measure_index_t index;
@@ -527,6 +520,14 @@ auto resolve_view_geometry(const document_history_t& history,
         .lane_position = lane_position, .lane = lane};
 }
 
+auto space_range_objects(const chart_document_t& chart, const editor_hit_test_index_t& index,
+                         std::uint64_t first, std::uint64_t last,
+                         editor_selection_scope_t scope)
+    -> std::variant<std::vector<editor_selection_object_t>, diagnostic_list_t> {
+    if (first == last) return std::vector<editor_selection_object_t>{};
+    return editor_objects_in_row_range(chart, index, first, last - 1, scope);
+}
+
 auto make_space_range_preview(const document_history_t& history,
                               const editor_interaction_state_t& state,
                               const view_geometry_t& geometry)
@@ -544,8 +545,8 @@ auto make_space_range_preview(const document_history_t& history,
                                        "Space range anchor lies outside chart geometry")};
     const auto first = std::min(pending.anchor_canvas_row, geometry.absolute_row);
     const auto last = std::max(pending.anchor_canvas_row, geometry.absolute_row);
-    auto queried = editor_objects_in_row_range(*geometry.chart, *pending.hit_index, first, last,
-                                               pending.scope);
+    auto queried = space_range_objects(*geometry.chart, *pending.hit_index, first, last,
+                                      pending.scope);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&queried)) return *diagnostics;
     auto objects = std::get<std::vector<editor_selection_object_t>>(std::move(queried));
     auto notes = notes_from_objects(objects);
@@ -4141,25 +4142,37 @@ auto update_area_selection_gesture(area_selection_context_t& context, double x_p
     return space_selection_view_result(make_view(history, state));
 }
 
+auto snapped_area_selection_row(const area_selection_context_t& context,
+                                 const editor_interaction_view_model_t& view, double y)
+    -> std::optional<std::uint64_t> {
+    const auto row = absolute_row_at_y_pixels(context.chart, context.index, view,
+        std::clamp(y, 0.0, std::nextafter(view.viewport_height_pixels, 0.0)), true);
+    if (!row) return std::nullopt;
+    const auto denominator = edit_snap_denominator(context.chart, context.state);
+    const auto snapped = snap_absolute_row(context.chart, *row, denominator);
+    if (!snapped) return std::nullopt;
+    auto total_rows = context.index.total_rows;
+    if (chart_has_virtual_tail(context.chart)) {
+        const auto canvas = build_virtual_canvas(context.chart);
+        const auto* geometry = std::get_if<virtual_canvas_t>(&canvas);
+        if (!geometry) return std::nullopt;
+        total_rows = geometry->total_rows;
+    }
+    const auto step = context.chart.divisions_per_standard_measure / denominator;
+    return std::min(*snapped, (total_rows - 1) / step * step);
+}
+
 auto retain_area_selection_range(area_selection_context_t& context,
                                  const pending_editor_area_selection_t& pending)
     -> void {
     const auto& view = std::get<editor_interaction_view_model_t>(context.initial_view);
-    const auto last_view_y = std::nextafter(view.viewport_height_pixels, 0.0);
-    const auto anchor = position_at_row_y_pixels(
-        context.chart, context.index, view,
-        std::clamp(area_selection_anchor_y(pending, view.viewport_scroll_pixels), 0.0, last_view_y));
-    const auto tail = position_at_row_y_pixels(
-        context.chart, context.index, view,
-        std::clamp(pending.current_y_pixels, 0.0, last_view_y));
+    const auto anchor_row = snapped_area_selection_row(context, view,
+        area_selection_anchor_y(pending, view.viewport_scroll_pixels));
+    const auto tail_row = snapped_area_selection_row(context, view, pending.current_y_pixels);
+    const auto anchor = anchor_row ? position_at(context.index, *anchor_row) : std::nullopt;
+    const auto tail = tail_row ? position_at(context.index, *tail_row) : std::nullopt;
     context.state.retained_selection_range =
         anchor && tail ? normalized_position_span(context.index, *anchor, *tail) : std::nullopt;
-    const auto anchor_row = absolute_row_at_y_pixels(
-        context.chart, context.index, view,
-        std::clamp(area_selection_anchor_y(pending, view.viewport_scroll_pixels), 0.0, last_view_y), true);
-    const auto tail_row = absolute_row_at_y_pixels(
-        context.chart, context.index, view,
-        std::clamp(pending.current_y_pixels, 0.0, last_view_y), true);
     context.state.retained_canvas_selection_range = anchor_row && tail_row && *anchor_row != *tail_row
         ? std::optional{canvas_row_span_t{std::min(*anchor_row, *tail_row),
                                           std::max(*anchor_row, *tail_row)}}

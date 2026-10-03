@@ -400,17 +400,16 @@ TEST_CASE("Compose area quantization changes selected notes only", "[unit][sys][
     CHECK(fixture.history.undo.size() == 1);
 }
 
-TEST_CASE("Compose area deletion includes note endpoints while preserving outside contents",
+TEST_CASE("Compose area deletion preserves notes and timing at the ending boundary",
           "[unit][sys][commands]") {
     AreaFixture fixture;
-    fixture.history.document.charts.front().bpms.resize(1);
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_DELETE;
     CHECK(fixture.dispatch() == "Selected area contents deleted.");
     const auto& chart = fixture.history.document.charts.front();
-    REQUIRE(chart.measures.front().notes.size() == 1);
-    CHECK(chart.measures.front().notes.front().id == wormedit::object_id_t{3});
-    REQUIRE(chart.bpms.size() == 1);
-    CHECK(chart.bpms.front().id == wormedit::object_id_t{101});
+    REQUIRE(chart.measures.front().notes.size() == 2);
+    CHECK(chart.measures.front().notes.front().id == wormedit::object_id_t{2});
+    CHECK(chart.measures.front().notes.back().id == wormedit::object_id_t{3});
+    REQUIRE(chart.bpms.size() == 2);
     CHECK(fixture.history.undo.size() == 1);
 }
 
@@ -438,6 +437,7 @@ TEST_CASE("Compose area resizing retains virtual canvas rows without materializi
 
 TEST_CASE("Compose area deletion rejects unsupported timing atomically", "[unit][sys][commands]") {
     AreaFixture fixture;
+    fixture.history.document.charts.front().bpms[1].position.row = 240;
     const auto original = wormedit::write_native_project(fixture.history.document).bytes;
     REQUIRE(original);
     CHECK_FALSE(compose_area_delete_supported(fixture.history, fixture.state));
@@ -447,14 +447,17 @@ TEST_CASE("Compose area deletion rejects unsupported timing atomically", "[unit]
     CHECK(fixture.history.undo.empty());
 }
 
-TEST_CASE("Compose area deletion removes BGM at the inclusive tail and keeps outside BGM",
+TEST_CASE("Compose area deletion removes interior BGM and preserves the ending boundary",
           "[unit][sys][commands]") {
     using namespace wormedit;
     AreaFixture fixture;
     auto& chart = fixture.history.document.charts.front();
     chart.bpms.resize(1);
     chart.bgm_source_lanes.push_back({.id = object_id_t{300}, .name = "BGM"});
-    chart.measures.front().bgm_events = {{.id = object_id_t{201},
+    chart.measures.front().bgm_events = {{.id = object_id_t{200},
+                                          .position = {measure_id_t{1}, 240},
+                                          .source_lane = object_id_t{300}},
+                                         {.id = object_id_t{201},
                                           .position = {measure_id_t{1}, 480},
                                           .source_lane = object_id_t{300}},
                                          {.id = object_id_t{202},
@@ -466,8 +469,8 @@ TEST_CASE("Compose area deletion removes BGM at the inclusive tail and keeps out
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_DELETE;
     CHECK(fixture.dispatch() == "Selected area contents deleted.");
     const auto& events = fixture.history.document.charts.front().measures.front().bgm_events;
-    REQUIRE(events.size() == 1);
-    CHECK(events.front().id == object_id_t{202});
+    REQUIRE(events.size() == 2);
+    CHECK(events.front().id == object_id_t{201});
     CHECK(fixture.history.undo.size() == 1);
 }
 

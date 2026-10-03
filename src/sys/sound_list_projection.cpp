@@ -161,6 +161,44 @@ auto keysound_layer_mask(const chart_document_t& chart, const keysound_list_t& l
     return mask;
 }
 
+auto note_conflicts(const note_t& note, const std::vector<layer_id_t>& defaults,
+                   const keysound_list_t& list) -> std::uint64_t {
+    const auto all = list.layers.size() == 64 ? ~std::uint64_t{0}
+        : (std::uint64_t{1} << list.layers.size()) - 1;
+    const auto contains_defaults = std::ranges::all_of(defaults, [&](auto id) {
+        return std::ranges::find(note.semantic_layers, id) != note.semantic_layers.end();
+    });
+    if (!contains_defaults || note.semantic_layers.size() > defaults.size() + 1) return all;
+    const auto same = note.semantic_layers.size() == defaults.size();
+    std::uint64_t matching{};
+    for (const auto id : note.semantic_layers) {
+        if (!same && std::ranges::find(defaults, id) != defaults.end()) continue;
+        const auto layer = std::ranges::find(list.layers, id, &keysound_layer_t::id);
+        if (layer != list.layers.end())
+            matching |= std::uint64_t{1} << (layer - list.layers.begin());
+    }
+    return all & ~matching;
+}
+
+void populate_note_conflicts(const chart_document_t& chart, keysound_list_t& list) {
+    std::unordered_map<std::uint64_t, keysound_row_t*> rows;
+    for (auto& row : list.rows) rows.emplace(row.resource.value, &row);
+    std::unordered_map<std::uint64_t, const std::vector<layer_id_t>*> defaults;
+    for (const auto& entry : chart.sound_layer_defaults)
+        defaults.emplace(entry.resource.value, &entry.layers);
+    const std::vector<layer_id_t> empty;
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            if (!note.sound || note.semantic_layers.empty()) continue;
+            const auto row = rows.find(note.sound->value);
+            if (row == rows.end()) continue;
+            const auto layers = defaults.find(note.sound->value);
+            row->second->note_layer_conflict_mask |= note_conflicts(
+                note, layers == defaults.end() ? empty : *layers->second, list);
+        }
+    }
+}
+
 } // namespace
 
 auto project_keysound_list(const song_document_t& document, const chart_document_t* chart,
@@ -188,6 +226,7 @@ auto project_keysound_list(const song_document_t& document, const chart_document
              .missing = resource.missing,
              .layer_mask = chart ? keysound_layer_mask(*chart, list, resource.id) : 0});
     }
+    if (chart) populate_note_conflicts(*chart, list);
     return list;
 }
 

@@ -794,8 +794,9 @@ static bool compose_pointer_start_hits_element(const ComposePointerEventContext&
 
 static void start_compose_note_move_candidate(const ComposePointerEventContext& input) {
     const auto can_move = wormedit::ui::compose_notes_editable(compose_mode_of(*input.view));
-    if (!can_move || !compose_point_hits_selected_note(input.view, input.pointer_started_x,
-                                                       input.pointer_started_y))
+    state.note_move_select_on_release = can_move && compose_point_hits_selected_note(
+        input.view, input.pointer_started_x, input.pointer_started_y);
+    if (!state.note_move_select_on_release)
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
                              input.pointer_started_x, input.pointer_started_y);
     state.note_move_candidate_active = can_move && !state.action_overflowed;

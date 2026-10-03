@@ -389,8 +389,9 @@ static auto update_note_move_candidate(const ComposePointerEventContext& input,
     if (!input.window_focused || (!input.left_down && !input.left_released)) {
         state.note_move_candidate_active = false;
     } else if (input.left_released) {
-        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
-                             state.note_move_anchor_x, state.note_move_anchor_y);
+        if (state.note_move_select_on_release)
+            append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
+                                 state.note_move_anchor_x, state.note_move_anchor_y);
         state.note_move_candidate_active = false;
     } else if (input.left_down) {
         constexpr float drag_threshold_pixels = 4.0f;

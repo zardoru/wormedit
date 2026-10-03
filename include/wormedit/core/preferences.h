@@ -33,6 +33,7 @@ struct editor_preferences_t {
     std::uint32_t playhead_anchor_percent{20};
     bool note_kind_palette_visible{true};
     bool lane_key_legend_visible{true};
+    bool audition_on_click{true};
     std::uint32_t area_band_alpha{48};
     auto operator==(const editor_preferences_t&) const -> bool = default;
 };

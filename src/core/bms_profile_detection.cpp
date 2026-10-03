@@ -479,6 +479,21 @@ auto select_octave_profile(const bms_profile_detection_request_t& request,
     return false;
 }
 
+auto choose_primary_candidate(bms_profile_candidate_t*& chosen,
+                             bms_profile_candidate_t& candidate) -> bool {
+    if (!chosen) {
+        chosen = &candidate;
+        return true;
+    }
+    if (primary_channel_families(chosen->profile.layout) !=
+        primary_channel_families(candidate.profile.layout)) return false;
+    if (candidate.profile.layout.lanes.size() == chosen->profile.layout.lanes.size()) return false;
+    // Identical primary channels with unused auxiliary lanes prefer the smaller layout.
+    if (candidate.profile.layout.lanes.size() < chosen->profile.layout.lanes.size())
+        chosen = &candidate;
+    return true;
+}
+
 auto select_complete_primary_profile(std::span<const bms_lane_profile_descriptor_t> specs,
                                      const std::vector<const bms_raw_channel_t*>& channels,
                                      const bms_profile_detection_request_t& request,
@@ -495,8 +510,7 @@ auto select_complete_primary_profile(std::span<const bms_lane_profile_descriptor
         })) continue;
         auto* candidate = find_candidate(result.candidates, spec.profile.layout.profile_id);
         if (!candidate || !complete_primary_family_match(candidate->profile.layout, observed)) continue;
-        if (chosen) return false;
-        chosen = candidate;
+        if (!choose_primary_candidate(chosen, *candidate)) return false;
     }
     if (!chosen) return false;
     chosen->confidence = std::max(chosen->confidence, 0.95);

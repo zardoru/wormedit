@@ -250,3 +250,22 @@ TEST_CASE("Editor Options typed edits retain page isolation and reject invalid f
     expect_options(options_view(runtime).can_apply);
     expect_options(program.preferences.general.autosave_minutes == 5);
 }
+
+TEST_CASE("Editor options save the note click audition toggle", "[options][audition]") {
+    temporary_preferences_t temporary;
+    program_preferences_runtime_t program;
+    program.path = temporary.directory / "preferences.json";
+    options_runtime_t runtime;
+    open_options(runtime, program.preferences);
+    select(runtime, program, WORM_UI_OPTIONS_EDITOR);
+    expect_options(options_view(runtime).audition_on_click);
+    const WormUiOptionsAction edit{.kind = WORM_UI_OPTIONS_EDIT_FIELD,
+        .revision = runtime.revision, .category = WORM_UI_OPTIONS_EDITOR,
+        .field = WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK, .boolean = false};
+    expect_options(!apply_options_action(runtime, program, edit));
+    expect_options(!options_view(runtime).audition_on_click);
+    expect_options(apply_options_action(runtime, program,
+        action(runtime, WORM_UI_OPTIONS_APPLY, WORM_UI_OPTIONS_EDITOR)));
+    expect_options(!program.preferences.editor.audition_on_click);
+    expect_options(!load_program_preferences(program.path).contents.preferences.editor.audition_on_click);
+}

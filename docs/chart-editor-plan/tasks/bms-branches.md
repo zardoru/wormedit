@@ -14,7 +14,8 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 - **Status:** ready
 - **Outcome:** selecting an inactive raw statement in the branch outline offers Edit text / Insert after / Delete, calling the existing core commands; errors show the typed BMS diagnostic.
 - **Read first:** `include/wormedit/core/bms_branch_editor.h`, `src/ui/nuklear/bms_branch_panel.cpp`, `src/sys/compose_actions.cpp` (choice command wiring), `docs/references/bms-control-flow.md`.
-- **Files owned:** `src/ui/nuklear/bms_branch_panel.cpp/.h`, `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `tests/core/bms_branch_editor_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/bms_branch_panel.cpp/.h`, `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `tests/core/bms_branch_editor_tests.cpp`; user-approved sequential-edit/error extensions (2026-10-03): `src/formats/bms.cpp`, `src/sys/compose_view.h`.
+- **Implementation audit (2026-10-03):** the outline selection/editor and application wiring are drafted; the 1,670-test checkpoint passes. The actual mixed-RANDOM fixture exposes a backing failure after Edit: `src/formats/bms.cpp` changes retained node text but keeps original source bytes/spans, so a subsequent Insert/Delete cannot verify the edited anchor. A direct core probe confirms atomic rejection. The typed message is also replaced by repeated navigation-cancel status while the field owns text. The user approved that format implementation and `src/sys/compose_view.h` to retain the panel message. Manual verification is incomplete; no completion is claimed.
 - **Steps:**
   1. Add statement selection (by stable branch ID) to the outline view.
   2. Add a bounded single-line text field and three buttons wired through the standard pattern.

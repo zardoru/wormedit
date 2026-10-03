@@ -14,10 +14,11 @@ auto column_song() -> song_document_t {
         .revision = 4,
         .charts = {{
             .id = chart_id_t{2},
+            .source_family = format_family_t::bms,
             .measures = {{
                 .id = measure_id_t{3},
                 .bgm_events = {{.id = object_id_t{11},
-                                .position = {measure_id_t{3}, 0},
+                                .position = {measure_id_t{3}, 24},
                                 .source_lane = object_id_t{20}}},
             }},
             .lane_layouts =
@@ -41,6 +42,26 @@ auto lane_count(const document_history_t& history) -> std::size_t {
     return history.document.charts.front().bgm_source_lanes.size();
 }
 
+void check_original_bgm_event(const chart_document_t& chart) {
+    const auto& event = chart.measures.front().bgm_events.front();
+    CHECK(event.id == object_id_t{11});
+    CHECK((event.position == local_position_t{measure_id_t{3}, 24}));
+    CHECK(event.source_lane == object_id_t{20});
+}
+
+void require_column_count(document_history_t& history, std::size_t count) {
+    REQUIRE(apply_bgm_column_count(history, history.document.revision, chart_id_t{2}, count));
+}
+
+void check_blocked_shrink(document_history_t& history) {
+    const auto blocked = apply_bgm_column_count(history, history.document.revision,
+                                                chart_id_t{2}, 1);
+    CHECK_FALSE(blocked);
+    REQUIRE_FALSE(blocked.diagnostics.empty());
+    CHECK(blocked.diagnostics.front().message.find("BGM 2") != std::string::npos);
+    CHECK(lane_count(history) == 2);
+}
+
 } // namespace
 
 TEST_CASE("BGM column count grows with fresh IDs orders and names",
@@ -53,28 +74,22 @@ TEST_CASE("BGM column count grows with fresh IDs orders and names",
     CHECK(lanes[3].source_order == 3);
     CHECK(lanes[1].id.value > 22);
     CHECK(lanes[2].id.value == lanes[1].id.value + 1);
-    CHECK(history.document.charts.front().measures.front().bgm_events.front().id ==
-          object_id_t{11});
+    check_original_bgm_event(history.document.charts.front());
 }
 
 TEST_CASE("BGM column count shrinks empty trailing columns only",
           "[unit][core][bgm-columns]") {
     auto history = make_document_history(column_song());
-    REQUIRE(apply_bgm_column_count(history, 4, chart_id_t{2}, 3));
-    const auto revision = history.document.revision;
-    REQUIRE(apply_bgm_column_count(history, revision, chart_id_t{2}, 1));
+    require_column_count(history, 3);
+    require_column_count(history, 1);
     CHECK(lane_count(history) == 1);
+    check_original_bgm_event(history.document.charts.front());
 
-    REQUIRE(apply_bgm_column_count(history, history.document.revision, chart_id_t{2}, 2));
+    require_column_count(history, 2);
     // Move the only event into the second column, then try to remove it.
     history.document.charts.front().measures.front().bgm_events.front().source_lane =
         history.document.charts.front().bgm_source_lanes.back().id;
-    const auto blocked = apply_bgm_column_count(history, history.document.revision,
-                                                chart_id_t{2}, 1);
-    CHECK_FALSE(blocked);
-    REQUIRE_FALSE(blocked.diagnostics.empty());
-    CHECK(blocked.diagnostics.front().message.find("BGM 2") != std::string::npos);
-    CHECK(lane_count(history) == 2);
+    check_blocked_shrink(history);
 }
 
 TEST_CASE("BGM column count enforces its range and revision",
@@ -96,4 +111,20 @@ TEST_CASE("BGM column count changes undo and redo as one step",
     CHECK(lane_count(history) == 1);
     REQUIRE(redo_document_command(history));
     CHECK(lane_count(history) == 6);
+}
+
+TEST_CASE("BGM column count rejects BMSON without changing its lanes",
+          "[unit][core][bgm-columns]") {
+    auto song = column_song();
+    song.charts.front().source_family = format_family_t::bmson;
+    auto history = make_document_history(std::move(song));
+    const auto revision = history.document.revision;
+    const auto result = apply_bgm_column_count(history, revision, chart_id_t{2}, 6);
+    CHECK_FALSE(result.applied);
+    REQUIRE(result.diagnostics.size() == 1);
+    CHECK(result.diagnostics.front().message == "BGM column counts are available only for BMS charts");
+    CHECK(history.document.revision == revision);
+    CHECK(lane_count(history) == 1);
+    check_original_bgm_event(history.document.charts.front());
+    CHECK(history.undo.empty());
 }

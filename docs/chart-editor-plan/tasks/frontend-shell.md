@@ -55,20 +55,24 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 - **Verify:** standard build/test; `clang-tidy -p build` on each new file shows no new complexity warning; smoke PNG of `metadata`.
 - **Out of scope:** any behavior change; `timing_panel.cpp` (T-43).
 
-## T-43 Split `timing_panel.cpp` and `compose_input_panel.cpp` (pure move)
+## T-43 Split Compose input responsibilities (pure move)
 
-- **Status:** blocked-on T-42
-- **Outcome:** neither file exceeds about 1,200 lines; behavior unchanged.
-- **Read first:** `docs/chart-editor-plan/tasks/compose-split.md`, `src/ui/nuklear/timing_panel.cpp`, `src/ui/nuklear/compose_input_panel.cpp`.
-- **Files owned:** those two files, new sibling units named after the responsibility moved (for example `timing_recipe_panel.cpp`, `compose_pointer_input.cpp`), their headers, `CMakeLists.txt`.
+- **Status:** done
+- **Implementation notes (2026-10-03):** stale-plan audit found `src/ui/nuklear/timing_panel.cpp` is no longer tracked; T-321 retired the Timing panel and its state after extracting the shared stage editor and recipe form. T-42 is done, so the old Timing-panel step and blocker are satisfied/obsolete. The remaining work is to split the still-large `compose_input_panel.cpp` by responsibility; no Timing panel is to be recreated.
+- **Verification (2026-10-03):** application builds passed after each extraction; coordinator/keyboard/viewport/timing/object units are 906/490/530/361/555 lines. Configured clang-tidy reported no cognitive-complexity findings in the five changed/new units. Frontend-state tests passed 102/102 (`/tmp/wormedit-t43-frontend-tests.log`); the actual isolated Compose window displayed the raw BMS fixture and handled its column controls after extraction (`/tmp/wormedit-t311/raw-bms-plus.png`, `raw-bms-minus.png`). Documentation validation passed.
+- **Outcome:** Compose keyboard, viewport, timing-gesture, and object/resource pointer input live in separate units, with shared queue/state/cancel coordination retained in the coordinator; behavior and action ordering remain unchanged.
+- **Read first:** `docs/chart-editor-plan/tasks/compose-split.md`, `docs/chart-editor-plan/tasks/compose-timing.md` (T-321), `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_input_panel.h`.
+- **Files owned:** `src/ui/nuklear/compose_input_panel.cpp/.h`, new `src/ui/nuklear/compose_input_internal.h`, new `src/ui/nuklear/compose_keyboard_input.cpp/.h`, new `src/ui/nuklear/compose_viewport_input.cpp/.h`, new `src/ui/nuklear/compose_timing_input.cpp/.h`, new `src/ui/nuklear/compose_object_input.cpp/.h`, `CMakeLists.txt`.
 - **Steps:**
-  1. For `timing_panel.cpp`, move the SV-recipe form and recipe-range drag code into `timing_recipe_panel.cpp`.
-  2. For `compose_input_panel.cpp`, move pointer-gesture handling apart from keyboard handling.
-  3. Build after each move.
-- **Invariants:** identical behavior.
-- **Reject/failure behavior:** as T-42.
-- **Verify:** as T-42 with smoke PNGs of `timing` and `compose`.
-- **Out of scope:** `main.cpp` reduction (separate decision).
+  1. Move keyboard event queuing and dispatch to `compose_keyboard_input.cpp/.h`.
+  2. Move pointer focus, viewport wheel/pinch, beat-fit, and overview handling to `compose_viewport_input.cpp/.h`.
+  3. Move timing stage/marker, Kiai, and recipe/SV gestures to `compose_timing_input.cpp/.h`.
+  4. Move note, resource, BMSON, semantic-layer, and BGM pointer handling to `compose_object_input.cpp/.h`.
+  5. Build after each move.
+- **Invariants:** identical widget/action behavior and event ordering; shared helpers stay in the coordinator/internal header rather than being duplicated.
+- **Reject/failure behavior:** stop if a moved responsibility requires behavior changes or an unowned production file.
+- **Verify:** build after each move; run the frontend-state tests and `clang-tidy -p build` on changed/new `.cpp` files after extraction. Visually verify Compose in isolated Xvfb; Timing-screen smoke is obsolete because T-321 retired that screen.
+- **Out of scope:** `main.cpp` reduction (separate decision), recreating the retired Timing panel.
 
 ## T-44 Add a loop region to the preview transport
 

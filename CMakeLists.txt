@@ -393,6 +393,10 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/compose_toolbar.cpp
         src/ui/nuklear/compose_inspector.cpp
         src/ui/nuklear/compose_input_panel.cpp
+        src/ui/nuklear/compose_keyboard_input.cpp
+        src/ui/nuklear/compose_viewport_input.cpp
+        src/ui/nuklear/compose_timing_input.cpp
+        src/ui/nuklear/compose_object_input.cpp
         src/ui/nuklear/compose_panel.cpp
         src/ui/nuklear/compose_resources.cpp
         src/ui/nuklear/compose_state.cpp

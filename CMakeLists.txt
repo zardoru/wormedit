@@ -21,6 +21,7 @@ set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 include(cmake/dependencies/nlohmann_json.cmake)
 
 option(WORMEDIT_BUILD_APP "Build the SDL3 GPU application" ON)
+option(WORMEDIT_BUILD_EVENT_HARNESS "Build windowless frontend event tests (requires BUILD_TESTING)" OFF)
 option(WORMEDIT_ENABLE_LUA "Build the pinned Lua runtime adapter" OFF)
 option(WORMEDIT_ENABLE_AUDIO_DECODER "Build the headless MP3/Ogg decoder target" ON)
 option(WORMEDIT_ENABLE_IMAGE_DECODER "Build the headless bounded static-image decoder target" ON)
@@ -245,7 +246,7 @@ if(WORMEDIT_ENABLE_VIDEO_DECODER)
     endif()
 endif()
 
-if(WORMEDIT_BUILD_APP)
+if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
     if(EXISTS "${CMAKE_SOURCE_DIR}/build/_deps/sdl3-src/CMakeLists.txt")
         set(WORMEDIT_DEFAULT_SDL3_SOURCE_DIR "${CMAKE_SOURCE_DIR}/build/_deps/sdl3-src")
     endif()
@@ -280,8 +281,10 @@ if(WORMEDIT_BUILD_APP)
 
     find_package(Git QUIET)
 
+    set(WORMEDIT_OTOWORM_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../libotoworm" CACHE PATH
+        "Local libotoworm source directory for the application or event harness")
     if(NOT TARGET otoworm::otoworm)
-        add_subdirectory("${CMAKE_SOURCE_DIR}/../libotoworm" "${CMAKE_BINARY_DIR}/_deps/libotoworm-build")
+        add_subdirectory("${WORMEDIT_OTOWORM_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/libotoworm-build")
     endif()
 
     # libotoworm's conversion bridge selects iconv through its legacy LINUX
@@ -371,6 +374,9 @@ if(WORMEDIT_BUILD_APP)
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/theme.cpp"
     )
 
+endif()
+
+if(WORMEDIT_BUILD_APP)
     add_executable(wormedit
         src/common/chart.cpp
         src/common/static_interval_index.cpp

@@ -486,7 +486,7 @@ if(WORMEDIT_ENABLE_LUA)
     )
 endif()
 
-if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
+if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
     add_executable(wormedit_frontend_event_harness_tests
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
@@ -519,8 +519,11 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     endif()
     catch_discover_tests(wormedit_frontend_event_harness_tests
         TEST_PREFIX "frontend-state."
-        PROPERTIES LABELS "unit;frontend" DISCOVERY_MODE PRE_TEST)
+        ADD_TAGS_AS_LABELS
+        PROPERTIES TIMEOUT 30 DISCOVERY_MODE PRE_TEST)
+endif()
 
+if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_frame_timing_tests
         sys/frame_timing_tests.cpp
         ui/nuklear_notification_state_tests.cpp

@@ -83,3 +83,9 @@ cmake --build --preset windows-cross-headless
 `WORMEDIT_WINDOWS_RC_COMPILER`, `WORMEDIT_WINDOWS_SYSROOT`, and `WORMEDIT_WINDOWS_TARGET` are optional when the compiler prefix already supplies them. Set `WORMEDIT_CROSS_EMULATOR` to a Wine executable if the build host can run the generated test programs; otherwise execute CTest on Windows and treat the Linux job as a compile gate.
 
 As with Linux cross-builds, enable the full application only after its Windows-target SDL3 GPU, decoder, and packaging dependencies are supplied as target packages/source builds. Host package discovery must never satisfy a Windows dependency.
+
+## Frontend event harness
+
+See [the frontend event harness guide](frontend-event-harness.md) for windowless
+input-to-action tests, owning snapshots, explicit modifier steps, and the
+`headless-events` preset used by the existing Linux/GCC CI lane.

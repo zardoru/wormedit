@@ -9,9 +9,8 @@
 namespace wormedit::sys {
 
 // A stored SV recipe as Compose shows it: an area over its rows with the recipe's own relative
-// value drawn as a graph. SV (scroll) output is a set of instantaneous events, so its graph holds
-// each sampled value like the SV step graph; SPEEDS output interpolates, so its graph connects
-// the sampled points with straight lines.
+// value drawn as a line graph. Recipes are continuous, so unlike the latched SV step graph the
+// graph connects the sampled points with straight lines.
 struct recipe_value_point_t {
     std::uint64_t row{};
     double value{};

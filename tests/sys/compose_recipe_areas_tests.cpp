@@ -84,12 +84,11 @@ TEST_CASE("recipe areas skip invalid ranges and are bounded", "[unit][sys][recip
     CHECK(cut.truncated);
 }
 
-TEST_CASE("speeds recipe graphs are continuous lines normalized to the visible window",
+TEST_CASE("recipe graphs are continuous lines normalized to the visible window",
           "[unit][sys][recipe-areas]") {
     auto chart = base_chart();
     chart.sv_recipes.push_back(linear_recipe(10, {measure_id_t{1}, 0}, {measure_id_t{2}, 0}, {1, 1}, {3, 1}));
-    auto area = project(chart).areas.front();
-    area.output = sv_recipe_output_t::speeds;
+    const auto area = project(chart).areas.front();
 
     const auto full = build_recipe_graph(area, 0, 960, y_of);
     CHECK(full.minimum == Catch::Approx(1.0));
@@ -116,21 +115,4 @@ TEST_CASE("speeds recipe graphs are continuous lines normalized to the visible w
     auto unevaluable = area;
     unevaluable.evaluable = false;
     CHECK(build_recipe_graph(unevaluable, 0, 960, y_of).points.empty());
-}
-
-TEST_CASE("SV recipe graphs hold each sampled value instead of ramping",
-          "[unit][sys][recipe-areas]") {
-    auto chart = base_chart();
-    chart.sv_recipes.push_back(linear_recipe(10, {measure_id_t{1}, 0}, {measure_id_t{2}, 0}, {1, 1}, {3, 1}));
-    auto area = project(chart).areas.front();
-    area.output = sv_recipe_output_t::sv;
-    area.points = {{0, 1.0}, {480, 2.0}, {960, 3.0}};
-    const auto graph = build_recipe_graph(area, 0, 960, y_of);
-    // Every consecutive pair of points shares an x (a hold) or a y (a jump): never a slant.
-    REQUIRE(graph.points.size() >= 4);
-    for (std::size_t index = 1; index < graph.points.size(); ++index) {
-        const auto& from = graph.points[index - 1];
-        const auto& to = graph.points[index];
-        CHECK((from.x == to.x || from.y == to.y));
-    }
 }

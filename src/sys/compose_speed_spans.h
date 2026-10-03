@@ -20,6 +20,9 @@ struct speed_span_t {
     double begin_row{};
     double end_row{};
     double multiplier{1.0};
+    // The value in force where the span begins: the previous span's value at that row, which is
+    // only partway to its target when this event cut it short.
+    double initial_multiplier{1.0};
     // Length of the transition in beats, or in seconds when `transition_is_seconds`.
     double transition_length{};
     bool transition_is_seconds{false};
@@ -51,11 +54,14 @@ template <typename RowToY>
     if (!(last_row > first_row)) return graph;
     // The curve as (row, value) vertices; vertical jumps repeat a row.
     std::vector<std::pair<double, double>> curve;
-    double current = 1.0;
-    for (const auto& span : spans.spans) {
-        curve.emplace_back(span.begin_row, current);
-        curve.emplace_back(span.end_row, span.multiplier);
-        current = span.multiplier;
+    // A span cut short by a replacement ends at the value the replacement starts from, which is
+    // partway to the target; a span that ran its course ends at its target.
+    for (std::size_t index = 0; index < spans.spans.size(); ++index) {
+        const auto& span = spans.spans[index];
+        const bool cut_short = span.clipped && index + 1 < spans.spans.size();
+        curve.emplace_back(span.begin_row, span.initial_multiplier);
+        curve.emplace_back(span.end_row,
+                           cut_short ? spans.spans[index + 1].initial_multiplier : span.multiplier);
     }
     const auto value_at = [&](double row) {
         double value = 1.0;

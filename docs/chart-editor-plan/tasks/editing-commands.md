@@ -26,7 +26,8 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-51 Build the modeless Timing Settings panel
 
-- **Status:** ready
+- **Status:** blocked-on-user
+- **Backing audit (2026-10-03):** metronome enable already calls `preview_session.set_metronome_enabled`, and the eight timing-lane toggles already exist. Neither preview state nor the application settings carry metronome volume or count-in state; `timing.open_settings` remains disabled. Step 3’s explicit STOP therefore applies. No settings implementation was started.
 - **Outcome:** `timing.open_settings` toggles a small modeless window, reachable from Timing and Compose, holding metronome enable/volume/count-in and the per-lane timing visibility toggles.
 - **Read first:** `docs/chart-editor-plan/editing/layout.md` (Timing Settings paragraph), `src/ui/nuklear/compose_inspector.cpp` (timing-lane visibility widgets), `src/sys/chart_preview_state.h` (metronome state), `src/sys/main.cpp` (`timing.open_settings`).
 - **Files owned:** new `src/ui/nuklear/timing_settings_panel.cpp/.h`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `src/sys/main.cpp`, `src/sys/chart_preview_state.cpp/.h`, `CMakeLists.txt`.
@@ -72,11 +73,13 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-54 Enable hitsound/keysound painting
 
-- **Status:** ready
+- **Status:** blocked-on-user
+- **Stale-plan audit (2026-10-03):** `audio.paint_hitsound` remains disabled; atomic `apply_resource_assignment` is implemented, but no hitsound paint capture exists. T-43 moved semantic-layer pointer capture into `src/ui/nuklear/compose_object_input.cpp`; its frontend state, application mode/projection, command dispatch, and toolbar indication are also outside the current owned list. No paint implementation was started.
 - **Outcome:** `audio.paint_hitsound` arms a paint mode: dragging across notes assigns the armed catalog resource to each note touched, committed as one undo step on release.
 - **Read first:** `docs/chart-editor-plan/editing/interactions.md` (hitsound painting paragraph), `include/wormedit/core/resource_assignment.h` (`apply_resource_assignment`), `src/ui/nuklear/compose_input_panel.cpp` (semantic-layer painting capture), `src/sys/main.cpp` (`audio.paint_hitsound`).
 - **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose_actions.cpp`, `src/sys/main.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/frontend.h`, `tests/core/resource_assignment_tests.cpp`.
 - **Steps:**
+  0. **STOP:** obtain scope approval for the existing object-input/state, application mode/dispatch/projection, and toolbar files before implementing the new paint capture.
   1. Copy the structure of semantic-layer paint capture: collect touched note IDs during the drag (bounded, deduplicated).
   2. On release call `apply_resource_assignment` once with the collected set.
   3. Enable the command only when a Sample resource is armed; show the mode with the `audio-lines` icon.

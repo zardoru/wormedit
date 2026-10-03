@@ -205,11 +205,13 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 
 ## T-49 Show BGA image thumbnails in the resource catalog
 
-- **Status:** ready
+- **Status:** blocked-on-user
+- **Stale-plan audit (2026-10-03):** resource rows still render text/controls only; the presenter projects image IDs and missing state but no decoded thumbnail. Async image jobs and the preview texture LRU exist, but visible-row request/polling and a generic thumbnail texture interface are absent. Those runtime/texture owners and actual frontend/texture tests are outside this card’s owned files. No thumbnail implementation was started.
 - **Outcome:** each image row in the Compose BGA catalog shows a small thumbnail once decoded; undecoded rows show a placeholder.
 - **Read first:** `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/player_preview_texture.h`, `include/wormedit/visual/image_job.h`, `src/sys/compose_resource_presenter.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_resources.cpp`, `src/sys/compose_resource_presenter.cpp/.h`, `src/ui/frontend.h`, `tests/core/compose_resource_presenter_tests.cpp`.
 - **Steps:**
+  0. **STOP:** report the missing runtime/texture/test ownership and obtain scope approval before wiring thumbnail decoding or duplicating the texture cache.
   1. Reuse the player-preview image job and texture LRU; request decode only for visible rows.
   2. Expose a per-row image handle through the scalar view; draw it at 32×32 logical pixels.
 - **Invariants:** the texture LRU bound is unchanged; decoding stays off the frame thread.

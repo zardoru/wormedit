@@ -506,6 +506,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/timing_view.cpp
         ../src/sys/recipe_form.cpp
         ../src/sys/workspace_projection.cpp
+        ../src/sys/sound_list_projection.cpp
     )
     target_include_directories(wormedit_frame_timing_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/generated")
@@ -537,6 +538,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         sys/frame_projection_arena_tests.cpp
         ../src/sys/frame_timing.cpp
         ../src/sys/workspace_projection.cpp
+        ../src/sys/sound_list_projection.cpp
         ../src/sys/timing_view.cpp
         ../src/sys/recipe_form.cpp
         ../src/sys/compose_resource_presenter.cpp

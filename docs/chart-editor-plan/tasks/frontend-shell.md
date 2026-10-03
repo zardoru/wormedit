@@ -25,6 +25,7 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 ## T-41 Add a simulated frontend event-queue test harness
 
 - **Status:** ready
+- **Implementation notes (2026-10-02):** feasibility audit stopped at the required headless-frame gate: `worm_ui_frontend_init` requires an SDL window and renderer before initializing its private context; `worm_ui_frontend_compose` requires that private context and window. The state-test target does not link the frontend. A no-window harness needs a production injection seam, outside this card’s owned files and no-production-change invariant. No harness was implemented.
 - **Outcome:** a test can feed a scripted list of SDL-like events (key, mouse, wheel, text) into the Nuklear frontend without a window and assert the resulting `WormUiWorkspaceAction` values.
 - **Read first:** `src/ui/nuklear/frontend.cpp` (event queue functions near `queue_compose_wheel_event`), `src/ui/frontend.h`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/CMakeLists.txt`.
 - **Files owned:** new `tests/ui/nuklear_event_harness.h`, new `tests/ui/nuklear_event_harness.cpp`, new `tests/ui/nuklear_event_harness_tests.cpp`, `tests/CMakeLists.txt`.

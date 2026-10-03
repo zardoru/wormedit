@@ -11,8 +11,8 @@ Bookmark editing already exists in the Markers panel
 
 ## T-308 Jump between bookmarks with Primary+Up/Down
 
-- **Status:** ready
-- **Implementation notes (2026-10-02):** `navigation.previous_bookmark` / `navigation.next_bookmark` (Primary+Up/Down) are registered; `navigate_beat_bookmark` in `src/sys/compose_bookmark_commands.cpp` is tested headless (cursor jump, bookmarks only, one seek while playing). Step 2 was not needed: the Compose key handler already returns early for Ctrl/Cmd chords, so only the registry shortcut fires. The dispatch wiring in `application_command_dispatch.cpp` and the enable state in `main.cpp` are syntax-checked only; verify Primary+Up/Down in a real window, including downscroll.
+- **Status:** done (already implemented: `src/sys/compose_bookmark_commands.cpp:90`; real-window verification completed 2026-10-02)
+- **Implementation notes (2026-10-02):** `navigation.previous_bookmark` / `navigation.next_bookmark` (Primary+Up/Down) are registered; `navigate_beat_bookmark` in `src/sys/compose_bookmark_commands.cpp` is tested headless (cursor jump, bookmarks only, one seek while playing). Step 2 was not needed: the Compose key handler already returns early for Ctrl/Cmd chords, so only the registry shortcut fires. The complete app build and 1,163 core/frontend-state/documentation/bookmark tests pass. Isolated Xvfb verified next/previous bookmark jumps in both scroll directions and playback continuing after a shortcut seek.
 - **Outcome:** in Compose, Primary+Up/Down (Ctrl, ⌘ on macOS) jumps to the previous or next beat bookmark in screen direction (downscroll flips them, like plain Up/Down); stopped or paused it moves the edit cursor and view to the bookmark row; while playing it seeks the playhead to the bookmark and playback continues.
 - **Request (user, 2026-10-01):** "a ctrl+uparrow/downarrow to jump bookmarks".
 - **Current behavior (2026-10-01):** Up/Down ignore modifiers (`compose_navigation_action_for_key`, `src/ui/nuklear/compose_input_panel.cpp`), so Primary+Up/Down moves the cursor one snap. Alt+Left/Right (`navigation.previous_marker` / `next_marker`) already jump to bookmarks *and* section boundaries.

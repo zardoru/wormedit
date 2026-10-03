@@ -170,11 +170,13 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-60 Add a searchable command menu
 
-- **Status:** ready
+- **Status:** blocked-on-user
+- **Stale-plan audit (2026-10-03):** no command-menu symbol or popup exists. Registry labels/enabled state and main’s invocation path are reusable, but the only frontend frame-render owner is omitted from Files owned. An unrendered module would not satisfy the outcome. No menu implementation was started.
 - **Outcome:** a primary-modifier+Shift+P popup lists enabled commands filtered by typed text; Enter invokes the selected one through `invoke_command`.
 - **Read first:** `include/wormedit/core/command_registry.h` (`invoke_command`), `src/sys/application_command_dispatch.cpp`, `src/ui/nuklear/frontend.cpp`.
 - **Files owned:** new `src/ui/nuklear/command_menu.cpp/.h`, `src/core/command_registry.cpp` (default chord only), `src/ui/frontend.h`, `src/sys/main.cpp`, `CMakeLists.txt`.
 - **Steps:**
+  0. **STOP:** obtain supporting scope for `src/ui/nuklear/frontend.cpp` and actual frontend event tests before adding the popup.
   1. Register `workspace.command_menu` with the default chord.
   2. Popup with a text field and up to 20 filtered rows (case-insensitive substring on label).
   3. Enter dispatches through the same path as shortcuts.

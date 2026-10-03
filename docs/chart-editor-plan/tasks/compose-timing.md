@@ -76,7 +76,7 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Status:** done (Esc cancel of an in-flight drag not implemented; releasing outside the lane still commits)
 - **Outcome:** Dragging the head or tail of a Kiai area, or creating one with the Kiai gesture, issues one undoable command that rewrites the on/off events and merges overlapped neighbors.
 - **Read first:** `src/core/marker_editor.cpp`, `include/wormedit/core/marker_editor.h`, `src/sys/compose_kiai_spans.h` (T-316), `src/sys/compose_input.cpp`.
-- **Files owned:** `src/core/marker_editor.cpp`, `include/wormedit/core/marker_editor.h`, `src/sys/compose_input.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `tests/core/marker_editor_tests.cpp`.
+- **Files owned:** `src/core/marker_editor.cpp`, `include/wormedit/core/marker_editor.h`, `src/sys/compose_input.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `tests/core/marker_editor_tests.cpp`, user-approved verification scope extension (2026-10-02): `tests/sys/frame_timing_tests.cpp` (real press-anchor/CREATE gesture payloads and explicit 1/8 snap).
 - **Steps:** 0. Add the `frontend.h` view struct and draw the T-316 rectangle with head and tail handles on the canvas. 1. Add a revision-checked core command `set_kiai_span` (insert, resize, delete, merge). 2. Wire it through the standard action pattern; the preview shows the dragged area and overlaps merge only on release. 3. Test merge, split-by-shrink, undo, and retained effect bits.
 - **Invariants:** `retained_effect_bits` and provenance of surviving events are preserved.
 - **Reject/failure behavior:** A stale revision or inverted span rejects atomically.

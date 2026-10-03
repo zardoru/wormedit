@@ -47,6 +47,8 @@ void visit_layouts(Chart& chart, Visit& visit) {
     }
     for (auto& binding : chart.input_profile.bindings) visit(binding.lane);
     for (auto& layer : chart.semantic_layers) visit(layer.id);
+    for (auto& entry : chart.sound_layer_defaults)
+        for (auto& layer : entry.layers) visit(layer);
     for (auto& lane : chart.bgm_source_lanes) visit(lane.id);
 }
 

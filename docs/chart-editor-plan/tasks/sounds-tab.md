@@ -166,3 +166,16 @@ later covering more bmhelper functions.
 - **Reject/failure behavior:** not applicable until planned.
 - **Verify:** to be planned.
 - **Out of scope:** everything in T-324–T-332.
+
+## T-335 Add the Compose keysound listbox with drop import and layer groups
+
+- **Status:** done (2026-10-03)
+- **Outcome:** Compose shows a Sounds column beside the inspector: a sticky toolbar (Paint, Play, Preview on click, Add, Remove, Select all, Clear selection, Layers) and search above a virtualized, Ctrl/Shift multi-selectable list of the catalog's samples; selecting a row arms it for the existing Place pointer mode, audio files dropped on the column are added as keysounds in one undo step, Remove deletes unused sounds, and the Layers strip adds or removes a semantic layer for the whole selection so painted notes join those layers.
+- **Implementation notes (2026-10-03, Claude):** the user chose per-sound defaults stored in the document and an own column rather than the T-228 dock. Layer IDs are chart-local, so the mapping is `chart_document_t::sound_layer_defaults` (written to the native project only when non-empty, so no schema bump); layer and sound deletion clean it, chart cloning remaps it, and `validate_document` rejects dangling entries. Locked layers cannot be added, and a layer locked later is skipped at placement. Core: `apply_sound_layer_defaults`, `apply_sound_layer_membership`, `apply_resource_deletions` (all-or-nothing). Application: `compose_sound_actions.cpp` (bulk import with audio probing, skips unreadable or already-listed files), `process_sound_audition_request`, drop collection in `poll_frontend_events`. Frontend: `compose_sounds_panel.cpp` plus the pure `keysound_list_state.cpp`. Verified with 20 new unit cases, an isolated Xvfb run on a 40-sound fixture (rows, chips, selection, armed outline, layer strip, audition), and the full suite.
+- **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/sys/compose_sound_actions.cpp`, `include/wormedit/core/semantic_layer_editor.h`, `src/sys/sound_list_projection.h`.
+- **Files owned:** the files above plus `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/frontend.h`.
+- **Steps:** none remaining.
+- **Invariants:** sound IDs and BMS `#WAV` slots of other sounds never change; one undo step per command.
+- **Reject/failure behavior:** a referenced sound, a locked layer, an unknown ID or a stale revision rejects the whole batch with the document unchanged.
+- **Verify:** `ctest --test-dir build --output-on-failure` (all pass); `scripts/smoke-compose-virtual-x.sh` style run against a project with keysounds.
+- **Out of scope:** keyboard navigation of the list (Up/Down/Delete need a list-focus input owner), drag-stroke painting of sounds, dragging rows onto the chart, an OS-drop hover highlight, removing the old Samples tree from the inspector (T-229/T-232), physical drop from a file manager (only the pending-path handling is exercised).

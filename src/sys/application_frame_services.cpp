@@ -70,6 +70,30 @@ auto offer_dropped_chart_project(const SDL_Event& event, SDL_Window* window,
     return true;
 }
 
+// Files dropped onto the Compose keysound listbox join the pending sound import
+// instead of being offered as a chart or project.
+auto collect_dropped_sound(const SDL_Event& event, SDL_Window* window,
+                           const workspace_controller_t& workspace,
+                           std::vector<std::string>& pending_sound_paths,
+                           std::string& status) -> bool {
+    if (event.type != SDL_EVENT_DROP_FILE || !event.drop.data ||
+        workspace.active_tab != workspace_tab_t::compose ||
+        (event.drop.windowID != 0 && event.drop.windowID != SDL_GetWindowID(window)) ||
+        !worm_ui_frontend_sound_list_contains(event.drop.windowID, event.drop.x, event.drop.y))
+        return false;
+    const std::string_view dropped{event.drop.data};
+    if (dropped.size() >= WORM_UI_PROJECT_PATH_CAPACITY ||
+        !std::filesystem::path{dropped}.is_absolute()) {
+        status = "Drop absolute local audio files within the path limit.";
+    } else if (pending_sound_paths.size() < WORM_UI_SOUND_DROP_CAPACITY) {
+        pending_sound_paths.emplace_back(dropped);
+    } else {
+        status = "Only the first " + std::to_string(WORM_UI_SOUND_DROP_CAPACITY) +
+                 " dropped sounds were taken.";
+    }
+    return true;
+}
+
 } // namespace
 
 auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_drop,
@@ -79,6 +103,7 @@ auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_dr
                           bool offer_audio_project_drop,
                           std::string& pending_audio_project_path,
                           std::string& pending_chart_project_path,
+                          std::vector<std::string>& pending_sound_paths,
                           std::string& status) -> bool {
     bool running = true;
     SDL_Event event;
@@ -86,11 +111,14 @@ auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_dr
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             running = false;
-        const bool project_chart_drop = offer_dropped_chart_project(
+        const bool sound_drop = collect_dropped_sound(event, window.handle, workspace,
+                                                      pending_sound_paths, status);
+        const bool project_chart_drop = !sound_drop && offer_dropped_chart_project(
             event, window.handle, pending_chart_project_path, status);
-        const bool project_audio_drop = !project_chart_drop && offer_dropped_audio_project(
+        const bool project_audio_drop = !sound_drop && !project_chart_drop &&
+            offer_dropped_audio_project(
             event, window.handle, offer_audio_project_drop, pending_audio_project_path, status);
-        if (!project_chart_drop && !project_audio_drop)
+        if (!sound_drop && !project_chart_drop && !project_audio_drop)
             metadata_drop.handle_file_drop(event, window.handle, workspace, history,
                                            asset_base, status);
         worm_ui_frontend_handle_event(&event);

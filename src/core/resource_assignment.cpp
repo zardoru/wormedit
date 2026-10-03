@@ -1,4 +1,5 @@
 #include <wormedit/core/resource_assignment.h>
+#include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/virtual_canvas.h>
@@ -289,7 +290,8 @@ auto place_sample_note(resource_placement_context_t& context) -> bool {
     context.measure.notes.push_back({.id = context.first_id, .position = context.position,
         .lane = action.lane, .kind = note_kind_t::tap, .end = std::nullopt,
         .sound = action.resource, .sound_channel_event = std::nullopt,
-        .semantic_layers = {}, .label = std::nullopt, .branch = std::nullopt, .provenance = {}});
+        .semantic_layers = sound_default_layers_for_placement(context.chart, action.resource),
+        .label = std::nullopt, .branch = std::nullopt, .provenance = {}});
     return true;
 }
 
@@ -1187,33 +1189,59 @@ auto apply_resource_sound_metadata(document_history_t& history, std::uint64_t ex
     return commit_document_command(history, std::move(proposed), "Edit sound kind and tags");
 }
 
-auto apply_resource_deletion(document_history_t& history, std::uint64_t expected_revision,
-                            resource_id_t resource_id) -> document_command_result_t {
+auto apply_resource_deletions(document_history_t& history, std::uint64_t expected_revision,
+                              std::span<const resource_id_t> resources)
+    -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     if (expected_revision != history.document.revision) {
         reject(result, diagnostic_code_t::invalid_id, "resource deletion document revision is stale");
         return result;
     }
-    const auto resource = std::ranges::find(history.document.resources, resource_id,
-                                            &resource_entry_t::id);
-    if (!resource_id || resource == history.document.resources.end()) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "resource deletion refers to an unknown catalog resource");
+    if (resources.empty() || resources.size() > maximum_resource_deletions) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "resource deletion needs a bounded nonempty selection");
         return result;
     }
-    const auto reference_count = count_resource_references(
-        history.document, resource_id, resource->asset);
-    if (reference_count != 0) {
-        reject(result, diagnostic_code_t::unsupported_feature,
-               "resource is still referenced by " + std::to_string(reference_count) +
-                   " stored event(s)");
-        return result;
+    std::unordered_set<std::uint64_t> doomed;
+    for (const auto resource_id : resources) {
+        const auto resource = std::ranges::find(history.document.resources, resource_id,
+                                                &resource_entry_t::id);
+        if (!resource_id || resource == history.document.resources.end()) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "resource deletion refers to an unknown catalog resource");
+            return result;
+        }
+        if (!doomed.insert(resource_id.value).second) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "resource deletion lists a catalog resource twice");
+            return result;
+        }
+        const auto reference_count = count_resource_references(
+            history.document, resource_id, resource->asset);
+        if (reference_count != 0) {
+            const auto subject = resources.size() == 1
+                ? std::string{"resource"} : "resource '" + resource->name + "'";
+            reject(result, diagnostic_code_t::unsupported_feature,
+                   subject + " is still referenced by " + std::to_string(reference_count) +
+                       " stored event(s)");
+            return result;
+        }
     }
     auto proposed = history.document;
-    const auto target = std::ranges::find(proposed.resources, resource_id,
-                                          &resource_entry_t::id);
-    proposed.resources.erase(target);
-    return commit_document_command(history, std::move(proposed), "Delete resource");
+    std::erase_if(proposed.resources,
+                  [&](const auto& entry) { return doomed.contains(entry.id.value); });
+    for (auto& chart : proposed.charts) {
+        std::erase_if(chart.sound_layer_defaults,
+                      [&](const auto& entry) { return doomed.contains(entry.resource.value); });
+    }
+    return commit_document_command(history, std::move(proposed),
+                                   resources.size() == 1 ? "Delete resource" : "Delete resources");
+}
+
+auto apply_resource_deletion(document_history_t& history, std::uint64_t expected_revision,
+                             resource_id_t resource_id) -> document_command_result_t {
+    return apply_resource_deletions(history, expected_revision,
+                                    std::span<const resource_id_t>{&resource_id, 1});
 }
 
 auto validate_resource_assignment_selection(const song_document_t& document,

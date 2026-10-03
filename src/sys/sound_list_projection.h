@@ -2,6 +2,7 @@
 
 #include <wormedit/core/document.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -69,5 +70,40 @@ struct sound_properties_t {
 // Invalid (valid == false) when the resource is unknown or not audio.
 [[nodiscard]] auto project_sound_properties(const song_document_t& document,
                                             resource_id_t resource) -> sound_properties_t;
+
+// Compose keysound listbox: every placeable sample (an audio resource with the
+// sample role that is not a stem), in catalog order, with the layers the sound
+// receives when painted on the given chart.
+inline constexpr std::size_t keysound_layer_limit = 64;
+
+struct keysound_layer_t {
+    layer_id_t id;
+    std::string name;
+    color_rgba_t color;
+    bool locked{};
+};
+
+struct keysound_row_t {
+    resource_id_t resource;
+    // BMS #WAV index ("01") when the sound has one, else empty.
+    std::string slot;
+    std::string name;
+    bool missing{};
+    // Bit i is set when the sound's default layers include keysound_list_t::layers[i].
+    std::uint64_t layer_mask{};
+};
+
+struct keysound_list_t {
+    std::vector<keysound_row_t> rows;
+    // Placeable sounds in the document, including rows cut off by the limit.
+    std::size_t total{};
+    bool truncated{};
+    // The chart's first keysound_layer_limit layers in palette order.
+    std::vector<keysound_layer_t> layers;
+};
+
+[[nodiscard]] auto project_keysound_list(const song_document_t& document,
+                                         const chart_document_t* chart,
+                                         std::size_t maximum_rows) -> keysound_list_t;
 
 } // namespace wormedit::sys

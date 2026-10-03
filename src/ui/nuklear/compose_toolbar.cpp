@@ -132,6 +132,11 @@ static void render_compose_view_controls(const ComposeToolbarContext& toolbar) {
                                          state.inspector_visible ? "Hide inspector" : "Show inspector",
                                          state.inspector_visible}.render(context))
         state.inspector_visible = !state.inspector_visible;
+    if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::sound_list,
+                                              state.sounds_panel_visible ? "Hide sounds list"
+                                                                         : "Show sounds list",
+                                              state.sounds_panel_visible}.render(context))
+        state.sounds_panel_visible = !state.sounds_panel_visible;
     render_compose_bgm_bar_toggle(toolbar);
 }
 
@@ -432,7 +437,7 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     nk_layout_row_template_begin(context, 27);
     wormedit::ui::chrome::IconButton::layout_columns(context, 3);
     nk_layout_row_template_push_static(context, 34);
-    wormedit::ui::chrome::IconButton::layout_columns(context, 5);
+    wormedit::ui::chrome::IconButton::layout_columns(context, 6);
     // Offset padlock, nudges and optional readout, then the BPM snap controls.
     wormedit::ui::chrome::IconButton::layout_columns(context);
     nk_layout_row_template_push_static(context, 10);

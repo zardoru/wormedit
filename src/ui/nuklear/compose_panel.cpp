@@ -10,6 +10,7 @@
 #include "ui/nuklear/compose_input_panel.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_resources.h"
+#include "ui/nuklear/compose_sounds_panel.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_recipe_form.h"
 #include "ui/nuklear/chrome.h"
@@ -1316,6 +1317,15 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     const auto inspector_width = inspector_drawn
                                      ? std::clamp(compose_body_bounds.w * 0.24f, 280.0f, 380.0f)
                                      : 0.0f;
+    const auto sounds_drawn = state.sounds_panel_visible && view->keysounds_available &&
+        compose_body_bounds.w >= 860.0f &&
+        wormedit::ui::compose_notes_editable(compose_mode_of(*view));
+    const auto sounds_width = sounds_drawn
+                                  ? std::clamp(compose_body_bounds.w * 0.2f, 292.0f, 340.0f)
+                                  : 0.0f;
+    // Both side panels float over the right edge of the editor; the field gives up their width.
+    const auto side_width = inspector_width + (sounds_drawn ? sounds_width + 8.0f : 0.0f);
+    state.sound_list_valid = false;
     const auto editor_width = compose_body_bounds.w;
     const auto palette_drawn =
         wormedit::ui::compose_note_palette_visible(compose_mode_of(*view)) &&
@@ -1323,7 +1333,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     constexpr float palette_width = 36.0f;
     const auto editor_left = palette_drawn ? palette_width : 0.0f;
     nk_layout_space_begin(context, NK_STATIC, compose_body_height,
-                          1 + (inspector_drawn ? 1 : 0) + (palette_drawn ? 1 : 0));
+                          1 + (inspector_drawn ? 1 : 0) + (palette_drawn ? 1 : 0) +
+                              (sounds_drawn ? 1 : 0));
     if (palette_drawn) {
         nk_layout_space_push(context, nk_rect(0.0f, 0.0f, palette_width, compose_body_height));
         if (nk_group_begin(context, "Compose note palette", NK_WINDOW_NO_SCROLLBAR)) {
@@ -1334,8 +1345,18 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     nk_layout_space_push(context, nk_rect(editor_left, 0.0f, editor_width - editor_left,
                                           compose_body_height));
     if (nk_group_begin(context, "Compose editor", NK_WINDOW_NO_SCROLLBAR)) {
-    render_compose_editor_canvas(panel, inspector_drawn, inspector_width);
+    render_compose_editor_canvas(panel, inspector_drawn || sounds_drawn, side_width);
     nk_group_end(context);
+    }
+    if (sounds_drawn) {
+        const auto sounds_left = editor_width - side_width - (inspector_drawn ? 8.0f : 0.0f);
+        nk_layout_space_push(context, nk_rect(sounds_left, 8.0f, sounds_width,
+                                              compose_body_height - 16.0f));
+        if (nk_group_begin(context, "Compose sounds",
+                           NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)) {
+            worm_ui_nuklear_render_compose_sounds(context, view, action, &state);
+            nk_group_end(context);
+        }
     }
     if (inspector_drawn) {
         nk_layout_space_push(context, nk_rect(editor_width - inspector_width - 8.0f, 8.0f,

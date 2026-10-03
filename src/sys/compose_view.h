@@ -261,6 +261,9 @@ struct application_command_state_t {
     [[nodiscard]] bool audio_offset_edits_locked() const noexcept {
         return timing_locked || audio_offset_locked;
     }
+    // Catalog sound the Compose keysound listbox asked to audition; consumed by
+    // process_sound_audition_request once per frame.
+    std::optional<wormedit::resource_id_t> pending_sound_audition;
     bool note_paint_mode_active{};
     bool semantic_layer_paint_mode_active{};
     bool semantic_layer_solo_active{};

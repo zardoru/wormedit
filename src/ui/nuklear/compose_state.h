@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ui/frontend.h"
+#include "ui/nuklear/keysound_list_state.h"
 
 #include <array>
 #include <cstddef>
@@ -8,6 +9,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <vector>
 
 // Historical panel focus does not decide canvas ownership. Actual entry/occlusion does.
 auto worm_ui_nuklear_compose_canvas_input_available(const WormUiComposeView* view,
@@ -340,6 +342,28 @@ struct worm_ui_nuklear_compose_state_t {
     worm_ui_nuklear_compose_color_t semantic_layer_color{};
     bool semantic_layer_color_editor_visible{};
     bool inspector_visible{true};
+    // Keysound listbox (compose_sounds_panel.cpp).
+    bool sounds_panel_visible{true};
+    bool sounds_layers_open{};
+    bool sounds_preview_on_click{true};
+    worm_ui_keysound_selection_t keysound_selection;
+    std::array<char, 64> keysound_search{};
+    std::uint64_t keysound_chart_id{};
+    std::uint64_t keysound_revision{std::numeric_limits<std::uint64_t>::max()};
+    // Scratch reused across frames so a frame with thousands of rows does not allocate.
+    std::vector<std::uint64_t> keysound_shown;
+    std::vector<std::uint64_t> keysound_all_ids;
+    std::vector<worm_ui_keysound_mask_t> keysound_masks;
+    // Frontend-owned staging that actions point at until their immediate dispatch.
+    std::vector<std::uint64_t> keysound_staged_ids;
+    std::vector<std::string> keysound_staged_paths;
+    std::vector<const char*> keysound_staged_path_pointers;
+    // Window rectangle of the list (for dropped files); valid only on frames that draw it.
+    bool sound_list_valid{};
+    float sound_list_x{};
+    float sound_list_y{};
+    float sound_list_width{};
+    float sound_list_height{};
     int bmson_audition_index{1};
     worm_ui_nuklear_compose_resource_filter_t resource_filter{
         worm_ui_nuklear_compose_resource_filter_t::sample};
@@ -383,6 +407,8 @@ void worm_ui_nuklear_dispatch_compose_keys(worm_ui_nuklear_compose_state_t& stat
 }
 
 [[nodiscard]] auto worm_ui_nuklear_compose_state() noexcept -> worm_ui_nuklear_compose_state_t&;
+// True when a window position lies over the keysound listbox drawn this frame.
+[[nodiscard]] auto worm_ui_nuklear_sound_list_contains(float x, float y) -> bool;
 void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
                                               std::uint64_t next_resource_id);
 

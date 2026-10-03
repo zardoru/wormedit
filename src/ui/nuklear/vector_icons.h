@@ -62,4 +62,70 @@ inline void grid(struct nk_command_buffer* canvas, struct nk_rect bounds, struct
                    thickness, tint);
 }
 
+// Lucide "plus": add sounds.
+inline void plus(struct nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
+    const auto frame = Frame::fit(bounds);
+    nk_stroke_line(canvas, frame.px(5.0f), frame.py(12.0f), frame.px(19.0f), frame.py(12.0f),
+                   frame.stroke(), tint);
+    nk_stroke_line(canvas, frame.px(12.0f), frame.py(5.0f), frame.px(12.0f), frame.py(19.0f),
+                   frame.stroke(), tint);
+}
+
+// Lucide "trash-2": remove sounds.
+inline void trash(struct nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
+    const auto frame = Frame::fit(bounds);
+    const auto thickness = frame.stroke();
+    nk_stroke_line(canvas, frame.px(3.0f), frame.py(6.0f), frame.px(21.0f), frame.py(6.0f),
+                   thickness, tint);
+    const float can[] = {
+        frame.px(19.0f), frame.py(6.0f),  frame.px(19.0f), frame.py(20.0f),
+        frame.px(17.0f), frame.py(22.0f), frame.px(7.0f),  frame.py(22.0f),
+        frame.px(5.0f),  frame.py(20.0f), frame.px(5.0f),  frame.py(6.0f),
+    };
+    nk_stroke_polyline(canvas, const_cast<float*>(can), 6, thickness, tint);
+    const float lid[] = {
+        frame.px(8.0f),  frame.py(6.0f), frame.px(8.0f),  frame.py(4.0f),
+        frame.px(10.0f), frame.py(2.0f), frame.px(14.0f), frame.py(2.0f),
+        frame.px(16.0f), frame.py(4.0f), frame.px(16.0f), frame.py(6.0f),
+    };
+    nk_stroke_polyline(canvas, const_cast<float*>(lid), 6, thickness, tint);
+    nk_stroke_line(canvas, frame.px(10.0f), frame.py(11.0f), frame.px(10.0f), frame.py(17.0f),
+                   thickness, tint);
+    nk_stroke_line(canvas, frame.px(14.0f), frame.py(11.0f), frame.px(14.0f), frame.py(17.0f),
+                   thickness, tint);
+}
+
+// Lucide "square-check": select every listed sound.
+inline void select_all(struct nk_command_buffer* canvas, struct nk_rect bounds,
+                       struct nk_color tint) {
+    const auto frame = Frame::fit(bounds);
+    const auto thickness = frame.stroke();
+    nk_stroke_rect(canvas, nk_rect(frame.px(3.0f), frame.py(3.0f), 18.0f * frame.scale,
+                                   18.0f * frame.scale), 2.0f * frame.scale, thickness, tint);
+    const float tick[] = {
+        frame.px(8.0f), frame.py(12.0f), frame.px(11.0f), frame.py(15.0f),
+        frame.px(16.0f), frame.py(9.0f),
+    };
+    nk_stroke_polyline(canvas, const_cast<float*>(tick), 3, thickness, tint);
+}
+
+// Lucide "list-music": the Compose sounds list.
+inline void sound_list(struct nk_command_buffer* canvas, struct nk_rect bounds,
+                       struct nk_color tint) {
+    const auto frame = Frame::fit(bounds);
+    const auto thickness = frame.stroke();
+    nk_stroke_line(canvas, frame.px(3.0f), frame.py(6.0f), frame.px(14.0f), frame.py(6.0f),
+                   thickness, tint);
+    nk_stroke_line(canvas, frame.px(3.0f), frame.py(12.0f), frame.px(14.0f), frame.py(12.0f),
+                   thickness, tint);
+    nk_stroke_line(canvas, frame.px(3.0f), frame.py(18.0f), frame.px(9.0f), frame.py(18.0f),
+                   thickness, tint);
+    nk_stroke_circle(canvas, nk_rect(frame.px(14.0f), frame.py(15.0f), 6.0f * frame.scale,
+                                     6.0f * frame.scale), thickness, tint);
+    nk_stroke_line(canvas, frame.px(20.0f), frame.py(18.0f), frame.px(20.0f), frame.py(7.0f),
+                   thickness, tint);
+    nk_stroke_line(canvas, frame.px(20.0f), frame.py(7.0f), frame.px(22.0f), frame.py(9.0f),
+                   thickness, tint);
+}
+
 } // namespace wormedit::ui::vector_icons

@@ -170,6 +170,10 @@ struct flattened_workspace_t {
             frame_span<WormUiComposeResourceView> view;
         } resource;
         struct {
+            frame_span<WormUiComposeKeysoundRowView> row;
+            frame_span<WormUiComposeKeysoundLayerView> layer;
+        } keysound;
+        struct {
             frame_span<WormUiComposeOutputGroupView> view;
         } output_group;
         std::array<WormUiComposeLaneKeyBinding, WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY>

@@ -620,6 +620,14 @@ WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_i
     return worm_ui_nuklear_metadata_drop_target(x, y);
 }
 
+bool worm_ui_frontend_sound_list_contains(uint32_t window_id, float x, float y) {
+    if (!g_context || !g_window ||
+        (window_id != 0 && window_id != SDL_GetWindowID(g_window)) || !std::isfinite(x) ||
+        !std::isfinite(y))
+        return false;
+    return worm_ui_nuklear_sound_list_contains(x, y);
+}
+
 static bool notification_document_gesture_active() {
     const auto& compose = worm_ui_nuklear_compose_state();
     return g_notification_view.edit_gesture_active || g_audio.offset_drag_active ||

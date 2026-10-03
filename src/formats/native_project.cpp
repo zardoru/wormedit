@@ -338,6 +338,7 @@ void from_json(const nlohmann::json& value, resource_entry_t& resource) {
     resource.sound_kind = static_cast<sound_kind_t>(value.value("sound_kind", std::uint8_t{0}));
     resource.tags = value.value("tags", std::vector<std::string>{});
 }
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sound_layer_default_t, resource, layers)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(audio_clip_t, id, source, begin_frame, end_frame)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sound_channel_event_t, id, position, end, lane, continuation,
                                    playable, provenance)
@@ -626,6 +627,10 @@ void to_json(json& value, const chart_document_t& chart) {
                  {"bms_pause_projections", chart.bms_pause_projections},
                  {"bms_control_tree", chart.bms_control_tree},
                  {"active_branch_selection", chart.active_branch_selection}};
+    // Written only when used, so projects without sound layers keep their bytes.
+    if (!chart.sound_layer_defaults.empty()) {
+        value["sound_layer_defaults"] = chart.sound_layer_defaults;
+    }
 }
 
 void from_json(const json& value, chart_document_t& chart) {
@@ -638,6 +643,8 @@ void from_json(const json& value, chart_document_t& chart) {
     value.at("lane_layouts").get_to(chart.lane_layouts);
     value.at("input_profile").get_to(chart.input_profile);
     value.at("semantic_layers").get_to(chart.semantic_layers);
+    chart.sound_layer_defaults =
+        value.value("sound_layer_defaults", std::vector<sound_layer_default_t>{});
     value.at("bgm_source_lanes").get_to(chart.bgm_source_lanes);
     value.at("bpms").get_to(chart.bpms);
     value.at("pauses").get_to(chart.pauses);

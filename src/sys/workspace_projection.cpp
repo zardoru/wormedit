@@ -685,6 +685,60 @@ void populate_compose_resources(const workspace_projection_context_t& projection
     }
 }
 
+auto append_keysound_row(flattened_workspace_t& result, frame_arena_t& arena,
+                         const wormedit::sys::keysound_row_t& row) -> bool {
+    const auto* slot = arena_string(arena, row.slot);
+    const auto* name = arena_string(arena, row.name);
+    if (!slot || !name) return false;
+    return result.compose.keysound.row.push_back({.resource_id = row.resource.value, .slot = slot,
+        .name = name, .missing = row.missing, .layer_mask = row.layer_mask});
+}
+
+auto append_keysound_layer(flattened_workspace_t& result, frame_arena_t& arena,
+                           const wormedit::sys::keysound_layer_t& layer) -> bool {
+    const auto* name = arena_string(arena, layer.name);
+    if (!name) return false;
+    return result.compose.keysound.layer.push_back({.layer_id = layer.id.value, .name = name,
+        .red = layer.color.red, .green = layer.color.green, .blue = layer.color.blue,
+        .alpha = layer.color.alpha, .locked = layer.locked});
+}
+
+void populate_compose_keysounds(const workspace_projection_context_t& projection,
+                                wormedit::chart_id_t chart_id) {
+    auto& result = projection.result;
+    auto& view = result.view.compose;
+    auto* arena = result.arena();
+    const auto chart = std::ranges::find(projection.document.charts, chart_id,
+                                         &wormedit::chart_document_t::id);
+    view.keysounds_available = chart != projection.document.charts.end();
+    if (!arena || !view.keysounds_available) return;
+    const auto list = wormedit::sys::project_keysound_list(
+        projection.document, &*chart, WORM_UI_COMPOSE_KEYSOUND_CAPACITY);
+    view.keysound_total_count = list.total;
+    view.keysounds_truncated = list.truncated;
+    result.compose.keysound.row = arena_array<WormUiComposeKeysoundRowView>(*arena, list.rows.size());
+    result.compose.keysound.layer =
+        arena_array<WormUiComposeKeysoundLayerView>(*arena, list.layers.size());
+    view.keysounds = result.compose.keysound.row.data();
+    view.keysound_layers = result.compose.keysound.layer.data();
+    if (result.compose.keysound.row.capacity() != list.rows.size() ||
+        result.compose.keysound.layer.capacity() != list.layers.size()) {
+        view.keysounds_truncated = true;
+        return;
+    }
+    for (const auto& layer : list.layers) {
+        if (!append_keysound_layer(result, *arena, layer)) break;
+    }
+    view.keysound_layer_count = result.compose.keysound.layer.size();
+    for (const auto& row : list.rows) {
+        if (!append_keysound_row(result, *arena, row)) {
+            view.keysounds_truncated = true;
+            break;
+        }
+    }
+    view.keysound_count = result.compose.keysound.row.size();
+}
+
 void populate_compose_branch_rows(flattened_workspace_t& result,
                                   const wormedit::workspace_bms_branch_outline_t& outline) {
     auto& view = result.view.compose;
@@ -795,6 +849,7 @@ void populate_compose_tab(const workspace_projection_context_t& projection, cons
                 compose.selected_visual_asset_id =
                     source.selected_visual_asset.value_or(wormedit::asset_id_t{}).value;
                 populate_compose_resources(projection);
+                populate_compose_keysounds(projection, tab.chart);
                 populate_compose_output_groups(projection, tab.chart);
                 populate_compose_branch_outline(result, outline);
                 append_workspace_format(projection, "Measures: %zu", static_cast<std::size_t>(tab.measure_count));
@@ -935,6 +990,8 @@ void flattened_workspace_t::rebind_view_pointers() {
 
     auto& compose_view = view.compose;
     compose_view.resources = compose.resource.view.data();
+    compose_view.keysounds = compose.keysound.row.data();
+    compose_view.keysound_layers = compose.keysound.layer.data();
     compose_view.output_groups = compose.output_group.view.data();
     compose_view.branch_rows = compose.branch.row.data();
     compose_view.branch_choices = compose.branch.choice.data();

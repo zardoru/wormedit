@@ -879,3 +879,27 @@ TEST_CASE("native projects persist sound kind and tags only when set",
     CHECK(parsed.song->resources.front().tags == std::vector<std::string>{"drums", "Loop"});
     CHECK(*wormedit::write_native_project(*parsed.song).bytes == *written.bytes);
 }
+
+TEST_CASE("native projects persist chart sound layer defaults only when set",
+          "[unit][format][native-project][sounds]") {
+    auto song = rich_bmson_song();
+    REQUIRE_FALSE(song.resources.empty());
+    auto& chart = song.charts.front();
+    chart.semantic_layers.push_back({.id = wormedit::layer_id_t{700}, .name = "Vocal"});
+    chart.semantic_layers.push_back({.id = wormedit::layer_id_t{800}, .name = "Drums"});
+    const auto plain = wormedit::write_native_project(song);
+    REQUIRE(plain.bytes.has_value());
+    CHECK(plain.bytes->find("\"sound_layer_defaults\"") == std::string::npos);
+    const auto legacy = wormedit::parse_native_project(*plain.bytes);
+    REQUIRE(legacy.song.has_value());
+    CHECK(legacy.song->charts.front().sound_layer_defaults.empty());
+
+    chart.sound_layer_defaults = {{.resource = song.resources.front().id,
+                                   .layers = {wormedit::layer_id_t{800}, wormedit::layer_id_t{700}}}};
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.bytes.has_value());
+    const auto parsed = wormedit::parse_native_project(*written.bytes);
+    REQUIRE(parsed.song.has_value());
+    CHECK(parsed.song->charts.front().sound_layer_defaults == chart.sound_layer_defaults);
+    CHECK(*wormedit::write_native_project(*parsed.song).bytes == *written.bytes);
+}

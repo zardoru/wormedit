@@ -297,6 +297,13 @@ void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
     }
 }
 
+auto worm_ui_nuklear_sound_list_contains(float x, float y) -> bool {
+    const auto& state = worm_ui_nuklear_compose_state();
+    return state.sound_list_valid && x >= state.sound_list_x &&
+           x < state.sound_list_x + state.sound_list_width && y >= state.sound_list_y &&
+           y < state.sound_list_y + state.sound_list_height;
+}
+
 void worm_ui_nuklear_reset_compose_state() {
     auto& dialog = compose_file_dialog_state();
     {

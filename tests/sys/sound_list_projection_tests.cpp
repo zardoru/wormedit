@@ -101,3 +101,52 @@ TEST_CASE("sound properties describe one audio resource", "[unit][sys][sounds]")
     CHECK_FALSE(project_sound_properties(catalog(), resource_id_t{99}).valid);
     CHECK_FALSE(project_sound_properties(catalog(), resource_id_t{}).valid);
 }
+
+TEST_CASE("keysound list holds placeable samples in catalog order with their layers",
+          "[unit][sys][sounds]") {
+    auto song = catalog();
+    song.resources[1].target_identities = {
+        {.family = format_family_t::bms, .identifier = "0A", .namespace_name = "WAV"}};
+    auto& chart = song.charts.front();
+    chart.semantic_layers = {{.id = layer_id_t{7}, .name = "Vocal", .color = {1, 2, 3, 255}},
+                             {.id = layer_id_t{8}, .name = "Drums", .color = {4, 5, 6, 255}}};
+    chart.sound_layer_defaults = {{.resource = resource_id_t{2},
+                                   .layers = {layer_id_t{8}, layer_id_t{99}, layer_id_t{7}}}};
+
+    const auto list = project_keysound_list(song, &chart, 100);
+    // The stem (1), the music/BGM file (3) and the BGA image (4) are not keysounds.
+    REQUIRE(list.rows.size() == 1);
+    CHECK(list.total == 1);
+    CHECK_FALSE(list.truncated);
+    REQUIRE(list.layers.size() == 2);
+    CHECK(list.layers[1].name == "Drums");
+    CHECK(list.layers[1].color == color_rgba_t{4, 5, 6, 255});
+    const auto& row = list.rows.front();
+    CHECK(row.resource == resource_id_t{2});
+    CHECK(row.slot == "0A");
+    CHECK(row.name == "Kick");
+    CHECK_FALSE(row.missing);
+    // The dangling layer 99 is ignored; both real layers are set.
+    CHECK(row.layer_mask == 0b11);
+
+    const auto without_chart = project_keysound_list(song, nullptr, 100);
+    REQUIRE(without_chart.rows.size() == 1);
+    CHECK(without_chart.rows.front().layer_mask == 0);
+    CHECK(without_chart.layers.empty());
+}
+
+TEST_CASE("keysound list is bounded and reports the full count",
+          "[unit][sys][sounds]") {
+    song_document_t song;
+    for (std::uint64_t index = 1; index <= 40; ++index) {
+        song.audio_assets.push_back({.id = asset_id_t{index}, .source_path = "k.wav"});
+        song.resources.push_back({.id = resource_id_t{index}, .asset = asset_id_t{index},
+                                  .roles = {resource_role_t::sample}});
+    }
+    const auto list = project_keysound_list(song, nullptr, 16);
+    CHECK(list.rows.size() == 16);
+    CHECK(list.total == 40);
+    CHECK(list.truncated);
+    CHECK(list.rows.front().name == "Resource 1");
+    CHECK(list.rows.front().slot.empty());
+}

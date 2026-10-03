@@ -1093,6 +1093,36 @@ auto validate_chart_sound_channels(chart_object_validation_t& context,
     }
 }
 
+auto validate_sound_layer_defaults(const chart_document_t& chart,
+                                   const std::unordered_set<std::uint64_t>& resources,
+                                   const std::unordered_set<std::uint64_t>& layer_ids,
+                                   diagnostic_list_t& diagnostics) -> void {
+    std::unordered_set<std::uint64_t> seen;
+    for (const auto& entry : chart.sound_layer_defaults) {
+        if (!entry.resource || !resources.contains(entry.resource.value)) {
+            add_diagnostic(diagnostics, diagnostic_code_t::dangling_resource,
+                           "sound layer default refers to an unknown sound resource");
+        } else if (!seen.insert(entry.resource.value).second) {
+            add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
+                           "sound layer default is duplicated for one resource");
+        }
+        if (entry.layers.empty()) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "sound layer default must name at least one layer");
+        }
+        std::unordered_set<std::uint64_t> listed;
+        for (const auto layer : entry.layers) {
+            if (!layer || !layer_ids.contains(layer.value)) {
+                add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                               "sound layer default refers to an unknown semantic layer");
+            } else if (!listed.insert(layer.value).second) {
+                add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
+                               "sound layer default lists a layer twice");
+            }
+        }
+    }
+}
+
 auto validate_chart(const chart_document_t& chart,
                     const std::unordered_set<std::uint64_t>& resources,
                     const std::unordered_map<std::uint64_t, asset_id_t>& resource_assets,
@@ -1127,6 +1157,7 @@ auto validate_chart(const chart_document_t& chart,
             layer_ids.insert(layer.id.value);
         }
     }
+    validate_sound_layer_defaults(chart, resources, layer_ids, diagnostics);
     std::unordered_set<std::uint64_t> bgm_lane_ids;
     for (const auto& lane : chart.bgm_source_lanes) {
         if (lane.id) {

@@ -1,0 +1,9 @@
+{
+  "servers": [
+    {
+      "extensions": ["c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx"],
+      "command": ["clangd", "--compile-commands-dir=build"],
+      "rootDir": "."
+    }
+  ]
+}

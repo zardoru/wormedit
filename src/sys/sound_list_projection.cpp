@@ -131,4 +131,64 @@ auto project_sound_properties(const song_document_t& document, resource_id_t res
             .missing = resource->missing};
 }
 
+namespace {
+
+auto keysound_slot(const resource_entry_t& resource) -> std::string {
+    const auto identity = std::ranges::find_if(resource.target_identities, [](const auto& item) {
+        return item.family == format_family_t::bms && item.namespace_name == "WAV";
+    });
+    return identity == resource.target_identities.end() ? std::string{} : identity->identifier;
+}
+
+auto is_placeable_keysound(const song_document_t& document, const resource_entry_t& resource)
+    -> bool {
+    return std::ranges::find(resource.roles, resource_role_t::sample) != resource.roles.end() &&
+           find_audio_asset(document, resource.asset) != nullptr &&
+           effective_sound_kind(resource) != sound_kind_t::stem;
+}
+
+auto keysound_layer_mask(const chart_document_t& chart, const keysound_list_t& list,
+                         resource_id_t resource) -> std::uint64_t {
+    const auto entry = std::ranges::find(chart.sound_layer_defaults, resource,
+                                         &sound_layer_default_t::resource);
+    if (entry == chart.sound_layer_defaults.end()) return 0;
+    std::uint64_t mask{};
+    for (const auto id : entry->layers) {
+        const auto layer = std::ranges::find(list.layers, id, &keysound_layer_t::id);
+        if (layer != list.layers.end())
+            mask |= std::uint64_t{1} << static_cast<unsigned>(layer - list.layers.begin());
+    }
+    return mask;
+}
+
+} // namespace
+
+auto project_keysound_list(const song_document_t& document, const chart_document_t* chart,
+                           std::size_t maximum_rows) -> keysound_list_t {
+    keysound_list_t list;
+    if (chart) {
+        for (const auto& layer : chart->semantic_layers) {
+            if (list.layers.size() == keysound_layer_limit) break;
+            list.layers.push_back(
+                {.id = layer.id, .name = layer.name, .color = layer.color, .locked = layer.locked});
+        }
+    }
+    for (const auto& resource : document.resources) {
+        if (!is_placeable_keysound(document, resource)) continue;
+        ++list.total;
+        if (list.rows.size() >= maximum_rows) {
+            list.truncated = true;
+            continue;
+        }
+        list.rows.push_back(
+            {.resource = resource.id,
+             .slot = keysound_slot(resource),
+             .name = resource.name.empty() ? "Resource " + std::to_string(resource.id.value)
+                                           : resource.name,
+             .missing = resource.missing,
+             .layer_mask = chart ? keysound_layer_mask(*chart, list, resource.id) : 0});
+    }
+    return list;
+}
+
 } // namespace wormedit::sys

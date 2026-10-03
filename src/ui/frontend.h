@@ -73,6 +73,9 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY 9
 #define WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY 128
 #define WORM_UI_COMPOSE_RESOURCE_CAPACITY 128
+#define WORM_UI_COMPOSE_KEYSOUND_CAPACITY 4096
+#define WORM_UI_SOUND_DROP_CAPACITY 1000
+#define WORM_UI_COMPOSE_KEYSOUND_LAYER_CAPACITY 64
 #define WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY 32
 #define WORM_UI_TIMING_SPEED_CAPACITY 4096
 #define WORM_UI_TIMING_MARKER_CAPACITY 16384
@@ -858,6 +861,27 @@ typedef struct WormUiComposeResourceView {
     const char* source_name;
 } WormUiComposeResourceView;
 
+/* One row of the Compose keysound listbox: a placeable sample of the catalog. */
+typedef struct WormUiComposeKeysoundRowView {
+    uint64_t resource_id;
+    /* BMS #WAV index such as "01", or an empty string. */
+    const char* slot;
+    const char* name;
+    bool missing;
+    /* Bit i is set when the sound's default layers include keysound_layers[i]. */
+    uint64_t layer_mask;
+} WormUiComposeKeysoundRowView;
+
+typedef struct WormUiComposeKeysoundLayerView {
+    uint64_t layer_id;
+    const char* name;
+    uint8_t red;
+    uint8_t green;
+    uint8_t blue;
+    uint8_t alpha;
+    bool locked;
+} WormUiComposeKeysoundLayerView;
+
 typedef struct WormUiComposeOutputGroupView {
     size_t document_index;
     const char* name;
@@ -1104,6 +1128,14 @@ typedef struct WormUiComposeView {
     size_t resource_count;
     size_t resource_total_count;
     bool resources_truncated;
+    /* Keysound listbox: every placeable sample, plus the chart layers its masks index. */
+    const WormUiComposeKeysoundRowView* keysounds;
+    size_t keysound_count;
+    size_t keysound_total_count;
+    bool keysounds_truncated;
+    const WormUiComposeKeysoundLayerView* keysound_layers;
+    size_t keysound_layer_count;
+    bool keysounds_available;
     const WormUiComposeOutputGroupView* output_groups;
     size_t output_group_count;
     bool output_groups_truncated;
@@ -1769,6 +1801,13 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE,
     WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_NOTE_TO_BGM,
     WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE,
+    /* Keysound listbox actions. The sound list is compose_sound_resource_ids. */
+    WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES,
+    WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS,
+    WORM_UI_COMPOSE_ACTION_AUDITION_SOUND,
+    WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER,
+    WORM_UI_COMPOSE_ACTION_REMOVE_SOUND_LAYER,
+    WORM_UI_COMPOSE_ACTION_CLEAR_SOUND_LAYERS,
     WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET,
     WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK,
@@ -2120,6 +2159,11 @@ typedef struct WormUiWorkspaceAction {
     uint64_t compose_resource_id;
     uint64_t compose_bmson_bgm_event_id;
     uint64_t compose_resource_asset_id;
+    /* Frontend-owned staging; valid through immediate workspace-action dispatch. */
+    const uint64_t* compose_sound_resource_ids;
+    size_t compose_sound_resource_count;
+    const char* const* compose_import_paths;
+    size_t compose_import_path_count;
     size_t compose_output_group_index;
     bool compose_export_overwrite;
     uint8_t compose_resource_role;
@@ -2184,6 +2228,9 @@ void worm_ui_frontend_begin_input(void);
 bool worm_ui_frontend_handle_event(const SDL_Event* event);
 WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_id, float x,
                                                                 float y);
+/* True when a window position lies over the Compose keysound listbox, where dropped audio
+   files are added as sounds. Only meaningful while the Compose tab is showing. */
+bool worm_ui_frontend_sound_list_contains(uint32_t window_id, float x, float y);
 void worm_ui_frontend_end_input(void);
 bool worm_ui_frontend_request_new_project(void);
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view);

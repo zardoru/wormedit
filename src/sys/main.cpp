@@ -23,6 +23,7 @@
 #include "sys/compose_minimap_navigation.h"
 #include "sys/timing_view.h"
 #include "sys/timing_edit_runtime.h"
+#include "sys/compose_sound_actions.h"
 #include "sys/metadata_drop_state.h"
 #include "sys/metadata_asset_runtime.h"
 #include "sys/metadata_actions.h"
@@ -1960,6 +1961,15 @@ auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& actio
             context.compose_scene_cache_ref, context.history_ref, context.status_ref);
 #endif
     }
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    wormedit::sys::process_sound_audition_request(
+        context.application_command_state_ref.pending_sound_audition, context.history_ref,
+        context.audition_sources_ref, context.preview_session_ref, context.preview_output_ref,
+        context.preview_state_ref, context.audition_output_ref, context.status_ref);
+#else
+    wormedit::sys::process_sound_audition_request(
+        context.application_command_state_ref.pending_sound_audition, context.status_ref);
+#endif
     if (context.workspace_ref.active_tab != wormedit::workspace_tab_t::compose) {
         context.compose_viewport_input_ref.escape();
         context.compose_scene_cache_ref.viewport_autoscroll_active = false;
@@ -2555,6 +2565,17 @@ auto dispatch_clipboard_menu(Context& context, const WormUiWorkspaceAction& acti
     return true;
 }
 
+// Adds files dropped on the Compose keysound listbox; always empties the pending list.
+void import_dropped_keysounds(bool session_loaded, wormedit::document_history_t& history,
+                              wormedit::workspace_controller_t& workspace,
+                              std::vector<std::string>& pending_paths, std::string& status) {
+    if (pending_paths.empty()) return;
+    if (session_loaded && workspace.selected_chart)
+        status = wormedit::sys::import_keysound_files(history, workspace, *workspace.selected_chart,
+                                                      pending_paths);
+    pending_paths.clear();
+}
+
 template <typename Context>
 void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceAction& action,
                                      bool shortcut_handled,
@@ -3107,6 +3128,7 @@ int main(int argc, char** argv) {
     bool fresh_blank_project = false;
     std::string pending_audio_project_path;
     std::string pending_chart_project_path;
+    std::vector<std::string> pending_sound_paths;
     std::string pending_bms_encoding_path;
     std::filesystem::path active_project_path =
         startup.loaded_primary ? requested_primary_path : std::filesystem::path{};
@@ -3396,9 +3418,11 @@ int main(int argc, char** argv) {
         if (!wormedit::sys::poll_frontend_events(
                 window, metadata_drop, workspace, history, asset_base,
                 can_offer_audio_project_drop(session_loaded, fresh_blank_project, history),
-                pending_audio_project_path, pending_chart_project_path, status))
+                pending_audio_project_path, pending_chart_project_path, pending_sound_paths,
+                status))
             confirm_unsaved_changes(pending_close, close_target_t::application, workspace_frame_action_context,
                 program_preferences.preferences.general.confirm_unsaved_close);
+        import_dropped_keysounds(session_loaded, history, workspace, pending_sound_paths, status);
         dispatch_dropped_chart_project(workspace_frame_action_context,
             pending_chart_project_path, pending_close,
             program_preferences.preferences.general.confirm_unsaved_close);

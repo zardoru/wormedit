@@ -3,7 +3,9 @@
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/audio/audition_resolver.h>
 
+#include <algorithm>
 #include <utility>
+#include <vector>
 
 namespace wormedit::sys {
 namespace {
@@ -86,6 +88,37 @@ void process_draft_request(const bmson_draft_audition_request_t& request,
 
 } // namespace
 
+void process_sound_audition_request(
+    std::optional<resource_id_t>& request, document_history_t& history,
+    audio::decoded_source_registry_t& audition_sources,
+    audio::preview_session_t& preview_session, sdl_preview_output_t& preview_output,
+    runtime::chart_preview_t& preview_state, sdl_audition_output_t& audition_output,
+    std::string& status) {
+    const auto resource_id = std::exchange(request, std::nullopt);
+    if (!resource_id) return;
+    const auto resource = std::ranges::find(history.document.resources, *resource_id,
+                                            &resource_entry_t::id);
+    if (resource == history.document.resources.end()) {
+        status = "That sound is no longer in the list.";
+        return;
+    }
+    audition_sources.await_pending();
+    const auto bindings = audition_sources.bindings();
+    const auto binding = std::ranges::find(bindings, resource->asset,
+                                           &audio::audition_source_binding_t::asset);
+    if (binding == bindings.end() || binding->output_frame_count == 0) {
+        status = "That sound's audio is not loaded yet.";
+        return;
+    }
+    pause_preview(preview_session, preview_output, preview_state);
+    const std::vector<audio::audition_clip_t> clips{
+        {binding->source, 0, binding->output_frame_count, 1.0F}};
+    const auto started = audition_output.start(clips);
+    status = started                   ? "Audio preview started."
+             : started.message.empty() ? "Audio preview could not start."
+                                       : started.message;
+}
+
 void process_compose_audition_requests(
     compose_scene_cache_t& cache, document_history_t& history,
     audio::decoded_source_registry_t& audition_sources,
@@ -113,6 +146,10 @@ void process_compose_audition_requests(
 #include <utility>
 
 namespace wormedit::sys {
+
+void process_sound_audition_request(std::optional<resource_id_t>& request, std::string& status) {
+    if (std::exchange(request, std::nullopt)) status = "Audio preview is unavailable in this build.";
+}
 
 void process_compose_audition_requests(compose_scene_cache_t& cache,
                                        document_history_t& history, std::string& status) {

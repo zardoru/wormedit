@@ -110,4 +110,45 @@ using semantic_layer_edit_action_t =
                                              semantic_layer_edit_limits_t limits = {})
     -> document_command_result_t;
 
+struct sound_layer_defaults_action_t {
+    chart_id_t chart;
+    // 1..maximum_sound_layer_default_resources catalog sounds.
+    std::vector<resource_id_t> resources;
+    // The layers every listed sound receives when painted; empty clears them.
+    std::vector<layer_id_t> layers;
+};
+
+inline constexpr std::size_t maximum_sound_layer_default_resources = 100'000;
+
+// Sets or clears the default layers of a group of sounds on one chart in one
+// history step, so painting those sounds tags the new note. Layers must exist
+// on the chart, be unlocked and unique; resources must be catalog sounds. Any
+// invalid entry rejects the whole batch. A no-op creates no history entry.
+[[nodiscard]] auto apply_sound_layer_defaults(document_history_t& history,
+                                              std::uint64_t expected_revision,
+                                              const sound_layer_defaults_action_t& action)
+    -> document_command_result_t;
+
+struct sound_layer_membership_action_t {
+    chart_id_t chart;
+    std::vector<resource_id_t> resources;
+    layer_id_t layer;
+    // true adds the layer to every listed sound, false removes it.
+    bool member{true};
+};
+
+// Adds or removes one layer from the defaults of a group of sounds while the
+// other layers of each sound stay as they are. Adding needs an unlocked layer;
+// removing works on locked ones. Same atomic rules as apply_sound_layer_defaults.
+[[nodiscard]] auto apply_sound_layer_membership(document_history_t& history,
+                                                std::uint64_t expected_revision,
+                                                const sound_layer_membership_action_t& action)
+    -> document_command_result_t;
+
+// Layers a sound brings to a freshly placed note: its defaults that still exist
+// on the chart and are unlocked, in the stored order.
+[[nodiscard]] auto sound_default_layers_for_placement(const chart_document_t& chart,
+                                                      resource_id_t resource)
+    -> std::vector<layer_id_t>;
+
 } // namespace wormedit

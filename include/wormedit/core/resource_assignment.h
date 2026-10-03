@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -105,6 +106,17 @@ struct set_resource_sound_metadata_action_t {
 [[nodiscard]] auto apply_resource_deletion(document_history_t& history,
                                            std::uint64_t expected_revision,
                                            resource_id_t resource) -> document_command_result_t;
+
+inline constexpr std::size_t maximum_resource_deletions = 100'000;
+
+// Removes several unreferenced catalog entries in one history step. Any unknown,
+// repeated or still-referenced entry rejects the whole batch, and the
+// diagnostic names the first referenced sound. Chart sound-layer defaults of
+// the removed sounds go with them. Assets and their files are never removed.
+[[nodiscard]] auto apply_resource_deletions(document_history_t& history,
+                                            std::uint64_t expected_revision,
+                                            std::span<const resource_id_t> resources)
+    -> document_command_result_t;
 
 enum class resource_placement_kind_t {
     sample_note,

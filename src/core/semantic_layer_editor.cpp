@@ -456,6 +456,8 @@ auto delete_semantic_layer(chart_document_t& chart,
             }
         }
     }
+    for (auto& entry : chart.sound_layer_defaults) std::erase(entry.layers, edit.layer);
+    std::erase_if(chart.sound_layer_defaults, [](const auto& entry) { return entry.layers.empty(); });
     std::erase_if(chart.semantic_layers,
                   [&edit](const auto& item) { return item.id == edit.layer; });
     return true;
@@ -664,6 +666,171 @@ auto apply_semantic_layer_edit(document_history_t& history, std::uint64_t expect
         return result;
     }
     return commit_document_command(history, std::move(proposed), std::move(outcome.label));
+}
+
+auto sound_default_layers_for_placement(const chart_document_t& chart, resource_id_t resource)
+    -> std::vector<layer_id_t> {
+    std::vector<layer_id_t> layers;
+    const auto entry = std::ranges::find(chart.sound_layer_defaults, resource,
+                                         &sound_layer_default_t::resource);
+    if (entry == chart.sound_layer_defaults.end()) return layers;
+    for (const auto id : entry->layers) {
+        const auto layer = std::ranges::find(chart.semantic_layers, id, &semantic_layer_t::id);
+        if (layer != chart.semantic_layers.end() && !layer->locked) layers.push_back(id);
+    }
+    return layers;
+}
+
+namespace {
+
+auto validate_sound_layer_defaults_request(const song_document_t& document,
+                                           const chart_document_t& chart,
+                                           const sound_layer_defaults_action_t& action,
+                                           document_command_result_t& result) -> bool {
+    if (action.resources.empty() ||
+        action.resources.size() > maximum_sound_layer_default_resources) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "sound layer defaults need a bounded nonempty sound selection");
+        return false;
+    }
+    std::unordered_set<std::uint64_t> seen;
+    for (const auto id : action.resources) {
+        if (!id || std::ranges::find(document.resources, id, &resource_entry_t::id) ==
+                       document.resources.end() ||
+            !seen.insert(id.value).second) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "sound layer defaults refer to an unknown or repeated sound");
+            return false;
+        }
+    }
+    if (action.layers.size() > chart.semantic_layers.size()) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "sound layer defaults list more layers than the chart has");
+        return false;
+    }
+    seen.clear();
+    for (const auto id : action.layers) {
+        const auto layer = std::ranges::find(chart.semantic_layers, id, &semantic_layer_t::id);
+        if (!id || layer == chart.semantic_layers.end() || !seen.insert(id.value).second) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "sound layer defaults refer to an unknown or repeated layer");
+            return false;
+        }
+        if (layer->locked && !action.layers.empty()) {
+            reject(result, diagnostic_code_t::unsupported_feature,
+                   "locked semantic layers cannot become sound defaults");
+            return false;
+        }
+    }
+    return true;
+}
+
+auto write_sound_layer_defaults(chart_document_t& chart,
+                                const sound_layer_defaults_action_t& action) -> bool {
+    bool changed{};
+    for (const auto resource : action.resources) {
+        const auto entry = std::ranges::find(chart.sound_layer_defaults, resource,
+                                             &sound_layer_default_t::resource);
+        if (action.layers.empty()) {
+            if (entry == chart.sound_layer_defaults.end()) continue;
+            chart.sound_layer_defaults.erase(entry);
+        } else if (entry == chart.sound_layer_defaults.end()) {
+            chart.sound_layer_defaults.push_back({.resource = resource, .layers = action.layers});
+        } else if (entry->layers != action.layers) {
+            entry->layers = action.layers;
+        } else {
+            continue;
+        }
+        changed = true;
+    }
+    return changed;
+}
+
+} // namespace
+
+auto apply_sound_layer_defaults(document_history_t& history, std::uint64_t expected_revision,
+                                const sound_layer_defaults_action_t& action)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "sound layer defaults document revision is stale");
+        return result;
+    }
+    auto proposed = history.document;
+    const auto chart = std::ranges::find(proposed.charts, action.chart, &chart_document_t::id);
+    if (!action.chart || chart == proposed.charts.end()) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "sound layer defaults refer to an unknown chart");
+        return result;
+    }
+    if (!validate_sound_layer_defaults_request(proposed, *chart, action, result) ||
+        !write_sound_layer_defaults(*chart, action)) {
+        return result;
+    }
+    return commit_document_command(history, std::move(proposed),
+                                   action.layers.empty() ? "Clear sound layers"
+                                                         : "Set sound layers");
+}
+
+namespace {
+
+auto write_sound_layer_membership(chart_document_t& chart,
+                                  const sound_layer_membership_action_t& action) -> bool {
+    bool changed{};
+    for (const auto resource : action.resources) {
+        auto entry = std::ranges::find(chart.sound_layer_defaults, resource,
+                                       &sound_layer_default_t::resource);
+        if (action.member) {
+            if (entry == chart.sound_layer_defaults.end()) {
+                chart.sound_layer_defaults.push_back({.resource = resource, .layers = {action.layer}});
+                changed = true;
+            } else if (std::ranges::find(entry->layers, action.layer) == entry->layers.end()) {
+                entry->layers.push_back(action.layer);
+                changed = true;
+            }
+        } else if (entry != chart.sound_layer_defaults.end() &&
+                   std::erase(entry->layers, action.layer) != 0) {
+            if (entry->layers.empty()) chart.sound_layer_defaults.erase(entry);
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+} // namespace
+
+auto apply_sound_layer_membership(document_history_t& history, std::uint64_t expected_revision,
+                                  const sound_layer_membership_action_t& action)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "sound layer membership document revision is stale");
+        return result;
+    }
+    auto proposed = history.document;
+    const auto chart = std::ranges::find(proposed.charts, action.chart, &chart_document_t::id);
+    if (!action.chart || chart == proposed.charts.end()) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "sound layer membership refers to an unknown chart");
+        return result;
+    }
+    // Reuse the batch validation: one layer, or none when removing from locked layers.
+    const sound_layer_defaults_action_t shape{
+        .chart = action.chart, .resources = action.resources,
+        .layers = action.member ? std::vector<layer_id_t>{action.layer} : std::vector<layer_id_t>{}};
+    if (!validate_sound_layer_defaults_request(proposed, *chart, shape, result)) return result;
+    if (!action.member &&
+        std::ranges::find(chart->semantic_layers, action.layer, &semantic_layer_t::id) ==
+            chart->semantic_layers.end()) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "sound layer membership refers to an unknown layer");
+        return result;
+    }
+    if (!write_sound_layer_membership(*chart, action)) return result;
+    return commit_document_command(history, std::move(proposed),
+                                   action.member ? "Add layer to sounds" : "Remove layer from sounds");
 }
 
 } // namespace wormedit

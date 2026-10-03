@@ -707,6 +707,15 @@ struct chart_metadata_t {
     std::vector<format_metadata_t> format_groups;
 };
 
+// Layers a sound receives when it is painted onto this chart. Layer IDs are
+// chart-local, so the mapping lives on the chart rather than on the shared
+// catalog entry. Entries are unique per resource and never empty.
+struct sound_layer_default_t {
+    resource_id_t resource;
+    std::vector<layer_id_t> layers;
+    auto operator==(const sound_layer_default_t&) const -> bool = default;
+};
+
 struct chart_document_t {
     chart_id_t id;
     chart_metadata_t metadata;
@@ -717,6 +726,7 @@ struct chart_document_t {
     std::vector<lane_layout_segment_t> lane_layouts;
     input_profile_t input_profile;
     std::vector<semantic_layer_t> semantic_layers;
+    std::vector<sound_layer_default_t> sound_layer_defaults;
     std::vector<bgm_source_lane_t> bgm_source_lanes;
     std::vector<bpm_event_t> bpms;
     std::vector<pause_event_t> pauses;

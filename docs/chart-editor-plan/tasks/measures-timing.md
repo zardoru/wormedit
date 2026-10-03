@@ -26,12 +26,14 @@ stale-plan check (rule 9) first.
 
 ## T-71 Remove nonempty measures by deleting their contents
 
-- **Status:** ready
+- **Status:** blocked-on-user
 - **Implementation notes (2026-10-01):** core is done: `remove_measure_with_contents_action_t` and `propose_measure_removal` in `measure_editor.h` (counts of deleted notes/BGM, shortened holds, moved positions). Holds ending inside are cut to the start of the following measure, and other positioned objects (timing, BGA, warps, markers, sections, sound channels, layout segments) move to its row 0. It rejects the last measure when it holds positioned objects, branch-owned or sound-linked objects, retained BMS BPM/pause projections or control tree, and a sole measure. Tests in `tests/core/measure_editor_tests.cpp`. The confirmation UI (step 3) remains.
+- **Stale-plan audit (2026-10-03):** The core proposal/removal API exists, but confirmation still needs unowned `src/ui/frontend.h` and `src/sys/compose_view.cpp` to project exact counts for the current cursor measure. The core currently retargets BGA events via `for_each_free_position`, while the outcome requires deleting contained BGA events; preserve that remaining core correction rather than treating step 2 as fully complete.
 - **Outcome:** removing a measure that still contains objects deletes its notes, holds that start in it, and BGM/BGA events in it (after a confirmation that lists counts), moves timing events located inside it to its start row, and shifts everything after it earlier by the measure's length, as one undoable command (user decision 2026-09-30).
 - **Read first:** `include/wormedit/core/measure_editor.h` (`delete_measure_action_t`, `apply_measure_edit`), `src/core/measure_editor.cpp`, `docs/chart-editor-plan/document-model.md` (measure ownership paragraph), T-70.
 - **Files owned:** `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp`, `tests/core/measure_editor_tests.cpp`, `src/sys/compose_actions.cpp`, `src/ui/nuklear/compose_inspector.cpp` (confirmation only).
 - **Steps:**
+  0. **STOP:** wait for supporting-file ownership approval before the remaining UI wiring; do not bypass the existing state/projection owners.
   1. Proposal function returning the counts of objects to delete and timing events to move, without mutating.
   2. Command: delete contained objects; holds that start in the measure are deleted, holds that start earlier and end inside are shortened to the measure start; timing events inside move to row 0 of the measure (keeping source order) before the measure is removed; later content keeps its musical position relative to the following measures (stable measure IDs make this automatic).
   3. Confirmation in the UI shows the counts; Remove on an empty measure needs no confirmation (T-70 behavior).
@@ -43,12 +45,14 @@ stale-plan check (rule 9) first.
 
 ## T-72 Add a global redivision control
 
-- **Status:** ready
+- **Status:** blocked-on-user
 - **Implementation notes (2026-10-01):** step 1 and 2 are done: `apply_redivision_command(history, revision, chart, resolution)` in `command.h` returns the moved positions, rejects stale revisions, unknown charts and inexact positions without touching history, and treats the current resolution as a no-op. Tests in `tests/core/command_tests.cpp`. The Metadata field and Apply (step 3) remain.
+- **Stale-plan audit (2026-10-03):** Core exact redivision and its tests already exist. After T-42, the requested chart section lives in unowned `src/ui/nuklear/metadata_difficulty_section.cpp`; its persisted draft needs unowned `src/ui/nuklear/metadata_state.h` (and reset/init changes in `metadata_state.cpp` if necessary). No resolution field is currently rendered.
 - **Outcome:** Metadata's chart section offers a resolution field (default 960, also 192 etc.); Apply runs exact global redivision as one command and reports how many positions moved, or rejects if any position is inexact.
 - **Read first:** `include/wormedit/core/document.h` (`redivide_chart_exact`), `include/wormedit/core/command.h`, `src/ui/nuklear/metadata_panel.cpp`, `src/sys/metadata_actions.cpp`.
 - **Files owned:** `include/wormedit/core/command.h`, `src/core/command.cpp`, `src/sys/metadata_actions.cpp`, `src/sys/metadata_view_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp`, `tests/core/command_tests.cpp`.
 - **Steps:**
+  0. **STOP:** wait for supporting-file ownership approval before the remaining UI wiring; do not bypass the existing state/projection owners.
   1. Core: `apply_redivision_command(history, revision, chart, new_resolution)` wrapping `redivide_chart_exact`.
   2. Tests: 960→192 with only 1/4 notes succeeds; with a 1/5 note rejects untouched.
   3. Wire the field and Apply through the standard pattern.
@@ -145,7 +149,7 @@ stale-plan check (rule 9) first.
 
 ## T-79 Preview audio-timed objects during beat fitting
 
-- **Status:** ready
+- **Status:** done (already implemented: `src/sys/compose_view.cpp:1685`, `src/sys/compose_waveform_overlays.cpp:332`, `src/ui/nuklear/compose_canvas.cpp:531`)
 - **Outcome:** during offset and interval-fit drags, audio-time bookmarks/sections stay fixed on the waveform while beat-anchored objects move; the preview labels the two groups differently.
 - **Read first:** `src/sys/compose_waveform_overlays.cpp`, `src/sys/compose_input.cpp` (fit drag), `memory/chart-editor-status/implemented/editing-frontend.md` (fit preview paragraph).
 - **Files owned:** `src/sys/compose_waveform_overlays.cpp/.h`, `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/frontend.h`.
@@ -157,7 +161,9 @@ stale-plan check (rule 9) first.
 
 ## T-80 Detect waveform onsets for fit snapping
 
-- **Status:** ready
+- **Status:** done
+- **Stale-plan audit (2026-10-03):** no onset detector exists. This owned audio-only cut follows the user’s testing priority: use cached RMS bins, source-aligned windows, a bounded result, and generated-click/silence/coverage tests; UI remains in T-81.
+- **Implementation/verification (2026-10-03):** `detect_waveform_onsets` uses source-zero-aligned RMS windows from cached base bins, maximum channel energy, fixed request thresholds and separation, and capped window-start frame results. Bin/window grids must align, and full requested windows plus the previous baseline are validated before output; unavailable/incomplete coverage or incompatible bin grids return `not_ready`, and capacity/invalid-data failures return no partial frames. Only the result vector grows with candidates. Eleven PCM-generated detector regressions use the actual decoder/waveform analyzer and cover click timing, silence, one-channel signals, determinism, source tails, subranges, missing baseline/tail coverage, alignment, malformed RMS, and capacity. All 155 audio tests pass (`/tmp/wormedit-t80-audio-tests.log`); the application builds, configured clang-tidy passes both new source/test files, and the complete suite passes 1,623/1,623 (`/tmp/wormedit-t80-all-tests.log`). UI query/snapping remains in T-81.
 - **Outcome:** a core function returns onset frames for a source range from the existing peak/RMS pyramid, deterministic for a given input.
 - **Read first:** `include/wormedit/audio/waveform.h`, `include/wormedit/audio/aligned_waveform.h`, `tests/core/audio_waveform_tests.cpp`.
 - **Files owned:** new `include/wormedit/audio/onset.h`, new `src/audio/onset.cpp`, new `tests/core/audio_onset_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -169,7 +175,7 @@ stale-plan check (rule 9) first.
 
 ## T-81 Snap fit drags to the nearest onset
 
-- **Status:** blocked-on T-80
+- **Status:** ready
 - **Outcome:** holding the snap modifier during an interval-fit drag snaps the target frame to the nearest onset within 30 ms.
 - **Read first:** `include/wormedit/audio/onset.h`, `src/sys/compose_input.cpp` (fit drag update), `src/sys/compose_waveform_overlays.cpp`.
 - **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/ui/nuklear/compose_input_panel.cpp`.

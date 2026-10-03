@@ -11,15 +11,29 @@ namespace {
 constexpr float padding = 4.0f;
 constexpr std::string_view ellipsis = "\xE2\x80\xA6";
 
+auto sequence_length_for_lead(unsigned char lead) -> std::size_t {
+    if (lead < 0x80) return 1;
+    if (lead >= 0xC2 && lead <= 0xDF) return 2;
+    if (lead >= 0xE0 && lead <= 0xEF) return 3;
+    if (lead >= 0xF0 && lead <= 0xF4) return 4;
+    return 0;
+}
+
+auto valid_scalar_encoding(unsigned char lead, unsigned char second) -> bool {
+    return !((lead == 0xE0 && second < 0xA0) || (lead == 0xED && second >= 0xA0) ||
+             (lead == 0xF0 && second < 0x90) || (lead == 0xF4 && second > 0x8F));
+}
+
 // Length of the UTF-8 sequence starting at `text[index]`, or 0 when malformed.
 auto utf8_sequence_length(std::string_view text, std::size_t index) -> std::size_t {
     const auto lead = static_cast<unsigned char>(text[index]);
-    const std::size_t length = lead < 0x80 ? 1 : (lead >> 5) == 0x6 ? 2 : (lead >> 4) == 0xE ? 3
-                               : (lead >> 3) == 0x1E ? 4 : 0;
+    const auto length = sequence_length_for_lead(lead);
     if (length == 0 || index + length > text.size()) return 0;
     for (std::size_t offset = 1; offset < length; ++offset) {
         if ((static_cast<unsigned char>(text[index + offset]) & 0xC0) != 0x80) return 0;
     }
+    if (length >= 3 && !valid_scalar_encoding(lead, static_cast<unsigned char>(text[index + 1])))
+        return 0;
     return length;
 }
 

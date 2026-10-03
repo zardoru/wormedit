@@ -40,6 +40,17 @@ TEST_CASE("empty or invalid names draw nothing", "[unit][ui][bookmark-label]") {
     CHECK_FALSE(layout_bookmark_label("trunc\xE2\x80", width_of, 12.0f, 200.0f, field, std::nullopt));
 }
 
+TEST_CASE("overlong UTF-8 encodings are rejected", "[unit][ui][bookmark-label]") {
+    CHECK_FALSE(layout_bookmark_label("\xC0\xAF", width_of, 12.0f, 200.0f, field, std::nullopt));
+    CHECK_FALSE(layout_bookmark_label("\xE0\x80\xAF", width_of, 12.0f, 200.0f, field, std::nullopt));
+    CHECK_FALSE(layout_bookmark_label("\xF0\x80\x80\xAF", width_of, 12.0f, 200.0f, field, std::nullopt));
+}
+
+TEST_CASE("non-scalar UTF-8 encodings are rejected", "[unit][ui][bookmark-label]") {
+    CHECK_FALSE(layout_bookmark_label("\xED\xA0\x80", width_of, 12.0f, 200.0f, field, std::nullopt));
+    CHECK_FALSE(layout_bookmark_label("\xF4\x90\x80\x80", width_of, 12.0f, 200.0f, field, std::nullopt));
+}
+
 TEST_CASE("an overlapping label is skipped and the earlier one stays", "[unit][ui][bookmark-label]") {
     const auto first = layout_bookmark_label("First", width_of, 12.0f, 200.0f, field, std::nullopt);
     REQUIRE(first);

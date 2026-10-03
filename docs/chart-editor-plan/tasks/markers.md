@@ -50,14 +50,14 @@ Bookmark editing already exists in the Markers panel
 
 ## T-310 Show bookmark names on their lines in the Compose field
 
-- **Status:** ready
-- **Implementation notes (2026-10-02):** the pure layout helper `layout_bookmark_label` (`src/ui/nuklear/compose_bookmark_label.cpp`) and its five tests pass. Drawing now aligns labels to the playable field and shares overlap tracking between beat and audio bookmarks. An actual isolated Xvfb capture of named, unnamed, long and audio bookmarks confirms field alignment and labels above their lines. The current font displays the truncation ellipsis as `?`, so the card remains incomplete. The helper accepts overlong and non-scalar UTF-8 encodings; strict invalid-UTF-8 rejection also remains. It allocates one short string per visible named bookmark per frame.
+- **Status:** done
+- **Implementation notes (2026-10-02):** playable-field alignment, shared prior-label overlap tracking, strict scalar UTF-8 rejection and the U+2026 atlas glyph are verified. The full application build passed; the focused core/frontend/documentation/osu filter passed 1156/1156. Actual isolated Xvfb captures in both scroll directions show named beat/audio labels above their lines, no text for unnamed bookmarks, and long labels ending in a rendered ellipsis. Clang-tidy passed for the canvas, helper, font-atlas frontend and tests. The complete 1548-test checkpoint has two unrelated stale Kiai gesture test failures; no whole-suite pass is claimed. Captures: `/tmp/wormedit-t310/direction-1.png` and `/tmp/wormedit-t310/direction-2.png`.
 - **Outcome:** every visible beat and audio-time bookmark line with a non-empty name shows that name as small text just above the line at the right edge of the playable field, in the line's color; long names end in "…"; empty names show nothing.
 - **Request (user, 2026-10-01):** "a little bit of text on the bookmark line to read whatever name one puts on it."
 - **Current behavior (2026-10-01):** `draw_compose_beat_bookmarks` and `draw_compose_audio_bookmarks` (`src/ui/nuklear/compose_canvas.cpp`) draw lines only, although `WormUiComposeBookmarkView::label` and `WormUiComposeAudioBookmarkView::label` already carry the names.
 - **Stale-plan check:** grep `field_text` inside `draw_compose_beat_bookmarks`.
 - **Read first:** `src/ui/nuklear/compose_canvas.cpp` (`draw_compose_beat_bookmarks`, `draw_compose_audio_bookmarks`, `field_text`, the note-label text drawing), `src/ui/frontend.h` (bookmark views).
-- **Files owned:** `src/ui/nuklear/compose_canvas.cpp`, `tests/ui/compose_bookmark_label_tests.cpp` (new), `tests/CMakeLists.txt`.
+- **Files owned:** `src/ui/nuklear/compose_canvas.cpp`, user-approved scope extension (2026-10-02): `src/ui/nuklear/compose_bookmark_label.cpp`, `src/ui/nuklear/frontend.cpp` (font atlas glyph ranges); `tests/ui/compose_bookmark_label_tests.cpp` (new), `tests/CMakeLists.txt`.
 - **Steps:**
   1. A pure helper that, given label width, font height, line y, field bounds, and the previous label's box, returns the text box or none: right-aligned to the field's right edge with 4 px padding, sitting on the line, truncated with "…" to at most half the field width.
   2. Draw with `field_text` in the line color on the same layer as the line. Skip a label whose box would overlap the previous drawn label (keep the earlier one).

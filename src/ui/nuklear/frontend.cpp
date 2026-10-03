@@ -56,6 +56,8 @@ class RenderSubphaseScope {
 
 using wormedit::ui::lucide::Glyph;
 
+static constexpr nk_rune editor_font_glyph_ranges[]{0x0020, 0x00FF, 0x2026, 0x2026, 0};
+
 static bool g_frame_timing_visible;
 static bool g_compose_area_shortcuts_active;
 // Layout-independent Compose hotkeys read from typed text: [ ] { } change the
@@ -439,8 +441,10 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer) {
     if (atlas && SDL_GetBasePath()) {
         const auto font_path = std::filesystem::path{SDL_GetBasePath()} /
                                "assets/fonts/AdwaitaMono-Regular.ttf";
+        auto font_config = nk_font_config(15.0f);
+        font_config.range = editor_font_glyph_ranges;
         editor_font = nk_font_atlas_add_from_file(atlas, font_path.string().c_str(), 15.0f,
-                                                  nullptr);
+                                                  &font_config);
     }
     nk_sdl_font_stash_end(context);
     const auto theme_directory = SDL_GetBasePath()

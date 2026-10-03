@@ -90,11 +90,13 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-55 Move mixed note and BGM selections together
 
-- **Status:** ready
+- **Status:** blocked-on-user
+- **Stale-plan audit (2026-10-03):** note move gestures and the separate single-event BGM drag exist, but no shared mixed drag does. A complete gesture starting from either selected note or BGM tile needs the existing object pointer-capture/action route and mixed-preview projection, outside the four owned files. Scope approval is required before extending that route; no mixed move implementation was started.
 - **Outcome:** dragging a selection that contains playable notes and BGM events moves both by the same snapped row delta in one command.
 - **Read first:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp` (note-move and BGM-move proposals), `src/sys/compose_input.cpp`.
 - **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/compose_input.cpp`, `tests/core/interaction_tests.cpp`.
 - **Steps:**
+  0. **STOP:** obtain ownership for the existing object-input/action and pending-preview projection files needed to route a mixed gesture from either pane.
   1. Build one proposal that validates the note part and the BGM part with their existing validators, then publishes both in one command.
   2. Only vertical (row) movement for BGM; lanes of BGM events stay fixed.
   3. Tests: success, collision in either part rejects both, undo restores both.

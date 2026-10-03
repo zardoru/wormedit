@@ -238,6 +238,89 @@ auto decode_line(std::string_view input, text_encoding_t encoding) -> decode_res
 #endif
 }
 
+#if defined(WORMEDIT_HAS_ICONV)
+auto encode_with_iconv(std::string_view input, std::string_view destination_name)
+    -> decode_result_t {
+    const auto converter = iconv_open(std::string(destination_name).c_str(), "UTF-8");
+    if (converter == reinterpret_cast<iconv_t>(-1)) {
+        return {.unsupported = true};
+    }
+    if (input.size() > (std::numeric_limits<std::size_t>::max() - 16U) / 4U) {
+        iconv_close(converter);
+        return {.text = std::nullopt, .error_offset = input.size()};
+    }
+    std::string output(std::max<std::size_t>(input.size() * 4U + 16U, 32U), '\0');
+    auto* source = const_cast<char*>(input.data());
+    auto source_remaining = input.size();
+    std::size_t written{};
+    while (true) {
+        auto* destination = output.data() + written;
+        auto destination_remaining = output.size() - written;
+        errno = 0;
+        const auto status = iconv(converter, &source, &source_remaining, &destination,
+                                  &destination_remaining);
+        written = output.size() - destination_remaining;
+        if (status != static_cast<std::size_t>(-1)) {
+            break;
+        }
+        if (errno != E2BIG || output.size() > std::numeric_limits<std::size_t>::max() / 2U) {
+            iconv_close(converter);
+            return {.text = std::nullopt, .error_offset = input.size() - source_remaining};
+        }
+        output.resize(output.size() * 2U);
+    }
+    iconv_close(converter);
+    output.resize(written);
+    return {.text = std::move(output)};
+}
+#endif
+
+auto encode_line(std::string_view input, text_encoding_t encoding) -> decode_result_t {
+    if (utf8_error_offset(input).has_value()) {
+        return {.text = std::nullopt};
+    }
+    if (encoding == text_encoding_t::utf8) {
+        return {.text = std::string(input)};
+    }
+    if (encoding == text_encoding_t::ascii) {
+        if (std::ranges::any_of(input, [](char character) {
+                return static_cast<unsigned char>(character) > 0x7fU;
+            })) {
+            return {.text = std::nullopt};
+        }
+        return {.text = std::string(input)};
+    }
+    const auto destination_name = iconv_name(encoding);
+    if (!destination_name.has_value()) {
+        return {.unsupported = true};
+    }
+    std::string output;
+#if defined(WORMEDIT_HAS_ICONV)
+    auto encoded = encode_with_iconv(input, *destination_name);
+    if (!encoded.text) {
+        return encoded;
+    }
+    output = std::move(*encoded.text);
+#elif defined(_WIN32)
+    const auto code_page = win32_codepage::code_page_for(encoding);
+    if (!code_page.has_value()) {
+        return {.unsupported = true};
+    }
+    auto converted = win32_codepage::from_utf8(*code_page, input);
+    if (!converted.text.has_value()) {
+        return {.text = std::nullopt, .error_offset = converted.error_offset};
+    }
+    output = std::move(*converted.text);
+#else
+    return {.unsupported = true};
+#endif
+    const auto round_trip = decode_line(output, encoding);
+    if (!round_trip.text || *round_trip.text != input) {
+        return {.text = std::nullopt};
+    }
+    return {.text = std::move(output)};
+}
+
 auto encoding_name(text_encoding_t encoding) -> std::string_view {
     switch (encoding) {
     case text_encoding_t::unknown:
@@ -2828,6 +2911,28 @@ auto validate_edit_source(const song_document_t& song, const chart_document_t& c
     return std::pair{*source, replacement};
 }
 
+auto encode_replacement_line(const retained_source_t& source, const bms_control_node_t& target,
+                            std::string_view replacement) -> std::optional<std::string> {
+    const auto ending = ending_bytes(target.line_ending);
+    const auto span_size = target.source_span.byte_end - target.source_span.byte_begin;
+    if (ending.size() > span_size) {
+        return std::nullopt;
+    }
+    auto encoded = encode_line(replacement, source.encoding);
+    if (!encoded.text || encoded.unsupported || encoded.text->size() >
+                                                  std::numeric_limits<std::size_t>::max() -
+                                                      ending.size()) {
+        return std::nullopt;
+    }
+    const auto replacement_size = encoded.text->size() + ending.size();
+    const auto retained_without_target = source.bytes->size() - span_size;
+    if (replacement_size > std::numeric_limits<std::size_t>::max() - retained_without_target) {
+        return std::nullopt;
+    }
+    encoded.text->append(ending);
+    return encoded.text;
+}
+
 auto is_leaf_branch_kind(bms_control_kind_t kind) -> bool {
     return kind == bms_control_kind_t::if_branch || kind == bms_control_kind_t::else_if_branch ||
            kind == bms_control_kind_t::else_branch || kind == bms_control_kind_t::case_branch ||
@@ -3077,6 +3182,89 @@ auto insert_source_bytes(const retained_source_t& source, std::size_t offset,
     }
     updated->insert(updated->end(), split, source.bytes->end());
     return updated;
+}
+
+auto replace_source_bytes(const retained_source_t& source, bms_source_span_t span,
+                          std::string_view replacement) -> std::shared_ptr<std::vector<std::byte>> {
+    const auto removed_size = span.byte_end - span.byte_begin;
+    auto updated = std::make_shared<std::vector<std::byte>>();
+    updated->reserve(source.bytes->size() - removed_size + replacement.size());
+    updated->insert(updated->end(), source.bytes->begin(),
+                    source.bytes->begin() + static_cast<std::ptrdiff_t>(span.byte_begin));
+    for (const auto character : replacement) {
+        updated->push_back(static_cast<std::byte>(static_cast<unsigned char>(character)));
+    }
+    updated->insert(updated->end(),
+                    source.bytes->begin() + static_cast<std::ptrdiff_t>(span.byte_end),
+                    source.bytes->end());
+    return updated;
+}
+
+auto remap_replaced_offset(std::size_t offset, bms_source_span_t old_span,
+                           std::size_t replacement_size) -> std::optional<std::size_t> {
+    if (offset < old_span.byte_end) {
+        return std::nullopt;
+    }
+    const auto suffix_offset = offset - old_span.byte_end;
+    if (replacement_size > std::numeric_limits<std::size_t>::max() - old_span.byte_begin ||
+        suffix_offset > std::numeric_limits<std::size_t>::max() - old_span.byte_begin -
+                            replacement_size) {
+        return std::nullopt;
+    }
+    return old_span.byte_begin + replacement_size + suffix_offset;
+}
+
+auto shift_replaced_span(bms_source_span_t& span, bms_source_span_t old_span,
+                         std::size_t replacement_size) -> bool {
+    if (span.byte_end <= old_span.byte_begin) {
+        return true;
+    }
+    if (span.byte_begin >= old_span.byte_end) {
+        const auto begin = remap_replaced_offset(span.byte_begin, old_span, replacement_size);
+        const auto end = remap_replaced_offset(span.byte_end, old_span, replacement_size);
+        if (!begin || !end) {
+            return false;
+        }
+        span = {*begin, *end};
+        return true;
+    }
+    if (span.byte_begin <= old_span.byte_begin && span.byte_end >= old_span.byte_end) {
+        const auto end = remap_replaced_offset(span.byte_end, old_span, replacement_size);
+        if (!end) {
+            return false;
+        }
+        span.byte_end = *end;
+        return true;
+    }
+    return false;
+}
+
+auto shift_replaced_tree(bms_control_node_t& node, branch_id_t target,
+                         bms_source_span_t old_span, std::size_t replacement_size) -> bool {
+    if (node.id == target) {
+        node.source_span = {old_span.byte_begin, old_span.byte_begin + replacement_size};
+    } else if (!shift_replaced_span(node.source_span, old_span, replacement_size)) {
+        return false;
+    }
+    if (node.close_source_span &&
+        !shift_replaced_span(*node.close_source_span, old_span, replacement_size)) {
+        return false;
+    }
+    return std::ranges::all_of(node.children, [&](auto& child) {
+        return shift_replaced_tree(child, target, old_span, replacement_size);
+    });
+}
+
+void update_replaced_source_groups(std::vector<format_metadata_t>& groups,
+                                   const retained_source_t& source,
+                                   const std::shared_ptr<std::vector<std::byte>>& updated_source) {
+    for (auto& group : groups) {
+        if (group.family == format_family_t::bms && group.encoding.original_bytes &&
+            group.encoding.original_bytes.get() == source.bytes.get()) {
+            group.encoding.original_bytes = updated_source;
+            group.encoding.unchanged_since_import = false;
+        }
+    }
 }
 
 template <typename Events, typename Shift>
@@ -3590,6 +3778,15 @@ auto edit_bms_inactive_branch_statement(const song_document_t& song,
     }
     const auto& source = validated_source->first;
     const auto& replacement = validated_source->second;
+    const auto replacement_line = encode_replacement_line(source, *target, edit.replacement_text);
+    if (!replacement_line) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::invalid_replacement,
+               "replacement text cannot be represented in the retained BMS source encoding",
+               path);
+        return result;
+    }
+    const auto original_span = target->source_span;
+    const auto updated_source = replace_source_bytes(source, original_span, *replacement_line);
 
     result.song = song;
     auto& edited_chart = result.song->charts[chart_index];
@@ -3606,17 +3803,15 @@ auto edit_bms_inactive_branch_statement(const song_document_t& song,
     edited_target->original_text = std::move(edit.replacement_text);
     edited_target->command_token = replacement.token;
     edited_target->raw_value = replacement.raw_value;
-
-    const auto mark_changed = [&](std::vector<format_metadata_t>& groups) {
-        for (auto& group : groups) {
-            if (group.family == format_family_t::bms && group.encoding.original_bytes &&
-                group.encoding.original_bytes.get() == source.bytes.get()) {
-                group.encoding.unchanged_since_import = false;
-            }
-        }
-    };
-    mark_changed(result.song->metadata.format_groups);
-    mark_changed(edited_chart.metadata.format_groups);
+    if (!shift_replaced_tree(*edited_chart.bms_control_tree, edit.statement, original_span,
+                             replacement_line->size())) {
+        result.song.reset();
+        reject(bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch,
+               "the retained source spans overlap and cannot be shifted safely", path);
+        return result;
+    }
+    update_replaced_source_groups(result.song->metadata.format_groups, source, updated_source);
+    update_replaced_source_groups(edited_chart.metadata.format_groups, source, updated_source);
     return result;
 }
 

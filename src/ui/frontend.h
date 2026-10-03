@@ -779,6 +779,10 @@ typedef struct WormUiComposeBranchRowView {
     bool display_text_truncated;
     bool has_source_order;
     size_t source_order;
+    /* Nonzero only for raw statements; identity and full text are borrowed from the retained tree. */
+    uint64_t statement_id;
+    const char* statement_text;
+    size_t statement_text_bytes;
 } WormUiComposeBranchRowView;
 
 typedef enum WormUiComposeBranchKind {
@@ -1769,6 +1773,9 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER,
     WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE,
     WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE,
+    WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT,
+    WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT,
+    WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT,
     WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART,
     WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE,
 } WormUiComposeActionKind;
@@ -2057,6 +2064,10 @@ typedef struct WormUiWorkspaceAction {
     uint8_t compose_timing_lane;
     uint64_t compose_branch_id;
     int64_t compose_branch_value;
+    uint64_t compose_branch_statement_id;
+    /* Frontend-owned staging text; valid through immediate workspace-action dispatch. */
+    const char* compose_branch_statement_text;
+    size_t compose_branch_statement_text_bytes;
     char compose_semantic_layer_name[WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY];
     uint8_t compose_semantic_layer_red;
     uint8_t compose_semantic_layer_green;

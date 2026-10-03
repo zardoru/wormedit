@@ -1,5 +1,6 @@
 #include <wormedit/core/bms_branch_editor.h>
 #include <wormedit/core/bms_branch_projection.h>
+#include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -293,10 +294,11 @@ auto first_note_resource_name(const song_document_t& song) -> std::string_view {
     return resource == song.resources.end() ? std::string_view{} : resource->name;
 }
 
-auto replace_request(const document_history_t& history, std::string replacement)
+auto replace_request(const document_history_t& history, std::string_view original,
+                     std::string replacement)
     -> bms_branch_statement_edit_t {
     const auto* target =
-        find_node(chart_tree(history), bms_control_kind_t::raw_statement, "#00011:0200");
+        find_node(chart_tree(history), bms_control_kind_t::raw_statement, original);
     if (target == nullptr) {
         throw std::runtime_error("inactive raw statement not found in test fixture");
     }
@@ -311,9 +313,34 @@ auto replace_request(const document_history_t& history, std::string replacement)
 }
 
 auto insert_request(const document_history_t& history) -> bms_branch_statement_insert_t {
-    const auto* leaf = find_node(chart_tree(history), bms_control_kind_t::else_branch, "#ELSE");
     const auto* anchor =
         find_node(chart_tree(history), bms_control_kind_t::raw_statement, "#00011:0200");
+    if (anchor == nullptr) {
+        throw std::runtime_error("inactive branch anchor not found in test fixture");
+    }
+    const auto* leaf = find_node(chart_tree(history), bms_control_kind_t::else_branch, "#ELSE");
+    if (leaf == nullptr) {
+        throw std::runtime_error("inactive branch leaf not found in test fixture");
+    }
+    return {
+        .chart = history.document.charts.front().id,
+        .leaf_branch = leaf->id,
+        .expected_leaf_source_order = leaf->source_order,
+        .expected_leaf_source_span = leaf->source_span,
+        .expected_leaf_original_text = leaf->original_text,
+        .after_statement = anchor->id,
+        .expected_statement_source_order = anchor->source_order,
+        .expected_statement_source_span = anchor->source_span,
+        .expected_statement_original_text = anchor->original_text,
+        .statement_text = "#00012:01",
+    };
+}
+
+auto insert_request_after(const document_history_t& history, std::string_view anchor_text,
+                          std::string statement_text) -> bms_branch_statement_insert_t {
+    const auto* leaf = find_node(chart_tree(history), bms_control_kind_t::else_branch, "#ELSE");
+    const auto* anchor = find_node(chart_tree(history), bms_control_kind_t::raw_statement,
+                                   anchor_text);
     if (leaf == nullptr || anchor == nullptr) {
         throw std::runtime_error("inactive branch or anchor not found in test fixture");
     }
@@ -327,7 +354,7 @@ auto insert_request(const document_history_t& history) -> bms_branch_statement_i
         .expected_statement_source_order = anchor->source_order,
         .expected_statement_source_span = anchor->source_span,
         .expected_statement_original_text = anchor->original_text,
-        .statement_text = "#00012:01",
+        .statement_text = std::move(statement_text),
     };
 }
 
@@ -351,6 +378,223 @@ auto delete_request(const document_history_t& history) -> bms_branch_statement_d
     };
 }
 
+auto delete_request_for(const document_history_t& history, std::string_view statement_text)
+    -> bms_branch_statement_delete_t {
+    const auto* leaf = find_node(chart_tree(history), bms_control_kind_t::else_branch, "#ELSE");
+    const auto* target = find_node(chart_tree(history), bms_control_kind_t::raw_statement,
+                                   statement_text);
+    if (leaf == nullptr || target == nullptr) {
+        throw std::runtime_error("inactive branch or statement not found in test fixture");
+    }
+    return {
+        .chart = history.document.charts.front().id,
+        .leaf_branch = leaf->id,
+        .expected_leaf_source_order = leaf->source_order,
+        .expected_leaf_source_span = leaf->source_span,
+        .expected_leaf_original_text = leaf->original_text,
+        .statement = target->id,
+        .expected_source_order = target->source_order,
+        .expected_source_span = target->source_span,
+        .expected_original_text = target->original_text,
+    };
+}
+
+auto retained_bms_bytes(const song_document_t& song) -> std::string {
+    for (const auto& group : song.charts.front().metadata.format_groups) {
+        if (group.family == format_family_t::bms && group.encoding.original_bytes) {
+            const auto& bytes = *group.encoding.original_bytes;
+            return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+        }
+    }
+    throw std::runtime_error("BMS source bytes were not retained");
+}
+
+auto has_only_crlf_line_endings(std::string_view text) -> bool {
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        if (text[index] == '\n' && (index == 0 || text[index - 1] != '\r')) {
+            return false;
+        }
+        if (text[index] == '\r' && (index + 1 == text.size() || text[index + 1] != '\n')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+auto native_roundtrip(document_history_t history) -> document_history_t {
+    const auto written = write_native_project(history.document);
+    if (!written.bytes) {
+        throw std::runtime_error("edited BMS fixture did not serialize to native project");
+    }
+    const auto parsed = parse_native_project(*written.bytes);
+    if (!parsed.song) {
+        throw std::runtime_error("edited BMS fixture did not reload from native project");
+    }
+    return make_document_history(*parsed.song);
+}
+
+auto parse_branch_fixture(std::string_view text, text_encoding_t encoding = text_encoding_t::utf8)
+    -> document_history_t {
+    constexpr std::string_view random_line = "#RANDOM 2";
+    bms_parse_options_t options;
+    options.lane_profile_id = "bme-7k-outside-scratch";
+    options.encoding_override = encoding;
+    options.branch_choices = {{source_line_order(text, random_line), 1}};
+    const auto parsed = parse_bms_bytes(
+        std::as_bytes(std::span{text.data(), text.size()}), std::move(options));
+    if (!parsed.song || parsed.has_errors()) {
+        throw std::runtime_error("BMS branch edit fixture did not parse");
+    }
+    return make_document_history(*parsed.song);
+}
+
+auto edit_or_throw(document_history_t& history, std::string_view before, std::string after)
+    -> bms_branch_statement_command_result_t {
+    auto result = apply_bms_branch_statement_edit_command(
+        history, history.document.revision, replace_request(history, before, std::move(after)));
+    if (!result) {
+        throw std::runtime_error("BMS statement edit fixture command failed");
+    }
+    return result;
+}
+
+auto insert_or_throw(document_history_t& history, std::string_view anchor,
+                     std::string statement) -> bms_branch_statement_command_result_t {
+    auto result = apply_bms_branch_statement_insert_command(
+        history, history.document.revision,
+        insert_request_after(history, anchor, std::move(statement)));
+    if (!result) {
+        throw std::runtime_error("BMS statement insert fixture command failed");
+    }
+    return result;
+}
+
+auto delete_or_throw(document_history_t& history, std::string_view statement)
+    -> bms_branch_statement_command_result_t {
+    auto result = apply_bms_branch_statement_delete_command(
+        history, history.document.revision, delete_request_for(history, statement));
+    if (!result) {
+        throw std::runtime_error("BMS statement delete fixture command failed");
+    }
+    return result;
+}
+
+auto prepare_edited_native_history(document_history_t history, branch_id_t statement_id)
+    -> document_history_t {
+    edit_or_throw(history, "#00011:0200", "#00011:000003");
+    if (retained_bms_bytes(history.document).find("#00011:000003\n") == std::string::npos ||
+        find_node_by_id(chart_tree(history), statement_id)->original_text != "#00011:000003") {
+        throw std::runtime_error("grown BMS statement was not retained atomically");
+    }
+    auto loaded = native_roundtrip(std::move(history));
+    if (retained_bms_bytes(loaded.document).find("#00011:000003\n") == std::string::npos ||
+        find_node_by_id(chart_tree(loaded), statement_id) == nullptr) {
+        throw std::runtime_error("native BMS roundtrip lost edited source identity");
+    }
+    return loaded;
+}
+
+auto verify_insert_delete_after_edit(document_history_t& history, branch_id_t statement_id) -> void {
+    insert_or_throw(history, "#00011:000003", "#00012:01");
+    if (retained_bms_bytes(history.document).find("#00011:000003\n#00012:01\n") ==
+        std::string::npos) {
+        throw std::runtime_error("insert did not follow edited source bytes");
+    }
+    delete_or_throw(history, "#00012:01");
+    if (find_node_by_id(chart_tree(history), statement_id)->original_text != "#00011:000003") {
+        throw std::runtime_error("insert/delete changed the edited statement identity");
+    }
+}
+
+auto verify_shrink_delete_after_edit(document_history_t& history, branch_id_t statement_id) -> void {
+    edit_or_throw(history, "#00011:000003", "#00011:03");
+    if (retained_bms_bytes(history.document).find("#00011:03\n") == std::string::npos ||
+        find_node_by_id(chart_tree(history), statement_id)->original_text != "#00011:03") {
+        throw std::runtime_error("shrunk BMS statement was not retained");
+    }
+    delete_or_throw(history, "#00011:03");
+    if (find_node_by_id(chart_tree(history), statement_id) != nullptr) {
+        throw std::runtime_error("delete did not remove the edited statement");
+    }
+}
+
+auto make_edited_cp932_history() -> document_history_t {
+    constexpr std::string_view text = "#PLAYER 1\r\n"
+                                      "#RANDOM 2\r\n"
+                                      "#IF 1\r\n"
+                                      "#COMMENT active\r\n"
+                                      "#ELSE\r\n"
+                                      "#COMMENT old\r\n"
+                                      "#ENDIF\r\n"
+                                      "#ENDRANDOM\r\n";
+    auto history = parse_branch_fixture(text, text_encoding_t::cp932);
+    edit_or_throw(history, "#COMMENT old", "#COMMENT 文字列-long");
+    const auto bytes = retained_bms_bytes(history.document);
+    if (!has_only_crlf_line_endings(bytes) ||
+        find_node(chart_tree(history), bms_control_kind_t::raw_statement,
+                  "#COMMENT 文字列-long") == nullptr) {
+        throw std::runtime_error("CP932 replacement did not preserve text and CRLF endings");
+    }
+    return history;
+}
+
+auto reject_unrepresentable_cp932(document_history_t& history) -> bool {
+    const auto original_bytes = retained_bms_bytes(history.document);
+    const auto revision = history.document.revision;
+    const auto result = apply_bms_branch_statement_edit_command(
+        history, revision,
+        replace_request(history, "#COMMENT 文字列-long", "#COMMENT 😀"));
+    return !result && history.document.revision == revision &&
+           retained_bms_bytes(history.document) == original_bytes &&
+           find_node(chart_tree(history), bms_control_kind_t::raw_statement,
+                     "#COMMENT 文字列-long") != nullptr;
+}
+
+auto edit_span_provenance_is_stable(const document_history_t& history, branch_id_t statement_id,
+                                    std::size_t old_byte_end, std::size_t old_source_order,
+                                    branch_id_t if_group_id, std::size_t old_close_begin) -> bool {
+    const auto* edited = find_node_by_id(chart_tree(history), statement_id);
+    const auto* if_group = find_node_by_id(chart_tree(history), if_group_id);
+    return edited != nullptr && if_group != nullptr && if_group->close_source_span.has_value() &&
+           edited->source_order == old_source_order && edited->source_span.byte_end == old_byte_end + 2 &&
+           if_group->close_source_span->byte_begin == old_close_begin + 2;
+}
+
+struct edit_identity_t {
+    branch_id_t statement_id;
+    std::size_t byte_end{};
+    std::size_t source_order{};
+    branch_id_t if_group_id;
+    std::size_t close_begin{};
+};
+
+auto find_if_group_for_header(const bms_control_node_t& node) -> const bms_control_node_t*;
+
+auto edit_identity(const document_history_t& history) -> edit_identity_t {
+    const auto* statement =
+        find_node(chart_tree(history), bms_control_kind_t::raw_statement, "#00011:0200");
+    const auto* if_group = find_if_group_for_header(chart_tree(history));
+    if (statement == nullptr || if_group == nullptr || !if_group->close_source_span) {
+        throw std::runtime_error("BMS fixture source identities were not found");
+    }
+    return {statement->id, statement->source_span.byte_end, statement->source_order, if_group->id,
+            if_group->close_source_span->byte_begin};
+}
+
+auto find_if_group_for_header(const bms_control_node_t& node) -> const bms_control_node_t* {
+    if (node.kind == bms_control_kind_t::if_group &&
+        std::ranges::any_of(node.children, [](const auto& child) {
+            return child.kind == bms_control_kind_t::if_branch &&
+                   child.original_text == "#IF 1";
+        })) {
+        return &node;
+    }
+    for (const auto& child : node.children) {
+        if (const auto* match = find_if_group_for_header(child)) return match;
+    }
+    return nullptr;
+}
+
 } // namespace
 
 TEST_CASE("inactive BMS statement replacement is one revision-checked undoable command",
@@ -360,7 +604,7 @@ TEST_CASE("inactive BMS statement replacement is one revision-checked undoable c
         find_node(chart_tree(history), bms_control_kind_t::raw_statement, "#00011:0200");
     REQUIRE(statement != nullptr);
     const auto statement_id = statement->id;
-    const auto request = replace_request(history, "#00011:0300");
+    const auto request = replace_request(history, "#00011:0200", "#00011:0300");
 
     const auto applied =
         apply_bms_branch_statement_edit_command(history, history.document.revision, request);
@@ -383,11 +627,38 @@ TEST_CASE("inactive BMS statement replacement is one revision-checked undoable c
     CHECK(find_node_by_id(chart_tree(history), statement_id)->original_text == "#00011:0300");
 }
 
+TEST_CASE("edited BMS source remains editable after native roundtrip and insert delete shrink",
+          "[unit][core][bms][branch][edit][roundtrip]") {
+    auto history = make_history();
+    const auto identity = edit_identity(history);
+    const auto active_notes = history.document.charts.front().measures.front().notes.size();
+    const auto active_sound = std::string(first_note_resource_name(history.document));
+
+    history = prepare_edited_native_history(std::move(history), identity.statement_id);
+    CHECK(edit_span_provenance_is_stable(history, identity.statement_id, identity.byte_end,
+                                          identity.source_order, identity.if_group_id,
+                                          identity.close_begin));
+    CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 1);
+    verify_insert_delete_after_edit(history, identity.statement_id);
+    verify_shrink_delete_after_edit(history, identity.statement_id);
+    CHECK(history.document.charts.front().measures.front().notes.size() == active_notes);
+    CHECK(std::string(first_note_resource_name(history.document)) == active_sound);
+    REQUIRE(undo_document_command(history));
+    CHECK(find_node_by_id(chart_tree(history), identity.statement_id)->original_text == "#00011:03");
+}
+
+TEST_CASE("BMS statement replacement preserves CRLF bytes and rejects unrepresentable source text",
+          "[unit][core][bms][branch][edit][encoding]") {
+    auto history = make_edited_cp932_history();
+    CHECK(std::ranges::count(retained_bms_bytes(history.document), '\n') == 8);
+    CHECK(reject_unrepresentable_cp932(history));
+}
+
 TEST_CASE("stale BMS branch actions reject without changing history or losing typed diagnostics",
           "[unit][core][bms][branch][command][negative]") {
     auto history = make_history();
     const auto original_revision = history.document.revision;
-    auto request = replace_request(history, "#00011:0300");
+    auto request = replace_request(history, "#00011:0200", "#00011:0300");
 
     const auto stale_revision =
         apply_bms_branch_statement_edit_command(history, original_revision + 1, request);
@@ -414,6 +685,44 @@ TEST_CASE("stale BMS branch actions reject without changing history or losing ty
     CHECK(history.redo.empty());
 }
 
+TEST_CASE("active BMS statements reject edits with a typed diagnostic",
+          "[unit][core][bms][branch][command][negative]") {
+    auto history = make_history();
+    const auto* statement =
+        find_node(chart_tree(history), bms_control_kind_t::raw_statement, "#00011:0100");
+    REQUIRE(statement != nullptr);
+    const auto revision = history.document.revision;
+    const auto applied = apply_bms_branch_statement_edit_command(
+        history, revision,
+        {.chart = history.document.charts.front().id,
+         .statement = statement->id,
+         .expected_source_order = statement->source_order,
+         .expected_source_span = statement->source_span,
+         .expected_original_text = statement->original_text,
+         .replacement_text = "#00011:0300"});
+    CHECK_FALSE(applied);
+    REQUIRE(applied.format_diagnostics.size() == 1);
+    CHECK(applied.format_diagnostics.front().code ==
+          bms_branch_statement_edit_diagnostic_code_t::active_statement);
+    CHECK(history.document.revision == revision);
+}
+
+TEST_CASE("inactive BMS statement edits reject ambiguous multi-chart source identity",
+          "[unit][core][bms][branch][command][negative]") {
+    auto history = make_history();
+    auto second_chart = history.document.charts.front();
+    second_chart.id = chart_id_t{second_chart.id.value + 1};
+    history.document.charts.push_back(std::move(second_chart));
+    const auto revision = history.document.revision;
+    const auto applied = apply_bms_branch_statement_insert_command(
+        history, revision, insert_request(history));
+    CHECK_FALSE(applied);
+    REQUIRE(applied.format_diagnostics.size() == 1);
+    CHECK(applied.format_diagnostics.front().code ==
+          bms_branch_statement_edit_diagnostic_code_t::unsupported_song_shape);
+    CHECK(history.document.revision == revision);
+}
+
 TEST_CASE("inactive BMS statement insertion enters history and replays retained source state",
           "[unit][core][bms][branch][command]") {
     auto history = make_history();
@@ -431,6 +740,18 @@ TEST_CASE("inactive BMS statement insertion enters history and replays retained 
     REQUIRE(redo_document_command(history));
     CHECK(find_node(chart_tree(history), bms_control_kind_t::raw_statement, "#00012:01") !=
           nullptr);
+}
+
+TEST_CASE("inactive BMS insertion leaves the active chart projection unchanged",
+          "[unit][core][bms][branch][command]") {
+    auto history = make_history();
+    const auto active_sound_before = std::string(first_note_resource_name(history.document));
+    const auto active_note_count_before = history.document.charts.front().measures.front().notes.size();
+    const auto applied = apply_bms_branch_statement_insert_command(
+        history, history.document.revision, insert_request(history));
+    REQUIRE(applied);
+    CHECK(std::string(first_note_resource_name(history.document)) == active_sound_before);
+    CHECK(history.document.charts.front().measures.front().notes.size() == active_note_count_before);
 }
 
 TEST_CASE("inactive BMS statement deletion enters history and replays retained source state",

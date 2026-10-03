@@ -2074,6 +2074,177 @@ std::string dispatch_bms_branch_choice_action(
                : "BMS branch choice cleared and its semantics were rematerialized.";
 }
 
+struct bms_statement_target_t {
+    const wormedit::bms_control_node_t* statement{};
+    const wormedit::bms_control_node_t* leaf{};
+};
+
+auto bms_statement_leaf(wormedit::bms_control_kind_t kind) -> bool {
+    using kind_t = wormedit::bms_control_kind_t;
+    return kind == kind_t::if_branch || kind == kind_t::else_if_branch ||
+           kind == kind_t::else_branch || kind == kind_t::case_branch ||
+           kind == kind_t::default_branch;
+}
+
+void find_bms_statement_target(const wormedit::bms_control_node_t& node, std::uint64_t id,
+                               const wormedit::bms_control_node_t* enclosing_leaf,
+                               bms_statement_target_t& result) {
+    const auto* leaf = bms_statement_leaf(node.kind) ? &node : enclosing_leaf;
+    if (node.kind == wormedit::bms_control_kind_t::raw_statement && node.id.value == id) {
+        result = {&node, leaf};
+        return;
+    }
+    for (const auto& child : node.children) {
+        find_bms_statement_target(child, id, leaf, result);
+        if (result.statement) return;
+    }
+}
+
+auto bms_statement_command_error(const wormedit::bms_branch_statement_command_result_t& result)
+    -> std::string {
+    if (!result.command.diagnostics.empty()) return result.command.diagnostics.front().message;
+    if (!result.format_diagnostics.empty()) return result.format_diagnostics.front().message;
+    return "BMS branch statement edit was rejected without changing the document.";
+}
+
+void retain_bms_statement_feedback(application_command_state_t& application,
+                                   std::optional<wormedit::chart_id_t> chart,
+                                   std::uint64_t revision, const std::string& message) {
+    if (chart) {
+        application.bms_branch_statement_feedback =
+            application_command_state_t::bms_branch_statement_feedback_t{
+                *chart, revision, message};
+    } else {
+        application.bms_branch_statement_feedback.reset();
+    }
+}
+
+std::string dispatch_bms_branch_statement_action(
+    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+    wormedit::workspace_controller_t& workspace,
+    const std::optional<wormedit::editor_interaction_state_t>& interaction_state) {
+    using namespace wormedit;
+    if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
+        workspace.selected_chart->value != action.compose_input_chart_id)
+        return "BMS branch statement action ignored because the selected chart changed.";
+    if (interaction_state && editor_interaction_has_pending_gesture(*interaction_state))
+        return "Finish or cancel the active Compose gesture before editing a BMS branch.";
+    if (action.compose_branch_statement_id == 0)
+        return "Select a raw BMS branch statement first.";
+    if (history.document.revision != action.compose_input_document_revision) {
+        const auto stale = apply_bms_branch_statement_edit_command(
+            history, action.compose_input_document_revision,
+            {.chart = *workspace.selected_chart,
+             .statement = branch_id_t{action.compose_branch_statement_id}});
+        return bms_statement_command_error(stale);
+    }
+    const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
+                                         &chart_document_t::id);
+    if (chart == history.document.charts.end())
+        return "The selected BMS chart is no longer available.";
+    if (!chart->bms_control_tree) {
+        const auto missing_tree = apply_bms_branch_statement_edit_command(
+            history, action.compose_input_document_revision,
+            {.chart = *workspace.selected_chart,
+             .statement = branch_id_t{action.compose_branch_statement_id}});
+        return bms_statement_command_error(missing_tree);
+    }
+    bms_statement_target_t target;
+    find_bms_statement_target(*chart->bms_control_tree, action.compose_branch_statement_id,
+                              nullptr, target);
+    if (!target.statement) {
+        const auto missing_target = apply_bms_branch_statement_edit_command(
+            history, action.compose_input_document_revision,
+            {.chart = *workspace.selected_chart,
+             .statement = branch_id_t{action.compose_branch_statement_id}});
+        return bms_statement_command_error(missing_target);
+    }
+
+    constexpr std::size_t maximum_text_bytes = 4096;
+    const bool has_text_action =
+        action.compose_action == WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT ||
+        action.compose_action == WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT;
+    if (has_text_action && (!action.compose_branch_statement_text ||
+                            action.compose_branch_statement_text_bytes == 0 ||
+                            action.compose_branch_statement_text_bytes > maximum_text_bytes))
+        return "BMS branch statement text is empty or exceeds the editor's bounded capacity.";
+    const std::string text = has_text_action
+        ? std::string(action.compose_branch_statement_text,
+                      action.compose_branch_statement_text_bytes)
+        : std::string{};
+    if (!target.leaf && action.compose_action ==
+                            WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT) {
+        const auto invalid = apply_bms_branch_statement_insert_command(
+            history, action.compose_input_document_revision,
+            {.chart = *workspace.selected_chart,
+             .after_statement = target.statement->id,
+             .expected_statement_source_order = target.statement->source_order,
+             .expected_statement_source_span = target.statement->source_span,
+             .expected_statement_original_text = target.statement->original_text,
+             .statement_text = text});
+        return bms_statement_command_error(invalid);
+    }
+    if (!target.leaf && action.compose_action ==
+                            WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT) {
+        const auto invalid = apply_bms_branch_statement_delete_command(
+            history, action.compose_input_document_revision,
+            {.chart = *workspace.selected_chart,
+             .statement = target.statement->id,
+             .expected_source_order = target.statement->source_order,
+             .expected_source_span = target.statement->source_span,
+             .expected_original_text = target.statement->original_text});
+        return bms_statement_command_error(invalid);
+    }
+    bms_branch_statement_command_result_t applied;
+    switch (action.compose_action) {
+    case WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT:
+        applied = apply_bms_branch_statement_edit_command(
+            history, action.compose_input_document_revision,
+            {.chart = *workspace.selected_chart,
+             .statement = target.statement->id,
+             .expected_source_order = target.statement->source_order,
+             .expected_source_span = target.statement->source_span,
+             .expected_original_text = target.statement->original_text,
+             .replacement_text = text});
+        break;
+    case WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT:
+        applied = apply_bms_branch_statement_insert_command(
+            history, action.compose_input_document_revision,
+            {.chart = *workspace.selected_chart,
+             .leaf_branch = target.leaf->id,
+             .expected_leaf_source_order = target.leaf->source_order,
+             .expected_leaf_source_span = target.leaf->source_span,
+             .expected_leaf_original_text = target.leaf->original_text,
+             .after_statement = target.statement->id,
+             .expected_statement_source_order = target.statement->source_order,
+             .expected_statement_source_span = target.statement->source_span,
+             .expected_statement_original_text = target.statement->original_text,
+             .statement_text = text});
+        break;
+    case WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT:
+        applied = apply_bms_branch_statement_delete_command(
+            history, action.compose_input_document_revision,
+            {.chart = *workspace.selected_chart,
+             .leaf_branch = target.leaf->id,
+             .expected_leaf_source_order = target.leaf->source_order,
+             .expected_leaf_source_span = target.leaf->source_span,
+             .expected_leaf_original_text = target.leaf->original_text,
+             .statement = target.statement->id,
+             .expected_source_order = target.statement->source_order,
+             .expected_source_span = target.statement->source_span,
+             .expected_original_text = target.statement->original_text});
+        break;
+    default:
+        return "Unknown BMS branch statement action.";
+    }
+    if (!applied) return bms_statement_command_error(applied);
+    const auto rebound = rebind_workspace(workspace, history);
+    if (!rebound)
+        return rebound.diagnostics.empty() ? "BMS branch statement changed, but workspace rebinding failed."
+                                           : rebound.diagnostics.front().message;
+    return "Inactive BMS branch statement updated.";
+}
+
 } // namespace
 
 auto dispatch_compose_view_action(
@@ -2111,7 +2282,10 @@ auto dispatch_compose_view_action(
         return {};
     }
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE ||
-        action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE) {
+        action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE ||
+        action.compose_action == WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT ||
+        action.compose_action == WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT ||
+        action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT) {
         return "BMS branch actions must use the workspace action boundary.";
     }
     compose_action_context_t context{
@@ -2146,6 +2320,14 @@ auto dispatch_compose_workspace_action(
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE ||
         action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE) {
         status = dispatch_bms_branch_choice_action(action, history, workspace, interaction_state);
+        return true;
+    }
+    if (action.compose_action == WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT ||
+        action.compose_action == WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT ||
+        action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT) {
+        status = dispatch_bms_branch_statement_action(action, history, workspace, interaction_state);
+        retain_bms_statement_feedback(application_state, workspace.selected_chart,
+                                      history.document.revision, status);
         return true;
     }
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE && !action.compose_area_clear_requested) {

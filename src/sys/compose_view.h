@@ -185,6 +185,12 @@ enum class external_player_action_t;
 
 struct application_command_state_t {
     std::optional<wormedit::chart_clipboard_t> chart_clipboard;
+    struct bms_branch_statement_feedback_t {
+        wormedit::chart_id_t chart;
+        std::uint64_t revision{};
+        std::string message;
+    };
+    std::optional<bms_branch_statement_feedback_t> bms_branch_statement_feedback;
     struct paste_session_t {
         wormedit::chart_clipboard_t clipboard;
         wormedit::local_position_t anchor;

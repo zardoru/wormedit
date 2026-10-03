@@ -104,11 +104,11 @@ stale-plan check (rule 9) first.
 
 ## T-107 Encode and publish preview.ogg
 
-- **Status:** ready
+- **Status:** blocked-on-user
 - **Outcome:** the area-selection menu offers "Export preview audio…": the selected interval is mixed with T-106, encoded to Ogg Vorbis with pinned libogg + libvorbis built through FetchContent (user decision 2026-09-30), written to a temporary file, verified by decoding it back, and atomically published as `preview.ogg` (or a chosen name) next to the chart.
 - **Read first:** `cmake/dependencies/` (pattern for pinned dependencies), `include/wormedit/audio/offline_mix.h` (T-106), `docs/chart-editor-plan/stages/authoring-export.md` (stage 4 preview bullet), `include/wormedit/formats/conversion_publication.h` (atomic publication helpers).
 - **Files owned:** new `cmake/dependencies/vorbis.cmake`, `CMakeLists.txt`, new `include/wormedit/audio/ogg_encoder.h`, new `src/audio/ogg_encoder.cpp`, new `tests/core/audio_ogg_encoder_tests.cpp`, `tests/CMakeLists.txt`, `src/ui/nuklear/compose_area_menu.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`.
-- **Steps:** 1. Pin libogg and libvorbis (record versions and license in the dependency file). 2. Encoder wrapper (quality setting, stereo, 44.1 kHz) with a stop token. 3. Encode on a worker with progress; verify by decoding with the existing miniaudio decoder. 4. Menu entry and atomic publish.
+- **Steps:** 0. **STOP:** extend ownership to `src/sys/resource_job_state.h/.cpp` for preview-export job data, progress, and cancellation through the existing per-frame export runtime; its current `poll()` reports completion only. If a dedicated runtime is chosen, also own its application frame-service wiring. 1. Pin libogg and libvorbis (record versions and license in the dependency file). 2. Encoder wrapper (quality setting, stereo, 44.1 kHz) with a stop token. 3. Encode on a worker with progress; verify by decoding with the existing miniaudio decoder. 4. Menu entry and atomic publish.
 - **Invariants:** the chart and its assets are never modified; cancellation leaves no partial file.
 - **Reject/failure behavior:** encode or verify failure reports an error and publishes nothing.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual export of a 20-second preview.

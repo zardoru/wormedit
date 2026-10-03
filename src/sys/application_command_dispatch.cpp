@@ -357,6 +357,8 @@ auto bookmark_commands(command_context_t& context) -> std::optional<command_resu
     if (kind == command_kind_t::markers_add_bookmark && editor_interaction_has_pending_gesture(*state))
         return reject_application_command(context.status,
             "Finish or cancel the active Compose gesture before editing bookmarks.");
+    const auto previous_revision = context.history.document.revision;
+    const auto bookmark_chart = state->chart;
     auto outcome = [&] {
         if (kind == command_kind_t::markers_add_bookmark)
             return add_beat_bookmark_here(context.history, *state, context.application_state);
@@ -372,6 +374,11 @@ auto bookmark_commands(command_context_t& context) -> std::optional<command_resu
     if (outcome.document_changed) {
         const auto rebound = context.rebind();
         if (!rebound.accepted) return rebound;
+        if (kind == command_kind_t::markers_add_bookmark && outcome.accepted &&
+            context.application_state.transport_preserve_bookmark_revision) {
+            static_cast<void>(context.application_state.transport_preserve_bookmark_revision(
+                bookmark_chart, previous_revision, context.history.document.revision));
+        }
     }
     return command_result_t{.accepted = outcome.accepted, .diagnostics = outcome.diagnostics};
 }

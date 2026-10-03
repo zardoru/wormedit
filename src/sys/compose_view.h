@@ -270,6 +270,9 @@ struct application_command_state_t {
     std::function<bool()> transport_preview_playing;
     std::function<bool()> transport_preview_paused;
     std::function<std::optional<std::uint64_t>()> transport_preview_end_frame;
+    // Preserve a running chart preview across the one-revision beat-bookmark insertion.
+    std::function<bool(wormedit::chart_id_t, std::uint64_t, std::uint64_t)>
+        transport_preserve_bookmark_revision;
     bool minimap_click_moves_paused_playhead{};
     // Session-only window of the BGM bar; zoom and pan never touch the chart.
     bgm_bar_range_t bgm_bar_range;

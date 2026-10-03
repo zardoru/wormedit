@@ -1022,6 +1022,16 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
     };
     state.transport_preview_playing = [&] { return preview_output.playing(); };
     state.transport_preview_paused = [&] { return preview_state.paused; };
+    state.transport_preserve_bookmark_revision =
+        [&](wormedit::chart_id_t chart, std::uint64_t previous_revision,
+            std::uint64_t next_revision) {
+            if (!preview_output.playing() || !workspace.selected_chart ||
+                *workspace.selected_chart != chart || preview_state.chart != chart ||
+                preview_state.revision != previous_revision)
+                return false;
+            return preview_state.preserve_bookmark_revision(
+                chart, previous_revision, next_revision);
+        };
     state.transport_preview_end_frame = [&]() -> std::optional<std::uint64_t> {
         return preview_state.matches_selection(history.document, workspace)
             ? std::optional{preview_state.end_frame} : std::nullopt;

@@ -33,6 +33,9 @@ struct chart_preview_t {
 
     [[nodiscard]] bool reusable(chart_id_t chart_id, std::uint64_t document_revision,
                                 std::optional<asset_id_t> selected_music_asset) const;
+    [[nodiscard]] bool preserve_bookmark_revision(chart_id_t chart_id,
+                                                  std::uint64_t previous_revision,
+                                                  std::uint64_t next_revision) noexcept;
     [[nodiscard]] bool matches_selection(const song_document_t& document,
                                          const workspace_controller_t& workspace) const;
     [[nodiscard]] auto compile_if_needed(

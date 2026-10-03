@@ -176,6 +176,22 @@ TEST_CASE("chart music preview follows the document music resource, not waveform
     CHECK(chart_music_preview_ignores_waveform_selection());
 }
 
+TEST_CASE("bookmark insertion can advance only the matching compiled preview revision",
+          "[integration][sys][chart-preview][bookmarks]") {
+    wormedit::sys::runtime::chart_preview_t preview;
+    preview.schedule.emplace();
+    preview.timing.emplace();
+    preview.chart = wormedit::chart_id_t{9};
+    preview.revision = 12;
+
+    CHECK(preview.preserve_bookmark_revision(wormedit::chart_id_t{9}, 12, 13));
+    CHECK(preview.revision == 13);
+    CHECK_FALSE(preview.preserve_bookmark_revision(wormedit::chart_id_t{9}, 12, 13));
+    CHECK_FALSE(preview.preserve_bookmark_revision(wormedit::chart_id_t{8}, 13, 14));
+    CHECK_FALSE(preview.preserve_bookmark_revision(wormedit::chart_id_t{9}, 13, 15));
+    CHECK(preview.revision == 13);
+}
+
 namespace {
 void expect_pitch(bool value, std::source_location where = std::source_location::current()) {
     INFO("pitch check caller line " << where.line());

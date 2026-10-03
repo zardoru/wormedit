@@ -87,14 +87,42 @@ auto bookmark_preview_frame(const timing_index_t& timing, const measure_index_t&
     return frame;
 }
 
+namespace {
+
+auto playing_bookmark_origin(const chart_document_t& chart,
+                              const application_command_state_t& application,
+                              marker_navigation_direction_t direction)
+    -> std::optional<local_position_t> {
+    const auto built = build_measure_index(chart);
+    if (!std::holds_alternative<measure_index_t>(built) ||
+        !application.preview_playhead_absolute_row ||
+        !std::isfinite(*application.preview_playhead_absolute_row))
+        return std::nullopt;
+    const auto& index = std::get<measure_index_t>(built);
+    if (index.total_rows == 0) return std::nullopt;
+    const auto row = std::clamp(*application.preview_playhead_absolute_row, 0.0,
+                                static_cast<double>(index.total_rows - 1));
+    // Marker lookup is strict: a fractional playhead must include the row below
+    // it when moving backward, and exclude that row when moving forward.
+    const auto origin = direction == marker_navigation_direction_t::previous
+                            ? std::ceil(row) : std::floor(row);
+    return local_position_for_row(index, static_cast<std::uint64_t>(origin));
+}
+
+} // namespace
+
 auto navigate_beat_bookmark(document_history_t& history, editor_interaction_state_t& state,
                             application_command_state_t& application,
                             marker_navigation_direction_t direction) -> bookmark_command_outcome_t {
     const bool previous = direction == marker_navigation_direction_t::previous;
     const auto* chart = find_chart(history, state.chart);
     if (!chart) return fail("Bookmark navigation requires the active Compose chart.");
+    const bool playing = is_playing(application);
+    const auto origin = playing ? playing_bookmark_origin(*chart, application, direction)
+                                : std::optional<local_position_t>{state.cursor};
+    if (!origin) return fail("The playhead row is not available yet.");
     const auto marker = navigate_markers(history.document, history.document.revision, state.chart,
-        state.cursor, direction, {.include_bookmarks = true, .include_section_begins = false,
+        *origin, direction, {.include_bookmarks = true, .include_section_begins = false,
                                   .include_section_ends = false});
     if (marker.status == marker_navigation_status_t::no_result)
         return {.accepted = true,
@@ -105,7 +133,7 @@ auto navigate_beat_bookmark(document_history_t& history, editor_interaction_stat
                               : marker.diagnostics.front().message,
                 .diagnostics = marker.diagnostics};
     const auto target = *marker.item->beat_position;
-    if (is_playing(application)) {
+    if (playing) {
         std::string status;
         const auto sought = seek_playhead_to(*chart, application, target, status);
         return {.accepted = sought, .status = std::move(status)};

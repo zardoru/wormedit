@@ -92,6 +92,17 @@ bool chart_preview_t::reusable(chart_id_t chart_id, std::uint64_t document_revis
            music_asset == selected_music_asset;
 }
 
+bool chart_preview_t::preserve_bookmark_revision(chart_id_t chart_id,
+                                                 std::uint64_t previous_revision,
+                                                 std::uint64_t next_revision) noexcept {
+    if (!schedule || !timing || chart != chart_id || revision != previous_revision ||
+        previous_revision == std::numeric_limits<std::uint64_t>::max() ||
+        next_revision != previous_revision + 1)
+        return false;
+    revision = next_revision;
+    return true;
+}
+
 bool chart_preview_t::matches_selection(
     const song_document_t& document, const workspace_controller_t& workspace) const {
     return chart && revision == document.revision && workspace.selected_chart &&

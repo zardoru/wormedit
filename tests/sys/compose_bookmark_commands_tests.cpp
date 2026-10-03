@@ -98,6 +98,7 @@ TEST_CASE("playing bookmark navigation seeks once instead of moving the cursor",
     std::uint64_t seeks{};
     std::uint64_t frame{};
     fixture.application.transport_preview_playing = [] { return true; };
+    fixture.application.preview_playhead_absolute_row = 0.0;
     fixture.application.transport_seek = [&](std::uint64_t target) {
         ++seeks;
         frame = target;
@@ -154,4 +155,47 @@ TEST_CASE("bookmark frames clamp to the preview end", "[unit][sys][bookmark-comm
           std::optional<std::uint64_t>{10});
     CHECK(bookmark_preview_frame(*timing.index, index, {measure_id_t{3}, 0}, std::nullopt) ==
           std::optional<std::uint64_t>{0});
+}
+
+TEST_CASE("playing bookmark jumps advance from the live playhead and preserve the edit cursor",
+          "[unit][sys][bookmark-commands]") {
+    fixture_t fixture{{measure_id_t{3}, 0}};
+    auto& bookmarks = fixture.history.document.charts.front().bookmarks;
+    bookmarks.push_back({.id = object_id_t{32}, .anchor = marker_anchor_t::beat,
+                          .position = local_position_t{measure_id_t{3}, 240}});
+    fixture.application.transport_preview_playing = [] { return true; };
+    std::vector<std::uint64_t> seeks;
+    fixture.application.transport_seek = [&](std::uint64_t frame) {
+        seeks.push_back(frame);
+        return std::string{};
+    };
+    const auto cursor = fixture.state.cursor;
+    fixture.application.preview_playhead_absolute_row = 0.0;
+    REQUIRE(navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+                                   marker_navigation_direction_t::next).accepted);
+    fixture.application.preview_playhead_absolute_row = 240.0;
+    REQUIRE(navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+                                   marker_navigation_direction_t::next).accepted);
+    REQUIRE(seeks.size() == 2);
+    CHECK(seeks[1] > seeks[0]);
+    CHECK(fixture.state.cursor == cursor);
+}
+
+TEST_CASE("previous playing bookmark includes the row below a fractional playhead",
+          "[unit][sys][bookmark-commands]") {
+    fixture_t fixture{{measure_id_t{3}, 0}};
+    fixture.history.document.charts.front().bookmarks.push_back(
+        {.id = object_id_t{32}, .anchor = marker_anchor_t::beat,
+         .position = local_position_t{measure_id_t{3}, 240}});
+    fixture.application.transport_preview_playing = [] { return true; };
+    fixture.application.preview_playhead_absolute_row = 240.25;
+    std::uint64_t sought{};
+    fixture.application.transport_seek = [&](std::uint64_t frame) {
+        sought = frame;
+        return std::string{};
+    };
+    REQUIRE(navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+                                   marker_navigation_direction_t::previous).accepted);
+    CHECK(sought == audio::output_sample_rate / 4);
+    CHECK((fixture.state.cursor == local_position_t{measure_id_t{3}, 0}));
 }

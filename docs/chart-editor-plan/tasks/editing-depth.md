@@ -72,15 +72,19 @@ other unless a card says otherwise. Apply the stale-plan check (rule 9) first.
 
 ## T-145 Add large-document performance benchmarks
 
-- **Status:** ready
+- **Status:** done (2026-10-02; opt-in Release benchmark in `tests/core/performance_budget_tests.cpp`)
 - **Outcome:** a benchmark test builds a synthetic 50,000-note, 400-measure chart with a 10-minute generated audio source and asserts budgets for scene composition, hit-test index build, timing index build, and waveform pyramid completion.
 - **Read first:** `docs/references/ui-backend-boundary.md` (performance paragraph), `tests/core/editor_scene_tests.cpp`, `tests/core/audio_waveform_tests.cpp`.
 - **Files owned:** new `tests/core/performance_budget_tests.cpp`, `tests/CMakeLists.txt`.
 - **Steps:** 1. Generate data in-test (no fixture files). 2. Time each phase with `std::chrono::steady_clock`; budgets start at 4× the measured Release value and are listed in the test. 3. Tag `[.performance]` so it is opt-in.
 - **Invariants:** tests only.
 - **Reject/failure behavior:** a missed budget becomes a new card.
-- **Verify:** `ctest --test-dir build --output-on-failure -R 'performance'` (or run the test binary with `[.performance]`).
+- **Verify:** `cmake -S . -B build/performance -G Ninja -DCMAKE_BUILD_TYPE=Release -DWORMEDIT_BUILD_APP=OFF -DWORMEDIT_ENABLE_LUA=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5`; `cmake --build build/performance --target wormedit_performance_tests -j 4`; `build/performance/tests/wormedit_performance_tests '[.performance]'` (93 assertions, all pass). The separate target is intentionally not registered with CTest; ordinary suites do not run the benchmark.
 - **Out of scope:** optimizations; scheduler priorities/work stealing (only if this card shows need).
+
+Implementation evidence: 400 measures, 125 distinct notes per measure, eight lanes and one 160 BPM event per measure (600 seconds total). The viewport shows four measures in the middle of the chart. A generated 44.1 kHz stereo square wave supplies 600 seconds of PCM without fixtures or filesystem writes. Each phase takes the maximum of five runs; fresh waveform caches prevent cache-hit measurements. Setup and result assertions are outside the timed intervals; scene-index preparation is outside the scene-composition budget. Correctness checks cover note counts, exact duration, visible geometry, generated status and complete pyramid coverage. PCM setup temporarily holds about 404 MiB in two copies.
+
+Release reference (2026-10-02, GCC 14.2, AMD EPYC 9V74 cloud VM, five vCPUs, no concurrent build): hit-test index 6.54204 ms → 26.16816 ms budget; timing index 0.145229 ms → 0.580916 ms; scene composition 0.099119 ms → 0.396476 ms; waveform pyramid 126.289 ms → 505.156 ms. These are machine-specific CPU regression budgets, not UI, GPU, codec throughput or physical-device validation. No production optimization is included.
 
 ## T-146 Report progress and allow cancel for chart import
 

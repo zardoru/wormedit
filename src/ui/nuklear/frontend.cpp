@@ -67,6 +67,9 @@ static std::size_t g_compose_text_hotkey_count{};
 static SDL_Window* g_window;
 static SDL_Renderer* g_renderer;
 static struct nk_context* g_context;
+static bool g_headless;
+static int g_headless_width;
+static int g_headless_height;
 static char g_recovery_save_as_destination[WORM_UI_RECOVERY_DESTINATION_CAPACITY];
 static auto& g_audio = worm_ui_nuklear_audio_state();
 
@@ -240,7 +243,18 @@ static void consume_project_file_dialog(WormUiWorkspaceAction& action) {
     g_project_dialog.kind = WORM_UI_WORKSPACE_ACTION_NONE;
 }
 
+static bool frontend_event_window_matches(uint32_t window_id, bool allow_zero = false) {
+    if (g_headless) return window_id == 0;
+    return g_window && (window_id == SDL_GetWindowID(g_window) ||
+                        (allow_zero && window_id == 0));
+}
+
 static bool frontend_window_size(int* width, int* height) {
+    if (g_headless) {
+        if (width) *width = g_headless_width;
+        if (height) *height = g_headless_height;
+        return g_headless_width > 0 && g_headless_height > 0;
+    }
     int current_width = 0;
     int current_height = 0;
     if (g_window && SDL_GetWindowSize(g_window, &current_width, &current_height) &&
@@ -261,8 +275,9 @@ static bool project_modal_active(const WormUiWorkspaceView& view);
 static bool notification_history_focused();
 
 static void queue_shortcut_key_event(const SDL_KeyboardEvent* event, bool tap_capture = false) {
-    if (!event || !g_window || !g_window_focused || event->type != SDL_EVENT_KEY_DOWN ||
-        !event->down || event->windowID == 0 || event->windowID != SDL_GetWindowID(g_window) ||
+    if (!event || (!g_window && !g_headless) || !g_window_focused ||
+        event->type != SDL_EVENT_KEY_DOWN || !event->down ||
+        !frontend_event_window_matches(event->windowID) ||
         g_shortcut_events_overflowed) {
         return;
     }
@@ -391,8 +406,8 @@ static void consume_compose_text_hotkeys(WormUiWorkspaceAction& action) {
 }
 
 static void queue_compose_wheel_event(const SDL_MouseWheelEvent* event) {
-    if (!event || !g_window_focused || !g_window ||
-        (event->windowID != 0 && event->windowID != SDL_GetWindowID(g_window)) ||
+    if (!event || !g_window_focused || (!g_window && !g_headless) ||
+        !frontend_event_window_matches(event->windowID, true) ||
         !std::isfinite(event->x) || !std::isfinite(event->y) || !std::isfinite(event->mouse_x) ||
         !std::isfinite(event->mouse_y)) {
         return;
@@ -437,50 +452,65 @@ static void shutdown_notification_context() {
     g_notification_context_initialized = false;
 }
 
-bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer) {
-    if (!window || !renderer || g_context) {
+static float headless_font_width(nk_handle, float height, const char*, int length) {
+    return static_cast<float>(length) * height * 0.5f;
+}
+
+static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
+                                int width, int height, bool headless) -> bool {
+    if (g_context || (headless ? width <= 0 || height <= 0 : !window || !renderer))
         return false;
-    }
     worm_ui_nuklear_reset_metadata_state();
     worm_ui_nuklear_reset_timing_state();
     worm_ui_nuklear_reset_audio_state();
     worm_ui_nuklear_reset_compose_panel();
 
-    struct nk_context* context = nk_sdl_init(window, renderer, nk_sdl_allocator());
-    if (!context) {
-        return false;
-    }
-    struct nk_font_atlas* atlas = nk_sdl_font_stash_begin(context);
-    struct nk_font* editor_font = nullptr;
-    if (atlas && SDL_GetBasePath()) {
-        const auto font_path = std::filesystem::path{SDL_GetBasePath()} /
-                               "assets/fonts/AdwaitaMono-Regular.ttf";
-        auto font_config = nk_font_config(15.0f);
-        font_config.range = editor_font_glyph_ranges;
-        editor_font = nk_font_atlas_add_from_file(atlas, font_path.string().c_str(), 15.0f,
-                                                  &font_config);
-    }
-    nk_sdl_font_stash_end(context);
-    const auto theme_directory = SDL_GetBasePath()
-                                     ? std::filesystem::path{SDL_GetBasePath()} / "assets/themes"
-                                     : std::filesystem::path{"assets/themes"};
-    wormedit::ui::theme::load(theme_directory);
-    wormedit::ui::chrome::apply_theme(context);
-    if (editor_font) nk_style_set_font(context, &editor_font->handle);
-
-    if (!wormedit::ui::lucide::initialize(renderer)) {
-        nk_sdl_shutdown(context);
-        return false;
-    }
-
-    if (!SDL_StartTextInput(window)) {
-        wormedit::ui::lucide::shutdown();
-        nk_sdl_shutdown(context);
-        return false;
+    static struct nk_user_font test_font{
+        .userdata = nk_handle_ptr(nullptr),
+        .height = 15.0f,
+        .width = headless_font_width,
+    };
+    struct nk_context* context = headless
+        ? nk_sdl_init_headless(nk_sdl_allocator(), &test_font)
+        : nk_sdl_init(window, renderer, nk_sdl_allocator());
+    if (!context) return false;
+    if (!headless) {
+        struct nk_font_atlas* atlas = nk_sdl_font_stash_begin(context);
+        struct nk_font* editor_font = nullptr;
+        if (atlas && SDL_GetBasePath()) {
+            const auto font_path = std::filesystem::path{SDL_GetBasePath()} /
+                                   "assets/fonts/AdwaitaMono-Regular.ttf";
+            auto font_config = nk_font_config(15.0f);
+            font_config.range = editor_font_glyph_ranges;
+            editor_font = nk_font_atlas_add_from_file(atlas, font_path.string().c_str(), 15.0f,
+                                                      &font_config);
+        }
+        nk_sdl_font_stash_end(context);
+        const auto theme_directory = SDL_GetBasePath()
+                                         ? std::filesystem::path{SDL_GetBasePath()} / "assets/themes"
+                                         : std::filesystem::path{"assets/themes"};
+        wormedit::ui::theme::load(theme_directory);
+        wormedit::ui::chrome::apply_theme(context);
+        if (editor_font) nk_style_set_font(context, &editor_font->handle);
+        if (!wormedit::ui::lucide::initialize(renderer)) {
+            nk_sdl_shutdown(context);
+            return false;
+        }
+        if (!SDL_StartTextInput(window)) {
+            wormedit::ui::lucide::shutdown();
+            nk_sdl_shutdown(context);
+            return false;
+        }
+    } else {
+        wormedit::ui::chrome::apply_theme(context);
+        nk_style_set_font(context, &test_font);
     }
     g_window = window;
     g_renderer = renderer;
     g_context = context;
+    g_headless = headless;
+    g_headless_width = headless ? width : 0;
+    g_headless_height = headless ? height : 0;
     initialize_notification_context();
     g_window_focused = true;
     g_notification_state = {};
@@ -496,11 +526,19 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer) {
     g_shortcut_events_overflowed = false;
     g_ime_composition_active = false;
     g_double_click_count = 0;
-    g_last_window_width = 0;
-    g_last_window_height = 0;
+    g_last_window_width = headless ? width : 0;
+    g_last_window_height = headless ? height : 0;
     reset_project_dialog();
     g_new_project_wizard = {};
     return true;
+}
+
+bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer) {
+    return initialize_frontend(window, renderer, 0, 0, false);
+}
+
+bool worm_ui_frontend_init_headless(int width, int height) {
+    return initialize_frontend(nullptr, nullptr, width, height, true);
 }
 
 void worm_ui_frontend_shutdown(void) {
@@ -509,13 +547,16 @@ void worm_ui_frontend_shutdown(void) {
     reset_project_dialog();
     g_new_project_wizard = {};
     if (!g_context) {
+        g_headless = false;
+        g_headless_width = 0;
+        g_headless_height = 0;
         worm_ui_nuklear_reset_metadata_state();
         worm_ui_nuklear_reset_timing_state();
         worm_ui_nuklear_reset_audio_state();
         worm_ui_nuklear_reset_compose_panel();
         return;
     }
-    if (g_window) {
+    if (g_window && !g_headless) {
         SDL_StopTextInput(g_window);
     }
     worm_ui_nuklear_shutdown_player_preview();
@@ -524,6 +565,9 @@ void worm_ui_frontend_shutdown(void) {
     g_window = NULL;
     g_renderer = NULL;
     g_context = NULL;
+    g_headless = false;
+    g_headless_width = 0;
+    g_headless_height = 0;
     g_shortcut_event_count = 0;
     g_shortcut_events_overflowed = false;
     g_ime_composition_active = false;
@@ -555,8 +599,8 @@ static bool capture_tap_timing_key(const SDL_KeyboardEvent& event) {
         return consumed;
     }
     if (event.repeat) return captured;
-    if (!g_tap_timing_visible || !g_window_focused || !g_window ||
-        event.windowID != SDL_GetWindowID(g_window) || project_dialog_active() ||
+    if (!g_tap_timing_visible || !g_window_focused || (!g_window && !g_headless) ||
+        !frontend_event_window_matches(event.windowID) || project_dialog_active() ||
         g_new_project_wizard.open || g_ime_composition_active ||
         nuklear_text_entry_active()) return false;
     const auto modifiers = SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT |
@@ -647,8 +691,8 @@ static bool notification_owns_pointer(float x, float y) {
 }
 
 static bool capture_notification_key(const SDL_KeyboardEvent& event) {
-    if (event.key != SDLK_ESCAPE || !g_window ||
-        event.windowID != SDL_GetWindowID(g_window)) return false;
+    if (event.key != SDLK_ESCAPE || !frontend_event_window_matches(event.windowID))
+        return false;
     if (g_notification_escape_captured) {
         if (event.type == SDL_EVENT_KEY_UP) g_notification_escape_captured = false;
         return true;
@@ -676,8 +720,8 @@ static bool capture_notification_key(const SDL_KeyboardEvent& event) {
 }
 
 static bool capture_notification_button(const SDL_MouseButtonEvent& event) {
-    if (!g_window_focused || !g_window ||
-        (event.windowID != 0 && event.windowID != SDL_GetWindowID(g_window)) ||
+    if (!g_window_focused || (!g_window && !g_headless) ||
+        !frontend_event_window_matches(event.windowID, true) ||
         !std::isfinite(event.x) || !std::isfinite(event.y)) return false;
     const bool captured = wormedit::ui::nuklear::notification_pointer_edge(
         g_notification_state, event.x, event.y, event.button, event.down,
@@ -802,8 +846,8 @@ static bool queue_compose_pinch_event(const SDL_Event& event) {
     using phase = worm_ui_nuklear_pinch_phase_t;
     if (event.type != SDL_EVENT_PINCH_BEGIN && event.type != SDL_EVENT_PINCH_UPDATE &&
         event.type != SDL_EVENT_PINCH_END) return false;
-    if (!g_window || !g_window_focused ||
-        (event.pinch.windowID != 0 && event.pinch.windowID != SDL_GetWindowID(g_window))) {
+    if ((!g_window && !g_headless) || !g_window_focused ||
+        !frontend_event_window_matches(event.pinch.windowID, true)) {
         queue_compose_pinch_input(phase::cancel, 0.0, 0.0, 0.0);
         return true;
     }
@@ -838,32 +882,30 @@ static bool handle_workspace_frontend_event(const SDL_Event* event) {
         g_window_focused = true;
     } else if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) {
         if (handle_frontend_keyboard_event(event->key)) return true;
-    } else if (event->type == SDL_EVENT_TEXT_EDITING && g_window && event->edit.windowID != 0 &&
-               event->edit.windowID == SDL_GetWindowID(g_window)) {
+    } else if (event->type == SDL_EVENT_TEXT_EDITING &&
+               frontend_event_window_matches(event->edit.windowID)) {
         g_ime_composition_active = event->edit.text && event->edit.text[0] != '\0';
-    } else if (event->type == SDL_EVENT_TEXT_EDITING_CANDIDATES && g_window &&
-               event->edit_candidates.windowID != 0 &&
-               event->edit_candidates.windowID == SDL_GetWindowID(g_window)) {
+    } else if (event->type == SDL_EVENT_TEXT_EDITING_CANDIDATES &&
+               frontend_event_window_matches(event->edit_candidates.windowID)) {
         if (event->edit_candidates.num_candidates > 0) {
             g_ime_composition_active = true;
         }
-    } else if (event->type == SDL_EVENT_TEXT_INPUT && g_window && event->text.windowID != 0 &&
-               event->text.windowID == SDL_GetWindowID(g_window)) {
+    } else if (event->type == SDL_EVENT_TEXT_INPUT &&
+               frontend_event_window_matches(event->text.windowID)) {
         g_ime_composition_active = false;
         queue_compose_text_hotkeys(event->text.text);
     } else if (event->type == SDL_EVENT_MOUSE_WHEEL) {
         queue_compose_wheel_event(&event->wheel);
     } else if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.down &&
-               event->button.button == SDL_BUTTON_MIDDLE && g_window_focused && g_window &&
-               (event->button.windowID == 0 ||
-                event->button.windowID == SDL_GetWindowID(g_window)) &&
+               event->button.button == SDL_BUTTON_MIDDLE && g_window_focused &&
+               (g_window || g_headless) &&
+               frontend_event_window_matches(event->button.windowID, true) &&
                std::isfinite(event->button.x) && std::isfinite(event->button.y)) {
         worm_ui_nuklear_queue_compose_middle_click(event->button.x, event->button.y);
     } else if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.down &&
                event->button.button == SDL_BUTTON_LEFT && event->button.clicks >= 2 &&
-               g_window_focused && g_window &&
-               (event->button.windowID == 0 ||
-                event->button.windowID == SDL_GetWindowID(g_window)) &&
+               g_window_focused && (g_window || g_headless) &&
+               frontend_event_window_matches(event->button.windowID, true) &&
                std::isfinite(event->button.x) && std::isfinite(event->button.y) &&
                g_double_click_count < g_double_clicks.size()) {
         g_double_clicks[g_double_click_count++] = {event->button.x, event->button.y};
@@ -948,7 +990,7 @@ WormUiWorkspaceAction worm_ui_frontend_workspace_error(
     action.tab = WORM_UI_WORKSPACE_TAB_SETUP;
     action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_NONE;
     action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
-    if (!g_context || !g_window) {
+    if (!g_context || (!g_window && !g_headless)) {
         return action;
     }
     int width = 0;
@@ -1154,7 +1196,8 @@ static void render_title_label(const WormUiWorkspaceView& view) {
 static void render_title_bar(const WormUiWorkspaceView* view,
                              WormUiWorkspaceAction* action) {
     close_unavailable_inline_offset(*view);
-    const bool custom_controls = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_BORDERLESS) != 0;
+    const bool custom_controls = g_window &&
+        (SDL_GetWindowFlags(g_window) & SDL_WINDOW_BORDERLESS) != 0;
     nk_menubar_begin(g_context);
     nk_layout_row_template_begin(g_context, 32);
     nk_layout_row_template_push_static(g_context, 76);
@@ -2092,7 +2135,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_NONE;
     action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
     consume_project_file_dialog(action);
-    if (!g_context || !g_window || !view) {
+    if (!g_context || (!g_window && !g_headless) || !view) {
         worm_ui_nuklear_compose_discard_frame_input();
         expose_shortcut_input(&action);
         return action;
@@ -2119,7 +2162,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
 
     const std::string window_title = std::string{view->project_title} +
                                      (view->dirty ? " *" : "") + " — wormedit";
-    if (window_title != SDL_GetWindowTitle(g_window))
+    if (g_window && window_title != SDL_GetWindowTitle(g_window))
         SDL_SetWindowTitle(g_window, window_title.c_str());
 
     if (!view->project_loaded) {
@@ -2160,6 +2203,11 @@ void worm_ui_frontend_resource_placed(uint64_t placed_resource_id, uint64_t next
 void worm_ui_frontend_render(int window_width, int window_height) {
     if (window_width <= 0 || window_height <= 0) {
         (void)frontend_window_size(&window_width, &window_height);
+    }
+    if (g_headless && g_context) {
+        nk_clear(g_context);
+        if (g_notification_context_initialized) nk_clear(&g_notification_context);
+        return;
     }
     if (g_context && g_renderer && window_width > 0 && window_height > 0) {
         const RenderSubphaseScope submit_phase{WORM_UI_FRAME_RENDER_SUBMIT};

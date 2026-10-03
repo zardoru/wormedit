@@ -194,6 +194,7 @@ struct nk_sdl {
     Uint64 last_render;
     bool insert_toggle;
     bool edit_was_active;
+    bool headless;
 };
 
 NK_API nk_handle nk_sdl_get_userdata(struct nk_context* ctx) {
@@ -746,6 +747,41 @@ NK_INTERN void nk_sdl_clipboard_copy(nk_handle usr, const char* text, int len) {
     sdl->allocator.free(sdl->allocator.userdata, str);
 }
 
+NK_API struct nk_context* nk_sdl_init_headless(struct nk_allocator allocator,
+                                               struct nk_user_font* font) {
+    NK_ASSERT(allocator.alloc);
+    NK_ASSERT(allocator.free);
+    NK_ASSERT(font);
+    struct nk_sdl* sdl = (struct nk_sdl*)allocator.alloc(allocator.userdata, 0, sizeof(*sdl));
+    if (!sdl) return nullptr;
+    SDL_zerop(sdl);
+    sdl->field = new (std::nothrow) ComposeFieldFrame;
+    sdl->overview = new (std::nothrow) OverviewCache;
+    if (!sdl->field || !sdl->overview) {
+        delete sdl->overview;
+        delete sdl->field;
+        allocator.free(allocator.userdata, sdl);
+        return nullptr;
+    }
+    sdl->allocator = allocator;
+    sdl->headless = true;
+    if (!nk_init(&sdl->ctx, &sdl->allocator, 0)) {
+        delete sdl->field;
+        delete sdl->overview;
+        allocator.free(allocator.userdata, sdl);
+        return nullptr;
+    }
+    sdl->ctx.userdata = nk_handle_ptr(sdl);
+    sdl->ctx.clip.copy = nk_sdl_clipboard_copy;
+    sdl->ctx.clip.paste = nk_sdl_clipboard_paste;
+    sdl->ctx.clip.userdata = nk_handle_ptr(sdl);
+    nk_buffer_init(&sdl->ogl.cmds, &sdl->allocator, NK_BUFFER_DEFAULT_INITIAL_SIZE);
+    nk_buffer_init(&sdl->ogl.vertices, &sdl->allocator, NK_BUFFER_DEFAULT_INITIAL_SIZE);
+    nk_buffer_init(&sdl->ogl.indices, &sdl->allocator, NK_BUFFER_DEFAULT_INITIAL_SIZE);
+    nk_style_set_font(&sdl->ctx, font);
+    return &sdl->ctx;
+}
+
 NK_API struct nk_context* nk_sdl_init(SDL_Window* win, SDL_Renderer* renderer,
                                       struct nk_allocator allocator) {
     struct nk_sdl* sdl;
@@ -989,10 +1025,10 @@ NK_API int nk_sdl_handle_event(struct nk_context* ctx, SDL_Event* evt) {
     sdl = (struct nk_sdl*)ctx->userdata.ptr;
     NK_ASSERT(sdl);
 
-    if (const auto reset = handle_sdl_renderer_reset(sdl, *evt)) return *reset;
-    /* We only care about Window currently used by Nuklear */
-    if (sdl->win != SDL_GetWindowFromEvent(evt)) {
-        return 0;
+    if (!sdl->headless) {
+        if (const auto reset = handle_sdl_renderer_reset(sdl, *evt)) return *reset;
+        /* We only care about Window currently used by Nuklear */
+        if (sdl->win != SDL_GetWindowFromEvent(evt)) return 0;
     }
 
     switch (evt->type) {

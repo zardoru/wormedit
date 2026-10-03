@@ -25,17 +25,19 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 
 ## T-41 Add a simulated frontend event-queue test harness
 
-- **Status:** ready
-- **Implementation notes (2026-10-02):** feasibility audit stopped at the required headless-frame gate: `worm_ui_frontend_init` requires an SDL window and renderer before initializing its private context; `worm_ui_frontend_compose` requires that private context and window. The state-test target does not link the frontend. A no-window harness needs a production injection seam, outside this card’s owned files and no-production-change invariant. No harness was implemented.
+- **Status:** done
+- **Implementation notes (2026-10-03):** the earlier renderer STOP was resolved by the approved headless initialization seam. The harness initializes the actual frontend/backend context with a fixed font, feeds genuine SDL events through `worm_ui_frontend_begin_input`, `worm_ui_frontend_handle_event`, and `worm_ui_frontend_end_input`, then collects `worm_ui_frontend_compose` actions and clears the frame through `worm_ui_frontend_render`. Script steps retain real press/release timing; no test-side action dispatcher is substituted. Eight cases cover wheel, Delete press/release/repeat, tab switching, and New Project wizard suppression/Cancel/Create. All 110 frontend-state tests pass; the eight harness cases also pass with DISPLAY and WAYLAND_DISPLAY unset and assert SDL video remains uninitialized (`/tmp/wormedit-headless-final-tests.log`). Affected-file clang-tidy reports no new cognitive-complexity findings.
+- **Scope extension (user, 2026-10-03):** add a minimal frontend/backend headless initialization seam and link the actual frontend into the harness. This supersedes the earlier no-production-change invariant and renderer STOP for this cut.
+- **Stale-plan check:** Delete is now a shortcut event in `WormUiWorkspaceAction`, resolved by the command registry/application dispatcher, rather than a direct `DELETE_SELECTION` frontend input. The harness asserts that real HID/focus payload without inventing a test-side dispatcher.
 - **Outcome:** a test can feed a scripted list of SDL-like events (key, mouse, wheel, text) into the Nuklear frontend without a window and assert the resulting `WormUiWorkspaceAction` values.
-- **Read first:** `src/ui/nuklear/frontend.cpp` (event queue functions near `queue_compose_wheel_event`), `src/ui/frontend.h`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/CMakeLists.txt`.
+- **Read first:** `src/ui/nuklear/frontend.cpp` (event queue functions near `queue_compose_wheel_event`), `src/ui/frontend.h`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/CMakeLists.txt`; user-approved headless/linkage scope: `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/sdl_backend.h/.cpp`, `CMakeLists.txt`.
 - **Files owned:** new `tests/ui/nuklear_event_harness.h`, new `tests/ui/nuklear_event_harness.cpp`, new `tests/ui/nuklear_event_harness_tests.cpp`, `tests/CMakeLists.txt`.
 - **Steps:**
   1. Identify the queue entry points the SDL loop calls (`worm_ui_nuklear_queue_*`). List them in the report.
   2. Write a harness that owns a headless `nk_context` with a fixed font stub, calls those entry points from a scripted vector, runs one frame per script step, and collects emitted actions.
-  3. Add three tests: wheel over Compose scrolls, Delete key emits the delete action, Tab-switch click emits the tab action.
-- **Invariants:** no production code changes; the harness links only the frontend-state test target.
-- **Reject/failure behavior:** if a frame cannot run without an SDL renderer, STOP and report which call requires it.
+  3. Add three tests: wheel over Compose scrolls, Delete key emits its typed shortcut action, Tab-switch click emits the tab action.
+- **Invariants:** live frontend behavior is unchanged; the headless harness builds real widgets and calls the actual input/compose APIs, with tests registered under `frontend-state.`.
+- **Reject/failure behavior:** if the authorized headless initialization cannot run actual frontend frames without a window/renderer, STOP and report the remaining backing gap.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^frontend-state\.'` includes the three new tests and passes.
 - **Out of scope:** pixel screenshots, IME.
 

@@ -63,6 +63,8 @@ extern "C" {
 
 NK_API struct nk_context* nk_sdl_init(SDL_Window* win, SDL_Renderer* renderer,
                                       struct nk_allocator allocator);
+NK_API struct nk_context* nk_sdl_init_headless(struct nk_allocator allocator,
+                                               struct nk_user_font* font);
 #ifdef NK_INCLUDE_FONT_BAKING
 NK_API struct nk_font_atlas* nk_sdl_font_stash_begin(struct nk_context* ctx);
 NK_API void nk_sdl_font_stash_end(struct nk_context* ctx);

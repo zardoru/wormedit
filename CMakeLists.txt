@@ -312,6 +312,57 @@ if(WORMEDIT_BUILD_APP)
     add_library(wormedit::ui_frontend ALIAS wormedit_ui_frontend)
     target_link_libraries(wormedit_ui_frontend INTERFACE nuklear_headers)
 
+    set(WORMEDIT_UI_FRONTEND_SOURCES
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/external_player_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/options_window.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/notification_toasts.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/notification_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/tap_timing_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio_state.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/bms_branch_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/arrow_glyph.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bookmark_label.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_markers.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_area_menu.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_recipe_menu.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_recipe_form.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_canvas.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_toolbar.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_inspector.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_input_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_keyboard_input.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_viewport_input.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_timing_input.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_object_input.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_resources.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_state.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/frontend.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/sdl_backend.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/field/field_renderer.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/field/field_tile_cache.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/field/field_glyphs.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/image_quad.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/lucide_icons.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata_audio_section.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata_difficulty_section.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata_format_fields.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata_song_section.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/metadata_state.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/player_preview.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/player_preview_texture.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/setup_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/setup_state.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/sound_import_state.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/timing_stage_editor.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/text_field.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/timing_state.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/meter_state.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/theme.cpp"
+    )
+
     add_executable(wormedit
         src/common/chart.cpp
         src/common/static_interval_index.cpp
@@ -375,54 +426,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/platform_recovery.cpp
         src/sys/platform_shortcut_profile.cpp
         src/sys/window.cpp
-        src/ui/nuklear/audio_panel.cpp
-        src/ui/nuklear/external_player_panel.cpp
-        src/ui/nuklear/options_window.cpp
-        src/ui/nuklear/notification_toasts.cpp
-        src/ui/nuklear/notification_panel.cpp
-        src/ui/nuklear/tap_timing_panel.cpp
-        src/ui/nuklear/audio_state.cpp
-        src/ui/nuklear/bms_branch_panel.cpp
-        src/ui/nuklear/arrow_glyph.cpp
-        src/ui/nuklear/compose_bookmark_label.cpp
-        src/ui/nuklear/compose_markers.cpp
-        src/ui/nuklear/compose_area_menu.cpp
-        src/ui/nuklear/compose_recipe_menu.cpp
-        src/ui/nuklear/compose_recipe_form.cpp
-        src/ui/nuklear/compose_canvas.cpp
-        src/ui/nuklear/compose_toolbar.cpp
-        src/ui/nuklear/compose_inspector.cpp
-        src/ui/nuklear/compose_input_panel.cpp
-        src/ui/nuklear/compose_keyboard_input.cpp
-        src/ui/nuklear/compose_viewport_input.cpp
-        src/ui/nuklear/compose_timing_input.cpp
-        src/ui/nuklear/compose_object_input.cpp
-        src/ui/nuklear/compose_panel.cpp
-        src/ui/nuklear/compose_resources.cpp
-        src/ui/nuklear/compose_state.cpp
-        src/ui/nuklear/frontend.cpp
-        src/ui/nuklear/sdl_backend.cpp
-        src/ui/field/field_renderer.cpp
-        src/ui/field/field_tile_cache.cpp
-        src/ui/field/field_glyphs.cpp
-        src/ui/nuklear/image_quad.cpp
-        src/ui/nuklear/lucide_icons.cpp
-        src/ui/nuklear/metadata_panel.cpp
-        src/ui/nuklear/metadata_audio_section.cpp
-        src/ui/nuklear/metadata_difficulty_section.cpp
-        src/ui/nuklear/metadata_format_fields.cpp
-        src/ui/nuklear/metadata_song_section.cpp
-        src/ui/nuklear/metadata_state.cpp
-        src/ui/nuklear/player_preview.cpp
-        src/ui/nuklear/player_preview_texture.cpp
-        src/ui/nuklear/setup_panel.cpp
-        src/ui/nuklear/setup_state.cpp
-        src/ui/nuklear/sound_import_state.cpp
-        src/ui/nuklear/timing_stage_editor.cpp
-        src/ui/nuklear/text_field.cpp
-        src/ui/nuklear/timing_state.cpp
-        src/ui/nuklear/meter_state.cpp
-        src/ui/nuklear/theme.cpp
+        ${WORMEDIT_UI_FRONTEND_SOURCES}
     )
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/assets/fonts")
     configure_file("${CMAKE_SOURCE_DIR}/assets/fonts/AdwaitaMono-Regular.ttf"

@@ -2067,6 +2067,8 @@ typedef struct WormUiWorkspaceAction {
 // Private application/frontend boundary. Implementations own all widget
 // toolkit state and translate semantic views into typed actions.
 bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer);
+// Initialize the same event/action frontend without a window or renderer for integration tests.
+bool worm_ui_frontend_init_headless(int width, int height);
 void worm_ui_frontend_shutdown(void);
 void worm_ui_frontend_begin_input(void);
 bool worm_ui_frontend_handle_event(const SDL_Event* event);

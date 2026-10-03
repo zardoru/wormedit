@@ -482,6 +482,40 @@ if(WORMEDIT_ENABLE_LUA)
 endif()
 
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
+    add_executable(wormedit_frontend_event_harness_tests
+        ui/nuklear_event_harness.cpp
+        ui/nuklear_event_harness_tests.cpp
+        ${WORMEDIT_UI_FRONTEND_SOURCES}
+        "${CMAKE_SOURCE_DIR}/src/common/static_interval_index.cpp"
+        "${CMAKE_SOURCE_DIR}/src/sys/frame_timing.cpp")
+    target_include_directories(wormedit_frontend_event_harness_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/include" "${CMAKE_SOURCE_DIR}/src"
+        "${CMAKE_SOURCE_DIR}/src/vendor" "${CMAKE_BINARY_DIR}/generated")
+    target_link_libraries(wormedit_frontend_event_harness_tests PRIVATE
+        wormedit::core wormedit::ui_frontend SDL3::SDL3 otoworm::otoworm
+        nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
+    if(WORMEDIT_ENABLE_IMAGE_DECODER)
+        target_link_libraries(wormedit_frontend_event_harness_tests PRIVATE
+            wormedit::visual_decoder)
+        target_compile_definitions(wormedit_frontend_event_harness_tests PRIVATE
+            WORMEDIT_HAS_IMAGE_DECODER=1)
+    endif()
+    if(TARGET wormedit_video_decoder)
+        target_link_libraries(wormedit_frontend_event_harness_tests PRIVATE
+            wormedit::video_decoder)
+        target_compile_definitions(wormedit_frontend_event_harness_tests PRIVATE
+            WORMEDIT_HAS_VIDEO_DECODER=1)
+    endif()
+    if(WORMEDIT_ENABLE_AUDIO_DECODER)
+        target_link_libraries(wormedit_frontend_event_harness_tests PRIVATE
+            wormedit::audio_decoder)
+        target_compile_definitions(wormedit_frontend_event_harness_tests PRIVATE
+            WORMEDIT_HAS_AUDIO_DECODER=1)
+    endif()
+    catch_discover_tests(wormedit_frontend_event_harness_tests
+        TEST_PREFIX "frontend-state."
+        PROPERTIES LABELS "unit;frontend" DISCOVERY_MODE PRE_TEST)
+
     add_executable(wormedit_frame_timing_tests
         sys/frame_timing_tests.cpp
         ui/nuklear_notification_state_tests.cpp

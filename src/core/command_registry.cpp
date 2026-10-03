@@ -885,10 +885,10 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
                 workspace_tab_t::timing, false);
     add_builtin(registry, invoker, "timing.insert_bpm", "Insert BPM Change",
                 command_category_t::timing, command_focus_scope_t::tab, {}, true,
-                workspace_tab_t::timing);
+                workspace_tab_t::compose);
     add_builtin(registry, invoker, "timing.insert_sv", "Insert Scroll Velocity",
                 command_category_t::timing, command_focus_scope_t::tab, {}, true,
-                workspace_tab_t::timing);
+                workspace_tab_t::compose);
     add_builtin(registry, invoker, "timing.open_settings", "Timing Settings",
                 command_category_t::timing, command_focus_scope_t::tab, {}, false,
                 workspace_tab_t::timing);

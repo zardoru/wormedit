@@ -993,6 +993,9 @@ static void dismiss_compose_inline_timing_popup(nk_context* context, struct nk_r
 
 static void render_compose_inline_timing_editor(const ComposePanelRenderContext& panel,
                                                 struct nk_rect viewport) {
+    static_cast<void>(worm_ui_nuklear_inline_timing_review_new_stage(
+        state, *panel.timing_view, *panel.action,
+        viewport.x + viewport.w * 0.5f, viewport.y + viewport.h * 0.5f));
     if (state.inline_timing_popup_close_pending) {
         dismiss_compose_inline_timing_popup(panel.context, viewport);
         return;

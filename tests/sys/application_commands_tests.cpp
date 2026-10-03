@@ -1,8 +1,10 @@
 #include "sys/transport_player_actions.h"
 #include "sys/application_commands.h"
+#include "sys/application_command_dispatch.h"
 #include "sys/compose_minimap_navigation.h"
 
 #include <wormedit/core/command_registry.h>
+#include <wormedit/core/timing_lane_controller.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -11,6 +13,7 @@
 
 using namespace wormedit::sys;
 
+#ifndef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
 TEST_CASE("Compose navigation cleanup preserves command results", "[unit][sys][commands]") {
     std::string status = "Semantic layer added.";
     // Focus loss can emit cleanup alongside a widget action or on later frames.
@@ -71,6 +74,8 @@ TEST_CASE("every built-in command ID has a typed representation", "[unit][sys][c
     }
 }
 
+#endif
+
 #include "sys/compose_area_actions.h"
 #include <algorithm>
 #include <array>
@@ -125,6 +130,121 @@ struct AreaFixture {
 };
 } // namespace
 
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+namespace {
+struct TimingInsertFixture {
+    AreaFixture fixture;
+    wormedit::workspace_controller_t workspace;
+    std::optional<wormedit::editor_interaction_state_t> compose_state;
+    std::optional<wormedit::timing_lane_pseudonote_preview_t> preview;
+    application_command_state_t application_state;
+    std::string status;
+    wormedit::local_position_t cursor{wormedit::measure_id_t{1}, 720};
+
+    TimingInsertFixture() {
+        using namespace wormedit;
+        auto& chart = fixture.history.document.charts.front();
+        chart.scrolls.push_back({.id = object_id_t{103},
+                                 .position = {measure_id_t{1}, 600},
+                                 .multiplier = {3, 2}});
+        const auto moved = dispatch_editor_action(
+            fixture.history, fixture.state,
+            jump_edit_cursor_action_t{cursor, fixture.history.document.revision});
+        REQUIRE(moved.accepted);
+        const auto workspace_result = make_workspace_controller(fixture.history);
+        REQUIRE(workspace_result);
+        workspace = *workspace_result.workspace;
+        workspace.active_tab = workspace_tab_t::compose;
+        workspace.selected_chart = chart.id;
+        compose_state = fixture.state;
+    }
+
+    auto invoke(application_command_kind_t kind) {
+        return invoke_application_command({.kind = kind}, fixture.history, workspace,
+                                          compose_state, preview, application_state, status);
+    }
+};
+
+auto bpm_preview_matches(const wormedit::timing_lane_pseudonote_preview_t& preview,
+                         wormedit::local_position_t cursor) -> bool {
+    using namespace wormedit;
+    return preview.kind == timing_lane_kind_t::bpm && preview.position == cursor &&
+           preview.initial_value_source == timing_lane_initial_value_source_t::effective_at_position &&
+           std::get<timing_bpm_value_t>(preview.value).beats_per_minute == signed_rational_t{150, 1};
+}
+
+auto sv_preview_matches(const wormedit::timing_lane_pseudonote_preview_t& preview,
+                        wormedit::local_position_t cursor) -> bool {
+    using namespace wormedit;
+    return preview.kind == timing_lane_kind_t::scroll && preview.position == cursor &&
+           preview.initial_value_source == timing_lane_initial_value_source_t::effective_at_position &&
+           std::get<timing_scroll_value_t>(preview.value).multiplier == signed_rational_t{3, 2};
+}
+
+auto history_unchanged(const wormedit::document_history_t& history, std::uint64_t revision) -> bool {
+    return history.document.revision == revision && history.undo.empty();
+}
+
+auto bpm_stage_ready(const TimingInsertFixture& fixture,
+                     const wormedit::command_invocation_result_t& result,
+                     std::uint64_t revision) -> bool {
+    return result.accepted && fixture.preview && bpm_preview_matches(*fixture.preview, fixture.cursor) &&
+           history_unchanged(fixture.fixture.history, revision);
+}
+
+auto confirm_bpm_once(TimingInsertFixture& fixture, std::uint64_t revision) -> bool {
+    if (!fixture.preview) return false;
+    const auto committed = wormedit::confirm_timing_lane_pseudonote(
+        fixture.fixture.history, *fixture.preview, false);
+    return committed.applied && fixture.fixture.history.document.revision == revision + 1 &&
+           fixture.fixture.history.undo.size() == 1;
+}
+
+auto sv_stage_ready(const TimingInsertFixture& fixture,
+                    const wormedit::command_invocation_result_t& result,
+                    std::uint64_t revision) -> bool {
+    return result.accepted && fixture.preview && sv_preview_matches(*fixture.preview, fixture.cursor) &&
+           history_unchanged(fixture.fixture.history, revision);
+}
+} // namespace
+
+TEST_CASE("BPM insertion stages effective cursor BPM and commits only on confirmation",
+          "[unit][sys][commands][timing]") {
+    using namespace wormedit;
+    TimingInsertFixture fixture;
+    const auto revision = fixture.fixture.history.document.revision;
+
+    const auto result = fixture.invoke(application_command_kind_t::timing_insert_bpm);
+    CHECK(bpm_stage_ready(fixture, result, revision));
+    CHECK(confirm_bpm_once(fixture, revision));
+}
+
+TEST_CASE("SV insertion stages the effective cursor scroll multiplier",
+          "[unit][sys][commands][timing]") {
+    using namespace wormedit;
+    TimingInsertFixture fixture;
+    const auto revision = fixture.fixture.history.document.revision;
+
+    const auto result = fixture.invoke(application_command_kind_t::timing_insert_sv);
+    CHECK(sv_stage_ready(fixture, result, revision));
+}
+
+TEST_CASE("timing insertion rejects locked edits and missing charts",
+          "[unit][sys][commands][timing]") {
+    using namespace wormedit;
+    TimingInsertFixture fixture;
+    const auto revision = fixture.fixture.history.document.revision;
+    fixture.application_state.timing_locked = true;
+    CHECK_FALSE(fixture.invoke(application_command_kind_t::timing_insert_bpm).accepted);
+    CHECK_FALSE(fixture.preview);
+    fixture.application_state.timing_locked = false;
+    fixture.workspace.selected_chart.reset();
+    CHECK_FALSE(fixture.invoke(application_command_kind_t::timing_insert_sv).accepted);
+    CHECK_FALSE(fixture.preview);
+    CHECK(fixture.fixture.history.document.revision == revision);
+}
+
+#else
 namespace {
 void check_area_unchanged(const AreaFixture& fixture, const std::optional<std::string>& original) {
     CHECK(wormedit::write_native_project(fixture.history.document).bytes == original);
@@ -608,3 +728,5 @@ TEST_CASE("bookmark commands parse to their application kinds", "[unit][sys][com
     CHECK(next->kind == kind::navigation_next_bookmark);
     CHECK(add->kind == kind::markers_add_bookmark);
 }
+
+#endif // WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY

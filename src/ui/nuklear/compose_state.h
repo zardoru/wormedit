@@ -255,6 +255,12 @@ struct worm_ui_nuklear_compose_state_t {
         bool release_pending{};
     } bgm_column_count_edit;
     bool inline_timing_open{};
+    bool inline_timing_stage_seen{};
+    std::uint64_t inline_timing_seen_chart_id{};
+    std::uint64_t inline_timing_seen_revision{};
+    std::uint64_t inline_timing_seen_object_id{};
+    WormUiTimingLaneKind inline_timing_seen_lane{WORM_UI_TIMING_LANE_BPM};
+    double inline_timing_seen_stage_y{};
     bool inline_timing_focus_pending{};
     bool inline_timing_popup_close_pending{};
     bool inline_timing_input_consumed{};
@@ -391,6 +397,9 @@ void worm_ui_nuklear_update_inline_offset(worm_ui_nuklear_compose_state_t& state
 
 void worm_ui_nuklear_inline_timing_initial_text(const WormUiTimingView& view, char* destination,
                                                 std::size_t capacity);
+[[nodiscard]] auto worm_ui_nuklear_inline_timing_review_new_stage(
+    worm_ui_nuklear_compose_state_t& state, const WormUiTimingView& view,
+    const WormUiWorkspaceAction& action, float anchor_x, float anchor_y) -> bool;
 void worm_ui_nuklear_inline_timing_cancel(worm_ui_nuklear_compose_state_t& state,
                                          WormUiWorkspaceAction& action);
 void worm_ui_nuklear_inline_timing_update(worm_ui_nuklear_compose_state_t& state,

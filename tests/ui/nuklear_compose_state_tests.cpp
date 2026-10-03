@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include <array>
 #include <cstring>
 #include <limits>
 #include <source_location>
@@ -63,7 +64,93 @@ void check_inline_binding(const WormUiWorkspaceAction& action) {
     CHECK(action.timing_lane == WORM_UI_TIMING_LANE_BPM);
 }
 
+auto inline_review_opens_once() -> bool {
+    worm_ui_nuklear_compose_state_t state{};
+    auto view = staged_timing(WORM_UI_TIMING_LANE_BPM);
+    view.stage_existing_object_id = 0;
+    std::strcpy(view.stage_primary_numerator_text, "150");
+    std::strcpy(view.stage_primary_denominator_text, "1");
+    std::strcpy(view.stage_primary_decimal_text, "150");
+    WormUiWorkspaceAction action{};
+    const auto opened = worm_ui_nuklear_inline_timing_review_new_stage(
+        state, view, action, 80.0f, 120.0f);
+    const auto seeded = state.inline_timing_open && state.inline_timing_focus_pending &&
+        state.inline_timing_chart_id == view.chart_id &&
+        state.inline_timing_revision == view.document_revision &&
+        state.inline_timing_object_id == 0 && state.inline_timing_lane == WORM_UI_TIMING_LANE_BPM &&
+        state.inline_timing_anchor_screen_x == 80.0f &&
+        state.inline_timing_anchor_screen_y == 120.0f;
+    std::array<char, 64> initial{};
+    worm_ui_nuklear_inline_timing_initial_text(view, initial.data(), initial.size());
+    const auto exact_effective_value = std::strcmp(initial.data(), "150") == 0;
+    worm_ui_nuklear_inline_timing_cancel(state, action);
+    const auto stays_closed_after_cancel =
+        !worm_ui_nuklear_inline_timing_review_new_stage(state, view, action, 80.0f, 120.0f);
+    view.stage_active = false;
+    const auto reset_on_end =
+        !worm_ui_nuklear_inline_timing_review_new_stage(state, view, action, 80.0f, 120.0f);
+    state.inline_timing_popup_close_pending = false;
+    view.stage_active = true;
+    view.document_revision += 1;
+    action.timing_stage_action = WORM_UI_TIMING_STAGE_NONE;
+    const auto new_revision_opens =
+        worm_ui_nuklear_inline_timing_review_new_stage(state, view, action, 80.0f, 120.0f);
+    const auto new_binding = state.inline_timing_revision == view.document_revision;
+    state.inline_timing_open = false;
+    state.inline_timing_popup_close_pending = true;
+    view.document_revision += 1;
+    const auto close_is_deferred =
+        !worm_ui_nuklear_inline_timing_review_new_stage(state, view, action, 80.0f, 120.0f);
+    state.inline_timing_popup_close_pending = false;
+    const auto opens_after_close =
+        worm_ui_nuklear_inline_timing_review_new_stage(state, view, action, 80.0f, 120.0f);
+    return opened && seeded && exact_effective_value && stays_closed_after_cancel && reset_on_end &&
+           new_revision_opens && new_binding && close_is_deferred && opens_after_close;
+}
+
+auto inline_review_ignores_other_stage_sources() -> bool {
+    worm_ui_nuklear_compose_state_t state{};
+    WormUiWorkspaceAction action{};
+    auto view = staged_timing(WORM_UI_TIMING_LANE_BPM);
+    const auto mouse_begin = [&] {
+        state = {};
+        action.timing_stage_action = WORM_UI_TIMING_STAGE_BEGIN;
+        view.stage_existing_object_id = 0;
+        return !worm_ui_nuklear_inline_timing_review_new_stage(state, view, action, 0.0f, 0.0f) &&
+               !state.inline_timing_open;
+    };
+    const auto object_edit = [&] {
+        state = {};
+        action = {};
+        view.stage_existing_object_id = 29;
+        return !worm_ui_nuklear_inline_timing_review_new_stage(state, view, action, 0.0f, 0.0f);
+    };
+    const auto kiai_span = [&] {
+        state = {};
+        view.stage_existing_object_id = 0;
+        view.stage_lane = WORM_UI_TIMING_LANE_KIAI;
+        return !worm_ui_nuklear_inline_timing_review_new_stage(state, view, action, 0.0f, 0.0f);
+    };
+    const auto pointer_drag = [&] {
+        state = {};
+        view.stage_lane = WORM_UI_TIMING_LANE_SCROLL;
+        state.timing_stage_drag_active = true;
+        return !worm_ui_nuklear_inline_timing_review_new_stage(state, view, action, 0.0f, 0.0f);
+    };
+    return mouse_begin() && object_edit() && kiai_span() && pointer_drag();
+}
+
 } // namespace
+
+TEST_CASE("keyboard-created BPM timing preview opens its effective value editor once",
+          "[unit][frontend][compose][timing]") {
+    CHECK(inline_review_opens_once());
+}
+
+TEST_CASE("inline timing review leaves mouse and unrelated previews alone",
+          "[unit][frontend][compose][timing]") {
+    CHECK(inline_review_ignores_other_stage_sources());
+}
 
 TEST_CASE("Nuklear compose state resets queues gestures editors and authored defaults",
           "[unit][frontend][compose]") {

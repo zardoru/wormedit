@@ -47,6 +47,15 @@ auto focus_for_compose() -> command_focus_t {
     };
 }
 
+auto invokes_command_in_focus(const command_registry_t& registry, command_focus_t focus,
+                              const std::shared_ptr<std::vector<command_id_t>>& calls,
+                              std::string_view id, std::size_t call_count) -> bool {
+    const command_id_t command_id{std::string(id)};
+    const auto result = invoke_command(registry, command_id, focus);
+    return result.status == command_dispatch_status_t::invoked && result.command == command_id &&
+           calls->size() == call_count && calls->back() == command_id;
+}
+
 auto has_command(const command_registry_t& registry, std::string_view id) -> bool {
     return find_command(registry, command_id_t{std::string(id)}) != nullptr;
 }
@@ -420,6 +429,18 @@ TEST_CASE("default registry seeds discoverable editor commands and visible tab r
     const auto hidden = dispatch_shortcut(registry, {.chord = {.key = shortcut_key_t::f3}}, focus,
                                           shortcut_primary_modifier_t::control);
     CHECK(hidden.status == command_dispatch_status_t::no_match);
+}
+
+TEST_CASE("timing insertion commands route through Compose focus",
+          "[unit][core][command_registry][timing]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    CHECK(invokes_command_in_focus(registry, focus_for_compose(), calls, "timing.insert_bpm", 1));
+    CHECK(invokes_command_in_focus(registry, focus_for_compose(), calls, "timing.insert_sv", 2));
+    CHECK(invoke_command(registry, command_id_t{"timing.insert_bpm"},
+                         {.workspace_active = true, .active_tab = workspace_tab_t::setup,
+                          .visible_tabs = {workspace_tab_t::setup, workspace_tab_t::compose}})
+              .status == command_dispatch_status_t::focus_consumed);
 }
 
 TEST_CASE("transport shortcuts distinguish cursor playback from play from start",

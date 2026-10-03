@@ -14,9 +14,11 @@
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/marker_navigation.h>
 #include <wormedit/core/semantic_layer_editor.h>
+#include <wormedit/core/timing.h>
 #include <wormedit/core/timing_lane_controller.h>
 #include <wormedit/core/workspace.h>
 
+#include <limits>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -424,6 +426,80 @@ auto timing_lock_command(command_context_t& context) -> std::optional<command_re
     return command_result_t{.accepted = true};
 }
 
+auto effective_scroll_multiplier_at(const wormedit::chart_document_t& chart,
+                                    wormedit::local_position_t position)
+    -> std::optional<wormedit::signed_rational_t> {
+    using namespace wormedit;
+    const auto measure_result = build_measure_index(chart);
+    const auto* measures = std::get_if<measure_index_t>(&measure_result);
+    const auto row = measures ? absolute_row(*measures, position) : std::nullopt;
+    if (!row || *row > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+        return std::nullopt;
+    const auto timing = build_timing_index(chart);
+    if (!timing) return std::nullopt;
+    const auto scroll = build_scroll_speed_index(chart, *timing.index);
+    if (!scroll) return std::nullopt;
+    const auto value = scroll_speed_at(*scroll.index, *timing.index,
+                                       {static_cast<std::int64_t>(*row), 1});
+    return value && value.state ? std::optional{value.state->scroll_multiplier} : std::nullopt;
+}
+
+auto timing_insert_command(command_context_t& context) -> std::optional<command_result_t> {
+    using namespace wormedit;
+    timing_lane_kind_t lane{};
+    if (context.command.kind == command_kind_t::timing_insert_bpm)
+        lane = timing_lane_kind_t::bpm;
+    else if (context.command.kind == command_kind_t::timing_insert_sv)
+        lane = timing_lane_kind_t::scroll;
+    else
+        return std::nullopt;
+
+    if (context.application_state.timing_locked)
+        return reject_application_command(context.status, "Timing edits are locked.");
+    if (context.timing_stage)
+        return reject_application_command(
+            context.status, "Confirm or cancel the open timing edit before starting another.");
+    auto* state = context.compose();
+    const auto* chart = selected_chart(context.history, context.workspace);
+    if (!state || !chart)
+        return reject_application_command(
+            context.status, "Timing insertion requires the active Compose chart.");
+    if (state->virtual_bms_cursor_row)
+        return reject_application_command(
+            context.status, "Timing insertion is unavailable at a virtual BMS cursor row.");
+    if (editor_interaction_has_pending_gesture(*state))
+        return reject_application_command(
+            context.status, "Finish or cancel the active Compose gesture before inserting timing.");
+
+    timing_lane_value_t initial;
+    if (lane == timing_lane_kind_t::bpm) {
+        const auto bpm = effective_bpm_at(*chart, state->cursor);
+        if (!bpm)
+            return reject_application_command(
+                context.status, "The effective BPM could not be resolved at the cursor.");
+        initial = timing_bpm_value_t{*bpm};
+    } else {
+        const auto multiplier = effective_scroll_multiplier_at(*chart, state->cursor);
+        if (!multiplier)
+            return reject_application_command(
+                context.status, "The effective SV value could not be resolved at the cursor.");
+        initial = timing_scroll_value_t{*multiplier};
+    }
+    auto preview = begin_timing_lane_pseudonote(
+        context.history, chart->id, lane, state->cursor, std::move(initial),
+        timing_lane_initial_value_source_t::effective_at_position,
+        context.application_state.timing_locked);
+    if (preview.status != timing_lane_pseudonote_status_t::editing) {
+        const auto message = preview.diagnostics.empty()
+                                 ? "Timing event could not be staged at the Compose cursor."
+                                 : preview.diagnostics.front().message;
+        return reject_application_command(context.status, message);
+    }
+    context.timing_stage = std::move(preview);
+    context.status = "Timing event staged; confirm to insert it.";
+    return command_result_t{.accepted = true};
+}
+
 auto note_kind_command(command_context_t& context) -> std::optional<command_result_t> {
     if (context.command.kind != command_kind_t::edit_note_kind) return std::nullopt;
     auto* state = context.compose();
@@ -508,6 +584,7 @@ auto invoke_application_command(
     if (auto result = navigation_commands(context)) return *result;
     if (auto result = bookmark_commands(context)) return *result;
     if (auto result = workspace_tab_command(context)) return *result;
+    if (auto result = timing_insert_command(context)) return *result;
     if (auto result = timing_lock_command(context)) return *result;
     if (kind == command_kind_t::semantic_layer_select_slot)
         return semantic_layer_slot_command(context);

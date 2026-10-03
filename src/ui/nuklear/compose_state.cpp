@@ -382,6 +382,47 @@ void worm_ui_nuklear_inline_timing_initial_text(const WormUiTimingView& view, ch
         std::snprintf(destination, capacity, "%s/%s", numerator, denominator);
 }
 
+auto worm_ui_nuklear_inline_timing_review_new_stage(
+    worm_ui_nuklear_compose_state_t& state, const WormUiTimingView& view,
+    const WormUiWorkspaceAction& action, float anchor_x, float anchor_y) -> bool {
+    if (!view.stage_active) {
+        state.inline_timing_stage_seen = false;
+        return false;
+    }
+    const bool same_stage = state.inline_timing_stage_seen &&
+        state.inline_timing_seen_chart_id == view.chart_id &&
+        state.inline_timing_seen_revision == view.document_revision &&
+        state.inline_timing_seen_object_id == view.stage_existing_object_id &&
+        state.inline_timing_seen_lane == view.stage_lane &&
+        state.inline_timing_seen_stage_y == view.stage_marker_y_pixels;
+    if (same_stage) return false;
+    if (state.inline_timing_open || state.inline_timing_popup_close_pending ||
+        action.timing_stage_action != WORM_UI_TIMING_STAGE_NONE)
+        return false;
+    state.inline_timing_stage_seen = true;
+    state.inline_timing_seen_chart_id = view.chart_id;
+    state.inline_timing_seen_revision = view.document_revision;
+    state.inline_timing_seen_object_id = view.stage_existing_object_id;
+    state.inline_timing_seen_lane = view.stage_lane;
+    state.inline_timing_seen_stage_y = view.stage_marker_y_pixels;
+    const bool editable_new_value = view.stage_existing_object_id == 0 &&
+        (view.stage_lane == WORM_UI_TIMING_LANE_BPM || view.stage_lane == WORM_UI_TIMING_LANE_SCROLL);
+    if (!editable_new_value || state.timing_stage_drag_active)
+        return false;
+
+    state.inline_timing_open = true;
+    state.inline_timing_focus_pending = true;
+    state.inline_timing_chart_id = view.chart_id;
+    state.inline_timing_revision = view.document_revision;
+    state.inline_timing_object_id = view.stage_existing_object_id;
+    state.inline_timing_lane = view.stage_lane;
+    state.inline_timing_anchor_screen_x = anchor_x;
+    state.inline_timing_anchor_screen_y = anchor_y;
+    state.inline_timing_text.fill('\0');
+    state.inline_timing_error.fill('\0');
+    return true;
+}
+
 auto worm_ui_nuklear_inline_timing_confirm(const WormUiTimingView& view, const char* text,
                                            WormUiWorkspaceAction& action) -> bool {
     if (!view.stage_active || !text) return false;

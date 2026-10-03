@@ -1437,8 +1437,8 @@ void refresh_application_command_states(
         workspace.active_tab == workspace_tab_t::compose &&
             application_state.compose_timing_focus,
         application_state.timing_locked);
-    set("timing.insert_bpm", false);
-    set("timing.insert_sv", false);
+    set("timing.insert_bpm", compose_ready && !application_state.timing_locked);
+    set("timing.insert_sv", compose_ready && !application_state.timing_locked);
     set("timing.open_settings", false);
 
     const auto palette = compose_ready

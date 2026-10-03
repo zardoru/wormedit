@@ -9,10 +9,12 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-50 Enable Insert BPM and Insert Scroll Velocity at the cursor
 
-- **Status:** ready
+- **Status:** done
+- **Stale-plan audit (2026-10-02):** Mouse insertion, `begin_timing_lane_pseudonote`, and the inline value editor already exist. The two registry commands remained disabled, lacked dispatcher handlers, and targeted the retired Timing tab. This cut reuses the existing staging and confirmation paths; the user approved retargeting to Compose and connecting command-created stages to the existing inline editor.
+- **Implementation notes (2026-10-02):** The existing timing controller stages exact effective BPM/SV at the Compose cursor; the existing inline editor reviews it and confirms or cancels. The registry now targets Compose, and command states honor the timing lock. Dispatcher tests live in the application frame target; pure command tests retain their core target. Isolated custom-shortcut checks showed BPM 175 and SV 11/4 before mutation; Escape canceled cleanly, typing 7/2 inserted one SV and one Undo restored the clean document. A separate BPM edit saved one event at measure 2 row 240 with exact value 375/2, revision +1, and unchanged notes/SV events (`/tmp/wormedit-t50/saved-document-check.txt`). No default shortcuts were added. Final build and full tests passed 1,568/1,568 (`/tmp/wormedit-final-all-tests2.log`); affected-file clang-tidy reported no new complexity warnings.
 - **Outcome:** `timing.insert_bpm` and `timing.insert_sv` are enabled when a chart is open and start the existing timing pseudo-note at the exact Compose cursor row, seeded with the effective value there.
 - **Read first:** `include/wormedit/core/timing_lane_controller.h` (`begin_timing_lane_pseudonote`), `src/sys/main.cpp` (`set("timing.insert_bpm", false)`), `src/sys/application_commands.cpp`, `src/sys/timing_edit_runtime.cpp`.
-- **Files owned:** `src/sys/main.cpp`, `src/sys/application_command_dispatch.cpp`, `src/sys/timing_edit_runtime.cpp/.h`, `tests/sys/application_commands_tests.cpp`.
+- **Files owned:** `src/sys/main.cpp`, `src/sys/application_command_dispatch.cpp`, `src/sys/timing_edit_runtime.cpp/.h`, `tests/sys/application_commands_tests.cpp`; user-approved scope extensions (2026-10-02): `src/core/command_registry.cpp`, `tests/core/command_registry_tests.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/CMakeLists.txt`.
 - **Steps:**
   1. In the dispatcher, handle `timing_insert_bpm` / `timing_insert_sv` by calling the same path that double-clicking an empty Timing-lane row uses, with the cursor row and `timing_lane_initial_value_source_t` "effective value".
   2. Replace the two `false` states with "chart open and timing not locked".

@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "sys/compose_resource_presenter.h"
+#include "sys/sound_list_projection.h"
 #include "wormedit/config.h"
 
 #include <wormedit/core/resource_file_copy.h>
@@ -809,11 +810,50 @@ void populate_storyboard_tab(const workspace_projection_context_t& projection, c
                 append("Storyboard documents: " + std::to_string(tab.storyboard_count));
 
 }
+void populate_sound_rows(const workspace_projection_context_t& projection) {
+    auto& result = projection.result;
+    auto& audio = result.view.audio_slices;
+    auto* arena = result.arena();
+    wormedit::sys::sound_list_request_t request;
+    request.row_limit = WORM_UI_SOUND_ROW_CAPACITY;
+    const auto list = wormedit::sys::project_sound_list(projection.document, request);
+    audio.sound_rows_truncated = list.total_matching > list.rows.size();
+    result.audio.sound_row = arena ? arena_array<WormUiSoundRowView>(*arena, list.rows.size())
+                                   : frame_span<WormUiSoundRowView>{};
+    if (result.audio.sound_row.capacity() < list.rows.size()) {
+        audio.sound_rows_truncated = true;
+        return;
+    }
+    for (const auto& row : list.rows) {
+        const auto resource = std::ranges::find(projection.document.resources, row.resource,
+                                                &wormedit::resource_entry_t::id);
+        const auto asset = resource == projection.document.resources.end()
+                               ? wormedit::asset_id_t{}
+                               : resource->asset;
+        const auto properties =
+            wormedit::sys::project_sound_properties(projection.document, row.resource);
+        WormUiSoundRowView view{};
+        view.resource_id = row.resource.value;
+        view.asset_id = asset.value;
+        view.name = arena_string(*arena, row.name);
+        view.tags_text = arena_string(*arena, row.tags_text);
+        view.source_path = arena_string(*arena, properties.source_path);
+        view.kind = static_cast<int>(row.kind);
+        view.use_count = row.use_count;
+        view.duration_frames = row.duration_frames;
+        view.sample_rate = row.sample_rate;
+        view.missing = row.missing;
+        (void)result.audio.sound_row.push_back(view);
+    }
+    audio.sound_rows = result.audio.sound_row.data();
+    audio.sound_row_count = result.audio.sound_row.size();
+}
 void populate_audio_slices_tab(const workspace_projection_context_t& projection, const wormedit::workspace_audio_slices_view_t& tab) {
     auto& result = projection.result;
     const auto append = [&](std::string line) { append_workspace_summary(projection, std::move(line)); };
                 auto& audio = result.view.audio_slices;
                 audio.visible = true;
+                populate_sound_rows(projection);
                 audio.assets_truncated = tab.audio_assets.size() > WORM_UI_AUDIO_ASSET_CAPACITY;
                 audio.asset_count =
                     std::min(tab.audio_assets.size(),
@@ -900,6 +940,7 @@ void flattened_workspace_t::rebind_view_pointers() {
     compose_view.branch_choices = compose.branch.choice.data();
 
     view.audio_slices.asset_ids = audio.asset.data();
+    view.audio_slices.sound_rows = audio.sound_row.data();
 }
 
 auto project_notification_view(const notification_center_t& center, notification_time_t now)

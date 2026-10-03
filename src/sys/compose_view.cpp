@@ -3426,6 +3426,64 @@ void populate_compose_final_projection(const compose_final_projection_context_t&
     cache_area_object_geometry(input);
 }
 
+void populate_bgm_only_compose_projection(
+    flattened_workspace_t& flattened, wormedit::document_history_t& history,
+    const wormedit::chart_document_t& chart, const wormedit::measure_index_t& measures,
+    compose_scene_cache_t& cache, application_command_state_t& application_state,
+    WormUiComposeView& view, bool downscroll,
+    const wormedit::timing_lane_pseudonote_preview_t* timing_stage) {
+    std::optional<wormedit::editor_interaction_state_t> projection_state{
+        std::in_place};
+    projection_state->chart = chart.id;
+    projection_state->pixels_per_standard_measure = view.pixels_per_standard_measure;
+    projection_state->viewport_height_pixels = view.viewport_height_pixels;
+    projection_state->viewport_minimum_margin_fraction =
+        wormedit::editor_cursor_edge_margin_fraction;
+    projection_state->viewport_end_margin_fraction =
+        wormedit::editor_cursor_edge_margin_fraction;
+    projection_state->scroll_direction = downscroll
+        ? wormedit::editor_field_scroll_direction_t::down
+        : wormedit::editor_field_scroll_direction_t::up;
+    projection_state->active_snap_denominator = 1;
+    const auto cached_view_matches = cache.interaction_view &&
+        cache.interaction_view->chart == chart.id &&
+        cache.interaction_view->document_revision == history.document.revision;
+    const auto viewport_scroll_pixels = cached_view_matches
+        ? cache.interaction_view->viewport_scroll_pixels
+        : -view.viewport_height_pixels * wormedit::editor_cursor_edge_margin_fraction;
+    wormedit::restore_cursor_pose(*projection_state, {
+        .cursor = {measures.entries.front().id, 0},
+        .viewport_scroll_pixels = viewport_scroll_pixels,
+    });
+
+    wormedit::editor_interaction_view_model_t interaction_view{};
+    interaction_view.chart = chart.id;
+    interaction_view.cursor = projection_state->cursor;
+    interaction_view.active_snap_denominator = projection_state->active_snap_denominator;
+    interaction_view.document_revision = history.document.revision;
+    interaction_view.pixels_per_standard_measure = projection_state->pixels_per_standard_measure;
+    interaction_view.viewport_scroll_pixels = projection_state->viewport_scroll_pixels;
+    interaction_view.viewport_height_pixels = projection_state->viewport_height_pixels;
+    interaction_view.viewport_minimum_margin_fraction = projection_state->viewport_minimum_margin_fraction;
+    interaction_view.viewport_end_margin_fraction = projection_state->viewport_end_margin_fraction;
+    interaction_view.scroll_direction = projection_state->scroll_direction;
+    const compose_final_projection_context_t final_context{
+        flattened, history, chart, cache, projection_state, application_state, view,
+        interaction_view, measures, downscroll, timing_stage};
+    const auto rows = prepare_compose_projection_state(final_context);
+    populate_compose_pending_previews(final_context);
+    (void)compose_project_scene(final_context, rows);
+    view.clipboard_copy_available = false;
+    view.clipboard_paste_available = false;
+    view.paste_active = false;
+    view.paste_valid = false;
+    view.paste_ghosts = nullptr;
+    view.paste_ghost_count = 0;
+    view.allowed_note_kind_mask = 0;
+    view.note_paint_mode_active = false;
+    view.semantic_layer_paint_mode_active = false;
+}
+
 } // namespace
 
 void populate_compose_view(flattened_workspace_t& flattened,
@@ -3466,6 +3524,11 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.audio_offset_editable = !application_state.audio_offset_edits_locked() &&
         (!retained_state || !editor_interaction_has_pending_gesture(*retained_state));
     const auto& measures = *measure_data;
+    if (chart.lane_layouts.empty() && !chart.bgm_source_lanes.empty()) {
+        populate_bgm_only_compose_projection(flattened, history, chart, measures, cache,
+                                             application_state, view, downscroll, timing_stage);
+        return;
+    }
     const compose_interaction_population_context_t interaction_context{
         flattened, history, chart, measures, retained_state, application_state, view, downscroll};
     auto interaction_data = prepare_compose_interaction(interaction_context);

@@ -153,11 +153,13 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-59 Remap shortcuts in a preferences window and save them
 
-- **Status:** ready
+- **Status:** blocked-on-user
+- **Stale-plan audit (2026-10-03):** remap, conflict diagnosis, and atomic profile persistence exist, but no Shortcuts window/capture UI does. The frontend shell is the only panel/event orchestrator and is not owned; frontend event-test linkage is omitted too. No remapping implementation was started.
 - **Outcome:** a Shortcuts window lists every registry command with its chord; the user can capture a new chord, see conflicts, and the profile is saved with `save_shortcut_profile_atomic`.
 - **Read first:** `include/wormedit/core/command_registry.h` (`remap_command`, `diagnose_shortcut_conflicts`), `include/wormedit/core/shortcut_profile_storage.h`, `src/core/shortcut_profile_startup.cpp`.
 - **Files owned:** new `src/ui/nuklear/shortcuts_panel.cpp/.h`, `src/ui/frontend.h`, `src/sys/main.cpp`, `CMakeLists.txt`, `tests/core/command_registry_tests.cpp`.
 - **Steps:**
+  0. **STOP:** obtain supporting ownership for `src/ui/nuklear/frontend.cpp` and actual frontend test linkage before wiring the new panel.
   1. Project the registry (id, label, chord text, conflict flag) into a bounded view.
   2. "Change" captures the next physical key batch as the chord; call `remap_command`.
   3. Save on every successful remap; show load/save errors in the status bar.
@@ -212,7 +214,8 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-63 Decode BMSE and iBMSC clipboard text
 
-- **Status:** blocked-on T-61
+- **Status:** in progress
+- **Stale-plan audit (2026-10-03):** T-61 is done, so its old blocker is satisfied. No BMS editor clipboard decoder exists. This tests-first format cut can proceed in its owned files and is prioritized after T-41 under the user’s testing request. The ten-endpoint fixture scenario normalizes to nine native clipboard objects because a long-note head/tail pair becomes one hold with an exact duration.
 - **Outcome:** pasting BMSE 3.0, BMSE legacy, iBMSC, or iBMSC xNT clipboard text produces the same snippet type as T-61, with exact rational rows.
 - **Read first:** `docs/references/bms-editor-clipboard.md` (full grammar, cross-editor table, hazards), `tests/fixtures/bms/clipboard/README.md`, `include/wormedit/core/chart_clipboard.h`.
 - **Files owned:** new `src/formats/bms_clipboard.cpp`, new `include/wormedit/formats/bms_clipboard.h`, new `tests/formats/bms_clipboard_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.

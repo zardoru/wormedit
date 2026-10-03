@@ -87,7 +87,8 @@ stale-plan check (rule 9) first.
 
 ## T-106 Render a selected interval to PCM offline
 
-- **Status:** ready
+- **Status:** done
+- **Implementation/verification (2026-10-03):** `render_offline_interval` owns a synchronous production preview session/bridge/mixer, renders from timeline zero, and retains exactly `[begin_frame, end_frame)` so prior keysound/BGM tails survive. Metronome clicks are excluded, silent tails remain, the optional linear fade ends at digital zero, and timeline/frame/byte caps bound work and output. Missing bindings, decoder failures, incomplete/capacity-limited scheduling and cancellation return no PCM. Nine generated-PCM regressions cover exact stereo sums and source-tail endings, chunk boundaries with small caller lookahead, playable keysounds, exclusive end, deterministic repeats, fade/silence, early/late source failures, capacity, cancellation and frame/byte bounds. Audio output: `100% tests passed out of 164` (`/tmp/wormedit-t106-final-audio.log`); complete output: `100% tests passed out of 1641` (`/tmp/wormedit-t100-t106-all-tests.log`). Application build and configured clang-tidy of both new source/test files pass. Encoding/UI remains T-107.
 - **Outcome:** a core function mixes the exact selected chart interval (music + BGM + keysounds) into an in-memory float32 stereo buffer using the same preview schedule and mixer as live playback, deterministically.
 - **Read first:** `include/wormedit/audio/preview_session.h`, `include/wormedit/audio/preview_bridge.h`, `docs/timing-preview-scheduling.md`, `tests/core/audio_preview_session_tests.cpp`.
 - **Files owned:** new `include/wormedit/audio/offline_mix.h`, new `src/audio/offline_mix.cpp`, new `tests/core/audio_offline_mix_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -102,7 +103,7 @@ stale-plan check (rule 9) first.
 
 ## T-107 Encode and publish preview.ogg
 
-- **Status:** blocked-on T-106
+- **Status:** ready
 - **Outcome:** the area-selection menu offers "Export preview audio…": the selected interval is mixed with T-106, encoded to Ogg Vorbis with pinned libogg + libvorbis built through FetchContent (user decision 2026-09-30), written to a temporary file, verified by decoding it back, and atomically published as `preview.ogg` (or a chosen name) next to the chart.
 - **Read first:** `cmake/dependencies/` (pattern for pinned dependencies), `include/wormedit/audio/offline_mix.h` (T-106), `docs/chart-editor-plan/stages/authoring-export.md` (stage 4 preview bullet), `include/wormedit/formats/conversion_publication.h` (atomic publication helpers).
 - **Files owned:** new `cmake/dependencies/vorbis.cmake`, `CMakeLists.txt`, new `include/wormedit/audio/ogg_encoder.h`, new `src/audio/ogg_encoder.cpp`, new `tests/core/audio_ogg_encoder_tests.cpp`, `tests/CMakeLists.txt`, `src/ui/nuklear/compose_area_menu.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`.

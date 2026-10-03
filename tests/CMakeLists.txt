@@ -201,6 +201,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         core/audio_transport_tests.cpp
         core/audio_waveform_tests.cpp
         core/audio_onset_tests.cpp
+        core/audio_offline_mix_tests.cpp
         core/audio_waveform_viewport_tests.cpp
         core/audio_slice_render_tests.cpp
         core/audio_aligned_waveform_tests.cpp

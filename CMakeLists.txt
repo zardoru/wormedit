@@ -171,7 +171,12 @@ endif()
 
 if(WORMEDIT_ENABLE_AUDIO_DECODER)
     include(cmake/dependencies/miniaudio.cmake)
-    target_sources(wormedit_audio_decoder PRIVATE src/audio/playback_rate.cpp src/audio/time_stretch.cpp src/audio/onset.cpp)
+    target_sources(wormedit_audio_decoder PRIVATE
+        src/audio/playback_rate.cpp
+        src/audio/time_stretch.cpp
+        src/audio/onset.cpp
+        src/audio/offline_mix.cpp
+    )
 endif()
 
 if(WORMEDIT_ENABLE_IMAGE_DECODER OR WORMEDIT_ENABLE_VIDEO_DECODER)

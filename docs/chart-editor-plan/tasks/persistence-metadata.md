@@ -93,7 +93,7 @@ was recently reorganized into collapsible sections; apply the stale-plan check
 
 ## T-126 Change a chart's key count or profile with a lane-migration preview
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** a core proposal maps notes from the current lane profile to a chosen one (explicit lane-to-lane table, default by display order), previews dropped/merged notes, and commits atomically.
 - **Read first:** `docs/chart-editor-plan/formats-persistence.md` (key-count selector paragraph), `include/wormedit/core/lane_profiles.h`, `include/wormedit/core/document.h` (`lane_layout_t`).
 - **Files owned:** new `include/wormedit/core/lane_migration.h`, new `src/core/lane_migration.cpp`, new `tests/core/lane_migration_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -103,9 +103,11 @@ was recently reorganized into collapsible sections; apply the stale-plan check
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`.
 - **Out of scope:** UI (T-127).
 
+Verified 2026-10-03: fourteen core regression cases cover confirmed drops and undo across layout segments, noncolliding merges, inclusive hold collisions, immutable revision/song-bound previews, ambiguous defaults, bounded collision examples, retained BMSON pairs and unlinked events, and parsed BMS branch channel identities. The core prefix passes 1,123/1,123 and the complete suite passes 1,655/1,655; the application builds and both new C++ units pass the configured complexity check. The target input profile replaces the chart's bindings explicitly; collision examples are capped at 64 while the conflict count remains available.
+
 ## T-127 Add the key-count/profile selector to Metadata
 
-- **Status:** blocked-on T-126
+- **Status:** ready
 - **Outcome:** per-chart selector showing only counts supported by the chart's format family plus "Custom", with the preview counts and a confirm button.
 - **Read first:** `include/wormedit/core/lane_migration.h`, `src/ui/nuklear/metadata_panel.cpp`, `src/sys/metadata_actions.cpp`.
 - **Files owned:** `src/sys/metadata_actions.cpp`, `src/sys/metadata_view_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp`.

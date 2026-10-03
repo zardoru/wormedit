@@ -48,8 +48,8 @@ auto preview_chart() -> chart_document_t {
                     .display_name = "Dance Single",
                     .lanes = {lane(lane_id_t{1}, 0, lane_glyph_t::arrow_left, stage_group_t::left),
                               lane(lane_id_t{2}, 1, lane_glyph_t::arrow_down, stage_group_t::left),
-                              lane(lane_id_t{3}, 2, lane_glyph_t::arrow_up, stage_group_t::right),
-                              lane(lane_id_t{4}, 3, lane_glyph_t::arrow_right,
+                              lane(lane_id_t{3}, 0, lane_glyph_t::arrow_up, stage_group_t::right),
+                              lane(lane_id_t{4}, 1, lane_glyph_t::arrow_right,
                                    stage_group_t::right)},
                     .split_stage = true,
                     .split_after_column = 2}},
@@ -82,6 +82,13 @@ auto has_code(const diagnostic_list_t& diagnostics, diagnostic_code_t code) -> b
                                [code](const auto& diagnostic) { return diagnostic.code == code; });
 }
 
+void check_preview_stage_order(const player_preview_scene_t& scene) {
+    for (std::size_t i = 0; i < 4; ++i) {
+        CHECK(scene.lanes[i].lane == lane_id_t{i + 1});
+        CHECK(scene.lanes[i].stage == (i < 2 ? stage_group_t::left : stage_group_t::right));
+    }
+}
+
 } // namespace
 
 TEST_CASE("player preview composes lanes receptors notes and holds from one transport frame",
@@ -97,6 +104,7 @@ TEST_CASE("player preview composes lanes receptors notes and holds from one tran
     CHECK(scene.scene->split_stage);
     REQUIRE(scene.scene->lanes.size() == 4);
     REQUIRE(scene.scene->receptors.size() == 4);
+    check_preview_stage_order(*scene.scene);
     CHECK(scene.scene->lanes[0].bounds.left == 0.0);
     CHECK(scene.scene->lanes[1].bounds.right == 200.0);
     CHECK(scene.scene->lanes[2].bounds.left == 212.0);

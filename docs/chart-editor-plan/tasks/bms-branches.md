@@ -44,13 +44,14 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-92 Add block create/remove and leaf reorder to the outline
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Outcome:** outline buttons create a block from the current selection, remove an empty block, and move a leaf up/down.
 - **Read first:** `include/wormedit/core/bms_branch_editor.h`, `src/ui/nuklear/bms_branch_panel.cpp`.
-- **Files owned:** `src/ui/nuklear/bms_branch_panel.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `src/core/bms_branch_editor.cpp` (leaf reorder command), `tests/core/bms_branch_editor_tests.cpp`.
-- **Implementation audit (2026-10-03):** create/remove commands now exist, but no public leaf-reorder command is declared. Its typed request and callable declaration require `include/wormedit/core/bms_branch_editor.h`, which this card omits. Header ownership approval is pending; no implementation was started.
+- **Files owned:** `src/ui/nuklear/bms_branch_panel.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `src/core/bms_branch_editor.cpp` (leaf reorder command), `tests/core/bms_branch_editor_tests.cpp`. User-approved supporting scope (2026-10-03): `include/wormedit/core/bms_branch_editor.h`.
+- **Implementation audit (2026-10-03):** create/remove commands now exist, but no public leaf-reorder command is declared. Its typed request and callable declaration require `include/wormedit/core/bms_branch_editor.h`, which this card omits. Header ownership was approved by the user on 2026-10-03; no implementation was started.
 - **Steps:**
-  0. STOP until the user extends ownership to `include/wormedit/core/bms_branch_editor.h` for the leaf-reorder API.
+  0. Scope extension approved by the user (2026-10-03).
   1. Core leaf-reorder command with test.
   2. Wire three buttons through the standard pattern.
 - **Invariants:** reordering leaves renumbers `#IF` values consistently.
@@ -60,13 +61,14 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-93 Move or copy selected notes into another branch leaf
 
-- **Status:** blocked-on-user
-- **Implementation audit (2026-10-03):** step 1 has concrete STOP cases. Fresh authored notes have default native provenance and no retained statement identity (`include/wormedit/core/document.h:104`); imported holds retain distinct start/end source statements (`src/formats/bms.cpp:557`, `src/formats/bms_writer.cpp:2082`). Imported taps can identify one line/slot, but limiting the command to those would narrow the outcome. Approval is pending to reconstruct ownership from current serialized BMS and cover fresh notes plus both hold endpoints. No implementation was started.
+- **Status:** ready
+- **Decision (user, 2026-10-03):** Support fresh authored notes and both hold endpoints by reconstructing statement ownership from current serialized BMS. Do not limit the command to imported taps. The earlier one-statement STOP is superseded by this decision.
+- **Implementation audit (2026-10-03):** the original step 1 exposed ownership cases now covered by the decision above. Fresh authored notes have default native provenance and no retained statement identity (`include/wormedit/core/document.h:104`); imported holds retain distinct start/end source statements (`src/formats/bms.cpp:557`, `src/formats/bms_writer.cpp:2082`). Imported taps can identify one line/slot, but limiting the command to those would narrow the outcome. The user approved reconstructing ownership on 2026-10-03 from current serialized BMS to cover fresh notes plus both hold endpoints. No implementation was started.
 - **Outcome:** selected notes that belong to one leaf (or root) can be moved or copied into another leaf as one command.
 - **Read first:** `include/wormedit/core/bms_branch_editor.h`, `include/wormedit/formats/bms_branch_selection.h` (`rematerialize_bms_branch_selection`), `docs/chart-editor-plan/editing/metadata-interop.md` (branch paragraphs).
 - **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_branch_editor_tests.cpp`.
 - **Steps:**
-  1. STOP if a selected note has no single owning statement; report the case.
+  1. Reconstruct selected-note ownership from current serialized BMS, including fresh notes and both hold endpoints; reject ambiguous ownership atomically.
   2. Rewrite the owning channel statements in source and target leaves; rematerialize.
   3. Tests: move root→leaf, leaf→leaf copy, undo.
 - **Invariants:** other notes on the same channel line keep their positions.
@@ -104,13 +106,14 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-96 Edit channel maps in Metadata
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Outcome:** Metadata's chart section lists lanes with their four channel strings, lets the user edit them, shows the preview count, and applies once.
 - **Read first:** `include/wormedit/core/channel_map_editor.h`, `src/ui/nuklear/metadata_panel.cpp`, `src/sys/metadata_actions.cpp`.
-- **Files owned:** `src/sys/metadata_actions.cpp`, `src/sys/metadata_view_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp` (or the section unit from T-42).
-- **Implementation audit (2026-10-03):** no channel-map form exists. Owned projection/section files can provide a layout-segment selector and editable lane table, but the sealed preview must persist between dispatch and projection so conflicts disable Apply and confirmation uses exactly the reviewed proposal. The shared declaration belongs in unowned `src/sys/metadata_actions.h`; approval is pending.
+- **Files owned:** `src/sys/metadata_actions.cpp`, `src/sys/metadata_view_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp` (or the section unit from T-42). User-approved supporting scope (2026-10-03): `src/sys/metadata_actions.h`.
+- **Implementation audit (2026-10-03):** no channel-map form exists. Owned projection/section files can provide a layout-segment selector and editable lane table, but the sealed preview must persist between dispatch and projection so conflicts disable Apply and confirmation uses exactly the reviewed proposal. The shared declaration belongs in unowned `src/sys/metadata_actions.h`; approval was granted on 2026-10-03.
 - **Steps:**
-  0. STOP until the user extends ownership to `src/sys/metadata_actions.h` for shared sealed-preview access.
+  0. Scope extension approved by the user (2026-10-03).
   1. Project lanes.
   2. Editable table plus Preview/Apply through the standard pattern.
 - **Invariants:** shown only for BMS-family charts.

@@ -49,6 +49,9 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY 32768
 #define WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY 128
 #define WORM_UI_COMPOSE_NOTE_LABEL_BYTES 4096
+#define WORM_UI_COMPOSE_QUANTIZE_PRESET_CAPACITY 256
+#define WORM_UI_COMPOSE_QUANTIZE_PRESET_NAME_BYTES 64
+#define WORM_UI_COMPOSE_QUANTIZE_REPORT_CAPACITY 256
 #define WORM_UI_COMPOSE_IMPORT_PATH_BYTES 4096
 #define WORM_UI_COMPOSE_BOOKMARK_CAPACITY 64
 #define WORM_UI_COMPOSE_SECTION_CAPACITY 64
@@ -862,6 +865,36 @@ typedef struct WormUiComposeOutputGroupView {
     const char* relative_asset_directory;
 } WormUiComposeOutputGroupView;
 
+typedef struct WormUiComposeQuantizePresetView {
+    const char* name;
+    uint64_t divisions;
+    uint8_t space;
+    uint8_t tie;
+    uint8_t holds;
+} WormUiComposeQuantizePresetView;
+
+typedef struct WormUiComposeQuantizePositionView {
+    uint64_t measure_id;
+    uint64_t row;
+} WormUiComposeQuantizePositionView;
+
+typedef struct WormUiComposeQuantizeReportRowView {
+    uint64_t object_id;
+    uint64_t lane_id;
+    uint64_t start_before_absolute_row;
+    uint64_t start_after_absolute_row;
+    WormUiComposeQuantizePositionView start_before;
+    WormUiComposeQuantizePositionView start_after;
+    bool has_end_before;
+    bool has_end_after;
+    WormUiComposeQuantizePositionView end_before;
+    WormUiComposeQuantizePositionView end_after;
+    bool moved;
+    bool collision;
+    uint64_t collision_peer_id;
+    bool has_collision_peer;
+} WormUiComposeQuantizeReportRowView;
+
 // Renderer-neutral field primitives projected into bounded scalar storage.
 // Coordinates are relative to the scene viewport; no chart/core types cross
 // the private frontend boundary.
@@ -906,9 +939,28 @@ typedef struct WormUiComposeView {
     bool note_paint_mode_active;
     bool semantic_layer_paint_mode_active;
     size_t selected_note_count;
-    // Dry-run of quantizing the selection to the active snap (counts are of selected notes).
+    // Quantization request currently selected in the inspector.
+    uint64_t quantize_divisions;
+    uint8_t quantize_space;
+    uint8_t quantize_tie;
+    uint8_t quantize_holds;
+    bool quantize_selected_preset_valid;
+    size_t quantize_selected_preset_index;
+    const WormUiComposeQuantizePresetView* quantize_presets;
+    size_t quantize_preset_count;
+    // Dry-run counts and bounded report for the current request.
     size_t quantize_preview_moved, quantize_preview_unchanged, quantize_preview_blocked;
+    size_t quantize_preview_colliding_objects;
+    const WormUiComposeQuantizeReportRowView* quantize_preview_rows;
+    size_t quantize_preview_row_count;
+    size_t quantize_preview_total_rows;
+    bool quantize_preview_rows_truncated;
     char quantize_preview_message[96];
+    // Report from the most recently applied request, retained across frames.
+    const WormUiComposeQuantizeReportRowView* quantize_applied_rows;
+    size_t quantize_applied_row_count;
+    size_t quantize_applied_total_rows;
+    bool quantize_applied_rows_truncated;
     size_t selected_object_count;
     uint64_t selected_assigned_resource_id;
     uint64_t selected_bgm_event_id;
@@ -1778,6 +1830,10 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT,
     WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART,
     WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE,
+    WORM_UI_COMPOSE_ACTION_SELECT_QUANTIZE_PRESET,
+    WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS,
+    WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET,
+    WORM_UI_COMPOSE_ACTION_DELETE_QUANTIZE_PRESET,
 } WormUiComposeActionKind;
 
 typedef enum WormUiComposeInputKind {
@@ -2036,6 +2092,13 @@ typedef struct WormUiWorkspaceAction {
     uint64_t compose_audio_offset_denominator;
     uint64_t compose_input_chart_id;
     uint64_t compose_input_document_revision;
+    size_t compose_quantize_preset_index;
+    bool compose_quantize_preset_selected;
+    uint64_t compose_quantize_divisions;
+    uint8_t compose_quantize_space;
+    uint8_t compose_quantize_tie;
+    uint8_t compose_quantize_holds;
+    char compose_quantize_preset_name[WORM_UI_COMPOSE_QUANTIZE_PRESET_NAME_BYTES + 1];
     double compose_input_viewport_width_pixels;
     bool compose_has_pointer_hover;
     double compose_pointer_hover_x_pixels;

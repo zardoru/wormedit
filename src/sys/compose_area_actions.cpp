@@ -57,9 +57,25 @@ std::string quantize_compose_area_selection(area_action_context_t& context,
 
     if (context.state.selected_notes.empty())
         return "Select notes before quantizing.";
-    const auto result = apply_quantize_command(context.history, context.state.chart,
-                                               {.divisions = context.state.active_snap_denominator,
-                                                .objects = context.state.selected_notes});
+    const auto& action = context.action;
+    if (action.compose_quantize_space > static_cast<std::uint8_t>(quantization_space_t::authored_measure) ||
+        action.compose_quantize_tie > static_cast<std::uint8_t>(quantization_tie_t::reject) ||
+        action.compose_quantize_holds > static_cast<std::uint8_t>(quantization_hold_t::both_endpoints))
+        return "Selection quantization has invalid settings.";
+    const auto legacy_request = action.compose_quantize_divisions == 0;
+    const auto divisions = legacy_request ? context.state.active_snap_denominator
+                                          : action.compose_quantize_divisions;
+    const auto request = quantize_request_t{.divisions = divisions,
+                                            .space = static_cast<quantization_space_t>(
+                                                action.compose_quantize_space),
+                                            .tie = static_cast<quantization_tie_t>(
+                                                action.compose_quantize_tie),
+                                            .holds = legacy_request
+                                                         ? quantization_hold_t::both_endpoints
+                                                         : static_cast<quantization_hold_t>(
+                                                               action.compose_quantize_holds),
+                                            .objects = context.state.selected_notes};
+    const auto result = apply_quantize_command(context.history, context.state.chart, request);
     if (!result.command.diagnostics.empty() && !result.command.applied)
         return result.command.diagnostics.front().message;
     return result.command.applied ? "Selected notes quantized."

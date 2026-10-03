@@ -25,12 +25,13 @@ stale-plan check (rule 9) first.
 
 ## T-101 Add Delete to the resource catalog
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** No catalog Delete/count UI exists. The actual catalog-to-C-view copy is `append_compose_resource` in unowned `src/sys/workspace_projection.cpp`; the owned presenter and frontend contract cannot project a new count without that owner. Use counts must match T-100 across charts and retained sound-channel asset aliases. Armed clearing can remain in owned `compose_resources.cpp` after a successful catalog refresh.
 - **Outcome:** each Compose catalog row has a Delete button, enabled only for unreferenced resources; referenced rows show their use count in the tooltip.
 - **Read first:** `src/ui/nuklear/compose_resources.cpp`, `src/sys/compose_resource_presenter.cpp`, `src/sys/compose_actions.cpp`.
-- **Files owned:** `src/ui/nuklear/compose_resources.cpp`, `src/sys/compose_resource_presenter.cpp/.h`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `tests/core/compose_resource_presenter_tests.cpp`.
-- **Steps:** 0. **STOP:** wait for ownership approval for `src/sys/workspace_projection.cpp` before completing catalog Delete wiring. 1. Project a per-row reference count. 2. Wire Delete through the standard pattern.
+- **Files owned:** `src/ui/nuklear/compose_resources.cpp`, `src/sys/compose_resource_presenter.cpp/.h`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `tests/core/compose_resource_presenter_tests.cpp`. User-approved supporting scope (2026-10-03): `src/sys/workspace_projection.cpp`.
+- **Steps:** 0. Scope extension approved by the user (2026-10-03). 1. Project a per-row reference count. 2. Wire Delete through the standard pattern.
 - **Invariants:** an armed resource that is deleted is disarmed.
 - **Reject/failure behavior:** core rejection shown in the status line.
 - **Verify:** standard build/test.
@@ -50,12 +51,13 @@ stale-plan check (rule 9) first.
 
 ## T-103 Filter the catalog by use state and name
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** Search state and name/source-filename matching already exist, but catalog rows expose no usage signal/count and only the source basename. The requested use-state and path filters need unowned `src/ui/frontend.h`, `src/sys/compose_resource_presenter.cpp`, and the actual catalog-to-C-view copy in `src/sys/workspace_projection.cpp`.
 - **Outcome:** the catalog has a text filter (case-insensitive substring on name/path/BMS ID) and a Used/Unused/Missing/All selector in addition to the existing role tabs.
 - **Read first:** `src/ui/nuklear/compose_resources.cpp` (`filter_role`, `filter_name`), `src/sys/compose_resource_presenter.cpp`, `docs/chart-editor-plan/document-model.md` (resource list paragraph).
-- **Files owned:** `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `tests/ui/nuklear_compose_state_tests.cpp`.
-- **Steps:** 0. **STOP:** wait for supporting-file ownership approval for resource usage/path projection before implementing the filters. 1. Add filter text and use-state to frontend state. 2. Apply both when iterating rows. 3. State tests for the filter predicate.
+- **Files owned:** `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `tests/ui/nuklear_compose_state_tests.cpp`. User-approved supporting scope (2026-10-03): `src/ui/frontend.h`, `src/sys/compose_resource_presenter.cpp`, `src/sys/workspace_projection.cpp`.
+- **Steps:** 0. Scope extension approved by the user (2026-10-03). 1. Add filter text and use-state to frontend state. 2. Apply both when iterating rows. 3. State tests for the filter predicate.
 - **Invariants:** armed resource stays armed even when filtered out.
 - **Reject/failure behavior:** none.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^frontend-state\.'`.
@@ -104,11 +106,12 @@ stale-plan check (rule 9) first.
 
 ## T-107 Encode and publish preview.ogg
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Outcome:** the area-selection menu offers "Export preview audio…": the selected interval is mixed with T-106, encoded to Ogg Vorbis with pinned libogg + libvorbis built through FetchContent (user decision 2026-09-30), written to a temporary file, verified by decoding it back, and atomically published as `preview.ogg` (or a chosen name) next to the chart.
 - **Read first:** `cmake/dependencies/` (pattern for pinned dependencies), `include/wormedit/audio/offline_mix.h` (T-106), `docs/chart-editor-plan/stages/authoring-export.md` (stage 4 preview bullet), `include/wormedit/formats/conversion_publication.h` (atomic publication helpers).
-- **Files owned:** new `cmake/dependencies/vorbis.cmake`, `CMakeLists.txt`, new `include/wormedit/audio/ogg_encoder.h`, new `src/audio/ogg_encoder.cpp`, new `tests/core/audio_ogg_encoder_tests.cpp`, `tests/CMakeLists.txt`, `src/ui/nuklear/compose_area_menu.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`.
-- **Steps:** 0. **STOP:** extend ownership to `src/sys/resource_job_state.h/.cpp` for preview-export job data, progress, and cancellation through the existing per-frame export runtime; its current `poll()` reports completion only. If a dedicated runtime is chosen, also own its application frame-service wiring. 1. Pin libogg and libvorbis (record versions and license in the dependency file). 2. Encoder wrapper (quality setting, stereo, 44.1 kHz) with a stop token. 3. Encode on a worker with progress; verify by decoding with the existing miniaudio decoder. 4. Menu entry and atomic publish.
+- **Files owned:** new `cmake/dependencies/vorbis.cmake`, `CMakeLists.txt`, new `include/wormedit/audio/ogg_encoder.h`, new `src/audio/ogg_encoder.cpp`, new `tests/core/audio_ogg_encoder_tests.cpp`, `tests/CMakeLists.txt`, `src/ui/nuklear/compose_area_menu.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`; user-approved supporting scope (2026-10-03): `src/sys/resource_job_state.h/.cpp` for preview-export job data, progress and cancellation; existing application frame-service wiring if a dedicated runtime is needed.
+- **Steps:** 0. Scope extension approved by the user (2026-10-03). 1. Pin libogg and libvorbis (record versions and license in the dependency file). 2. Encoder wrapper (quality setting, stereo, 44.1 kHz) with a stop token. 3. Encode on a worker with progress; verify by decoding with the existing miniaudio decoder. 4. Menu entry and atomic publish.
 - **Invariants:** the chart and its assets are never modified; cancellation leaves no partial file.
 - **Reject/failure behavior:** encode or verify failure reports an error and publishes nothing.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual export of a 20-second preview.

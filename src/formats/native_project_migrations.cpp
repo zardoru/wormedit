@@ -31,7 +31,20 @@ auto migrate_v1_to_v2(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 1> released_migrations{{{1, &migrate_v1_to_v2}}};
+// Schema 3 adds the project-owned quantization preset list. Older projects start with none.
+auto migrate_v2_to_v3(nlohmann::json& document) -> std::string {
+    if (!document.contains("quantization_presets")) {
+        document["quantization_presets"] = nlohmann::json::array();
+    } else if (!document.at("quantization_presets").is_array()) {
+        return "document quantization_presets must be an array";
+    }
+    return {};
+}
+
+constexpr std::array<migration_t, 2> released_migrations{{
+    {1, &migrate_v1_to_v2},
+    {2, &migrate_v2_to_v3},
+}};
 
 } // namespace
 

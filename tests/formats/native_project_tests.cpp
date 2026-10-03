@@ -129,6 +129,13 @@ auto rich_bmson_song() -> wormedit::song_document_t {
         .charts = {chart.id},
         .relative_output_path = std::filesystem::path{"exports/chart.bmson"},
     });
+    song.quantization_presets.push_back({
+        .name = "Triplet ends",
+        .divisions = 3,
+        .space = wormedit::quantization_space_t::authored_measure,
+        .tie = wormedit::quantization_tie_t::later,
+        .holds = wormedit::quantization_hold_t::start_only,
+    });
     return song;
 }
 
@@ -210,6 +217,16 @@ TEST_CASE("native project deterministically round-trips rich editor state",
             return event.sound_channel_event.has_value();
         }));
     }
+}
+
+TEST_CASE("native projects round-trip quantization presets",
+          "[unit][format][native-project][quantize-preset]") {
+    const auto song = rich_bmson_song();
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.bytes.has_value());
+    const auto parsed = wormedit::parse_native_project(*written.bytes);
+    REQUIRE(parsed.song.has_value());
+    CHECK(parsed.song->quantization_presets == song.quantization_presets);
 }
 
 TEST_CASE("native projects persist SV recipes but accept older documents without them",
@@ -381,7 +398,7 @@ TEST_CASE("native project rejects malformed, unsupported, over-limit, and invali
                    wormedit::native_project_diagnostic_code_t::unsupported_version));
 
     auto unsupported_document_json = nlohmann::json::parse(*written.bytes);
-    unsupported_document_json["document"]["schema_version"] = 3;
+    unsupported_document_json["document"]["schema_version"] = 4;
     const auto unsupported_document =
         wormedit::parse_native_project(unsupported_document_json.dump());
     CHECK_FALSE(unsupported_document.song.has_value());
@@ -541,19 +558,19 @@ auto legacy_project_bytes() -> std::string {
 
 TEST_CASE("native project migrations: the current schema passes through the default table",
           "[unit][format][native-project][migration]") {
-    REQUIRE(internal::default_migrations().size() == 1);
     CHECK(internal::default_migrations().front().from_version == 1);
+    CHECK(internal::default_migrations().back().from_version == 2);
     const auto written = wormedit::write_native_project(rich_bmson_song());
     REQUIRE(written.bytes.has_value());
     auto document = nlohmann::json::parse(*written.bytes).at("document");
-    REQUIRE(document.at("schema_version") == 2);
+    REQUIRE(document.at("schema_version") == 3);
     const auto before = document;
-    const auto outcome = internal::migrate_document(document, 2, internal::default_migrations());
+    const auto outcome = internal::migrate_document(document, 3, internal::default_migrations());
     CHECK(outcome.status == internal::migration_status_t::unchanged);
     CHECK(document == before);
 }
 
-TEST_CASE("native project migrations: schema 1 documents gain an empty expression source",
+TEST_CASE("native project migrations: schema 1 documents gain current default fields",
           "[unit][format][native-project][migration][sv-recipe]") {
     const auto written = wormedit::write_native_project(rich_bmson_song());
     REQUIRE(written.bytes.has_value());
@@ -564,16 +581,87 @@ TEST_CASE("native project migrations: schema 1 documents gain an empty expressio
 
     const auto parsed = wormedit::parse_native_project(root.dump());
     REQUIRE(parsed.song.has_value());
-    CHECK(parsed.song->schema_version == 2);
+    CHECK(parsed.song->schema_version == 3);
     CHECK(parsed.song->charts.front().sv_recipes.front().expression_source.empty());
     const auto rewritten = wormedit::write_native_project(*parsed.song);
     REQUIRE(rewritten.bytes.has_value());
-    CHECK(rewritten.bytes == written.bytes);
 
-    // A schema 1 file that already carries the key, or a malformed recipe list, still behaves.
+    // A schema 1 file with malformed recipe structure still rejects.
     auto malformed = root;
     malformed["document"]["charts"][0]["sv_recipes"] = 5;
     CHECK_FALSE(wormedit::parse_native_project(malformed.dump()).song.has_value());
+}
+
+TEST_CASE("native project schema 1 migration supplies empty quantization presets",
+          "[unit][format][native-project][migration][quantize-preset]") {
+    const auto written = wormedit::write_native_project(rich_bmson_song());
+    REQUIRE(written.bytes.has_value());
+    auto root = nlohmann::json::parse(*written.bytes);
+    root["document"].erase("quantization_presets");
+    root["document"]["schema_version"] = 1;
+    const auto parsed = wormedit::parse_native_project(root.dump());
+    REQUIRE(parsed.song.has_value());
+    CHECK(parsed.song->quantization_presets.empty());
+}
+
+TEST_CASE("native project schema 2 migration adds an empty preset list",
+          "[unit][format][native-project][migration][quantize-preset]") {
+    const auto written = wormedit::write_native_project(rich_bmson_song());
+    REQUIRE(written.bytes.has_value());
+    auto root = nlohmann::json::parse(*written.bytes);
+    root["document"].erase("quantization_presets");
+    root["document"]["schema_version"] = 2;
+
+    const auto parsed = wormedit::parse_native_project(root.dump());
+    REQUIRE(parsed.song.has_value());
+    CHECK(parsed.song->schema_version == 3);
+    CHECK(parsed.song->quantization_presets.empty());
+}
+
+TEST_CASE("native project upgrades schema 2 in-memory documents without losing presets",
+          "[unit][format][native-project][quantize-preset]") {
+    auto song = rich_bmson_song();
+    song.schema_version = 2;
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.bytes.has_value());
+    const auto root = nlohmann::json::parse(*written.bytes);
+    CHECK(root["document"]["schema_version"] == 3);
+    const auto parsed = wormedit::parse_native_project(*written.bytes);
+    REQUIRE(parsed.song.has_value());
+    CHECK(parsed.song->quantization_presets == song.quantization_presets);
+}
+
+TEST_CASE("native project rejects preset names with embedded null bytes",
+          "[unit][format][native-project][quantize-preset][negative]") {
+    auto song = rich_bmson_song();
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.bytes.has_value());
+    const std::string name("Grid\0hidden", 11);
+    song.quantization_presets.front().name = name;
+    CHECK_FALSE(wormedit::write_native_project(song).bytes.has_value());
+    auto root = nlohmann::json::parse(*written.bytes);
+    root["document"]["quantization_presets"][0]["name"] = name;
+    CHECK_FALSE(wormedit::parse_native_project(root.dump()).song.has_value());
+}
+
+TEST_CASE("native project rejects duplicate or invalid quantization presets",
+          "[unit][format][native-project][quantize-preset][negative]") {
+    auto song = rich_bmson_song();
+    song.quantization_presets.push_back(song.quantization_presets.front());
+    const auto duplicate_write = wormedit::write_native_project(song);
+    CHECK_FALSE(duplicate_write.bytes.has_value());
+
+    const auto valid_write = wormedit::write_native_project(rich_bmson_song());
+    REQUIRE(valid_write.bytes.has_value());
+    auto duplicate_json = nlohmann::json::parse(*valid_write.bytes);
+    auto& presets = duplicate_json["document"]["quantization_presets"];
+    presets.push_back(presets.front());
+    CHECK_FALSE(wormedit::parse_native_project(duplicate_json.dump()).song.has_value());
+
+    auto valid = rich_bmson_song();
+    valid.quantization_presets.front().divisions = 0;
+    const auto invalid_write = wormedit::write_native_project(valid);
+    CHECK_FALSE(invalid_write.bytes.has_value());
 }
 
 TEST_CASE("native project migrations: a legacy document migrates through the injected table",

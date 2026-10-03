@@ -790,39 +790,6 @@ struct song_metadata_t {
     std::vector<format_metadata_t> format_groups;
 };
 
-struct song_document_t {
-    std::uint32_t schema_version{2};
-    song_id_t id;
-    std::uint64_t revision{};
-    song_metadata_t metadata;
-    std::vector<audio_asset_t> audio_assets;
-    std::vector<visual_asset_t> visual_assets;
-    std::vector<resource_entry_t> resources;
-    std::vector<midi_asset_t> midi_assets;
-    std::vector<generator_recipe_t> generator_recipes;
-    std::vector<storyboard_document_t> storyboards;
-    std::vector<chart_document_t> charts;
-    std::vector<output_group_t> output_groups;
-};
-
-enum class warp_encoding_t {
-    native,
-    negative_bpm,
-    negative_stop,
-    reject,
-};
-
-enum class loss_policy_t {
-    reject,
-    warn,
-    allow,
-};
-
-enum class branch_projection_t {
-    preserve_tree,
-    active_projection,
-};
-
 enum class quantization_space_t {
     standard_measure,
     authored_measure,
@@ -842,6 +809,52 @@ enum class quantization_collision_t {
 enum class quantization_hold_t {
     start_only,
     both_endpoints,
+};
+
+struct quantization_preset_t {
+    static constexpr std::size_t maximum_name_bytes = 64;
+    static constexpr std::size_t maximum_count = 256;
+
+    std::string name;
+    std::uint64_t divisions{};
+    quantization_space_t space{quantization_space_t::standard_measure};
+    quantization_tie_t tie{quantization_tie_t::earlier};
+    quantization_hold_t holds{quantization_hold_t::both_endpoints};
+    auto operator==(const quantization_preset_t&) const -> bool = default;
+};
+
+struct song_document_t {
+    std::uint32_t schema_version{3};
+    song_id_t id;
+    std::uint64_t revision{};
+    song_metadata_t metadata;
+    std::vector<audio_asset_t> audio_assets;
+    std::vector<visual_asset_t> visual_assets;
+    std::vector<resource_entry_t> resources;
+    std::vector<midi_asset_t> midi_assets;
+    std::vector<generator_recipe_t> generator_recipes;
+    std::vector<storyboard_document_t> storyboards;
+    std::vector<chart_document_t> charts;
+    std::vector<output_group_t> output_groups;
+    std::vector<quantization_preset_t> quantization_presets;
+};
+
+enum class warp_encoding_t {
+    native,
+    negative_bpm,
+    negative_stop,
+    reject,
+};
+
+enum class loss_policy_t {
+    reject,
+    warn,
+    allow,
+};
+
+enum class branch_projection_t {
+    preserve_tree,
+    active_projection,
 };
 
 struct quantize_request_t {

@@ -1449,7 +1449,8 @@ auto append_visible_layout_band(scene_geometry_context_t& context,
             lanes.push_back(&lane);
         }
     }
-    std::ranges::sort(lanes, [](const auto* left, const auto* right) {
+    std::ranges::sort(lanes, [split_stage = source.layout.split_stage](const auto* left, const auto* right) {
+        if (split_stage && left->stage != right->stage) return left->stage < right->stage;
         return std::tie(left->display_order, left->id.value) <
                std::tie(right->display_order, right->id.value);
     });

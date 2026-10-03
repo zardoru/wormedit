@@ -291,7 +291,8 @@ auto visible_sorted_lanes(const editor_field_scene_layout_source_t& layout)
             lanes.push_back(&lane);
         }
     }
-    std::ranges::sort(lanes, [](const auto* left, const auto* right) {
+    std::ranges::sort(lanes, [split_stage = layout.layout.split_stage](const auto* left, const auto* right) {
+        if (split_stage && left->stage != right->stage) return left->stage < right->stage;
         return std::tie(left->display_order, left->id.value) <
                std::tie(right->display_order, right->id.value);
     });

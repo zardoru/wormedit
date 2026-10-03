@@ -49,7 +49,7 @@ void write_text(const std::filesystem::path& path, std::string_view bytes) {
 }
 
 auto valid_song(std::uint64_t revision) -> wormedit::song_document_t {
-    return {.schema_version = 2, .id = wormedit::song_id_t{417}, .revision = revision};
+    return {.id = wormedit::song_id_t{417}, .revision = revision};
 }
 
 auto fails_at(wormedit::native_project_storage_stage_t failed_stage)
@@ -869,5 +869,41 @@ TEST_CASE("autosave rejects nonpositive intervals explicitly",
             return diagnostic.code ==
                    wormedit::native_project_storage_diagnostic_code_t::invalid_interval;
         }));
+    }
+}
+
+TEST_CASE("schema-3 autosave preserves quantization presets through recovery",
+          "[unit][format][native-project][autosave][recovery]") {
+    using clock_t = wormedit::native_project_autosave_coordinator_t::clock_t;
+    temporary_directory_t directory;
+    const auto recovery_path = directory.path / "presets.bak";
+    auto song = valid_song(2);
+    song.quantization_presets = {
+        {.name = "Triplets", .divisions = 12,
+         .space = wormedit::quantization_space_t::authored_measure,
+         .tie = wormedit::quantization_tie_t::later,
+         .holds = wormedit::quantization_hold_t::start_only},
+        {.name = "Sixteenths", .divisions = 16}};
+    wormedit::native_project_autosave_coordinator_t autosave(clock_t::time_point{});
+    const auto saved = autosave.maybe_autosave(song, clock_t::time_point{} + 5min, recovery_path);
+    REQUIRE(saved.status == wormedit::native_project_autosave_status_t::published);
+    const auto parsed = wormedit::parse_native_project_recovery_snapshot(read_text(recovery_path));
+    REQUIRE(parsed.snapshot);
+    CHECK(parsed.snapshot->song.schema_version == 3);
+    CHECK(parsed.snapshot->song.quantization_presets == song.quantization_presets);
+}
+
+TEST_CASE("recovery envelope accepts supported schema tags and rejects unknown versions",
+          "[unit][format][native-project][recovery][negative]") {
+    temporary_directory_t directory;
+    const auto recovery_path = directory.path / "schemas.bak";
+    REQUIRE(wormedit::publish_native_project_recovery_atomic(
+                recovery_path, valid_song(2), {.session_sequence = 1}).published);
+    auto envelope = nlohmann::json::parse(read_text(recovery_path));
+    for (const auto schema : std::array<std::uint64_t, 5>{0, 1, 2, 3, 4}) {
+        INFO(schema);
+        envelope["schema_version"] = schema;
+        const auto parsed = wormedit::parse_native_project_recovery_snapshot(envelope.dump());
+        CHECK(parsed.snapshot.has_value() == (schema >= 1 && schema <= 3));
     }
 }

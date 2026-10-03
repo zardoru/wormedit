@@ -165,7 +165,8 @@ struct note_area_query_t {
             editable.reserve(layout->lanes.size());
             for (const auto& candidate : layout->lanes)
                 if (editable_lane(candidate)) editable.push_back(&candidate);
-            std::ranges::sort(editable, [](const auto* a, const auto* b) {
+            std::ranges::sort(editable, [split_stage = layout->split_stage](const auto* a, const auto* b) {
+                if (split_stage && a->stage != b->stage) return a->stage < b->stage;
                 if (a->display_order != b->display_order) return a->display_order < b->display_order;
                 return a->id.value < b->id.value;
             });

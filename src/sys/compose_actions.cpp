@@ -2245,6 +2245,175 @@ std::string dispatch_bms_branch_statement_action(
     return "Inactive BMS branch statement updated.";
 }
 
+auto quantize_request_from_action(const WormUiWorkspaceAction& action,
+                                 std::uint64_t fallback_divisions,
+                                 const std::vector<wormedit::object_id_t>& objects)
+    -> std::optional<wormedit::quantize_request_t> {
+    using namespace wormedit;
+    if (action.compose_quantize_space > static_cast<std::uint8_t>(quantization_space_t::authored_measure) ||
+        action.compose_quantize_tie > static_cast<std::uint8_t>(quantization_tie_t::reject) ||
+        action.compose_quantize_holds > static_cast<std::uint8_t>(quantization_hold_t::both_endpoints))
+        return std::nullopt;
+    const auto legacy = action.compose_quantize_divisions == 0;
+    const auto divisions = legacy ? fallback_divisions : action.compose_quantize_divisions;
+    if (divisions == 0) return std::nullopt;
+    return quantize_request_t{.divisions = divisions,
+                              .space = static_cast<quantization_space_t>(action.compose_quantize_space),
+                              .tie = static_cast<quantization_tie_t>(action.compose_quantize_tie),
+                              .collisions = quantization_collision_t::reject,
+                              .holds = legacy ? quantization_hold_t::both_endpoints
+                                              : static_cast<quantization_hold_t>(action.compose_quantize_holds),
+                              .allow_resolution_promotion = false,
+                              .objects = objects};
+}
+
+auto quantize_settings_valid(const wormedit::quantize_request_t& request) -> bool {
+    using namespace wormedit;
+    return request.divisions != 0 &&
+           request.space <= quantization_space_t::authored_measure &&
+           request.tie <= quantization_tie_t::reject &&
+           request.holds <= quantization_hold_t::both_endpoints;
+}
+
+auto quantize_editor_for(compose_action_context_t& context)
+    -> application_command_state_t::quantize_editor_t& {
+    auto& editor = context.application_state.quantize_editor;
+    if (!editor || editor->song != context.history.document.id || editor->chart != context.state.chart) {
+        const auto request = wormedit::quantize_request_t{
+            .divisions = context.state.active_snap_denominator};
+        editor = application_command_state_t::quantize_editor_t{
+            .song = context.history.document.id, .chart = context.state.chart, .request = request};
+    }
+    return *editor;
+}
+
+auto apply_quantize_settings_from_action(compose_action_context_t& context)
+    -> std::optional<std::string> {
+    auto& editor = quantize_editor_for(context);
+    const auto request = quantize_request_from_action(context.action,
+        context.state.active_snap_denominator, {});
+    if (!request) return "Quantization settings must use a positive grid and supported policies.";
+    editor.request = *request;
+    editor.preset_index.reset();
+    return "Quantization settings updated.";
+}
+
+auto select_quantize_preset(compose_action_context_t& context) -> std::string {
+    using namespace wormedit;
+    const auto index = context.action.compose_quantize_preset_index;
+    if (index >= context.history.document.quantization_presets.size())
+        return "The selected quantization preset is no longer available.";
+    const auto& preset = context.history.document.quantization_presets[index];
+    auto& editor = quantize_editor_for(context);
+    editor.request = {.divisions = preset.divisions, .space = preset.space, .tie = preset.tie,
+                      .collisions = quantization_collision_t::reject, .holds = preset.holds};
+    editor.preset_index = index;
+    return "Quantization preset selected.";
+}
+
+auto validate_quantize_preset_save(const compose_action_context_t& context,
+                                   std::size_t name_length,
+                                   const std::optional<wormedit::quantize_request_t>& request)
+    -> std::optional<std::string> {
+    using namespace wormedit;
+    if (name_length == 0 || name_length >= sizeof(context.action.compose_quantize_preset_name))
+        return "Enter a name for the quantization preset (maximum 64 bytes).";
+    if (name_length > quantization_preset_t::maximum_name_bytes)
+        return "Quantization preset names must be at most 64 bytes.";
+    const std::string_view name(context.action.compose_quantize_preset_name, name_length);
+    if (std::ranges::any_of(context.history.document.quantization_presets,
+                            [&](const auto& preset) { return preset.name == name; }))
+        return "A quantization preset already has that name.";
+    if (context.history.document.quantization_presets.size() >= quantization_preset_t::maximum_count)
+        return "The project already has the maximum number of quantization presets.";
+    if (!request || !quantize_settings_valid(*request))
+        return "Quantization settings are invalid.";
+    return std::nullopt;
+}
+
+auto save_quantize_preset(compose_action_context_t& context) -> std::string {
+    using namespace wormedit;
+    const auto length = strnlen(context.action.compose_quantize_preset_name,
+                                sizeof(context.action.compose_quantize_preset_name));
+    const auto request = quantize_request_from_action(context.action,
+        context.state.active_snap_denominator, {});
+    if (const auto error = validate_quantize_preset_save(context, length, request)) return *error;
+    auto proposed = context.history.document;
+    proposed.quantization_presets.push_back({
+        .name = context.action.compose_quantize_preset_name,
+        .divisions = request->divisions, .space = request->space,
+        .tie = request->tie, .holds = request->holds});
+    const auto index = proposed.quantization_presets.size() - 1;
+    const auto committed = commit_document_command(context.history, std::move(proposed),
+                                                   "Save quantization preset");
+    if (!committed) return committed.diagnostics.empty()
+        ? "Quantization preset could not be saved." : committed.diagnostics.front().message;
+    auto& editor = quantize_editor_for(context);
+    editor.request = *request;
+    editor.preset_index = index;
+    return "Quantization preset saved.";
+}
+
+auto delete_quantize_preset(compose_action_context_t& context) -> std::string {
+    using namespace wormedit;
+    const auto index = context.action.compose_quantize_preset_index;
+    if (index >= context.history.document.quantization_presets.size())
+        return "The selected quantization preset is no longer available.";
+    auto proposed = context.history.document;
+    proposed.quantization_presets.erase(proposed.quantization_presets.begin() +
+                                        static_cast<std::ptrdiff_t>(index));
+    const auto committed = commit_document_command(context.history, std::move(proposed),
+                                                   "Delete quantization preset");
+    if (!committed) return committed.diagnostics.empty()
+        ? "Quantization preset could not be deleted." : committed.diagnostics.front().message;
+    auto& editor = quantize_editor_for(context);
+    if (editor.preset_index) {
+        if (*editor.preset_index == index) editor.preset_index.reset();
+        else if (*editor.preset_index > index) --*editor.preset_index;
+    }
+    return "Quantization preset deleted.";
+}
+
+auto dispatch_quantize_preset_action(compose_action_context_t& context)
+    -> std::optional<std::string> {
+    using namespace wormedit;
+    const auto kind = context.action.compose_action;
+    if (kind == WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS)
+        return apply_quantize_settings_from_action(context);
+    if (kind == WORM_UI_COMPOSE_ACTION_SELECT_QUANTIZE_PRESET)
+        return select_quantize_preset(context);
+    if (kind == WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET) return save_quantize_preset(context);
+    if (kind == WORM_UI_COMPOSE_ACTION_DELETE_QUANTIZE_PRESET)
+        return delete_quantize_preset(context);
+    return std::nullopt;
+}
+
+auto dispatch_compose_area_with_quantize_report(
+    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+    wormedit::editor_interaction_state_t& state,
+    application_command_state_t& application_state) -> std::optional<std::string> {
+    using namespace wormedit;
+    const auto revision = history.document.revision;
+    std::optional<quantize_preview_t> report;
+    if (action.compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE) {
+        const auto chart = std::ranges::find(history.document.charts, state.chart,
+                                             &chart_document_t::id);
+        const auto request = quantize_request_from_action(action, state.active_snap_denominator,
+                                                          state.selected_notes);
+        if (chart != history.document.charts.end() && request)
+            report = preview_quantize_selection(*chart, state.selected_notes, *request);
+    }
+    const auto response = dispatch_compose_area_action(action, history, state);
+    if (response && report && history.document.revision != revision) {
+        application_state.quantize_applied_report =
+            application_command_state_t::quantize_applied_report_t{
+                .song = history.document.id, .chart = state.chart,
+                .rows = report->report_rows, .total_rows = report->report_total_rows,
+                .truncated = report->report_truncated};
+    }
+    return response;
+}
+
 } // namespace
 
 auto dispatch_compose_view_action(
@@ -2277,7 +2446,13 @@ auto dispatch_compose_view_action(
     editor_interaction_result_t result;
     std::string status;
 
-    if (auto response = dispatch_compose_area_action(action, history, state)) return *response;
+    compose_action_context_t context{
+        action, history, workspace, state, viewport_height, application_state, asset_base,
+        resource_copy_scheduler, resource_copy_runtime, export_runtime, metadata_import_busy,
+        scroll_direction};
+    if (auto response = dispatch_quantize_preset_action(context)) return *response;
+    if (auto response = dispatch_compose_area_with_quantize_report(
+            action, history, state, application_state)) return *response;
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
         return {};
     }
@@ -2288,10 +2463,6 @@ auto dispatch_compose_view_action(
         action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT) {
         return "BMS branch actions must use the workspace action boundary.";
     }
-    compose_action_context_t context{
-        action, history, workspace, state, viewport_height, application_state, asset_base,
-        resource_copy_scheduler, resource_copy_runtime, export_runtime, metadata_import_busy,
-        scroll_direction};
     if (auto response = dispatch_compose_audio_offset(context)) return *response;
     if (auto response = dispatch_compose_measure_navigation(context)) return *response;
     if (auto response = dispatch_compose_bgm_column_count(context)) return *response;

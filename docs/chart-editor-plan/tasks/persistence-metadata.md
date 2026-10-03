@@ -11,13 +11,14 @@ was recently reorganized into collapsible sections; apply the stale-plan check
 
 ## T-120 Write the crash marker
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** No crash-marker backend or startup crash flag exists. The required existing atomic temporary/write/flush/validate/rename helper is private `publish_prevalidated_bytes` in unowned `src/formats/native_project_storage.cpp`; public storage APIs serialize native projects/recovery envelopes rather than marker bytes. Reusing that backend needs an approved raw-byte publication seam in `include/wormedit/formats/native_project_storage.h` and its implementation, rather than disguising a marker as a project or copying atomic-publication code.
 - **Outcome:** the app creates a crash marker file in the per-user recovery directory at startup and removes it on clean shutdown; a marker left over from a previous run is reported to the startup recovery scan.
 - **Read first:** `docs/references/recovery-design.md` (crash-marker paragraphs), `src/sys/platform_recovery.cpp`, `include/wormedit/core/startup_session.h`, `tests/core/startup_session_tests.cpp`.
-- **Files owned:** `src/sys/platform_recovery.cpp/.h`, `include/wormedit/core/startup_session.h`, `src/core/startup_session.cpp`, `tests/core/startup_session_tests.cpp`, `src/sys/main.cpp` (create/remove calls only).
+- **Files owned:** `src/sys/platform_recovery.cpp/.h`, `include/wormedit/core/startup_session.h`, `src/core/startup_session.cpp`, `tests/core/startup_session_tests.cpp`, `src/sys/main.cpp` (create/remove calls only). User-approved supporting scope (2026-10-03): `src/formats/native_project_storage.cpp`, `include/wormedit/formats/native_project_storage.h`.
 - **Steps:**
-  0. **STOP:** wait for supporting-file ownership approval for reuse of the atomic publication backend before implementing the marker.
+  0. Scope extension approved by the user (2026-10-03).
   1. Marker contents: process ID and project ID, written through the existing atomic temporary+rename helper.
   2. Startup scan gains a `previous_run_crashed` flag.
   3. If the flag is set and the primary validates with no newer backup, create the `.bak` from the primary as the design requires.
@@ -107,13 +108,14 @@ Verified 2026-10-03: fourteen core regression cases cover confirmed drops and un
 
 ## T-127 Add the key-count/profile selector to Metadata
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Outcome:** per-chart selector showing only counts supported by the chart's format family plus "Custom", with the preview counts and a confirm button.
 - **Read first:** `include/wormedit/core/lane_migration.h`, `src/ui/nuklear/metadata_panel.cpp`, `src/sys/metadata_actions.cpp`.
-- **Files owned:** `src/sys/metadata_actions.cpp`, `src/sys/metadata_view_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp`.
-- **Implementation audit (2026-10-03):** no migration selector exists. Family choices and a real generic Custom target can be built in owned files; Custom must not reuse the osu!mania 1–18 factory or become a no-op for the current layout. The sealed migration preview/count/conflict state needs shared dispatch/projection access declared in unowned `src/sys/metadata_actions.h`, the same ownership gap as T-96. Approval is pending; no implementation was started.
+- **Files owned:** `src/sys/metadata_actions.cpp`, `src/sys/metadata_view_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp`. User-approved supporting scope (2026-10-03): `src/sys/metadata_actions.h`.
+- **Implementation audit (2026-10-03):** no migration selector exists. Family choices and a real generic Custom target can be built in owned files; Custom must not reuse the osu!mania 1–18 factory or become a no-op for the current layout. The sealed migration preview/count/conflict state needs shared dispatch/projection access declared in unowned `src/sys/metadata_actions.h`, the same ownership gap as T-96. The user approved this scope extension on 2026-10-03; no implementation was started.
 - **Steps:**
-  0. STOP until the user extends ownership to `src/sys/metadata_actions.h` for shared sealed-preview access.
+  0. Scope extension approved by the user (2026-10-03).
   1. Wire the complete selector/preview/confirmation through the standard pattern.
 - **Invariants:** as T-126.
 - **Reject/failure behavior:** as T-126.
@@ -122,12 +124,13 @@ Verified 2026-10-03: fourteen core regression cases cover confirmed drops and un
 
 ## T-128 Apply one metadata edit to several difficulties
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Implementation notes (2026-10-01):** the core batch command already exists as `apply_batch_chart_metadata_edit` in `metadata_editor.h` (added with T-260); only the Metadata multi-select UI (step 2) is open.
 - **Outcome:** Metadata offers a multi-select of difficulties; applying author or rating edits writes all selected charts in one command.
 - **Read first:** `include/wormedit/core/metadata_editor.h`, `src/sys/metadata_actions.cpp`, `src/ui/nuklear/metadata_panel.cpp`.
-- **Files owned:** `include/wormedit/core/metadata_editor.h`, `src/core/metadata_editor.cpp`, `tests/core/metadata_editor_tests.cpp`, `src/sys/metadata_actions.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp`.
-- **Steps:** 0. **STOP:** extend ownership to `src/sys/metadata_view_projection.cpp` to expose the difficulty list; Metadata currently receives only the selected difficulty, and its renderer receives no Project chart rows. Include `src/ui/nuklear/metadata_state.h/.cpp` if the selection is stored in the shared resettable Metadata state. 1. Core batch command over a bounded chart-ID list. 2. UI checkboxes per difficulty.
+- **Files owned:** `include/wormedit/core/metadata_editor.h`, `src/core/metadata_editor.cpp`, `tests/core/metadata_editor_tests.cpp`, `src/sys/metadata_actions.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp`. User-approved supporting scope (2026-10-03): `src/sys/metadata_view_projection.cpp`, `src/ui/nuklear/metadata_state.h/.cpp` as needed for resettable selection state.
+- **Steps:** 0. Scope extension approved by the user (2026-10-03). 1. Core batch command over a bounded chart-ID list. 2. UI checkboxes per difficulty.
 - **Invariants:** one undo step.
 - **Reject/failure behavior:** any invalid chart rejects all.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`.
@@ -135,12 +138,13 @@ Verified 2026-10-03: fourteen core regression cases cover confirmed drops and un
 
 ## T-129 Add typed per-format metadata forms
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Implementation notes (2026-10-01):** steps 1 and 2 are done: `format_field_schema.h` has the typed table (`format_field_schemas`, `find_format_field_schema`) and `validate_format_field_value` with plain-ASCII integer/decimal parsing, case-insensitive choices (StepMania `DIFFICULTY`) and single-line text. Stored names are the exact `ordered_fields` spellings: BMS tokens without `#`, StepMania tags, osu! `Difficulty.HPDrainRate`/`Difficulty.OverallDifficulty`/`Metadata.Version`, BMSON `info.level`/`info.judge_rank`/`info.total`. Tests in `tests/core/format_field_schema_tests.cpp`. Step 3 (the typed widgets) remains.
 - **Outcome:** Metadata's format section shows named typed fields for BMS (`#PLAYER`, `#RANK`, `#TOTAL`, `#PLAYLEVEL`, `#DIFFICULTY`), StepMania (`#CREDIT`, `#DIFFICULTY`, `#METER`), osu! (`HPDrainRate`, `OverallDifficulty`, `Version`), and BMSON (`level`, `judge_rank`, `total`) that read/write the existing ordered format fields.
 - **Read first:** `docs/chart-editor-plan/formats-persistence.md` (Metadata tab paragraph), `include/wormedit/core/metadata_editor.h`, `src/ui/nuklear/metadata_panel.cpp`.
-- **Files owned:** new `include/wormedit/core/format_field_schema.h`, new `src/core/format_field_schema.cpp`, new `tests/core/format_field_schema_tests.cpp`, `src/sys/metadata_view_projection.cpp`, `src/ui/nuklear/metadata_panel.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
-- **Steps:** 0. **STOP:** extend ownership to the extracted widget owner `src/ui/nuklear/metadata_format_fields.cpp/.h` and its value buffers in `src/ui/nuklear/metadata_state.h`. The owned panel now delegates its format section; current BMS/BMSON widgets bypass schema range validation and StepMania/osu!mania typed widgets are absent. 1. Static schema table (format, key, type int/decimal/text, range). 2. Validation function with tests. 3. Render typed widgets that edit through the existing format-field insert/replace commands.
+- **Files owned:** new `include/wormedit/core/format_field_schema.h`, new `src/core/format_field_schema.cpp`, new `tests/core/format_field_schema_tests.cpp`, `src/sys/metadata_view_projection.cpp`, `src/ui/nuklear/metadata_panel.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`. User-approved supporting scope (2026-10-03): `src/ui/nuklear/metadata_format_fields.cpp/.h`, `src/ui/nuklear/metadata_state.h`.
+- **Steps:** 0. Scope extension approved by the user (2026-10-03). 1. Static schema table (format, key, type int/decimal/text, range). 2. Validation function with tests. 3. Render typed widgets that edit through the existing format-field insert/replace commands.
 - **Invariants:** unknown fields remain in the generic list; nothing is reordered.
 - **Reject/failure behavior:** out-of-range values show an inline error and are not applied.
 - **Verify:** standard build/test; smoke PNG of `metadata`.

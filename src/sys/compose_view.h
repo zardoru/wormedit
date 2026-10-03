@@ -107,6 +107,9 @@ struct compose_scene_cache_t {
 
     std::optional<wormedit::measure_index_t> cached_measure_index;
     quantize_preview_cache_t quantize_preview;
+    std::vector<WormUiComposeQuantizePresetView> quantize_preset_views;
+    std::vector<WormUiComposeQuantizeReportRowView> quantize_preview_row_views;
+    std::vector<WormUiComposeQuantizeReportRowView> quantize_applied_row_views;
     std::unordered_map<std::uint64_t, std::uint64_t> bgm_rows_by_id;
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
     std::shared_ptr<const wormedit::editor_area_geometry_snapshot_t> area_object_geometry;
@@ -191,6 +194,21 @@ struct application_command_state_t {
         std::string message;
     };
     std::optional<bms_branch_statement_feedback_t> bms_branch_statement_feedback;
+    struct quantize_editor_t {
+        wormedit::song_id_t song;
+        wormedit::chart_id_t chart;
+        wormedit::quantize_request_t request;
+        std::optional<std::size_t> preset_index;
+    };
+    std::optional<quantize_editor_t> quantize_editor;
+    struct quantize_applied_report_t {
+        wormedit::song_id_t song;
+        wormedit::chart_id_t chart;
+        std::vector<quantize_report_row_t> rows;
+        std::size_t total_rows{};
+        bool truncated{};
+    };
+    std::optional<quantize_applied_report_t> quantize_applied_report;
     struct paste_session_t {
         wormedit::chart_clipboard_t clipboard;
         wormedit::local_position_t anchor;

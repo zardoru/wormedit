@@ -1,4 +1,5 @@
 #include <wormedit/core/editor_scene.h>
+#include <wormedit/core/lane_profiles.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -1624,4 +1625,49 @@ TEST_CASE("Expanded source budget failure retains valid fresh visible primitives
     CHECK_FALSE(window.scene);
     CHECK(window.rebuild_count == 0);
     CHECK_FALSE(wormedit::can_reuse_editor_field_scene_window(chart, index, current, request, window));
+}
+
+namespace {
+
+void check_dp_field_lane(const auto& painted, wormedit::lane_id_t expected, bool left) {
+    CHECK(painted.lane == expected);
+    CHECK(painted.stage == (left ? wormedit::stage_group_t::left : wormedit::stage_group_t::right));
+}
+
+void check_dp_field_layout(const wormedit::lane_layout_t& layout) {
+    using namespace wormedit;
+    INFO(layout.profile_id);
+    auto chart = scene_chart();
+    chart.lane_layouts.resize(1);
+    chart.lane_layouts.front().layout = layout;
+    for (auto& measure : chart.measures) measure.notes.clear();
+    const auto built = build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<editor_field_scene_index_t>(built));
+    auto dp_view = view();
+    dp_view.active_lane = layout.lanes.front().id;
+    dp_view.selected_notes.clear();
+    dp_view.selected_objects.clear();
+    const auto result = make_editor_field_scene(
+        chart, std::get<editor_field_scene_index_t>(built), dp_view,
+        {.field_left_pixels = 10.0, .field_width_pixels = 400.0,
+         .split_stage_gutter_pixels = 12.0});
+    REQUIRE(result);
+    REQUIRE(result.scene->lanes.size() == layout.lanes.size());
+    const auto split = *layout.split_after_column;
+    for (std::size_t i = 0; i < layout.lanes.size(); ++i) {
+        const auto& painted = result.scene->lanes[i];
+        check_dp_field_lane(painted, layout.lanes[i].id, i < split);
+    }
+    CHECK(result.scene->lanes[split].bounds.left -
+          result.scene->lanes[split - 1].bounds.right == Catch::Approx(12.0));
+
+}
+
+} // namespace
+
+TEST_CASE("DP field keeps all P1 lanes before P2 with stage-local display orders",
+          "[unit][core][editor-scene]") {
+    for (const auto& descriptor : wormedit::built_in_bms_lane_profiles()) {
+        if (descriptor.profile.layout.split_stage) check_dp_field_layout(descriptor.profile.layout);
+    }
 }

@@ -4695,3 +4695,56 @@ TEST_CASE("picking a row drops the sub-row offset a fixed-cursor scroll left",
     CHECK(state.cursor_subrow == 0.0);
     CHECK((state.cursor == local_position_t{measure_id_t{2}, 240}));
 }
+
+namespace {
+
+void check_dp_hit(const auto& hit, std::uint64_t column) {
+    REQUIRE(hit);
+    CHECK(hit->lane == lane_id_t{column + 1});
+    CHECK(hit->note == object_id_t{201 + column});
+}
+
+} // namespace
+
+TEST_CASE("DP hit testing and area selection keep stage-local lanes together",
+          "[unit][core][interaction]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout = {
+        .profile_id = "dp-test",
+        .lanes = {{.id = lane_id_t{1}, .name = "P1 key 1", .stage = stage_group_t::left,
+                   .display_order = 0},
+                  {.id = lane_id_t{2}, .name = "P1 key 2", .stage = stage_group_t::left,
+                   .display_order = 1},
+                  {.id = lane_id_t{3}, .name = "P2 key 1", .stage = stage_group_t::right,
+                   .display_order = 0},
+                  {.id = lane_id_t{4}, .name = "P2 key 2", .stage = stage_group_t::right,
+                   .display_order = 1}},
+        .split_stage = true,
+        .split_after_column = 2};
+    for (std::uint64_t i = 1; i <= 4; ++i)
+        chart.measures.front().notes.push_back({.id = object_id_t{200 + i},
+                                               .position = {measure_id_t{1}, 240},
+                                               .lane = lane_id_t{i}});
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{std::uint64_t{4}};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                              {measure_id_t{1}, 0}, snaps, 4, 192.0);
+    REQUIRE(setup);
+    const auto built = build_editor_hit_test_index(history.document.charts.front(), 1);
+    REQUIRE(std::holds_alternative<editor_hit_test_index_t>(built));
+    for (std::uint64_t i = 0; i < 4; ++i) {
+        const auto hit = hit_test_editor(
+            history.document.charts.front(), std::get<editor_hit_test_index_t>(built), *setup.view,
+            {.x_pixels = 125.0 + 50.0 * i, .y_pixels = 48.0,
+             .field_left_pixels = 100.0, .field_width_pixels = 200.0});
+        check_dp_hit(hit, i);
+    }
+    auto state = *setup.state;
+    REQUIRE(dispatch_editor_action(
+        history, state, begin_editor_area_selection_action_t{
+                            101.0, 46.0, 100.0, 200.0, editor_area_selection_mode_t::replace, true}));
+    REQUIRE(dispatch_editor_action(
+        history, state, commit_editor_area_selection_action_t{199.0, 50.0, true}));
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{201}, object_id_t{202}});
+}

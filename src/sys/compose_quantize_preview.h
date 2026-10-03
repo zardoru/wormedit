@@ -10,13 +10,34 @@
 
 namespace wormedit::sys {
 
-// Dry-run result of quantizing the selected notes to the active snap.
+inline constexpr std::size_t quantize_report_row_capacity = 256;
+
+struct quantize_report_row_t {
+    object_id_t object;
+    lane_id_t lane;
+    std::uint64_t start_before_absolute_row{};
+    std::uint64_t start_after_absolute_row{};
+    local_position_t start_before;
+    local_position_t start_after;
+    std::optional<local_position_t> end_before;
+    std::optional<local_position_t> end_after;
+    bool moved{};
+    bool collision{};
+    std::optional<object_id_t> collision_peer;
+};
+
+// Dry-run result for a selected-note quantization request. Report rows contain every moved or
+// colliding note up to the fixed capacity; aggregate counts always cover the full selection.
 struct quantize_preview_t {
     std::size_t selected{};
     std::size_t moved{};
     std::size_t unchanged{};
     // Collisions or other rejections that make the real command fail; Apply stays disabled.
     std::size_t blocked{};
+    std::size_t colliding_objects{};
+    std::size_t report_total_rows{};
+    bool report_truncated{};
+    std::vector<quantize_report_row_t> report_rows;
     std::string message;
 };
 
@@ -24,17 +45,24 @@ struct quantize_preview_t {
                                               const std::vector<object_id_t>& selected,
                                               std::uint64_t snap_denominator) -> quantize_preview_t;
 
+[[nodiscard]] auto preview_quantize_selection(const chart_document_t& chart,
+                                              const std::vector<object_id_t>& selected,
+                                              quantize_request_t request) -> quantize_preview_t;
+
 // Recomputes only when the chart, document revision, selection or snap changed.
 class quantize_preview_cache_t {
 public:
     [[nodiscard]] auto get(const chart_document_t& chart, std::uint64_t revision,
                            const std::vector<object_id_t>& selected,
                            std::uint64_t snap_denominator) -> const quantize_preview_t&;
+    [[nodiscard]] auto get(const chart_document_t& chart, std::uint64_t revision,
+                           const std::vector<object_id_t>& selected,
+                           const quantize_request_t& request) -> const quantize_preview_t&;
 
 private:
     chart_id_t chart_{};
     std::uint64_t revision_{};
-    std::uint64_t snap_{};
+    quantize_request_t request_;
     std::vector<object_id_t> selected_;
     std::optional<quantize_preview_t> value_;
 };

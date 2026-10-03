@@ -614,7 +614,8 @@ auto hit_test_lanes(const lane_layout_t& layout) -> std::vector<const lane_defin
     lanes.reserve(layout.lanes.size());
     for (const auto& lane : layout.lanes)
         if (editable_lane(lane)) lanes.push_back(&lane);
-    std::ranges::sort(lanes, [](const auto* left, const auto* right) {
+    std::ranges::sort(lanes, [split_stage = layout.split_stage](const auto* left, const auto* right) {
+        if (split_stage && left->stage != right->stage) return left->stage < right->stage;
         if (left->display_order != right->display_order)
             return left->display_order < right->display_order;
         return left->id.value < right->id.value;

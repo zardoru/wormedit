@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <limits>
 #include <ranges>
+#include <set>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -383,10 +384,10 @@ namespace {
 
 constexpr std::string_view native_project_format = "wormedit-project";
 // The envelope (`format`, `format_version`, `document`) and the document schema evolve separately:
-// the envelope is still version 1, while the document is at schema 2 (schema 1 files migrate on
+// the envelope is still version 1, while the document is at schema 3 (older documents migrate on
 // load; see native_project_migrations.cpp).
 constexpr std::uint32_t native_project_format_version = 1;
-constexpr std::uint32_t native_project_schema_version = 2;
+constexpr std::uint32_t native_project_schema_version = 3;
 
 auto path_to_utf8(const std::filesystem::path& path) -> std::string {
     const auto encoded = path.generic_u8string();
@@ -483,6 +484,22 @@ void from_json(const json& value, format_metadata_t& metadata) {
     value.at("ordered_fields").get_to(metadata.ordered_fields);
     value.at("ordered_field_source_orders").get_to(metadata.ordered_field_source_orders);
     value.at("encoding").get_to(metadata.encoding);
+}
+
+void to_json(json& value, const quantization_preset_t& preset) {
+    value = json{{"name", preset.name},
+                 {"divisions", preset.divisions},
+                 {"space", preset.space},
+                 {"tie", preset.tie},
+                 {"holds", preset.holds}};
+}
+
+void from_json(const json& value, quantization_preset_t& preset) {
+    value.at("name").get_to(preset.name);
+    preset.divisions = strict_unsigned<std::uint64_t>(value.at("divisions"));
+    value.at("space").get_to(preset.space);
+    value.at("tie").get_to(preset.tie);
+    value.at("holds").get_to(preset.holds);
 }
 
 void to_json(json& value, const audio_asset_t& asset) {
@@ -658,7 +675,8 @@ void to_json(json& value, const song_document_t& song) {
                  {"generator_recipes", song.generator_recipes},
                  {"storyboards", song.storyboards},
                  {"charts", song.charts},
-                 {"output_groups", song.output_groups}};
+                 {"output_groups", song.output_groups},
+                 {"quantization_presets", song.quantization_presets}};
 }
 
 void from_json(const json& value, song_document_t& song) {
@@ -674,6 +692,7 @@ void from_json(const json& value, song_document_t& song) {
     value.at("storyboards").get_to(song.storyboards);
     value.at("charts").get_to(song.charts);
     value.at("output_groups").get_to(song.output_groups);
+    value.at("quantization_presets").get_to(song.quantization_presets);
 }
 
 namespace {
@@ -697,6 +716,24 @@ auto valid_encoding(const encoding_provenance_t& encoding) -> bool {
 auto valid_metadata(const format_metadata_t& metadata) -> bool {
     return enum_at_most(metadata.family, format_family_t::quaver) &&
            valid_encoding(metadata.encoding);
+}
+
+auto valid_quantization_preset(const quantization_preset_t& preset) -> bool {
+    return !preset.name.empty() &&
+           preset.name.size() <= quantization_preset_t::maximum_name_bytes &&
+           preset.name.find('\0') == std::string::npos &&
+           preset.divisions > 0 &&
+           enum_at_most(preset.space, quantization_space_t::authored_measure) &&
+           enum_at_most(preset.tie, quantization_tie_t::reject) &&
+           enum_at_most(preset.holds, quantization_hold_t::both_endpoints);
+}
+
+auto valid_quantization_presets(const std::vector<quantization_preset_t>& presets) -> bool {
+    if (presets.size() > quantization_preset_t::maximum_count) return false;
+    std::set<std::string_view> names;
+    for (const auto& preset : presets)
+        if (!valid_quantization_preset(preset) || !names.insert(preset.name).second) return false;
+    return true;
 }
 
 auto valid_control_node(const bms_control_node_t& root, std::size_t maximum_depth) -> bool {
@@ -845,7 +882,8 @@ auto valid_chart_enum_domains(const chart_document_t& chart, std::size_t maximum
 
 auto valid_enum_domains(const song_document_t& song, std::size_t maximum_depth) -> bool {
     if (!std::ranges::all_of(song.metadata.format_groups, valid_metadata) ||
-        !valid_resource_enum_domains(song)) {
+        !valid_resource_enum_domains(song) ||
+        !valid_quantization_presets(song.quantization_presets)) {
         return false;
     }
     if (!std::ranges::all_of(song.visual_assets, [](const auto& asset) {
@@ -1200,7 +1238,7 @@ auto native_project_parse_result_t::has_errors() const -> bool {
 auto write_native_project(const song_document_t& song, native_project_limits_t limits)
     -> native_project_write_result_t {
     native_project_write_result_t result;
-    if (song.schema_version != native_project_schema_version) {
+    if (song.schema_version != 2 && song.schema_version != native_project_schema_version) {
         result.diagnostics.push_back(
             {diagnostic_severity_t::error, native_project_diagnostic_code_t::unsupported_version,
              "document schema version is unsupported", "$.document.schema_version"});
@@ -1226,9 +1264,11 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
         return result;
     }
     try {
+        json serialized_document = song;
+        serialized_document["schema_version"] = native_project_schema_version;
         const json root{{"format", native_project_format},
                         {"format_version", native_project_format_version},
-                        {"document", song}};
+                        {"document", std::move(serialized_document)}};
         if (!json_nodes_within(root, limits.maximum_json_nodes, limits.maximum_nesting_depth)) {
             result.diagnostics.push_back(
                 {diagnostic_severity_t::error, native_project_diagnostic_code_t::resource_limit,

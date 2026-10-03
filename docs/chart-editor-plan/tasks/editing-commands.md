@@ -26,15 +26,16 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-51 Build the modeless Timing Settings panel
 
-- **Status:** blocked-on-user
-- **Backing audit (2026-10-03):** metronome enable already calls `preview_session.set_metronome_enabled`, and the eight timing-lane toggles already exist. Neither preview state nor the application settings carry metronome volume or count-in state; `timing.open_settings` remains disabled. Step 3’s explicit STOP therefore applies. No settings implementation was started.
+- **Status:** ready
+- **Decision (user, 2026-10-03):** Implement metronome volume and count-in backing state before binding the panel controls; do not omit these controls. Ownership extends to the existing preview-session/mixer/transport implementation and related audio/frontend tests and source-list linkage needed for these settings.
+- **Backing audit (2026-10-03):** metronome enable already calls `preview_session.set_metronome_enabled`, and the eight timing-lane toggles already exist. Neither preview state nor the application settings carry metronome volume or count-in state; `timing.open_settings` remains disabled. This backing-state gap is now approved for implementation by the decision above. No settings implementation was started at the audit checkpoint.
 - **Outcome:** `timing.open_settings` toggles a small modeless window, reachable from Timing and Compose, holding metronome enable/volume/count-in and the per-lane timing visibility toggles.
 - **Read first:** `docs/chart-editor-plan/editing/layout.md` (Timing Settings paragraph), `src/ui/nuklear/compose_inspector.cpp` (timing-lane visibility widgets), `src/sys/chart_preview_state.h` (metronome state), `src/sys/main.cpp` (`timing.open_settings`).
-- **Files owned:** new `src/ui/nuklear/timing_settings_panel.cpp/.h`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `src/sys/main.cpp`, `src/sys/chart_preview_state.cpp/.h`, `CMakeLists.txt`.
+- **Files owned:** new `src/ui/nuklear/timing_settings_panel.cpp/.h`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `src/sys/main.cpp`, `src/sys/chart_preview_state.cpp/.h`, `CMakeLists.txt`. User-approved backing-state scope (2026-10-03): `include/wormedit/audio/preview_session.h`, `src/audio/preview_session.cpp`, existing metronome mixer/transport owners, related audio/frontend tests, `tests/CMakeLists.txt`.
 - **Steps:**
   1. Create the panel as an `nk_begin` window with a close button; its visibility is frontend state, not document state.
   2. Move (do not copy) the timing-lane visibility toggles from the inspector into the panel; leave a one-line "Timing Settings…" button in their place.
-  3. Add metronome enable, volume (0–100 %), and count-in measures (0–4) bound to existing preview state; if a field has no backing state, STOP and report it.
+  3. Add metronome enable, volume (0–100 %), and count-in measures (0–4) by implementing their missing preview/audio backing state, then binding the controls to it.
   4. Enable `timing.open_settings` and make it toggle the panel.
 - **Invariants:** opening the panel does not change tool, selection, cursor, or shortcut focus.
 - **Reject/failure behavior:** none; purely presentational plus existing state.
@@ -73,13 +74,14 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-54 Enable hitsound/keysound painting
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** `audio.paint_hitsound` remains disabled; atomic `apply_resource_assignment` is implemented, but no hitsound paint capture exists. T-43 moved semantic-layer pointer capture into `src/ui/nuklear/compose_object_input.cpp`; its frontend state, application mode/projection, command dispatch, and toolbar indication are also outside the current owned list. No paint implementation was started.
 - **Outcome:** `audio.paint_hitsound` arms a paint mode: dragging across notes assigns the armed catalog resource to each note touched, committed as one undo step on release.
 - **Read first:** `docs/chart-editor-plan/editing/interactions.md` (hitsound painting paragraph), `include/wormedit/core/resource_assignment.h` (`apply_resource_assignment`), `src/ui/nuklear/compose_input_panel.cpp` (semantic-layer painting capture), `src/sys/main.cpp` (`audio.paint_hitsound`).
-- **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose_actions.cpp`, `src/sys/main.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/frontend.h`, `tests/core/resource_assignment_tests.cpp`.
+- **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose_actions.cpp`, `src/sys/main.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/frontend.h`, `tests/core/resource_assignment_tests.cpp`. User-approved supporting scope (2026-10-03): `src/ui/nuklear/compose_object_input.cpp`; `src/ui/nuklear/compose_object_input.cpp`, `src/ui/nuklear/compose_state.h/.cpp`, application mode/dispatch/projection owners, `src/ui/nuklear/compose_toolbar.cpp`.
 - **Steps:**
-  0. **STOP:** obtain scope approval for the existing object-input/state, application mode/dispatch/projection, and toolbar files before implementing the new paint capture.
+  0. Scope extension approved by the user (2026-10-03).
   1. Copy the structure of semantic-layer paint capture: collect touched note IDs during the drag (bounded, deduplicated).
   2. On release call `apply_resource_assignment` once with the collected set.
   3. Enable the command only when a Sample resource is armed; show the mode with the `audio-lines` icon.
@@ -90,13 +92,14 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-55 Move mixed note and BGM selections together
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** note move gestures and the separate single-event BGM drag exist, but no shared mixed drag does. A complete gesture starting from either selected note or BGM tile needs the existing object pointer-capture/action route and mixed-preview projection, outside the four owned files. Scope approval is required before extending that route; no mixed move implementation was started.
 - **Outcome:** dragging a selection that contains playable notes and BGM events moves both by the same snapped row delta in one command.
 - **Read first:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp` (note-move and BGM-move proposals), `src/sys/compose_input.cpp`.
-- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/compose_input.cpp`, `tests/core/interaction_tests.cpp`.
+- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/compose_input.cpp`, `tests/core/interaction_tests.cpp`. User-approved supporting scope (2026-10-03): existing object-input/action route and pending mixed-preview projection owners.
 - **Steps:**
-  0. **STOP:** obtain ownership for the existing object-input/action and pending-preview projection files needed to route a mixed gesture from either pane.
+  0. Scope extension approved by the user (2026-10-03).
   1. Build one proposal that validates the note part and the BGM part with their existing validators, then publishes both in one command.
   2. Only vertical (row) movement for BGM; lanes of BGM events stay fixed.
   3. Tests: success, collision in either part rejects both, undo restores both.
@@ -123,13 +126,14 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-57 Show the lane-key binding legend
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** active-profile `{scancode, lane_id}` bindings and the persisted editor legend preference already reach the Compose view. Existing lane-header legends draw lane numbers rather than physical keys; no toolbar toggle exists. Publishing a toolbar toggle through the existing preference/action owner needs an unowned application file. A separate frontend flag would diverge from the preference. No legend implementation was started.
 - **Outcome:** a toggleable legend above the Compose lanes shows the physical key bound to each lane for the active input profile.
 - **Read first:** `include/wormedit/core/lane_profiles.h` (input profiles), `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_canvas.cpp`.
-- **Files owned:** `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_toolbar.cpp`.
+- **Files owned:** `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_toolbar.cpp`. User-approved supporting scope (2026-10-03): existing application preference/action publication owner (one persisted visibility owner).
 - **Steps:**
-  0. **STOP:** obtain scope for the existing preference/action publication path before adding the toolbar toggle; retain one visibility owner.
+  0. Scope extension approved by the user (2026-10-03).
   1. Project one short key label per visible lane into the view.
   2. Draw labels in the lane header row; add a toolbar toggle.
 - **Invariants:** lane geometry unchanged.
@@ -153,13 +157,14 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-59 Remap shortcuts in a preferences window and save them
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** remap, conflict diagnosis, and atomic profile persistence exist, but no Shortcuts window/capture UI does. The frontend shell is the only panel/event orchestrator and is not owned; frontend event-test linkage is omitted too. No remapping implementation was started.
 - **Outcome:** a Shortcuts window lists every registry command with its chord; the user can capture a new chord, see conflicts, and the profile is saved with `save_shortcut_profile_atomic`.
 - **Read first:** `include/wormedit/core/command_registry.h` (`remap_command`, `diagnose_shortcut_conflicts`), `include/wormedit/core/shortcut_profile_storage.h`, `src/core/shortcut_profile_startup.cpp`.
-- **Files owned:** new `src/ui/nuklear/shortcuts_panel.cpp/.h`, `src/ui/frontend.h`, `src/sys/main.cpp`, `CMakeLists.txt`, `tests/core/command_registry_tests.cpp`.
+- **Files owned:** new `src/ui/nuklear/shortcuts_panel.cpp/.h`, `src/ui/frontend.h`, `src/sys/main.cpp`, `CMakeLists.txt`, `tests/core/command_registry_tests.cpp`. User-approved supporting scope (2026-10-03): `src/ui/nuklear/frontend.cpp`, frontend event tests and `tests/CMakeLists.txt`.
 - **Steps:**
-  0. **STOP:** obtain supporting ownership for `src/ui/nuklear/frontend.cpp` and actual frontend test linkage before wiring the new panel.
+  0. Scope extension approved by the user (2026-10-03).
   1. Project the registry (id, label, chord text, conflict flag) into a bounded view.
   2. "Change" captures the next physical key batch as the chord; call `remap_command`.
   3. Save on every successful remap; show load/save errors in the status bar.
@@ -170,13 +175,14 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-60 Add a searchable command menu
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** no command-menu symbol or popup exists. Registry labels/enabled state and main’s invocation path are reusable, but the only frontend frame-render owner is omitted from Files owned. An unrendered module would not satisfy the outcome. No menu implementation was started.
 - **Outcome:** a primary-modifier+Shift+P popup lists enabled commands filtered by typed text; Enter invokes the selected one through `invoke_command`.
 - **Read first:** `include/wormedit/core/command_registry.h` (`invoke_command`), `src/sys/application_command_dispatch.cpp`, `src/ui/nuklear/frontend.cpp`.
-- **Files owned:** new `src/ui/nuklear/command_menu.cpp/.h`, `src/core/command_registry.cpp` (default chord only), `src/ui/frontend.h`, `src/sys/main.cpp`, `CMakeLists.txt`.
+- **Files owned:** new `src/ui/nuklear/command_menu.cpp/.h`, `src/core/command_registry.cpp` (default chord only), `src/ui/frontend.h`, `src/sys/main.cpp`, `CMakeLists.txt`. User-approved supporting scope (2026-10-03): `src/ui/nuklear/frontend.cpp`, frontend event tests and `tests/CMakeLists.txt`.
 - **Steps:**
-  0. **STOP:** obtain supporting scope for `src/ui/nuklear/frontend.cpp` and actual frontend event tests before adding the popup.
+  0. Scope extension approved by the user (2026-10-03).
   1. Register `workspace.command_menu` with the default chord.
   2. Popup with a text field and up to 20 filtered rows (case-insensitive substring on label).
   3. Enter dispatches through the same path as shortcuts.
@@ -246,13 +252,14 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-284 Add Pump 5K and Solo 6K arrow profiles
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Implementation notes (2026-10-01):** steps 2 and 3 are done and step 1 is half done. `lane_glyph_t` gained `arrow_up_left`, `arrow_up_right`, `arrow_down_left`, `arrow_down_right` and `arrow_center` appended after `arrow_right` (stored values 0-5 are unchanged; the native-project enum bound moved to `arrow_center`). `make_stepmania_pump_single_profile()`, `make_stepmania_dance_solo_profile()` and `stepmania_lane_specs()` live in `lane_profiles`; the importer takes lane names and glyphs from the same table, so `dance-solo` diagonals are now `arrow_up_left`/`arrow_up_right` instead of `bar`. Step-type mapping already worked through the `stepmania:<type>` profile id and the 5/6-column fallbacks. Paired fixtures `stepmania/pump-single.{sm,ssc}` and `dance-solo.{sm,ssc}` have import and re-export tests. **Remaining:** the arrow polygons in `src/ui/nuklear/arrow_glyph.cpp`, the `glyph >= 2 && glyph <= 5` range checks in `compose_canvas.cpp`, `compose_panel.cpp` and `player_preview.cpp`, the arrow switch in `compose_field_downscroll` (`src/sys/compose_view.cpp`, so Pump charts scroll up), and the smoke PNG. Until then the new glyphs draw as bars.
 - **Stale-plan audit (2026-10-03):** The profile/import/round-trip core exists. Diagonal/center rendering still needs range checks in unowned `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_panel.cpp`, and `src/ui/nuklear/player_preview.cpp`, plus the arrow-direction switch in unowned `src/sys/compose_view.cpp`. Updating owned polygons alone would leave the outcome incomplete.
 - **Outcome:** built-in lane profiles for pump-single (down-left, up-left, center, up-right, down-right) and dance-solo (left, up-left, down, up, up-right, right) with arrow glyphs, number-row default bindings (T-242), and SM/SSC step-type mapping (`pump-single`, `dance-solo`) (user decision 2026-09-30, question 8).
 - **Read first:** `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `include/wormedit/core/document.h` (`lane_glyph_t`), `src/formats/stepmania.cpp` (step types), `src/ui/nuklear/arrow_glyph.h`.
-- **Files owned:** `include/wormedit/core/document.h` (diagonal and center glyph values), `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `tests/core/lane_profile_tests.cpp`, `src/formats/stepmania.cpp`, `tests/formats/stepmania_tests.cpp`, `src/ui/nuklear/arrow_glyph.cpp/.h`, new fixtures under `tests/fixtures/stepmania/`, `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`.
-- **Steps:** 0. **STOP:** wait for supporting-file ownership approval for the glyph consumers and scroll-direction projection before completing rendering. 1. Glyph values for diagonals and center; polygons in `arrow_glyph`. 2. Profiles and step-type mapping. 3. Paired SM/SSC fixtures and round-trip tests.
+- **Files owned:** `include/wormedit/core/document.h` (diagonal and center glyph values), `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `tests/core/lane_profile_tests.cpp`, `src/formats/stepmania.cpp`, `tests/formats/stepmania_tests.cpp`, `src/ui/nuklear/arrow_glyph.cpp/.h`, new fixtures under `tests/fixtures/stepmania/`, `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`. User-approved supporting scope (2026-10-03): `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/player_preview.cpp`, `src/sys/compose_view.cpp`.
+- **Steps:** 0. Scope extension approved by the user (2026-10-03). 1. Glyph values for diagonals and center; polygons in `arrow_glyph`. 2. Profiles and step-type mapping. 3. Paired SM/SSC fixtures and round-trip tests.
 - **Invariants:** existing 4K/8K behavior unchanged.
 - **Reject/failure behavior:** unknown step types keep the current custom-map behavior.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'stepmania|lane_profile'`; smoke PNG.
@@ -273,13 +280,14 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-286 Use the StepMania/ITG snap color palette
 
-- **Status:** blocked-on-user
+- **Status:** ready
+- **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Implementation notes (2026-10-02, Claude):** classification now includes 48 (cyan) and 64 (green) and the tests cover them (arrow tests compiled standalone against `arrow_glyph.cpp`, 162 assertions pass). The palette is still a constant table in `arrow_glyph.cpp`; moving it into `assets/themes/compose-field.json` and `theme.cpp` remains, so this card stays open for that step.
 - **Stale-plan audit (2026-10-03):** the 48/64 classification already exists, but Compose still calls the hard-coded palette in unowned `src/ui/nuklear/arrow_glyph.cpp`. The theme file/accessor cannot become the palette’s sole source without replacing that table/API implementation.
 - **Outcome:** arrow notes use 4th red, 8th blue, 12th purple, 16th yellow, 24th pink, 32nd orange, 48th cyan, 64th green, other grey (user decision 2026-09-30, question 14); the table lives in the compose theme file.
 - **Read first:** `src/ui/nuklear/arrow_glyph.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_view.cpp` (`snap_class` projection), `assets/themes/compose-field.json`.
-- **Files owned:** `src/sys/compose_view.cpp`, `src/ui/frontend.h` (snap class values 48 and 64), `assets/themes/compose-field.json`, `src/ui/nuklear/theme.cpp/.h`, `src/ui/nuklear/compose_canvas.cpp`, `tests/ui/arrow_glyph_tests.cpp`.
-- **Steps:** 0. **STOP:** wait for supporting-file ownership approval for `src/ui/nuklear/arrow_glyph.cpp`. 1. Extend snap classification with 48 and 64. 2. Move the palette into the theme file. 3. Test classification of exact positions.
+- **Files owned:** `src/sys/compose_view.cpp`, `src/ui/frontend.h` (snap class values 48 and 64), `assets/themes/compose-field.json`, `src/ui/nuklear/theme.cpp/.h`, `src/ui/nuklear/compose_canvas.cpp`, `tests/ui/arrow_glyph_tests.cpp`. User-approved supporting scope (2026-10-03): `src/ui/nuklear/arrow_glyph.cpp`.
+- **Steps:** 0. Scope extension approved by the user (2026-10-03). 1. Extend snap classification with 48 and 64. 2. Move the palette into the theme file. 3. Test classification of exact positions.
 - **Invariants:** classification uses exact rational positions.
 - **Reject/failure behavior:** none.
 - **Verify:** standard build/test; smoke PNG of an SM chart with mixed snaps.

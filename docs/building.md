@@ -17,6 +17,10 @@ ctest --preset headless
 
 Omit the source-directory options when network-backed FetchContent is acceptable. nlohmann/json is pinned to the v3.12.0 release archive and SHA-256, uses its MIT license, and is built with diagnostic byte positions enabled. Catch2 is pinned to commit `2b60af89e23d28eefc081bc930831ee9d45ea58b` (v3.8.1 source), and Lua is pinned to `6e22fedb74cf0c9b6656e9fce8b7331db847c605` (Lua 5.4.8 source).
 
+## Frontend tests without a window
+
+Scripted SDL input against the real Nuklear frontend runs headless; see [frontend event harness](frontend-event-harness.md).
+
 ## UI frontend selection
 
 Application builds select exactly one frontend with

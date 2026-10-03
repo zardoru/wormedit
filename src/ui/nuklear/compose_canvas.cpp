@@ -579,17 +579,22 @@ static void draw_compose_bookmark_label(const ComposePaintContext& paint, const 
     const auto width_of = [font](std::string_view text) {
         return font->width(font->userdata, font->height, text.data(), static_cast<int>(text.size()));
     };
+    const auto scale = paint.viewport.w / static_cast<float>(paint.view->viewport_width_pixels);
+    const auto left = paint.viewport.x +
+        static_cast<float>(paint.view->playable_field_left_pixels) * scale;
+    const auto width = static_cast<float>(paint.view->playable_field_right_pixels -
+                                         paint.view->playable_field_left_pixels) * scale;
     const auto box = wormedit::ui::layout_bookmark_label(
         label, width_of, font->height, line_y,
-        {paint.viewport.x, paint.viewport.y, paint.viewport.w, paint.viewport.h}, previous);
+        {left, paint.viewport.y, width, paint.viewport.h}, previous);
     if (!box) return;
     previous = box;
     field_text(paint, nk_rect(box->x, box->y, box->w, box->h), box->text.c_str(),
                static_cast<int>(box->text.size()), font, nk_rgba(0, 0, 0, 0), color, 4);
 }
 
-static void draw_compose_beat_bookmarks(const ComposePaintContext& paint) {
-    std::optional<wormedit::ui::bookmark_label_box_t> previous;
+static void draw_compose_beat_bookmarks(const ComposePaintContext& paint,
+    std::optional<wormedit::ui::bookmark_label_box_t>& previous) {
     for (size_t index = 0; index < paint.view->beat_bookmark_count; ++index) {
         const auto& bookmark = paint.view->beat_bookmarks[index];
         if (bookmark.projection_visible) {
@@ -630,8 +635,8 @@ static void draw_compose_audio_sections(const ComposePaintContext& paint) {
     }
 }
 
-static void draw_compose_audio_bookmarks(const ComposePaintContext& paint) {
-    std::optional<wormedit::ui::bookmark_label_box_t> previous;
+static void draw_compose_audio_bookmarks(const ComposePaintContext& paint,
+    std::optional<wormedit::ui::bookmark_label_box_t>& previous) {
     for (size_t index = 0; index < paint.view->audio_bookmark_count; ++index) {
         const auto& bookmark = paint.view->audio_bookmarks[index];
         if (!bookmark.projection_visible) {
@@ -1457,9 +1462,10 @@ static void draw_compose_timing_layer(const ComposePaintContext& paint,
     draw_compose_timing_preview_markers(paint, layout);
     draw_compose_timing_stage_marker(paint, layout);
     draw_compose_beat_sections(paint);
-    draw_compose_beat_bookmarks(paint);
+    std::optional<wormedit::ui::bookmark_label_box_t> previous_bookmark_label;
+    draw_compose_beat_bookmarks(paint, previous_bookmark_label);
     draw_compose_audio_sections(paint);
-    draw_compose_audio_bookmarks(paint);
+    draw_compose_audio_bookmarks(paint, previous_bookmark_label);
 }
 
 static struct nk_color compose_selection_outline_color() { return nk_rgb(74, 222, 128); }

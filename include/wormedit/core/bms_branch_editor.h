@@ -65,4 +65,37 @@ struct bms_branch_choice_command_t {
                                                    bms_branch_choice_command_t choice)
     -> bms_branch_selection_command_result_t;
 
+struct bms_branch_block_create_command_t {
+    chart_id_t chart;
+    branch_id_t first_statement;
+    std::size_t first_source_order{};
+    bms_source_span_t first_source_span;
+    std::string first_original_text;
+    branch_id_t last_statement;
+    std::size_t last_source_order{};
+    bms_source_span_t last_source_span;
+    std::string last_original_text;
+    std::size_t leaf_count{2};
+};
+
+struct bms_branch_block_remove_command_t {
+    chart_id_t chart;
+    branch_id_t random_block;
+    std::size_t expected_source_order{};
+    bms_source_span_t expected_source_span;
+    std::string expected_original_text;
+};
+
+// These commands only accept one exact contiguous range of root-level raw
+// statements. Creation places that range in leaf 1; remaining leaves are empty.
+[[nodiscard]] auto apply_bms_branch_block_create_command(
+    document_history_t& history, std::uint64_t expected_revision,
+    bms_branch_block_create_command_t request) -> document_command_result_t;
+
+// Only an empty RANDOM/IF block can be removed. The complete edit is reparsed
+// and published as one history command, preserving unrelated retained source.
+[[nodiscard]] auto apply_bms_branch_block_remove_command(
+    document_history_t& history, std::uint64_t expected_revision,
+    bms_branch_block_remove_command_t request) -> document_command_result_t;
+
 } // namespace wormedit

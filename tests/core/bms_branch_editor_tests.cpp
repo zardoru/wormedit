@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 
 using namespace wormedit;
@@ -27,6 +28,14 @@ constexpr std::string_view source = "#PLAYER 1\n"
                                     "#00011:0200\n"
                                     "#ENDIF\n"
                                     "#ENDRANDOM\n";
+constexpr std::string_view empty_branch_source = "#PLAYER 1\n"
+                                                "#TITLE Empty block test\n"
+                                                "#BPM 120\n"
+                                                "#RANDOM 2\n"
+                                                "#IF 1\n"
+                                                "#ELSEIF 2\n"
+                                                "#ENDIF\n"
+                                                "#ENDRANDOM\n";
 
 auto source_line_order(std::string_view text, std::string_view line) -> std::size_t {
     const auto offset = text.find(line);
@@ -47,6 +56,18 @@ auto make_history() -> document_history_t {
         parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}), std::move(options));
     if (!parsed.song || parsed.has_errors()) {
         throw std::runtime_error("BMS branch command test fixture did not parse");
+    }
+    return make_document_history(*parsed.song);
+}
+
+auto make_empty_branch_history() -> document_history_t {
+    bms_parse_options_t options;
+    options.lane_profile_id = "bme-7k-outside-scratch";
+    const auto parsed = parse_bms_bytes(
+        std::as_bytes(std::span{empty_branch_source.data(), empty_branch_source.size()}),
+        std::move(options));
+    if (!parsed.song || parsed.has_errors()) {
+        throw std::runtime_error("empty BMS block fixture did not parse");
     }
     return make_document_history(*parsed.song);
 }
@@ -74,6 +95,179 @@ auto find_node_by_id(const bms_control_node_t& root, branch_id_t id) -> const bm
         }
     }
     return nullptr;
+}
+
+auto tree_ids_are_unique(const bms_control_node_t& root,
+                         std::unordered_set<std::uint64_t>& ids) -> bool {
+    if (!ids.insert(root.id.value).second) return false;
+    return std::ranges::all_of(root.children, [&](const auto& child) {
+        return tree_ids_are_unique(child, ids);
+    });
+}
+
+auto chart_tree(const document_history_t& history) -> const bms_control_node_t&;
+auto created_block_shape_is_valid(const bms_control_node_t& block) -> bool;
+auto first_note_resource_name(const song_document_t& song) -> std::string_view;
+
+void check_created_block_nodes(const document_history_t& history, branch_id_t statement_id,
+                               std::size_t original_order) {
+    REQUIRE(history.document.charts.front().bms_control_tree.has_value());
+    const auto* block = find_node(chart_tree(history), bms_control_kind_t::random, "#RANDOM 3");
+    REQUIRE(block != nullptr);
+    CHECK(created_block_shape_is_valid(*block));
+    const auto* moved = find_node_by_id(chart_tree(history), statement_id);
+    REQUIRE(moved != nullptr);
+    CHECK(moved->original_text == "#WAV03 replacement.wav");
+    CHECK(moved->source_order == original_order + 2);
+}
+
+void check_created_block_projection(const document_history_t& history) {
+    REQUIRE(history.document.charts.front().active_branch_selection.size() == 2);
+    CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 1);
+    CHECK(first_note_resource_name(history.document) == "active.wav");
+}
+
+void check_created_block_serialization(const document_history_t& history) {
+    const auto written = write_bms(history.document, {.chart = history.document.charts.front().id,
+                                                       .preserve_unchanged_source = false});
+    REQUIRE(written.bytes.has_value());
+    CHECK(written.bytes->find("#RANDOM 3\n#IF 1\n#WAV03 replacement.wav") !=
+          std::string::npos);
+}
+
+void check_created_block_undo_redo(document_history_t& history) {
+    REQUIRE(undo_document_command(history));
+    CHECK(find_node(chart_tree(history), bms_control_kind_t::random, "#RANDOM 3") == nullptr);
+    REQUIRE(redo_document_command(history));
+    CHECK(find_node(chart_tree(history), bms_control_kind_t::random, "#RANDOM 3") != nullptr);
+}
+
+void edit_bms_note_and_bpm(document_history_t& history) {
+    auto edited = history.document;
+    REQUIRE_FALSE(edited.charts.front().measures.front().notes.empty());
+    edited.charts.front().measures.front().notes.front().position.row = 480;
+    REQUIRE_FALSE(edited.charts.front().bpms.empty());
+    edited.charts.front().bpms.front().beats_per_minute = {150, 1};
+    REQUIRE(commit_document_command(history, std::move(edited), "Edit active BMS objects").applied);
+}
+
+void check_serialized_note_and_bpm(const document_history_t& history) {
+    CHECK(history.document.charts.front().measures.front().notes.front().position.row == 480);
+    CHECK((history.document.charts.front().bpms.front().beats_per_minute ==
+           signed_rational_t{150, 1}));
+    CHECK(first_note_resource_name(history.document) == "active.wav");
+}
+
+auto add_root_note(document_history_t& history) -> document_command_result_t {
+    auto edited = history.document;
+    const auto& existing = edited.charts.front().measures.front().notes.front();
+    const auto lane = edited.charts.front().lane_layouts.front().layout.lanes.front().id;
+    edited.charts.front().measures.front().notes.push_back(
+        {.id = object_id_t{900001},
+         .position = {edited.charts.front().measures.front().id, 480},
+         .lane = lane,
+         .kind = note_kind_t::tap,
+         .sound = existing.sound});
+    return commit_document_command(history, std::move(edited), "Add root BMS note");
+}
+
+void check_root_note_survived(const document_history_t& history) {
+    const auto& notes = history.document.charts.front().measures.front().notes;
+    REQUIRE(notes.size() == 2);
+    CHECK(std::ranges::any_of(notes, [](const auto& note) { return note.position.row == 480; }));
+}
+
+void check_normalized_tree_identity(const document_history_t& history, branch_id_t statement_id) {
+    REQUIRE(history.document.charts.front().bms_control_tree.has_value());
+    std::unordered_set<std::uint64_t> ids;
+    CHECK(tree_ids_are_unique(*history.document.charts.front().bms_control_tree, ids));
+    CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 1);
+    CHECK(find_node_by_id(chart_tree(history), statement_id) != nullptr);
+}
+
+void add_unreferenced_catalog_entry(document_history_t& history) {
+    auto asset = history.document.audio_assets.front();
+    asset.id = asset_id_t{900001};
+    asset.source_path = "resolved/unused.wav";
+    history.document.audio_assets.push_back(asset);
+    auto resource = history.document.resources.front();
+    resource.id = resource_id_t{900002};
+    resource.name = "unused.wav";
+    resource.asset = asset.id;
+    resource.target_identities = {{format_family_t::bms, "ZZ", "WAV"}};
+    history.document.resources.push_back(resource);
+}
+
+void check_unreferenced_resource_rejected(const document_command_result_t& result,
+                                          const document_history_t& history) {
+    CHECK_FALSE(result.applied);
+    REQUIRE_FALSE(result.diagnostics.empty());
+    CHECK(history.document.resources.size() == 4);
+    CHECK(history.document.audio_assets.size() == 4);
+}
+
+void check_unreferenced_resource_preserved(const document_history_t& history) {
+    const auto found = std::ranges::find(history.document.resources, resource_id_t{900002},
+                                         &resource_entry_t::id);
+    REQUIRE(found != history.document.resources.end());
+    CHECK(found->name == "unused.wav");
+    const auto loaded = std::ranges::find(history.document.audio_assets, asset_id_t{900001},
+                                          &audio_asset_t::id);
+    REQUIRE(loaded != history.document.audio_assets.end());
+    CHECK(loaded->source_path == "resolved/unused.wav");
+}
+
+void check_empty_block_removal_history(document_history_t& history) {
+    CHECK(find_node(chart_tree(history), bms_control_kind_t::random, "#RANDOM 2") == nullptr);
+    REQUIRE(undo_document_command(history));
+    CHECK(find_node(chart_tree(history), bms_control_kind_t::random, "#RANDOM 2") != nullptr);
+    REQUIRE(redo_document_command(history));
+    CHECK(find_node(chart_tree(history), bms_control_kind_t::random, "#RANDOM 2") == nullptr);
+}
+
+auto chart_tree(const document_history_t& history) -> const bms_control_node_t&;
+
+auto create_block_request(const document_history_t& history, std::string_view first_text,
+                          std::string_view last_text, std::size_t leaves)
+    -> bms_branch_block_create_command_t {
+    const auto& tree = chart_tree(history);
+    const auto* first = find_node(tree, bms_control_kind_t::raw_statement, first_text);
+    const auto* last = find_node(tree, bms_control_kind_t::raw_statement, last_text);
+    if (first == nullptr || last == nullptr) {
+        throw std::runtime_error("BMS root statements not found for block command");
+    }
+    return {
+        .chart = history.document.charts.front().id,
+        .first_statement = first->id,
+        .first_source_order = first->source_order,
+        .first_source_span = first->source_span,
+        .first_original_text = first->original_text,
+        .last_statement = last->id,
+        .last_source_order = last->source_order,
+        .last_source_span = last->source_span,
+        .last_original_text = last->original_text,
+        .leaf_count = leaves,
+    };
+}
+
+auto remove_block_request(const document_history_t& history, const bms_control_node_t& block)
+    -> bms_branch_block_remove_command_t {
+    return {
+        .chart = history.document.charts.front().id,
+        .random_block = block.id,
+        .expected_source_order = block.source_order,
+        .expected_source_span = block.source_span,
+        .expected_original_text = block.original_text,
+    };
+}
+
+auto created_block_shape_is_valid(const bms_control_node_t& block) -> bool {
+    if (block.kind != bms_control_kind_t::random || block.value != 3 ||
+        block.children.size() != 1) return false;
+    const auto& branches = block.children.front().children;
+    return block.children.front().kind == bms_control_kind_t::if_group && branches.size() == 3 &&
+           branches.front().children.size() == 1 && branches[1].children.empty() &&
+           branches[2].children.empty();
 }
 
 auto chart_tree(const document_history_t& history) -> const bms_control_node_t& {
@@ -426,6 +620,120 @@ TEST_CASE("scalar BMS branch choice command derives set and clear proposals from
     REQUIRE(undo_document_command(history));
     CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 2);
     CHECK(first_note_resource_name(history.document) == "inactive.wav");
+}
+
+TEST_CASE("BMS branch block creation preserves selected source statements and history",
+          "[unit][core][bms][branch][block]") {
+    auto history = make_history();
+    const auto request = create_block_request(history, "#WAV03 replacement.wav",
+                                              "#WAV03 replacement.wav", 3);
+    const auto statement_id = request.first_statement;
+    const auto original_order = request.first_source_order;
+    const auto created = apply_bms_branch_block_create_command(
+        history, history.document.revision, request);
+    REQUIRE(created.applied);
+    check_created_block_nodes(history, statement_id, original_order);
+    check_created_block_projection(history);
+    check_created_block_serialization(history);
+    check_created_block_undo_redo(history);
+}
+
+TEST_CASE("BMS branch block creation serializes current note and timing edits",
+          "[unit][core][bms][branch][block][roundtrip]") {
+    auto history = make_history();
+    edit_bms_note_and_bpm(history);
+    const auto request = create_block_request(history, "#WAV03 replacement.wav",
+                                              "#WAV03 replacement.wav", 2);
+    const auto created = apply_bms_branch_block_create_command(
+        history, history.document.revision, request);
+    REQUIRE(created.applied);
+    check_serialized_note_and_bpm(history);
+}
+
+TEST_CASE("BMS branch block creation keeps IDs unique after serializing a new root object",
+          "[unit][core][bms][branch][block][roundtrip]") {
+    auto history = make_history();
+    const auto add_note = add_root_note(history);
+    REQUIRE(add_note.applied);
+
+    const auto request = create_block_request(history, "#WAV03 replacement.wav",
+                                              "#WAV03 replacement.wav", 2);
+    const auto created = apply_bms_branch_block_create_command(
+        history, history.document.revision, request);
+
+    REQUIRE(created.applied);
+    check_root_note_survived(history);
+    check_normalized_tree_identity(history, request.first_statement);
+}
+
+TEST_CASE("BMS branch block creation rejects an unroundtrippable unused resource atomically",
+          "[unit][core][bms][branch][block][resources]") {
+    auto history = make_history();
+    add_unreferenced_catalog_entry(history);
+
+    const auto request = create_block_request(history, "#WAV03 replacement.wav",
+                                              "#WAV03 replacement.wav", 2);
+    const auto created = apply_bms_branch_block_create_command(
+        history, history.document.revision, request);
+    check_unreferenced_resource_rejected(created, history);
+    check_unreferenced_resource_preserved(history);
+}
+
+TEST_CASE("BMS branch block creation rejects a custom lane map it cannot reconcile",
+          "[unit][core][bms][branch][block][negative]") {
+    auto history = make_history();
+    history.document.charts.front().lane_layouts.front().layout.profile_id = "custom-layout";
+    const auto request = create_block_request(history, "#WAV03 replacement.wav",
+                                              "#WAV03 replacement.wav", 2);
+    const auto revision = history.document.revision;
+    const auto created = apply_bms_branch_block_create_command(history, revision, request);
+    CHECK_FALSE(created.applied);
+    CHECK_FALSE(created.diagnostics.empty());
+    CHECK(history.document.revision == revision);
+    CHECK(first_note_resource_name(history.document) == "active.wav");
+}
+
+TEST_CASE("BMS branch block creation rejects a range crossing existing control flow",
+          "[unit][core][bms][branch][block][negative]") {
+    auto history = make_history();
+    const auto request = create_block_request(history, "#WAV03 replacement.wav", "#00011:0200", 2);
+    const auto revision = history.document.revision;
+    const auto created = apply_bms_branch_block_create_command(history, revision, request);
+    CHECK_FALSE(created.applied);
+    CHECK_FALSE(created.diagnostics.empty());
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+    CHECK(find_node(chart_tree(history), bms_control_kind_t::raw_statement,
+                    "#WAV03 replacement.wav") != nullptr);
+}
+
+TEST_CASE("BMS branch block removal accepts only an exact empty block",
+          "[unit][core][bms][branch][block]") {
+    auto history = make_empty_branch_history();
+    const auto* block = find_node(chart_tree(history), bms_control_kind_t::random, "#RANDOM 2");
+    REQUIRE(block != nullptr);
+    const auto removed = apply_bms_branch_block_remove_command(
+        history, history.document.revision, remove_block_request(history, *block));
+    REQUIRE(removed.applied);
+    check_empty_block_removal_history(history);
+}
+
+TEST_CASE("BMS branch block removal rejects a nonempty selected leaf atomically",
+          "[unit][core][bms][branch][block][negative]") {
+    auto history = make_history();
+    const auto create = create_block_request(history, "#WAV03 replacement.wav",
+                                             "#WAV03 replacement.wav", 2);
+    REQUIRE(apply_bms_branch_block_create_command(history, history.document.revision, create)
+                .applied);
+    const auto* block = find_node(chart_tree(history), bms_control_kind_t::random, "#RANDOM 2");
+    REQUIRE(block != nullptr);
+    const auto revision = history.document.revision;
+    const auto removed = apply_bms_branch_block_remove_command(
+        history, revision, remove_block_request(history, *block));
+    CHECK_FALSE(removed.applied);
+    CHECK_FALSE(removed.diagnostics.empty());
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.size() == 1);
 }
 
 TEST_CASE("BMS branch selection maps nested controls across normalized source orders",

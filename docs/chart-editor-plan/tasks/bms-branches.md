@@ -26,7 +26,8 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-91 Create and remove branch blocks
 
-- **Status:** ready
+- **Status:** done
+- **Implementation/verification (2026-10-03):** source-verified, revision-checked create/remove commands serialize the current document before splicing and reparsing. Creation selects leaf 1 and leaves the other leaves empty; removal requires an exact empty RANDOM/IF block. Retained statement IDs and relative order survive while physical source spans/orders refresh. Normalized generated statements receive distinct IDs; existing branch selections, note/BGM branch links, lane/input identities, and resource/asset references are reconciled before one history commit. Parser byte/line limits bound leaf construction. Unsupported editor graphs, custom layouts, multiple charts, and selected statements rewritten by serialization reject atomically instead of discarding state. Eight new regressions cover writer output, undo/redo, unsaved edits, normalized root-note identity, catalog/custom-layout rejection, overlap and nonempty removal. Application build, configured clang-tidy (no new violations; existing test warnings remain), all 1,135 core tests, and the complete 1,667-test suite pass (`/tmp/wormedit-lanes-branches-core.log`, `/tmp/wormedit-lanes-branches-all.log`).
 - **Outcome:** core commands wrap a selected range of root statements into a new `#RANDOM n`/`#IF k`…`#ENDIF`/`#ENDRANDOM` block, and remove an empty block, each atomically.
 - **Read first:** `include/wormedit/core/bms_branch_editor.h`, `include/wormedit/core/document.h` (BMS control tree types), `docs/references/bms-control-flow.md`, `tests/core/bms_branch_editor_tests.cpp`.
 - **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_branch_editor_tests.cpp`.
@@ -41,7 +42,7 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-92 Add block create/remove and leaf reorder to the outline
 
-- **Status:** blocked-on T-91
+- **Status:** ready
 - **Outcome:** outline buttons create a block from the current selection, remove an empty block, and move a leaf up/down.
 - **Read first:** `include/wormedit/core/bms_branch_editor.h`, `src/ui/nuklear/bms_branch_panel.cpp`.
 - **Files owned:** `src/ui/nuklear/bms_branch_panel.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `src/core/bms_branch_editor.cpp` (leaf reorder command), `tests/core/bms_branch_editor_tests.cpp`.
@@ -53,7 +54,7 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-93 Move or copy selected notes into another branch leaf
 
-- **Status:** blocked-on T-91
+- **Status:** ready
 - **Outcome:** selected notes that belong to one leaf (or root) can be moved or copied into another leaf as one command.
 - **Read first:** `include/wormedit/core/bms_branch_editor.h`, `include/wormedit/formats/bms_branch_selection.h` (`rematerialize_bms_branch_selection`), `docs/chart-editor-plan/editing/metadata-interop.md` (branch paragraphs).
 - **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_branch_editor_tests.cpp`.

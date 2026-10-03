@@ -296,3 +296,48 @@ TEST_CASE("scratchless 10K is offered only without scratch channels and never au
     if (scratch.selected_profile)
         CHECK(scratch.selected_profile->layout.profile_id != "bms-10k-scratchless");
 }
+
+namespace {
+void require_detected_standard(const bms_profile_detection_result_t& result, std::string_view profile) {
+    REQUIRE(result.selected_profile.has_value());
+    CHECK(result.selected_profile->layout.profile_id == profile);
+    CHECK(result.status == bms_profile_detection_status_t::selected);
+}
+}
+
+TEST_CASE("Complete five-key primary families select the ordinary profile without an auxiliary lane",
+          "[unit][core][bms-detection][regression]") {
+    for (const auto& channels : std::vector<std::vector<std::string>>{
+             {"11", "12", "13", "14", "15", "16"},
+             {"31", "32", "33", "34", "35", "36"},
+             {"51", "52", "53", "54", "55", "56"},
+             {"D1", "D2", "D3", "D4", "D5", "D6"}}) {
+        const auto result = detect_bms_lane_profile({.file_extension = ".bms",
+            .player_header = 1, .used_channels = channels});
+        require_detected_standard(result, "bms-5k-outside-scratch-free-zone");
+    }
+}
+
+TEST_CASE("Unused auxiliary defaults do not resolve sparse or observed pedal ambiguities",
+          "[unit][core][bms-detection][negative]") {
+    for (const auto& channels : std::vector<std::vector<std::string>>{
+             {"11", "12", "13", "14", "16"},
+             {"11", "12", "13", "14", "15", "16", "37"}}) {
+        const auto result = detect_bms_lane_profile({.file_extension = ".bms",
+            .player_header = 1, .used_channels = channels});
+        CHECK_FALSE(result.selected_profile);
+    }
+    const auto seven_key_hint = detect_bms_lane_profile({.file_extension = ".bme",
+        .player_header = 1, .used_channels = {"11", "12", "13", "14", "15", "16"}});
+    CHECK_FALSE(seven_key_hint.selected_profile);
+}
+
+TEST_CASE("Complete nine-button channels survive the long-note BML extension",
+          "[unit][core][bms-detection][regression]") {
+    const auto result = detect_bms_lane_profile({.file_extension = ".bml", .player_header = 3,
+        .used_channels = {"11", "12", "13", "14", "15", "22", "23", "24", "25"}});
+    require_detected_standard(result, "pms-standard-9button");
+    const auto double_play_hint = detect_bms_lane_profile({.file_extension = ".bml", .player_header = 2,
+        .used_channels = {"11", "12", "13", "14", "15", "22", "23", "24", "25"}});
+    CHECK_FALSE(double_play_hint.selected_profile);
+}

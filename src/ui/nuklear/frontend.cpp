@@ -1313,10 +1313,11 @@ static void render_minimap_preferences(const WormUiWorkspaceView& view,
 static void render_status_minimap(const WormUiWorkspaceView& view,
                                   WormUiWorkspaceAction* action, bool available) {
     if (available && view.compose.bgm_bar_row_count == 0) {
+        const auto bounds = nk_widget_bounds(g_context);
         nk_widget_disable_begin(g_context);
         nk_label(g_context, "Overview unavailable", NK_TEXT_CENTERED);
         nk_widget_disable_end(g_context);
-        if (nk_widget_is_hovered(g_context))
+        if (nk_input_is_mouse_hovering_rect(&g_context->input, bounds))
             nk_tooltip(g_context, "Audio is unavailable for this chart overview.");
         return;
     }
@@ -1714,9 +1715,27 @@ static auto workspace_validation_error(const WormUiWorkspaceView& view) -> const
 
 // Two rows under the mode tabs: the transport seek bar, always, and below it the song-length
 // BGM bar when the chart has BGM audio. Stopped or paused, the seek bar shows the Compose cursor
-// (or the paused point) as the playhead; only playing or paused transports can be dragged.
+// (or the paused point) as the playhead. Dragging while stopped navigates Compose;
+// dragging during playback or pause seeks the transport.
 static constexpr float preview_row_height = 24.0f;
 static constexpr float bgm_bar_row_height = 48.0f;
+
+static void render_seek_grip(struct nk_rect bounds, nk_size position, nk_size steps) {
+    using wormedit::ui::theme::UiColor;
+    auto* canvas = nk_window_get_canvas(g_context);
+    const float width = 14.0f;
+    const float x = bounds.x + static_cast<float>(position) / static_cast<float>(steps) *
+        std::max(0.0f, bounds.w - width);
+    const auto handle = nk_rect(x, bounds.y, width, bounds.h);
+    nk_fill_rect(canvas, handle, 3.0f, wormedit::ui::chrome::color(UiColor::text_bright));
+    for (int row = 0; row < 3; ++row) {
+        for (int column = 0; column < 2; ++column) {
+            const auto dot = nk_rect(x + 4.0f + column * 4.0f,
+                bounds.y + bounds.h * 0.5f - 5.0f + row * 4.0f, 2.0f, 2.0f);
+            nk_fill_circle(canvas, dot, wormedit::ui::chrome::color(UiColor::background));
+        }
+    }
+}
 
 static void render_transport_seek_bar(const WormUiWorkspaceView& view,
                                       WormUiWorkspaceAction& action) {
@@ -1733,7 +1752,9 @@ static void render_transport_seek_bar(const WormUiWorkspaceView& view,
     nk_size seek_position = static_cast<nk_size>(
         static_cast<long double>(bounded_frame) /
         static_cast<long double>(view.transport_end_frame) * seek_steps);
-    const bool draggable = view.transport_available && (view.transport_playing || view.transport_paused);
+    const bool draggable = view.transport_available &&
+        (view.compose.scene_available || view.transport_playing || view.transport_paused);
+    const auto bounds = nk_widget_bounds(g_context);
     if (nk_progress(g_context, &seek_position, seek_steps, draggable ? NK_MODIFIABLE : NK_FIXED) &&
         draggable) {
         action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK;
@@ -1741,6 +1762,7 @@ static void render_transport_seek_bar(const WormUiWorkspaceView& view,
             (view.transport_end_frame / seek_steps) * seek_position +
             ((view.transport_end_frame % seek_steps) * seek_position) / seek_steps;
     }
+    if (draggable) render_seek_grip(bounds, seek_position, seek_steps);
 }
 
 // Flat stand-in while the song's waveform is still being prepared.
@@ -2238,6 +2260,25 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
 
 void worm_ui_frontend_resource_placed(uint64_t placed_resource_id, uint64_t next_resource_id) {
     worm_ui_nuklear_advance_resource_picker(placed_resource_id, next_resource_id);
+}
+
+size_t worm_ui_frontend_copy_drawn_text_for_testing(char* output, size_t capacity) {
+    size_t length = 0;
+    if (!g_headless || !g_context) return 0;
+    const struct nk_command* command{};
+    nk_foreach(command, g_context) {
+        if (command->type != NK_COMMAND_TEXT) continue;
+        const auto* text = reinterpret_cast<const struct nk_command_text*>(command);
+        const auto count = static_cast<size_t>(text->length);
+        if (output && length < capacity) {
+            const auto copied = std::min(count, capacity - length);
+            std::memcpy(output + length, text->string, copied);
+        }
+        length += count;
+        if (output && length < capacity) output[length] = '\n';
+        ++length;
+    }
+    return length;
 }
 
 void worm_ui_frontend_render(int window_width, int window_height) {

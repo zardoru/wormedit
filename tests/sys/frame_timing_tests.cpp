@@ -9,6 +9,9 @@
 #include "sys/compose_area_actions.h"
 #include "sys/recipe_form.h"
 #include "sys/compose_playhead_cursor.h"
+#include "sys/compose_minimap_navigation.h"
+#include <wormedit/formats/bms.h>
+#include <span>
 #include <wormedit/core/command.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/resource_assignment.h>
@@ -3312,4 +3315,57 @@ void check_marker_reused_frame(std::uint32_t direction) {
 TEST_CASE("Compose marker arena views agree across fresh and reused scene windows", "[sys][frame-arena][compose-markers]") {
     check_marker_reused_frame(1);
     check_marker_reused_frame(2);
+}
+
+TEST_CASE("Imported five-key BMS materializes a Compose field that responds to the wheel",
+          "[sys][compose][bms-detection][regression]") {
+    const std::string source = "#PLAYER 1\n#BPM 154\n#WAV01 synth.wav\n"
+        "#00011:01\n#00012:01\n#00013:01\n#00014:01\n#00015:01\n#00016:01\n#04011:01\n";
+    auto parsed = parse_bms_bytes(std::as_bytes(std::span(source.data(), source.size())),
+        {.file_extension = ".bms"});
+    expect_compose_test(parsed.song.has_value());
+    compose_test_fixture_t fixture(std::move(*parsed.song));
+    fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.note_endpoint_count > 0);
+    const auto before = fixture.interaction->viewport_scroll_pixels;
+    WormUiWorkspaceAction action{};
+    action.shortcut_window_focused = true;
+    action.compose_input_chart_id = fixture.interaction->chart.value;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    action.compose_viewport_input_count = 1;
+    action.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
+        .delta_y = -1, .cursor_x_pixels = 200, .cursor_y_pixels = 300};
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0.016);
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.area_scroll_pixels > before);
+    expect_compose_test(fixture.history.undo.empty());
+}
+
+TEST_CASE("Stopped BMS transport seek moves cursor and viewport without editing",
+          "[sys][compose][seek-bar][regression]") {
+    const std::string source = "#PLAYER 1\n#BPM 154\n#WAV01 synth.wav\n"
+        "#00011:01\n#00012:01\n#00013:01\n#00014:01\n#00015:01\n#00016:01\n#04011:01\n";
+    auto parsed = parse_bms_bytes(std::as_bytes(std::span(source.data(), source.size())),
+        {.file_extension = ".bms"});
+    expect_compose_test(parsed.song.has_value());
+    compose_test_fixture_t fixture(std::move(*parsed.song));
+    fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
+    fixture.project();
+    const auto before = fixture.interaction->cursor;
+    const auto status = seek_stopped_compose_transport(fixture.history, *fixture.interaction,
+        fixture.cache, 20 * 44'100);
+    expect_compose_test(status == "Compose cursor moved to the seek position.");
+    expect_compose_test(fixture.interaction->cursor != before);
+    expect_compose_test(fixture.interaction->viewport_scroll_pixels > 0);
+    expect_compose_test(!fixture.interaction->virtual_bms_cursor_row);
+    expect_compose_test(fixture.history.undo.empty());
+    const auto sought = fixture.interaction->cursor;
+    ++fixture.history.document.revision;
+    (void)seek_stopped_compose_transport(fixture.history, *fixture.interaction, fixture.cache, 0);
+    expect_compose_test(fixture.interaction->cursor == sought);
 }

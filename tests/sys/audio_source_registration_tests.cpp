@@ -5,6 +5,48 @@
 #include <filesystem>
 #include <vector>
 
+namespace {
+void check_large_inventory_pending(wormedit::audio::decoded_source_registry_t& sources,
+                                   std::uint64_t sound_count) {
+    CHECK(sources.pending_count() == sound_count);
+    CHECK(sources.open_decoder_count() == 0);
+    REQUIRE(sources.probe(wormedit::asset_id_t{sound_count}));
+}
+
+void check_large_inventory_binding(const wormedit::audio::decoded_source_registry_t& sources,
+                                   std::uint64_t sound_count) {
+    const auto last = sources.binding(wormedit::asset_id_t{sound_count});
+    REQUIRE(last);
+    CHECK(last->output_frame_count > 0);
+    CHECK(sources.open_decoder_count() <= 8);
+}
+
+void check_large_keysound_inventory(bool deferred, std::uint64_t sound_count) {
+    wormedit::song_document_t document;
+    document.id = wormedit::song_id_t{79};
+    for (std::uint64_t index = 1; index <= sound_count; ++index)
+        document.audio_assets.push_back({.id = wormedit::asset_id_t{index},
+                                         .source_path = "keysound-c4.ogg"});
+    const auto directory = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
+    wormedit::audio::decoded_source_registry_t sources;
+    std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
+    const auto register_sources = deferred ? wormedit::sys::register_audition_sources_deferred
+                                          : wormedit::sys::register_audition_sources;
+    CHECK(register_sources(document, directory, 1, sources, metronome) == 0);
+    CHECK(sources.size() == sound_count + 3);
+    CHECK(metronome.size() == 3);
+    if (deferred) check_large_inventory_pending(sources, sound_count);
+    check_large_inventory_binding(sources, sound_count);
+}
+}
+
+TEST_CASE("Large keysound inventories register every asset and metronome accent",
+          "[integration][sys][audio-source-registration][regression]") {
+    SECTION("full BMS namespace synchronous registration") { check_large_keysound_inventory(false, 1'295); }
+    SECTION("full BMS namespace deferred registration") { check_large_keysound_inventory(true, 1'295); }
+    SECTION("larger inventories") { check_large_keysound_inventory(true, 3'843); }
+}
+
 
 TEST_CASE("relative audio assets resolve from the opened chart directory",
           "[integration][sys][audio-source-registration]") {

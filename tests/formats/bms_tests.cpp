@@ -1185,3 +1185,30 @@ TEST_CASE("WAV and BMP declarations retain unresolved relative asset paths",
     CHECK(unicode.song->audio_assets[0].source_path ==
           std::filesystem::path(std::u8string{u8"café.ogg"}));
 }
+
+TEST_CASE("BMS import materializes complete primary keys and scratch without channel 17",
+          "[unit][formats][bms][regression]") {
+    const auto result = parse("#PLAYER 1\n#BPM 154\n#WAV01 synth.wav\n"
+        "#00011:01\n#00012:01\n#00013:01\n#00014:01\n#00015:01\n#00016:01\n#04011:01\n",
+        {.file_extension = ".bms"});
+    REQUIRE(result.song);
+    const auto& chart = result.song->charts.front();
+    REQUIRE(chart.lane_layouts.size() == 1);
+    CHECK(chart.lane_layouts.front().layout.profile_id == "bms-5k-outside-scratch-free-zone");
+    CHECK(chart.measures.front().notes.size() == 6);
+    CHECK(chart.measures.back().notes.size() == 1);
+}
+
+TEST_CASE("BML import materializes the standard nine-button channel pattern",
+          "[unit][formats][bms][regression]") {
+    const auto result = parse("#PLAYER 3\n#BPM 154\n#WAV01 synth.wav\n"
+        "#00011:01\n#00012:01\n#00013:01\n#00014:01\n#00015:01\n"
+        "#00022:01\n#00023:01\n#00024:01\n#00025:01\n#04011:01\n",
+        {.file_extension = ".bml"});
+    REQUIRE(result.song);
+    const auto& chart = result.song->charts.front();
+    REQUIRE(chart.lane_layouts.size() == 1);
+    CHECK(chart.lane_layouts.front().layout.profile_id == "pms-standard-9button");
+    CHECK(chart.measures.front().notes.size() == 9);
+    CHECK(chart.measures.back().notes.size() == 1);
+}

@@ -95,6 +95,8 @@ auto nuklear_event_harness_t::frame(std::span<const SDL_Event> events, SDL_Keymo
     }
     worm_ui_frontend_end_input();
     auto action = worm_ui_frontend_compose(&view_);
+    drawn_text_.resize(worm_ui_frontend_copy_drawn_text_for_testing(nullptr, 0));
+    (void)worm_ui_frontend_copy_drawn_text_for_testing(drawn_text_.data(), drawn_text_.size());
     worm_ui_frontend_render(width_, height_);
     return workspace_action_snapshot_t{action};
 }

@@ -78,6 +78,11 @@ class decoded_source_registry_t::decoder_lease_t {
     std::shared_ptr<entry_t> entry_;
 };
 
+void decoded_source_registry_t::ensure_source_capacity(std::size_t source_count) {
+    const std::scoped_lock lock(mutex_);
+    maximum_sources_ = std::max(maximum_sources_, source_count);
+}
+
 auto decoded_source_registry_t::add_entry(std::shared_ptr<entry_t> candidate)
     -> std::optional<source_registration_result_t> {
     const std::scoped_lock lock(mutex_);

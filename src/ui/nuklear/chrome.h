@@ -108,9 +108,19 @@ inline auto button_style(nk_context* context, bool selected) -> nk_style_button 
     return style;
 }
 
+inline auto button_hovered(const nk_context* context, struct nk_rect bounds) -> bool {
+    if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0) return true;
+    // Disabled widgets omit Nuklear's hover bit but retain their own tooltip.
+    if (!context->current || !context->current->layout || !context->current->widgets_disabled)
+        return false;
+    if (context->active != context->current && !popup_panel(context)) return false;
+    return nk_input_is_mouse_hovering_rect(&context->input, bounds) &&
+           nk_input_is_mouse_hovering_rect(&context->input, context->current->layout->clip);
+}
+
 inline void button_feedback(nk_context* context, struct nk_rect bounds, bool selected,
                             const char* tooltip) {
-    if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0) {
+    if (button_hovered(context, bounds)) {
         nk_stroke_rect(nk_window_get_canvas(context), bounds, 4.0f, 1.0f,
                        color(UiColor::border_hover));
         if (tooltip && tooltip[0] != '\0') nk_tooltip(context, tooltip);

@@ -1077,8 +1077,35 @@ void configure_transport_play_pause(auto& state, auto& history, auto& workspace,
     };
 }
 
+void configure_transport_seek_commands(auto& state, auto& history, auto& workspace,
+    auto& compose_interaction_state, auto& compose_scene_cache, auto& audition_output,
+    auto& preview_session, auto& preview_state, auto& preview_output) {
+    state.transport_seek = [&](std::uint64_t frame) -> std::string {
+        if (!preview_output.playing() && !preview_state.paused &&
+            workspace.active_tab == wormedit::workspace_tab_t::compose &&
+            compose_interaction_state && workspace.selected_chart &&
+            compose_interaction_state->chart == *workspace.selected_chart) {
+            if (wormedit::sys::editor_interaction_has_pending_gesture(*compose_interaction_state))
+                return "Finish or cancel the active Compose gesture before seeking.";
+            return wormedit::sys::seek_stopped_compose_transport(
+                history, *compose_interaction_state, compose_scene_cache, frame);
+        }
+        return preview_state.seek(frame, history.document, workspace, audition_output,
+                                  preview_session, preview_output);
+    };
+    state.transport_audio_milliseconds = [&]() {
+        return preview_state.audio_milliseconds(history.document, workspace, preview_session);
+    };
+    state.transport_seek_audio_milliseconds = [&](std::int64_t milliseconds) -> std::string {
+        return preview_state.seek_audio_milliseconds(
+            milliseconds, history.document, workspace, audition_output,
+            preview_session, preview_output);
+    };
+}
+
 void configure_transport_commands(auto& state, auto& history, auto& workspace,
-                                 auto& compose_interaction_state, auto& inline_preview_cursor,
+                                 auto& compose_interaction_state, auto& compose_scene_cache,
+                                 auto& inline_preview_cursor,
                                  auto& audition_session, auto& preview_session, auto& preview_state,
                                  auto& audition_sources, auto& preview_metronome_bindings,
                                  auto& audition_output, auto& preview_output) {
@@ -1132,18 +1159,8 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
         if (preview_output.playing()) inline_preview_cursor.capture_follow_anchor(history, compose_cursor);
         return result;
     };
-    state.transport_seek = [&](std::uint64_t frame) -> std::string {
-        return preview_state.seek(frame, history.document, workspace, audition_output,
-                                  preview_session, preview_output);
-    };
-    state.transport_audio_milliseconds = [&]() {
-        return preview_state.audio_milliseconds(history.document, workspace, preview_session);
-    };
-    state.transport_seek_audio_milliseconds = [&](std::int64_t milliseconds) -> std::string {
-        return preview_state.seek_audio_milliseconds(
-            milliseconds, history.document, workspace, audition_output,
-            preview_session, preview_output);
-    };
+    configure_transport_seek_commands(state, history, workspace, compose_interaction_state,
+        compose_scene_cache, audition_output, preview_session, preview_state, preview_output);
     state.transport_stop = [&] {
         state.minimap_start_frame.reset();
         preview_state.stop(audition_output, preview_output);
@@ -3257,7 +3274,7 @@ int main(int argc, char** argv) {
     wormedit::stepmania_export_policy_t stepmania_export_policy;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     configure_transport_commands(application_command_state, history, workspace,
-                                 compose_interaction_state, inline_preview_cursor,
+                                 compose_interaction_state, compose_scene_cache, inline_preview_cursor,
                                  audition_session, preview_session, preview_state, audition_sources,
                                  preview_metronome_bindings, audition_output, preview_output);
 #endif

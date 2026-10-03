@@ -91,8 +91,9 @@ struct bms_profile_detection_result_t {
 };
 
 // Candidate confidence is comparative evidence, not a claim of file-format
-// certainty. Automatic selection requires both a strong score and a clear
-// margin over every other compatible mapping. Sparse charts commonly remain
+// certainty. A unique complete primary family with matching player/header hints
+// can select the ordinary standard profile while its auxiliary lanes are unused.
+// Otherwise automatic selection requires a strong score and a clear margin. Sparse charts commonly remain
 // ambiguous, while the raw fallback always preserves their original channels.
 [[nodiscard]] auto detect_bms_lane_profile(const bms_profile_detection_request_t& request)
     -> bms_profile_detection_result_t;

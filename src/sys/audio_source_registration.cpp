@@ -51,6 +51,8 @@ auto asset_registration(const song_document_t& document, const audio_asset_t& as
 auto register_assets(const song_document_t& document, const std::filesystem::path& asset_base,
                      std::uint64_t generation, audio::decoded_source_registry_t& sources,
                      bool defer) -> std::size_t {
+    // Every authored asset plus the three generated metronome accents must fit.
+    sources.ensure_source_capacity(document.audio_assets.size() + 3);
     std::size_t unavailable{};
     for (const auto& asset : document.audio_assets) {
         const auto resolved_path = resolve_asset_path(asset, asset_base);

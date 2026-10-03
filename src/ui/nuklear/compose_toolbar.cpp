@@ -57,7 +57,8 @@ static void render_compose_bgm_bar_toggle(const ComposeToolbarContext& toolbar) 
     auto* action = toolbar.action;
     if (!view->bgm_bar_available) nk_widget_disable_begin(context);
     const bool clicked = wormedit::ui::chrome::IconButton{
-        Glyph::audio_lines, view->bgm_bar_reserved ? "Hide song bar" : "Show song bar",
+        Glyph::audio_lines, !view->bgm_bar_available ? "Song audio is unavailable"
+            : view->bgm_bar_reserved ? "Hide song bar" : "Show song bar",
         view->bgm_bar_reserved}.render(context);
     if (!view->bgm_bar_available) nk_widget_disable_end(context);
     if (!clicked || !view->bgm_bar_available ||
@@ -489,7 +490,7 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
     const auto spacing = context->style.window.spacing;
     const bool spacing_pushed = nk_style_push_vec2(context, &context->style.window.spacing,
-                                                  nk_vec2(1.0f, spacing.y)) != 0;
+                                                  nk_vec2(3.0f, spacing.y)) != 0;
     layout_compose_toolbar(context);
     render_navigation_group(toolbar);
     wormedit::ui::chrome::toolbar_separator(context);

@@ -2244,6 +2244,8 @@ typedef struct WormUiWorkspaceAction {
 bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer);
 // Initialize the same event/action frontend without a window or renderer for integration tests.
 bool worm_ui_frontend_init_headless(int width, int height);
+// Read queued draw text before render clears it; returns required bytes (no terminator).
+size_t worm_ui_frontend_copy_drawn_text_for_testing(char* output, size_t capacity);
 void worm_ui_frontend_shutdown(void);
 void worm_ui_frontend_begin_input(void);
 bool worm_ui_frontend_handle_event(const SDL_Event* event);

@@ -174,6 +174,43 @@ auto profile_header_compatibility(const bms_lane_profile_descriptor_t& spec,
     return spec.player_header_two_stage == expected_two_stage;
 }
 
+auto primary_channel_families(const lane_layout_t& layout) -> channel_family_sets_t {
+    channel_family_sets_t result;
+    for (const auto& lane : layout.lanes) {
+        if (lane.role == lane_role_t::free_zone || lane.role == lane_role_t::foot_pedal) continue;
+        for (std::size_t family = 0; family < playable_channel_families.size(); ++family) {
+            const auto* channel = channel_for_kind(lane, playable_channel_families[family]);
+            if (channel && channel->has_value()) result[family].insert(**channel);
+        }
+    }
+    return result;
+}
+
+auto complete_primary_family_match(const lane_layout_t& layout,
+                                   const channel_family_sets_t& observed) -> bool {
+    const auto primary = primary_channel_families(layout);
+    bool complete = false;
+    for (std::size_t family = 0; family < observed.size(); ++family) {
+        for (const auto& channel : observed[family])
+            if (!primary[family].contains(channel)) return false;
+        complete = complete || (!observed[family].empty() && observed[family] == primary[family]);
+    }
+    return complete;
+}
+
+auto primary_detection_hints_match(const bms_lane_profile_descriptor_t& spec,
+                                   const bms_profile_detection_request_t& request,
+                                   std::string_view extension) -> bool {
+    if (spec.family == bms_lane_profile_family_t::special || request.octave_fp_header) return false;
+    if (spec.family == bms_lane_profile_family_t::popn)
+        return request.player_header == 3 && extension != ".BME";
+    if (extension == ".PMS") return false;
+    if (spec.family == bms_lane_profile_family_t::bms_five_or_ten_key &&
+        extension != ".BMS" && extension != ".BML") return false;
+    return request.player_header &&
+        profile_header_compatibility(spec, extension, request.player_header, false).value_or(false);
+}
+
 auto clamp_confidence(double value) -> double {
     return std::clamp(value, 0.0, 1.0);
 }
@@ -442,6 +479,37 @@ auto select_octave_profile(const bms_profile_detection_request_t& request,
     return false;
 }
 
+auto select_complete_primary_profile(std::span<const bms_lane_profile_descriptor_t> specs,
+                                     const std::vector<const bms_raw_channel_t*>& channels,
+                                     const bms_profile_detection_request_t& request,
+                                     std::string_view extension,
+                                     bms_profile_detection_result_t& result) -> bool {
+    const auto observed = observed_channel_families(channels);
+    bms_profile_candidate_t* chosen = nullptr;
+    for (const auto& spec : specs) {
+        if (!primary_detection_hints_match(spec, request, extension)) continue;
+        // Free-zone and pedal variants are identical on their primary lanes.
+        // Use the catalog's ordinary variant only while every auxiliary channel is unused.
+        if (std::ranges::any_of(spec.profile.layout.lanes, [](const auto& lane) {
+            return lane.role == lane_role_t::foot_pedal;
+        })) continue;
+        auto* candidate = find_candidate(result.candidates, spec.profile.layout.profile_id);
+        if (!candidate || !complete_primary_family_match(candidate->profile.layout, observed)) continue;
+        if (chosen) return false;
+        chosen = candidate;
+    }
+    if (!chosen) return false;
+    chosen->confidence = std::max(chosen->confidence, 0.95);
+    chosen->evidence.push_back({
+        .source = bms_detection_evidence_source_t::used_channel,
+        .message = "A complete standard primary channel family matches the player header; "
+                   "unused auxiliary channels do not require a different interpretation.",
+        .weight = 0.30,
+    });
+    select_candidate(result, *chosen, chosen->confidence);
+    return true;
+}
+
 void append_custom_required_evidence(bms_profile_detection_result_t& result,
                                      bool no_playable_channels) {
     result.status = bms_profile_detection_status_t::custom_required;
@@ -518,6 +586,9 @@ auto detect_bms_lane_profile(const bms_profile_detection_request_t& request)
         return result;
     }
     if (select_octave_profile(request, result)) {
+        return result;
+    }
+    if (select_complete_primary_profile(specs, channels, request, extension, result)) {
         return result;
     }
     decide_automatic_profile(result);

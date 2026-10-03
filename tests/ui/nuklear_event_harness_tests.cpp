@@ -437,7 +437,7 @@ TEST_CASE("Compose toolbar color views change frontend state without document ac
     const auto revision = harness.view().compose.document_revision;
     // 24 px toolbar icons: navigation, separator, five tools, separator, views.
     constexpr std::array views{View::snap, View::layer, View::normal};
-    constexpr std::array positions{266.0f, 291.0f, 241.0f};
+    constexpr std::array positions{288.0f, 315.0f, 261.0f};
     for (std::size_t index = 0; index < views.size(); ++index) {
         const auto clicks = click_at(harness, positions[index], 122.0f);
         CHECK(worm_ui_nuklear_compose_state().color_view == views[index]);
@@ -648,7 +648,7 @@ TEST_CASE("Layer row menu releases its popup after a stale revision or hidden pa
     (void)fixture.harness.frame();
     check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
     check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_close_pending);
-    (void)click_at(fixture.harness, 266, 122);
+    (void)click_at(fixture.harness, 288, 122);
     check_layer_menu(worm_ui_nuklear_compose_state().color_view ==
                      worm_ui_nuklear_compose_color_view_t::snap);
 }
@@ -853,7 +853,77 @@ TEST_CASE("Note menu retires chart and project changes without a lingering popup
     (void)fixture.harness.frame();
     check_layer_menu(!compose_note_menu_open());
     (void)fixture.harness.frame();
-    (void)click_at(fixture.harness, 266, 122);
+    (void)click_at(fixture.harness, 288, 122);
     check_layer_menu(worm_ui_nuklear_compose_state().color_view ==
                      worm_ui_nuklear_compose_color_view_t::snap);
+}
+
+namespace {
+void hover_at(nuklear_event_harness_t& harness, float x, float y) {
+    const std::array events{motion_event(x, y)};
+    (void)harness.frame(events);
+}
+void check_tooltip_text(const nuklear_event_harness_t& harness, const char* text) {
+    INFO(harness.drawn_text());
+    CHECK(harness.drawn_text().find(text) != std::string::npos);
+}
+void check_no_tooltip_text(const nuklear_event_harness_t& harness, const char* text) {
+    CHECK(harness.drawn_text().find(text) == std::string::npos);
+}
+}
+
+TEST_CASE("Unavailable overview tooltip stays on its row and preserves panel tooltips",
+          "[unit][frontend-state][frontend][event-harness][tooltip]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& compose = harness.view().compose;
+    compose.has_bgm_events = true;
+    compose.bgm_bar_reserved = true;
+    compose.bgm_bar_available = false;
+    (void)harness.frame();
+    hover_at(harness, 381, 174);
+    check_tooltip_text(harness, "Hide sounds list");
+    check_no_tooltip_text(harness, "Audio is unavailable for this chart overview.");
+    hover_at(harness, 408, 174);
+    check_tooltip_text(harness, "Show layers");
+    check_no_tooltip_text(harness, "Audio is unavailable for this chart overview.");
+    hover_at(harness, 351, 120);
+    check_tooltip_text(harness, "Audio is unavailable for this chart overview.");
+    check_no_tooltip_text(harness, "Hide sounds list");
+}
+
+TEST_CASE("Disabled song bar icon keeps its tooltip and emits no toggle action",
+          "[unit][frontend-state][frontend][event-harness][tooltip]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    harness.view().compose.bgm_bar_available = false;
+    (void)harness.frame();
+    hover_at(harness, 435, 122);
+    check_tooltip_text(harness, "Song audio is unavailable");
+    const auto clicked = click_at(harness, 435, 122);
+    check_no_toolbar_document_actions(clicked);
+    for (const auto& frame : clicked) {
+        const auto& action = frame.get();
+        for (size_t index = 0; index < action.compose_input_count; ++index)
+            CHECK(action.compose_inputs[index].kind != WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE);
+    }
+}
+
+TEST_CASE("Stopped Compose seek bar emits navigation and drag seeks",
+          "[unit][frontend-state][event-harness][seek-bar]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    harness.view().transport_available = true;
+    harness.view().transport_end_frame = 4'410'000;
+    (void)harness.frame();
+    const auto clicked = click_at(harness, 640, 88);
+    CHECK(clicked.front().get().kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK);
+    CHECK(clicked.front().get().transport_seek_frame > 2'000'000);
+    CHECK(clicked.front().get().transport_seek_frame < 2'400'000);
+    const std::array down{motion_event(320, 88), button_event(true, 320, 88)};
+    (void)harness.frame(down);
+    const std::array moved{motion_event(960, 88)};
+    const auto dragged = harness.frame(moved);
+    CHECK(dragged.get().kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK);
+    CHECK(dragged.get().transport_seek_frame > 3'000'000);
 }

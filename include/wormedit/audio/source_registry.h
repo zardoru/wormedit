@@ -84,6 +84,10 @@ class decoded_source_registry_t {
                                        std::size_t maximum_open_decoders = 8)
         : maximum_sources_(maximum_sources), maximum_open_decoders_(maximum_open_decoders) {}
 
+    // Allows a known document inventory to fit without changing decoder or PCM limits.
+    // Raises the registration limit only; does not open or preload any sources.
+    void ensure_source_capacity(std::size_t source_count);
+
     // Registers and probes synchronously; a source that cannot be opened is not kept.
     [[nodiscard]] auto register_source(decoded_source_registration_t registration)
         -> source_registration_result_t;

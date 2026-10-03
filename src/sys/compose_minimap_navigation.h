@@ -17,6 +17,9 @@ struct compose_minimap_target_t {
     editor_interaction_state_t& state, const measure_index_t& measures,
     const timing_index_t& timing, const compose_minimap_target_t& target)
     -> editor_interaction_result_t;
+[[nodiscard]] auto seek_stopped_compose_transport(document_history_t& history,
+    editor_interaction_state_t& state, const compose_scene_cache_t& cache,
+    std::uint64_t frame) -> std::string;
 void retain_compose_minimap_start(application_command_state_t& application,
     const document_history_t& history, const editor_interaction_state_t& state,
     const compose_minimap_target_t& target, const timing_index_t& timing);

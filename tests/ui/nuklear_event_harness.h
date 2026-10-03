@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <span>
+#include <string>
 #include <vector>
 
 struct event_step_t {
@@ -39,6 +40,7 @@ class nuklear_event_harness_t {
 
     [[nodiscard]] auto ready() const noexcept -> bool { return initialized_ && view_valid_; }
     [[nodiscard]] auto view() noexcept -> WormUiWorkspaceView& { return view_; }
+    [[nodiscard]] auto drawn_text() const noexcept -> const std::string& { return drawn_text_; }
     // Event objects are consumed synchronously and never retained. Any pointer
     // payload inside an SDL_Event must remain valid for this call. The explicit
     // modifier state overrides key.mod and SDL state, then restores SDL state.
@@ -56,4 +58,5 @@ class nuklear_event_harness_t {
     bool initialized_{};
     bool view_valid_{};
     WormUiWorkspaceView view_{};
+    std::string drawn_text_;
 };

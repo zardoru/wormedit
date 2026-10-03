@@ -5,7 +5,20 @@
 #include "ui/nuklear/setup_state.h"
 #include "ui/nuklear/timing_stage_editor.h"
 
+#include <deque>
+#include <string>
+
 namespace {
+
+class modifier_scope_t {
+  public:
+    explicit modifier_scope_t(SDL_Keymod modifiers) : previous_{SDL_GetModState()} {
+        SDL_SetModState(modifiers);
+    }
+    ~modifier_scope_t() { SDL_SetModState(previous_); }
+  private:
+    SDL_Keymod previous_;
+};
 
 void initialize_compose_view(WormUiWorkspaceView& workspace, int width, int height) {
     workspace.project_loaded = true;
@@ -67,24 +80,70 @@ nuklear_event_harness_t::nuklear_event_harness_t(int width, int height)
 
 nuklear_event_harness_t::~nuklear_event_harness_t() {
     if (initialized_) worm_ui_frontend_shutdown();
-    if (sdl_initialized_) SDL_Quit();
+    if (sdl_initialized_) SDL_QuitSubSystem(SDL_INIT_EVENTS);
 }
 
-auto nuklear_event_harness_t::frame(std::span<const SDL_Event> events)
-    -> WormUiWorkspaceAction {
-    if (!initialized_) return {};
+auto nuklear_event_harness_t::frame(std::span<const SDL_Event> events, SDL_Keymod modifiers)
+    -> workspace_action_snapshot_t {
+    if (!initialized_) return workspace_action_snapshot_t{{}};
+    const modifier_scope_t modifier_scope{modifiers};
     worm_ui_frontend_begin_input();
-    for (const auto& event : events) (void)worm_ui_frontend_handle_event(&event);
+    for (auto event : events) {
+        if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP)
+            event.key.mod = modifiers;
+        (void)worm_ui_frontend_handle_event(&event);
+    }
     worm_ui_frontend_end_input();
     auto action = worm_ui_frontend_compose(&view_);
     worm_ui_frontend_render(width_, height_);
-    return action;
+    return workspace_action_snapshot_t{action};
 }
 
 auto nuklear_event_harness_t::run_script(std::span<const event_step_t> steps)
-    -> std::vector<WormUiWorkspaceAction> {
-    std::vector<WormUiWorkspaceAction> actions;
+    -> std::vector<workspace_action_snapshot_t> {
+    std::vector<workspace_action_snapshot_t> actions;
     actions.reserve(steps.size());
-    for (const auto& step : steps) actions.push_back(frame(step.events));
+    for (const auto& step : steps) actions.push_back(frame(step.events, step.modifiers));
     return actions;
+}
+
+struct workspace_action_snapshot_t::storage_t {
+    WormUiWorkspaceAction action;
+    std::deque<std::string> strings;
+    std::vector<const char*> tags;
+
+    auto own(const char* text) -> const char* {
+        if (!text) return nullptr;
+        strings.emplace_back(text);
+        return strings.back().c_str();
+    }
+
+    explicit storage_t(const WormUiWorkspaceAction& source) : action{source} {
+        action.project_chart.author = own(source.project_chart.author);
+        action.project_chart.rating_numerator = own(source.project_chart.rating_numerator);
+        action.project_chart.rating_denominator = own(source.project_chart.rating_denominator);
+        action.metadata_chart_rating_numerator_text = own(source.metadata_chart_rating_numerator_text);
+        action.metadata_chart_rating_denominator_text = own(source.metadata_chart_rating_denominator_text);
+        action.metadata_audio_offset_numerator_text = own(source.metadata_audio_offset_numerator_text);
+        action.metadata_audio_offset_denominator_text = own(source.metadata_audio_offset_denominator_text);
+        action.metadata_title = own(source.metadata_title);
+        action.metadata_artist = own(source.metadata_artist);
+        action.metadata_chart_name = own(source.metadata_chart_name);
+        action.metadata_chart_author = own(source.metadata_chart_author);
+        action.metadata_format_name = own(source.metadata_format_name);
+        action.metadata_format_value = own(source.metadata_format_value);
+        action.metadata_output_path = own(source.metadata_output_path);
+        if (source.metadata_search_tags) {
+            for (std::size_t i = 0; i < source.metadata_search_tag_count; ++i)
+                tags.push_back(own(source.metadata_search_tags[i]));
+            action.metadata_search_tags = tags.data();
+        }
+    }
+};
+
+workspace_action_snapshot_t::workspace_action_snapshot_t(const WormUiWorkspaceAction& action)
+    : storage_{std::make_shared<storage_t>(action)} {}
+
+auto workspace_action_snapshot_t::get() const -> const WormUiWorkspaceAction& {
+    return storage_->action;
 }

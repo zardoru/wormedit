@@ -25,16 +25,35 @@ jobs:
             os: ubuntu-24.04
             cc: gcc
             cxx: g++
+            preset: headless-events
           - name: linux-clang
             os: ubuntu-24.04
             cc: clang
             cxx: clang++
+            preset: headless
           - name: macos
             os: macos-latest
             cc: clang
             cxx: clang++
+            preset: headless
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check out frontend dependency
+        if: matrix.name == 'linux-gcc'
+        uses: actions/checkout@v4
+        with:
+          repository: zardoru/libotoworm
+          ref: 2690edac3e4d8182e4af6bc6c04ad1fbd4e99ff9
+          path: .ci-deps/libotoworm
+
+      - name: Install frontend build tools
+        if: matrix.name == 'linux-gcc'
+        run: |
+          sudo apt-get update && sudo apt-get install -y zlib1g-dev python3-venv
+          python3 -m venv "$RUNNER_TEMP/frontend-tools"
+          "$RUNNER_TEMP/frontend-tools/bin/pip" install cmake==4.2.3
+          echo "$RUNNER_TEMP/frontend-tools/bin" >> "$GITHUB_PATH"
 
       - name: Install tools (Linux)
         if: runner.os == 'Linux'
@@ -48,15 +67,30 @@ jobs:
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
-        run: cmake --preset headless
+        run: >-
+          cmake --preset ${{ matrix.preset }}
+          ${{ matrix.name == 'linux-gcc' && '-DWORMEDIT_OTOWORM_SOURCE_DIR=.ci-deps/libotoworm' || '' }}
 
       - name: Build
-        run: cmake --build --preset headless -- -k 0
+        run: cmake --build --preset ${{ matrix.preset }} -- -k 0
+
+      - name: Check event harness discovery
+        if: matrix.name == 'linux-gcc'
+        run: |
+          ctest --preset headless-events --show-only=json-v1 > /tmp/tests.json
+          python3 - <<'PY'
+          import json
+          tests = json.load(open('/tmp/tests.json'))['tests']
+          harness = [t for t in tests if any(
+              p['name'] == 'LABELS' and 'event-harness' in p['value']
+              for p in t.get('properties', []))]
+          assert len(harness) >= 12, f'Expected at least 12 event harness tests, got {len(harness)}'
+          PY
 
       # Serial on purpose: some tests assert wall-clock ceilings. The timeout turns a
       # hung test into a quick failure instead of ctest's 25 minute default.
       - name: Test
-        run: ctest --preset headless --output-on-failure --timeout 120
+        run: ctest --preset ${{ matrix.preset }} --output-on-failure --timeout 120
 
   # Windows is slow, so on pull requests it runs only when the PR has the `windows`
   # label (and on every push to main). Release avoids MSVC's very slow debug runtime.

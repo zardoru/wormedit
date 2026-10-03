@@ -121,12 +121,14 @@ stale-plan check (rule 9) first.
 
 ## T-77 Project audio-time bookmarks onto beats for navigation
 
-- **Status:** ready
+- **Status:** blocked-on-user
 - **Implementation notes (2026-10-01):** steps 1 and 2 are done in core: the beat `navigate_markers` overload takes an optional trailing `const timing_index_t*`; audio-time bookmarks and section boundaries are projected by `musical_position_at` (warp side = entry), floored to the containing row, and returned with both `beat_position` and `audio_milliseconds`. Out-of-range markers are skipped with a warning diagnostic naming the object, and an unusable index falls back to beat markers with one warning (status stays `found`, so callers check `status`, not `operator bool`). Without an index behavior is unchanged. Tests in `tests/core/marker_navigation_tests.cpp`. Step 3 (build the index in `src/sys/main.cpp`, pass it in, and enable the commands when any marker kind exists) remains and touches `main.cpp`.
+- **Stale-plan audit (2026-10-03):** The core overload and tests exist, but the actual dispatcher in `src/sys/application_command_dispatch.cpp` still omits the timing index and rejects usable found-with-warning results. The owned `main.cpp` slice permits enablement changes only; completing dispatch requires supporting-file ownership approval.
 - **Outcome:** Previous/Next marker navigation also stops at audio-time bookmarks and section boundaries, converted to exact rows through the timing index.
 - **Read first:** `include/wormedit/core/marker_navigation.h`, `include/wormedit/core/timing.h` (`musical_position_at`), `tests/core/marker_navigation_tests.cpp`.
 - **Files owned:** `include/wormedit/core/marker_navigation.h`, `src/core/marker_navigation.cpp`, `tests/core/marker_navigation_tests.cpp`, `src/sys/main.cpp` (enablement condition only).
 - **Steps:**
+  0. **STOP:** wait for supporting-file ownership approval for timing-aware application dispatch before continuing; preserve the existing core implementation.
   1. Accept an optional timing index; when present, include audio-time markers by inverse lookup (warp side = entry).
   2. Tests: marker inside a stop maps to the stop row; out-of-range marker is skipped with a diagnostic.
   3. Enable the navigation commands when any marker kind exists.
@@ -175,11 +177,12 @@ stale-plan check (rule 9) first.
 
 ## T-81 Snap fit drags to the nearest onset
 
-- **Status:** ready
+- **Status:** blocked-on-user
+- **Stale-plan audit (2026-10-03):** No onset snapping exists. Input runs before waveform-overlay projection, and the existing Ctrl bit already means BPM-step quantization. One-query-per-drag candidates require unowned `src/sys/compose_view.h` state (and, for direct input data, `src/sys/compose_input.h`/`src/sys/main.cpp`); an independent modifier or distinct tick would also need `src/ui/frontend.h`/`src/ui/nuklear/compose_canvas.cpp`. Any chosen modifier must avoid BPM-step rounding moving the snapped target off its onset. Do not retain global drag state to bypass the existing state owner.
 - **Outcome:** holding the snap modifier during an interval-fit drag snaps the target frame to the nearest onset within 30 ms.
 - **Read first:** `include/wormedit/audio/onset.h`, `src/sys/compose_input.cpp` (fit drag update), `src/sys/compose_waveform_overlays.cpp`.
 - **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/ui/nuklear/compose_input_panel.cpp`.
-- **Steps:** 1. Query onsets for the visible range once per drag. 2. Snap and draw a tick at the chosen onset.
+- **Steps:** 0. **STOP:** wait for supporting-file ownership approval for onset state and its input/overlay wiring. 1. Query onsets for the visible range once per drag. 2. Snap and draw a tick at the chosen onset.
 - **Invariants:** without the modifier, behavior is unchanged.
 - **Reject/failure behavior:** no onset in range → unsnapped.
 - **Verify:** standard build/test; manual drag.

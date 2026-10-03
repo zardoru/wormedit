@@ -48,11 +48,12 @@ stale-plan check (rule 9) first.
 
 ## T-103 Filter the catalog by use state and name
 
-- **Status:** ready
+- **Status:** blocked-on-user
+- **Stale-plan audit (2026-10-03):** Search state and name/source-filename matching already exist, but catalog rows expose no usage signal/count and only the source basename. The requested use-state and path filters need unowned `src/ui/frontend.h` and `src/sys/compose_resource_presenter.cpp` projection changes.
 - **Outcome:** the catalog has a text filter (case-insensitive substring on name/path/BMS ID) and a Used/Unused/Missing/All selector in addition to the existing role tabs.
 - **Read first:** `src/ui/nuklear/compose_resources.cpp` (`filter_role`, `filter_name`), `src/sys/compose_resource_presenter.cpp`, `docs/chart-editor-plan/document-model.md` (resource list paragraph).
 - **Files owned:** `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `tests/ui/nuklear_compose_state_tests.cpp`.
-- **Steps:** 1. Add filter text and use-state to frontend state. 2. Apply both when iterating rows. 3. State tests for the filter predicate.
+- **Steps:** 0. **STOP:** wait for supporting-file ownership approval for resource usage/path projection before implementing the filters. 1. Add filter text and use-state to frontend state. 2. Apply both when iterating rows. 3. State tests for the filter predicate.
 - **Invariants:** armed resource stays armed even when filtered out.
 - **Reject/failure behavior:** none.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^frontend-state\.'`.

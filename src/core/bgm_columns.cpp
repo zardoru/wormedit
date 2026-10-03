@@ -103,8 +103,10 @@ auto apply_bgm_column_count(document_history_t& history, std::uint64_t expected_
         reject(result, diagnostic_code_t::invalid_id, "BGM column chart is missing");
         return result;
     }
-    if (target->source_family != format_family_t::bms) {
-        reject(result, diagnostic_code_t::invalid_id, "BGM column counts are available only for BMS charts");
+    if (target->source_family != format_family_t::bms &&
+        target->source_family != format_family_t::osu_mania) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "BGM column counts are available only for BMS and osu!mania charts");
         return result;
     }
     const auto current = target->bgm_source_lanes.size();

@@ -310,6 +310,9 @@ static void queue_shortcut_key_event(const SDL_KeyboardEvent* event, bool tap_ca
 }
 
 static bool nuklear_text_entry_active(void) {
+    if (worm_ui_nuklear_compose_state().bgm_column_count_edit.input_owned) {
+        return true;
+    }
     if (!g_context || !g_context->active) {
         return false;
     }
@@ -342,6 +345,7 @@ static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_la
     action->shortcut_ime_composition_active = g_ime_composition_active;
     action->shortcut_compose_lane_focused = compose_lane_focused && g_window_focused;
     action->shortcut_focused_lane_id = action->shortcut_compose_lane_focused ? focused_lane_id : 0;
+    worm_ui_nuklear_retire_bgm_column_count_input_owner(compose_state);
 
     g_shortcut_event_count = 0;
     g_shortcut_events_overflowed = false;
@@ -364,7 +368,9 @@ static void queue_compose_text_hotkeys(const char* text) {
 // Turns the first queued hotkey into a Compose action; the rest are dropped.
 static void consume_compose_text_hotkeys(WormUiWorkspaceAction& action) {
     const auto count = std::exchange(g_compose_text_hotkey_count, std::size_t{});
-    if (count == 0 || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if (count == 0 || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE ||
+        worm_ui_nuklear_compose_state().bgm_column_count_edit.input_owned)
+        return;
     switch (g_compose_text_hotkeys[0]) {
     case '+': action.compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_IN; break;
     case '-': action.compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_OUT; break;
@@ -2129,6 +2135,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     render_auxiliary_windows(WorkspaceRenderContext{*view, action, width, height});
     render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
     const bool compose_lane_focused =
+        !worm_ui_nuklear_compose_state().bgm_column_count_edit.input_owned &&
         worm_ui_nuklear_compose_lane_focused(&view->compose, compose_tab_active, g_window_focused);
     if (compose_tab_active) consume_compose_text_hotkeys(action);
     else g_compose_text_hotkey_count = 0;

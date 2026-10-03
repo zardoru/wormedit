@@ -616,6 +616,74 @@ TEST_CASE("Compose canvas ownership ignores historical inspector focus but defer
         expect_inline(!worm_ui_nuklear_compose_canvas_input_available(&view, true, false, false));
 }
 
+TEST_CASE("BGM column count field claims its first clicked frame",
+          "[unit][frontend][compose][bgm-columns]") {
+    worm_ui_nuklear_reset_compose_state();
+    auto& state = worm_ui_nuklear_compose_state();
+    CHECK(worm_ui_nuklear_update_bgm_column_count_input_owner(
+        state, 12, 7, true, true, false, false));
+    CHECK(state.bgm_column_count_edit.input_owned);
+}
+
+TEST_CASE("BGM column count field owns active editing and the finish dispatch frame",
+          "[unit][frontend][compose][bgm-columns]") {
+    worm_ui_nuklear_reset_compose_state();
+    auto& state = worm_ui_nuklear_compose_state();
+    (void)worm_ui_nuklear_update_bgm_column_count_input_owner(
+        state, 12, 7, true, true, false, false);
+    CHECK(worm_ui_nuklear_update_bgm_column_count_input_owner(
+        state, 12, 7, true, false, true, false));
+    CHECK(worm_ui_nuklear_update_bgm_column_count_input_owner(
+        state, 12, 7, true, false, false, true));
+    CHECK(state.bgm_column_count_edit.input_owned);
+    CHECK(state.bgm_column_count_edit.release_pending);
+    worm_ui_nuklear_retire_bgm_column_count_input_owner(state);
+    CHECK_FALSE(state.bgm_column_count_edit.input_owned);
+    CHECK_FALSE(state.bgm_column_count_edit.release_pending);
+}
+
+TEST_CASE("BGM column count field ownership resets when its chart changes",
+          "[unit][frontend][compose][bgm-columns]") {
+    worm_ui_nuklear_reset_compose_state();
+    auto& state = worm_ui_nuklear_compose_state();
+    CHECK(worm_ui_nuklear_update_bgm_column_count_input_owner(
+        state, 12, 7, true, true, false, false));
+    CHECK_FALSE(worm_ui_nuklear_update_bgm_column_count_input_owner(
+        state, 13, 7, true, false, false, false));
+}
+
+TEST_CASE("BGM column count field ownership resets on revision change",
+          "[unit][frontend][compose][bgm-columns]") {
+    worm_ui_nuklear_reset_compose_state();
+    auto& state = worm_ui_nuklear_compose_state();
+    CHECK(worm_ui_nuklear_update_bgm_column_count_input_owner(
+        state, 13, 7, true, true, false, false));
+    CHECK_FALSE(worm_ui_nuklear_update_bgm_column_count_input_owner(
+        state, 13, 8, true, false, false, false));
+}
+
+TEST_CASE("BGM column count field ownership resets when editing is disabled",
+          "[unit][frontend][compose][bgm-columns]") {
+    worm_ui_nuklear_reset_compose_state();
+    auto& state = worm_ui_nuklear_compose_state();
+    CHECK(worm_ui_nuklear_update_bgm_column_count_input_owner(
+        state, 13, 7, true, true, false, false));
+    CHECK_FALSE(worm_ui_nuklear_update_bgm_column_count_input_owner(
+        state, 13, 7, false, false, false, false));
+}
+
+TEST_CASE("BGM column count field owner clears with Compose reset",
+          "[unit][frontend][compose][bgm-columns]") {
+    worm_ui_nuklear_reset_compose_state();
+    auto& state = worm_ui_nuklear_compose_state();
+    CHECK(worm_ui_nuklear_update_bgm_column_count_input_owner(
+        state, 13, 8, true, true, false, false));
+    CHECK(worm_ui_nuklear_update_bgm_column_count_input_owner(
+        state, 13, 8, true, false, false, true));
+    worm_ui_nuklear_reset_compose_state();
+    CHECK_FALSE(worm_ui_nuklear_compose_state().bgm_column_count_edit.input_owned);
+}
+
 TEST_CASE("Compose key batches preserve same-frame edges and release held keys after text ownership",
           "[unit][frontend][compose]") {
     worm_ui_nuklear_compose_state_t state;

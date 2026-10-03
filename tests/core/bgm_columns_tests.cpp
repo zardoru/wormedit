@@ -38,6 +38,23 @@ auto column_song() -> song_document_t {
     return song;
 }
 
+auto osu_mania_column_song() -> song_document_t {
+    auto song = column_song();
+    song.charts.front().source_family = format_family_t::osu_mania;
+    song.resources.push_back({.id = resource_id_t{40},
+                              .name = "background-sample.wav",
+                              .asset = asset_id_t{40},
+                              .roles = {resource_role_t::sample}});
+    song.audio_assets.push_back({.id = asset_id_t{40},
+                                 .source_path = "background-sample.wav"});
+    song.charts.front().measures.front().bgm_events.front().sound = resource_id_t{40};
+    const auto diagnostics = validate_document(song);
+    INFO("validation diagnostics: "
+         << diagnostics.size() << (diagnostics.empty() ? "" : ": " + diagnostics.front().message));
+    REQUIRE(diagnostics.empty());
+    return song;
+}
+
 auto lane_count(const document_history_t& history) -> std::size_t {
     return history.document.charts.front().bgm_source_lanes.size();
 }
@@ -113,6 +130,24 @@ TEST_CASE("BGM column count changes undo and redo as one step",
     CHECK(lane_count(history) == 6);
 }
 
+TEST_CASE("osu!mania BGM column growth preserves samples and undoes as one step",
+          "[unit][core][bgm-columns][osu-mania]") {
+    auto song = osu_mania_column_song();
+    auto history = make_document_history(std::move(song));
+
+    REQUIRE(apply_bgm_column_count(history, history.document.revision, chart_id_t{2}, 4));
+    CHECK(lane_count(history) == 4);
+    check_original_bgm_event(history.document.charts.front());
+    CHECK(history.document.charts.front().measures.front().bgm_events.front().sound ==
+          resource_id_t{40});
+
+    REQUIRE(undo_document_command(history));
+    CHECK(lane_count(history) == 1);
+    check_original_bgm_event(history.document.charts.front());
+    CHECK(history.document.charts.front().measures.front().bgm_events.front().sound ==
+          resource_id_t{40});
+}
+
 TEST_CASE("BGM column count rejects BMSON without changing its lanes",
           "[unit][core][bgm-columns]") {
     auto song = column_song();
@@ -122,7 +157,8 @@ TEST_CASE("BGM column count rejects BMSON without changing its lanes",
     const auto result = apply_bgm_column_count(history, revision, chart_id_t{2}, 6);
     CHECK_FALSE(result.applied);
     REQUIRE(result.diagnostics.size() == 1);
-    CHECK(result.diagnostics.front().message == "BGM column counts are available only for BMS charts");
+    CHECK(result.diagnostics.front().message ==
+          "BGM column counts are available only for BMS and osu!mania charts");
     CHECK(history.document.revision == revision);
     CHECK(lane_count(history) == 1);
     check_original_bgm_event(history.document.charts.front());

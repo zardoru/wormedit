@@ -780,6 +780,7 @@ static bool process_go_to_measure_keys(nk_context* context, const WormUiComposeV
 }
 
 static bool compose_text_owned(const nk_context* context) {
+    if (state.bgm_column_count_edit.input_owned) return true;
     if (!context || !context->active) return false;
     const auto* active = context->active;
     return active->popup.win ? active->popup.win->edit.active != 0 : active->edit.active != 0;
@@ -883,6 +884,7 @@ static void cancel_pending_compose_panel_actions(WormUiWorkspaceAction* action) 
 }
 
 static void reset_compose_revision_state(bool chart_changed, WormUiWorkspaceAction* action) {
+    state.bgm_column_count_edit = {};
     cancel_beat_fit_drag(action);
     if (state.waveform_beat_zero_drag_active) {
         set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
@@ -917,6 +919,7 @@ static void reset_compose_revision_state(bool chart_changed, WormUiWorkspaceActi
 }
 
 static void clear_inactive_compose_panel(WormUiWorkspaceAction* action) {
+    state.bgm_column_count_edit = {};
     state.cancel_pending = false;
     cancel_beat_fit_drag(action);
     state.key_event_count = 0;

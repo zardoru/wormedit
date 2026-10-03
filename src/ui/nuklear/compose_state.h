@@ -245,6 +245,15 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t inline_offset_revision{};
     std::array<char, 64> inline_offset_text{};
     std::array<char, 128> inline_offset_error{};
+    struct bgm_column_count_edit_t {
+        std::uint64_t chart_id{};
+        std::uint64_t revision{};
+        std::array<char, 4> text{};
+        bool initialized{};
+        bool commit_pending{};
+        bool input_owned{};
+        bool release_pending{};
+    } bgm_column_count_edit;
     bool inline_timing_open{};
     bool inline_timing_focus_pending{};
     bool inline_timing_popup_close_pending{};
@@ -344,6 +353,15 @@ struct worm_ui_nuklear_compose_state_t {
         worm_ui_nuklear_bmson_razor_mode_t::off};
     worm_ui_nuklear_pinch_gesture_t pinch{};
 };
+
+// Claims Compose keyboard input for the BGM column number field as soon as it
+// receives a click, including the frame before Nuklear reports it active.
+auto worm_ui_nuklear_update_bgm_column_count_input_owner(
+    worm_ui_nuklear_compose_state_t& state, std::uint64_t chart_id,
+    std::uint64_t revision, bool editable, bool field_clicked, bool edit_active,
+    bool edit_finished) -> bool;
+void worm_ui_nuklear_retire_bgm_column_count_input_owner(
+    worm_ui_nuklear_compose_state_t& state);
 
 // Keep press/release pairs ordered, including pairs received within one SDL frame.
 // When another owner takes input, discard new presses but deliver matching releases.

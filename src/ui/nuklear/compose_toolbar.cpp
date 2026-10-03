@@ -4,10 +4,13 @@
 #include "ui/nuklear/chrome.h"
 
 #include <algorithm>
+#include <array>
+#include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <iterator>
+#include <optional>
 
 using wormedit::ui::lucide::Glyph;
 
@@ -139,26 +142,92 @@ static void render_compose_bgm_scroll_controls(const ComposeToolbarContext& tool
               view->pixels_per_standard_measure, view->lane_count);
 }
 
-static void request_bgm_column_count(const ComposeToolbarContext& toolbar, uint32_t count) {
+static void reset_bgm_column_count_draft(
+                                         worm_ui_nuklear_compose_state_t::bgm_column_count_edit_t& draft,
+                                         const WormUiComposeView& view,
+                                         bool clear_ownership = true) {
+    const auto was_owned = draft.input_owned;
+    const auto release_pending = draft.release_pending;
+    draft.chart_id = view.chart_id;
+    draft.revision = view.document_revision;
+    draft.text.fill('\0');
+    const auto converted = std::to_chars(draft.text.data(),
+                                         draft.text.data() + draft.text.size() - 1,
+                                         view.bgm_column_count);
+    if (converted.ec == std::errc{}) *converted.ptr = '\0';
+    draft.initialized = true;
+    draft.commit_pending = false;
+    if (clear_ownership) {
+        draft.input_owned = false;
+        draft.release_pending = false;
+    } else {
+        draft.input_owned = was_owned;
+        draft.release_pending = release_pending;
+    }
+}
+
+static auto bgm_column_count_draft(const WormUiComposeView& view)
+    -> worm_ui_nuklear_compose_state_t::bgm_column_count_edit_t& {
+    auto& draft = state.bgm_column_count_edit;
+    if (!draft.initialized || !view.bgm_column_count_editable ||
+        draft.chart_id != view.chart_id || draft.revision != view.document_revision ||
+        draft.commit_pending)
+        reset_bgm_column_count_draft(draft, view);
+    return draft;
+}
+
+static auto parse_bgm_column_count(const char* text) -> std::optional<std::uint32_t> {
+    if (!text || !text[0]) return std::nullopt;
+    const auto* end = text + std::strlen(text);
+    std::uint32_t count{};
+    const auto parsed = std::from_chars(text, end, count);
+    if (parsed.ec != std::errc{} || parsed.ptr != end) return std::nullopt;
+    return count;
+}
+
+static auto request_bgm_column_count(const ComposeToolbarContext& toolbar, uint32_t count)
+    -> bool {
     auto* action = toolbar.action;
-    if (action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if (action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
     action->compose_action = WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT;
     action->compose_bgm_column_count = count;
     action->compose_input_chart_id = toolbar.view->chart_id;
     action->compose_input_document_revision = toolbar.view->document_revision;
+    bgm_column_count_draft(*toolbar.view).commit_pending = true;
+    return true;
 }
 
-// "BGM columns: N" with minus and plus; the core refuses a shrink over events.
+// "BGM columns: N" with minus, an editable count, and plus.
 static void render_compose_bgm_column_count_controls(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
     const auto* view = toolbar.view;
     const bool editable = view->bgm_column_count_editable;
+    auto& draft = bgm_column_count_draft(*view);
     if (!editable) nk_widget_disable_begin(context);
-    nk_labelf(context, NK_TEXT_RIGHT, "BGM: %u", view->bgm_column_count);
+    nk_label(context, "BGM columns:", NK_TEXT_RIGHT);
     if (nk_button_label(context, "-") && editable && view->bgm_column_count > 1)
-        request_bgm_column_count(toolbar, view->bgm_column_count - 1);
+        (void)request_bgm_column_count(toolbar, view->bgm_column_count - 1);
+    const auto field_bounds = nk_widget_bounds(context);
+    const bool field_clicked = nk_input_is_mouse_click_in_rect(
+        &context->input, NK_BUTTON_LEFT, field_bounds);
+    const auto flags = nk_edit_string_zero_terminated(
+        context, static_cast<nk_flags>(NK_EDIT_FIELD | NK_EDIT_SIG_ENTER), draft.text.data(),
+        static_cast<int>(draft.text.size()), nk_filter_decimal);
+    const bool edit_active = (flags & NK_EDIT_ACTIVE) != 0;
+    const bool deactivated = (flags & NK_EDIT_DEACTIVATED) != 0;
+    const bool committed = (flags & NK_EDIT_COMMITED) != 0;
+    (void)worm_ui_nuklear_update_bgm_column_count_input_owner(
+        state, view->chart_id, view->document_revision, editable, field_clicked,
+        edit_active, committed || deactivated);
+    if (editable && !draft.commit_pending &&
+        (committed || deactivated)) {
+        const auto count = parse_bgm_column_count(draft.text.data());
+        if (!count || !request_bgm_column_count(toolbar, *count))
+            reset_bgm_column_count_draft(draft, *view, false);
+        nk_edit_unfocus(context);
+    }
     if (nk_button_label(context, "+") && editable && view->bgm_column_count < 128)
-        request_bgm_column_count(toolbar, view->bgm_column_count + 1);
+        (void)request_bgm_column_count(toolbar, view->bgm_column_count + 1);
     if (!editable) nk_widget_disable_end(context);
 }
 
@@ -332,6 +401,10 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
 void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     update_compose_note_label_cache(toolbar.view);
     auto* context = toolbar.context;
+    const auto spacing = context->style.window.spacing;
+    const auto compact_spacing = nk_vec2(1.0f, spacing.y);
+    const bool spacing_pushed =
+        nk_style_push_vec2(context, &context->style.window.spacing, compact_spacing) != 0;
     nk_layout_row_template_begin(context, 27);
     wormedit::ui::chrome::IconButton::layout_columns(context, 3);
     nk_layout_row_template_push_static(context, 12);
@@ -351,12 +424,14 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     wormedit::ui::chrome::IconButton::layout_columns(context);
     nk_layout_row_template_push_dynamic(context);
     wormedit::ui::chrome::IconButton::layout_columns(context);
-    nk_layout_row_template_push_static(context, 60);
+    nk_layout_row_template_push_static(context, 100);
     nk_layout_row_template_push_static(context, 24);
+    nk_layout_row_template_push_static(context, 42);
     nk_layout_row_template_push_static(context, 24);
     nk_layout_row_template_push_static(context, 215);
     nk_layout_row_template_end(context);
     render_compose_view_controls(toolbar);
     render_compose_offset_toolbar(toolbar);
     render_compose_bgm_scroll_controls(toolbar);
+    if (spacing_pushed) (void)nk_style_pop_vec2(context);
 }

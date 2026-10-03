@@ -241,6 +241,47 @@ auto worm_ui_nuklear_compose_state() noexcept -> worm_ui_nuklear_compose_state_t
     return state;
 }
 
+auto worm_ui_nuklear_update_bgm_column_count_input_owner(
+    worm_ui_nuklear_compose_state_t& state, std::uint64_t chart_id,
+    std::uint64_t revision, bool editable, bool field_clicked, bool edit_active,
+    bool edit_finished) -> bool {
+    auto& edit = state.bgm_column_count_edit;
+    if (!editable || chart_id == 0) {
+        edit = {};
+        return false;
+    }
+    if (!edit.initialized || edit.chart_id != chart_id || edit.revision != revision) {
+        edit = {};
+        edit.chart_id = chart_id;
+        edit.revision = revision;
+        edit.initialized = true;
+    }
+    if (edit.release_pending) {
+        edit.input_owned = false;
+        edit.release_pending = false;
+    }
+    if (edit_finished) {
+        edit.input_owned = edit.input_owned || field_clicked || edit_active;
+        edit.release_pending = edit.input_owned;
+    } else if (field_clicked || edit_active) {
+        edit.input_owned = true;
+        edit.release_pending = false;
+    } else if (edit.input_owned) {
+        // Losing Nuklear's active flag can precede queued key dispatch too.
+        // Keep ownership for this frame and release it on the next update.
+        edit.release_pending = true;
+    }
+    return edit.input_owned;
+}
+
+void worm_ui_nuklear_retire_bgm_column_count_input_owner(
+    worm_ui_nuklear_compose_state_t& state) {
+    auto& edit = state.bgm_column_count_edit;
+    if (!edit.release_pending) return;
+    edit.input_owned = false;
+    edit.release_pending = false;
+}
+
 void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
                                               std::uint64_t next_resource_id) {
     auto& state = worm_ui_nuklear_compose_state();

@@ -404,6 +404,10 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/image_quad.cpp
         src/ui/nuklear/lucide_icons.cpp
         src/ui/nuklear/metadata_panel.cpp
+        src/ui/nuklear/metadata_audio_section.cpp
+        src/ui/nuklear/metadata_difficulty_section.cpp
+        src/ui/nuklear/metadata_format_fields.cpp
+        src/ui/nuklear/metadata_song_section.cpp
         src/ui/nuklear/metadata_state.cpp
         src/ui/nuklear/player_preview.cpp
         src/ui/nuklear/player_preview_texture.cpp

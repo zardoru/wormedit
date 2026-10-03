@@ -41,7 +41,8 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 
 ## T-42 Split `metadata_panel.cpp` by section (pure move)
 
-- **Status:** ready
+- **Status:** done
+- **Implementation notes (2026-10-02):** Song, Difficulty, Audio sync, Audio/export, and Format-specific fields moved in that order. The app build passed after each move (`/tmp/wormedit-t42-song-build.log`, `-difficulty-build.log`, `-audio-sync-build.log`, `-audio-export-build.log`, `-format-build.log`) and after restoring the six original Nuklear tree identities (`-preserved-tree-ids-build.log`). Clang-tidy passed on `metadata_panel.cpp` and all four section units with no project cognitive-complexity warnings (only vendored nlohmann warnings in the format unit). The isolated Metadata before/after capture comparison was pixel-identical (AE 0; `/tmp/wormedit-metadata-split/after.png`). The final coordinated build passed; full tests passed 1,568/1,568 (`/tmp/wormedit-final-all-tests2.log`, 53.50 seconds).
 - **Outcome:** `metadata_panel.cpp` (about 1,900 lines) becomes an entry file plus section units; the app renders identically.
 - **Read first:** `docs/chart-editor-plan/tasks/compose-split.md` (shared rules), `src/ui/nuklear/metadata_panel.cpp`, `src/ui/nuklear/metadata_panel.h`, `src/ui/nuklear/metadata_state.h`.
 - **Files owned:** `src/ui/nuklear/metadata_panel.cpp`, new `src/ui/nuklear/metadata_panel_internal.h`, new `metadata_song_section.cpp/.h`, new `metadata_difficulty_section.cpp/.h`, new `metadata_format_fields.cpp/.h`, new `metadata_audio_section.cpp/.h`, `CMakeLists.txt`.

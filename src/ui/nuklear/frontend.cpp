@@ -160,6 +160,14 @@ static bool project_dialog_active() {
     return g_project_dialog.active;
 }
 
+bool worm_ui_frontend_request_new_project(void) {
+    if (project_dialog_active() || g_new_project_wizard.open || g_notification_modal ||
+        !g_bms_encoding_path_seen.empty())
+        return false;
+    request_manual_new_project();
+    return true;
+}
+
 static void SDLCALL project_file_dialog_callback(void* userdata,
                                                  const char* const* files, int) {
     std::unique_ptr<std::uint64_t> generation{static_cast<std::uint64_t*>(userdata)};

@@ -57,10 +57,11 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-53 Enable New Project from the command registry
 
-- **Status:** ready
+- **Status:** done
+- **Implementation notes (2026-10-03):** registry New opens the existing layout wizard. New/Open (including chart drop), Close, and Quit share the existing Save/Discard/Cancel flow; replacement checks file-operation busy state and preserves the approved document/version through a BMS encoding continuation. Isolated real-window checks verified dirty Cancel preservation, Save-before-New persistence, Discard-to-New, and dirty Open cancellation/replacement. The actual headless wizard tests cover modal shortcut suppression, Cancel/reopen, and default 7K creation. Application build and all 1,580 tests pass (`/tmp/wormedit-final-all-tests.log`); configured clang-tidy found no new complexity violation. Private application replacement sequencing is verified by the real-window checks, not a synthetic test-side dispatcher.
 - **Outcome:** `document.new_project` opens the same new-project flow as the landing page (`create_new_project_session` in `src/sys/main.cpp`).
 - **Read first:** `src/sys/main.cpp` (`create_new_project_session`, `set("document.new_project", false)`), `src/sys/application_command_dispatch.cpp`.
-- **Files owned:** `src/sys/main.cpp`, `src/sys/application_command_dispatch.cpp`.
+- **Files owned:** `src/sys/main.cpp`, `src/sys/application_command_dispatch.cpp`; user-approved wizard-entry scope extension (2026-10-03): `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`.
 - **Steps:**
   1. When the current document is dirty, show a Save / Discard / Cancel dialog (user decision 2026-09-30); add a shared `confirm_unsaved_changes` helper (a normal Nuklear window, not a popup, see T-264) that New project, Open, Close project, and Quit all use.
   2. Enable the command and invoke the landing-page flow.

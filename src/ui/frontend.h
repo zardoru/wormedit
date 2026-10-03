@@ -2073,6 +2073,7 @@ bool worm_ui_frontend_handle_event(const SDL_Event* event);
 WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_id, float x,
                                                                 float y);
 void worm_ui_frontend_end_input(void);
+bool worm_ui_frontend_request_new_project(void);
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view);
 // Draw a recoverable workspace error when the model could not produce a view.
 WormUiWorkspaceAction worm_ui_frontend_workspace_error(

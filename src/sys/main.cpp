@@ -1381,7 +1381,7 @@ void refresh_application_command_states(
     const auto set = [&](std::string id, bool enabled, std::optional<bool> checked = std::nullopt) {
         (void)update_command_state(registry, command_id_t{std::move(id)}, enabled, checked);
     };
-    set("document.new_project", false);
+    set("document.new_project", true);
     set("document.new_chart", chart != nullptr);
     set("history.undo", !history.undo.empty());
     set("history.redo", !history.redo.empty());
@@ -2127,13 +2127,50 @@ auto save_project_session(Context& context, const WormUiWorkspaceAction& action)
     return true;
 }
 
-enum class close_target_t { none, application, project };
+enum class close_target_t { none, application, project, new_project, open_file };
 struct pending_close_t {
     close_target_t target{close_target_t::none};
     wormedit::song_id_t project;
     std::uint64_t revision{};
     bool save_requested{};
+    std::string project_path;
+    std::uint8_t layout_index{};
+    std::uint8_t encoding_index{};
+    bool awaiting_encoding{};
 };
+
+template <typename Context>
+void create_new_project_session(Context& context, const WormUiWorkspaceAction& action);
+template <typename Context>
+void open_project_session(Context& context, const WormUiWorkspaceAction& action);
+
+template <typename Context>
+void finish_confirmed_project_replacement(pending_close_t& pending, Context& context) {
+    WormUiWorkspaceAction action{};
+    action.new_project_layout_index = pending.layout_index;
+    action.bms_encoding_index = pending.encoding_index;
+    std::snprintf(action.project_path, sizeof(action.project_path), "%s", pending.project_path.c_str());
+    if (pending.target == close_target_t::new_project)
+        create_new_project_session(context, action);
+    else
+        open_project_session(context, action);
+    // Encoding choice continues the same approved replacement of this document version.
+    if (pending.target == close_target_t::open_file && !pending.project_path.empty() &&
+        context.pending_bms_encoding_path_ref == pending.project_path) {
+        pending.awaiting_encoding = true;
+        return;
+    }
+    pending = {};
+}
+
+template <typename Context>
+auto project_replacement_busy(Context& context) -> bool {
+    if (!context.autosave_loop_ref.busy() && !context.resource_copy_runtime_ref.busy() &&
+        !context.export_runtime_ref.busy() && !context.metadata_asset_runtime_ref.import_pending())
+        return false;
+    context.status_ref = "Wait for the current file operation before closing the project.";
+    return true;
+}
 
 template <typename Context>
 auto finish_confirmed_close(pending_close_t& pending, Context& context) -> bool {
@@ -2142,10 +2179,10 @@ auto finish_confirmed_close(pending_close_t& pending, Context& context) -> bool 
         pending = {};
         return true;
     }
-    if (context.autosave_loop_ref.busy() || context.resource_copy_runtime_ref.busy() ||
-        context.export_runtime_ref.busy() || context.metadata_asset_runtime_ref.import_pending()) {
-        context.status_ref = "Wait for the current file operation before closing the project.";
-        return false;
+    if (project_replacement_busy(context)) return false;
+    if (pending.target == close_target_t::new_project || pending.target == close_target_t::open_file) {
+        finish_confirmed_project_replacement(pending, context);
+        return true;
     }
     if (!replace_project_session(context, wormedit::sys::empty_session_document(
         wormedit::sys::new_session_project_id()), false, true, false, {}, {})) return false;
@@ -2155,7 +2192,9 @@ auto finish_confirmed_close(pending_close_t& pending, Context& context) -> bool 
 }
 
 template <typename Context>
-void request_workspace_close(pending_close_t& pending, close_target_t target, Context& context, bool confirm) {
+void confirm_unsaved_changes(pending_close_t& pending, close_target_t target, Context& context,
+                             bool confirm, const WormUiWorkspaceAction* replacement = nullptr) {
+    if (target != close_target_t::application && project_replacement_busy(context)) return;
     // A close request ends transient gestures; cancellation returns a usable editor.
     context.compose_navigation_input_ref.cancel();
     context.compose_viewport_input_ref.escape();
@@ -2164,8 +2203,36 @@ void request_workspace_close(pending_close_t& pending, close_target_t target, Co
             wormedit::cancel_editor_gesture_action_t{});
     pending = {.target = target, .project = context.history_ref.document.id,
         .revision = context.history_ref.document.revision};
+    if (replacement) {
+        pending.project_path = replacement->project_path;
+        pending.layout_index = replacement->new_project_layout_index;
+        pending.encoding_index = replacement->bms_encoding_index;
+    }
     if (!confirm || !context.session_loaded_ref || !wormedit::is_document_dirty(context.history_ref))
         (void)finish_confirmed_close(pending, context);
+}
+
+auto requested_project_transition(WormUiWorkspaceActionKind kind) -> std::optional<close_target_t> {
+    switch (kind) {
+        case WORM_UI_WORKSPACE_ACTION_QUIT: return close_target_t::application;
+        case WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT: return close_target_t::project;
+        case WORM_UI_WORKSPACE_ACTION_NEW_PROJECT: return close_target_t::new_project;
+        case WORM_UI_WORKSPACE_ACTION_OPEN_FILE: return close_target_t::open_file;
+        default: return std::nullopt;
+    }
+}
+
+template <typename Context>
+auto resume_confirmed_encoding(pending_close_t& pending, Context& context,
+                               const WormUiWorkspaceAction& action) -> bool {
+    if (!pending.awaiting_encoding || action.kind != WORM_UI_WORKSPACE_ACTION_OPEN_FILE ||
+        pending.project_path != action.project_path || pending.project != context.history_ref.document.id ||
+        pending.revision != context.history_ref.document.revision)
+        return false;
+    pending.encoding_index = action.bms_encoding_index;
+    pending.awaiting_encoding = false;
+    (void)finish_confirmed_close(pending, context);
+    return true;
 }
 
 template <typename Context>
@@ -2185,12 +2252,17 @@ void save_before_confirmed_close(pending_close_t& pending, Context& context, con
 template <typename Context>
 auto dispatch_close_confirmation(pending_close_t& pending, Context& context,
     const WormUiWorkspaceAction& action, bool confirm) -> bool {
-    if (action.kind == WORM_UI_WORKSPACE_ACTION_QUIT || action.kind == WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT) {
-        request_workspace_close(pending, action.kind == WORM_UI_WORKSPACE_ACTION_QUIT
-            ? close_target_t::application : close_target_t::project, context, confirm);
+    if (pending.awaiting_encoding && action.kind == WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING) {
+        pending = {};
+        return false;
+    }
+    if (resume_confirmed_encoding(pending, context, action)) return true;
+    if (const auto target = requested_project_transition(action.kind)) {
+        const bool replacing = *target == close_target_t::new_project || *target == close_target_t::open_file;
+        confirm_unsaved_changes(pending, *target, context, confirm || replacing, &action);
         return true;
     }
-    if (pending.target == close_target_t::none) return false;
+    if (pending.target == close_target_t::none || pending.awaiting_encoding) return false;
     if (action.close_decision != WORM_UI_CLOSE_NONE) {
         if (action.close_project_id != pending.project.value || action.close_revision != pending.revision) return true;
         if (action.close_decision == WORM_UI_CLOSE_CANCEL) { pending = {}; return true; }
@@ -2343,7 +2415,8 @@ auto dispatch_project_session_action(Context& context,
 }
 
 template <typename Context>
-void dispatch_dropped_chart_project(Context& context, std::string& pending_path) {
+void dispatch_dropped_chart_project(Context& context, std::string& pending_path,
+                                    pending_close_t& pending, bool confirm) {
     if (pending_path.empty()) return;
     const auto path = std::exchange(pending_path, {});
     if (path.size() >= WORM_UI_PROJECT_PATH_CAPACITY) {
@@ -2353,7 +2426,7 @@ void dispatch_dropped_chart_project(Context& context, std::string& pending_path)
     WormUiWorkspaceAction action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
     std::memcpy(action.project_path, path.c_str(), path.size() + 1);
-    (void)dispatch_project_session_action(context, action);
+    (void)dispatch_close_confirmation(pending, context, action, confirm);
 }
 
 template <typename Context>
@@ -2598,7 +2671,7 @@ void begin_notification_frame(notification_frame_context_t& context,
 
 auto close_confirmation_view(const pending_close_t& pending, bool has_native_path, const std::string& status)
     -> WormUiCloseConfirmationView {
-    return {.visible = pending.target != close_target_t::none,
+    return {.visible = pending.target != close_target_t::none && !pending.awaiting_encoding,
         .application = pending.target == close_target_t::application, .has_native_path = has_native_path,
         .project_id = pending.project.value, .revision = pending.revision, .status_text = status.c_str()};
 }
@@ -2841,6 +2914,12 @@ auto dispatch_registered_application_command(
     if (!command) {
         return wormedit::sys::reject_application_command(
             status, "Command is not implemented by the application.");
+    }
+    if (command->kind == wormedit::sys::application_command_kind_t::document_new_project) {
+        if (!worm_ui_frontend_request_new_project())
+            return wormedit::sys::reject_application_command(status, "Finish the open project dialog first.");
+        status = "Choose the layout for the new project.";
+        return wormedit::command_invocation_result_t{.accepted = true};
     }
     if (command->kind == wormedit::sys::application_command_kind_t::document_new_chart) {
         const auto created = wormedit::apply_add_chart_command(history, history.document.revision,
@@ -3233,10 +3312,11 @@ int main(int argc, char** argv) {
                 window, metadata_drop, workspace, history, asset_base,
                 can_offer_audio_project_drop(session_loaded, fresh_blank_project, history),
                 pending_audio_project_path, pending_chart_project_path, status))
-            request_workspace_close(pending_close, close_target_t::application, workspace_frame_action_context,
+            confirm_unsaved_changes(pending_close, close_target_t::application, workspace_frame_action_context,
                 program_preferences.preferences.general.confirm_unsaved_close);
         dispatch_dropped_chart_project(workspace_frame_action_context,
-                                       pending_chart_project_path);
+            pending_chart_project_path, pending_close,
+            program_preferences.preferences.general.confirm_unsaved_close);
         wormedit::sys::poll_application_jobs(metadata_asset_runtime, resource_copy_runtime,
                                              export_runtime, history, workspace, asset_base,
                                              status);

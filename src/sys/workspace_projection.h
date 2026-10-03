@@ -178,6 +178,7 @@ struct flattened_workspace_t {
     } compose;
     struct {
         frame_span<std::uint64_t> asset;
+        frame_span<WormUiSoundRowView> sound_row;
         std::vector<WormUiAudioWaveformColumnView> waveform;
     } audio;
   private:

@@ -73,6 +73,7 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES 64
 #define WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES 32
 #define WORM_UI_AUDIO_ASSET_CAPACITY 128
+#define WORM_UI_SOUND_ROW_CAPACITY 512
 #define WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY 4096
 #define WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY 64
 #define WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY 4096
@@ -333,7 +334,24 @@ typedef struct WormUiMetadataView {
     const char* copy_preview_source;
 } WormUiMetadataView;
 
+typedef struct WormUiSoundRowView {
+    uint64_t resource_id;
+    uint64_t asset_id;
+    const char* name;
+    const char* tags_text;
+    const char* source_path;
+    // 0 unspecified, 1 stem, 2 keysound, 3 sample (sound_kind_t, effective kind).
+    int kind;
+    uint32_t use_count;
+    uint64_t duration_frames;
+    uint32_t sample_rate;
+    bool missing;
+} WormUiSoundRowView;
+
 typedef struct WormUiAudioSlicesView {
+    const WormUiSoundRowView* sound_rows;
+    size_t sound_row_count;
+    bool sound_rows_truncated;
     bool visible;
     bool assets_truncated;
     const uint64_t* asset_ids;

@@ -14,6 +14,7 @@ struct worm_ui_nuklear_audio_state_t {
     std::int64_t offset_drag_delta_frames{};
     bool offset_escape_pending{};
     bool offset_cancel_pending{};
+    char search_text[128]{};
 };
 
 [[nodiscard]] auto worm_ui_nuklear_audio_state() noexcept -> worm_ui_nuklear_audio_state_t&;

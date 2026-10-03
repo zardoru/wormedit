@@ -818,3 +818,53 @@ TEST_CASE("resource assignment protects retained BMSON sound links",
     CHECK(history.document.revision == 4);
     CHECK(history.undo.empty());
 }
+
+TEST_CASE("sound metadata sets kind and normalized tags in one undoable step",
+          "[unit][core][resources][sounds]") {
+    auto history = make_document_history(assignment_song());
+    const auto result = apply_resource_sound_metadata(
+        history, 4,
+        {.resource = resource_id_t{1},
+         .kind = sound_kind_t::stem,
+         .tags = {"  Drums ", "drums", "VOX", "vox lead"}});
+    REQUIRE(result);
+    const auto& resource = history.document.resources.front();
+    CHECK(resource.sound_kind == sound_kind_t::stem);
+    CHECK(resource.tags == std::vector<std::string>{"Drums", "VOX", "vox lead"});
+    REQUIRE(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.resources.front().sound_kind == sound_kind_t::unspecified);
+    CHECK(history.document.resources.front().tags.empty());
+}
+
+TEST_CASE("sound metadata rejects invalid input without changing the document",
+          "[unit][core][resources][sounds]") {
+    auto history = make_document_history(assignment_song());
+    const auto revision = history.document.revision;
+    const auto rejected = [&](set_resource_sound_metadata_action_t action,
+                              std::uint64_t expected = 4) {
+        const auto result = apply_resource_sound_metadata(history, expected, action);
+        CHECK_FALSE(result);
+        CHECK(history.document.revision == revision);
+        CHECK(history.undo.empty());
+    };
+    rejected({.resource = resource_id_t{1}, .tags = {"   "}});
+    rejected({.resource = resource_id_t{1}, .tags = {std::string(65, 'a')}});
+    rejected({.resource = resource_id_t{1}, .tags = {"bad\ntag"}});
+    rejected({.resource = resource_id_t{99}, .tags = {"x"}});
+    rejected({.resource = resource_id_t{1}, .kind = static_cast<sound_kind_t>(9)});
+    rejected({.resource = resource_id_t{1}, .tags = {"x"}}, 3);
+    set_resource_sound_metadata_action_t too_many{.resource = resource_id_t{1}};
+    for (int index = 0; index < 33; ++index) too_many.tags.push_back("tag" + std::to_string(index));
+    rejected(too_many);
+}
+
+TEST_CASE("sound metadata that changes nothing creates no history entry",
+          "[unit][core][resources][sounds]") {
+    auto history = make_document_history(assignment_song());
+    const auto result = apply_resource_sound_metadata(history, 4, {.resource = resource_id_t{1}});
+    CHECK_FALSE(result);
+    CHECK(result.diagnostics.empty());
+    CHECK(history.undo.empty());
+    CHECK(history.document.revision == 4);
+}

@@ -82,6 +82,21 @@ struct relink_resource_asset_action_t {
                                                const relink_resource_asset_action_t& action)
     -> document_command_result_t;
 
+struct set_resource_sound_metadata_action_t {
+    resource_id_t resource;
+    sound_kind_t kind{sound_kind_t::unspecified};
+    std::vector<std::string> tags;
+};
+
+// Sets the user-facing sound kind and tags of one resource in one history
+// step. Tags are trimmed and de-duplicated ignoring ASCII case, keeping the
+// first spelling; more than maximum_sound_tags or over-long, empty-after-trim
+// or control-character tags reject the command. A no-op creates no history entry.
+[[nodiscard]] auto apply_resource_sound_metadata(document_history_t& history,
+                                                 std::uint64_t expected_revision,
+                                                 const set_resource_sound_metadata_action_t& action)
+    -> document_command_result_t;
+
 enum class resource_placement_kind_t {
     sample_note,
     bgm_event,

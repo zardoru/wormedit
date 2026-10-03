@@ -31,9 +31,10 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Frame time during live transport](tasks/live-transport.md)
 - [Bookmark shortcuts and labels](tasks/markers.md)
 - [Compose timing: retire the Timing screen](tasks/compose-timing.md)
+- [Sounds tab: library, bulk import, zoomable waveform, slicer](tasks/sounds-tab.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-323.
+every number above T-334.
 
 ## Rules for whoever executes a card
 

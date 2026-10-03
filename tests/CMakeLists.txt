@@ -29,6 +29,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_bookmark_commands.cpp
     ../src/sys/compose_playhead_skip.cpp
     ../src/sys/compose_bgm_bar.cpp
+    ../src/sys/sound_list_projection.cpp
     ../src/sys/compose_measure_commands.cpp
     ../src/sys/compose_selection_transform.cpp
     ../src/sys/compose_label_search.cpp
@@ -58,6 +59,7 @@ add_executable(wormedit_core_tests
     sys/compose_bookmark_commands_tests.cpp
     sys/compose_playhead_skip_tests.cpp
     sys/compose_bgm_bar_tests.cpp
+    sys/sound_list_projection_tests.cpp
     sys/compose_measure_commands_tests.cpp
     sys/compose_selection_transform_tests.cpp
     sys/compose_label_search_tests.cpp
@@ -98,6 +100,8 @@ add_executable(wormedit_core_tests
     core/measure_editor_tests.cpp
     core/measure_tests.cpp
     core/sound_slice_rules_tests.cpp
+    core/audio_slicer_tests.cpp
+    core/sound_import_tests.cpp
     core/note_label_editor_tests.cpp
     core/pause_warp_editor_tests.cpp
     core/player_preview_tests.cpp
@@ -195,6 +199,8 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         core/audio_source_registry_tests.cpp
         core/audio_transport_tests.cpp
         core/audio_waveform_tests.cpp
+        core/audio_waveform_viewport_tests.cpp
+        core/audio_slice_render_tests.cpp
         core/audio_aligned_waveform_tests.cpp
         core/audio_waveform_job_tests.cpp
     )
@@ -359,6 +365,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ui/nuklear_compose_state_tests.cpp
         ui/nuklear_metadata_state_tests.cpp
         ui/nuklear_setup_state_tests.cpp
+        ui/sound_import_state_tests.cpp
         ui/nuklear_timing_state_tests.cpp
         ui/nuklear_meter_state_tests.cpp
         ../src/ui/nuklear/audio_state.cpp
@@ -367,6 +374,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/compose_state.cpp
         ../src/ui/nuklear/metadata_state.cpp
         ../src/ui/nuklear/setup_state.cpp
+        ../src/ui/nuklear/sound_import_state.cpp
         ../src/ui/nuklear/timing_state.cpp
         ../src/ui/nuklear/meter_state.cpp
     )

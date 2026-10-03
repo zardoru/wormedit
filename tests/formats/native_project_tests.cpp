@@ -767,3 +767,27 @@ TEST_CASE("native projects round-trip Lua expression recipes",
     CHECK(loaded.curve == wormedit::sv_recipe_curve_t::lua_expression);
     CHECK(loaded.expression_source == recipe.expression_source);
 }
+
+TEST_CASE("native projects persist sound kind and tags only when set",
+          "[unit][format][native-project][sounds]") {
+    auto song = rich_bmson_song();
+    REQUIRE_FALSE(song.resources.empty());
+    const auto plain = wormedit::write_native_project(song);
+    REQUIRE(plain.bytes.has_value());
+    CHECK(plain.bytes->find("\"sound_kind\"") == std::string::npos);
+    CHECK(plain.bytes->find("\"tags\"") == std::string::npos);
+    const auto legacy = wormedit::parse_native_project(*plain.bytes);
+    REQUIRE(legacy.song.has_value());
+    CHECK(legacy.song->resources.front().sound_kind == wormedit::sound_kind_t::unspecified);
+    CHECK(legacy.song->resources.front().tags.empty());
+
+    song.resources.front().sound_kind = wormedit::sound_kind_t::stem;
+    song.resources.front().tags = {"drums", "Loop"};
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.bytes.has_value());
+    const auto parsed = wormedit::parse_native_project(*written.bytes);
+    REQUIRE(parsed.song.has_value());
+    CHECK(parsed.song->resources.front().sound_kind == wormedit::sound_kind_t::stem);
+    CHECK(parsed.song->resources.front().tags == std::vector<std::string>{"drums", "Loop"});
+    CHECK(*wormedit::write_native_project(*parsed.song).bytes == *written.bytes);
+}

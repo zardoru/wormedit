@@ -90,6 +90,8 @@ add_library(wormedit_core
     src/core/preferences.cpp
     src/core/shortcut_profile_startup.cpp
     src/core/sound_slice.cpp
+    src/core/audio_slicer.cpp
+    src/core/sound_import.cpp
     src/core/arena.cpp
     src/core/notifications.cpp
     src/core/storyboard.cpp
@@ -321,6 +323,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_bookmark_commands.cpp
         src/sys/compose_playhead_skip.cpp
         src/sys/compose_bgm_bar.cpp
+        src/sys/sound_list_projection.cpp
         src/sys/compose_measure_commands.cpp
         src/sys/compose_selection_transform.cpp
         src/sys/compose_label_search.cpp
@@ -406,6 +409,7 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/player_preview_texture.cpp
         src/ui/nuklear/setup_panel.cpp
         src/ui/nuklear/setup_state.cpp
+        src/ui/nuklear/sound_import_state.cpp
         src/ui/nuklear/timing_stage_editor.cpp
         src/ui/nuklear/timing_state.cpp
         src/ui/nuklear/meter_state.cpp

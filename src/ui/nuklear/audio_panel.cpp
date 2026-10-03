@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <limits>
+#include <string>
 
 namespace {
 
@@ -152,6 +153,8 @@ int worm_ui_nuklear_audio_slices_view_valid(const WormUiAudioSlicesView* view) {
         (view->asset_count != 0 && !view->asset_ids) ||
         view->waveform_column_count > WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY ||
         (view->waveform_column_count != 0 && !view->waveform_columns) ||
+        view->sound_row_count > WORM_UI_SOUND_ROW_CAPACITY ||
+        (view->sound_row_count != 0 && !view->sound_rows) ||
         (view->has_selected_asset && view->selected_asset_id == 0) ||
         (view->analysis_pending && view->waveform_available) ||
         (!view->waveform_available && view->waveform_column_count != 0) ||
@@ -184,18 +187,10 @@ int worm_ui_nuklear_audio_slices_view_valid(const WormUiAudioSlicesView* view) {
     return 1;
 }
 
-void worm_ui_nuklear_render_audio_slices(struct nk_context* context,
-                                         const WormUiAudioSlicesView* view,
-                                         WormUiWorkspaceAction* action, bool show_asset_catalog,
-                                         bool window_focused) {
-    if (!context || !view || !action) {
-        return;
-    }
-    cancel_stale_offset_drag(*view, *action, window_focused);
-    if (show_asset_catalog) {
-        render_audio_asset_catalog(context, *view, *action);
-    }
+namespace {
 
+void render_waveform_column(struct nk_context* context, const WormUiAudioSlicesView* view,
+                            WormUiWorkspaceAction* action) {
     nk_layout_row_dynamic(context, 22, 1);
     if (!view->has_selected_asset) {
         nk_label(context, "Select an asset to build its waveform overview.", NK_TEXT_LEFT);
@@ -284,4 +279,141 @@ void worm_ui_nuklear_render_audio_slices(struct nk_context* context,
         nk_label(context, "Drag the waveform horizontally to adjust beat-zero offset.",
                  NK_TEXT_LEFT);
     }
+}
+
+auto folded(const char* text) -> std::string {
+    std::string result = text ? text : "";
+    for (auto& c : result) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
+    }
+    return result;
+}
+
+auto sound_kind_name(int kind) -> const char* {
+    switch (kind) {
+    case 1: return "Stem";
+    case 2: return "Keysound";
+    case 3: return "Sample";
+    default: return "Sound";
+    }
+}
+
+auto row_matches(const WormUiSoundRowView& row, const std::string& needle) -> bool {
+    if (needle.empty()) {
+        return true;
+    }
+    return folded(row.name).find(needle) != std::string::npos ||
+           folded(row.tags_text).find(needle) != std::string::npos;
+}
+
+void render_sound_list_column(struct nk_context* context, const WormUiAudioSlicesView& view,
+                              WormUiWorkspaceAction& action) {
+    nk_layout_row_dynamic(context, 24, 1);
+    nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, audio.search_text,
+                                   static_cast<int>(sizeof(audio.search_text)), nk_filter_default);
+    const std::string needle = folded(audio.search_text);
+    std::size_t shown = 0;
+    for (std::size_t index = 0; index < view.sound_row_count; ++index) {
+        const auto& row = view.sound_rows[index];
+        if (!row_matches(row, needle)) {
+            continue;
+        }
+        ++shown;
+        const bool selected = view.has_selected_asset && view.selected_asset_id == row.asset_id;
+        nk_bool active = selected ? nk_true : nk_false;
+        nk_layout_row_dynamic(context, 24, 1);
+        char label[160]{};
+        std::snprintf(label, sizeof(label), "%s%s  ·  %s", row.missing ? "! " : "",
+                      row.name ? row.name : "(unnamed)", sound_kind_name(row.kind));
+        if (nk_selectable_label(context, label, NK_TEXT_LEFT, &active) && !selected &&
+            row.asset_id != 0) {
+            action.kind = WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET;
+            action.audio_asset_id = row.asset_id;
+        }
+    }
+    nk_layout_row_dynamic(context, 20, 1);
+    if (shown == 0) {
+        nk_label(context, view.sound_row_count == 0 ? "No sounds in this project."
+                                                     : "No sound matches the search.",
+                 NK_TEXT_LEFT);
+    } else if (view.sound_rows_truncated) {
+        nk_label(context, "More sounds are hidden by the view cap.", NK_TEXT_LEFT);
+    }
+}
+
+void render_sound_properties_column(struct nk_context* context,
+                                    const WormUiAudioSlicesView& view) {
+    const WormUiSoundRowView* selected = nullptr;
+    for (std::size_t index = 0; index < view.sound_row_count; ++index) {
+        if (view.has_selected_asset && view.sound_rows[index].asset_id == view.selected_asset_id) {
+            selected = &view.sound_rows[index];
+            break;
+        }
+    }
+    nk_layout_row_dynamic(context, 22, 1);
+    if (!selected) {
+        nk_label(context, "Select a sound to see its properties.", NK_TEXT_LEFT);
+        return;
+    }
+    nk_label(context, selected->name ? selected->name : "(unnamed)", NK_TEXT_LEFT);
+    nk_labelf(context, NK_TEXT_LEFT, "Kind: %s", sound_kind_name(selected->kind));
+    nk_labelf(context, NK_TEXT_LEFT, "Used %u time(s)", selected->use_count);
+    if (selected->sample_rate != 0) {
+        nk_labelf(context, NK_TEXT_LEFT, "%.2f s · %u Hz",
+                  static_cast<double>(selected->duration_frames) / selected->sample_rate,
+                  selected->sample_rate);
+    }
+    nk_labelf(context, NK_TEXT_LEFT, "Tags: %s",
+              selected->tags_text && selected->tags_text[0] ? selected->tags_text : "(none)");
+    if (selected->source_path && selected->source_path[0]) {
+        nk_label(context, selected->source_path, NK_TEXT_LEFT);
+    }
+    if (selected->missing) {
+        nk_label_colored(context, "The audio file is missing.", NK_TEXT_LEFT,
+                         nk_rgb(255, 120, 120));
+    }
+}
+
+void render_sound_columns(struct nk_context* context, const WormUiAudioSlicesView& view,
+                          WormUiWorkspaceAction& action) {
+    constexpr float margin = 0.02f;
+    constexpr float height = 460.0f;
+    const float ratios[] = {margin, 0.26f, margin, 0.40f, margin, 0.26f, margin};
+    nk_layout_row(context, NK_DYNAMIC, height, 7, ratios);
+    nk_spacing(context, 1);
+    if (nk_group_begin(context, "sound_list", NK_WINDOW_BORDER)) {
+        render_sound_list_column(context, view, action);
+        nk_group_end(context);
+    }
+    nk_spacing(context, 1);
+    if (nk_group_begin(context, "sound_wave", NK_WINDOW_BORDER)) {
+        render_waveform_column(context, &view, &action);
+        nk_group_end(context);
+    }
+    nk_spacing(context, 1);
+    if (nk_group_begin(context, "sound_properties", NK_WINDOW_BORDER)) {
+        render_sound_properties_column(context, view);
+        nk_group_end(context);
+    }
+    nk_spacing(context, 1);
+}
+
+} // namespace
+
+void worm_ui_nuklear_render_audio_slices(struct nk_context* context,
+                                         const WormUiAudioSlicesView* view,
+                                         WormUiWorkspaceAction* action, bool show_asset_catalog,
+                                         bool window_focused) {
+    if (!context || !view || !action) {
+        return;
+    }
+    cancel_stale_offset_drag(*view, *action, window_focused);
+    if (show_asset_catalog && view->sound_rows) {
+        render_sound_columns(context, *view, *action);
+        return;
+    }
+    if (show_asset_catalog) {
+        render_audio_asset_catalog(context, *view, *action);
+    }
+    render_waveform_column(context, view, action);
 }

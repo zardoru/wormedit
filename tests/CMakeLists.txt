@@ -135,6 +135,7 @@ add_executable(wormedit_core_tests
     core/visual_layout_tests.cpp
     core/workspace_tests.cpp
     formats/bms_tests.cpp
+    formats/bms_clipboard_tests.cpp
     formats/bms_writer_tests.cpp
     formats/bmson_tests.cpp
     formats/bmson_writer_tests.cpp

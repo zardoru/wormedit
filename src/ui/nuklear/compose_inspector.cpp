@@ -191,7 +191,71 @@ static void render_lane_profile_section(const ComposeInspectorContext& inspector
     nk_tree_pop(context);
 }
 
+static void render_lane_layout_editor(const ComposeInspectorContext& inspector) {
+    const auto* view = inspector.view;
+    auto* context = inspector.context;
+    auto* action = inspector.action;
+    if (!nk_tree_push(context, NK_TREE_TAB, "Lane layout segment", NK_MAXIMIZED)) return;
+    if (!view->lane_layout_edit_available) {
+        nk_layout_row_dynamic(context, 30, 1);
+        nk_label_wrap(context, "Layout changes are unavailable at a virtual-only cursor measure.");
+        nk_tree_pop(context);
+        return;
+    }
+    if (view->lane_layout_profile_choice_count == 0) {
+        nk_layout_row_dynamic(context, 30, 1);
+        nk_label_wrap(context, "No built-in layout profiles are available for this chart family.");
+        nk_tree_pop(context);
+        return;
+    }
+    struct selection_state_t {
+        std::uint64_t chart{};
+        std::uint64_t revision{};
+        std::uint32_t measure{};
+        int selected{};
+    };
+    static selection_state_t selection;
+    if (selection.chart != view->chart_id || selection.revision != view->document_revision ||
+        selection.measure != view->lane_layout_edit_measure_number) {
+        selection.chart = view->chart_id;
+        selection.revision = view->document_revision;
+        selection.measure = view->lane_layout_edit_measure_number;
+        selection.selected = std::max<int>(view->lane_layout_profile_current, 0);
+    }
+    std::array<const char*, WORM_UI_COMPOSE_LAYOUT_PROFILE_CAPACITY> names{};
+    for (std::size_t index = 0; index < view->lane_layout_profile_choice_count; ++index)
+        names[index] = view->lane_layout_profile_names[index];
+    nk_layout_row_dynamic(context, 18, 1);
+    nk_labelf(context, NK_TEXT_LEFT, "Measure %u · %s", view->lane_layout_edit_measure_number,
+              view->lane_layout_edit_is_update ? "Update existing segment" : "Insert new segment");
+    nk_layout_row_dynamic(context, 26, 1);
+    selection.selected = std::clamp(selection.selected, 0,
+                                    static_cast<int>(view->lane_layout_profile_choice_count) - 1);
+    selection.selected = wormedit::ui::chrome::safe_combo(
+        context, names.data(), static_cast<int>(view->lane_layout_profile_choice_count),
+        selection.selected, 24, nk_vec2(220.0f, 180.0f));
+    char button[64]{};
+    (void)snprintf(button, sizeof(button), "%s layout at measure %u",
+                   view->lane_layout_edit_is_update ? "Update" : "Insert",
+                   view->lane_layout_edit_measure_number);
+    const auto disabled = action->compose_action != WORM_UI_COMPOSE_ACTION_NONE;
+    if (disabled) nk_widget_disable_begin(context);
+    const auto clicked = nk_button_label(context, button);
+    if (disabled) nk_widget_disable_end(context);
+    if (clicked && !disabled) {
+        action->compose_action = WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE;
+        action->compose_input_chart_id = view->chart_id;
+        action->compose_input_document_revision = view->document_revision;
+        action->compose_measure_number = view->lane_layout_edit_measure_number;
+        std::snprintf(action->compose_lane_layout_profile_id,
+                      sizeof(action->compose_lane_layout_profile_id), "%s",
+                      view->lane_layout_profile_ids[static_cast<std::size_t>(selection.selected)]);
+    }
+    nk_tree_pop(context);
+}
+
 void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
+    render_lane_layout_editor(inspector);
     render_lane_profile_section(inspector);
     const auto& timing = *inspector.timing_view;
     nk_layout_row_dynamic(inspector.context, 18, 1);

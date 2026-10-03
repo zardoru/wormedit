@@ -33,6 +33,10 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_COMPOSE_BGM_LANE_CAPACITY 4096
 #define WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY 4
 #define WORM_UI_COMPOSE_LANE_PROFILE_NAME_BYTES 48
+#define WORM_UI_COMPOSE_LAYOUT_PROFILE_CAPACITY 32
+#define WORM_UI_COMPOSE_LAYOUT_PROFILE_NAME_BYTES 64
+#define WORM_UI_COMPOSE_LAYOUT_PROFILE_ID_BYTES 64
+#define WORM_UI_COMPOSE_LAYOUT_SEGMENT_CAPACITY 2048
 #define WORM_UI_COMPOSE_BGM_EVENT_CAPACITY 32768
 #define WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY 4096
 #define WORM_UI_COMPOSE_CHANNEL_WAVEFORM_ROW_CAPACITY 4096
@@ -421,6 +425,14 @@ typedef struct WormUiComposeGridLineView {
     uint32_t measure_number;
     uint64_t chart_row;
 } WormUiComposeGridLineView;
+
+typedef struct WormUiComposeLaneLayoutSegmentView {
+    uint64_t segment_id;
+    uint32_t measure_number;
+    uint64_t row;
+    double y_pixels;
+    const char* profile_name;
+} WormUiComposeLaneLayoutSegmentView;
 
 typedef struct WormUiComposeTimingPreviewRectView {
     WormUiComposeRect bounds;
@@ -868,6 +880,20 @@ typedef struct WormUiComposeView {
     int8_t lane_profile_current;
     char lane_profile_names[WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY]
                            [WORM_UI_COMPOSE_LANE_PROFILE_NAME_BYTES];
+    // Layout profiles can change the lane count; this editor is separate from
+    // the same-count profile switch above.
+    uint8_t lane_layout_profile_choice_count;
+    int8_t lane_layout_profile_current;
+    uint32_t lane_layout_edit_measure_number;
+    uint64_t lane_layout_edit_segment_id;
+    bool lane_layout_edit_is_update;
+    bool lane_layout_edit_available;
+    char lane_layout_profile_names[WORM_UI_COMPOSE_LAYOUT_PROFILE_CAPACITY]
+                                  [WORM_UI_COMPOSE_LAYOUT_PROFILE_NAME_BYTES];
+    char lane_layout_profile_ids[WORM_UI_COMPOSE_LAYOUT_PROFILE_CAPACITY]
+                                [WORM_UI_COMPOSE_LAYOUT_PROFILE_ID_BYTES];
+    const WormUiComposeLaneLayoutSegmentView* lane_layout_segments;
+    size_t lane_layout_segment_count;
     bool downscroll;
     bool bms_measure_labels;
     uint64_t compose_measure_count;
@@ -1657,6 +1683,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE,
     WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT,
     WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE,
+    WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE,
     WORM_UI_COMPOSE_ACTION_ZOOM_IN,
     WORM_UI_COMPOSE_ACTION_ZOOM_OUT,
     WORM_UI_COMPOSE_ACTION_SCROLL_UP,
@@ -1997,6 +2024,7 @@ typedef struct WormUiWorkspaceAction {
     uint64_t compose_measure_number;
     uint32_t compose_bgm_column_count;
     uint32_t compose_lane_profile_index;
+    char compose_lane_layout_profile_id[WORM_UI_COMPOSE_LAYOUT_PROFILE_ID_BYTES];
     int64_t compose_audio_offset_numerator;
     uint64_t compose_audio_offset_denominator;
     uint64_t compose_input_chart_id;

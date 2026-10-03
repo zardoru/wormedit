@@ -223,6 +223,167 @@ static void populate_lane_profile_choices(WormUiComposeView& view, const wormedi
     }
     view.lane_profile_choice_count = static_cast<std::uint8_t>(count);
 }
+
+auto compose_mode_family(const wormedit::lane_layout_t& layout) -> wormedit::editor_mode_family_t;
+
+void append_bms_layout_profiles(std::vector<wormedit::lane_input_profile_t>& choices) {
+    for (const auto& profile : wormedit::built_in_bms_lane_profiles())
+        choices.push_back(profile.profile);
+}
+
+void append_stepmania_layout_profiles(std::vector<wormedit::lane_input_profile_t>& choices) {
+    constexpr std::array<std::string_view, 3> step_types{"pump-single", "pump-double", "dance-solo"};
+    for (const auto type : step_types)
+        if (auto profile = wormedit::make_stepmania_profile_for(type))
+            choices.push_back(std::move(*profile));
+}
+
+void append_osu_layout_profiles(std::vector<wormedit::lane_input_profile_t>& choices) {
+    for (std::uint32_t keys = 1; keys <= 18; ++keys)
+        if (auto profile = wormedit::make_osu_mania_profile(keys))
+            choices.push_back(std::move(*profile));
+}
+
+void append_mode_layout_profiles(std::vector<wormedit::lane_input_profile_t>& choices,
+                                 wormedit::editor_mode_family_t mode) {
+    switch (mode) {
+    case wormedit::editor_mode_family_t::beatmania:
+    case wormedit::editor_mode_family_t::popn: append_bms_layout_profiles(choices); break;
+    case wormedit::editor_mode_family_t::dance:
+    case wormedit::editor_mode_family_t::pump: append_stepmania_layout_profiles(choices); break;
+    case wormedit::editor_mode_family_t::keyboard: append_osu_layout_profiles(choices); break;
+    case wormedit::editor_mode_family_t::other: break;
+    }
+}
+
+auto make_lane_layout_profile_choices(wormedit::format_family_t family,
+                                      wormedit::editor_mode_family_t mode)
+    -> std::vector<wormedit::lane_input_profile_t> {
+    std::vector<wormedit::lane_input_profile_t> choices;
+    if (family == wormedit::format_family_t::bms) {
+        append_bms_layout_profiles(choices);
+        return choices;
+    }
+    if (family == wormedit::format_family_t::osu_mania) {
+        append_osu_layout_profiles(choices);
+        return choices;
+    }
+    if (family == wormedit::format_family_t::stepmania) {
+        append_stepmania_layout_profiles(choices);
+        return choices;
+    }
+    if (family == wormedit::format_family_t::bmson) {
+        choices.push_back(wormedit::make_bmson_generic_24k_profile());
+        choices.push_back(wormedit::make_bmson_generic_48k_profile());
+        append_mode_layout_profiles(choices, mode);
+        return choices;
+    }
+    append_mode_layout_profiles(choices, mode);
+    return choices;
+}
+
+auto cached_lane_layout_profile_choices(wormedit::format_family_t family,
+                                        wormedit::editor_mode_family_t mode)
+    -> const std::vector<wormedit::lane_input_profile_t>& {
+    static std::array<std::array<std::optional<std::vector<wormedit::lane_input_profile_t>>, 6>, 7> cache;
+    static const std::vector<wormedit::lane_input_profile_t> none;
+    const auto key = static_cast<std::size_t>(family);
+    const auto mode_key = static_cast<std::size_t>(mode);
+    if (key >= cache.size() || mode_key >= cache.front().size()) return none;
+    if (!cache[key][mode_key]) cache[key][mode_key] = make_lane_layout_profile_choices(family, mode);
+    return *cache[key][mode_key];
+}
+
+void populate_lane_layout_editor(WormUiComposeView& view, const wormedit::chart_document_t& chart,
+                                 const wormedit::measure_index_t& measures,
+                                 wormedit::local_position_t cursor, bool virtual_cursor) {
+    view.lane_layout_profile_choice_count = 0;
+    view.lane_layout_profile_current = -1;
+    view.lane_layout_edit_segment_id = 0;
+    view.lane_layout_edit_is_update = false;
+    view.lane_layout_edit_available = !virtual_cursor;
+    const auto measure = std::ranges::find(measures.entries, cursor.measure,
+                                           &wormedit::measure_index_entry_t::id);
+    if (measure == measures.entries.end()) {
+        view.lane_layout_edit_available = false;
+        return;
+    }
+    const auto measure_number = static_cast<std::size_t>(measure - measures.entries.begin()) + 1;
+    view.lane_layout_edit_measure_number = static_cast<std::uint32_t>(
+        std::min<std::size_t>(measure_number, std::numeric_limits<std::uint32_t>::max()));
+    const auto segment = std::ranges::find_if(chart.lane_layouts, [&](const auto& value) {
+        return value.position.measure == cursor.measure && value.position.row == 0;
+    });
+    if (segment != chart.lane_layouts.end()) {
+        view.lane_layout_edit_segment_id = segment->id.value;
+        view.lane_layout_edit_is_update = true;
+    }
+    const auto* active = wormedit::active_lane_layout_segment(chart, cursor);
+    const auto mode = active ? compose_mode_family(active->layout) : wormedit::editor_mode_family_t::other;
+    const auto& choices = cached_lane_layout_profile_choices(chart.source_family, mode);
+    auto append_choice = [&](const wormedit::lane_layout_t& layout) {
+        const auto index = static_cast<std::size_t>(view.lane_layout_profile_choice_count);
+        if (index >= WORM_UI_COMPOSE_LAYOUT_PROFILE_CAPACITY) return;
+        std::snprintf(view.lane_layout_profile_names[index],
+                      sizeof(view.lane_layout_profile_names[index]), "%s",
+                      layout.display_name.c_str());
+        std::snprintf(view.lane_layout_profile_ids[index], sizeof(view.lane_layout_profile_ids[index]),
+                      "%s", layout.profile_id.c_str());
+        if (active && layout.profile_id == active->layout.profile_id)
+            view.lane_layout_profile_current = static_cast<std::int8_t>(index);
+        ++view.lane_layout_profile_choice_count;
+    };
+    for (const auto& profile : choices) append_choice(profile.layout);
+    if (active && std::ranges::none_of(choices, [&](const auto& profile) {
+            return profile.layout.profile_id == active->layout.profile_id;
+        }))
+        append_choice(active->layout);
+}
+
+void populate_lane_layout_segments(flattened_workspace_t& flattened,
+                                   const wormedit::chart_document_t& chart,
+                                   const wormedit::measure_index_t& measures,
+                                   const wormedit::editor_interaction_view_model_t& interaction,
+                                   bool downscroll, WormUiComposeView& view) {
+    const auto count = std::min<std::size_t>(chart.lane_layouts.size(),
+                                             WORM_UI_COMPOSE_LAYOUT_SEGMENT_CAPACITY);
+    auto* arena = flattened.arena();
+    auto storage = arena ? arena_array<WormUiComposeLaneLayoutSegmentView>(*arena, count)
+                         : frame_span<WormUiComposeLaneLayoutSegmentView>{};
+    if (count != 0 && storage.capacity() != count) {
+        view.truncated = true;
+        return;
+    }
+    const auto pixels_per_row = interaction.pixels_per_standard_measure /
+                                static_cast<double>(chart.divisions_per_standard_measure);
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& segment = chart.lane_layouts[index];
+        const auto measure = std::ranges::find(measures.entries, segment.position.measure,
+                                               &wormedit::measure_index_entry_t::id);
+        const auto row = wormedit::absolute_row(measures, segment.position);
+        if (measure == measures.entries.end() || !row) {
+            view.truncated = true;
+            return;
+        }
+        const auto measure_number = static_cast<std::size_t>(measure - measures.entries.begin()) + 1;
+        const auto projected_y = compose_project_y(*row, pixels_per_row,
+                                                   interaction.viewport_scroll_pixels,
+                                                   view.viewport_height_pixels, downscroll);
+        if (!storage.push_back({.segment_id = segment.id.value,
+                                .measure_number = static_cast<std::uint32_t>(std::min<std::size_t>(
+                                    measure_number, std::numeric_limits<std::uint32_t>::max())),
+                                .row = segment.position.row,
+                                .y_pixels = projected_y,
+                                .profile_name = segment.layout.display_name.c_str()})) {
+            view.truncated = true;
+            return;
+        }
+    }
+    view.lane_layout_segments = storage.data();
+    view.lane_layout_segment_count = storage.size();
+    if (chart.lane_layouts.size() > count) view.truncated = true;
+}
+
 auto compose_mode_family(const wormedit::lane_layout_t& layout) -> wormedit::editor_mode_family_t {
     using family = wormedit::editor_mode_family_t;
     const auto& id = layout.profile_id;
@@ -518,6 +679,7 @@ auto prepare_compose_grid_rows(flattened_workspace_t& flattened, std::size_t cou
     grid.row = rows;
     return true;
 }
+
 auto append_compose_grid_row(flattened_workspace_t& flattened,
                              const WormUiComposeGridLineView& line,
                              const wormedit::exact_chart_row_t& row) -> bool {
@@ -3134,6 +3296,9 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     flattened.compose.interaction_view = interaction_view;
     view.bms_measure_labels = chart.source_family == wormedit::format_family_t::bms;
     populate_lane_profile_choices(view, chart, interaction_view.cursor);
+    populate_lane_layout_editor(view, chart, input.measures, interaction_view.cursor,
+                                retained_state && retained_state->virtual_bms_cursor_row.has_value());
+    populate_lane_layout_segments(flattened, chart, input.measures, interaction_view, downscroll, view);
     populate_quantize_preview(cache, chart, history.document.revision, *retained_state, view);
     view.compose_measure_count = chart.measures.size();
     view.selected_bms_measure_number_plus_one =

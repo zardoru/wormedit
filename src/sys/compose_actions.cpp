@@ -22,6 +22,8 @@
 #include <wormedit/core/grid.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/lane_profile_switch.h>
+#include <wormedit/core/lane_layout_editor.h>
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/marker_editor.h>
 #include <wormedit/core/marker_navigation.h>
 #include <wormedit/core/note_label_editor.h>
@@ -165,6 +167,101 @@ std::optional<std::string> dispatch_compose_lane_profile(compose_action_context_
         return rebound.diagnostics.empty() ? "Lane profile changed, but workspace rebinding failed."
                                            : rebound.diagnostics.front().message;
     return "Lane profile set to " + target.display_name + ".";
+}
+
+auto layout_profile_from_id(const wormedit::chart_document_t& chart,
+                            wormedit::local_position_t position,
+                            std::string_view profile_id)
+    -> std::optional<wormedit::lane_layout_t> {
+    for (const auto& profile : wormedit::built_in_bms_lane_profiles())
+        if (profile.profile.layout.profile_id == profile_id) return profile.profile.layout;
+    constexpr std::array<std::string_view, 3> step_types{"pump-single", "pump-double", "dance-solo"};
+    for (const auto type : step_types) {
+        auto profile = wormedit::make_stepmania_profile_for(type);
+        if (profile && profile->layout.profile_id == profile_id) return profile->layout;
+    }
+    for (std::uint32_t keys = 1; keys <= 18; ++keys) {
+        auto profile = wormedit::make_osu_mania_profile(keys);
+        if (profile && profile->layout.profile_id == profile_id) return profile->layout;
+    }
+    if (profile_id == "bmson-generic-24keys") return wormedit::make_bmson_generic_24k_profile().layout;
+    if (profile_id == "bmson-generic-48keys") return wormedit::make_bmson_generic_48k_profile().layout;
+    if (const auto* active = wormedit::active_lane_layout_segment(chart, position);
+        active && active->layout.profile_id == profile_id)
+        return active->layout;
+    const auto current = std::ranges::find_if(chart.lane_layouts, [&](const auto& segment) {
+        return segment.layout.profile_id == profile_id;
+    });
+    if (current != chart.lane_layouts.end()) return current->layout;
+    return std::nullopt;
+}
+
+auto layout_with_preserved_lane_ids(const wormedit::chart_document_t& chart,
+                                    const wormedit::lane_layout_segment_t* reference,
+                                    wormedit::lane_layout_t target)
+    -> std::optional<wormedit::lane_layout_t> {
+    if (target.lanes.empty()) return std::nullopt;
+    std::vector<const wormedit::lane_definition_t*> old_lanes;
+    if (reference) {
+        old_lanes.reserve(reference->layout.lanes.size());
+        for (const auto& lane : reference->layout.lanes) old_lanes.push_back(&lane);
+        std::ranges::stable_sort(old_lanes, {}, [](const auto* lane) { return lane->display_order; });
+    }
+    std::ranges::stable_sort(target.lanes, {}, &wormedit::lane_definition_t::display_order);
+    auto largest_id = std::uint64_t{};
+    for (const auto& segment : chart.lane_layouts)
+        for (const auto& lane : segment.layout.lanes)
+            largest_id = std::max(largest_id, lane.id.value);
+    for (std::size_t index = 0; index < target.lanes.size(); ++index) {
+        if (index < old_lanes.size()) {
+            target.lanes[index].id = old_lanes[index]->id;
+            continue;
+        }
+        if (largest_id == std::numeric_limits<std::uint64_t>::max()) return std::nullopt;
+        target.lanes[index].id = wormedit::lane_id_t{++largest_id};
+    }
+    return target;
+}
+
+std::optional<std::string> dispatch_compose_lane_layout_profile(compose_action_context_t& context) {
+    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE)
+        return std::nullopt;
+    if (editor_interaction_has_pending_gesture(context.state))
+        return "Finish or cancel the active Compose gesture before editing a lane layout.";
+    if (context.history.document.revision != context.action.compose_input_document_revision)
+        return "Lane layout change ignored because the document changed.";
+    const auto* chart = selected_chart(context.history, context.workspace);
+    if (!chart || chart->id.value != context.action.compose_input_chart_id ||
+        context.action.compose_measure_number == 0 ||
+        context.action.compose_measure_number > chart->measures.size())
+        return "Lane layout change ignored because the selected difficulty changed.";
+    const auto measure_index = static_cast<std::size_t>(context.action.compose_measure_number - 1);
+    const auto target_position = wormedit::local_position_t{chart->measures[measure_index].id, 0};
+    const auto target = layout_profile_from_id(
+        *chart, target_position, context.action.compose_lane_layout_profile_id);
+    if (!target) return "Choose a lane layout profile first.";
+    const auto exact_segment = std::ranges::find_if(chart->lane_layouts, [&](const auto& segment) {
+        return segment.position.measure == target_position.measure && segment.position.row == 0;
+    });
+    const auto is_update = exact_segment != chart->lane_layouts.end();
+    const auto* active = is_update
+                             ? &*exact_segment
+                             : wormedit::active_lane_layout_segment(*chart, target_position);
+    if (!active && !chart->lane_layouts.empty()) active = &chart->lane_layouts.front();
+    const auto layout = layout_with_preserved_lane_ids(*chart, active, *target);
+    if (!layout) return "Lane layout change could not preserve lane identities.";
+    wormedit::lane_layout_action_t edit = wormedit::insert_lane_layout_action_t{
+        chart->id, target_position, *layout};
+    if (is_update)
+        edit = wormedit::update_lane_layout_action_t{chart->id, exact_segment->id, *layout};
+    const auto applied = wormedit::apply_lane_layout_edit(
+        context.history, context.action.compose_input_document_revision, edit);
+    if (!applied.applied)
+        return applied.diagnostics.empty() ? "Lane layout change was rejected."
+                                           : applied.diagnostics.front().message;
+    const auto rebound = wormedit::rebind_workspace(context.workspace, context.history);
+    if (!rebound) return "Lane layout changed, but workspace rebinding failed.";
+    return is_update ? "Lane layout updated." : "Lane layout inserted.";
 }
 
 std::optional<std::string> dispatch_compose_audio_offset(compose_action_context_t& context) {
@@ -2025,6 +2122,7 @@ auto dispatch_compose_view_action(
     if (auto response = dispatch_compose_measure_navigation(context)) return *response;
     if (auto response = dispatch_compose_bgm_column_count(context)) return *response;
     if (auto response = dispatch_compose_lane_profile(context)) return *response;
+    if (auto response = dispatch_compose_lane_layout_profile(context)) return *response;
     if (auto response = dispatch_compose_view_action_group(context)) return *response;
     if (auto response = dispatch_compose_resource_action(context)) return *response;
     if (auto response = dispatch_compose_bmson_action(context)) return *response;

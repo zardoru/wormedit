@@ -523,6 +523,17 @@ static void draw_compose_grid_lines(const ComposePaintContext& paint) {
     }
 }
 
+static void draw_compose_lane_layout_segments(const ComposePaintContext& paint) {
+    for (size_t index = 0; index < paint.view->lane_layout_segment_count; ++index) {
+        const auto& segment = paint.view->lane_layout_segments[index];
+        const auto y = paint.viewport.y + static_cast<float>(segment.y_pixels) * paint.viewport.h /
+                                               static_cast<float>(paint.view->viewport_height_pixels);
+        if (std::isfinite(y) && y >= paint.viewport.y && y <= paint.viewport.y + paint.viewport.h)
+            paint_field(paint.context).rect(
+                1, {paint.rail.x + paint.rail.w - 7.0f, y - 3.0f, 5.0f, 6.0f}, {126, 190, 255});
+    }
+}
+
 static float compose_projected_y(const ComposePaintContext& paint, double y_pixels) {
     return paint.viewport.y + static_cast<float>(y_pixels) * paint.viewport.h /
                                     static_cast<float>(paint.view->viewport_height_pixels);
@@ -2219,6 +2230,7 @@ void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* vie
         draw_compose_waveform_layer(paint, timing_layout);
         draw_compose_cached_pass(paint,5,true,view->beat_fit_drag_active ||
             view->selected_bms_measure_number_plus_one!=0,[&](const ComposePaintContext& cached) { draw_compose_grid_lines(cached); });
+        draw_compose_lane_layout_segments(paint);
         draw_compose_dead_spans(paint);
         draw_compose_area_band(paint);
         draw_compose_timing_layer(paint, timing_layout);

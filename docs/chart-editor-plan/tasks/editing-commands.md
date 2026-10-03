@@ -123,11 +123,13 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-57 Show the lane-key binding legend
 
-- **Status:** ready
+- **Status:** blocked-on-user
+- **Stale-plan audit (2026-10-03):** active-profile `{scancode, lane_id}` bindings and the persisted editor legend preference already reach the Compose view. Existing lane-header legends draw lane numbers rather than physical keys; no toolbar toggle exists. Publishing a toolbar toggle through the existing preference/action owner needs an unowned application file. A separate frontend flag would diverge from the preference. No legend implementation was started.
 - **Outcome:** a toggleable legend above the Compose lanes shows the physical key bound to each lane for the active input profile.
 - **Read first:** `include/wormedit/core/lane_profiles.h` (input profiles), `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_canvas.cpp`.
 - **Files owned:** `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_toolbar.cpp`.
 - **Steps:**
+  0. **STOP:** obtain scope for the existing preference/action publication path before adding the toolbar toggle; retain one visibility owner.
   1. Project one short key label per visible lane into the view.
   2. Draw labels in the lane header row; add a toolbar toggle.
 - **Invariants:** lane geometry unchanged.

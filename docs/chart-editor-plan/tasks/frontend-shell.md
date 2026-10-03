@@ -162,11 +162,13 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 
 ## T-46 Render synchronized side-by-side difficulties in Compare/Validate
 
-- **Status:** ready
+- **Status:** blocked-on-user
+- **Stale-plan audit (2026-10-03):** core `compare_chart_difficulties`, workspace comparison-chart selection, and yellow difference geometry exist; the frontend Compare tab still renders only summary text. The bounded Compose scene adapter is private in `src/sys/compose_view.cpp`; the picker/shared-scroll application dispatch exceeds this card’s main.cpp view-only allowance. Scope approval is pending for `src/sys/compose_view.h/.cpp`, main.cpp dispatch, and linked compare projection/frontend event tests through `tests/CMakeLists.txt`. No Compare implementation was started.
 - **Outcome:** the Compare/Validate tab draws two read-only Compose fields (active and comparison difficulty) that scroll together, with yellow rows where `compare_chart_difficulties` reports differences.
 - **Read first:** `include/wormedit/core/chart_compare.h`, `include/wormedit/core/workspace.h` (comparison-pane selection), `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_canvas.h`, `src/ui/nuklear/frontend.cpp` (tab dispatch near `WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE`).
 - **Files owned:** new `src/ui/nuklear/compare_panel.cpp/.h`, new `src/sys/compare_view.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp` (view hookup only), `CMakeLists.txt`, `tests/core/chart_compare_tests.cpp`.
 - **Steps:**
+  0. **STOP:** await the requested scope extension for the private scene adapter, picker/shared-scroll dispatch, and automated comparison tests; do not duplicate the existing Compose adapter to bypass the ownership gate.
   1. Build a `compare_view` that produces two field scenes for the same viewport rows, feeding the comparison's yellow-row primitives into both.
   2. Render them with `draw_compose_scene_canvas` in two columns; share one scroll offset.
   3. Add a difficulty picker for the comparison pane using the existing workspace selection.

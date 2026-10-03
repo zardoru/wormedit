@@ -25,11 +25,12 @@ stale-plan check (rule 9) first.
 
 ## T-101 Add Delete to the resource catalog
 
-- **Status:** ready
+- **Status:** blocked-on-user
+- **Stale-plan audit (2026-10-03):** No catalog Delete/count UI exists. The actual catalog-to-C-view copy is `append_compose_resource` in unowned `src/sys/workspace_projection.cpp`; the owned presenter and frontend contract cannot project a new count without that owner. Use counts must match T-100 across charts and retained sound-channel asset aliases. Armed clearing can remain in owned `compose_resources.cpp` after a successful catalog refresh.
 - **Outcome:** each Compose catalog row has a Delete button, enabled only for unreferenced resources; referenced rows show their use count in the tooltip.
 - **Read first:** `src/ui/nuklear/compose_resources.cpp`, `src/sys/compose_resource_presenter.cpp`, `src/sys/compose_actions.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_resources.cpp`, `src/sys/compose_resource_presenter.cpp/.h`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `tests/core/compose_resource_presenter_tests.cpp`.
-- **Steps:** 1. Project a per-row reference count. 2. Wire Delete through the standard pattern.
+- **Steps:** 0. **STOP:** wait for ownership approval for `src/sys/workspace_projection.cpp` before completing catalog Delete wiring. 1. Project a per-row reference count. 2. Wire Delete through the standard pattern.
 - **Invariants:** an armed resource that is deleted is disarmed.
 - **Reject/failure behavior:** core rejection shown in the status line.
 - **Verify:** standard build/test.
@@ -50,7 +51,7 @@ stale-plan check (rule 9) first.
 ## T-103 Filter the catalog by use state and name
 
 - **Status:** blocked-on-user
-- **Stale-plan audit (2026-10-03):** Search state and name/source-filename matching already exist, but catalog rows expose no usage signal/count and only the source basename. The requested use-state and path filters need unowned `src/ui/frontend.h` and `src/sys/compose_resource_presenter.cpp` projection changes.
+- **Stale-plan audit (2026-10-03):** Search state and name/source-filename matching already exist, but catalog rows expose no usage signal/count and only the source basename. The requested use-state and path filters need unowned `src/ui/frontend.h`, `src/sys/compose_resource_presenter.cpp`, and the actual catalog-to-C-view copy in `src/sys/workspace_projection.cpp`.
 - **Outcome:** the catalog has a text filter (case-insensitive substring on name/path/BMS ID) and a Used/Unused/Missing/All selector in addition to the existing role tabs.
 - **Read first:** `src/ui/nuklear/compose_resources.cpp` (`filter_role`, `filter_name`), `src/sys/compose_resource_presenter.cpp`, `docs/chart-editor-plan/document-model.md` (resource list paragraph).
 - **Files owned:** `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `tests/ui/nuklear_compose_state_tests.cpp`.

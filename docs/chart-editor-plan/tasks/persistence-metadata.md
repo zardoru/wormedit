@@ -11,11 +11,13 @@ was recently reorganized into collapsible sections; apply the stale-plan check
 
 ## T-120 Write the crash marker
 
-- **Status:** ready
+- **Status:** blocked-on-user
+- **Stale-plan audit (2026-10-03):** No crash-marker backend or startup crash flag exists. The required existing atomic temporary/write/flush/validate/rename helper is private `publish_prevalidated_bytes` in unowned `src/formats/native_project_storage.cpp`; public storage APIs serialize native projects/recovery envelopes rather than marker bytes. Reusing that backend needs an approved raw-byte publication seam in `include/wormedit/formats/native_project_storage.h` and its implementation, rather than disguising a marker as a project or copying atomic-publication code.
 - **Outcome:** the app creates a crash marker file in the per-user recovery directory at startup and removes it on clean shutdown; a marker left over from a previous run is reported to the startup recovery scan.
 - **Read first:** `docs/references/recovery-design.md` (crash-marker paragraphs), `src/sys/platform_recovery.cpp`, `include/wormedit/core/startup_session.h`, `tests/core/startup_session_tests.cpp`.
 - **Files owned:** `src/sys/platform_recovery.cpp/.h`, `include/wormedit/core/startup_session.h`, `src/core/startup_session.cpp`, `tests/core/startup_session_tests.cpp`, `src/sys/main.cpp` (create/remove calls only).
 - **Steps:**
+  0. **STOP:** wait for supporting-file ownership approval for reuse of the atomic publication backend before implementing the marker.
   1. Marker contents: process ID and project ID, written through the existing atomic temporary+rename helper.
   2. Startup scan gains a `previous_run_crashed` flag.
   3. If the flag is set and the primary validates with no newer backup, create the `.bak` from the primary as the design requires.

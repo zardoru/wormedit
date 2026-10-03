@@ -436,7 +436,7 @@ static void metadata_input_row(struct nk_context* context, const char* label, ch
     if (!enabled) {
         nk_widget_disable_begin(context);
     }
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, buffer, capacity,
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, buffer, capacity,
                                          nk_filter_default);
     if (!enabled) {
         nk_widget_disable_end(context);
@@ -682,7 +682,7 @@ static void render_bms_field(const MetadataPanel& panel,
     nk_label(context, bms_field_names[typed], NK_TEXT_LEFT);
     nk_layout_row_push(context, 0.51f);
     if (!editable) nk_widget_disable_begin(context);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, buffer.data(), buffer.size(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, buffer.data(), buffer.size(),
                                          nk_filter_default);
     if (!editable) nk_widget_disable_end(context);
     render_bms_field_buttons(panel, target, typed, source, editable, numeric_valid);
@@ -721,7 +721,7 @@ static void render_bmson_field_input(const MetadataPanel& panel, size_t typed, b
     nk_label(context, bmson_field_labels[typed], NK_TEXT_LEFT);
     nk_layout_row_push(context, 0.73f);
     if (!editable) nk_widget_disable_begin(context);
-    (void)nk_edit_string_zero_terminated(context, typed == 1 ? NK_EDIT_BOX : NK_EDIT_FIELD,
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, typed == 1 ? NK_EDIT_BOX : NK_EDIT_FIELD,
                                          buffer.data(), buffer.size(), nk_filter_default);
     if (!editable) nk_widget_disable_end(context);
     nk_layout_row_end(context);
@@ -835,7 +835,7 @@ static void metadata_read_only_path(struct nk_context* context, const char* labe
     buffer.push_back('\0');
     nk_layout_row_dynamic(context, 25, 1);
     metadata_register_drop_target(context, target);
-    (void)nk_edit_string_zero_terminated(
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(
         context, static_cast<nk_flags>(NK_EDIT_FIELD) | static_cast<nk_flags>(NK_EDIT_READ_ONLY),
         buffer.data(), buffer.size(), nk_filter_default);
 }
@@ -1279,7 +1279,7 @@ static void render_output_path_editor(const MetadataPanel& panel,
     metadata_register_drop_target(context,
         {WORM_UI_METADATA_DROP_OUTPUT_PATH, selected.document_index});
     if (!state.output_path_buffer_valid) nk_widget_disable_begin(context);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.output_path.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.output_path.data(),
                                          state.output_path.size(), nk_filter_default);
     if (!state.output_path_buffer_valid) nk_widget_disable_end(context);
     nk_layout_row_end(context);
@@ -1461,7 +1461,7 @@ auto render_metadata_tag_row(nk_context* context, std::size_t index, bool editab
     nk_labelf(context, NK_TEXT_LEFT, "%zu", index + 1);
     nk_layout_row_push(context, 0.41f);
     if (!editable) nk_widget_disable_begin(context);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.search_tags[index].data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.search_tags[index].data(),
                                          state.search_tags[index].size(), nk_filter_default);
     if (!editable) nk_widget_disable_end(context);
     nk_layout_row_push(context, 0.07f);
@@ -1510,7 +1510,7 @@ void render_metadata_tag_editor(const MetadataPanel& panel) {
     nk_label(context, "Search tags", NK_TEXT_LEFT);
     nk_layout_row_push(context, 0.52f);
     if (!editable) nk_widget_disable_begin(context);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.new_search_tag.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.new_search_tag.data(),
                                          state.new_search_tag.size(), nk_filter_default);
     if (!editable) nk_widget_disable_end(context);
     nk_layout_row_push(context, 0.20f);
@@ -1601,7 +1601,7 @@ void render_difficulty_section(const MetadataPanel& panel) {
     nk_label(context, "Rating", NK_TEXT_LEFT);
     nk_layout_row_push(context, has_rating ? 0.57f : 0.72f);
     if (!editable) nk_widget_disable_begin(context);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.chart_rating_text.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.chart_rating_text.data(),
                                          state.chart_rating_text.size(), nk_filter_default);
     if (!editable) nk_widget_disable_end(context);
     if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0)
@@ -1681,7 +1681,7 @@ void render_audio_sync_section(const MetadataPanel& panel) {
     nk_label(context, "Audio offset", NK_TEXT_LEFT);
     nk_layout_row_push(context, 0.67f);
     if (!editable) nk_widget_disable_begin(context);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_offset_text.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.audio_offset_text.data(),
                                          state.audio_offset_text.size(), nk_filter_default);
     if (!editable) nk_widget_disable_end(context);
     if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0)

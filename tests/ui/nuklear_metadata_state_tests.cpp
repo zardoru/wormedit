@@ -1,9 +1,25 @@
 #include "ui/nuklear/metadata_state.h"
+#include "ui/nuklear/text_field.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <limits>
 #include <string_view>
+
+TEST_CASE("Nuklear text fields select their complete value on a double-click",
+          "[unit][frontend][metadata]") {
+    const auto selection = worm_ui_nuklear_double_click_selection(true, true, 12);
+    REQUIRE(selection);
+    CHECK(selection->start == 0);
+    CHECK(selection->end == 12);
+}
+
+TEST_CASE("Nuklear text-field selection ignores non-double-click and multiline input",
+          "[unit][frontend][metadata]") {
+    CHECK_FALSE(worm_ui_nuklear_double_click_selection(true, false, 12));
+    CHECK_FALSE(worm_ui_nuklear_double_click_selection(false, true, 12));
+    CHECK_FALSE(worm_ui_nuklear_double_click_selection(true, true, 0));
+}
 
 TEST_CASE("Nuklear metadata state resets every retained editing buffer",
           "[unit][frontend][metadata]") {

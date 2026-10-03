@@ -1,4 +1,5 @@
 #include "ui/nuklear/audio_panel.h"
+#include "ui/nuklear/chrome.h"
 #include "ui/nuklear/audio_state.h"
 
 #include "wormedit/nuklear_config.h"
@@ -309,7 +310,7 @@ auto row_matches(const WormUiSoundRowView& row, const std::string& needle) -> bo
 void render_sound_list_column(struct nk_context* context, const WormUiAudioSlicesView& view,
                               WormUiWorkspaceAction& action) {
     nk_layout_row_dynamic(context, 24, 1);
-    nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, audio.search_text,
+    wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, audio.search_text,
                                    static_cast<int>(sizeof(audio.search_text)), nk_filter_default);
     const std::string needle = folded(audio.search_text);
     std::size_t shown = 0;

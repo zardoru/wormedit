@@ -1,5 +1,6 @@
 #include "ui/nuklear/compose_recipe_form.h"
 
+#include "ui/nuklear/chrome.h"
 #include "ui/nuklear/compose_panel_internal.h"
 
 #include <array>
@@ -19,7 +20,7 @@ template <std::size_t Size>
 bool edit_text(nk_context* context, char (&buffer)[Size], nk_plugin_filter filter) {
     std::array<char, Size> before{};
     std::memcpy(before.data(), buffer, Size);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, buffer, static_cast<int>(Size), filter);
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, buffer, static_cast<int>(Size), filter);
     return std::memcmp(before.data(), buffer, Size) != 0;
 }
 
@@ -45,7 +46,7 @@ bool count_field(nk_context* context, const char* label, char* buffer, std::size
     nk_layout_row_push(context, 0.66f);
     std::array<char, 64> before{};
     std::memcpy(before.data(), buffer, std::min(size, before.size()));
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, buffer, static_cast<int>(size),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, buffer, static_cast<int>(size),
                                          nk_filter_decimal);
     nk_layout_row_end(context);
     return std::memcmp(before.data(), buffer, std::min(size, before.size())) != 0;

@@ -1,4 +1,5 @@
 #include "ui/nuklear/timing_stage_editor.h"
+#include "ui/nuklear/chrome.h"
 #include "ui/nuklear/timing_state.h"
 
 #include "wormedit/nuklear_config.h"
@@ -253,7 +254,7 @@ static void render_stage_anchor(TimingStageEditor& editor) {
     nk_layout_row_push(context, 0.38f);
     nk_label(context, timing_stage_primary_label(editor.view->stage_lane), NK_TEXT_LEFT);
     nk_layout_row_push(context, 0.62f);
-    editor.changed |= nk_edit_string_zero_terminated(context, NK_EDIT_FIELD,
+    editor.changed |= wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         state.primary_numerator.data(), state.primary_numerator.size(), nk_filter_decimal) != 0;
     nk_layout_row_end(context);
     nk_layout_row_dynamic(context, 24, 1);
@@ -272,12 +273,12 @@ static void render_bpm_fraction(TimingStageEditor& editor) {
     nk_label(context, "Exact BPM", NK_TEXT_LEFT);
     nk_layout_row_begin(context, NK_DYNAMIC, 28, 3);
     nk_layout_row_push(context, 0.46f);
-    const auto numerator_changed = nk_edit_string_zero_terminated(context, NK_EDIT_FIELD,
+    const auto numerator_changed = wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         state.primary_numerator.data(), state.primary_numerator.size(), nk_filter_float) != 0;
     nk_layout_row_push(context, 0.08f);
     nk_label(context, "/", NK_TEXT_CENTERED);
     nk_layout_row_push(context, 0.46f);
-    const auto denominator_changed = nk_edit_string_zero_terminated(context, NK_EDIT_FIELD,
+    const auto denominator_changed = wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         state.primary_denominator.data(), state.primary_denominator.size(), nk_filter_decimal) != 0;
     nk_layout_row_end(context);
     if (numerator_changed || denominator_changed) {
@@ -294,7 +295,7 @@ static void render_stage_bpm(TimingStageEditor& editor) {
                                                        : "Decimal BPM (approximate; fraction retained)",
              NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 28, 1);
-    const auto decimal_changed = nk_edit_string_zero_terminated(context, NK_EDIT_FIELD,
+    const auto decimal_changed = wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         state.bpm_decimal.data(), state.bpm_decimal.size(), nk_filter_float) != 0;
     nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
     nk_layout_row_push(context, 0.50f);
@@ -321,12 +322,12 @@ static void render_stage_rational_primary(TimingStageEditor& editor) {
               timing_stage_primary_label(editor.view->stage_lane));
     nk_layout_row_begin(context, NK_DYNAMIC, 28, 3);
     nk_layout_row_push(context, 0.46f);
-    editor.changed |= nk_edit_string_zero_terminated(context, NK_EDIT_FIELD,
+    editor.changed |= wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         state.primary_numerator.data(), state.primary_numerator.size(), nk_filter_float) != 0;
     nk_layout_row_push(context, 0.08f);
     nk_label(context, "/", NK_TEXT_CENTERED);
     nk_layout_row_push(context, 0.46f);
-    editor.changed |= nk_edit_string_zero_terminated(context, NK_EDIT_FIELD,
+    editor.changed |= wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
         state.primary_denominator.data(), state.primary_denominator.size(), nk_filter_decimal) != 0;
     nk_layout_row_end(context);
 }
@@ -347,13 +348,13 @@ static void render_stage_secondary(TimingStageEditor& editor) {
         nk_label(context, "Transition", NK_TEXT_LEFT);
         nk_layout_row_begin(context, NK_DYNAMIC, 28, 3);
         nk_layout_row_push(context, 0.46f);
-        editor.changed |= nk_edit_string_zero_terminated(context, NK_EDIT_FIELD,
+        editor.changed |= wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
             state.secondary_numerator.data(), state.secondary_numerator.size(),
             nk_filter_decimal) != 0;
         nk_layout_row_push(context, 0.08f);
         nk_label(context, "/", NK_TEXT_CENTERED);
         nk_layout_row_push(context, 0.46f);
-        editor.changed |= nk_edit_string_zero_terminated(context, NK_EDIT_FIELD,
+        editor.changed |= wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
             state.secondary_denominator.data(), state.secondary_denominator.size(),
             nk_filter_decimal) != 0;
         nk_layout_row_end(context);
@@ -365,7 +366,7 @@ static void render_stage_secondary(TimingStageEditor& editor) {
                                                               : "Length in current grid steps",
                  NK_TEXT_LEFT);
         nk_layout_row_dynamic(context, 28, 1);
-        editor.changed |= nk_edit_string_zero_terminated(context, NK_EDIT_FIELD,
+        editor.changed |= wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
             state.secondary_numerator.data(), state.secondary_numerator.size(),
             nk_filter_decimal) != 0;
     } else if (view.stage_lane == WORM_UI_TIMING_LANE_STOP ||
@@ -440,4 +441,3 @@ void worm_ui_nuklear_render_timing_stage_editor(struct nk_context* context,
     synchronize_timing_stage_editor(view);
     if (view->stage_active) render_active_timing_stage(context, view, action);
 }
-

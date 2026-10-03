@@ -8,7 +8,8 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 
 ## T-40 Make every Nuklear text field select all on double-click
 
-- **Status:** ready
+- **Status:** done
+- **Implementation notes (2026-10-02):** all 42 edit calls across 12 frontend units use the shared chrome adapter, including autofocus. The selection helper is independent of Nuklear; the adapter is inline so popup-test callers need no new link dependency. Full application build and 1,561/1,561 tests pass; clang-tidy shows no new complexity violations. Isolated Metadata captures verify whole-value selection and typing replacement with unchanged layout.
 - **Outcome:** double-clicking any single-line text field in Metadata, Timing, or the Compose inspector selects its whole value, and typing replaces it.
 - **Read first:** `docs/chart-editor-plan/editing/layout.md` (text-entry paragraph), `src/ui/nuklear/chrome.h`, `src/ui/nuklear/panel_input.h`, `src/ui/nuklear/metadata_panel.cpp`.
 - **Files owned:** `src/ui/nuklear/chrome.h`, new `src/ui/nuklear/text_field.cpp`, new `src/ui/nuklear/text_field.h`, every `src/ui/nuklear/*.cpp` that calls `nk_edit_string` or `nk_edit_buffer`, `CMakeLists.txt`, `tests/ui/nuklear_metadata_state_tests.cpp`.

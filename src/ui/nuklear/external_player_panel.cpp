@@ -1,4 +1,5 @@
 #include "ui/nuklear/external_player_panel.h"
+#include "ui/nuklear/chrome.h"
 #include "wormedit/nuklear_config.h"
 
 #include <cstdio>
@@ -33,7 +34,7 @@ void edit_field(nk_context* context, const char* label, char* value, int capacit
     nk_layout_row_dynamic(context, 22, 1);
     nk_label(context, label, NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 28, 1);
-    nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, value, capacity, nk_filter_default);
+    wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, value, capacity, nk_filter_default);
 }
 
 void render_player_list(nk_context* context, const WormUiExternalPlayerView& view,

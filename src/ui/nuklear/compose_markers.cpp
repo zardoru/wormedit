@@ -195,12 +195,12 @@ void render_audio_bookmarks(struct nk_context* context, const WormUiComposeView&
     if (!enabled)
         nk_widget_disable_begin(context);
     nk_layout_row_dynamic(context, 25, 1);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_bookmark_label.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.audio_bookmark_label.data(),
                                          state.audio_bookmark_label.size(), nk_filter_default);
     nk_layout_row_dynamic(context, 18, 1);
     nk_label(context, "Audio time (ms)", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 25, 1);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_bookmark_time.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.audio_bookmark_time.data(),
                                          state.audio_bookmark_time.size(), nk_filter_default);
     nk_layout_row_dynamic(context, 25, 2);
     const auto apply_clicked = nk_button_label(context, selected ? "Apply" : "Add");
@@ -270,15 +270,15 @@ void render_audio_sections(struct nk_context* context, const WormUiComposeView& 
     if (!enabled)
         nk_widget_disable_begin(context);
     nk_layout_row_dynamic(context, 25, 1);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_section_label.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.audio_section_label.data(),
                                          state.audio_section_label.size(), nk_filter_default);
     nk_layout_row_dynamic(context, 18, 2);
     nk_label(context, "Start (ms)", NK_TEXT_LEFT);
     nk_label(context, "End (ms)", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 25, 2);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_section_begin.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.audio_section_begin.data(),
                                          state.audio_section_begin.size(), nk_filter_default);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_section_end.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.audio_section_end.data(),
                                          state.audio_section_end.size(), nk_filter_default);
     nk_layout_row_dynamic(context, 25, 2);
     const auto apply_clicked = nk_button_label(context, selected ? "Apply" : "Add");
@@ -367,7 +367,7 @@ void render_bookmarks(struct nk_context* context, const WormUiComposeView& view,
         nk_widget_disable_begin(context);
     }
     nk_layout_row_dynamic(context, 25, 1);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.bookmark_label.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.bookmark_label.data(),
                                          state.bookmark_label.size(), nk_filter_default);
     nk_layout_row_dynamic(context, 25, 3);
     const auto apply_clicked =
@@ -449,7 +449,7 @@ void render_sections(struct nk_context* context, const WormUiComposeView& view,
         nk_widget_disable_begin(context);
     }
     nk_layout_row_dynamic(context, 25, 1);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.section_label.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.section_label.data(),
                                          state.section_label.size(), nk_filter_default);
     nk_layout_row_dynamic(context, 25, 2);
     const auto apply_clicked =

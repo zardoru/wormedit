@@ -313,7 +313,7 @@ void render_filter_and_search(const ResourcePanel& panel) {
     nk_label(context, "Search", NK_TEXT_LEFT);
     nk_layout_row_begin(context, NK_DYNAMIC, 25, 2);
     nk_layout_row_push(context, 0.76f);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state->resource_search.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state->resource_search.data(),
                                          state->resource_search.size(), nk_filter_default);
     nk_layout_row_push(context, 0.24f);
     if (nk_button_label(context, "Clear")) state->resource_search.fill('\0');
@@ -505,7 +505,7 @@ void render_import_path(const ResourcePanel& panel) {
     nk_label(context, "External file (absolute path)", NK_TEXT_LEFT);
     nk_layout_row_begin(context, NK_DYNAMIC, 24, 2);
     nk_layout_row_push(context, 0.75f);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state->resource_import_path.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state->resource_import_path.data(),
                                          state->resource_import_path.size(), nk_filter_default);
     nk_layout_row_push(context, 0.25f);
     const auto dialog_open = worm_ui_nuklear_compose_file_dialog_open();

@@ -3,11 +3,34 @@
 #include "wormedit/nuklear_config.h"
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/lucide_icons.h"
+#include "ui/nuklear/text_field.h"
 
 #include <algorithm>
 #include <cstring>
 
 namespace wormedit::ui::chrome {
+
+// Edits a single-line text field and selects its whole value on a double-click.
+inline auto worm_ui_nuklear_text_field(nk_context* context, nk_flags flags, char* buffer,
+                                       int capacity, nk_plugin_filter filter) -> nk_flags {
+    if (!context || !buffer || capacity <= 0 || !context->current || !context->current->layout)
+        return 0;
+
+    const auto bounds = nk_widget_bounds(context);
+    const auto edit_sequence = context->current->edit.seq;
+    const bool double_clicked = (flags & NK_EDIT_MULTILINE) == 0 &&
+                                nk_input_mouse_clicked(&context->input, NK_BUTTON_DOUBLE, bounds);
+    const auto result = nk_edit_string_zero_terminated(context, flags, buffer, capacity, filter);
+    const auto selection = worm_ui_nuklear_double_click_selection(
+        (flags & NK_EDIT_MULTILINE) == 0, double_clicked, context->text_edit.string.len);
+    if (selection && context->current->edit.active &&
+        context->current->edit.name == edit_sequence) {
+        context->current->edit.cursor = selection->end;
+        context->current->edit.sel_start = selection->start;
+        context->current->edit.sel_end = selection->end;
+    }
+    return result;
+}
 
 // Focus names the next edit widget, so it must precede drawing that widget.
 inline auto autofocus_text_field(nk_context* context, nk_flags flags, char* text,
@@ -23,7 +46,7 @@ inline auto autofocus_text_field(nk_context* context, nk_flags flags, char* text
         }
         focus_pending = false;
     }
-    return nk_edit_string_zero_terminated(context, flags, text, capacity, filter);
+    return worm_ui_nuklear_text_field(context, flags, text, capacity, filter);
 }
 
 // Finish a retained popup in its own panel so Nuklear releases the parent input lock.

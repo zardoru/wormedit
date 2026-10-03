@@ -210,7 +210,7 @@ static void render_compose_bgm_column_count_controls(const ComposeToolbarContext
     const auto field_bounds = nk_widget_bounds(context);
     const bool field_clicked = nk_input_is_mouse_click_in_rect(
         &context->input, NK_BUTTON_LEFT, field_bounds);
-    const auto flags = nk_edit_string_zero_terminated(
+    const auto flags = wormedit::ui::chrome::worm_ui_nuklear_text_field(
         context, static_cast<nk_flags>(NK_EDIT_FIELD | NK_EDIT_SIG_ENTER), draft.text.data(),
         static_cast<int>(draft.text.size()), nk_filter_decimal);
     const bool edit_active = (flags & NK_EDIT_ACTIVE) != 0;

@@ -411,6 +411,7 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/setup_state.cpp
         src/ui/nuklear/sound_import_state.cpp
         src/ui/nuklear/timing_stage_editor.cpp
+        src/ui/nuklear/text_field.cpp
         src/ui/nuklear/timing_state.cpp
         src/ui/nuklear/meter_state.cpp
         src/ui/nuklear/theme.cpp

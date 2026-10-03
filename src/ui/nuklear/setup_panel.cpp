@@ -50,12 +50,12 @@ void render_project_batch(nk_context* context, const WormUiSetupView& view, Worm
     if (project_state.selection.count < 2) return;
     nk_layout_row_dynamic(context, 26, 2);
     nk_checkbox_label(context, "Set author", &project_state.edit_author);
-    nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, project_state.author, sizeof(project_state.author), nk_filter_default);
+    wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, project_state.author, sizeof(project_state.author), nk_filter_default);
     nk_layout_row_dynamic(context, 26, 4);
     nk_checkbox_label(context, "Set rating", &project_state.edit_rating);
     nk_checkbox_label(context, "Unset rating", &project_state.unset_rating);
-    nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, project_state.rating_numerator, sizeof(project_state.rating_numerator), nk_filter_default);
-    nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, project_state.rating_denominator, sizeof(project_state.rating_denominator), nk_filter_default);
+    wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, project_state.rating_numerator, sizeof(project_state.rating_numerator), nk_filter_default);
+    wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, project_state.rating_denominator, sizeof(project_state.rating_denominator), nk_filter_default);
     nk_layout_row_dynamic(context, 28, 1);
     if (nk_button_label(context, "Apply to selected charts")) {
         publish_chart_action(view, action, WORM_UI_PROJECT_CHART_BATCH_METADATA, 0);

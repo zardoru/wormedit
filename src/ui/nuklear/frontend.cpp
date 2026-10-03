@@ -1473,7 +1473,7 @@ static void render_recovery_candidate(const WormUiRecoveryCandidateView* candida
         nk_layout_row_push(g_context, 0.18f);
         nk_label(g_context, "New project path", NK_TEXT_LEFT);
         nk_layout_row_push(g_context, 0.82f);
-        (void)nk_edit_string_zero_terminated(
+        (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(
             g_context, NK_EDIT_FIELD, g_recovery_save_as_destination,
             sizeof(g_recovery_save_as_destination), nk_filter_default);
         nk_layout_row_end(g_context);

@@ -229,7 +229,7 @@ void render_compose_note_label_editor(const ComposeInspectorContext& inspector) 
     const auto disabled = !view->scene_available || view->selected_note_count == 0;
     if (disabled) nk_widget_disable_begin(context);
     nk_layout_row_dynamic(context, 25, 1);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.note_label.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.note_label.data(),
                                          state.note_label.size(), nk_filter_default);
     if (view->focus_note_label_editor) {
         nk_edit_focus(context, NK_EDIT_GOTO_END_ON_ACTIVATE);
@@ -255,7 +255,7 @@ void render_compose_label_search(const ComposeInspectorContext& inspector) {
     nk_layout_row_dynamic(context, 18, 1);
     nk_label(context, "Find label", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 25, 1);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.label_search.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.label_search.data(),
                                          state.label_search.size(), nk_filter_default);
     const auto disabled = !view->scene_available || state.label_search[0] == '\0';
     if (disabled) nk_widget_disable_begin(context);
@@ -286,12 +286,12 @@ static void render_compose_meter_control(const ComposeInspectorContext& inspecto
     nk_layout_row_push(context, 0.2f);
     nk_label(context, "Meter", NK_TEXT_LEFT);
     nk_layout_row_push(context, 0.2f);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.meter_numerator.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.meter_numerator.data(),
                                          state.meter_numerator.size(), nk_filter_decimal);
     nk_layout_row_push(context, 0.06f);
     nk_label(context, "/", NK_TEXT_CENTERED);
     nk_layout_row_push(context, 0.2f);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.meter_denominator.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.meter_denominator.data(),
                                          state.meter_denominator.size(), nk_filter_decimal);
     nk_layout_row_push(context, 0.34f);
     const auto apply = nk_button_label(context, "Apply");
@@ -581,7 +581,7 @@ static void render_semantic_layer_selection_fields(const ComposeInspectorContext
         state.semantic_layer_color = {color.r, color.g, color.b, color.a};
     }
     nk_layout_row_dynamic(context, 24, 1);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.semantic_layer_name.data(),
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.semantic_layer_name.data(),
                                          state.semantic_layer_name.size(), nk_filter_default);
     nk_layout_row_dynamic(context, 24, 2);
     if (nk_button_label(context, "Rename") && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {

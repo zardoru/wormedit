@@ -1276,7 +1276,7 @@ static void render_go_to_measure(nk_context* context, const WormUiComposeView& v
         nk_edit_focus(context, NK_EDIT_ALWAYS_INSERT_MODE);
         state.go_to_measure_focus_pending = false;
     }
-    const auto flags = nk_edit_string_zero_terminated(
+    const auto flags = wormedit::ui::chrome::worm_ui_nuklear_text_field(
         context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER,
         state.go_to_measure_text.data(), static_cast<int>(state.go_to_measure_text.size()),
         nk_filter_decimal);

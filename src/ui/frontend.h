@@ -117,6 +117,7 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH,
+    WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_LOOP_SELECTION,
     WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET,
     WORM_UI_WORKSPACE_ACTION_SELECT_VISUAL_ASSET,
     WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW,
@@ -899,6 +900,8 @@ typedef struct WormUiComposeView {
     bool area_range_available;
     bool area_range_virtual;
     bool area_delete_supported;
+    bool transport_loop_selection_available;
+    bool transport_loop_selection_enabled;
     uint64_t area_range_begin_row;
     uint64_t area_range_end_row;
     uint64_t area_canvas_rows;
@@ -1936,6 +1939,11 @@ typedef struct WormUiWorkspaceAction {
     WormUiWorkspaceTab tab;
     uint64_t recovery_scan_generation;
     uint64_t transport_seek_frame;
+    uint64_t transport_loop_chart_id;
+    uint64_t transport_loop_document_revision;
+    uint64_t transport_loop_begin_row;
+    uint64_t transport_loop_end_row;
+    bool transport_loop_enabled;
     uint8_t transport_rate_index;
     bool transport_keep_pitch;
     uint64_t audio_asset_id;

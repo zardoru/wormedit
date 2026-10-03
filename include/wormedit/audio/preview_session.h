@@ -33,6 +33,7 @@ struct preview_session_start_result_t {
 enum class preview_session_pump_status_t {
     ready,
     not_started,
+    loop_boundary,
     invalid_timeline,
     materialize_failed,
     decode_failed,
@@ -64,6 +65,12 @@ struct preview_session_render_result_t {
     transport_mix_result_t mix;
 };
 
+struct preview_loop_region_t {
+    std::uint64_t begin_frame{};
+    std::uint64_t end_frame{};
+    auto operator==(const preview_loop_region_t&) const -> bool = default;
+};
+
 // Owns one chart-play generation and its monotonic normalized timeline.
 // start()/seek()/pump() run on the control thread; render() performs only the
 // cache-resident transport mix. The immutable schedule must outlive the active
@@ -86,6 +93,12 @@ class preview_session_t {
     [[nodiscard]] auto render(std::span<float> interleaved_stereo)
         -> preview_session_render_result_t;
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
+
+    // Rendering clamps at end_frame and never seeks or changes transport generations.
+    // pump() reports a loop boundary; output owners perform the seek on their control
+    // thread so device queues and their source clocks can be reset together.
+    [[nodiscard]] auto set_loop_region(std::optional<preview_loop_region_t> region) -> bool;
+    [[nodiscard]] auto loop_region() const -> std::optional<preview_loop_region_t>;
 
     void set_metronome_enabled(bool enabled);
     [[nodiscard]] auto metronome_enabled() const -> bool;
@@ -118,6 +131,7 @@ class preview_session_t {
     std::uint64_t timeline_frame_{};
     std::uint64_t start_frame_{};
     std::uint64_t minimum_end_frame_{};
+    std::optional<preview_loop_region_t> loop_region_;
     std::atomic<std::uint64_t> output_latency_frames_{};
 };
 

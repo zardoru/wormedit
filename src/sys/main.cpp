@@ -102,6 +102,7 @@
 #include "sys/chart_preview_state.h"
 #include "sys/compose_playhead_cursor.h"
 #include "sys/audio_transport_frame.h"
+#include "sys/preview_cursor_frame.h"
 #include "sys/waveform_analysis_runtime.h"
 #include "sys/sdl_audition_output.h"
 #include "sys/sdl_preview_output.h"
@@ -974,6 +975,77 @@ auto inline_preview_active(const application_command_state_t& state) -> bool {
 }
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+auto loop_region_for_selection(const wormedit::chart_document_t& chart,
+                               wormedit::position_span_t selection,
+                               std::uint64_t requested_begin_row,
+                               std::uint64_t requested_end_row)
+    -> std::optional<wormedit::audio::preview_loop_region_t> {
+    using namespace wormedit;
+    const auto built_measures = build_measure_index(chart);
+    const auto* measures = std::get_if<measure_index_t>(&built_measures);
+    if (!measures) return std::nullopt;
+    const auto begin_row = absolute_row(*measures, selection.begin);
+    const auto end_row = absolute_row(*measures, selection.end);
+    if (!begin_row || !end_row || *begin_row != requested_begin_row ||
+        *end_row != requested_end_row || *begin_row >= *end_row) return std::nullopt;
+    const auto built_timing = build_timing_index(chart);
+    if (!built_timing) return std::nullopt;
+    const auto begin = sys::preview_cursor_frame(chart, *built_timing.index, selection.begin);
+    const auto end = sys::preview_cursor_frame(chart, *built_timing.index, selection.end);
+    const auto* begin_frame = std::get_if<std::uint64_t>(&begin);
+    const auto* end_frame = std::get_if<std::uint64_t>(&end);
+    if (!begin_frame || !end_frame || *begin_frame >= *end_frame) return std::nullopt;
+    return audio::preview_loop_region_t{*begin_frame, *end_frame};
+}
+
+auto apply_loop_selection(auto& history, auto& workspace, auto& interaction_state,
+    auto& inline_preview_cursor, auto& preview_session,
+    auto& preview_state, auto& audition_sources, auto& metronome_bindings,
+    auto& audition_output, auto& preview_output, wormedit::chart_id_t chart_id,
+    std::uint64_t expected_revision, std::uint64_t begin_row,
+    std::uint64_t end_row, bool enabled) -> bool {
+    if (!workspace.selected_chart || *workspace.selected_chart != chart_id ||
+        history.document.revision != expected_revision) return false;
+    if (!enabled) return preview_output.set_loop_region(std::nullopt);
+    const auto* chart = selected_chart(history, workspace);
+    if (workspace.active_tab != wormedit::workspace_tab_t::compose || !chart ||
+        chart->id != chart_id || !interaction_state || interaction_state->chart != chart_id ||
+        !interaction_state->retained_selection_range) return false;
+    const auto region = loop_region_for_selection(*chart,
+        *interaction_state->retained_selection_range, begin_row, end_row);
+    if (!region || (preview_output.playing() &&
+                    !preview_state.matches_selection(history.document, workspace)))
+        return false;
+    if (!preview_output.set_loop_region(region)) return false;
+    if (preview_output.playing()) {
+        const auto sought = preview_output.seek(region->begin_frame);
+        if (!sought) {
+            static_cast<void>(preview_output.set_loop_region(std::nullopt));
+            return false;
+        }
+        preview_state.resume_frame = region->begin_frame;
+        preview_state.paused = false;
+    } else {
+        const auto previous_frame = preview_state.resume_frame;
+        const auto was_paused = preview_state.paused;
+        preview_state.resume_frame = region->begin_frame;
+        preview_state.paused = false;
+        static_cast<void>(preview_state.play_pause(chart, history.document, audition_sources,
+            metronome_bindings, audition_output, preview_session, preview_output,
+            std::nullopt, false, region->begin_frame));
+        if (!preview_output.playing()) {
+            preview_state.resume_frame = previous_frame;
+            preview_state.paused = was_paused;
+            static_cast<void>(preview_output.set_loop_region(std::nullopt));
+            return false;
+        }
+    }
+    inline_preview_cursor.capture(interaction_state ? &*interaction_state : nullptr);
+    inline_preview_cursor.capture_follow_anchor(history,
+        interaction_state ? &*interaction_state : nullptr);
+    return true;
+}
+
 void configure_transport_play_pause(auto& state, auto& history, auto& workspace,
                                  auto& compose_interaction_state, auto& inline_preview_cursor,
                                  auto& audition_session, auto& preview_session, auto& preview_state,
@@ -1075,6 +1147,17 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
         state.minimap_start_frame.reset();
         preview_state.stop(audition_output, preview_output);
         inline_preview_cursor.anchor.reset();
+    };
+    state.transport_loop_selection_active = [&] {
+        return preview_session.loop_region().has_value();
+    };
+    state.transport_set_loop_selection = [&](wormedit::chart_id_t chart_id,
+        std::uint64_t expected_revision, std::uint64_t begin_row,
+        std::uint64_t end_row, bool enabled) {
+        return apply_loop_selection(history, workspace, compose_interaction_state,
+            inline_preview_cursor, preview_session, preview_state,
+            audition_sources, preview_metronome_bindings, audition_output, preview_output,
+            chart_id, expected_revision, begin_row, end_row, enabled);
     };
     state.transport_cancel_restore = [&]() -> std::string {
         preview_state.stop(audition_output, preview_output);
@@ -1977,6 +2060,8 @@ void reset_project_edit_state(application_command_state_t& current) {
     next.transport_audio_milliseconds = std::move(current.transport_audio_milliseconds);
     next.transport_seek_audio_milliseconds = std::move(current.transport_seek_audio_milliseconds);
     next.transport_stop = std::move(current.transport_stop);
+    next.transport_set_loop_selection = std::move(current.transport_set_loop_selection);
+    next.transport_loop_selection_active = std::move(current.transport_loop_selection_active);
     next.transport_metronome_enabled = current.transport_metronome_enabled;
     next.transport_metronome_available = current.transport_metronome_available;
     next.transport_set_metronome = std::move(current.transport_set_metronome);

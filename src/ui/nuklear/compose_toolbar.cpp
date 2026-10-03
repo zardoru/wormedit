@@ -68,6 +68,30 @@ static void render_compose_bgm_bar_toggle(const ComposeToolbarContext& toolbar) 
     input.kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE;
 }
 
+static void render_loop_selection_button(const ComposeToolbarContext& toolbar) {
+    const auto& view = *toolbar.view;
+    auto* action = toolbar.action;
+    const bool can_toggle = view.transport_loop_selection_available &&
+        (view.transport_loop_selection_enabled ||
+         (view.area_range_available && !view.area_range_virtual &&
+          view.area_range_begin_row < view.area_range_end_row));
+    const auto* tooltip = view.transport_loop_selection_enabled
+        ? "Disable selection loop" : "Loop the committed selection";
+    if (!can_toggle) nk_widget_disable_begin(toolbar.context);
+    const auto clicked = wormedit::ui::chrome::IconButton{Glyph::rotate_ccw, tooltip,
+            view.transport_loop_selection_enabled}.render(toolbar.context) && can_toggle &&
+        action->kind == WORM_UI_WORKSPACE_ACTION_NONE;
+    if (!can_toggle) nk_widget_disable_end(toolbar.context);
+    if (clicked) {
+        action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_LOOP_SELECTION;
+        action->transport_loop_chart_id = view.chart_id;
+        action->transport_loop_document_revision = view.document_revision;
+        action->transport_loop_begin_row = view.area_range_available ? view.area_range_begin_row : 0;
+        action->transport_loop_end_row = view.area_range_available ? view.area_range_end_row : 0;
+        action->transport_loop_enabled = !view.transport_loop_selection_enabled;
+    }
+}
+
 static void render_compose_view_controls(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
     const auto* view = toolbar.view;
@@ -82,7 +106,7 @@ static void render_compose_view_controls(const ComposeToolbarContext& toolbar) {
     if (wormedit::ui::chrome::IconButton{Glyph::rotate_ccw, "Reset view"}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW;
-    nk_label(context, "", NK_TEXT_LEFT);
+    render_loop_selection_button(toolbar);
     const auto paint_disabled = !view->scene_available || view->timing_focus;
     if (paint_disabled) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::IconButton{Glyph::paintbrush, "Toggle note paint mode",
@@ -407,7 +431,7 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
         nk_style_push_vec2(context, &context->style.window.spacing, compact_spacing) != 0;
     nk_layout_row_template_begin(context, 27);
     wormedit::ui::chrome::IconButton::layout_columns(context, 3);
-    nk_layout_row_template_push_static(context, 12);
+    nk_layout_row_template_push_static(context, 34);
     wormedit::ui::chrome::IconButton::layout_columns(context, 5);
     // Offset padlock, nudges and optional readout, then the BPM snap controls.
     wormedit::ui::chrome::IconButton::layout_columns(context);

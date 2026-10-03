@@ -90,6 +90,80 @@ auto seek_music_segment_starts_at_source_frame(wormedit::audio::preview_session_
            active.voices.front().frame_count == maximum_read_frames - 500;
 }
 
+auto preview_loop_restarts_at_begin_and_stop_is_hard() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    constexpr std::uint64_t loop_begin = 1'024;
+    constexpr std::uint64_t loop_duration = output_sample_rate * 2U;
+    constexpr std::uint64_t loop_end = loop_begin + loop_duration;
+    constexpr std::size_t chunk_frames = 4'096;
+    decoded_source_registry_t sources;
+    std::vector<float> pcm(static_cast<std::size_t>(loop_end) * output_channel_count);
+    for (std::size_t frame = 0; frame < static_cast<std::size_t>(loop_end); ++frame) {
+        const auto sample = static_cast<float>(frame % 128U) / 128.0F;
+        pcm[frame * output_channel_count] = sample;
+        pcm[frame * output_channel_count + 1] = sample;
+    }
+    const auto generated = sources.register_generated_source({
+        .source = {"generated:preview-loop", "preview-loop-v1"},
+        .interleaved_stereo = std::move(pcm),
+    });
+    if (!generated) return false;
+
+    decoded_block_cache_t cache{preview_block_cache_limits()};
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    constexpr object_id_t music_object{std::numeric_limits<std::uint64_t>::max()};
+    schedule.music = preview_schedule_t::music_event_t{
+        .resource = resource_id_t{7}, .frame_count = generated.binding->output_frame_count};
+    const preview_object_source_binding_t binding{
+        .object = music_object,
+        .voices = {{.source = generated.binding->source,
+                    .frame_count = generated.binding->output_frame_count}},
+    };
+    const preview_loop_region_t region{loop_begin, loop_end};
+    if (!session.set_loop_region(region) || session.set_loop_region(preview_loop_region_t{64, 64}))
+        return false;
+    const auto started = session.start(schedule, std::span{&binding, 1}, {}, 0,
+                                       {.lookahead_frames = chunk_frames});
+    if (!started || session.timeline_frame() != region.begin_frame) return false;
+
+    std::vector<float> first_block(chunk_frames * output_channel_count);
+    const auto first_render = session.render(first_block);
+    if (first_render.status != preview_session_render_status_t::mixed ||
+        first_render.first_timeline_frame != region.begin_frame ||
+        session.timeline_frame() != region.begin_frame + chunk_frames || first_block.front() != 0.0F)
+        return false;
+    while (session.timeline_frame() < region.end_frame) {
+        const auto pump = session.pump({.lookahead_frames = chunk_frames});
+        if (pump.status != preview_session_pump_status_t::ready) return false;
+        const auto remaining = region.end_frame - session.timeline_frame();
+        const auto frames = static_cast<std::size_t>(std::min<std::uint64_t>(remaining, chunk_frames));
+        std::vector<float> block(frames * output_channel_count);
+        const auto rendered = session.render(block);
+        if (rendered.status != preview_session_render_status_t::mixed || rendered.mix.frames != frames)
+            return false;
+    }
+    const auto boundary = session.pump({.lookahead_frames = chunk_frames});
+    if (boundary.status != preview_session_pump_status_t::loop_boundary) return false;
+    const auto restarted = session.seek(region.begin_frame, {.lookahead_frames = chunk_frames});
+    if (!restarted || session.timeline_frame() != region.begin_frame) return false;
+
+    std::vector<float> repeated_block(first_block.size());
+    const auto repeated_render = session.render(repeated_block);
+    if (repeated_render.status != preview_session_render_status_t::mixed ||
+        repeated_render.first_timeline_frame != region.begin_frame ||
+        !std::ranges::equal(first_block, repeated_block)) return false;
+
+    static_cast<void>(session.stop());
+    std::vector<float> stopped(chunk_frames * output_channel_count, 1.0F);
+    const auto stopped_render = session.render(stopped);
+    return stopped_render.status == preview_session_render_status_t::stopped &&
+           std::ranges::all_of(stopped, [](float sample) { return sample == 0.0F; });
+}
+
 auto preview_music_seek_geometry_is_correct() -> bool {
     using namespace wormedit;
     using namespace wormedit::audio;
@@ -242,6 +316,11 @@ TEST_CASE("preview session primes advances refills and completes one chart timel
 TEST_CASE("preview session streams contiguous music segments and seeks within a segment",
           "[unit][audio][preview-session][music][seek]") {
     CHECK(preview_music_seek_geometry_is_correct());
+}
+
+TEST_CASE("preview session loops a source interval on control pump and Stop silences",
+          "[unit][audio][preview-session][loop][stop]") {
+    CHECK(preview_loop_restarts_at_begin_and_stop_is_hard());
 }
 
 TEST_CASE("a dropped music segment does not prevent the next segment from playing",

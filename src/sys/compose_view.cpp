@@ -3484,6 +3484,17 @@ void populate_bgm_only_compose_projection(
     view.semantic_layer_paint_mode_active = false;
 }
 
+void project_loop_selection_controls(WormUiComposeView& view,
+                                     const application_command_state_t& application) {
+    view.transport_loop_selection_enabled = application.transport_loop_selection_active &&
+                                            application.transport_loop_selection_active();
+    view.transport_loop_selection_available =
+        static_cast<bool>(application.transport_set_loop_selection) &&
+        (view.transport_loop_selection_enabled ||
+         (view.scene_available && view.area_range_available && !view.area_range_virtual &&
+          view.area_range_begin_row < view.area_range_end_row));
+}
+
 } // namespace
 
 void populate_compose_view(flattened_workspace_t& flattened,
@@ -3527,6 +3538,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     if (chart.lane_layouts.empty() && !chart.bgm_source_lanes.empty()) {
         populate_bgm_only_compose_projection(flattened, history, chart, measures, cache,
                                              application_state, view, downscroll, timing_stage);
+        project_loop_selection_controls(view, application_state);
         return;
     }
     const compose_interaction_population_context_t interaction_context{
@@ -3538,6 +3550,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
         flattened, history, chart, cache, retained_state, application_state, view,
         interaction_view, measures, downscroll, timing_stage};
     populate_compose_final_projection(final_context);
+    project_loop_selection_controls(view, application_state);
 }
 
 auto toggle_compose_audio_offset_lock(const WormUiWorkspaceAction& action,

@@ -229,6 +229,186 @@ auto generated_sine(std::size_t frames) -> std::vector<float> {
     return samples;
 }
 
+auto exercise_sdl_loop_restart() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    constexpr std::uint64_t loop_begin = 1'024;
+    constexpr std::uint64_t loop_end = 5'120;
+    decoded_source_registry_t sources;
+    const auto registered = sources.register_generated_source({
+        .source = {"generated:sdl-loop", "sdl-loop-v1"},
+        .interleaved_stereo = generated_sine(loop_end),
+    });
+    if (!registered) return false;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    sys::sdl_preview_output_t output{session};
+    if (!output.open()) return false;
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.music = preview_schedule_t::music_event_t{
+        .resource = resource_id_t{1}, .frame_count = loop_end};
+    const preview_object_source_binding_t binding{
+        .object = object_id_t{std::numeric_limits<std::uint64_t>::max()},
+        .voices = {{.source = registered.binding->source, .frame_count = loop_end}},
+    };
+    const preview_loop_region_t loop{loop_begin, loop_end};
+    if (!output.set_loop_region(loop) || !output.start(schedule, std::span{&binding, 1})) {
+        output.close();
+        return false;
+    }
+    const bool start_clock_aligned = output.timeline_frame() == loop_begin;
+    const auto initial_token = bridge.session_token();
+    const auto deadline = SDL_GetTicks() + 2'000;
+    while (session.timeline_frame() < loop_end && SDL_GetTicks() < deadline) SDL_Delay(1);
+    if (session.timeline_frame() != loop_end) {
+        static_cast<void>(output.stop());
+        output.close();
+        return false;
+    }
+    SDL_Delay(20);
+    const bool worker_waited_for_control = session.timeline_frame() == loop_end &&
+        bridge.session_token() == initial_token;
+    bool restarted{};
+    while (!restarted && SDL_GetTicks() < deadline) {
+        const auto serviced = output.service();
+        if (serviced && !*serviced) break;
+        const auto token = bridge.session_token();
+        restarted = token && initial_token && token->generation > initial_token->generation &&
+                    session.timeline_frame() < loop_end;
+        SDL_Delay(1);
+    }
+    const bool repeated = start_clock_aligned && worker_waited_for_control && restarted &&
+        output.timeline_frame() >= loop_begin && output.timeline_frame() < loop_end && output.playing() &&
+        session.loop_region() == std::optional<preview_loop_region_t>{loop};
+    static_cast<void>(output.stop());
+    std::array<float, 32> stopped{};
+    stopped.fill(1.0F);
+    const auto silence = session.render(stopped);
+    const bool hard_stop = silence.status == preview_session_render_status_t::stopped &&
+        std::ranges::all_of(stopped, [](float sample) { return sample == 0.0F; });
+    output.close();
+    return repeated && hard_stop;
+}
+
+auto wait_for_session_frame(wormedit::audio::preview_session_t& session,
+                            std::uint64_t frame, std::uint64_t deadline) -> bool {
+    while (session.timeline_frame() < frame && SDL_GetTicks() < deadline) SDL_Delay(1);
+    return session.timeline_frame() == frame;
+}
+
+auto service_until_after_frame(wormedit::sys::sdl_preview_output_t& output,
+                               wormedit::audio::preview_session_t& session,
+                               std::uint64_t frame, std::uint64_t deadline) -> bool {
+    while (SDL_GetTicks() < deadline) {
+        const auto serviced = output.service();
+        if (serviced && !*serviced) return false;
+        if (session.timeline_frame() > frame && output.playing()) return true;
+        SDL_Delay(1);
+    }
+    return false;
+}
+
+auto exercise_sdl_silent_tail_loop() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    constexpr std::uint64_t loop_begin = 1'024;
+    constexpr std::uint64_t source_end = 2'048;
+    constexpr std::uint64_t loop_end = 5'120;
+    decoded_source_registry_t sources;
+    const auto registered = sources.register_generated_source({
+        .source = {"generated:sdl-loop-silent-tail", "sdl-loop-silent-tail-v1"},
+        .interleaved_stereo = generated_sine(source_end),
+    });
+    if (!registered) return false;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    sys::sdl_preview_output_t output{session};
+    if (!output.open()) return false;
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.music = preview_schedule_t::music_event_t{
+        .resource = resource_id_t{1}, .frame_count = source_end};
+    const preview_object_source_binding_t binding{
+        .object = object_id_t{std::numeric_limits<std::uint64_t>::max()},
+        .voices = {{.source = registered.binding->source, .frame_count = source_end}},
+    };
+    const preview_loop_region_t loop{loop_begin, loop_end};
+    if (!output.set_loop_region(loop) || !output.start(schedule, std::span{&binding, 1})) {
+        output.close();
+        return false;
+    }
+    const auto initial = bridge.session_token();
+    const auto deadline = SDL_GetTicks() + 2'000;
+    const bool reached_end = wait_for_session_frame(session, loop_end, deadline);
+    const bool stayed_active = session.active() && output.playing() &&
+                               session.timeline_frame() == loop_end;
+    SDL_Delay(20);
+    const bool worker_waited = bridge.session_token() == initial &&
+                               session.timeline_frame() == loop_end;
+    bool restarted{};
+    while (!restarted && SDL_GetTicks() < deadline) {
+        const auto serviced = output.service();
+        if (serviced && !*serviced) break;
+        const auto token = bridge.session_token();
+        restarted = token && initial && token->generation > initial->generation &&
+                    session.timeline_frame() < loop_end;
+        SDL_Delay(1);
+    }
+    const bool looped = reached_end && stayed_active && worker_waited && restarted;
+    static_cast<void>(output.stop());
+    output.close();
+    return looped;
+}
+
+auto exercise_sdl_loop_disable_at_boundary() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    constexpr std::uint64_t loop_begin = 1'024;
+    constexpr std::uint64_t loop_end = 5'120;
+    constexpr std::uint64_t source_end = loop_end + output_sample_rate;
+    decoded_source_registry_t sources;
+    const auto registered = sources.register_generated_source({
+        .source = {"generated:sdl-loop-disable", "sdl-loop-disable-v1"},
+        .interleaved_stereo = generated_sine(source_end),
+    });
+    if (!registered) return false;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    sys::sdl_preview_output_t output{session};
+    if (!output.open()) return false;
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.music = preview_schedule_t::music_event_t{
+        .resource = resource_id_t{1}, .frame_count = source_end};
+    const preview_object_source_binding_t binding{
+        .object = object_id_t{std::numeric_limits<std::uint64_t>::max()},
+        .voices = {{.source = registered.binding->source, .frame_count = source_end}},
+    };
+    if (!output.set_loop_region(preview_loop_region_t{loop_begin, loop_end}) ||
+        !output.start(schedule, std::span{&binding, 1})) {
+        output.close();
+        return false;
+    }
+    const auto deadline = SDL_GetTicks() + 2'000;
+    const auto at_boundary = wait_for_session_frame(session, loop_end, deadline);
+    SDL_Delay(20); // Let the refill worker publish its pending boundary marker.
+    const bool disabled = output.set_loop_region(std::nullopt);
+    const auto continued = service_until_after_frame(output, session, loop_end, deadline);
+    INFO("boundary=" << at_boundary << " disabled=" << disabled << " continued=" << continued
+         << " session=" << session.timeline_frame() << " output=" << output.timeline_frame()
+         << " playing=" << output.playing());
+    CHECK(at_boundary);
+    CHECK(disabled);
+    CHECK(continued);
+    static_cast<void>(output.stop());
+    output.close();
+    return at_boundary && disabled && continued;
+}
+
 auto captured_frequency(std::span<const float> samples, int rate) -> double {
     std::vector<double> periods;
     std::optional<double> previous;
@@ -653,4 +833,31 @@ TEST_CASE("SDL preview repeatedly closes idle and stopped refill workers",
         .object = object_id_t{1},
         .voices = {{.source = registered.binding->source, .frame_count = 11025}}};
     CHECK(exercise_preview_worker_closes(output, session, schedule, binding));
+}
+
+TEST_CASE("SDL loop restarts at the source tail on control service and Stop clears it",
+          "[integration][audio][sdl][preview][loop]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_FREQUENCY, "44100"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    CHECK(exercise_sdl_loop_restart());
+}
+
+TEST_CASE("SDL loop can be disabled at a pending boundary and continue the chart",
+          "[integration][audio][sdl][preview][loop]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_FREQUENCY, "44100"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    CHECK(exercise_sdl_loop_disable_at_boundary());
+}
+
+TEST_CASE("SDL loop timeline reaches its end after chart audio has become silent",
+          "[integration][audio][sdl][preview][loop]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_FREQUENCY, "44100"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    CHECK(exercise_sdl_silent_tail_loop());
 }

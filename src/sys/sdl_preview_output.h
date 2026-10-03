@@ -75,6 +75,7 @@ class sdl_preview_output_t {
           std::uint64_t seek_frame = 0,
           std::uint64_t minimum_end_frame = 0) -> sdl_preview_start_result_t;
     [[nodiscard]] auto seek(std::uint64_t sample_frame) -> sdl_preview_start_result_t;
+    [[nodiscard]] auto set_loop_region(std::optional<audio::preview_loop_region_t> region) -> bool;
     [[nodiscard]] auto service() -> std::optional<sdl_preview_service_result_t>;
     [[nodiscard]] auto stop() noexcept -> audio::transport_stop_result_t;
     // The requested rate is applied at the next SDL callback, without restarting.
@@ -99,6 +100,17 @@ class sdl_preview_output_t {
     [[nodiscard]] auto pause_device() noexcept -> bool;
     [[nodiscard]] auto resume_device() noexcept -> bool;
     [[nodiscard]] auto finish_start(sdl_preview_start_result_t result) -> sdl_preview_start_result_t;
+    enum class loop_restart_status_t { none, waiting_for_drain, restarted, failed };
+    [[nodiscard]] auto service_loop_restart() -> loop_restart_status_t;
+    [[nodiscard]] auto service_refill_result(
+        std::optional<audio::preview_session_pump_result_t> pumped,
+        bool rate_unavailable, std::uint64_t silenced_voices,
+        std::uint64_t silenced_music_voices)
+        -> std::optional<sdl_preview_service_result_t>;
+    [[nodiscard]] auto service_loop_boundary(
+        audio::preview_session_pump_result_t pumped, bool rate_unavailable,
+        std::uint64_t silenced_voices, std::uint64_t silenced_music_voices)
+        -> std::optional<sdl_preview_service_result_t>;
     void reset_output(std::uint64_t frame) noexcept;
     [[nodiscard]] auto apply_output_mode(SDL_AudioStream* stream) noexcept -> bool;
     [[nodiscard]] auto render_source(std::size_t frames) noexcept -> std::size_t;
@@ -143,6 +155,10 @@ class sdl_preview_output_t {
     std::atomic<std::uint64_t> output_start_frame_{};
     bool source_finished_{};
     std::atomic<bool> output_drained_{};
+    std::atomic<bool> loop_enabled_{};
+    std::atomic<std::uint64_t> loop_end_frame_{};
+    std::atomic<bool> loop_disable_pending_{};
+    bool loop_restart_pending_{};
     std::size_t fade_remaining_{};
     std::size_t fade_total_{};
     bool have_output_{};

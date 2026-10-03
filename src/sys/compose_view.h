@@ -290,6 +290,9 @@ struct application_command_state_t {
     std::function<std::optional<std::int64_t>()> transport_audio_milliseconds;
     std::function<std::string(std::int64_t)> transport_seek_audio_milliseconds;
     std::function<void()> transport_stop;
+    std::function<bool(wormedit::chart_id_t, std::uint64_t, std::uint64_t,
+                       std::uint64_t, bool)> transport_set_loop_selection;
+    std::function<bool()> transport_loop_selection_active;
     bool transport_metronome_enabled{};
     bool transport_metronome_available{};
     std::function<void(bool)> transport_set_metronome;

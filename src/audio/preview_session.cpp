@@ -27,7 +27,8 @@ auto preview_session_t::start(const preview_schedule_t& schedule,
                               std::uint64_t minimum_end_frame)
     -> preview_session_start_result_t {
     const std::scoped_lock lock(mutex_);
-    auto started = bridge_.start(schedule, objects, metronome, seek_frame);
+    const auto start_frame = loop_region_ ? loop_region_->begin_frame : seek_frame;
+    auto started = bridge_.start(schedule, objects, metronome, start_frame);
     if (!started) {
         auto result = preview_session_start_result_t{};
         result.status = preview_session_start_status_t::bridge_failed;
@@ -35,7 +36,7 @@ auto preview_session_t::start(const preview_schedule_t& schedule,
         return result;
     }
     minimum_end_frame_ = minimum_end_frame;
-    return prime_started(started, seek_frame, options);
+    return prime_started(started, start_frame, options);
 }
 
 auto preview_session_t::seek(std::uint64_t sample_frame, preview_pump_options_t options)
@@ -99,6 +100,10 @@ auto preview_session_t::pump(preview_pump_options_t options) -> preview_session_
         const std::scoped_lock lock(mutex_);
         if (!token_.has_value())
             return result;
+        if (loop_region_ && timeline_frame_ >= loop_region_->end_frame) {
+            result.status = preview_session_pump_status_t::loop_boundary;
+            return result;
+        }
         token = token_;
         timeline_frame = timeline_frame_;
         const auto window_end = checked_window_end(timeline_frame, options.lookahead_frames);
@@ -137,7 +142,20 @@ auto preview_session_t::render(std::span<float> interleaved_stereo)
                 .mix = {.status = transport_mix_status_t::stale_generation}};
     }
     const auto first_frame = timeline_frame_;
-    const auto mixed = transport_.mix(*token_, first_frame, interleaved_stereo);
+    transport_mix_result_t mixed;
+    if (loop_region_ && first_frame >= loop_region_->end_frame) {
+        mixed.status = transport_mix_status_t::mixed;
+    } else {
+        auto render_samples = interleaved_stereo;
+        if (loop_region_) {
+            const auto remaining_frames = loop_region_->end_frame - first_frame;
+            if (remaining_frames < interleaved_stereo.size() / samples_per_frame) {
+                const auto samples = static_cast<std::size_t>(remaining_frames) * samples_per_frame;
+                render_samples = interleaved_stereo.first(samples);
+            }
+        }
+        mixed = transport_.mix(*token_, first_frame, render_samples);
+    }
     if (mixed.status == transport_mix_status_t::stale_generation) {
         clear_state();
         return {.status = preview_session_render_status_t::stale_generation,
@@ -159,7 +177,7 @@ auto preview_session_t::render(std::span<float> interleaved_stereo)
     }
     timeline_frame_ += mixed.frames;
     publish_playhead();
-    if (mixed.missing_blocks == 0 && bridge_.exhausted() &&
+    if (mixed.missing_blocks == 0 && !loop_region_ && bridge_.exhausted() &&
         transport_.scheduled_voice_count() == 0 &&
         timeline_frame_ >= minimum_end_frame_) {
         static_cast<void>(bridge_.stop());
@@ -179,6 +197,18 @@ auto preview_session_t::stop() noexcept -> transport_stop_result_t {
     auto stopped = bridge_.stop();
     clear_state();
     return stopped;
+}
+
+auto preview_session_t::set_loop_region(std::optional<preview_loop_region_t> region) -> bool {
+    if (region && region->begin_frame >= region->end_frame) return false;
+    const std::scoped_lock lock(mutex_);
+    loop_region_ = region;
+    return true;
+}
+
+auto preview_session_t::loop_region() const -> std::optional<preview_loop_region_t> {
+    const std::scoped_lock lock(mutex_);
+    return loop_region_;
 }
 
 void preview_session_t::set_metronome_enabled(bool enabled) {
@@ -220,6 +250,7 @@ void preview_session_t::clear_state() noexcept {
     start_frame_ = 0;
     output_latency_frames_.store(0, std::memory_order_release);
     minimum_end_frame_ = 0;
+    loop_region_.reset();
     ++generation_;
     publish_playhead();
 }

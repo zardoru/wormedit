@@ -3133,10 +3133,6 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     const auto downscroll = input.downscroll;
     flattened.compose.interaction_view = interaction_view;
     view.bms_measure_labels = chart.source_family == wormedit::format_family_t::bms;
-    view.bgm_column_count = static_cast<std::uint32_t>(chart.bgm_source_lanes.size());
-    view.bgm_column_count_editable =
-        chart.source_family == wormedit::format_family_t::bms ||
-        chart.source_family == wormedit::format_family_t::osu_mania;
     populate_lane_profile_choices(view, chart, interaction_view.cursor);
     populate_quantize_preview(cache, chart, history.document.revision, *retained_state, view);
     view.compose_measure_count = chart.measures.size();
@@ -3458,6 +3454,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
         return;
     }
     const auto& chart = *chart_it;
+    view.bgm_column_count = static_cast<std::uint32_t>(chart.bgm_source_lanes.size());
+    view.bgm_column_count_editable =
+        chart.source_family == wormedit::format_family_t::bms ||
+        chart.source_family == wormedit::format_family_t::osu_mania;
     const auto downscroll = compose_field_downscroll(chart, application_state.editor_preferences);
     view.downscroll = downscroll;
     const auto measure_data = prepare_compose_chart_view(flattened, chart, history, cache,

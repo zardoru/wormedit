@@ -2054,6 +2054,23 @@ auto dispatch_compose_workspace_action(
         return false;
     }
 
+    if (!interaction_state &&
+        action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT) {
+        if (workspace.active_tab != wormedit::workspace_tab_t::compose ||
+            !workspace.selected_chart ||
+            action.compose_input_chart_id != workspace.selected_chart->value) {
+            status = "BGM column count edit expired because the selected chart changed.";
+            return true;
+        }
+        wormedit::editor_interaction_state_t bgm_interaction;
+        bgm_interaction.chart = *workspace.selected_chart;
+        status = dispatch_compose_view_action(
+            action, history, workspace, bgm_interaction, viewport_height,
+            application_state, asset_base, resource_copy_scheduler, resource_copy_runtime,
+            export_runtime, metadata_import_busy);
+        return true;
+    }
+
     const bool metadata_path_action =
         workspace.active_tab == wormedit::workspace_tab_t::metadata &&
         (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET ||

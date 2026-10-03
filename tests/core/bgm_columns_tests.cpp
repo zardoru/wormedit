@@ -55,6 +55,15 @@ auto osu_mania_column_song() -> song_document_t {
     return song;
 }
 
+auto bgm_only_song() -> song_document_t {
+    auto song = column_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.clear();
+    chart.input_profile.bindings.clear();
+    REQUIRE(validate_document(song).empty());
+    return song;
+}
+
 auto lane_count(const document_history_t& history) -> std::size_t {
     return history.document.charts.front().bgm_source_lanes.size();
 }
@@ -64,6 +73,14 @@ void check_original_bgm_event(const chart_document_t& chart) {
     CHECK(event.id == object_id_t{11});
     CHECK((event.position == local_position_t{measure_id_t{3}, 24}));
     CHECK(event.source_lane == object_id_t{20});
+}
+
+void check_bgm_only_chart(const document_history_t& history, std::size_t expected_columns) {
+    const auto& chart = history.document.charts.front();
+    CHECK(chart.bgm_source_lanes.size() == expected_columns);
+    CHECK(chart.lane_layouts.empty());
+    CHECK(chart.input_profile.bindings.empty());
+    check_original_bgm_event(chart);
 }
 
 void require_column_count(document_history_t& history, std::size_t count) {
@@ -92,6 +109,16 @@ TEST_CASE("BGM column count grows with fresh IDs orders and names",
     CHECK(lanes[1].id.value > 22);
     CHECK(lanes[2].id.value == lanes[1].id.value + 1);
     check_original_bgm_event(history.document.charts.front());
+}
+
+TEST_CASE("BGM-only BMS charts change column count without inventing playable lanes",
+          "[unit][core][bgm-columns]") {
+    auto history = make_document_history(bgm_only_song());
+
+    REQUIRE(apply_bgm_column_count(history, history.document.revision, chart_id_t{2}, 3));
+    check_bgm_only_chart(history, 3);
+    REQUIRE(undo_document_command(history));
+    check_bgm_only_chart(history, 1);
 }
 
 TEST_CASE("BGM column count shrinks empty trailing columns only",

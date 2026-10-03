@@ -376,8 +376,8 @@ typedef struct WormUiComposeRect {
 
 typedef struct WormUiComposePasteGhostView {
     WormUiComposeRect bounds;
-    uint8_t kind; /* 0 note endpoint, 1 hold body, 2 BGM event */
-    uint8_t glyph;
+    uint8_t kind; /* 0 note endpoint, 1 hold body, 2 BGM event, 3 timing object */
+    uint8_t glyph; /* note glyph; for kind 3 the WormUiTimingLaneKind. Kind 3 bounds carry only top/bottom */
 } WormUiComposePasteGhostView;
 
 typedef struct WormUiComposeBandView {

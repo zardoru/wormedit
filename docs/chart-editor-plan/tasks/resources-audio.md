@@ -10,7 +10,8 @@ stale-plan check (rule 9) first.
 
 ## T-100 Add a protected resource-delete command
 
-- **Status:** ready
+- **Status:** done
+- **Implementation/verification (2026-10-03):** `apply_resource_deletion` checks revision and catalog identity before one reference pass, rejects with the exact stored-event count, and commits one undoable catalog-only deletion. Direct note/BGM/BGA IDs count alongside each retained sound-channel event whose source asset matches; aliases sharing that asset are conservatively protected, and linked semantic/retained objects count separately. Nine new regression cases cover cross-chart counts, orphan channel protection, aliases, stale/missing/zero IDs, undo, assets, and unchanged BMS identifiers before undo. Final core output: `100% tests passed out of 1109` (`/tmp/wormedit-t100-final-core.log`). The application builds, new functions satisfy configured clang-tidy; existing earlier test-wrapper warnings are unchanged.
 - **Outcome:** a core command deletes one catalog resource only when no note, BGM, BGA, or sound-channel event references it; otherwise it rejects with the reference count.
 - **Read first:** `include/wormedit/core/resource_assignment.h`, `src/core/resource_assignment.cpp`, `include/wormedit/core/document.h` (resource catalog), `tests/core/resource_assignment_tests.cpp`.
 - **Files owned:** `include/wormedit/core/resource_assignment.h`, `src/core/resource_assignment.cpp`, `tests/core/resource_assignment_tests.cpp`.
@@ -24,7 +25,7 @@ stale-plan check (rule 9) first.
 
 ## T-101 Add Delete to the resource catalog
 
-- **Status:** blocked-on T-100
+- **Status:** ready
 - **Outcome:** each Compose catalog row has a Delete button, enabled only for unreferenced resources; referenced rows show their use count in the tooltip.
 - **Read first:** `src/ui/nuklear/compose_resources.cpp`, `src/sys/compose_resource_presenter.cpp`, `src/sys/compose_actions.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_resources.cpp`, `src/sys/compose_resource_presenter.cpp/.h`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `tests/core/compose_resource_presenter_tests.cpp`.

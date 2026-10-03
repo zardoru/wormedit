@@ -30,6 +30,25 @@ auto has_role(const resource_entry_t& resource, resource_role_t role) -> bool {
     return std::ranges::find(resource.roles, role) != resource.roles.end();
 }
 
+auto count_resource_references(const song_document_t& song, resource_id_t resource_id,
+                               asset_id_t asset_id) -> std::size_t {
+    std::size_t count{};
+    for (const auto& chart : song.charts) {
+        for (const auto& measure : chart.measures) {
+            count += static_cast<std::size_t>(std::ranges::count(
+                measure.notes, resource_id, &note_t::sound));
+            count += static_cast<std::size_t>(std::ranges::count(
+                measure.bgm_events, resource_id, &bgm_event_t::sound));
+        }
+        count += static_cast<std::size_t>(std::ranges::count(
+            chart.bga_events, resource_id, &bga_event_t::resource));
+        for (const auto& channel : chart.sound_channels) {
+            if (channel.source_clip.source == asset_id) count += channel.events.size();
+        }
+    }
+    return count;
+}
+
 auto next_chart_object_id(const chart_document_t& chart) -> std::optional<object_id_t> {
     std::uint64_t largest{};
     std::size_t count{};
@@ -1166,6 +1185,35 @@ auto apply_resource_sound_metadata(document_history_t& history, std::uint64_t ex
     target.sound_kind = action.kind;
     target.tags = std::move(*tags);
     return commit_document_command(history, std::move(proposed), "Edit sound kind and tags");
+}
+
+auto apply_resource_deletion(document_history_t& history, std::uint64_t expected_revision,
+                            resource_id_t resource_id) -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id, "resource deletion document revision is stale");
+        return result;
+    }
+    const auto resource = std::ranges::find(history.document.resources, resource_id,
+                                            &resource_entry_t::id);
+    if (!resource_id || resource == history.document.resources.end()) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "resource deletion refers to an unknown catalog resource");
+        return result;
+    }
+    const auto reference_count = count_resource_references(
+        history.document, resource_id, resource->asset);
+    if (reference_count != 0) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "resource is still referenced by " + std::to_string(reference_count) +
+                   " stored event(s)");
+        return result;
+    }
+    auto proposed = history.document;
+    const auto target = std::ranges::find(proposed.resources, resource_id,
+                                          &resource_entry_t::id);
+    proposed.resources.erase(target);
+    return commit_document_command(history, std::move(proposed), "Delete resource");
 }
 
 auto validate_resource_assignment_selection(const song_document_t& document,

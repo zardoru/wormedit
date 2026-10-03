@@ -71,6 +71,40 @@ auto assignment_song() -> song_document_t {
     return song;
 }
 
+auto deletion_reference_song() -> song_document_t {
+    auto song = assignment_song();
+    auto& first = song.charts.front();
+    first.measures.front().notes.front().sound_channel_event = object_id_t{51};
+    first.sound_channels = {{.id = object_id_t{50},
+        .source_clip = {.id = clip_id_t{1}, .source = asset_id_t{1}, .end_frame = 48'000},
+        .events = {{.id = object_id_t{51}, .position = {measure_id_t{3}, 120},
+                    .lane = lane_id_t{1}}}}};
+
+    chart_document_t second{
+        .id = chart_id_t{30},
+        .measures = {{.id = measure_id_t{31},
+            .notes = {{.id = object_id_t{40}, .position = {measure_id_t{31}, 120},
+                       .lane = lane_id_t{2}, .sound = resource_id_t{1}}},
+            .bgm_events = {{.id = object_id_t{41}, .position = {measure_id_t{31}, 240},
+                            .source_lane = object_id_t{33}, .sound = resource_id_t{1}}}}},
+        .lane_layouts = {{.id = object_id_t{32}, .position = {measure_id_t{31}, 0},
+            .layout = {.profile_id = "one-key",
+                       .lanes = {{.id = lane_id_t{2}, .name = "Key", .display_order = 0}}}}},
+        .input_profile = {.profile_id = "one-key",
+                          .bindings = {{.key = physical_key_t::digit_2, .lane = lane_id_t{2}}}},
+        .bgm_source_lanes = {{.id = object_id_t{33}, .name = "BGM"}},
+        .bpms = {{.id = object_id_t{34}, .position = {measure_id_t{31}, 0},
+                  .beats_per_minute = {120, 1}}},
+        .bga_events = {{.id = object_id_t{35}, .position = {measure_id_t{31}, 360},
+                        .resource = resource_id_t{3}}},
+    };
+    first.bga_events.push_back({.id = object_id_t{36},
+        .position = {measure_id_t{3}, 400}, .resource = resource_id_t{3}});
+    song.charts.push_back(std::move(second));
+    REQUIRE(validate_document(song).empty());
+    return song;
+}
+
 auto has_code(const document_command_result_t& result, diagnostic_code_t code) -> bool {
     return std::ranges::any_of(result.diagnostics,
                                [code](const auto& item) { return item.code == code; });
@@ -867,4 +901,119 @@ TEST_CASE("sound metadata that changes nothing creates no history entry",
     CHECK(result.diagnostics.empty());
     CHECK(history.undo.empty());
     CHECK(history.document.revision == 4);
+}
+
+TEST_CASE("unused resource deletion leaves its asset intact",
+          "[unit][core][resources][delete]") {
+    auto history = make_document_history(assignment_song());
+    const auto deleted = apply_resource_deletion(history, 4, resource_id_t{4});
+    REQUIRE(deleted);
+    CHECK(history.document.resources.size() == 4);
+    CHECK((history.document.visual_assets.size() == 2 &&
+          history.document.visual_assets.back().source_path == "two.png" &&
+          history.document.visual_assets.back().id == asset_id_t{5}));
+}
+
+TEST_CASE("undo restores a deleted resource without renumbering BMS identities",
+          "[unit][core][resources][delete]") {
+    auto song = assignment_song();
+    song.resources[2].target_identities = {
+        {.family = format_family_t::bms, .identifier = "03", .namespace_name = "BMP"}};
+    song.resources[3].target_identities = {
+        {.family = format_family_t::bms, .identifier = "04", .namespace_name = "BMP"}};
+    auto history = make_document_history(std::move(song));
+    REQUIRE(apply_resource_deletion(history, 4, resource_id_t{4}));
+    REQUIRE(undo_document_command(history));
+    CHECK((history.document.resources.size() == 5 &&
+          history.document.resources[2].id == resource_id_t{3} &&
+          history.document.resources[2].target_identities.front().identifier == "03" &&
+          history.document.resources[3].id == resource_id_t{4} &&
+          history.document.resources[3].target_identities.front().identifier == "04" &&
+          history.document.visual_assets.back().source_path == "two.png"));
+}
+
+TEST_CASE("resource deletion counts direct and retained sound references across charts",
+          "[unit][core][resources][delete]") {
+    auto history = make_document_history(deletion_reference_song());
+    const auto note_and_bgm = apply_resource_deletion(history, 4, resource_id_t{1});
+    CHECK_FALSE(note_and_bgm);
+    REQUIRE(note_and_bgm.diagnostics.size() == 1);
+    CHECK(note_and_bgm.diagnostics.front().message ==
+          "resource is still referenced by 5 stored event(s)");
+    CHECK(history.document.revision == 4);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("resource deletion counts BGA references across charts",
+          "[unit][core][resources][delete]") {
+    auto history = make_document_history(deletion_reference_song());
+    const auto bga = apply_resource_deletion(history, 4, resource_id_t{3});
+    CHECK_FALSE(bga);
+    REQUIRE(bga.diagnostics.size() == 1);
+    CHECK(bga.diagnostics.front().message == "resource is still referenced by 3 stored event(s)");
+}
+
+TEST_CASE("retained channel references conservatively protect resource aliases",
+          "[unit][core][resources][delete]") {
+    auto song = deletion_reference_song();
+    song.charts.front().measures.front().notes.front().sound_channel_event.reset();
+    song.resources.push_back({.id = resource_id_t{6}, .name = "Alias",
+                              .asset = asset_id_t{1}, .roles = {resource_role_t::sample}});
+    auto history = make_document_history(std::move(song));
+    const auto rejected = apply_resource_deletion(history, 4, resource_id_t{6});
+    CHECK_FALSE(rejected);
+    REQUIRE(rejected.diagnostics.size() == 1);
+    CHECK(rejected.diagnostics.front().message ==
+          "resource is still referenced by 1 stored event(s)");
+    CHECK(history.document.resources.size() == 6);
+    CHECK(history.document.audio_assets.front().id == asset_id_t{1});
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("resource deletion rejects stale revisions atomically",
+          "[unit][core][resources][delete]") {
+    auto history = make_document_history(assignment_song());
+    const auto stale = apply_resource_deletion(history, 3, resource_id_t{4});
+    CHECK_FALSE(stale);
+    CHECK(stale.diagnostics.front().message == "resource deletion document revision is stale");
+    CHECK(history.document.revision == 4);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("resource deletion rejects missing IDs atomically",
+          "[unit][core][resources][delete]") {
+    auto history = make_document_history(assignment_song());
+    const auto unknown = apply_resource_deletion(history, 4, resource_id_t{99});
+    CHECK_FALSE(unknown);
+    CHECK(unknown.diagnostics.front().message ==
+          "resource deletion refers to an unknown catalog resource");
+    CHECK(history.document.revision == 4);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("resource deletion rejects the reserved zero ID atomically",
+          "[unit][core][resources][delete]") {
+    auto history = make_document_history(assignment_song());
+    const auto zero = apply_resource_deletion(history, 4, resource_id_t{});
+    CHECK_FALSE(zero);
+    CHECK(zero.diagnostics.front().message ==
+          "resource deletion refers to an unknown catalog resource");
+    CHECK(history.document.revision == 4);
+    CHECK(history.document.resources.size() == 5);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("resource deletion preserves remaining BMS IDs before undo",
+          "[unit][core][resources][delete]") {
+    auto song = assignment_song();
+    song.resources[0].target_identities = {
+        {.family = format_family_t::bms, .identifier = "01", .namespace_name = "WAV"}};
+    song.resources[1].target_identities = {
+        {.family = format_family_t::bms, .identifier = "02", .namespace_name = "WAV"}};
+    auto history = make_document_history(std::move(song));
+    REQUIRE(apply_resource_deletion(history, 4, resource_id_t{2}));
+    CHECK(history.document.resources.front().id == resource_id_t{1});
+    CHECK(history.document.resources.front().target_identities.front().identifier == "01");
+    CHECK(history.document.audio_assets.size() == 3);
+    CHECK(history.document.audio_assets[1].source_path == "two.wav");
 }

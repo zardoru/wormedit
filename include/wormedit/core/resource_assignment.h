@@ -97,6 +97,15 @@ struct set_resource_sound_metadata_action_t {
                                                  const set_resource_sound_metadata_action_t& action)
     -> document_command_result_t;
 
+// Removes one catalog entry only when it has no references. Notes, BGM and
+// BGA events count direct resource-ID references. Retained sound-channel events
+// count against every resource sharing their source asset; a linked semantic
+// note/BGM and retained channel event are distinct stored references. Assets
+// and their files are never removed.
+[[nodiscard]] auto apply_resource_deletion(document_history_t& history,
+                                           std::uint64_t expected_revision,
+                                           resource_id_t resource) -> document_command_result_t;
+
 enum class resource_placement_kind_t {
     sample_note,
     bgm_event,

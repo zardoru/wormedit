@@ -47,8 +47,11 @@ shortcut event (`shortcut_events[0].hid_usage`, `repeat`, focus flags), not as a
 | `h.run_script(steps)` | One frame per `event_step_t`. Returns one owning snapshot per step; each step has `events` and `modifiers` (default none). |
 
 `snapshot.get()` returns a const action reference. All eleven borrowed metadata
-strings and every search-tag string plus its pointer array are owned by the
-snapshot. Scalar fields and inline arrays are copied by value. Copies share
+strings, the nested `project_chart.author`, `project_chart.rating_numerator`,
+and `project_chart.rating_denominator` strings, and every search-tag string plus
+its pointer array are owned by the snapshot. Null strings remain null; non-null
+empty strings remain non-null and empty. Scalar fields and inline arrays are
+copied by value. Copies share
 immutable storage; copy/move construction, assignment, and vector relocation
 preserve values beyond subsequent compose calls and frontend destruction. Keep
 an owning snapshot alive while using `get()`; copying the raw C action from it
@@ -126,7 +129,7 @@ env -u DISPLAY -u WAYLAND_DISPLAY ctest --test-dir build -L event-harness --outp
 ```
 
 CI uses `headless-events` only in the existing Linux/GCC lane, checks that at
-least eleven harness cases are discovered, and runs them with the aggregate
+least twelve harness cases are discovered, and runs them with the aggregate
 suite. The other lanes retain `headless`; no new matrix entries or manual
 Actions re-runs are needed. Each harness test has a 30-second timeout.
 
@@ -147,4 +150,14 @@ Delete, cancels and can reopen, and creates the default 7K layout.
 
 Regressions additionally cover Ctrl-down/wheel/release versus ordinary scrolling,
 restoration of ambient modifiers, every borrowed payload across ownership
-operations, and multiframe Metadata text history after later compose and shutdown.
+operations (including nested project-chart strings, null and empty values), and
+multiframe Metadata text history after later compose and shutdown.
+
+The recursive action payload audit covers `project_chart`, `notifications`,
+`options`, `tap_timing`, `external_player`, `compose_inputs`,
+`compose_viewport_inputs`, `compose_recipe_form` (including its rational-text
+members), `timing_target`, and `shortcut_events`. Only `project_chart` contains
+nested borrowed pointers; the others contain scalars, enums, or inline arrays.
+Together with the top-level metadata fields this is fourteen string pointers
+plus the search-tag array and its elements. Future nested payload changes must
+be included in the ownership audit, not only new top-level fields.

@@ -119,6 +119,9 @@ struct workspace_action_snapshot_t::storage_t {
     }
 
     explicit storage_t(const WormUiWorkspaceAction& source) : action{source} {
+        action.project_chart.author = own(source.project_chart.author);
+        action.project_chart.rating_numerator = own(source.project_chart.rating_numerator);
+        action.project_chart.rating_denominator = own(source.project_chart.rating_denominator);
         action.metadata_chart_rating_numerator_text = own(source.metadata_chart_rating_numerator_text);
         action.metadata_chart_rating_denominator_text = own(source.metadata_chart_rating_denominator_text);
         action.metadata_audio_offset_numerator_text = own(source.metadata_audio_offset_numerator_text);

@@ -84,7 +84,7 @@ jobs:
           harness = [t for t in tests if any(
               p['name'] == 'LABELS' and 'event-harness' in p['value']
               for p in t.get('properties', []))]
-          assert len(harness) >= 11, f'Expected at least 11 event harness tests, got {len(harness)}'
+          assert len(harness) >= 12, f'Expected at least 12 event harness tests, got {len(harness)}'
           PY
 
       # Serial on purpose: some tests assert wall-clock ceilings. The timeout turns a

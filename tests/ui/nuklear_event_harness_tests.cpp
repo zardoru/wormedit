@@ -245,7 +245,7 @@ TEST_CASE("Headless frontend isolates scripted Ctrl wheel zoom and release",
     check_modifier_fixture_isolation();
 }
 
-TEST_CASE("Action snapshots own every borrowed payload across copies moves and destruction",
+TEST_CASE("Action snapshots own metadata payloads across copies moves and destruction",
           "[unit][frontend-state][frontend][event-harness]") {
     using text_member_t = const char* WormUiWorkspaceAction::*;
     constexpr std::array<text_member_t, 11> fields{
@@ -353,4 +353,67 @@ TEST_CASE("Headless metadata text history survives later compose and frontend sh
     auto moved = std::move(copied);
     CHECK(std::string{moved[0].get().metadata_title} == "First");
     CHECK(std::string{moved[0].get().metadata_artist} == "Artist");
+}
+
+namespace {
+
+constexpr std::array project_chart_text_fields{
+    &WormUiProjectChartAction::author,
+    &WormUiProjectChartAction::rating_numerator,
+    &WormUiProjectChartAction::rating_denominator,
+};
+
+auto project_chart_snapshot_from_local_buffers() -> workspace_action_snapshot_t {
+    WormUiWorkspaceAction source{};
+    std::array<std::string, 3> strings{"Chart author", std::string(100, '9'), "7"};
+    for (std::size_t i = 0; i < strings.size(); ++i)
+        source.project_chart.*project_chart_text_fields[i] = strings[i].c_str();
+    auto snapshot = workspace_action_snapshot_t{source};
+    for (auto& value : strings) value[0] = '!';
+    // Check while the source still lives: the shallow-copy negative control
+    // fails safely here before any borrowed pointer could become dangling.
+    for (std::size_t i = 0; i < strings.size(); ++i)
+        REQUIRE((snapshot.get().project_chart.*project_chart_text_fields[i])[0] != '!');
+    return snapshot;
+}
+
+void check_project_chart_snapshot(const workspace_action_snapshot_t& snapshot) {
+    const auto& chart = snapshot.get().project_chart;
+    CHECK(std::string{chart.author} == "Chart author");
+    CHECK(std::string{chart.rating_numerator} == std::string(100, '9'));
+    CHECK(std::string{chart.rating_denominator} == "7");
+}
+
+void check_project_chart_null_and_empty() {
+    for (const auto member : project_chart_text_fields) {
+        WormUiWorkspaceAction source{};
+        const workspace_action_snapshot_t absent{source};
+        CHECK(absent.get().project_chart.*member == nullptr);
+        char empty[]{'\0', '\0'};
+        source.project_chart.*member = empty;
+        const workspace_action_snapshot_t present{source};
+        empty[0] = 'x';
+        REQUIRE(present.get().project_chart.*member != nullptr);
+        CHECK(std::string{present.get().project_chart.*member}.empty());
+    }
+}
+
+} // namespace
+
+TEST_CASE("Action snapshots own nested project chart text through source destruction",
+          "[unit][frontend-state][frontend][event-harness]") {
+    auto original = project_chart_snapshot_from_local_buffers();
+    auto copied = original;
+    auto moved = std::move(copied);
+    auto assigned = workspace_action_snapshot_t{{}};
+    assigned = moved;
+    auto move_assigned = workspace_action_snapshot_t{{}};
+    move_assigned = std::move(assigned);
+    std::vector<workspace_action_snapshot_t> history;
+    history.push_back(std::move(move_assigned));
+    original = workspace_action_snapshot_t{{}};
+    moved = workspace_action_snapshot_t{{}};
+    for (int i = 0; i < 32; ++i) history.push_back(workspace_action_snapshot_t{{}});
+    check_project_chart_snapshot(history.front());
+    check_project_chart_null_and_empty();
 }

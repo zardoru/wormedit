@@ -155,7 +155,7 @@ Most remaining format work waits on user decisions; those cards are
 
 ## T-291 Pin the latest osu!mania format version
 
-- **Status:** ready
+- **Status:** done (already implemented: `src/formats/osu_mania.cpp:1996`; current encoder commit and v128 evidence verified 2026-10-02 in `docs/references/osu-mania-version-profiles.md`)
 - **Outcome:** the lazer profile is pinned to the latest `osu file format vN` emitted by the current osu! (lazer) encoder, with a fixture and the encoder commit recorded; stable v14 stays readable (user decision 2026-09-30).
 - **Read first:** `docs/references/osu-mania-version-profiles.md`, `src/formats/osu_mania.cpp` (profile selection), `tests/fixtures/osu/`.
 - **Files owned:** `docs/references/osu-mania-version-profiles.md`, `src/formats/osu_mania.cpp`, `include/wormedit/formats/osu_mania.h`, `tests/formats/osu_mania_tests.cpp`, new fixture under `tests/fixtures/osu/`, `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`.

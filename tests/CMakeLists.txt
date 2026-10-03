@@ -112,6 +112,7 @@ add_executable(wormedit_core_tests
     core/bgm_columns_tests.cpp
     core/lane_profile_switch_tests.cpp
     core/lane_migration_tests.cpp
+    core/channel_map_editor_tests.cpp
     core/resource_assignment_tests.cpp
     core/resource_file_copy_tests.cpp
     core/scroll_speed_editor_tests.cpp

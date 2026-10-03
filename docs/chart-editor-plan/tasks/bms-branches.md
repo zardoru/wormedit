@@ -80,7 +80,8 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-95 Add a custom BMS channel-map edit command
 
-- **Status:** ready
+- **Status:** done
+- **Implementation/verification (2026-10-03):** revision-bound sealed previews validate the final channel map, so simultaneous swaps work, case-insensitive duplicates name the conflicting lanes, and affected-note counts stay within the selected layout segment. Apply preserves note lane IDs and commits one undoable command. Used channels cannot be removed; branch-local notes retain their actual source channel identity. Four new regressions cover swaps, syntax/category ranges, conflict names, stale or altered previews, export/reimport, and branch-source protection. Application build, configured clang-tidy (no new violations), all 1,135 core tests, and the complete 1,667-test suite pass (`/tmp/wormedit-lanes-branches-core.log`, `/tmp/wormedit-lanes-branches-all.log`).
 - **Outcome:** a core command changes one lane's `bms_channel_map_t` (visible/invisible/LN/mine channel strings), validates uniqueness and syntax, and reports how many notes would change channel on export.
 - **Read first:** `include/wormedit/core/document.h` (`bms_channel_map_t`, `lane_definition_t`), `include/wormedit/core/lane_profiles.h`, `docs/references/bms-command-memo.md`.
 - **Files owned:** new `include/wormedit/core/channel_map_editor.h`, new `src/core/channel_map_editor.cpp`, new `tests/core/channel_map_editor_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -95,7 +96,7 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-96 Edit channel maps in Metadata
 
-- **Status:** blocked-on T-95
+- **Status:** ready
 - **Outcome:** Metadata's chart section lists lanes with their four channel strings, lets the user edit them, shows the preview count, and applies once.
 - **Read first:** `include/wormedit/core/channel_map_editor.h`, `src/ui/nuklear/metadata_panel.cpp`, `src/sys/metadata_actions.cpp`.
 - **Files owned:** `src/sys/metadata_actions.cpp`, `src/sys/metadata_view_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp` (or the section unit from T-42).

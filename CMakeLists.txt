@@ -82,6 +82,7 @@ add_library(wormedit_core
     src/core/bgm_columns.cpp
     src/core/lane_profile_switch.cpp
     src/core/lane_migration.cpp
+    src/core/channel_map_editor.cpp
     src/core/resource_assignment.cpp
     src/core/resource_file_copy.cpp
     src/core/scroll_speed_editor.cpp

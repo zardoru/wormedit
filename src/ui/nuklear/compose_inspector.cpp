@@ -751,267 +751,26 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
 }
 
 auto semantic_layer_target_active(const WormUiComposeView* view) -> bool {
-    for (size_t index = 0; index < view->semantic_layer_count; ++index)
-        if (view->semantic_layers[index].selected) return true;
-    return false;
-}
-
-static void render_semantic_layer_page_controls(const ComposeInspectorContext& inspector) {
-    const auto* view = inspector.view;
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    nk_layout_row_dynamic(context, 24, 1);
-    if (nk_button_label(context, "Add semantic layer") &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER;
-    nk_layout_row_dynamic(context, 24, 1);
-    if (view->semantic_layer_page_count == 0) {
-        nk_label(context, "Palette empty", NK_TEXT_CENTERED);
-    } else {
-        nk_labelf(context, NK_TEXT_CENTERED, "Page %zu/%zu · %zu layers",
-                  view->semantic_layer_page + 1, view->semantic_layer_page_count,
-                  view->semantic_layer_total_count);
-    }
-    nk_layout_row_dynamic(context, 24, 2);
-    if (view->semantic_layer_page == 0) nk_widget_disable_begin(context);
-    const auto previous_clicked = nk_button_label(context, "Previous");
-    if (view->semantic_layer_page == 0) nk_widget_disable_end(context);
-    const auto last_page = view->semantic_layer_page_count == 0 ||
-                           view->semantic_layer_page + 1 >= view->semantic_layer_page_count;
-    if (last_page) nk_widget_disable_begin(context);
-    const auto next_clicked = nk_button_label(context, "Next");
-    if (last_page) nk_widget_disable_end(context);
-    if (action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
-    if (previous_clicked)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_PREVIOUS_SEMANTIC_LAYER_PAGE;
-    else if (next_clicked)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_NEXT_SEMANTIC_LAYER_PAGE;
-}
-
-static void fit_semantic_layer_label(nk_context* context, char* label,
-                                     std::size_t capacity) {
-    const auto* font = context->style.font;
-    const auto width = nk_widget_bounds(context).w -
-                       2.0f * (context->style.button.padding.x + context->style.button.border +
-                               context->style.button.rounding);
-    const auto length = static_cast<int>(strlen(label));
-    if (font->width(font->userdata, font->height, label, length) <= width) return;
-    const auto dots_width = font->width(font->userdata, font->height, "...", 3);
-    auto end = length;
-    while (end > 0 && font->width(font->userdata, font->height, label, end) + dots_width > width)
-        --end;
-    // Keep the ellipsis on a UTF-8 boundary when names contain non-ASCII text.
-    while (end > 0 && (static_cast<unsigned char>(label[end]) & 0xc0U) == 0x80U)
-        --end;
-    snprintf(label + end, capacity - static_cast<std::size_t>(end), "...");
-}
-
-static void render_semantic_layer_button(const ComposeInspectorContext& inspector,
-                                         const auto& layer, std::size_t index) {
-    const auto* view = inspector.view;
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    const bool assign_selection = view->selected_note_count != 0 && !layer.locked;
-    std::array<char, 96> label{};
-    auto name_length = std::min<std::size_t>(strlen(layer.name), 24);
-    while (name_length > 0 &&
-           (static_cast<unsigned char>(layer.name[name_length]) & 0xc0U) == 0x80U)
-        --name_length;
-    snprintf(label.data(), label.size(), "%zu:%.*s #%llu%s%s", index + 1,
-             static_cast<int>(name_length), layer.name,
-             static_cast<unsigned long long>(layer.layer_id),
-             layer.visible ? "" : " [hidden]", layer.selected ? " *" : "");
-    nk_layout_row_dynamic(context, 25, 1);
-    const auto palette_color = nk_rgba(layer.red, layer.green, layer.blue, layer.alpha);
-    nk_style_push_style_item(context, &context->style.button.normal,
-                             nk_style_item_color(palette_color));
-    nk_style_push_style_item(context, &context->style.button.hover,
-                             nk_style_item_color(palette_color));
-    nk_style_push_style_item(context, &context->style.button.active,
-                             nk_style_item_color(palette_color));
-    if (!view->scene_available) nk_widget_disable_begin(context);
-    std::array<char, 256> full_label{};
-    snprintf(full_label.data(), full_label.size(), "%s #%llu%s%s%s", layer.name,
-             static_cast<unsigned long long>(layer.layer_id),
-             layer.visible ? "" : " [hidden]", layer.selected ? " *" : "",
-             assign_selection ? "\nClick to add selected notes to this layer" : "");
-    fit_semantic_layer_label(context, label.data(), label.size());
-    const auto clicked = nk_button_label(context, label.data());
-    if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0)
-        nk_tooltip(context, full_label.data());
-    if (!view->scene_available) nk_widget_disable_end(context);
-    nk_style_pop_style_item(context);
-    nk_style_pop_style_item(context);
-    nk_style_pop_style_item(context);
-    if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        action->compose_action = assign_selection ? WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER
-                                                  : WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER;
-        action->compose_semantic_layer_id = layer.layer_id;
-    }
-}
-
-static void render_semantic_layer_palette(const ComposeInspectorContext& inspector) {
-    const auto* view = inspector.view;
-    auto* context = inspector.context;
-    if (view->semantic_layer_count == 0) {
-        nk_layout_row_dynamic(context, 22, 1);
-        nk_label_wrap(context, "No visible semantic layers");
-        return;
-    }
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_label(context, view->semantic_layers_truncated ? "Layers+" : "Layers", NK_TEXT_LEFT);
-    if (view->selected_note_count != 0) {
-        nk_layout_row_dynamic(context, 32, 1);
-        nk_label_wrap(context, "Click an unlocked layer to add selected notes");
-    }
-    for (size_t index = 0; index < view->semantic_layer_count; ++index)
-        render_semantic_layer_button(inspector, view->semantic_layers[index], index);
+    return view->semantic_layer_target_none || view->semantic_layer_target.layer_id != 0;
 }
 
 auto render_semantic_layer_palette_panel(const ComposeInspectorContext& inspector) -> bool {
-    if (!nk_tree_push(inspector.context, NK_TREE_TAB, "Semantic layers", NK_MAXIMIZED)) return false;
-    render_semantic_layer_page_controls(inspector);
-    render_semantic_layer_palette(inspector);
-    return true;
-}
-
-static void render_semantic_layer_color_editor(const ComposeInspectorContext& inspector) {
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    if (!state.semantic_layer_color_editor_visible) return;
-    nk_layout_row_dynamic(context, 110, 1);
-    auto color = nk_colorf{state.semantic_layer_color.r, state.semantic_layer_color.g,
-                           state.semantic_layer_color.b, state.semantic_layer_color.a};
-    color = nk_color_picker(context, color, NK_RGBA);
-    state.semantic_layer_color = {color.r, color.g, color.b, color.a};
-    const auto byte_component = [](float component) {
-        return static_cast<uint8_t>(std::lround(std::clamp(component, 0.0f, 1.0f) * 255.0f));
-    };
-    const auto red = byte_component(state.semantic_layer_color.r);
-    const auto green = byte_component(state.semantic_layer_color.g);
-    const auto blue = byte_component(state.semantic_layer_color.b);
-    const auto alpha = byte_component(state.semantic_layer_color.a);
-    nk_layout_row_dynamic(context, 24, 1);
-    nk_labelf(context, NK_TEXT_LEFT, "RGBA %u %u %u %u", static_cast<unsigned>(red),
-              static_cast<unsigned>(green), static_cast<unsigned>(blue),
-              static_cast<unsigned>(alpha));
-    nk_layout_row_dynamic(context, 24, 2);
-    const auto apply_clicked = nk_button_label(context, "Apply");
-    const auto cancel_clicked = nk_button_label(context, "Cancel");
-    if (apply_clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        action->compose_semantic_layer_red = red;
-        action->compose_semantic_layer_green = green;
-        action->compose_semantic_layer_blue = blue;
-        action->compose_semantic_layer_alpha = alpha;
-        action->compose_action = WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR;
-        state.semantic_layer_color_editor_visible = false;
-    } else if (cancel_clicked) {
-        state.semantic_layer_color_editor_visible = false;
-    }
-}
-
-static void render_semantic_layer_selection_fields(const ComposeInspectorContext& inspector,
-                                                   const auto& layer) {
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    const auto* view = inspector.view;
-    if (state.semantic_layer_name_id != layer.layer_id ||
-        state.semantic_layer_name_revision != view->document_revision) {
-        state.semantic_layer_name.fill('\0');
-        const auto length = std::min(strlen(layer.name), state.semantic_layer_name.size() - 1);
-        memcpy(state.semantic_layer_name.data(), layer.name, length);
-        state.semantic_layer_name_id = layer.layer_id;
-        state.semantic_layer_name_revision = view->document_revision;
-    }
-    if (state.semantic_layer_color_id != layer.layer_id) {
-        state.semantic_layer_color_id = layer.layer_id;
-        state.semantic_layer_color_editor_visible = false;
-    }
-    if (!state.semantic_layer_color_editor_visible) {
-        const auto color = nk_color_cf(nk_rgba(layer.red, layer.green, layer.blue, layer.alpha));
-        state.semantic_layer_color = {color.r, color.g, color.b, color.a};
-    }
-    nk_layout_row_dynamic(context, 24, 1);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.semantic_layer_name.data(),
-                                         state.semantic_layer_name.size(), nk_filter_default);
-    nk_layout_row_dynamic(context, 24, 2);
-    if (nk_button_label(context, "Rename") && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        memcpy(action->compose_semantic_layer_name, state.semantic_layer_name.data(),
-               sizeof(action->compose_semantic_layer_name));
-        action->compose_action = WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER;
-    }
-    if (nk_button_label(context, "Color..."))
-        state.semantic_layer_color_editor_visible = !state.semantic_layer_color_editor_visible;
-}
-
-static void render_semantic_layer_membership_details(const ComposeInspectorContext& inspector,
-                                                     const auto& layer);
-
-static void render_semantic_layer_selected_actions(const ComposeInspectorContext& inspector,
-                                                   const auto& layer) {
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    const auto* view = inspector.view;
-    nk_layout_row_dynamic(context, 24, 2);
-    if (layer.locked) nk_widget_disable_begin(context);
-    const auto delete_clicked = nk_button_label(context, "Delete");
-    if (layer.locked) nk_widget_disable_end(context);
-    if (delete_clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER;
-    if (nk_button_label(context, "Up") && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP;
-    if (nk_button_label(context, "Down") && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_DOWN;
-    if (nk_button_label(context, view->semantic_layer_target_visible ? "Hide" : "Show") &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY;
-    render_semantic_layer_color_editor(inspector);
-    render_semantic_layer_membership_details(inspector, layer);
-}
-
-static void render_semantic_layer_membership_details(const ComposeInspectorContext& inspector,
-                                                     const auto& layer) {
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    const auto* view = inspector.view;
-    if (layer.assigned_note_count != 0) {
-        nk_layout_row_dynamic(context, 24, 1);
-        nk_labelf(context, NK_TEXT_LEFT, "Assigned to %zu note%s", layer.assigned_note_count,
-                  layer.assigned_note_count == 1 ? "" : "s");
-        if (layer.locked) nk_widget_disable_begin(context);
-        const auto unlink_clicked = nk_button_label(context, "Delete + unlink");
-        if (layer.locked) nk_widget_disable_end(context);
-        if (unlink_clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-            action->compose_action = WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS;
-    }
-    if (!layer.visible) return;
-    nk_layout_row_begin(context, NK_DYNAMIC, 22, 2);
-    nk_layout_row_push(context, wormedit::ui::chrome::property_label_ratio);
-    if (nk_button_label(context, view->semantic_layer_target_required_filter ? "Require: On"
-                                                                            : "Require") &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER;
-    nk_layout_row_push(context, wormedit::ui::chrome::property_label_ratio);
-    if (nk_button_label(context, view->semantic_layer_target_excluded_filter ? "Exclude: On"
-                                                                            : "Exclude") &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER;
-    nk_layout_row_end(context);
+    return nk_tree_push(inspector.context, NK_TREE_TAB, "Semantic layers", NK_MAXIMIZED) != 0;
 }
 
 void render_semantic_layer_selected_panel(const ComposeInspectorContext& inspector,
-                                                std::size_t layer_count) {
-    const auto* layers = inspector.view->semantic_layers;
-    const auto selected = std::ranges::find_if(layers, layers + layer_count,
-                                               [](const auto& layer) { return layer.selected; });
-    if (selected == layers + layer_count) return;
-    render_semantic_layer_selection_fields(inspector, *selected);
-    render_semantic_layer_selected_actions(inspector, *selected);
+                                           std::size_t layer_count) {
+    (void)layer_count;
+    const auto& layer = inspector.view->semantic_layer_target;
+    if (layer.layer_id == 0 || !layer.name) return;
+    nk_layout_row_dynamic(inspector.context, 22, 1);
+    nk_labelf(inspector.context, NK_TEXT_LEFT, "%s · %zu notes", layer.name, layer.assigned_note_count);
 }
 
 static auto semantic_layer_membership_hint(const WormUiComposeView& view,
                                           bool target_active) -> const char* {
     if (!target_active) return "Choose a layer";
+    if (view.semantic_layer_target_none) return "No layer only assigns";
     if (view.selected_note_count == 0) return "Select notes first";
     if (view.semantic_layer_target_locked) return "Unlock the layer first";
     if (!view.scene_available) return "Open a Compose chart";
@@ -1029,19 +788,21 @@ void render_semantic_layer_membership_buttons(const ComposeInspectorContext& ins
                                     !view->semantic_layer_target_locked &&
                                     view->selected_note_count != 0;
     const auto button = [&](const char* label, WormUiComposeActionKind kind) {
-        if (!membership_enabled) nk_widget_disable_begin(context);
+        const auto enabled = membership_enabled &&
+            (!view->semantic_layer_target_none || kind == WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
+        if (!enabled) nk_widget_disable_begin(context);
         const auto clicked = nk_button_label(context, label);
-        if (!membership_enabled) nk_widget_disable_end(context);
+        if (!enabled) nk_widget_disable_end(context);
         if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
             action->compose_action = kind;
     };
     nk_layout_row_dynamic(context, 24, 1);
-    if (!view->scene_available || !target_active) nk_widget_disable_begin(context);
+    if (!view->scene_available || !target_active || view->semantic_layer_target_none) nk_widget_disable_begin(context);
     const auto select_clicked = nk_button_label(context, "Select notes in layer");
-    if (!view->scene_available || !target_active) nk_widget_disable_end(context);
+    if (!view->scene_available || !target_active || view->semantic_layer_target_none) nk_widget_disable_end(context);
     if (select_clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER_NOTES;
-    button("Add selected notes to layer", WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
+    button("Assign selected notes", WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
     button("Remove selected notes", WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER);
     button("Toggle selected notes", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER);
     if (const auto* hint = semantic_layer_membership_hint(*view, target_active)) {
@@ -1064,19 +825,13 @@ void render_semantic_layer_target_buttons(const ComposeInspectorContext& inspect
     if (!layer_paint_enabled) nk_widget_disable_end(context);
     if (paint_clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE;
-    if (!target_active) nk_widget_disable_begin(context);
+    if (!target_active || view->semantic_layer_target_none) nk_widget_disable_begin(context);
     const auto solo_clicked =
         nk_button_label(context, view->semantic_layer_solo_active ? "Solo: On" : "Solo: Off");
-    if (!target_active) nk_widget_disable_end(context);
+    if (!target_active || view->semantic_layer_target_none) nk_widget_disable_end(context);
     if (solo_clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO;
-    nk_layout_row_dynamic(context, 24, 2);
-    if (!target_active) nk_widget_disable_begin(context);
-    const auto lock_clicked =
-        nk_button_label(context, view->semantic_layer_target_locked ? "Unlock" : "Lock");
-    if (!target_active) nk_widget_disable_end(context);
-    if (lock_clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK;
+    nk_layout_row_dynamic(context, 24, 1);
     if (!target_active) nk_widget_disable_begin(context);
     const auto clear_clicked = nk_button_label(context, "Clear target");
     if (!target_active) nk_widget_disable_end(context);

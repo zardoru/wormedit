@@ -23,6 +23,36 @@ struct Frame {
     [[nodiscard]] auto stroke() const -> float { return std::max(1.0f, 2.0f * scale); }
 };
 
+// The view segment uses keys, a fraction and a layer stack as distinct marks.
+inline void view_keys(struct nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
+    const auto f = Frame::fit(bounds);
+    nk_stroke_rect(canvas, nk_rect(f.px(2), f.py(4), 20*f.scale, 16*f.scale), 0, f.stroke(), tint);
+    nk_stroke_line(canvas, f.px(9), f.py(4), f.px(9), f.py(20), f.stroke(), tint);
+    nk_stroke_line(canvas, f.px(15), f.py(4), f.px(15), f.py(20), f.stroke(), tint);
+    nk_fill_rect(canvas, nk_rect(f.px(7), f.py(4), 4*f.scale, 9*f.scale), 0, tint);
+    nk_fill_rect(canvas, nk_rect(f.px(13), f.py(4), 4*f.scale, 9*f.scale), 0, tint);
+}
+
+inline void view_snap(struct nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
+    const auto f = Frame::fit(bounds);
+    nk_stroke_line(canvas, f.px(8), f.py(5), f.px(10), f.py(3), f.stroke(), tint);
+    nk_stroke_line(canvas, f.px(10), f.py(3), f.px(10), f.py(10), f.stroke(), tint);
+    nk_stroke_line(canvas, f.px(4), f.py(14), f.px(20), f.py(10), f.stroke(), tint);
+    nk_stroke_line(canvas, f.px(12), f.py(15), f.px(10), f.py(20), f.stroke(), tint);
+    nk_stroke_line(canvas, f.px(10), f.py(20), f.px(17), f.py(20), f.stroke(), tint);
+    nk_stroke_line(canvas, f.px(15), f.py(16), f.px(15), f.py(23), f.stroke(), tint);
+}
+
+inline void view_layers(struct nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
+    const auto f = Frame::fit(bounds);
+    const float top[]{f.px(12),f.py(3),f.px(22),f.py(8),f.px(12),f.py(13),f.px(2),f.py(8)};
+    nk_stroke_polygon(canvas, const_cast<float*>(top), 4, f.stroke(), tint);
+    const float middle[]{f.px(2),f.py(13),f.px(12),f.py(18),f.px(22),f.py(13)};
+    nk_stroke_polyline(canvas, const_cast<float*>(middle), 3, f.stroke(), tint);
+    const float bottom[]{f.px(2),f.py(18),f.px(12),f.py(23),f.px(22),f.py(18)};
+    nk_stroke_polyline(canvas, const_cast<float*>(bottom), 3, f.stroke(), tint);
+}
+
 // Lucide "mouse-pointer-2": the select tool.
 inline void select_cursor(struct nk_command_buffer* canvas, struct nk_rect bounds,
                           struct nk_color tint) {

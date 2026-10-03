@@ -29,6 +29,7 @@ struct semantic_layer_rgba_t {
 };
 
 struct semantic_layer_palette_window_t {
+    std::size_t first_row{};
     std::size_t page{};
     std::size_t page_count{};
     std::size_t total_count{};
@@ -42,6 +43,15 @@ struct semantic_layer_palette_window_t {
                                                       std::optional<layer_id_t> selected_layer,
                                                       std::size_t requested_page,
                                                       bool reveal_selected, std::size_t page_size,
+                                                      std::size_t maximum_layers = 100'000)
+    -> std::optional<semantic_layer_palette_window_t>;
+
+// Projects a bounded scrolling window over every layer, including hidden
+// layers, in chart order. The first row clamps after catalog edits. A zero
+// row count or a chart exceeding maximum_layers rejects the request.
+[[nodiscard]] auto make_semantic_layer_palette_window(const chart_document_t& chart,
+                                                      std::size_t first_row,
+                                                      std::size_t row_count,
                                                       std::size_t maximum_layers = 100'000)
     -> std::optional<semantic_layer_palette_window_t>;
 
@@ -92,11 +102,26 @@ struct toggle_semantic_layer_membership_action_t {
     std::vector<object_id_t> notes;
 };
 
+struct clear_semantic_layer_membership_action_t {
+    chart_id_t chart;
+    std::vector<object_id_t> notes;
+};
+
+// Compose assignment replaces previous memberships. Toggle clears notes already
+// in the target, and replaces every other note with that one target.
+struct replace_notes_semantic_layer_action_t {
+    chart_id_t chart;
+    layer_id_t layer;
+    std::vector<object_id_t> notes;
+    bool toggle{};
+};
+
 using semantic_layer_edit_action_t =
     std::variant<insert_semantic_layer_action_t, update_semantic_layer_action_t,
                  delete_semantic_layer_action_t, reorder_semantic_layers_action_t,
                  assign_notes_to_semantic_layer_action_t, remove_notes_from_semantic_layer_action_t,
-                 toggle_semantic_layer_membership_action_t>;
+                 toggle_semantic_layer_membership_action_t,
+                 clear_semantic_layer_membership_action_t, replace_notes_semantic_layer_action_t>;
 
 // Applies one layer edit through shared document history. Layer IDs are stable,
 // nonzero, chart-local values. Membership actions affect only the explicitly

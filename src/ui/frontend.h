@@ -71,6 +71,8 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY 96
 #define WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY 4
 #define WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY 9
+#define WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY 256
+#define WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY 18
 #define WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY 128
 #define WORM_UI_COMPOSE_RESOURCE_CAPACITY 128
 #define WORM_UI_COMPOSE_KEYSOUND_CAPACITY 4096
@@ -580,6 +582,7 @@ typedef struct WormUiComposeHoldView {
     uint64_t lane_id;
     uint32_t display_lane_number; // 1-based chart layout order; 0 when unavailable.
     uint8_t key_color; // lane key color of the owning lane; 0 = generic.
+    uint8_t snap_class; // subdivision of the owning note head.
     bool selected;
     bool proposal_origin;
     bool proposal_ghost;
@@ -962,6 +965,7 @@ typedef struct WormUiComposeView {
     bool truncated;
     bool note_paint_mode_active;
     bool semantic_layer_paint_mode_active;
+    bool semantic_layer_gesture_active;
     size_t selected_note_count;
     // Quantization request currently selected in the inspector.
     uint64_t quantize_divisions;
@@ -1030,6 +1034,14 @@ typedef struct WormUiComposeView {
     const WormUiComposeSemanticLayerView* semantic_layers;
     size_t semantic_layer_count;
     size_t semantic_layer_total_count;
+    size_t semantic_layer_first_row;
+    const WormUiComposeSemanticLayerView* note_menu_layers;
+    size_t note_menu_layer_count;
+    size_t note_menu_layer_first_row;
+    size_t note_menu_layer_total_count;
+    WormUiComposeSemanticLayerView semantic_layer_target;
+    bool semantic_layer_target_none;
+    size_t semantic_layer_unassigned_note_count;
     size_t semantic_layer_page;
     size_t semantic_layer_page_count;
     bool semantic_layers_truncated;
@@ -1842,6 +1854,8 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_NAVIGATE_PREVIOUS_AUDIO_MARKER,
     WORM_UI_COMPOSE_ACTION_NAVIGATE_NEXT_AUDIO_MARKER,
     WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER,
+    WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER,
+    WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW,
     WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER,
@@ -1873,6 +1887,10 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS,
     WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET,
     WORM_UI_COMPOSE_ACTION_DELETE_QUANTIZE_PRESET,
+    WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU,
+    WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW,
+    WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU,
+    WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER,
 } WormUiComposeActionKind;
 
 typedef enum WormUiComposeInputKind {
@@ -2156,6 +2174,9 @@ typedef struct WormUiWorkspaceAction {
     char compose_marker_audio_begin[WORM_UI_COMPOSE_MARKER_TIME_BYTES];
     char compose_marker_audio_end[WORM_UI_COMPOSE_MARKER_TIME_BYTES];
     uint64_t compose_semantic_layer_id;
+    uint64_t compose_note_context_id;
+    size_t compose_semantic_layer_first_row;
+    size_t compose_semantic_layer_row_count;
     uint64_t compose_resource_id;
     uint64_t compose_bmson_bgm_event_id;
     uint64_t compose_resource_asset_id;

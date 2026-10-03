@@ -767,12 +767,14 @@ auto compose_note_key_color(const wormedit::editor_field_scene_t& scene, const a
 }
 
 auto compose_endpoint_snap_class(const compose_scene_projection_context_t& projection,
-                                 const wormedit::editor_field_note_endpoint_geometry_t& endpoint)
+                                 const auto& endpoint)
     -> std::uint8_t {
     const auto found = projection.index.note_indices_by_id.find(endpoint.note.value);
     if (found == projection.index.note_indices_by_id.end()) return 0;
     const auto& source = projection.index.notes[found->second];
-    return wormedit::ui::note_snap_class(endpoint.tail ? source.end_row : source.begin_row,
+    bool tail = false;
+    if constexpr (requires { endpoint.tail; }) tail = endpoint.tail;
+    return wormedit::ui::note_snap_class(tail ? source.end_row : source.begin_row,
                                         projection.chart.divisions_per_standard_measure);
 }
 
@@ -822,6 +824,7 @@ void project_compose_scene_objects(const compose_scene_projection_context_t& pro
              .lane_id = hold.lane.value,
              .display_lane_number = compose_note_display_lane_number(scene, hold),
              .key_color = compose_note_key_color(scene, hold),
+             .snap_class = compose_endpoint_snap_class(projection, hold),
              .selected = hold.selected,
              .proposal_origin = hold.proposal_origin,
              .proposal_ghost = hold.proposal_ghost,
@@ -1126,6 +1129,8 @@ bool initialize_compose_view_state(
     view.note_paint_mode_active = notes_editable && application_state.note_paint_mode_active;
     view.semantic_layer_paint_mode_active =
         notes_editable && application_state.semantic_layer_paint_mode_active;
+    view.semantic_layer_gesture_active = retained_state &&
+        editor_interaction_has_pending_gesture(*retained_state);
     view.timing_stage_active = false;
     view.timing_stage_valid = false;
     view.timing_stage_lane = WORM_UI_TIMING_LANE_BPM;
@@ -1222,6 +1227,14 @@ bool initialize_compose_view_state(
     view.semantic_layers = flattened.compose.semantic_layer.view.data();
     view.semantic_layer_count = 0;
     view.semantic_layer_total_count = 0;
+    view.semantic_layer_first_row = 0;
+    view.note_menu_layers = nullptr;
+    view.note_menu_layer_count = 0;
+    view.note_menu_layer_first_row = 0;
+    view.note_menu_layer_total_count = 0;
+    view.semantic_layer_target = {};
+    view.semantic_layer_target_none = false;
+    view.semantic_layer_unassigned_note_count = 0;
     view.semantic_layer_page = 0;
     view.semantic_layer_page_count = 0;
     view.semantic_layers_truncated = false;
@@ -1287,6 +1300,47 @@ auto append_semantic_layer_row(flattened_workspace_t& flattened, compose_scene_c
     });
 }
 
+void populate_semantic_membership_counts(compose_scene_cache_t& cache,
+                                          const wormedit::chart_document_t& chart) {
+    cache.semantic_layer_membership_counts.clear();
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            if (note.semantic_layers.empty()) ++cache.semantic_layer_membership_counts[0];
+            for (const auto layer : note.semantic_layers) {
+                auto& count = cache.semantic_layer_membership_counts[layer.value];
+                if (count != std::numeric_limits<std::size_t>::max()) ++count;
+            }
+        }
+    }
+}
+
+void populate_note_layer_menu(flattened_workspace_t& flattened,
+    const wormedit::chart_document_t& chart, std::uint64_t revision,
+    application_command_state_t& app) {
+    auto& view = flattened.view.compose;
+    auto& rows = flattened.compose.semantic_layer.note_menu;
+    view.note_menu_layer_total_count = chart.semantic_layers.size();
+    if (app.note_layer_menu_chart != chart.id || app.note_layer_menu_revision != revision)
+        app.note_layer_menu_row_count = 0;
+    if (!app.note_layer_menu_row_count) { rows = {}; return; }
+    const auto window = wormedit::make_semantic_layer_palette_window(chart,
+        app.note_layer_menu_first_row,
+        std::min<std::size_t>(app.note_layer_menu_row_count, WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY));
+    if (!window || !prepare_compose_geometry_rows(flattened, rows, window->layer_indices.size())) return;
+    app.note_layer_menu_first_row = window->first_row;
+    view.note_menu_layer_first_row = window->first_row;
+    for (const auto index : window->layer_indices) {
+        const auto& layer = chart.semantic_layers[index];
+        const auto* name = flattened.arena() ? arena_string(*flattened.arena(), layer.name) : nullptr;
+        if (!name) break;
+        if (!rows.push_back({.layer_id = layer.id.value, .name = name,
+            .red = layer.color.red, .green = layer.color.green, .blue = layer.color.blue,
+            .alpha = layer.color.alpha, .visible = layer.visible, .locked = layer.locked})) break;
+    }
+    view.note_menu_layers = rows.data();
+    view.note_menu_layer_count = rows.size();
+}
+
 bool populate_semantic_layer_palette(
     flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
     compose_scene_cache_t& cache, const wormedit::document_history_t& history,
@@ -1294,40 +1348,40 @@ bool populate_semantic_layer_palette(
     auto& view = flattened.view.compose;
     if (!cache.attempted || cache.chart != chart.id ||
         cache.revision != history.document.revision) {
-        cache.semantic_layer_membership_counts.clear();
-        for (const auto& measure : chart.measures) {
-            for (const auto& note : measure.notes) {
-                for (const auto layer : note.semantic_layers) {
-                    auto& count = cache.semantic_layer_membership_counts[layer.value];
-                    if (count != std::numeric_limits<std::size_t>::max()) {
-                        ++count;
-                    }
-                }
-            }
-        }
+        populate_semantic_membership_counts(cache, chart);
     }
-    const auto palette_context_changed = application_state.semantic_layer_palette_chart != chart.id;
-    const auto palette_target_changed =
-        application_state.semantic_layer_palette_target != application_state.semantic_layer_target;
-    if (palette_context_changed) {
+    if (application_state.semantic_layer_palette_chart != chart.id) {
         application_state.semantic_layer_palette_chart = chart.id;
-        application_state.semantic_layer_palette_page = 0;
+        application_state.semantic_layer_first_row = 0;
     }
+    view.semantic_layer_target_none = application_state.semantic_layer_target_none;
+    view.semantic_layer_unassigned_note_count = cache.semantic_layer_membership_counts[0];
     const auto palette = wormedit::make_semantic_layer_palette_window(
-        chart, application_state.semantic_layer_target,
-        application_state.semantic_layer_palette_page,
-        palette_context_changed || palette_target_changed, WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY);
+        chart, application_state.semantic_layer_first_row,
+        std::clamp<std::size_t>(application_state.semantic_layer_row_count, 1,
+                               WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY));
     if (!palette) {
         flattened.compose.status = "The semantic-layer palette exceeds its UI limit.";
         view.status_text = flattened.compose.status.c_str();
         return false;
     }
-    application_state.semantic_layer_palette_target = application_state.semantic_layer_target;
-    application_state.semantic_layer_palette_page = palette->page;
+    application_state.semantic_layer_first_row = palette->first_row;
+    view.semantic_layer_first_row = palette->first_row;
     view.semantic_layer_total_count = palette->total_count;
-    view.semantic_layer_page = palette->page;
-    view.semantic_layer_page_count = palette->page_count;
-    view.semantic_layers_truncated = palette->page_count > 1;
+    const auto target = std::ranges::find(chart.semantic_layers,
+        application_state.semantic_layer_target.value_or(wormedit::layer_id_t{}),
+        &wormedit::semantic_layer_t::id);
+    if (target != chart.semantic_layers.end()) {
+        const auto* name = flattened.arena() ? arena_string(*flattened.arena(), target->name) : nullptr;
+        view.semantic_layer_target = {
+            .layer_id = target->id.value, .name = name,
+            .red = target->color.red, .green = target->color.green,
+            .blue = target->color.blue, .alpha = target->color.alpha,
+            .assigned_note_count = cache.semantic_layer_membership_counts[target->id.value],
+            .visible = target->visible, .locked = target->locked, .selected = true,
+        };
+        populate_semantic_layer_target_state(view, application_state, *target, true);
+    }
     if (!prepare_compose_geometry_rows(flattened, flattened.compose.semantic_layer.view,
                                         palette->layer_indices.size())) {
         view.semantic_layers_truncated = true;
@@ -2603,6 +2657,7 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
     view.project_id = history.document.id.value;
     view.chart_id = chart.id.value;
     view.document_revision = history.document.revision;
+    populate_note_layer_menu(flattened, chart, history.document.revision, application_state);
     if (!populate_semantic_layer_palette(flattened, chart, cache, history, application_state)) {
         return nullptr;
     }

@@ -1,8 +1,12 @@
 #include "nuklear_event_harness.h"
+#include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_note_menu.h"
+#include "ui/nuklear/compose_area_menu.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <cstdio>
 #include <string>
 #include <utility>
 
@@ -58,6 +62,12 @@ auto click_at(nuklear_event_harness_t& harness, float x, float y)
     script[0].events = {motion_event(x, y), button_event(true, x, y)};
     script[1].events = {motion_event(x, y), button_event(false, x, y)};
     return harness.run_script(script);
+}
+
+auto check_no_toolbar_document_actions(const std::vector<workspace_action_snapshot_t>& frames)
+    -> void {
+    for (const auto& snapshot : frames)
+        CHECK(snapshot.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
 auto delete_shortcut_has_compose_context(const WormUiWorkspaceAction& action) -> bool {
@@ -416,4 +426,434 @@ TEST_CASE("Action snapshots own nested project chart text through source destruc
     for (int i = 0; i < 32; ++i) history.push_back(workspace_action_snapshot_t{{}});
     check_project_chart_snapshot(history.front());
     check_project_chart_null_and_empty();
+}
+
+TEST_CASE("Compose toolbar color views change frontend state without document actions",
+          "[unit][frontend-state][frontend][event-harness]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    (void)harness.frame();
+    using View = worm_ui_nuklear_compose_color_view_t;
+    const auto revision = harness.view().compose.document_revision;
+    // 24 px toolbar icons: navigation, separator, five tools, separator, views.
+    constexpr std::array views{View::snap, View::layer, View::normal};
+    constexpr std::array positions{266.0f, 291.0f, 241.0f};
+    for (std::size_t index = 0; index < views.size(); ++index) {
+        const auto clicks = click_at(harness, positions[index], 122.0f);
+        CHECK(worm_ui_nuklear_compose_state().color_view == views[index]);
+        check_no_toolbar_document_actions(clicks);
+        CHECK(harness.view().compose.document_revision == revision);
+    }
+}
+
+namespace {
+void check_layer_row_action(const workspace_action_snapshot_t& snapshot,
+                            WormUiComposeActionKind kind, std::uint64_t layer) {
+    REQUIRE(snapshot.get().compose_action == kind);
+    CHECK(snapshot.get().compose_semantic_layer_id == layer);
+}
+} // namespace
+
+TEST_CASE("Layers dock rows choose the target and send eye and lock actions for that row",
+          "[unit][frontend-state][frontend][event-harness]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& state = worm_ui_nuklear_compose_state();
+    state.inspector_visible = false;
+    state.sounds_panel_visible = false;
+    state.layers_panel_visible = true;
+    std::array<WormUiComposeSemanticLayerView, 2> layers{{
+        {.layer_id = 7, .name = "Lead", .red = 255, .assigned_note_count = 3, .visible = true},
+        {.layer_id = 9, .name = "Hidden", .blue = 255, .assigned_note_count = 2, .visible = false},
+    }};
+    auto& view = harness.view().compose;
+    view.semantic_layers = layers.data();
+    view.semantic_layer_count = layers.size();
+    view.semantic_layer_total_count = layers.size();
+    (void)harness.frame();
+    const auto chosen = click_at(harness, 1060, 233);
+    check_layer_row_action(chosen.back(), WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER, 7);
+    layers.front().selected = true;
+    view.semantic_layer_target = layers.front();
+    (void)harness.frame();
+    const auto eye = click_at(harness, 1200, 263);
+    check_layer_row_action(eye[0], WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, 9);
+    const auto lock = click_at(harness, 1225, 263);
+    check_layer_row_action(lock[0], WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK, 9);
+}
+
+TEST_CASE("Layers dock No layer row requests clear assignment without eye or lock actions",
+          "[unit][frontend-state][frontend][event-harness]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& state = worm_ui_nuklear_compose_state();
+    state.inspector_visible = false;
+    state.sounds_panel_visible = false;
+    state.layers_panel_visible = true;
+    auto& view = harness.view().compose;
+    view.semantic_layer_unassigned_note_count = 4;
+    view.selected_note_count = 2;
+    const auto revision = view.document_revision;
+    (void)harness.frame();
+    const auto clicked = click_at(harness, 1060, 203);
+    check_layer_row_action(clicked.back(), WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER, 0);
+    CHECK(view.document_revision == revision);
+    view.semantic_layer_target_none = true;
+    (void)harness.frame();
+    const auto no_eye = click_at(harness, 1200, 203);
+    check_layer_row_action(no_eye.back(), WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER, 0);
+}
+
+namespace {
+
+auto right_click_at(nuklear_event_harness_t& harness, float x, float y)
+    -> std::vector<workspace_action_snapshot_t> {
+    auto down = button_event(true, x, y);
+    auto up = button_event(false, x, y);
+    down.button.button = SDL_BUTTON_RIGHT;
+    up.button.button = SDL_BUTTON_RIGHT;
+    std::array<event_step_t, 2> script{};
+    script[0].events = {motion_event(x, y), down};
+    script[1].events = {motion_event(x, y), up};
+    return harness.run_script(script);
+}
+
+void check_layer_menu(bool condition) { CHECK(condition); }
+
+void check_layer_menu_no_actions(const std::vector<workspace_action_snapshot_t>& frames) {
+    for (const auto& frame : frames) {
+        check_layer_menu(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        check_layer_menu(frame.get().compose_input_count == 0);
+        check_layer_menu(frame.get().compose_viewport_input_count == 0);
+    }
+}
+
+struct layer_menu_fixture_t {
+    nuklear_event_harness_t harness{1280, 900};
+    std::array<WormUiComposeSemanticLayerView, 2> layers{{
+        {.layer_id = 7, .name = "Lead", .red = 255, .assigned_note_count = 3, .visible = true},
+        {.layer_id = 9, .name = "Locked", .blue = 255, .assigned_note_count = 2,
+         .visible = true, .locked = true},
+    }};
+
+    layer_menu_fixture_t() {
+        REQUIRE(harness.ready());
+        auto& state = worm_ui_nuklear_compose_state();
+        state.inspector_visible = false;
+        state.sounds_panel_visible = false;
+        state.layers_panel_visible = true;
+        state.color_view = worm_ui_nuklear_compose_color_view_t::normal;
+        auto& view = harness.view().compose;
+        view.semantic_layers = layers.data();
+        view.semantic_layer_count = layers.size();
+        view.semantic_layer_total_count = layers.size();
+        view.selected_note_count = 3;
+        (void)harness.frame();
+    }
+
+    void open(std::size_t index = 0) {
+        const auto clicks = right_click_at(harness, 1060, 233 + static_cast<float>(index) * 30);
+        check_layer_row_action(clicks.front(), WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER,
+                               layers[index].layer_id);
+        layers[index].selected = true;
+        harness.view().compose.semantic_layer_target = layers[index];
+        (void)harness.frame();
+        check_layer_menu(worm_ui_nuklear_compose_state().layers_menu_open);
+    }
+};
+
+} // namespace
+
+TEST_CASE("Layer row menu hides its captured target without assigning selected notes",
+          "[unit][frontend-state][frontend][event-harness]") {
+    layer_menu_fixture_t fixture;
+    fixture.open();
+    const auto hide = click_at(fixture.harness, 1100, 305);
+    check_layer_row_action(hide.front(), WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, 7);
+    fixture.layers.front().visible = false;
+    fixture.harness.view().compose.semantic_layer_target = fixture.layers.front();
+    ++fixture.harness.view().compose.document_revision;
+    (void)fixture.harness.frame();
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
+    const auto eye = click_at(fixture.harness, 1200, 233);
+    check_layer_row_action(eye.front(), WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, 7);
+}
+
+TEST_CASE("Layer row menu captures keyboard shortcuts and Escape closes without an action",
+          "[unit][frontend-state][frontend][event-harness]") {
+    layer_menu_fixture_t fixture;
+    fixture.open();
+    const std::array undo{key_event(SDL_EVENT_KEY_DOWN, SDLK_Z, SDL_SCANCODE_Z)};
+    const auto suppressed = fixture.harness.frame(undo, SDL_KMOD_CTRL);
+    check_layer_menu(suppressed.get().shortcut_text_entry_active);
+    check_layer_menu(suppressed.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    const std::array release{key_event(SDL_EVENT_KEY_UP, SDLK_Z, SDL_SCANCODE_Z)};
+    (void)fixture.harness.frame(release);
+    SDL_Event plus{};
+    plus.type = SDL_EVENT_TEXT_INPUT;
+    plus.text.text = "+";
+    const std::array text{plus};
+    const auto blocked_text = fixture.harness.frame(text);
+    check_layer_menu(blocked_text.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    const std::array escape{key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
+    const auto closed = fixture.harness.frame(escape);
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
+    check_layer_menu(closed.get().shortcut_text_entry_active);
+    check_layer_menu(closed.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_layer_menu(closed.get().compose_input_count == 0);
+}
+
+TEST_CASE("Layer row menu discards both halves of an outside click",
+          "[unit][frontend-state][frontend][event-harness]") {
+    layer_menu_fixture_t fixture;
+    fixture.open();
+    const auto outside = click_at(fixture.harness, 500, 400);
+    check_layer_menu_no_actions(outside);
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_release_pending);
+}
+
+TEST_CASE("Layer row menu owns Escape and outside clicks ahead of notification toasts",
+          "[unit][frontend-state][frontend][event-harness]") {
+    layer_menu_fixture_t fixture;
+    auto& notifications = fixture.harness.view().notifications;
+    notifications.toast_count = 1;
+    notifications.toasts[0] = {.id = 42, .severity = WORM_UI_NOTIFICATION_ERROR,
+                               .message = "Keep this notification", .repeat_count = 1};
+    (void)fixture.harness.frame();
+    fixture.open();
+    const std::array escape{key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
+    const auto closed = fixture.harness.frame(escape);
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
+    check_layer_menu(closed.get().notifications.kind == WORM_UI_NOTIFICATION_ACTION_NONE);
+    const std::array release{key_event(SDL_EVENT_KEY_UP, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
+    (void)fixture.harness.frame(release);
+    fixture.open();
+    const auto outside = click_at(fixture.harness, 1200, 820);
+    check_layer_menu_no_actions(outside);
+    for (const auto& frame : outside)
+        check_layer_menu(frame.get().notifications.kind == WORM_UI_NOTIFICATION_ACTION_NONE);
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
+}
+
+TEST_CASE("Layer row menu releases its popup after a stale revision or hidden panel",
+          "[unit][frontend-state][frontend][event-harness]") {
+    layer_menu_fixture_t fixture;
+    fixture.open();
+    ++fixture.harness.view().compose.document_revision;
+    (void)fixture.harness.frame();
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
+    fixture.open();
+    worm_ui_nuklear_compose_state().layers_panel_visible = false;
+    (void)fixture.harness.frame();
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_close_pending);
+    (void)click_at(fixture.harness, 266, 122);
+    check_layer_menu(worm_ui_nuklear_compose_state().color_view ==
+                     worm_ui_nuklear_compose_color_view_t::snap);
+}
+
+TEST_CASE("Locked layer row menu disables Rename and Color",
+          "[unit][frontend-state][frontend][event-harness]") {
+    layer_menu_fixture_t fixture;
+    fixture.open(1);
+    const auto rename = click_at(fixture.harness, 1100, 275);
+    check_layer_menu_no_actions(rename);
+    check_layer_menu(worm_ui_nuklear_compose_state().layers_menu_open);
+    check_layer_menu(!worm_ui_nuklear_compose_state().semantic_layer_name_editor_visible);
+    check_layer_menu(!worm_ui_nuklear_compose_state().semantic_layer_color_editor_visible);
+}
+
+TEST_CASE("Layer row Rename editor keeps its captured ID after target and window changes",
+          "[unit][frontend-state][frontend][event-harness]") {
+    layer_menu_fixture_t fixture;
+    fixture.open();
+    const auto rename = click_at(fixture.harness, 1100, 249);
+    check_layer_menu_no_actions(rename);
+    auto& state = worm_ui_nuklear_compose_state();
+    check_layer_menu(state.semantic_layer_name_editor_visible);
+    std::snprintf(state.semantic_layer_name.data(), state.semantic_layer_name.size(), "Renamed");
+    fixture.harness.view().compose.semantic_layer_target = fixture.layers.back();
+    fixture.harness.view().compose.semantic_layers = &fixture.layers.back();
+    fixture.harness.view().compose.semantic_layer_first_row = 1;
+    fixture.harness.view().compose.semantic_layer_count = 1;
+    const auto applied = click_at(fixture.harness, 1100, 253);
+    check_layer_row_action(applied.front(), WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER, 7);
+    check_layer_menu(std::string{applied.front().get().compose_semantic_layer_name} == "Renamed");
+    check_layer_menu(!state.semantic_layer_name_editor_visible);
+}
+
+namespace {
+struct note_menu_fixture_t {
+    nuklear_event_harness_t harness{1280, 900};
+    WormUiComposeHoldView note{.bounds = {200, 0, 500, 900}, .note_id = 42, .lane_id = 1};
+    std::array<WormUiComposeSemanticLayerView, 2> layers{{
+        {.layer_id = 7, .name = "Lead", .red = 255, .visible = true},
+        {.layer_id = 9, .name = "Locked", .blue = 255, .visible = false, .locked = true},
+    }};
+    note_menu_fixture_t() {
+        initialize();
+    }
+    void initialize() {
+        REQUIRE(harness.ready());
+        auto& state = worm_ui_nuklear_compose_state();
+        state.inspector_visible = state.sounds_panel_visible = state.layers_panel_visible = false;
+        auto& view = harness.view().compose;
+        view.hold_bodies = &note;
+        view.hold_body_count = 1;
+        view.note_menu_layers = layers.data();
+        view.note_menu_layer_count = layers.size();
+        view.note_menu_layer_total_count = layers.size();
+        view.selected_note_count = 2;
+        (void)harness.frame();
+    }
+    void open() {
+        const auto clicks = right_click_at(harness, 300, 300);
+        check_layer_menu(clicks.front().get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+        check_layer_menu(clicks.front().get().compose_note_context_id == 42);
+        check_layer_menu(compose_note_menu_open());
+        (void)click_at(harness, 350, 315);
+        (void)harness.frame();
+    }
+};
+}
+
+TEST_CASE("Note right click opens Layer submenu and assigns its captured selection",
+          "[unit][frontend-state][frontend][event-harness]") {
+    note_menu_fixture_t fixture;
+    fixture.open();
+    const auto chosen = click_at(fixture.harness, 490, 347);
+    check_layer_row_action(chosen.front(), WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER, 7);
+    check_layer_menu(chosen.front().get().compose_note_context_id == 42);
+    check_layer_menu(!compose_note_menu_open());
+    check_layer_menu(chosen.back().get().compose_input_count == 0);
+}
+
+TEST_CASE("Note Layer submenu clears through No layer and disables locked rows",
+          "[unit][frontend-state][frontend][event-harness]") {
+    note_menu_fixture_t fixture;
+    fixture.open();
+    const auto locked = click_at(fixture.harness, 490, 375);
+    check_layer_menu(locked.front().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_layer_menu(compose_note_menu_open());
+    const auto clear = click_at(fixture.harness, 490, 320);
+    check_layer_row_action(clear.front(), WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER, 0);
+}
+
+TEST_CASE("Note menu captures shortcuts and retires stale revisions",
+          "[unit][frontend-state][frontend][event-harness]") {
+    note_menu_fixture_t fixture;
+    fixture.open();
+    const std::array undo{key_event(SDL_EVENT_KEY_DOWN, SDLK_Z, SDL_SCANCODE_Z)};
+    const auto suppressed = fixture.harness.frame(undo, SDL_KMOD_CTRL);
+    check_layer_menu(suppressed.get().shortcut_text_entry_active);
+    check_layer_menu(suppressed.get().compose_input_count == 0);
+    ++fixture.harness.view().compose.document_revision;
+    (void)fixture.harness.frame();
+    check_layer_menu(!compose_note_menu_open());
+}
+
+TEST_CASE("Empty area band keeps its right click menu when no note was hit",
+          "[unit][frontend-state][frontend][event-harness]") {
+    note_menu_fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    view.area_range_available = true;
+    view.area_rows_per_measure = 960;
+    view.area_canvas_rows = 9600;
+    view.area_range_begin_row = 0;
+    view.area_range_end_row = 9600;
+    (void)fixture.harness.frame();
+    const auto clicked = right_click_at(fixture.harness, 900, 400);
+    check_layer_menu(!compose_note_menu_open());
+    check_layer_menu(compose_area_capture_active());
+    check_layer_menu(clicked.front().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+}
+
+TEST_CASE("Note submenu requests a bounded scrolling window independent of hidden Layers dock",
+          "[unit][frontend-state][frontend][event-harness]") {
+    note_menu_fixture_t fixture;
+    std::array<WormUiComposeSemanticLayerView, WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY> rows{};
+    for (std::size_t index = 0; index < rows.size(); ++index)
+        rows[index] = {.layer_id = index + 1, .name = "Layer", .visible = true};
+    auto& view = fixture.harness.view().compose;
+    view.note_menu_layers = rows.data();
+    view.note_menu_layer_count = rows.size();
+    view.note_menu_layer_total_count = 30;
+    view.semantic_layer_first_row = 12;
+    view.semantic_layer_total_count = 30;
+    fixture.open();
+    SDL_Event wheel{};
+    wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.y = -8;
+    wheel.wheel.mouse_x = 490;
+    wheel.wheel.mouse_y = 500;
+    const std::array events{motion_event(490, 500), wheel};
+    (void)fixture.harness.frame(events);
+    const auto request = fixture.harness.frame();
+    check_layer_menu(request.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW);
+    check_layer_menu(request.get().compose_semantic_layer_first_row > 0);
+    check_layer_menu(request.get().compose_semantic_layer_row_count <= WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY);
+    check_layer_menu(view.semantic_layer_first_row == 12);
+}
+
+TEST_CASE("Note menu closes on Escape and focus loss without leaking canvas input",
+          "[unit][frontend-state][frontend][event-harness]") {
+    note_menu_fixture_t fixture;
+    fixture.open();
+    const std::array escape{key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
+    const auto closed = fixture.harness.frame(escape);
+    check_layer_menu(!compose_note_menu_open());
+    check_layer_menu(closed.get().compose_input_count == 0);
+    check_layer_menu(closed.get().shortcut_text_entry_active);
+    const std::array released{key_event(SDL_EVENT_KEY_UP, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
+    (void)fixture.harness.frame(released);
+    fixture.open();
+    SDL_Event lost{};
+    lost.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+    lost.window.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+    (void)fixture.harness.frame(std::span{&lost, 1});
+    check_layer_menu(!compose_note_menu_open());
+}
+
+TEST_CASE("Note menu owns Escape and outside presses ahead of notification toasts",
+          "[unit][frontend-state][frontend][event-harness]") {
+    note_menu_fixture_t fixture;
+    auto& notifications = fixture.harness.view().notifications;
+    notifications.toast_count = 1;
+    notifications.toasts[0] = {.id = 42, .severity = WORM_UI_NOTIFICATION_ERROR,
+                               .message = "Keep this notification", .repeat_count = 1};
+    (void)fixture.harness.frame();
+    fixture.open();
+    const std::array escape{key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
+    const auto closed = fixture.harness.frame(escape);
+    check_layer_menu(!compose_note_menu_open());
+    check_layer_menu(closed.get().notifications.kind == WORM_UI_NOTIFICATION_ACTION_NONE);
+    const std::array release{key_event(SDL_EVENT_KEY_UP, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
+    (void)fixture.harness.frame(release);
+    fixture.open();
+    const auto outside = click_at(fixture.harness, 1200, 820);
+    for (const auto& frame : outside) {
+        check_layer_menu(frame.get().notifications.kind == WORM_UI_NOTIFICATION_ACTION_NONE);
+        check_layer_menu(frame.get().compose_input_count == 0);
+    }
+    check_layer_menu(!compose_note_menu_open());
+}
+
+TEST_CASE("Note menu retires chart and project changes without a lingering popup lock",
+          "[unit][frontend-state][frontend][event-harness]") {
+    note_menu_fixture_t fixture;
+    fixture.open();
+    ++fixture.harness.view().compose.chart_id;
+    (void)fixture.harness.frame();
+    check_layer_menu(!compose_note_menu_open());
+    (void)fixture.harness.frame();
+    fixture.open();
+    ++fixture.harness.view().compose.project_id;
+    (void)fixture.harness.frame();
+    check_layer_menu(!compose_note_menu_open());
+    (void)fixture.harness.frame();
+    (void)click_at(fixture.harness, 266, 122);
+    check_layer_menu(worm_ui_nuklear_compose_state().color_view ==
+                     worm_ui_nuklear_compose_color_view_t::snap);
 }

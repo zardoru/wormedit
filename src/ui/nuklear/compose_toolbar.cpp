@@ -92,9 +92,8 @@ static void render_loop_selection_button(const ComposeToolbarContext& toolbar) {
     }
 }
 
-static void render_compose_view_controls(const ComposeToolbarContext& toolbar) {
+static void render_navigation_group(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
-    const auto* view = toolbar.view;
     auto* action = toolbar.action;
     if (wormedit::ui::chrome::IconButton{Glyph::zoom_out, "Zoom out"}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
@@ -106,37 +105,65 @@ static void render_compose_view_controls(const ComposeToolbarContext& toolbar) {
     if (wormedit::ui::chrome::IconButton{Glyph::rotate_ccw, "Reset view"}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW;
-    render_loop_selection_button(toolbar);
-    const auto paint_disabled = !view->scene_available || view->timing_focus;
+}
+
+static void render_tool_group(const ComposeToolbarContext& toolbar) {
+    auto* context = toolbar.context;
+    const auto* view = toolbar.view;
+    auto* action = toolbar.action;
+    const bool paint_disabled = !view->scene_available || view->timing_focus;
     if (paint_disabled) nk_widget_disable_begin(context);
+    if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::select_cursor,
+            "Select (leave note paint mode)", !view->note_paint_mode_active}.render(context) &&
+        view->note_paint_mode_active && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
     if (wormedit::ui::chrome::IconButton{Glyph::paintbrush, "Toggle note paint mode",
-                                         view->note_paint_mode_active}.render(context) &&
+            view->note_paint_mode_active}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
     if (paint_disabled) nk_widget_disable_end(context);
     if (!view->scene_available) nk_widget_disable_begin(context);
-    if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::timer,
-                                              "Timing focus: edit timing only",
-                                              view->timing_focus}.render(context) &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS;
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::grid,
-                                              view->edit_snap_enabled
-                                                  ? "Snap on: edits land on the grid (click to turn off)"
-                                                  : "Snap off: edits use the finest row (click to turn on)",
-                                              view->edit_snap_enabled}.render(context) &&
+            view->edit_snap_enabled ? "Snap on: edits land on the grid (click to turn off)"
+                                   : "Snap off: edits use the finest row (click to turn on)",
+            view->edit_snap_enabled}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_EDIT_SNAP;
+    if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::timer,
+            "Timing focus: edit timing only", view->timing_focus}.render(context) &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS;
     if (!view->scene_available) nk_widget_disable_end(context);
+    render_loop_selection_button(toolbar);
+}
+
+static void render_color_view_group(const ComposeToolbarContext& toolbar) {
+    using View = worm_ui_nuklear_compose_color_view_t;
+    static constexpr View views[]{View::normal, View::snap, View::layer};
+    static constexpr const char* tips[]{"Normal view: layout colors", "Snap view: beat snap colors",
+                                         "Layer view: semantic layer colors"};
+    static constexpr auto icons = std::array{wormedit::ui::vector_icons::view_keys,
+        wormedit::ui::vector_icons::view_snap, wormedit::ui::vector_icons::view_layers};
+    for (std::size_t index = 0; index < std::size(views); ++index)
+        if (wormedit::ui::chrome::DrawnIconButton{icons[index], tips[index],
+                state.color_view == views[index]}.render(toolbar.context))
+            state.color_view = views[index];
+}
+
+static void render_panel_group(const ComposeToolbarContext& toolbar) {
+    auto* context = toolbar.context;
     if (wormedit::ui::chrome::IconButton{compose_inspector_icon(state.inspector_visible),
-                                         state.inspector_visible ? "Hide inspector" : "Show inspector",
-                                         state.inspector_visible}.render(context))
+            state.inspector_visible ? "Hide inspector" : "Show inspector",
+            state.inspector_visible}.render(context))
         state.inspector_visible = !state.inspector_visible;
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::sound_list,
-                                              state.sounds_panel_visible ? "Hide sounds list"
-                                                                         : "Show sounds list",
-                                              state.sounds_panel_visible}.render(context))
+            state.sounds_panel_visible ? "Hide sounds list" : "Show sounds list",
+            state.sounds_panel_visible}.render(context))
         state.sounds_panel_visible = !state.sounds_panel_visible;
+    if (wormedit::ui::chrome::IconButton{Glyph::layers,
+            state.layers_panel_visible ? "Hide layers" : "Show layers",
+            state.layers_panel_visible}.render(context))
+        state.layers_panel_visible = !state.layers_panel_visible;
     render_compose_bgm_bar_toggle(toolbar);
 }
 
@@ -167,8 +194,9 @@ static void render_compose_bgm_scroll_controls(const ComposeToolbarContext& tool
         append_bgm_horizontal_scroll(action, view, 80.0);
     if (!scrollable) nk_widget_disable_end(context);
     render_compose_bgm_column_count_controls(toolbar);
-    nk_labelf(context, NK_TEXT_RIGHT, "%.0f px/measure · %zu lanes",
-              view->pixels_per_standard_measure, view->lane_count);
+    if (nk_window_get_bounds(context).w >= 1100.0f)
+        nk_labelf(context, NK_TEXT_RIGHT, "%.0f px/measure",
+                  view->pixels_per_standard_measure);
 }
 
 static void reset_bgm_column_count_draft(
@@ -233,7 +261,8 @@ static void render_compose_bgm_column_count_controls(const ComposeToolbarContext
     const bool editable = view->bgm_column_count_editable;
     auto& draft = bgm_column_count_draft(*view);
     if (!editable) nk_widget_disable_begin(context);
-    nk_label(context, "BGM columns:", NK_TEXT_RIGHT);
+    if (nk_window_get_bounds(context).w >= 900.0f)
+        nk_label(context, "BGM columns:", NK_TEXT_RIGHT);
     if (nk_button_label(context, "-") && editable && view->bgm_column_count > 1)
         (void)request_bgm_column_count(toolbar, view->bgm_column_count - 1);
     const auto field_bounds = nk_widget_bounds(context);
@@ -367,14 +396,9 @@ static void render_offset_padlock(const ComposeToolbarContext& toolbar) {
 }
 
 static void render_compose_offset_toolbar(const ComposeToolbarContext& toolbar) {
-    const auto* view = toolbar.view;
     const bool show_offset = nk_window_get_bounds(toolbar.context).w >= 900.0f;
     render_offset_padlock(toolbar);
-    nk_spacing(toolbar.context, 1);
     render_compose_audio_offset(toolbar, show_offset);
-    nk_label(toolbar.context, "", NK_TEXT_LEFT);
-    render_compose_snap_controls(toolbar.context);
-    nk_label(toolbar.context, "", NK_TEXT_LEFT);
 }
 
 namespace {
@@ -427,40 +451,58 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
     }
 }
 
+static void layout_toolbar_icons(nk_context* context, int count) {
+    wormedit::ui::chrome::IconButton::layout_columns(context, count, 24.0f);
+}
+
+static void layout_compose_toolbar(nk_context* context) {
+    const auto width = nk_window_get_bounds(context).w;
+    nk_layout_row_template_begin(context, 27);
+    layout_toolbar_icons(context, 3); // Navigation.
+    wormedit::ui::chrome::layout_separator(context);
+    layout_toolbar_icons(context, 5); // Tools.
+    wormedit::ui::chrome::layout_separator(context);
+    layout_toolbar_icons(context, 3); // Color views.
+    wormedit::ui::chrome::layout_separator(context);
+    layout_toolbar_icons(context, 4); // Panels.
+    wormedit::ui::chrome::layout_separator(context);
+    layout_toolbar_icons(context, 3); // Audio lock, backward nudges.
+    if (width >= 900.0f) nk_layout_row_template_push_static(context, 104);
+    layout_toolbar_icons(context, 2); // Forward nudges.
+    wormedit::ui::chrome::layout_separator(context);
+    layout_toolbar_icons(context, 1); // BPM snap.
+    nk_layout_row_template_push_static(context, 60);
+    wormedit::ui::chrome::layout_separator(context);
+    layout_toolbar_icons(context, 1); // BGM scroll back.
+    nk_layout_row_template_push_dynamic(context);
+    layout_toolbar_icons(context, 1); // BGM scroll forward.
+    if (width >= 900.0f) nk_layout_row_template_push_static(context, 85);
+    layout_toolbar_icons(context, 1);
+    nk_layout_row_template_push_static(context, 42);
+    layout_toolbar_icons(context, 1);
+    if (width >= 1100.0f) nk_layout_row_template_push_static(context, 160);
+    nk_layout_row_template_end(context);
+}
+
 void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     update_compose_note_label_cache(toolbar.view);
     auto* context = toolbar.context;
     const auto spacing = context->style.window.spacing;
-    const auto compact_spacing = nk_vec2(1.0f, spacing.y);
-    const bool spacing_pushed =
-        nk_style_push_vec2(context, &context->style.window.spacing, compact_spacing) != 0;
-    nk_layout_row_template_begin(context, 27);
-    wormedit::ui::chrome::IconButton::layout_columns(context, 3);
-    nk_layout_row_template_push_static(context, 34);
-    wormedit::ui::chrome::IconButton::layout_columns(context, 6);
-    // Offset padlock, nudges and optional readout, then the BPM snap controls.
-    wormedit::ui::chrome::IconButton::layout_columns(context);
-    nk_layout_row_template_push_static(context, 10);
-    wormedit::ui::chrome::IconButton::layout_columns(context, 2);
-    if (nk_window_get_bounds(context).w >= 900.0f)
-        nk_layout_row_template_push_static(context, 104);
-    wormedit::ui::chrome::IconButton::layout_columns(context, 2);
-    nk_layout_row_template_push_static(context, 16);
-    wormedit::ui::chrome::IconButton::layout_columns(context);
-    nk_layout_row_template_push_static(context, 70);
-    nk_layout_row_template_push_static(context, 12);
-    // BGM column scroll: left, progress, right, then the zoom readout.
-    wormedit::ui::chrome::IconButton::layout_columns(context);
-    nk_layout_row_template_push_dynamic(context);
-    wormedit::ui::chrome::IconButton::layout_columns(context);
-    nk_layout_row_template_push_static(context, 100);
-    nk_layout_row_template_push_static(context, 24);
-    nk_layout_row_template_push_static(context, 42);
-    nk_layout_row_template_push_static(context, 24);
-    nk_layout_row_template_push_static(context, 215);
-    nk_layout_row_template_end(context);
-    render_compose_view_controls(toolbar);
+    const bool spacing_pushed = nk_style_push_vec2(context, &context->style.window.spacing,
+                                                  nk_vec2(1.0f, spacing.y)) != 0;
+    layout_compose_toolbar(context);
+    render_navigation_group(toolbar);
+    wormedit::ui::chrome::toolbar_separator(context);
+    render_tool_group(toolbar);
+    wormedit::ui::chrome::toolbar_separator(context);
+    render_color_view_group(toolbar);
+    wormedit::ui::chrome::toolbar_separator(context);
+    render_panel_group(toolbar);
+    wormedit::ui::chrome::toolbar_separator(context);
     render_compose_offset_toolbar(toolbar);
+    wormedit::ui::chrome::toolbar_separator(context);
+    render_compose_snap_controls(context);
+    wormedit::ui::chrome::toolbar_separator(context);
     render_compose_bgm_scroll_controls(toolbar);
     if (spacing_pushed) (void)nk_style_pop_vec2(context);
 }

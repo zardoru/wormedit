@@ -1,4 +1,8 @@
+#define NK_IMPLEMENTATION
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_note_menu.h"
+#include "ui/nuklear/arrow_glyph.h"
+#include "ui/nuklear/theme.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -1050,4 +1054,119 @@ TEST_CASE("Compose zoom anchors use source coordinates in either scroll directio
         expect_inline(source + 37.25 == height);
         expect_inline(worm_ui_nuklear_compose_zoom_anchor(source, height, true) == 37.25);
     }
+}
+
+TEST_CASE("Compose color views choose tile and arrow base fills", "[compose][color-view]") {
+    using View = worm_ui_nuklear_compose_color_view_t;
+    const auto view = GENERATE(View::normal, View::snap, View::layer);
+    const auto membership = GENERATE(0, 1, 2); // unassigned, visible, hidden
+    const auto glyph = GENERATE(0, 2);
+    WormUiComposeNoteView note{};
+    note.key_color = 3;
+    note.snap_class = 16;
+    note.glyph = static_cast<std::uint8_t>(glyph);
+    note.semantic_color_visible = membership == 1;
+    note.semantic_red = 31;
+    note.semantic_green = 87;
+    note.semantic_blue = 143;
+    note.semantic_alpha = 201;
+    nk_color expected{};
+    if (view == View::layer) {
+        expected = membership == 1 ? nk_rgba(31, 87, 143, 201) :
+            wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::semantic_layer_none);
+    } else if (view == View::snap || glyph == 2) {
+        const auto snap = wormedit::ui::arrow_snap_color(16);
+        expected = nk_rgb(snap.red, snap.green, snap.blue);
+    } else {
+        expected = wormedit::ui::theme::compose_key_color(3, false).note;
+    }
+    const auto actual = compose_note_base_fill(view, note);
+    CHECK(actual.r == expected.r);
+    CHECK(actual.g == expected.g);
+    CHECK(actual.b == expected.b);
+    CHECK(actual.a == expected.a);
+}
+
+TEST_CASE("Compose hold fills use head snap and neutral hidden membership", "[compose][color-view]") {
+    using View = worm_ui_nuklear_compose_color_view_t;
+    WormUiComposeHoldView hold{};
+    hold.key_color = 3;
+    hold.snap_class = 8;
+    hold.semantic_color_visible = true;
+    hold.semantic_red = 31;
+    hold.semantic_green = 87;
+    hold.semantic_blue = 143;
+    hold.semantic_alpha = 201;
+    const auto normal = compose_note_base_fill(View::normal, hold);
+    const auto key = wormedit::ui::theme::compose_key_color(3, false).note;
+    expect_inline(normal.r == key.r * 3 / 4);
+    expect_inline(normal.g == key.g * 3 / 4);
+    expect_inline(normal.b == key.b * 3 / 4);
+    const auto snap = compose_note_base_fill(View::snap, hold);
+    const auto expected_snap = wormedit::ui::arrow_snap_color(8);
+    expect_inline(snap.r == expected_snap.red);
+    expect_inline(snap.g == expected_snap.green);
+    expect_inline(snap.b == expected_snap.blue);
+    const auto layer = compose_note_base_fill(View::layer, hold);
+    expect_inline(layer.r == 31);
+    expect_inline(layer.g == 87);
+    expect_inline(layer.b == 143);
+    expect_inline(layer.a == 201);
+    hold.semantic_color_visible = false;
+    const auto hidden = compose_note_base_fill(View::layer, hold);
+    const auto neutral = wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::semantic_layer_none);
+    expect_inline(hidden.r == neutral.r);
+    expect_inline(hidden.g == neutral.g);
+    expect_inline(hidden.b == neutral.b);
+}
+
+TEST_CASE("Compose color views default to Normal and unknown snaps use other grey", "[compose][color-view]") {
+    using View = worm_ui_nuklear_compose_color_view_t;
+    CHECK(worm_ui_nuklear_compose_state_t{}.color_view == View::normal);
+    WormUiComposeNoteView note{};
+    note.snap_class = 255;
+    const auto actual = compose_note_base_fill(View::snap, note);
+    const auto other = wormedit::ui::arrow_snap_color(0);
+    CHECK(actual.r == other.red);
+    CHECK(actual.g == other.green);
+    CHECK(actual.b == other.blue);
+}
+
+TEST_CASE("Compose transient arrows omit semantic outlines in every color view", "[compose][color-view]") {
+    using View = worm_ui_nuklear_compose_color_view_t;
+    const auto color_view = GENERATE(View::normal, View::snap, View::layer);
+    const auto assigned = GENERATE(false, true);
+    const auto transient = GENERATE(0, 1, 2, 3, 4, 5, 6);
+    WormUiComposeView view{};
+    WormUiComposeNoteView note{};
+    note.note_id = 7;
+    note.glyph = 2;
+    note.semantic_color_visible = assigned;
+    note.proposal_ghost = transient == 1;
+    note.proposal_origin = transient == 2;
+    note.paint_preview = transient == 3;
+    note.paint_erase_preview = transient == 4;
+    note.paint_invalid_preview = transient == 5;
+    view.hover_note_visible = transient == 6;
+    view.hover_note_id = 7;
+    CHECK(compose_note_is_transient(view, note) == (transient != 0));
+    CHECK(compose_arrow_layer_outline_visible(color_view, view, note) ==
+          (color_view == View::layer && assigned && transient == 0));
+}
+
+TEST_CASE("Note layer submenu rejects malformed rows and oversized projections",
+          "[unit][frontend-state][compose][note-menu]") {
+    WormUiComposeSemanticLayerView layer{.layer_id = 7, .name = "Lead"};
+    WormUiComposeView view{};
+    view.note_menu_layers = &layer;
+    view.note_menu_layer_count = view.note_menu_layer_total_count = 1;
+    expect_inline(worm_ui_nuklear_note_layer_window_valid(&view));
+    layer.name = nullptr;
+    expect_inline(!worm_ui_nuklear_note_layer_window_valid(&view));
+    layer.name = "Lead";
+    layer.layer_id = 0;
+    expect_inline(!worm_ui_nuklear_note_layer_window_valid(&view));
+    layer.layer_id = 7;
+    view.note_menu_layer_count = WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY + 1;
+    expect_inline(!worm_ui_nuklear_note_layer_window_valid(&view));
 }

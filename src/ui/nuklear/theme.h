@@ -13,7 +13,7 @@ enum class UiColor {
     count
 };
 
-enum class ComposeColor { viewport, rail, grid, label, overview, count };
+enum class ComposeColor { viewport, rail, grid, label, overview, semantic_layer_none, count };
 
 // Call once before creating the first frame. WORMEDIT_THEME_DIR overrides the bundled files.
 void load(const std::filesystem::path& bundled_directory);

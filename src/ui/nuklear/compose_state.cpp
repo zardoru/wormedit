@@ -1,4 +1,6 @@
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/arrow_glyph.h"
+#include "ui/nuklear/theme.h"
 
 #include <algorithm>
 #include <cmath>
@@ -11,6 +13,54 @@
 #include <numeric>
 #include <string_view>
 #include <utility>
+
+namespace {
+template<class Note>
+auto compose_layer_fill(const Note& note) -> nk_color {
+    if (note.semantic_color_visible)
+        return nk_rgba(note.semantic_red, note.semantic_green, note.semantic_blue,
+                       note.semantic_alpha);
+    return wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::semantic_layer_none);
+}
+auto compose_snap_fill(std::uint8_t snap_class) -> nk_color {
+    const auto color = wormedit::ui::arrow_snap_color(snap_class);
+    return nk_rgb(color.red, color.green, color.blue);
+}
+}
+
+auto compose_note_is_transient(const WormUiComposeView& view,
+                               const WormUiComposeNoteView& note) -> bool {
+    return note.proposal_ghost || note.proposal_origin || note.paint_preview ||
+        note.paint_erase_preview || note.paint_invalid_preview ||
+        (view.hover_note_visible && note.note_id == view.hover_note_id);
+}
+
+auto compose_arrow_layer_outline_visible(worm_ui_nuklear_compose_color_view_t color_view,
+    const WormUiComposeView& view, const WormUiComposeNoteView& note) -> bool {
+    return color_view == worm_ui_nuklear_compose_color_view_t::layer &&
+           note.semantic_color_visible && !compose_note_is_transient(view, note);
+}
+
+auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
+                            const WormUiComposeNoteView& note) -> nk_color {
+    if (color_view == worm_ui_nuklear_compose_color_view_t::layer)
+        return compose_layer_fill(note);
+    if (color_view == worm_ui_nuklear_compose_color_view_t::snap ||
+        (note.glyph >= 2 && note.glyph <= 5)) return compose_snap_fill(note.snap_class);
+    const auto key = wormedit::ui::theme::compose_key_color(note.key_color, false);
+    return key.has_color ? key.note : nk_rgb(133, 182, 222);
+}
+
+auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
+                            const WormUiComposeHoldView& hold) -> nk_color {
+    if (color_view == worm_ui_nuklear_compose_color_view_t::layer)
+        return compose_layer_fill(hold);
+    if (color_view == worm_ui_nuklear_compose_color_view_t::snap)
+        return compose_snap_fill(hold.snap_class);
+    const auto key = wormedit::ui::theme::compose_key_color(hold.key_color, false);
+    if (!key.has_color) return nk_rgb(48, 111, 151);
+    return nk_rgb(key.note.r * 3 / 4, key.note.g * 3 / 4, key.note.b * 3 / 4);
+}
 
 auto worm_ui_nuklear_normalize_compose_wheel(double x, double y, double mouse_x,
     double mouse_y, std::uint16_t modifiers, bool flipped)

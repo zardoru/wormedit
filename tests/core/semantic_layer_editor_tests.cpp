@@ -1,4 +1,5 @@
 #include <wormedit/core/semantic_layer_editor.h>
+#include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -8,6 +9,7 @@
 #include <limits>
 #include <ranges>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -71,6 +73,43 @@ auto note_by_id(chart_document_t& chart, object_id_t id) -> note_t& {
     return chart.measures.front().notes.front();
 }
 
+
+auto check_gameplay_unchanged(const note_t& actual, const note_t& expected) -> void {
+    CHECK(std::tie(actual.id, actual.kind, actual.position, actual.lane, actual.end,
+                   actual.sound, actual.label) ==
+          std::tie(expected.id, expected.kind, expected.position, expected.lane, expected.end,
+                   expected.sound, expected.label));
+}
+
+auto check_cleared_gameplay(const std::vector<note_t>& cleared_notes,
+                            const std::vector<note_t>& original_notes) -> void {
+    REQUIRE(cleared_notes.size() == original_notes.size());
+    for (std::size_t index = 0; index < cleared_notes.size(); ++index) {
+        CHECK(cleared_notes[index].semantic_layers.empty());
+        check_gameplay_unchanged(cleared_notes[index], original_notes[index]);
+    }
+}
+
+auto check_clear_memberships(chart_document_t& chart, std::vector<layer_id_t> tap,
+                             std::vector<layer_id_t> hold) -> void {
+    CHECK(note_by_id(chart, object_id_t{20}).semantic_layers == tap);
+    CHECK(note_by_id(chart, object_id_t{21}).semantic_layers == hold);
+}
+
+auto check_pristine_clear_history(const document_history_t& history,
+                                  std::uint64_t next_revision) -> void {
+    CHECK(history.document.revision == 4);
+    CHECK(history.next_revision == next_revision);
+    CHECK(history.undo.empty());
+    CHECK(history.redo.empty());
+    CHECK_FALSE(is_document_dirty(history));
+}
+
+auto check_rejected_clear(const document_command_result_t& result, diagnostic_code_t code) -> void {
+    CHECK_FALSE(result);
+    CHECK(has_code(result, code));
+}
+
 } // namespace
 
 TEST_CASE("semantic-layer palette windows page visible layers and reveal a hidden selection",
@@ -105,6 +144,42 @@ TEST_CASE("semantic-layer palette windows page visible layers and reveal a hidde
 
     CHECK_FALSE(make_semantic_layer_palette_window(chart, std::nullopt, 0, false, 0));
     CHECK_FALSE(make_semantic_layer_palette_window(chart, std::nullopt, 0, false, 4, 11));
+}
+
+namespace {
+void check_scrolling_window(bool condition) { CHECK(condition); }
+void require_scrolling_window(bool condition) { REQUIRE(condition); }
+} // namespace
+
+TEST_CASE("semantic-layer scrolling windows include hidden layers and clamp bounded requests",
+          "[unit][core][semantic-layer-editor][palette]") {
+    chart_document_t chart;
+    for (std::uint64_t index = 0; index < 30; ++index)
+        chart.semantic_layers.push_back({.id = layer_id_t{index + 1},
+                                         .name = "Layer " + std::to_string(index + 1),
+                                         .visible = index % 2 == 0});
+    const auto window = make_semantic_layer_palette_window(chart, 9, 4);
+    require_scrolling_window(window.has_value());
+    check_scrolling_window(window->first_row == 9);
+    check_scrolling_window(window->total_count == 30);
+    check_scrolling_window(window->layer_indices == std::vector<std::size_t>{9, 10, 11, 12});
+
+    const auto clamped = make_semantic_layer_palette_window(
+        chart, std::numeric_limits<std::size_t>::max(),
+        std::numeric_limits<std::size_t>::max());
+    require_scrolling_window(clamped.has_value());
+    check_scrolling_window(clamped->first_row == 29);
+    check_scrolling_window(clamped->layer_indices == std::vector<std::size_t>{29});
+    check_scrolling_window(!make_semantic_layer_palette_window(chart, 0, 0));
+    check_scrolling_window(!make_semantic_layer_palette_window(chart, 0, 4, 29));
+    check_scrolling_window(!make_semantic_layer_palette_window(chart, 0, 4, 0));
+
+    chart.semantic_layers.clear();
+    const auto empty = make_semantic_layer_palette_window(chart, 99, 4);
+    require_scrolling_window(empty.has_value());
+    check_scrolling_window(empty->first_row == 0);
+    check_scrolling_window(empty->total_count == 0);
+    check_scrolling_window(empty->layer_indices.empty());
 }
 
 TEST_CASE("semantic layers insert, update, reorder, and share bounded document history",
@@ -231,6 +306,93 @@ TEST_CASE("semantic layer membership is bounded, atomic, and leaves gameplay dat
     CHECK(note_by_id(history.document.charts.front(), object_id_t{20}).semantic_layers ==
           std::vector{layer_id_t{7}});
     CHECK(is_document_dirty(history));
+}
+
+TEST_CASE("clearing mixed semantic layers is one undoable revision and preserves gameplay",
+          "[unit][core][semantic-layer-editor][clear]") {
+    auto song = semantic_layer_song();
+    auto& chart = song.charts.front();
+    chart.semantic_layers.push_back({.id = layer_id_t{8}, .name = "Percussion"});
+    note_by_id(chart, object_id_t{21}).semantic_layers = {layer_id_t{8}};
+    const auto original_notes = chart.measures.front().notes;
+    auto history = make_document_history(std::move(song));
+
+    REQUIRE(apply_semantic_layer_edit(
+        history, 4,
+        clear_semantic_layer_membership_action_t{chart_id_t{2}, {object_id_t{20}, object_id_t{21}}}));
+    CHECK(history.document.revision == 5);
+    REQUIRE(history.undo.size() == 1);
+    const auto& cleared_notes = history.document.charts.front().measures.front().notes;
+    check_cleared_gameplay(cleared_notes, original_notes);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.undo.empty());
+    check_clear_memberships(history.document.charts.front(), {layer_id_t{7}}, {layer_id_t{8}});
+    REQUIRE(redo_document_command(history));
+    check_clear_memberships(history.document.charts.front(), {}, {});
+}
+
+TEST_CASE("clearing memberships rejects a locked member without modifying history",
+          "[unit][core][semantic-layer-editor][clear][locked]") {
+    auto song = semantic_layer_song();
+    auto& chart = song.charts.front();
+    chart.semantic_layers.push_back({.id = layer_id_t{8}, .name = "Locked", .locked = true});
+    note_by_id(chart, object_id_t{21}).semantic_layers = {layer_id_t{8}};
+    auto history = make_document_history(std::move(song));
+    const auto next_revision = history.next_revision;
+
+    const auto rejected = apply_semantic_layer_edit(
+        history, 4,
+        clear_semantic_layer_membership_action_t{chart_id_t{2}, {object_id_t{20}, object_id_t{21}}});
+    CHECK_FALSE(rejected);
+    CHECK(has_code(rejected, diagnostic_code_t::unsupported_feature));
+    check_pristine_clear_history(history, next_revision);
+    check_clear_memberships(history.document.charts.front(), {layer_id_t{7}}, {layer_id_t{8}});
+}
+
+TEST_CASE("clearing unassigned notes is a no-op and mixed assigned notes still clear",
+          "[unit][core][semantic-layer-editor][clear][noop]") {
+    auto history = make_document_history(semantic_layer_song());
+    const auto next_revision = history.next_revision;
+    const auto no_op = apply_semantic_layer_edit(
+        history, 4, clear_semantic_layer_membership_action_t{chart_id_t{2}, {object_id_t{21}}});
+    CHECK_FALSE(no_op.applied);
+    CHECK(no_op.diagnostics.empty());
+    check_pristine_clear_history(history, next_revision);
+    REQUIRE(apply_semantic_layer_edit(
+        history, 4,
+        clear_semantic_layer_membership_action_t{chart_id_t{2}, {object_id_t{20}, object_id_t{21}}}));
+    CHECK(history.document.revision == 5);
+    CHECK(history.undo.size() == 1);
+    check_clear_memberships(history.document.charts.front(), {}, {});
+}
+
+TEST_CASE("clearing semantic layers validates revisions charts notes and selection caps",
+          "[unit][core][semantic-layer-editor][clear][negative]") {
+    auto history = make_document_history(semantic_layer_song());
+    const auto stale = apply_semantic_layer_edit(
+        history, 3, clear_semantic_layer_membership_action_t{chart_id_t{2}, {object_id_t{20}}});
+    CHECK_FALSE(stale);
+    CHECK_FALSE(stale.diagnostics.empty());
+    const auto unknown_chart = apply_semantic_layer_edit(
+        history, 4, clear_semantic_layer_membership_action_t{chart_id_t{99}, {object_id_t{20}}});
+    check_rejected_clear(unknown_chart, diagnostic_code_t::invalid_id);
+    for (const auto invalid_note : {object_id_t{}, object_id_t{99}, object_id_t{30}}) {
+        const auto unknown = apply_semantic_layer_edit(
+            history, 4,
+            clear_semantic_layer_membership_action_t{chart_id_t{2}, {object_id_t{20}, invalid_note}});
+        check_rejected_clear(unknown, diagnostic_code_t::invalid_id);
+    }
+    const auto duplicate = apply_semantic_layer_edit(
+        history, 4,
+        clear_semantic_layer_membership_action_t{chart_id_t{2}, {object_id_t{20}, object_id_t{20}}});
+    check_rejected_clear(duplicate, diagnostic_code_t::duplicate_id);
+    const auto capped = apply_semantic_layer_edit(
+        history, 4,
+        clear_semantic_layer_membership_action_t{chart_id_t{2}, {object_id_t{20}, object_id_t{21}}},
+        {.maximum_note_selection = 1});
+    check_rejected_clear(capped, diagnostic_code_t::invalid_resolution);
+    check_pristine_clear_history(history, 5);
+    check_clear_memberships(history.document.charts.front(), {layer_id_t{7}}, {});
 }
 
 TEST_CASE("locked layers block membership and deletion until unlocked",
@@ -421,4 +583,73 @@ TEST_CASE("semantic layer assignment indexes a fifty-thousand-note chart once",
         WARN("50k semantic layer assignment exceeded the 125 ms interaction target on this host");
     }
     CHECK(milliseconds < 500);
+}
+
+namespace {
+void check_membership(bool condition) { CHECK(condition); }
+void require_membership(bool condition) { REQUIRE(condition); }
+}
+
+TEST_CASE("replacement layer assignments keep one membership and restore originals on undo",
+          "[unit][core][semantic-layer][replacement]") {
+    auto song = semantic_layer_song();
+    song.charts.front().semantic_layers.push_back({.id = layer_id_t{8}, .name = "Target", .color = {32, 64, 128, 255}});
+    auto history = make_document_history(song);
+    require_membership(static_cast<bool>(apply_semantic_layer_edit(history, 4,
+        replace_notes_semantic_layer_action_t{chart_id_t{2}, layer_id_t{8}, {object_id_t{20}, object_id_t{21}}})));
+    check_membership(static_cast<bool>(history.document.revision == 5));
+    check_membership(static_cast<bool>(history.undo.size() == 1));
+    for (const auto& note : history.document.charts.front().measures.front().notes)
+        check_membership(static_cast<bool>(note.semantic_layers == std::vector{layer_id_t{8}}));
+    require_membership(static_cast<bool>(undo_document_command(history)));
+    check_membership(static_cast<bool>(write_native_project(history.document).bytes == write_native_project(song).bytes));
+}
+
+TEST_CASE("replacement layer assignments reject locked source layers atomically",
+          "[unit][core][semantic-layer][replacement]") {
+    auto song = semantic_layer_song();
+    song.charts.front().semantic_layers.front().locked = true;
+    song.charts.front().semantic_layers.push_back({.id = layer_id_t{8}, .name = "Target", .color = {32, 64, 128, 255}});
+    auto history = make_document_history(song);
+    const auto result = apply_semantic_layer_edit(history, 4,
+        replace_notes_semantic_layer_action_t{chart_id_t{2}, layer_id_t{8}, {object_id_t{21}, object_id_t{20}}});
+    check_membership(static_cast<bool>(!(result)));
+    check_membership(static_cast<bool>(has_code(result, diagnostic_code_t::unsupported_feature)));
+    check_membership(static_cast<bool>(write_native_project(history.document).bytes == write_native_project(song).bytes));
+    check_membership(static_cast<bool>(history.undo.empty()));
+}
+
+TEST_CASE("replacement layer paint toggles only the target and replaces other memberships",
+          "[unit][core][semantic-layer][replacement]") {
+    auto song = semantic_layer_song();
+    song.charts.front().semantic_layers.push_back({.id = layer_id_t{8}, .name = "Target", .color = {32, 64, 128, 255}});
+    song.charts.front().measures.front().notes.back().semantic_layers = {layer_id_t{8}};
+    auto history = make_document_history(song);
+    require_membership(static_cast<bool>(apply_semantic_layer_edit(history, 4,
+        replace_notes_semantic_layer_action_t{chart_id_t{2}, layer_id_t{8}, {object_id_t{20}, object_id_t{21}}, true})));
+    check_membership(static_cast<bool>(history.document.charts.front().measures.front().notes.front().semantic_layers == std::vector{layer_id_t{8}}));
+    check_membership(static_cast<bool>(history.document.charts.front().measures.front().notes.back().semantic_layers.empty()));
+    require_membership(static_cast<bool>(undo_document_command(history)));
+    check_membership(static_cast<bool>(write_native_project(history.document).bytes == write_native_project(song).bytes));
+}
+
+TEST_CASE("replacement membership batch checks a shared layer catalog once",
+          "[unit][core][semantic-layer][replacement][batch]") {
+    auto song = semantic_layer_song();
+    auto& chart = song.charts.front();
+    for (std::uint64_t index = 0; index < 1000; ++index)
+        chart.semantic_layers.push_back({.id = layer_id_t{100 + index}, .name = "Layer " + std::to_string(index), .color = {32, 64, 128, 255}});
+    chart.measures.front().notes.clear();
+    std::vector<object_id_t> ids;
+    for (std::uint64_t index = 0; index < 900; ++index) {
+        ids.push_back(object_id_t{10000 + index});
+        chart.measures.front().notes.push_back({.id = ids.back(), .position = {measure_id_t{3}, index},
+            .lane = lane_id_t{1}, .semantic_layers = {layer_id_t{100 + index}}});
+    }
+    auto history = make_document_history(song);
+    require_membership(static_cast<bool>(apply_semantic_layer_edit(history, 4,
+        replace_notes_semantic_layer_action_t{chart_id_t{2}, layer_id_t{1099}, ids})));
+    check_membership(static_cast<bool>(history.undo.size() == 1));
+    for (const auto& note : history.document.charts.front().measures.front().notes)
+        check_membership(static_cast<bool>(note.semantic_layers == std::vector{layer_id_t{1099}}));
 }

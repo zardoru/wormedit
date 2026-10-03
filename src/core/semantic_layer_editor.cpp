@@ -340,6 +340,99 @@ auto apply_membership(chart_document_t& chart, layer_id_t layer_id,
     return changed;
 }
 
+using membership_layer_index_t = std::unordered_map<std::uint64_t, const semantic_layer_t*>;
+
+auto membership_layer_index(const chart_document_t& chart) -> membership_layer_index_t {
+    membership_layer_index_t layers;
+    layers.reserve(chart.semantic_layers.size());
+    for (const auto& layer : chart.semantic_layers) {
+        const auto [entry, inserted] = layers.emplace(layer.id.value, &layer);
+        if (!inserted) entry->second = nullptr;
+    }
+    return layers;
+}
+
+auto editable_membership_layer(const membership_layer_index_t& layers, layer_id_t id,
+                                document_command_result_t& result) -> bool {
+    const auto found = layers.find(id.value);
+    if (!id || found == layers.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "note membership refers to an unknown layer");
+        return false;
+    }
+    if (!found->second) {
+        reject(result, diagnostic_code_t::duplicate_id, "note membership refers to a duplicated layer ID");
+        return false;
+    }
+    if (found->second->locked) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "note memberships cannot be changed on a locked semantic layer");
+        return false;
+    }
+    return true;
+}
+
+auto validate_clear_note_layers(const membership_layer_index_t& layers, const note_t& note,
+                                document_command_result_t& result) -> bool {
+    std::unordered_set<std::uint64_t> memberships;
+    for (const auto layer_id : note.semantic_layers) {
+        if (!memberships.insert(layer_id.value).second) {
+            reject(result, diagnostic_code_t::duplicate_id,
+                   "note contains a duplicated semantic layer membership");
+            return false;
+        }
+        if (!editable_membership_layer(layers, layer_id, result)) return false;
+    }
+    return true;
+}
+
+auto collect_replacement_notes(chart_document_t& chart, const std::vector<object_id_t>& notes,
+                               const membership_layer_index_t& layers,
+                               const semantic_layer_edit_limits_t& limits,
+                               document_command_result_t& result)
+    -> std::optional<std::vector<note_t*>> {
+    if (notes.size() > limits.maximum_note_selection) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "semantic layer note selection exceeds the configured cap");
+        return std::nullopt;
+    }
+    auto note_index = build_chart_note_index(chart, limits.maximum_chart_objects, notes.size(), result);
+    if (!note_index) return std::nullopt;
+    std::unordered_set<std::uint64_t> selected_ids;
+    std::vector<note_t*> selected_notes;
+    selected_ids.reserve(notes.size());
+    selected_notes.reserve(notes.size());
+    for (const auto note_id : notes) {
+        if (!selected_ids.insert(note_id.value).second) {
+            reject(result, diagnostic_code_t::duplicate_id,
+                   "semantic layer note selection contains a duplicate note ID");
+            return std::nullopt;
+        }
+        auto* note = unique_note(*note_index, note_id, result);
+        if (!note || !validate_clear_note_layers(layers, *note, result)) return std::nullopt;
+        selected_notes.push_back(note);
+    }
+    return selected_notes;
+}
+
+auto replace_note_memberships(chart_document_t& chart, const std::vector<object_id_t>& notes,
+                               std::optional<layer_id_t> target, bool toggle,
+                               const semantic_layer_edit_limits_t& limits,
+                               document_command_result_t& result) -> bool {
+    const auto layers = membership_layer_index(chart);
+    if (target && !editable_membership_layer(layers, *target, result)) return false;
+    const auto selected = collect_replacement_notes(chart, notes, layers, limits, result);
+    if (!selected) return false;
+    bool changed = false;
+    for (auto* note : *selected) {
+        const std::vector<layer_id_t> replacement = target ? std::vector{*target} : std::vector<layer_id_t>{};
+        const auto clear = toggle && note->semantic_layers == replacement;
+        const auto desired = clear ? std::vector<layer_id_t>{} : replacement;
+        changed = changed || note->semantic_layers != desired;
+        note->semantic_layers = desired;
+    }
+    return changed;
+}
+
 auto insert_semantic_layer(chart_document_t& chart,
                            const insert_semantic_layer_action_t& edit,
                            const semantic_layer_edit_limits_t& limits,
@@ -561,6 +654,12 @@ auto apply_typed_semantic_edit(chart_document_t& chart, const edit_t& edit,
     } else if constexpr (std::is_same_v<edit_t, reorder_semantic_layers_action_t>) {
         return {.label = semantic_edit_label<edit_t>(),
                 .changed = reorder_semantic_layers(chart, edit, limits, result)};
+    } else if constexpr (std::is_same_v<edit_t, clear_semantic_layer_membership_action_t>) {
+        return {.label = "Clear semantic layer membership",
+                .changed = replace_note_memberships(chart, edit.notes, std::nullopt, false, limits, result)};
+    } else if constexpr (std::is_same_v<edit_t, replace_notes_semantic_layer_action_t>) {
+        return {.label = "Replace semantic layer membership",
+                .changed = replace_note_memberships(chart, edit.notes, edit.layer, edit.toggle, limits, result)};
     } else {
         const auto operation = membership_operation(edit);
         return {.label = semantic_edit_label<edit_t>(operation),
@@ -625,6 +724,7 @@ auto make_semantic_layer_palette_window(const chart_document_t& chart,
                           : std::min(requested_page, result.page_count - 1);
     }
     const auto begin = result.page * page_size;
+    result.first_row = begin;
     const auto end = std::min(result.total_count, begin + page_size);
     result.layer_indices.reserve(end - begin);
     std::size_t eligible_index{};
@@ -641,6 +741,22 @@ auto make_semantic_layer_palette_window(const chart_document_t& chart,
             break;
         }
     }
+    return result;
+}
+
+auto make_semantic_layer_palette_window(const chart_document_t& chart,
+                                        std::size_t first_row, std::size_t row_count,
+                                        std::size_t maximum_layers)
+    -> std::optional<semantic_layer_palette_window_t> {
+    const auto count = chart.semantic_layers.size();
+    if (row_count == 0 || maximum_layers == 0 || count > maximum_layers) return std::nullopt;
+    semantic_layer_palette_window_t result;
+    result.total_count = count;
+    result.first_row = count == 0 ? 0 : std::min(first_row, count - 1);
+    const auto window_count = std::min(row_count, count - result.first_row);
+    result.layer_indices.reserve(window_count);
+    for (std::size_t offset = 0; offset < window_count; ++offset)
+        result.layer_indices.push_back(result.first_row + offset);
     return result;
 }
 

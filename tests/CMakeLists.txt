@@ -377,6 +377,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/audio_state.cpp
         ../src/ui/nuklear/arrow_glyph.cpp
         ../src/ui/nuklear/compose_bookmark_label.cpp
+        ../src/ui/nuklear/theme.cpp
         ../src/ui/nuklear/compose_state.cpp
         ../src/ui/nuklear/metadata_state.cpp
         ../src/ui/nuklear/setup_state.cpp
@@ -385,9 +386,12 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/timing_state.cpp
         ../src/ui/nuklear/meter_state.cpp
     )
-    target_include_directories(wormedit_frontend_state_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    target_include_directories(wormedit_frontend_state_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
     target_link_libraries(wormedit_frontend_state_tests
         PRIVATE
+            wormedit::ui_frontend
+            nlohmann_json::nlohmann_json
             SDL3::SDL3
             Catch2::Catch2WithMain
     )

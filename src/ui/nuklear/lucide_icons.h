@@ -13,6 +13,7 @@ enum class Glyph : std::uint8_t {
     rotate_ccw, paintbrush, chevron_left, chevron_right,
     play, pause, square, eye, minus, maximize, minimize_2, x,
     audio_lines, layers, chevrons_left, chevrons_right, magnet, metronome,
+    lock, lock_open, eye_off,
     count
 };
 

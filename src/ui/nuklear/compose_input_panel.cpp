@@ -32,6 +32,7 @@
 #include "ui/nuklear/compose_input_panel.h"
 #include "ui/nuklear/compose_input_internal.h"
 #include "ui/nuklear/compose_area_menu.h"
+#include "ui/nuklear/compose_note_menu.h"
 
 void reset_bmson_marker_move_capture() {
     state.bmson_marker_move_candidate_active = false;
@@ -518,6 +519,7 @@ void prepare_compose_panel_input(const WormUiComposeView* view, bool compose_tab
     if (!action) {
         return;
     }
+    prepare_compose_note_menu(view, compose_tab_active, window_focused, action);
     if (!compose_tab_active || !view || !view->visible) reset_compose_area_menu();
     if (view && compose_tab_active && view->visible) {
         state.action_overflowed = false;
@@ -647,7 +649,7 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
 bool process_compose_double_clicks(const ComposeDoubleClickContext& input,
                                           bool compose_pointer_captured,
                                           bool window_focused) {
-    if (input.view->paste_active || compose_area_pointer_consumed()) return true;
+    if (input.view->paste_active || compose_area_pointer_consumed() || compose_note_menu_consumed()) return true;
     if (compose_pointer_captured || !window_focused || !input.view->scene_available) return false;
     bool note_double_click_in_view = false;
     for (size_t click_index = 0; click_index < input.click_count; ++click_index) {
@@ -779,7 +781,7 @@ static auto begin_compose_timing_marker_drag(const ComposePointerEventContext& i
 
 auto process_compose_timing_marker_pointer(const ComposePointerEventContext& input,
                                                   bool paint_pointer_consumed) -> bool {
-    if (compose_area_pointer_consumed()) return true;
+    if (compose_area_pointer_consumed() || compose_note_menu_consumed()) return true;
     if (update_compose_timing_marker_drag(input)) return true;
     return begin_compose_timing_marker_drag(input, paint_pointer_consumed);
 }
@@ -897,7 +899,7 @@ void process_compose_pointer_actions(const ComposePointerEventContext& input,
         }
         return;
     }
-    if (compose_area_pointer_consumed()) return;
+    if (compose_area_pointer_consumed() || compose_note_menu_consumed()) return;
     if (handle_compose_measure_click(input, paint_pointer_consumed)) return;
     if (handle_compose_alt_pointer(input, paint_pointer_consumed)) return;
     if (handle_compose_note_field_pointer_start(input, paint_pointer_consumed)) return;

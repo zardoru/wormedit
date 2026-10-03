@@ -161,6 +161,7 @@ struct flattened_workspace_t {
         std::optional<WormUiComposeCursorView> cursor;
         struct {
             frame_span<WormUiComposeSemanticLayerView> view;
+            frame_span<WormUiComposeSemanticLayerView> note_menu;
         } semantic_layer;
         struct {
             frame_span<WormUiComposeBranchRowView> row;

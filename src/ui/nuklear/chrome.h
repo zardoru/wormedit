@@ -120,6 +120,18 @@ inline void button_feedback(nk_context* context, struct nk_rect bounds, bool sel
     }
 }
 
+inline void layout_separator(nk_context* context) {
+    nk_layout_row_template_push_static(context, 9.0f);
+}
+
+inline void toolbar_separator(nk_context* context) {
+    struct nk_rect bounds{};
+    if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
+    const auto x = bounds.x + bounds.w * 0.5f;
+    nk_stroke_line(nk_window_get_canvas(context), x, bounds.y + 4.0f,
+                   x, bounds.y + bounds.h - 4.0f, 1.0f, color(UiColor::border));
+}
+
 struct IconButton {
     lucide::Glyph glyph;
     const char* tooltip;
@@ -127,9 +139,9 @@ struct IconButton {
 
     static constexpr float width = 34.0f;
 
-    static void layout_columns(nk_context* context, int count = 1) {
+    static void layout_columns(nk_context* context, int count = 1, float column_width = width) {
         for (int index = 0; index < count; ++index)
-            nk_layout_row_template_push_static(context, width);
+            nk_layout_row_template_push_static(context, column_width);
     }
 
     auto render(nk_context* context) const -> bool {

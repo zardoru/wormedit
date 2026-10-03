@@ -16,7 +16,7 @@ constexpr std::array<std::string_view, static_cast<size_t>(UiColor::count)> ui_n
     "border_hover", "text", "text_bright", "text_muted", "selected",
     "selected_text", "accent", "status"};
 constexpr std::array<std::string_view, static_cast<size_t>(ComposeColor::count)> compose_names{
-    "viewport", "rail", "grid", "label", "overview"};
+    "viewport", "rail", "grid", "label", "overview", "semantic_layer_none"};
 
 std::array<nk_color, ui_names.size()> ui_colors{
     nk_rgb(18, 19, 26), nk_rgb(30, 31, 40), nk_rgb(44, 46, 60),
@@ -26,7 +26,7 @@ std::array<nk_color, ui_names.size()> ui_colors{
     nk_rgb(30, 31, 40)};
 std::array<nk_color, compose_names.size()> compose_colors{
     nk_rgb(22, 25, 33), nk_rgb(18, 21, 29), nk_rgb(58, 67, 83),
-    nk_rgb(190, 196, 207), nk_rgb(22, 31, 42)};
+    nk_rgb(190, 196, 207), nk_rgb(22, 31, 42), nk_rgb(148, 153, 163)};
 std::array<std::array<nk_color, 2>, 4> lane_colors{{
     {nk_rgb(42, 39, 61), nk_rgb(48, 44, 68)},
     {nk_rgb(42, 49, 58), nk_rgb(47, 54, 63)},

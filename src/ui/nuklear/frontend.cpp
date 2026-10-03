@@ -6,6 +6,8 @@
 #include "ui/nuklear/audio_panel.h"
 #include "ui/nuklear/audio_state.h"
 #include "ui/nuklear/compose_panel.h"
+#include "ui/nuklear/compose_layers_panel.h"
+#include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_input_panel.h"
@@ -362,9 +364,12 @@ static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_la
     auto& compose_state = worm_ui_nuklear_compose_state();
     action->shortcut_text_entry_active = nuklear_text_entry_active() ||
                                          compose_state.inline_timing_input_consumed ||
-                                         compose_state.inline_offset_input_consumed;
+                                         compose_state.inline_offset_input_consumed ||
+                                         compose_state.layers_menu_input_consumed ||
+                                         compose_note_menu_consumed();
     compose_state.inline_timing_input_consumed = false;
     compose_state.inline_offset_input_consumed = false;
+    compose_state.layers_menu_input_consumed = false;
     action->shortcut_ime_composition_active = g_ime_composition_active;
     action->shortcut_compose_lane_focused = compose_lane_focused && g_window_focused;
     action->shortcut_focused_lane_id = action->shortcut_compose_lane_focused ? focused_lane_id : 0;
@@ -392,7 +397,8 @@ static void queue_compose_text_hotkeys(const char* text) {
 static void consume_compose_text_hotkeys(WormUiWorkspaceAction& action) {
     const auto count = std::exchange(g_compose_text_hotkey_count, std::size_t{});
     if (count == 0 || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE ||
-        worm_ui_nuklear_compose_state().bgm_column_count_edit.input_owned)
+        worm_ui_nuklear_compose_state().bgm_column_count_edit.input_owned ||
+        worm_ui_nuklear_compose_state().layers_menu_input_consumed || compose_note_menu_consumed() || nuklear_text_entry_active())
         return;
     switch (g_compose_text_hotkeys[0]) {
     case '+': action.compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_IN; break;
@@ -542,6 +548,7 @@ bool worm_ui_frontend_init_headless(int width, int height) {
 }
 
 void worm_ui_frontend_shutdown(void) {
+    reset_compose_note_menu();
     shutdown_notification_context();
     worm_ui_nuklear_reset_external_player_panel();
     reset_project_dialog();
@@ -692,8 +699,12 @@ static void close_notification_history_windows() {
         nk_window_close(&g_notification_context, "Notifications");
 }
 
+static bool compose_popup_owns_input() {
+    return worm_ui_nuklear_compose_state().layers_menu_open || compose_note_menu_open();
+}
+
 static bool notification_owns_pointer(float x, float y) {
-    if (g_notification_project_modal) return false;
+    if (g_notification_project_modal || compose_popup_owns_input()) return false;
     return wormedit::ui::nuklear::notification_pointer_owned(
         g_notification_state, x, y, notification_editor_gesture_active());
 }
@@ -717,7 +728,8 @@ static bool capture_notification_key(const SDL_KeyboardEvent& event) {
     const auto target = wormedit::ui::nuklear::notification_escape_target(
         g_notification_view, g_window_focused,
         nuklear_text_entry_active() || compose.inline_timing_open || compose.inline_offset_open ||
-            compose.go_to_measure_open,
+            compose.go_to_measure_open || compose_popup_owns_input() ||
+            compose.semantic_layer_name_editor_visible || compose.semantic_layer_color_editor_visible,
         g_ime_composition_active,
         notification_editor_gesture_active() || compose.key_event_count != 0,
         g_notification_modal || g_new_project_wizard.open || project_dialog_active());
@@ -733,7 +745,8 @@ static bool capture_notification_button(const SDL_MouseButtonEvent& event) {
         !std::isfinite(event.x) || !std::isfinite(event.y)) return false;
     const bool captured = wormedit::ui::nuklear::notification_pointer_edge(
         g_notification_state, event.x, event.y, event.button, event.down,
-        !g_notification_project_modal && !notification_editor_gesture_active());
+        !g_notification_project_modal && !notification_editor_gesture_active() &&
+            !compose_popup_owns_input());
     if (captured) nk_input_motion(g_context, static_cast<int>(event.x), static_cast<int>(event.y));
     return captured;
 }
@@ -1592,7 +1605,8 @@ static bool options_owns_content_input(const WormUiWorkspaceView& view) {
     if (history_owns_content_input(view)) return true;
     const auto& compose = worm_ui_nuklear_compose_state();
     const bool text_active = nuklear_text_entry_active() || g_ime_composition_active ||
-                             compose.inline_timing_open || compose.go_to_measure_open;
+                             compose.inline_timing_open || compose.go_to_measure_open ||
+                             compose_popup_owns_input();
     if (g_context && !g_notification_project_modal &&
         wormedit::ui::nuklear::notification_content_occluded(g_notification_state,
             g_context->input.mouse.pos.x, g_context->input.mouse.pos.y,
@@ -1943,6 +1957,8 @@ static void render_empty_project_window(const WorkspaceRenderContext& frame) {
     if (nk_begin(g_context, "wormedit-workspace",
                  nk_rect(0, 0, static_cast<float>(frame.width), static_cast<float>(frame.height)),
                  workspace_window_flags(frame.view))) {
+        worm_ui_nuklear_dismiss_layer_popup(g_context);
+        dismiss_compose_note_popup(g_context);
         render_title_bar(&frame.view, &frame.action);
         const float recovery_height = render_recovery_panel(frame.view, frame.action);
         const float available_height = std::max(100.0f,
@@ -2060,6 +2076,8 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
     if (nk_begin(g_context, "wormedit-workspace",
                  nk_rect(0, 0, static_cast<float>(frame.width), static_cast<float>(frame.height)),
                  workspace_window_flags(frame.view))) {
+        worm_ui_nuklear_dismiss_layer_popup(g_context);
+        dismiss_compose_note_popup(g_context);
         render_title_bar(&view, &action);
         render_workspace_tabs(&view, &action);
         render_transport_seek_control(view, action);
@@ -2134,6 +2152,19 @@ static void render_notification_frame(const WormUiNotificationView& view,
         action.notifications.kind == WORM_UI_NOTIFICATION_ACTION_NONE) action.notifications = pending;
 }
 
+static void retire_unavailable_layer_actions(const WormUiWorkspaceView& view) {
+    if (view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && g_window_focused &&
+        view.compose.visible && !view.compose.input_occluded) return;
+    auto& state = worm_ui_nuklear_compose_state();
+    state.layers_menu_close_pending = state.layers_menu_close_pending || state.layers_menu_open;
+    state.layers_menu_open = false;
+    state.layers_menu_input_consumed = false;
+    state.layers_menu_release_pending = false;
+    state.semantic_layer_name_editor_visible = false;
+    state.semantic_layer_name_focus_pending = false;
+    state.semantic_layer_color_editor_visible = false;
+}
+
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
     remember_notification_frame(view);
     worm_ui_nuklear_begin_image_quad_frame();
@@ -2148,6 +2179,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         expose_shortcut_input(&action);
         return action;
     }
+    retire_unavailable_layer_actions(*view);
     g_tap_timing_visible = view->tap_timing.visible && !project_modal_active(*view);
     sync_pending_audio_project(*view);
 

@@ -268,6 +268,7 @@ struct application_command_state_t {
     bool semantic_layer_paint_mode_active{};
     bool semantic_layer_solo_active{};
     std::optional<wormedit::layer_id_t> semantic_layer_target;
+    bool semantic_layer_target_none{};
     // Semantic-layer filters are an ephemeral per-chart Compose view setting.
     // Layer IDs are only unique within their chart, so never carry a filter to
     // another selected difficulty.
@@ -277,6 +278,12 @@ struct application_command_state_t {
     std::optional<wormedit::chart_id_t> semantic_layer_palette_chart;
     std::optional<wormedit::layer_id_t> semantic_layer_palette_target;
     std::size_t semantic_layer_palette_page{};
+    std::size_t semantic_layer_first_row{};
+    std::size_t semantic_layer_row_count{32};
+    wormedit::chart_id_t note_layer_menu_chart{};
+    std::uint64_t note_layer_menu_revision{};
+    std::size_t note_layer_menu_first_row{};
+    std::size_t note_layer_menu_row_count{};
     // UI-only, chart-scoped preferences. Changing a snap never changes chart
     // data; an active gesture keeps its captured snap until it is resolved.
     std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;

@@ -2,9 +2,11 @@
 #include "sys/application_commands.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/compose_minimap_navigation.h"
+#include "sys/compose_semantic_layer_commands.h"
 
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/timing_lane_controller.h>
+#include <wormedit/core/semantic_layer_editor.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -243,6 +245,75 @@ TEST_CASE("timing insertion rejects locked edits and missing charts",
     CHECK_FALSE(fixture.preview);
     CHECK(fixture.fixture.history.document.revision == revision);
 }
+
+namespace {
+void check_layer_command(bool condition) { CHECK(condition); }
+void require_layer_command(bool condition) { REQUIRE(condition); }
+void seed_layer_commands(TimingInsertFixture& fixture, bool locked = false) {
+    using namespace wormedit;
+    auto& chart = fixture.fixture.history.document.charts.front();
+    chart.semantic_layers = {
+        {.id = layer_id_t{7}, .name = "First", .color = {32, 64, 128, 255}, .locked = locked},
+        {.id = layer_id_t{8}, .name = "Second", .color = {64, 128, 32, 255}}};
+    chart.measures.front().notes.front().semantic_layers = {layer_id_t{7}};
+    fixture.compose_state->selected_notes = {object_id_t{1}, object_id_t{2}};
+}
+}
+
+TEST_CASE("Application No layer command clears selection and disables other membership operations",
+          "[unit][sys][application_commands][semantic-layer]") {
+    using namespace wormedit;
+    TimingInsertFixture fixture;
+    seed_layer_commands(fixture);
+    fixture.application_state.semantic_layer_target_none = true;
+    require_layer_command(fixture.invoke(application_command_kind_t::semantic_layer_apply).accepted);
+    check_layer_command(fixture.fixture.history.undo.size() == 1);
+    check_layer_command(fixture.fixture.history.document.charts.front().measures.front().notes.front().semantic_layers.empty());
+    check_layer_command(!fixture.invoke(application_command_kind_t::semantic_layer_remove).accepted);
+    check_layer_command(fixture.status == "No layer only assigns");
+    check_layer_command(!fixture.invoke(application_command_kind_t::semantic_layer_toggle).accepted);
+    check_layer_command(fixture.fixture.history.undo.size() == 1);
+    require_layer_command(fixture.invoke(application_command_kind_t::semantic_layer_clear_target).accepted);
+    check_layer_command(!fixture.application_state.semantic_layer_target_none);
+}
+
+TEST_CASE("Application layer commands replace membership and reject locked sources without edits",
+          "[unit][sys][application_commands][semantic-layer]") {
+    using namespace wormedit;
+    for (const auto locked : {false, true}) {
+        TimingInsertFixture fixture;
+        seed_layer_commands(fixture, locked);
+        fixture.application_state.semantic_layer_target = layer_id_t{8};
+        const auto original = write_native_project(fixture.fixture.history.document).bytes;
+        const auto result = fixture.invoke(application_command_kind_t::semantic_layer_apply);
+        check_layer_command(result.accepted == !locked);
+        if (locked) {
+            check_layer_command(fixture.status.find("locked") != std::string::npos);
+            check_layer_command(write_native_project(fixture.fixture.history.document).bytes == original);
+        } else {
+            const auto& notes = fixture.fixture.history.document.charts.front().measures.front().notes;
+            check_layer_command(notes[0].semantic_layers == std::vector{layer_id_t{8}});
+            check_layer_command(notes[1].semantic_layers == std::vector{layer_id_t{8}});
+        }
+        check_layer_command(fixture.application_state.semantic_layer_target == layer_id_t{8});
+    }
+}
+
+TEST_CASE("Application numbered layer selection resets No layer target",
+          "[unit][sys][application_commands][semantic-layer]") {
+    using namespace wormedit;
+    TimingInsertFixture fixture;
+    seed_layer_commands(fixture);
+    fixture.application_state.semantic_layer_target_none = true;
+    const auto result = invoke_application_command(
+        {.kind = application_command_kind_t::semantic_layer_select_slot, .semantic_layer_slot = 1},
+        fixture.fixture.history, fixture.workspace, fixture.compose_state, fixture.preview,
+        fixture.application_state, fixture.status);
+    require_layer_command(result.accepted);
+    check_layer_command(!fixture.application_state.semantic_layer_target_none);
+    check_layer_command(fixture.application_state.semantic_layer_target == layer_id_t{7});
+}
+
 
 #else
 namespace {
@@ -729,4 +800,213 @@ TEST_CASE("bookmark commands parse to their application kinds", "[unit][sys][com
     CHECK(add->kind == kind::markers_add_bookmark);
 }
 
+namespace {
+void check_layer_lock(bool condition) { CHECK(condition); }
+void require_layer_lock(bool condition) { REQUIRE(condition); }
+} // namespace
+
+TEST_CASE("Layer row lock commands round trip through shared history and undo",
+          "[unit][sys][commands][application_commands]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    fixture.history.document.charts.front().semantic_layers = {
+        {.id = layer_id_t{7}, .name = "Layer", .color = {32, 64, 128, 255}},
+        {.id = layer_id_t{9}, .name = "Other", .color = {64, 128, 32, 255}}};
+    const auto update = [&](bool locked) {
+        return apply_semantic_layer_edit(fixture.history, fixture.history.document.revision,
+            update_semantic_layer_action_t{chart_id_t{7}, layer_id_t{9}, "Other",
+                                           {64.0 / 255, 128.0 / 255, 32.0 / 255, 1}, true, locked});
+    };
+    require_layer_lock(update(true).applied);
+    check_layer_lock(!fixture.history.document.charts.front().semantic_layers.front().locked);
+    check_layer_lock(fixture.history.document.charts.front().semantic_layers.back().locked);
+    require_layer_lock(update(false).applied);
+    check_layer_lock(!fixture.history.document.charts.front().semantic_layers.back().locked);
+    require_layer_lock(undo_document_command(fixture.history));
+    check_layer_lock(fixture.history.document.charts.front().semantic_layers.back().locked);
+    require_layer_lock(undo_document_command(fixture.history));
+    check_layer_lock(!fixture.history.document.charts.front().semantic_layers.back().locked);
+}
+
+
+namespace {
+void seed_membership_fixture(AreaFixture& fixture, bool locked = false) {
+    using namespace wormedit;
+    auto& chart = fixture.history.document.charts.front();
+    chart.semantic_layers = {
+        {.id = layer_id_t{7}, .name = "First", .color = {32, 64, 128, 255}, .locked = locked},
+        {.id = layer_id_t{8}, .name = "Second", .color = {64, 128, 32, 255}}};
+    chart.measures.front().notes[0].semantic_layers = {layer_id_t{7}};
+    chart.measures.front().notes[1].semantic_layers = {layer_id_t{8}};
+    fixture.state.selected_notes = {object_id_t{1}, object_id_t{2}};
+}
+}
+
+namespace {
+void check_membership(bool condition) { CHECK(condition); }
+void require_membership(bool condition) { REQUIRE(condition); }
+}
+
+TEST_CASE("Compose No layer assigns mixed selection in one step and binds target after success",
+          "[unit][sys][application_commands][semantic-layer]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    seed_membership_fixture(fixture);
+    const auto original = fixture.history.document;
+    bool none = false;
+    std::optional<layer_id_t> target = layer_id_t{7};
+    const auto result = apply_compose_layer_assignment(fixture.history, fixture.state, 9, true, {}, none, target);
+    require_membership(static_cast<bool>(result));
+    check_membership(static_cast<bool>(none));
+    check_membership(static_cast<bool>(!(target)));
+    check_membership(static_cast<bool>(fixture.history.undo.size() == 1));
+    check_membership(static_cast<bool>(fixture.state.selected_notes.size() == 2));
+    for (const auto& note : fixture.history.document.charts.front().measures.front().notes)
+        check_membership(static_cast<bool>(note.semantic_layers.empty()));
+    require_membership(static_cast<bool>(undo_document_command(fixture.history)));
+    check_membership(static_cast<bool>(write_native_project(fixture.history.document).bytes == write_native_project(original).bytes));
+}
+
+TEST_CASE("Compose rejected clear and replacement preserve target and selection",
+          "[unit][sys][application_commands][semantic-layer]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    seed_membership_fixture(fixture, true);
+    const auto original = fixture.history.document;
+    const auto selection = fixture.state.selected_notes;
+    bool none = false;
+    std::optional<layer_id_t> target = layer_id_t{7};
+    for (const auto clear : {true, false}) {
+        const auto result = apply_compose_layer_assignment(fixture.history, fixture.state, 9,
+            clear, layer_id_t{8}, none, target);
+        check_membership(static_cast<bool>(!(result)));
+        check_membership(static_cast<bool>(!(result.diagnostics.empty())));
+        check_membership(static_cast<bool>(!(none)));
+        check_membership(static_cast<bool>(target == layer_id_t{7}));
+        check_membership(static_cast<bool>(fixture.state.selected_notes == selection));
+        check_membership(static_cast<bool>(write_native_project(fixture.history.document).bytes == write_native_project(original).bytes));
+        check_membership(static_cast<bool>(fixture.history.undo.empty()));
+    }
+}
+
+TEST_CASE("Compose No layer paint clears mixed memberships once and undo restores each source",
+          "[unit][sys][application_commands][semantic-layer][paint]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    seed_membership_fixture(fixture);
+    const auto original = fixture.history.document;
+    require_membership(static_cast<bool>(begin_compose_layer_paint(fixture.history, fixture.state, true, {}, object_id_t{1}, true)));
+    require_membership(static_cast<bool>(dispatch_editor_action(fixture.history, fixture.state,
+        update_semantic_layer_paint_gesture_action_t{object_id_t{2}, true})));
+    require_membership(static_cast<bool>(finish_compose_layer_paint(fixture.history, fixture.state, {})));
+    check_membership(static_cast<bool>(fixture.history.undo.size() == 1));
+    check_membership(static_cast<bool>(!(fixture.state.pending_semantic_layer_paint_gesture)));
+    check_membership(static_cast<bool>(fixture.state.selected_notes.size() == 2));
+    for (const auto& note : fixture.history.document.charts.front().measures.front().notes)
+        check_membership(static_cast<bool>(note.semantic_layers.empty()));
+    require_membership(static_cast<bool>(undo_document_command(fixture.history)));
+    check_membership(static_cast<bool>(write_native_project(fixture.history.document).bytes == write_native_project(original).bytes));
+}
+
+TEST_CASE("Compose No layer paint rejects locked membership and exposes status diagnostic",
+          "[unit][sys][application_commands][semantic-layer][paint]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    seed_membership_fixture(fixture, true);
+    const auto original = fixture.history.document;
+    require_membership(static_cast<bool>(begin_compose_layer_paint(fixture.history, fixture.state, true, {}, object_id_t{2}, true)));
+    require_membership(static_cast<bool>(dispatch_editor_action(fixture.history, fixture.state,
+        update_semantic_layer_paint_gesture_action_t{object_id_t{1}, true})));
+    const auto result = finish_compose_layer_paint(fixture.history, fixture.state, {});
+    check_membership(static_cast<bool>(!(result)));
+    require_membership(static_cast<bool>(!(result.diagnostics.empty())));
+    check_membership(static_cast<bool>(result.diagnostics.front().message.find("locked") != std::string::npos));
+    check_membership(static_cast<bool>(!(fixture.state.pending_semantic_layer_paint_gesture)));
+    check_membership(static_cast<bool>(write_native_project(fixture.history.document).bytes == write_native_project(original).bytes));
+    check_membership(static_cast<bool>(fixture.history.undo.empty()));
+    check_membership(static_cast<bool>(fixture.state.selected_notes.size() == 2));
+}
+
+TEST_CASE("Compose ordinary layer paint replaces other sources while toggling its own target",
+          "[unit][sys][application_commands][semantic-layer][paint]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    seed_membership_fixture(fixture);
+    require_membership(static_cast<bool>(begin_compose_layer_paint(fixture.history, fixture.state, false, layer_id_t{8}, object_id_t{1}, true)));
+    require_membership(static_cast<bool>(finish_compose_layer_paint(fixture.history, fixture.state, object_id_t{2})));
+    const auto& notes = fixture.history.document.charts.front().measures.front().notes;
+    check_membership(static_cast<bool>(notes[0].semantic_layers == std::vector{layer_id_t{8}}));
+    check_membership(static_cast<bool>(notes[1].semantic_layers.empty()));
+    check_membership(static_cast<bool>(fixture.history.undo.size() == 1));
+}
+
+
+TEST_CASE("Compose No layer no-op still binds target and releases an unassigned paint stroke",
+          "[unit][sys][application_commands][semantic-layer]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    bool none = false;
+    std::optional<layer_id_t> target = layer_id_t{7};
+    const auto result = apply_compose_layer_assignment(fixture.history, fixture.state, 9, true, {}, none, target);
+    check_membership(!result.applied && result.diagnostics.empty());
+    check_membership(none && !target);
+    require_membership(static_cast<bool>(begin_compose_layer_paint(fixture.history, fixture.state, true, {}, object_id_t{1}, true)));
+    require_membership(static_cast<bool>(finish_compose_layer_paint(fixture.history, fixture.state, {})));
+    check_membership(!fixture.state.pending_semantic_layer_paint_gesture);
+    check_membership(fixture.history.undo.empty());
+}
+
 #endif // WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+
+#ifndef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Note context selects only an unselected hit before assigning one layer",
+          "[unit][sys][application_commands][note-menu]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    seed_membership_fixture(fixture);
+    fixture.state.selected_notes = {object_id_t{1}};
+    require_membership(static_cast<bool>(select_compose_note_context(fixture.history, fixture.state, 9, object_id_t{2})));
+    check_membership(fixture.state.selected_notes == std::vector{object_id_t{2}});
+    bool none = false;
+    std::optional<layer_id_t> target;
+    require_membership(static_cast<bool>(apply_compose_layer_assignment(fixture.history,
+        fixture.state, 9, false, layer_id_t{7}, none, target)));
+    const auto& notes = fixture.history.document.charts.front().measures.front().notes;
+    check_membership(notes[0].semantic_layers == std::vector{layer_id_t{7}});
+    check_membership(notes[1].semantic_layers == std::vector{layer_id_t{7}});
+    check_membership(fixture.history.undo.size() == 1);
+    require_membership(undo_document_command(fixture.history));
+    check_membership(fixture.history.document.charts.front().measures.front().notes[1].semantic_layers ==
+                     std::vector{layer_id_t{8}});
+}
+
+TEST_CASE("Note context preserves selected groups and clearing removes mixed layers once",
+          "[unit][sys][application_commands][note-menu]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    seed_membership_fixture(fixture);
+    require_membership(static_cast<bool>(select_compose_note_context(fixture.history, fixture.state, 9, object_id_t{2})));
+    check_membership(fixture.state.selected_notes == std::vector{object_id_t{1}, object_id_t{2}});
+    bool none = false;
+    std::optional<layer_id_t> target{layer_id_t{8}};
+    require_membership(static_cast<bool>(apply_compose_layer_assignment(fixture.history,
+        fixture.state, 9, true, {}, none, target)));
+    const auto& notes = fixture.history.document.charts.front().measures.front().notes;
+    check_membership(notes[0].semantic_layers.empty());
+    check_membership(notes[1].semantic_layers.empty());
+    check_membership(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("Note context rejects stale and unknown hits without replacing selection",
+          "[unit][sys][application_commands][note-menu]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    seed_membership_fixture(fixture);
+    const auto selection = fixture.state.selected_notes;
+    check_membership(!select_compose_note_context(fixture.history, fixture.state, 8, object_id_t{3}));
+    check_membership(!select_compose_note_context(fixture.history, fixture.state, 9, object_id_t{999}));
+    check_membership(fixture.state.selected_notes == selection);
+    check_membership(fixture.history.undo.empty());
+}
+
+#endif

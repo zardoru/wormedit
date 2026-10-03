@@ -1438,6 +1438,19 @@ auto paste_target_available(bool compose_ready, bool pending,
     return compose_ready && !pending && state.chart_clipboard.has_value();
 }
 
+void refresh_semantic_membership_commands(wormedit::command_registry_t& registry,
+    bool compose_ready, bool target_valid, const application_command_state_t& app,
+    const std::optional<wormedit::editor_interaction_state_t>& state) {
+    using namespace wormedit;
+    const auto any_target = target_valid || app.semantic_layer_target_none;
+    const auto can_apply = compose_ready && any_target && !state->selected_notes.empty();
+    (void)update_command_state(registry, command_id_t{"semantic_layer.clear_target"},
+                               compose_ready && any_target, !any_target);
+    (void)update_command_state(registry, command_id_t{"semantic_layer.apply"}, can_apply, std::nullopt);
+    (void)update_command_state(registry, command_id_t{"semantic_layer.remove"}, can_apply && target_valid, std::nullopt);
+    (void)update_command_state(registry, command_id_t{"semantic_layer.toggle"}, can_apply && target_valid, std::nullopt);
+}
+
 void refresh_application_command_states(
     wormedit::command_registry_t& registry, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
@@ -1456,6 +1469,7 @@ void refresh_application_command_states(
         target_valid = target_layer != chart->semantic_layers.end();
         if (!target_valid) {
             application_state.semantic_layer_target.reset();
+            application_state.semantic_layer_target_none = false;
             application_state.semantic_layer_paint_mode_active = false;
             application_state.semantic_layer_solo_active = false;
         } else if (target_layer->locked || !target_layer->visible) {
@@ -1542,12 +1556,8 @@ void refresh_application_command_states(
                              layer->id == *application_state.semantic_layer_target;
         set("semantic_layer.select_slot_" + std::to_string(index + 1), available, checked);
     }
-    set("semantic_layer.clear_target", compose_ready && target_valid, !target_valid);
-    const bool can_apply_layer =
-        compose_ready && target_valid && !compose_state->selected_notes.empty();
-    set("semantic_layer.apply", can_apply_layer);
-    set("semantic_layer.remove", can_apply_layer);
-    set("semantic_layer.toggle", can_apply_layer);
+    refresh_semantic_membership_commands(registry, compose_ready, target_valid,
+                                          application_state, compose_state);
     set("audio.paint_hitsound", false);
 }
 

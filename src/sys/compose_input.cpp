@@ -1,4 +1,5 @@
 #include "sys/compose_input.h"
+#include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_playhead_skip.h"
 #include "sys/compose_scroll_geometry.h"
@@ -1361,6 +1362,16 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
     return compose_input_family_result_t::continue_with_result();
 }
 
+auto semantic_layer_paint_armed(const application_command_state_t& app) -> bool {
+    return app.semantic_layer_paint_mode_active &&
+           (app.semantic_layer_target.has_value() || app.semantic_layer_target_none);
+}
+
+auto semantic_layer_paint_target_editable(const application_command_state_t& app,
+                                          const wormedit::semantic_layer_t* layer) -> bool {
+    return app.semantic_layer_target_none || (layer && !layer->locked);
+}
+
 template <typename HitTargetAt>
 auto dispatch_semantic_layer_paint_gesture(const WormUiComposeInputAction& input,
                                            compose_gesture_context_t& context,
@@ -1368,8 +1379,7 @@ auto dispatch_semantic_layer_paint_gesture(const WormUiComposeInputAction& input
     -> compose_input_family_result_t {
     using namespace wormedit;
     auto& [history, state, application_state, result, accepted] = context;
-    if (!application_state.semantic_layer_paint_mode_active ||
-        !application_state.semantic_layer_target) {
+    if (!semantic_layer_paint_armed(application_state)) {
         if (state.pending_semantic_layer_paint_gesture) {
             result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
             accepted = "Semantic-layer paint stroke canceled because paint mode is inactive.";
@@ -1387,8 +1397,8 @@ auto dispatch_semantic_layer_paint_gesture(const WormUiComposeInputAction& input
         return "The selected chart field is no longer available.";
     }
     const auto* layer =
-        visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target);
-    if (!layer || layer->locked) {
+        visible_semantic_layer_by_id(*chart, application_state.semantic_layer_target.value_or(layer_id_t{}));
+    if (!semantic_layer_paint_target_editable(application_state, layer)) {
         application_state.semantic_layer_paint_mode_active = false;
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         return "Choose an unlocked visible semantic layer before painting note membership.";
@@ -1403,19 +1413,15 @@ auto dispatch_semantic_layer_paint_gesture(const WormUiComposeInputAction& input
             result.accepted = true;
             accepted = "Semantic-layer paint moved between playable notes.";
         } else {
-            result = dispatch_editor_action(history, state,
-                                            end_semantic_layer_paint_gesture_action_t{
-                                                .note = object_id_t{}, .pointer_captured = true});
+            result = finish_compose_layer_paint(history, state, {});
             accepted = result.document_changed ? "Semantic-layer paint stroke committed."
                                                : "Semantic-layer paint stroke released.";
         }
         return compose_input_family_result_t::continue_with_result();
     }
     if (beginning) {
-        result = dispatch_editor_action(
-            history, state,
-            begin_semantic_layer_paint_gesture_action_t{
-                .layer = layer->id, .note = *target->note, .pointer_captured = true});
+        result = begin_compose_layer_paint(history, state, application_state.semantic_layer_target_none,
+            layer ? layer->id : layer_id_t{}, *target->note, true);
         accepted = "Semantic-layer paint stroke started.";
     } else if (updating) {
         result = dispatch_editor_action(history, state,
@@ -1423,9 +1429,7 @@ auto dispatch_semantic_layer_paint_gesture(const WormUiComposeInputAction& input
                                             .note = *target->note, .pointer_captured = true});
         accepted = "Semantic-layer paint preview updated.";
     } else {
-        result = dispatch_editor_action(history, state,
-                                        end_semantic_layer_paint_gesture_action_t{
-                                            .note = *target->note, .pointer_captured = true});
+        result = finish_compose_layer_paint(history, state, *target->note);
         accepted = result.document_changed ? "Semantic-layer paint stroke committed."
                                            : "Semantic-layer paint stroke released.";
     }

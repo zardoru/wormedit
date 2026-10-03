@@ -1,5 +1,6 @@
 #include "sys/compose_scroll_geometry.h"
 #include "ui/nuklear/compose_area_menu.h"
+#include "ui/nuklear/compose_note_menu.h"
 #include "wormedit/nuklear_config.h"
 #include <cstring>
 
@@ -135,6 +136,7 @@ void cancel_compose_area_capture(WormUiWorkspaceAction& action) {
 void process_compose_area_menu(nk_context* context, const WormUiComposeView& view,
                                WormUiWorkspaceAction& action, struct nk_rect viewport,
                                double input_right, bool focused) {
+    if (compose_note_menu_consumed()) { consumed = false; return; }
     band_visible = view.scene_available && view.area_range_available;
     consumed = capture.active || menu_open;
     if (!view.scene_available || view.area_rows_per_measure == 0 ||

@@ -172,7 +172,23 @@ enum class worm_ui_nuklear_bmson_razor_mode_t : std::uint8_t {
     restart,
 };
 
+struct nk_color;
+enum class worm_ui_nuklear_compose_color_view_t { normal, snap, layer };
+
+// Transient arrows retain their snap artwork without a semantic layer ring.
+auto compose_note_is_transient(const WormUiComposeView& view,
+                               const WormUiComposeNoteView& note) -> bool;
+auto compose_arrow_layer_outline_visible(worm_ui_nuklear_compose_color_view_t color_view,
+    const WormUiComposeView& view, const WormUiComposeNoteView& note) -> bool;
+
+// Pure base fills; kind, hover and preview overrides are applied by the canvas.
+auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
+                            const WormUiComposeNoteView& note) -> nk_color;
+auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
+                            const WormUiComposeHoldView& hold) -> nk_color;
+
 struct worm_ui_nuklear_compose_state_t {
+    worm_ui_nuklear_compose_color_view_t color_view{worm_ui_nuklear_compose_color_view_t::normal};
     std::array<worm_ui_nuklear_compose_key_event_t, 64> key_events{};
     std::size_t key_event_count{};
     std::array<worm_ui_nuklear_compose_wheel_event_t, WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY>
@@ -341,9 +357,27 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t semantic_layer_color_id{};
     worm_ui_nuklear_compose_color_t semantic_layer_color{};
     bool semantic_layer_color_editor_visible{};
+    bool semantic_layer_name_editor_visible{};
+    bool semantic_layer_name_focus_pending{};
+    bool layers_menu_open{};
+    bool layers_menu_input_consumed{};
+    bool layers_menu_close_pending{};
+    bool layers_menu_release_pending{};
+    std::uint64_t layers_menu_project_id{};
+    std::uint64_t layers_menu_chart_id{};
+    std::uint64_t layers_menu_revision{};
+    std::uint64_t layers_menu_layer_id{};
+    WormUiComposeSemanticLayerView layers_menu_layer{};
+    std::string layers_menu_layer_name;
+    std::size_t layers_menu_row_index{};
+    float layers_menu_anchor_x{}, layers_menu_anchor_y{};
+    float layers_menu_x{}, layers_menu_y{};
     bool inspector_visible{true};
     // Keysound listbox (compose_sounds_panel.cpp).
     bool sounds_panel_visible{true};
+    bool layers_panel_visible{};
+    std::uint64_t layers_panel_chart_id{};
+    std::uint64_t layers_panel_project_id{};
     bool sounds_layers_open{};
     bool sounds_preview_on_click{true};
     worm_ui_keysound_selection_t keysound_selection;

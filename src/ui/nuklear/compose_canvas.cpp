@@ -264,6 +264,10 @@ static auto compose_tile_request(const ComposePaintContext& paint, unsigned pass
         (static_cast<std::uint64_t>(view.edit_snap_enabled)<<5) |
         // Snap changes the grid lines without bumping the document revision.
         (view.area_snap_denominator<<8)};
+    // Color views affect raster artwork, not the retained core scene.
+    if (pass == 7 || pass == 9)
+        request.key.style[1] |= static_cast<std::uint64_t>(
+            worm_ui_nuklear_compose_state().color_view) << 6;
     request.key.identity={view.project_id,view.chart_id,view.document_revision,
         std::bit_cast<std::uint64_t>(view.pixels_per_standard_measure),
         std::bit_cast<std::uint64_t>(view.viewport_width_pixels),
@@ -1481,12 +1485,6 @@ static void draw_compose_timing_layer(const ComposePaintContext& paint,
 
 static struct nk_color compose_selection_outline_color() { return nk_rgb(74, 222, 128); }
 
-static struct nk_color compose_key_hold_fill(std::uint8_t key_color) {
-    const auto key = wormedit::ui::theme::compose_key_color(key_color, false);
-    if (!key.has_color) return nk_rgb(48, 111, 151);
-    return nk_rgb(key.note.r * 3 / 4, key.note.g * 3 / 4, key.note.b * 3 / 4);
-}
-
 static void draw_compose_hold_bodies(const ComposePaintContext& paint) {
     for (size_t index = 0; index < paint.view->hold_body_count; ++index) {
         const auto& hold = paint.view->hold_bodies[index];
@@ -1501,10 +1499,8 @@ static void draw_compose_hold_bodies(const ComposePaintContext& paint) {
         }
         const auto color = hold.proposal_origin
                                ? nk_rgb(51, 82, 100)
-                               : (hold.semantic_color_visible
-                                      ? nk_rgba(hold.semantic_red, hold.semantic_green,
-                                                hold.semantic_blue, hold.semantic_alpha)
-                                      : compose_key_hold_fill(hold.key_color));
+                               : compose_note_base_fill(
+                                     worm_ui_nuklear_compose_state().color_view, hold);
         field_rect(paint, rect, 0.0f, color, 2);
         if (hold.selected) {
             field_stroke_rect(paint, rect, 0.0f, 2.0f, compose_selection_outline_color(), 2);
@@ -1515,18 +1511,13 @@ static void draw_compose_hold_bodies(const ComposePaintContext& paint) {
     }
 }
 
-static struct nk_color compose_key_note_fill(std::uint8_t key_color) {
-    const auto key = wormedit::ui::theme::compose_key_color(key_color, false);
-    return key.has_color ? key.note : nk_rgb(133, 182, 222);
-}
-
 struct ComposeNoteStyle {
     struct nk_color fill;
     struct nk_color border;
     float border_width;
 };
 
-// Selection keeps the key-color fill and adds a green outline (iBMSC style), unless a
+// Selection keeps the active view fill and adds a green outline (iBMSC style), unless a
 // ghost, hover, or paint preview already owns the border.
 static bool compose_note_shows_selection_outline(const WormUiComposeView& view,
                                                  const WormUiComposeNoteView& note) {
@@ -1540,10 +1531,8 @@ static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
                                            const WormUiComposeNoteView& note) {
     auto fill = note.proposal_origin
                     ? nk_rgb(73, 101, 120)
-                    : (note.semantic_color_visible
-                           ? nk_rgba(note.semantic_red, note.semantic_green, note.semantic_blue,
-                                     note.semantic_alpha)
-                           : compose_key_note_fill(note.key_color));
+                    : compose_note_base_fill(
+                          worm_ui_nuklear_compose_state().color_view, note);
     auto border = nk_rgb(17, 24, 34);
     auto border_width = 1.0f;
     if (note.proposal_ghost) {
@@ -1583,7 +1572,8 @@ static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
 static void draw_compose_arrow_outline(const ComposePaintContext& paint,
                                         const WormUiComposeNoteView& note,
                                         const std::array<SDL_FPoint, 7>& points) {
-    if (note.semantic_color_visible) {
+    if (compose_arrow_layer_outline_visible(
+            worm_ui_nuklear_compose_state().color_view, *paint.view, note)) {
         paint_field(paint.context).stroke_polygon(
             2, points, 4.0f,
             {note.semantic_red, note.semantic_green, note.semantic_blue, note.semantic_alpha}, 1);
@@ -1608,11 +1598,14 @@ static bool draw_compose_note_glyph(const ComposePaintContext& paint,
     std::array<SDL_FPoint, 7> points{};
     for (std::size_t index = 0; index < authored.size(); ++index)
         points[index] = {std::trunc(authored[index].x), std::trunc(authored[index].y)};
-    const auto color = wormedit::ui::arrow_snap_color(note.snap_class);
+    // Preserve the existing snap-colored arrow artwork for transient previews.
+    const auto transient = compose_note_is_transient(*paint.view, note);
+    const auto color = compose_note_base_fill(transient ?
+        worm_ui_nuklear_compose_color_view_t::snap : worm_ui_nuklear_compose_state().color_view, note);
     auto& field = paint_field(paint.context);
     // Proposal ghosts stay translucent so they do not read as materialized notes.
     const auto alpha = static_cast<std::uint8_t>(note.proposal_ghost ? 120 : 255);
-    field.polygon(2, points, field_color(nk_rgba(color.red, color.green, color.blue, alpha)), 1);
+    field.polygon(2, points, field_color(nk_rgba(color.r, color.g, color.b, note.proposal_ghost ? alpha : color.a)), 1);
     field.stroke_polygon(2, points, 1, field_color(nk_rgba(17, 24, 34, alpha)), 1);
     draw_compose_arrow_outline(paint, note, points);
     return true;

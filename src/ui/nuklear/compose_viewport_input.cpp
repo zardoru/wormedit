@@ -38,6 +38,7 @@
 
 #include "ui/nuklear/compose_input_internal.h"
 #include "ui/nuklear/compose_viewport_input.h"
+#include "ui/nuklear/compose_note_menu.h"
 
 ComposePointerFocusState update_compose_pointer_focus(
     const ComposePointerFocusContext& focus) {
@@ -205,6 +206,10 @@ ComposeViewportCursor collect_compose_viewport_inputs(
         state.timing_marker_candidate_active || state.timing_marker_drag_active ||
         state.beat_fit_drag_active || state.offset_fit_drag_active ||
         state.waveform_beat_zero_drag_active || state.waveform_overview_drag_active;
+    if (!competing_capture && !compose_area_capture_active())
+        process_compose_note_menu(input.context, *input.view, *input.action, input.viewport,
+                                  input.input_right, input.window_focused);
+    if (compose_note_menu_consumed()) return update_compose_viewport_pointer(input);
     if (!competing_capture || compose_area_capture_active())
         process_compose_area_menu(input.context, *input.view, *input.action, input.viewport,
                                   input.input_right, input.window_focused);

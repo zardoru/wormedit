@@ -3854,7 +3854,8 @@ auto append_semantic_paint_note(semantic_paint_context_t& context, object_id_t n
 }
 
 auto begin_semantic_paint(semantic_paint_context_t& context, layer_id_t layer_id,
-                          object_id_t note_id, bool pointer_captured)
+                          object_id_t note_id, bool pointer_captured,
+                          bool replace_memberships, bool clear_memberships)
     -> editor_interaction_result_t {
     auto& history = context.history;
     auto& state = context.state;
@@ -3872,12 +3873,12 @@ auto begin_semantic_paint(semantic_paint_context_t& context, layer_id_t layer_id
                                         "another editor gesture is already active")});
     const auto layer = std::ranges::find(context.chart.semantic_layers, layer_id,
                                          &semantic_layer_t::id);
-    if (layer == context.chart.semantic_layers.end() || !layer->visible)
+    if (!clear_memberships && (layer == context.chart.semantic_layers.end() || !layer->visible))
         return diagnostic_result(
             history, state,
             {error(diagnostic_code_t::invalid_id,
                    "semantic-layer paint requires a visible chart layer")});
-    if (layer->locked)
+    if (!clear_memberships && layer->locked)
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_id,
                                         "semantic-layer paint cannot modify a locked layer")});
@@ -3892,6 +3893,8 @@ auto begin_semantic_paint(semantic_paint_context_t& context, layer_id_t layer_id
         .layer = layer_id,
         .document_revision = history.document.revision,
         .notes = std::move(notes),
+        .replace_memberships = replace_memberships,
+        .clear_memberships = clear_memberships,
     };
     pending.visited.reserve(64);
     pending.visited.insert(note_id.value);
@@ -3921,14 +3924,18 @@ auto end_semantic_paint(semantic_paint_context_t& context, object_id_t note_id,
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "semantic-layer paint gesture is malformed or stale")});
-    const auto applied = apply_semantic_layer_edit(
-        history, pending.document_revision,
-        toggle_semantic_layer_membership_action_t{state.chart, pending.layer, *pending.notes});
-    if (!applied)
+    semantic_layer_edit_action_t edit = toggle_semantic_layer_membership_action_t{
+        state.chart, pending.layer, *pending.notes};
+    if (pending.clear_memberships)
+        edit = clear_semantic_layer_membership_action_t{state.chart, *pending.notes};
+    else if (pending.replace_memberships)
+        edit = replace_notes_semantic_layer_action_t{state.chart, pending.layer, *pending.notes, true};
+    const auto applied = apply_semantic_layer_edit(history, pending.document_revision, edit);
+    if (!applied && !applied.diagnostics.empty())
         return diagnostic_result(history, state, applied.diagnostics);
     state.pending_semantic_layer_paint_gesture.reset();
     auto result = semantic_paint_view(history, state);
-    result.document_changed = true;
+    result.document_changed = applied.applied;
     return result;
 }
 
@@ -4608,8 +4615,8 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
             return append_semantic_paint_note(semantic_paint, note, pointer_captured);
         };
     const auto begin_semantic_layer_paint_gesture =
-        [&](layer_id_t layer, object_id_t note, bool pointer_captured) {
-            return begin_semantic_paint(semantic_paint, layer, note, pointer_captured);
+        [&](layer_id_t layer, object_id_t note, bool pointer_captured, bool replace, bool clear) {
+            return begin_semantic_paint(semantic_paint, layer, note, pointer_captured, replace, clear);
         };
     const auto end_semantic_layer_paint_gesture =
         [&](object_id_t note, bool pointer_captured) {
@@ -4757,7 +4764,8 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
     const auto handle_begin_semantic_layer_paint_gesture = [&](const begin_semantic_layer_paint_gesture_action_t& typed_action) -> editor_interaction_result_t {
 
         return begin_semantic_layer_paint_gesture(typed_action.layer, typed_action.note,
-                                                  typed_action.pointer_captured);
+                                                  typed_action.pointer_captured, typed_action.replace_memberships,
+                                                  typed_action.clear_memberships);
 
     };
 

@@ -1,4 +1,5 @@
 #include "sys/application_command_dispatch.h"
+#include "sys/compose_semantic_layer_commands.h"
 
 #include "sys/compose_bookmark_commands.h"
 #include "sys/compose_clipboard_selection.h"
@@ -530,6 +531,7 @@ auto semantic_layer_slot_command(command_context_t& context) -> command_result_t
         return reject_application_command(context.status, "That semantic-layer slot is unavailable.");
     const auto* layer = &chart->semantic_layers[palette->layer_indices[slot - 1]];
     app.semantic_layer_target = layer->id;
+    app.semantic_layer_target_none = false;
     context.status = "Semantic-layer target: " + layer->name;
     return {.accepted = true};
 }
@@ -538,20 +540,24 @@ auto semantic_layer_membership_command(command_context_t& context) -> command_re
     using namespace wormedit;
     auto* state = context.compose();
     auto& app = context.application_state;
-    if (!state || !app.semantic_layer_target || state->selected_notes.empty())
+    if (!state || (!app.semantic_layer_target && !app.semantic_layer_target_none) || state->selected_notes.empty())
         return reject_application_command(context.status,
             "Choose a semantic layer and select playable notes first.");
     semantic_layer_edit_action_t edit;
     const auto kind = context.command.kind;
-    if (kind == command_kind_t::semantic_layer_apply)
-        edit = assign_notes_to_semantic_layer_action_t{
+    if (app.semantic_layer_target_none && kind != command_kind_t::semantic_layer_apply)
+        return reject_application_command(context.status, "No layer only assigns");
+    if (app.semantic_layer_target_none)
+        edit = clear_semantic_layer_membership_action_t{state->chart, state->selected_notes};
+    else if (kind == command_kind_t::semantic_layer_apply)
+        edit = replace_notes_semantic_layer_action_t{
             state->chart, *app.semantic_layer_target, state->selected_notes};
     else if (kind == command_kind_t::semantic_layer_remove)
         edit = remove_notes_from_semantic_layer_action_t{
             state->chart, *app.semantic_layer_target, state->selected_notes};
     else
-        edit = toggle_semantic_layer_membership_action_t{
-            state->chart, *app.semantic_layer_target, state->selected_notes};
+        edit = replace_notes_semantic_layer_action_t{
+            state->chart, *app.semantic_layer_target, state->selected_notes, true};
     const auto applied = apply_semantic_layer_edit(context.history,
         context.history.document.revision, edit);
     if (applied.applied) {
@@ -590,6 +596,7 @@ auto invoke_application_command(
         return semantic_layer_slot_command(context);
     if (kind == command_kind_t::semantic_layer_clear_target) {
         application_state.semantic_layer_target.reset();
+        application_state.semantic_layer_target_none = false;
         application_state.semantic_layer_paint_mode_active = false;
         application_state.semantic_layer_solo_active = false;
         status = "Semantic-layer target cleared.";

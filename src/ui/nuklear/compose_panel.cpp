@@ -1,3 +1,4 @@
+#include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_panel.h"
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/sdl_backend.h"
@@ -11,6 +12,7 @@
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_sounds_panel.h"
+#include "ui/nuklear/compose_layers_panel.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_recipe_form.h"
 #include "ui/nuklear/chrome.h"
@@ -144,7 +146,7 @@ static bool compose_geometry_counts_valid(const WormUiComposeView* view) {
     return view->branch_row_count <= WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY &&
            view->branch_choice_count <= WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY &&
            view->branch_diagnostic_count <= WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY &&
-           view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY &&
+           view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY &&
            view->beat_bookmark_count <= WORM_UI_COMPOSE_BOOKMARK_CAPACITY &&
            view->beat_section_count <= WORM_UI_COMPOSE_SECTION_CAPACITY &&
            view->audio_bookmark_count <= WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY &&
@@ -153,19 +155,10 @@ static bool compose_geometry_counts_valid(const WormUiComposeView* view) {
            view->resource_count <= WORM_UI_COMPOSE_RESOURCE_CAPACITY &&
            view->output_group_count <= WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY &&
            view->resource_total_count >= view->resource_count &&
-           (view->semantic_layer_page_count == 0
-                ? view->semantic_layer_page == 0 && view->semantic_layer_total_count == 0 &&
-                      view->semantic_layer_count == 0
-                : view->semantic_layer_total_count != 0 &&
-                      view->semantic_layer_page < view->semantic_layer_page_count &&
-                      view->semantic_layer_page_count ==
-                          1 + (view->semantic_layer_total_count - 1) /
-                                  WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY &&
-                      view->semantic_layer_count ==
-                          std::min(static_cast<size_t>(WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY),
-                                   view->semantic_layer_total_count -
-                                       view->semantic_layer_page *
-                                           WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY));
+           view->semantic_layer_first_row <= view->semantic_layer_total_count &&
+           view->semantic_layer_count <=
+               view->semantic_layer_total_count - view->semantic_layer_first_row;
+
 }
 
 static bool compose_geometry_arrays_valid(const WormUiComposeView* view) {
@@ -635,7 +628,7 @@ static bool compose_scene_arrays_present(const WormUiComposeView* view) {
 }
 
 int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
-    return view && view->band_count <= WORM_UI_COMPOSE_BAND_CAPACITY &&
+    return worm_ui_nuklear_note_layer_window_valid(view) && view->band_count <= WORM_UI_COMPOSE_BAND_CAPACITY &&
            (view->selected_bmson_bgm_event_id == 0 || view->selected_object_count == 1) &&
            (view->selected_bmson_note_event_id == 0 || view->selected_note_count == 1) &&
            ((view->selected_bmson_bgm_event_id == 0) ==
@@ -667,7 +660,7 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            view->waveform_overview_row_count <= WORM_UI_COMPOSE_WAVEFORM_OVERVIEW_CAPACITY &&
            compose_waveform_overview_valid(view) &&
            compose_bgm_bar_valid(view) &&
-           view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY &&
+           view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY &&
            view->lane_key_binding_count <= WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY &&
            view->branch_row_count <= WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY &&
            view->branch_choice_count <= WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY &&
@@ -1096,7 +1089,10 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     const auto editor_input_right = inspector_drawn
         ? viewport.x + viewport.w - inspector_width - 8.0f
         : viewport.x + viewport.w;
-    if (view->input_occluded) {
+    if (compose_note_menu_open() || compose_note_menu_consumed())
+        process_compose_note_menu(context, *view, *action, viewport, editor_input_right, window_focused);
+    if (view->input_occluded || state.layers_menu_open || state.layers_menu_release_pending ||
+        compose_note_menu_consumed()) {
         discard_occluded_compose_input(panel);
         draw_compose_scene_canvas(context, view, canvas, viewport);
         return;
@@ -1291,22 +1287,34 @@ static void render_go_to_measure(nk_context* context, const WormUiComposeView& v
     nk_popup_end(context);
 }
 
-void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const WormUiComposeView* view,
-                                          const WormUiTimingView* timing_view,
-                                          WormUiWorkspaceAction* action, bool window_focused,
-                                          bool ime_composition_active,
-                                          const worm_ui_nuklear_pointer_click_t* double_clicks,
-                                          std::size_t double_click_count,
-                                          std::size_t shortcut_event_count) {
-    if (!context || !view || !timing_view || !action || !view->visible ||
-        (double_click_count != 0 && !double_clicks)) {
-        return;
-    }
-    render_compose_toolbar({context, view, action});
-    const ComposePanelRenderContext panel{context, view, timing_view, action, window_focused,
-                                         ime_composition_active, double_clicks,
-                                         double_click_count, shortcut_event_count};
+static void begin_layer_menu_input_frame() {
+    state.layers_menu_input_consumed = state.layers_menu_open || state.layers_menu_release_pending;
+}
 
+static void close_hidden_layer_actions(bool visible) {
+    if (visible) return;
+    state.layers_menu_close_pending = state.layers_menu_close_pending || state.layers_menu_open;
+    state.layers_menu_open = false;
+    state.layers_menu_release_pending = false;
+    state.semantic_layer_name_editor_visible = false;
+    state.semantic_layer_name_focus_pending = false;
+    state.semantic_layer_color_editor_visible = false;
+}
+
+struct ComposeDockLayout {
+    struct nk_rect compose_body_bounds;
+    float compose_body_height;
+    bool inspector_drawn;
+    float inspector_width;
+    bool layers_drawn;
+    float layers_width;
+    bool sounds_drawn;
+    float sounds_width;
+    float side_width;
+};
+
+static auto compose_dock_layout(nk_context* context, const WormUiComposeView* view)
+    -> ComposeDockLayout {
     const auto compose_body_bounds = nk_window_get_content_region(context);
     const auto body_top = nk_widget_position(context).y;
     const auto compose_body_height = std::max(
@@ -1317,52 +1325,27 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     const auto inspector_width = inspector_drawn
                                      ? std::clamp(compose_body_bounds.w * 0.24f, 280.0f, 380.0f)
                                      : 0.0f;
+    const auto layers_drawn = state.layers_panel_visible && compose_body_bounds.w >= 540.0f &&
+        wormedit::ui::compose_notes_editable(compose_mode_of(*view));
+    close_hidden_layer_actions(layers_drawn);
+    worm_ui_nuklear_dismiss_layer_popup(context);
+    const auto layers_width = layers_drawn ? 240.0f : 0.0f;
     const auto sounds_drawn = state.sounds_panel_visible && view->keysounds_available &&
-        compose_body_bounds.w >= 860.0f &&
+        compose_body_bounds.w >= 860.0f + layers_width &&
         wormedit::ui::compose_notes_editable(compose_mode_of(*view));
     const auto sounds_width = sounds_drawn
                                   ? std::clamp(compose_body_bounds.w * 0.2f, 292.0f, 340.0f)
                                   : 0.0f;
     // Both side panels float over the right edge of the editor; the field gives up their width.
-    const auto side_width = inspector_width + (sounds_drawn ? sounds_width + 8.0f : 0.0f);
-    state.sound_list_valid = false;
-    const auto editor_width = compose_body_bounds.w;
-    const auto palette_drawn =
-        wormedit::ui::compose_note_palette_visible(compose_mode_of(*view)) &&
-        compose_note_palette_has_buttons(*view);
-    constexpr float palette_width = 36.0f;
-    const auto editor_left = palette_drawn ? palette_width : 0.0f;
-    nk_layout_space_begin(context, NK_STATIC, compose_body_height,
-                          1 + (inspector_drawn ? 1 : 0) + (palette_drawn ? 1 : 0) +
-                              (sounds_drawn ? 1 : 0));
-    if (palette_drawn) {
-        nk_layout_space_push(context, nk_rect(0.0f, 0.0f, palette_width, compose_body_height));
-        if (nk_group_begin(context, "Compose note palette", NK_WINDOW_NO_SCROLLBAR)) {
-            render_compose_note_palette_column({context, view, action});
-            nk_group_end(context);
-        }
-    }
-    nk_layout_space_push(context, nk_rect(editor_left, 0.0f, editor_width - editor_left,
-                                          compose_body_height));
-    if (nk_group_begin(context, "Compose editor", NK_WINDOW_NO_SCROLLBAR)) {
-    render_compose_editor_canvas(panel, inspector_drawn || sounds_drawn, side_width);
-    nk_group_end(context);
-    }
-    if (sounds_drawn) {
-        const auto sounds_left = editor_width - side_width - (inspector_drawn ? 8.0f : 0.0f);
-        nk_layout_space_push(context, nk_rect(sounds_left, 8.0f, sounds_width,
-                                              compose_body_height - 16.0f));
-        if (nk_group_begin(context, "Compose sounds",
-                           NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR)) {
-            worm_ui_nuklear_render_compose_sounds(context, view, action, &state);
-            nk_group_end(context);
-        }
-    }
-    if (inspector_drawn) {
-        nk_layout_space_push(context, nk_rect(editor_width - inspector_width - 8.0f, 8.0f,
-                                              inspector_width, compose_body_height - 16.0f));
-        if (nk_group_begin(context, "Compose inspector", NK_WINDOW_BORDER)) {
+    const auto side_width = inspector_width + (sounds_drawn ? sounds_width + 8.0f : 0.0f) +
+                            (layers_drawn ? layers_width + 8.0f : 0.0f);
+    return {compose_body_bounds, compose_body_height, inspector_drawn, inspector_width, layers_drawn, layers_width, sounds_drawn, sounds_width, side_width};
+}
 
+static void render_compose_inspector_contents(nk_context* context,
+                                               const WormUiComposeView* view,
+                                               const WormUiTimingView* timing_view,
+                                               WormUiWorkspaceAction* action) {
     const ComposeInspectorContext inspector{context, view, timing_view, action};
     render_compose_recipe_form(inspector);
     render_compose_note_label_editor(inspector);
@@ -1383,6 +1366,81 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     render_compose_timing_inspector(inspector);
 
     worm_ui_nuklear_render_bms_branch_panel(context, view, action);
+}
+
+template <typename Render>
+static void render_compose_dock(nk_context* context, struct nk_rect bounds, const char* name,
+                                nk_flags flags, const Render& render) {
+    nk_layout_space_push(context, bounds);
+    if (nk_group_begin(context, name, flags)) {
+        render();
+        nk_group_end(context);
+    }
+}
+
+void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const WormUiComposeView* view,
+                                          const WormUiTimingView* timing_view,
+                                          WormUiWorkspaceAction* action, bool window_focused,
+                                          bool ime_composition_active,
+                                          const worm_ui_nuklear_pointer_click_t* double_clicks,
+                                          std::size_t double_click_count,
+                                          std::size_t shortcut_event_count) {
+    if (!context || !view || !timing_view || !action || !view->visible ||
+        (double_click_count != 0 && !double_clicks)) {
+        return;
+    }
+    begin_layer_menu_input_frame();
+    begin_compose_note_menu_frame();
+    render_compose_toolbar({context, view, action});
+    const ComposePanelRenderContext panel{context, view, timing_view, action, window_focused,
+                                         ime_composition_active, double_clicks,
+                                         double_click_count, shortcut_event_count};
+
+    const auto [compose_body_bounds, compose_body_height, inspector_drawn, inspector_width, layers_drawn, layers_width, sounds_drawn, sounds_width, side_width] = compose_dock_layout(context, view);
+    state.sound_list_valid = false;
+    const auto editor_width = compose_body_bounds.w;
+    const auto palette_drawn =
+        wormedit::ui::compose_note_palette_visible(compose_mode_of(*view)) &&
+        compose_note_palette_has_buttons(*view);
+    constexpr float palette_width = 36.0f;
+    const auto editor_left = palette_drawn ? palette_width : 0.0f;
+    nk_layout_space_begin(context, NK_STATIC, compose_body_height,
+                          1 + (inspector_drawn ? 1 : 0) + (palette_drawn ? 1 : 0) +
+                              (sounds_drawn ? 1 : 0) + (layers_drawn ? 1 : 0));
+    if (palette_drawn) {
+        nk_layout_space_push(context, nk_rect(0.0f, 0.0f, palette_width, compose_body_height));
+        if (nk_group_begin(context, "Compose note palette", NK_WINDOW_NO_SCROLLBAR)) {
+            render_compose_note_palette_column({context, view, action});
+            nk_group_end(context);
+        }
+    }
+    nk_layout_space_push(context, nk_rect(editor_left, 0.0f, editor_width - editor_left,
+                                          compose_body_height));
+    if (nk_group_begin(context, "Compose editor", NK_WINDOW_NO_SCROLLBAR)) {
+    render_compose_editor_canvas(panel, inspector_drawn || sounds_drawn || layers_drawn, side_width);
+    nk_group_end(context);
+    }
+    if (sounds_drawn) {
+        const auto sounds_left = editor_width - side_width - (inspector_drawn ? 8.0f : 0.0f) +
+                                 (layers_drawn ? layers_width + 8.0f : 0.0f);
+        render_compose_dock(context, nk_rect(sounds_left, 8.0f, sounds_width,
+                                             compose_body_height - 16.0f), "Compose sounds",
+            NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR,
+            [&] { worm_ui_nuklear_render_compose_sounds(context, view, action, &state); });
+    }
+    if (layers_drawn) {
+        const auto layers_left = editor_width - side_width - (inspector_drawn ? 8.0f : 0.0f);
+        render_compose_dock(context, nk_rect(layers_left, 8.0f, layers_width,
+                                             compose_body_height - 16.0f), "Compose layers",
+            NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR,
+            [&] { worm_ui_nuklear_render_compose_layers(context, view, action, &state); });
+    }
+    if (inspector_drawn) {
+        nk_layout_space_push(context, nk_rect(editor_width - inspector_width - 8.0f, 8.0f,
+                                              inspector_width, compose_body_height - 16.0f));
+        if (nk_group_begin(context, "Compose inspector", NK_WINDOW_BORDER)) {
+
+    render_compose_inspector_contents(context, view, timing_view, action);
     nk_group_end(context);
         }
     }
@@ -1393,6 +1451,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
 bool worm_ui_nuklear_compose_lane_focused(const WormUiComposeView* view, bool compose_tab_active,
                                           bool window_focused) {
     return compose_tab_active && worm_ui_nuklear_compose_canvas_input_available(
-        view, window_focused, state.inline_timing_open || state.go_to_measure_open, false) &&
+        view, window_focused, state.inline_timing_open || state.go_to_measure_open ||
+            state.layers_menu_open || state.layers_menu_input_consumed || compose_note_menu_consumed(), false) &&
         view->cursor && view->cursor->lane_id != 0;
 }

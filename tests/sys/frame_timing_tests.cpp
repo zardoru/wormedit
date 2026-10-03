@@ -2682,17 +2682,61 @@ TEST_CASE("Compose semantic arena preserves palette flags and independent text l
     project_geometry_arena(fixture,arena);
     expect_compose_test(std::strcmp(fixture.flattened.view.compose.semantic_layers[0].name,"changed source")==0);
 }
-TEST_CASE("Compose semantic arena preserves palette capacity pages and empty state",
+TEST_CASE("Compose semantic arena preserves bounded scrolling and empty state",
           "[sys][compose-semantic-arena]") {
     compose_test_fixture_t empty(semantic_arena_song(0)); empty.project();
     expect_compose_test(empty.flattened.view.compose.semantic_layer_count==0);
     expect_compose_test(empty.flattened.view.compose.semantic_layer_total_count==0);
     expect_compose_test(!empty.flattened.view.compose.semantic_layers_truncated);
-    compose_test_fixture_t dense(semantic_arena_song(20)); dense.project();
+    compose_test_fixture_t dense(semantic_arena_song(300));
+    dense.application.semantic_layer_row_count=1000;
+    dense.application.semantic_layer_target=layer_id_t{101};
+    dense.project();
     const auto& view=dense.flattened.view.compose;
-    expect_compose_test(view.semantic_layer_count==WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY);
-    expect_compose_test(view.semantic_layer_total_count==20 && view.semantic_layer_page_count==3);
-    expect_compose_test(view.semantic_layers_truncated);
+    expect_compose_test(view.semantic_layer_count==WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY);
+    expect_compose_test(view.semantic_layer_total_count==300 && view.semantic_layer_first_row==0);
+    expect_compose_test(!view.semantic_layers_truncated);
+    dense.application.semantic_layer_first_row=280;
+    dense.application.semantic_layer_row_count=18;
+    dense.history.document.charts.front().semantic_layers[285].visible=false;
+    dense.project();
+    expect_compose_test(view.semantic_layer_first_row==280 && view.semantic_layer_count==18);
+    expect_compose_test(view.semantic_layers[0].layer_id==381 && view.semantic_layers[5].layer_id==386);
+    expect_compose_test(!view.semantic_layers[5].visible);
+    expect_compose_test(view.semantic_layer_target.layer_id==101 && view.semantic_layer_target.locked);
+}
+TEST_CASE("Compose note menu projects a bounded independent catalog and retires its capture",
+          "[sys][compose-semantic-arena][note-menu]") {
+    compose_test_fixture_t fixture(semantic_arena_song(30)); fixture.project();
+    auto& app=fixture.application;
+    const auto& view=fixture.flattened.view.compose;
+    expect_compose_test(view.note_menu_layer_count==0 && !view.note_menu_layers);
+    app.semantic_layer_first_row=20;
+    app.note_layer_menu_chart=chart_id_t{1};
+    app.note_layer_menu_revision=fixture.history.document.revision;
+    app.note_layer_menu_row_count=1000;
+    fixture.project();
+    expect_compose_test(view.note_menu_layer_count==WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY);
+    expect_compose_test(view.note_menu_layer_total_count==30 && view.note_menu_layer_first_row==0);
+    expect_compose_test(view.note_menu_layers[0].layer_id==101 && view.note_menu_layers[0].locked);
+    expect_compose_test(view.semantic_layer_first_row==20 && view.semantic_layers[0].layer_id==121);
+    app.note_layer_menu_first_row=16;
+    fixture.project();
+    expect_compose_test(view.note_menu_layer_first_row==16 && view.note_menu_layer_count==14);
+    expect_compose_test(view.note_menu_layers[13].layer_id==130);
+    expect_compose_test(view.semantic_layer_first_row==20 && view.semantic_layers[0].layer_id==121);
+    app.note_layer_menu_row_count=0;
+    fixture.project();
+    expect_compose_test(view.note_menu_layer_count==0 && !view.note_menu_layers);
+    app.note_layer_menu_row_count=18;
+    ++fixture.history.document.revision;
+    fixture.project();
+    expect_compose_test(view.note_menu_layer_count==0 && app.note_layer_menu_row_count==0);
+    app.note_layer_menu_revision=fixture.history.document.revision;
+    app.note_layer_menu_chart=chart_id_t{2};
+    app.note_layer_menu_row_count=18;
+    fixture.project();
+    expect_compose_test(view.note_menu_layer_count==0 && app.note_layer_menu_row_count==0);
 }
 TEST_CASE("Compose semantic arena exhaustion publishes only complete named rows",
           "[sys][compose-semantic-arena]") {

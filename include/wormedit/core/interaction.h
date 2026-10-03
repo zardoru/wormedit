@@ -314,6 +314,8 @@ struct begin_semantic_layer_paint_gesture_action_t {
     layer_id_t layer;
     object_id_t note;
     bool pointer_captured{true};
+    bool replace_memberships{};
+    bool clear_memberships{};
 };
 
 struct update_semantic_layer_paint_gesture_action_t {
@@ -516,6 +518,8 @@ struct pending_semantic_layer_paint_gesture_t {
     std::uint64_t document_revision{};
     std::shared_ptr<const std::vector<object_id_t>> notes;
     std::unordered_set<std::uint64_t> visited;
+    bool replace_memberships{};
+    bool clear_memberships{};
 };
 
 struct editor_hit_test_index_t;

@@ -6,6 +6,13 @@
 
 namespace wormedit::sys {
 namespace {
+void set_options_status(options_runtime_t& runtime, notification_severity_t severity,
+                        std::string message) {
+    runtime.status = std::move(message);
+    runtime.notification = notification_post_t{
+        .severity = severity, .source = notification_source_t::system,
+        .message = runtime.status};
+}
 auto valid_category(WormUiOptionsCategory value) -> bool {
     return value >= WORM_UI_OPTIONS_GENERAL && value < WORM_UI_OPTIONS_CATEGORY_COUNT;
 }
@@ -85,18 +92,19 @@ void validate_draft(options_runtime_t& r) {
 }
 auto apply_category(options_runtime_t& r, program_preferences_runtime_t& program) -> bool {
     validate_draft(r);
-    if (!r.diagnostics.empty()) { r.status = "Correct this page's invalid fields before applying."; return false; }
+    if (!r.diagnostics.empty()) { set_options_status(r, notification_severity_t::warning, "Correct this page's invalid fields before applying."); return false; }
     if (!category_equal(program.preferences, r.baseline, r.category)) {
-        r.status = "These settings changed outside Options. Revert this page before applying.";
+        set_options_status(r, notification_severity_t::warning, "These settings changed outside Options. Revert this page before applying.");
         return false;
     }
-    if (category_equal(program.preferences, r.draft, r.category)) { r.status = "This page has no changes."; return false; }
+    if (category_equal(program.preferences, r.draft, r.category)) { set_options_status(r, notification_severity_t::info, "This page has no changes."); return false; }
     auto candidate = program.preferences;
     copy_category(candidate, r.draft, r.category);
-    if (!serialize_program_preferences(candidate)) { r.status = "Program preferences contain invalid or oversized values."; return false; }
+    if (!serialize_program_preferences(candidate)) { set_options_status(r, notification_severity_t::warning, "Program preferences contain invalid or oversized values."); return false; }
     const auto error = apply_program_preferences(program, std::move(candidate));
     copy_category(r.baseline, program.preferences, r.category);
-    r.status = error.empty() ? "Options saved." : error;
+    set_options_status(r, error.empty() ? notification_severity_t::success : notification_severity_t::error,
+                       error.empty() ? "Options saved." : error);
     return true;
 }
 auto edit_general(program_preferences_t& p, const WormUiOptionsAction& a) -> bool {
@@ -240,6 +248,7 @@ auto options_view(options_runtime_t& r) -> WormUiOptionsView {
 }
 auto apply_options_action(options_runtime_t& r, program_preferences_runtime_t& program,
     const WormUiOptionsAction& action) -> bool {
+    r.notification.reset();
     if (action.kind == WORM_UI_OPTIONS_NONE) return false;
     if (action.kind == WORM_UI_OPTIONS_OPEN) { open_options(r, program.preferences); return false; }
     if (!r.visible || action.revision != r.revision) return false;

@@ -2,6 +2,7 @@
 
 #include <wormedit/core/document.h>
 #include <wormedit/core/metadata_editor.h>
+#include <wormedit/core/notifications.h>
 #include "ui/frontend.h"
 #include <map>
 
@@ -66,6 +67,7 @@ struct project_chart_ui_result_t {
     std::string status;
     std::optional<chart_id_t> open_chart;
     bool applied{};
+    notification_severity_t severity{notification_severity_t::warning};
 };
 void project_chart_view(project_chart_runtime_t& runtime, const song_document_t& document,
     WormUiSetupView& view);

@@ -244,6 +244,8 @@ auto fractional_preview_start(double subrow, std::optional<std::uint64_t> exact_
     (void)preview.play_pause(&document.charts.front(), document, sources, {}, audition_output,
         session, output, local_position_t{measure_id_t{1}, 480}, false, exact_start, subrow);
     expect_pitch(output.playing());
+    expect_pitch(preview.feedback.accepted &&
+                 preview.feedback.severity == notification_severity_t::success);
     const auto start = preview.resume_frame;
     preview.stop(audition_output, output);
     output.close();
@@ -922,4 +924,56 @@ TEST_CASE("SDL loop timeline reaches its end after chart audio has become silent
     REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
     const preview_audio_subsystem_t audio_subsystem;
     CHECK(exercise_sdl_silent_tail_loop());
+}
+
+namespace {
+struct preview_feedback_fixture_t {
+    wormedit::audio::decoded_source_registry_t sources;
+    wormedit::audio::decoded_block_cache_t cache;
+    wormedit::audio::transport_t transport{cache};
+    wormedit::audio::preview_transport_bridge_t preview_bridge{transport};
+    wormedit::audio::audition_transport_bridge_t audition_bridge{transport};
+    wormedit::audio::preview_session_t session{sources, transport, preview_bridge};
+    wormedit::audio::audition_session_t audition{sources, transport, audition_bridge};
+    wormedit::sys::sdl_preview_output_t output{session};
+    wormedit::sys::sdl_audition_output_t audition_output{audition};
+    wormedit::sys::runtime::chart_preview_t preview;
+    wormedit::song_document_t document{.id = wormedit::song_id_t{1}, .revision = 1,
+        .charts = {{.id = wormedit::chart_id_t{1}, .divisions_per_standard_measure = 960,
+            .measures = {{.id = wormedit::measure_id_t{1}}},
+            .bpms = {{.id = wormedit::object_id_t{1}, .position = {wormedit::measure_id_t{1}, 0},
+                      .beats_per_minute = {120, 1}}}}}};
+};
+void expect_preview_feedback(const preview_feedback_fixture_t& fixture,
+                             wormedit::notification_severity_t severity, bool accepted) {
+    CHECK(fixture.preview.feedback.severity == severity);
+    CHECK(fixture.preview.feedback.accepted == accepted);
+}
+}
+
+TEST_CASE("chart preview result metadata separates user precondition from output failure",
+          "[integration][sys][chart-preview][notifications]") {
+    using namespace wormedit;
+    preview_feedback_fixture_t fixture;
+    fixture.preview.resume_frame = 123;
+    CHECK(fixture.preview.play_pause(nullptr, fixture.document, fixture.sources, {},
+        fixture.audition_output, fixture.session, fixture.output) == "Select a chart before starting preview.");
+    expect_preview_feedback(fixture, notification_severity_t::warning, false);
+    CHECK(fixture.preview.resume_frame == 123);
+    const auto failed = fixture.preview.play_pause(&fixture.document.charts.front(), fixture.document,
+        fixture.sources, {}, fixture.audition_output, fixture.session, fixture.output);
+    CHECK_FALSE(failed.empty());
+    expect_preview_feedback(fixture, notification_severity_t::error, false);
+}
+
+TEST_CASE("chart preview rejected seek retains explicit metadata and current position",
+          "[integration][sys][chart-preview][notifications]") {
+    using namespace wormedit;
+    preview_feedback_fixture_t fixture;
+    workspace_controller_t workspace;
+    fixture.preview.resume_frame = 123;
+    CHECK(fixture.preview.seek_audio_milliseconds(200, fixture.document, workspace,
+        fixture.audition_output, fixture.session, fixture.output) == "Chart preview seek is unavailable for the selected chart.");
+    expect_preview_feedback(fixture, notification_severity_t::warning, false);
+    CHECK(fixture.preview.resume_frame == 123);
 }

@@ -222,9 +222,16 @@ auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,
     auto result = apply_project_chart_command(history, command);
     const auto error = result.command.diagnostics.empty() ? std::string{} : result.command.diagnostics.front().message;
     publish_row_error(runtime, action, error);
-    if (!error.empty()) return {.status = error};
+    if (!error.empty()) {
+        const auto severity = result.command.diagnostics.front().severity;
+        return {.status = error,
+            .severity = severity == diagnostic_severity_t::error ? notification_severity_t::error
+                      : severity == diagnostic_severity_t::warning ? notification_severity_t::warning
+                                                                  : notification_severity_t::info};
+    }
     return {.status = result.command.applied ? "Project chart changes applied." : "Project chart action completed.",
-        .open_chart = result.open_chart, .applied = result.command.applied};
+        .open_chart = result.open_chart, .applied = result.command.applied,
+        .severity = result.command.applied ? notification_severity_t::success : notification_severity_t::info};
 }
 
 } // namespace wormedit::sys

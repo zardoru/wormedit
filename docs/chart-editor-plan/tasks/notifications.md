@@ -85,6 +85,13 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 - **Reject/failure behavior:** none.
 - **Verify:** standard build/test; `grep -n "std::string& status" src/sys/main.cpp` returns nothing.
 - **Out of scope:** Compose/Timing view strings (T-222), workers (T-223).
+- **Approved implementation scope (2026-10-04):** the user authorized the full T-221/T-222/T-223 batch; root approved the exact N1–N7 supporting paths in `memory/coordination/notifications.md`. T-221 additionally owns `include/wormedit/core/notifications.h`, `src/core/notifications.cpp`, `tests/core/notifications_tests.cpp`, `tests/sys/application_command_notification_tests.cpp`, `tests/CMakeLists.txt`, `src/sys/options_runtime.h`, and `src/sys/options_runtime.cpp`, for the missing sink API, typed outcomes, and focused regressions. Executors receive exclusive subsets before editing; coordinator records further producer extensions here before use.
+- **Staged acceptance:** T-221 removes global application message-producing status-reference seams. Compose/view/worker seams and history/close-dialog fallback state remain explicitly excluded until T-222/T-223. The zero `std::string& status` main grep is the final full-batch gate, not permission to migrate excluded producers early. Sink posts are noexcept, suppress empty messages, preserve explicit producer classification and original text/order, and contain posting failures. The center must be declared before every posting scheduler/runtime, with joins completed before destruction on all exits.
+- **Coordinator supporting extension (2026-10-04):** `tests/ui/nuklear_options_state_tests.cpp` is added to Files owned for existing Options producer tests: explicit typed success/info/warning/error results and no repeat on NONE/projection, preserving acceptance/failure state. Sol owns Options/main integration while N1 Luna owns only notification core files.
+- **Coordinator producer extension (2026-10-04):** `src/sys/project_view.h`, `src/sys/project_view.cpp`, and `tests/sys/project_view_tests.cpp` are added to Files owned for typed project-chart outcomes; this resolves classification at the result producer before main consumes it. Sol owns these paths during the N1 core brief.
+- **Root text-preservation follow-up (2026-10-04):** `tests/sys/notification_history_runtime_tests.cpp` is added to Files owned for long UTF-8 sink/diagnostic history and clipboard-payload checks. When no explicit detail is supplied, a message longer than 200 bytes is retained in detail within the existing 4 KiB UTF-8 bound; explicit detail remains authoritative. Sol owns this follow-up after N1 Luna finalized.
+- **N2 focused executor ownership (2026-10-04):** `tests/sys/application_commands_tests.cpp` is added to Files owned to adapt existing dispatcher regressions to sink outcomes. N2 Luna exclusively owns this file and `src/sys/application_command_dispatch.cpp/.h`; Sol owns main, transport/external producer glue, and all other sources. Callback results stay producer-owned: dispatch must not infer severity from returned prose or repost a callback's typed notification.
+- **Transport producer extension (2026-10-04):** `src/sys/chart_preview_state.h`, `src/sys/chart_preview_state.cpp`, and `tests/sys/sdl_preview_output_tests.cpp` are added to Files owned. Sol attaches explicit severity/acceptance metadata at preview result creation so existing string callbacks can post once at their main-owned producer bridge; seek success no longer depends on matching returned prose. This does not change playback policy.
 
 ## T-222 Route Compose, Timing, and dialog messages through notifications
 
@@ -97,6 +104,7 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 - **Reject/failure behavior:** none.
 - **Verify:** standard build/test; manual repro of T-207's add-layer flow shows "Semantic layer added."
 - **Out of scope:** new messages.
+- **Approved implementation scope (2026-10-04):** exact N4 paths in `memory/coordination/notifications.md`, including supporting `src/sys/main.cpp`, `src/sys/application_command_dispatch.cpp`, `tests/core/notifications_tests.cpp`, `tests/ui/nuklear_notification_state_tests.cpp`, `tests/sys/compose_notification_tests.cpp`, and `tests/CMakeLists.txt`, are approved for integration/regressions. Use sequential exclusive input/actions, projection, and dialog briefs after T-221 review.
 
 ## T-223 Post worker and background failures
 
@@ -109,6 +117,7 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 - **Reject/failure behavior:** posting failures are ignored (never crash a worker).
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'autosave|recovery|^audio\.|^core\.'`.
 - **Out of scope:** stderr logging.
+- **Approved implementation scope (2026-10-04):** exact N5–N7 paths in `memory/coordination/notifications.md`, including `include/wormedit/core/autosave_loop.h`, `tests/core/autosave_loop_tests.cpp`, `src/sys/application_frame_services.cpp`, `src/sys/application_frame_services.h`, `src/sys/main.cpp`, `src/sys/metadata_asset_runtime.cpp`, `src/sys/metadata_asset_runtime.h`, `src/sys/audio_source_registration.cpp`, `src/sys/audio_source_registration.h`, `src/sys/waveform_analysis_runtime.cpp`, `src/sys/waveform_analysis_runtime.h`, `tests/sys/resource_notification_tests.cpp`, `tests/sys/audio_notification_tests.cpp`, and `tests/CMakeLists.txt`, are approved for typed completion metadata, one-time terminal posting and focused tests. Serialize shared paths after T-222 and establish join-safe sink lifetime first.
 
 ## T-224 Attach targets to validation and import diagnostics
 

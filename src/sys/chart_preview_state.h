@@ -6,6 +6,7 @@
 #include <wormedit/audio/audition_session.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/workspace.h>
+#include <wormedit/core/notifications.h>
 
 #include "sys/sdl_audition_output.h"
 #include "sys/sdl_preview_output.h"
@@ -16,6 +17,11 @@
 #include <vector>
 
 namespace wormedit::sys::runtime {
+
+struct preview_feedback_t {
+    notification_severity_t severity{notification_severity_t::info};
+    bool accepted{};
+};
 
 struct chart_preview_t {
     std::optional<preview_schedule_t> schedule;
@@ -32,6 +38,9 @@ struct chart_preview_t {
     std::uint8_t count_in_measures{};
     std::uint8_t compiled_count_in_measures{};
     const sdl_preview_output_t* output_observer{};
+    preview_feedback_t feedback;
+
+    auto report(notification_severity_t severity, bool accepted, std::string message) -> std::string;
 
     [[nodiscard]] bool reusable(chart_id_t chart_id, std::uint64_t document_revision,
                                 std::optional<asset_id_t> selected_music_asset) const;

@@ -18,20 +18,6 @@
 namespace wormedit::sys {
 namespace {
 
-auto autosave_status_text(const native_project_autosave_result_t& result) -> std::string {
-    using status_t = native_project_autosave_status_t;
-    if (result.status == status_t::published)
-        return "Autosaved revision " + std::to_string(result.revision) + ".";
-    if (result.status != status_t::failed)
-        return {};
-    if (result.diagnostics.empty())
-        return "Autosave failed; the previous recovery backup was retained.";
-    const auto& diagnostic = result.diagnostics.front();
-    auto message = "Autosave failed: " + diagnostic.message;
-    if (!diagnostic.path.empty())
-        message += " (" + diagnostic.path.generic_string() + ")";
-    return message;
-}
 
 auto offer_dropped_audio_project(const SDL_Event& event, SDL_Window* window,
                                  bool offer_audio_project_drop,
@@ -177,15 +163,15 @@ void tick_application_autosave(native_project_autosave_loop_t& autosave_loop,
                                bool loaded_primary,
                                const std::filesystem::path& requested_primary_path,
                                const std::filesystem::path& recovery_path,
-                               std::string& status) {
+                               notification_sink_t& notifications) {
     const auto target = make_native_project_autosave_target(
         history.document.id, loaded_primary, requested_primary_path, recovery_path);
     if (const auto result = autosave_loop.tick(
             history.document, is_document_dirty(history),
             native_project_autosave_loop_t::clock_t::now(), target)) {
-        const auto message = autosave_status_text(*result);
-        if (!message.empty())
-            status = message;
+        if (result->status == native_project_autosave_status_t::published)
+            notifications.post(notification_severity_t::success, notification_source_t::recovery,
+                "Autosaved revision " + std::to_string(result->revision) + ".");
     }
 }
 

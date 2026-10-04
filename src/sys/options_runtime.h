@@ -1,6 +1,7 @@
 #pragma once
 #include "sys/preferences_runtime.h"
 #include "ui/frontend.h"
+#include <wormedit/core/notifications.h>
 
 namespace wormedit::sys {
 struct options_diagnostic_t {
@@ -18,6 +19,8 @@ struct options_runtime_t {
     std::vector<WormUiOptionsDiagnostic> diagnostic_views;
     std::vector<WormUiExternalPlayerDefinitionView> player_views;
     std::string status;
+    // One producer result per action; projection must never repost this value.
+    std::optional<notification_post_t> notification;
 };
 void open_options(options_runtime_t&, const program_preferences_t&);
 // Later registered pages submit typed candidates; only the active category is copied.

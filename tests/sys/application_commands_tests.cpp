@@ -8,6 +8,7 @@
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/timing_lane_controller.h>
 #include <wormedit/core/semantic_layer_editor.h>
+#include <wormedit/core/notifications.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -459,7 +460,8 @@ struct TimingInsertFixture {
     std::optional<wormedit::editor_interaction_state_t> compose_state;
     std::optional<wormedit::timing_lane_pseudonote_preview_t> preview;
     application_command_state_t application_state;
-    std::string status;
+    wormedit::notification_center_t center;
+    wormedit::notification_sink_t sink{center};
     wormedit::local_position_t cursor{wormedit::measure_id_t{1}, 720};
 
     TimingInsertFixture() {
@@ -482,7 +484,13 @@ struct TimingInsertFixture {
 
     auto invoke(application_command_kind_t kind) {
         return invoke_application_command({.kind = kind}, fixture.history, workspace,
-                                          compose_state, preview, application_state, status);
+                                          compose_state, preview, application_state, sink);
+    }
+
+    auto latest_message() -> std::string {
+        center.drain_inbox(wormedit::notification_time_t{0});
+        const auto entries = center.snapshot(1);
+        return entries.empty() ? std::string{} : entries.front().message;
     }
 };
 
@@ -524,14 +532,14 @@ TEST_CASE("Note kind shortcut activates paint and keeps it active when repeated"
     const auto result = invoke_application_command(
         {.kind = application_command_kind_t::edit_note_kind, .note_kind = 1},
         fixture.fixture.history, fixture.workspace, fixture.compose_state, fixture.preview,
-        fixture.application_state, fixture.status);
+        fixture.application_state, fixture.sink);
     REQUIRE(result.accepted);
     CHECK(fixture.compose_state->armed_note_kind == wormedit::note_kind_t::hold);
     CHECK(fixture.application_state.note_paint_mode_active);
     CHECK(invoke_application_command(
         {.kind = application_command_kind_t::edit_note_kind, .note_kind = 1},
         fixture.fixture.history, fixture.workspace, fixture.compose_state, fixture.preview,
-        fixture.application_state, fixture.status).accepted);
+        fixture.application_state, fixture.sink).accepted);
     CHECK(fixture.application_state.note_paint_mode_active);
 }
 
@@ -569,7 +577,7 @@ TEST_CASE("Disallowed note kind leaves Select and the armed kind unchanged", "[s
     const auto result = invoke_application_command(
         {.kind = application_command_kind_t::edit_note_kind, .note_kind = 2},
         fixture.fixture.history, fixture.workspace, fixture.compose_state, fixture.preview,
-        fixture.application_state, fixture.status);
+        fixture.application_state, fixture.sink);
     CHECK_FALSE(result.accepted);
     CHECK_FALSE(fixture.application_state.note_paint_mode_active);
     CHECK(fixture.compose_state->armed_note_kind == wormedit::note_kind_t::tap);
@@ -646,12 +654,142 @@ TEST_CASE("timing insertion rejects locked edits and missing charts",
     const auto revision = fixture.fixture.history.document.revision;
     fixture.application_state.timing_locked = true;
     CHECK_FALSE(fixture.invoke(application_command_kind_t::timing_insert_bpm).accepted);
+    CHECK(fixture.latest_message() == "Timing edits are locked.");
     CHECK_FALSE(fixture.preview);
     fixture.application_state.timing_locked = false;
     fixture.workspace.selected_chart.reset();
     CHECK_FALSE(fixture.invoke(application_command_kind_t::timing_insert_sv).accepted);
     CHECK_FALSE(fixture.preview);
     CHECK(fixture.fixture.history.document.revision == revision);
+}
+
+namespace {
+void check_undo_notification(const std::vector<wormedit::notification_entry_t>& entries) {
+    CHECK(entries[1].message == "Nothing to undo.");
+    CHECK(entries[1].severity == wormedit::notification_severity_t::info);
+    CHECK(entries[1].source == wormedit::notification_source_t::edit);
+}
+
+void check_clear_notification(const std::vector<wormedit::notification_entry_t>& entries) {
+    CHECK(entries[0].message == "Semantic-layer target cleared.");
+    CHECK(entries[0].severity == wormedit::notification_severity_t::info);
+}
+
+void check_long_command_detail(const TimingInsertFixture& fixture, const std::string& message) {
+    const auto entries = fixture.center.snapshot(1);
+    REQUIRE(entries.size() == 1);
+    CHECK(entries[0].message.size() == wormedit::notification_message_max_bytes);
+    CHECK(entries[0].detail == message);
+}
+
+void check_long_command_classification(const TimingInsertFixture& fixture) {
+    const auto entries = fixture.center.snapshot(1);
+    REQUIRE(entries.size() == 1);
+    CHECK(entries[0].severity == wormedit::notification_severity_t::error);
+    CHECK(entries[0].source == wormedit::notification_source_t::document);
+}
+
+void check_success_current_line(const wormedit::notification_entry_t& entry) {
+    CHECK(entry.message == "Semantic-layer membership updated.");
+    CHECK(entry.severity == wormedit::notification_severity_t::success);
+    CHECK(entry.source == wormedit::notification_source_t::edit);
+}
+} // namespace
+
+TEST_CASE("application command posts ordered typed no-op and state-clear results",
+          "[unit][sys][application_commands][notifications]") {
+    TimingInsertFixture fixture;
+    const auto original_revision = fixture.fixture.history.document.revision;
+    const auto undo = fixture.invoke(application_command_kind_t::history_undo);
+    REQUIRE(undo.accepted);
+    const auto cleared = fixture.invoke(application_command_kind_t::semantic_layer_clear_target);
+    REQUIRE(cleared.accepted);
+
+    fixture.center.drain_inbox(wormedit::notification_time_t{0});
+    const auto entries = fixture.center.snapshot(4);
+    REQUIRE(entries.size() == 2);
+    check_undo_notification(entries);
+    check_clear_notification(entries);
+    CHECK(fixture.fixture.history.document.revision == original_revision);
+    CHECK(fixture.fixture.history.undo.empty());
+}
+
+TEST_CASE("semantic command success remains current after a navigation hint",
+          "[unit][sys][application_commands][notifications]") {
+    TimingInsertFixture fixture;
+    auto& chart = fixture.fixture.history.document.charts.front();
+    chart.semantic_layers = {
+        {.id = wormedit::layer_id_t{7}, .name = "First", .color = {32, 64, 128, 255}},
+        {.id = wormedit::layer_id_t{8}, .name = "Second", .color = {64, 128, 32, 255}}};
+    fixture.compose_state->selected_notes = {wormedit::object_id_t{1}, wormedit::object_id_t{2}};
+    fixture.application_state.semantic_layer_target = wormedit::layer_id_t{8};
+    const auto applied = fixture.invoke(application_command_kind_t::semantic_layer_apply);
+    REQUIRE(applied.accepted);
+    fixture.sink.post(wormedit::notification_severity_t::hint,
+                       wormedit::notification_source_t::input, "Navigation canceled.");
+    fixture.center.drain_inbox(wormedit::notification_time_t{0});
+
+    REQUIRE(fixture.center.current_line() != nullptr);
+    check_success_current_line(*fixture.center.current_line());
+}
+
+TEST_CASE("application command does not post an empty producer callback result",
+          "[unit][sys][application_commands][notifications]") {
+    TimingInsertFixture fixture;
+    fixture.application_state.external_player = [](external_player_action_t) { return std::string{}; };
+    const auto result = fixture.invoke(application_command_kind_t::transport_external_play_start);
+    REQUIRE(result.accepted);
+    fixture.center.drain_inbox(wormedit::notification_time_t{0});
+    CHECK(fixture.center.size() == 0);
+}
+
+TEST_CASE("application command selection clear invokes producer-owned cursor restore once",
+          "[unit][sys][application_commands][notifications]") {
+    TimingInsertFixture fixture;
+    int restored{};
+    const auto original = wormedit::write_native_project(fixture.fixture.history.document).bytes;
+    fixture.application_state.transport_inline_active = [] { return true; };
+    fixture.application_state.transport_cancel_restore = [&] {
+        ++restored;
+        fixture.sink.post(wormedit::notification_severity_t::success, wormedit::notification_source_t::audio,
+                          "Chart preview stopped; cursor restored.");
+        return std::string{"Chart preview stopped; cursor restored."};
+    };
+    REQUIRE(fixture.invoke(application_command_kind_t::selection_clear).accepted);
+    CHECK(restored == 1);
+    fixture.center.drain_inbox(wormedit::notification_time_t{0});
+    const auto entries = fixture.center.snapshot(4);
+    REQUIRE(entries.size() == 1);
+    CHECK(entries.front().message == "Chart preview stopped; cursor restored.");
+    CHECK(wormedit::write_native_project(fixture.fixture.history.document).bytes == original);
+}
+
+TEST_CASE("application command notification severity preserves original rejection diagnostic",
+          "[unit][sys][application_commands][notifications]") {
+    TimingInsertFixture fixture;
+    const auto result = reject_application_command(fixture.sink, "Precondition was rejected.",
+        wormedit::notification_severity_t::warning, wormedit::notification_source_t::edit);
+    REQUIRE(result.diagnostics.size() == 1);
+    CHECK(result.diagnostics.front().severity == wormedit::diagnostic_severity_t::error);
+    CHECK_FALSE(result.accepted);
+    fixture.center.drain_inbox(wormedit::notification_time_t{0});
+    REQUIRE(fixture.center.current_line());
+    CHECK(fixture.center.current_line()->severity == wormedit::notification_severity_t::warning);
+}
+
+TEST_CASE("application command rejection preserves long diagnostic detail", "[notifications]") {
+    TimingInsertFixture fixture;
+    const auto message = std::string(600, 'x');
+    const auto original_revision = fixture.fixture.history.document.revision;
+    const auto result = reject_application_command(
+        fixture.sink, message, wormedit::notification_severity_t::error,
+        wormedit::notification_source_t::document,
+        wormedit::diagnostic_code_t::invalid_id);
+    CHECK_FALSE(result.accepted);
+    fixture.center.drain_inbox(wormedit::notification_time_t{0});
+    check_long_command_detail(fixture, message);
+    check_long_command_classification(fixture);
+    CHECK(fixture.fixture.history.document.revision == original_revision);
 }
 
 namespace {
@@ -678,7 +816,7 @@ TEST_CASE("Application No layer command clears selection and disables other memb
     check_layer_command(fixture.fixture.history.undo.size() == 1);
     check_layer_command(fixture.fixture.history.document.charts.front().measures.front().notes.front().semantic_layers.empty());
     check_layer_command(!fixture.invoke(application_command_kind_t::semantic_layer_remove).accepted);
-    check_layer_command(fixture.status == "No layer only assigns");
+    check_layer_command(fixture.latest_message() == "No layer only assigns");
     check_layer_command(!fixture.invoke(application_command_kind_t::semantic_layer_toggle).accepted);
     check_layer_command(fixture.fixture.history.undo.size() == 1);
     require_layer_command(fixture.invoke(application_command_kind_t::semantic_layer_clear_target).accepted);
@@ -696,7 +834,7 @@ TEST_CASE("Application layer commands replace membership and reject locked sourc
         const auto result = fixture.invoke(application_command_kind_t::semantic_layer_apply);
         check_layer_command(result.accepted == !locked);
         if (locked) {
-            check_layer_command(fixture.status.find("locked") != std::string::npos);
+            check_layer_command(fixture.latest_message().find("locked") != std::string::npos);
             check_layer_command(write_native_project(fixture.fixture.history.document).bytes == original);
         } else {
             const auto& notes = fixture.fixture.history.document.charts.front().measures.front().notes;
@@ -716,7 +854,7 @@ TEST_CASE("Application numbered layer selection resets No layer target",
     const auto result = invoke_application_command(
         {.kind = application_command_kind_t::semantic_layer_select_slot, .semantic_layer_slot = 1},
         fixture.fixture.history, fixture.workspace, fixture.compose_state, fixture.preview,
-        fixture.application_state, fixture.status);
+        fixture.application_state, fixture.sink);
     require_layer_command(result.accepted);
     check_layer_command(!fixture.application_state.semantic_layer_target_none);
     check_layer_command(fixture.application_state.semantic_layer_target == layer_id_t{7});

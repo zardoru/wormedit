@@ -8,6 +8,14 @@ using namespace wormedit;
 using namespace wormedit::sys;
 namespace {
 void expect_options(bool value) { CHECK(value); }
+void expect_options_notification(const options_runtime_t& runtime,
+                                 notification_severity_t severity,
+                                 std::string_view message) {
+    REQUIRE(runtime.notification);
+    CHECK(runtime.notification->severity == severity);
+    CHECK(runtime.notification->source == notification_source_t::system);
+    CHECK(runtime.notification->message == message);
+}
 auto action(const options_runtime_t& r, WormUiOptionsActionKind kind,
     WormUiOptionsCategory category = WORM_UI_OPTIONS_GENERAL) -> WormUiOptionsAction {
     return {.kind = kind, .revision = r.revision, .category = category};
@@ -58,6 +66,8 @@ TEST_CASE("Options validates individual draft fields and stale actions atomicall
     expect_options(!view.can_apply && view.diagnostic_count == 1);
     expect_options(view.diagnostics[0].field == WORM_UI_OPTIONS_FIELD_AUTOSAVE);
     expect_options(!apply_options_action(r, program, action(r, WORM_UI_OPTIONS_APPLY)));
+    expect_options_notification(r, notification_severity_t::warning,
+                                "Correct this page's invalid fields before applying.");
     expect_options(program.preferences.general.autosave_minutes == 5);
     expect_options(!edit_options_draft(r, old_revision, program.preferences));
     const auto current = r.revision;
@@ -81,6 +91,7 @@ TEST_CASE("Options applies one page atomically preserving other applied sections
     expect_options(edit_options_draft(r, r.revision, candidate));
     program.preferences.display.theme = "external-theme";
     expect_options(apply_options_action(r, program, action(r, WORM_UI_OPTIONS_APPLY)));
+    expect_options_notification(r, notification_severity_t::success, "Options saved.");
     expect_options(program.preferences.audio.keep_pitch);
     expect_options(program.preferences.general.autosave_minutes == 5);
     expect_options(program.preferences.display.theme == "external-theme");
@@ -120,13 +131,18 @@ TEST_CASE("Options no-op skips publication and publication failure keeps accepte
     open_options(r, program.preferences);
     expect_options(!apply_options_action(r, program, action(r, WORM_UI_OPTIONS_APPLY)));
     expect_options(r.status == "This page has no changes.");
+    expect_options_notification(r, notification_severity_t::info, r.status);
     auto candidate = r.draft;
     candidate.general.autosave_minutes = 12;
     expect_options(edit_options_draft(r, r.revision, candidate));
     expect_options(apply_options_action(r, program, action(r, WORM_UI_OPTIONS_APPLY)));
     expect_options(program.preferences.general.autosave_minutes == 12);
     expect_options(!options_view(r).changed && r.status.find("saving failed") != std::string::npos);
+    expect_options_notification(r, notification_severity_t::error, r.status);
     expect_options(std::filesystem::is_directory(target));
+    expect_options(!apply_options_action(r, program, action(r, WORM_UI_OPTIONS_NONE)));
+    expect_options(!r.notification);
+    expect_options(program.preferences.general.autosave_minutes == 12);
 }
 TEST_CASE("Options page validation catches unsupported rates paths scales and player definitions", "[options]") {
     program_preferences_runtime_t program;

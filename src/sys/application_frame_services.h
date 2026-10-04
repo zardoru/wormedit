@@ -45,7 +45,7 @@ void tick_application_autosave(native_project_autosave_loop_t& autosave_loop,
                                bool loaded_primary,
                                const std::filesystem::path& requested_primary_path,
                                const std::filesystem::path& recovery_path,
-                               std::string& status);
+                               notification_sink_t& notifications);
 
 void rebind_workspace_after_edit(workspace_controller_t& workspace,
                                  const document_history_t& history,

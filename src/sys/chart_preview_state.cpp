@@ -10,7 +10,22 @@
 #include <ranges>
 
 namespace wormedit::sys::runtime {
+auto chart_preview_t::report(notification_severity_t severity, bool accepted, std::string message)
+    -> std::string {
+    feedback = {severity, accepted};
+    return message;
+}
+
 namespace {
+auto preview_diagnostic_feedback(chart_preview_t& preview, const auto& diagnostics, std::string_view fallback)
+    -> std::string {
+    if (diagnostics.empty()) return preview.report(notification_severity_t::error, false, std::string{fallback});
+    const auto severity = diagnostics.front().severity;
+    return preview.report(severity == diagnostic_severity_t::error ? notification_severity_t::error
+                  : severity == diagnostic_severity_t::warning ? notification_severity_t::warning
+                                                               : notification_severity_t::info,
+                  false, diagnostics.front().message);
+}
 
 constexpr object_id_t preview_music_object{std::numeric_limits<std::uint64_t>::max()};
 
@@ -128,23 +143,22 @@ auto chart_preview_t::compile_if_needed(
 
     auto built_timing = build_timing_index(selected_chart);
     if (!built_timing)
-        return built_timing.diagnostics.empty() ? "Chart timing could not be compiled."
-                                                : built_timing.diagnostics.front().message;
+        return preview_diagnostic_feedback(*this, built_timing.diagnostics, "Chart timing could not be compiled.");
     const auto count_in = timing_count_in_pulses(selected_chart, count_in_measures);
-    if (!count_in) return "Count-in exceeds the first meter's pulse limits.";
+    if (!count_in)
+        return report(notification_severity_t::warning, false,
+                      "Count-in exceeds the first meter's pulse limits.");
     auto built_schedule = build_preview_schedule(
         selected_chart, *built_timing.index,
         {.sample_rate = audio::output_sample_rate,
          .include_metronome = true, .count_in_pulses = *count_in});
     if (!built_schedule)
-        return built_schedule.diagnostics.empty() ? "Chart preview could not be compiled."
-                                                  : built_schedule.diagnostics.front().message;
+        return preview_diagnostic_feedback(*this, built_schedule.diagnostics, "Chart preview could not be compiled.");
     auto resolved = audio::resolve_preview_bindings(
         document, selected_chart.id, *built_schedule.schedule, sources.bindings(),
         {.skip_unavailable_preview_sources = true});
     if (!resolved)
-        return resolved.diagnostics.empty() ? "Chart audio could not be resolved."
-                                            : resolved.diagnostics.front().message;
+        return preview_diagnostic_feedback(*this, resolved.diagnostics, "Chart audio could not be resolved.");
 
     if (selected_music) {
         const auto source = sources.binding(selected_music->second);
@@ -165,7 +179,7 @@ auto chart_preview_t::compile_if_needed(
     const auto visual_end_frame =
         chart_visual_end_frame(*built_timing.index, *built_schedule.schedule);
     if (!visual_end_frame)
-        return "Chart visual endpoint exceeds the preview clock.";
+        return report(notification_severity_t::error, false, "Chart visual endpoint exceeds the preview clock.");
     const auto compiled_end_frame = std::max(
         preview_end_frame(*built_schedule.schedule, resolved.bindings, metronome_bindings),
         *visual_end_frame);
@@ -243,10 +257,10 @@ auto chart_preview_t::play_pause(
         const auto frame = preview_output.timeline_frame();
         static_cast<void>(preview_output.stop());
         pause_at(frame);
-        return "Chart preview paused.";
+        return report(notification_severity_t::success, true, "Chart preview paused.");
     }
     if (selected_chart == nullptr)
-        return "Select a chart before starting preview.";
+        return report(notification_severity_t::warning, false, "Select a chart before starting preview.");
 
     if (auto error = compile_if_needed(*selected_chart, document, sources, metronome_bindings))
         return *error;
@@ -261,7 +275,8 @@ auto chart_preview_t::play_pause(
     } else if (!paused && start_cursor) {
         const auto frame = wormedit::sys::preview_cursor_frame(*selected_chart, *timing,
                                                               *start_cursor, start_cursor_subrow);
-        if (const auto* error = std::get_if<std::string>(&frame)) return *error;
+        if (const auto* error = std::get_if<std::string>(&frame))
+            return report(notification_severity_t::warning, false, *error);
         resume_frame = std::get<std::uint64_t>(frame);
     }
 
@@ -269,7 +284,8 @@ auto chart_preview_t::play_pause(
     const auto started = preview_output.start(*schedule, bindings, metronome_bindings,
                                               resume_frame, end_frame);
     if (!started)
-        return started.message.empty() ? "Chart preview could not start." : started.message;
+        return report(notification_severity_t::error, false,
+                      started.message.empty() ? "Chart preview could not start." : started.message);
     paused = false;
     std::string status = from_beginning ? "Chart preview started from the beginning."
            : was_paused ? "Chart preview resumed."
@@ -280,7 +296,8 @@ auto chart_preview_t::play_pause(
                   std::to_string(skipped_unavailable_audio_objects) +
                   " chart object(s); preview continues silently for them.";
     }
-    return status;
+    return report(skipped_unavailable_audio_objects ? notification_severity_t::warning
+                                                  : notification_severity_t::success, true, std::move(status));
 }
 
 namespace {
@@ -302,7 +319,8 @@ auto chart_preview_t::seek(std::uint64_t frame, const song_document_t& document,
                            audio::preview_session_t& preview_session,
                            sdl_preview_output_t& preview_output) -> std::string {
     if (!schedule || !matches_selection(document, workspace))
-        return "Chart preview seek is unavailable or outside the compiled timeline.";
+        return report(notification_severity_t::warning, false,
+                      "Chart preview seek is unavailable or outside the compiled timeline.");
     frame = std::min(frame, end_frame);
     static_cast<void>(audition_output.stop());
     output_observer = &preview_output;
@@ -310,15 +328,16 @@ auto chart_preview_t::seek(std::uint64_t frame, const song_document_t& document,
         const auto previous_frame = preview_output.timeline_frame();
         const auto sought = preview_output.seek(frame);
         if (!sought)
-            return restore_preview_after_seek_failure(*this, previous_frame, preview_session, preview_output,
-                sought.message.empty() ? "Chart preview seek failed." : sought.message);
+            return report(notification_severity_t::error, false,
+                restore_preview_after_seek_failure(*this, previous_frame, preview_session, preview_output,
+                    sought.message.empty() ? "Chart preview seek failed." : sought.message));
         paused = false;
     } else {
         paused = true;
     }
     resume_frame = frame;
-    return "Chart preview moved to " +
-           std::to_string(frame / audio::output_sample_rate) + " seconds.";
+    return report(notification_severity_t::hint, true, "Chart preview moved to " +
+                  std::to_string(frame / audio::output_sample_rate) + " seconds.");
 }
 
 auto chart_preview_t::audio_milliseconds(
@@ -335,18 +354,20 @@ auto chart_preview_t::seek_audio_milliseconds(
     audio::preview_session_t& preview_session, sdl_preview_output_t& preview_output)
     -> std::string {
     if (!audio_milliseconds(document, workspace, preview_session))
-        return "Chart preview seek is unavailable for the selected chart.";
+        return report(notification_severity_t::warning, false,
+                      "Chart preview seek is unavailable for the selected chart.");
     const auto unclamped = milliseconds_to_frame(milliseconds, audio::output_sample_rate);
     const auto frame = std::min(unclamped, end_frame);
     const auto seek_status = seek(frame, document, workspace, audition_output, preview_session,
                                   preview_output);
-    if (!seek_status.starts_with("Chart preview moved"))
+    if (!feedback.accepted)
         return seek_status;
     if (milliseconds < 0)
-        return "Audio marker precedes the source; chart preview clamped to 0 ms.";
+        return report(notification_severity_t::warning, true, "Audio marker precedes the source; chart preview clamped to 0 ms.");
     if (unclamped > end_frame)
-        return "Audio marker follows the compiled timeline; chart preview clamped to its end.";
-    return "Chart preview moved to the audio marker at " + std::to_string(milliseconds) + " ms.";
+        return report(notification_severity_t::warning, true, "Audio marker follows the compiled timeline; chart preview clamped to its end.");
+    return report(notification_severity_t::hint, true,
+                  "Chart preview moved to the audio marker at " + std::to_string(milliseconds) + " ms.");
 }
 
 void chart_preview_t::stop(sdl_audition_output_t& audition_output,

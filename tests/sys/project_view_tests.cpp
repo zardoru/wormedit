@@ -81,10 +81,12 @@ TEST_CASE("Project chart UI rejects closed sessions stale delete and malformed b
         .chart_id = history.document.charts[0].id.value};
     auto result = apply_project_chart_ui_action(runtime, history, action);
     expect_project(!result.applied && !result.status.empty());
+    expect_project(result.severity == notification_severity_t::warning);
     action.session_generation = runtime.session_generation;
     --action.document_revision;
     result = apply_project_chart_ui_action(runtime, history, action);
     expect_project(!result.applied && !result.status.empty());
+    expect_project(result.severity == notification_severity_t::error);
     expect_project(runtime.row_errors.contains(action.chart_id));
     action = {.kind = WORM_UI_PROJECT_CHART_BATCH_METADATA, .document_revision = history.document.revision,
         .session_generation = runtime.session_generation, .selected_count = 1, .edit_rating = true,
@@ -96,6 +98,7 @@ TEST_CASE("Project chart UI rejects closed sessions stale delete and malformed b
     action.edit_rating = false;
     result = apply_project_chart_ui_action(runtime, history, action);
     expect_project(!result.applied && runtime.row_errors.empty());
+    expect_project(result.severity == notification_severity_t::info);
 }
 
 TEST_CASE("Project chart scalar projection exposes row rejection and refreshes after mutations", "[unit][project-view]") {

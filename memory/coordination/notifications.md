@@ -3,7 +3,8 @@
 Date: 2026-10-04. Base: `f2b35bd`; branch: `coord/notifications`.
 Coordinator: **GPT-6.1 Sol, medium** (user preference recorded in
 `memory/agent-workflow.md`). Executor: **GPT-6 Luna,
-medium**. This pilot contains documentation only; no feature implementation.
+medium**. The readiness pilot was documentation only. The user subsequently
+authorized full T-221/T-222/T-223 implementation; root approved the N1–N7 paths.
 
 ## Readiness and review
 
@@ -65,8 +66,8 @@ original complete text; the exact split/detail policy needs coordinator review.
 
 ## Proposed exact ownership extensions and ordered Luna briefs
 
-Extensions below are **proposals for root approval**, not edits approved by this
-pilot. Before each implementation task, record approved paths on its card,
+Extensions below were **approved by root for implementation** after the pilot.
+Before each implementation task, record approved paths on its card,
 assign exclusive ownership and read the producer sources for that brief. Every
 brief uses medium Luna, the workflow's full outcome/context/invariants/report
 format, and the positive/negative checks below. Never overlap shared files.
@@ -155,6 +156,11 @@ format, and the positive/negative checks below. Never overlap shared files.
    emits nothing; stop/join and device close preserve playback cleanup.
 
 Ordering: N1 → N2 → N3/full T-221 review → N4 → N5 → N6 → N7.
+Root revised scheduling after reviewed N1/N2: N5 autosave may execute alongside
+Sol's N3/N4 glue because T-219 and the sink prerequisite are satisfied and its
+core files/tests have exclusive ownership. N5 Luna does not edit main or frame
+services; Sol wires those after review. T-223 internal construction/post/test
+step order remains unchanged. N6/N7 shared frontend/main paths stay serialized.
 No concurrent main, Compose, notifications core or test-wiring edits. Independent
 inventory reads may run in parallel; root owns integration and resume updates.
 
@@ -170,8 +176,33 @@ contradiction before claiming the gate satisfied; do not widen scope silently.
 Full no-message-loss acceptance compares producer inventory with posts, retaining
 original call order and exact message bytes (existing center UTF-8 bounds apply).
 
-Root decisions: approve exact extensions per brief; settle typed producer
-policies listed above; approve sink lifetime/exception policy and staged legacy
-bridges; finalize remaining N3 ownership and N4 subdivision before execution.
-No feature build/test was run by this documentation-only pilot. Direct worktree
-documentation validation and diff checks are recorded in the coordinator handoff.
+Root settled sink lifetime: non-owning handle, center declared before all posting
+schedulers/runtimes; scheduler joins on normal and exceptional exits before
+center destruction. Noexcept posting catches exceptions, ignores failure, and
+suppresses empty messages. Producers supply explicit classification metadata;
+text/order remain unchanged. Final main grep is a full-batch gate; staged exclusions
+are recorded on T-221. Further exact scope extensions can be coordinator-approved.
+Typed policies still need producer-by-producer review, and N4 will be subdivided
+before execution. Sol owns main/Options glue; N1 Luna owns only core notification
+files. `tests/ui/nuklear_options_state_tests.cpp` was added to T-221 ownership for
+typed outcome and repeat suppression tests. The independent Debug Ninja app build
+uses offline dependency sources and `-j4`; evidence goes under
+`/tmp/wormedit-batch-implementation/notifications-*.log`.
+
+Reviewed increments (2026-10-04): N1 sink and long-detail correction are committed
+and root-integrated. N2 dispatch plus Sol global glue covers Options/preferences,
+project chart/session save/open/close producers, timing staging, external player,
+shortcut startup/rejections, and play/pause/start/cancel typed bridges. Rejection
+diagnostic severity and cursor-restore callback behavior remain unchanged.
+N5 executor completed core autosave/platform recovery; Sol review preserved the
+original autosave prefix/path, eliminated duplicate frame failure posts, and kept
+successful autosave confirmation. Center precedes posting schedulers on all exits.
+Own app build passes; focused changed behavior suite passes 120/120. Configured
+tidy reports only existing main/refresh/build_speed_graph and old test violations;
+new registered chart helper is extracted to remain at or below 25. Actual logs:
+`notifications-global-increment-ctest.log`, `notifications-global-review-build.log`,
+`notifications-global-final-tidy.log` under the temporary evidence directory.
+Remaining T-221: selection/metadata/import/drop and seek bookmark producer seams.
+T-222 input/projection/dialog and T-223 resource/export/audio/recovery scan remain.
+No card is marked done. Visual verification remains pending due unavailable Xvfb;
+root forbids escalation. Headless event harness remains the allowed workflow gate.

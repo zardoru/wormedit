@@ -12,6 +12,7 @@
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_sounds_panel.h"
+#include "ui/nuklear/compose_bga_panel.h"
 #include "ui/nuklear/compose_layers_panel.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_recipe_form.h"
@@ -1310,6 +1311,8 @@ struct ComposeDockLayout {
     float layers_width;
     bool sounds_drawn;
     float sounds_width;
+    bool bga_drawn;
+    float bga_width;
     float side_width;
 };
 
@@ -1336,10 +1339,14 @@ static auto compose_dock_layout(nk_context* context, const WormUiComposeView* vi
     const auto sounds_width = sounds_drawn
                                   ? std::clamp(compose_body_bounds.w * 0.2f, 292.0f, 340.0f)
                                   : 0.0f;
+    const auto bga_drawn = state.bga_panel_visible && view->scene_available &&
+        compose_body_bounds.w >= 860.0f + layers_width + sounds_width;
+    const auto bga_width = bga_drawn ? 292.0f : 0.0f;
     // Both side panels float over the right edge of the editor; the field gives up their width.
     const auto side_width = inspector_width + (sounds_drawn ? sounds_width + 8.0f : 0.0f) +
-                            (layers_drawn ? layers_width + 8.0f : 0.0f);
-    return {compose_body_bounds, compose_body_height, inspector_drawn, inspector_width, layers_drawn, layers_width, sounds_drawn, sounds_width, side_width};
+                            (layers_drawn ? layers_width + 8.0f : 0.0f) +
+                            (bga_drawn ? bga_width + 8.0f : 0.0f);
+    return {compose_body_bounds, compose_body_height, inspector_drawn, inspector_width, layers_drawn, layers_width, sounds_drawn, sounds_width, bga_drawn, bga_width, side_width};
 }
 
 static void render_compose_inspector_contents(nk_context* context,
@@ -1378,6 +1385,44 @@ static void render_compose_dock(nk_context* context, struct nk_rect bounds, cons
     }
 }
 
+static void render_compose_side_docks(nk_context* context, const WormUiComposeView* view,
+    const WormUiTimingView* timing_view, WormUiWorkspaceAction* action, const ComposeDockLayout& layout) {
+    const auto [compose_body_bounds, compose_body_height, inspector_drawn, inspector_width,
+        layers_drawn, layers_width, sounds_drawn, sounds_width, bga_drawn, bga_width, side_width] = layout;
+    const auto editor_width = compose_body_bounds.w;
+    if (sounds_drawn) {
+        const auto sounds_left = editor_width - side_width - (inspector_drawn ? 8.0f : 0.0f) +
+                                 (layers_drawn ? layers_width + 8.0f : 0.0f) + (bga_drawn ? bga_width + 8.0f : 0.0f);
+        render_compose_dock(context, nk_rect(sounds_left, 8.0f, sounds_width,
+                                             compose_body_height - 16.0f), "Compose sounds",
+            NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR,
+            [&] { worm_ui_nuklear_render_compose_sounds(context, view, action, &state); });
+    }
+    if (bga_drawn) {
+        const auto left = editor_width - side_width - (inspector_drawn ? 8.0f : 0.0f) +
+                          (layers_drawn ? layers_width + 8.0f : 0.0f);
+        render_compose_dock(context, nk_rect(left, 8.0f, bga_width, compose_body_height - 16.0f),
+            "Compose BGA", NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR,
+            [&] { worm_ui_nuklear_render_compose_bga(context, view, action, &state); });
+    }
+    if (layers_drawn) {
+        const auto layers_left = editor_width - side_width - (inspector_drawn ? 8.0f : 0.0f);
+        render_compose_dock(context, nk_rect(layers_left, 8.0f, layers_width,
+                                             compose_body_height - 16.0f), "Compose layers",
+            NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR,
+            [&] { worm_ui_nuklear_render_compose_layers(context, view, action, &state); });
+    }
+    if (inspector_drawn) {
+        nk_layout_space_push(context, nk_rect(editor_width - inspector_width - 8.0f, 8.0f,
+                                              inspector_width, compose_body_height - 16.0f));
+        if (nk_group_begin(context, "Compose inspector", NK_WINDOW_BORDER)) {
+
+    render_compose_inspector_contents(context, view, timing_view, action);
+    nk_group_end(context);
+        }
+    }
+}
+
 void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const WormUiComposeView* view,
                                           const WormUiTimingView* timing_view,
                                           WormUiWorkspaceAction* action, bool window_focused,
@@ -1396,8 +1441,10 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                          ime_composition_active, double_clicks,
                                          double_click_count, shortcut_event_count};
 
-    const auto [compose_body_bounds, compose_body_height, inspector_drawn, inspector_width, layers_drawn, layers_width, sounds_drawn, sounds_width, side_width] = compose_dock_layout(context, view);
+    const auto dock_layout = compose_dock_layout(context, view);
+    const auto [compose_body_bounds, compose_body_height, inspector_drawn, inspector_width, layers_drawn, layers_width, sounds_drawn, sounds_width, bga_drawn, bga_width, side_width] = dock_layout;
     state.sound_list_valid = false;
+    state.bga_list_valid = false;
     const auto editor_width = compose_body_bounds.w;
     const auto palette_drawn =
         wormedit::ui::compose_note_palette_visible(compose_mode_of(*view)) &&
@@ -1406,7 +1453,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     const auto editor_left = palette_drawn ? palette_width : 0.0f;
     nk_layout_space_begin(context, NK_STATIC, compose_body_height,
                           1 + (inspector_drawn ? 1 : 0) + (palette_drawn ? 1 : 0) +
-                              (sounds_drawn ? 1 : 0) + (layers_drawn ? 1 : 0));
+                              (sounds_drawn ? 1 : 0) + (layers_drawn ? 1 : 0) + (bga_drawn ? 1 : 0));
     if (palette_drawn) {
         nk_layout_space_push(context, nk_rect(0.0f, 0.0f, palette_width, compose_body_height));
         if (nk_group_begin(context, "Compose note palette", NK_WINDOW_NO_SCROLLBAR)) {
@@ -1417,33 +1464,10 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     nk_layout_space_push(context, nk_rect(editor_left, 0.0f, editor_width - editor_left,
                                           compose_body_height));
     if (nk_group_begin(context, "Compose editor", NK_WINDOW_NO_SCROLLBAR)) {
-    render_compose_editor_canvas(panel, inspector_drawn || sounds_drawn || layers_drawn, side_width);
+    render_compose_editor_canvas(panel, inspector_drawn || sounds_drawn || layers_drawn || bga_drawn, side_width);
     nk_group_end(context);
     }
-    if (sounds_drawn) {
-        const auto sounds_left = editor_width - side_width - (inspector_drawn ? 8.0f : 0.0f) +
-                                 (layers_drawn ? layers_width + 8.0f : 0.0f);
-        render_compose_dock(context, nk_rect(sounds_left, 8.0f, sounds_width,
-                                             compose_body_height - 16.0f), "Compose sounds",
-            NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR,
-            [&] { worm_ui_nuklear_render_compose_sounds(context, view, action, &state); });
-    }
-    if (layers_drawn) {
-        const auto layers_left = editor_width - side_width - (inspector_drawn ? 8.0f : 0.0f);
-        render_compose_dock(context, nk_rect(layers_left, 8.0f, layers_width,
-                                             compose_body_height - 16.0f), "Compose layers",
-            NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR,
-            [&] { worm_ui_nuklear_render_compose_layers(context, view, action, &state); });
-    }
-    if (inspector_drawn) {
-        nk_layout_space_push(context, nk_rect(editor_width - inspector_width - 8.0f, 8.0f,
-                                              inspector_width, compose_body_height - 16.0f));
-        if (nk_group_begin(context, "Compose inspector", NK_WINDOW_BORDER)) {
-
-    render_compose_inspector_contents(context, view, timing_view, action);
-    nk_group_end(context);
-        }
-    }
+    render_compose_side_docks(context, view, timing_view, action, dock_layout);
     nk_layout_space_end(context);
     render_go_to_measure(context, *view, *action, window_focused);
 }

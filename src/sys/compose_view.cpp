@@ -7,6 +7,7 @@
 #include "sys/compose_resource_presenter.h"
 
 #include <wormedit/core/editor_scene.h>
+#include <wormedit/core/snap.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/lane_profiles.h>
@@ -38,6 +39,31 @@
 #include <vector>
 
 namespace wormedit::sys {
+
+auto resolve_compose_paint_cell(
+    const wormedit::chart_document_t& chart, const wormedit::editor_hit_test_index_t& index,
+    const wormedit::editor_interaction_view_model_t& view, double x, double y,
+    double field_left, double field_width, bool downscroll, std::uint64_t snap,
+    const dead_span_projection_t* dead_spans)
+    -> std::optional<wormedit::editor_hit_target_t> {
+    auto hit_view = view;
+    hit_view.active_snap_denominator = snap;
+    auto target = wormedit::hit_test_editor(chart, index, hit_view,
+        {.x_pixels = x, .y_pixels = downscroll ? view.viewport_height_pixels - y : y,
+         .field_left_pixels = field_left, .field_width_pixels = field_width});
+    if (!target) return std::nullopt;
+    if (!target->note && dead_spans) {
+        auto bands = project_dead_span_bands(*dead_spans, view.pixels_per_standard_measure /
+            chart.divisions_per_standard_measure, view.viewport_scroll_pixels,
+            view.viewport_height_pixels, downscroll, dead_span_pause_band_pixels);
+        std::erase_if(bands, [](const auto& band) { return band.kind == dead_span_kind_t::warp; });
+        if (pointer_in_dead_span(bands, y)) return std::nullopt;
+    }
+    const auto snapped = wormedit::snap_position(chart, index.measures, target->position, snap);
+    if (!snapped) return std::nullopt;
+    target->position = *snapped;
+    return target;
+}
 
 namespace {
 auto paste_anchor(application_command_state_t::paste_session_t& session,
@@ -1106,6 +1132,7 @@ bool initialize_compose_view_state(
     if (!view.visible) {
         cache.interaction_view.reset();
         cache.hover.reset();
+        cache.paint_pointer.reset();
         cache.focus_note_label_editor = false;
         cache.viewport_autoscroll_active = false;
         return false;
@@ -2692,6 +2719,7 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         cache.focus_note_label_editor = false;
         cache.viewport_autoscroll_active = false;
         cache.status.clear();
+        cache.paint_pointer.reset();
         cache.chart = chart.id;
         cache.revision = history.document.revision;
         cache.attempted = true;
@@ -3756,6 +3784,55 @@ void populate_compose_paste_projection(const compose_final_projection_context_t&
     view.paste_ghost_count = session.ghosts.size();
 }
 
+void populate_compose_paint_ghost(const compose_final_projection_context_t& input) {
+    using namespace wormedit;
+    auto& view = input.view;
+    auto& cache = input.cache;
+    view.paint_ghost_visible = false;
+    if (!view.note_paint_mode_active || !cache.paint_pointer || !input.retained_state ||
+        editor_interaction_has_pending_gesture(*input.retained_state)) return;
+    if (!cache.hit_test_index) {
+        auto built = build_editor_hit_test_index(input.chart, input.history.document.revision);
+        if (!std::holds_alternative<editor_hit_test_index_t>(built)) return;
+        cache.hit_test_index = std::get<editor_hit_test_index_t>(std::move(built));
+    }
+    const auto [x, y] = *cache.paint_pointer;
+    const auto target = resolve_compose_paint_cell(input.chart, *cache.hit_test_index,
+        input.interaction_view, x, y, view.playable_field_left_pixels,
+        view.playable_field_right_pixels - view.playable_field_left_pixels, input.downscroll,
+        edit_snap_denominator(input.chart, *input.retained_state),
+        cache.dead_spans ? &*cache.dead_spans : nullptr);
+    if (!target) return;
+    const auto row = absolute_row(input.measures, target->position);
+    if (!row) return;
+    const auto source_y = static_cast<double>(*row) *
+        input.interaction_view.pixels_per_standard_measure / input.chart.divisions_per_standard_measure -
+        input.interaction_view.viewport_scroll_pixels;
+    const auto ghost_y = input.downscroll ? view.viewport_height_pixels - source_y : source_y;
+    const auto lanes = std::span(view.lanes, view.lane_count);
+    const auto lane = std::ranges::find_if(lanes, [&](const auto& value) {
+        return value.lane_id == target->lane.value && ghost_y >= value.bounds.top &&
+               ghost_y <= value.bounds.bottom;
+    });
+    if (lane == lanes.end()) return;
+    bool occupied = false;
+    for (const auto& measure : input.chart.measures)
+        occupied = occupied || std::ranges::any_of(measure.notes, [&](const auto& note) {
+            return note.lane == target->lane && note.position == target->position;
+        });
+    const auto rectangular = lane->glyph <= 1;
+    const auto height = cache.preview_scene_request.note_head_height_pixels;
+    const auto top = rectangular ? (input.downscroll ? ghost_y - height : ghost_y) : ghost_y - height / 2;
+    view.paint_ghost = {.bounds = {lane->bounds.left, top, lane->bounds.right, top + height},
+        .lane_id = lane->lane_id, .display_lane_number = lane->display_order + 1,
+        .key_color = lane->key_color, .glyph = lane->glyph,
+        .snap_class = wormedit::ui::note_snap_class(*row, input.chart.divisions_per_standard_measure),
+        .kind = static_cast<std::uint8_t>(view.armed_note_kind),
+        .paint_erase_preview = occupied,
+        .paint_invalid_preview = !note_kind_allowed(input.chart, input.retained_state->armed_note_kind)};
+    view.paint_ghost_visible = true;
+}
+
 void populate_compose_final_projection(const compose_final_projection_context_t& input) {
     input.view.clipboard_copy_available = input.retained_state &&
         !editor_interaction_has_pending_gesture(*input.retained_state) &&
@@ -3769,6 +3846,7 @@ void populate_compose_final_projection(const compose_final_projection_context_t&
     (void)compose_project_scene(input, rows);
     populate_compose_paste_projection(input);
     cache_area_object_geometry(input);
+    populate_compose_paint_ghost(input);
 }
 
 void populate_bgm_only_compose_projection(

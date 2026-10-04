@@ -381,12 +381,25 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t layers_panel_project_id{};
     bool sounds_layers_open{};
     bool sounds_preview_on_click{true};
+    bool bga_panel_visible{};
+    worm_ui_keysound_selection_t bga_selection;
+    std::array<char, 64> bga_search{};
+    std::size_t bga_first_row{}, bga_row_limit{32};
+    std::uint64_t bga_project_id{}, bga_chart_id{};
+    std::vector<std::uint64_t> bga_staged_ids;
+    std::vector<std::string> bga_staged_paths;
+    std::vector<const char*> bga_staged_path_pointers;
+    bool bga_list_valid{};
+    float bga_list_x{}, bga_list_y{}, bga_list_width{}, bga_list_height{};
     worm_ui_keysound_selection_t keysound_selection;
     std::array<char, 64> keysound_search{};
     std::uint64_t keysound_chart_id{};
     std::uint64_t keysound_revision{std::numeric_limits<std::uint64_t>::max()};
     // Scratch reused across frames so a frame with thousands of rows does not allocate.
     std::vector<std::uint64_t> keysound_shown;
+    std::vector<worm_ui_keysound_advance_row_t> keysound_advance_rows;
+    bool armed_from_sounds_dock{};
+    bool keysound_reveal_primary{};
     std::vector<std::uint64_t> keysound_all_ids;
     std::vector<worm_ui_keysound_mask_t> keysound_masks;
     // Frontend-owned staging that actions point at until their immediate dispatch.

@@ -104,3 +104,12 @@ TEST_CASE("keysound layer state is none some or all across the selection",
     CHECK(worm_ui_keysound_layer_state(selection, rows, 0) == worm_ui_keysound_layer_state_t::none);
     CHECK(worm_ui_keysound_layer_state(selection, rows, 64) == worm_ui_keysound_layer_state_t::none);
 }
+
+TEST_CASE("Keysound advance follows filtered order skips missing rows and stops", "[frontend-state][keysounds]") {
+    const std::array<worm_ui_keysound_advance_row_t, 4> rows{{{40, false}, {10, true}, {30, false}, {20, false}}};
+    CHECK(next_visible_keysound(rows, 40) == 30);
+    CHECK(next_visible_keysound(rows, 30) == 20);
+    CHECK(next_visible_keysound(rows, 20) == 0);
+    CHECK(next_visible_keysound(rows, 99) == 0);
+    CHECK(next_visible_keysound({}, 40) == 0);
+}

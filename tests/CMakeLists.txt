@@ -60,6 +60,8 @@ add_executable(wormedit_core_tests
     sys/compose_playhead_skip_tests.cpp
     sys/compose_bgm_bar_tests.cpp
     sys/sound_list_projection_tests.cpp
+    sys/bga_list_projection_tests.cpp
+    ../src/sys/bga_list_projection.cpp
     sys/compose_measure_commands_tests.cpp
     sys/compose_selection_transform_tests.cpp
     sys/compose_label_search_tests.cpp
@@ -530,6 +532,15 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
 endif()
 
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
+    if(TARGET wormedit_visual_decoder)
+        add_executable(wormedit_bga_actions_tests sys/bga_actions_tests.cpp
+            ../src/sys/compose_bga_actions.cpp ../src/sys/bga_list_projection.cpp)
+        target_include_directories(wormedit_bga_actions_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+        target_compile_definitions(wormedit_bga_actions_tests PRIVATE WORMEDIT_HAS_IMAGE_DECODER=1)
+        target_link_libraries(wormedit_bga_actions_tests PRIVATE wormedit::core wormedit::visual_decoder Catch2::Catch2WithMain)
+        catch_discover_tests(wormedit_bga_actions_tests TEST_PREFIX "bga-actions.")
+    endif()
+
     add_executable(wormedit_frame_timing_tests
         sys/frame_timing_tests.cpp
         ui/nuklear_notification_state_tests.cpp

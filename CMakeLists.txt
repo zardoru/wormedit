@@ -370,6 +370,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/sound_import_state.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/keysound_list_state.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_sounds_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bga_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_layers_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/timing_stage_editor.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/text_field.cpp"
@@ -410,6 +411,9 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_area_actions.cpp
         src/sys/compose_actions.cpp
         src/sys/compose_sound_actions.cpp
+        src/sys/compose_bga_actions.cpp
+        src/sys/bga_list_projection.cpp
+        src/sys/bga_dock_runtime.cpp
         src/sys/compose_audition_requests.cpp
         src/sys/crash_backtrace.cpp
         src/sys/audio_source_registration.cpp

@@ -55,3 +55,11 @@ struct worm_ui_keysound_mask_t {
                                                 std::span<const worm_ui_keysound_mask_t> rows,
                                                 unsigned layer_bit)
     -> worm_ui_keysound_layer_state_t;
+
+struct worm_ui_keysound_advance_row_t {
+    std::uint64_t id{};
+    bool missing{};
+};
+// The next available row in the dock's filtered order; zero at the end or if absent.
+[[nodiscard]] auto next_visible_keysound(std::span<const worm_ui_keysound_advance_row_t> shown,
+                                         std::uint64_t placed_id) -> std::uint64_t;

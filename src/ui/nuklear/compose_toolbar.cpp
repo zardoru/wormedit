@@ -115,7 +115,7 @@ static void render_tool_group(const ComposeToolbarContext& toolbar) {
     const bool paint_disabled = !view->scene_available || view->timing_focus;
     if (paint_disabled) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::select_cursor,
-            "Select (leave note paint mode)", !view->note_paint_mode_active}.render(context) &&
+            "Select (Alt+1)", !view->note_paint_mode_active}.render(context) &&
         view->note_paint_mode_active && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
     if (wormedit::ui::chrome::IconButton{Glyph::paintbrush, "Toggle note paint mode",
@@ -165,6 +165,9 @@ static void render_panel_group(const ComposeToolbarContext& toolbar) {
             state.layers_panel_visible ? "Hide layers" : "Show layers",
             state.layers_panel_visible}.render(context))
         state.layers_panel_visible = !state.layers_panel_visible;
+    if (wormedit::ui::chrome::IconButton{Glyph::eye,
+            state.bga_panel_visible ? "Hide BGA list" : "Show BGA list", state.bga_panel_visible}.render(context))
+        state.bga_panel_visible = !state.bga_panel_visible;
     render_compose_bgm_bar_toggle(toolbar);
 }
 
@@ -423,13 +426,13 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
     // Stable shortcut order differs from the document enum order.
     static constexpr Glyph icons[]{Glyph::square, Glyph::minus, Glyph::x,
         Glyph::eye, Glyph::chevron_left, Glyph::layers, Glyph::audio_lines};
-    static constexpr const char* labels[]{"Tap (Alt+1)", "Hold (Alt+2; click to begin hold gesture)",
-        "Mine (Alt+3)", "Invisible (Alt+4)", "Lift (Alt+5)", "Fake (Alt+6)",
-        "Roll (Alt+7; click to begin hold gesture)"};
+    static constexpr const char* labels[]{"Tap (Alt+2)", "Hold (Alt+3; click to begin hold gesture)",
+        "Mine (Alt+4)", "Invisible (Alt+5)", "Lift (Alt+6)", "Fake (Alt+7)",
+        "Roll (Alt+8; click to begin hold gesture)"};
     // Select tool: the pointer selects instead of painting notes.
     nk_layout_row_static(toolbar.context, 30, 30, 1);
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::select_cursor,
-            "Select (leave note paint mode)", !toolbar.view->note_paint_mode_active}
+            "Select (Alt+1)", !toolbar.view->note_paint_mode_active}
             .render(toolbar.context) &&
         toolbar.view->note_paint_mode_active &&
         toolbar.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
@@ -465,7 +468,7 @@ static void layout_compose_toolbar(nk_context* context) {
     wormedit::ui::chrome::layout_separator(context);
     layout_toolbar_icons(context, 3); // Color views.
     wormedit::ui::chrome::layout_separator(context);
-    layout_toolbar_icons(context, 4); // Panels.
+    layout_toolbar_icons(context, 5); // Panels.
     wormedit::ui::chrome::layout_separator(context);
     layout_toolbar_icons(context, 3); // Audio lock, backward nudges.
     if (width >= 900.0f) nk_layout_row_template_push_static(context, 104);

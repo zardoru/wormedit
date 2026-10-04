@@ -111,3 +111,11 @@ auto worm_ui_keysound_layer_state(const worm_ui_keysound_selection_t& selection,
     return with == counted ? worm_ui_keysound_layer_state_t::all
                            : worm_ui_keysound_layer_state_t::some;
 }
+
+auto next_visible_keysound(std::span<const worm_ui_keysound_advance_row_t> shown,
+                           std::uint64_t placed_id) -> std::uint64_t {
+    const auto current = std::ranges::find(shown, placed_id, &worm_ui_keysound_advance_row_t::id);
+    if (current == shown.end()) return 0;
+    const auto next = std::find_if(current + 1, shown.end(), [](const auto& row) { return !row.missing; });
+    return next == shown.end() ? 0 : next->id;
+}

@@ -24,6 +24,8 @@
 #include "sys/timing_view.h"
 #include "sys/timing_edit_runtime.h"
 #include "sys/compose_sound_actions.h"
+#include "sys/compose_bga_actions.h"
+#include "sys/bga_dock_runtime.h"
 #include "sys/metadata_drop_state.h"
 #include "sys/metadata_asset_runtime.h"
 #include "sys/metadata_actions.h"
@@ -1424,8 +1426,10 @@ bool dispatch_project_chart_action(wormedit::sys::project_chart_runtime_t& runti
 void refresh_note_kind_commands(wormedit::command_registry_t& registry,
     const wormedit::chart_document_t* chart,
     const std::optional<wormedit::editor_interaction_state_t>& compose_state,
-    bool compose_ready, bool pending) {
+    bool compose_ready, bool pending, bool paint_active) {
     using namespace wormedit;
+    (void)update_command_state(registry, command_id_t{"edit.tool_select"}, compose_ready,
+                                compose_ready && !paint_active);
     constexpr std::pair<std::string_view, note_kind_t> note_kinds[]{
         {"tap", note_kind_t::tap}, {"hold", note_kind_t::hold}, {"mine", note_kind_t::mine},
         {"invisible", note_kind_t::invisible}, {"lift", note_kind_t::lift},
@@ -1433,7 +1437,7 @@ void refresh_note_kind_commands(wormedit::command_registry_t& registry,
     for (const auto& [name, kind] : note_kinds)
         (void)update_command_state(registry, command_id_t{"edit.note_kind_" + std::string(name)},
             compose_ready && note_kind_allowed(*chart, kind) && !pending,
-            compose_ready && compose_state->armed_note_kind == kind);
+            compose_ready && paint_active && compose_state->armed_note_kind == kind);
 }
 
 auto has_clipboard_selection(bool compose_ready, bool pending,
@@ -1506,7 +1510,8 @@ void refresh_application_command_states(
     set("edit.copy", clipboard_selection);
     set("edit.cut", clipboard_selection);
     set("edit.paste", paste_target_available(compose_ready, pending, application_state));
-    refresh_note_kind_commands(registry, chart, compose_state, compose_ready, pending);
+    refresh_note_kind_commands(registry, chart, compose_state, compose_ready, pending,
+                                application_state.note_paint_mode_active);
 
     set("selection.clear", compose_ready && (inline_preview_active(application_state) ||
                                             application_state.paste_session.has_value() ||
@@ -2592,6 +2597,24 @@ auto dispatch_clipboard_menu(Context& context, const WormUiWorkspaceAction& acti
     return true;
 }
 
+void import_dropped_bga(bool loaded, wormedit::document_history_t& history,
+    wormedit::workspace_controller_t& workspace, std::vector<std::string>& paths, std::string& status) {
+    if (paths.empty()) return;
+    if (loaded && workspace.selected_chart)
+        status = wormedit::sys::import_bga_files(history, workspace, *workspace.selected_chart, paths);
+    else status = "Open a project and select a difficulty before adding images.";
+    paths.clear();
+}
+
+void project_bga_dock(wormedit::sys::bga_dock_runtime_t& runtime,
+    const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
+    const std::filesystem::path& base, WormUiComposeView& view) {
+    WormUiBgaDockRequest request{};
+    worm_ui_frontend_bga_dock_request(&request);
+    request.visible = request.visible && workspace.active_tab == wormedit::workspace_tab_t::compose;
+    runtime.project(history.document, base, request, view);
+}
+
 // Adds files dropped on the Compose keysound listbox; always empties the pending list.
 void import_dropped_keysounds(bool session_loaded, wormedit::document_history_t& history,
                               wormedit::workspace_controller_t& workspace,
@@ -3155,7 +3178,8 @@ int main(int argc, char** argv) {
     bool fresh_blank_project = false;
     std::string pending_audio_project_path;
     std::string pending_chart_project_path;
-    std::vector<std::string> pending_sound_paths;
+    std::vector<std::string> pending_sound_paths, pending_bga_paths;
+    wormedit::sys::bga_dock_runtime_t bga_dock_runtime;
     std::string pending_bms_encoding_path;
     std::filesystem::path active_project_path =
         startup.loaded_primary ? requested_primary_path : std::filesystem::path{};
@@ -3445,11 +3469,12 @@ int main(int argc, char** argv) {
         if (!wormedit::sys::poll_frontend_events(
                 window, metadata_drop, workspace, history, asset_base,
                 can_offer_audio_project_drop(session_loaded, fresh_blank_project, history),
-                pending_audio_project_path, pending_chart_project_path, pending_sound_paths,
+                pending_audio_project_path, pending_chart_project_path, pending_sound_paths, pending_bga_paths,
                 status))
             confirm_unsaved_changes(pending_close, close_target_t::application, workspace_frame_action_context,
                 program_preferences.preferences.general.confirm_unsaved_close);
         import_dropped_keysounds(session_loaded, history, workspace, pending_sound_paths, status);
+        import_dropped_bga(session_loaded, history, workspace, pending_bga_paths, status);
         dispatch_dropped_chart_project(workspace_frame_action_context,
             pending_chart_project_path, pending_close,
             program_preferences.preferences.general.confirm_unsaved_close);
@@ -3578,6 +3603,7 @@ int main(int argc, char** argv) {
             flattened.view.pending_bms_encoding_path = pending_bms_encoding_path.c_str();
             // Projection returns by value; refresh view pointers after any move.
             flattened.rebind_view_pointers();
+            project_bga_dock(bga_dock_runtime, history, workspace, asset_base, flattened.view.compose);
             const auto frame_nuklear_previous = wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::nuklear);
             auto action = worm_ui_frontend_compose(&flattened.view);
             pending_notification = action.notifications;

@@ -370,8 +370,17 @@ void render_assign_disarm(const ResourcePanel& panel,
 auto resource_can_place(const ResourcePanel& panel,
                         const WormUiComposeResourceView* armed) -> bool {
     const auto role = filter_role(panel.state->resource_filter);
-    return panel.view->scene_available && armed && !armed->missing &&
-           (armed->roles & role) != 0;
+    if (!panel.view->scene_available) return false;
+    if (armed) return !armed->missing && (armed->roles & role) != 0;
+    const auto id = panel.state->armed_resource_id;
+    if (role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGA)
+        return id && id == panel.state->bga_selection.primary &&
+            std::ranges::find(std::span(panel.view->bga_matching_ids, panel.view->bga_total_matching), id) !=
+                std::span(panel.view->bga_matching_ids, panel.view->bga_total_matching).end();
+    if (role == WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE)
+        return std::ranges::any_of(std::span(panel.view->keysounds, panel.view->keysound_count),
+            [&](const auto& row) { return row.resource_id == id && !row.missing; });
+    return false;
 }
 
 void render_place_at_cursor(const ResourcePanel& panel,
@@ -455,7 +464,7 @@ void render_armed_placement_controls(const ResourcePanel& panel,
     render_armed_resource_status(panel, armed);
     render_assign_disarm(panel, armed);
     const auto can_place = resource_can_place(panel, armed);
-    render_place_at_cursor(panel, armed, can_place);
+    render_place_at_cursor(panel, armed, can_place && armed);
     render_pointer_modes(panel, pointer_place_allowed(panel, can_place));
     render_auto_increment(panel, can_place);
 }
@@ -633,6 +642,7 @@ void render_resource_usage_and_arm(const ResourcePanel& panel,
     if (resource.missing) nk_widget_disable_end(context);
     if (arm_clicked) {
         state->armed_resource_id = resource.resource_id;
+        state->armed_from_sounds_dock = false;
         state->resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     }
     nk_layout_row_end(context);

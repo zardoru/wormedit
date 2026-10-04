@@ -10,6 +10,7 @@
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_bga_panel.h"
 #include "ui/nuklear/compose_input_panel.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/content_margin.h"
@@ -513,6 +514,7 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
     }
     g_window = window;
     g_renderer = renderer;
+    worm_ui_nuklear_bga_set_renderer(renderer);
     g_context = context;
     g_headless = headless;
     g_headless_width = headless ? width : 0;
@@ -566,6 +568,7 @@ void worm_ui_frontend_shutdown(void) {
     if (g_window && !g_headless) {
         SDL_StopTextInput(g_window);
     }
+    worm_ui_nuklear_bga_set_renderer(nullptr);
     worm_ui_nuklear_shutdown_player_preview();
     wormedit::ui::lucide::shutdown();
     nk_sdl_shutdown(g_context);
@@ -625,6 +628,23 @@ WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_i
         !std::isfinite(y))
         return {};
     return worm_ui_nuklear_metadata_drop_target(x, y);
+}
+
+void worm_ui_frontend_bga_dock_request(WormUiBgaDockRequest* request) {
+    if (!request) return;
+    const auto& state = worm_ui_nuklear_compose_state();
+    *request = {};
+    request->visible = state.bga_panel_visible && state.bga_list_valid;
+    std::copy(state.bga_search.begin(), state.bga_search.end(), request->search);
+    request->first_row = state.bga_first_row;
+    request->row_limit = state.bga_row_limit;
+}
+
+bool worm_ui_frontend_bga_list_contains(uint32_t window_id, float x, float y) {
+    if (!g_window || (window_id && SDL_GetWindowID(g_window) != window_id)) return false;
+    const auto& state = worm_ui_nuklear_compose_state();
+    return state.bga_list_valid && x >= state.bga_list_x && y >= state.bga_list_y &&
+        x < state.bga_list_x + state.bga_list_width && y < state.bga_list_y + state.bga_list_height;
 }
 
 bool worm_ui_frontend_sound_list_contains(uint32_t window_id, float x, float y) {

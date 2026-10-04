@@ -501,6 +501,21 @@ auto timing_insert_command(command_context_t& context) -> std::optional<command_
     return command_result_t{.accepted = true};
 }
 
+auto select_tool_command(command_context_t& context) -> std::optional<command_result_t> {
+    if (context.command.kind != command_kind_t::edit_tool_select) return std::nullopt;
+    auto* state = context.compose();
+    if (!state) return reject_application_command(context.status, "Select requires the active Compose chart.");
+    if (editor_interaction_has_pending_gesture(*state)) {
+        const auto canceled = wormedit::dispatch_editor_action(
+            context.history, *state, wormedit::cancel_editor_gesture_action_t{});
+        if (!canceled.accepted) return accept_editor_command(canceled, context.status, "Gesture canceled.");
+    }
+    context.application_state.note_paint_mode_active = false;
+    context.application_state.semantic_layer_paint_mode_active = false;
+    context.status = "Select tool active.";
+    return command_result_t{.accepted = true};
+}
+
 auto note_kind_command(command_context_t& context) -> std::optional<command_result_t> {
     if (context.command.kind != command_kind_t::edit_note_kind) return std::nullopt;
     auto* state = context.compose();
@@ -508,7 +523,11 @@ auto note_kind_command(command_context_t& context) -> std::optional<command_resu
         return reject_application_command(context.status, "Note kind requires the active Compose chart.");
     const auto result = wormedit::arm_note_kind(context.history, *state,
         static_cast<wormedit::note_kind_t>(*context.command.note_kind));
-    return accept_editor_command(result, context.status, "Note kind armed.");
+    if (result.accepted) {
+        context.application_state.note_paint_mode_active = true;
+        context.application_state.semantic_layer_paint_mode_active = false;
+    }
+    return accept_editor_command(result, context.status, "Note paint tool armed.");
 }
 
 auto semantic_layer_slot_command(command_context_t& context) -> command_result_t {
@@ -582,6 +601,7 @@ auto invoke_application_command(
                               application_state, status};
     const auto kind = command.kind;
     if (auto result = history_command(context)) return *result;
+    if (auto result = select_tool_command(context)) return *result;
     if (auto result = note_kind_command(context)) return *result;
     if (auto result = transport_command(context)) return *result;
     if (auto result = external_player_command(context)) return *result;

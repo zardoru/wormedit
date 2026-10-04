@@ -41,6 +41,14 @@
 
 namespace wormedit::sys {
 
+// Shared pointer cell resolution for idle paint previews and note placement.
+[[nodiscard]] auto resolve_compose_paint_cell(
+    const wormedit::chart_document_t& chart, const wormedit::editor_hit_test_index_t& index,
+    const wormedit::editor_interaction_view_model_t& view, double x, double y,
+    double field_left, double field_width, bool downscroll, std::uint64_t snap,
+    const dead_span_projection_t* dead_spans = nullptr)
+    -> std::optional<wormedit::editor_hit_target_t>;
+
 inline constexpr double compose_measure_rail_width_pixels{42.0};
 inline constexpr double compose_timing_lane_width_pixels{24.0};
 inline constexpr std::size_t compose_timing_lane_count{8};
@@ -170,6 +178,7 @@ struct compose_scene_cache_t {
     std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
     wormedit::editor_field_scene_request_t preview_scene_request;
     std::optional<wormedit::editor_object_hover_state_t> hover;
+    std::optional<std::pair<double, double>> paint_pointer;
     std::optional<wormedit::editor_object_audition_request_t> audition_request;
     std::optional<bmson_draft_audition_request_t> draft_audition_request;
     std::unordered_map<std::uint64_t, std::size_t> semantic_layer_membership_counts;

@@ -29,6 +29,7 @@ enum class application_command_kind_t {
     edit_cut,
     edit_paste,
     edit_note_kind,
+    edit_tool_select,
     selection_clear,
     selection_select_all,
     selection_invert,

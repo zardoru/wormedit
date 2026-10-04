@@ -1170,3 +1170,22 @@ TEST_CASE("Note layer submenu rejects malformed rows and oversized projections",
     view.note_menu_layer_count = WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY + 1;
     expect_inline(!worm_ui_nuklear_note_layer_window_valid(&view));
 }
+
+TEST_CASE("Sounds dock advance selects its visible successor and rejected placement leaves it alone", "[frontend-state][keysounds]") {
+    auto& state = worm_ui_nuklear_compose_state();
+    state = {};
+    state.armed_from_sounds_dock = true;
+    state.auto_increment_on_place = true;
+    state.armed_resource_id = 40;
+    state.keysound_advance_rows = {{40, false}, {10, true}, {30, false}};
+    state.keysound_selection.selected = {40, 50};
+    worm_ui_nuklear_advance_resource_picker(50, 99);
+    CHECK(state.armed_resource_id == 40);
+    worm_ui_nuklear_advance_resource_picker(40, 99);
+    CHECK(state.armed_resource_id == 30);
+    CHECK(state.keysound_selection.selected == std::vector<std::uint64_t>{30});
+    CHECK(state.keysound_reveal_primary);
+    worm_ui_nuklear_advance_resource_picker(30, 99);
+    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+    state = {};
+}

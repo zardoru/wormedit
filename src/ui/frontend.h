@@ -865,6 +865,25 @@ typedef struct WormUiComposeResourceView {
 } WormUiComposeResourceView;
 
 /* One row of the Compose keysound listbox: a placeable sample of the catalog. */
+typedef struct WormUiComposeBgaRowView {
+    uint64_t resource_id;
+    const char* slot;
+    const char* name;
+    uint32_t use_count;
+    bool missing;
+    bool video;
+    uint64_t image_content_id;
+    uint32_t image_width, image_height;
+    const uint8_t* rgba_pixels;
+    size_t rgba_byte_count;
+} WormUiComposeBgaRowView;
+
+typedef struct WormUiBgaDockRequest {
+    bool visible;
+    char search[64];
+    size_t first_row, row_limit;
+} WormUiBgaDockRequest;
+
 typedef struct WormUiComposeKeysoundRowView {
     uint64_t resource_id;
     /* BMS #WAV index such as "01", or an empty string. */
@@ -1079,6 +1098,12 @@ typedef struct WormUiComposeView {
     const char* selected_note_label;
     uint64_t selected_note_label_note_id;
     bool focus_note_label_editor;
+    const WormUiComposeBgaRowView* bga_rows;
+    size_t bga_row_count, bga_total_matching, bga_first_row;
+    const uint64_t* bga_matching_ids;
+    const char* bga_search;
+    bool paint_ghost_visible;
+    WormUiComposeNoteView paint_ghost;
     bool hover_note_visible;
     uint64_t hover_note_id;
     const char* hover_tooltip;
@@ -1818,6 +1843,8 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE,
     /* Keysound listbox actions. The sound list is compose_sound_resource_ids. */
     WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES,
+    WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES,
+    WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA,
     WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS,
     WORM_UI_COMPOSE_ACTION_AUDITION_SOUND,
     WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER,
@@ -2321,3 +2348,6 @@ typedef enum WormUiFrameRenderPhase {
 // The returned token is opaque to the frontend and restores the prior phase.
 uint32_t worm_ui_frame_render_phase_begin(WormUiFrameRenderPhase phase);
 void worm_ui_frame_render_phase_end(uint32_t previous);
+
+void worm_ui_frontend_bga_dock_request(WormUiBgaDockRequest* request);
+bool worm_ui_frontend_bga_list_contains(uint32_t window_id, float x, float y);

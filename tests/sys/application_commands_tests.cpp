@@ -167,6 +167,78 @@ struct TimingInsertFixture {
     }
 };
 
+void check_paint_cell(bool downscroll, bool snap) {
+    using namespace wormedit;
+    TimingInsertFixture fixture;
+    auto& state = *fixture.compose_state;
+    state.snap_enabled = snap;
+    state.viewport_height_pixels = 600;
+    state.viewport_scroll_pixels = 0;
+    state.pixels_per_standard_measure = 960;
+    const auto& chart = fixture.fixture.history.document.charts.front();
+    const auto inspected = inspect_editor_interaction(fixture.fixture.history, state);
+    const auto& view = std::get<editor_interaction_view_model_t>(inspected);
+    const auto built = build_editor_hit_test_index(chart, fixture.fixture.history.document.revision);
+    const auto& index = std::get<editor_hit_test_index_t>(built);
+    const auto target = resolve_compose_paint_cell(chart, index, view, 50,
+        downscroll ? 263 : 337, 42, 48, downscroll, edit_snap_denominator(chart, state));
+    REQUIRE(target);
+    CHECK(target->position.row == (snap ? 240 : 337));
+    state.active_lane = target->lane;
+    const auto placed = dispatch_editor_action(fixture.fixture.history, state,
+        place_tap_action_t{target->position});
+    REQUIRE(placed.document_changed);
+    const auto& notes = fixture.fixture.history.document.charts.front().measures.front().notes;
+    CHECK(std::ranges::any_of(notes, [&](const auto& note) { return note.position == target->position; }));
+}
+
+TEST_CASE("Compose paint ghost cell equals placement with snap and either scroll direction",
+          "[sys][application_commands][paint-ghost]") {
+    check_paint_cell(false, false);
+    check_paint_cell(false, true);
+    check_paint_cell(true, false);
+    check_paint_cell(true, true);
+}
+
+TEST_CASE("Note kind shortcut activates paint and keeps it active when repeated", "[sys][application_commands][palette-repro]") {
+    TimingInsertFixture fixture;
+    const auto result = invoke_application_command(
+        {.kind = application_command_kind_t::edit_note_kind, .note_kind = 1},
+        fixture.fixture.history, fixture.workspace, fixture.compose_state, fixture.preview,
+        fixture.application_state, fixture.status);
+    REQUIRE(result.accepted);
+    CHECK(fixture.compose_state->armed_note_kind == wormedit::note_kind_t::hold);
+    CHECK(fixture.application_state.note_paint_mode_active);
+    CHECK(invoke_application_command(
+        {.kind = application_command_kind_t::edit_note_kind, .note_kind = 1},
+        fixture.fixture.history, fixture.workspace, fixture.compose_state, fixture.preview,
+        fixture.application_state, fixture.status).accepted);
+    CHECK(fixture.application_state.note_paint_mode_active);
+}
+
+TEST_CASE("Select shortcut ends note paint without changing the armed kind", "[sys][application_commands]") {
+    TimingInsertFixture fixture;
+    fixture.application_state.note_paint_mode_active = true;
+    fixture.compose_state->armed_note_kind = wormedit::note_kind_t::hold;
+    REQUIRE(fixture.invoke(application_command_kind_t::edit_tool_select).accepted);
+    CHECK_FALSE(fixture.application_state.note_paint_mode_active);
+    CHECK(fixture.compose_state->armed_note_kind == wormedit::note_kind_t::hold);
+    fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
+    CHECK_FALSE(fixture.invoke(application_command_kind_t::edit_tool_select).accepted);
+}
+
+TEST_CASE("Disallowed note kind leaves Select and the armed kind unchanged", "[sys][application_commands]") {
+    TimingInsertFixture fixture;
+    fixture.fixture.history.document.charts.front().source_family = wormedit::format_family_t::bms;
+    const auto result = invoke_application_command(
+        {.kind = application_command_kind_t::edit_note_kind, .note_kind = 2},
+        fixture.fixture.history, fixture.workspace, fixture.compose_state, fixture.preview,
+        fixture.application_state, fixture.status);
+    CHECK_FALSE(result.accepted);
+    CHECK_FALSE(fixture.application_state.note_paint_mode_active);
+    CHECK(fixture.compose_state->armed_note_kind == wormedit::note_kind_t::tap);
+}
+
 auto bpm_preview_matches(const wormedit::timing_lane_pseudonote_preview_t& preview,
                          wormedit::local_position_t cursor) -> bool {
     using namespace wormedit;
@@ -555,7 +627,7 @@ void check_note_kind_command_shortcut(const wormedit::command_registry_t& regist
     REQUIRE(registration != registry.commands.end());
     REQUIRE(registration->default_shortcuts.size() == 1);
     CHECK(registration->default_shortcuts.front().key ==
-        static_cast<shortcut_key_t>(static_cast<unsigned>(shortcut_key_t::digit_1) + index));
+        static_cast<shortcut_key_t>(static_cast<unsigned>(shortcut_key_t::digit_2) + index));
     CHECK(registration->default_shortcuts.front().modifiers ==
         static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt));
 }

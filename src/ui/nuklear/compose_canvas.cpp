@@ -1651,6 +1651,27 @@ static void draw_compose_note(const ComposePaintContext& paint,
     draw_compose_note_sound_label(paint, note, tile, style.fill);
 }
 
+static void draw_compose_paint_ghost(const ComposePaintContext& paint) {
+    if (!paint.view->paint_ghost_visible) return;
+    const auto& note = paint.view->paint_ghost;
+    auto fill = compose_note_base_fill(worm_ui_nuklear_compose_state().color_view, note);
+    if (note.paint_invalid_preview) fill = nk_rgb(245, 178, 65);
+    else if (note.paint_erase_preview) fill = nk_rgb(244, 94, 111);
+    fill.a = 115;
+    const auto rect = compose_screen_rect(&note.bounds, paint.view, paint.viewport);
+    const auto tile = nk_rect(rect.x + 1, rect.y, std::max(1.0f, rect.w - 2), std::max(2.0f, rect.h));
+    if (note.glyph < 2 || note.glyph > 5 || tile.w < 10) {
+        field_rect(paint, tile, 0, fill, 2);
+        return;
+    }
+    const auto authored = wormedit::ui::arrow_polygon(
+        note.glyph, tile.x, tile.y + (tile.h - tile.w) * .5f, tile.w);
+    std::array<SDL_FPoint, 7> points{};
+    for (std::size_t index = 0; index < authored.size(); ++index)
+        points[index] = {std::trunc(authored[index].x), std::trunc(authored[index].y)};
+    paint_field(paint.context).polygon(2, points, field_color(fill), 1);
+}
+
 static void draw_compose_notes(const ComposePaintContext& paint) {
     for (size_t index = 0; index < paint.view->note_endpoint_count; ++index) {
         draw_compose_note(paint, paint.view->note_endpoints[index]);
@@ -2246,6 +2267,7 @@ void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* vie
             note_holes ? std::span<const SDL_FRect>(*note_holes) : std::span<const SDL_FRect>{});
         if (wormedit::ui::compose_notes_dimmed(compose_mode_of(*paint.view)))
             draw_compose_notes_veil(paint);
+        draw_compose_paint_ghost(paint);
         draw_compose_foreground_markers(paint);
         draw_compose_editor_overlays(paint, hovered_bgm);
     }

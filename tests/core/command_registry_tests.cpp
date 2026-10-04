@@ -585,3 +585,24 @@ TEST_CASE("Primary V starts paste only for the Compose input owner", "[unit][com
           command_dispatch_status_t::focus_consumed);
     CHECK(calls->size() == 1);
 }
+
+TEST_CASE("Compose palette Alt digits select exactly one tool", "[core][command-registry]") {
+    using namespace wormedit;
+    std::string invoked;
+    const auto registry = make_default_editor_command_registry([&](const auto& context) {
+        invoked = context.command.value;
+        return command_invocation_result_t{.accepted = true};
+    });
+    const std::array ids{"edit.tool_select", "edit.note_kind_tap", "edit.note_kind_hold",
+        "edit.note_kind_mine", "edit.note_kind_invisible", "edit.note_kind_lift",
+        "edit.note_kind_fake", "edit.note_kind_roll"};
+    for (unsigned digit = 0; digit < ids.size(); ++digit) {
+        invoked.clear();
+        const auto result = dispatch_shortcut(registry,
+            {.chord = {static_cast<shortcut_key_t>(static_cast<unsigned>(shortcut_key_t::digit_1) + digit),
+                       static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt)}},
+            focus_for_compose(),
+            shortcut_primary_modifier_t::control);
+        CHECK(invoked == ids[digit]);
+    }
+}

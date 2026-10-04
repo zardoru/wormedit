@@ -156,12 +156,15 @@ void collect_shown_and_masks(const SoundsPanel& panel) {
     const auto& view = *panel.view;
     const std::string_view query{state.keysound_search.data()};
     state.keysound_shown.clear();
+    state.keysound_advance_rows.clear();
     state.keysound_masks.clear();
     for (std::size_t index = 0; index < view.keysound_count; ++index) {
         const auto& row = view.keysounds[index];
         state.keysound_masks.push_back({row.resource_id, row.layer_mask});
-        if (worm_ui_keysound_matches(row.slot, row.name, query))
+        if (worm_ui_keysound_matches(row.slot, row.name, query)) {
             state.keysound_shown.push_back(row.resource_id);
+            state.keysound_advance_rows.push_back({row.resource_id, row.missing});
+        }
     }
 }
 
@@ -202,9 +205,9 @@ void render_toolbar(const SoundsPanel& panel) {
                           worm_ui_nuklear_compose_resource_pointer_mode_t::place;
     const auto spacing = context->style.window.spacing;
     const auto pushed = nk_style_push_vec2(context, &context->style.window.spacing,
-                                           nk_vec2(1.0f, spacing.y)) != 0;
+                                           nk_vec2(2.0f, spacing.y)) != 0;
     nk_layout_row_template_begin(context, 27);
-    IconButton::layout_columns(context, 8);
+    IconButton::layout_columns(context, 9, 27.0f);
     nk_layout_row_template_end(context);
 
     const auto can_paint = paint_allowed(panel);
@@ -215,6 +218,9 @@ void render_toolbar(const SoundsPanel& panel) {
                            : "Paint: select a sound first (and leave note paint mode)",
                        painting}))
         toggle_paint(panel);
+    if (IconButton{Glyph::chevron_right, "Advance after place: arm the next available sound shown",
+                   state.auto_increment_on_place}.render(context))
+        state.auto_increment_on_place = !state.auto_increment_on_place;
     if (toolbar_button(context, has_primary,
             IconButton{Glyph::play, "Play the selected sound (Space on the list)"}) &&
         raise(panel, WORM_UI_COMPOSE_ACTION_AUDITION_SOUND))
@@ -453,6 +459,7 @@ void click_row(const SoundsPanel& panel, std::size_t shown_index, std::uint64_t 
     const auto* primary = find_row(*panel.view, state.keysound_selection.primary);
     state.armed_resource_id = primary && !primary->missing ? primary->resource_id : 0;
     state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
+    state.armed_from_sounds_dock = true;
     if (state.sounds_preview_on_click && !ctrl && !shift && id == state.armed_resource_id &&
         raise(panel, WORM_UI_COMPOSE_ACTION_AUDITION_SOUND))
         panel.action->compose_resource_id = id;
@@ -492,6 +499,15 @@ void render_list(const SoundsPanel& panel, float height) {
     auto* context = panel.context;
     const auto count = static_cast<int>(panel.state->keysound_shown.size());
     nk_layout_row_dynamic(context, height, 1);
+    if (panel.state->keysound_reveal_primary) {
+        const auto primary = std::ranges::find(panel.state->keysound_shown,
+                                               panel.state->keysound_selection.primary);
+        if (primary != panel.state->keysound_shown.end())
+            nk_group_set_scroll(context, "Compose sound list", 0,
+                static_cast<nk_uint>(std::distance(panel.state->keysound_shown.begin(), primary) *
+                    (row_height + context->style.window.spacing.y)));
+        panel.state->keysound_reveal_primary = false;
+    }
     struct nk_list_view list{};
     if (!nk_list_view_begin(context, &list, "Compose sound list", NK_WINDOW_BORDER,
                             static_cast<int>(row_height), std::max(count, 1))) return;

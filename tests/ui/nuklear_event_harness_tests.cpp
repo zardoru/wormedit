@@ -166,6 +166,36 @@ TEST_CASE("Headless frontend emits Delete shortcut press with focused Compose co
     CHECK(delete_shortcut_has_compose_context(pressed.get()));
 }
 
+TEST_CASE("Headless frontend routes Alt digit to Compose while Select remains active",
+          "[frontend-state][event-harness][palette-shortcuts]") {
+    nuklear_event_harness_t harness;
+    REQUIRE(harness.ready());
+    (void)harness.frame();
+    const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
+    const auto action = harness.frame(std::span{&press, 1}, SDL_KMOD_LALT);
+    REQUIRE(action.get().shortcut_event_count == 1);
+    CHECK(action.get().shortcut_events[0].hid_usage == SDL_SCANCODE_2);
+    CHECK_FALSE(action.get().shortcut_text_entry_active);
+    CHECK_FALSE(harness.view().compose.note_paint_mode_active);
+}
+
+TEST_CASE("Headless frontend routes Alt1 after the Hold shortcut", "[frontend-state][event-harness]") {
+    nuklear_event_harness_t harness;
+    REQUIRE(harness.ready());
+    (void)harness.frame();
+    const auto hold = key_event(SDL_EVENT_KEY_DOWN, SDLK_3, SDL_SCANCODE_3);
+    const auto painting = harness.frame(std::span{&hold, 1}, SDL_KMOD_LALT);
+    REQUIRE(painting.get().shortcut_event_count == 1);
+    CHECK(painting.get().shortcut_events[0].hid_usage == SDL_SCANCODE_3);
+    harness.view().compose.note_paint_mode_active = true;
+    (void)harness.frame();
+    const auto select = key_event(SDL_EVENT_KEY_DOWN, SDLK_1, SDL_SCANCODE_1);
+    const auto selecting = harness.frame(std::span{&select, 1}, SDL_KMOD_LALT);
+    REQUIRE(selecting.get().shortcut_event_count == 1);
+    CHECK(selecting.get().shortcut_events[0].hid_usage == SDL_SCANCODE_1);
+    CHECK_FALSE(selecting.get().shortcut_text_entry_active);
+}
+
 TEST_CASE("Headless frontend ignores Delete shortcut release",
           "[unit][frontend-state][frontend][event-harness]") {
     nuklear_event_harness_t harness;
@@ -949,9 +979,9 @@ TEST_CASE("Disabled song bar icon keeps its tooltip and emits no toggle action",
     REQUIRE(harness.ready());
     harness.view().compose.bgm_bar_available = false;
     (void)harness.frame();
-    hover_at(harness, 435, 122);
+    hover_at(harness, 460, 122);
     check_tooltip_text(harness, "Song audio is unavailable");
-    const auto clicked = click_at(harness, 435, 122);
+    const auto clicked = click_at(harness, 460, 122);
     check_no_toolbar_document_actions(clicked);
     for (const auto& frame : clicked) {
         const auto& action = frame.get();
@@ -1010,4 +1040,37 @@ TEST_CASE("Clicking selected and unselected notes emits one audition selection",
           "[unit][frontend-state][event-harness][audition][regression]") {
     check_note_click_emitted_once(false);
     check_note_click_emitted_once(true);
+}
+
+namespace { void check_bga_dock(bool value) { CHECK(value); } }
+
+TEST_CASE("BGA dock reuses list selection and arms resources outside the drawer window", "[frontend-state][event-harness][bga]") {
+    nuklear_event_harness_t harness{1600, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    const std::array<std::uint64_t, 2> ids{1400, 1500};
+    const std::array<WormUiComposeBgaRowView, 2> rows{{
+        {.resource_id = 1400, .slot = "01", .name = "clip.png", .use_count = 2},
+        {.resource_id = 1500, .slot = "02", .name = "missing.png", .missing = true}}};
+    view.bga_rows = rows.data(); view.bga_row_count = rows.size();
+    view.bga_total_matching = ids.size(); view.bga_matching_ids = ids.data(); view.bga_search = "";
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.bga_panel_visible = true;
+    (void)harness.frame();
+    REQUIRE(state.bga_list_valid);
+    check_bga_dock(harness.drawn_text().find("clip.png") != std::string::npos);
+    INFO("BGA bounds " << state.bga_list_x << "," << state.bga_list_y << "," << state.bga_list_width << "," << state.bga_list_height);
+    (void)click_at(harness, state.bga_list_x + 70, state.bga_list_y + 112);
+    check_bga_dock(state.bga_selection.primary == 1400);
+    check_bga_dock(state.armed_resource_id == 1400);
+    check_bga_dock(state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::bga);
+    (void)click_at(harness, state.bga_list_x + 22, state.bga_list_y + 43);
+    check_bga_dock(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
+    view.bga_rows = rows.data() + 1; view.bga_row_count = 1; view.bga_first_row = 1;
+    (void)harness.frame();
+    check_bga_dock(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
+    state.bga_panel_visible = false;
+    (void)harness.frame();
+    CHECK_FALSE(state.bga_list_valid);
 }

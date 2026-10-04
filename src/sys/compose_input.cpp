@@ -1029,6 +1029,9 @@ void update_compose_pointer_hover(const WormUiWorkspaceAction& ui_action, bool g
                                   double field_width_pixels, compose_scene_cache_t& scene_cache,
                                   const wormedit::editor_preferences_t& preferences) {
     using namespace wormedit;
+    scene_cache.paint_pointer = ui_action.compose_has_pointer_hover && !gesture_active
+        ? std::optional{std::pair{ui_action.compose_pointer_hover_x_pixels,
+                                  ui_action.compose_pointer_hover_y_pixels}} : std::nullopt;
     if (!ui_action.compose_has_pointer_hover || gesture_active || !chart || !interaction_view) {
         scene_cache.hover.reset();
     } else {
@@ -1136,6 +1139,12 @@ struct compose_input_context_t {
             scene_cache.hit_test_index =
                 std::get<wormedit::editor_hit_test_index_t>(std::move(built));
         }
+        if (application_state.note_paint_mode_active)
+            return resolve_compose_paint_cell(chart, *scene_cache.hit_test_index, view,
+                x_pixels, y_pixels, field_left_pixels, field_width_pixels,
+                compose_field_downscroll(chart, application_state.editor_preferences),
+                wormedit::edit_snap_denominator(chart, state),
+                scene_cache.dead_spans ? &*scene_cache.dead_spans : nullptr);
         return wormedit::hit_test_editor(
             chart, *scene_cache.hit_test_index, view,
             {.x_pixels = x_pixels,

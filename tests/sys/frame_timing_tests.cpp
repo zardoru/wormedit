@@ -3505,3 +3505,43 @@ TEST_CASE("Note click audition can be disabled without suppressing selection",
     check_click_audition_preference(true);
     check_click_audition_preference(false);
 }
+
+TEST_CASE("Idle paint ghost follows hover without rebuilding the retained scene", "[sys][paint-ghost]") {
+    compose_test_fixture_t fixture;
+    fixture.application.note_paint_mode_active = true;
+    fixture.project();
+    const auto& view = fixture.flattened.view.compose;
+    const auto lane = view.lanes[0];
+    const auto x = (lane.bounds.left + lane.bounds.right) * .5;
+    const auto source_y = view.pixels_per_standard_measure * .375 - fixture.interaction->viewport_scroll_pixels;
+    const auto y = view.downscroll ? view.viewport_height_pixels - source_y : source_y;
+    fixture.cache.paint_pointer = std::pair{x, y};
+    fixture.project();
+    REQUIRE(fixture.flattened.view.compose.paint_ghost_visible);
+    const auto builds = fixture.cache.static_scene_rebuild_count;
+    fixture.cache.paint_pointer = std::pair{x, y + 30};
+    fixture.project();
+    CHECK(fixture.flattened.view.compose.paint_ghost_visible);
+    CHECK(fixture.cache.static_scene_rebuild_count == builds);
+    CHECK(fixture.history.undo.empty());
+    const auto endpoint = fixture.flattened.view.compose.note_endpoints[0];
+    fixture.cache.paint_pointer = std::pair{(endpoint.bounds.left + endpoint.bounds.right) * .5,
+                                           (endpoint.bounds.top + endpoint.bounds.bottom) * .5};
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.paint_ghost_visible);
+    const auto ghost = fixture.flattened.view.compose.paint_ghost;
+    expect_compose_test(ghost.paint_erase_preview);
+    expect_compose_test(std::abs(ghost.bounds.top - endpoint.bounds.top) < 1e-9);
+    expect_compose_test(std::abs(ghost.bounds.bottom - endpoint.bounds.bottom) < 1e-9);
+    fixture.interaction->armed_note_kind = note_kind_t::hold;
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.paint_ghost.kind == 1);
+    expect_compose_test(fixture.flattened.view.compose.hold_body_count == 0);
+    fixture.cache.paint_pointer.reset();
+    fixture.project();
+    CHECK_FALSE(fixture.flattened.view.compose.paint_ghost_visible);
+    fixture.cache.paint_pointer = std::pair{x, y};
+    fixture.application.note_paint_mode_active = false;
+    fixture.project();
+    CHECK_FALSE(fixture.flattened.view.compose.paint_ghost_visible);
+}

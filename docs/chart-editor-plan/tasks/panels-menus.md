@@ -97,7 +97,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-230 Add the Images panel (BMP/BGA slot list)
 
-- **Status:** blocked-on T-229
+- **Status:** merged into [T-347 and T-352](compose-followups.md) (2026-10-03): the BGA dock follows the T-335 keysound column instead of the T-228 dock; T-347 carries the list and thumbnails, T-352 name order and ID capacity. A slot view is not planned (user clarification 2026-10-03). Do not start this card.
 - **Outcome:** same behavior as T-229 for `#BMP` slots and BGA resources, with thumbnails (T-49) at 32 px.
 - **Read first:** `src/ui/nuklear/sounds_panel.cpp`, `src/ui/nuklear/player_preview_texture.h`, `include/wormedit/visual/image_job.h`.
 - **Files owned:** new `src/ui/nuklear/images_panel.cpp/.h`, `src/sys/compose_resource_presenter.cpp/.h`, `src/ui/frontend.h`, `CMakeLists.txt`.

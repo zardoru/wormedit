@@ -4,6 +4,7 @@
 #include <wormedit/core/sv_recipe.h>
 #include "sys/compose_label_search.h"
 #include "sys/compose_sound_actions.h"
+#include "sys/compose_bga_actions.h"
 #include "sys/compose_measure_commands.h"
 #include "sys/compose_selection_transform.h"
 #include "sys/compose_area_actions.h"
@@ -897,6 +898,11 @@ std::optional<std::string> dispatch_compose_resource_action(compose_action_conte
         return dispatch_compose_export_output_group_action(context);
     case WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE:
         return dispatch_compose_place_resource_action(context);
+    case WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES:
+    case WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA:
+        if (editor_interaction_has_pending_gesture(context.state))
+            return "Finish or cancel the active Compose gesture before editing BGA.";
+        return dispatch_compose_bga_action(context.action, context.history, context.workspace, context.state.chart);
     case WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES:
     case WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS:
     case WORM_UI_COMPOSE_ACTION_AUDITION_SOUND:

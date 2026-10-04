@@ -25,6 +25,7 @@ auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_dr
                           std::string& pending_audio_project_path,
                           std::string& pending_chart_project_path,
                           std::vector<std::string>& pending_sound_paths,
+                          std::vector<std::string>& pending_bga_paths,
                           std::string& status) -> bool;
 
 void poll_application_jobs(runtime::metadata_asset_t& metadata_assets,

@@ -375,16 +375,95 @@ TEST_CASE("same-row BPM source order controls beat-derived pause duration",
     CHECK(seconds_at(*built.index, 240) == signed_rational_t{2, 1});
 }
 
-TEST_CASE("sample-frame conversion is exact with explicit rounding and negative bounds",
+TEST_CASE("sample-frame conversion is exact with explicit rounding",
           "[unit][core][timing][sample-frame]") {
     CHECK(sample_frame_at({1, 2}, 44'100).frame == 22'050);
     CHECK(sample_frame_at({1, 2}, 1, sample_rounding_t::floor).frame == 0);
     CHECK(sample_frame_at({1, 2}, 1, sample_rounding_t::ceil).frame == 1);
     CHECK(sample_frame_at({1, 2}, 1, sample_rounding_t::nearest_ties_to_even).frame == 0);
     CHECK(sample_frame_at({3, 2}, 1, sample_rounding_t::nearest_ties_to_even).frame == 2);
+}
+
+TEST_CASE("sample-frame conversion rejects negative times",
+          "[unit][core][timing][sample-frame]") {
     const auto negative = sample_frame_at({-1, 2}, 44'100);
     REQUIRE_FALSE(negative);
     CHECK(negative.error->code == timing_error_code_t::negative_sample_frame);
+}
+
+TEST_CASE("sample-frame conversion divides a wide coprime rational",
+          "[unit][core][timing][sample-frame]") {
+    const auto near_one = sample_frame_at(
+        {9'000'000'000'000'000'001LL, 100'000'000'000'000'003ULL}, 48'000,
+        sample_rounding_t::nearest_ties_to_even);
+    REQUIRE(near_one);
+    CHECK(near_one.frame == 4'320'000);
+}
+
+TEST_CASE("sample-frame conversion handles the osu cursor time at 44.1 kHz",
+          "[unit][core][timing][sample-frame]") {
+    const auto cursor_row = sample_frame_at(
+        {1'046'902'753'305'360'727LL, 14'284'000'000'000'000ULL}, 44'100,
+        sample_rounding_t::floor);
+    REQUIRE(cursor_row);
+    CHECK(cursor_row.frame == 3'232'176);
+    const auto rounded_cursor_row = sample_frame_at(
+        {1'046'902'753'305'360'727LL, 14'284'000'000'000'000ULL}, 44'100,
+        sample_rounding_t::ceil);
+    REQUIRE(rounded_cursor_row);
+    CHECK(rounded_cursor_row.frame == 3'232'177);
+}
+
+TEST_CASE("sample-frame conversion supports the full sample-rate range",
+          "[unit][core][timing][sample-frame]") {
+    constexpr auto rate = std::numeric_limits<std::uint32_t>::max();
+    const auto maximum_rate = sample_frame_at({1, 1}, rate, sample_rounding_t::floor);
+    REQUIRE(maximum_rate);
+    CHECK(maximum_rate.frame == rate);
+    const auto wide_maximum_rate = sample_frame_at(
+        {std::numeric_limits<std::int64_t>::max(),
+         static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) - 1},
+        rate, sample_rounding_t::nearest_ties_to_even);
+    REQUIRE(wide_maximum_rate);
+    CHECK(wide_maximum_rate.frame == rate);
+}
+
+TEST_CASE("sample-frame conversion supports the maximum uint64 frame",
+          "[unit][core][timing][sample-frame]") {
+    constexpr auto maximum_frame = std::numeric_limits<std::uint64_t>::max();
+    const auto exact_maximum = sample_frame_at({6'148'914'691'236'517'205LL, 1}, 3,
+                                               sample_rounding_t::floor);
+    REQUIRE(exact_maximum);
+    CHECK(exact_maximum.frame == maximum_frame);
+}
+
+TEST_CASE("sample-frame conversion reports a rounding carry past UINT64_MAX",
+          "[unit][core][timing][sample-frame]") {
+    constexpr auto maximum_frame = std::numeric_limits<std::uint64_t>::max();
+    const auto below_rounded_maximum = sample_frame_at(
+        {8'198'552'921'648'689'607LL, 4}, 9, sample_rounding_t::floor);
+    REQUIRE(below_rounded_maximum);
+    CHECK(below_rounded_maximum.frame == maximum_frame);
+    const auto ceil_overflow = sample_frame_at(
+        {8'198'552'921'648'689'607LL, 4}, 9, sample_rounding_t::ceil);
+    REQUIRE_FALSE(ceil_overflow);
+    CHECK(ceil_overflow.error->code == timing_error_code_t::arithmetic_overflow);
+    const auto nearest_overflow = sample_frame_at(
+        {8'198'552'921'648'689'607LL, 4}, 9, sample_rounding_t::nearest_ties_to_even);
+    REQUIRE_FALSE(nearest_overflow);
+    CHECK(nearest_overflow.error->code == timing_error_code_t::arithmetic_overflow);
+}
+
+TEST_CASE("sample-frame conversion rejects a quotient that exceeds uint64",
+          "[unit][core][timing][sample-frame]") {
+    constexpr auto rate = std::numeric_limits<std::uint32_t>::max();
+    const auto overflow = sample_frame_at({std::numeric_limits<std::int64_t>::max(), 1}, rate,
+                                          sample_rounding_t::floor);
+    REQUIRE_FALSE(overflow);
+    CHECK(overflow.error->code == timing_error_code_t::arithmetic_overflow);
+    const auto invalid = sample_frame_at({1, 0}, rate);
+    REQUIRE_FALSE(invalid);
+    CHECK(invalid.error->code == timing_error_code_t::invalid_document);
 }
 
 TEST_CASE("preview schedule keeps separate sorted queues and stable simultaneous order",

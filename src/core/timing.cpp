@@ -1,5 +1,7 @@
 #include <wormedit/core/timing.h>
 
+#include "wide_math.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -1445,12 +1447,21 @@ auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
     const auto reduced_rate = sample_rate / divisor;
     denominator /= divisor;
     const auto product = checked_multiply(numerator, reduced_rate);
-    if (!product) {
-        return {.error = error(timing_error_code_t::arithmetic_overflow,
-                               "sample-frame conversion overflows")};
+    auto whole = std::uint64_t{};
+    auto remainder = std::uint64_t{};
+    if (product) {
+        whole = *product / denominator;
+        remainder = *product % denominator;
+    } else {
+        const auto quotient = wide_math::divide(
+            wide_math::multiply(numerator, reduced_rate), {0, denominator});
+        if (!wide_math::fits_u64(quotient.quotient)) {
+            return {.error = error(timing_error_code_t::arithmetic_overflow,
+                                   "sample-frame conversion overflows")};
+        }
+        whole = quotient.quotient.low;
+        remainder = quotient.remainder.low;
     }
-    const auto whole = *product / denominator;
-    const auto remainder = *product % denominator;
     auto frame = whole;
     if (rounding == sample_rounding_t::ceil && remainder != 0) {
         if (frame == std::numeric_limits<std::uint64_t>::max()) {

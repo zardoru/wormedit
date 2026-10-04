@@ -32,3 +32,12 @@ now succeed. Independent runtime probe registers the real `Hybris.ogg` and
 checks start at the cursor, clock advancement, pause, resume, and music binding
 for all eight native imports with SDL dummy audio. Logs are under
 `/tmp/wormedit-batch-implementation/osutest-playback-*`.
+
+Root integrated Debug build and 136 focused checks pass, as do all 127 current
+CTest-isolated frontend event-harness cases. Independent Sol review accepts the
+change and reran 13 core/settings and two SDL cases successfully. Its sustained
+runtime probe passes all eight real charts twice, checking twenty consecutive
+advancing-clock samples, active output, music binding, pause and resume. The
+earlier probe had one transient zero-frame re-read; the exact cause was not
+conclusively reproduced and the failing log is retained. Sustained runtime logs
+are `osutest-playback-independent-instrumented.log` and `-repeat.log`.

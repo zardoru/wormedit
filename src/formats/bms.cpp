@@ -746,15 +746,51 @@ auto resolution_for_slots(std::uint64_t current_resolution, const measure_defini
     return checked_lcm(current_resolution, required_multiple);
 }
 
-auto parse_positive_rational(std::string_view text) -> std::optional<signed_rational_t> {
-    const auto parsed = parse_measure_length(text);
-    if (!parsed.value.has_value() ||
-        parsed.value->numerator >
-            static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+// Parses the optional signed decimal exponent after 'e'/'E' (as in "1.00001E+07").
+auto parse_decimal_exponent(std::string_view text) -> std::optional<int> {
+    const bool negative = !text.empty() && text.front() == '-';
+    if (!text.empty() && (text.front() == '-' || text.front() == '+')) text.remove_prefix(1);
+    int magnitude{};
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), magnitude);
+    if (text.empty() || parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() ||
+        magnitude > 38) {
         return std::nullopt;
     }
-    return signed_rational_t{static_cast<std::int64_t>(parsed.value->numerator),
-                             parsed.value->denominator};
+    return negative ? -magnitude : magnitude;
+}
+
+// Scales one side of an exact value by 10^count; nullopt on overflow.
+auto scale_by_power_of_ten(std::uint64_t value, int count) -> std::optional<std::uint64_t> {
+    for (int index = 0; index < count; ++index) {
+        if (value > std::numeric_limits<std::uint64_t>::max() / 10) return std::nullopt;
+        value *= 10;
+    }
+    return value;
+}
+
+// BMS BPM and STOP declarations are decimals or fractions, optionally with a
+// decimal exponent; players read them as doubles, so charts use "1.00001E+07".
+auto parse_positive_rational(std::string_view text) -> std::optional<signed_rational_t> {
+    std::optional<int> exponent{0};
+    if (const auto marker = text.find_first_of("eE"); marker != std::string_view::npos) {
+        exponent = parse_decimal_exponent(text.substr(marker + 1));
+        text = text.substr(0, marker);
+    }
+    const auto parsed = parse_measure_length(text);
+    if (!exponent || !parsed.value.has_value()) return std::nullopt;
+    auto numerator = std::optional{parsed.value->numerator};
+    auto denominator = std::optional{parsed.value->denominator};
+    if (*exponent >= 0)
+        numerator = scale_by_power_of_ten(*numerator, *exponent);
+    else
+        denominator = scale_by_power_of_ten(*denominator, -*exponent);
+    if (!numerator || !denominator ||
+        *numerator > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        return std::nullopt;
+    }
+    const auto divisor = std::gcd(*numerator, *denominator);
+    return signed_rational_t{static_cast<std::int64_t>(*numerator / divisor),
+                             *denominator / divisor};
 }
 
 auto parse_signed_decimal_seconds(std::string_view text) -> std::optional<signed_rational_t> {

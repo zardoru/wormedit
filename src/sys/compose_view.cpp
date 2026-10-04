@@ -247,6 +247,9 @@ static void populate_lane_profile_choices(WormUiComposeView& view, const wormedi
         if (layout.profile_id == segment->layout.profile_id)
             view.lane_profile_current = static_cast<std::int8_t>(index);
     }
+    // The switcher only covers osu!mania/StepMania key modes. A layout outside it (BMS DP7,
+    // custom maps) must not show as the first choice, where one click would convert it.
+    if (view.lane_profile_current < 0) return;
     view.lane_profile_choice_count = static_cast<std::uint8_t>(count);
 }
 

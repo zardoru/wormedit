@@ -3618,3 +3618,19 @@ TEST_CASE("Idle paint ghost follows hover without rebuilding the retained scene"
     fixture.project();
     CHECK_FALSE(fixture.flattened.view.compose.paint_ghost_visible);
 }
+
+TEST_CASE("Lane profile switcher hides itself for layouts it cannot represent",
+          "[sys][lane-profile-switch][regression]") {
+    // A BMS DP7 chart has 16 lanes, the same count as osu!mania 16K. The switcher only lists
+    // osu!mania/StepMania key modes, so it must not present DP7 as its first entry.
+    compose_test_fixture_t custom{compose_test_song()};
+    custom.project();
+    CHECK(custom.flattened.view.compose.lane_profile_choice_count == 0);
+
+    auto song = compose_test_song();
+    song.charts.front().lane_layouts.front().layout.profile_id = "osu-mania-1k";
+    compose_test_fixture_t mania{std::move(song)};
+    mania.project();
+    CHECK(mania.flattened.view.compose.lane_profile_choice_count >= 1);
+    CHECK(mania.flattened.view.compose.lane_profile_current == 0);
+}

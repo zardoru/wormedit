@@ -2,6 +2,7 @@
 #include <wormedit/core/timing.h>
 #include <wormedit/formats/bms.h>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -174,6 +175,64 @@ TEST_CASE("BMS reader imports metadata, source bytes, measures and resource decl
     CHECK((*ratio_line)->source_span.byte_end > (*ratio_line)->source_span.byte_begin);
     CHECK((*ratio_line)->line_ending == wormedit::bms_line_ending_t::lf);
     CHECK(wormedit::validate_document(song).empty());
+}
+
+TEST_CASE("NULCTRL: stops end when a real player says they do",
+          "[unit][format][bms][timing][regression]") {
+    // NULCTRL (G2R2018) gimmick: a 1/8 measure stops at BPM 100, then jumps to
+    // 1.00001E+07 BPM one slot later so the rest of the measure passes instantly.
+    constexpr std::string_view source = "#BPM 100\n"
+                                        "#WAV01 kick.wav\n"
+                                        "#BPM01 1.00001E+07\n"
+                                        "#BPM02 25e-1\n"
+                                        "#STOP01 47\n"
+                                        "#STOP02 4.7E+1\n"
+                                        "#BPM03 1E+39\n"
+                                        "#BPM04 1e\n"
+                                        "#00002:0.125\n"
+                                        "#00003:64\n"
+                                        "#00009:01\n"
+                                        "#00008:000100000000000000000000000000000000000000000000\n"
+                                        "#00111:01\n";
+    const auto parsed = parse(source);
+    REQUIRE(parsed.song.has_value());
+    const auto& chart = parsed.song->charts.front();
+    REQUIRE(chart.bpms.size() == 3);
+    CHECK((chart.bpms[2].beats_per_minute == wormedit::signed_rational_t{10'000'100, 1}));
+    REQUIRE(chart.pauses.size() == 1);
+    CHECK((chart.pauses[0].duration == wormedit::signed_rational_t{47, 1}));
+    const auto invalid = std::ranges::count_if(parsed.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.message.starts_with("BPM declaration is not a positive exact number");
+    });
+    CHECK(invalid == 2); // 1E+39 overflows; "1e" has no exponent digits.
+
+    const auto timing = wormedit::build_timing_index(chart);
+    REQUIRE(timing);
+    // The 1/8 measure #000 ends at an eighth of a standard measure.
+    const auto measure_one = timing.index->divisions_per_standard_measure / 8;
+    const auto at = wormedit::timing_at(*timing.index, measure_one);
+    REQUIRE(at.seconds.has_value());
+    const auto seconds = static_cast<double>(at.seconds->numerator) /
+                         static_cast<double>(at.seconds->denominator);
+    // The STOP is 47/192 of a whole note at 100 BPM (0.5875 s), the first of 24 slots in the
+    // 1/8 measure still plays at 100 BPM (0.0125 s), and the 1e7 BPM tail adds ~3 microseconds.
+    // Before exponents were accepted, the tail played at 100 BPM and this was 0.8875 s.
+    CHECK(seconds == Catch::Approx(0.6).margin(1e-5));
+}
+
+TEST_CASE("BMS exponent declarations keep exact values",
+          "[unit][format][bms][timing][regression]") {
+    const auto parsed = parse("#BPM 1.5e2\n#BPM01 25e-1\n#STOP01 4.7E+1\n"
+                              "#00103:01\n#00108:01\n#00109:01\n#00111:01\n#WAV01 a.wav\n");
+    REQUIRE(parsed.song.has_value());
+    const auto& chart = parsed.song->charts.front();
+    REQUIRE_FALSE(chart.bpms.empty());
+    CHECK((chart.bpms.front().beats_per_minute == wormedit::signed_rational_t{150, 1}));
+    CHECK(std::ranges::any_of(chart.bpms, [](const auto& bpm) {
+        return bpm.beats_per_minute == wormedit::signed_rational_t{5, 2};
+    }));
+    REQUIRE(chart.pauses.size() == 1);
+    CHECK((chart.pauses[0].duration == wormedit::signed_rational_t{47, 1}));
 }
 
 TEST_CASE("BMS fixture preserves presentation-first discontinuity order",

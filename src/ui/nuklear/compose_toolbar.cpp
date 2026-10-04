@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_toolbar.h"
+#include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/vector_icons.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/chrome.h"
@@ -341,7 +342,7 @@ static void render_inline_offset(const ComposeToolbarContext& toolbar) {
         (flags & NK_EDIT_COMMITED) != 0, (flags & NK_EDIT_DEACTIVATED) != 0);
     if (!state.inline_offset_open) nk_edit_unfocus(context);
     if (state.inline_offset_error[0] && nk_input_is_mouse_hovering_rect(&context->input, bounds))
-        nk_tooltip(context, state.inline_offset_error.data());
+        wormedit::ui::nuklear::tooltip::text(context, state.inline_offset_error.data());
 }
 
 static void render_compose_audio_offset(const ComposeToolbarContext& toolbar, bool show_offset) {
@@ -401,7 +402,7 @@ static void render_offset_padlock(const ComposeToolbarContext& toolbar) {
                                    10.0f, 11.0f), 4.0f, 2.0f, color);
     nk_fill_rect(canvas, nk_rect(center - 7.0f, bounds.y + 13.0f, 14.0f, 10.0f), 2.0f, color);
     if (nk_input_is_mouse_hovering_rect(&context->input, bounds))
-        nk_tooltip(context, locked ? "Unlock audio offset" : "Lock audio offset");
+        wormedit::ui::nuklear::tooltip::text(context, locked ? "Unlock audio offset" : "Lock audio offset");
 }
 
 static void render_compose_offset_toolbar(const ComposeToolbarContext& toolbar) {

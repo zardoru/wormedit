@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_bga_panel.h"
+#include "ui/nuklear/tooltip.h"
 #include "wormedit/core/document.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/chrome.h"
@@ -217,7 +218,7 @@ void row(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear_com
                   value.missing ? " · missing" : "");
     nk_draw_text(canvas, nk_rect(bounds.x + 40, bounds.y + 8, bounds.w - 42, 20), label,
         static_cast<int>(std::strlen(label)), context->style.font, nk_rgba(0, 0, 0, 0), nk_rgb(222, 228, 238));
-    if (hovered) nk_tooltip(context, label);
+    if (hovered) wormedit::ui::nuklear::tooltip::text(context, label);
     if (!clicked) return;
     const auto modifiers = SDL_GetModState();
     worm_ui_keysound_click(state.bga_selection, {view.bga_matching_ids, view.bga_total_matching}, index,
@@ -347,7 +348,7 @@ static bool draw_bga_stack_row(nk_context* context, const WormUiComposeBgaEventV
         event.bmp_id && event.bmp_id[0] ? event.bmp_id : "No BMP ID",
         event.name ? event.name : "Missing resource");
     const auto clicked = nk_button_label(context, label);
-    if (nk_widget_is_hovered(context)) nk_tooltip(context, label);
+    if (nk_widget_is_hovered(context)) wormedit::ui::nuklear::tooltip::text(context, label);
     if (!clicked) return false;
     if (action.compose_input_count < WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {
         auto& input = action.compose_inputs[action.compose_input_count++];

@@ -2138,3 +2138,37 @@ TEST_CASE("Headless Compose keeps backward wheel navigation available during tra
     REQUIRE(stopped_action.get().compose_viewport_input_count == 1);
     CHECK(stopped_action.get().compose_viewport_inputs[0].delta_y != 0.0);
 }
+
+namespace {
+void check_tooltip_rectangle(const WormUiTestingDrawnText& text, int width, int height) {
+    CHECK(text.x >= 0);
+    CHECK(text.y >= 0);
+    CHECK(text.x + text.width <= width);
+    CHECK(text.y + text.height <= height);
+}
+}
+
+TEST_CASE("Sounds clear selection hover remains readable near the application right edge",
+          "[frontend-state][event-harness][tooltip][tooltip-bounds]") {
+    nuklear_event_harness_t harness{960, 720};
+    REQUIRE(harness.ready());
+    harness.view().compose.keysounds_available = true;
+    static_cast<void>(harness.frame());
+    auto& state = worm_ui_nuklear_compose_state();
+    state.sounds_panel_visible = true;
+    state.inspector_visible = state.layers_panel_visible = false;
+    static_cast<void>(harness.frame());
+    REQUIRE(state.sound_list_valid);
+    const auto title = harness.drawn_text_center("Sounds  0  ·  0 selected");
+    REQUIRE(title);
+    // Clear selection is the eighth 27-pixel toolbar button, separated by two pixels.
+    const auto mouse_x = static_cast<float>(state.sound_list_x) + 7.0f * 29.0f + 13.0f;
+    const auto mouse_y = title->second + 27.0f;
+    hover_at(harness, mouse_x, mouse_y);
+    check_tooltip_text(harness, "Clear the selection");
+    const auto text = std::ranges::find_if(harness.drawn_text_bounds(), [](const auto& item) {
+        return std::string_view{item.text} == "Clear the selection";
+    });
+    REQUIRE(text != harness.drawn_text_bounds().end());
+    check_tooltip_rectangle(*text, 960, 720);
+}

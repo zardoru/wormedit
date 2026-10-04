@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_note_menu.h"
+#include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/popup_lifecycle.h"
 #include "ui/nuklear/theme.h"
@@ -104,7 +105,7 @@ void render_layer(nk_context* context, const WormUiComposeView& view,
     const auto clicked = nk_button_label(context, layer.name);
     if (disabled) nk_widget_disable_end(context);
     if (disabled && nk_input_is_mouse_hovering_rect(&context->input, bounds))
-        nk_tooltip(context, layer.locked ? "Layer is locked" : "Finish editing before assigning layers");
+        wormedit::ui::nuklear::tooltip::text(context, layer.locked ? "Layer is locked" : "Finish editing before assigning layers");
     if (clicked && !disabled && raise(view, action, WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER, layer.layer_id)) {
         menu.open = false;
         menu.consumed = true;

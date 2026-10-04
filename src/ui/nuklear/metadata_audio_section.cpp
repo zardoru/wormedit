@@ -1,4 +1,5 @@
 #include "ui/nuklear/metadata_audio_section.h"
+#include "ui/nuklear/tooltip.h"
 
 #include "ui/nuklear/audio_panel.h"
 #include "ui/nuklear/chrome.h"
@@ -101,7 +102,7 @@ void render_audio_sync_section(const MetadataPanel& panel) {
                                          state.audio_offset_text.size(), nk_filter_default);
     if (!editable) nk_widget_disable_end(context);
     if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0)
-        nk_tooltip(context, "Seconds. Accepts 0.125, 1/8 or 125 ms.");
+        wormedit::ui::nuklear::tooltip::text(context, "Seconds. Accepts 0.125, 1/8 or 125 ms.");
     nk_layout_row_push(context, 0.05f);
     nk_label_colored(context, "s", NK_TEXT_LEFT,
                      wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted));

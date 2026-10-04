@@ -3,6 +3,7 @@
 #include "ui/nuklear/popup_lifecycle.h"
 #include "ui/nuklear/lucide_icons.h"
 #include "ui/nuklear/theme.h"
+#include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/vector_icons.h"
 
 #include "wormedit/nuklear_config.h"
@@ -371,7 +372,7 @@ void render_row_name(const LayersPanel& panel, const WormUiComposeSemanticLayerV
     nk_fill_circle(canvas, nk_rect(bounds.x + 5, bounds.y + 9, 8, 8),
                    nk_rgba(layer.red, layer.green, layer.blue, layer.alpha));
     draw_layer_row_text(panel, layer, bounds);
-    if (hovered) nk_tooltip(context, layer.locked ? "Layer is locked; click to choose its target"
+    if (hovered) wormedit::ui::nuklear::tooltip::text(context, layer.locked ? "Layer is locked; click to choose its target"
                          : panel.view->selected_note_count || panel.view->selected_bgm_event_count
                                ? "Assign selected notes and BGM events to this layer"
                                : layer.name);

@@ -29,6 +29,7 @@
 #include "ui/nuklear/timing_stage_editor.h"
 #include "ui/nuklear/timing_state.h"
 #include "ui/nuklear/theme.h"
+#include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/notification_toasts.h"
 #include "ui/nuklear/notification_panel.h"
 #include "ui/nuklear/compare_panel.h"
@@ -1676,7 +1677,8 @@ static void render_status_minimap(const WormUiWorkspaceView& view,
         nk_label(g_context, "Overview unavailable", NK_TEXT_CENTERED);
         nk_widget_disable_end(g_context);
         if (nk_input_is_mouse_hovering_rect(&g_context->input, bounds))
-            nk_tooltip(g_context, "Audio is unavailable for this chart overview.");
+            wormedit::ui::nuklear::tooltip::text(
+                g_context, "Audio is unavailable for this chart overview.");
         return;
     }
     struct nk_rect bounds{};
@@ -2642,6 +2644,7 @@ static void consume_pending_save_request(const WormUiWorkspaceView* view, WormUi
 }
 
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
+    wormedit::ui::nuklear::tooltip::set_viewport(nk_rect(0.0F, 0.0F, 0.0F, 0.0F));
     reset_compose_canvas_viewport_for_testing();
     if (view && !view->project_loaded) worm_ui_nuklear_reset_sound_import();
     remember_notification_frame(view);
@@ -2671,6 +2674,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         expose_shortcut_input(&action);
         return action;
     }
+    wormedit::ui::nuklear::tooltip::set_viewport(
+        nk_rect(0.0F, 0.0F, static_cast<float>(width), static_cast<float>(height)));
 
     if (validation_error) {
         render_workspace_error(&action, width, height, validation_error, view->close_confirmation.visible);

@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_sounds_panel.h"
+#include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/popup_lifecycle.h"
 #include "ui/nuklear/lucide_icons.h"
@@ -1231,7 +1232,7 @@ void render_layer_row(const SoundsPanel& panel, std::size_t index) {
                  label.c_str(), static_cast<int>(label.size()), context->style.font,
                  nk_rgba(0, 0, 0, 0), tint);
     if (hovered)
-        nk_tooltip(context, !has_selection ? "Select sounds first"
+        wormedit::ui::nuklear::tooltip::text(context, !has_selection ? "Select sounds first"
                             : layer.locked && adding ? "Locked layers cannot gain sounds"
                             : adding ? "Add this layer to the selected sounds"
                                      : "Remove this layer from the selected sounds");
@@ -1362,7 +1363,7 @@ void render_row(const SoundsPanel& panel, std::size_t shown_index) {
              hovered);
     if (hovered) {
         const auto tip = layer_tooltip(panel, *row);
-        if (!tip.empty()) nk_tooltip(context, tip.c_str());
+        if (!tip.empty()) wormedit::ui::nuklear::tooltip::text(context, tip);
     }
     if (clicked) click_row(panel, shown_index, id);
     if (!panel.state->keysound_group_menu_open &&

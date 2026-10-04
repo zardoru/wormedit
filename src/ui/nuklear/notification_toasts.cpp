@@ -1,4 +1,5 @@
 #include "ui/nuklear/notification_toasts.h"
+#include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/theme.h"
 
 #include <algorithm>
@@ -17,24 +18,15 @@ auto severity_color(WormUiNotificationSeverity severity) -> nk_color {
 }
 
 void render_message_detail(nk_context* context, const char* message,
-                           notification_rect_t bounds, int width, int height) {
+                           notification_rect_t bounds) {
     const auto mouse = context->input.mouse.pos;
     if (!message || !notification_contains(bounds, mouse.x, mouse.y)) return;
-    const auto detail_width = std::min(420.0f, static_cast<float>(width) - 24.0f);
-    const auto padding = 4 * std::max({context->style.window.padding.y,
-        context->style.window.popup_padding.y, context->style.window.menu_padding.y}) +
-        2 * context->style.window.border + context->style.window.spacing.y;
-    const auto detail_height = std::min(180.0f, static_cast<float>(height) - 42.0f - padding);
-    if (detail_width < 80.0f || detail_height < context->style.font->height) return;
-    const auto outer_height = detail_height + padding;
-    const auto left = std::clamp(bounds.x, 0.0f, static_cast<float>(width) - detail_width);
-    const auto top = std::clamp(bounds.y - outer_height - 8.0f, 0.0f,
-                               static_cast<float>(height) - 42.0f - outer_height);
-    const auto offset = nk_vec2(left - mouse.x - 1, top - mouse.y - 1);
-    if (!nk_tooltip_begin_offset(context, detail_width, NK_TOP_LEFT, offset)) return;
-    nk_layout_row_dynamic(context, detail_height, 1);
-    nk_label_wrap(context, message);
-    nk_tooltip_end(context);
+    const auto plan = tooltip::plan_text(context, message);
+    if (!plan) return;
+    const auto placement = tooltip::place(context, plan->outer_width, plan->content_height);
+    if (!placement || !tooltip::begin(context, *placement)) return;
+    tooltip::draw_text(context, *plan);
+    tooltip::end(context);
 }
 
 void render_one_toast(nk_context* context, const WormUiNotificationToastView& toast,
@@ -62,7 +54,7 @@ void render_one_toast(nk_context* context, const WormUiNotificationToastView& to
         nk_layout_row_end(context);
         nk_layout_row_dynamic(context, std::max(0.0f, bounds.height - 38.0f), 1);
         nk_label_wrap(context, toast.message ? toast.message : "");
-        render_message_detail(context, toast.message, bounds, width, height);
+        render_message_detail(context, toast.message, bounds);
     }
     nk_end(context);
 }
@@ -76,6 +68,8 @@ void render_notification_toasts(nk_context* context, const WormUiNotificationVie
     state.ids.fill(0);
     state.count = 0;
     if (!context || width <= 0 || height <= 0) return;
+    tooltip::set_viewport(nk_rect(0.0F, 0.0F, static_cast<float>(width),
+                                  static_cast<float>(height)));
     const auto count = std::min(view.toast_count, std::size_t{WORM_UI_NOTIFICATION_TOAST_CAPACITY});
     for (std::size_t index = 0; index < count; ++index) {
         if (notification_toast_bounds(width, height, index).height == 0) break;

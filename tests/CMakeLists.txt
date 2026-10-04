@@ -516,6 +516,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
     add_executable(wormedit_frontend_event_harness_tests
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
+        ui/nuklear_tooltip_tests.cpp
         ui/notification_hit_region_event_harness_tests.cpp
         sys/global_drop_notification_tests.cpp
         ../src/sys/metadata_drop_state.cpp
@@ -591,6 +592,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ui/nuklear_notification_panel_tests.cpp
         sys/notification_history_runtime_tests.cpp
         ../src/ui/nuklear/notification_toasts.cpp
+        ../src/ui/nuklear/tooltip.cpp
         ../src/ui/nuklear/notification_panel.cpp
         ../src/sys/notification_history_runtime.cpp
         ../src/ui/nuklear/theme.cpp

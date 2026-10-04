@@ -4,35 +4,23 @@
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/lucide_icons.h"
 #include "ui/nuklear/text_field.h"
+#include "ui/nuklear/tooltip.h"
 
 #include <algorithm>
 #include <cstring>
+#include <string>
 
 namespace wormedit::ui::chrome {
 
 inline void timing_tooltip(nk_context* context, const char* timing,
                            const char* instructions = nullptr) {
     if (!context || !context->current || !timing || !timing[0]) return;
-    const auto bounds = context->current->bounds;
-    const auto* font = context->style.font;
-    const auto text_width = font->width(font->userdata, font->height, timing,
-                                        static_cast<int>(std::strlen(timing)));
-    const auto desired_width = instructions ? 420.0f
-        : text_width + 4.0f * context->style.window.padding.x;
-    const auto width = std::min(desired_width, std::max(1.0f, bounds.w - 16.0f));
-    const auto pointer_x = context->input.mouse.pos.x + 1.0f;
-    const auto left = bounds.x + 8.0f;
-    const auto right = std::max(left, bounds.x + bounds.w - width - 8.0f);
-    const auto x = std::clamp(pointer_x + 12.0f, left, right);
-    if (!nk_tooltip_begin_offset(context, width, NK_TOP_LEFT,
-                                  nk_vec2(x - pointer_x, 12.0f))) return;
-    nk_layout_row_dynamic(context, font->height + 8.0f, 1);
-    nk_label(context, timing, NK_TEXT_LEFT);
-    if (instructions) {
-        nk_layout_row_dynamic(context, 2.0f * font->height + 8.0f, 1);
-        nk_label_wrap(context, instructions);
+    std::string content{timing};
+    if (instructions && instructions[0]) {
+        content += "\n\n";
+        content += instructions;
     }
-    nk_tooltip_end(context);
+    nuklear::tooltip::text(context, content);
 }
 
 // Edits a single-line text field and selects its whole value on a double-click.
@@ -148,7 +136,7 @@ inline void button_feedback(nk_context* context, struct nk_rect bounds, bool sel
     if (button_hovered(context, bounds)) {
         nk_stroke_rect(nk_window_get_canvas(context), bounds, 4.0f, 1.0f,
                        color(UiColor::border_hover));
-        if (tooltip && tooltip[0] != '\0') nk_tooltip(context, tooltip);
+        if (tooltip && tooltip[0] != '\0') nuklear::tooltip::text(context, tooltip);
     } else if (selected) {
         nk_stroke_rect(nk_window_get_canvas(context), bounds, 4.0f, 1.0f,
                        color(UiColor::selected));

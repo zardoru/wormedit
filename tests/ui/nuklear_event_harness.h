@@ -44,6 +44,9 @@ class nuklear_event_harness_t {
     [[nodiscard]] auto ready() const noexcept -> bool { return initialized_ && view_valid_; }
     [[nodiscard]] auto view() noexcept -> WormUiWorkspaceView& { return view_; }
     [[nodiscard]] auto drawn_text() const noexcept -> const std::string& { return drawn_text_; }
+    [[nodiscard]] auto drawn_text_bounds() const noexcept -> std::span<const WormUiTestingDrawnText> {
+        return drawn_text_bounds_;
+    }
     [[nodiscard]] auto drawn_text_center(std::string_view text) const
         -> std::optional<std::pair<float, float>>;
     // Event objects are consumed synchronously and never retained. Any pointer

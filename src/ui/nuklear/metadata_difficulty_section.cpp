@@ -1,4 +1,5 @@
 #include "ui/nuklear/metadata_difficulty_section.h"
+#include "ui/nuklear/tooltip.h"
 
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/theme.h"
@@ -128,7 +129,7 @@ void render_difficulty_section(const MetadataPanel& panel) {
                                          state.chart_rating_text.size(), nk_filter_default);
     if (!editable) nk_widget_disable_end(context);
     if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0)
-        nk_tooltip(context, "Number or fraction, e.g. 12, 12.5 or 25/2. Stored exactly.");
+        wormedit::ui::nuklear::tooltip::text(context, "Number or fraction, e.g. 12, 12.5 or 25/2. Stored exactly.");
     bool clear = false;
     if (has_rating) {
         nk_layout_row_push(context, 0.15f);

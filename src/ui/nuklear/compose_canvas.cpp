@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_canvas.h"
+#include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_bookmark_label.h"
@@ -1964,7 +1965,8 @@ static void draw_compose_bga_stack(const ComposePaintContext& paint,
     field_text(paint, rect, label, static_cast<int>(std::strlen(label)),
                paint.context->style.font, nk_rgb(95, 74, 132), nk_rgb(255, 255, 255), 4);
     if (nk_input_is_mouse_hovering_rect(&paint.context->input, rect))
-        nk_tooltip(paint.context, "Choose a BGA event at this measure");
+        wormedit::ui::nuklear::tooltip::text(paint.context,
+            "Choose a BGA event at this measure");
 }
 
 static void draw_compose_bga_move_ghost(const ComposePaintContext& paint,
@@ -2007,7 +2009,8 @@ static void draw_compose_bga_event(const ComposePaintContext& paint, size_t inde
                        paint.context->style.font, fill, nk_rgb(255, 255, 245), 4);
     }
     if (nk_input_is_mouse_hovering_rect(&paint.context->input, rect))
-        nk_tooltip(paint.context, event.missing ? "Missing BGA resource" : event.name);
+        wormedit::ui::nuklear::tooltip::text(paint.context,
+            event.missing ? "Missing BGA resource" : event.name);
 }
 
 static void draw_compose_bga_events(const ComposePaintContext& paint) {

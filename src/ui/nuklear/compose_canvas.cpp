@@ -1061,6 +1061,12 @@ static void draw_compose_beat_fit_overlay(const ComposePaintContext& paint) {
         return;
     }
     const auto y = compose_projected_y(paint, view.beat_fit_target_y_pixels);
+    if (view.beat_fit_onset_snap_active && y >= paint.viewport.y &&
+        y <= paint.viewport.y + paint.viewport.h) {
+        field_line(paint, paint.viewport.x + paint.rail.w - 7.0f, y - 6.0f,
+                   paint.viewport.x + paint.rail.w - 7.0f, y + 6.0f,
+                   3.0f, nk_rgb(110, 222, 236), 4);
+    }
     if (y >= paint.viewport.y && y <= paint.viewport.y + paint.viewport.h) {
         field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
                        1.3f, nk_rgba(110, 222, 236, 215), 4);
@@ -2345,7 +2351,7 @@ auto compose_editor_status_hint(const WormUiComposeView* view,
     if (state.timing_stage_drag_active)
         return "Move timing event · release to keep staged position · Apply to commit";
     if (state.beat_fit_drag_active)
-        return "Fit beat to waveform · Ctrl snaps BPM · release to commit · Esc cancels";
+        return "Fit beat to waveform · Ctrl snaps BPM · Ctrl+Alt snaps onsets · release to commit · Esc cancels";
     if (state.offset_fit_drag_active)
         return "Shift offset to waveform · release to commit · Esc cancels";
     if (state.waveform_beat_zero_drag_active)

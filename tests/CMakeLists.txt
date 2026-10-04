@@ -511,6 +511,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
         ui/timing_settings_tests.cpp
+        ui/compose_beat_fit_tests.cpp
         ui/sound_source_copy_event_harness_tests.cpp
         ui/sound_slot_batch_event_harness_tests.cpp
         ui/compose_hover_timing_event_harness_tests.cpp
@@ -616,6 +617,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         target_sources(wormedit_frame_timing_tests PRIVATE
             sys/minimap_center_tests.cpp
             sys/compose_beat_fit_tests.cpp
+            sys/compose_onset_snap_tests.cpp
             sys/application_commands_tests.cpp
             sys/manual_sound_group_command_tests.cpp
             ../src/sys/compose_sound_actions.cpp

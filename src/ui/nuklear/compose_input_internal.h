@@ -21,7 +21,7 @@ void cancel_beat_fit_drag(WormUiWorkspaceAction* action);
 bool compose_shortcut_modifier(std::uint16_t modifiers);
 void cancel_offset_fit_drag(WormUiWorkspaceAction* action);
 void append_beat_fit_input(WormUiWorkspaceAction* action,
-                           WormUiComposeInputKind kind, double y, bool ctrl_held);
+                           WormUiComposeInputKind kind, double y, bool ctrl_held, bool onset_snap_held = false);
 auto compose_timing_target(const WormUiComposeView& view, double screen_y)
     -> WormUiTimingTarget;
 bool compose_point_hits_note(const WormUiComposeView* view, double x, double y);

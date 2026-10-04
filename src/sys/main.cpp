@@ -2114,8 +2114,7 @@ auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& actio
     if (shortcut_handled && !preserves_editor_gesture) {
         context.audio_offset_drag_ref.reset();
         context.audio_offset_drag_tab_ref.reset();
-        context.compose_scene_cache_ref.beat_fit_drag.reset();
-        context.compose_scene_cache_ref.beat_fit_asset.reset();
+        context.compose_scene_cache_ref.clear_beat_fit_capture();
         context.compose_scene_cache_ref.offset_fit_drag.reset();
     }
     if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
@@ -3342,8 +3341,7 @@ void prepare_bound_workspace_frame(
          history.document.revision != compose_scene_cache.beat_fit_drag->document_revision ||
          workspace.transport.audio_asset != compose_scene_cache.beat_fit_asset ||
          application_command_state.timing_locked)) {
-        compose_scene_cache.beat_fit_drag.reset();
-        compose_scene_cache.beat_fit_asset.reset();
+        compose_scene_cache.clear_beat_fit_capture();
     }
     if (compose_scene_cache.offset_fit_drag &&
         (workspace.active_tab != wormedit::workspace_tab_t::compose ||
@@ -4083,6 +4081,8 @@ int main(int argc, char** argv) {
         waveform_runtime.service(
             history.document, workspace, compose_scene_cache,
             compose_interaction_state ? &*compose_interaction_state : nullptr, status);
+        compose_scene_cache.fit_waveform = waveform_runtime.waveform_analysis();
+        compose_scene_cache.fit_waveform_asset = waveform_runtime.waveform_asset();
 #endif
 
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::workspace);

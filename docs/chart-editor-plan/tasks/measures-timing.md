@@ -180,16 +180,18 @@ stale-plan check (rule 9) first.
 
 ## T-81 Snap fit drags to the nearest onset
 
-- **Status:** blocked-on-user
+- **Status:** ready
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** No onset snapping exists. Input runs before waveform-overlay projection, and the existing Ctrl bit already means BPM-step quantization. One-query-per-drag candidates require unowned `src/sys/compose_view.h` state (and, for direct input data, `src/sys/compose_input.h`/`src/sys/main.cpp`); an independent modifier or distinct tick would also need `src/ui/frontend.h`/`src/ui/nuklear/compose_canvas.cpp`. Any chosen modifier must avoid BPM-step rounding moving the snapped target off its onset. Do not retain global drag state to bypass the existing state owner.
 - **Outcome:** holding the snap modifier during an interval-fit drag snaps the target frame to the nearest onset within 30 ms.
 - **Read first:** `include/wormedit/audio/onset.h`, `src/sys/compose_input.cpp` (fit drag update), `src/sys/compose_waveform_overlays.cpp`.
 - **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/ui/nuklear/compose_input_panel.cpp`. User-approved supporting scope (2026-10-03): `src/sys/compose_view.h`, `src/sys/compose_input.h`, `src/sys/main.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`.
-- **Steps:** STOP — identify the intended snap modifier; existing Ctrl already quantizes BPM, and supporting-file approval does not settle the gesture. 0. Scope extension approved by the user (2026-10-03). 1. Query onsets for the visible range once per drag. 2. Snap and draw a tick at the chosen onset.
+- **Gesture decision (user, 2026-10-04):** Ctrl+Alt during a captured fit drag snaps to onsets; literal Ctrl is retained on every platform, with no Primary/Meta alias. Plain Ctrl retains BPM quantization. Ctrl+Alt bypasses BPM quantization and consumes fit-wheel input without changing its BPM step. Timing quick-insert rejects Ctrl+Alt, and Shift offset fitting rejects Ctrl/Alt; no conflicting active-drag gesture remains.
+- **Implementation supporting scope (coordinator, 2026-10-04):** `src/sys/compose_onset_snap.h`, `tests/sys/compose_onset_snap_tests.cpp`, `tests/sys/compose_beat_fit_tests.cpp`, `tests/ui/compose_beat_fit_tests.cpp`, `tests/CMakeLists.txt`, `src/ui/nuklear/compose_viewport_input.cpp`, `src/ui/nuklear/compose_input_internal.h`, `src/ui/nuklear/compose_state.h`, and `memory/coordination/tap-apply.md`, in addition to the approved state, main, input, overlay, frontend and canvas paths above.
+- **Steps:** 0. Supporting scope and gesture approved. 1. Query onsets for the visible range once per drag. 2. Snap and draw a tick at the chosen onset.
 - **Invariants:** without the modifier, behavior is unchanged.
 - **Reject/failure behavior:** no onset in range → unsnapped.
-- **Verify:** standard build/test; manual drag.
+- **Verify:** Debug application build passed (`/tmp/wormedit-batch-implementation/timing-onset-final-verified-build.log`); focused onset/fit checks passed 232 assertions in 10 cases (`timing-onset-final-sys.log`), and all 122 event-harness cases passed (`timing-onset-final-events.log`). Actual events cover Ctrl/Alt changes without motion, Ctrl+Alt wheel consumption, Meta exclusion and release. Fit tests cover exact snapped frame, plain Ctrl rounding, no candidate, one commit/Undo, source identity/rate guards, cache refresh without re-query, negative audio time and outside-chart viewports in both scroll directions. Clang-tidy passed all new/affected functions; inherited `main` 28, command-state refresh 27 and header speed graph 29 remain unchanged. Direct documentation and whitespace checks passed. Manual visual drag is pending: isolated Xvfb socket creation was rejected by the sandbox/automatic approval review; no desktop window or escalation. Keep ready until this gate is satisfied.
 - **Out of scope:** local Ctrl-drag fit (T-78 follow-up).
 
 ## T-235 Toggle the metronome on and off

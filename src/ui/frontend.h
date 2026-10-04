@@ -1445,6 +1445,7 @@ typedef struct WormUiComposeView {
     uint64_t beat_fit_original_bpm_denominator;
     int64_t beat_fit_proposed_bpm_numerator;
     uint64_t beat_fit_proposed_bpm_denominator;
+    bool beat_fit_onset_snap_active;
     bool beat_fit_snap_active;
     int64_t beat_fit_snap_step_numerator;
     uint64_t beat_fit_snap_step_denominator;
@@ -2332,6 +2333,7 @@ typedef struct WormUiComposeInputAction {
     bool overview_shift;
     bool overview_primary;
     bool beat_fit_ctrl_held;
+    bool beat_fit_onset_snap_held;
     int64_t beat_fit_snap_step_numerator;
     uint64_t beat_fit_snap_step_denominator;
     /* RECIPE_COMMAND: span_edge is 0 toggle enabled, 1 materialize, 2 delete; object_id is the recipe.

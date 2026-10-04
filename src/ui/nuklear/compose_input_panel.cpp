@@ -159,11 +159,12 @@ void append_compose_input(
 
 void append_beat_fit_input(WormUiWorkspaceAction* action,
                                   WormUiComposeInputKind kind, double y,
-                                  bool ctrl_held) {
+                                  bool ctrl_held, bool onset_snap_held) {
     append_compose_input(action, kind, 0.0, y);
     if (!action || action->compose_input_count == 0) return;
     auto& event = action->compose_inputs[action->compose_input_count - 1];
     event.beat_fit_ctrl_held = ctrl_held;
+    event.beat_fit_onset_snap_held = onset_snap_held;
     const auto index = std::min<std::size_t>(state.beat_fit_snap_step_index,
                                              beat_fit_snap_steps.size() - 1);
     event.beat_fit_snap_step_numerator = beat_fit_snap_steps[index].numerator;

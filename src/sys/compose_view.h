@@ -28,6 +28,7 @@
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/audio/waveform.h>
+#include "sys/compose_onset_snap.h"
 #endif
 
 #include <array>
@@ -144,6 +145,22 @@ struct compose_scene_cache_t {
     std::optional<wormedit::signed_rational_t> proposed_offset_seconds;
     std::optional<wormedit::beat_interval_drag_t> beat_fit_drag;
     std::optional<wormedit::asset_id_t> beat_fit_asset;
+    bool beat_fit_onset_snapped{};
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    std::shared_ptr<const audio::waveform_analysis_result_t> fit_waveform;
+    std::optional<wormedit::asset_id_t> fit_waveform_asset;
+    compose_onset_snap_t beat_fit_onsets;
+    std::optional<audio::waveform_key_t> beat_fit_onset_source;
+#endif
+    void clear_beat_fit_capture() {
+        beat_fit_drag.reset();
+        beat_fit_asset.reset();
+        beat_fit_onset_snapped = false;
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        beat_fit_onsets = {};
+        beat_fit_onset_source.reset();
+#endif
+    }
     struct offset_fit_drag_t {
         wormedit::beat_interval_drag_t beat;
         wormedit::timing_index_t timing;

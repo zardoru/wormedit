@@ -112,6 +112,7 @@ static ComposeViewportCursor update_compose_viewport_pointer(
 static bool append_beat_fit_snap_wheel(const ComposeViewportInputContext& input,
                                        const worm_ui_nuklear_compose_wheel_event_t& wheel) {
     if (!state.beat_fit_drag_active || (wheel.modifiers & SDL_KMOD_CTRL) == 0) return false;
+    if ((wheel.modifiers & SDL_KMOD_ALT) != 0) return true;
     // Compose wheel deltas are positive toward the song end: wheel down picks a finer step.
     const auto step = wheel.delta_y > 0.0 ? 1 : wheel.delta_y < 0.0 ? -1 : 0;
     const auto next = static_cast<int>(state.beat_fit_snap_step_index) + step;
@@ -288,6 +289,7 @@ static bool start_compose_beat_fit_drag(const ComposeBeatFitInput& input) {
     const auto& view = *input.view;
     state.beat_fit_drag_active = true;
     state.beat_fit_ctrl_held = false;
+    state.beat_fit_onset_snap_held = false;
     state.beat_fit_chart_row = nearest_row;
     state.beat_fit_chart_id = view.chart_id;
     state.beat_fit_revision = view.document_revision;
@@ -372,17 +374,23 @@ static void update_active_beat_fit_drag(const ComposeBeatFitInput& input) {
             append_beat_fit_input(input.action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE,
                                   std::clamp(input.pointer_y, 0.0,
                                              view.viewport_height_pixels),
-                                  (input.pointer_modifiers & SDL_KMOD_CTRL) != 0);
+                                  (input.pointer_modifiers & SDL_KMOD_CTRL) != 0,
+                                  (input.pointer_modifiers & SDL_KMOD_CTRL) != 0 &&
+                                  (input.pointer_modifiers & SDL_KMOD_ALT) != 0);
             state.beat_fit_drag_active = false;
         }
     } else if (const bool ctrl_held = (input.pointer_modifiers & SDL_KMOD_CTRL) != 0;
                input.left_down && (nk_input_is_mouse_moved(&input.context->input) ||
-                                   ctrl_held != state.beat_fit_ctrl_held)) {
+                                   ctrl_held != state.beat_fit_ctrl_held ||
+                                   (ctrl_held && (input.pointer_modifiers & SDL_KMOD_ALT) != 0) !=
+                                       state.beat_fit_onset_snap_held)) {
         // Pressing or releasing Ctrl re-previews in place so the snap toggles without motion.
         state.beat_fit_ctrl_held = ctrl_held;
+        state.beat_fit_onset_snap_held = ctrl_held &&
+                                        (input.pointer_modifiers & SDL_KMOD_ALT) != 0;
         append_beat_fit_input(input.action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE,
                               std::clamp(input.pointer_y, 0.0, view.viewport_height_pixels),
-                              ctrl_held);
+                              ctrl_held, state.beat_fit_onset_snap_held);
     }
 }
 

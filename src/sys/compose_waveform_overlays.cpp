@@ -565,6 +565,7 @@ void populate_beat_fit_overlay(flattened_workspace_t& flattened,
     const auto& drag = *cache.beat_fit_drag;
     auto& compose = flattened.view.compose;
     populate_beat_fit_fields(compose, drag);
+    compose.beat_fit_onset_snap_active = cache.beat_fit_onset_snapped;
     const auto chart = std::ranges::find(history.document.charts, drag.chart,
                                          &chart_document_t::id);
     if (chart == history.document.charts.end() || !cache.index || !interaction ||

@@ -338,6 +338,7 @@ struct worm_ui_nuklear_compose_state_t {
     float beat_fit_anchor_screen_y{};
     std::uint8_t beat_fit_snap_step_index{};
     bool beat_fit_ctrl_held{};
+    bool beat_fit_onset_snap_held{};
     float waveform_beat_zero_drag_anchor_x{};
     float waveform_beat_zero_drag_width{};
     float waveform_beat_zero_drag_left{};

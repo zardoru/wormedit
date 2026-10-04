@@ -23,3 +23,20 @@
 - **Review evidence:** `memory/coordination/tooltip-bounds.md` records native baseline overflow, seven actual command/hover cases, 140 isolated frontend cases, read-only dependency reuse, complexity review, and explicitly pending root full app/suite and visual gates.
 
 - **Root integration verification (2026-10-04):** integrated as `34fdf42`; full application build and 2,255/2,255 CTest cases pass with T-376/T-378, including 144 isolated event-harness cases. Actual Sounds hover and six tooltip geometry cases also pass in the independent focused main run. Logs: `/tmp/tooltip-bounds-review/main-build.log`, `main-focused.log`, and `/tmp/hidden-history-validation/main-suite.log`. Required real-window verification remains pending under the recorded sandbox approval block.
+
+## T-379 Remove gesture-only minimap hover fallback
+
+- **Status:** done (2026-10-04; main build and full suite pass)
+- **Outcome:** minimap hover waits for a fresh timing label rather than alternating between gesture-only and timing tooltips.
+- **Read first:** `src/ui/nuklear/compose_panel.cpp` (`report_compose_bgm_hover`), `tests/ui/compose_hover_timing_event_harness_tests.cpp`, `AGENTS.md`.
+- **Files owned:** root: `src/ui/nuklear/compose_panel.cpp`, this card, `docs/chart-editor-plan/tasks.md`, `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Inspect fallback and fresh timing paths for minimap hover.
+  2. Remove gesture-only fallback drawing; retain exact source-frame reporting, stale-context rejection and the timing tooltip.
+  3. Build, run the full suite including existing actual hover workflows, and check affected production complexity.
+- **Invariants:** keep gesture handling and timing-with-instructions rendering unchanged; hover never seeks.
+- **Reject/failure behavior:** missing audio, invalid frames or stale timing produce no tooltip.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `clang-tidy -p build src/ui/nuklear/compose_panel.cpp`; `git diff --check`.
+- **Out of scope:** tooltip positioning, input gestures, timing projection, vendor code, new test cases, user-desktop windows, and Xvfb retry after the recorded sandbox approval rejection.
+
+- **T-379 verification:** removed all three gesture-only fallback draws in `report_compose_bgm_hover`; the matching timing tooltip still includes its gesture instructions. Application build and configured clang-tidy pass. All 2,255/2,255 CTest cases pass, including 144 isolated event-harness cases and existing fresh/stale overview hover workflows. Logs: `/tmp/wormedit-minimap-tooltip-build.log`, `/tmp/wormedit-minimap-tooltip-tidy.log`, `/tmp/wormedit-minimap-tooltip-suite.log` (149.12 seconds). No new test cases or user-desktop windows were created.

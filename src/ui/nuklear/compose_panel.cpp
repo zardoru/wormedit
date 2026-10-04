@@ -932,14 +932,12 @@ void report_compose_bgm_hover(struct nk_context* context, const WormUiComposeVie
         "Wheel: zoom   Shift+wheel or middle-drag: pan   Middle-click: whole song";
     if (view->selected_audio_asset_id == 0 || view->waveform_overview_total_frames == 0 ||
         view->waveform_overview_sample_rate == 0) {
-        wormedit::ui::nuklear::tooltip::text(context, instructions);
         return;
     }
     const auto frame_value = static_cast<long double>(
         geometry.fraction_at(context->input.mouse.pos.x)) *
         (view->waveform_overview_total_frames - 1);
     if (frame_value > static_cast<long double>(std::numeric_limits<std::int64_t>::max())) {
-        wormedit::ui::nuklear::tooltip::text(context, instructions);
         return;
     }
     const auto source_frame = static_cast<std::int64_t>(frame_value);
@@ -950,7 +948,6 @@ void report_compose_bgm_hover(struct nk_context* context, const WormUiComposeVie
     if (!view->hover_timing_valid || view->hover_timing_source_frame != source_frame ||
         view->hover_timing_total_frames != view->waveform_overview_total_frames ||
         view->hover_timing_sample_rate != view->waveform_overview_sample_rate) {
-        wormedit::ui::nuklear::tooltip::text(context, instructions);
         return;
     }
     wormedit::ui::chrome::timing_tooltip(context, view->hover_timing_label, instructions);

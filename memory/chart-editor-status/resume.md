@@ -15,6 +15,9 @@ close/reopen and stale-hidden motion/wheel regressions. T-375 routine feedback
 expires after four seconds outside history. The earlier T-374 middle-click
 OPEN_HISTORY observation remains unreproduced; its badge hardening is retained.
 Required real-window checks remain pending under the recorded Xvfb approval block.
+T-379 removes the gesture-only minimap tooltip fallback; matching timing hover
+remains. Main rebuild, complexity check and full 2,255-case suite pass
+(`/tmp/wormedit-minimap-tooltip-suite.log`).
 The following pilot entries retain earlier integration evidence.
 
 Worktree coordination pilot (2026-10-04): the user requests GPT-6.1 Sol medium

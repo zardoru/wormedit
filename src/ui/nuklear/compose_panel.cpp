@@ -727,6 +727,8 @@ void worm_ui_nuklear_render_compose_minimap(
     struct nk_context* context, const WormUiComposeView* view,
     WormUiWorkspaceAction* action, struct nk_rect bounds, bool window_focused) {
     if (!context || !view || !action) return;
+    action->minimap_visible_begin_fraction = view->waveform_overview_visible_begin_fraction;
+    action->minimap_visible_end_fraction = view->waveform_overview_visible_end_fraction;
     const bool available = view->visible && worm_ui_nuklear_compose_view_valid(view) &&
         view->scene_available && view->waveform_overview_row_count != 0 &&
         bounds.w > 1.0f && bounds.h > 1.0f;
@@ -754,9 +756,8 @@ struct BgmBarGeometry {
     [[nodiscard]] float x_of(double fraction) const {
         return bounds.x + static_cast<float>((fraction - begin) / (end - begin)) * bounds.w;
     }
-    [[nodiscard]] double fraction_at(float x) const {
-        return begin + std::clamp(static_cast<double>((x - bounds.x) / bounds.w), 0.0, 1.0) *
-                           (end - begin);
+    [[nodiscard]] double fraction_at(double x) const {
+        return begin + std::clamp((x - bounds.x) / bounds.w, 0.0, 1.0) * (end - begin);
     }
 };
 
@@ -887,9 +888,9 @@ void append_bgm_bar_input(WormUiWorkspaceAction* action, WormUiComposeInputKind 
     if (input.kind == kind) input.audio_fraction = audio_fraction;
 }
 
-// Wheel zooms around the pointer, Shift+wheel or the horizontal wheel pans, a middle drag pans,
-// and a middle click shows the whole song again.
-void process_bgm_bar_view_input(struct nk_context* context, WormUiWorkspaceAction* action,
+// Wheel zoom centers on the visible field span; Shift+wheel or middle-drag pans the range.
+void process_bgm_bar_view_input(struct nk_context* context, const WormUiComposeView& view,
+                                WormUiWorkspaceAction* action,
                                 const BgmBarGeometry& geometry) {
     static bool middle_dragged = false;
     auto& input = context->input;
@@ -917,7 +918,8 @@ void process_bgm_bar_view_input(struct nk_context* context, WormUiWorkspaceActio
                                  -amount * span * bgm_bar_wheel_pan_fraction, 0.0);
     } else if (wheel_y != 0.0) {
         append_bgm_bar_input(action, WORM_UI_COMPOSE_INPUT_BGM_BAR_ZOOM, wheel_y,
-                             geometry.fraction_at(input.mouse.pos.x));
+                             (view.waveform_overview_visible_begin_fraction +
+                              view.waveform_overview_visible_end_fraction) * 0.5);
     }
 }
 
@@ -958,10 +960,19 @@ void worm_ui_nuklear_render_compose_bgm_bar(
     struct nk_context* context, const WormUiComposeView* view,
     WormUiWorkspaceAction* action, struct nk_rect bounds, bool window_focused) {
     if (!context || !view || !action) return;
+    action->minimap_visible_begin_fraction = view->waveform_overview_visible_begin_fraction;
+    action->minimap_visible_end_fraction = view->waveform_overview_visible_end_fraction;
     const bool available = view->visible && worm_ui_nuklear_compose_view_valid(view) &&
         view->scene_available && view->bgm_bar_row_count != 0 && bounds.w > 1.0f && bounds.h > 1.0f;
     auto* canvas = nk_window_get_canvas(context);
-    const BgmBarGeometry geometry{bounds, view->bgm_bar_begin_fraction, view->bgm_bar_end_fraction};
+    const auto capture_valid = state.waveform_overview_drag_active &&
+        state.waveform_overview_capture.window_capture &&
+        worm_ui_nuklear_overview_capture_matches(state.waveform_overview_capture, *view,
+            bounds.x, bounds.w, available, window_focused);
+    const auto captured_window = worm_ui_nuklear_overview_window_for_capture(
+        state.waveform_overview_capture, capture_valid,
+        view->bgm_bar_begin_fraction, view->bgm_bar_end_fraction);
+    const BgmBarGeometry geometry{bounds, captured_window.begin, captured_window.end};
     if (available && canvas) {
         nk_fill_rect(canvas, bounds, 0.0f,
                      wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::overview));
@@ -975,10 +986,15 @@ void worm_ui_nuklear_render_compose_bgm_bar(
     const bool pressed = available && window_focused && button.clicked && button.down &&
         nk_input_is_mouse_click_down_in_rect(&context->input, NK_BUTTON_LEFT, bounds, nk_true);
     if (pressed) state.keyboard_focus = true;
-    if (available && window_focused) process_bgm_bar_view_input(context, action, geometry);
+    if (available && window_focused) process_bgm_bar_view_input(context, *view, action, geometry);
     process_compose_overview_input({context, view, action, bounds, available, pressed,
         window_focused && available, state.waveform_beat_zero_drag_active,
-        view->bgm_bar_begin_fraction, view->bgm_bar_end_fraction});
+        view->bgm_bar_begin_fraction, view->bgm_bar_end_fraction, true});
+    action->minimap_window_capture_active = state.waveform_overview_drag_active &&
+        state.waveform_overview_capture.window_capture;
+    action->minimap_window_capture_begin_fraction =
+        state.waveform_overview_capture.window_begin;
+    action->minimap_window_capture_end_fraction = state.waveform_overview_capture.window_end;
 }
 
 struct ComposePanelRenderContext {

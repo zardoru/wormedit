@@ -1286,6 +1286,12 @@ void check_window_bgm_event(const wormedit::editor_field_bgm_event_geometry_t& a
           std::tie(e.event, e.source_lane, e.sound, e.bmson_restart, e.selected));
     check_window_bounds(a.bounds, e.bounds);
 }
+void check_window_bga_event(const wormedit::editor_field_bga_event_geometry_t& a,
+                            const wormedit::editor_field_bga_event_geometry_t& e) {
+    CHECK(std::tie(a.event, a.resource, a.kind, a.row, a.overlap_count, a.selected) ==
+          std::tie(e.event, e.resource, e.kind, e.row, e.overlap_count, e.selected));
+    check_window_bounds(a.bounds, e.bounds);
+}
 void check_window_grid_line(const wormedit::editor_field_grid_geometry_t& a,
                             const wormedit::editor_field_grid_geometry_t& e) {
     CHECK(std::tie(a.chart_row, a.kind, a.emphasis) == std::tie(e.chart_row, e.kind, e.emphasis));
@@ -1309,6 +1315,7 @@ void check_window_scene(const wormedit::editor_field_scene_t& actual,
     check_window_geometry(actual.hold_bodies, expected.hold_bodies, check_window_hold);
     check_window_geometry(actual.bgm_lanes, expected.bgm_lanes, check_window_bgm_lane);
     check_window_geometry(actual.bgm_events, expected.bgm_events, check_window_bgm_event);
+    check_window_geometry(actual.bga_events, expected.bga_events, check_window_bga_event);
     check_window_geometry(actual.grid_lines, expected.grid_lines, check_window_grid_line);
     check_window_cursor(actual, expected);
     REQUIRE(actual.comparison_differences.size() == expected.comparison_differences.size());
@@ -1323,6 +1330,36 @@ auto window_chart() -> wormedit::chart_document_t {
                 .lane = wormedit::lane_id_t{1}}}});
     chart.measures[0].notes[1].end = wormedit::local_position_t{wormedit::measure_id_t{8}, 240};
     return chart;
+}
+void require_two_bga_events(const wormedit::editor_field_scene_result_t& result,
+                            wormedit::object_id_t first, wormedit::object_id_t second) {
+    REQUIRE(result);
+    REQUIRE(result.scene->bga_events.size() == 2);
+    CHECK(result.scene->bga_events[0].event == first);
+    CHECK(result.scene->bga_events[1].event == second);
+}
+void require_metadata_bga_events(
+    const wormedit::editor_field_scene_window_metadata_t& metadata) {
+    REQUIRE(metadata.projection);
+    REQUIRE(metadata.projection.scene->bga_events.size() == 2);
+}
+void check_bga_window_projection(const wormedit::chart_document_t& chart,
+                                const wormedit::editor_field_scene_index_t& index,
+                                const wormedit::editor_interaction_view_model_t& current,
+                                const wormedit::editor_field_scene_request_t& request) {
+    wormedit::editor_field_scene_window_t window;
+    const auto initial = wormedit::make_editor_field_scene_reusing_window(
+        chart, index, current, request, window);
+    REQUIRE(initial);
+    const auto metadata = wormedit::project_editor_field_scene_window_metadata(
+        chart, index, current, request, window);
+    require_metadata_bga_events(metadata);
+    const auto cached = wormedit::make_editor_field_scene_reusing_window(
+        chart, index, current, request, window);
+    const auto fresh = wormedit::make_editor_field_scene(chart, index, current, request);
+    require_two_bga_events(cached, wormedit::object_id_t{900}, wormedit::object_id_t{901});
+    require_two_bga_events(fresh, wormedit::object_id_t{900}, wormedit::object_id_t{901});
+    check_window_scene(*cached.scene, *fresh.scene);
 }
 void check_reused_frame(const wormedit::chart_document_t& chart,
                         const wormedit::editor_field_scene_index_t& index,
@@ -1385,6 +1422,37 @@ TEST_CASE("Compose scene window rebuilds for stable input changes and falls back
     request.comparison_difference_rows = {{wormedit::measure_id_t{1}, 240}};
     check_reused_frame(chart, index, current, request, window);
     CHECK_FALSE(window.scene);
+}
+
+TEST_CASE("cached BGA projection returns each event once with fresh geometry parity",
+          "[editor-scene][scene-window][bga]") {
+    auto chart = window_chart();
+    chart.bga_events = {
+        {.id = wormedit::object_id_t{900},
+         .position = {wormedit::measure_id_t{1}, 720},
+         .resource = wormedit::resource_id_t{90}},
+        {.id = wormedit::object_id_t{901},
+         .position = {wormedit::measure_id_t{1}, 900},
+         .resource = wormedit::resource_id_t{91},
+         .kind = wormedit::visual_event_kind_t::video},
+    };
+    const auto index = std::get<wormedit::editor_field_scene_index_t>(
+        wormedit::build_editor_field_scene_index(chart, 7));
+    auto current = view();
+    current.bga_lane_visible = true;
+    auto request = wormedit::editor_field_scene_request_t{
+        .field_left_pixels = 10.0,
+        .field_width_pixels = 200.0,
+        .bgm_pane_left_pixels = 220.0,
+        .bgm_pane_width_pixels = 36.0,
+        .bga_pane_left_pixels = 270.0,
+        .bga_pane_width_pixels = 48.0,
+    };
+    for (const auto direction : {wormedit::editor_field_scroll_direction_t::up,
+                                 wormedit::editor_field_scroll_direction_t::down}) {
+        request.scroll_direction = direction;
+        check_bga_window_projection(chart, index, current, request);
+    }
 }
 
 namespace {

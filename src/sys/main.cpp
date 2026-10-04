@@ -3450,6 +3450,32 @@ void retain_compose_hover_timing(
     hover.sample_rate = action.hover_source_sample_rate;
 }
 
+void retain_compose_bgm_window_capture(
+    wormedit::sys::application_command_state_t& application, const WormUiWorkspaceView& view,
+    const WormUiWorkspaceAction& action) {
+    application.bgm_bar_window_capture.reset();
+    if (!action.minimap_window_capture_active || view.project_id == 0 ||
+        view.selected_chart_id == 0 ||
+        view.compose.selected_audio_asset_id == 0 ||
+        view.compose.waveform_overview_total_frames == 0 ||
+        view.compose.waveform_overview_sample_rate == 0 ||
+        !std::isfinite(action.minimap_window_capture_begin_fraction) ||
+        !std::isfinite(action.minimap_window_capture_end_fraction) ||
+        action.minimap_window_capture_begin_fraction < 0.0 ||
+        action.minimap_window_capture_begin_fraction >= action.minimap_window_capture_end_fraction ||
+        action.minimap_window_capture_end_fraction > 1.0)
+        return;
+    application.bgm_bar_window_capture = wormedit::sys::bgm_bar_window_capture_t{
+        .range = {action.minimap_window_capture_begin_fraction,
+                  action.minimap_window_capture_end_fraction},
+        .project = wormedit::song_id_t{view.project_id},
+        .chart = wormedit::chart_id_t{view.selected_chart_id},
+        .document_revision = view.document_revision,
+        .asset = wormedit::asset_id_t{view.compose.selected_audio_asset_id},
+        .total_frames = view.compose.waveform_overview_total_frames,
+        .sample_rate = view.compose.waveform_overview_sample_rate};
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -3947,6 +3973,7 @@ int main(int argc, char** argv) {
             const auto frame_nuklear_previous = wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::nuklear);
             auto action = worm_ui_frontend_compose(&flattened.view);
             retain_compose_hover_timing(compose_scene_cache, flattened.view, action);
+            retain_compose_bgm_window_capture(application_command_state, flattened.view, action);
             pending_notification = action.notifications;
             wormedit::sys::frame_timing().restore(frame_nuklear_previous);
             {

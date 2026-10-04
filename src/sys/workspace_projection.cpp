@@ -706,6 +706,94 @@ auto append_keysound_row(flattened_workspace_t& result, frame_arena_t& arena,
          .sound_group_id = row.sound_group_id});
 }
 
+auto append_keysound_selected_row(flattened_workspace_t& result, frame_arena_t& arena,
+                                  const wormedit::sys::keysound_row_t& row) -> bool {
+    const auto* slot = arena_string(arena, row.slot);
+    const auto* name = arena_string(arena, row.name);
+    if (!slot || !name) return false;
+    return result.compose.keysound.selected_row.push_back({.resource_id = row.resource.value,
+        .slot = slot, .name = name, .missing = row.missing, .layer_mask = row.layer_mask,
+        .note_layer_conflict_mask = row.note_layer_conflict_mask,
+        .sound_group_id = row.sound_group_id});
+}
+
+auto append_keysound_selection_row(flattened_workspace_t& result, frame_arena_t& arena,
+                                   const wormedit::sys::keysound_selection_row_t& row) -> bool {
+    const auto* slot = arena_string(arena, row.slot);
+    if (!slot) return false;
+    return result.compose.keysound.selection_row.push_back({.resource_id = row.resource.value,
+        .group_id = row.group_id, .layer_mask = row.layer_mask,
+        .note_layer_conflict_mask = row.note_layer_conflict_mask,
+        .slot = slot, .missing = row.missing});
+}
+
+auto append_keysound_display_row(flattened_workspace_t& result, frame_arena_t& arena,
+                                 const wormedit::sys::keysound_list_t::display_row_t& row)
+    -> bool {
+    const auto* name = row.kind == wormedit::sys::keysound_list_t::display_row_t::kind_t::group_header
+        ? arena_string(arena, row.group_name) : "";
+    if (!name) return false;
+    return result.compose.keysound.display_row.push_back({
+        .kind = row.kind == wormedit::sys::keysound_list_t::display_row_t::kind_t::group_header
+            ? WORM_UI_COMPOSE_KEYSOUND_GROUP_HEADER : WORM_UI_COMPOSE_KEYSOUND_SOUND_ROW,
+        .group_id = row.group_id, .group_name = name,
+        .group_sound_count = row.group_sound_count, .expanded = row.expanded,
+        .resource_id = row.resource.value});
+}
+
+auto bounded_text(const char* text, std::size_t size) -> std::string_view {
+    if (!text) return {};
+    const auto end = std::find(text, text + size, '\0');
+    return {text, static_cast<std::size_t>(end - text)};
+}
+
+template<class T>
+auto request_span(const T* data, std::size_t count) -> std::span<const T> {
+    return data && count > 0 ? std::span<const T>{data, count} : std::span<const T>{};
+}
+
+auto project_compose_keysounds(const workspace_projection_context_t& projection,
+                               const wormedit::chart_document_t& chart)
+    -> wormedit::sys::keysound_list_t {
+    const auto& request = projection.keysound_request;
+    if (request.slots_mode)
+        return wormedit::sys::project_keysound_list(projection.document, &chart,
+            WORM_UI_COMPOSE_KEYSOUND_CAPACITY,
+            chart.source_family == wormedit::format_family_t::bms &&
+                    (request.sort_by_id || projection.keysound_sort == dock_sort_t::bms_id)
+                ? wormedit::sys::dock_sort_t::bms_id : wormedit::sys::dock_sort_t::natural_name,
+            chart.source_family == wormedit::format_family_t::bms);
+    auto layer_filter = wormedit::sys::keysound_layer_filter_kind_t::any;
+    if (request.layer_filter_kind == 1)
+        layer_filter = wormedit::sys::keysound_layer_filter_kind_t::no_layer;
+    else if (request.layer_filter_kind == 2)
+        layer_filter = wormedit::sys::keysound_layer_filter_kind_t::specific;
+    return wormedit::sys::project_keysound_list(projection.document, &chart,
+        wormedit::sys::keysound_list_request_t{
+            .search = bounded_text(request.automatic_search, sizeof(request.automatic_search)),
+            .selected_resource_ids = request_span(request.selected_resource_ids,
+                                                   request.selected_resource_count),
+            .include_selected_metadata = request.include_selected_metadata,
+            .group_ids = request_span(request.group_filter_ids, request.group_filter_count),
+            .group_filter_active = request.group_filter_active,
+            .include_ungrouped = request.include_ungrouped,
+            .layer_filter = layer_filter, .layer_id = request.layer_filter_id,
+            .collapsed_group_ids = request_span(request.collapsed_group_ids,
+                                                request.collapsed_group_count),
+            .ungrouped_collapsed = request.ungrouped_collapsed,
+            .first_row = request.automatic_first_row,
+            .row_limit = request.automatic_row_limit == 0
+                ? 64 : request.automatic_row_limit,
+            .primary_resource_id = request.primary_resource_id,
+            .filter_layer_first = request.filter_layer_first_row,
+            .filter_layer_limit = request.filter_layer_row_limit == 0
+                ? 64 : request.filter_layer_row_limit,
+            .sort = request.sort_by_id || projection.keysound_sort == dock_sort_t::bms_id
+                ? wormedit::sys::dock_sort_t::bms_id
+                : wormedit::sys::dock_sort_t::natural_name,
+            .ids_available = chart.source_family == wormedit::format_family_t::bms});
+}
+
 auto append_keysound_layer(flattened_workspace_t& result, frame_arena_t& arena,
                            const wormedit::sys::keysound_layer_t& layer) -> bool {
     const auto* name = arena_string(arena, layer.name);
@@ -718,6 +806,15 @@ auto append_keysound_layer(flattened_workspace_t& result, frame_arena_t& arena,
                                                     .blue = layer.color.blue,
                                                     .alpha = layer.color.alpha,
                                                     .locked = layer.locked});
+}
+
+auto append_keysound_filter_layer(flattened_workspace_t& result, frame_arena_t& arena,
+                                  const wormedit::sys::keysound_layer_t& layer) -> bool {
+    const auto* name = arena_string(arena, layer.name);
+    if (!name) return false;
+    return result.compose.keysound.filter_layer.push_back({.layer_id = layer.id.value,
+        .name = name, .red = layer.color.red, .green = layer.color.green,
+        .blue = layer.color.blue, .alpha = layer.color.alpha, .locked = layer.locked});
 }
 
 void populate_compose_sound_groups(const workspace_projection_context_t& projection) {
@@ -767,6 +864,121 @@ void populate_compose_sound_slots(const workspace_projection_context_t& projecti
     view.sound_slot_count = rows.size();
 }
 
+auto reserve_compose_keysound_arrays(flattened_workspace_t& result, frame_arena_t& arena,
+                                     const wormedit::sys::keysound_list_t& list)
+    -> bool {
+    auto& rows = result.compose.keysound;
+    rows.row = arena_array<WormUiComposeKeysoundRowView>(arena, list.rows.size());
+    rows.selected_row = arena_array<WormUiComposeKeysoundRowView>(arena, list.selected_rows.size());
+    rows.selection_row = arena_array<WormUiComposeKeysoundSelectionView>(arena,
+                                                                          list.selection_rows.size());
+    rows.display_row = arena_array<WormUiComposeKeysoundDisplayRowView>(arena,
+                                                                         list.display_rows.size());
+    rows.advance_row = arena_array<WormUiComposeKeysoundAdvanceRowView>(arena,
+                                                                        list.advance_rows.size());
+    rows.listed_resource_id = arena_array<std::uint64_t>(arena, list.listed_resources.size());
+    rows.all_resource_id = arena_array<std::uint64_t>(arena, list.all_resources.size());
+    rows.layer = arena_array<WormUiComposeKeysoundLayerView>(arena, list.layers.size());
+    rows.filter_layer = arena_array<WormUiComposeKeysoundLayerView>(arena,
+                                                                     list.filter_layers.size());
+    return rows.row.capacity() == list.rows.size() &&
+        rows.selected_row.capacity() == list.selected_rows.size() &&
+        rows.selection_row.capacity() == list.selection_rows.size() &&
+        rows.display_row.capacity() == list.display_rows.size() &&
+        rows.advance_row.capacity() == list.advance_rows.size() &&
+        rows.listed_resource_id.capacity() == list.listed_resources.size() &&
+        rows.all_resource_id.capacity() == list.all_resources.size() &&
+        rows.layer.capacity() == list.layers.size() &&
+        rows.filter_layer.capacity() == list.filter_layers.size();
+}
+
+void clear_compose_keysound_counts(WormUiComposeView& view) {
+    view.keysound_count = 0;
+    view.keysound_selected_row_count = 0;
+    view.keysound_selection_row_count = 0;
+    view.keysound_display_row_count = 0;
+    view.keysound_advance_row_count = 0;
+    view.keysound_listed_resource_count = 0;
+    view.keysound_all_resource_count = 0;
+    view.keysound_layer_count = 0;
+    view.keysound_filter_layer_count = 0;
+}
+
+template<class KeysoundArrays>
+void bind_compose_keysound_arrays(WormUiComposeView& view, KeysoundArrays& rows) {
+    view.keysounds = rows.row.data();
+    view.keysound_selected_rows = rows.selected_row.data();
+    view.keysound_selection_rows = rows.selection_row.data();
+    view.keysound_display_rows = rows.display_row.data();
+    view.keysound_advance_rows = rows.advance_row.data();
+    view.keysound_listed_resource_ids = rows.listed_resource_id.data();
+    view.keysound_all_resource_ids = rows.all_resource_id.data();
+    view.keysound_layers = rows.layer.data();
+    view.keysound_filter_layers = rows.filter_layer.data();
+}
+
+void append_compose_keysound_payload(flattened_workspace_t& result, frame_arena_t& arena,
+                                     const wormedit::sys::keysound_list_t& list,
+                                     WormUiComposeView& view) {
+    for (const auto& layer : list.layers)
+        if (!append_keysound_layer(result, arena, layer)) break;
+    view.keysound_layer_count = result.compose.keysound.layer.size();
+    for (const auto& layer : list.filter_layers)
+        if (!append_keysound_filter_layer(result, arena, layer)) break;
+    view.keysound_filter_layer_count = result.compose.keysound.filter_layer.size();
+    for (const auto& row : list.rows) {
+        if (!append_keysound_row(result, arena, row)) {
+            view.keysounds_truncated = true;
+            break;
+        }
+    }
+    view.keysound_count = result.compose.keysound.row.size();
+    for (const auto& row : list.selected_rows) {
+        if (!append_keysound_selected_row(result, arena, row)) {
+            view.keysounds_truncated = true;
+            break;
+        }
+    }
+    view.keysound_selected_row_count = result.compose.keysound.selected_row.size();
+    for (const auto& row : list.selection_rows)
+        if (!append_keysound_selection_row(result, arena, row)) {
+            view.keysounds_truncated = true;
+            break;
+        }
+    view.keysound_selection_row_count = result.compose.keysound.selection_row.size();
+    for (const auto& row : list.display_rows) {
+        if (!append_keysound_display_row(result, arena, row)) {
+            view.keysound_display_rows_truncated = true;
+            break;
+        }
+    }
+    view.keysound_display_row_count = result.compose.keysound.display_row.size();
+}
+
+void append_compose_keysound_indices(flattened_workspace_t& result,
+                                     const wormedit::sys::keysound_list_t& list,
+                                     WormUiComposeView& view) {
+    for (const auto& row : list.advance_rows)
+        if (!result.compose.keysound.advance_row.push_back({.resource_id = row.resource.value,
+                                                             .missing = row.missing})) {
+            view.keysounds_truncated = true;
+            break;
+        }
+    for (const auto id : list.listed_resources)
+        if (!result.compose.keysound.listed_resource_id.push_back(id.value)) {
+            view.keysounds_truncated = true;
+            break;
+        }
+    for (const auto id : list.all_resources)
+        if (!result.compose.keysound.all_resource_id.push_back(id.value)) {
+            view.keysounds_truncated = true;
+            break;
+        }
+    view.keysound_advance_row_count = result.compose.keysound.advance_row.size();
+    view.keysound_listed_resource_count = result.compose.keysound.listed_resource_id.size();
+    view.keysound_all_resource_count = result.compose.keysound.all_resource_id.size();
+}
+
 void populate_compose_keysounds(const workspace_projection_context_t& projection,
                                 wormedit::chart_id_t chart_id) {
     auto& result = projection.result;
@@ -776,41 +988,33 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
                                          &wormedit::chart_document_t::id);
     view.keysounds_available = chart != projection.document.charts.end();
     if (!arena || !view.keysounds_available) return;
-    const auto list = wormedit::sys::project_keysound_list(
-        projection.document, &*chart, WORM_UI_COMPOSE_KEYSOUND_CAPACITY,
-        chart->source_family == wormedit::format_family_t::bms &&
-                (projection.keysound_sort == dock_sort_t::bms_id ||
-                 projection.keysound_request.slots_mode)
-            ? wormedit::sys::dock_sort_t::bms_id
-            : wormedit::sys::dock_sort_t::natural_name,
-        chart->source_family == wormedit::format_family_t::bms);
+    const auto list = project_compose_keysounds(projection, *chart);
+    clear_compose_keysound_counts(view);
+    view.keysound_section_projection_available = !projection.keysound_request.slots_mode;
     view.keysound_total_count = list.total;
     view.keysounds_truncated = list.truncated;
+    view.keysound_display_total_count = list.display_total;
+    view.keysound_display_first_row = list.display_first_row;
+    view.keysound_display_rows_truncated = list.display_truncated;
+    view.keysound_primary_display_index_valid = list.primary_display_index.has_value();
+    view.keysound_primary_display_index = list.primary_display_index.value_or(0);
+    view.keysound_filter_layer_first = list.filter_layer_first;
+    view.keysound_filter_layer_total = list.filter_layer_total;
+    view.keysound_filter_selected_layer_valid = list.selected_filter_layer_valid;
+    view.keysound_filter_selected_layer_name = arena_string(
+        *arena, list.selected_filter_layer_name);
     view.keysound_ids_available = chart->source_family == wormedit::format_family_t::bms;
     view.keysound_ids_used = list.bms_capacity.used;
     view.keysound_ids_total = list.bms_capacity.total;
     view.keysound_largest_free_run = list.bms_capacity.largest_free_run;
-    result.compose.keysound.row = arena_array<WormUiComposeKeysoundRowView>(*arena, list.rows.size());
-    result.compose.keysound.layer =
-        arena_array<WormUiComposeKeysoundLayerView>(*arena, list.layers.size());
-    view.keysounds = result.compose.keysound.row.data();
-    view.keysound_layers = result.compose.keysound.layer.data();
-    if (result.compose.keysound.row.capacity() != list.rows.size() ||
-        result.compose.keysound.layer.capacity() != list.layers.size()) {
+    if (!reserve_compose_keysound_arrays(result, *arena, list)) {
+        bind_compose_keysound_arrays(view, result.compose.keysound);
         view.keysounds_truncated = true;
         return;
     }
-    for (const auto& layer : list.layers) {
-        if (!append_keysound_layer(result, *arena, layer)) break;
-    }
-    view.keysound_layer_count = result.compose.keysound.layer.size();
-    for (const auto& row : list.rows) {
-        if (!append_keysound_row(result, *arena, row)) {
-            view.keysounds_truncated = true;
-            break;
-        }
-    }
-    view.keysound_count = result.compose.keysound.row.size();
+    bind_compose_keysound_arrays(view, result.compose.keysound);
+    append_compose_keysound_payload(result, *arena, list, view);
+    append_compose_keysound_indices(result, list, view);
     populate_compose_sound_groups(projection);
     populate_compose_sound_slots(projection);
 }
@@ -1137,8 +1341,15 @@ void flattened_workspace_t::rebind_view_pointers() {
     auto& compose_view = view.compose;
     compose_view.resources = compose.resource.view.data();
     compose_view.keysounds = compose.keysound.row.data();
+    compose_view.keysound_selected_rows = compose.keysound.selected_row.data();
+    compose_view.keysound_selection_rows = compose.keysound.selection_row.data();
+    compose_view.keysound_display_rows = compose.keysound.display_row.data();
+    compose_view.keysound_advance_rows = compose.keysound.advance_row.data();
+    compose_view.keysound_listed_resource_ids = compose.keysound.listed_resource_id.data();
+    compose_view.keysound_all_resource_ids = compose.keysound.all_resource_id.data();
     compose_view.sound_slots = compose.keysound.slot.data();
     compose_view.keysound_layers = compose.keysound.layer.data();
+    compose_view.keysound_filter_layers = compose.keysound.filter_layer.data();
     compose_view.output_groups = compose.output_group.view.data();
     compose_view.branch_rows = compose.branch.row.data();
     compose_view.branch_choices = compose.branch.choice.data();

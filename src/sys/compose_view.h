@@ -339,6 +339,9 @@ struct application_command_state_t {
     bool minimap_click_moves_paused_playhead{};
     // Session-only window of the BGM bar; zoom and pan never touch the chart.
     bgm_bar_range_t bgm_bar_range;
+    // Temporary pan wins over field centering only for its stamped chart/asset/visible span.
+    std::optional<bgm_bar_pan_override_t> bgm_bar_pan_override;
+    std::optional<bgm_bar_window_capture_t> bgm_bar_window_capture;
     bool bgm_bar_hidden{};
     struct minimap_start_frame_t {
         wormedit::chart_id_t chart;
@@ -387,8 +390,10 @@ inline auto toggle_transport_metronome(application_command_state_t& state) -> bo
 }
 
 struct compose_horizontal_layout_t {
+    double bga_pane_left_pixels{};
     double field_left_pixels{};
     double playable_field_width_pixels{};
+    double bgm_pane_left_pixels{};
     double bgm_pane_width_pixels{};
     double bga_pane_width_pixels{};
 };

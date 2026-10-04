@@ -345,8 +345,29 @@ void populate_bgm_bar_bookmarks(flattened_workspace_t& flattened, const compose_
 }
 // Publishes the BGM bar rows and measure marks for the requested song window.
 void populate_bgm_bar(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
-                      const audio::waveform_t& waveform, bgm_bar_range_t requested) {
-    const auto range = bgm_bar_fit(requested, bgm_bar_minimum_span(waveform.total_frames));
+                      const audio::waveform_t& waveform, bgm_bar_range_t requested,
+                      std::optional<bgm_bar_pan_override_t>* pan_override,
+                      std::optional<bgm_bar_window_capture_t>* window_capture) {
+    const auto minimum_span = bgm_bar_minimum_span(waveform.total_frames);
+    const auto& projection_view = flattened.view.compose;
+    const bool keep_capture = window_capture && *window_capture &&
+        bgm_bar_window_capture_matches(**window_capture, song_id_t{projection_view.project_id},
+            chart_id_t{cache.chart.value}, cache.revision,
+            asset_id_t{projection_view.selected_audio_asset_id}, waveform.total_frames,
+            waveform.sample_rate);
+    if (window_capture && *window_capture && !keep_capture) window_capture->reset();
+    const bool keep_pan = pan_override && *pan_override &&
+        bgm_bar_pan_override_matches(**pan_override,
+            projection_view.waveform_overview_visible_begin_fraction,
+            projection_view.waveform_overview_visible_end_fraction,
+            song_id_t{projection_view.project_id}, chart_id_t{cache.chart.value}, cache.revision,
+            asset_id_t{projection_view.selected_audio_asset_id});
+    if (pan_override && *pan_override && !keep_pan) pan_override->reset();
+    const auto range = keep_capture ? bgm_bar_fit((*window_capture)->range, minimum_span)
+        : keep_pan ? bgm_bar_fit((*pan_override)->range, minimum_span)
+        : bgm_bar_center_on_visible_span(requested,
+            projection_view.waveform_overview_visible_begin_fraction,
+            projection_view.waveform_overview_visible_end_fraction, minimum_span);
     if (!refresh_bgm_bar_rows(cache.bgm_bar, waveform, range)) return;
     refresh_bgm_bar_marks(cache, waveform, range);
     auto& waveform_views = flattened.compose.waveform;
@@ -431,7 +452,9 @@ auto populate_compose_waveform_projection(
     const wormedit::editor_interaction_state_t* interaction_state,
     const audio::waveform_analysis_result_t* detail_analysis,
     audio::decoded_block_cache_t* decoded_blocks,
-    const audio::aligned_waveform_style_t* stable_style, bgm_bar_range_t bgm_bar_range) -> bool {
+    const audio::aligned_waveform_style_t* stable_style, bgm_bar_range_t bgm_bar_range,
+    std::optional<bgm_bar_pan_override_t>* bgm_bar_pan_override,
+    std::optional<bgm_bar_window_capture_t>* bgm_bar_window_capture) -> bool {
     cache.waveform_overview_total_frames = 0;
     cache.waveform_overview_sample_rate = 0;
     auto& compose = flattened.view.compose;
@@ -486,7 +509,8 @@ auto populate_compose_waveform_projection(
     compose.waveform_overview_total_frames = waveform.total_frames;
     cache.waveform_overview_total_frames = waveform.total_frames;
     cache.waveform_overview_sample_rate = waveform.sample_rate;
-    populate_bgm_bar(flattened, cache, waveform, bgm_bar_range);
+    populate_bgm_bar(flattened, cache, waveform, bgm_bar_range, bgm_bar_pan_override,
+                     bgm_bar_window_capture);
     return true;
 }
 

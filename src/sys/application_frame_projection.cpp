@@ -237,7 +237,9 @@ auto project_application_frame(application_frame_projection_context_t context)
             context.compose_interaction_state ? &*context.compose_interaction_state : nullptr,
             context.waveform_runtime.detail_analysis().get(),
             &context.waveform_runtime.decoded_blocks(), context.waveform_runtime.playback_style(),
-            context.application_command_state.bgm_bar_range);
+            context.application_command_state.bgm_bar_range,
+            &context.application_command_state.bgm_bar_pan_override,
+            &context.application_command_state.bgm_bar_window_capture);
     }
     {
         frame_phase_scope_t overlays(frame_phase_t::workspace_waveform_overlays);

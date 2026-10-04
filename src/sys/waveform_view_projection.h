@@ -24,7 +24,9 @@ void populate_audio_waveform_views(
     const audio::waveform_analysis_result_t* detail_analysis = nullptr,
     audio::decoded_block_cache_t* decoded_blocks = nullptr,
     const audio::aligned_waveform_style_t* stable_style = nullptr,
-    bgm_bar_range_t bgm_bar_range = {}) -> bool;
+    bgm_bar_range_t bgm_bar_range = {},
+    std::optional<bgm_bar_pan_override_t>* bgm_bar_pan_override = nullptr,
+    std::optional<bgm_bar_window_capture_t>* bgm_bar_window_capture = nullptr) -> bool;
 
 } // namespace wormedit::sys
 #endif

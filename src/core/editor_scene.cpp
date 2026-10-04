@@ -2382,6 +2382,10 @@ auto project_scene_window(const chart_document_t& chart, const editor_field_scen
     if (!result)
         return result;
     auto& scene = *result.scene;
+    // The metadata pass composes BGA events for metadata-only callers. The full
+    // window path projects its cached event geometry below, so keep only that
+    // shifted copy in the returned scene.
+    scene.bga_events.clear();
     const auto shift = request.scroll_direction == editor_field_scroll_direction_t::down
                            ? view.viewport_height_pixels - window.view.viewport_height_pixels +
                                  view.viewport_scroll_pixels - window.view.viewport_scroll_pixels

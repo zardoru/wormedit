@@ -978,8 +978,8 @@ auto dispatch_bmson_compose_input(
 void update_compose_viewport_pointer_input(const WormUiWorkspaceAction& ui_action,
                                            wormedit::viewport_input_controller_t& viewport_input,
                                            compose_scene_cache_t& scene_cache,
-                                           double bgm_pane_width, double field_left_pixels,
-                                           double field_width_pixels) {
+                                           double bgm_pane_width, double bgm_pane_left_pixels,
+                                           double viewport_width_pixels) {
     using namespace wormedit;
     if (!ui_action.shortcut_window_focused) {
         viewport_input.focus_lost();
@@ -990,9 +990,9 @@ void update_compose_viewport_pointer_input(const WormUiWorkspaceAction& ui_actio
                 bgm_pane_width > 0.0 &&
                         std::isfinite(ui_action.compose_viewport_middle_click_x_pixels) &&
                         ui_action.compose_viewport_middle_click_x_pixels >=
-                            field_left_pixels + field_width_pixels &&
+                            bgm_pane_left_pixels &&
                         ui_action.compose_viewport_middle_click_x_pixels <=
-                            ui_action.compose_input_viewport_width_pixels
+                            viewport_width_pixels
                     ? viewport_pane_t::bgm
                     : viewport_pane_t::chart;
             viewport_input.middle_click(middle_click_pane,
@@ -1069,6 +1069,7 @@ struct compose_input_context_t {
     bool gesture_active{};
     std::size_t bgm_lane_count{};
     double bgm_pane_width{};
+    double bgm_pane_left_pixels{};
     double field_left_pixels{};
     double field_width_pixels{};
 
@@ -3334,7 +3335,7 @@ auto dispatch_compose_viewport_batch(compose_input_context_t& context,
         }
         const auto bgm_pane =
             context.bgm_pane_width > 0.0 && std::isfinite(input.cursor_x_pixels) &&
-            input.cursor_x_pixels >= context.field_left_pixels + context.field_width_pixels &&
+            input.cursor_x_pixels >= context.bgm_pane_left_pixels &&
             input.cursor_x_pixels <= context.ui_action.compose_input_viewport_width_pixels;
         apply_compose_viewport_actions(
             context.viewport_input.handle_wheel(
@@ -3427,6 +3428,7 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
         bgm_lane_count != 0, state.bga_lane_visible,
         std::popcount(effective_compose_timing_lane_mask(application_state)));
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
+    const auto bgm_pane_left_pixels = horizontal_layout.bgm_pane_left_pixels;
     const auto field_left_pixels = horizontal_layout.field_left_pixels;
     const auto field_width_pixels = horizontal_layout.playable_field_width_pixels;
     const auto chart =
@@ -3452,10 +3454,12 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
         .gesture_active = gesture_active,
         .bgm_lane_count = bgm_lane_count,
         .bgm_pane_width = bgm_pane_width,
+        .bgm_pane_left_pixels = bgm_pane_left_pixels,
         .field_left_pixels = field_left_pixels,
         .field_width_pixels = field_width_pixels};
     update_compose_viewport_pointer_input(ui_action, viewport_input, scene_cache, bgm_pane_width,
-                                          field_left_pixels, field_width_pixels);
+                                          bgm_pane_left_pixels,
+                                          ui_action.compose_input_viewport_width_pixels);
     update_compose_pointer_hover(
         ui_action, gesture_active, chart == history.document.charts.end() ? nullptr : &*chart,
         scene_cache.interaction_view ? &*scene_cache.interaction_view : nullptr,
@@ -3487,8 +3491,16 @@ auto dispatch_compose_input_action(WormUiWorkspaceAction& ui_action,
                                    compose_scene_cache_t& scene_cache,
                                    double viewport_delta_seconds) -> std::string {
     // View-only BGM bar inputs never reach the editor dispatcher.
+    const bgm_bar_input_context_t bgm_bar_context{
+        .total_frames = scene_cache.waveform_overview_total_frames,
+        .visible_begin_fraction = ui_action.minimap_visible_begin_fraction,
+        .visible_end_fraction = ui_action.minimap_visible_end_fraction,
+        .project = history.document.id,
+        .chart = state.chart,
+        .document_revision = history.document.revision,
+        .asset = workspace.transport.audio_asset.value_or(asset_id_t{})};
     (void)consume_bgm_bar_inputs(ui_action, application_state.bgm_bar_range,
-                                 scene_cache.waveform_overview_total_frames);
+                                 application_state.bgm_bar_pan_override, bgm_bar_context);
     const bool preference_changed = consume_minimap_preferences(ui_action, application_state);
     if (preference_changed && ui_action.compose_input_count == 0)
         return "Minimap paused-click preference changed for this session.";

@@ -1,6 +1,8 @@
 #include "sys/sound_list_projection.h"
 
 #include <algorithm>
+#include <limits>
+#include <optional>
 #include <unordered_map>
 #include <wormedit/core/natural_order.h>
 #include <wormedit/core/resource_assignment.h>
@@ -180,6 +182,51 @@ auto keysound_layer_mask(const chart_document_t& chart, const keysound_list_t& l
     return mask;
 }
 
+auto keysound_matches_request(const resource_entry_t& resource,
+                              const chart_document_t* chart,
+                              const keysound_list_request_t& request,
+                              std::string_view folded_search) -> bool {
+    if (!folded_search.empty() &&
+        fold(resource.name).find(folded_search) == std::string::npos &&
+        fold(keysound_slot(resource)).find(folded_search) == std::string::npos)
+        return false;
+    const auto group_id = resource.sound_group ? resource.sound_group->value : 0;
+    if (request.group_filter_active) {
+        const auto chosen = std::ranges::find(request.group_ids, group_id);
+        if ((group_id == 0 && !request.include_ungrouped) ||
+            (group_id != 0 && chosen == request.group_ids.end()))
+            return false;
+    }
+    if (request.layer_filter == keysound_layer_filter_kind_t::any) return true;
+    if (!chart) return request.layer_filter == keysound_layer_filter_kind_t::no_layer;
+    const auto defaults = std::ranges::find(chart->sound_layer_defaults, resource.id,
+        &sound_layer_default_t::resource);
+    const bool has_layers = defaults != chart->sound_layer_defaults.end() &&
+                            !defaults->layers.empty();
+    if (request.layer_filter == keysound_layer_filter_kind_t::no_layer) return !has_layers;
+    return defaults != chart->sound_layer_defaults.end() &&
+           std::ranges::find(defaults->layers, layer_id_t{request.layer_id}) !=
+                              defaults->layers.end();
+}
+
+auto group_is_collapsed(const keysound_list_request_t& request, std::uint64_t group_id) -> bool {
+    return group_id == 0 ? request.ungrouped_collapsed
+                         : std::ranges::find(request.collapsed_group_ids, group_id) !=
+                               request.collapsed_group_ids.end();
+}
+
+auto keysound_row_from_resource(const chart_document_t* chart,
+                                const keysound_list_t& list,
+                                const resource_entry_t& resource) -> keysound_row_t {
+    return {.resource = resource.id,
+            .slot = keysound_slot(resource),
+            .name = resource.name.empty() ? "Resource " + std::to_string(resource.id.value)
+                                          : resource.name,
+            .missing = resource.missing,
+            .layer_mask = chart ? keysound_layer_mask(*chart, list, resource.id) : 0,
+            .sound_group_id = resource.sound_group ? resource.sound_group->value : 0};
+}
+
 auto note_conflicts(const note_t& note, const std::vector<layer_id_t>& defaults,
                    const keysound_list_t& list) -> std::uint64_t {
     const auto all = list.layers.size() == 64 ? ~std::uint64_t{0}
@@ -202,6 +249,10 @@ auto note_conflicts(const note_t& note, const std::vector<layer_id_t>& defaults,
 void populate_note_conflicts(const chart_document_t& chart, keysound_list_t& list) {
     std::unordered_map<std::uint64_t, keysound_row_t*> rows;
     for (auto& row : list.rows) rows.emplace(row.resource.value, &row);
+    for (auto& row : list.selected_rows) rows.emplace(row.resource.value, &row);
+    std::unordered_map<std::uint64_t, keysound_selection_row_t*> selection_rows;
+    for (auto& row : list.selection_rows)
+        selection_rows.emplace(row.resource.value, &row);
     std::unordered_map<std::uint64_t, const std::vector<layer_id_t>*> defaults;
     for (const auto& entry : chart.sound_layer_defaults)
         defaults.emplace(entry.resource.value, &entry.layers);
@@ -209,11 +260,14 @@ void populate_note_conflicts(const chart_document_t& chart, keysound_list_t& lis
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
             if (!note.sound || note.semantic_layers.empty()) continue;
-            const auto row = rows.find(note.sound->value);
-            if (row == rows.end()) continue;
             const auto layers = defaults.find(note.sound->value);
-            row->second->note_layer_conflict_mask |= note_conflicts(
+            const auto conflicts = note_conflicts(
                 note, layers == defaults.end() ? empty : *layers->second, list);
+            if (const auto row = rows.find(note.sound->value); row != rows.end())
+                row->second->note_layer_conflict_mask |= conflicts;
+            if (const auto row = selection_rows.find(note.sound->value);
+                row != selection_rows.end())
+                row->second->note_layer_conflict_mask |= conflicts;
         }
     }
 }
@@ -253,6 +307,175 @@ auto project_keysound_list(const song_document_t& document, const chart_document
              .layer_mask = chart ? keysound_layer_mask(*chart, list, resource.id) : 0,
              .sound_group_id = resource.sound_group ? resource.sound_group->value : 0});
     }
+    if (chart) populate_note_conflicts(*chart, list);
+    return list;
+}
+
+namespace {
+struct keysound_section_projection_t {
+    std::uint64_t id{};
+    std::string name;
+    std::vector<const resource_entry_t*> members;
+    bool collapsed{};
+};
+
+auto section_requested(const keysound_list_request_t& request, std::uint64_t id) -> bool {
+    return !request.group_filter_active ||
+           std::ranges::find(request.group_ids, id) != request.group_ids.end();
+}
+
+void append_section_projection(keysound_list_t& list,
+                               const keysound_section_projection_t& section,
+                               std::size_t first, std::size_t last,
+                               std::uint64_t primary_resource_id,
+                               const chart_document_t* chart) {
+    if (section.members.empty()) return;
+    auto display_index = list.display_total++;
+    if (display_index >= first && display_index < last)
+        list.display_rows.push_back({.kind = keysound_list_t::display_row_t::kind_t::group_header,
+            .group_id = section.id, .group_name = section.name,
+            .group_sound_count = section.members.size(), .expanded = !section.collapsed});
+    for (const auto* member : section.members) {
+        list.advance_rows.push_back({.resource = member->id, .missing = member->missing});
+        if (section.collapsed) continue;
+        if (member->id.value == primary_resource_id)
+            list.primary_display_index = list.display_total;
+        list.listed_resources.push_back(member->id);
+        display_index = list.display_total++;
+        if (display_index >= first && display_index < last) {
+            list.display_rows.push_back({.kind = keysound_list_t::display_row_t::kind_t::sound,
+                .group_id = section.id, .resource = member->id});
+            list.rows.push_back(keysound_row_from_resource(chart, list, *member));
+        }
+    }
+}
+
+auto make_keysound_sections(const song_document_t& document,
+                           const keysound_list_request_t& request,
+                           std::unordered_map<std::uint64_t, std::size_t>& indices,
+                           std::size_t& ungrouped_index)
+    -> std::vector<keysound_section_projection_t> {
+    std::vector<keysound_section_projection_t> sections;
+    sections.reserve(document.sound_groups.size() + 1);
+    for (const auto& group : document.sound_groups) {
+        if (!section_requested(request, group.id.value)) continue;
+        indices.emplace(group.id.value, sections.size());
+        sections.push_back({.id = group.id.value, .name = group.name,
+                            .collapsed = group_is_collapsed(request, group.id.value)});
+    }
+    ungrouped_index = sections.size();
+    if (!request.group_filter_active || request.include_ungrouped)
+        sections.push_back({.id = 0, .name = "Ungrouped",
+                            .collapsed = request.ungrouped_collapsed});
+    return sections;
+}
+
+auto collect_keysound_resources(const song_document_t& document,
+                                const chart_document_t* chart,
+                                const keysound_list_request_t& request,
+                                std::string_view search, keysound_list_t& list,
+                                std::vector<keysound_section_projection_t>& sections,
+                                const std::unordered_map<std::uint64_t, std::size_t>& indices,
+                                std::size_t ungrouped_index)
+    -> std::unordered_map<std::uint64_t, const resource_entry_t*> {
+    std::unordered_map<std::uint64_t, const resource_entry_t*> resources;
+    for (const auto& resource : document.resources) {
+        if (!is_placeable_keysound(document, resource)) continue;
+        list.all_resources.push_back(resource.id);
+        resources.emplace(resource.id.value, &resource);
+        if (!keysound_matches_request(resource, chart, request, search)) continue;
+        const auto group_id = resource.sound_group ? resource.sound_group->value : 0;
+        const auto found = indices.find(group_id);
+        if (group_id == 0) {
+            if (ungrouped_index < sections.size())
+                sections[ungrouped_index].members.push_back(&resource);
+        } else if (found != indices.end()) {
+            sections[found->second].members.push_back(&resource);
+        }
+    }
+    return resources;
+}
+
+void sort_keysound_sections(std::vector<keysound_section_projection_t>& sections,
+                            dock_sort_t sort) {
+    for (auto& section : sections)
+        std::ranges::sort(section.members, [&](const auto* left, const auto* right) {
+            return keysound_resource_less(*left, *right, sort);
+        });
+    std::ranges::sort(sections, [](const auto& left, const auto& right) {
+        if (left.id == 0) return false;
+        if (right.id == 0) return true;
+        if (natural_name_less(left.name, right.name)) return true;
+        if (natural_name_less(right.name, left.name)) return false;
+        return left.id < right.id;
+    });
+}
+
+void append_selected_keysounds(keysound_list_t& list, const chart_document_t* chart,
+                               const keysound_list_request_t& request,
+                               const std::unordered_map<std::uint64_t,
+                                   const resource_entry_t*>& resources) {
+    for (const auto id : request.selected_resource_ids) {
+        const auto found = resources.find(id);
+        if (found == resources.end()) continue;
+        const auto row = keysound_row_from_resource(chart, list, *found->second);
+        list.selection_rows.push_back({.resource = row.resource,
+            .group_id = row.sound_group_id, .layer_mask = row.layer_mask,
+            .slot = row.slot, .missing = row.missing});
+        const auto visible = std::ranges::find(list.rows, row.resource,
+                                                &keysound_row_t::resource) != list.rows.end();
+        if (request.include_selected_metadata && !visible) list.selected_rows.push_back(row);
+    }
+}
+} // namespace
+
+auto project_keysound_list(const song_document_t& document, const chart_document_t* chart,
+                           const keysound_list_request_t& request) -> keysound_list_t {
+    keysound_list_t list;
+    list.bms_capacity = bms_identifier_capacity(document, "WAV");
+    if (chart) {
+        for (const auto& layer : chart->semantic_layers) {
+            if (list.layers.size() == keysound_layer_limit) break;
+            list.layers.push_back(
+                {.id = layer.id, .name = layer.name, .color = layer.color, .locked = layer.locked});
+        }
+        list.filter_layer_total = chart->semantic_layers.size();
+        list.filter_layer_first = std::min(request.filter_layer_first,
+                                           list.filter_layer_total);
+        const auto choice_count = std::min(request.filter_layer_limit,
+                                           list.filter_layer_total - list.filter_layer_first);
+        list.filter_layers.reserve(choice_count);
+        for (std::size_t index = 0; index < choice_count; ++index) {
+            const auto& layer = chart->semantic_layers[list.filter_layer_first + index];
+            list.filter_layers.push_back({.id = layer.id, .name = layer.name,
+                .color = layer.color, .locked = layer.locked});
+        }
+        const auto selected = std::ranges::find(chart->semantic_layers,
+            layer_id_t{request.layer_id}, &semantic_layer_t::id);
+        if (request.layer_id != 0 && selected != chart->semantic_layers.end()) {
+            list.selected_filter_layer_valid = true;
+            list.selected_filter_layer_name = selected->name;
+        }
+    }
+    std::unordered_map<std::uint64_t, std::size_t> section_indices;
+    std::size_t ungrouped_index{};
+    auto sections = make_keysound_sections(document, request, section_indices, ungrouped_index);
+    const auto resources_by_id = collect_keysound_resources(document, chart, request,
+        fold(request.search), list, sections, section_indices, ungrouped_index);
+    list.total = list.all_resources.size();
+    sort_keysound_sections(sections, request.ids_available ? request.sort
+                                                          : dock_sort_t::natural_name);
+    const auto first = request.first_row;
+    const auto last = request.row_limit > std::numeric_limits<std::size_t>::max() - first
+        ? std::numeric_limits<std::size_t>::max() : first + request.row_limit;
+    for (const auto& section : sections)
+        append_section_projection(list, section, first, last,
+                                  request.primary_resource_id, chart);
+    append_selected_keysounds(list, chart, request, resources_by_id);
+    list.display_first_row = std::min(first, list.display_total);
+    list.display_truncated = list.display_first_row != 0 ||
+                             list.display_rows.size() < list.display_total;
+    list.truncated = list.display_truncated;
     if (chart) populate_note_conflicts(*chart, list);
     return list;
 }

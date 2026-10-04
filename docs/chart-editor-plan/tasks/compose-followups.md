@@ -313,10 +313,11 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-357 Show group sections and group/layer filters in the Sounds dock
 
-- **Status:** ready (T-353 is done)
+- **Status:** done (2026-10-04; windowed sections and stable-ID filters)
 - **Outcome:** the dock lists sounds under collapsible group headers (name, count), followed by an "Ungrouped" section, each in natural name order. A filter row narrows the list by group (one or several) and by default layer (any layer, a specific layer, or no layer), combined with the existing search. Collapsed state and filters last for the session, per song.
 - **Read first:** `src/sys/sound_list_projection.h`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.h`, `include/wormedit/core/sound_groups.h`.
-- **Files owned:** `src/sys/sound_list_projection.cpp/.h`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/compose_state.h`, `src/ui/frontend.h`, `tests/sys/sound_list_projection_tests.cpp`, `tests/ui/keysound_list_state_tests.cpp`.
+- **Files owned:** `src/sys/sound_list_projection.cpp/.h`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/compose_state.h`, `src/ui/frontend.h`, `tests/sys/sound_list_projection_tests.cpp`, `tests/ui/keysound_list_state_tests.cpp`, `src/ui/nuklear/frontend.cpp`, `src/sys/application_frame_projection.cpp`, `src/sys/workspace_projection.cpp/.h`, new `tests/ui/sound_filter_event_harness_tests.cpp`, `tests/CMakeLists.txt`, `tests/sys/frame_projection_arena_tests.cpp`.
+- **Supporting scope (coordinator approved, 2026-10-04):** Frontend request retention and application/workspace projection wiring carry group/layer filters before windowing. Dedicated event-harness tests verify interactions; the coordinator-owned arena regression verifies windowed group labels, complete ID-only order and compact off-page selection survive source mutation and projection moves. Coordinator owns build registration and shared contract coordination. Verification uses discovered test names; the old filename-based regex did not select projection cases. Automatic mode uses group sections; slots mode keeps direct BMS-ID order. The filter layer picker uses a bounded stable-ID/name window independent of the first-64 mask palette; selected filter validity/name is resolved independently so off-window layers are retained and deleted layers are dropped. Select all includes listed expanded matching sounds; collapsed members are excluded. Advance ordering remains matching sound order independent of headers and viewport paging.
 - **Steps:**
   1. Projection: group headers as rows in the visible window (collapsed groups contribute one row), with the filters applied before windowing.
   2. Filter row: a group multi-select popup, a layer popup (including "No layer"), and Clear.
@@ -324,8 +325,10 @@ Apply the stale-plan check (rule 9) first.
   4. Tests: window over collapsed and expanded groups; group+layer+search combination; 1,200 sounds stay windowed (only visible rows built).
 - **Invariants:** filters and collapse never change the document.
 - **Reject/failure behavior:** a filter naming a deleted group or layer drops that entry.
-- **Verify:** `ctest --test-dir build --output-on-failure -R 'sound_list_projection|^frontend-state\.'`; isolated Xvfb PNG with three groups, one collapsed.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'keysound|sound list|sound properties|sound layer conflicts|BMS slot|^frontend-state\.'`; isolated Xvfb PNG with three groups, one collapsed.
 - **Out of scope:** tag and usage filters; the BGA dock (can reuse this later).
+
+- **Verification evidence (2026-10-04):** Application build and full suite passed 2,045/2,045, including all 104 input-harness cases. Projection tests cover filtering before paging, complete ID-only advance/selection order, collapse, large catalogs/selections and layer IDs beyond 64; arena tests cover source lifetime, moves and capacity failure. The real isolated window shows three groups with one collapsed, combined group/layer/search filters, slots mode and paged layer 65 filtering to the correct sound. Popup open/selection/Escape/outside/paging own their release without auditioning covered rows. Affected-source tidy reports no new complexity violations. Artifacts: `/tmp/wormedit-filters-bga-minimap-batch/`; suite log: `/tmp/wormedit-filters-full-suite-passed.log`.
 
 ## T-358 Restore optional BMS sound slots mode with direct ID assignment
 

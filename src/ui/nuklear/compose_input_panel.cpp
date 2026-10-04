@@ -632,16 +632,22 @@ static auto compose_timing_lane_at_x(const WormUiComposeView& view, double x,
     return std::nullopt;
 }
 
+static auto compose_timing_right(const WormUiComposeView& view) -> double {
+    return view.bga_lane_visible ? view.bga_lane_bounds.left
+                                 : view.playable_field_left_pixels;
+}
+
 static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& input,
                                                double click_x, double click_y) {
     const auto& view = *input.view;
     const auto& timing_view = *input.timing_view;
     auto& action = *input.action;
+    const auto timing_right = compose_timing_right(view);
     if (timing_view.stage_active || click_x < compose_measure_rail_width ||
-        click_x >= input.note_field_left ||
+        click_x >= timing_right ||
         action.timing_stage_action != WORM_UI_TIMING_STAGE_NONE)
         return false;
-    const auto clicked_lane = compose_timing_lane_at_x(view, click_x, input.note_field_left);
+    const auto clicked_lane = compose_timing_lane_at_x(view, click_x, timing_right);
     if (!clicked_lane) return false;
     const auto clicked_timing_lane_ordinal = static_cast<std::size_t>(*clicked_lane);
     const auto* clicked_marker = compose_timing_marker_at(view, click_x, click_y);
@@ -762,7 +768,7 @@ static auto begin_timing_quick_insert(const ComposePointerEventContext& input) -
     const auto allowed = ctrl ? wormedit::ui::compose_ctrl_click_inserts_matching_bpm(mode)
                               : wormedit::ui::compose_alt_click_inserts_anchor(mode);
     const auto lane = compose_timing_lane_at_x(view, input.pointer_started_x,
-                                               input.note_field_left);
+                                               compose_timing_right(view));
     if (!allowed || !lane || *lane != wanted || !timing.initial_bpm_editable ||
         timing.stage_active || input.action->timing_stage_action != WORM_UI_TIMING_STAGE_NONE)
         return false;
@@ -782,7 +788,7 @@ static auto begin_compose_timing_marker_drag(const ComposePointerEventContext& i
     if (paint_pointer_consumed || !input.view->scene_available || !input.window_focused ||
         !input.pointer_started_in_view || !input.left_down ||
         input.pointer_started_x < compose_measure_rail_width ||
-        input.pointer_started_x >= input.note_field_left ||
+        input.pointer_started_x >= compose_timing_right(*input.view) ||
         input.compose_note_double_click_in_view || state.action_overflowed)
         return false;
     const auto* marker = compose_timing_marker_at(*input.view, input.pointer_started_x,
@@ -896,13 +902,14 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
                                      bool paint_pointer_consumed) -> bool {
     const auto& view = *input.view;
     auto* action = input.action;
+    const auto bga_event_id = compose_bga_event_at(&view, input.pointer_x, input.pointer_y);
     if (state.action_overflowed || paint_pointer_consumed || !view.scene_available ||
-        !input.pointer_clicked || !input.pointer_inside || input.pointer_x < input.note_field_right ||
+        !input.pointer_clicked || !input.pointer_inside ||
+        (input.pointer_x < input.note_field_right && bga_event_id == 0) ||
         !input.window_focused || state.pointer_hold_active || state.note_move_active ||
         state.note_move_candidate_active || state.area_selection_active ||
         state.area_selection_candidate_active)
         return false;
-    const auto bga_event_id = compose_bga_event_at(&view, input.pointer_x, input.pointer_y);
     if (bga_event_id != 0) {
         const auto stacked = std::ranges::find(
             std::span(view.bga_events, view.bga_event_count), bga_event_id,

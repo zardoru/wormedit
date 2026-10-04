@@ -2,6 +2,7 @@
 #include "sys/workspace_projection.h"
 #include "sys/timing_view.h"
 #include "sys/metadata_view_projection.h"
+#include <array>
 #include <cstring>
 #include <limits>
 #include <catch2/catch_test_macros.hpp>
@@ -825,13 +826,15 @@ auto compose_resource_document(std::size_t count) -> wormedit::song_document_t {
     return document;
 }
 auto project_resource_rows(const wormedit::song_document_t& document,
-                           frame_arena_t* arena = nullptr) -> flattened_workspace_t {
+                           frame_arena_t* arena = nullptr,
+                           WormUiKeysoundDockRequest request = {}) -> flattened_workspace_t {
     wormedit::workspace_view_t model;
     model.active_tab = wormedit::workspace_tab_t::compose;
     model.tab_view = wormedit::workspace_compose_view_t{.chart = wormedit::chart_id_t{1}};
     model.transport.audio_asset = wormedit::asset_id_t{1};
     model.selected_visual_asset = wormedit::asset_id_t{7};
-    return flatten_workspace(model, document, "ready", {}, false, {}, arena);
+    return flatten_workspace(model, document, "ready", {}, false, {}, arena,
+                             dock_sort_t::natural_name, request);
 }
 }
 TEST_CASE("Compose resource arena owns complete rows after source mutation and move",
@@ -1188,6 +1191,109 @@ TEST_CASE("Compose sound group choices retain names and stable resource membersh
     auto current = project_resource_rows(document);
     check_frame_storage(current.view.compose.keysounds[grouped].sound_group_id == 0);
     check_frame_storage(std::strcmp(current.view.compose.compose_sound_groups[0].name, "Changed") == 0);
+}
+
+TEST_CASE("Windowed sound sections retain arena labels and complete selection orders",
+          "[sys][frame-arena][sound-group][sound-filter]") {
+    auto document = compose_resource_document(5);
+    document.charts.push_back({.id = wormedit::chart_id_t{1}});
+    document.sound_groups = {{.id = wormedit::sound_group_id_t{9}, .name = "Piano"},
+                             {.id = wormedit::sound_group_id_t{10}, .name = "Percussion"}};
+    for (std::size_t index = 0; index < document.resources.size(); ++index) {
+        auto& resource = document.resources[index];
+        resource.name = "Sample " + std::to_string(index + 1);
+        resource.target_identities.front().identifier = "0" + std::to_string(index + 1);
+        if (index < 4)
+            resource.sound_group = wormedit::sound_group_id_t{index < 2 ? 9U : 10U};
+    }
+    std::array<std::uint64_t, 1> collapsed{9}, selected{1};
+    WormUiKeysoundDockRequest request{};
+    request.collapsed_group_ids = collapsed.data();
+    request.collapsed_group_count = collapsed.size();
+    request.selected_resource_ids = selected.data();
+    request.selected_resource_count = selected.size();
+    request.primary_resource_id = 4;
+    request.automatic_first_row = 2;
+    request.automatic_row_limit = 3;
+    auto frame = project_resource_rows(document, nullptr, request);
+    REQUIRE(frame.view.compose.keysound_display_row_count == 3);
+    REQUIRE(frame.view.compose.keysound_count == 1);
+    REQUIRE(frame.view.compose.keysound_selection_row_count == 1);
+    document.sound_groups.clear();
+    document.resources.clear();
+    collapsed[0] = 0;
+    selected[0] = 0;
+    auto retained = std::move(frame);
+    retained.rebind_view_pointers();
+    const auto& view = retained.view.compose;
+    check_frame_storage(view.keysound_section_projection_available);
+    check_frame_storage(view.keysound_display_total_count == 6);
+    check_frame_storage(view.keysound_display_first_row == 2);
+    check_frame_storage(view.keysound_primary_display_index_valid);
+    check_frame_storage(view.keysound_primary_display_index == 2);
+    check_frame_storage(view.keysound_display_rows[0].kind == WORM_UI_COMPOSE_KEYSOUND_SOUND_ROW);
+    check_frame_storage(view.keysound_display_rows[0].resource_id == 4);
+    check_frame_storage(view.keysound_display_rows[1].group_id == 9);
+    check_frame_storage(std::strcmp(view.keysound_display_rows[1].group_name, "Piano") == 0);
+    check_frame_storage(!view.keysound_display_rows[1].expanded);
+    check_frame_storage(view.keysound_display_rows[1].group_sound_count == 2);
+    check_frame_storage(std::strcmp(view.keysound_display_rows[2].group_name, "Ungrouped") == 0);
+    check_frame_storage(std::strcmp(view.keysounds[0].name, "Sample 4") == 0);
+    check_frame_storage(view.keysound_selected_row_count == 0);
+    check_frame_storage(view.keysound_selection_rows[0].resource_id == 1);
+    check_frame_storage(view.keysound_selection_rows[0].group_id == 9);
+    check_frame_storage(std::strcmp(view.keysound_selection_rows[0].slot, "01") == 0);
+    check_frame_storage(view.keysound_all_resource_count == 5);
+    check_frame_storage(view.keysound_advance_row_count == 5);
+    check_frame_storage(view.keysound_advance_rows[0].resource_id == 3);
+    check_frame_storage(view.keysound_advance_rows[2].resource_id == 1);
+    check_frame_storage(view.keysound_listed_resource_count == 3);
+    check_frame_storage(view.keysound_listed_resource_ids[0] == 3);
+    check_frame_storage(view.keysound_listed_resource_ids[2] == 5);
+}
+
+namespace {
+auto keysound_arrays_are_consistent(const WormUiComposeView& view) -> bool {
+    return (view.keysound_count == 0 || view.keysounds) &&
+           (view.keysound_display_row_count == 0 || view.keysound_display_rows) &&
+           (view.keysound_selected_row_count == 0 || view.keysound_selected_rows) &&
+           (view.keysound_selection_row_count == 0 || view.keysound_selection_rows) &&
+           (view.keysound_filter_layer_count == 0 || view.keysound_filter_layers) &&
+           (view.keysound_advance_row_count == 0 || view.keysound_advance_rows) &&
+           (view.keysound_listed_resource_count == 0 || view.keysound_listed_resource_ids) &&
+           (view.keysound_all_resource_count == 0 || view.keysound_all_resource_ids);
+}
+}
+
+TEST_CASE("Sound section arena exhaustion preserves count and pointer consistency",
+          "[sys][frame-arena][sound-group][sound-filter]") {
+    auto document = compose_resource_document(5);
+    document.charts.push_back({.id = wormedit::chart_id_t{1}});
+    document.charts.front().semantic_layers.push_back(
+        {.id = wormedit::layer_id_t{7}, .name = "Blue"});
+    document.sound_groups = {{.id = wormedit::sound_group_id_t{9}, .name = "Piano"}};
+    for (auto& resource : document.resources)
+        resource.sound_group = wormedit::sound_group_id_t{9};
+    const std::array<std::uint64_t, 5> selected{1, 2, 3, 4, 5};
+    WormUiKeysoundDockRequest request{};
+    request.selected_resource_ids = selected.data();
+    request.selected_resource_count = selected.size();
+    request.include_selected_metadata = true;
+    request.automatic_row_limit = 3;
+    request.filter_layer_row_limit = 64;
+    bool saw_rows = false, saw_truncation = false;
+    for (const auto budget : {64U, 128U, 256U, 512U, 1024U, 2048U, 4096U, 8192U}) {
+        frame_arena_t arena({.chunk_bytes = budget, .maximum_bytes = budget});
+        auto frame = project_resource_rows(document, &arena, request);
+        frame.rebind_view_pointers();
+        INFO("Arena budget " << budget);
+        check_frame_storage(keysound_arrays_are_consistent(frame.view.compose));
+        saw_rows = saw_rows || frame.view.compose.keysound_display_row_count != 0;
+        saw_truncation = saw_truncation || frame.view.compose.keysounds_truncated;
+    }
+    check_frame_storage(saw_rows && saw_truncation);
+    check_frame_storage(document.resources.size() == 5);
+    check_frame_storage(document.resources.front().sound_group == wormedit::sound_group_id_t{9});
 }
 
 TEST_CASE("Sound usage rows and labels remain arena owned after source changes and move",

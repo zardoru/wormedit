@@ -483,28 +483,33 @@ auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_co
                                std::size_t visible_timing_lane_count)
     -> compose_horizontal_layout_t {
     constexpr double bga_pane_width = 48.0;
-    const auto desired_left = compose_measure_rail_width_pixels +
-                              compose_timing_lane_width_pixels * visible_timing_lane_count;
-    const auto field_left =
-        std::clamp(viewport_width_pixels - compose_minimum_playable_field_width_pixels,
-                   compose_measure_rail_width_pixels, desired_left);
+    const auto desired_timing_right = compose_measure_rail_width_pixels +
+        compose_timing_lane_width_pixels * visible_timing_lane_count;
+    const auto reserved_bga = has_bga_lane ? bga_pane_width : 0.0;
+    const auto bga_left = std::clamp(
+        viewport_width_pixels - compose_minimum_playable_field_width_pixels - reserved_bga,
+        compose_measure_rail_width_pixels, desired_timing_right);
+    const auto field_left = bga_left + reserved_bga;
     const auto available = std::max(1.0, viewport_width_pixels - field_left);
     auto playable = std::clamp(static_cast<double>(std::max<std::size_t>(lane_count, 1)) *
                                    compose_playable_lane_width_pixels,
                                compose_minimum_playable_field_width_pixels,
                                compose_maximum_playable_field_width_pixels);
     playable = std::min(playable, available);
-    const auto reserved_bga = has_bga_lane ? bga_pane_width : 0.0;
     if (!has_bgm_lanes) {
-        playable = std::min(playable, std::max(1.0, available - reserved_bga));
-        return {.field_left_pixels = field_left, .playable_field_width_pixels = playable,
+        playable = std::min(playable, available);
+        return {.bga_pane_left_pixels = bga_left,
+                .field_left_pixels = field_left, .playable_field_width_pixels = playable,
+                .bgm_pane_left_pixels = field_left + playable,
                 .bga_pane_width_pixels = reserved_bga};
     }
-    if (available > compose_minimum_bgm_pane_width_pixels + reserved_bga)
-        playable = std::min(playable, available - compose_minimum_bgm_pane_width_pixels - reserved_bga);
-    return {.field_left_pixels = field_left,
+    if (available > compose_minimum_bgm_pane_width_pixels)
+        playable = std::min(playable, available - compose_minimum_bgm_pane_width_pixels);
+    return {.bga_pane_left_pixels = bga_left,
+            .field_left_pixels = field_left,
             .playable_field_width_pixels = std::max(1.0, playable),
-            .bgm_pane_width_pixels = std::max(0.0, available - playable - reserved_bga),
+            .bgm_pane_left_pixels = field_left + std::max(1.0, playable),
+            .bgm_pane_width_pixels = std::max(0.0, available - playable),
             .bga_pane_width_pixels = reserved_bga};
 }
 
@@ -3804,11 +3809,11 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
             ? wormedit::editor_field_scroll_direction_t::down
             : wormedit::editor_field_scroll_direction_t::up,
         .fixed_cursor_screen_y_pixels = retained_state->fixed_cursor_screen_y_pixels,
-        .bgm_pane_left_pixels = field_left_pixels + playable_field_width,
+        .bgm_pane_left_pixels = horizontal_layout.bgm_pane_left_pixels,
         .bgm_pane_width_pixels = bgm_pane_width,
         .bgm_lane_width_pixels = compose_bgm_lane_width_pixels,
         .bgm_horizontal_scroll_pixels = bgm_horizontal_scroll,
-        .bga_pane_left_pixels = field_left_pixels + playable_field_width + bgm_pane_width,
+        .bga_pane_left_pixels = horizontal_layout.bga_pane_left_pixels,
         .bga_pane_width_pixels = bga_pane_width,
         .include_virtual_bms_tail = wormedit::chart_has_virtual_tail(chart),
         .solo_semantic_layer = application_state.semantic_layer_solo_active
@@ -3894,7 +3899,9 @@ void append_area_timing_geometry(wormedit::editor_area_geometry_snapshot_t& snap
                                 const WormUiComposeView& view, bool downscroll) {
     const auto count = std::popcount(view.timing_lane_visibility_mask);
     if (count == 0) return;
-    const auto width = (view.playable_field_left_pixels - 42.0) / count;
+    const auto timing_right = view.bga_lane_visible ? view.bga_lane_bounds.left
+                                                     : view.playable_field_left_pixels;
+    const auto width = (timing_right - 42.0) / count;
     for (std::size_t i = 0; i < view.timing_marker_count; ++i) {
         const auto& marker = view.timing_markers[i];
         const auto kind = area_timing_kind(marker.lane);

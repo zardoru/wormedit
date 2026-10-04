@@ -507,7 +507,9 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/sound_source_copy_event_harness_tests.cpp
         ui/sound_slot_batch_event_harness_tests.cpp
         ui/compose_hover_timing_event_harness_tests.cpp
+        ui/minimap_center_event_harness_tests.cpp
         ui/manual_sound_group_event_harness_tests.cpp
+        ui/sound_filter_event_harness_tests.cpp
         ui/compose_bgm_layer_tests.cpp
         ui/sound_usage_event_harness_tests.cpp
         sys/sound_drop_transaction_tests.cpp
@@ -559,6 +561,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     endif()
 
     add_executable(wormedit_frame_timing_tests
+        sys/bga_lane_projection_tests.cpp
         sys/compose_hover_timing_tests.cpp
         ../src/sys/compose_hover_timing.cpp
         sys/frame_timing_tests.cpp
@@ -598,6 +601,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         wormedit::core SDL3::SDL3 Catch2::Catch2WithMain)
     if(TARGET wormedit_audio_decoder)
         target_sources(wormedit_frame_timing_tests PRIVATE
+            sys/minimap_center_tests.cpp
             sys/compose_beat_fit_tests.cpp
             sys/application_commands_tests.cpp
             sys/manual_sound_group_command_tests.cpp

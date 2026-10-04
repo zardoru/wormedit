@@ -942,7 +942,29 @@ typedef struct WormUiKeysoundDockRequest {
     uint16_t selected_slot;
     char search[64];
     size_t first_row, row_limit;
+    char automatic_search[64];
+    bool group_filter_active;
+    const uint64_t* group_filter_ids;
+    size_t group_filter_count;
+    bool include_ungrouped;
+    uint8_t layer_filter_kind; /* 0 any, 1 no layer, 2 specific layer */
+    uint64_t layer_filter_id;
+    const uint64_t* collapsed_group_ids;
+    size_t collapsed_group_count;
+    bool ungrouped_collapsed;
+    const uint64_t* selected_resource_ids;
+    size_t selected_resource_count;
+    bool include_selected_metadata;
+    size_t automatic_first_row, automatic_row_limit;
+    uint64_t primary_resource_id;
+    size_t filter_layer_first_row, filter_layer_row_limit;
 } WormUiKeysoundDockRequest;
+
+enum {
+    WORM_UI_KEYSOUND_LAYER_FILTER_ANY = 0,
+    WORM_UI_KEYSOUND_LAYER_FILTER_NONE = 1,
+    WORM_UI_KEYSOUND_LAYER_FILTER_SPECIFIC = 2,
+};
 
 typedef struct WormUiComposeSoundGroupView {
     uint64_t group_id;
@@ -961,6 +983,34 @@ typedef struct WormUiComposeKeysoundRowView {
     uint64_t note_layer_conflict_mask;
     uint64_t sound_group_id;
 } WormUiComposeKeysoundRowView;
+
+typedef enum WormUiComposeKeysoundDisplayRowKind {
+    WORM_UI_COMPOSE_KEYSOUND_GROUP_HEADER = 0,
+    WORM_UI_COMPOSE_KEYSOUND_SOUND_ROW = 1,
+} WormUiComposeKeysoundDisplayRowKind;
+
+typedef struct WormUiComposeKeysoundDisplayRowView {
+    WormUiComposeKeysoundDisplayRowKind kind;
+    uint64_t group_id;
+    const char* group_name;
+    size_t group_sound_count;
+    bool expanded;
+    uint64_t resource_id;
+} WormUiComposeKeysoundDisplayRowView;
+
+typedef struct WormUiComposeKeysoundAdvanceRowView {
+    uint64_t resource_id;
+    bool missing;
+} WormUiComposeKeysoundAdvanceRowView;
+
+typedef struct WormUiComposeKeysoundSelectionView {
+    uint64_t resource_id;
+    uint64_t group_id;
+    uint64_t layer_mask;
+    uint64_t note_layer_conflict_mask;
+    const char* slot;
+    bool missing;
+} WormUiComposeKeysoundSelectionView;
 
 typedef struct WormUiComposeBgaEventView {
     uint64_t event_id;
@@ -1274,12 +1324,35 @@ typedef struct WormUiComposeView {
     /* Keysound listbox: every placeable sample, plus the chart layers its masks index. */
     const WormUiComposeKeysoundRowView* keysounds;
     size_t keysound_count;
+    const WormUiComposeKeysoundRowView* keysound_selected_rows;
+    size_t keysound_selected_row_count;
+    const WormUiComposeKeysoundSelectionView* keysound_selection_rows;
+    size_t keysound_selection_row_count;
+    const WormUiComposeKeysoundDisplayRowView* keysound_display_rows;
+    /* True when section/filter projection was used, including legitimate empty windows. */
+    bool keysound_section_projection_available;
+    size_t keysound_display_row_count, keysound_display_total_count;
+    size_t keysound_display_first_row;
+    bool keysound_display_rows_truncated;
+    bool keysound_primary_display_index_valid;
+    size_t keysound_primary_display_index;
+    const uint64_t* keysound_listed_resource_ids;
+    size_t keysound_listed_resource_count;
+    const WormUiComposeKeysoundAdvanceRowView* keysound_advance_rows;
+    size_t keysound_advance_row_count;
+    const uint64_t* keysound_all_resource_ids;
+    size_t keysound_all_resource_count;
     const WormUiComposeSoundGroupView* compose_sound_groups;
     size_t compose_sound_group_count;
     size_t keysound_total_count;
     bool keysounds_truncated;
     const WormUiComposeKeysoundLayerView* keysound_layers;
     size_t keysound_layer_count;
+    const WormUiComposeKeysoundLayerView* keysound_filter_layers;
+    size_t keysound_filter_layer_count, keysound_filter_layer_first;
+    size_t keysound_filter_layer_total;
+    const char* keysound_filter_selected_layer_name;
+    bool keysound_filter_selected_layer_valid;
     bool keysounds_available;
     size_t keysound_ids_used, keysound_ids_total, keysound_largest_free_run;
     bool keysound_ids_available;
@@ -2298,6 +2371,12 @@ typedef struct WormUiWorkspaceAction {
     WormUiWorkspaceTab tab;
     uint64_t recovery_scan_generation;
     uint64_t transport_seek_frame;
+    // Current field span, stamped onto BGM-bar view inputs for centered zoom/pan retention.
+    double minimap_visible_begin_fraction;
+    double minimap_visible_end_fraction;
+    bool minimap_window_capture_active;
+    double minimap_window_capture_begin_fraction;
+    double minimap_window_capture_end_fraction;
     int64_t hover_source_frame;
     bool hover_source_frame_valid;
     uint64_t hover_source_total_frames;

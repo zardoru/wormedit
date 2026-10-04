@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 #include <optional>
 
 namespace wormedit::sys {
@@ -35,6 +36,43 @@ auto bgm_bar_fit(bgm_bar_range_t range, double minimum_span) -> bgm_bar_range_t 
     return {begin, begin + span};
 }
 
+auto bgm_bar_center_on(bgm_bar_range_t range, double center, double minimum_span)
+    -> bgm_bar_range_t {
+    range = bgm_bar_fit(range, minimum_span);
+    if (!std::isfinite(center)) return range;
+    const auto span = range.end - range.begin;
+    center = std::clamp(center, 0.0, 1.0);
+    return bgm_bar_fit({center - span * 0.5, center + span * 0.5}, minimum_span);
+}
+
+auto bgm_bar_center_on_visible_span(bgm_bar_range_t range, double visible_begin,
+                                    double visible_end, double minimum_span)
+    -> bgm_bar_range_t {
+    if (!std::isfinite(visible_begin) || !std::isfinite(visible_end) ||
+        visible_begin < 0.0 || visible_end > 1.0 || visible_begin > visible_end)
+        return bgm_bar_fit(range, minimum_span);
+    return bgm_bar_center_on(range, std::midpoint(visible_begin, visible_end), minimum_span);
+}
+
+auto bgm_bar_pan_override_matches(const bgm_bar_pan_override_t& override,
+    double visible_begin, double visible_end, song_id_t project, chart_id_t chart,
+    std::uint64_t revision, asset_id_t asset) -> bool {
+    return override.visible_begin_fraction == visible_begin &&
+        override.visible_end_fraction == visible_end && override.project == project &&
+        override.chart == chart && override.document_revision == revision && override.asset == asset;
+}
+
+auto bgm_bar_window_capture_matches(const bgm_bar_window_capture_t& capture,
+    song_id_t project, chart_id_t chart, std::uint64_t revision, asset_id_t asset,
+    std::uint64_t total_frames, std::uint32_t sample_rate) -> bool {
+    return capture.project == project && capture.chart == chart &&
+        capture.document_revision == revision && capture.asset == asset &&
+        capture.total_frames == total_frames && capture.sample_rate == sample_rate &&
+        std::isfinite(capture.range.begin) && std::isfinite(capture.range.end) &&
+        capture.range.begin >= 0.0 && capture.range.begin < capture.range.end &&
+        capture.range.end <= 1.0;
+}
+
 auto bgm_bar_zoom(bgm_bar_range_t range, double anchor, double steps, double minimum_span)
     -> bgm_bar_range_t {
     range = bgm_bar_fit(range, minimum_span);
@@ -46,6 +84,17 @@ auto bgm_bar_zoom(bgm_bar_range_t range, double anchor, double steps, double min
                                       std::clamp(minimum_span, 1e-9, 1.0), 1.0);
     return bgm_bar_fit({anchored - along * next_span, anchored - along * next_span + next_span},
                        minimum_span);
+}
+
+auto bgm_bar_zoom_centered(bgm_bar_range_t range, double center, double steps,
+                           double minimum_span) -> bgm_bar_range_t {
+    range = bgm_bar_fit(range, minimum_span);
+    if (!std::isfinite(center) || !std::isfinite(steps)) return range;
+    const auto span = range.end - range.begin;
+    const auto next_span = std::clamp(span / std::pow(bgm_bar_zoom_step, steps),
+                                      std::clamp(minimum_span, 1e-9, 1.0), 1.0);
+    return bgm_bar_center_on({center - next_span * 0.5, center + next_span * 0.5}, center,
+                             minimum_span);
 }
 
 auto bgm_bar_pan(bgm_bar_range_t range, double delta_fraction) -> bgm_bar_range_t {
@@ -86,24 +135,46 @@ auto bgm_bar_measure_marks(const wormedit::measure_index_t& measures,
 }
 
 auto consume_bgm_bar_inputs(WormUiWorkspaceAction& action, bgm_bar_range_t& range,
-                            std::uint64_t total_frames) -> bool {
+                            std::optional<bgm_bar_pan_override_t>& pan_override,
+                            const bgm_bar_input_context_t& context) -> bool {
     if (action.compose_input_count > WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) return false;
-    const auto minimum_span = bgm_bar_minimum_span(total_frames);
+    const auto minimum_span = bgm_bar_minimum_span(context.total_frames);
+    const auto visible_center = std::midpoint(context.visible_begin_fraction,
+                                              context.visible_end_fraction);
+    if (pan_override && !bgm_bar_pan_override_matches(*pan_override,
+            context.visible_begin_fraction, context.visible_end_fraction,
+            context.project, context.chart, context.document_revision, context.asset))
+        pan_override.reset();
     bool consumed = false;
     std::size_t kept = 0;
     for (std::size_t index = 0; index < action.compose_input_count; ++index) {
         const auto& input = action.compose_inputs[index];
         switch (input.kind) {
         case WORM_UI_COMPOSE_INPUT_BGM_BAR_ZOOM:
-            range = bgm_bar_zoom(range, input.audio_fraction, input.x_pixels, minimum_span);
+            range = bgm_bar_zoom_centered(pan_override ? pan_override->range : range,
+                                          visible_center, input.x_pixels, minimum_span);
+            pan_override.reset();
             consumed = true;
             break;
         case WORM_UI_COMPOSE_INPUT_BGM_BAR_PAN:
-            range = bgm_bar_pan(bgm_bar_fit(range, minimum_span), input.x_pixels);
+            range = bgm_bar_fit(range, minimum_span);
+            pan_override = bgm_bar_pan_override_t{
+                .range = bgm_bar_pan(pan_override ? pan_override->range
+                                                 : bgm_bar_center_on_visible_span(
+                                                       range, context.visible_begin_fraction,
+                                                       context.visible_end_fraction, minimum_span),
+                                     input.x_pixels),
+                .visible_begin_fraction = context.visible_begin_fraction,
+                .visible_end_fraction = context.visible_end_fraction,
+                .project = context.project,
+                .chart = context.chart,
+                .document_revision = context.document_revision,
+                .asset = context.asset};
             consumed = true;
             break;
         case WORM_UI_COMPOSE_INPUT_BGM_BAR_RESET:
             range = {};
+            pan_override.reset();
             consumed = true;
             break;
         default:

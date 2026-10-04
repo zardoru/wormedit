@@ -499,8 +499,12 @@ static void update_waveform_overview_seek(const ComposeOverviewInput& input) {
         state.waveform_overview_capture = {
             view.chart_id, view.document_revision, view.selected_audio_asset_id,
             view.waveform_overview_total_frames, view.waveform_overview_sample_rate,
-            input.overview.x, input.overview.w};
+            input.overview.x, input.overview.w, input.window_begin, input.window_end,
+            input.window_capture, view.project_id};
     }
+    if (state.waveform_overview_drag_active &&
+        state.waveform_overview_capture.window_capture != input.window_capture)
+        return;
     const bool valid = worm_ui_nuklear_overview_capture_matches(
             state.waveform_overview_capture, view, input.overview.x, input.overview.w,
             input.available, input.window_focused) &&
@@ -517,10 +521,15 @@ static void update_waveform_overview_seek(const ComposeOverviewInput& input) {
     append_compose_input(input.action, event == worm_ui_nuklear_overview_event_t::click
         ? WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK : WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK);
     auto& emitted = input.action->compose_inputs[input.action->compose_input_count - 1];
-    emitted.audio_fraction = input.window_begin +
+    const auto captured_window = worm_ui_nuklear_overview_window_for_capture(
+        state.waveform_overview_capture, state.waveform_overview_capture.window_capture &&
+            (state.waveform_overview_drag_active ||
+             event != worm_ui_nuklear_overview_event_t::none),
+        input.window_begin, input.window_end);
+    emitted.audio_fraction = captured_window.begin +
         worm_ui_nuklear_overview_fraction(input.context->input.mouse.pos.x,
             input.overview.x, input.overview.w).value_or(0.0) *
-        (input.window_end - input.window_begin);
+        (captured_window.end - captured_window.begin);
     const auto modifiers = SDL_GetModState();
     emitted.overview_shift = (modifiers & SDL_KMOD_SHIFT) != 0;
 #ifdef __APPLE__

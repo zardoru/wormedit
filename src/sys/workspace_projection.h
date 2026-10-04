@@ -174,8 +174,15 @@ struct flattened_workspace_t {
         } resource;
         struct {
             frame_span<WormUiComposeKeysoundRowView> row;
+            frame_span<WormUiComposeKeysoundRowView> selected_row;
+            frame_span<WormUiComposeKeysoundSelectionView> selection_row;
+            frame_span<WormUiComposeKeysoundDisplayRowView> display_row;
+            frame_span<WormUiComposeKeysoundAdvanceRowView> advance_row;
+            frame_span<std::uint64_t> listed_resource_id;
+            frame_span<std::uint64_t> all_resource_id;
             frame_span<WormUiComposeSoundSlotRowView> slot;
             frame_span<WormUiComposeKeysoundLayerView> layer;
+            frame_span<WormUiComposeKeysoundLayerView> filter_layer;
             frame_span<WormUiComposeSoundGroupView> group;
         } keysound;
         struct {

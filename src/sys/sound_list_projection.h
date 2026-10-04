@@ -7,7 +7,10 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <string_view>
+#include <span>
 #include <vector>
 
 namespace wormedit::sys {
@@ -99,14 +102,72 @@ struct keysound_row_t {
     std::uint64_t sound_group_id{};
 };
 
+struct keysound_advance_row_t {
+    resource_id_t resource;
+    bool missing{};
+};
+
+struct keysound_selection_row_t {
+    resource_id_t resource;
+    std::uint64_t group_id{};
+    std::uint64_t layer_mask{};
+    std::uint64_t note_layer_conflict_mask{};
+    std::string slot;
+    bool missing{};
+};
+
 struct keysound_list_t {
+    // Sound payloads only for the requested display window and selected IDs.
     std::vector<keysound_row_t> rows;
+    std::vector<keysound_row_t> selected_rows;
+    std::vector<keysound_selection_row_t> selection_rows;
+    struct display_row_t {
+        enum class kind_t : std::uint8_t { group_header, sound } kind{kind_t::sound};
+        std::uint64_t group_id{};
+        std::string group_name;
+        std::size_t group_sound_count{};
+        bool expanded{true};
+        resource_id_t resource;
+    };
+    std::vector<display_row_t> display_rows;
+    std::vector<resource_id_t> listed_resources;
+    std::vector<keysound_advance_row_t> advance_rows;
+    std::vector<resource_id_t> all_resources;
     // Placeable sounds in the document, including rows cut off by the limit.
     std::size_t total{};
     bool truncated{};
+    std::size_t display_total{}, display_first_row{};
+    std::optional<std::size_t> primary_display_index;
+    bool display_truncated{};
     // The chart's first keysound_layer_limit layers in palette order.
     std::vector<keysound_layer_t> layers;
+    // Complete stable-ID choice list for the default-layer filter dropdown.
+    std::vector<keysound_layer_t> filter_layers;
+    std::size_t filter_layer_first{}, filter_layer_total{};
+    std::string selected_filter_layer_name;
+    bool selected_filter_layer_valid{};
     bms_identifier_capacity_t bms_capacity{};
+};
+
+enum class keysound_layer_filter_kind_t : std::uint8_t { any, no_layer, specific };
+
+struct keysound_list_request_t {
+    std::string_view search;
+    std::span<const std::uint64_t> selected_resource_ids;
+    bool include_selected_metadata{};
+    std::span<const std::uint64_t> group_ids;
+    bool group_filter_active{};
+    bool include_ungrouped{true};
+    keysound_layer_filter_kind_t layer_filter{keysound_layer_filter_kind_t::any};
+    std::uint64_t layer_id{};
+    std::span<const std::uint64_t> collapsed_group_ids;
+    bool ungrouped_collapsed{};
+    std::size_t first_row{};
+    std::size_t row_limit{64};
+    std::uint64_t primary_resource_id{};
+    std::size_t filter_layer_first{}, filter_layer_limit{64};
+    dock_sort_t sort{dock_sort_t::natural_name};
+    bool ids_available{true};
 };
 
 [[nodiscard]] auto project_keysound_list(const song_document_t& document,
@@ -114,6 +175,13 @@ struct keysound_list_t {
                                          std::size_t maximum_rows,
                                          dock_sort_t sort = dock_sort_t::natural_name,
                                          bool ids_available = true)
+    -> keysound_list_t;
+
+// Filter the complete placeable catalog first, then flatten group sections and
+// return only the requested display window. ID-only lists retain full filtered order.
+[[nodiscard]] auto project_keysound_list(const song_document_t& document,
+                                         const chart_document_t* chart,
+                                         const keysound_list_request_t& request)
     -> keysound_list_t;
 
 // All supported nonzero BMS WAV slots, filtered and projected in a bounded window.

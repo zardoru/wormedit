@@ -10,6 +10,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // Historical panel focus does not decide canvas ownership. Actual entry/occlusion does.
@@ -54,7 +55,20 @@ struct worm_ui_nuklear_overview_capture_t {
     std::uint32_t sample_rate{};
     double left{};
     double width{};
+    double window_begin{};
+    double window_end{1.0};
+    bool window_capture{};
+    std::uint64_t project_id{};
 };
+
+struct worm_ui_nuklear_overview_window_t {
+    double begin{};
+    double end{1.0};
+};
+
+auto worm_ui_nuklear_overview_window_for_capture(
+    const worm_ui_nuklear_overview_capture_t& capture, bool active,
+    double projected_begin, double projected_end) -> worm_ui_nuklear_overview_window_t;
 
 auto worm_ui_nuklear_overview_fraction(double x, double left, double width)
     -> std::optional<double>;
@@ -386,6 +400,18 @@ struct worm_ui_nuklear_compose_state_t {
     bool sounds_preview_on_click{true};
     bool keysound_sort_by_id{};
     bool keysound_slots_mode{};
+    std::uint64_t keysound_filter_project_id{};
+    std::uint64_t keysound_filter_chart_id{};
+    worm_ui_keysound_filter_state_t keysound_filters;
+    std::unordered_map<std::uint64_t, worm_ui_keysound_filter_state_t>
+        keysound_filter_states_by_project;
+    std::size_t keysound_auto_first_row{};
+    std::size_t keysound_auto_row_limit{64};
+    std::size_t keysound_filter_layer_first{};
+    bool keysound_filter_popup_open{};
+    bool keysound_filter_group_popup_open{};
+    bool keysound_layer_filter_popup_open{};
+    bool keysound_filter_release_pending{};
     worm_ui_sound_slot_batch_t keysound_slot_batch;
     worm_ui_keysound_group_review_t keysound_group_review;
     bool keysound_group_menu_open{};

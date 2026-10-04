@@ -24,6 +24,18 @@ struct worm_ui_keysound_selection_t {
     std::uint64_t primary{};
 };
 
+struct worm_ui_keysound_filter_state_t {
+    std::array<char, 64> search{};
+    bool group_filter_active{};
+    bool include_ungrouped{true};
+    std::vector<std::uint64_t> group_ids;
+    std::vector<std::uint64_t> collapsed_group_ids;
+    bool ungrouped_collapsed{};
+    std::uint8_t layer_filter_kind{};
+    std::uint64_t layer_filter_id{};
+    std::uint64_t layer_chart_id{};
+};
+
 struct worm_ui_keysound_group_candidate_t {
     std::uint64_t id{};
     std::string name;
@@ -42,6 +54,7 @@ struct worm_ui_keysound_group_assignment_t {
 struct worm_ui_keysound_group_review_t {
     bool open{};
     bool open_pending{};
+    bool preparation_complete{};
     bool manual{};
     bool keep_ids_together{true};
     std::uint64_t target_group_id{};

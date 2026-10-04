@@ -65,6 +65,7 @@ struct ComposeOverviewInput {
     // Song window the overview rectangle spans; the BGM bar zooms, the minimap shows it all.
     double window_begin{0.0};
     double window_end{1.0};
+    bool window_capture{};
 };
 
 struct ComposeOverviewContext {
@@ -173,4 +174,3 @@ struct ComposePointerEventContext {
     bool compose_pointer_captured;
     bool compose_note_double_click_in_view;
 };
-

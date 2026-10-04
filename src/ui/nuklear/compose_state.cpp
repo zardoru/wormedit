@@ -609,7 +609,8 @@ auto worm_ui_nuklear_overview_capture_matches(
     const worm_ui_nuklear_overview_capture_t& capture, const WormUiComposeView& view,
     double left, double width, bool available, bool window_focused) -> bool {
     return available && window_focused && view.scene_available &&
-        view.chart_id == capture.chart_id && view.document_revision == capture.revision &&
+        view.project_id == capture.project_id && view.chart_id == capture.chart_id &&
+        view.document_revision == capture.revision &&
         view.selected_audio_asset_id == capture.asset_id &&
         view.waveform_overview_total_frames == capture.total_frames &&
         view.waveform_overview_sample_rate == capture.sample_rate &&
@@ -660,6 +661,19 @@ auto worm_ui_nuklear_overview_gesture(worm_ui_nuklear_overview_gesture_t& gestur
     if (!down) { gesture.active = false; return event::click; }
     if (std::abs(x - gesture.anchor) >= 4.0) gesture.dragged = true;
     return gesture.dragged ? event::scroll : event::none;
+}
+
+auto worm_ui_nuklear_overview_window_for_capture(
+    const worm_ui_nuklear_overview_capture_t& capture, bool active,
+    double projected_begin, double projected_end) -> worm_ui_nuklear_overview_window_t {
+    if (active && std::isfinite(capture.window_begin) && std::isfinite(capture.window_end) &&
+        capture.window_begin >= 0.0 && capture.window_begin < capture.window_end &&
+        capture.window_end <= 1.0)
+        return {capture.window_begin, capture.window_end};
+    if (!std::isfinite(projected_begin) || !std::isfinite(projected_end) ||
+        projected_begin < 0.0 || projected_begin >= projected_end || projected_end > 1.0)
+        return {};
+    return {projected_begin, projected_end};
 }
 
 void worm_ui_nuklear_pinch_input(worm_ui_nuklear_pinch_gesture_t& gesture,

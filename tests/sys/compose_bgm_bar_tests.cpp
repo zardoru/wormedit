@@ -19,6 +19,9 @@ using namespace wormedit::sys;
 
 namespace {
 
+void check_bar_state(bool condition) { CHECK(condition); }
+void require_bar_state(bool condition) { REQUIRE(condition); }
+
 constexpr std::uint32_t sample_rate = 48'000;
 constexpr std::uint64_t total_frames = 600ULL * sample_rate;
 
@@ -120,7 +123,12 @@ TEST_CASE("bgm bar inputs are consumed and the rest are kept in order", "[sys][b
     push(WORM_UI_COMPOSE_INPUT_BGM_BAR_ZOOM, 0.5, 2.0);
     push(WORM_UI_COMPOSE_INPUT_REDO, 0.0, 0.0);
     bgm_bar_range_t range;
-    CHECK(consume_bgm_bar_inputs(action, range, total_frames));
+    std::optional<bgm_bar_pan_override_t> pan_override;
+    const bgm_bar_input_context_t context{.total_frames = total_frames,
+        .visible_begin_fraction = 0.4, .visible_end_fraction = 0.6,
+        .project = song_id_t{1}, .chart = chart_id_t{2}, .document_revision = 3,
+        .asset = asset_id_t{4}};
+    CHECK(consume_bgm_bar_inputs(action, range, pan_override, context));
     CHECK(action.compose_input_count == 2);
     CHECK(action.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_UNDO);
     CHECK(action.compose_inputs[1].kind == WORM_UI_COMPOSE_INPUT_REDO);
@@ -128,12 +136,15 @@ TEST_CASE("bgm bar inputs are consumed and the rest are kept in order", "[sys][b
 
     push(WORM_UI_COMPOSE_INPUT_BGM_BAR_PAN, 0.0, 0.01);
     const auto before = range;
-    CHECK(consume_bgm_bar_inputs(action, range, total_frames));
-    CHECK(range.begin == Catch::Approx(before.begin + 0.01));
+    CHECK(consume_bgm_bar_inputs(action, range, pan_override, context));
+    require_bar_state(pan_override.has_value());
+    check_bar_state(pan_override->range.begin == Catch::Approx(before.begin + 0.01));
+    check_bar_state(range == before);
 
     push(WORM_UI_COMPOSE_INPUT_BGM_BAR_RESET, 0.0, 0.0);
-    CHECK(consume_bgm_bar_inputs(action, range, total_frames));
+    CHECK(consume_bgm_bar_inputs(action, range, pan_override, context));
     CHECK(range == bgm_bar_range_t{});
+    check_bar_state(!pan_override.has_value());
     CHECK(action.compose_input_count == 2);
-    CHECK_FALSE(consume_bgm_bar_inputs(action, range, total_frames));
+    CHECK_FALSE(consume_bgm_bar_inputs(action, range, pan_override, context));
 }

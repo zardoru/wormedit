@@ -211,14 +211,14 @@ void prepare_bga_stack_dismissal_picker(
     view.document_revision = 11;
     view.viewport_width_pixels = 900;
     view.viewport_height_pixels = 600;
-    view.playable_field_left_pixels = 50;
+    view.playable_field_left_pixels = 90;
     view.playable_field_right_pixels = 620;
     view.bga_lane_visible = true;
-    view.bga_lane_bounds = {640, 0, 688, 600};
+    view.bga_lane_bounds = {42, 0, 90, 600};
     for (std::size_t index = 0; index < events.size(); ++index) {
         events[index] = {.event_id = 100 + index, .resource_id = 200 + index,
             .canvas_row = 480, .overlap_count = events.size(), .kind = 0,
-            .name = "background", .bmp_id = "01", .bounds = {640, 0, 688, 600}};
+            .name = "background", .bmp_id = "01", .bounds = {42, 0, 90, 600}};
     }
     view.bga_events = events.data();
     view.bga_event_count = events.size();
@@ -268,16 +268,16 @@ TEST_CASE("BGA lane click selects an event and drag emits one move on release",
     view.document_revision = 11;
     view.viewport_width_pixels = 900;
     view.viewport_height_pixels = 600;
-    view.playable_field_left_pixels = 50;
+    view.playable_field_left_pixels = 90;
     view.playable_field_right_pixels = 620;
     view.bga_lane_visible = true;
-    view.bga_lane_bounds = {640, 0, 688, 600};
+    view.bga_lane_bounds = {42, 0, 90, 600};
     WormUiComposeBgaEventView event{.event_id = 81,
                                     .resource_id = 91,
                                     .kind = 0,
                                     .name = "background",
                                     .bmp_id = "01",
-                                    .bounds = {640, 0, 688, 600}};
+                                    .bounds = {42, 0, 90, 600}};
     view.bga_events = &event;
     view.bga_event_count = 1;
     (void)harness.frame();
@@ -312,10 +312,10 @@ TEST_CASE("armed BGA resource cannot place from playable or BGM lane clicks",
     view.document_revision = 11;
     view.viewport_width_pixels = 900;
     view.viewport_height_pixels = 600;
-    view.playable_field_left_pixels = 50;
+    view.playable_field_left_pixels = 90;
     view.playable_field_right_pixels = 600;
     view.bga_lane_visible = true;
-    view.bga_lane_bounds = {650, 0, 698, 600};
+    view.bga_lane_bounds = {42, 0, 90, 600};
     WormUiComposeBgmLaneView bgm_lane{.bounds = {604, 0, 640, 600},
                                      .source_lane_id = 44};
     view.bgm_lanes = &bgm_lane;
@@ -331,8 +331,11 @@ TEST_CASE("armed BGA resource cannot place from playable or BGM lane clicks",
     const auto field_click = click(harness, field.first, field.second);
     const auto bgm_center = rect_center(harness, bgm_lane.bounds);
     const auto bgm_click = click(harness, bgm_center.first, bgm_center.second);
+    const auto bga_center = rect_center(harness, view.bga_lane_bounds);
+    const auto bga_click = click(harness, bga_center.first, bga_center.second);
     CHECK_FALSE(has_resource_place(field_click));
     CHECK_FALSE(has_resource_place(bgm_click));
+    CHECK(has_resource_place(bga_click));
 }
 
 TEST_CASE("BGA event hit testing maps through the visible inspector and Sounds docks",
@@ -351,13 +354,13 @@ TEST_CASE("BGA event hit testing maps through the visible inspector and Sounds d
     view.document_revision = 11;
     view.viewport_width_pixels = 900;
     view.viewport_height_pixels = 600;
-    view.playable_field_left_pixels = 50;
-    view.playable_field_right_pixels = 428;
+    view.playable_field_left_pixels = 90;
+    view.playable_field_right_pixels = 900;
     view.keysounds_available = true;
     view.bga_lane_visible = true;
-    view.bga_lane_bounds = {430, 0, 478, 600};
+    view.bga_lane_bounds = {42, 0, 90, 600};
     WormUiComposeBgaEventView event{.event_id = 81, .resource_id = 91, .kind = 0,
-        .name = "background", .bmp_id = "01", .bounds = {430, 0, 478, 600}};
+        .name = "background", .bmp_id = "01", .bounds = {42, 0, 90, 600}};
     view.bga_events = &event;
     view.bga_event_count = 1;
     (void)harness.frame();
@@ -366,6 +369,7 @@ TEST_CASE("BGA event hit testing maps through the visible inspector and Sounds d
     view.viewport_width_pixels = viewport.width;
     (void)harness.frame();
     const auto center = rect_center(harness, event.bounds);
+    CHECK(event.bounds.right == view.playable_field_left_pixels);
     CHECK(center.first < viewport.x + viewport.width * 0.55f);
     const auto selected = click(harness, center.first, center.second);
     CHECK(has_input(selected.back(), WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK, 81));
@@ -383,15 +387,15 @@ TEST_CASE("dense BGA overlap marker opens a scrollable picker for every event",
     view.document_revision = 11;
     view.viewport_width_pixels = 900;
     view.viewport_height_pixels = 600;
-    view.playable_field_left_pixels = 50;
+    view.playable_field_left_pixels = 90;
     view.playable_field_right_pixels = 620;
     view.bga_lane_visible = true;
-    view.bga_lane_bounds = {640, 0, 688, 600};
+    view.bga_lane_bounds = {42, 0, 90, 600};
     std::array<WormUiComposeBgaEventView, 50> events{};
     for (std::size_t index = 0; index < events.size(); ++index) {
         events[index] = {.event_id = 100 + index, .resource_id = 200 + index,
             .canvas_row = 480, .overlap_count = events.size(), .kind = 0,
-            .name = "background", .bmp_id = "01", .bounds = {640, 0, 688, 600}};
+            .name = "background", .bmp_id = "01", .bounds = {42, 0, 90, 600}};
     }
     view.bga_events = events.data();
     view.bga_event_count = events.size();

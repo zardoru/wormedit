@@ -709,7 +709,9 @@ static auto compose_timing_marker_document_rect(const WormUiComposeView& view,
     if (visible_count == 0 || (view.timing_lane_visibility_mask & bit) == 0) return {};
     const auto preceding = static_cast<std::uint8_t>(view.timing_lane_visibility_mask & (bit - 1));
     const auto visible_marker_lane_slot = std::popcount(preceding);
-    const auto width = (view.playable_field_left_pixels - compose_measure_rail_width) / visible_count;
+    const auto timing_right = view.bga_lane_visible ? view.bga_lane_bounds.left
+                                                    : view.playable_field_left_pixels;
+    const auto width = (timing_right - compose_measure_rail_width) / visible_count;
     const auto inner_left = compose_measure_rail_width + width * visible_marker_lane_slot + 2.0;
     const auto inner_width = std::max(0.0, width - 4.0);
     const auto left = inner_left + inner_width * marker.marker_left_fraction;
@@ -1239,7 +1241,9 @@ auto compose_timing_lane_inner_extent(const WormUiComposeView& view, WormUiTimin
     if (ordinal >= WORM_UI_TIMING_LANE_COUNT || visible_count == 0 ||
         (view.timing_lane_visibility_mask & bit) == 0) return std::nullopt;
     const auto slot = std::popcount(static_cast<std::uint8_t>(view.timing_lane_visibility_mask & (bit - 1)));
-    const auto width = (view.playable_field_left_pixels - compose_measure_rail_width) / visible_count;
+    const auto timing_right = view.bga_lane_visible ? view.bga_lane_bounds.left
+                                                    : view.playable_field_left_pixels;
+    const auto width = (timing_right - compose_measure_rail_width) / visible_count;
     const auto left = compose_measure_rail_width + width * slot + 2.0;
     return std::pair{left, left + std::max(0.0, width - 4.0)};
 }
@@ -2407,7 +2411,10 @@ void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* vie
                              static_cast<float>(view->viewport_width_pixels);
         const ComposePaintContext paint{context, view, canvas, viewport, rail};
         ComposeTimingLaneLayout timing_layout{};
-        timing_layout.field_left = field_left;
+        timing_layout.field_left = view->bga_lane_visible
+            ? viewport.x + static_cast<float>(view->bga_lane_bounds.left) * viewport.w /
+                               static_cast<float>(view->viewport_width_pixels)
+            : field_left;
         draw_compose_scene_background(paint, timing_layout);
         draw_compose_waveform_layer(paint, timing_layout);
         draw_compose_cached_pass(paint,5,true,view->beat_fit_drag_active ||

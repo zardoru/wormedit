@@ -1319,6 +1319,55 @@ TEST_CASE("configured playing anchor preserves paused comfort scrolling", "[fram
     CHECK_FALSE(compose_playhead_scroll_target(state, chart, 4000, 0, true, 1.1));
 }
 
+namespace {
+auto compose_full_layout_is_ordered() -> bool {
+    using namespace wormedit::sys;
+    const auto full = compose_horizontal_layout(900, 5, true, true, 8);
+    return full.bga_pane_left_pixels == 234.0 && full.bga_pane_width_pixels == 48.0 &&
+           full.field_left_pixels == full.bga_pane_left_pixels + full.bga_pane_width_pixels &&
+           full.bgm_pane_left_pixels ==
+               full.field_left_pixels + full.playable_field_width_pixels &&
+           full.bgm_pane_left_pixels + full.bgm_pane_width_pixels == 900.0;
+}
+
+auto compose_narrow_layout_is_ordered() -> bool {
+    using namespace wormedit::sys;
+    const auto hidden_timing = compose_horizontal_layout(900, 5, true, true, 0);
+    const auto narrow = compose_horizontal_layout(280, 5, true, true, 8);
+    return hidden_timing.bga_pane_left_pixels == compose_measure_rail_width_pixels &&
+           hidden_timing.field_left_pixels == 90.0 &&
+           narrow.bga_pane_left_pixels >= compose_measure_rail_width_pixels &&
+           narrow.bga_pane_left_pixels + narrow.bga_pane_width_pixels ==
+               narrow.field_left_pixels &&
+           narrow.field_left_pixels + narrow.playable_field_width_pixels ==
+               narrow.bgm_pane_left_pixels &&
+           narrow.bgm_pane_left_pixels + narrow.bgm_pane_width_pixels == 280.0 &&
+           narrow.bgm_pane_width_pixels > 0.0;
+}
+
+auto compose_hidden_lane_layout_is_ordered() -> bool {
+    using namespace wormedit::sys;
+    const auto no_bga = compose_horizontal_layout(900, 5, true, false, 8);
+    const auto no_bgm = compose_horizontal_layout(900, 5, false, true, 8);
+    return no_bga.bga_pane_width_pixels == 0.0 &&
+           no_bga.field_left_pixels == no_bga.bga_pane_left_pixels &&
+           no_bga.field_left_pixels == 234.0 && no_bgm.bga_pane_left_pixels == 234.0 &&
+           no_bgm.field_left_pixels == 282.0 &&
+           no_bgm.playable_field_width_pixels == 240.0 &&
+           no_bgm.bgm_pane_width_pixels == 0.0;
+}
+
+auto compose_horizontal_layout_is_ordered() -> bool {
+    return compose_full_layout_is_ordered() && compose_narrow_layout_is_ordered() &&
+           compose_hidden_lane_layout_is_ordered();
+}
+} // namespace
+
+TEST_CASE("Compose horizontal layout orders timing, BGA, playable and BGM panes",
+          "[sys][bga-lane][horizontal-layout]") {
+    CHECK(compose_horizontal_layout_is_ordered());
+}
+
 TEST_CASE("scroll overrides follow mode identity across native and imported charts", "[frame-timing]") {
     chart_document_t chart;
     lane_layout_t layout;

@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <optional>
 
 using namespace wormedit;
 using namespace wormedit::sys;
@@ -181,6 +182,114 @@ TEST_CASE("keysound list is bounded and reports the full count",
     CHECK(list.truncated);
     CHECK(list.rows.front().name == "Resource 1");
     CHECK(list.rows.front().slot.empty());
+}
+
+TEST_CASE("keysound section projection filters before windowing and advances across collapse",
+          "[unit][sys][sounds][sound-groups]") {
+    song_document_t song;
+    song.sound_groups = {{.id = sound_group_id_t{10}, .name = "Piano"},
+                         {.id = sound_group_id_t{20}, .name = "Percussion"}};
+    chart_document_t chart;
+    chart.semantic_layers = {{.id = layer_id_t{5}, .name = "Blue"}};
+    const std::array names{"piano.wav", "kick.wav", "snare.wav", "loose.wav"};
+    const std::array<std::uint64_t, 4> ids{1, 2, 3, 4};
+    for (std::size_t index = 0; index < ids.size(); ++index) {
+        song.audio_assets.push_back({.id = asset_id_t{ids[index]}, .source_path = names[index]});
+        song.resources.push_back({.id = resource_id_t{ids[index]}, .name = names[index],
+            .asset = asset_id_t{ids[index]}, .roles = {resource_role_t::sample},
+            .sound_group = index == 0 ? std::optional{sound_group_id_t{10}}
+                : index < 3 ? std::optional{sound_group_id_t{20}}
+                            : std::optional<sound_group_id_t>{}});
+    }
+    chart.sound_layer_defaults = {{.resource = resource_id_t{2}, .layers = {layer_id_t{5}}}};
+    chart.id = chart_id_t{7};
+    std::array<std::uint64_t, 1> collapsed_group_ids{10};
+    const auto page = project_keysound_list(song, &chart, keysound_list_request_t{
+        .search = "wav", .collapsed_group_ids = collapsed_group_ids,
+        .first_row = 0, .row_limit = 3});
+    check_sound_projection(page.display_total == 6);
+    require_sound_projection(page.display_rows.size() == 3);
+    check_sound_projection(page.display_rows[0].group_name == "Percussion");
+    check_sound_projection(page.display_rows[1].resource == resource_id_t{2});
+    check_sound_projection(page.display_rows[2].resource == resource_id_t{3});
+    check_sound_projection(page.rows.size() == 2);
+    check_sound_projection((page.listed_resources == std::vector<resource_id_t>{
+        resource_id_t{2}, resource_id_t{3}, resource_id_t{4}}));
+    check_sound_projection(page.advance_rows.size() == 4);
+    check_sound_projection(page.display_first_row == 0);
+
+    const auto filtered = project_keysound_list(song, &chart, keysound_list_request_t{
+        .search = "KI", .group_ids = std::array<std::uint64_t, 1>{20},
+        .group_filter_active = true, .include_ungrouped = false,
+        .layer_filter = keysound_layer_filter_kind_t::specific, .layer_id = 5});
+    require_sound_projection(filtered.rows.size() == 1);
+    check_sound_projection(filtered.rows[0].resource == resource_id_t{2});
+    check_sound_projection(filtered.advance_rows.size() == 1);
+    const auto located = project_keysound_list(song, &chart, keysound_list_request_t{
+        .row_limit = 1, .primary_resource_id = 4});
+    check_sound_projection(located.primary_display_index == std::optional<std::size_t>{6});
+
+    const std::array collapsed_groups{std::uint64_t{10}, std::uint64_t{20}};
+    const auto collapsed = project_keysound_list(song, &chart, keysound_list_request_t{
+        .collapsed_group_ids = collapsed_groups, .ungrouped_collapsed = true});
+    check_sound_projection(collapsed.display_total == 3);
+    check_sound_projection(collapsed.rows.empty());
+    check_sound_projection(collapsed.listed_resources.empty());
+    check_sound_projection(collapsed.advance_rows.size() == 4);
+    const auto no_matches = project_keysound_list(song, &chart,
+        keysound_list_request_t{.search = "not present"});
+    check_sound_projection(no_matches.display_total == 0);
+    check_sound_projection(no_matches.display_rows.empty());
+    check_sound_projection(no_matches.listed_resources.empty());
+    check_sound_projection(no_matches.advance_rows.empty());
+}
+
+TEST_CASE("keysound projection keeps row payload bounded for large selections and catalogs",
+          "[unit][sys][sounds][sound-groups]") {
+    song_document_t song;
+    std::vector<std::uint64_t> selected;
+    for (std::uint64_t id = 1; id <= 1200; ++id) {
+        song.audio_assets.push_back({.id = asset_id_t{id}, .source_path = "sound.wav"});
+        song.resources.push_back({.id = resource_id_t{id}, .name = "sound" + std::to_string(id),
+            .asset = asset_id_t{id}, .roles = {resource_role_t::sample}});
+        if (id > 1000) selected.push_back(id);
+    }
+    const auto list = project_keysound_list(song, nullptr, keysound_list_request_t{
+        .selected_resource_ids = selected, .first_row = 0, .row_limit = 12});
+    check_sound_projection(list.total == 1200);
+    check_sound_projection(list.rows.size() == 11);
+    check_sound_projection(list.display_rows.size() == 12);
+    check_sound_projection(list.selection_rows.size() == 200);
+    check_sound_projection(list.selected_rows.empty());
+    check_sound_projection(list.listed_resources.size() == 1200);
+    check_sound_projection(list.advance_rows.size() == 1200);
+}
+
+TEST_CASE("keysound default layer filters use stable IDs beyond the visible mask width",
+          "[unit][sys][sounds][sound-groups]") {
+    song_document_t song;
+    song.audio_assets = {{.id = asset_id_t{1}, .source_path = "sample.wav"}};
+    song.resources = {{.id = resource_id_t{1}, .name = "sample", .asset = asset_id_t{1},
+                       .roles = {resource_role_t::sample}}};
+    chart_document_t chart;
+    for (std::uint64_t id = 1; id <= 65; ++id)
+        chart.semantic_layers.push_back({.id = layer_id_t{id}, .name = "Layer " +
+            std::to_string(id)});
+    chart.sound_layer_defaults = {{.resource = resource_id_t{1}, .layers = {layer_id_t{65}}}};
+    const auto list = project_keysound_list(song, &chart, keysound_list_request_t{
+        .layer_filter = keysound_layer_filter_kind_t::specific, .layer_id = 65,
+        .filter_layer_first = 64, .filter_layer_limit = 64});
+    require_sound_projection(list.rows.size() == 1);
+    check_sound_projection(list.rows[0].resource == resource_id_t{1});
+    check_sound_projection(list.rows[0].layer_mask == 0);
+    check_sound_projection(list.filter_layer_total == 65);
+    check_sound_projection(list.filter_layer_first == 64);
+    check_sound_projection(list.filter_layers.size() == 1);
+    check_sound_projection(list.filter_layers[0].id == layer_id_t{65});
+    check_sound_projection(list.selected_filter_layer_valid);
+    const auto stale = project_keysound_list(song, &chart, keysound_list_request_t{
+        .layer_filter = keysound_layer_filter_kind_t::specific, .layer_id = 999});
+    check_sound_projection(!stale.selected_filter_layer_valid);
 }
 
 TEST_CASE("sound layer conflicts distinguish matching layers from unlayered notes",

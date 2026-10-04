@@ -669,12 +669,32 @@ void worm_ui_frontend_bga_dock_request(WormUiBgaDockRequest* request) {
 void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request) {
     if (!request) return;
     const auto& state = worm_ui_nuklear_compose_state();
+    *request = {};
     request->sort_by_id = state.keysound_sort_by_id;
     request->slots_mode = state.keysound_slots_mode;
     request->selected_slot = state.keysound_selected_slot;
     std::copy(state.keysound_slots_search.begin(), state.keysound_slots_search.end(), request->search);
     request->first_row = state.keysound_slots_first_row;
     request->row_limit = state.keysound_slots_row_limit;
+    std::copy(state.keysound_filters.search.begin(), state.keysound_filters.search.end(),
+              request->automatic_search);
+    request->group_filter_active = state.keysound_filters.group_filter_active;
+    request->group_filter_ids = state.keysound_filters.group_ids.data();
+    request->group_filter_count = state.keysound_filters.group_ids.size();
+    request->include_ungrouped = state.keysound_filters.include_ungrouped;
+    request->layer_filter_kind = state.keysound_filters.layer_filter_kind;
+    request->layer_filter_id = state.keysound_filters.layer_filter_id;
+    request->collapsed_group_ids = state.keysound_filters.collapsed_group_ids.data();
+    request->collapsed_group_count = state.keysound_filters.collapsed_group_ids.size();
+    request->ungrouped_collapsed = state.keysound_filters.ungrouped_collapsed;
+    request->selected_resource_ids = state.keysound_selection.selected.data();
+    request->selected_resource_count = state.keysound_selection.selected.size();
+    request->include_selected_metadata = state.keysound_group_review.open_pending;
+    request->automatic_first_row = state.keysound_auto_first_row;
+    request->automatic_row_limit = state.keysound_auto_row_limit;
+    request->primary_resource_id = state.keysound_selection.primary;
+    request->filter_layer_first_row = state.keysound_filter_layer_first;
+    request->filter_layer_row_limit = 64;
 }
 
 bool worm_ui_frontend_stage_sound_slot_batch(uint64_t project, uint64_t chart, uint64_t revision,
@@ -818,6 +838,7 @@ static bool compose_popup_owns_input() {
     return compose.layers_menu_open || compose.keysound_slot_confirmation_open ||
            compose.keysound_slot_batch.open || compose.keysound_group_review.open ||
            compose.keysound_group_menu_open || compose.keysound_group_menu_release_pending ||
+           compose.keysound_filter_popup_open || compose.keysound_filter_release_pending ||
            compose.bga_stack_open || compose.bga_stack_release_pending ||
            compose.bga_renumber_confirmation_open || compose.bga_renumber_release_pending ||
            compose_note_menu_open();
@@ -1017,6 +1038,15 @@ static bool capture_keysound_group_review_key(const SDL_KeyboardEvent& event) {
 }
 
 static bool capture_compose_modal_key(const SDL_KeyboardEvent& event) {
+    const auto& compose = worm_ui_nuklear_compose_state();
+    if ((compose.keysound_filter_popup_open || compose.keysound_filter_release_pending) &&
+        event.key == SDLK_ESCAPE) {
+        SDL_Event copy{};
+        copy.type = event.type;
+        copy.key = event;
+        (void)nk_sdl_handle_event(g_context, &copy);
+        return true;
+    }
     return capture_bga_stack_key(event) || capture_keysound_group_review_key(event);
 }
 

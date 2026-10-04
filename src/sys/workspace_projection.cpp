@@ -321,6 +321,7 @@ struct workspace_projection_context_t {
     const wormedit::workspace_view_t& source;
     const wormedit::song_document_t& document;
     const wormedit::stepmania_export_policy_t& stepmania_policy;
+    dock_sort_t keysound_sort;
 };
 
 void publish_workspace_summary(flattened_workspace_t& result, const char* text) {
@@ -714,9 +715,18 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
     view.keysounds_available = chart != projection.document.charts.end();
     if (!arena || !view.keysounds_available) return;
     const auto list = wormedit::sys::project_keysound_list(
-        projection.document, &*chart, WORM_UI_COMPOSE_KEYSOUND_CAPACITY);
+        projection.document, &*chart, WORM_UI_COMPOSE_KEYSOUND_CAPACITY,
+        chart->source_family == wormedit::format_family_t::bms &&
+                projection.keysound_sort == dock_sort_t::bms_id
+            ? wormedit::sys::dock_sort_t::bms_id
+            : wormedit::sys::dock_sort_t::natural_name,
+        chart->source_family == wormedit::format_family_t::bms);
     view.keysound_total_count = list.total;
     view.keysounds_truncated = list.truncated;
+    view.keysound_ids_available = chart->source_family == wormedit::format_family_t::bms;
+    view.keysound_ids_used = list.bms_capacity.used;
+    view.keysound_ids_total = list.bms_capacity.total;
+    view.keysound_largest_free_run = list.bms_capacity.largest_free_run;
     result.compose.keysound.row = arena_array<WormUiComposeKeysoundRowView>(*arena, list.rows.size());
     result.compose.keysound.layer =
         arena_array<WormUiComposeKeysoundLayerView>(*arena, list.layers.size());
@@ -1032,7 +1042,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                        const wormedit::native_project_recovery_controller_view_t& recovery,
                        bool recovery_scan_configured,
                        const wormedit::stepmania_export_policy_t& stepmania_policy,
-                       frame_arena_t* arena)
+                       frame_arena_t* arena, dock_sort_t keysound_sort)
     -> flattened_workspace_t {
     flattened_workspace_t result(arena);
     result.view.project_title = document.metadata.title.c_str();
@@ -1057,7 +1067,8 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
     const char* heading = tab_labels[static_cast<std::size_t>(source.active_tab)];
     result.view.tab_heading = heading ? heading : "Compose";
 
-    const workspace_projection_context_t projection{result, source, document, stepmania_policy};
+    const workspace_projection_context_t projection{result, source, document, stepmania_policy,
+                                                    keysound_sort};
     std::visit(workspace_tab_visitor{projection}, source.tab_view);
     return result;
 }

@@ -1,6 +1,7 @@
 #include "sys/bga_list_projection.h"
 #include <catch2/catch_test_macros.hpp>
 #include <source_location>
+#include <array>
 using namespace wormedit;
 using namespace wormedit::sys;
 namespace {
@@ -25,16 +26,53 @@ auto images() -> song_document_t {
     return document;
 }
 }
-TEST_CASE("BGA projection builds only the requested window with IDs uses and missing state", "[sys][bga]") {
-    const auto result = project_bga_list(images(), {.first_row = 100, .row_limit = 3});
+TEST_CASE("BGA projection searches and builds only the requested window with ID use state", "[sys][bga]") {
+    const auto result = project_bga_list(images(), {.search = "Image101", .row_limit = 3});
     require_bga(static_cast<bool>(result.rows.size() == 3));
-    check_bga(result.total_matching == 1200);
-    check_bga(result.matching_ids.size() == 1200);
+    check_bga(result.total_matching == 11);
+    check_bga(result.matching_ids.size() == 11);
     check_bga(result.rows.front().resource == resource_id_t{101});
+    check_bga(result.rows[1].resource == resource_id_t{1010});
+    check_bga(result.rows[2].resource == resource_id_t{1011});
+    check_bga(result.matching_ids[0] == resource_id_t{101});
+    check_bga(result.matching_ids[1] == resource_id_t{1010});
+    check_bga(result.matching_ids[2] == resource_id_t{1011});
     check_bga(result.rows.front().missing);
-    check_bga(result.rows[1].video);
-    check_bga(result.rows[1].use_count == 2);
-    check_bga(result.rows[1].slot == "102");
+    check_bga(result.rows.front().slot == "101");
+    const auto used = project_bga_list(images(), {.search = "Image102"});
+    check_bga(used.rows.front().video);
+    check_bga(used.rows.front().use_count == 2);
+}
+
+TEST_CASE("BGA dock sorts matching rows naturally before the requested window", "[sys][bga][dock]") {
+    auto document = images();
+    document.resources.resize(3);
+    document.visual_assets.resize(3);
+    document.charts.clear();
+    const auto names = std::array{"snd10.bmp", "snd2.bmp", "snd1.bmp"};
+    for (std::size_t index = 0; index < names.size(); ++index) {
+        auto& resource = document.resources[index];
+        resource.name = names[index];
+        resource.target_identities = {{format_family_t::bms,
+            index == 0 ? "0Z" : index == 1 ? "0a" : "10", "BMP"}};
+    }
+    const auto result = project_bga_list(document, {.search = "snd", .row_limit = 2});
+    require_bga(result.rows.size() == 2);
+    check_bga(result.rows[0].name == "snd1.bmp");
+    check_bga(result.rows[1].name == "snd2.bmp");
+    check_bga(result.matching_ids[0] == resource_id_t{3});
+    const auto by_id = project_bga_list(document, {.search = "snd", .row_limit = 2,
+                                                   .sort = dock_sort_t::bms_id});
+    require_bga(by_id.rows.size() == 2);
+    check_bga(by_id.rows[0].name == "snd2.bmp");
+    check_bga(by_id.rows[1].name == "snd10.bmp");
+    check_bga(result.bms_capacity.used == 3);
+    check_bga(result.bms_capacity.total == 1295);
+    const auto without_ids = project_bga_list(document, {.search = "snd", .row_limit = 2,
+        .sort = dock_sort_t::bms_id, .ids_available = false});
+    require_bga(without_ids.rows.size() == 2);
+    check_bga(without_ids.rows[0].name == "snd1.bmp");
+    check_bga(without_ids.rows[1].name == "snd2.bmp");
 }
 TEST_CASE("BGA search matches names and BMP IDs and clamps its window", "[sys][bga]") {
     const auto document = images();

@@ -3,6 +3,7 @@
 #include <wormedit/core/resource_assignment.h>
 #include <algorithm>
 #include <unordered_map>
+#include <wormedit/core/natural_order.h>
 namespace wormedit::sys {
 namespace {
 auto folded(std::string value) -> std::string {
@@ -18,6 +19,22 @@ auto bga_slot(const resource_entry_t& resource) -> std::string {
             return identity.identifier;
     return {};
 }
+auto bga_resource_less(const resource_entry_t& left, const resource_entry_t& right,
+                       dock_sort_t sort) -> bool {
+    if (sort == dock_sort_t::bms_id) {
+        const auto left_slot = folded(bga_slot(left));
+        const auto right_slot = folded(bga_slot(right));
+        if (left_slot != right_slot) {
+            if (left_slot.empty()) return false;
+            if (right_slot.empty()) return true;
+            return left_slot < right_slot;
+        }
+    } else if (left.name != right.name) {
+        if (natural_name_less(left.name, right.name)) return true;
+        if (natural_name_less(right.name, left.name)) return false;
+    }
+    return left.id.value < right.id.value;
+}
 auto bga_uses(const song_document_t& document) -> std::unordered_map<std::uint64_t, std::uint32_t> {
     std::unordered_map<std::uint64_t, std::uint32_t> uses;
     for (const auto& chart : document.charts)
@@ -27,6 +44,7 @@ auto bga_uses(const song_document_t& document) -> std::unordered_map<std::uint64
 }
 auto project_bga_list(const song_document_t& document, const bga_list_request_t& request) -> bga_list_t {
     bga_list_t result;
+    result.bms_capacity = bms_identifier_capacity(document, "BMP");
     const auto uses = bga_uses(document);
     std::vector<const resource_entry_t*> matching;
     const auto query = folded(request.search);
@@ -38,6 +56,12 @@ auto project_bga_list(const song_document_t& document, const bga_list_request_t&
             result.matching_ids.push_back(resource.id);
         }
     }
+    const auto sort = request.ids_available ? request.sort : dock_sort_t::natural_name;
+    std::ranges::sort(matching, [sort](const auto* left, const auto* right) {
+        return bga_resource_less(*left, *right, sort);
+    });
+    result.matching_ids.clear();
+    for (const auto* resource : matching) result.matching_ids.push_back(resource->id);
     result.total_matching = matching.size();
     result.first_row = std::min(request.first_row, matching.size());
     const auto end = result.first_row + std::min(request.row_limit, matching.size() - result.first_row);

@@ -1354,9 +1354,10 @@ auto build_audio_slices_tab(workspace_view_build_context_t& context) -> bool {
     return true;
 }
 
-auto build_compare_validate_tab(workspace_view_build_context_t& context) -> bool {
+auto build_compare_validate_tab(workspace_view_build_context_t& context,
+                                const diagnostic_list_t* cached_diagnostics) -> bool {
     const auto& [workspace, document, chart, result, view] = context;
-    auto diagnostics = validate_document(document);
+    auto diagnostics = cached_diagnostics ? *cached_diagnostics : validate_document(document);
     if (diagnostics.size() > workspace.limits.maximum_validation_diagnostics) {
         add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
                   "document diagnostics exceed the workspace validation cap");
@@ -1383,7 +1384,8 @@ auto make_workspace_view(const workspace_controller_t& workspace, const song_doc
 }
 
 auto make_workspace_view(const workspace_controller_t& workspace, const song_document_t& document,
-                         workspace_tab_t requested_tab) -> workspace_view_result_t {
+                         workspace_tab_t requested_tab,
+                         const diagnostic_list_t* cached_diagnostics) -> workspace_view_result_t {
     workspace_view_result_t result;
     if (document.id != workspace.song || document.revision != workspace.document_revision) {
         add_error(result.diagnostics, diagnostic_code_t::invalid_id,
@@ -1474,7 +1476,7 @@ auto make_workspace_view(const workspace_controller_t& workspace, const song_doc
         }
         break;
     case workspace_tab_t::compare_validate:
-        if (!build_compare_validate_tab(context)) {
+        if (!build_compare_validate_tab(context, cached_diagnostics)) {
             return result;
         }
         break;

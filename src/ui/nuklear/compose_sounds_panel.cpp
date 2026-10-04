@@ -88,6 +88,13 @@ auto take_picked_paths(std::vector<std::string>& destination) -> bool {
     return true;
 }
 
+auto grouped_count(std::size_t value) -> std::string {
+    auto text = std::to_string(value);
+    for (auto position = text.size(); position > 3; position -= 3)
+        text.insert(position - 3, ",");
+    return text;
+}
+
 // ---- Actions ----
 
 auto raise(const SoundsPanel& panel, WormUiComposeActionKind kind) -> bool {
@@ -201,7 +208,7 @@ void render_toolbar(const SoundsPanel& panel) {
     const auto pushed = nk_style_push_vec2(context, &context->style.window.spacing,
                                            nk_vec2(2.0f, spacing.y)) != 0;
     nk_layout_row_template_begin(context, 27);
-    IconButton::layout_columns(context, 9, 27.0f);
+    IconButton::layout_columns(context, panel.view->keysound_ids_available ? 11 : 9, 27.0f);
     nk_layout_row_template_end(context);
 
     const auto can_paint = paint_allowed(panel);
@@ -240,11 +247,76 @@ void render_toolbar(const SoundsPanel& panel) {
     if (toolbar_button(context, has_selection,
             IconButton{Glyph::x, "Clear the selection"}))
         worm_ui_keysound_clear(state.keysound_selection);
+    if (panel.view->keysound_ids_available) {
+        if (IconButton{Glyph::chevrons_left, state.keysound_sort_by_id
+                           ? "Sort by name" : "Sort by BMS ID", state.keysound_sort_by_id}.render(context))
+            state.keysound_sort_by_id = !state.keysound_sort_by_id;
+        if (toolbar_button(context, true, IconButton{Glyph::rotate_ccw, "Renumber BMS IDs by name"}))
+        {
+            state.keysound_renumber_confirmation_open = true;
+            state.keysound_renumber_project = panel.view->project_id;
+            state.keysound_renumber_chart = panel.view->chart_id;
+            state.keysound_renumber_revision = panel.view->document_revision;
+            state.keysound_renumber_resources = state.keysound_selection.selected;
+        }
+    }
     if (IconButton{Glyph::layers, "Layers: give the selected sounds a semantic layer, so notes "
                                   "painted from them join it", state.sounds_layers_open}
             .render(context))
         state.sounds_layers_open = !state.sounds_layers_open;
     if (pushed) (void)nk_style_pop_vec2(context);
+}
+
+void raise_sound_renumber(const SoundsPanel& panel, bool all) {
+    if (!raise(panel, WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS)) return;
+    auto& state = *panel.state;
+    state.keysound_staged_ids = all ? std::vector<std::uint64_t>{}
+                                    : state.keysound_renumber_resources;
+    panel.action->compose_sound_resource_ids = state.keysound_staged_ids.data();
+    panel.action->compose_sound_resource_count = state.keysound_staged_ids.size();
+    panel.action->compose_renumber_all = all;
+    panel.action->compose_renumber_bga = false;
+    state.keysound_renumber_confirmation_open = false;
+    state.keysound_renumber_release_pending = true;
+    state.keysound_renumber_resources.clear();
+}
+
+void render_sound_renumber_confirmation(const SoundsPanel& panel) {
+    auto& state = *panel.state;
+    if (!state.keysound_renumber_confirmation_open) return;
+    auto* context = panel.context;
+    const auto region = nk_window_get_content_region(context);
+    const auto bounds = nk_rect(0, 60, std::min(360.0f, region.w), 204);
+    if (!panel.view->keysound_ids_available ||
+        state.keysound_renumber_project != panel.view->project_id ||
+        state.keysound_renumber_chart != panel.view->chart_id ||
+        state.keysound_renumber_revision != panel.view->document_revision) {
+        state.keysound_renumber_confirmation_open = false;
+        state.keysound_renumber_release_pending = true;
+        state.keysound_renumber_resources.clear();
+        wormedit::ui::chrome::dismiss_popup(context, "Renumber WAV IDs", bounds);
+        return;
+    }
+    if (!nk_popup_begin(context, NK_POPUP_STATIC, "Renumber WAV IDs",
+                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) {
+        state.keysound_renumber_confirmation_open = false;
+        state.keysound_renumber_release_pending = true;
+        state.keysound_renumber_resources.clear();
+        return;
+    }
+    nk_layout_row_dynamic(context, 66, 1);
+    nk_label_wrap(context, "Renumber WAV IDs in natural name order? Choose the selected sounds or the whole list.");
+    nk_layout_row_dynamic(context, 28, 2);
+    if (!state.keysound_renumber_resources.empty() && nk_button_label(context, "Selected"))
+        raise_sound_renumber(panel, false);
+    if (nk_button_label(context, "All sounds")) raise_sound_renumber(panel, true);
+    if (nk_button_label(context, "Cancel")) {
+        state.keysound_renumber_confirmation_open = false;
+        state.keysound_renumber_release_pending = true;
+        state.keysound_renumber_resources.clear();
+    }
+    if (!state.keysound_renumber_confirmation_open) nk_popup_close(context);
+    nk_popup_end(context);
 }
 
 void render_search(const SoundsPanel& panel) {
@@ -410,9 +482,10 @@ void draw_row(const SoundsPanel& panel, struct nk_rect bounds, const WormUiCompo
     const auto text_color = row.missing ? color(UiColor::text_muted)
                             : selected  ? color(UiColor::selected_text) : color(UiColor::text);
     const auto clear = nk_rgba(0, 0, 0, 0);
-    constexpr float slot_width = 30.0f;
-    const auto slot_len = static_cast<int>(std::strlen(row.slot));
-    nk_draw_text(canvas, nk_rect(bounds.x + 6, bounds.y + 3, slot_width, bounds.h - 6), row.slot,
+    const auto slot = panel.view->keysound_ids_available ? row.slot : "";
+    const auto slot_width = panel.view->keysound_ids_available ? 30.0f : 0.0f;
+    const auto slot_len = static_cast<int>(std::strlen(slot));
+    nk_draw_text(canvas, nk_rect(bounds.x + 6, bounds.y + 3, slot_width, bounds.h - 6), slot,
                  slot_len, context->style.font, clear, color(UiColor::text_muted));
     const auto chips = static_cast<float>(
         std::min<int>(std::popcount(row.layer_mask), 3)) * (chip_size + 2.0f);
@@ -469,7 +542,9 @@ void render_row(const SoundsPanel& panel, std::size_t shown_index) {
     if (!row) return;
     const auto hovered = nk_widget_is_hovered(context);
     const auto clicked = nk_widget_is_mouse_clicked(context, NK_BUTTON_LEFT) &&
-                         !panel.view->input_occluded;
+                         !panel.view->input_occluded &&
+                         !panel.state->keysound_renumber_confirmation_open &&
+                         !panel.state->keysound_renumber_release_pending;
     struct nk_rect bounds{};
     if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
     draw_row(panel, bounds, *row, worm_ui_keysound_is_selected(panel.state->keysound_selection, id),
@@ -554,8 +629,33 @@ void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
     render_search(panel);
     if (state->sounds_layers_open) render_layer_section(panel);
     const auto region = nk_window_get_content_region(context);
-    const auto remaining = region.y + region.h - nk_widget_position(context).y -
+    const auto footer_height = view->keysound_ids_available ? 44.0f : 0.0f;
+    const auto remaining = region.y + region.h - nk_widget_position(context).y - footer_height -
                            context->style.window.spacing.y;
+    const auto block_list_pointer = state->keysound_renumber_confirmation_open ||
+                                    state->keysound_renumber_release_pending;
+    if (block_list_pointer) nk_widget_disable_begin(context);
     render_list(panel, std::max(remaining, 60.0f));
+    if (block_list_pointer) nk_widget_disable_end(context);
+    if (view->keysound_ids_available) {
+        nk_layout_row_dynamic(context, 20, 1);
+        char capacity[64];
+        const auto used = grouped_count(view->keysound_ids_used);
+        const auto total = grouped_count(view->keysound_ids_total);
+        std::snprintf(capacity, sizeof(capacity), "%s / %s IDs", used.c_str(), total.c_str());
+        const auto amber = view->keysound_ids_total != 0 &&
+            view->keysound_ids_used * 10 > view->keysound_ids_total * 9;
+        nk_label_colored(context, capacity, NK_TEXT_LEFT,
+                         amber ? nk_rgb(226, 166, 64) : context->style.text.color);
+        nk_layout_row_dynamic(context, 20, 1);
+        char free_run[64];
+        std::snprintf(free_run, sizeof(free_run), "Largest free run: %zu",
+                      view->keysound_largest_free_run);
+        nk_label(context, free_run, NK_TEXT_LEFT);
+    }
     render_sound_layer_confirmation(panel);
+    render_sound_renumber_confirmation(panel);
+    if (state->keysound_renumber_release_pending &&
+        !context->input.mouse.buttons[NK_BUTTON_LEFT].down)
+        state->keysound_renumber_release_pending = false;
 }

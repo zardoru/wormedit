@@ -94,7 +94,10 @@ void bga_dock_runtime_t::project(const song_document_t& document, const std::fil
     if (state.revision != document.revision) { state.failed.clear(); state.revision = document.revision; }
     if (!request.visible) return;
     state.search.assign(request.search, std::find(request.search, request.search + sizeof(request.search), '\0'));
-    state.list = project_bga_list(document, {state.search, request.first_row, std::min<std::size_t>(64, request.row_limit)});
+    state.list = project_bga_list(document, {state.search, request.first_row,
+        std::min<std::size_t>(64, request.row_limit),
+        request.sort_by_id ? dock_sort_t::bms_id : dock_sort_t::natural_name,
+        request.ids_available});
     state.update_images(document, base);
     state.ids.clear(); state.rows.clear();
     for (const auto id : state.list.matching_ids) state.ids.push_back(id.value);
@@ -114,5 +117,9 @@ void bga_dock_runtime_t::project(const song_document_t& document, const std::fil
     view.bga_rows = state.rows.data(); view.bga_row_count = state.rows.size();
     view.bga_first_row = state.list.first_row; view.bga_total_matching = state.list.total_matching;
     view.bga_matching_ids = state.ids.data();
+    view.bga_ids_available = request.ids_available;
+    view.bga_ids_used = state.list.bms_capacity.used;
+    view.bga_ids_total = state.list.bms_capacity.total;
+    view.bga_largest_free_run = state.list.bms_capacity.largest_free_run;
 }
 }

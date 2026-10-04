@@ -182,10 +182,11 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 
 ## T-47 List validation diagnostics in Compare/Validate
 
-- **Status:** ready (T-46 is done)
+- **Status:** done (2026-10-04; cached diagnostics, bounded active-chart list, rowless rejection and exact Compose jumps)
+- **Scope approval (user, 2026-10-04):** Application cursor-jump wiring may also edit `src/sys/main.cpp`, and actual input coverage may edit `tests/ui/nuklear_event_harness_tests.cpp`. Also approved: `src/core/workspace.cpp` and `include/wormedit/core/workspace.h` to pass cached validation through the normal Compare workspace builder, preserving its focus and diagnostic-cap checks.
 - **Outcome:** the tab shows a bounded list of document-validation diagnostics for the active chart; clicking one moves the Compose cursor to its row.
 - **Read first:** `include/wormedit/core/document.h` (graph validation diagnostics), `src/sys/compare_view.cpp`, `src/ui/nuklear/compare_panel.cpp`.
-- **Files owned:** `src/sys/compare_view.cpp/.h`, `src/ui/nuklear/compare_panel.cpp`, `src/ui/frontend.h`.
+- **Files owned:** `src/sys/compare_view.cpp/.h`, `src/ui/nuklear/compare_panel.cpp`, `src/ui/frontend.h`. Supporting scope approved 2026-10-04: `src/sys/main.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `src/core/workspace.cpp`, `include/wormedit/core/workspace.h`.
 - **Steps:**
   1. Project up to 256 diagnostics (code, message, optional row) into the scalar view.
   2. Render them as a selectable list; a click emits a cursor-jump action reusing the marker-jump path.

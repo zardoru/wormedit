@@ -640,6 +640,13 @@ void worm_ui_frontend_bga_dock_request(WormUiBgaDockRequest* request) {
     std::copy(state.bga_search.begin(), state.bga_search.end(), request->search);
     request->first_row = state.bga_first_row;
     request->row_limit = state.bga_row_limit;
+    request->sort_by_id = state.bga_sort_by_id;
+}
+
+void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request) {
+    if (!request) return;
+    const auto& state = worm_ui_nuklear_compose_state();
+    request->sort_by_id = state.keysound_sort_by_id;
 }
 
 bool worm_ui_frontend_bga_list_contains(uint32_t window_id, float x, float y) {

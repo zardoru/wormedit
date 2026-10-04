@@ -225,6 +225,24 @@ auto change_sound_layers(const WormUiWorkspaceAction& action, document_history_t
                              "The sounds already had that layer state.");
 }
 
+auto renumber_dock_ids(const WormUiWorkspaceAction& action, document_history_t& history,
+                       workspace_controller_t& workspace, chart_id_t chart_id) -> std::string {
+    const auto chart = std::ranges::find(history.document.charts, chart_id, &chart_document_t::id);
+    if (chart == history.document.charts.end() || chart->source_family != format_family_t::bms)
+        return "BMS identifiers are available only for a BMS chart.";
+    if (!action.compose_renumber_all && action.compose_sound_resource_count == 0)
+        return "Select sounds or choose all before renumbering.";
+    std::vector<resource_id_t> ids;
+    if (!action.compose_renumber_all) ids = sound_ids(action);
+    const auto name_space = action.compose_renumber_bga ? "BMP" : "WAV";
+    const auto applied = apply_bms_identifier_renumber(
+        history, action.compose_input_document_revision,
+        {.name_space = name_space, .resources = std::move(ids)});
+    return finish_sound_edit(workspace, history, applied,
+        std::string{"Renumbered "} + name_space + " IDs by name.",
+        "BMS IDs are already in name order.");
+}
+
 auto request_audition(const WormUiWorkspaceAction& action, const document_history_t& history,
                       application_command_state_t& application_state) -> std::string {
     const resource_id_t resource{action.compose_resource_id};
@@ -262,6 +280,8 @@ auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action,
     case WORM_UI_COMPOSE_ACTION_REMOVE_SOUND_LAYER:
     case WORM_UI_COMPOSE_ACTION_CLEAR_SOUND_LAYERS:
         return change_sound_layers(action, history, workspace, chart);
+    case WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS:
+        return renumber_dock_ids(action, history, workspace, chart);
     default: return std::nullopt;
     }
 }

@@ -25,7 +25,23 @@ struct compare_scene_cache_t {
     std::vector<std::uint64_t> chart_ids;
     std::vector<std::string> chart_names;
     std::vector<const char*> chart_name_pointers;
+    std::uint64_t diagnostics_revision{};
+    std::uint64_t diagnostics_projection_revision{};
+    wormedit::song_id_t diagnostics_song;
+    wormedit::chart_id_t diagnostics_chart;
+    wormedit::diagnostic_list_t cached_diagnostics;
+    std::vector<std::string> diagnostic_labels;
+    std::vector<const char*> diagnostic_label_pointers;
+    std::vector<std::uint64_t> diagnostic_rows;
+    std::vector<std::uint64_t> diagnostic_measures;
+    std::vector<std::uint8_t> diagnostic_has_rows;
 };
+
+void cache_compare_diagnostics(compare_scene_cache_t& cache,
+                               const wormedit::song_document_t& document);
+[[nodiscard]] auto build_workspace_frame_model(
+    compare_scene_cache_t& cache, const wormedit::workspace_controller_t& workspace,
+    const wormedit::song_document_t& document) -> wormedit::workspace_view_result_t;
 
 [[nodiscard]] inline auto choose_compare_chart_pair(
     std::span<const wormedit::chart_id_t> available,

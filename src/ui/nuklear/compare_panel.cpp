@@ -5,10 +5,42 @@
 
 #include <algorithm>
 
+namespace {
+void render_diagnostics(nk_context* context, const WormUiCompareView& view,
+                        WormUiWorkspaceAction& action) {
+    if (view.diagnostic_count == 0) {
+        nk_layout_row_dynamic(context, 22, 1);
+        nk_label(context, "No validation diagnostics.", NK_TEXT_LEFT);
+        return;
+    }
+    const auto group_height = std::min(154.0f, 44.0f +
+        22.0f * static_cast<float>(view.diagnostic_count));
+    nk_layout_row_dynamic(context, group_height, 1);
+    if (!nk_group_begin(context, "Validation diagnostics", NK_WINDOW_BORDER)) return;
+    for (size_t index = 0; index < view.diagnostic_count; ++index) {
+        const char* label = view.diagnostic_labels ? view.diagnostic_labels[index]
+                                                    : "Validation diagnostic";
+        nk_layout_row_dynamic(context, 22, 1);
+        if (view.diagnostic_has_rows && view.diagnostic_has_rows[index]) {
+            if (nk_button_label(context, label)) {
+                action.kind = WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP;
+                action.compare_diagnostic_row = view.diagnostic_rows[index];
+                action.compare_diagnostic_measure = view.diagnostic_measures[index];
+                action.compare_diagnostic_chart = view.diagnostic_chart_id;
+            }
+        } else {
+            nk_label(context, label, NK_TEXT_LEFT);
+        }
+    }
+    nk_group_end(context);
+}
+} // namespace
+
 void worm_ui_nuklear_render_compare_panel(nk_context* context,
                                           const WormUiCompareView* view,
                                           WormUiWorkspaceAction* action) {
     if (!context || !view || !action || !view->visible) return;
+    render_diagnostics(context, *view, *action);
     if (!view->has_two_difficulties || !view->first_pane || !view->second_pane) {
         nk_layout_row_dynamic(context, 24, 1);
         nk_label(context, "Choose two difficulties to compare.", NK_TEXT_LEFT);
@@ -31,7 +63,11 @@ void worm_ui_nuklear_render_compare_panel(nk_context* context,
     nk_label(context, view->first_difficulty, NK_TEXT_CENTERED);
     nk_label(context, view->second_difficulty, NK_TEXT_CENTERED);
     struct nk_rect first{}, second{};
-    nk_layout_row_dynamic(context, std::max(160.0f, nk_window_get_content_region(context).h - 56.0f), 2);
+    const auto content = nk_window_get_content_region(context);
+    const auto next = nk_widget_position(context);
+    const auto field_height = std::max(160.0f, content.y + content.h - next.y -
+                                               context->style.window.spacing.y);
+    nk_layout_row_dynamic(context, field_height, 2);
     (void)nk_widget(&first, context);
     (void)nk_widget(&second, context);
     auto* canvas = nk_window_get_canvas(context);

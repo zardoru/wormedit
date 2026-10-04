@@ -53,10 +53,14 @@ auto project_application_frame(application_frame_projection_context_t context)
     flattened_workspace_t flattened;
     {
         frame_phase_scope_t flatten(frame_phase_t::workspace_flatten);
+        WormUiKeysoundDockRequest keysound_request{};
+        worm_ui_frontend_keysound_dock_request(&keysound_request);
         flattened =
             flatten_workspace(context.model, context.history.document, context.status,
                               context.recovery_controller.view(), context.recovery_scan_configured,
-                              context.stepmania_export_policy, context.frame_arena);
+                              context.stepmania_export_policy, context.frame_arena,
+                              keysound_request.sort_by_id ? dock_sort_t::bms_id
+                                                          : dock_sort_t::natural_name);
         flattened.rebind_view_pointers();
         flattened.view.transport_metronome_enabled =
             context.application_command_state.transport_metronome_enabled;

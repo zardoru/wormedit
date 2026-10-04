@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <string>
+#include <string_view>
 #include <source_location>
 #include <utility>
 
@@ -1188,7 +1189,12 @@ TEST_CASE("Clicking selected and unselected notes emits one audition selection",
     check_note_click_emitted_once(true);
 }
 
-namespace { void check_bga_dock(bool value) { CHECK(value); } }
+namespace {
+void check_bga_dock(bool value) { CHECK(value); }
+void check_sound_slot_hidden(const std::string& drawn_text) {
+    CHECK(drawn_text.find("0A  kick.wav") == std::string::npos);
+}
+}
 
 TEST_CASE("Selecting a sound keeps note painting armed with that sound and preserves advance",
           "[frontend-state][event-harness][sound-paint]") {
@@ -1234,6 +1240,7 @@ TEST_CASE("BGA dock reuses list selection and arms resources outside the drawer 
     (void)harness.frame();
     REQUIRE(state.bga_list_valid);
     check_bga_dock(harness.drawn_text().find("clip.png") != std::string::npos);
+    check_bga_dock(harness.drawn_text().find("01  clip.png") == std::string::npos);
     INFO("BGA bounds " << state.bga_list_x << "," << state.bga_list_y << "," << state.bga_list_width << "," << state.bga_list_height);
     (void)click_at(harness, state.bga_list_x + 70, state.bga_list_y + 112);
     check_bga_dock(state.bga_selection.primary == 1400);
@@ -1247,6 +1254,177 @@ TEST_CASE("BGA dock reuses list selection and arms resources outside the drawer 
     state.bga_panel_visible = false;
     (void)harness.frame();
     CHECK_FALSE(state.bga_list_valid);
+}
+
+namespace {
+void require_sound_renumber(bool value) { REQUIRE(value); }
+void check_sound_renumber(bool value, std::string_view description) {
+    INFO(description);
+    CHECK(value);
+}
+auto has_sound_renumber_action(const std::vector<workspace_action_snapshot_t>& frames) -> bool {
+    return std::ranges::any_of(frames, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
+    });
+}
+auto has_sound_audition_action(const std::vector<workspace_action_snapshot_t>& frames) -> bool {
+    return std::ranges::any_of(frames, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_AUDITION_SOUND;
+    });
+}
+}
+
+TEST_CASE("Sounds dock confirms renumbering the selected BMS resources", "[frontend-state][event-harness][sounds][bms]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    const std::array<WormUiComposeKeysoundRowView, 2> rows{{
+        {.resource_id = 40, .slot = "0A", .name = "kick2.wav"},
+        {.resource_id = 50, .slot = "0B", .name = "kick10.wav"}}};
+    view.keysounds = rows.data();
+    view.keysound_count = view.keysound_total_count = rows.size();
+    view.keysounds_available = view.keysound_ids_available = true;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.keysound_search = {'k', 'i', 'c', 'k'};
+    (void)harness.frame();
+    const auto rendered = harness.drawn_text();
+    check_sound_renumber(rendered.find("kick2.wav") < rendered.find("kick10.wav"),
+                         "filtered natural name order");
+    state.keysound_selection.selected = {50};
+    state.keysound_selection.primary = 50;
+    state.keysound_renumber_confirmation_open = true;
+    state.keysound_renumber_project = view.project_id;
+    state.keysound_renumber_chart = view.chart_id;
+    state.keysound_renumber_revision = view.document_revision;
+    state.keysound_renumber_resources = {50};
+    (void)harness.frame();
+    const auto frames = click_at(harness, 760, 298);
+    const auto found = std::ranges::find_if(frames, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
+    });
+    require_sound_renumber(found != frames.end());
+    check_sound_renumber(found->get().compose_sound_resource_count == 1, "one selected resource");
+    require_sound_renumber(found->get().compose_sound_resource_ids != nullptr);
+    check_sound_renumber(found->get().compose_sound_resource_ids[0] == 50, "selected resource ID");
+    check_sound_renumber(!found->get().compose_renumber_all, "selection mode");
+    check_sound_renumber(!found->get().compose_renumber_bga, "WAV namespace");
+    check_sound_renumber(!state.keysound_renumber_confirmation_open, "confirmation closes");
+}
+
+TEST_CASE("Sounds dock cancels stale or dismissed BMS renumber confirmations", "[frontend-state][event-harness][sounds][bms]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    const std::array<WormUiComposeKeysoundRowView, 1> rows{{
+        {.resource_id = 50, .slot = "0B", .name = "kick10.wav"}}};
+    view.keysounds = rows.data();
+    view.keysound_count = view.keysound_total_count = rows.size();
+    view.keysounds_available = view.keysound_ids_available = true;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.keysound_renumber_confirmation_open = true;
+    state.keysound_renumber_project = view.project_id;
+    state.keysound_renumber_chart = view.chart_id;
+    state.keysound_renumber_revision = view.document_revision;
+    state.keysound_renumber_resources = {50};
+    ++view.document_revision;
+    (void)harness.frame();
+    check_sound_renumber(!state.keysound_renumber_confirmation_open, "stale revision closes popup");
+    auto frames = click_at(harness, 760, 298);
+    check_sound_renumber(!has_sound_renumber_action(frames), "stale revision sends no action");
+
+    state.keysound_renumber_confirmation_open = true;
+    state.keysound_renumber_project = view.project_id;
+    state.keysound_renumber_chart = view.chart_id;
+    state.keysound_renumber_revision = view.document_revision;
+    state.keysound_renumber_resources = {50};
+    ++view.chart_id;
+    (void)harness.frame();
+    check_sound_renumber(!state.keysound_renumber_confirmation_open, "stale chart closes popup");
+
+    state.keysound_renumber_confirmation_open = true;
+    state.keysound_renumber_project = view.project_id;
+    state.keysound_renumber_chart = view.chart_id;
+    state.keysound_renumber_revision = view.document_revision;
+    state.keysound_renumber_resources = {50};
+    ++view.project_id;
+    (void)harness.frame();
+    check_sound_renumber(!state.keysound_renumber_confirmation_open, "stale project closes popup");
+
+    state.keysound_renumber_confirmation_open = true;
+    state.keysound_renumber_project = view.project_id;
+    state.keysound_renumber_chart = view.chart_id;
+    state.keysound_renumber_revision = view.document_revision;
+    state.keysound_renumber_resources = {50};
+    (void)harness.frame();
+    frames = click_at(harness, 760, 330);
+    check_sound_renumber(!has_sound_renumber_action(frames), "cancel sends no action");
+    check_sound_renumber(!state.keysound_renumber_confirmation_open, "cancel closes popup");
+}
+
+TEST_CASE("Sounds dock renumber release does not audition the covered row",
+          "[frontend-state][event-harness][sounds][bms]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    const std::array<WormUiComposeKeysoundRowView, 1> rows{{
+        {.resource_id = 50, .slot = "0B", .name = "kick.wav"}}};
+    view.keysounds = rows.data();
+    view.keysound_count = view.keysound_total_count = rows.size();
+    view.keysounds_available = view.keysound_ids_available = true;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.keysound_renumber_confirmation_open = true;
+    state.keysound_renumber_project = view.project_id;
+    state.keysound_renumber_chart = view.chart_id;
+    state.keysound_renumber_revision = view.document_revision;
+    state.keysound_renumber_resources.clear();
+    (void)harness.frame();
+    const auto frames = click_at(harness, 760, 298);
+    check_sound_renumber(has_sound_renumber_action(frames), "all sounds action dispatched");
+    check_sound_renumber(!has_sound_audition_action(frames), "press and release do not audition row");
+    const auto renumber = std::ranges::find_if(frames, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
+    });
+    require_sound_renumber(renumber != frames.end());
+    check_sound_renumber(renumber->get().compose_renumber_all, "all sounds mode");
+}
+
+TEST_CASE("BGA renumber release does not select the covered image",
+          "[frontend-state][event-harness][bga][bms]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    const std::array<std::uint64_t, 1> ids{80};
+    const std::array<WormUiComposeBgaRowView, 1> rows{{
+        {.resource_id = 80, .slot = "0A", .name = "cover.bmp"}}};
+    view.bga_rows = rows.data();
+    view.bga_row_count = 1;
+    view.bga_total_matching = 1;
+    view.bga_matching_ids = ids.data();
+    view.bga_search = "";
+    view.bga_ids_available = true;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.bga_panel_visible = true;
+    (void)harness.frame();
+    state.bga_renumber_confirmation_open = true;
+    state.bga_renumber_project = view.project_id;
+    state.bga_renumber_chart = view.chart_id;
+    state.bga_renumber_revision = view.document_revision;
+    state.bga_renumber_resources.clear();
+    (void)harness.frame();
+    const auto frames = click_at(harness, 760, 298);
+    check_sound_renumber(has_sound_renumber_action(frames), "all BGA action dispatched");
+    const auto renumber = std::ranges::find_if(frames, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
+    });
+    require_sound_renumber(renumber != frames.end());
+    check_sound_renumber(renumber->get().compose_renumber_all, "all images mode");
+    check_sound_renumber(renumber->get().compose_renumber_bga, "BMP namespace");
+    check_sound_renumber(state.bga_selection.primary == 0, "covered image stays unselected");
+    check_sound_renumber(state.bga_selection.selected.empty(), "covered image absent from selection");
 }
 
 namespace {
@@ -1272,6 +1450,7 @@ TEST_CASE("Note paint carries the Sounds dock sound whichever was picked first",
     view.keysound_count = view.keysound_total_count = rows.size();
     view.keysounds_available = true;
     (void)harness.frame();
+    check_sound_slot_hidden(harness.drawn_text());
     auto& state = worm_ui_nuklear_compose_state();
 
     // Tool first, then sound: the sound pick leaves note paint and the place mode alone.
@@ -1354,4 +1533,72 @@ TEST_CASE("Compare fields route wheel input as one shared read-only scroll actio
     CHECK(action.get().kind == WORM_UI_WORKSPACE_ACTION_COMPARE_SCROLL);
     CHECK(action.get().compare_scroll_delta != 0.0);
     CHECK(action.get().compose_input_count == 0);
+}
+
+namespace {
+struct compare_diagnostic_fixture_t {
+    std::array<const char*, 2> labels{"[3] Missing note resource", "[7] Chart warning"};
+    std::array<std::uint64_t, 2> rows{17, 0};
+    std::array<std::uint64_t, 2> measures{5, 0};
+    std::array<std::uint8_t, 2> has_rows{1, 0};
+};
+
+void configure_compare_diagnostic_view(nuklear_event_harness_t& harness,
+                                       const compare_diagnostic_fixture_t& fixture) {
+    auto& workspace = harness.view();
+    workspace.active_tab = WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE;
+    workspace.setup.visible = false;
+    workspace.metadata.visible = false;
+    workspace.compose.visible = false;
+    workspace.audio_slices.visible = false;
+    auto& compare = workspace.compare;
+    compare.visible = true;
+    compare.diagnostic_count = fixture.labels.size();
+    compare.diagnostic_labels = fixture.labels.data();
+    compare.diagnostic_rows = fixture.rows.data();
+    compare.diagnostic_measures = fixture.measures.data();
+    compare.diagnostic_has_rows = fixture.has_rows.data();
+    compare.diagnostic_chart_id = 42;
+}
+
+auto click_compare_diagnostic(nuklear_event_harness_t& harness)
+    -> std::pair<float, std::vector<workspace_action_snapshot_t>> {
+    for (float y = 80; y <= 260; y += 2) {
+        auto candidate = click_at(harness, 640, y);
+        if (!candidate.empty() && candidate[0].get().kind ==
+                                      WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP)
+            return {y, std::move(candidate)};
+    }
+    return {-1.0f, {}};
+}
+
+void check_clickable_compare_diagnostic(const std::vector<workspace_action_snapshot_t>& clickable) {
+    REQUIRE(clickable.size() == 2);
+    CHECK(clickable[0].get().compare_diagnostic_row == 17);
+    CHECK(clickable[0].get().compare_diagnostic_measure == 5);
+    CHECK(clickable[0].get().compare_diagnostic_chart == 42);
+}
+
+void check_rowless_compare_diagnostic(nuklear_event_harness_t& harness, float y) {
+    const auto rowless = click_at(harness, 640, y + 22.0f);
+    REQUIRE(rowless.size() == 2);
+    CHECK(rowless[0].get().kind != WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP);
+}
+
+void check_compare_diagnostic_actions(nuklear_event_harness_t& harness) {
+    const auto [y, clickable] = click_compare_diagnostic(harness);
+    REQUIRE(y >= 0.0f);
+    check_clickable_compare_diagnostic(clickable);
+    check_rowless_compare_diagnostic(harness, y);
+}
+} // namespace
+
+TEST_CASE("Compare validation diagnostics jump only when a row is available",
+          "[unit][frontend-state][event-harness][compare]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    const compare_diagnostic_fixture_t fixture;
+    configure_compare_diagnostic_view(harness, fixture);
+    (void)harness.frame();
+    check_compare_diagnostic_actions(harness);
 }

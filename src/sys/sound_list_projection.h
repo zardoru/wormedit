@@ -1,6 +1,8 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/resource_assignment.h>
+#include <wormedit/core/natural_order.h>
 
 #include <array>
 #include <cstddef>
@@ -9,6 +11,8 @@
 #include <vector>
 
 namespace wormedit::sys {
+
+enum class dock_sort_t : std::uint8_t { natural_name, bms_id };
 
 // Sounds tab data: the audio catalog as a searchable, windowed list plus the
 // properties of one selected sound. Pure projection of the document.
@@ -71,9 +75,9 @@ struct sound_properties_t {
 [[nodiscard]] auto project_sound_properties(const song_document_t& document,
                                             resource_id_t resource) -> sound_properties_t;
 
-// Compose keysound listbox: every placeable sample (an audio resource with the
-// sample role that is not a stem), in catalog order, with the layers the sound
-// receives when painted on the given chart.
+// Compose keysound dock: every placeable sample (an audio resource with the
+// sample role that is not a stem), in the requested order, with the layers the
+// sound receives when painted on the given chart.
 inline constexpr std::size_t keysound_layer_limit = 64;
 
 struct keysound_layer_t {
@@ -101,10 +105,14 @@ struct keysound_list_t {
     bool truncated{};
     // The chart's first keysound_layer_limit layers in palette order.
     std::vector<keysound_layer_t> layers;
+    bms_identifier_capacity_t bms_capacity{};
 };
 
 [[nodiscard]] auto project_keysound_list(const song_document_t& document,
                                          const chart_document_t* chart,
-                                         std::size_t maximum_rows) -> keysound_list_t;
+                                         std::size_t maximum_rows,
+                                         dock_sort_t sort = dock_sort_t::natural_name,
+                                         bool ids_available = true)
+    -> keysound_list_t;
 
 } // namespace wormedit::sys

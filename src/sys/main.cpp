@@ -2638,6 +2638,12 @@ void project_bga_dock(wormedit::sys::bga_dock_runtime_t& runtime,
     WormUiBgaDockRequest request{};
     worm_ui_frontend_bga_dock_request(&request);
     request.visible = request.visible && workspace.active_tab == wormedit::workspace_tab_t::compose;
+    const auto chart = workspace.selected_chart
+        ? std::ranges::find(history.document.charts, *workspace.selected_chart,
+                            &wormedit::chart_document_t::id)
+        : history.document.charts.end();
+    request.ids_available = chart != history.document.charts.end() &&
+        chart->source_family == wormedit::format_family_t::bms;
     runtime.project(history.document, base, request, view);
 }
 
@@ -2659,6 +2665,73 @@ void import_dropped_keysounds(bool session_loaded, wormedit::document_history_t&
         status = wormedit::sys::import_keysound_files(history, workspace, *workspace.selected_chart,
                                                       pending_paths);
     pending_paths.clear();
+}
+
+auto compare_jump_interaction(const wormedit::document_history_t& history,
+                              const wormedit::chart_document_t& chart,
+                              wormedit::local_position_t position,
+                              const std::optional<wormedit::editor_interaction_state_t>& previous)
+    -> std::optional<wormedit::editor_interaction_state_t> {
+    if (previous && previous->chart == chart.id) return previous;
+    const auto built = wormedit::build_measure_index(chart);
+    const auto* index = std::get_if<wormedit::measure_index_t>(&built);
+    const auto row = index ? wormedit::absolute_row(*index, position) : std::nullopt;
+    const wormedit::lane_layout_segment_t* active{};
+    std::uint64_t active_row{};
+    if (row) {
+        for (const auto& segment : chart.lane_layouts) {
+            const auto start = wormedit::absolute_row(*index, segment.position);
+            if (start && *start <= *row && (!active || *start >= active_row)) {
+                active = &segment;
+                active_row = *start;
+            }
+        }
+    }
+    if (!active || active->layout.lanes.empty()) return std::nullopt;
+    constexpr std::array<std::uint64_t, 6> default_snaps{4, 8, 16, 32, 48, 64};
+    const auto setup = wormedit::make_editor_interaction(history, chart.id,
+        active->layout.lanes.front().id, position,
+        previous ? std::span<const std::uint64_t>{previous->supported_snap_denominators}
+                 : std::span<const std::uint64_t>{default_snaps},
+        previous ? previous->active_snap_denominator : 16,
+        previous ? previous->viewport_height_pixels : 1.0);
+    return setup.state;
+}
+
+auto dispatch_compare_diagnostic_jump(
+    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+    wormedit::workspace_controller_t& workspace,
+    std::optional<wormedit::editor_interaction_state_t>& interaction) -> std::string {
+    const auto chart_id = wormedit::chart_id_t{action.compare_diagnostic_chart};
+    const auto chart = std::ranges::find(history.document.charts, chart_id,
+                                         &wormedit::chart_document_t::id);
+    if (chart == history.document.charts.end()) return "The validation target is no longer available.";
+    const auto measure = std::ranges::find(chart->measures,
+        wormedit::measure_id_t{action.compare_diagnostic_measure}, &wormedit::measure_chunk_t::id);
+    if (measure == chart->measures.end()) return "The validation target is no longer available.";
+    const auto capacity = wormedit::validate_measure(chart->divisions_per_standard_measure,
+                                                      measure->definition).row_capacity;
+    if (!capacity || action.compare_diagnostic_row >= *capacity)
+        return "The validation target is no longer available.";
+    auto candidate = compare_jump_interaction(history, *chart,
+        {measure->id, action.compare_diagnostic_row}, interaction);
+    if (!candidate) return "The validation target cannot be opened in Compose.";
+    const auto jumped = wormedit::dispatch_editor_action(history, *candidate,
+        wormedit::jump_edit_cursor_action_t{
+            {measure->id, action.compare_diagnostic_row}, history.document.revision});
+    if (!jumped.accepted)
+        return jumped.diagnostics.empty() ? "Could not move to validation diagnostic."
+                                          : jumped.diagnostics.front().message;
+    auto next_workspace = workspace;
+    const auto revision = history.document.revision;
+    if (!wormedit::apply_workspace_action(next_workspace, history.document, revision,
+            wormedit::workspace_select_chart_action_t{chart_id}) ||
+        !wormedit::apply_workspace_action(next_workspace, history.document, revision,
+            wormedit::workspace_switch_tab_action_t{wormedit::workspace_tab_t::compose}))
+        return "The validation target cannot be opened in Compose.";
+    workspace = std::move(next_workspace);
+    interaction = std::move(candidate);
+    return "Moved to validation diagnostic.";
 }
 
 template <typename Context>
@@ -2708,6 +2781,9 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
         } else if (const auto common_status = wormedit::sys::dispatch_transport_player_action(
                        action, application_command_state, stepmania_export_policy)) {
             status = *common_status;
+        } else if (action.kind == WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP) {
+            status = dispatch_compare_diagnostic_jump(action, history, workspace,
+                                                       compose_interaction_state);
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER ||
                    action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER) {
             const auto command = wormedit::command_id_t{
@@ -3570,7 +3646,8 @@ int main(int argc, char** argv) {
 #endif
 
             wormedit::sys::rebind_workspace_after_edit(workspace, history, status);
-            model = wormedit::make_workspace_view(workspace, history.document);
+            model = wormedit::sys::build_workspace_frame_model(
+                compare_scene_cache, workspace, history.document);
         }
         timing_edit.cancel_if_stale(history, workspace, application_command_state);
         const auto notification_view = project_application_notifications(

@@ -2,10 +2,15 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
+
 using namespace wormedit;
 using namespace wormedit::sys;
 
 namespace {
+
+void require_sound_projection(bool value) { REQUIRE(value); }
+void check_sound_projection(bool value) { CHECK(value); }
 
 auto catalog() -> song_document_t {
     song_document_t song;
@@ -102,7 +107,7 @@ TEST_CASE("sound properties describe one audio resource", "[unit][sys][sounds]")
     CHECK_FALSE(project_sound_properties(catalog(), resource_id_t{}).valid);
 }
 
-TEST_CASE("keysound list holds placeable samples in catalog order with their layers",
+TEST_CASE("keysound list holds placeable samples in name order with their layers",
           "[unit][sys][sounds]") {
     auto song = catalog();
     song.resources[1].target_identities = {
@@ -133,6 +138,33 @@ TEST_CASE("keysound list holds placeable samples in catalog order with their lay
     REQUIRE(without_chart.rows.size() == 1);
     CHECK(without_chart.rows.front().layer_mask == 0);
     CHECK(without_chart.layers.empty());
+}
+
+TEST_CASE("keysound dock natural and ID sorting happen before the row limit", "[sys][sounds][dock]") {
+    song_document_t song;
+    const std::array names{"snd10.wav", "snd2.wav", "snd1.wav"};
+    const std::array slots{"0Z", "0a", "10"};
+    for (std::size_t index = 0; index < names.size(); ++index) {
+        const auto id = static_cast<std::uint64_t>(index + 1);
+        song.audio_assets.push_back({.id = asset_id_t{id}, .source_path = names[index]});
+        song.resources.push_back({.id = resource_id_t{id}, .name = names[index],
+            .asset = asset_id_t{id}, .roles = {resource_role_t::sample},
+            .target_identities = {{format_family_t::bms, slots[index], "WAV"}}});
+    }
+    const auto natural = project_keysound_list(song, nullptr, 2);
+    require_sound_projection(natural.rows.size() == 2);
+    check_sound_projection(natural.rows[0].name == "snd1.wav");
+    check_sound_projection(natural.rows[1].name == "snd2.wav");
+    const auto by_id = project_keysound_list(song, nullptr, 2, dock_sort_t::bms_id);
+    require_sound_projection(by_id.rows.size() == 2);
+    check_sound_projection(by_id.rows[0].slot == "0a");
+    check_sound_projection(by_id.rows[1].slot == "0Z");
+    check_sound_projection(by_id.bms_capacity.used == 3);
+    check_sound_projection(by_id.bms_capacity.total == 1295);
+    const auto without_ids = project_keysound_list(song, nullptr, 2, dock_sort_t::bms_id, false);
+    require_sound_projection(without_ids.rows.size() == 2);
+    check_sound_projection(without_ids.rows[0].name == "snd1.wav");
+    check_sound_projection(without_ids.rows[1].name == "snd2.wav");
 }
 
 TEST_CASE("keysound list is bounded and reports the full count",

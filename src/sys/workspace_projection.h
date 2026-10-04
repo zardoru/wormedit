@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ui/frontend.h"
+#include "sys/sound_list_projection.h"
 
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/arena.h>
@@ -196,7 +197,8 @@ struct flattened_workspace_t {
                                      const native_project_recovery_controller_view_t& recovery,
                                      bool recovery_scan_configured,
                                      const stepmania_export_policy_t& stepmania_policy,
-                                     frame_arena_t* arena = nullptr)
+                                     frame_arena_t* arena = nullptr,
+                                     dock_sort_t keysound_sort = dock_sort_t::natural_name)
     -> flattened_workspace_t;
 
 // Borrowed notification strings remain valid until the center's next frame-

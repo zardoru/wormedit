@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <unordered_map>
+#include <wormedit/core/natural_order.h>
+#include <wormedit/core/resource_assignment.h>
 
 namespace wormedit::sys {
 namespace {
@@ -140,6 +142,23 @@ auto keysound_slot(const resource_entry_t& resource) -> std::string {
     return identity == resource.target_identities.end() ? std::string{} : identity->identifier;
 }
 
+auto keysound_resource_less(const resource_entry_t& left, const resource_entry_t& right,
+                            dock_sort_t sort) -> bool {
+    if (sort == dock_sort_t::bms_id) {
+        const auto left_slot = fold(keysound_slot(left));
+        const auto right_slot = fold(keysound_slot(right));
+        if (left_slot != right_slot) {
+            if (left_slot.empty()) return false;
+            if (right_slot.empty()) return true;
+            return left_slot < right_slot;
+        }
+    } else if (left.name != right.name) {
+        if (natural_name_less(left.name, right.name)) return true;
+        if (natural_name_less(right.name, left.name)) return false;
+    }
+    return left.id.value < right.id.value;
+}
+
 auto is_placeable_keysound(const song_document_t& document, const resource_entry_t& resource)
     -> bool {
     return std::ranges::find(resource.roles, resource_role_t::sample) != resource.roles.end() &&
@@ -202,8 +221,10 @@ void populate_note_conflicts(const chart_document_t& chart, keysound_list_t& lis
 } // namespace
 
 auto project_keysound_list(const song_document_t& document, const chart_document_t* chart,
-                           std::size_t maximum_rows) -> keysound_list_t {
+                           std::size_t maximum_rows, dock_sort_t sort,
+                           bool ids_available) -> keysound_list_t {
     keysound_list_t list;
+    list.bms_capacity = bms_identifier_capacity(document, "WAV");
     if (chart) {
         for (const auto& layer : chart->semantic_layers) {
             if (list.layers.size() == keysound_layer_limit) break;
@@ -211,13 +232,18 @@ auto project_keysound_list(const song_document_t& document, const chart_document
                 {.id = layer.id, .name = layer.name, .color = layer.color, .locked = layer.locked});
         }
     }
-    for (const auto& resource : document.resources) {
-        if (!is_placeable_keysound(document, resource)) continue;
-        ++list.total;
-        if (list.rows.size() >= maximum_rows) {
-            list.truncated = true;
-            continue;
-        }
+    std::vector<const resource_entry_t*> matching;
+    for (const auto& resource : document.resources)
+        if (is_placeable_keysound(document, resource)) matching.push_back(&resource);
+    const auto effective_sort = ids_available ? sort : dock_sort_t::natural_name;
+    std::ranges::sort(matching, [effective_sort](const auto* left, const auto* right) {
+        return keysound_resource_less(*left, *right, effective_sort);
+    });
+    list.total = matching.size();
+    const auto count = std::min(maximum_rows, matching.size());
+    list.truncated = count < matching.size();
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& resource = *matching[index];
         list.rows.push_back(
             {.resource = resource.id,
              .slot = keysound_slot(resource),

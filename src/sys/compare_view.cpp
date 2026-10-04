@@ -1,8 +1,10 @@
 #include "sys/compare_view.h"
+#include "sys/notification_history_runtime.h"
 
 #include <algorithm>
 #include <array>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace wormedit::sys {
@@ -16,6 +18,101 @@ auto find_chart(const wormedit::song_document_t& document, wormedit::chart_id_t 
     -> const wormedit::chart_document_t* {
     const auto found = std::ranges::find(document.charts, id, &wormedit::chart_document_t::id);
     return found == document.charts.end() ? nullptr : &*found;
+}
+
+auto diagnostic_position(const wormedit::song_document_t& document,
+                         wormedit::object_id_t id)
+    -> wormedit::sys::notification_history_target_t {
+    return wormedit::sys::resolve_notification_target(document, wormedit::notification_target_t{id});
+}
+
+auto chart_owns_object(const wormedit::chart_document_t& chart, wormedit::object_id_t id) -> bool {
+    const auto contains = [id](const auto& items) {
+        return std::ranges::find(items, id, [](const auto& item) { return item.id; }) != items.end();
+    };
+    const auto direct = std::apply([&](const auto&... items) {
+        return (contains(items) || ...);
+    }, std::tie(chart.lane_layouts, chart.bgm_source_lanes, chart.bpms, chart.pauses,
+                chart.warps, chart.scrolls, chart.speeds, chart.kiai, chart.timing_anchors,
+                chart.bookmarks, chart.sections, chart.bga_events, chart.sound_channels));
+    if (direct) return true;
+    for (const auto& measure : chart.measures)
+        if (contains(measure.notes) || contains(measure.bgm_events)) return true;
+    return std::ranges::any_of(chart.sound_channels, [&](const auto& channel) {
+        return contains(channel.events);
+    });
+}
+
+auto diagnostic_belongs_to_other_chart(const wormedit::song_document_t& document,
+                                       const wormedit::chart_document_t& chart,
+                                       wormedit::object_id_t id,
+                                       const wormedit::sys::notification_history_target_t& target)
+    -> bool {
+    if (target.availability == WORM_UI_NOTIFICATION_TARGET_POSITION ||
+        target.availability == WORM_UI_NOTIFICATION_TARGET_NONPOSITIONAL)
+        return target.chart != chart.id;
+    const auto owner = std::ranges::find_if(document.charts, [id](const auto& candidate) {
+        return chart_owns_object(candidate, id);
+    });
+    return owner != document.charts.end() && owner->id != chart.id;
+}
+
+} // namespace
+
+void cache_compare_diagnostics(compare_scene_cache_t& cache,
+                               const wormedit::song_document_t& document) {
+    if (cache.diagnostics_song == document.id &&
+        cache.diagnostics_revision == document.revision) return;
+    cache.diagnostics_song = document.id;
+    cache.diagnostics_revision = document.revision;
+    cache.cached_diagnostics = wormedit::validate_document(document);
+}
+
+auto build_workspace_frame_model(compare_scene_cache_t& cache,
+                                 const wormedit::workspace_controller_t& workspace,
+                                 const wormedit::song_document_t& document)
+    -> wormedit::workspace_view_result_t {
+    const bool compare_active = workspace.active_tab == wormedit::workspace_tab_t::compare_validate;
+    if (compare_active) cache_compare_diagnostics(cache, document);
+    const auto* cached = compare_active ? &cache.cached_diagnostics : nullptr;
+    return wormedit::make_workspace_view(workspace, document, workspace.active_tab, cached);
+}
+
+namespace {
+
+void project_diagnostics(compare_scene_cache_t& cache,
+                         const wormedit::song_document_t& document,
+                         const wormedit::chart_document_t& chart) {
+    cache_compare_diagnostics(cache, document);
+    if (cache.diagnostics_chart == chart.id &&
+        cache.diagnostics_projection_revision == document.revision) return;
+    cache.diagnostics_chart = chart.id;
+    cache.diagnostics_projection_revision = document.revision;
+    cache.diagnostic_labels.clear();
+    cache.diagnostic_label_pointers.clear();
+    cache.diagnostic_rows.clear();
+    cache.diagnostic_measures.clear();
+    cache.diagnostic_has_rows.clear();
+    for (const auto& diagnostic : cache.cached_diagnostics) {
+        if (cache.diagnostic_labels.size() == 256) break;
+        auto position = std::optional<wormedit::local_position_t>{};
+        if (diagnostic.object) {
+            const auto target = diagnostic_position(document, *diagnostic.object);
+            if (diagnostic_belongs_to_other_chart(document, chart, *diagnostic.object, target))
+                continue;
+            if (target.availability == WORM_UI_NOTIFICATION_TARGET_POSITION) {
+                position = target.position;
+            }
+        }
+        cache.diagnostic_labels.push_back("[" + std::to_string(static_cast<int>(diagnostic.code)) +
+                                          "] " + diagnostic.message);
+        cache.diagnostic_rows.push_back(position ? position->row : 0);
+        cache.diagnostic_measures.push_back(position ? position->measure.value : 0);
+        cache.diagnostic_has_rows.push_back(position.has_value() ? 1 : 0);
+    }
+    cache.diagnostic_label_pointers.reserve(cache.diagnostic_labels.size());
+    for (const auto& label : cache.diagnostic_labels)
+        cache.diagnostic_label_pointers.push_back(label.c_str());
 }
 
 } // namespace
@@ -92,6 +189,22 @@ void populate_compare_view(flattened_workspace_t& result, flattened_workspace_t&
     for (const auto& name : cache.chart_names) cache.chart_name_pointers.push_back(name.c_str());
     view.chart_ids = cache.chart_ids.data();
     view.chart_names = cache.chart_name_pointers.data();
+    if (first) {
+        project_diagnostics(cache, history.document, *first);
+        view.diagnostic_count = cache.diagnostic_labels.size();
+        view.diagnostic_labels = cache.diagnostic_label_pointers.data();
+        view.diagnostic_rows = cache.diagnostic_rows.data();
+        view.diagnostic_measures = cache.diagnostic_measures.data();
+        view.diagnostic_chart_id = cache.diagnostics_chart.value;
+        view.diagnostic_has_rows = cache.diagnostic_has_rows.data();
+    } else {
+        view.diagnostic_count = 0;
+        view.diagnostic_labels = nullptr;
+        view.diagnostic_rows = nullptr;
+        view.diagnostic_measures = nullptr;
+        view.diagnostic_chart_id = 0;
+        view.diagnostic_has_rows = nullptr;
+    }
     if (!view.has_two_difficulties) return;
 
     wormedit::chart_compare_request_t request;

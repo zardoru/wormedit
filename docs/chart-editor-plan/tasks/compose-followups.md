@@ -220,10 +220,11 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-352 Sort the docks by name and show BMS ID capacity
 
-- **Status:** ready (T-351 and T-347 are done)
+- **Status:** done (2026-10-04; natural/ID dock sorting, complete capacity footers and confirmed renumbering)
+- **Scope approval (user, 2026-10-04):** Supporting application wiring may also edit `src/sys/compose_view.cpp/.h`, `src/sys/main.cpp`, `src/sys/compose_actions.cpp`, and their existing action/request headers as needed for dock sorting and confirmed renumbering. Caller audit additions also approved: `src/sys/workspace_projection.cpp`, `src/sys/bga_dock_runtime.cpp`, `src/ui/nuklear/frontend.cpp`. Projection input wiring also approved: `src/sys/workspace_projection.h`, `src/sys/application_frame_projection.cpp`.
 - **Outcome:** the Sounds and BGA docks list rows in natural name order by default, with a toggle back to ID order, and each row shows its ID. The dock footer shows capacity ("412 / 1,295 IDs · largest free run 40"), turning amber above 90%. The toolbar has "Renumber by name", which applies T-351 to the selected rows (or all) after a one-line confirmation. For formats without IDs (BMSON, osu!, StepMania), the ID column, capacity and Renumber are hidden.
 - **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/keysound_list_state.h`, `src/sys/sound_list_projection.h`, `include/wormedit/core/natural_order.h`.
-- **Files owned:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/sys/sound_list_projection.cpp/.h`, `src/sys/bga_list_projection.cpp/.h`, `src/sys/compose_sound_actions.cpp`, `src/sys/compose_bga_actions.cpp`, `src/ui/frontend.h`, `tests/sys/sound_list_projection_tests.cpp`, `tests/sys/bga_list_projection_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/sys/sound_list_projection.cpp/.h`, `src/sys/bga_list_projection.cpp/.h`, `src/sys/compose_sound_actions.cpp`, `src/sys/compose_bga_actions.cpp`, `src/ui/frontend.h`, `tests/sys/sound_list_projection_tests.cpp`, `tests/sys/bga_list_projection_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`. Supporting scope approved 2026-10-04: `src/sys/compose_view.cpp/.h`, `src/sys/main.cpp`, `src/sys/compose_actions.cpp` and existing action/request headers (including `src/ui/nuklear/compose_state.h`), `src/sys/workspace_projection.cpp`, `src/sys/bga_dock_runtime.cpp`, `src/ui/nuklear/frontend.cpp`, `src/sys/workspace_projection.h`, `src/sys/application_frame_projection.cpp`.
 - **Steps:**
   1. Projection sorts matching rows by natural name or by ID, before windowing; it also projects the ID and the capacity.
   2. Add the sort toggle and the capacity footer.
@@ -236,10 +237,11 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-353 Add flat sound groups to the resource catalog
 
-- **Status:** ready
+- **Status:** done (2026-10-04; atomic flat groups, empty-group cleanup, native persistence and unchanged BMS/BMSON exports)
+- **Scope approval (user, 2026-10-04):** `src/core/resource_assignment.cpp` is added to Files owned so ordinary sound deletion removes any group it empties in the same undo step; coverage stays in the owned sound-group tests. Also approved: `src/core/command.cpp` and `include/wormedit/core/command.h` for a command option that preserves retained export source flags during native-only group edits.
 - **Outcome:** the song has a list of sound groups (stable ID, name), and each sound resource has an optional group ID. Commands create a group from sounds, add sounds to a group, ungroup sounds, rename a group and delete a group (its sounds become ungrouped), each in one undo step. A group left with no sounds is removed in the same command. Native projects save groups, and exporters ignore them.
 - **Read first:** `include/wormedit/core/document.h` (`resource_entry_t`, `song_document_t`), `include/wormedit/core/resource_assignment.h` (`apply_resource_sound_metadata`), `src/formats/native_project.cpp` (`sound_kind`/`tags` serialization), `tests/core/resource_assignment_tests.cpp`.
-- **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, new `include/wormedit/core/sound_groups.h`, new `src/core/sound_groups.cpp`, new `tests/core/sound_groups_tests.cpp`, `src/formats/native_project.cpp`, `tests/formats/native_project_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, new `include/wormedit/core/sound_groups.h`, new `src/core/sound_groups.cpp`, new `tests/core/sound_groups_tests.cpp`, `src/formats/native_project.cpp`, `tests/formats/native_project_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `src/core/resource_assignment.cpp` (user-approved deletion integration, 2026-10-04), `src/core/command.cpp`, `include/wormedit/core/command.h` (user-approved native-only export preservation, 2026-10-04).
 - **Steps:**
   1. Add `sound_group_t{id, name}`, `song_document_t::sound_groups`, and `resource_entry_t::sound_group` (optional, appended). `validate_document` rejects unknown group IDs, duplicate names (case-insensitive), and empty groups.
   2. Add the commands as one `apply_sound_group_edit` variant, as `semantic_layer_editor` does. Names are trimmed, 1–64 bytes.
@@ -252,7 +254,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-354 Propose sound groups from file names
 
-- **Status:** blocked-on T-351, T-353
+- **Status:** ready (T-351 and T-353 are done)
 - **Outcome:** a pure function `propose_sound_groups(names, existing_groups)` returns proposed groups and ungrouped names. Names that share a stem after removing a trailing number and separators (`kick_001`…`kick_040` → "kick", `drums-0001.wav` → "drums", `snd01` → "snd") form a proposal when at least two match. A stem equal to an existing group's name proposes joining that group, and everything else stays ungrouped. The result is deterministic.
 - **Read first:** `include/wormedit/core/natural_order.h` (T-351), `include/wormedit/core/sound_groups.h` (T-353).
 - **Files owned:** new `include/wormedit/core/sound_group_proposal.h`, new `src/core/sound_group_proposal.cpp`, new `tests/core/sound_group_proposal_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -267,7 +269,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-355 Review proposed groups before an import commits
 
-- **Status:** blocked-on T-351, T-353, T-354
+- **Status:** blocked-on T-354
 - **Outcome:** when an import (dock drop, Add, or the Sounds tab) gets at least one group proposal, the import dialog adds a Groups step. Each proposal shows a checkbox (accepted by default), an editable name, and its member count, which expands to the file list. Members can be moved to another proposal or to Ungrouped, and "Leave all ungrouped" rejects every proposal. Confirming imports the files and creates the accepted groups in one undo step, each group with its own contiguous ID run (T-351). Imports with no proposals skip the step.
 - **Read first:** `src/ui/nuklear/sound_import_state.h`, `src/sys/compose_sound_actions.cpp` (`plan_sound_import`), `include/wormedit/core/sound_group_proposal.h`, `include/wormedit/core/sound_groups.h`.
 - **Files owned:** `src/ui/nuklear/sound_import_state.cpp/.h`, new `src/ui/nuklear/sound_import_dialog.cpp/.h`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/sys/compose_sound_actions.cpp/.h`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/ui/sound_import_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`.
@@ -283,7 +285,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-356 Group and ungroup sounds by hand in the Sounds dock
 
-- **Status:** blocked-on T-353, T-355
+- **Status:** blocked-on T-355
 - **Outcome:** with sounds selected in the dock, the right-click menu and toolbar offer "Group…" (new name, or pick an existing group), "Ungroup", and "Suggest groups…" (runs T-354 on the selected ungrouped sounds and opens the T-355 review without importing). Grouping offers "Keep IDs together" (on by default), which renumbers the group into one contiguous run (T-351) in the same undo step.
 - **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.h`, `include/wormedit/core/sound_groups.h`, `src/ui/nuklear/sound_import_dialog.h`.
 - **Files owned:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/sound_import_dialog.cpp`, `src/sys/compose_sound_actions.cpp/.h`, `src/ui/frontend.h`, `tests/sys/application_commands_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
@@ -298,7 +300,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-357 Show group sections and group/layer filters in the Sounds dock
 
-- **Status:** blocked-on T-353
+- **Status:** ready (T-353 is done)
 - **Outcome:** the dock lists sounds under collapsible group headers (name, count), followed by an "Ungrouped" section, each in natural name order. A filter row narrows the list by group (one or several) and by default layer (any layer, a specific layer, or no layer), combined with the existing search. Collapsed state and filters last for the session, per song.
 - **Read first:** `src/sys/sound_list_projection.h`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.h`, `include/wormedit/core/sound_groups.h`.
 - **Files owned:** `src/sys/sound_list_projection.cpp/.h`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/compose_state.h`, `src/ui/frontend.h`, `tests/sys/sound_list_projection_tests.cpp`, `tests/ui/keysound_list_state_tests.cpp`.
@@ -314,7 +316,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-358 Restore optional BMS sound slots mode with direct ID assignment
 
-- **Status:** blocked-on T-352
+- **Status:** ready (T-352 is done)
 - **Decision (user, 2026-10-04):** The sound picker must retain a slots mode that lets authors choose a BMS ID directly for backwards compatibility. Automatic natural-order assignment remains the default. This supersedes the earlier statement that a slot view was not planned.
 - **Outcome:** the BMS Sounds dock switches between the automatic resource list and a virtualized slots view of all usable WAV IDs, including empty slots. Choosing a slot and assigning a file uses that exact ID; occupied slots require explicit replacement confirmation. Other formats keep their resource list.
 - **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/sys/sound_list_projection.h`, `include/wormedit/core/resource_assignment.h`, `src/sys/compose_sound_actions.cpp`, `docs/references/bms-command-memo.md`.

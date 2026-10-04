@@ -145,6 +145,7 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_CANCEL_AUDIO_PROJECT,
     WORM_UI_WORKSPACE_ACTION_COMPARE_SELECT_CHART,
     WORM_UI_WORKSPACE_ACTION_COMPARE_SCROLL,
+    WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP,
 } WormUiWorkspaceActionKind;
 
 typedef enum WormUiWorkspaceTab {
@@ -882,9 +883,15 @@ typedef struct WormUiComposeBgaRowView {
 
 typedef struct WormUiBgaDockRequest {
     bool visible;
+    bool ids_available;
     char search[64];
     size_t first_row, row_limit;
+    bool sort_by_id;
 } WormUiBgaDockRequest;
+
+typedef struct WormUiKeysoundDockRequest {
+    bool sort_by_id;
+} WormUiKeysoundDockRequest;
 
 typedef struct WormUiComposeKeysoundRowView {
     uint64_t resource_id;
@@ -1102,6 +1109,8 @@ typedef struct WormUiComposeView {
     bool focus_note_label_editor;
     const WormUiComposeBgaRowView* bga_rows;
     size_t bga_row_count, bga_total_matching, bga_first_row;
+    size_t bga_ids_used, bga_ids_total, bga_largest_free_run;
+    bool bga_ids_available;
     const uint64_t* bga_matching_ids;
     const char* bga_search;
     bool paint_ghost_visible;
@@ -1177,6 +1186,8 @@ typedef struct WormUiComposeView {
     const WormUiComposeKeysoundLayerView* keysound_layers;
     size_t keysound_layer_count;
     bool keysounds_available;
+    size_t keysound_ids_used, keysound_ids_total, keysound_largest_free_run;
+    bool keysound_ids_available;
     const WormUiComposeOutputGroupView* output_groups;
     size_t output_group_count;
     bool output_groups_truncated;
@@ -1749,6 +1760,12 @@ typedef struct WormUiCompareView {
     const char* const* chart_names;
     size_t chart_count;
     double scroll_pixels;
+    size_t diagnostic_count;
+    const char* const* diagnostic_labels;
+    const uint64_t* diagnostic_rows;
+    const uint64_t* diagnostic_measures;
+    const uint8_t* diagnostic_has_rows;
+    uint64_t diagnostic_chart_id;
 } WormUiCompareView;
 
 typedef struct WormUiWorkspaceView {
@@ -1863,6 +1880,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES,
     WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES,
     WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA,
+    WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS,
     WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS,
     WORM_UI_COMPOSE_ACTION_AUDITION_SOUND,
     WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER,
@@ -2157,6 +2175,9 @@ typedef struct WormUiWorkspaceAction {
     int64_t audio_offset_drag_delta_frames;
     size_t recovery_row_index;
     uint64_t compare_chart_id;
+    uint64_t compare_diagnostic_row;
+    uint64_t compare_diagnostic_measure;
+    uint64_t compare_diagnostic_chart;
     double compare_scroll_delta;
     size_t recovery_candidate_index;
     char recovery_save_as_destination[WORM_UI_RECOVERY_DESTINATION_CAPACITY];
@@ -2237,6 +2258,9 @@ typedef struct WormUiWorkspaceAction {
     const uint64_t* compose_sound_resource_ids;
     size_t compose_sound_resource_count;
     bool compose_sound_overwrite_note_layers;
+    /* Renumber WAV or BMP identifiers for the selected resources, or all in the namespace. */
+    bool compose_renumber_all;
+    bool compose_renumber_bga;
     const char* const* compose_import_paths;
     size_t compose_import_path_count;
     size_t compose_output_group_index;
@@ -2373,4 +2397,5 @@ uint32_t worm_ui_frame_render_phase_begin(WormUiFrameRenderPhase phase);
 void worm_ui_frame_render_phase_end(uint32_t previous);
 
 void worm_ui_frontend_bga_dock_request(WormUiBgaDockRequest* request);
+void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request);
 bool worm_ui_frontend_bga_list_contains(uint32_t window_id, float x, float y);

@@ -311,8 +311,11 @@ struct workspace_view_result_t {
                                        const song_document_t& document) -> workspace_view_result_t;
 // Also builds a non-active tab's view. This lets the shell display the
 // storyboard placeholder while navigation/actions continue to reject it.
+// Compare diagnostics may be supplied from a cache keyed to this document's
+// ID and revision; a null pointer preserves the normal validation behavior.
 [[nodiscard]] auto make_workspace_view(const workspace_controller_t& workspace,
-                                       const song_document_t& document, workspace_tab_t tab)
+                                       const song_document_t& document, workspace_tab_t tab,
+                                       const diagnostic_list_t* cached_diagnostics = nullptr)
     -> workspace_view_result_t;
 
 } // namespace wormedit

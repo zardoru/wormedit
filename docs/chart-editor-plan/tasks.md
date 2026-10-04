@@ -36,7 +36,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Compose follow-ups: palette shortcuts, ghost note, docks, BGM layers, overview tooltip](tasks/compose-followups.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-357.
+every number above T-358.
 
 ## Rules for whoever executes a card
 

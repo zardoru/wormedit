@@ -81,7 +81,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-229 Add the Sounds panel (iBMSC/BMSE-style WAV slot list)
 
-- **Status:** blocked-on T-228
+- **Status:** merged into [T-358](compose-followups.md) (2026-10-04): optional Sounds dock slots mode and direct BMS ID assignment are required for compatibility. Use the existing Sounds dock rather than the obsolete T-228 panel. Do not start this historical card.
 - **Outcome:** for BMS charts the Sounds panel lists every slot `01`–`ZZ` (or base-62 range when the chart uses it) with its file name or blank, uses count, and missing state; only visible rows are built; double-click arms the slot for placement; Enter/F2 or a file drop assigns a file to the slot (creating or relinking the resource with that exact BMS identifier); a play button auditions it. For formats without slots (BMSON, SM, osu!, Quaver) the panel shows the compact table from T-206.
 - **Read first:** `src/ui/nuklear/compose_resources.cpp`, `src/sys/compose_resource_presenter.cpp`, `include/wormedit/core/resource_assignment.h` (`apply_resource_creation` with BMS identifier, `apply_resource_asset_relink`), `docs/references/bms-command-memo.md`.
 - **Files owned:** new `src/ui/nuklear/sounds_panel.cpp/.h`, `src/sys/compose_resource_presenter.cpp/.h`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `tests/core/compose_resource_presenter_tests.cpp`, `CMakeLists.txt`.
@@ -97,7 +97,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-230 Add the Images panel (BMP/BGA slot list)
 
-- **Status:** merged into [T-347 and T-352](compose-followups.md) (2026-10-03): the BGA dock follows the T-335 keysound column instead of the T-228 dock; T-347 carries the list and thumbnails, T-352 name order and ID capacity. A slot view is not planned (user clarification 2026-10-03). Do not start this card.
+- **Status:** merged into [T-347 and T-352](compose-followups.md) (2026-10-03): the BGA dock follows the T-335 keysound column instead of the T-228 dock; T-347 carries the list and thumbnails, T-352 name order and ID capacity. Optional Sounds slots mode and direct WAV ID assignment are restored in T-358 (user correction 2026-10-04); BMP slots remain a separate scope. Do not start this card.
 - **Outcome:** same behavior as T-229 for `#BMP` slots and BGA resources, with thumbnails (T-49) at 32 px.
 - **Read first:** `src/ui/nuklear/sounds_panel.cpp`, `src/ui/nuklear/player_preview_texture.h`, `include/wormedit/visual/image_job.h`.
 - **Files owned:** new `src/ui/nuklear/images_panel.cpp/.h`, `src/sys/compose_resource_presenter.cpp/.h`, `src/ui/frontend.h`, `CMakeLists.txt`.

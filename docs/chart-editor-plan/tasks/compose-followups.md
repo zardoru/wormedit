@@ -44,8 +44,11 @@ Findings (2026-10-03):
   Other editors (iBMSC, BMSE) list sounds in ID order, so a group that gets
   one unbroken run of IDs also stays together for people who open the chart
   there. Allocating each group as a contiguous run is a goal in its own right
-  (2026-10-03). T-351 and T-352 cover this. Choosing individual IDs and a slot view are not
-  planned, so T-229's slot list is not needed.
+  (2026-10-03). T-351 and T-352 cover automatic assignment. User correction
+  (2026-10-04): the sound picker must also offer optional BMS slots mode with
+  direct assignment to a chosen ID for compatibility with existing workflows
+  (T-358). Automatic assignment remains the default; ID-order sorting alone
+  does not satisfy slots mode. The supported codec currently uses base 36.
 - Sound groups (user decisions 2026-10-03): with about 1,200 sounds, the dock
   needs groups and filters. A group is a flat, song-wide set of sounds; there is
   no nesting, and a sound is in at most one group or ungrouped. Groups exist only
@@ -145,7 +148,7 @@ Apply the stale-plan check (rule 9) first.
 - **Reject/failure behavior:** an unreadable image is skipped and reported, and the batch keeps the readable ones, as the Sounds dock does.
 - **Verify:** `cmake --build build`; full `ctest --test-dir build --output-on-failure`; clang-tidy on new `.cpp`; isolated Xvfb PNG on a BMS fixture with `#BMP` entries.
 - **Verification evidence:** 2026-10-03: application build passed; `100% tests passed out of 1804` (full suite; 117.54 s). Import/remove atomicity, a 1,200-resource window, and painting beyond the drawer window pass. Selected BGA remains armed when scrolled out of the visible window. Isolated Xvfb BMP dock PNG inspected at `/tmp/followups-bga-reviewed.png`. Clang-tidy reports no new functions above 25.
-- **Out of scope:** video thumbnails; BGA layer channels beyond placement; choosing IDs (T-352).
+- **Out of scope:** video thumbnails; BGA layer channels beyond placement; direct BMP ID assignment. Sound slots mode is separate (T-358).
 
 ## T-348 Let BGM events belong to one semantic layer
 
@@ -213,11 +216,11 @@ Apply the stale-plan check (rule 9) first.
 - **Invariants:** resource IDs and note references are unchanged; renumbering changes only BMS IDs; a group's IDs follow its natural name order.
 - **Reject/failure behavior:** a stale revision or an over-capacity import leaves the document untouched.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'` passed 1,242/1,242. Final focused BMS allocation/order/renumber/export checks passed 14/14 after strengthening largest-gap and unselected-ID coverage. Affected-source clang-tidy found no new complexity violations.
-- **Out of scope:** UI (T-352); choosing individual IDs.
+- **Out of scope:** dock UI (T-352); optional direct sound ID assignment/slots mode (T-358). Automatic assignment here must coexist with that mode.
 
 ## T-352 Sort the docks by name and show BMS ID capacity
 
-- **Status:** blocked-on T-351, T-347
+- **Status:** ready (T-351 and T-347 are done)
 - **Outcome:** the Sounds and BGA docks list rows in natural name order by default, with a toggle back to ID order, and each row shows its ID. The dock footer shows capacity ("412 / 1,295 IDs · largest free run 40"), turning amber above 90%. The toolbar has "Renumber by name", which applies T-351 to the selected rows (or all) after a one-line confirmation. For formats without IDs (BMSON, osu!, StepMania), the ID column, capacity and Renumber are hidden.
 - **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/keysound_list_state.h`, `src/sys/sound_list_projection.h`, `include/wormedit/core/natural_order.h`.
 - **Files owned:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/sys/sound_list_projection.cpp/.h`, `src/sys/bga_list_projection.cpp/.h`, `src/sys/compose_sound_actions.cpp`, `src/sys/compose_bga_actions.cpp`, `src/ui/frontend.h`, `tests/sys/sound_list_projection_tests.cpp`, `tests/sys/bga_list_projection_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
@@ -229,7 +232,7 @@ Apply the stale-plan check (rule 9) first.
 - **Invariants:** sorting is view-only; IDs change only through Renumber or import.
 - **Reject/failure behavior:** a rejected renumber reports through notifications and leaves the list unchanged.
 - **Verify:** `cmake --build build`; full `ctest --test-dir build --output-on-failure`; isolated Xvfb PNG of the Sounds dock on a BMS fixture with `snd1`…`snd12`.
-- **Out of scope:** choosing individual IDs; a list of unused IDs.
+- **Out of scope:** optional BMS sound slots mode and direct assignment, tracked by T-358. The ID-order toggle here is sorting, not slots mode.
 
 ## T-353 Add flat sound groups to the resource catalog
 
@@ -308,3 +311,20 @@ Apply the stale-plan check (rule 9) first.
 - **Reject/failure behavior:** a filter naming a deleted group or layer drops that entry.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'sound_list_projection|^frontend-state\.'`; isolated Xvfb PNG with three groups, one collapsed.
 - **Out of scope:** tag and usage filters; the BGA dock (can reuse this later).
+
+## T-358 Restore optional BMS sound slots mode with direct ID assignment
+
+- **Status:** blocked-on T-352
+- **Decision (user, 2026-10-04):** The sound picker must retain a slots mode that lets authors choose a BMS ID directly for backwards compatibility. Automatic natural-order assignment remains the default. This supersedes the earlier statement that a slot view was not planned.
+- **Outcome:** the BMS Sounds dock switches between the automatic resource list and a virtualized slots view of all usable WAV IDs, including empty slots. Choosing a slot and assigning a file uses that exact ID; occupied slots require explicit replacement confirmation. Other formats keep their resource list.
+- **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/sys/sound_list_projection.h`, `include/wormedit/core/resource_assignment.h`, `src/sys/compose_sound_actions.cpp`, `docs/references/bms-command-memo.md`.
+- **Files owned:** `include/wormedit/core/resource_assignment.h`, `src/core/resource_assignment.cpp`, `src/sys/sound_list_projection.cpp/.h`, `src/sys/compose_sound_actions.cpp/.h`, `src/sys/compose_actions.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/frontend.h`, `tests/core/resource_assignment_tests.cpp`, `tests/sys/sound_list_projection_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Steps:**
+  1. Add a revision-checked assign-to-slot command for an exact supported WAV ID. An empty slot creates a resource; confirmed replacement relinks the occupied resource in one undo step, retaining its ID and note references.
+  2. Project a bounded visible slot window with ID, empty/occupied state, file name, uses and missing state; reserve 00 and use supported base-36 capacity.
+  3. Add the automatic/slots mode switch and selected-slot file assignment through the normal resource import flow; expose replacement confirmation and arm occupied slots for note placement.
+  4. Test exact assignment into an empty slot, confirmed occupied replacement, rejection/cancellation, undo, unchanged unrelated IDs and note links, slot windowing and mode switching through the frontend harness.
+- **Invariants:** automatic allocation stays the default; selecting or viewing slots never renumbers resources; direct assignment never silently invokes automatic ID allocation or Renumber by name.
+- **Reject/failure behavior:** invalid/reserved IDs, stale revisions, invalid files and unconfirmed replacements leave the document unchanged.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^core\.|sound_list_projection'`; `ctest --test-dir build -L event-harness --output-on-failure`; isolated Xvfb assignment to a chosen empty slot and confirmed replacement on a BMS fixture.
+- **Out of scope:** base-62 codec support; BMP/BGA slots mode; automatic group allocation (T-351).

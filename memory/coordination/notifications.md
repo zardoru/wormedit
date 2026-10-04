@@ -219,3 +219,15 @@ idle, and legacy/owned playhead and wheel seek checks pass: 6/6. App/frame build
 passes. Logs: `notifications-n4-main-build.log`, `notifications-n4-reviewed-build.log`,
 `notifications-n4-reviewed-tests.log`, `notifications-n4-tidy.log`.
 Actions remain separately owned; final recovery/history/audio bridges are pending.
+
+Root N4 review correction: preserve original stop flags for unchanged BGM/restart
+and paste cancel. Fit/razor helpers carry typed branch metadata; previews/cancel
+are hint/input, actual commits success/edit, accepted no-op info/edit. Paste exposes
+actual core diagnostic severity and reports rebind failure after commit feedback.
+Minimap callback ownership suppresses duplicate seek posts; recipe rejection retains
+actual core diagnostics. Generic gesture cancellation keeps the previous success
+current. App/frame builds pass; 571 assertions in 21 focused cases pass, including
+fit preview/commit/no-op and paste/BGM stop boundaries. Final configured tidy has
+only prior build_speed_graph/compose_surface_height violations. Logs:
+`notifications-n4-corrections-build.log`, `notifications-n4-corrections-final-build.log`,
+`notifications-n4-corrections-tests.log`, `notifications-n4-corrections-final-tidy.log`.

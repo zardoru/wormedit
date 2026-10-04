@@ -26,6 +26,8 @@ auto fit_song(bool downscroll) -> song_document_t {
 }
 
 struct fit_fixture_t {
+    notification_center_t center;
+    notification_sink_t sink{center};
     document_history_t history;
     workspace_controller_t workspace;
     editor_interaction_state_t state;
@@ -73,7 +75,7 @@ struct fit_fixture_t {
             .beat_fit_ctrl_held = ctrl, .beat_fit_onset_snap_held = onset,
             .beat_fit_snap_step_numerator = 10, .beat_fit_snap_step_denominator = 1};
         const auto status = dispatch_compose_input_action(action, history, workspace, state,
-            viewport, navigation, application, cache, 0);
+            viewport, navigation, application, cache, 0, &sink);
         INFO(status);
         expect_fit(!status.empty());
     }
@@ -238,4 +240,41 @@ TEST_CASE("Compose visible onset query clips negative audio time and outside cha
         fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN, 120);
         expect_fit(fixture.cache.beat_fit_onsets.frames.empty());
     }
+}
+
+TEST_CASE("Beat fit notifications distinguish previews commits and unchanged release", "[unit][sys][compose-notification]") {
+    fit_fixture_t fixture(false);
+    fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN, 120);
+    fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, 180);
+    fixture.center.drain_inbox(notification_time_t{0});
+    auto entries = fixture.center.snapshot(notification_capacity);
+    expect_fit(entries.size() == 2);
+    expect_fit(entries[0].severity == notification_severity_t::hint);
+    expect_fit(entries[1].severity == notification_severity_t::hint);
+    fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE, 180);
+    fixture.center.drain_inbox(notification_time_t{1});
+    entries = fixture.center.snapshot(notification_capacity);
+    expect_fit(entries[0].severity == notification_severity_t::success);
+    expect_fit(entries[0].source == notification_source_t::edit);
+    expect_fit(entries[0].message == "Beat interval fitted to the selected audio frame.");
+    fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN, 180);
+    fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE, 180);
+    fixture.center.drain_inbox(notification_time_t{2});
+    entries = fixture.center.snapshot(notification_capacity);
+    expect_fit(entries[0].severity == notification_severity_t::info);
+    expect_fit(entries[0].source == notification_source_t::edit);
+    expect_fit(entries[0].message == "Beat fit was unchanged.");
+}
+
+TEST_CASE("Offset fit stages hint feedback and cancel preserves timing", "[unit][sys][compose-notification]") {
+    fit_fixture_t fixture(false);
+    fixture.send(WORM_UI_COMPOSE_INPUT_OFFSET_FIT_BEGIN, 120);
+    fixture.send(WORM_UI_COMPOSE_INPUT_OFFSET_FIT_UPDATE, 180);
+    fixture.send(WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE, 180);
+    fixture.center.drain_inbox(notification_time_t{0});
+    const auto entries = fixture.center.snapshot(notification_capacity);
+    expect_fit(entries.size() == 3);
+    for (const auto& entry : entries) expect_fit(entry.severity == notification_severity_t::hint);
+    expect_fit(fixture.history.undo.empty());
+    expect_fit(fixture.action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_COMMIT);
 }

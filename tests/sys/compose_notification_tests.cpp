@@ -155,11 +155,17 @@ TEST_CASE("Compose edit success stays current after a later navigation cancellat
         fixture.application, fixture.sink);
     REQUIRE(result.accepted);
     fixture.state = *fixture.optional_state;
-    CHECK(fixture.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL) == "Compose navigation canceled.");
+    auto kind = WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL;
+    auto message = "Compose navigation canceled.";
+    SECTION("navigation cancellation") {}
+    SECTION("generic gesture cancellation") {
+        kind = WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE;
+        message = "Compose gesture canceled.";
+    }
+    CHECK(fixture.input(kind) == message);
     const auto entries = fixture.drain();
     REQUIRE(entries.size() == 2);
-    expect_entry(entries[0], notification_severity_t::hint, notification_source_t::input,
-                 "Compose navigation canceled.");
+    expect_entry(entries[0], notification_severity_t::hint, notification_source_t::input, message);
     expect_entry(entries[1], notification_severity_t::success, notification_source_t::edit,
                  "Semantic-layer membership updated.");
     REQUIRE(fixture.center.current_line() != nullptr);
@@ -234,4 +240,64 @@ TEST_CASE("Viewport wheel seek feedback keeps explicit callback ownership", "[un
     expect_entry(entries[0], notification_severity_t::warning, notification_source_t::audio,
         "Producer wheel seek clamped.");
     CHECK(fixture.center.statistics().posted == 2);
+}
+
+TEST_CASE("Paste cancellation keeps the original stop boundary", "[unit][sys][compose-notification]") {
+    compose_notification_fixture_t fixture;
+    REQUIRE(invoke_application_command({.kind = application_command_kind_t::semantic_layer_apply},
+        fixture.history, fixture.workspace, fixture.optional_state, fixture.timing_stage,
+        fixture.application, fixture.sink).accepted);
+    fixture.state = *fixture.optional_state;
+    const auto revision = fixture.history.document.revision;
+    const auto undo_size = fixture.history.undo.size();
+    WormUiWorkspaceAction action{};
+    action.compose_input_chart_id = fixture.state.chart.value;
+    action.compose_input_document_revision = revision;
+    action.compose_input_viewport_width_pixels = 800;
+    action.compose_input_count = 2;
+    action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_PASTE_CANCEL;
+    action.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_UNDO;
+    CHECK(dispatch_compose_input_action(action, fixture.history, fixture.workspace, fixture.state,
+        fixture.viewport, fixture.navigation, fixture.application, fixture.cache, 0,
+        &fixture.sink) == "Paste preview cancelled.");
+    const auto entries = fixture.drain();
+    REQUIRE(entries.size() == 2);
+    expect_entry(entries[0], notification_severity_t::hint, notification_source_t::input,
+        "Paste preview cancelled.");
+    CHECK(fixture.history.document.revision == revision);
+    CHECK(fixture.history.undo.size() == undo_size);
+}
+
+TEST_CASE("Unchanged BGM move keeps the original stop boundary", "[unit][sys][compose-notification]") {
+    compose_notification_fixture_t fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.lane_layouts.front().layout.lanes.front().glyph = lane_glyph_t::arrow_up;
+    chart.bgm_source_lanes = {{.id = object_id_t{4}}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{45},
+        .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{4}}};
+    fixture.state.viewport_height_pixels = 400;
+    fixture.state.pixels_per_standard_measure = 240;
+    fixture.state.viewport_scroll_pixels = 0;
+    fixture.application.bmson_marker_move_preview = application_command_state_t::bmson_marker_move_preview_t{
+        .chart = fixture.state.chart, .revision = fixture.history.document.revision,
+        .event = object_id_t{45}, .source_lane = object_id_t{4}, .linked_bmson = false,
+        .snap_denominator = 4, .target = {measure_id_t{1}, 240}, .valid = true};
+    WormUiWorkspaceAction action{};
+    action.compose_input_chart_id = fixture.state.chart.value;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    action.compose_input_viewport_width_pixels = 800;
+    action.compose_input_count = 2;
+    action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE;
+    action.compose_inputs[0].object_id = 45;
+    action.compose_inputs[0].lane_id = 4;
+    action.compose_inputs[0].y_pixels = 60;
+    action.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_UNDO;
+    CHECK(dispatch_compose_input_action(action, fixture.history, fixture.workspace, fixture.state,
+        fixture.viewport, fixture.navigation, fixture.application, fixture.cache, 0,
+        &fixture.sink) == "BGM event remained at its original position.");
+    const auto entries = fixture.drain();
+    REQUIRE(entries.size() == 1);
+    expect_entry(entries[0], notification_severity_t::info, notification_source_t::edit,
+        "BGM event remained at its original position.");
+    CHECK(fixture.history.undo.empty());
 }

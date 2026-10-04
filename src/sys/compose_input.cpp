@@ -98,6 +98,11 @@ auto post_input_feedback(const wormedit::notification_sink_t* notifications,
         notifications->post(severity, source, message);
 }
 
+auto staged_input_severity(bool staged, wormedit::notification_severity_t fallback)
+    -> wormedit::notification_severity_t {
+    return staged ? wormedit::notification_severity_t::hint : fallback;
+}
+
 // While the preview plays, navigation skips the playhead instead of moving the edit cursor.
 struct playhead_navigation_feedback_t {
     std::string message;
@@ -276,10 +281,12 @@ auto stage_bmson_bgm_markers(const wormedit::document_history_t& history,
                              const wormedit::editor_interaction_state_t& state,
                              application_command_state_t& application_state,
                              wormedit::object_id_t reference,
-                             std::span<const wormedit::bmson_sound_marker_insertion_t> markers)
-    -> std::string {
+                             std::span<const wormedit::bmson_sound_marker_insertion_t> markers,
+                             wormedit::notification_severity_t* severity) -> std::string {
+    if (severity) *severity = wormedit::notification_severity_t::warning;
     using namespace wormedit;
     if (markers.empty()) {
+        if (severity) *severity = notification_severity_t::hint;
         return "BMSON razor remains on the current snapped row.";
     }
     if (state.selected_objects.size() != 1 ||
@@ -326,6 +333,7 @@ auto stage_bmson_bgm_markers(const wormedit::document_history_t& history,
             .reference = reference, .markers = {}};
     }
     draft->markers.insert(draft->markers.end(), markers.begin(), markers.end());
+    if (severity) *severity = notification_severity_t::hint;
     return markers.size() == 1 ? "BMSON marker staged at the exact snapped row."
                                : "BMSON razor segment staged at exact snapped rows.";
 }
@@ -334,9 +342,9 @@ auto stage_bmson_bgm_marker(const wormedit::document_history_t& history,
                             const wormedit::editor_interaction_state_t& state,
                             application_command_state_t& application_state,
                             wormedit::object_id_t reference, wormedit::local_position_t position,
-                            bool restart) -> std::string {
+                            bool restart, wormedit::notification_severity_t* severity) -> std::string {
     const std::array markers{wormedit::bmson_sound_marker_insertion_t{position, restart}};
-    return stage_bmson_bgm_markers(history, state, application_state, reference, markers);
+    return stage_bmson_bgm_markers(history, state, application_state, reference, markers, severity);
 }
 
 struct bmson_marker_source_t {
@@ -404,7 +412,9 @@ auto dispatch_bmson_razor_input(
     const WormUiComposeInputAction& input, const wormedit::document_history_t& history,
     const wormedit::editor_interaction_state_t& state,
     application_command_state_t& application_state, bool gesture_active,
-    PositionAtComposeY&& position_at_compose_y) -> std::string {
+    PositionAtComposeY&& position_at_compose_y,
+    wormedit::notification_severity_t& severity) -> std::string {
+    severity = wormedit::notification_severity_t::warning;
     using namespace wormedit;
     if (gesture_active) {
         return "Finish or cancel the active Compose gesture before using the BMSON razor.";
@@ -445,7 +455,8 @@ auto dispatch_bmson_razor_input(
         const auto status = already_staged
             ? std::string{"BMSON razor stroke started on a staged pulse."}
             : stage_bmson_bgm_marker(history, state, application_state,
-                                     reference, *position, restart);
+                                     reference, *position, restart, &severity);
+        severity = staged_input_severity(already_staged, severity);
         const auto& staged = application_state.bmson_marker_draft;
         if (staged && staged->chart == state.chart &&
             staged->revision == history.document.revision &&
@@ -463,6 +474,7 @@ auto dispatch_bmson_razor_input(
     const auto path = interpolate_bmson_razor_path(
         *chart, stroke->last_position, *position, denominator);
     if (!path) {
+        severity = input_notification_severity(path.diagnostics.front().severity);
         return path.diagnostics.front().message;
     }
     std::vector<bmson_sound_marker_insertion_t> pending;
@@ -478,12 +490,13 @@ auto dispatch_bmson_razor_input(
     }
     if (pending.empty()) {
         stroke->last_position = *position;
+        severity = notification_severity_t::hint;
         return "BMSON razor remains on staged grid cells.";
     }
     const auto before = application_state.bmson_marker_draft
         ? application_state.bmson_marker_draft->markers.size() : 0;
     const auto status = stage_bmson_bgm_markers(
-        history, state, application_state, reference, pending);
+        history, state, application_state, reference, pending, &severity);
     if (application_state.bmson_marker_draft &&
         application_state.bmson_marker_draft->markers.size() == before + pending.size()) {
         stroke->last_position = *position;
@@ -534,6 +547,15 @@ struct compose_input_family_result_t {
         return result;
     }
 };
+
+auto input_diagnostic_feedback(const auto& diagnostics, std::string_view fallback,
+    wormedit::notification_severity_t fallback_severity,
+    wormedit::notification_source_t source) -> compose_input_family_result_t {
+    if (diagnostics.empty())
+        return compose_input_family_result_t::stop_with_feedback(std::string{fallback}, fallback_severity, source);
+    return compose_input_family_result_t::stop_with_feedback(diagnostics.front().message,
+        input_notification_severity(diagnostics.front().severity), source);
+}
 
 auto dispatch_compose_navigation_input(const WormUiComposeInputAction&,
                                        wormedit::document_history_t&,
@@ -843,7 +865,7 @@ auto commit_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
             input_notification_severity(moved.diagnostics.front().severity),
             notification_source_t::edit);
     if (!moved.applied)
-        return compose_input_family_result_t::continue_batch(
+        return compose_input_family_result_t::stop_with_feedback(
             "BGM event remained at its original position.", notification_severity_t::info,
             notification_source_t::edit);
     const auto rebound = rebind_workspace(workspace, history);
@@ -893,7 +915,7 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
             return "BGM event drag cannot snap to this chart row.";
         }
         return compose_input_family_result_t::continue_batch(
-            "BGM event drag cannot snap to this chart row.");
+            "BGM event drag cannot snap to this chart row.", notification_severity_t::warning);
     }
     if (target)
         preview->target = *target;
@@ -914,7 +936,8 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
     }
     if (input.kind == WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_UPDATE)
         return compose_input_family_result_t::continue_batch(
-            preview->valid ? "BGM event drag preview updated." : "BGM move target is unavailable.");
+            preview->valid ? "BGM event drag preview updated." : "BGM move target is unavailable.",
+            preview->valid ? notification_severity_t::hint : notification_severity_t::warning);
     const auto captured = *preview;
     preview.reset();
     return captured.valid ? commit_bmson_bgm_move(input, context, captured)
@@ -949,15 +972,20 @@ auto edit_bmson_draft_marker(const WormUiComposeInputAction& input,
                               : std::nullopt;
         if (proposed[index].playable_lane == lane)
             return compose_input_family_result_t::continue_batch(
-                "Staged BMSON region already has that assignment.");
+                "Staged BMSON region already has that assignment.", notification_severity_t::info,
+                notification_source_t::edit);
         proposed[index].playable_lane = lane;
     }
     auto temporary = make_document_history(history.document, 1);
     const auto checked = insert_bmson_sound_markers(temporary, temporary.document.revision,
                                                     draft->chart, draft->reference, proposed);
     if (!checked)
-        return checked.diagnostics.empty() ? "Staged BMSON region edit could not be validated."
-                                           : checked.diagnostics.front().message;
+        return compose_input_family_result_t::stop_with_feedback(
+            checked.diagnostics.empty() ? "Staged BMSON region edit could not be validated."
+                                       : checked.diagnostics.front().message,
+            checked.diagnostics.empty() ? notification_severity_t::warning
+                : input_notification_severity(checked.diagnostics.front().severity),
+            notification_source_t::edit);
     draft->markers = std::move(proposed);
     const auto message = input.kind == WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT
                              ? "Staged BMSON region removed."
@@ -999,7 +1027,7 @@ auto toggle_bmson_restart(const WormUiComposeInputAction& input, bmson_compose_c
             input_notification_severity(applied.diagnostics.front().severity),
             notification_source_t::edit);
     if (!applied.applied)
-        return compose_input_family_result_t::continue_batch(
+        return compose_input_family_result_t::stop_with_feedback(
             "BMSON restart state did not change.", notification_severity_t::info,
             notification_source_t::edit);
     const auto rebound = rebind_workspace(workspace, history);
@@ -1032,11 +1060,17 @@ auto dispatch_bmson_compose_input(
         return update_bmson_bgm_move(input, context, position_at_compose_y, virtual_bms_row_at);
     case WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_CANCEL:
         application_state.bmson_marker_move_preview.reset();
-        return "BMSON BGM marker drag canceled.";
+        return compose_input_family_result_t::stop_with_feedback("BMSON BGM marker drag canceled.",
+            wormedit::notification_severity_t::hint, wormedit::notification_source_t::input);
     case WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_CONTINUE:
     case WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_RESTART:
-        return dispatch_bmson_razor_input(input, history, state, application_state, gesture_active,
-                                          position_at_compose_y);
+        {
+        auto severity = wormedit::notification_severity_t::warning;
+        auto message = dispatch_bmson_razor_input(input, history, state, application_state,
+            gesture_active, position_at_compose_y, severity);
+        return compose_input_family_result_t::stop_with_feedback(std::move(message), severity,
+            wormedit::notification_source_t::input);
+    }
     case WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT: {
         const auto& draft = application_state.bmson_marker_draft;
         if (!draft || draft->chart != state.chart || draft->revision != history.document.revision ||
@@ -1804,7 +1838,7 @@ auto begin_compose_beat_fit(const WormUiComposeInputAction&, wormedit::document_
                             wormedit::workspace_controller_t&,
                             wormedit::editor_interaction_state_t&, application_command_state_t&,
                             compose_scene_cache_t&, const wormedit::chart_document_t*)
-    -> std::string;
+    -> compose_input_family_result_t;
 auto fit_onset_target(compose_scene_cache_t& cache,
                       const WormUiComposeInputAction& input, std::uint64_t frame)
     -> std::uint64_t {
@@ -1828,13 +1862,13 @@ auto fit_onset_target(compose_scene_cache_t& cache,
 auto update_compose_beat_fit(const WormUiComposeInputAction&, wormedit::document_history_t&,
                              wormedit::workspace_controller_t&,
                              wormedit::editor_interaction_state_t&, application_command_state_t&,
-                             compose_scene_cache_t&) -> std::string;
+                             compose_scene_cache_t&) -> compose_input_family_result_t;
 
 auto dispatch_compose_beat_fit_input(
     const WormUiComposeInputAction& input, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace, wormedit::editor_interaction_state_t& state,
     application_command_state_t& application_state, compose_scene_cache_t& scene_cache,
-    const wormedit::chart_document_t* input_chart) -> std::optional<std::string> {
+    const wormedit::chart_document_t* input_chart) -> std::optional<compose_input_family_result_t> {
     using namespace wormedit;
     switch (input.kind) {
     case WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN:
@@ -1850,7 +1884,8 @@ auto dispatch_compose_beat_fit_input(
     }
     case WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL:
         scene_cache.clear_beat_fit_capture();
-        return "Beat fit cancelled; timing was unchanged.";
+        return compose_input_family_result_t::stop_with_feedback("Beat fit cancelled; timing was unchanged.",
+            notification_severity_t::hint, notification_source_t::input);
     default:
         return std::nullopt;
     }
@@ -1858,20 +1893,21 @@ auto dispatch_compose_beat_fit_input(
 
 auto dispatch_compose_offset_fit_input(
     const WormUiComposeInputAction& input, compose_input_context_t& context)
-    -> std::optional<std::string> {
+    -> std::optional<compose_input_family_result_t> {
     using namespace wormedit;
     auto& cache = context.scene_cache;
     auto& action = context.ui_action;
     if (input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_CANCEL) {
         cache.offset_fit_drag.reset();
         action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
-        return "Offset fit cancelled; timing was unchanged.";
+        return compose_input_family_result_t::stop_with_feedback("Offset fit cancelled; timing was unchanged.",
+            notification_severity_t::hint, notification_source_t::input);
     }
     if (input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_BEGIN) {
         if (context.application_state.audio_offset_edits_locked() || cache.offset_fit_drag ||
             !cache.marker_timing_index || !context.workspace.transport.audio_asset ||
             input.object_id == 0) {
-            return "Offset fitting requires an unlocked waveform and idle chart gesture.";
+            return compose_input_family_result_t{"Offset fitting requires an unlocked waveform and idle chart gesture."};
         }
         cache.clear_beat_fit_capture();
         const auto status = begin_compose_beat_fit(input, context.history, context.workspace,
@@ -1889,7 +1925,8 @@ auto dispatch_compose_offset_fit_input(
         action.audio_offset_drag_document_revision = context.history.document.revision;
         action.audio_offset_drag_sample_rate = cache.offset_fit_drag->beat.sample_rate;
         action.audio_offset_drag_delta_frames = 0;
-        return "Dragging beat to shift waveform offset.";
+        return compose_input_family_result_t::stop_with_feedback("Dragging beat to shift waveform offset.",
+            notification_severity_t::hint, notification_source_t::input);
     }
     if (input.kind != WORM_UI_COMPOSE_INPUT_OFFSET_FIT_UPDATE &&
         input.kind != WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE) return std::nullopt;
@@ -1899,7 +1936,7 @@ auto dispatch_compose_offset_fit_input(
         context.application_state.audio_offset_edits_locked()) {
         cache.offset_fit_drag.reset();
         action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
-        return "Offset fit expired after its chart or waveform changed.";
+        return compose_input_family_result_t{"Offset fit expired after its chart or waveform changed."};
     }
     const auto& drag = *cache.offset_fit_drag;
     cache.offset_fit_drag->target_y_pixels = input.y_pixels;
@@ -1911,13 +1948,13 @@ auto dispatch_compose_offset_fit_input(
             cache.offset_fit_drag.reset();
             action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
         }
-        return "Offset target is outside the source audio range.";
+        return compose_input_family_result_t{"Offset target is outside the source audio range."};
     }
     constexpr auto max_frame = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
     if (*target > max_frame || drag.beat.original_sample_frame > max_frame) {
         cache.offset_fit_drag.reset();
         action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
-        return "Offset target exceeds the supported frame range.";
+        return compose_input_family_result_t{"Offset target exceeds the supported frame range."};
     }
     const auto delta = static_cast<std::int64_t>(*target) -
                        static_cast<std::int64_t>(drag.beat.original_sample_frame);
@@ -1929,9 +1966,10 @@ auto dispatch_compose_offset_fit_input(
     action.audio_offset_drag_sample_rate = drag.beat.sample_rate;
     action.audio_offset_drag_delta_frames = delta;
     if (input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE) cache.offset_fit_drag.reset();
-    return input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE
-               ? "Offset fit committed."
-               : "Previewing exact waveform offset.";
+    return compose_input_family_result_t::stop_with_feedback(
+        input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE
+            ? "Offset fit committed." : "Previewing exact waveform offset.",
+        notification_severity_t::hint, notification_source_t::input);
 }
 
 auto begin_compose_beat_fit(const WormUiComposeInputAction& input,
@@ -1940,24 +1978,24 @@ auto begin_compose_beat_fit(const WormUiComposeInputAction& input,
                             wormedit::editor_interaction_state_t& state,
                             application_command_state_t& application_state,
                             compose_scene_cache_t& scene_cache,
-                            const wormedit::chart_document_t* input_chart) -> std::string {
+                            const wormedit::chart_document_t* input_chart) -> compose_input_family_result_t {
     using namespace wormedit;
     if (application_state.timing_locked || scene_cache.beat_fit_drag ||
         editor_interaction_has_pending_gesture(state) || !scene_cache.index ||
         !scene_cache.marker_timing_index || scene_cache.waveform_overview_sample_rate == 0 ||
         scene_cache.waveform_overview_total_frames == 0 || !input_chart || input.object_id == 0) {
-        return "Beat fitting requires an unlocked waveform and idle chart gesture.";
+        return compose_input_family_result_t{"Beat fitting requires an unlocked waveform and idle chart gesture."};
     }
     const auto& measures = scene_cache.index->measures;
     const auto beat_row = input.object_id;
     const auto measure = std::ranges::upper_bound(measures.entries, beat_row, {},
                                                   &measure_index_entry_t::absolute_begin_row);
     if (measure == measures.entries.begin()) {
-        return "Selected beat is outside the chart.";
+        return compose_input_family_result_t{"Selected beat is outside the chart."};
     }
     const auto& entry = *std::prev(measure);
     if (beat_row - entry.absolute_begin_row >= entry.row_capacity) {
-        return "Selected beat is outside the chart.";
+        return compose_input_family_result_t{"Selected beat is outside the chart."};
     }
     const auto beat = local_position_t{entry.id, beat_row - entry.absolute_begin_row};
     std::optional<object_id_t> previous_bpm;
@@ -1970,23 +2008,24 @@ auto begin_compose_beat_fit(const WormUiComposeInputAction& input,
         }
     }
     if (!previous_bpm) {
-        return "No earlier BPM change can anchor this beat fit.";
+        return compose_input_family_result_t{"No earlier BPM change can anchor this beat fit."};
     }
     const auto begun = begin_beat_interval_drag(history.document, input_chart->id, *previous_bpm,
                                                 beat, scene_cache.waveform_overview_sample_rate,
                                                 application_state.timing_locked);
     if (!begun) {
-        return begun.diagnostics.empty() ? "Beat fit could not start."
-                                         : begun.diagnostics.front().message;
+        return input_diagnostic_feedback(begun.diagnostics, "Beat fit could not start.",
+            notification_severity_t::warning, notification_source_t::edit);
     }
     if (begun.drag->original_sample_frame >= scene_cache.waveform_overview_total_frames) {
-        return "Selected beat lies after the source audio ends.";
+        return compose_input_family_result_t{"Selected beat lies after the source audio ends."};
     }
     scene_cache.beat_fit_drag = begun.drag;
     scene_cache.beat_fit_asset = workspace.transport.audio_asset;
     scene_cache.beat_fit_onset_snapped = false;
     capture_fit_onsets(scene_cache, state, workspace);
-    return "Dragging beat against the fixed waveform; release to apply.";
+    return compose_input_family_result_t::stop_with_feedback("Dragging beat against the fixed waveform; release to apply.",
+            notification_severity_t::hint, notification_source_t::input);
 }
 
 auto update_beat_fit_proposal(const WormUiComposeInputAction& input,
@@ -2010,14 +2049,14 @@ auto update_compose_beat_fit(const WormUiComposeInputAction& input,
                              wormedit::workspace_controller_t& workspace,
                              wormedit::editor_interaction_state_t& state,
                              application_command_state_t& application_state,
-                             compose_scene_cache_t& scene_cache) -> std::string {
+                             compose_scene_cache_t& scene_cache) -> compose_input_family_result_t {
     using namespace wormedit;
     if (!scene_cache.beat_fit_drag || !scene_cache.marker_timing_index ||
         scene_cache.beat_fit_drag->document_revision != history.document.revision ||
         scene_cache.beat_fit_asset != workspace.transport.audio_asset ||
         scene_cache.waveform_overview_sample_rate != scene_cache.beat_fit_drag->sample_rate) {
         scene_cache.clear_beat_fit_capture();
-        return "Beat fit has no matching captured transaction.";
+        return compose_input_family_result_t{"Beat fit has no matching captured transaction."};
     }
     const auto frame = sample_frame_at_chart_y(
         *scene_cache.marker_timing_index, state.viewport_scroll_pixels,
@@ -2027,7 +2066,7 @@ auto update_compose_beat_fit(const WormUiComposeInputAction& input,
         if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE) {
             scene_cache.clear_beat_fit_capture();
         }
-        return "Beat target is outside the source audio range.";
+        return compose_input_family_result_t{"Beat target is outside the source audio range."};
     }
     const auto target_frame = fit_onset_target(scene_cache, input, *frame);
     const auto updated = update_beat_fit_proposal(
@@ -2037,14 +2076,14 @@ auto update_compose_beat_fit(const WormUiComposeInputAction& input,
         if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE) {
             scene_cache.clear_beat_fit_capture();
         }
-        return "Snapped beat target is outside the source audio range.";
+        return compose_input_family_result_t{"Snapped beat target is outside the source audio range."};
     }
     if (!updated) {
         if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE) {
             scene_cache.clear_beat_fit_capture();
         }
-        return updated.diagnostics.empty() ? "Beat fit target was rejected."
-                                           : updated.diagnostics.front().message;
+        return input_diagnostic_feedback(updated.diagnostics, "Beat fit target was rejected.",
+            notification_severity_t::warning, notification_source_t::edit);
     }
     scene_cache.beat_fit_drag = updated.drag;
     scene_cache.beat_fit_drag->snap_active = input.beat_fit_ctrl_held &&
@@ -2054,23 +2093,27 @@ auto update_compose_beat_fit(const WormUiComposeInputAction& input,
                                                 input.beat_fit_snap_step_denominator};
     }
     if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE) {
-        return "Previewing exact sample-frame beat fit.";
+        return compose_input_family_result_t::stop_with_feedback("Previewing exact sample-frame beat fit.",
+            notification_severity_t::hint, notification_source_t::input);
     }
     const auto committed = commit_beat_interval_drag(history, *scene_cache.beat_fit_drag,
                                                      application_state.timing_locked);
     scene_cache.clear_beat_fit_capture();
     if (!committed.applied) {
-        return committed.diagnostics.empty() ? "Beat fit was unchanged."
-                                             : committed.diagnostics.front().message;
+        return input_diagnostic_feedback(committed.diagnostics, "Beat fit was unchanged.",
+            notification_severity_t::info, notification_source_t::edit);
     }
     const auto rebound = rebind_workspace(workspace, history);
-    return rebound ? "Beat interval fitted to the selected audio frame."
-                   : "Beat fit applied, but workspace rebinding failed.";
+    return compose_input_family_result_t::stop_with_feedback(
+        rebound ? "Beat interval fitted to the selected audio frame."
+                : "Beat fit applied, but workspace rebinding failed.",
+        rebound ? notification_severity_t::success : notification_severity_t::error,
+        rebound ? notification_source_t::edit : notification_source_t::document);
 }
 
 auto seek_compose_waveform(const WormUiComposeInputAction& input, compose_input_context_t& context,
                            wormedit::editor_interaction_result_t& result,
-                           std::string_view& accepted) -> std::optional<std::string> {
+                           std::string_view& accepted) -> std::optional<compose_input_family_result_t> {
     using namespace wormedit;
     const auto& cache = context.scene_cache;
     const auto& state = context.state;
@@ -2078,9 +2121,9 @@ auto seek_compose_waveform(const WormUiComposeInputAction& input, compose_input_
         input.audio_fraction > 1.0 || !cache.marker_timing_index ||
         cache.waveform_overview_total_frames == 0 || cache.waveform_overview_sample_rate == 0 ||
         !context.input_chart)
-        return "Waveform overview seek is unavailable.";
+        return compose_input_family_result_t{"Waveform overview seek is unavailable."};
     if (editor_interaction_has_pending_gesture(state))
-        return "Finish or cancel the active gesture before navigating the waveform.";
+        return compose_input_family_result_t{"Finish or cancel the active gesture before navigating the waveform."};
     const auto& timing = *cache.marker_timing_index;
     const auto frame = static_cast<std::int64_t>(
         input.audio_fraction * static_cast<long double>(cache.waveform_overview_total_frames - 1));
@@ -2112,28 +2155,45 @@ auto seek_compose_waveform(const WormUiComposeInputAction& input, compose_input_
 
 auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input_context_t& context,
                             wormedit::editor_interaction_result_t& result,
-                            std::string_view& accepted) -> std::optional<std::string> {
+                            std::string_view& accepted) -> std::optional<compose_input_family_result_t> {
     using namespace wormedit;
     if (input.overview_shift) return seek_compose_waveform(input, context, result, accepted);
     auto& cache = context.scene_cache;
     if (!cache.marker_timing_index || !cache.index || !context.input_chart ||
         editor_interaction_has_pending_gesture(context.state))
-        return "Waveform overview seek is unavailable during an active gesture.";
+        return compose_input_family_result_t{"Waveform overview seek is unavailable during an active gesture."};
     const auto end = context.application_state.transport_preview_end_frame
         ? context.application_state.transport_preview_end_frame() : std::nullopt;
     const auto target = compose_minimap_target(input.audio_fraction, cache.waveform_overview_total_frames,
         cache.waveform_overview_sample_rate, audio::output_sample_rate, *cache.marker_timing_index,
         edit_snap_denominator(*context.input_chart, context.state), end);
-    if (!target) return "Waveform overview seek is unavailable.";
+    if (!target) return compose_input_family_result_t{"Waveform overview seek is unavailable."};
+    const auto& application = context.application_state;
+    const bool playing = application.transport_preview_playing && application.transport_preview_playing();
+    const bool paused = application.transport_preview_paused && application.transport_preview_paused();
+    const bool seeks = playing || (paused && (input.overview_primary != application.minimap_click_moves_paused_playhead));
     const auto status = navigate_compose_minimap_transport(context.application_state, target->frame,
                                                           false, input.overview_primary);
     result = move_compose_minimap_cursor(context.history, context.state, cache.index->measures,
                                          *cache.marker_timing_index, *target);
-    if (!result.accepted) return compose_result_status(result, "Waveform cursor moved.");
+    if (!result.accepted)
+        return compose_input_family_result_t::stop_with_feedback(
+            compose_result_status(result, "Waveform cursor moved."),
+            result.diagnostics.empty() ? notification_severity_t::warning
+                : input_notification_severity(result.diagnostics.front().severity),
+            notification_source_t::input);
     retain_compose_minimap_start(context.application_state, context.history, context.state,
                                  *target, *cache.marker_timing_index);
     accepted = "Compose waveform position moved.";
-    if (!status.empty()) return status;
+    if (!status.empty()) {
+        auto feedback = compose_input_family_result_t::stop_with_feedback(status,
+            seeks && !application.transport_seek ? notification_severity_t::warning
+                                                : notification_severity_t::hint,
+            notification_source_t::input);
+        feedback.notification_posted = seeks && application.transport_seek &&
+                                       application.transport_seek_posts_feedback;
+        return feedback;
+    }
     return std::nullopt;
 }
 
@@ -2494,11 +2554,15 @@ auto edit_compose_recipe_range(const WormUiComposeInputAction& input,
     auto drag = begin_sv_recipe_range_drag(context.history, chart->id, recipe_id_t{input.object_id},
                                            handle, *press, edit_snap_denominator(*chart, context.state),
                                            context.application_state.timing_locked);
-    if (drag.status != sv_recipe_range_drag_status_t::previewing)
+    if (drag.status != sv_recipe_range_drag_status_t::previewing) {
+        result.diagnostics = drag.diagnostics;
         return drag.diagnostics.empty() ? "SV recipe edit was rejected." : drag.diagnostics.front().message;
+    }
     if (!update_sv_recipe_range_drag(context.history, drag, *release,
-                                     context.application_state.timing_locked))
+                                     context.application_state.timing_locked)) {
+        result.diagnostics = drag.diagnostics;
         return drag.diagnostics.empty() ? "SV recipe edit was rejected." : drag.diagnostics.front().message;
+    }
     const auto committed = commit_sv_recipe_range_drag(context.history, drag,
                                                        context.application_state.timing_locked);
     result.accepted = committed.applied;
@@ -3087,6 +3151,14 @@ auto cancel_compose_gesture(compose_input_context_t& context,
     return compose_input_family_result_t::continue_with_result();
 }
 
+auto compose_input_rejection(std::string message,
+    const wormedit::editor_interaction_result_t& result) -> compose_input_family_result_t {
+    return compose_input_family_result_t::stop_with_feedback(std::move(message),
+        result.diagnostics.empty() ? wormedit::notification_severity_t::warning
+            : input_notification_severity(result.diagnostics.front().severity),
+        wormedit::notification_source_t::input);
+}
+
 // Kiai area and SV recipe inputs from the timing lanes. Returns nothing for any other input.
 auto dispatch_timing_lane_area_input(const WormUiComposeInputAction& input,
                                      compose_input_context_t& context,
@@ -3101,11 +3173,11 @@ auto dispatch_timing_lane_area_input(const WormUiComposeInputAction& input,
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT:
         if (const auto error = edit_compose_kiai_span(input, context, result, accepted))
-            return *error;
+            return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT:
         if (const auto error = edit_compose_speed_span(input, context, result, accepted))
-            return *error;
+            return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_RECIPE_SELECT:
         if (context.application_state.recipe_selected != input.object_id)
@@ -3116,12 +3188,12 @@ auto dispatch_timing_lane_area_input(const WormUiComposeInputAction& input,
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT:
         if (const auto error = edit_compose_recipe_range(input, context, result, accepted))
-            return *error;
+            return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND:
         if (const auto error = run_compose_recipe_command(input.object_id, input.span_edge, context,
                                                           result, accepted))
-            return *error;
+            return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     default:
         return std::nullopt;
@@ -3133,7 +3205,7 @@ auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
                                       wormedit::editor_interaction_result_t& result,
                                       std::string_view& accepted) -> compose_input_family_result_t {
     if (const auto status = dispatch_compose_offset_fit_input(input, context))
-        return compose_input_family_result_t{*status};
+        return *status;
     if (const auto status = dispatch_compose_beat_fit_input(
             input, context.history, context.workspace, context.state, context.application_state,
             context.scene_cache, context.input_chart))
@@ -3150,35 +3222,35 @@ auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK:
         if (const auto error = focus_compose_note_label(input, context, result, accepted))
-            return *error;
+            return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK:
         if (const auto error = select_compose_bgm_event(input, context, result, accepted))
-            return *error;
+            return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT:
         if (const auto error = select_compose_timing_marker(input, context, result, accepted))
-            return *error;
+            return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE:
         if (const auto error = move_compose_timing_selection(input, context, result, accepted))
-            return *error;
+            return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK:
         if (const auto error = select_compose_bga_event(input, context, result, accepted))
-            return *error;
+            return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE:
         if (const auto error = move_compose_bga_event(input, context, result, accepted))
-            return *error;
+            return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_POINTER_CLICK:
         if (const auto error = select_compose_pointer_target(input, context, result, accepted))
-            return *error;
+            return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_MEASURE_SELECT:
         if (const auto error = select_compose_bms_measure(input, context, result, accepted))
-            return *error;
+            return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE:
     case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE:
@@ -3231,14 +3303,21 @@ auto compose_input_notification_source(WormUiComposeInputKind kind)
         kind == WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT ||
         kind == WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE ||
         kind == WORM_UI_COMPOSE_INPUT_UNDO || kind == WORM_UI_COMPOSE_INPUT_REDO ||
-        kind == WORM_UI_COMPOSE_INPUT_PASTE_COMMIT)
+        kind == WORM_UI_COMPOSE_INPUT_PASTE_COMMIT ||
+        kind == WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT ||
+        kind == WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT ||
+        kind == WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT ||
+        kind == WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND)
         return notification_source_t::edit;
     return notification_source_t::input;
 }
 
 auto input_feedback_source(WormUiComposeInputKind kind,
-                           wormedit::notification_source_t explicit_source)
+                           wormedit::notification_source_t explicit_source,
+                           wormedit::notification_severity_t severity)
     -> wormedit::notification_source_t {
+    if (severity == wormedit::notification_severity_t::hint)
+        return wormedit::notification_source_t::input;
     return explicit_source == wormedit::notification_source_t::input
                ? compose_input_notification_source(kind)
                : explicit_source;
@@ -3256,8 +3335,18 @@ auto input_result_severity(const WormUiComposeInputAction& input,
         input.kind == WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD ||
         input.kind == WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND)
         return notification_severity_t::hint;
-    return result.document_changed ? notification_severity_t::success
-                                   : notification_severity_t::info;
+    if (result.document_changed) return notification_severity_t::success;
+    switch (input.kind) {
+    case WORM_UI_COMPOSE_INPUT_DELETE_SELECTION:
+    case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE:
+    case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE:
+    case WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT:
+    case WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT:
+    case WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT:
+    case WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND:
+        return notification_severity_t::info;
+    default: return notification_severity_t::hint;
+    }
 }
 
 auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
@@ -3335,18 +3424,28 @@ auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
     auto& application = context.application_state;
     if (input.kind == WORM_UI_COMPOSE_INPUT_PASTE_CANCEL) {
         application.paste_session.reset();
-        return compose_input_family_result_t::continue_batch("Paste preview cancelled.");
+        return compose_input_family_result_t::stop_with_feedback("Paste preview cancelled.",
+            wormedit::notification_severity_t::hint, wormedit::notification_source_t::input);
     }
     if (input.kind == WORM_UI_COMPOSE_INPUT_PASTE_COMMIT) {
         std::string status;
-        const auto committed = commit_compose_paste(application, context.history, context.state, status);
-        if (committed)
-            (void)wormedit::rebind_workspace(context.workspace, context.history);
-        return compose_input_family_result_t::stop_with_feedback(
-            std::move(status), committed ? wormedit::notification_severity_t::success
-                                         : wormedit::notification_severity_t::warning,
-            wormedit::notification_source_t::edit);
+        auto severity = wormedit::notification_severity_t::warning;
+        const auto committed = commit_compose_paste(application, context.history, context.state, status, &severity);
+        post_input_feedback(context.notifications, severity, wormedit::notification_source_t::edit, status);
+        if (committed) {
+            const auto rebound = wormedit::rebind_workspace(context.workspace, context.history);
+            if (!rebound)
+                post_input_feedback(context.notifications, wormedit::notification_severity_t::error,
+                    wormedit::notification_source_t::document,
+                    rebound.diagnostics.empty() ? "Compose edit applied, but workspace rebinding failed."
+                                                : rebound.diagnostics.front().message);
+        }
+        auto feedback = compose_input_family_result_t::stop_with_feedback(
+            std::move(status), severity, wormedit::notification_source_t::edit);
+        feedback.notification_posted = context.notifications != nullptr;
+        return feedback;
     }
+
     if (input.kind != WORM_UI_COMPOSE_INPUT_PASTE_UPDATE) return std::nullopt;
     if (!application.paste_session || !context.input_chart)
         return compose_input_family_result_t::continue_batch({});
@@ -3425,20 +3524,22 @@ auto process_compose_input_result(const WormUiComposeInputAction& input,
     if (dispatched.stop_batch) {
         if (!dispatched.notification_posted)
             post_input_feedback(context.notifications, dispatched.severity,
-                                input_feedback_source(input.kind, dispatched.source),
+                                input_feedback_source(input.kind, dispatched.source, dispatched.severity),
                                 dispatched.status);
         return {.handled = true, .stop = true, .status = dispatched.status};
     }
     if (!dispatched.process_result) {
         if (!dispatched.notification_posted)
             post_input_feedback(context.notifications, dispatched.severity,
-                                input_feedback_source(input.kind, dispatched.source),
+                                input_feedback_source(input.kind, dispatched.source, dispatched.severity),
                                 dispatched.status);
         return {.handled = true, .status = dispatched.status};
     }
     auto status = compose_result_status(result, accepted);
     post_input_feedback(context.notifications, input_result_severity(input, result),
-                        compose_input_notification_source(input.kind), status);
+                        result.document_changed ? notification_source_t::edit
+            : input_result_severity(input, result) == notification_severity_t::hint
+                ? notification_source_t::input : compose_input_notification_source(input.kind), status);
     if (result.accepted && result.audition.has_value())
         context.scene_cache.audition_request = result.audition;
     if (result.accepted && result.document_changed) {

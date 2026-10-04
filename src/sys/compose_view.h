@@ -480,7 +480,7 @@ auto update_compose_paste(application_command_state_t& application_state,
     wormedit::local_position_t anchor) -> bool;
 auto commit_compose_paste(application_command_state_t& application_state,
     wormedit::document_history_t& history, wormedit::editor_interaction_state_t& state,
-    std::string& status) -> bool;
+    std::string& status, wormedit::notification_severity_t* severity = nullptr) -> bool;
 
 auto toggle_compose_audio_offset_lock(const WormUiWorkspaceAction& action,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,

@@ -164,7 +164,8 @@ auto begin_compose_paste(application_command_state_t& application_state,
 
 auto commit_compose_paste(application_command_state_t& application_state,
     wormedit::document_history_t& history, wormedit::editor_interaction_state_t& state,
-    std::string& status) -> bool {
+    std::string& status, wormedit::notification_severity_t* severity) -> bool {
+    if (severity) *severity = wormedit::notification_severity_t::warning;
     const auto anchor = application_state.paste_session
         ? paste_anchor(*application_state.paste_session, state.cursor) : state.cursor;
     if (!update_compose_paste(application_state, history.document, state.chart, anchor)) {
@@ -178,10 +179,18 @@ auto commit_compose_paste(application_command_state_t& application_state,
                                                        session.anchor, session.proposal.revision);
     if (!applied.applied) {
         status = applied.diagnostics.empty() ? "Paste failed." : applied.diagnostics.front().message;
+        if (severity && !applied.diagnostics.empty()) {
+            switch (applied.diagnostics.front().severity) {
+            case wormedit::diagnostic_severity_t::info: *severity = wormedit::notification_severity_t::info; break;
+            case wormedit::diagnostic_severity_t::warning: break;
+            case wormedit::diagnostic_severity_t::error: *severity = wormedit::notification_severity_t::error; break;
+            }
+        }
         return false;
     }
     application_state.paste_session.reset();
     status = "Selection pasted.";
+    if (severity) *severity = wormedit::notification_severity_t::success;
     return true;
 }
 

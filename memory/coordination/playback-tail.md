@@ -49,8 +49,11 @@ schedule/session/output lifecycle code is unchanged.
 
 ## Integration and remaining verification
 
-Root alone integrates and runs the full app build/suite and repeats the original
-imported runtime probe against main. Real-window visual verification remains
+Root integrated the reviewed change as `d64c048`, repaired the main app build,
+and repeated the actual eight-chart tail/backward-seek/natural-EOF probe against
+main successfully (`/tmp/wormedit-playback-tail-root/runtime-main.log`). Three
+focused main regression cases pass. Root runs the full suite after tooltip
+integration. Real-window visual verification remains
 pending: the prior Xvfb request was rejected by automatic sandbox approval, and
 no retry or user desktop window was attempted.
 
@@ -58,5 +61,7 @@ Offline builds read dependency source trees in the main build's `_deps` and put
 all dependency binary directories in this worktree. An initial executor
 reconfiguration accidentally pointed `FETCHCONTENT_BASE_DIR` at main `_deps`;
 this was detected, the build stopped, and all binary dirs were corrected before
-final verification. Only generated dependency build artifacts were affected;
-tracked main/source files and original chart/audio files remained unchanged.
+final verification. The interrupted shared dependency build left exactly one zero-byte object,
+`SDL_blendline.c.o`, causing the main relink to miss `SDL_BlendLines`. Root
+removed only that empty object and rebuilt successfully. No tracked source or
+CMake cache repair was needed; original chart/audio files remained unchanged.

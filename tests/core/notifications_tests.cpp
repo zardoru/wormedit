@@ -678,4 +678,37 @@ TEST_CASE("notification hint does not replace success on the current line", "[no
     CHECK(center.current_line()->message == "Semantic layer added.");
 }
 
+TEST_CASE("notification sink preserves long messages in bounded detail without overriding explicit detail",
+          "[notifications]") {
+    notification_center_t center{[] { return 0ns; }};
+    const notification_sink_t sink{center};
+    const std::string message = std::string(196, 'a') + "é" + std::string(700, 'b');
+    std::string expected_detail = message;
+    SECTION("implicit detail") {
+        sink.post(notification_severity_t::error, notification_source_t::system, message);
+    }
+    SECTION("explicit detail") {
+        expected_detail = "Producer supplied details";
+        sink.post(notification_post_t{.severity = notification_severity_t::error,
+            .source = notification_source_t::system, .message = message, .detail = expected_detail});
+    }
+    center.drain_inbox(0ns);
+    const auto entries = center.snapshot(1);
+    REQUIRE(entries.size() == 1);
+    CHECK(entries.front().message == std::string(196, 'a') + ellipsis);
+    CHECK(entries.front().detail == expected_detail);
+}
+
+TEST_CASE("notification sink long-message detail keeps the existing UTF8 bound", "[notifications]") {
+    notification_center_t center{[] { return 0ns; }};
+    const notification_sink_t sink{center};
+    const auto message = std::string(notification_detail_max_bytes - 4, 'x') + "éééé";
+    sink.post(notification_severity_t::error, notification_source_t::system, message);
+    center.drain_inbox(0ns);
+    const auto entries = center.snapshot(1);
+    REQUIRE(entries.size() == 1);
+    CHECK(entries.front().detail == std::string(notification_detail_max_bytes - 4, 'x') + ellipsis);
+    CHECK(entries.front().detail.size() <= notification_detail_max_bytes);
+}
+
 } // namespace

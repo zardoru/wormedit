@@ -89,6 +89,32 @@ TEST_CASE("opening history marks existing entries read once and does not discard
     CHECK(center.borrowed_snapshot(notification_capacity).empty());
 }
 
+TEST_CASE("migrated long UTF8 messages retain full history and clipboard payload",
+          "[sys][notifications]") {
+    notification_center_t center{[] { return 0ns; }};
+    const notification_sink_t sink{center};
+    const std::string message = std::string(196, 'a') + "é" + std::string(700, 'b');
+    SECTION("simple sink") {
+        sink.post(notification_severity_t::error, notification_source_t::system, message);
+    }
+    SECTION("typed sink without explicit detail") {
+        sink.post(notification_post_t{.severity = notification_severity_t::error,
+            .source = notification_source_t::system, .message = message});
+    }
+    SECTION("diagnostic sink") {
+        sink.post_diagnostics(notification_source_t::system,
+            {{.severity = diagnostic_severity_t::error, .message = message}});
+    }
+    center.drain_inbox(0ns);
+    notification_history_runtime_t runtime;
+    runtime.visible = true;
+    const auto view = runtime.project(center, history_song(), 0ns);
+    REQUIRE(view.row_count == 1);
+    CHECK(std::string_view{view.rows[0].detail} == message);
+    CHECK(notification_copy_payload(center, view.rows[0].id) == message);
+    CHECK(std::string_view{view.rows[0].message} == std::string(196, 'a') + "…");
+}
+
 TEST_CASE("history targets distinguish exact, missing and valid nonpositional objects",
           "[sys][notifications]") {
     auto song = history_song();

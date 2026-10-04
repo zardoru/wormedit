@@ -192,7 +192,8 @@ void notification_sink_t::post(notification_severity_t severity, notification_so
         center_->post(notification_post_t{.severity = severity,
                                           .source = source,
                                           .message = std::string{message},
-                                          .detail = {},
+                                          .detail = message.size() > notification_message_max_bytes
+                                              ? std::string{message} : std::string{},
                                           .target = {}});
     } catch (...) {
         // Posting must not escape into worker/runtime code.
@@ -206,7 +207,9 @@ void notification_sink_t::post(const notification_post_t& request) const noexcep
         center_->post(notification_post_t{.severity = request.severity,
                                           .source = request.source,
                                           .message = request.message,
-                                          .detail = request.detail,
+                                          .detail = request.detail.empty() &&
+                                                    request.message.size() > notification_message_max_bytes
+                                              ? request.message : request.detail,
                                           .target = request.target});
     } catch (...) {
         // Copying and center posting can allocate or call an injected clock.
@@ -222,7 +225,8 @@ void notification_sink_t::post_diagnostics(notification_source_t source,
             notification_post_t request{.severity = diagnostic_severity(diagnostic.severity),
                                         .source = source,
                                         .message = diagnostic.message,
-                                        .detail = {},
+                                        .detail = diagnostic.message.size() > notification_message_max_bytes
+                                            ? diagnostic.message : std::string{},
                                         .target = {}};
             if (diagnostic.object)
                 request.target = *diagnostic.object;

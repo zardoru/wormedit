@@ -165,6 +165,8 @@ class notification_center_t {
 // before every runtime/scheduler that receives a sink, then join all posting
 // workers before destroying the center on normal and exceptional exits. The
 // sink never accesses UI state.
+// Messages longer than the 200-byte line bound also become detail when callers
+// supply no explicit detail. The center's 4 KiB UTF-8 detail bound still applies.
 class notification_sink_t {
   public:
     explicit notification_sink_t(notification_center_t& center) noexcept : center_(&center) {}

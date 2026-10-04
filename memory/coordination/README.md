@@ -49,3 +49,22 @@ cherry-picks only accepted results. Run `git diff --check` and
 planning round. Production changes additionally require the owning
 card's build, test, complexity, and isolated visual/workflow checks. Workers
 must not merge or push main.
+
+## Accepted implementation increments
+
+- Timing T-239/T-51: `f2f838b`, integrated Debug build and full suite
+  2,108/2,108, including 121 event-harness cases. T-81 continues under
+  the user's Ctrl+Alt choice after a collision audit.
+- Notifications sink/full-detail foundation: `11e577d`/`c0ea10f`.
+- Autosave/recovery failure producer: `67494af`, independent 30/30 tests pass.
+- Dispatch/global producer increment: `36fb59b`, integrated Debug build,
+  225/225 focused tests and 632 assertions in 53 dispatch cases pass.
+  Root retained atomic tap Apply, Timing Settings and count-in while resolving
+  the shared-code conflicts; Tap Apply now publishes typed notifications.
+  T-221–T-223 remain in progress, with metadata/import/drop, Compose/dialog and
+  worker completion slices still required. No incomplete card is marked done.
+- Required isolated visual gates remain unperformed: Xvfb cannot open sockets
+  in this sandbox, and automatic approval review rejected escalation because
+  sandbox approval is disabled. Windowless event checks are recorded separately.
+
+Logs are under `/tmp/wormedit-batch-implementation/`.

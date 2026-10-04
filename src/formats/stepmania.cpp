@@ -1,6 +1,7 @@
 #include <wormedit/formats/stepmania.h>
 
 #include <wormedit/core/measure.h>
+#include <wormedit/core/numeric_text.h>
 #include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/lane_profiles.h>
 
@@ -122,52 +123,10 @@ auto parse_unsigned(std::string_view text, std::uint64_t& value) -> bool {
 }
 
 auto decimal_rational(std::string_view text) -> std::optional<signed_rational_t> {
-    text = trim(text);
-    if (text.empty())
-        return std::nullopt;
-    bool negative{};
-    if (text.front() == '+' || text.front() == '-') {
-        negative = text.front() == '-';
-        text.remove_prefix(1);
-    }
-    if (text.empty())
-        return std::nullopt;
-    const auto point = text.find('.');
-    if (point != std::string_view::npos && text.find('.', point + 1) != std::string_view::npos)
-        return std::nullopt;
-    const auto fractional = point == std::string_view::npos ? 0U : text.size() - point - 1;
-    if (fractional > 18)
-        return std::nullopt;
-    std::string digits;
-    digits.reserve(text.size());
-    bool any_digit{};
-    for (const auto ch : text) {
-        if (ch == '.')
-            continue;
-        if (ch < '0' || ch > '9')
-            return std::nullopt;
-        digits.push_back(ch);
-        any_digit = true;
-    }
-    if (!any_digit)
-        return std::nullopt;
-    std::uint64_t magnitude{};
-    if (!parse_unsigned(digits, magnitude))
-        return std::nullopt;
-    std::uint64_t denominator{1};
-    for (std::size_t i = 0; i < fractional; ++i) {
-        if (denominator > std::numeric_limits<std::uint64_t>::max() / 10)
-            return std::nullopt;
-        denominator *= 10;
-    }
-    const auto divisor = std::gcd(magnitude, denominator);
-    magnitude /= divisor;
-    denominator /= divisor;
-    const auto max_numerator = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
-    if (magnitude > max_numerator)
-        return std::nullopt;
-    const auto numerator = static_cast<std::int64_t>(magnitude);
-    return signed_rational_t{negative ? -numerator : numerator, denominator};
+    const auto parsed = parse_exact_decimal(trim(text));
+    // Offset and legacy timing conversions negate values; keep the signed range symmetric.
+    return parsed && parsed->numerator != std::numeric_limits<std::int64_t>::min()
+        ? parsed : std::nullopt;
 }
 
 auto checked_lcm(std::uint64_t left, std::uint64_t right) -> std::optional<std::uint64_t> {

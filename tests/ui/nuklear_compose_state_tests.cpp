@@ -353,6 +353,26 @@ TEST_CASE("Inline timing scalar accepts signed scroll and zero pause exactly",
     check_primary(action, "3", "8");
 }
 
+TEST_CASE("Inline timing events accept exact scientific notation",
+          "[unit][frontend][compose][numeric-text]") {
+    for (const auto lane : {WORM_UI_TIMING_LANE_BPM, WORM_UI_TIMING_LANE_SPEED,
+                            WORM_UI_TIMING_LANE_SCROLL, WORM_UI_TIMING_LANE_STOP,
+                            WORM_UI_TIMING_LANE_DELAY}) {
+        auto view = staged_timing(lane);
+        WormUiWorkspaceAction action{};
+        expect_inline(worm_ui_nuklear_inline_timing_confirm(view, "1.25E-1", action));
+        check_primary(action, "1", "8");
+        check_inline_rejected(view, "1e+-2", action, "1");
+        check_inline_rejected(view, "1E+99", action, "1");
+    }
+    auto view = staged_timing(WORM_UI_TIMING_LANE_SCROLL);
+    WormUiWorkspaceAction action{};
+    expect_inline(worm_ui_nuklear_inline_timing_confirm(view, "-1.25e-1", action));
+    check_primary(action, "-1", "8");
+    view.stage_lane = WORM_UI_TIMING_LANE_STOP;
+    check_inline_rejected(view, "-1.25e-1", action, "-1");
+}
+
 TEST_CASE("Inline timing edit retains secondary fields and rejects invalid input atomically",
           "[unit][frontend][compose]") {
     auto view = staged_timing(WORM_UI_TIMING_LANE_SPEED);

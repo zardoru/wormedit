@@ -24,7 +24,7 @@ struct bpm_text_format_t {
 
 enum class bpm_step_direction_t { decrement, increment };
 
-// Parses positive decimal or fraction text without passing through binary
+// Parses positive decimal (including e/E exponents) or fraction text without passing through binary
 // floating point. Formatting emits an exact terminating decimal when it fits
 // the configured digit cap; otherwise decimal is an explicitly approximate UI
 // value while fraction remains the lossless representation.

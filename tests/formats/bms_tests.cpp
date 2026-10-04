@@ -235,6 +235,19 @@ TEST_CASE("BMS exponent declarations keep exact values",
     CHECK((chart.pauses[0].duration == wormedit::signed_rational_t{47, 1}));
 }
 
+TEST_CASE("BMS scientific notation also covers offsets and measure lengths",
+          "[unit][format][bms][numeric-text]") {
+    const auto parsed = parse("#BPM 120\n#OFFSET -1.25E-1\n#00002:1.25E-1\n"
+                              "#STOP01 4.7E+1\n#00009:01\n#00011:01\n#WAV01 a.wav\n");
+    REQUIRE(parsed.song.has_value());
+    REQUIRE_FALSE(parsed.has_errors());
+    const auto& chart = parsed.song->charts.front();
+    CHECK(chart.beat_zero_audio_offset_seconds == wormedit::signed_rational_t{-1, 8});
+    CHECK(chart.measures.front().definition.length == wormedit::rational_t{1, 8});
+    REQUIRE(chart.pauses.size() == 1);
+    CHECK(chart.pauses.front().duration == wormedit::signed_rational_t{47, 1});
+}
+
 TEST_CASE("BMS fixture preserves presentation-first discontinuity order",
           "[unit][format][bms][timing][discontinuity]") {
     const auto parsed = fixture("bms/repeated-bgm-ratio-stop-collision.bms");

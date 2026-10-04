@@ -1,4 +1,5 @@
 #include <wormedit/core/rational.h>
+#include <wormedit/core/numeric_text.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -7,6 +8,32 @@
 #include <limits>
 
 using namespace wormedit;
+
+TEST_CASE("Exact decimal text accepts signed scientific notation without rounding",
+          "[unit][core][rational][numeric-text]") {
+    const std::pair<std::string_view, signed_rational_t> cases[] = {
+        {"1.00001E+07", {10'000'100, 1}}, {"25e-1", {5, 2}},
+        {"-1.25E-1", {-1, 8}}, {"+.5e+1", {5, 1}}, {"1.e2", {100, 1}},
+        {"0e2147483647", {0, 1}}, {"2e-19", {1, 5'000'000'000'000'000'000ULL}},
+        {"92233720368547758070e-1", {INT64_MAX, 1}},
+        {"-9223372036854775808e0", {INT64_MIN, 1}}, {"0.000", {0, 1}},
+    };
+    for (const auto& [text, expected] : cases) {
+        INFO(text);
+        CHECK(parse_exact_decimal(text) == expected);
+    }
+}
+
+TEST_CASE("Exact decimal text rejects malformed exponents and unrepresentable values",
+          "[unit][core][rational][numeric-text]") {
+    for (const auto text : {"", ".", "e2", "1e", "1e+", "1e+-2", "1e--2", "1e++2",
+                            "1e2e3", "1.2.0", "1/2", "NaN", "inf", " 1", "1 ",
+                            "9223372036854775808", "-9223372036854775809",
+                            "1e-20", "1e2147483647", "1e-2147483648", "1e2147483648"}) {
+        INFO(text);
+        CHECK_FALSE(parse_exact_decimal(text));
+    }
+}
 
 TEST_CASE("IEEE-754 rationalization distinguishes exact and approximate values",
           "[unit][core][rational]") {

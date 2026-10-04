@@ -1,4 +1,5 @@
 #include <wormedit/core/bms_profile_detection.h>
+#include <wormedit/core/numeric_text.h>
 #include <wormedit/formats/bms.h>
 
 #include <algorithm>
@@ -771,6 +772,10 @@ auto scale_by_power_of_ten(std::uint64_t value, int count) -> std::optional<std:
 // BMS BPM and STOP declarations are decimals or fractions, optionally with a
 // decimal exponent; players read them as doubles, so charts use "1.00001E+07".
 auto parse_positive_rational(std::string_view text) -> std::optional<signed_rational_t> {
+    if (text.find('/') == std::string_view::npos) {
+        const auto parsed = parse_exact_decimal(text);
+        return parsed && parsed->numerator > 0 ? parsed : std::nullopt;
+    }
     std::optional<int> exponent{0};
     if (const auto marker = text.find_first_of("eE"); marker != std::string_view::npos) {
         exponent = parse_decimal_exponent(text.substr(marker + 1));
@@ -793,43 +798,6 @@ auto parse_positive_rational(std::string_view text) -> std::optional<signed_rati
                              *denominator / divisor};
 }
 
-auto parse_signed_decimal_seconds(std::string_view text) -> std::optional<signed_rational_t> {
-    if (text.empty()) return std::nullopt;
-    const bool negative = text.front() == '-';
-    if (negative || text.front() == '+') text.remove_prefix(1);
-    if (text.empty()) return std::nullopt;
-    std::uint64_t magnitude{};
-    std::uint64_t denominator{1};
-    bool decimal_point = false;
-    bool digit_seen = false;
-    const auto limit = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) +
-                       (negative ? 1U : 0U);
-    for (const char character : text) {
-        if (character == '.' && !decimal_point) {
-            decimal_point = true;
-            continue;
-        }
-        if (character < '0' || character > '9') return std::nullopt;
-        digit_seen = true;
-        const auto digit = static_cast<std::uint64_t>(character - '0');
-        if (magnitude > (limit - digit) / 10 ||
-            (decimal_point && denominator > std::numeric_limits<std::uint64_t>::max() / 10)) {
-            return std::nullopt;
-        }
-        magnitude = magnitude * 10 + digit;
-        if (decimal_point) denominator *= 10;
-    }
-    if (!digit_seen) return std::nullopt;
-    const auto divisor = std::gcd(magnitude, denominator);
-    magnitude /= divisor;
-    denominator /= divisor;
-    const auto numerator = negative
-                               ? (magnitude == limit
-                                      ? std::numeric_limits<std::int64_t>::min()
-                                      : -static_cast<std::int64_t>(magnitude))
-                               : static_cast<std::int64_t>(magnitude);
-    return signed_rational_t{numerator, denominator};
-}
 
 auto source_provenance(std::string_view field, std::string_view spelling, std::size_t order,
                        std::string_view profile = "bms-byte-parser") -> source_provenance_t {
@@ -2225,7 +2193,7 @@ auto collect_metadata_statement(active_statement_scan_context_t& context,
             context.player_header = static_cast<unsigned int>(*parsed_player);
         }
     } else if (token == "OFFSET") {
-        const auto parsed_offset = parse_signed_decimal_seconds(value);
+        const auto parsed_offset = parse_exact_decimal(value);
         if (parsed_offset) {
             context.chart.beat_zero_audio_offset_seconds = *parsed_offset;
         } else {
@@ -2253,6 +2221,14 @@ auto collect_resource_statement(active_statement_scan_context_t& context,
     return false;
 }
 
+auto parse_bms_measure_length(std::string_view value) -> std::optional<rational_t> {
+    if (value.find_first_of("eE") == std::string_view::npos)
+        return parse_measure_length(value).value;
+    const auto parsed = parse_positive_rational(value);
+    if (!parsed) return std::nullopt;
+    return rational_t{static_cast<std::uint64_t>(parsed->numerator), parsed->denominator};
+}
+
 auto collect_measure_length_statement(active_statement_scan_context_t& context,
                                       const bms_control_node_t& node,
                                       std::string_view token, std::string_view value,
@@ -2264,15 +2240,15 @@ auto collect_measure_length_statement(active_statement_scan_context_t& context,
         return false;
     }
     const auto measure = command->first;
-    const auto parsed_length = parse_measure_length(value);
-    if (parsed_length.value.has_value()) {
+    const auto parsed_length = parse_bms_measure_length(value);
+    if (parsed_length.has_value()) {
         if (context.last_measure_length_order.contains(measure)) {
             context.diagnose(node, diagnostic_severity_t::warning,
                              bms_parse_diagnostic_code_t::invalid_measure,
                              "repeated measure-length declaration; later value is applied");
         }
         auto& measure_chunk = context.ensure_measure(measure);
-        measure_chunk.definition.length = *parsed_length.value;
+        measure_chunk.definition.length = *parsed_length;
         measure_chunk.definition.meter.reset();
         context.last_measure_length_order[measure] = node.source_order;
     } else {

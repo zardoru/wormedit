@@ -1,7 +1,9 @@
 #include <wormedit/core/rational.h>
+#include <wormedit/core/numeric_text.h>
 
 #include <algorithm>
 #include <bit>
+#include <charconv>
 #include <cmath>
 #include <limits>
 #include <numeric>
@@ -14,6 +16,74 @@ constexpr auto maximum_u64 = std::numeric_limits<std::uint64_t>::max();
 constexpr auto two_to_64 = 18446744073709551616.0L;
 static_assert(std::numeric_limits<double>::is_iec559);
 static_assert(sizeof(double) == sizeof(std::uint64_t));
+
+auto decimal_exponent(std::string_view text) -> std::optional<int> {
+    if (!text.empty() && text.front() == '+') {
+        text.remove_prefix(1);
+        if (!text.empty() && text.front() == '-') return std::nullopt;
+    }
+    if (text.empty() || text.front() == '+') return std::nullopt;
+    int exponent{};
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), exponent);
+    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size()) return std::nullopt;
+    return exponent;
+}
+
+struct exact_decimal_mantissa_t {
+    std::uint64_t magnitude{};
+    std::int64_t scale{};
+};
+
+auto decimal_mantissa(std::string_view text) -> std::optional<exact_decimal_mantissa_t> {
+    const auto point = text.find('.');
+    const auto fractional = point == std::string_view::npos ? 0 : text.size() - point - 1;
+    std::int64_t scale = static_cast<std::int64_t>(fractional);
+    // Remove trailing zeros before accumulating, so scaling can cancel them exactly.
+    while (!text.empty() && text.back() == '0') {
+        text.remove_suffix(1);
+        --scale;
+    }
+    std::uint64_t magnitude{};
+    bool digit_seen = scale != static_cast<std::int64_t>(fractional);
+    bool point_seen{};
+    for (const auto character : text) {
+        if (character == '.' && !point_seen) {
+            point_seen = true;
+            continue;
+        }
+        if (character < '0' || character > '9') return std::nullopt;
+        digit_seen = true;
+        const auto digit = static_cast<std::uint64_t>(character - '0');
+        if (magnitude > (maximum_u64 - digit) / 10) return std::nullopt;
+        magnitude = magnitude * 10 + digit;
+    }
+    return digit_seen ? std::optional{exact_decimal_mantissa_t{magnitude, scale}} : std::nullopt;
+}
+
+auto scaled_decimal(exact_decimal_mantissa_t mantissa, bool negative)
+    -> std::optional<signed_rational_t> {
+    auto magnitude = mantissa.magnitude;
+    if (magnitude == 0) return signed_rational_t{0, 1};
+    std::uint64_t denominator{1};
+    for (; mantissa.scale > 0; --mantissa.scale) {
+        const auto common = std::gcd(magnitude, std::uint64_t{10});
+        magnitude /= common;
+        const auto factor = 10 / common;
+        if (denominator > maximum_u64 / factor) return std::nullopt;
+        denominator *= factor;
+    }
+    const auto maximum_signed = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+    const auto limit = maximum_signed + static_cast<std::uint64_t>(negative);
+    for (; mantissa.scale < 0; ++mantissa.scale) {
+        if (magnitude > limit / 10) return std::nullopt;
+        magnitude *= 10;
+    }
+    if (magnitude > limit) return std::nullopt;
+    const auto numerator = negative && magnitude == maximum_signed + 1
+        ? std::numeric_limits<std::int64_t>::min()
+        : static_cast<std::int64_t>(magnitude) * (negative ? -1 : 1);
+    return signed_rational_t{numerator, denominator};
+}
 
 auto normalize(std::uint64_t numerator, std::uint64_t denominator) -> rational_t {
     const auto divisor = std::gcd(numerator, denominator);
@@ -216,6 +286,23 @@ auto best_bounded_approximation(double input, std::uint64_t maximum_denominator,
 }
 
 } // namespace
+
+auto parse_exact_decimal(std::string_view text) -> std::optional<signed_rational_t> {
+    bool negative{};
+    if (!text.empty() && (text.front() == '+' || text.front() == '-')) {
+        negative = text.front() == '-';
+        text.remove_prefix(1);
+    }
+    const auto marker = text.find_first_of("eE");
+    auto mantissa = decimal_mantissa(text.substr(0, marker));
+    if (!mantissa) return std::nullopt;
+    if (marker != std::string_view::npos) {
+        const auto exponent = decimal_exponent(text.substr(marker + 1));
+        if (!exponent) return std::nullopt;
+        mantissa->scale -= *exponent;
+    }
+    return scaled_decimal(*mantissa, negative);
+}
 
 auto rationalize_positive_double(double value, const rationalization_options_t& options)
     -> rationalization_result_t {

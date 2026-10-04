@@ -110,6 +110,11 @@ auto rejects_locked_anchor_snap() -> bool {
 
 } // namespace
 
+TEST_CASE("BPM text parsing accepts exact scientific notation",
+          "[unit][core][bpm-editor][numeric-text]") {
+    CHECK(parse_bpm_text(" 1.00001E+07 ") == signed_rational_t{10'000'100, 1});
+}
+
 TEST_CASE("BPM text parsing is decimal-first and retains a lossless fraction",
           "[unit][core][bpm-editor][text]") {
     CHECK(parse_bpm_text("120") == signed_rational_t{120, 1});

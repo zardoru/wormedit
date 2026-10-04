@@ -3110,22 +3110,22 @@ void apply_compose_viewport_scroll(const wormedit::viewport_scroll_action_t& scr
         status = "The selected difficulty is no longer available.";
         return;
     }
+    const auto downscroll = compose_field_downscroll(
+        *context.input_chart, context.application_state.editor_preferences);
+    // Convert displacement to chart direction before routing it to the viewport or playhead.
+    const auto chart_delta = compose_wheel_scroll_delta(scroll.delta_y_pixels, downscroll);
     if (is_preview_playing(context.application_state)) {
-        // Wheel notches skip by the active snap; scrolling up goes back in time on an upscroll.
-        const auto downscroll = compose_field_downscroll(
-            *context.input_chart, context.application_state.editor_preferences);
-        const auto toward_later = (scroll.delta_y_pixels < 0.0) != downscroll;
+        // Playback uses the same direction, skipping by the active snap.
         status = skip_playing_playhead(context.application_state, *context.input_chart,
                                        context.state.active_snap_denominator,
-                                       playhead_skip_unit_t::snap, toward_later ? 1.0 : -1.0)
+                                       playhead_skip_unit_t::snap, chart_delta > 0.0 ? 1.0 : -1.0)
                      .status;
         return;
     }
-    const auto downscroll = compose_field_downscroll(*context.input_chart, context.application_state.editor_preferences);
     const auto result = dispatch_editor_action(
         context.history, context.state,
         scroll_editor_view_action_t{
-            compose_wheel_scroll_delta(scroll.delta_y_pixels, downscroll),
+            chart_delta,
             compose_cursor_screen_anchor(context.state.viewport_height_pixels, downscroll),
             downscroll ? editor_field_scroll_direction_t::down
                        : editor_field_scroll_direction_t::up});

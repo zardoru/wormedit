@@ -13,6 +13,7 @@
 #include <fstream>
 #include <iterator>
 #include <span>
+#include <source_location>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -608,6 +609,42 @@ TEST_CASE("Native warp timing, notes, and unknown metadata write deterministical
     CHECK(reimported.scrolls.size() == original.scrolls.size());
     CHECK(reimported.speeds.size() == original.speeds.size());
     CHECK(reimported.measures[0].notes.size() == original.measures[0].notes.size());
+}
+
+namespace {
+void expect_scientific_timing(bool condition,
+                              std::source_location source = std::source_location::current()) {
+    INFO("Scientific timing expectation at " << source.line());
+    REQUIRE(condition);
+}
+} // namespace
+
+TEST_CASE("StepMania scientific notation is exact across timing event fields",
+          "[unit][format][stepmania][numeric-text]") {
+    const auto parsed = parse_ssc(
+        "#OFFSET:-1.25e-1;#BPMS:0E+0=1.2E+2;#STOPS:1e0=2.5e-1;"
+        "#DELAYS:2E+0=5E-2;#WARPS:4e0=2E+0;#SCROLLS:0=-1.25E-1;"
+        "#SPEEDS:0=2.5E+0=1.25E-1=1;"
+        "#NOTEDATA:;#STEPSTYPE:dance-single;#NOTES:\n0000\n0000\n0000\n0000\n;");
+    expect_scientific_timing(parsed.song.has_value());
+    expect_scientific_timing(!parsed.has_errors());
+    const auto& chart = parsed.song->charts.front();
+    expect_scientific_timing(chart.beat_zero_audio_offset_seconds == wormedit::signed_rational_t{1, 8});
+    expect_scientific_timing(chart.bpms.size() == 1);
+    expect_scientific_timing(chart.bpms.front().beats_per_minute == wormedit::signed_rational_t{120, 1});
+    expect_scientific_timing(chart.pauses.size() == 2);
+    expect_scientific_timing(chart.pauses[0].duration == wormedit::signed_rational_t{1, 4});
+    expect_scientific_timing(chart.pauses[1].duration == wormedit::signed_rational_t{1, 20});
+    expect_scientific_timing(chart.warps.size() == 1);
+    expect_scientific_timing(chart.scrolls.size() == 1);
+    expect_scientific_timing(chart.scrolls.front().multiplier == wormedit::signed_rational_t{-1, 8});
+    expect_scientific_timing(chart.speeds.size() == 1);
+    expect_scientific_timing(chart.speeds.front().multiplier == wormedit::signed_rational_t{5, 2});
+    expect_scientific_timing(chart.speeds.front().transition_beats == wormedit::rational_t{1, 8});
+    expect_scientific_timing(chart.speeds.front().transition_is_seconds);
+    const auto reimported = roundtrip(*parsed.song, wormedit::stepmania_profile_t::ssc);
+    expect_scientific_timing(reimported.song.has_value());
+    expect_scientific_timing(reimported.song->charts.front().speeds.front().multiplier == chart.speeds.front().multiplier);
 }
 
 TEST_CASE("StepMania empty timing lists and common column mappings are accepted",

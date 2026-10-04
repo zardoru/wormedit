@@ -3446,6 +3446,61 @@ void check_note_placement_preserves_cursor(int mode, bool downscroll) {
 }
 } // namespace
 
+namespace {
+void check_wheel_displacement(bool downscroll, double delta,
+                              WormUiComposeViewportInputKind kind, bool playing) {
+    INFO("downscroll " << downscroll << ", delta " << delta
+         << ", kind " << kind << ", playing " << playing);
+    compose_test_fixture_t fixture{cursor_placement_song()};
+    fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
+    fixture.application.editor_preferences.scroll_directions[0] = downscroll ? 2U : 1U;
+    fixture.project();
+    auto& state = *fixture.interaction;
+    state.viewport_scroll_pixels = 1000.0;
+    state.active_snap_denominator = 4;
+    fixture.application.preview_playhead_absolute_row = 960.0;
+    fixture.application.transport_preview_playing = [playing] { return playing; };
+    std::size_t seeks = 0;
+    fixture.application.transport_seek = [&seeks](std::uint64_t) {
+        ++seeks;
+        return std::string{"Seeked."};
+    };
+    auto action = cursor_placement_action(fixture);
+    action.compose_viewport_input_count = 1;
+    action.compose_viewport_inputs[0] = {.kind = kind, .delta_y = delta,
+        .cursor_x_pixels = 200, .cursor_y_pixels = 300};
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        state, viewport, navigation, fixture.application, fixture.cache, 0.016);
+    const bool forward = (delta > 0.0) != downscroll;
+    if (playing) {
+        expect_compose_test(fixture.application.preview_playhead_absolute_row == (forward ? 1200.0 : 720.0));
+        expect_compose_test(seeks == 1);
+        expect_compose_test(state.viewport_scroll_pixels == 1000.0);
+    } else {
+        expect_compose_test((state.viewport_scroll_pixels > 1000.0) == forward);
+        expect_compose_test(state.viewport_scroll_pixels != 1000.0);
+        expect_compose_test(seeks == 0);
+    }
+    expect_compose_test(fixture.history.undo.empty());
+}
+} // namespace
+
+TEST_CASE("Compose wheel displacement follows the same direction during editing and playback",
+          "[sys][compose][playhead-skip][regression]") {
+    for (const bool downscroll : {false, true}) {
+        for (const double delta : {-1.0, 1.0}) {
+            for (const auto kind : {WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
+                                    WORM_UI_COMPOSE_VIEWPORT_INPUT_SMOOTH_WHEEL}) {
+                for (const bool playing : {false, true}) {
+                    check_wheel_displacement(downscroll, delta, kind, playing);
+                }
+            }
+        }
+    }
+}
+
 TEST_CASE("Pointer note placement preserves the yellow cursor and normal scrolling",
           "[sys][compose][cursor-placement][regression]") {
     check_note_placement_preserves_cursor(0, false);

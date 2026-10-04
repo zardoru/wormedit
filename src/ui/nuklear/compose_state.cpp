@@ -2,6 +2,8 @@
 #include "ui/nuklear/arrow_glyph.h"
 #include "ui/nuklear/theme.h"
 
+#include <wormedit/core/numeric_text.h>
+
 #include <algorithm>
 #include <cmath>
 #include <charconv>
@@ -155,47 +157,19 @@ auto parse_timing_fraction(std::string_view text, bool negative)
     return inline_timing_rational_t{*numerator, *denominator / divisor};
 }
 
-auto parse_timing_decimal(std::string_view text, bool negative)
-    -> std::optional<inline_timing_rational_t> {
-    if (text.empty()) return std::nullopt;
-    const auto point = text.find('.');
-    if (point != std::string_view::npos && text.find('.', point + 1) != std::string_view::npos)
-        return std::nullopt;
-    std::uint64_t magnitude{};
-    std::uint64_t denominator{1};
-    bool saw_digit{};
-    for (std::size_t i = 0; i < text.size(); ++i) {
-        const auto digit = text[i];
-        if (digit == '.') continue;
-        if (digit < '0' || digit > '9') return std::nullopt;
-        saw_digit = true;
-        const auto value = static_cast<std::uint64_t>(digit - '0');
-        if (magnitude > (std::numeric_limits<std::uint64_t>::max() - value) / 10)
-            return std::nullopt;
-        magnitude = magnitude * 10 + value;
-        if (point != std::string_view::npos && i > point) {
-            if (denominator > std::numeric_limits<std::uint64_t>::max() / 10)
-                return std::nullopt;
-            denominator *= 10;
-        }
-    }
-    if (!saw_digit) return std::nullopt;
-    const auto divisor = std::gcd(magnitude, denominator);
-    const auto numerator = signed_timing_magnitude(magnitude / divisor, negative);
-    if (!numerator) return std::nullopt;
-    return inline_timing_rational_t{*numerator, denominator / divisor};
-}
-
 auto parse_timing_scalar(std::string_view text) -> std::optional<inline_timing_rational_t> {
     text = trim_timing_text(text);
+    if (text.find('/') == std::string_view::npos) {
+        const auto parsed = wormedit::parse_exact_decimal(text);
+        if (!parsed) return std::nullopt;
+        return inline_timing_rational_t{parsed->numerator, parsed->denominator};
+    }
     bool negative{};
     if (!text.empty() && (text.front() == '+' || text.front() == '-')) {
         negative = text.front() == '-';
         text.remove_prefix(1);
     }
-    if (text.find('/') != std::string_view::npos)
-        return parse_timing_fraction(text, negative);
-    return parse_timing_decimal(text, negative);
+    return parse_timing_fraction(text, negative);
 }
 
 template <std::size_t N>

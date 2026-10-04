@@ -392,6 +392,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
     target_link_libraries(wormedit_frontend_state_tests
         PRIVATE
+            wormedit::core
             wormedit::ui_frontend
             nlohmann_json::nlohmann_json
             SDL3::SDL3

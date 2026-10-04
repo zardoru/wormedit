@@ -1,6 +1,7 @@
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/measure.h>
 #include <wormedit/core/measure_editor.h>
+#include <wormedit/core/numeric_text.h>
 #include <wormedit/core/timing.h>
 
 #include "wide_math.h"
@@ -259,6 +260,13 @@ auto apply_chart_edit(song_document_t& document, const Edit& edit, bpm_edit_limi
 } // namespace
 
 auto parse_bpm_text(std::string_view text) -> std::optional<signed_rational_t> {
+    const auto begin = text.find_first_not_of(" \t\r\n");
+    if (begin == std::string_view::npos) return std::nullopt;
+    text = text.substr(begin, text.find_last_not_of(" \t\r\n") - begin + 1);
+    if (text.find('/') == std::string_view::npos) {
+        const auto parsed = parse_exact_decimal(text);
+        return parsed && parsed->numerator > 0 ? parsed : std::nullopt;
+    }
     const auto parsed = parse_measure_length(text);
     if (!parsed || parsed.value->numerator >
                        static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {

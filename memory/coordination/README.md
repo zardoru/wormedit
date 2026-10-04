@@ -22,7 +22,8 @@ remains serialized.
 | --- | --- | --- | --- |
 | `/home/zardoru/devel/wormedit-notifications` | `coord/notifications` | T-221, T-222, T-223 | [Notifications](notifications.md) |
 | `/home/zardoru/devel/wormedit-tap-apply` | `coord/tap-apply` | T-239, T-81, T-51 | [Timing](tap-apply.md) |
-| `/home/zardoru/devel/wormedit-audio-notifications` | `coord/audio-notifications` | T-223 N7 audio/decode/waveform | Brief assigned to timing coordinator after T-81 |
+| `/home/zardoru/devel/wormedit-audio-notifications` | `coord/audio-notifications` | T-223 N7 audio/decode/waveform | Dedicated brief in that worktree |
+| `/home/zardoru/devel/wormedit-osutest-load` | `coord/osutest-load` | Real osu!mania import compatibility | Dedicated brief and Sol 6.1 medium coordinator in that worktree |
 
 ## Ownership and scheduling
 
@@ -79,3 +80,16 @@ moves to this third worktree after committing T-81; each worktree keeps its own
 written Sol/Luna task list. Root alone integrates shared main changes. This
 parallel producer cut depends on the integrated sink, with no Compose migration
 dependency; T-223 remains incomplete until all of its slices and gates pass.
+
+New user priority: all eight charts in `/home/zardoru/Documents/charts/osutest/`
+fail the real loader's timing geometry bounds. A fourth isolated worktree and
+Sol 6.1 medium coordinator now audit/fix those limits with a Luna executor once
+the slot becomes available. The user accepts import quantization and considers
+960 divisions per standard measure already very high. Preserve read-only input
+files, use bounded normal resolution, and measure timing error/hold behavior.
+Onset snapping is integrated as `c50e61f`; its integrated build, 25 focused
+system/detector tests and all 122 CTest-isolated event cases pass. A broader
+single-process aggregate event run exposed seven fixture/state-order failures;
+it is not recorded as passing. Standard isolated CTest cases remain passing.
+Metadata/resource and selection producer increment `92ccc16` has an integrated
+Debug build and 52 relevant metadata/transport tests passing.

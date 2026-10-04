@@ -2,7 +2,7 @@
 
 ## T-377 Keep hover tooltips readable inside the application viewport
 
-- **Status:** ready (implementation reviewed; root full app and suite pending)
+- **Status:** done (reviewed implementation and integrated main build/full suite pass; real-window check pending)
 - **Outcome:** Sounds dock and shared tooltips wrap or move inside every edge of the logical application viewport.
 - **Read first:** `src/ui/nuklear/chrome.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/notification_toasts.cpp`, `docs/frontend-event-harness.md`.
 - **Files owned:** Executor: new `src/ui/nuklear/tooltip.h`, new `src/ui/nuklear/tooltip.cpp`, `src/ui/nuklear/chrome.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_layers_panel.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/metadata_difficulty_section.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/metadata_audio_section.cpp`, `src/ui/nuklear/notification_toasts.cpp`, `src/ui/nuklear/compose_note_menu.cpp`, `src/ui/nuklear/compose_panel.cpp`. Coordinator: `tests/ui/nuklear_event_harness.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`, new `tests/ui/nuklear_tooltip_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `docs/chart-editor-plan/tasks/tooltip-bounds.md`, `docs/chart-editor-plan/tasks.md`, new `memory/coordination/tooltip-bounds.md`.
@@ -21,3 +21,5 @@
 - **Ownership transfer (2026-10-04, before coordinator source edits):** Executor releases all listed tooltip source/header files to the coordinator after the initial implementation, namespace fixes, and direct notification viewport seam. The coordinator now owns all T-377 files for verification, necessary fixes, and review. Executor moves to the separate T-378 hidden-history worktree under root coordination; no concurrent tooltip source edits remain.
 
 - **Review evidence:** `memory/coordination/tooltip-bounds.md` records native baseline overflow, seven actual command/hover cases, 140 isolated frontend cases, read-only dependency reuse, complexity review, and explicitly pending root full app/suite and visual gates.
+
+- **Root integration verification (2026-10-04):** integrated as `34fdf42`; full application build and 2,255/2,255 CTest cases pass with T-376/T-378, including 144 isolated event-harness cases. Actual Sounds hover and six tooltip geometry cases also pass in the independent focused main run. Logs: `/tmp/tooltip-bounds-review/main-build.log`, `main-focused.log`, and `/tmp/hidden-history-validation/main-suite.log`. Required real-window verification remains pending under the recorded sandbox approval block.

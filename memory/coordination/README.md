@@ -26,6 +26,9 @@ remains serialized.
 | `/home/zardoru/devel/wormedit-osutest-load` | `coord/osutest-playback` | Real osu!mania import and partial-measure playback, integrated | [Playback](osutest-playback.md) |
 | `/home/zardoru/devel/wormedit-osutest-cursor` | `coord/osutest-cursor` | Exact fractional cursor frame conversion, integrated | [Cursor](osutest-cursor.md) |
 | `/home/zardoru/devel/wormedit-notification-ux` | `coord/notification-ux` | T-374 badge ownership hardening, T-375 transient feedback, integrated | [Notification UX](notification-ux.md); original click reproduction pending |
+| `/home/zardoru/devel/wormedit-playback-tail` | `coord/playback-tail` | T-376 legitimate audio-tail navigation, integrated | [Playback tail](playback-tail.md) |
+| `/home/zardoru/devel/wormedit-tooltip-bounds` | `coord/tooltip-bounds` | T-377 viewport tooltip placement and wrapping, integrated | [Tooltip bounds](tooltip-bounds.md) |
+| `/home/zardoru/devel/wormedit-hidden-history` | `fix/hidden-history` | T-378 hidden history input capture, integrated | [Hidden history](hidden-history.md); Luna under root review |
 
 The completed audio worktree is now reused on `coord/compose-notifications`
 at `b57b47f` for the remaining Compose action producers; its original
@@ -205,3 +208,32 @@ event-harness cases (`root-ux-main-build.log`, `root-ux-main-suite.log`). The
 original middle-canvas click is unreproduced; T-374 is hardening with manual
 reproduction pending, not a proved root-cause fix. Required manual visual gates
 remain pending under the established Xvfb block.
+
+## Playback tail and tooltip follow-up
+
+Playback tail `d64c048` retains the final editable row after chart timing ends,
+allowing backward seeks while decoded music continues naturally. Original Hybris
+audio lasts 165.866485 seconds; seven charts end at 157.215 seconds and beginner
+at 157.597 seconds. Core inverse timing bounds remain unchanged. Root main build
+and three focused consumer/music/event cases pass. Final full suite will include
+the parallel tooltip batch. The Sol coordinator reuses the existing Luna for the
+separate tooltip worktree after releasing playback source ownership because
+additional agent launches reached the session thread limit.
+
+## Final follow-up checkpoint
+
+Root accepted tooltips `34fdf42` and Luna hidden-history `f17d4f4` after review.
+The user-provided gdb diagnosis is confirmed: Nuklear X hides history without
+setting closed, while the old model and hit bounds continued to claim input.
+The producer now publishes close for hidden windows, both retained contexts
+close, and hidden/closed/absent windows cannot claim new input. Real X down/up,
+close/reopen, visible capture and stale-hidden motion/wheel cases pass. This
+resolves the confirmed invisible-rectangle input problem; the earlier isolated
+OPEN_HISTORY middle-click observation remains distinct from that diagnosis.
+Main full application build and **2,255/2,255** CTest cases pass, including
+**144** isolated event-harness cases (`/tmp/hidden-history-validation/main-suite.log`,
+169.16 seconds). Independent configured main complexity checks pass. Tooltip
+geometry and actual Sounds hover pass on main; eight real charts retain natural
+audio tails and backward navigation. Required real-window gates remain pending
+under the established automatic sandbox-approval rejection. Worktrees are
+retained; root did not push or restart the user app.

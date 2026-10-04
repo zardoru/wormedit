@@ -2,7 +2,7 @@
 
 ## T-376 Stop completed preview and preserve navigation through audio tails
 
-- **Status:** done (focused implementation verified; root integration and real-window check pending)
+- **Status:** done (reviewed implementation and integrated main build/full suite pass; real-window check pending)
 - **Outcome:** Imported charts retain legitimate trailing audio, stop at natural EOF, and allow Compose navigation after the final chart row without unavailable-playhead warnings.
 - **Read first:** `src/sys/sdl_preview_output.cpp`, `src/audio/preview_session.cpp`, `src/sys/chart_preview_state.cpp`, `src/sys/compose_playhead_cursor.h`, `docs/frontend-event-harness.md`.
 - **Files owned:** Executor: `src/sys/sdl_preview_output.cpp`, `src/sys/sdl_preview_output.h`, `src/sys/chart_preview_state.cpp`, `src/sys/chart_preview_state.h`, `src/sys/compose_playhead_cursor.h`, `src/sys/compose_bookmark_commands.cpp`, `src/sys/inline_preview_cursor.h`, `src/audio/preview_session.cpp`, `include/wormedit/audio/preview_session.h`, `tests/sys/sdl_preview_output_tests.cpp`, `tests/core/audio_preview_session_tests.cpp`. Coordinator: `src/sys/audio_transport_frame.cpp`, `src/sys/audio_transport_frame.h`, `tests/sys/audio_transport_notification_tests.cpp`, `docs/chart-editor-plan/tasks/playback-tail.md`, `docs/chart-editor-plan/tasks.md`, `memory/coordination/playback-tail.md`, `src/sys/main.cpp`, `src/sys/compose_area_actions.cpp`, `tests/sys/compose_playhead_cursor_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/CMakeLists.txt`.
@@ -19,3 +19,5 @@
 - **Supporting ownership approval (2026-10-04, before edits):** Coordinator owns `src/sys/audio_transport_frame.cpp`, `src/sys/audio_transport_frame.h`, and `tests/sys/audio_transport_notification_tests.cpp` to repair and test UI-only bounded tail row projection and inverse arithmetic overflow. Executor retains audio lifecycle owners exclusively.
 
 - **Review evidence:** `memory/coordination/playback-tail.md` records actual eight-chart runtime reproduction, preserved 165.866 s music tail, backward-seek recovery, natural EOF, focused tests, and pending root integration/real-window verification. No preview lifecycle source change was warranted.
+
+- **Final root checkpoint (2026-10-04):** main `d64c048` and evidence `6315a69` are integrated; full application build and 2,255/2,255 CTest cases pass with T-377/T-378, including 144 isolated event-harness cases. Eight real-chart main runtime probes preserve natural music EOF and allow backward tail seeks; see `memory/coordination/playback-tail.md`. Final suite: `/tmp/hidden-history-validation/main-suite.log`. Real-window verification remains pending under the recorded sandbox approval block.

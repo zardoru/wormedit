@@ -22,3 +22,12 @@ real balanced title-bar X clicks, stale-model raw-hidden motion and wheel cases,
 visible positive capture, absent-window fallthrough, and reopen. The local
 production event-harness relink passes 23 assertions in 3 cases; docs check and
 clang-tidy pass. Main integration remains with root.
+
+## Root integration
+
+Accepted as `f17d4f4` after source review and an independent 23-assertion/3-case
+production harness run. The final main application builds and all 2,255/2,255
+CTest cases pass, including 144 isolated event-harness cases. Main configured
+clang-tidy passes without actionable diagnostics. Logs are in
+`/tmp/hidden-history-validation/`: `main-build.log`, `main-tidy.log`,
+`main-suite.log`. The user app and source charts remain untouched.

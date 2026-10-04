@@ -4,14 +4,17 @@
 
 ## Immediate work
 
-Latest integrated checkpoint (2026-10-04): notification UX `3feaced` follows the
-completed timing/notification producer/import/playback batches. Root Debug build
-and all 2,242/2,242 CTest cases pass, including 133 isolated event-harness cases
-(`root-ux-main-suite.log`). T-375 routine transport/audition/navigation feedback
-expires after four seconds outside history; important results/errors retain history.
-T-374 adds current visible badge bounds with tested badge/View positives and blank
-canvas negatives, but the original middle-click cause remains unreproduced. Manual
-real-window verification remains unavailable under the recorded Xvfb approval block.
+Latest integrated checkpoint (2026-10-04): playback tail `d64c048`, viewport
+tooltips `34fdf42`, and hidden Notifications history `f17d4f4` are reviewed and
+integrated. Root full application build and all 2,255/2,255 CTest cases pass,
+including 144 isolated event-harness cases
+(`/tmp/hidden-history-validation/main-suite.log`). T-376 retains legitimate
+music tails and backward navigation; T-377 keeps shared hover text inside the
+logical viewport. T-378 fixes confirmed hidden-window input capture with real X
+close/reopen and stale-hidden motion/wheel regressions. T-375 routine feedback
+expires after four seconds outside history. The earlier T-374 middle-click
+OPEN_HISTORY observation remains unreproduced; its badge hardening is retained.
+Required real-window checks remain pending under the recorded Xvfb approval block.
 The following pilot entries retain earlier integration evidence.
 
 Worktree coordination pilot (2026-10-04): the user requests GPT-6.1 Sol medium

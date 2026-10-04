@@ -58,3 +58,13 @@ Root alone integrates the change and verifies the full app build and full suite.
 Real-window visual verification remains pending because the prior Xvfb request
 was automatically rejected by sandbox approval; no retry or desktop window was
 attempted.
+
+## Final main verification
+
+Root integrated `34fdf42`, preserving both the playback-tail and tooltip tests.
+The main application builds, and the independent 32-case focused run passes,
+including actual Sounds hover and all six geometry cases. With T-378 integrated
+as `f17d4f4`, the full suite passes 2,255/2,255, including 144 isolated
+event-harness cases. Logs: `/tmp/tooltip-bounds-review/main-build.log`,
+`main-focused.log`, and `/tmp/hidden-history-validation/main-suite.log`.
+The real-window gate remains pending under the established approval block.

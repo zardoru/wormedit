@@ -152,13 +152,14 @@ void start_audition_source_probes(audio::decoded_source_registry_t& sources,
 }
 
 auto drain_audition_probe_failures(audio::decoded_source_registry_t& sources)
-    -> std::optional<std::string> {
+    -> std::optional<notification_post_t> {
     const auto failures = sources.take_probe_failures();
     if (failures.empty()) return std::nullopt;
     auto line = std::to_string(failures.size()) + " audio asset(s) could not be opened (" +
                 failures.front().path.filename().string() +
                 (failures.size() > 1 ? ", ..." : "") + "): " + failures.front().message;
-    return line;
+    return notification_post_t{notification_severity_t::error,
+                               notification_source_t::audio, std::move(line)};
 }
 
 auto first_use_asset_order(const song_document_t& document) -> std::vector<asset_id_t> {
@@ -354,17 +355,20 @@ auto grouped_count(std::size_t value) -> std::string {
 
 } // namespace
 
-auto resident_sample_loader_t::drain_progress() -> std::optional<std::string> {
+auto resident_sample_loader_t::drain_progress() -> std::optional<notification_post_t> {
     const auto current = progress();
     if (current.total == 0) return std::nullopt;
     const auto shown = current.running ? current.done : current.total;
     if (shown == last_progress_) return std::nullopt;
     last_progress_ = shown;
     if (current.running) {
-        return "Loading keysounds " + grouped_count(current.done) + "/" +
-               grouped_count(current.total);
+        return notification_post_t{notification_severity_t::hint, notification_source_t::audio,
+                                   "Loading keysounds " + grouped_count(current.done) + "/" +
+                                       grouped_count(current.total)};
     }
-    return "Loaded " + grouped_count(current.total) + " keysound(s) into memory.";
+    return notification_post_t{notification_severity_t::hint, notification_source_t::audio,
+                               "Loaded " + grouped_count(current.total) +
+                                   " keysound(s) into memory."};
 }
 
 auto resident_sample_loader_t::progress() const -> progress_t {
@@ -372,7 +376,7 @@ auto resident_sample_loader_t::progress() const -> progress_t {
     return {state_->total.load(), state_->done.load(), state_->running.load()};
 }
 
-auto resident_sample_loader_t::drain_report() -> std::optional<std::string> {
+auto resident_sample_loader_t::drain_report() -> std::optional<notification_post_t> {
     if (!state_ || state_->running.load() || state_->reported.exchange(true)) return std::nullopt;
     const auto over_budget = state_->over_budget.load();
     const auto failed = state_->failed.load();
@@ -386,7 +390,8 @@ auto resident_sample_loader_t::drain_report() -> std::optional<std::string> {
         if (!line.empty()) line += " ";
         line += std::to_string(failed) + " keysound(s) could not be decoded and keep streaming.";
     }
-    return line;
+    return notification_post_t{notification_severity_t::warning,
+                               notification_source_t::audio, std::move(line)};
 }
 
 void resident_sample_loader_t::start(const song_document_t& document,

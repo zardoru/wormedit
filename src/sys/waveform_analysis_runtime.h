@@ -12,6 +12,7 @@
 #include <wormedit/core/document.h>
 #include <wormedit/core/workspace.h>
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/notifications.h>
 #include <wormedit/core/task_graph.h>
 
 #include <memory>
@@ -20,11 +21,17 @@
 
 namespace wormedit::sys::runtime {
 
+// Completion metadata is determined from the native result, never message text.
+[[nodiscard]] auto waveform_completion_notification(
+    const audio::waveform_job_completion_t& completed, const char* failure_message = nullptr)
+    -> std::optional<notification_post_t>;
+
 // Owns the analysis caches and jobs used by the audio and Compose waveform views.
 class waveform_analysis_t {
 public:
     explicit waveform_analysis_t(audio::decoded_source_registry_t& sources,
-        audio::decoded_block_cache_t* preview_blocks = nullptr);
+        audio::decoded_block_cache_t* preview_blocks = nullptr,
+        std::optional<notification_sink_t> sink = std::nullopt);
 
     ~waveform_analysis_t();
 
@@ -34,8 +41,7 @@ public:
     // Request and collect the workspace and selected BMSON channel analyses.
     void service(const song_document_t& document, const workspace_controller_t& workspace,
                  compose_scene_cache_t& compose_scene_cache,
-                 const editor_interaction_state_t* compose_interaction_state,
-                 std::string& status);
+                 const editor_interaction_state_t* compose_interaction_state);
 
     void service_compose_detail(std::optional<asset_id_t> asset,
                                 std::optional<audio::aligned_waveform_window_t> window,
@@ -78,6 +84,11 @@ public:
     }
 
 private:
+    void request_selected_waveform(std::optional<asset_id_t> asset,
+        audio::waveform_job_t& job, std::optional<asset_id_t>& accepted,
+        std::optional<asset_id_t>& attempted, const char* failure_message);
+    void report_waveform_completion(const audio::waveform_job_completion_t& completed,
+                                    const char* failure_message = nullptr);
     void service_idle_detail(std::optional<asset_id_t> asset,
         std::optional<audio::aligned_waveform_window_t> window);
     [[nodiscard]] auto retained_detail_range() const
@@ -90,13 +101,11 @@ private:
     void borrow_preview_blocks(const audio::waveform_key_t& key, std::stop_token stop);
     bool playing_detail_{};
     audio::aligned_waveform_style_t detail_style_;
-    void service_workspace_waveform(const workspace_controller_t& workspace,
-                                   std::string& status);
+    void service_workspace_waveform(const workspace_controller_t& workspace);
     void service_channel_waveform(const song_document_t& document,
                                   const workspace_controller_t& workspace,
                                   compose_scene_cache_t& compose_scene_cache,
-                                  const editor_interaction_state_t* compose_interaction_state,
-                                  std::string& status);
+                                  const editor_interaction_state_t* compose_interaction_state);
     [[nodiscard]] auto selected_channel_asset(
         const song_document_t& document, const workspace_controller_t& workspace,
         compose_scene_cache_t& compose_scene_cache,
@@ -105,6 +114,9 @@ private:
 
     audio::decoded_source_registry_t& sources_;
     audio::decoded_block_cache_t* preview_blocks_{};
+    std::optional<notification_sink_t> sink_;
+    std::optional<asset_id_t> attempted_waveform_asset_;
+    std::optional<asset_id_t> attempted_channel_asset_;
     audio::decoded_block_cache_t coarse_blocks_;
     audio::decoded_block_cache_t decoded_blocks_{
         {.maximum_bytes = 4U * 1024U * 1024U, .maximum_frames = 524288,

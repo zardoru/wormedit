@@ -73,17 +73,29 @@ TEST_CASE("relative audio assets resolve from the opened chart directory",
 #include <chrono>
 #include <mutex>
 #include <thread>
+#include <source_location>
+
+namespace {
+template <typename T>
+void expect_registration(const T& value,
+    std::source_location where = std::source_location::current()) {
+    INFO("Registration check at " << where.line());
+    REQUIRE(static_cast<bool>(value));
+}
+}
 
 namespace {
 void check_background_probe_results(wormedit::audio::decoded_source_registry_t& sources) {
-    CHECK(sources.binding(wormedit::asset_id_t{5}));
-    CHECK_FALSE(sources.binding(wormedit::asset_id_t{6}));
-    CHECK(sources.open_decoder_count() == 0);
+    expect_registration(sources.binding(wormedit::asset_id_t{5}));
+    expect_registration(!(sources.binding(wormedit::asset_id_t{6})));
+    expect_registration(sources.open_decoder_count() == 0);
 
     const auto reported = wormedit::sys::drain_audition_probe_failures(sources);
-    REQUIRE(reported.has_value());
-    CHECK(reported->find("does-not-exist.ogg") != std::string::npos);
-    CHECK_FALSE(wormedit::sys::drain_audition_probe_failures(sources).has_value());
+    expect_registration(reported.has_value());
+    expect_registration(reported->severity == wormedit::notification_severity_t::error);
+    expect_registration(reported->source == wormedit::notification_source_t::audio);
+    expect_registration(reported->message.find("does-not-exist.ogg") != std::string::npos);
+    expect_registration(!(wormedit::sys::drain_audition_probe_failures(sources).has_value()));
 }
 } // namespace
 
@@ -230,35 +242,37 @@ TEST_CASE("the resident loader decodes keysounds once and rebinds them on reconc
         while (loader.progress().running && std::chrono::steady_clock::now() < deadline) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
-        REQUIRE_FALSE(loader.progress().running);
+        expect_registration(!(loader.progress().running));
     };
 
-    REQUIRE(reconcile().has_value());
+    expect_registration(reconcile().has_value());
     wait();
     sources.await_pending();
     const auto binding = sources.binding(wormedit::asset_id_t{5});
-    REQUIRE(binding.has_value());
-    CHECK(store.snapshot()->find(binding->source) != nullptr);
-    CHECK(store.stats().decode_count == 1);
-    CHECK(loader.progress().done == 1);
+    expect_registration(binding.has_value());
+    expect_registration(store.snapshot()->find(binding->source) != nullptr);
+    expect_registration(store.stats().decode_count == 1);
+    expect_registration(loader.progress().done == 1);
     const auto progress = loader.drain_progress();
-    REQUIRE(progress.has_value());
-    CHECK(*progress == "Loaded 1 keysound(s) into memory.");
-    CHECK_FALSE(loader.drain_progress().has_value());
+    expect_registration(progress.has_value());
+    expect_registration(progress->severity == wormedit::notification_severity_t::hint);
+    expect_registration(progress->source == wormedit::notification_source_t::audio);
+    expect_registration(progress->message == "Loaded 1 keysound(s) into memory.");
+    expect_registration(!(loader.drain_progress().has_value()));
 
     // A new inventory entry rebinds the unchanged keysound without decoding it again.
     document.audio_assets.push_back({.id = wormedit::asset_id_t{7},
                                      .source_path = "keysound-e4.ogg"});
-    REQUIRE(reconcile().has_value());
+    expect_registration(reconcile().has_value());
     wait();
     sources.await_pending();
     const auto rebound = sources.binding(wormedit::asset_id_t{5});
-    REQUIRE(rebound.has_value());
-    CHECK(rebound->source != binding->source);
-    CHECK(store.snapshot()->find(rebound->source) != nullptr);
-    CHECK(store.snapshot()->find(binding->source) == nullptr);
-    CHECK(store.snapshot()->size() == 2);
-    CHECK(store.stats().decode_count == 2);
+    expect_registration(rebound.has_value());
+    expect_registration(rebound->source != binding->source);
+    expect_registration(store.snapshot()->find(rebound->source) != nullptr);
+    expect_registration(store.snapshot()->find(binding->source) == nullptr);
+    expect_registration(store.snapshot()->size() == 2);
+    expect_registration(store.stats().decode_count == 2);
 }
 
 TEST_CASE("long sources get their head decoded into the block cache instead of going resident",

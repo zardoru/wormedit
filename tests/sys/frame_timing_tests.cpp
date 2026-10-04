@@ -469,19 +469,24 @@ TEST_CASE("Idle Compose timing projection does not build a measure index", "[sys
 TEST_CASE("Waveform runtime reports decoder failures instead of silently losing the waveform",
           "[sys][waveform-projection]") {
     audio::decoded_source_registry_t sources;
-    runtime::waveform_analysis_t waveform(sources);
+    notification_center_t center;
+    notification_sink_t sink{center};
+    runtime::waveform_analysis_t waveform(sources, nullptr, sink);
     workspace_controller_t workspace;
     workspace.transport.audio_asset = asset_id_t{42};
     compose_scene_cache_t cache;
     song_document_t document;
-    std::string status;
-    waveform.service(document, workspace, cache, nullptr, status);
+    waveform.service(document, workspace, cache, nullptr);
     for (std::size_t attempt = 0; attempt < 200 && waveform.waveform_job().busy(); ++attempt) {
         SDL_Delay(5);
-        waveform.service(document, workspace, cache, nullptr, status);
+        waveform.service(document, workspace, cache, nullptr);
     }
-    REQUIRE_FALSE(waveform.waveform_job().busy());
-    CHECK(status == "Waveform analysis failed: the audio source is unavailable.");
+    expect_compose_test(!waveform.waveform_job().busy());
+    center.drain_inbox(std::chrono::seconds{1});
+    const auto notifications = center.snapshot(10);
+    expect_compose_test(notifications.size() == 1);
+    expect_compose_test(notifications.front().message == "Waveform analysis failed: the audio source is unavailable.");
+    expect_compose_test(notifications.front().severity == notification_severity_t::error);
 }
 namespace {
 auto overview_analysis(float peak) -> audio::waveform_analysis_result_t {

@@ -239,6 +239,8 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
 
     if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         add_executable(wormedit_sdl_audio_tests
+            sys/audio_transport_notification_tests.cpp
+            ../src/sys/audio_transport_frame.cpp
             sys/sdl_audition_output_tests.cpp
             sys/sdl_preview_output_tests.cpp
             ../src/sys/chart_preview_state.cpp
@@ -626,13 +628,16 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/application_defaults.cpp
             ../src/sys/waveform_view_projection.cpp
             ../src/sys/waveform_analysis_runtime.cpp
+            ../src/sys/audio_source_registration.cpp
+            sys/audio_notification_tests.cpp
             ../src/sys/bmson_waveform_projection.cpp
             ../src/sys/compose_input.cpp
             ../src/sys/compose_minimap_navigation.cpp
             ../src/sys/compose_bookmark_commands.cpp
             ../src/sys/compose_playhead_skip.cpp
             ../src/sys/compose_bgm_bar.cpp)
-        target_compile_definitions(wormedit_frame_timing_tests PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1)
+        target_compile_definitions(wormedit_frame_timing_tests PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1
+            WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
         target_link_libraries(wormedit_frame_timing_tests PRIVATE wormedit::audio_decoder)
     endif()
     target_compile_definitions(wormedit_frame_timing_tests PRIVATE

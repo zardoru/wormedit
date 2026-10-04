@@ -6,6 +6,7 @@
 #include <wormedit/audio/source_registry.h>
 #include <wormedit/audio/preview_bridge.h>
 #include <wormedit/core/document.h>
+#include <wormedit/core/notifications.h>
 #include <wormedit/core/task_graph.h>
 
 #include <cstddef>
@@ -46,7 +47,7 @@ void start_audition_source_probes(audio::decoded_source_registry_t& sources,
 // Drains finished probe failures (each asset is reported once) into one status line;
 // returns nullopt when there is nothing new to report.
 [[nodiscard]] auto drain_audition_probe_failures(audio::decoded_source_registry_t& sources)
-    -> std::optional<std::string>;
+    -> std::optional<notification_post_t>;
 
 // Assets in the order the chart first plays them (notes and BGM events, by measure
 // then row), followed by assets the chart never references, in document order.
@@ -87,10 +88,10 @@ class resident_sample_loader_t {
     [[nodiscard]] auto progress() const -> progress_t;
     // One status line for samples that stayed on the streaming path (over budget or
     // failed to decode); nullopt when there is nothing new.
-    [[nodiscard]] auto drain_report() -> std::optional<std::string>;
+    [[nodiscard]] auto drain_report() -> std::optional<notification_post_t>;
     // "Loading keysounds 312/1,024" while a run is active and again when it ends;
     // nullopt unless the displayed count changed since the last call.
-    [[nodiscard]] auto drain_progress() -> std::optional<std::string>;
+    [[nodiscard]] auto drain_progress() -> std::optional<notification_post_t>;
 
     struct run_state_t;
 

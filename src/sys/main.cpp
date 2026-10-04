@@ -2208,12 +2208,15 @@ auto can_offer_audio_project_drop(bool session_loaded, bool fresh_blank_project,
 // playback and the waveform see them without a save or reload.
 void reconcile_audition_sources_after_edit(
     const wormedit::sys::audition_source_reconciliation_context_t& reconciliation,
-    std::uint64_t revision, std::uint64_t& reconciled_revision, std::string& status) {
+    std::uint64_t revision, std::uint64_t& reconciled_revision,
+    const wormedit::notification_sink_t& notifications) {
     if (revision == reconciled_revision) return;
     reconciled_revision = revision;
     const auto unavailable = wormedit::sys::reconcile_audition_sources(reconciliation, true);
     if (unavailable && *unavailable != 0) {
-        status = std::to_string(*unavailable) + " audio asset(s) are unavailable for preview.";
+        notifications.post(wormedit::notification_severity_t::warning,
+            wormedit::notification_source_t::audio,
+            std::to_string(*unavailable) + " audio asset(s) are unavailable for preview.");
     }
 }
 #endif
@@ -3795,7 +3798,7 @@ int main(int argc, char** argv) {
     wormedit::sys::sdl_audition_output_t audition_output{audition_session};
     wormedit::audio::decoded_block_cache_t preview_cache{
         wormedit::audio::preview_block_cache_limits()};
-    wormedit::sys::runtime::waveform_analysis_t waveform_runtime{audition_sources, &preview_cache};
+    wormedit::sys::runtime::waveform_analysis_t waveform_runtime{audition_sources, &preview_cache, notification_sink};
     wormedit::audio::transport_t preview_transport{preview_cache};
     wormedit::audio::preview_transport_bridge_t preview_bridge{preview_transport};
     wormedit::audio::preview_session_t preview_session{audition_sources, preview_transport,
@@ -4077,24 +4080,24 @@ int main(int argc, char** argv) {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::audio_service);
         reconcile_audition_sources_after_edit(audition_reconciliation, history.document.revision,
-                                              audition_reconciled_revision, status);
+                                              audition_reconciled_revision, notification_sink);
         if (const auto failed = wormedit::sys::drain_audition_probe_failures(audition_sources)) {
-            status = *failed;
+            notification_sink.post(*failed);
         }
         if (const auto streaming = resident_loader.drain_report()) {
-            status = *streaming;
+            notification_sink.post(*streaming);
         }
         if (const auto loading = resident_loader.drain_progress()) {
-            status = *loading;
+            notification_sink.post(*loading);
         }
         wormedit::sys::service_audio_transport_frame(
             history.document, workspace, preview_state, preview_session,
             audition_output, preview_output,
-            application_command_state.preview_playhead_absolute_row, status);
+            application_command_state.preview_playhead_absolute_row, notification_sink);
         wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
         waveform_runtime.service(
             history.document, workspace, compose_scene_cache,
-            compose_interaction_state ? &*compose_interaction_state : nullptr, status);
+            compose_interaction_state ? &*compose_interaction_state : nullptr);
         compose_scene_cache.fit_waveform = waveform_runtime.waveform_analysis();
         compose_scene_cache.fit_waveform_asset = waveform_runtime.waveform_asset();
 #endif

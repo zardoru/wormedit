@@ -18,15 +18,22 @@ auto waveform_failure_message(audio::waveform_analysis_status_t status) -> const
     case decode_failed: return "Waveform analysis failed while decoding the audio.";
     case analysis_cache_capacity_exceeded: return "Waveform analysis failed: the waveform cache is full.";
     case invalid_request: return "Waveform analysis failed: the analysis range is invalid.";
-    case cancelled: return "Waveform analysis was cancelled.";
+    case cancelled: return "";
     default: return "Waveform analysis returned no waveform.";
     }
+}
+auto waveform_source_recovered(std::optional<asset_id_t> asset,
+    const std::shared_ptr<const audio::waveform_analysis_result_t>& analysis,
+    const audio::decoded_source_registry_t& sources) -> bool {
+    return asset && analysis && !analysis->waveform &&
+           analysis->status == audio::waveform_analysis_status_t::decoder_unavailable &&
+           sources.binding(*asset).has_value();
 }
 } // namespace
 
 waveform_analysis_t::waveform_analysis_t(audio::decoded_source_registry_t& sources,
-    audio::decoded_block_cache_t* preview_blocks)
-    : sources_(sources), preview_blocks_(preview_blocks),
+    audio::decoded_block_cache_t* preview_blocks, std::optional<notification_sink_t> sink)
+    : sources_(sources), preview_blocks_(preview_blocks), sink_(std::move(sink)),
       waveform_job_(sources_, coarse_blocks_, waveform_cache_, scheduler_),
       channel_waveform_job_(sources_, coarse_blocks_, waveform_cache_, scheduler_),
       detail_job_(sources_, decoded_blocks_, waveform_cache_, scheduler_) {}
@@ -96,6 +103,8 @@ void waveform_analysis_t::reset_sources() {
     waveform_job_asset_.reset();
     waveform_analysis_.reset();
     channel_waveform_job_.cancel();
+    attempted_waveform_asset_.reset();
+    attempted_channel_asset_.reset();
     channel_waveform_job_asset_.reset();
     channel_waveform_analysis_.reset();
     detail_job_.cancel();
@@ -112,40 +121,64 @@ void waveform_analysis_t::reset_sources() {
 void waveform_analysis_t::service(const song_document_t& document,
                                   const workspace_controller_t& workspace,
                                   compose_scene_cache_t& compose_scene_cache,
-                                  const editor_interaction_state_t* compose_interaction_state,
-                                  std::string& status) {
-    service_workspace_waveform(workspace, status);
+                                  const editor_interaction_state_t* compose_interaction_state) {
+    service_workspace_waveform(workspace);
     service_channel_waveform(document, workspace, compose_scene_cache,
-                             compose_interaction_state, status);
+                             compose_interaction_state);
 }
 
-void waveform_analysis_t::service_workspace_waveform(
-    const workspace_controller_t& workspace, std::string& status) {
+void waveform_analysis_t::request_selected_waveform(std::optional<asset_id_t> asset,
+    audio::waveform_job_t& job, std::optional<asset_id_t>& accepted,
+    std::optional<asset_id_t>& attempted, const char* failure_message) {
+    if (attempted != asset) attempted.reset();
+    if (!asset || attempted == asset) return;
+    const auto started = job.request(*asset, 256);
+    if (started) {
+        accepted = asset;
+        return;
+    }
+    if (started.status == audio::waveform_job_start_status_t::capacity_exceeded) return;
+    attempted = asset;
+    if (sink_) sink_->post(notification_severity_t::error, notification_source_t::audio,
+        started.message.empty() ? failure_message : started.message);
+}
+
+auto waveform_completion_notification(const audio::waveform_job_completion_t& completed,
+                                      const char* failure_message) -> std::optional<notification_post_t> {
+    if (completed.task_error) {
+        if (completed.task_error->code == task_error_code_t::cancelled) return std::nullopt;
+        return notification_post_t{notification_severity_t::error, notification_source_t::audio,
+                                   completed.task_error->message};
+    }
+    if (!completed.analysis || completed.analysis->waveform ||
+        completed.analysis->status == audio::waveform_analysis_status_t::cancelled) return std::nullopt;
+    return notification_post_t{notification_severity_t::error, notification_source_t::audio,
+        failure_message ? failure_message : waveform_failure_message(completed.analysis->status)};
+}
+
+void waveform_analysis_t::report_waveform_completion(
+    const audio::waveform_job_completion_t& completed, const char* failure_message) {
+    if (!sink_) return;
+    if (const auto notification = waveform_completion_notification(completed, failure_message))
+        sink_->post(*notification);
+}
+
+void waveform_analysis_t::service_workspace_waveform(const workspace_controller_t& workspace) {
+    if (waveform_source_recovered(workspace.transport.audio_asset, waveform_analysis_, sources_))
+        waveform_job_asset_.reset();
+    if (attempted_waveform_asset_ != workspace.transport.audio_asset) attempted_waveform_asset_.reset();
     if (workspace.transport.audio_asset != waveform_job_asset_) {
         waveform_job_.cancel();
         waveform_job_asset_.reset();
         waveform_analysis_.reset();
-        if (workspace.transport.audio_asset) {
-            const auto started = waveform_job_.request(*workspace.transport.audio_asset, 256);
-            if (started) {
-                waveform_job_asset_ = workspace.transport.audio_asset;
-            } else if (started.status != audio::waveform_job_start_status_t::capacity_exceeded) {
-                status = started.message.empty() ? "Waveform analysis could not start."
-                                                 : started.message;
-            }
-        }
+        request_selected_waveform(workspace.transport.audio_asset, waveform_job_,
+            waveform_job_asset_, attempted_waveform_asset_, "Waveform analysis could not start.");
     }
     if (const auto completed = waveform_job_.poll();
         completed && waveform_job_asset_ == completed->asset) {
-        if (*completed) {
-            waveform_analysis_ = completed->analysis;
-            if (!waveform_analysis_->waveform)
-                status = waveform_failure_message(waveform_analysis_->status);
-        } else if (completed->task_error) {
-            status = completed->task_error->message;
-        }
+        if (*completed) waveform_analysis_ = completed->analysis;
+        report_waveform_completion(*completed);
     }
-
 }
 
 auto waveform_analysis_t::retained_detail_range() const
@@ -275,31 +308,24 @@ auto waveform_analysis_t::selected_channel_asset(
 void waveform_analysis_t::service_channel_waveform(
     const song_document_t& document, const workspace_controller_t& workspace,
     compose_scene_cache_t& compose_scene_cache,
-    const editor_interaction_state_t* compose_interaction_state, std::string& status) {
+    const editor_interaction_state_t* compose_interaction_state) {
     const auto selected_channel_waveform_asset = selected_channel_asset(
         document, workspace, compose_scene_cache, compose_interaction_state);
+    if (waveform_source_recovered(selected_channel_waveform_asset, channel_waveform_analysis_, sources_))
+        channel_waveform_job_asset_.reset();
+    if (attempted_channel_asset_ != selected_channel_waveform_asset) attempted_channel_asset_.reset();
     if (selected_channel_waveform_asset != channel_waveform_job_asset_) {
         channel_waveform_job_.cancel();
         channel_waveform_job_asset_.reset();
         channel_waveform_analysis_.reset();
-        if (selected_channel_waveform_asset) {
-            const auto started = channel_waveform_job_.request(*selected_channel_waveform_asset, 256);
-            if (started)
-                channel_waveform_job_asset_ = selected_channel_waveform_asset;
-            else if (started.status != audio::waveform_job_start_status_t::capacity_exceeded)
-                status = started.message.empty() ? "Channel waveform analysis could not start."
-                                                 : started.message;
-        }
+        request_selected_waveform(selected_channel_waveform_asset, channel_waveform_job_,
+            channel_waveform_job_asset_, attempted_channel_asset_,
+            "Channel waveform analysis could not start.");
     }
     if (const auto completed = channel_waveform_job_.poll();
         completed && channel_waveform_job_asset_ == completed->asset) {
-        if (*completed) {
-            channel_waveform_analysis_ = completed->analysis;
-            if (!channel_waveform_analysis_->waveform)
-                status = "Selected BMSON channel waveform could not be analyzed.";
-        } else if (completed->task_error) {
-            status = completed->task_error->message;
-        }
+        if (*completed) channel_waveform_analysis_ = completed->analysis;
+        report_waveform_completion(*completed, "Selected BMSON channel waveform could not be analyzed.");
     }
 }
 

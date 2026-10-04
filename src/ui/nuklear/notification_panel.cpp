@@ -173,7 +173,8 @@ void render_notification_panel(nk_context* context, const WormUiNotificationHist
     nk_window_get_scroll(context, &state.scroll_x, &state.scroll_y);
     state.last_context = context;
     nk_end(context);
-    if (interactive && nk_window_is_closed(context, "Notifications"))
+    if (interactive && (nk_window_is_closed(context, "Notifications") ||
+                        nk_window_is_hidden(context, "Notifications")))
         emit_notification_action(action, WORM_UI_NOTIFICATION_ACTION_CLOSE_HISTORY);
 }
 } // namespace wormedit::ui::nuklear

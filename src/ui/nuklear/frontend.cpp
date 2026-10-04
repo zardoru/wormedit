@@ -850,12 +850,20 @@ static bool notification_history_contains(struct nk_rect bounds, float x, float 
            x < bounds.x + bounds.w && y < bounds.y + bounds.h;
 }
 
+static bool notification_history_window_visible(bool overlay) {
+    auto* context = overlay ? &g_notification_context : g_context;
+    return context && nk_window_find(context, "Notifications") &&
+           !nk_window_is_closed(context, "Notifications") &&
+           !nk_window_is_hidden(context, "Notifications");
+}
+
 static struct nk_rect notification_history_bounds(bool overlay) {
     auto* context = overlay ? &g_notification_context : g_context;
     const auto* window = context ? nk_window_find(context, "Notifications") : nullptr;
-    if (window) return window->bounds;
-    return nk_rect(12, 40, std::max(1.0f, std::min(760.0f, float(g_last_window_width) - 24)),
-                   std::max(1.0f, std::min(560.0f, float(g_last_window_height) - 60)));
+    if (!window || nk_window_is_closed(context, "Notifications") ||
+        nk_window_is_hidden(context, "Notifications"))
+        return nk_rect(0, 0, 0, 0);
+    return window->bounds;
 }
 
 static bool notification_editor_text_owned() {
@@ -881,7 +889,7 @@ static bool notification_history_locked() {
 
 static bool notification_history_focused() {
     return g_context && g_notification_view.history.visible && !g_notification_project_modal &&
-        !g_notification_history_close_pending && !nk_window_is_closed(g_context, "Notifications") &&
+        !g_notification_history_close_pending && notification_history_window_visible(false) &&
         nk_window_is_active(g_context, "Notifications") && !notification_history_locked() &&
         (nuklear_text_entry_active() || notification_history_contains(notification_history_bounds(false),
             g_context->input.mouse.pos.x, g_context->input.mouse.pos.y));
@@ -1016,9 +1024,11 @@ static bool capture_history_button(const SDL_Event& event, bool available, bool 
 
 static bool capture_notification_history_event(const SDL_Event& event) {
     const bool locked = notification_history_locked();
+    const bool overlay = locked;
     const bool available = g_notification_view.history.visible && !g_notification_project_modal &&
         !g_notification_history_close_pending && g_window_focused &&
-        (!locked || g_notification_context_initialized);
+        (!locked || g_notification_context_initialized) &&
+        notification_history_window_visible(overlay);
     const bool interactive = available && !locked;
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP)
         return capture_history_button(event, available, interactive);
@@ -2588,6 +2598,7 @@ static void render_notification_history(const WormUiNotificationView& view,
     if (g_notification_history_close_pending) {
         action.notifications = {WORM_UI_NOTIFICATION_ACTION_CLOSE_HISTORY, 0};
         g_notification_history_close_pending = false;
+        close_notification_history_windows();
         return;
     }
     if (project_modal || !view.history.visible) return;
@@ -2597,6 +2608,8 @@ static void render_notification_history(const WormUiNotificationView& view,
     if (locked) context->style = g_context->style;
     wormedit::ui::nuklear::render_notification_panel(context, view.history,
         g_notification_history_state, action.notifications, width, height, !locked);
+    if (action.notifications.kind == WORM_UI_NOTIFICATION_ACTION_CLOSE_HISTORY)
+        close_notification_history_windows();
 }
 
 static void render_notification_frame(const WormUiNotificationView& view,
@@ -2795,6 +2808,15 @@ bool worm_ui_frontend_window_bounds_for_testing(const char* name, WormUiTestingR
     const auto* window = nk_window_find(g_context, name);
     if (!window) return false;
     *output = {window->bounds.x, window->bounds.y, window->bounds.w, window->bounds.h};
+    return true;
+}
+
+bool worm_ui_frontend_hide_notification_history_for_testing(void) {
+    if (!g_headless || !g_context || !nk_window_find(g_context, "Notifications")) return false;
+    nk_window_show(g_context, "Notifications", NK_HIDDEN);
+    if (g_notification_context_initialized &&
+        nk_window_find(&g_notification_context, "Notifications"))
+        nk_window_show(&g_notification_context, "Notifications", NK_HIDDEN);
     return true;
 }
 

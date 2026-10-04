@@ -28,8 +28,17 @@ roundtrips. This import fix is now integrated as `4d2a8e9`: root Debug build,
 1,374 selected tests, and all eight real-chart native/export/reimport pipelines
 pass. Note/lane/hold inventory is preserved; maximum actual endpoint error is
 5.169 ms on import and 5.168 ms after reimport. Inputs remain read-only.
-Notifications T-221–T-223 continue; N4 input requires reviewed severity and
-batch-stop corrections, while a separate Sol 6.1/Luna action worktree handles
+User playback regression: `b88e4b7` fixes partial unmetered metronome measures
+that blocked seven charts and selects the actual fatal diagnostic over preceding
+warnings. All eight real charts now start, advance, pause and resume with their
+music registered through SDL dummy audio; 1,370 core and 76 focused preview
+tests pass in the worktree. Main Debug build and 136 focused checks pass;
+independent import-coordinator review is underway.
+Notifications T-221–T-223 continue; reviewed N4 input and batch-stop corrections
+are integrated as `68d8b2f`/`4ea6383` (root build and 352 assertions in 16 focused
+cases pass). Recovery/history/audition producers are integrated as `73b3194`
+with root build, 53 recovery/settings and 30 audition assertions passing, while
+a separate Sol 6.1/Luna action worktree handles
 the remaining Compose widget producers. The readiness pilot did not complete feature cards;
 implementation status requires reviewed code and actual verification.
 

@@ -31,8 +31,11 @@ at `b57b47f` for the remaining Compose action producers; its original
 brief in `/tmp/wormedit-batch-implementation/compose-actions-brief.txt`:
 `compose_actions.{h,cpp}`, new action-notification tests, narrow test manifest,
 task-card scope and a dedicated coordination note. Any needed area-action or
-bookmark-rename support must be recorded before edits. The Sol coordinator waits
-for an agent slot; its Luna executor waits for the input executor's release.
+bookmark-rename support must be recorded before edits. The Sol coordinator is
+reviewing the Luna implementation and supporting typed producer seams. The Luna
+has released source ownership after implementation. The import worktree is now
+on `coord/osutest-playback`; its Sol coordinator independently reviews root's fix
+for the user's Space playback regression.
 
 ## Ownership and scheduling
 
@@ -157,10 +160,22 @@ remain unchanged; artifacts are in `osutest-load/root-final/` below the log
 directory. Normal resolution is bounded at 960 divisions per standard measure,
 with quantization warnings and explicit source-time origin.
 
-The first N4 input increment is held for corrections before integration:
-ordinary generic gesture cancellation and fit previews must be hints, fit/edit
-commits must preserve typed results, paste must retain diagnostic/rebind
-metadata, and no-op/cancellation changes must preserve original batch-stop
-semantics. Notifications Sol owns those corrections and recovery/final main;
-the new `/root/compose_actions_61` Sol and its Luna executor own the separately
-prepared Compose action worktree and supporting area metadata.
+Corrected N4 input is integrated as `68d8b2f`/`4ea6383`: ordinary gesture
+cancellation and fit previews are hints, fit/edit commits preserve typed results,
+paste retains diagnostic/rebind metadata, and original batch-stop boundaries
+are restored. Root Debug build, configured production complexity checks and
+352 assertions in 16 focused cases pass. Recovery/history/audition producers
+are integrated as `73b3194`; root build, 53 recovery/settings assertions and
+30 audition assertions pass. The combined 136 focused checks pass.
+The action coordinator reviews the separately implemented widget producers,
+and notifications prepares the final main/projection adapter retirement.
+
+User's Space playback regression is integrated as `b88e4b7`, with a dedicated
+[playback brief](osutest-playback.md). The negative-frame warning hid fatal
+metronome divisibility errors in seven real charts. Unmetered partial measures
+now use normal quarter-note pulse spacing including their final partial onset;
+preview failure feedback prefers an actual error over earlier warnings.
+All eight real schedules compile and runtime start/advance/pause/resume checks
+with real music registered pass under SDL dummy audio. Worktree application
+build, 1,370 core cases, 76 focused preview cases and three timing-settings cases
+pass; root integrated build passes. The import Sol independently audits this fix.

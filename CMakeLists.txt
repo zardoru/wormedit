@@ -349,6 +349,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_timing_input.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_object_input.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compare_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_resources.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_state.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/frontend.cpp"
@@ -408,6 +409,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/application_command_dispatch.cpp
         src/sys/compose_resource_presenter.cpp
         src/sys/compose_view.cpp
+        src/sys/compare_view.cpp
         src/sys/compose_input.cpp
         src/sys/compose_area_actions.cpp
         src/sys/compose_actions.cpp

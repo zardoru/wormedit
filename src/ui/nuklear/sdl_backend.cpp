@@ -170,6 +170,7 @@ struct OverviewCache {
 };
 
 struct ComposeFieldMarker {
+    struct ComposeFieldFrame* owner{};
     std::size_t first_index{}, index_count{};
 };
 struct ComposeFieldFrame {
@@ -177,9 +178,12 @@ struct ComposeFieldFrame {
     std::array<ComposeFieldMarker, 32> markers{};
     std::size_t marker_count{}, next_index{};
 };
+constexpr std::size_t maximum_compose_field_frames = 8;
 
 struct nk_sdl {
     ComposeFieldFrame* field;
+    ComposeFieldFrame* field_frames[maximum_compose_field_frames];
+    std::size_t field_frame_count{}, next_field_frame{};
     OverviewCache* overview;
     SDL_Window* win;
     SDL_Renderer* renderer;
@@ -326,15 +330,19 @@ static void submit_sdl_batch(nk_sdl* sdl, const wormedit::ui::nuklear::sdl_draw_
 }
 
 static const ComposeFieldMarker* field_marker(const nk_sdl* sdl, const nk_draw_command* command) {
-    for (std::size_t index = 0; index < sdl->field->marker_count; ++index)
-        if (command->userdata.ptr == &sdl->field->markers[index])
-            return &sdl->field->markers[index];
+    for (std::size_t frame = 0; frame < sdl->field_frame_count; ++frame) {
+        const auto* field = sdl->field_frames[frame];
+        if (!field) continue;
+        for (std::size_t index = 0; index < field->marker_count; ++index)
+            if (command->userdata.ptr == &field->markers[index])
+                return &field->markers[index];
+    }
     return nullptr;
 }
 static void submit_field_marker(nk_sdl* sdl, const ComposeFieldMarker& marker) {
     const wormedit::ui::field::submission_t hooks{set_nuklear_clip_rect,
                                                 render_nuklear_geometry_raw};
-    sdl->field->geometry.submit_range(sdl->renderer, marker.first_index, marker.index_count, hooks);
+    marker.owner->geometry.submit_range(sdl->renderer, marker.first_index, marker.index_count, hooks);
 }
 static auto overview_intersection(SDL_Rect first, SDL_Rect second) -> SDL_Rect {
     SDL_Rect result{};
@@ -538,10 +546,14 @@ static bool submit_overview_marker(nk_sdl* sdl, const nk_draw_command* command,
 
 static void submit_sdl_draw_list(nk_context* context, nk_sdl* sdl) {
     // Field markers stay set until the frame ends; only the application pass draws them.
-    if (sdl->field->marker_count != 0 && g_gpu_submission == &g_application_submission) {
-        const auto work = sdl->field->geometry.workload();
-        g_gpu_submission->work.vertices += work.vertices;
-        g_gpu_submission->work.indices += work.indices;
+    if (g_gpu_submission == &g_application_submission) {
+        for (std::size_t index = 0; index < sdl->field_frame_count; ++index) {
+            const auto* field = sdl->field_frames[index];
+            if (!field || field->marker_count == 0) continue;
+            const auto work = field->geometry.workload();
+            g_gpu_submission->work.vertices += work.vertices;
+            g_gpu_submission->work.indices += work.indices;
+        }
     }
     wormedit::ui::nuklear::sdl_draw_batcher_t batches;
     const nk_draw_command* command;
@@ -618,9 +630,21 @@ static void render_nuklear_pass(struct nk_context* ctx, struct nk_sdl* sdl, enum
 }
 
 static void finish_nuklear_frame(struct nk_context* ctx, struct nk_sdl* sdl) {
-    sdl->field->marker_count = 0;
+    for (std::size_t index = 0; index < sdl->field_frame_count; ++index)
+        sdl->field_frames[index]->marker_count = 0;
+    sdl->field = sdl->field_frames[0];
+    sdl->next_field_frame = 0;
     nk_clear(ctx);
     nk_buffer_clear(&sdl->ogl.cmds);
+}
+
+NK_API void nk_sdl_begin_frame(struct nk_context* ctx) {
+    if (!ctx || !ctx->userdata.ptr) return;
+    auto* sdl = static_cast<struct nk_sdl*>(ctx->userdata.ptr);
+    for (std::size_t index = 0; index < sdl->field_frame_count; ++index)
+        sdl->field_frames[index]->marker_count = 0;
+    sdl->field = sdl->field_frames[0];
+    sdl->next_field_frame = 0;
 }
 
 NK_API void nk_sdl_render(struct nk_context* ctx, enum nk_anti_aliasing AA) {
@@ -757,6 +781,10 @@ NK_API struct nk_context* nk_sdl_init_headless(struct nk_allocator allocator,
     SDL_zerop(sdl);
     sdl->field = new (std::nothrow) ComposeFieldFrame;
     sdl->overview = new (std::nothrow) OverviewCache;
+    if (sdl->field) {
+        sdl->field_frames[0] = sdl->field;
+        sdl->field_frame_count = 1;
+    }
     if (!sdl->field || !sdl->overview) {
         delete sdl->overview;
         delete sdl->field;
@@ -793,6 +821,8 @@ NK_API struct nk_context* nk_sdl_init(SDL_Window* win, SDL_Renderer* renderer,
     NK_ASSERT(sdl);
     SDL_zerop(sdl);
     sdl->field = new ComposeFieldFrame;
+    sdl->field_frames[0] = sdl->field;
+    sdl->field_frame_count = 1;
     sdl->overview = new (std::nothrow) OverviewCache;
     sdl->allocator.userdata = allocator.userdata;
     sdl->allocator.alloc = allocator.alloc;
@@ -1008,7 +1038,8 @@ static auto handle_sdl_renderer_reset(nk_sdl* sdl, const SDL_Event& event) -> st
     if (event.type != SDL_EVENT_RENDER_TARGETS_RESET && event.type != SDL_EVENT_RENDER_DEVICE_RESET)
         return std::nullopt;
     if (event.render.windowID != 0 && event.render.windowID != SDL_GetWindowID(sdl->win)) return 0;
-    sdl->field->geometry.invalidate_envelopes();
+    for (std::size_t index = 0; index < sdl->field_frame_count; ++index)
+        sdl->field_frames[index]->geometry.invalidate_envelopes();
     if (sdl->overview) {
         sdl->overview->invalidate();
         ++sdl->overview->renderer_generation;
@@ -1086,7 +1117,8 @@ void nk_sdl_shutdown(struct nk_context* ctx) {
         sdl->ogl.font_tex = NULL;
     }
 
-    delete sdl->field;
+    for (std::size_t index = 0; index < sdl->field_frame_count; ++index)
+        delete sdl->field_frames[index];
     delete sdl->overview;
     nk_free(ctx);
     sdl->allocator.free(sdl->allocator.userdata, sdl->debug_font);
@@ -1363,7 +1395,18 @@ auto compose_field(nk_context* context) -> wormedit::ui::field::renderer_t& {
 }
 auto begin_compose_field(nk_context* context, SDL_FRect viewport)
     -> wormedit::ui::field::renderer_t& {
-    const auto& backend = *static_cast<nk_sdl*>(context->userdata.ptr);
+    auto& backend = *static_cast<nk_sdl*>(context->userdata.ptr);
+    const auto slot = backend.next_field_frame++;
+    if (slot >= maximum_compose_field_frames) {
+        NK_ASSERT(slot < maximum_compose_field_frames);
+        return backend.field->geometry;
+    }
+    if (!backend.field_frames[slot]) {
+        backend.field_frames[slot] = new (std::nothrow) ComposeFieldFrame;
+        if (!backend.field_frames[slot]) return backend.field->geometry;
+        backend.field_frame_count = std::max(backend.field_frame_count, slot + 1);
+    }
+    backend.field = backend.field_frames[slot];
     auto& frame = *backend.field;
     frame.marker_count = 0;
     frame.next_index = 0;
@@ -1410,7 +1453,7 @@ void insert_compose_field(nk_context* context, nk_command_buffer* canvas, struct
     if (end == frame.next_index || frame.marker_count == frame.markers.size())
         return;
     auto& marker = frame.markers[frame.marker_count++];
-    marker = {frame.next_index, end - frame.next_index};
+    marker = {&frame, frame.next_index, end - frame.next_index};
     frame.next_index = end;
     nk_push_custom(canvas, viewport, convert_field_marker, nk_handle_ptr(&marker));
 }

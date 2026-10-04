@@ -25,6 +25,7 @@
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/notification_toasts.h"
 #include "ui/nuklear/notification_panel.h"
+#include "ui/nuklear/compare_panel.h"
 
 #include "ui/nuklear/sdl_backend.h"
 
@@ -592,6 +593,7 @@ void worm_ui_frontend_shutdown(void) {
 
 void worm_ui_frontend_begin_input(void) {
     if (g_context) {
+        nk_sdl_begin_frame(g_context);
         nk_input_begin(g_context);
         g_notification_history_state.pointer_owned_this_frame = false;
         g_shortcut_event_count = 0;
@@ -1676,6 +1678,8 @@ static void render_workspace_content(const WormUiWorkspaceView& view,
     } else if (view.audio_slices.visible) {
         worm_ui_nuklear_render_audio_slices(g_context, &view.audio_slices, &action, true,
                                             g_window_focused);
+    } else if (view.compare.visible) {
+        worm_ui_nuklear_render_compare_panel(g_context, &view.compare, &action);
     } else {
         nk_layout_row_dynamic(g_context, 24, 1);
         if (view.summary_line_count == 0) nk_label(g_context, "No items in this view.", NK_TEXT_LEFT);

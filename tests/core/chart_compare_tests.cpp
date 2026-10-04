@@ -1,8 +1,10 @@
 #include <wormedit/core/chart_compare.h>
+#include "sys/compare_view.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <ranges>
 
 namespace {
@@ -51,6 +53,25 @@ auto compare(const wormedit::song_document_t& song, wormedit::chart_compare_requ
 }
 
 } // namespace
+
+TEST_CASE("Compare view selects a safe default pair for zero through three difficulties",
+          "[unit][core][chart-compare][compare-view]") {
+    using wormedit::chart_id_t;
+    const std::array<chart_id_t, 0> none{};
+    const std::array<chart_id_t, 1> one{chart_id_t{1}};
+    const std::array<chart_id_t, 2> two{chart_id_t{1}, chart_id_t{2}};
+    const std::array<chart_id_t, 3> three{chart_id_t{1}, chart_id_t{2}, chart_id_t{3}};
+    const std::array<chart_id_t, 0> no_selection{};
+    const std::array<chart_id_t, 2> selected_three{chart_id_t{3}, chart_id_t{2}};
+    CHECK_FALSE(wormedit::sys::choose_compare_chart_pair(none, std::nullopt, no_selection));
+    CHECK_FALSE(wormedit::sys::choose_compare_chart_pair(one, chart_id_t{1}, no_selection));
+    CHECK((wormedit::sys::choose_compare_chart_pair(two, chart_id_t{1}, no_selection) ==
+           std::pair{chart_id_t{1}, chart_id_t{2}}));
+    CHECK((wormedit::sys::choose_compare_chart_pair(three, chart_id_t{1}, selected_three) ==
+           std::pair{chart_id_t{1}, chart_id_t{3}}));
+    CHECK((wormedit::sys::choose_compare_chart_pair(three, std::nullopt, no_selection) ==
+           std::pair{chart_id_t{1}, chart_id_t{2}}));
+}
 
 TEST_CASE("chart comparison aligns exact musical rows across different resolutions",
           "[unit][core][chart-compare]") {

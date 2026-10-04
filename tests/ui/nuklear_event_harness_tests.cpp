@@ -33,6 +33,31 @@ TEST_CASE("Sound layer confirmation waits for a choice and rejects stale documen
     CHECK_FALSE(state.sound_layer_confirmation_open);
 }
 
+TEST_CASE("Compare tab shows its single-difficulty hint without edit actions",
+          "[unit][frontend-state][event-harness][compare]") {
+    nuklear_event_harness_t harness{1280, 900};
+    auto& view = harness.view();
+    view.active_tab = WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE;
+    view.setup.visible = false;
+    view.metadata.visible = false;
+    view.compose.visible = false;
+    view.audio_slices.visible = false;
+    view.compare.visible = true;
+    view.compare.has_two_difficulties = false;
+    const auto initial = harness.frame();
+    CHECK(initial.get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
+    CHECK(harness.drawn_text().find("Choose two difficulties to compare.") != std::string::npos);
+    SDL_Event press{};
+    press.type = SDL_EVENT_KEY_DOWN;
+    press.key.type = SDL_EVENT_KEY_DOWN;
+    press.key.key = SDLK_DELETE;
+    press.key.scancode = SDL_SCANCODE_DELETE;
+    press.key.down = true;
+    const auto result = harness.frame(std::span{&press, 1});
+    CHECK(result.get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
+    CHECK(result.get().compose_input_count == 0);
+}
+
 namespace {
 
 struct sdl_event_scope_t {
@@ -1285,4 +1310,48 @@ TEST_CASE("Note paint carries the Sounds dock sound whichever was picked first",
     REQUIRE(begin != nullptr);
     CHECK(begin->resource_id == 0);
     state = {};
+}
+
+TEST_CASE("Compare fields route wheel input as one shared read-only scroll action",
+          "[unit][frontend-state][event-harness][compare]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& workspace = harness.view();
+    workspace.active_tab = WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE;
+    workspace.setup.visible = false;
+    workspace.metadata.visible = false;
+    workspace.compose.visible = false;
+    workspace.audio_slices.visible = false;
+    auto& compare = workspace.compare;
+    WormUiComposeView first{}, second{};
+    first.viewport_width_pixels = second.viewport_width_pixels = 640;
+    first.viewport_height_pixels = second.viewport_height_pixels = 600;
+    first.status_text = "First field";
+    second.status_text = "Second field";
+    compare.visible = true;
+    compare.has_two_difficulties = true;
+    compare.first_pane = &first;
+    compare.second_pane = &second;
+    const std::array<std::uint64_t, 2> ids{10, 20};
+    const std::array<const char*, 2> names{"Easy", "Hard"};
+    compare.chart_ids = ids.data();
+    compare.chart_names = names.data();
+    compare.chart_count = ids.size();
+    compare.first_chart_id = ids[0];
+    compare.second_chart_id = ids[1];
+    compare.first_difficulty = names[0];
+    compare.second_difficulty = names[1];
+    (void)harness.frame();
+
+    SDL_Event wheel{};
+    wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.y = -1.0f;
+    wheel.wheel.mouse_x = 320.0f;
+    wheel.wheel.mouse_y = 420.0f;
+    const std::array<SDL_Event, 2> wheel_script{motion_event(320.0f, 420.0f), wheel};
+    const auto action = harness.frame(wheel_script);
+    CHECK(action.get().kind == WORM_UI_WORKSPACE_ACTION_COMPARE_SCROLL);
+    CHECK(action.get().compare_scroll_delta != 0.0);
+    CHECK(action.get().compose_input_count == 0);
 }

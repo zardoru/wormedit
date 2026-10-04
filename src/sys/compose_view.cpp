@@ -2925,6 +2925,7 @@ struct compose_final_projection_context_t {
     const wormedit::measure_index_t& measures;
     bool downscroll;
     const wormedit::timing_lane_pseudonote_preview_t* timing_stage;
+    std::span<const wormedit::local_position_t> comparison_rows;
 };
 
 WormUiComposeSelectionMode compose_scalar_selection_mode(
@@ -3608,6 +3609,8 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
         // One physical 512-row tile at scale >= .5, plus conservative glyph halo.
         .retained_window_minimum_margin_pixels =
             1024.0 + std::max(96.0, playable_field_width * .5 + 20.0)};
+    cache.preview_scene_request.comparison_difference_rows.assign(
+        input.comparison_rows.begin(), input.comparison_rows.end());
     refresh_compose_static_scene_style(cache,view);
     const auto frame_scene_previous = frame_timing().enter(frame_phase_t::scene);
     if (project_reused_scalar_scene(input, field_left_pixels, playable_field_width, pixels_per_row,
@@ -3994,7 +3997,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
                            compose_scene_cache_t& cache, int window_width, int window_height,
                            std::optional<wormedit::editor_interaction_state_t>& retained_state,
                            application_command_state_t& application_state,
-                           const wormedit::timing_lane_pseudonote_preview_t* timing_stage) {
+                           const wormedit::timing_lane_pseudonote_preview_t* timing_stage,
+                           std::span<const wormedit::local_position_t> comparison_rows) {
     if (!workspace.selected_chart || !application_state.bms_branch_statement_feedback ||
         application_state.bms_branch_statement_feedback->chart != *workspace.selected_chart ||
         application_state.bms_branch_statement_feedback->revision != history.document.revision)
@@ -4045,7 +4049,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     auto interaction_view = std::move(*interaction_data);
     const compose_final_projection_context_t final_context{
         flattened, history, chart, cache, retained_state, application_state, view,
-        interaction_view, measures, downscroll, timing_stage};
+        interaction_view, measures, downscroll, timing_stage, comparison_rows};
     populate_compose_final_projection(final_context);
     project_loop_selection_controls(view, application_state);
 }

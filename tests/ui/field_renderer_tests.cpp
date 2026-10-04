@@ -244,6 +244,24 @@ void build_interleaved_field(nk_context* context) {
     insert_compose_field(context, canvas, nk_rect(0, 0, 128, 128));
     nk_end(context);
 }
+
+void build_two_deferred_fields(nk_context* context) {
+    using namespace wormedit::ui::nuklear;
+    nk_input_begin(context);
+    nk_input_end(context);
+    expect_field(nk_begin(context, "two fields", nk_rect(0, 0, 128, 128), NK_WINDOW_NO_SCROLLBAR));
+    auto* canvas = nk_window_get_canvas(context);
+    auto& first = begin_compose_field(context, {0, 0, 128, 128});
+    first.rect(0, {12, 12, 32, 32}, {240, 20, 30, 255});
+    insert_compose_field(context, canvas, nk_rect(0, 0, 128, 128));
+    auto& second = begin_compose_field(context, {0, 0, 128, 128});
+    second.rect(0, {72, 72, 32, 32}, {20, 40, 240, 255});
+    insert_compose_field(context, canvas, nk_rect(0, 0, 128, 128));
+    expect_field(&first != &second);
+    expect_field(first.indices().size() == 6);
+    expect_field(second.indices().size() == 6);
+    nk_end(context);
+}
 } // namespace
 TEST_CASE("Field conversion barriers preserve interleaved SDL and Nuklear layers",
           "[ui][field][sdl]") {
@@ -267,6 +285,21 @@ TEST_CASE("Field conversion barriers preserve interleaved SDL and Nuklear layers
     expect_field(SDL_GetRenderClipRect(fixture.renderer, &retained));
     expect_field(retained.x == clip.x && retained.y == clip.y && retained.w == clip.w &&
                  retained.h == clip.h);
+}
+
+TEST_CASE("Separate deferred Compose fields retain both pane geometries through submission",
+          "[ui][field][sdl][compare]") {
+    field_submission_fixture_t fixture;
+    build_two_deferred_fields(fixture.context);
+    const SDL_Rect clip{0, 0, 128, 128};
+    expect_field(SDL_SetRenderClipRect(fixture.renderer, &clip));
+    expect_field(SDL_SetRenderDrawBlendMode(fixture.renderer, SDL_BLENDMODE_NONE));
+    wormedit::ui::nuklear::render_sdl_backend(fixture.context, NK_ANTI_ALIASING_ON);
+    expect_field(SDL_RenderPresent(fixture.renderer));
+    const auto first = fixture.pixel(20, 20);
+    const auto second = fixture.pixel(80, 80);
+    expect_field(first.r == 240 && first.g == 20 && first.b == 30);
+    expect_field(second.r == 20 && second.g == 40 && second.b == 240);
 }
 
 TEST_CASE("Arrow antialias fringe straddles the authored polygon and closes its outline",

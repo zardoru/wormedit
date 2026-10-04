@@ -143,6 +143,8 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE,
     WORM_UI_WORKSPACE_ACTION_SET_STEPMANIA_EXPORT_POLICY,
     WORM_UI_WORKSPACE_ACTION_CANCEL_AUDIO_PROJECT,
+    WORM_UI_WORKSPACE_ACTION_COMPARE_SELECT_CHART,
+    WORM_UI_WORKSPACE_ACTION_COMPARE_SCROLL,
 } WormUiWorkspaceActionKind;
 
 typedef enum WormUiWorkspaceTab {
@@ -1734,6 +1736,21 @@ typedef struct WormUiCloseConfirmationView {
     uint64_t project_id, revision;
     const char* status_text;
 } WormUiCloseConfirmationView;
+typedef struct WormUiCompareView {
+    bool visible;
+    bool has_two_difficulties;
+    uint64_t first_chart_id;
+    uint64_t second_chart_id;
+    const char* first_difficulty;
+    const char* second_difficulty;
+    const WormUiComposeView* first_pane;
+    const WormUiComposeView* second_pane;
+    const uint64_t* chart_ids;
+    const char* const* chart_names;
+    size_t chart_count;
+    double scroll_pixels;
+} WormUiCompareView;
+
 typedef struct WormUiWorkspaceView {
     WormUiNotificationView notifications;
     WormUiOptionsView options;
@@ -1787,6 +1804,7 @@ typedef struct WormUiWorkspaceView {
     WormUiTimingView timing;
     WormUiComposeView compose;
     WormUiAudioSlicesView audio_slices;
+    WormUiCompareView compare;
     WormUiPlayerPreviewView player_preview;
     struct WormUiExternalPlayerView external_player;
 } WormUiWorkspaceView;
@@ -2138,6 +2156,8 @@ typedef struct WormUiWorkspaceAction {
     uint32_t audio_offset_drag_sample_rate;
     int64_t audio_offset_drag_delta_frames;
     size_t recovery_row_index;
+    uint64_t compare_chart_id;
+    double compare_scroll_delta;
     size_t recovery_candidate_index;
     char recovery_save_as_destination[WORM_UI_RECOVERY_DESTINATION_CAPACITY];
     // Metadata pointers refer to frontend-owned staging buffers and are valid

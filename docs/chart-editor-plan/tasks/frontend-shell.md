@@ -163,12 +163,13 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 
 ## T-46 Render synchronized side-by-side difficulties in Compare/Validate
 
-- **Status:** ready
+- **Status:** done (2026-10-04; independent read-only fields, shared scrolling, chart picker and yellow difference rows)
+- **Renderer scope approval (user, 2026-10-04):** `src/ui/nuklear/compose_canvas.cpp/.h` and `src/ui/nuklear/sdl_backend.cpp/.h` are added to Files owned so each comparison pane retains independent geometry through deferred rendering. The isolated visual check exposed the shared frame being overwritten by the second pane.
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** core `compare_chart_difficulties`, workspace comparison-chart selection, and yellow difference geometry exist; the frontend Compare tab still renders only summary text. The bounded Compose scene adapter is private in `src/sys/compose_view.cpp`; the picker/shared-scroll application dispatch exceeds this card’s main.cpp view-only allowance. Scope approval was granted on 2026-10-03 for `src/sys/compose_view.h/.cpp`, main.cpp dispatch, and linked compare projection/frontend event tests through `tests/CMakeLists.txt`. No Compare implementation was started.
 - **Outcome:** the Compare/Validate tab draws two read-only Compose fields (active and comparison difficulty) that scroll together, with yellow rows where `compare_chart_difficulties` reports differences.
 - **Read first:** `include/wormedit/core/chart_compare.h`, `include/wormedit/core/workspace.h` (comparison-pane selection), `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_canvas.h`, `src/ui/nuklear/frontend.cpp` (tab dispatch near `WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE`).
-- **Files owned:** new `src/ui/nuklear/compare_panel.cpp/.h`, new `src/sys/compare_view.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp` (view hookup only), `CMakeLists.txt`, `tests/core/chart_compare_tests.cpp`. User-approved supporting scope (2026-10-03): `src/sys/compose_view.cpp`, `src/sys/compose_view.h/.cpp`, `tests/CMakeLists.txt`; `src/sys/compose_view.h/.cpp`, `src/sys/main.cpp` (comparison picker/shared-scroll dispatch), comparison projection/frontend event tests, `tests/CMakeLists.txt`.
+- **Files owned:** new `src/ui/nuklear/compare_panel.cpp/.h`, new `src/sys/compare_view.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp` (view hookup only), `CMakeLists.txt`, `tests/core/chart_compare_tests.cpp`. User-approved supporting scope (2026-10-03): `src/sys/compose_view.cpp`, `src/sys/compose_view.h/.cpp`, `tests/CMakeLists.txt`; `src/sys/compose_view.h/.cpp`, `src/sys/main.cpp` (comparison picker/shared-scroll dispatch), comparison projection/frontend event tests, `tests/CMakeLists.txt`. Renderer support scope (2026-10-04): `src/ui/nuklear/compose_canvas.cpp/.h`, `src/ui/nuklear/sdl_backend.cpp/.h`; linked renderer regression coverage in `tests/ui/field_renderer_tests.cpp`.
 - **Steps:**
   0. Scope extension approved by the user (2026-10-03).
   1. Build a `compare_view` that produces two field scenes for the same viewport rows, feeding the comparison's yellow-row primitives into both.
@@ -176,12 +177,12 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
   3. Add a difficulty picker for the comparison pane using the existing workspace selection.
 - **Invariants:** read-only; no edit commands are emitted from this tab.
 - **Reject/failure behavior:** with only one difficulty, show a one-line hint instead of the second pane.
-- **Verify:** standard build/test; smoke PNG with a two-difficulty fixture (for example a multi-chart `.ssc` in `tests/fixtures/stepmania`).
+- **Verify:** application build passed; full `ctest --test-dir build --output-on-failure -j4` passed 1,857/1,857 (34.56 s), including all 47 event-harness tests and deferred two-pane pixel coverage. Affected-file clang-tidy found no new complexity violations. Isolated Xvfb captures `/tmp/wormedit-t46-fixed.png` and `-scrolled.png` show both fields and aligned yellow differences scrolling together; `/tmp/wormedit-t46-picker-final.png` confirms selecting a third chart replaces the second pane and clears differences for equal charts.
 - **Out of scope:** validation report list (T-47), editing from the compare tab.
 
 ## T-47 List validation diagnostics in Compare/Validate
 
-- **Status:** blocked-on T-46
+- **Status:** ready (T-46 is done)
 - **Outcome:** the tab shows a bounded list of document-validation diagnostics for the active chart; clicking one moves the Compose cursor to its row.
 - **Read first:** `include/wormedit/core/document.h` (graph validation diagnostics), `src/sys/compare_view.cpp`, `src/ui/nuklear/compare_panel.cpp`.
 - **Files owned:** `src/sys/compare_view.cpp/.h`, `src/ui/nuklear/compare_panel.cpp`, `src/ui/frontend.h`.

@@ -12,6 +12,7 @@
 #include "sys/audio_project_import.h"
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose_view.h"
+#include "sys/compare_view.h"
 #include "sys/compose_timing_target.h"
 #include "sys/compose_input.h"
 #include "sys/compose_actions.h"
@@ -176,6 +177,7 @@ using wormedit::sys::compose_measure_rail_width_pixels;
 using wormedit::sys::compose_timing_lane_count;
 using wormedit::sys::bmson_draft_audition_request_t;
 using wormedit::sys::compose_scene_cache_t;
+using wormedit::sys::compare_scene_cache_t;
 using wormedit::sys::compose_field_downscroll;
 using wormedit::sys::compose_horizontal_layout;
 using wormedit::sys::compose_lane_is_editable;
@@ -1846,6 +1848,26 @@ void dispatch_timing_stage_action(
     }
 }
 
+auto dispatch_comparison_selection(const WormUiWorkspaceAction& action,
+                                   const wormedit::document_history_t& history,
+                                   wormedit::workspace_controller_t& workspace) -> std::string {
+    const auto selected = wormedit::chart_id_t{action.compare_chart_id};
+    const auto first = workspace.selected_chart.value_or(selected);
+    auto second = selected;
+    if (first == second) {
+        const auto other = std::ranges::find_if(history.document.charts,
+            [first](const auto& chart) { return chart.id != first; });
+        if (other == history.document.charts.end()) return "Add another difficulty to compare.";
+        second = other->id;
+    }
+    const auto applied = wormedit::apply_workspace_action(
+        workspace, history.document, history.document.revision,
+        wormedit::workspace_set_comparison_charts_action_t{{first, second}});
+    if (applied) return "Comparison difficulty selected.";
+    return applied.diagnostics.empty() ? "Comparison selection rejected."
+                                       : applied.diagnostics.front().message;
+}
+
 auto dispatch_workspace_selection_action(const WormUiWorkspaceAction& action,
                                          const wormedit::document_history_t& history,
                                          wormedit::workspace_controller_t& workspace)
@@ -1877,6 +1899,9 @@ auto dispatch_workspace_selection_action(const WormUiWorkspaceAction& action,
         return applied ? "Workspace tab changed"
                        : (applied.diagnostics.empty() ? "Workspace action rejected"
                                                       : applied.diagnostics.front().message);
+    }
+    case WORM_UI_WORKSPACE_ACTION_COMPARE_SELECT_CHART: {
+        return dispatch_comparison_selection(action, history, workspace);
     }
     default:
         return std::nullopt;
@@ -2616,6 +2641,15 @@ void project_bga_dock(wormedit::sys::bga_dock_runtime_t& runtime,
     runtime.project(history.document, base, request, view);
 }
 
+void apply_compare_scroll_action(compare_scene_cache_t& cache,
+                                 const WormUiWorkspaceAction& action) {
+    if (action.kind != WORM_UI_WORKSPACE_ACTION_COMPARE_SCROLL ||
+        cache.pixels_per_measure <= 0.0) return;
+    cache.shared_scroll_measures = std::max(
+        0.0, cache.shared_scroll_measures -
+                 action.compare_scroll_delta / cache.pixels_per_measure);
+}
+
 // Adds files dropped on the Compose keysound listbox; always empties the pending list.
 void import_dropped_keysounds(bool session_loaded, wormedit::document_history_t& history,
                               wormedit::workspace_controller_t& workspace,
@@ -3277,6 +3311,7 @@ int main(int argc, char** argv) {
     timing_scene_cache_t timing_scene_cache;
     timing_edit_t timing_edit;
     compose_scene_cache_t compose_scene_cache;
+    compare_scene_cache_t compare_scene_cache;
     wormedit::frame_arena_t frame_projection_arena({
         .chunk_bytes = 1024 * 1024, .maximum_bytes = 16 * 1024 * 1024});
     wormedit::sys::player_preview_presenter_t player_preview_presenter;
@@ -3584,6 +3619,14 @@ int main(int argc, char** argv) {
                  .preview_output_available = preview_output.available(),
 #endif
                 });
+            wormedit::sys::flattened_workspace_t compare_first_pane(&frame_projection_arena);
+            wormedit::sys::flattened_workspace_t compare_second_pane(&frame_projection_arena);
+            int compare_width = 0;
+            int compare_height = 0;
+            worm_window_get_size(&window, &compare_width, &compare_height);
+            wormedit::sys::populate_compare_view(
+                flattened, compare_first_pane, compare_second_pane, history, workspace,
+                compare_scene_cache, application_command_state, compare_width, compare_height);
             validate_minimap_start_frame(application_command_state, history, compose_interaction_state);
             flattened.view.minimap_click_moves_paused_playhead = application_command_state.minimap_click_moves_paused_playhead;
             flattened.view.transport_rate_index = static_cast<uint8_t>(application_command_state.transport_rate_index);
@@ -3633,6 +3676,7 @@ int main(int argc, char** argv) {
                     shortcut_handled || external_handled, session_loaded);
                 remember_created_chart_snap(application_command_state, project_handled,
                     action.project_chart.kind, previous_selected_chart, workspace.selected_chart);
+                apply_compare_scroll_action(compare_scene_cache, action);
                 dispatch_workspace_frame_action(
                     workspace_frame_action_context, action, project_handled,
                     selected_waveform_sample_rate, flattened.view.compose.viewport_height_pixels);

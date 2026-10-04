@@ -35,6 +35,7 @@
 #include <functional>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -418,6 +419,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
                            compose_scene_cache_t& cache, int window_width, int window_height,
                            std::optional<wormedit::editor_interaction_state_t>& retained_state,
                            application_command_state_t& application_state,
-                           const wormedit::timing_lane_pseudonote_preview_t* timing_stage);
+                           const wormedit::timing_lane_pseudonote_preview_t* timing_stage,
+                           std::span<const wormedit::local_position_t> comparison_rows = {});
 
 } // namespace wormedit::sys

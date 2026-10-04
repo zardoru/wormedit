@@ -8,21 +8,14 @@ authorized full T-221/T-222/T-223 implementation; root approved the N1–N7 path
 
 ## Readiness and review
 
-- T-218, T-219 and T-220 are done in the cards and resume checklist.
-- T-221 is ready for scoped implementation briefs; its T-219 block was stale.
-- T-222 stayed **blocked-on T-221** during the documentation-only pilot;
-  implementation scheduling is recorded below after global source review.
-- T-223's T-219 prerequisite is satisfied; execution must wait for the sink
-  contract and serialized ownership below. Ready does not mean independent.
-- Only the T-221/T-223 statuses were reconciled in the card file. T-224 and
-  the root-owned resume checklist remain outside this pilot's ownership.
-
-Reviewed `/tmp/wormedit-coordination-notifications-luna.md` against the actual
-read-first sources, AGENTS/workflow/card rules: lexical counts were not acceptance
-totals. Missing sink, mixed dispatch strings, omitted frame-service consumers,
-picker callback timing and worker/global ownership were verified before briefs.
-Center precedes schedulers; explicit noexcept shutdown joins cover exceptional
-exits. Readiness records above are historical, not final batch completion.
+T-218/T-219/T-220 are done. T-221/T-223 readiness was reconciled; T-222 remained
+blocked-on T-221 during the pilot. Root later authorized implementation scheduling
+following reviewed T-221 code while its visual gate remains pending. T-224/resume
+are root-owned. Actual Luna report `/tmp/wormedit-coordination-notifications-luna.md`
+was checked against AGENTS/workflow/card rules and read-first sources: lexical
+counts were not producer counts. Missing sink, mixed strings, omitted frame-service
+consumers and callback/worker boundaries informed the exact briefs. Center precedes
+schedulers, with noexcept shutdown joins on exceptional exits. Readiness is historical.
 
 ## Classification ledger
 
@@ -223,3 +216,10 @@ Logs: `notifications-recovery-audition-final-build.log`, `notifications-recovery
 `notifications-recovery-main-tidy.log`. Existing controller diagnostic/path limits
 and center 200-byte message/4 KiB detail limits remain. Only actions adapter and
 projection legacy fallback remain in main, pending separate actions integration.
+
+Final glue handed to root at `/tmp/wormedit-batch-implementation/notifications-final-glue/`.
+Three-path patch removes the main status string/context seams and projection field;
+immutable empty flatten fallback preserves borrowed-string lifetime. Against the
+stable actions header copy, main and frame projection typecheck exit 0; patch-check
+and proposed final producer grep pass. Root applies after actions integration and
+owns final linked build/full tests/manual gate evidence. No overlay entered Git.

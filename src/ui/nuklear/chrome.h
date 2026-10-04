@@ -142,6 +142,15 @@ inline void toolbar_separator(nk_context* context) {
                    x, bounds.y + bounds.h - 4.0f, 1.0f, color(UiColor::border));
 }
 
+inline void section_separator(nk_context* context) {
+    nk_layout_row_dynamic(context, 9.0f, 1);
+    struct nk_rect bounds{};
+    if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
+    const auto y = bounds.y + bounds.h * 0.5f;
+    nk_stroke_line(nk_window_get_canvas(context), bounds.x, y,
+                   bounds.x + bounds.w, y, 1.0f, color(UiColor::border));
+}
+
 struct IconButton {
     lucide::Glyph glyph;
     const char* tooltip;

@@ -431,6 +431,41 @@ TEST_CASE("default registry seeds discoverable editor commands and visible tab r
     CHECK(hidden.status == command_dispatch_status_t::no_match);
 }
 
+auto save_binding_dispatches_for_primary(const command_registry_t& registry,
+                                         shortcut_primary_modifier_t primary) -> bool {
+    const auto modifier = primary == shortcut_primary_modifier_t::control
+                              ? shortcut_modifier_t::control : shortcut_modifier_t::meta;
+    const auto chord = shortcut_chord_t{
+        .key = shortcut_key_t::s,
+        .modifiers = static_cast<shortcut_modifiers_t>(modifier),
+    };
+    const auto saved = dispatch_shortcut(registry, {.chord = chord}, focus_for_compose(), primary);
+    const auto repeated = dispatch_shortcut(registry,
+        {.chord = chord, .auto_repeat = true}, focus_for_compose(), primary);
+    return saved.status == command_dispatch_status_t::invoked &&
+           saved.command == command_id_t{"document.save_project"} &&
+           repeated.status == command_dispatch_status_t::repeat_suppressed;
+}
+
+auto save_command_has_primary_binding(const command_registry_t& registry) -> bool {
+    const auto* command = find_command(registry, command_id_t{"document.save_project"});
+    return command && command->mutation && command->default_shortcuts.size() == 1 &&
+           command->default_shortcuts.front() == shortcut_chord_t{
+               .key = shortcut_key_t::s,
+               .modifiers = static_cast<shortcut_modifiers_t>(shortcut_modifier_t::primary),
+           };
+}
+
+TEST_CASE("Save command uses platform Primary and suppresses held-key repeats",
+          "[unit][core][command_registry][save-shortcut]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    CHECK(save_command_has_primary_binding(registry));
+    CHECK(save_binding_dispatches_for_primary(registry, shortcut_primary_modifier_t::control));
+    CHECK(save_binding_dispatches_for_primary(registry, shortcut_primary_modifier_t::meta));
+    CHECK(calls->size() == 2);
+}
+
 TEST_CASE("timing insertion commands route through Compose focus",
           "[unit][core][command_registry][timing]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();

@@ -18,12 +18,26 @@ auto has_code(const diagnostic_list_t& diagnostics, diagnostic_code_t code) -> b
                                [code](const auto& diagnostic) { return diagnostic.code == code; });
 }
 
+auto standard_5k_profile_valid(const lane_input_profile_t& profile, std::string_view id) -> bool {
+    const auto& lanes = profile.layout.lanes;
+    return profile.layout.profile_id == id && lanes.size() == 6 &&
+           std::ranges::count(lanes, lane_role_t::playable, &lane_definition_t::role) == 5 &&
+           std::ranges::count(lanes, lane_role_t::scratch, &lane_definition_t::role) == 1 &&
+           std::ranges::none_of(lanes, [](const auto& lane) {
+               return lane.role == lane_role_t::free_zone || lane.role == lane_role_t::foot_pedal;
+           }) &&
+           profile.input.bindings.size() == 6 &&
+           profile.input.bindings[0].key == physical_key_t::digit_1 &&
+           profile.input.bindings[5].key == physical_key_t::digit_6 &&
+           validate_input_profile(profile.layout, profile.input).empty();
+}
+
 } // namespace
 
 TEST_CASE("built-in BMS profile registry is complete unique and frontend-neutral",
           "[unit][core][lane-profile][bms][registry]") {
     const auto profiles = built_in_bms_lane_profiles();
-    REQUIRE(profiles.size() == 17);
+    REQUIRE(profiles.size() == 18);
 
     std::set<std::string> ids;
     for (const auto& descriptor : profiles) {
@@ -42,7 +56,7 @@ TEST_CASE("built-in BMS profile registry is complete unique and frontend-neutral
 
     CHECK(std::ranges::count_if(profiles, [](const auto& descriptor) {
         return descriptor.family == bms_lane_profile_family_t::bms_five_or_ten_key;
-    }) == 5);
+    }) == 6);
     CHECK(std::ranges::count_if(profiles, [](const auto& descriptor) {
               return descriptor.family == bms_lane_profile_family_t::bme_seven_or_fourteen_key;
           }) == 4);
@@ -75,6 +89,14 @@ TEST_CASE("BMS 7K built-in profile declares seven keys, scratch, and number-row 
     REQUIRE(inside.layout.lanes.size() == 8);
     CHECK(inside.layout.lanes.back().role == lane_role_t::scratch);
     CHECK(inside.layout.lanes.back().bms_channels.visible == "16");
+}
+
+TEST_CASE("standard BMS 5K maps five keys and scratch without an auxiliary lane",
+          "[unit][core][lane-profile][bms][5k]") {
+    CHECK(standard_5k_profile_valid(make_bms_5k_standard_profile(scratch_placement_t::outside),
+                                    "bms-5k-outside-scratch"));
+    CHECK(standard_5k_profile_valid(make_bms_5k_standard_profile(scratch_placement_t::inside),
+                                    "bms-5k-inside-scratch"));
 }
 
 TEST_CASE("BMS 14K uses the exact interleaved keyboard map in lane order",

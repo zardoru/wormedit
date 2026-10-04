@@ -64,6 +64,8 @@ static constexpr nk_rune editor_font_glyph_ranges[]{0x0020, 0x00FF, 0x2026, 0x20
 
 static bool g_frame_timing_visible;
 static bool g_compose_area_shortcuts_active;
+static bool g_save_project_requested;
+static uint64_t g_save_project_request_id;
 // Layout-independent Compose hotkeys read from typed text: [ ] { } change the
 // playback rate and + - zoom, wherever the layout puts those characters.
 static std::array<char, 8> g_compose_text_hotkeys{};
@@ -167,11 +169,23 @@ static bool project_dialog_active() {
     return g_project_dialog.active;
 }
 
+static bool nuklear_text_entry_active(void);
+static bool compose_popup_owns_input();
+
 bool worm_ui_frontend_request_new_project(void) {
     if (project_dialog_active() || g_new_project_wizard.open || g_notification_modal ||
         !g_bms_encoding_path_seen.empty())
         return false;
     request_manual_new_project();
+    return true;
+}
+
+bool worm_ui_frontend_request_save_project(uint64_t project_id) {
+    if ((!g_window && !g_headless) || project_dialog_active() || g_new_project_wizard.open ||
+        g_notification_project_modal || nuklear_text_entry_active() || compose_popup_owns_input())
+        return false;
+    g_save_project_requested = true;
+    g_save_project_request_id = project_id;
     return true;
 }
 
@@ -281,8 +295,7 @@ static bool notification_history_focused();
 static void queue_shortcut_key_event(const SDL_KeyboardEvent* event, bool tap_capture = false) {
     if (!event || (!g_window && !g_headless) || !g_window_focused ||
         event->type != SDL_EVENT_KEY_DOWN || !event->down ||
-        !frontend_event_window_matches(event->windowID) ||
-        g_shortcut_events_overflowed) {
+        !frontend_event_window_matches(event->windowID) || g_shortcut_events_overflowed) {
         return;
     }
 
@@ -528,6 +541,8 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
     g_notification_view = {};
     g_notification_modal = false;
     g_notification_project_modal = false;
+    g_save_project_requested = false;
+    g_save_project_request_id = 0;
     g_notification_escape_captured = false;
     worm_ui_nuklear_reset_external_player_panel();
     g_compose_area_shortcuts_active = false;
@@ -551,6 +566,8 @@ bool worm_ui_frontend_init_headless(int width, int height) {
 }
 
 void worm_ui_frontend_shutdown(void) {
+    g_save_project_requested = false;
+    g_save_project_request_id = 0;
     reset_compose_note_menu();
     shutdown_notification_context();
     worm_ui_nuklear_reset_external_player_panel();
@@ -2270,6 +2287,20 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_NONE;
     action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
     consume_project_file_dialog(action);
+    if (g_save_project_requested) {
+        const bool same_project = view && view->project_id == g_save_project_request_id;
+        const bool eligible = same_project && view->project_loaded && action.kind == WORM_UI_WORKSPACE_ACTION_NONE &&
+                              !project_modal_active(*view) && !project_dialog_active() &&
+                              !g_new_project_wizard.open;
+        g_save_project_requested = false;
+        g_save_project_request_id = 0;
+        if (eligible) {
+            if (view->project_has_native_path)
+                action.kind = WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT;
+            else
+                start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
+        }
+    }
     if (!g_context || (!g_window && !g_headless) || !view) {
         worm_ui_nuklear_compose_discard_frame_input();
         expose_shortcut_input(&action);

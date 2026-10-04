@@ -771,6 +771,8 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
                 global, {chord(static_cast<shortcut_key_t>(0x36), primary())});
     add_builtin(registry, invoker, "document.new_project", "New Project",
                 command_category_t::document, global, {chord(shortcut_key_t::n, primary())}, true);
+    add_builtin(registry, invoker, "document.save_project", "Save Project",
+                command_category_t::document, global, {chord(shortcut_key_t::s, primary())}, true);
     add_builtin(registry, invoker, "document.new_chart", "New Chart", command_category_t::document,
                 global, {chord(shortcut_key_t::n, modified(shortcut_modifier_t::shift))}, true);
     add_builtin(registry, invoker, "history.undo", "Undo", command_category_t::edit, global,

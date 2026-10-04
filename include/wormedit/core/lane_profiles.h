@@ -51,6 +51,8 @@ make_bms_14k_profile(scratch_placement_t left_scratch = scratch_placement_t::out
 // foot-pedal variant assigns the same raw channel a different semantic role.
 [[nodiscard]] auto make_bms_5k_profile(scratch_placement_t scratch = scratch_placement_t::outside)
     -> lane_input_profile_t;
+[[nodiscard]] auto make_bms_5k_standard_profile(
+    scratch_placement_t scratch = scratch_placement_t::outside) -> lane_input_profile_t;
 [[nodiscard]] auto
 make_bms_5k_free_zone_profile(scratch_placement_t scratch = scratch_placement_t::outside)
     -> lane_input_profile_t;

@@ -314,8 +314,27 @@ TEST_CASE("Complete five-key primary families select the ordinary profile withou
              {"D1", "D2", "D3", "D4", "D5", "D6"}}) {
         const auto result = detect_bms_lane_profile({.file_extension = ".bms",
             .player_header = 1, .used_channels = channels});
-        require_detected_standard(result, "bms-5k-outside-scratch-free-zone");
+        require_detected_standard(result, "bms-5k-outside-scratch");
+        REQUIRE(result.selected_profile);
+        CHECK(result.selected_profile->layout.lanes.size() == 6);
     }
+}
+
+TEST_CASE("BMS 5K auxiliary channel 17 keeps standard profile out of automatic selection",
+          "[unit][core][bms-detection][5k-standard]") {
+    const auto with_auxiliary = detect_bms_lane_profile({.file_extension = ".bms",
+        .player_header = 1,
+        .used_channels = {"11", "12", "13", "14", "15", "16", "17"}});
+    CHECK_FALSE(with_auxiliary.selected_profile);
+    CHECK(with_auxiliary.status == bms_profile_detection_status_t::ambiguous);
+    CHECK(find_candidate(with_auxiliary, "bms-5k-outside-scratch") == nullptr);
+
+    const auto explicit_standard = detect_bms_lane_profile({.file_extension = ".bms",
+        .player_header = 1,
+        .used_channels = {"11", "12", "13", "14", "15", "16", "17"},
+        .explicit_profile_id = "bms-5k-outside-scratch"});
+    CHECK_FALSE(explicit_standard.selected_profile);
+    CHECK(explicit_standard.status == bms_profile_detection_status_t::custom_required);
 }
 
 TEST_CASE("Unused auxiliary defaults do not resolve sparse or observed pedal ambiguities",

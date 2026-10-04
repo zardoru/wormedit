@@ -2430,6 +2430,27 @@ auto read_fixture_text(std::string_view relative) -> std::string {
     return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
 }
 
+auto standard_5k_fixture_import() -> wormedit::bms_parse_result_t {
+    return parse(read_fixture_text("bms/profiles/bms-5k-standard.bms"),
+                 {.lane_profile_id = "bms-5k-outside-scratch"});
+}
+
+auto write_standard_5k_fixture() -> std::optional<std::string> {
+    const auto imported = standard_5k_fixture_import();
+    if (!imported.song) return std::nullopt;
+    const auto written = wormedit::write_bms(
+        *imported.song, {.lane_profile_id = "bms-5k-outside-scratch",
+                         .preserve_unchanged_source = false});
+    return written.bytes;
+}
+
+auto has_standard_5k_channels(std::string_view text) -> bool {
+    constexpr std::array channels{"11", "12", "13", "14", "15", "16"};
+    return std::ranges::all_of(channels, [text](const auto channel) {
+        return text.find(std::string("#000") + channel + ":01") != std::string_view::npos;
+    }) && text.find("#00017:") == std::string_view::npos;
+}
+
 // Imports the non-gameplay fixture, deletes the one note in measure 040, and exports.
 auto export_after_far_edit(const std::string& source) -> wormedit::bms_write_result_t {
     const auto imported = parse(source, {.lane_profile_id = "bme-7k-outside-scratch"});
@@ -2639,6 +2660,31 @@ TEST_CASE("BMS BGM columns export byte-identically unedited and keep each line's
     CHECK_FALSE(reparsed.has_errors());
     CHECK(reparsed.song->charts.front().bgm_source_lanes.size() == 5);
     CHECK(bgm_cells(*reparsed.song) == bgm_cells(*imported.song));
+}
+
+TEST_CASE("standard BMS 5K fixture imports five keys and scratch", "[unit][format][bms][5k-standard]") {
+    const auto imported = standard_5k_fixture_import();
+    REQUIRE(imported.song);
+    REQUIRE_FALSE(imported.has_errors());
+    REQUIRE(imported.song->charts.front().lane_layouts.front().layout.lanes.size() == 6);
+    REQUIRE(imported.song->charts.front().measures.front().notes.size() == 6);
+}
+
+TEST_CASE("standard BMS 5K writer emits all six mapped channels and no auxiliary channel",
+          "[unit][format][bms][writer][5k-standard]") {
+    const auto written = write_standard_5k_fixture();
+    REQUIRE(written);
+    CHECK(has_standard_5k_channels(*written));
+}
+
+TEST_CASE("standard BMS 5K writer output round-trips the six lanes", "[unit][format][bms][5k-standard]") {
+    const auto written = write_standard_5k_fixture();
+    REQUIRE(written);
+    const auto reparsed = parse(*written, {.lane_profile_id = "bms-5k-outside-scratch"});
+    REQUIRE(reparsed.song);
+    CHECK_FALSE(reparsed.has_errors());
+    CHECK(reparsed.song->charts.front().lane_layouts.front().layout.lanes.size() == 6);
+    CHECK(reparsed.song->charts.front().measures.front().notes.size() == 6);
 }
 
 TEST_CASE("BMS warns when a measure has more BGM lines than BMSE allows",

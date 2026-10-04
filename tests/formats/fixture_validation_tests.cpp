@@ -46,6 +46,7 @@ auto explicit_fixture_encoding(const std::filesystem::path& path)
 
 auto explicit_fixture_profile(const std::filesystem::path& path) -> std::optional<std::string> {
     static const std::map<std::string, std::string> choices{
+        {"bms-5k-standard.bms", "bms-5k-outside-scratch"},
         {"bms-5k-free-zone.bms", "bms-5k-outside-scratch-free-zone"},
         {"bms-5k-foot-pedal.bms", "bms-5k-outside-scratch-foot-pedal"},
         {"bme-7k.bme", "bme-7k-outside-scratch"},

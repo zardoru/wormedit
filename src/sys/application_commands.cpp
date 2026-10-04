@@ -14,6 +14,7 @@ struct command_name_t {
 
 constexpr command_name_t command_names[]{
     {"document.new_project", application_command_kind_t::document_new_project},
+    {"document.save_project", application_command_kind_t::document_save_project},
     {"document.new_chart", application_command_kind_t::document_new_chart},
     {"history.undo", application_command_kind_t::history_undo},
     {"history.redo", application_command_kind_t::history_redo},

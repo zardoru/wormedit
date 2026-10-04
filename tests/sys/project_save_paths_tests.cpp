@@ -1,4 +1,5 @@
 #include "sys/project_save_paths.h"
+#include "sys/application_commands.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -25,6 +26,13 @@ void check_rebased_path(const std::filesystem::path& destination,
 }
 
 } // namespace
+
+TEST_CASE("project Save command ID resolves to the application Save action",
+          "[unit][sys][project-save-paths]") {
+    const auto command = wormedit::sys::parse_application_command("document.save_project");
+    REQUIRE(command);
+    CHECK(command->kind == wormedit::sys::application_command_kind_t::document_save_project);
+}
 
 TEST_CASE("Save As keeps every relative asset path pointed at its original file",
           "[unit][sys][project-save-paths]") {

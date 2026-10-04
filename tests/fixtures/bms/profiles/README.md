@@ -11,6 +11,7 @@ BME-style fixtures deliberately overlap BME channel families while retaining but
 
 | Fixture | Explicit profile ID | Expected lanes |
 | --- | --- | ---: |
+| `bms-5k-standard.bms` | `bms-5k-outside-scratch` | 6 |
 | `bms-5k-free-zone.bms` | `bms-5k-outside-scratch-free-zone` | 7 |
 | `bms-5k-foot-pedal.bms` | `bms-5k-outside-scratch-foot-pedal` | 7 |
 | `bme-7k.bme` | `bme-7k-outside-scratch` | 8 |

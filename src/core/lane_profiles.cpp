@@ -417,6 +417,20 @@ auto make_bms_5k_profile(scratch_placement_t scratch) -> lane_input_profile_t {
     return make_bms_5k_free_zone_profile(scratch);
 }
 
+auto make_bms_5k_standard_profile(scratch_placement_t scratch) -> lane_input_profile_t {
+    constexpr std::array<std::string_view, 5> keys{"11", "12", "13", "14", "15"};
+    auto lanes = make_side_lanes(0, scratch, keys, "16");
+    auto input = input_profile_t{
+        .profile_id = "number-row-single-stage",
+        .bindings = make_number_row_bindings(lanes, 0),
+        .stage_count = 1,
+        .requires_focused_stage = false,
+    };
+    return make_profile(std::string("bms-5k-") + std::string(placement_name(scratch)) +
+                            "-scratch",
+                        "BMS 5K", std::move(lanes), std::move(input));
+}
+
 auto make_bms_5k_free_zone_profile(scratch_placement_t scratch) -> lane_input_profile_t {
     constexpr std::array<std::string_view, 5> keys{"11", "12", "13", "14", "15"};
     auto lanes = make_side_lanes(0, scratch, keys, "16",
@@ -629,6 +643,8 @@ auto make_project2dx_7k_profile() -> lane_input_profile_t {
 
 auto built_in_bms_lane_profiles() -> std::span<const bms_lane_profile_descriptor_t> {
     static const std::array profiles{
+        bms_lane_profile_descriptor_t{make_bms_5k_standard_profile(),
+                                      bms_lane_profile_family_t::bms_five_or_ten_key, false, false},
         bms_lane_profile_descriptor_t{make_bms_5k_free_zone_profile(),
                                       bms_lane_profile_family_t::bms_five_or_ten_key, false, false},
         bms_lane_profile_descriptor_t{make_bms_5k_foot_pedal_profile(),

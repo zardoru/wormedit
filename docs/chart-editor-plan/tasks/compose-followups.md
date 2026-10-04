@@ -256,7 +256,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-354 Propose sound groups from file names
 
-- **Status:** ready (T-351 and T-353 are done)
+- **Status:** done (2026-10-04; deterministic filename group proposals)
 - **Outcome:** a pure function `propose_sound_groups(names, existing_groups)` returns proposed groups and ungrouped names. Names that share a stem after removing a trailing number and separators (`kick_001`…`kick_040` → "kick", `drums-0001.wav` → "drums", `snd01` → "snd") form a proposal when at least two match. A stem equal to an existing group's name proposes joining that group, and everything else stays ungrouped. The result is deterministic.
 - **Read first:** `include/wormedit/core/natural_order.h` (T-351), `include/wormedit/core/sound_groups.h` (T-353).
 - **Files owned:** new `include/wormedit/core/sound_group_proposal.h`, new `src/core/sound_group_proposal.cpp`, new `tests/core/sound_group_proposal_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -267,11 +267,12 @@ Apply the stale-plan check (rule 9) first.
 - **Invariants:** pure function of the passed names and groups.
 - **Reject/failure behavior:** none (empty input gives an empty result).
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'sound_group_proposal'`.
+- **Verification (2026-10-04):** Application build passed; proposal filter: `100% tests passed out of 6`; full suite: `100% tests passed out of 1914`. Release benchmark (`-O2 -DNDEBUG`): 100 runs of 1,300 names, slowest 0.99831 ms (limit 10 ms). Source and tests checked with `clang-tidy -p build`, with no new cognitive-complexity violations.
 - **Out of scope:** fuzzy or similarity-based grouping.
 
 ## T-355 Review proposed groups before an import commits
 
-- **Status:** blocked-on T-354
+- **Status:** ready (T-354 is done)
 - **Outcome:** when an import (dock drop, Add, or the Sounds tab) gets at least one group proposal, the import dialog adds a Groups step. Each proposal shows a checkbox (accepted by default), an editable name, and its member count, which expands to the file list. Members can be moved to another proposal or to Ungrouped, and "Leave all ungrouped" rejects every proposal. Confirming imports the files and creates the accepted groups in one undo step, each group with its own contiguous ID run (T-351). Imports with no proposals skip the step.
 - **Read first:** `src/ui/nuklear/sound_import_state.h`, `src/sys/compose_sound_actions.cpp` (`plan_sound_import`), `include/wormedit/core/sound_group_proposal.h`, `include/wormedit/core/sound_groups.h`.
 - **Files owned:** `src/ui/nuklear/sound_import_state.cpp/.h`, new `src/ui/nuklear/sound_import_dialog.cpp/.h`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/sys/compose_sound_actions.cpp/.h`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/ui/sound_import_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`.

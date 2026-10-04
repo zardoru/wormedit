@@ -33,6 +33,40 @@ auto switch_song(std::uint32_t keys, const char* profile) -> song_document_t {
     return song;
 }
 
+auto auxiliary_bms_history() -> document_history_t {
+    auto profile = make_bms_5k_free_zone_profile();
+    song_document_t song{
+        .id = song_id_t{1},
+        .revision = 4,
+        .charts = {{
+            .id = chart_id_t{2},
+            .measures = {{.id = measure_id_t{3}}},
+            .lane_layouts = {{.id = object_id_t{21},
+                              .position = {measure_id_t{3}, 0},
+                              .layout = profile.layout}},
+            .input_profile = profile.input,
+        }},
+    };
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{30}, .position = {measure_id_t{3}, 0}, .lane = lane_id_t{107}}};
+    REQUIRE(validate_document(song).empty());
+    return make_document_history(std::move(song));
+}
+
+auto auxiliary_bms_data_unchanged(const document_history_t& history,
+                                  const song_document_t& before) -> bool {
+    const auto& after_chart = history.document.charts.front();
+    const auto& before_chart = before.charts.front();
+    const auto& after_note = after_chart.measures.front().notes.front();
+    const auto& before_note = before_chart.measures.front().notes.front();
+    return history.document.revision == before.revision &&
+           after_chart.lane_layouts.front().layout.profile_id ==
+               before_chart.lane_layouts.front().layout.profile_id &&
+           after_chart.measures.front().notes.size() == before_chart.measures.front().notes.size() &&
+           after_note.id == before_note.id && after_note.lane == before_note.lane &&
+           after_note.position == before_note.position;
+}
+
 } // namespace
 
 TEST_CASE("a ten-lane layout offers osu!mania and pump-double", "[unit][core][lane-profile-switch]") {
@@ -73,6 +107,30 @@ TEST_CASE("switching to a profile with another lane count is rejected",
     CHECK_FALSE(rejected);
     CHECK(history.document.charts.front().lane_layouts.front().layout.profile_id ==
           "osu-mania-10k");
+}
+
+TEST_CASE("switching away from an auxiliary BMS lane rejects without changing chart data",
+          "[unit][core][lane-profile-switch][bms]") {
+    auto history = auxiliary_bms_history();
+    const auto target = make_bms_5k_standard_profile();
+
+    const auto rejected = apply_lane_profile_switch(history, 4, chart_id_t{2},
+                                                    {measure_id_t{3}, 0}, target.layout);
+    CHECK_FALSE(rejected);
+    REQUIRE_FALSE(rejected.diagnostics.empty());
+    CHECK(rejected.diagnostics.front().message.find("different number of lanes") !=
+          std::string::npos);
+}
+
+TEST_CASE("rejected BMS switch leaves auxiliary lane events and profile unchanged",
+          "[unit][core][lane-profile-switch][bms]") {
+    auto history = auxiliary_bms_history();
+    const auto before = history.document;
+    const auto target = make_bms_5k_standard_profile();
+    const auto rejected = apply_lane_profile_switch(history, 4, chart_id_t{2},
+                                                    {measure_id_t{3}, 0}, target.layout);
+    REQUIRE_FALSE(rejected);
+    CHECK(auxiliary_bms_data_unchanged(history, before));
 }
 
 TEST_CASE("osu!mania 10K profile carries the canonical key colors",

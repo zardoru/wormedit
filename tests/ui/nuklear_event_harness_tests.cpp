@@ -2,6 +2,7 @@
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_area_menu.h"
+#include "ui/nuklear/audio_state.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -233,6 +234,64 @@ TEST_CASE("Headless frontend emits Delete shortcut press with focused Compose co
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_DELETE, SDL_SCANCODE_DELETE);
     const auto pressed = harness.frame(std::span{&press, 1});
     CHECK(delete_shortcut_has_compose_context(pressed.get()));
+}
+
+TEST_CASE("Headless frontend captures Ctrl+S as a registered shortcut",
+          "[frontend-state][event-harness][save-shortcut]") {
+    nuklear_event_harness_t harness;
+    (void)harness.frame();
+    const auto save = key_event(SDL_EVENT_KEY_DOWN, SDLK_S, SDL_SCANCODE_S);
+    const auto pressed = harness.frame(std::span{&save, 1}, SDL_KMOD_CTRL);
+    REQUIRE(pressed.get().shortcut_event_count == 1);
+    CHECK(pressed.get().shortcut_events[0].hid_usage == SDL_SCANCODE_S);
+    CHECK(pressed.get().shortcut_events[0].modifiers == WORM_UI_SHORTCUT_MODIFIER_CONTROL);
+    CHECK_FALSE(pressed.get().shortcut_events[0].repeat);
+}
+
+TEST_CASE("Headless frontend marks repeated Ctrl+S for registry suppression",
+          "[frontend-state][event-harness][save-shortcut]") {
+    nuklear_event_harness_t harness;
+    (void)harness.frame();
+    const auto save = key_event(SDL_EVENT_KEY_DOWN, SDLK_S, SDL_SCANCODE_S, true);
+    const auto repeated = harness.frame(std::span{&save, 1}, SDL_KMOD_CTRL);
+    REQUIRE(repeated.get().shortcut_event_count == 1);
+    CHECK(repeated.get().shortcut_events[0].repeat);
+}
+
+TEST_CASE("Queued Save reuses File Save and fires only once",
+          "[frontend-state][event-harness][save-shortcut]") {
+    nuklear_event_harness_t harness;
+    auto& view = harness.view();
+    view.project_has_native_path = true;
+    (void)harness.frame();
+    CHECK(worm_ui_frontend_request_save_project(view.project_id));
+    CHECK(harness.frame().get().kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
+    CHECK(harness.frame().get().kind != WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
+}
+
+TEST_CASE("Queued Save is discarded when its project changes",
+          "[frontend-state][event-harness][save-shortcut]") {
+    nuklear_event_harness_t harness;
+    auto& view = harness.view();
+    view.project_has_native_path = true;
+    (void)harness.frame();
+    CHECK(worm_ui_frontend_request_save_project(view.project_id));
+    ++view.project_id;
+    CHECK(harness.frame().get().kind != WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
+    CHECK(harness.frame().get().kind != WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
+}
+
+TEST_CASE("Queued Save is discarded when a modal intervenes",
+          "[frontend-state][event-harness][save-shortcut]") {
+    nuklear_event_harness_t harness;
+    auto& view = harness.view();
+    view.project_has_native_path = true;
+    (void)harness.frame();
+    CHECK(worm_ui_frontend_request_save_project(view.project_id));
+    view.close_confirmation.visible = true;
+    CHECK(harness.frame().get().kind != WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
+    view.close_confirmation.visible = false;
+    CHECK(harness.frame().get().kind != WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
 }
 
 TEST_CASE("Headless frontend routes Alt digit to Compose while Select remains active",
@@ -1781,4 +1840,54 @@ TEST_CASE("Missing and empty slots disarm painting and non-BMS charts retain aut
     const auto& view = harness.view().compose;
     check_sound_slots(!worm_ui_frontend_stage_sound_slot_file(
         view.project_id, view.chart_id, view.document_revision, "/tmp/auto.wav", 1));
+}
+
+namespace {
+void expect_sound_sections(const nuklear_event_harness_t& harness) {
+    CHECK(harness.drawn_text().find("Sounds") != std::string::npos);
+    CHECK(harness.drawn_text().find("Waveform") != std::string::npos);
+    CHECK(harness.drawn_text().find("Properties") != std::string::npos);
+    CHECK(harness.drawn_text().find("Kick") != std::string::npos);
+    CHECK(harness.drawn_text().find("Snare") != std::string::npos);
+}
+
+void select_and_filter_sound(nuklear_event_harness_t& harness) {
+    const auto selected = click_at(harness, 100, 234);
+    const auto action = std::ranges::find_if(selected, [](const auto& frame) {
+        return frame.get().kind == WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET;
+    });
+    REQUIRE(action != selected.end());
+    CHECK(action->get().audio_asset_id == 22);
+    std::snprintf(worm_ui_nuklear_audio_state().search_text, 128, "kick");
+    CHECK(harness.frame().get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
+    CHECK(harness.drawn_text().find("Kick") != std::string::npos);
+    CHECK(harness.drawn_text().find("Snare") == std::string::npos);
+}
+
+void check_separated_sound_columns(int width) {
+    nuklear_event_harness_t harness{width, 720};
+    auto& workspace = harness.view();
+    workspace.active_tab = WORM_UI_WORKSPACE_TAB_AUDIO_SLICES;
+    workspace.compose.visible = false;
+    auto& view = workspace.audio_slices;
+    view.visible = true;
+    const std::array<WormUiSoundRowView, 2> rows{{
+        {.resource_id = 101, .asset_id = 11, .name = "Kick", .kind = 2},
+        {.resource_id = 102, .asset_id = 22, .name = "Snare", .kind = 2}}};
+    view.sound_rows = rows.data();
+    view.sound_row_count = rows.size();
+    CHECK(harness.frame().get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
+    expect_sound_sections(harness);
+    select_and_filter_sound(harness);
+}
+} // namespace
+
+TEST_CASE("Sounds section separators preserve row selection and search at normal width",
+          "[frontend-state][event-harness][sounds-separators]") {
+    check_separated_sound_columns(1280);
+}
+
+TEST_CASE("Sounds section separators preserve row selection and search at narrow width",
+          "[frontend-state][event-harness][sounds-separators]") {
+    check_separated_sound_columns(800);
 }

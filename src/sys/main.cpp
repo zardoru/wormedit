@@ -3197,6 +3197,11 @@ auto dispatch_registered_application_command(
         status = "Choose the layout for the new project.";
         return wormedit::command_invocation_result_t{.accepted = true};
     }
+    if (command->kind == wormedit::sys::application_command_kind_t::document_save_project) {
+        if (!worm_ui_frontend_request_save_project(history.document.id.value))
+            return wormedit::sys::reject_application_command(status, "Finish the open dialog first.");
+        return wormedit::command_invocation_result_t{.accepted = true};
+    }
     if (command->kind == wormedit::sys::application_command_kind_t::document_new_chart) {
         const auto created = wormedit::apply_add_chart_command(history, history.document.revision,
             workspace.selected_chart.value_or(wormedit::chart_id_t{}));

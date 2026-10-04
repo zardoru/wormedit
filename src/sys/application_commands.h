@@ -11,6 +11,7 @@ namespace wormedit::sys {
 // this value is the validated form used by the application dispatcher.
 enum class application_command_kind_t {
     document_new_project,
+    document_save_project,
     document_new_chart,
     history_undo,
     history_redo,

@@ -1793,6 +1793,7 @@ typedef struct WormUiWorkspaceView {
     WormUiTapTimingView tap_timing;
     bool project_loaded;
     bool project_has_native_path;
+    uint64_t project_id;
     // A dropped MP3/OGG awaiting confirmation as a new project's audio.
     const char* pending_new_project_audio_path;
     // A BMS-family source whose text encoding must be selected before opening.
@@ -2355,6 +2356,7 @@ WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_i
 bool worm_ui_frontend_sound_list_contains(uint32_t window_id, float x, float y);
 void worm_ui_frontend_end_input(void);
 bool worm_ui_frontend_request_new_project(void);
+bool worm_ui_frontend_request_save_project(uint64_t project_id);
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view);
 // Draw a recoverable workspace error when the model could not produce a view.
 WormUiWorkspaceAction worm_ui_frontend_workspace_error(

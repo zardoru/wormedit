@@ -6,7 +6,7 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 
 ## T-361 Advance sounds in the active automatic or slots order
 
-- **Status:** ready
+- **Status:** done (already implemented: src/ui/nuklear/compose_sounds_panel.cpp:314; src/sys/workspace_projection.cpp:747)
 - **Outcome:** advance-after-place in the Sounds dock follows automatic mode's displayed resource order or slots mode's ascending BMS WAV ID order.
 - **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.h`, `src/sys/sound_list_projection.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/compose_state.h`, `src/sys/sound_list_projection.cpp/.h`, `src/sys/workspace_projection.cpp`, `tests/ui/keysound_list_state_tests.cpp`, `tests/sys/sound_list_projection_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
@@ -21,7 +21,7 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 
 ## T-362 Add visual separators to the Sounds tab
 
-- **Status:** ready
+- **Status:** done (2026-10-04; shared section and column separators)
 - **Outcome:** the Sounds tab separates related toolbar actions and the list, waveform/slicer and properties sections using the shared chrome separators.
 - **Read first:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/chrome.h`.
 - **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/chrome.h`, `tests/ui/nuklear_event_harness_tests.cpp`.
@@ -33,6 +33,8 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 - **Reject/failure behavior:** Narrow layouts keep controls reachable and avoid overlapping hit regions.
 - **Verify:** `cmake --build build`; `ctest --test-dir build -L event-harness --output-on-failure`; `ctest --test-dir build --output-on-failure -R '^core\.|^frontend-state\.|^frame-timing\.|^documentation\.'`; affected-source `clang-tidy -p build <source-file>` with no new complexity violations; isolated Xvfb check of the card's workflow.
 - **Out of scope:** new Sounds actions; sound-group headers (T-357).
+
+- **Verification (2026-10-04):** `cmake --build build` passed; event harness: `100% tests passed out of 65`; required core/frontend/frame/documentation filter: `100% tests passed out of 1613`; full suite: `100% tests passed out of 1914`. Affected sources checked with `clang-tidy -p build`, with no new cognitive-complexity violations. Isolated Xvfb captures at 1,280 and 800 pixels were inspected; row selection and search pass the input harness. Existing list, waveform and properties actions stay reachable.
 
 ## T-363 Copy sound sources into the project from the Sounds tab
 
@@ -81,10 +83,11 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 
 ## T-366 Add standard BMS 5K without an auxiliary lane
 
-- **Status:** ready
+- **Status:** done (2026-10-04; standard six-lane BMS 5K profile)
 - **Outcome:** the BMS profile picker and import/export support five keys plus scratch without a Free Zone or Foot Pedal lane.
 - **Read first:** `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `src/core/bms_profile_detection.cpp`, `src/formats/bms.cpp`, `tests/fixtures/bms/profiles/README.md`.
-- **Files owned:** `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `src/core/bms_profile_detection.cpp`, `src/core/lane_profile_switch.cpp`, `src/formats/bms.cpp`, `src/formats/bms_writer.cpp`, `src/ui/nuklear/setup_panel.cpp`, `tests/core/lane_profile_tests.cpp`, `tests/core/bms_profile_detection_tests.cpp`, `tests/core/lane_profile_switch_tests.cpp`, `tests/formats/bms_writer_tests.cpp`, `tests/formats/fixture_validation_tests.cpp`, new `tests/fixtures/bms/profiles/bms-5k-standard.bms`, `tests/fixtures/bms/profiles/README.md`.
+- **Files owned:** `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `src/core/bms_profile_detection.cpp`, `src/core/lane_profile_switch.cpp`, `src/formats/bms.cpp`, `src/formats/bms_writer.cpp`, `src/ui/nuklear/setup_panel.cpp`, `tests/core/lane_profile_tests.cpp`, `tests/core/bms_profile_detection_tests.cpp`, `tests/core/lane_profile_switch_tests.cpp`, `tests/formats/bms_writer_tests.cpp`, `tests/formats/bms_tests.cpp`, `tests/formats/fixture_validation_tests.cpp`, new `tests/fixtures/bms/profiles/bms-5k-standard.bms`, `tests/fixtures/bms/profiles/README.md`.
+- **Supporting scope (coordinator approved, 2026-10-04):** `tests/formats/bms_tests.cpp` updates the exhaustive catalog fixture inventory and automatic 5K import expectations for the new standard profile.
 - **Steps:**
   1. Add a distinct standard 5K profile with five key channels and scratch, no auxiliary lane, and the supported scratch placements; retain explicit free-zone and pedal variants.
   2. Expose it in profile selection and conservative BMS detection/export; preserve or diagnose auxiliary-channel content when switching rather than dropping notes.
@@ -94,12 +97,15 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 - **Verify:** `cmake --build build`; `ctest --test-dir build -L event-harness --output-on-failure`; `ctest --test-dir build --output-on-failure -R '^core\.|^frontend-state\.|^frame-timing\.|^documentation\.'`; affected-source `clang-tidy -p build <source-file>` with no new complexity violations; isolated Xvfb check of the card's workflow.
 - **Out of scope:** scratchless 5K; changing DP5/10K profiles.
 
+- **Verification (2026-10-04):** `cmake --build build` passed; event harness: `100% tests passed out of 65`; required core/frontend/frame/documentation filter: `100% tests passed out of 1613`; full suite: `100% tests passed out of 1914`. Affected sources checked with `clang-tidy -p build`, with no new cognitive-complexity violations. The real isolated Compose field shows five keys plus scratch. Fixture import/export and unsafe auxiliary-lane switching pass; the saved native chart retains all six notes and lane bindings.
+
 ## T-367 Advance after placement in the BGA listing
 
 - **Status:** ready
 - **Outcome:** the BGA dock offers advance-after-place that arms the next eligible image/video resource after successful event placement.
 - **Read first:** `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/sys/bga_list_projection.cpp`, `src/sys/compose_input.cpp`.
-- **Files owned:** `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `src/sys/bga_list_projection.cpp/.h`, `src/sys/bga_dock_runtime.cpp/.h`, `tests/sys/bga_list_projection_tests.cpp`, `tests/ui/keysound_list_state_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `src/sys/bga_list_projection.cpp/.h`, `src/sys/bga_dock_runtime.cpp/.h`, `tests/sys/bga_list_projection_tests.cpp`, `tests/ui/keysound_list_state_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
+- **Supporting scope (coordinator approved, 2026-10-04):** `src/ui/nuklear/compose_state.cpp` and `tests/ui/nuklear_compose_state_tests.cpp` are owned for the shared successful-placement advance callback and its separate BGA state regression coverage.
 - **Steps:**
   1. Reuse the successful-placement advance mechanism from the Sounds dock, keeping separate BGA toggle and selection state.
   2. Advance in the BGA listing's current sort/filter order, skip unusable resources and reveal the successor beyond the visible window.
@@ -126,10 +132,11 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 
 ## T-369 Wire Ctrl+S to the existing Save action
 
-- **Status:** ready
+- **Status:** done (2026-10-04; platform Primary+S routes through existing Save)
 - **Outcome:** Ctrl+S invokes the same project save action as File → Save, including the existing destination picker for an unsaved project.
 - **Read first:** `src/core/command_registry.cpp`, `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp`, `src/sys/project_save_paths.cpp`.
-- **Files owned:** `src/core/command_registry.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `src/sys/main.cpp`, `src/sys/platform_shortcut_profile.cpp`, `tests/core/command_registry_tests.cpp`, `tests/sys/project_save_paths_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
+- **Files owned:** `src/core/command_registry.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `src/sys/main.cpp`, `src/sys/platform_shortcut_profile.cpp`, `src/sys/application_commands.cpp/.h`, `src/sys/workspace_projection.cpp`, `tests/core/command_registry_tests.cpp`, `tests/sys/project_save_paths_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
+- **Supporting scope (coordinator approved, 2026-10-04):** `src/sys/application_commands.cpp/.h` are owned to route the registered Save command through the existing application action; `src/sys/workspace_projection.cpp` publishes the originating project ID on every tab.
 - **Steps:**
   1. Audit shortcut registration and application routing for Save; bind Ctrl+S through the existing command/shortcut system, with platform Primary compatibility.
   2. Route it to the exact File → Save behavior and deduplicate held-key repeats or an already-open save dialog; honor modal/input ownership.
@@ -138,6 +145,8 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 - **Reject/failure behavior:** Cancellation or write failure does not clear dirty state or report success.
 - **Verify:** `cmake --build build`; `ctest --test-dir build -L event-harness --output-on-failure`; `ctest --test-dir build --output-on-failure -R '^core\.|^frontend-state\.|^frame-timing\.|^documentation\.'`; affected-source `clang-tidy -p build <source-file>` with no new complexity violations; isolated Xvfb check of the card's workflow.
 - **Out of scope:** new Save As shortcut; autosave policy changes.
+
+- **Verification (2026-10-04):** `cmake --build build` passed; event harness: `100% tests passed out of 65`; required core/frontend/frame/documentation filter: `100% tests passed out of 1613`; full suite: `100% tests passed out of 1914`. Affected sources checked with `clang-tidy -p build`, with no new cognitive-complexity violations. Real isolated Ctrl+S saved revision 2 from Compose and saved from Sounds. Unsaved projects open the existing picker and retain state on repeated cancellation. A failed write retained the dirty marker and left the destination byte-identical.
 
 ## T-370 Open Go To Bookmark with Ctrl+Shift+G
 

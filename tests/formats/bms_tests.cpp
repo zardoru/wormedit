@@ -46,6 +46,10 @@ auto fixture(std::string_view relative, wormedit::bms_parse_options_t options = 
     return wormedit::parse_bms_bytes(bytes, std::move(options));
 }
 
+auto is_standard_bms_5k_layout(const wormedit::lane_layout_t& layout) -> bool {
+    return layout.profile_id == "bms-5k-outside-scratch" && layout.lanes.size() == 6;
+}
+
 auto has_detection_evidence(const wormedit::bms_profile_detection_result_t& detection,
                             wormedit::bms_detection_evidence_source_t source) -> bool {
     return std::ranges::any_of(detection.evidence,
@@ -390,6 +394,7 @@ TEST_CASE("every built-in BMS lane profile imports its fixture-backed visible ch
         std::size_t lane_count;
     };
     constexpr std::array cases{
+        fixture_case_t{"bms-5k-standard.bms", "bms-5k-outside-scratch", 6},
         fixture_case_t{"bms-5k-free-zone.bms", "bms-5k-outside-scratch-free-zone", 7},
         fixture_case_t{"bms-5k-foot-pedal.bms", "bms-5k-outside-scratch-foot-pedal", 7},
         fixture_case_t{"bme-7k.bme", "bme-7k-outside-scratch", 8},
@@ -1267,7 +1272,8 @@ TEST_CASE("BMS import materializes complete primary keys and scratch without cha
     REQUIRE(result.song);
     const auto& chart = result.song->charts.front();
     REQUIRE(chart.lane_layouts.size() == 1);
-    CHECK(chart.lane_layouts.front().layout.profile_id == "bms-5k-outside-scratch-free-zone");
+    CHECK(is_standard_bms_5k_layout(chart.lane_layouts.front().layout));
+    CHECK(chart.lane_layouts.front().layout.profile_id == "bms-5k-outside-scratch");
     CHECK(chart.measures.front().notes.size() == 6);
     CHECK(chart.measures.back().notes.size() == 1);
 }

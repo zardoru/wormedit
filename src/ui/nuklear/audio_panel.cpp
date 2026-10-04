@@ -309,9 +309,13 @@ auto row_matches(const WormUiSoundRowView& row, const std::string& needle) -> bo
 
 void render_sound_list_column(struct nk_context* context, const WormUiAudioSlicesView& view,
                               WormUiWorkspaceAction& action) {
+    nk_layout_row_dynamic(context, 22, 1);
+    nk_label(context, "Sounds", NK_TEXT_LEFT);
+    wormedit::ui::chrome::section_separator(context);
     nk_layout_row_dynamic(context, 24, 1);
     wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, audio.search_text,
                                    static_cast<int>(sizeof(audio.search_text)), nk_filter_default);
+    wormedit::ui::chrome::section_separator(context);
     const std::string needle = folded(audio.search_text);
     std::size_t shown = 0;
     for (std::size_t index = 0; index < view.sound_row_count; ++index) {
@@ -344,6 +348,9 @@ void render_sound_list_column(struct nk_context* context, const WormUiAudioSlice
 
 void render_sound_properties_column(struct nk_context* context,
                                     const WormUiAudioSlicesView& view) {
+    nk_layout_row_dynamic(context, 22, 1);
+    nk_label(context, "Properties", NK_TEXT_LEFT);
+    wormedit::ui::chrome::section_separator(context);
     const WormUiSoundRowView* selected = nullptr;
     for (std::size_t index = 0; index < view.sound_row_count; ++index) {
         if (view.has_selected_asset && view.sound_rows[index].asset_id == view.selected_asset_id) {
@@ -386,12 +393,15 @@ void render_sound_columns(struct nk_context* context, const WormUiAudioSlicesVie
         render_sound_list_column(context, view, action);
         nk_group_end(context);
     }
-    nk_spacing(context, 1);
+    wormedit::ui::chrome::toolbar_separator(context);
     if (nk_group_begin(context, "sound_wave", NK_WINDOW_BORDER)) {
+        nk_layout_row_dynamic(context, 22, 1);
+        nk_label(context, "Waveform", NK_TEXT_LEFT);
+        wormedit::ui::chrome::section_separator(context);
         render_waveform_column(context, &view, &action);
         nk_group_end(context);
     }
-    nk_spacing(context, 1);
+    wormedit::ui::chrome::toolbar_separator(context);
     if (nk_group_begin(context, "sound_properties", NK_WINDOW_BORDER)) {
         render_sound_properties_column(context, view);
         nk_group_end(context);

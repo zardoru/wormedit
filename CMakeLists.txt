@@ -52,6 +52,7 @@ add_library(wormedit_core
     src/core/chart_clipboard.cpp
     src/core/document.cpp
     src/core/sound_groups.cpp
+    src/core/sound_group_proposal.cpp
     src/core/editor_navigation_input.cpp
     src/core/editor_scene.cpp
     src/core/bms_profile_detection.cpp

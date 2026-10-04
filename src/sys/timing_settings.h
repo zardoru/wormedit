@@ -15,10 +15,10 @@ namespace wormedit::sys {
     const auto& first = chart.measures.front().definition;
     const auto validated = validate_measure(chart.divisions_per_standard_measure, first);
     if (!validated) return std::nullopt;
-    const auto quarter = chart.divisions_per_standard_measure / 4;
+    const auto quarter = std::max<std::uint64_t>(1, chart.divisions_per_standard_measure / 4);
     const auto pulses = first.meter ? static_cast<std::uint64_t>(first.meter->numerator)
-        : quarter == 0 ? 1 : std::max<std::uint64_t>(1, *validated.row_capacity / quarter);
-    if (pulses == 0 || *validated.row_capacity % pulses != 0 ||
+        : *validated.row_capacity / quarter + (*validated.row_capacity % quarter != 0);
+    if (pulses == 0 || (first.meter && *validated.row_capacity % pulses != 0) ||
         pulses > std::numeric_limits<std::uint32_t>::max() / measures) return std::nullopt;
     return static_cast<std::uint32_t>(pulses * measures);
 }

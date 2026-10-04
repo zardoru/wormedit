@@ -2561,7 +2561,9 @@ auto append_measure_metronome_pulses(preview_metronome_context_t& context,
                                      std::size_t measure_index, std::uint64_t pulses) -> bool {
     const auto& measure = context.chart.measures[measure_index];
     const auto& entry = context.measures.entries[measure_index];
-    const auto step = entry.row_capacity / pulses;
+    const auto step = measure.definition.meter
+                          ? entry.row_capacity / pulses
+                          : std::max<std::uint64_t>(1, context.chart.divisions_per_standard_measure / 4);
     const bool compound = measure.definition.meter && pulses > 3 && pulses % 3 == 0;
     for (std::uint64_t pulse = 0; pulse < pulses; ++pulse) {
         const auto row = entry.absolute_begin_row + pulse * step;
@@ -2663,7 +2665,9 @@ auto append_count_in_pulses(preview_metronome_context_t& context,
         return true;
     }
     const auto& first_measure = context.chart.measures.front();
-    const auto step = context.measures.entries.front().row_capacity / *pulses;
+    const auto step = first_measure.definition.meter
+                          ? context.measures.entries.front().row_capacity / *pulses
+                          : std::max<std::uint64_t>(1, context.chart.divisions_per_standard_measure / 4);
     const auto row_zero = timing_at(context.timing, 0, timing_boundary_side_t::event);
     const auto initial_bpm = context.timing.rows.empty()
                                  ? std::optional<signed_rational_t>{}
@@ -2702,9 +2706,9 @@ auto metronome_pulse_count(const preview_metronome_context_t& context, std::size
     if (measure.definition.meter) {
         pulses = measure.definition.meter->numerator;
     } else {
-        const auto quarter_rows = context.chart.divisions_per_standard_measure / 4;
-        pulses =
-            quarter_rows == 0 ? 1 : std::max<std::uint64_t>(1, entry.row_capacity / quarter_rows);
+        const auto quarter_rows =
+            std::max<std::uint64_t>(1, context.chart.divisions_per_standard_measure / 4);
+        return entry.row_capacity / quarter_rows + (entry.row_capacity % quarter_rows != 0);
     }
     if (pulses == 0 || entry.row_capacity % pulses != 0) {
         return std::nullopt;

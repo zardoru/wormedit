@@ -20,11 +20,15 @@ namespace {
 auto preview_diagnostic_feedback(chart_preview_t& preview, const auto& diagnostics, std::string_view fallback)
     -> std::string {
     if (diagnostics.empty()) return preview.report(notification_severity_t::error, false, std::string{fallback});
-    const auto severity = diagnostics.front().severity;
+    const auto fatal = std::ranges::find_if(diagnostics, [](const auto& diagnostic) {
+        return diagnostic.severity == diagnostic_severity_t::error;
+    });
+    const auto& diagnostic = fatal == diagnostics.end() ? diagnostics.front() : *fatal;
+    const auto severity = diagnostic.severity;
     return preview.report(severity == diagnostic_severity_t::error ? notification_severity_t::error
                   : severity == diagnostic_severity_t::warning ? notification_severity_t::warning
                                                                : notification_severity_t::info,
-                  false, diagnostics.front().message);
+                  false, diagnostic.message);
 }
 
 constexpr object_id_t preview_music_object{std::numeric_limits<std::uint64_t>::max()};

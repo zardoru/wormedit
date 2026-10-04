@@ -771,6 +771,48 @@ TEST_CASE("count-in construction obeys the metronome queue cap atomically",
     CHECK(built.diagnostics.back().code == timing_error_code_t::capacity_exceeded);
 }
 
+TEST_CASE("unmetered partial measures keep quarter-note clicks without blocking preview",
+          "[unit][core][timing][preview][partial-measure]") {
+    auto chart = base_chart();
+    chart.measures[0].definition = {{721, 960}, std::nullopt};
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+    const auto built = build_preview_schedule(chart, *timing.index, {.sample_rate = 48'000});
+    REQUIRE(built);
+    REQUIRE(built.diagnostics.empty());
+    const auto& clicks = built.schedule->metronome;
+    REQUIRE(clicks.size() == 7);
+    CHECK(clicks[1].sample_frame == 72'000);
+    CHECK(clicks[3].sample_frame == 120'000);
+}
+
+TEST_CASE("partial unmetered count-in retains quarter-note spacing",
+          "[unit][core][timing][preview][partial-measure]") {
+    auto chart = base_chart();
+    chart.measures[0].definition = {{721, 960}, std::nullopt};
+    chart.beat_zero_audio_offset_seconds = {4, 1};
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+    const auto built = build_preview_schedule(chart, *timing.index,
+        {.sample_rate = 48'000, .count_in_pulses = 4});
+    REQUIRE(built);
+    REQUIRE(built.schedule->metronome.size() == 11);
+    CHECK(built.schedule->metronome[0].sample_frame == 96'000);
+    CHECK(built.schedule->metronome[3].sample_frame == 168'000);
+}
+
+TEST_CASE("one-row unmetered measures have a single metronome onset",
+          "[unit][core][timing][preview][partial-measure]") {
+    auto chart = base_chart();
+    chart.measures[0].definition = {{1, 960}, std::nullopt};
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+    const auto built = build_preview_schedule(chart, *timing.index, {.sample_rate = 48'000});
+    REQUIRE(built);
+    REQUIRE(built.schedule->metronome.size() == 4);
+    CHECK(built.schedule->metronome.front().sample_frame == 48'000);
+}
+
 TEST_CASE("preview queue seek is binary-searchable and advancement is allocation free",
           "[unit][core][timing][preview][queue]") {
     const std::array<preview_audio_event_t, 4> events{{

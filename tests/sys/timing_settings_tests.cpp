@@ -44,3 +44,12 @@ TEST_CASE("Timing count-in uses quarter pulses for an unspecified meter and reje
     chart.measures.clear();
     CHECK_FALSE(wormedit::sys::timing_count_in_pulses(chart, 1));
 }
+
+TEST_CASE("Timing count-in accepts the final partial beat of an unmetered measure",
+          "[sys][timing-settings][partial-measure]") {
+    chart_document_t chart{.id = {1}, .divisions_per_standard_measure = 960,
+        .measures = {{.id = {1}, .definition = {{721, 960}, std::nullopt}}}};
+    CHECK(wormedit::sys::timing_count_in_pulses(chart, 1) == 4);
+    chart.measures.front().definition.length = {1, 960};
+    CHECK(wormedit::sys::timing_count_in_pulses(chart, 2) == 2);
+}

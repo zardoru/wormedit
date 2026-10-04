@@ -977,3 +977,38 @@ TEST_CASE("chart preview rejected seek retains explicit metadata and current pos
     expect_preview_feedback(fixture, notification_severity_t::warning, false);
     CHECK(fixture.preview.resume_frame == 123);
 }
+
+TEST_CASE("chart preview starts and advances through unmetered partial measures",
+          "[integration][sys][chart-preview][partial-measure]") {
+    using namespace wormedit;
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    preview_feedback_fixture_t fixture;
+    fixture.document.charts.front().measures.front().definition = {{721, 960}, std::nullopt};
+    fixture.document.charts.front().beat_zero_audio_offset_seconds = {-1, 4};
+    REQUIRE(fixture.output.open());
+    const auto started = fixture.preview.play_pause(&fixture.document.charts.front(),
+        fixture.document, fixture.sources, {}, fixture.audition_output, fixture.session,
+        fixture.output, local_position_t{{1}, 0});
+    expect_preview_feedback(fixture, notification_severity_t::success, true);
+    CHECK(started == "Chart preview started at the cursor.");
+    CHECK(wait_for_silent_preview_frame(fixture.session, fixture.output));
+    fixture.preview.stop(fixture.audition_output, fixture.output);
+    fixture.output.close();
+}
+
+TEST_CASE("chart preview reports a fatal diagnostic after preceding timing warnings",
+          "[integration][sys][chart-preview][partial-measure]") {
+    using namespace wormedit;
+    preview_feedback_fixture_t fixture;
+    auto& chart = fixture.document.charts.front();
+    chart.beat_zero_audio_offset_seconds = {-1, 1};
+    chart.divisions_per_standard_measure = 3;
+    chart.measures.front().definition = {{1, 1}, meter_t{4, 4}};
+    const auto failed = fixture.preview.compile_if_needed(chart, fixture.document, fixture.sources, {});
+    REQUIRE(failed);
+    CHECK(*failed == "measure meter cannot produce exact metronome pulse rows");
+    expect_preview_feedback(fixture, notification_severity_t::error, false);
+    CHECK_FALSE(fixture.preview.schedule);
+}

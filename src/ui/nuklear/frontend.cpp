@@ -647,6 +647,37 @@ void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request) 
     if (!request) return;
     const auto& state = worm_ui_nuklear_compose_state();
     request->sort_by_id = state.keysound_sort_by_id;
+    request->slots_mode = state.keysound_slots_mode;
+    request->selected_slot = state.keysound_selected_slot;
+    std::copy(state.keysound_slots_search.begin(), state.keysound_slots_search.end(), request->search);
+    request->first_row = state.keysound_slots_first_row;
+    request->row_limit = state.keysound_slots_row_limit;
+}
+
+bool worm_ui_frontend_stage_sound_slot_file(uint64_t project, uint64_t chart, uint64_t revision,
+                                            const char* path, size_t file_count) {
+    auto& state = worm_ui_nuklear_compose_state();
+    if (!state.keysound_slots_mode) return false;
+    if (!path || file_count != 1) {
+        state.keysound_slot_feedback = "Choose exactly one file for a BMS WAV slot.";
+        return true;
+    }
+    if (state.keysound_slots_project != project ||
+        state.keysound_slots_chart != chart || state.keysound_slots_revision != revision ||
+        state.keysound_selected_slot == 0 ||
+        state.keysound_selected_slot > 1295 || !state.keysound_selected_slot_resource_known) {
+        state.keysound_slot_feedback = "The selected WAV slot is no longer available.";
+        return true;
+    }
+    state.keysound_pending_path = path;
+    state.keysound_pending_project = project;
+    state.keysound_pending_chart = chart;
+    state.keysound_pending_revision = revision;
+    state.keysound_pending_slot = state.keysound_selected_slot;
+    state.keysound_pending_occupied_resource = state.keysound_selected_slot_resource;
+    state.keysound_pending_file = true;
+    state.keysound_slot_feedback.clear();
+    return true;
 }
 
 bool worm_ui_frontend_bga_list_contains(uint32_t window_id, float x, float y) {
@@ -729,7 +760,9 @@ static void close_notification_history_windows() {
 }
 
 static bool compose_popup_owns_input() {
-    return worm_ui_nuklear_compose_state().layers_menu_open || compose_note_menu_open();
+    const auto& compose = worm_ui_nuklear_compose_state();
+    return compose.layers_menu_open || compose.keysound_slot_confirmation_open ||
+           compose_note_menu_open();
 }
 
 static bool notification_owns_pointer(float x, float y) {
@@ -859,6 +892,15 @@ static bool capture_notification_history_event(const SDL_Event& event) {
     return false;
 }
 
+static bool capture_sound_slot_key(const SDL_KeyboardEvent& event) {
+    if (!worm_ui_nuklear_compose_state().keysound_slot_confirmation_open) return false;
+    SDL_Event copy{};
+    copy.type = event.type;
+    copy.key = event;
+    (void)nk_sdl_handle_event(g_context, &copy);
+    return true;
+}
+
 static bool capture_inline_offset_key(const SDL_KeyboardEvent& event) {
     auto& compose = worm_ui_nuklear_compose_state();
     if (!compose.inline_offset_open) return false;
@@ -875,6 +917,7 @@ static bool capture_inline_offset_key(const SDL_KeyboardEvent& event) {
 }
 
 static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
+        if (capture_sound_slot_key(event)) return true;
         if (capture_inline_offset_key(event)) return true;
         if (capture_tap_timing_key(event)) return true;
         const bool down = event.type == SDL_EVENT_KEY_DOWN;

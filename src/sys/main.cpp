@@ -2661,9 +2661,18 @@ void import_dropped_keysounds(bool session_loaded, wormedit::document_history_t&
                               wormedit::workspace_controller_t& workspace,
                               std::vector<std::string>& pending_paths, std::string& status) {
     if (pending_paths.empty()) return;
-    if (session_loaded && workspace.selected_chart)
-        status = wormedit::sys::import_keysound_files(history, workspace, *workspace.selected_chart,
-                                                      pending_paths);
+    if (session_loaded && workspace.selected_chart) {
+        const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
+                                             &wormedit::chart_document_t::id);
+        const auto direct = chart != history.document.charts.end() &&
+            chart->source_family == wormedit::format_family_t::bms &&
+            worm_ui_frontend_stage_sound_slot_file(history.document.id.value,
+                chart->id.value, history.document.revision, pending_paths.front().c_str(),
+                pending_paths.size());
+        if (!direct)
+            status = wormedit::sys::import_keysound_files(history, workspace, *workspace.selected_chart,
+                                                          pending_paths);
+    }
     pending_paths.clear();
 }
 

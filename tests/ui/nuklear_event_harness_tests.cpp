@@ -1602,3 +1602,183 @@ TEST_CASE("Compare validation diagnostics jump only when a row is available",
     (void)harness.frame();
     check_compare_diagnostic_actions(harness);
 }
+
+namespace {
+struct sound_slots_fixture_t {
+    std::array<WormUiComposeKeysoundRowView, 2> sounds{{
+        {.resource_id = 501, .slot = "02", .name = "kick.wav"},
+        {.resource_id = 502, .slot = "03", .name = "missing.wav", .missing = true}}};
+    std::array<WormUiComposeSoundSlotRowView, 3> slots{{
+        {.number = 1, .slot = "01", .resource_id = 0, .name = "(empty)"},
+        {.number = 2, .slot = "02", .resource_id = 501, .name = "kick.wav",
+         .use_count = 3, .placeable = true},
+        {.number = 3, .slot = "03", .resource_id = 502, .name = "missing.wav",
+         .use_count = 1, .missing = true, .placeable = true}}};
+};
+void require_sound_slots(bool value) { REQUIRE(value); }
+void check_sound_slots(bool value) { CHECK(value); }
+void configure_sound_slots(nuklear_event_harness_t& harness, const sound_slots_fixture_t& fixture,
+                            bool enabled = true) {
+    auto& view = harness.view().compose;
+    view.keysounds = fixture.sounds.data();
+    view.keysound_count = view.keysound_total_count = fixture.sounds.size();
+    view.keysounds_available = view.keysound_ids_available = true;
+    view.keysound_ids_total = 1295;
+    view.sound_slots = fixture.slots.data();
+    view.sound_slot_count = fixture.slots.size();
+    view.sound_slot_total_matching = 1295;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.sounds_panel_visible = true;
+    state.keysound_slots_mode = enabled;
+    view.sound_slots_mode = enabled;
+    (void)harness.frame();
+}
+void stage_sound_slot(nuklear_event_harness_t& harness, std::uint16_t slot = 2) {
+    auto& state = worm_ui_nuklear_compose_state();
+    auto& view = harness.view().compose;
+    state.keysound_selected_slot = slot;
+    (void)harness.frame();
+    require_sound_slots(worm_ui_frontend_stage_sound_slot_file(
+        view.project_id, view.chart_id, view.document_revision, "/tmp/slot-picked.wav", 1));
+}
+auto find_sound_slot_action(const std::vector<workspace_action_snapshot_t>& frames)
+    -> const WormUiWorkspaceAction* {
+    const auto found = std::ranges::find_if(frames, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT;
+    });
+    return found == frames.end() ? nullptr : &found->get();
+}
+} // namespace
+
+TEST_CASE("BMS dock defaults to automatic and switches to its bounded slots view",
+          "[frontend-state][event-harness][sound-slots]") {
+    nuklear_event_harness_t harness{1280, 900};
+    require_sound_slots(harness.ready());
+    const sound_slots_fixture_t fixture;
+    configure_sound_slots(harness, fixture, false);
+    auto& state = worm_ui_nuklear_compose_state();
+    WormUiKeysoundDockRequest request{};
+    worm_ui_frontend_keysound_dock_request(&request);
+    check_sound_slots(!request.slots_mode);
+    (void)click_at(harness, state.sound_list_x + 210, state.sound_list_y + 36);
+    worm_ui_frontend_keysound_dock_request(&request);
+    check_sound_slots(request.slots_mode);
+    harness.view().compose.sound_slots_mode = true;
+    (void)harness.frame();
+    check_sound_slots(harness.drawn_text().find("(empty)") != std::string::npos);
+    check_sound_slots(request.row_limit <= 128);
+    (void)click_at(harness, state.sound_list_x + 60, state.sound_list_y + 36);
+    worm_ui_frontend_keysound_dock_request(&request);
+    check_sound_slots(!request.slots_mode);
+}
+
+TEST_CASE("Empty slot file assignment sends its exact ID once without automatic allocation",
+          "[frontend-state][event-harness][sound-slots]") {
+    nuklear_event_harness_t harness{1280, 900};
+    const sound_slots_fixture_t fixture;
+    configure_sound_slots(harness, fixture);
+    stage_sound_slot(harness, 1);
+    const auto snapshot = harness.frame();
+    const auto& action = snapshot.get();
+    check_sound_slots(action.compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT);
+    check_sound_slots(action.compose_sound_slot == 1);
+    check_sound_slots(!action.compose_sound_slot_confirmed);
+    require_sound_slots(action.compose_import_path_count == 1 && action.compose_import_paths);
+    check_sound_slots(std::string_view{action.compose_import_paths[0]} == "/tmp/slot-picked.wav");
+    check_sound_slots(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_sound_slots(std::string_view{snapshot.get().compose_import_paths[0]} == "/tmp/slot-picked.wav");
+    const auto& view = harness.view().compose;
+    check_sound_slots(worm_ui_frontend_stage_sound_slot_file(
+        view.project_id, view.chart_id, view.document_revision, "/tmp/one.wav", 2));
+    check_sound_slots(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_sound_slots(!worm_ui_nuklear_compose_state().keysound_slot_feedback.empty());
+}
+
+TEST_CASE("Occupied slot selection arms its sound and replacement requires explicit confirmation",
+          "[frontend-state][event-harness][sound-slots]") {
+    nuklear_event_harness_t harness{1280, 900};
+    const sound_slots_fixture_t fixture;
+    configure_sound_slots(harness, fixture);
+    auto& state = worm_ui_nuklear_compose_state();
+    (void)click_at(harness, state.sound_list_x + 70, state.sound_list_y + 165);
+    check_sound_slots(state.keysound_selected_slot == 2);
+    check_sound_slots(state.armed_resource_id == 501);
+    check_sound_slots(state.keysound_selection.primary == 501);
+    stage_sound_slot(harness);
+    check_sound_slots(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_sound_slots(state.keysound_slot_confirmation_open);
+    check_sound_slots(harness.drawn_text().find("Replace occupied WAV slot 02") != std::string::npos);
+    const auto frames = click_at(harness, 760, 298);
+    const auto* action = find_sound_slot_action(frames);
+    require_sound_slots(action != nullptr);
+    check_sound_slots(action->compose_sound_slot == 2);
+    check_sound_slots(action->compose_sound_slot_confirmed);
+    check_sound_slots(action->compose_import_path_count == 1);
+    check_sound_slots(!state.keysound_slot_confirmation_open);
+    check_sound_slots(!has_sound_audition_action(frames));
+}
+
+TEST_CASE("Slot replacement Escape cancels and does not play or assign audio",
+          "[frontend-state][event-harness][sound-slots]") {
+    nuklear_event_harness_t harness{1280, 900};
+    const sound_slots_fixture_t fixture;
+    configure_sound_slots(harness, fixture);
+    stage_sound_slot(harness);
+    (void)harness.frame();
+    const auto space = key_event(SDL_EVENT_KEY_DOWN, SDLK_SPACE, SDL_SCANCODE_SPACE);
+    const auto blocked = harness.frame(std::span{&space, 1});
+    check_sound_slots(blocked.get().kind != WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE);
+    check_sound_slots(blocked.get().compose_input_count == 0);
+    check_sound_slots(blocked.get().shortcut_event_count == 0);
+    const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_SPACE, SDL_SCANCODE_SPACE);
+    (void)harness.frame(std::span{&release, 1});
+    const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    const auto action = harness.frame(std::span{&escape, 1});
+    check_sound_slots(!worm_ui_nuklear_compose_state().keysound_slot_confirmation_open);
+    check_sound_slots(action.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_sound_slots(action.get().kind != WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE);
+    check_sound_slots(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+}
+
+TEST_CASE("Slot replacement rejects stale revisions and a mode change without fallback",
+          "[frontend-state][event-harness][sound-slots]") {
+    nuklear_event_harness_t harness{1280, 900};
+    const sound_slots_fixture_t fixture;
+    configure_sound_slots(harness, fixture);
+    stage_sound_slot(harness);
+    (void)harness.frame();
+    ++harness.view().compose.document_revision;
+    check_sound_slots(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_sound_slots(!worm_ui_nuklear_compose_state().keysound_slot_confirmation_open);
+    stage_sound_slot(harness, 1);
+    worm_ui_nuklear_compose_state().keysound_slots_mode = false;
+    check_sound_slots(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_sound_slots(!worm_ui_nuklear_compose_state().keysound_pending_file);
+}
+
+TEST_CASE("Missing and empty slots disarm painting and non-BMS charts retain automatic mode",
+          "[frontend-state][event-harness][sound-slots]") {
+    nuklear_event_harness_t harness{1280, 900};
+    const sound_slots_fixture_t fixture;
+    configure_sound_slots(harness, fixture);
+    auto& state = worm_ui_nuklear_compose_state();
+    state.armed_resource_id = 501;
+    (void)click_at(harness, state.sound_list_x + 70, state.sound_list_y + 196);
+    check_sound_slots(state.keysound_selected_slot == 3);
+    check_sound_slots(state.armed_resource_id == 0);
+    state.armed_resource_id = 501;
+    (void)click_at(harness, state.sound_list_x + 70, state.sound_list_y + 134);
+    check_sound_slots(state.keysound_selected_slot == 1);
+    check_sound_slots(state.armed_resource_id == 0);
+    harness.view().compose.keysound_ids_available = false;
+    harness.view().compose.sound_slots_mode = false;
+    (void)harness.frame();
+    WormUiKeysoundDockRequest request{};
+    worm_ui_frontend_keysound_dock_request(&request);
+    check_sound_slots(!request.slots_mode);
+    check_sound_slots(harness.drawn_text().find("BMS slots") == std::string::npos);
+    const auto& view = harness.view().compose;
+    check_sound_slots(!worm_ui_frontend_stage_sound_slot_file(
+        view.project_id, view.chart_id, view.document_revision, "/tmp/auto.wav", 1));
+}

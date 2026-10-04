@@ -1181,6 +1181,132 @@ auto apply_resource_asset_import(document_history_t& history, std::uint64_t expe
     return commit_document_command(history, std::move(draft.document), "Import resource asset");
 }
 
+namespace {
+
+auto decode_supported_wav_identifier(std::string_view identifier) -> std::optional<std::size_t> {
+    if (identifier.size() != 2) return std::nullopt;
+    const auto high = bms_digit_value(static_cast<unsigned char>(identifier[0]));
+    const auto low = bms_digit_value(static_cast<unsigned char>(identifier[1]));
+    if (high < 0 || low < 0) return std::nullopt;
+    const auto value = static_cast<std::size_t>(high) * 36 + static_cast<std::size_t>(low);
+    return value == 0 ? std::nullopt : std::optional{value};
+}
+
+auto is_bms_wav_identity(const target_resource_identity_t& identity) -> bool {
+    if (identity.family != format_family_t::bms || identity.namespace_name.size() != 3) return false;
+    return std::ranges::equal(identity.namespace_name, std::string_view{"WAV"},
+        [](unsigned char left, unsigned char right) {
+            if (left >= 'a' && left <= 'z') left = static_cast<unsigned char>(left - ('a' - 'A'));
+            return left == right;
+        });
+}
+
+struct wav_slot_owner_t {
+    resource_id_t resource;
+    bool ambiguous{};
+};
+
+auto find_wav_slot_owner(const song_document_t& song, std::size_t value) -> wav_slot_owner_t {
+    wav_slot_owner_t result;
+    for (const auto& resource : song.resources) {
+        const auto owns_slot = std::ranges::any_of(resource.target_identities, [value](const auto& id) {
+            if (!is_bms_wav_identity(id)) return false;
+            return decode_supported_wav_identifier(id.identifier) == value;
+        });
+        if (!owns_slot) continue;
+        if (result.resource && result.resource != resource.id) result.ambiguous = true;
+        else result.resource = resource.id;
+    }
+    return result;
+}
+
+auto replace_imported_resource_with_exact_slot(document_history_t& draft,
+                                               std::string_view identifier,
+                                               document_command_result_t& result) -> bool {
+    if (draft.document.resources.empty()) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "WAV slot import did not create a sound resource");
+        return false;
+    }
+    auto& resource = draft.document.resources.back();
+    std::erase_if(resource.target_identities, [](const auto& identity) {
+        return is_bms_wav_identity(identity);
+    });
+    const auto value = decode_supported_wav_identifier(identifier);
+    if (!value) return false;
+    resource.target_identities.push_back(
+        {format_family_t::bms, encode_bms_identifier(*value, 36), "WAV"});
+    return true;
+}
+
+} // namespace
+
+auto apply_bms_wav_slot_assignment(document_history_t& history,
+                                   std::uint64_t expected_revision,
+                                   const assign_bms_wav_slot_action_t& action)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id, "BMS WAV slot assignment revision is stale");
+        return result;
+    }
+    const auto value = decode_supported_wav_identifier(action.identifier);
+    if (!value) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "BMS WAV slot must be a supported nonzero base-36 identifier");
+        return result;
+    }
+    if (action.imported_file.role != resource_role_t::sample) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "BMS WAV slot assignment requires a sample import");
+        return result;
+    }
+    const auto owner = find_wav_slot_owner(history.document, *value);
+    if (owner.ambiguous) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "BMS WAV slot is assigned to more than one sound");
+        return result;
+    }
+    if (owner.resource && !action.confirm_replacement) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "replacing an occupied BMS WAV slot requires confirmation");
+        return result;
+    }
+
+    auto draft = make_document_history(history.document, 1, false);
+    auto imported_action = action.imported_file;
+    imported_action.allocate_bms_identifier = false;
+    const auto imported = apply_resource_asset_import(draft, draft.document.revision,
+                                                      imported_action);
+    if (!imported) {
+        result.diagnostics = imported.diagnostics;
+        return result;
+    }
+    if (!owner.resource) {
+        if (!replace_imported_resource_with_exact_slot(draft, action.identifier, result)) return result;
+        return commit_document_command(history, std::move(draft.document), "Assign BMS WAV slot");
+    }
+
+    const auto temporary = draft.document.resources.back();
+    std::erase_if(draft.document.resources, [&temporary](const auto& resource) {
+        return resource.id == temporary.id;
+    });
+    const auto target = std::ranges::find(draft.document.resources, owner.resource,
+                                          &resource_entry_t::id);
+    if (target == draft.document.resources.end()) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "occupied BMS WAV slot sound disappeared during import");
+        return result;
+    }
+    if (target->asset == temporary.asset && !target->missing &&
+        (imported_action.name.empty() || target->name == imported_action.name)) return result;
+    target->asset = temporary.asset;
+    target->missing = false;
+    if (!imported_action.name.empty()) target->name = imported_action.name;
+    return commit_document_command(history, std::move(draft.document),
+                                    "Replace BMS WAV slot sound");
+}
+
 auto apply_primary_music_set(document_history_t& history, std::uint64_t expected_revision,
                              import_resource_asset_action_t action)
     -> document_command_result_t {

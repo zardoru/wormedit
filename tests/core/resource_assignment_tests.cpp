@@ -8,9 +8,12 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <filesystem>
 #include <ranges>
 #include <span>
 #include <string>
+#include <string_view>
+#include <utility>
 
 using namespace wormedit;
 
@@ -77,6 +80,43 @@ auto assignment_song() -> song_document_t {
     REQUIRE(validate_document(song).empty());
     return song;
 }
+
+auto wav_slot_song() -> song_document_t {
+    auto song = assignment_song();
+    song.audio_assets.front().stream = {48'000, 2, 48'000, true};
+    song.resources[0].target_identities = {{format_family_t::bms, "01", "WAV"}};
+    song.resources[0].sound_kind = sound_kind_t::keysound;
+    song.resources[0].tags = {"kick"};
+    song.resources[0].sound_group = sound_group_id_t{7};
+    song.resources[1].asset = song.resources[0].asset;
+    song.resources[1].target_identities = {{format_family_t::bms, "02", "WAV"}};
+    song.sound_groups = {{.id = sound_group_id_t{7}, .name = "Drums"}};
+    song.charts.front().semantic_layers = {
+        {.id = layer_id_t{8}, .name = "Accent", .color = {255, 128, 0, 255}}};
+    song.charts.front().sound_layer_defaults = {
+        {.resource = resource_id_t{1}, .layers = {layer_id_t{8}}}};
+    REQUIRE(validate_document(song).empty());
+    return song;
+}
+
+auto wav_slot_import(std::string_view path, std::string name)
+    -> import_resource_asset_action_t {
+    return {.source_path = std::filesystem::path{TEST_ROOT} / std::filesystem::path{path},
+            .role = resource_role_t::sample,
+            .name = std::move(name),
+            .audio_stream = audio_stream_info_t{48'000, 2, 48'000, true}};
+}
+
+auto same_target_identities(const std::vector<target_resource_identity_t>& left,
+                            const std::vector<target_resource_identity_t>& right) -> bool {
+    return left.size() == right.size() && std::ranges::equal(left, right, [](const auto& a,
+                                                                               const auto& b) {
+        return a.family == b.family && a.identifier == b.identifier &&
+               a.namespace_name == b.namespace_name;
+    });
+}
+
+void check_wav_slot(bool value) { CHECK(value); }
 
 auto deletion_reference_song() -> song_document_t {
     auto song = assignment_song();
@@ -566,6 +606,122 @@ TEST_CASE("resource import registers decoded asset and catalog entry in one hist
     REQUIRE(reused);
     CHECK(history.document.audio_assets.size() == 4);
     CHECK(history.document.resources.back().asset == history.document.audio_assets.back().id);
+}
+
+TEST_CASE("explicit BMS WAV assignment creates a resource at the chosen empty slot",
+          "[unit][core][resources][bms-wav-slots]") {
+    auto history = make_document_history(assignment_song());
+    const auto old_resources = history.document.resources.size();
+    const auto old_assets = history.document.audio_assets.size();
+    const auto result = apply_bms_wav_slot_assignment(
+        history, history.document.revision,
+        {.identifier = "0a", .imported_file = wav_slot_import("empty-slot.wav", "Empty slot")});
+    check_wav_slot(static_cast<bool>(result));
+    check_wav_slot(history.document.resources.size() == old_resources + 1);
+    check_wav_slot(history.document.audio_assets.size() == old_assets + 1);
+    const auto& added = history.document.resources.back();
+    check_wav_slot(added.id == resource_id_t{6});
+    check_wav_slot(added.asset == history.document.audio_assets.back().id);
+    check_wav_slot(added.target_identities.size() == 1);
+    check_wav_slot(added.target_identities.front().identifier == "0A");
+    check_wav_slot(added.target_identities.front().namespace_name == "WAV");
+    check_wav_slot(history.undo.size() == 1);
+    check_wav_slot(static_cast<bool>(undo_document_command(history)));
+    check_wav_slot(history.document.resources.size() == old_resources);
+    check_wav_slot(history.document.audio_assets.size() == old_assets);
+    check_wav_slot(static_cast<bool>(redo_document_command(history)));
+    check_wav_slot(history.document.resources.back().target_identities.front().identifier == "0A");
+}
+
+TEST_CASE("confirmed BMS WAV replacement preserves resource identity and references",
+          "[unit][core][resources][bms-wav-slots]") {
+    auto history = make_document_history(wav_slot_song());
+    const auto original = history.document;
+    const auto old_asset = history.document.resources.front().asset;
+    const auto result = apply_bms_wav_slot_assignment(
+        history, history.document.revision,
+        {.identifier = "01", .imported_file = wav_slot_import("replacement.wav", "Replacement"),
+         .confirm_replacement = true});
+    check_wav_slot(static_cast<bool>(result));
+    const auto& replaced = history.document.resources.front();
+    const auto replacement_asset = replaced.asset;
+    check_wav_slot(replaced.id == original.resources.front().id);
+    check_wav_slot(replaced.asset != old_asset);
+    check_wav_slot(replaced.name == "Replacement");
+    check_wav_slot(replaced.roles == original.resources.front().roles);
+    check_wav_slot(same_target_identities(replaced.target_identities,
+                                          original.resources.front().target_identities));
+    check_wav_slot(replaced.sound_kind == original.resources.front().sound_kind);
+    check_wav_slot(replaced.tags == original.resources.front().tags);
+    check_wav_slot(replaced.sound_group == original.resources.front().sound_group);
+    check_wav_slot(history.document.resources[1].asset == old_asset);
+    check_wav_slot(same_target_identities(history.document.resources[1].target_identities,
+                                          original.resources[1].target_identities));
+    check_wav_slot(history.document.audio_assets.front().id == original.audio_assets.front().id);
+    check_wav_slot(history.document.audio_assets.front().source_path ==
+                   original.audio_assets.front().source_path);
+    check_wav_slot(history.document.audio_assets.front().stream.sample_rate ==
+                   original.audio_assets.front().stream.sample_rate);
+    check_wav_slot(history.document.charts.front().sound_layer_defaults ==
+                   original.charts.front().sound_layer_defaults);
+    check_wav_slot(history.document.charts.front().measures.front().notes.front().sound ==
+                   original.charts.front().measures.front().notes.front().sound);
+    check_wav_slot(history.document.charts.front().measures.front().bgm_events.front().sound ==
+                   original.charts.front().measures.front().bgm_events.front().sound);
+    check_wav_slot(history.undo.size() == 1);
+    check_wav_slot(static_cast<bool>(undo_document_command(history)));
+    check_wav_slot(history.document.resources.front().id == original.resources.front().id);
+    check_wav_slot(history.document.resources.front().asset == original.resources.front().asset);
+    check_wav_slot(same_target_identities(history.document.resources.front().target_identities,
+                                          original.resources.front().target_identities));
+    check_wav_slot(static_cast<bool>(redo_document_command(history)));
+    check_wav_slot(history.document.resources.front().asset == replacement_asset);
+}
+
+TEST_CASE("BMS WAV assignment rejects reserved, invalid, stale and unconfirmed requests atomically",
+          "[unit][core][resources][bms-wav-slots]") {
+    auto history = make_document_history(wav_slot_song());
+    const auto original = history.document;
+    auto attempt = [&](std::string id, std::uint64_t revision, bool confirm = false) {
+        return apply_bms_wav_slot_assignment(history, revision,
+            {.identifier = std::move(id), .imported_file = wav_slot_import("reject.wav", "Reject"),
+             .confirm_replacement = confirm});
+    };
+    check_wav_slot(!attempt("00", history.document.revision, true));
+    check_wav_slot(!attempt("0?", history.document.revision, true));
+    check_wav_slot(!attempt("100", history.document.revision, true));
+    check_wav_slot(!attempt("01", history.document.revision));
+    check_wav_slot(!attempt("03", history.document.revision - 1));
+    auto relative_import = wav_slot_import("relative.wav", "Reject");
+    relative_import.source_path = "relative.wav";
+    check_wav_slot(!apply_bms_wav_slot_assignment(history, history.document.revision,
+        {.identifier = "03", .imported_file = relative_import}));
+    auto invalid_probe = wav_slot_import("invalid-probe.wav", "Reject");
+    invalid_probe.audio_stream->sample_rate = 0;
+    check_wav_slot(!apply_bms_wav_slot_assignment(history, history.document.revision,
+        {.identifier = "03", .imported_file = invalid_probe}));
+    check_wav_slot(history.document.resources.size() == original.resources.size());
+    check_wav_slot(history.document.resources.front().asset == original.resources.front().asset);
+    check_wav_slot(same_target_identities(history.document.resources.front().target_identities,
+                                          original.resources.front().target_identities));
+    check_wav_slot(history.document.audio_assets.size() == original.audio_assets.size());
+    check_wav_slot(history.document.audio_assets.front().source_path ==
+                   original.audio_assets.front().source_path);
+    check_wav_slot(history.document.revision == original.revision);
+    check_wav_slot(history.undo.empty());
+}
+
+TEST_CASE("explicit WAV slot assignment matches canonical namespace casing",
+          "[unit][core][resources][bms-wav-slots]") {
+    auto song = wav_slot_song();
+    song.resources.front().target_identities.front().namespace_name = "wav";
+    auto history = make_document_history(std::move(song));
+    const auto result = apply_bms_wav_slot_assignment(
+        history, history.document.revision,
+        {.identifier = "01", .imported_file = wav_slot_import("case-fold.wav", "Case fold")});
+    check_wav_slot(!result);
+    check_wav_slot(history.document.resources.front().asset == asset_id_t{1});
+    check_wav_slot(history.undo.empty());
 }
 
 namespace { void check_import_extent(bool value) { CHECK(value); } }

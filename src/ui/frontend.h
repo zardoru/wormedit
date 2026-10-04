@@ -891,6 +891,10 @@ typedef struct WormUiBgaDockRequest {
 
 typedef struct WormUiKeysoundDockRequest {
     bool sort_by_id;
+    bool slots_mode;
+    uint16_t selected_slot;
+    char search[64];
+    size_t first_row, row_limit;
 } WormUiKeysoundDockRequest;
 
 typedef struct WormUiComposeKeysoundRowView {
@@ -904,6 +908,15 @@ typedef struct WormUiComposeKeysoundRowView {
     /* Bit i means adding keysound_layers[i] conflicts with existing note layers. */
     uint64_t note_layer_conflict_mask;
 } WormUiComposeKeysoundRowView;
+
+typedef struct WormUiComposeSoundSlotRowView {
+    uint16_t number;
+    const char* slot;
+    uint64_t resource_id;
+    const char* name;
+    uint32_t use_count;
+    bool missing, placeable;
+} WormUiComposeSoundSlotRowView;
 
 typedef struct WormUiComposeKeysoundLayerView {
     uint64_t layer_id;
@@ -1188,6 +1201,11 @@ typedef struct WormUiComposeView {
     bool keysounds_available;
     size_t keysound_ids_used, keysound_ids_total, keysound_largest_free_run;
     bool keysound_ids_available;
+    const WormUiComposeSoundSlotRowView* sound_slots;
+    size_t sound_slot_count, sound_slot_first_row, sound_slot_total_matching;
+    bool sound_slots_mode;
+    uint16_t sound_slot_selected_number;
+    size_t sound_slot_selected_row;
     const WormUiComposeOutputGroupView* output_groups;
     size_t output_group_count;
     bool output_groups_truncated;
@@ -1878,6 +1896,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE,
     /* Keysound listbox actions. The sound list is compose_sound_resource_ids. */
     WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES,
+    WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT,
     WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES,
     WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA,
     WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS,
@@ -2263,6 +2282,8 @@ typedef struct WormUiWorkspaceAction {
     bool compose_renumber_bga;
     const char* const* compose_import_paths;
     size_t compose_import_path_count;
+    uint16_t compose_sound_slot;
+    bool compose_sound_slot_confirmed;
     size_t compose_output_group_index;
     bool compose_export_overwrite;
     uint8_t compose_resource_role;
@@ -2398,4 +2419,8 @@ void worm_ui_frame_render_phase_end(uint32_t previous);
 
 void worm_ui_frontend_bga_dock_request(WormUiBgaDockRequest* request);
 void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request);
+/* Queues one dropped file for exact slot assignment; false when automatic mode is active.
+   In slots mode invalid/stale requests are consumed without falling back to allocation. */
+bool worm_ui_frontend_stage_sound_slot_file(uint64_t project, uint64_t chart, uint64_t revision,
+                                            const char* path, size_t file_count);
 bool worm_ui_frontend_bga_list_contains(uint32_t window_id, float x, float y);

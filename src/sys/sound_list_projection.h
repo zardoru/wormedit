@@ -115,4 +115,29 @@ struct keysound_list_t {
                                          bool ids_available = true)
     -> keysound_list_t;
 
+// All supported nonzero BMS WAV slots, filtered and projected in a bounded window.
+struct sound_slot_request_t {
+    std::string search;
+    std::uint16_t selected_slot{};
+    std::size_t first_row{};
+    std::size_t row_limit{64};
+};
+struct sound_slot_row_t {
+    std::uint16_t number{};
+    std::string identifier;
+    resource_id_t resource;
+    std::string name;
+    std::uint32_t use_count{};
+    bool missing{};
+    bool placeable{};
+};
+struct sound_slot_list_t {
+    std::vector<sound_slot_row_t> rows;
+    std::size_t first_row{}, total_matching{};
+    // Index in the filtered virtual list, or SIZE_MAX when the selected slot is hidden.
+    std::size_t selected_row{SIZE_MAX};
+};
+[[nodiscard]] auto project_sound_slots(const song_document_t& document,
+                                       const sound_slot_request_t& request) -> sound_slot_list_t;
+
 } // namespace wormedit::sys

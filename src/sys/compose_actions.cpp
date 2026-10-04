@@ -904,6 +904,7 @@ std::optional<std::string> dispatch_compose_resource_action(compose_action_conte
             return "Finish or cancel the active Compose gesture before editing BGA.";
         return dispatch_compose_bga_action(context.action, context.history, context.workspace, context.state.chart);
     case WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES:
+    case WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT:
     case WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS:
     case WORM_UI_COMPOSE_ACTION_AUDITION_SOUND:
     case WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS:

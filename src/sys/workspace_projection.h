@@ -173,6 +173,7 @@ struct flattened_workspace_t {
         } resource;
         struct {
             frame_span<WormUiComposeKeysoundRowView> row;
+            frame_span<WormUiComposeSoundSlotRowView> slot;
             frame_span<WormUiComposeKeysoundLayerView> layer;
         } keysound;
         struct {
@@ -198,7 +199,8 @@ struct flattened_workspace_t {
                                      bool recovery_scan_configured,
                                      const stepmania_export_policy_t& stepmania_policy,
                                      frame_arena_t* arena = nullptr,
-                                     dock_sort_t keysound_sort = dock_sort_t::natural_name)
+                                     dock_sort_t keysound_sort = dock_sort_t::natural_name,
+                                     WormUiKeysoundDockRequest keysound_request = {})
     -> flattened_workspace_t;
 
 // Borrowed notification strings remain valid until the center's next frame-

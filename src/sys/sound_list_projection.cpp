@@ -137,7 +137,7 @@ namespace {
 
 auto keysound_slot(const resource_entry_t& resource) -> std::string {
     const auto identity = std::ranges::find_if(resource.target_identities, [](const auto& item) {
-        return item.family == format_family_t::bms && item.namespace_name == "WAV";
+        return item.family == format_family_t::bms && fold(item.namespace_name) == "wav";
     });
     return identity == resource.target_identities.end() ? std::string{} : identity->identifier;
 }
@@ -253,6 +253,59 @@ auto project_keysound_list(const song_document_t& document, const chart_document
              .layer_mask = chart ? keysound_layer_mask(*chart, list, resource.id) : 0});
     }
     if (chart) populate_note_conflicts(*chart, list);
+    return list;
+}
+
+namespace {
+constexpr std::string_view slot_digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+auto slot_number(const target_resource_identity_t& id) -> std::size_t {
+    if (id.family != format_family_t::bms || fold(id.namespace_name) != "wav" ||
+        id.identifier.size() != 2) return 0;
+    const auto text = fold(id.identifier);
+    constexpr std::string_view digits = "0123456789abcdefghijklmnopqrstuvwxyz";
+    const auto high = digits.find(text[0]), low = digits.find(text[1]);
+    if (high == digits.npos || low == digits.npos) return 0;
+    return high * 36 + low;
+}
+auto slot_identifier(std::size_t number) -> std::string {
+    return {slot_digits[number / 36], slot_digits[number % 36]};
+}
+} // namespace
+
+auto project_sound_slots(const song_document_t& document, const sound_slot_request_t& request)
+    -> sound_slot_list_t {
+    std::array<const resource_entry_t*, 1296> owners{};
+    for (const auto& resource : document.resources)
+        for (const auto& identity : resource.target_identities)
+            if (const auto number = slot_number(identity); number != 0) owners[number] = &resource;
+    const auto counts = use_counts(document);
+    const auto query = fold(request.search);
+    std::vector<std::size_t> matching;
+    for (std::size_t number = 1; number < owners.size(); ++number) {
+        const auto* resource = owners[number];
+        const auto name = resource ? resource->name : "(empty)";
+        if (query.empty() || fold(slot_identifier(number)).find(query) != std::string::npos ||
+            fold(name).find(query) != std::string::npos) matching.push_back(number);
+    }
+    sound_slot_list_t list;
+    list.total_matching = matching.size();
+    const auto selected = std::ranges::find(matching, request.selected_slot);
+    if (selected != matching.end())
+        list.selected_row = static_cast<std::size_t>(selected - matching.begin());
+    list.first_row = std::min(request.first_row, matching.size());
+    const auto count = std::min({request.row_limit, std::size_t{128},
+                                 matching.size() - list.first_row});
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto number = matching[list.first_row + index];
+        const auto* resource = owners[number];
+        const auto uses = resource ? counts.find(resource->id.value) : counts.end();
+        list.rows.push_back({.number = static_cast<std::uint16_t>(number),
+            .identifier = slot_identifier(number), .resource = resource ? resource->id : resource_id_t{},
+            .name = resource ? resource->name : "(empty)",
+            .use_count = uses == counts.end() ? 0U : uses->second,
+            .missing = resource && resource->missing,
+            .placeable = resource && is_placeable_keysound(document, *resource)});
+    }
     return list;
 }
 

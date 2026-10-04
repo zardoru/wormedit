@@ -89,6 +89,18 @@ struct import_resource_asset_action_t {
                                                const import_resource_asset_action_t& action)
     -> document_command_result_t;
 
+struct assign_bms_wav_slot_action_t {
+    std::string identifier;
+    import_resource_asset_action_t imported_file;
+    bool confirm_replacement{};
+};
+
+// Imports one externally validated audio file and binds it to the exact BMS WAV
+// identifier. Replacing an occupied slot requires explicit confirmation.
+[[nodiscard]] auto apply_bms_wav_slot_assignment(
+    document_history_t& history, std::uint64_t expected_revision,
+    const assign_bms_wav_slot_action_t& action) -> document_command_result_t;
+
 // Sets the song's main audio from an externally probed file. The first Music
 // resource has its asset repointed (keeping every reference); without one, the
 // file is imported as a new Music+BGM resource. Native charts grow to fit.

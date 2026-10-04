@@ -194,6 +194,38 @@ auto finish_sound_edit(workspace_controller_t& workspace, document_history_t& hi
     return success;
 }
 
+auto assign_picked_slot(const WormUiWorkspaceAction& action, document_history_t& history,
+                         workspace_controller_t& workspace, chart_id_t chart_id) -> std::string {
+    const auto chart = std::ranges::find(history.document.charts, chart_id, &chart_document_t::id);
+    if (chart == history.document.charts.end() || chart->source_family != format_family_t::bms)
+        return "Direct sound slots are available only for a BMS chart.";
+    if (action.compose_input_chart_id != chart_id.value ||
+        action.compose_input_document_revision != history.document.revision)
+        return "The chosen sound slot is stale. Select it again.";
+    if (action.compose_sound_slot == 0 || action.compose_sound_slot >= 1296)
+        return "Choose a sound slot from 01 through ZZ.";
+    if (action.compose_import_path_count != 1 || !action.compose_import_paths ||
+        !action.compose_import_paths[0]) return "Assign exactly one audio file to the selected slot.";
+    const auto path = std::filesystem::path{action.compose_import_paths[0]}.lexically_normal();
+    std::error_code error;
+    if (!path.is_absolute() || !std::filesystem::is_regular_file(path, error) || error)
+        return "The selected audio file is not readable.";
+    const auto stream = probe_audio(path);
+    if (!stream) return "The selected file is not decodable audio.";
+    constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const auto number = action.compose_sound_slot;
+    const auto identifier = std::string{digits[number / 36], digits[number % 36]};
+    auto name = path.filename().generic_string();
+    if (name.size() > 255) name.clear();
+    const auto applied = apply_bms_wav_slot_assignment(history, history.document.revision,
+        {.identifier = identifier,
+         .imported_file = {.source_path = path, .role = resource_role_t::sample,
+                           .name = std::move(name), .audio_stream = stream},
+         .confirm_replacement = action.compose_sound_slot_confirmed});
+    return finish_sound_edit(workspace, history, applied,
+        "Assigned audio to WAV " + identifier + ".", "Sound slot assignment made no change.");
+}
+
 auto delete_sounds(const WormUiWorkspaceAction& action, document_history_t& history,
                    workspace_controller_t& workspace) -> std::string {
     const auto ids = sound_ids(action);
@@ -273,6 +305,8 @@ auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action,
     switch (action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES:
         return import_picked_files(action, history, workspace, chart);
+    case WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT:
+        return assign_picked_slot(action, history, workspace, chart);
     case WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS: return delete_sounds(action, history, workspace);
     case WORM_UI_COMPOSE_ACTION_AUDITION_SOUND:
         return request_audition(action, history, application_state);

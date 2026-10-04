@@ -322,6 +322,7 @@ struct workspace_projection_context_t {
     const wormedit::song_document_t& document;
     const wormedit::stepmania_export_policy_t& stepmania_policy;
     dock_sort_t keysound_sort;
+    WormUiKeysoundDockRequest keysound_request;
 };
 
 void publish_workspace_summary(flattened_workspace_t& result, const char* text) {
@@ -705,6 +706,35 @@ auto append_keysound_layer(flattened_workspace_t& result, frame_arena_t& arena,
         .alpha = layer.color.alpha, .locked = layer.locked});
 }
 
+void populate_compose_sound_slots(const workspace_projection_context_t& projection) {
+    auto& result = projection.result;
+    auto& view = result.view.compose;
+    const auto& request = projection.keysound_request;
+    view.sound_slots_mode = view.keysound_ids_available && request.slots_mode;
+    if (!view.sound_slots_mode || !result.arena()) return;
+    const auto list = wormedit::sys::project_sound_slots(projection.document,
+        {.search = std::string{std::begin(request.search),
+             std::find(std::begin(request.search), std::end(request.search), '\0')},
+         .selected_slot = request.selected_slot,
+         .first_row = request.first_row, .row_limit = request.row_limit});
+    view.sound_slot_selected_number = request.selected_slot;
+    view.sound_slot_selected_row = list.selected_row;
+    view.sound_slot_first_row = list.first_row;
+    view.sound_slot_total_matching = list.total_matching;
+    auto& rows = result.compose.keysound.slot;
+    auto& arena = *result.arena();
+    rows = arena_array<WormUiComposeSoundSlotRowView>(arena, list.rows.size());
+    for (const auto& row : list.rows) {
+        const auto* slot = arena_string(arena, row.identifier);
+        const auto* name = arena_string(arena, row.name);
+        if (!slot || !name || !rows.push_back({.number = row.number, .slot = slot,
+            .resource_id = row.resource.value, .name = name, .use_count = row.use_count,
+            .missing = row.missing, .placeable = row.placeable})) break;
+    }
+    view.sound_slots = rows.data();
+    view.sound_slot_count = rows.size();
+}
+
 void populate_compose_keysounds(const workspace_projection_context_t& projection,
                                 wormedit::chart_id_t chart_id) {
     auto& result = projection.result;
@@ -717,7 +747,8 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
     const auto list = wormedit::sys::project_keysound_list(
         projection.document, &*chart, WORM_UI_COMPOSE_KEYSOUND_CAPACITY,
         chart->source_family == wormedit::format_family_t::bms &&
-                projection.keysound_sort == dock_sort_t::bms_id
+                (projection.keysound_sort == dock_sort_t::bms_id ||
+                 projection.keysound_request.slots_mode)
             ? wormedit::sys::dock_sort_t::bms_id
             : wormedit::sys::dock_sort_t::natural_name,
         chart->source_family == wormedit::format_family_t::bms);
@@ -748,6 +779,7 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
         }
     }
     view.keysound_count = result.compose.keysound.row.size();
+    populate_compose_sound_slots(projection);
 }
 
 void populate_compose_branch_rows(flattened_workspace_t& result,
@@ -1002,6 +1034,7 @@ void flattened_workspace_t::rebind_view_pointers() {
     auto& compose_view = view.compose;
     compose_view.resources = compose.resource.view.data();
     compose_view.keysounds = compose.keysound.row.data();
+    compose_view.sound_slots = compose.keysound.slot.data();
     compose_view.keysound_layers = compose.keysound.layer.data();
     compose_view.output_groups = compose.output_group.view.data();
     compose_view.branch_rows = compose.branch.row.data();
@@ -1042,7 +1075,8 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                        const wormedit::native_project_recovery_controller_view_t& recovery,
                        bool recovery_scan_configured,
                        const wormedit::stepmania_export_policy_t& stepmania_policy,
-                       frame_arena_t* arena, dock_sort_t keysound_sort)
+                       frame_arena_t* arena, dock_sort_t keysound_sort,
+                       WormUiKeysoundDockRequest keysound_request)
     -> flattened_workspace_t {
     flattened_workspace_t result(arena);
     result.view.project_title = document.metadata.title.c_str();
@@ -1068,7 +1102,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
     result.view.tab_heading = heading ? heading : "Compose";
 
     const workspace_projection_context_t projection{result, source, document, stepmania_policy,
-                                                    keysound_sort};
+                                                    keysound_sort, keysound_request};
     std::visit(workspace_tab_visitor{projection}, source.tab_view);
     return result;
 }

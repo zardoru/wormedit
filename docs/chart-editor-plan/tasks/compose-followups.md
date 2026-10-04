@@ -316,11 +316,12 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-358 Restore optional BMS sound slots mode with direct ID assignment
 
-- **Status:** ready (T-352 is done)
+- **Status:** done (2026-10-04)
 - **Decision (user, 2026-10-04):** The sound picker must retain a slots mode that lets authors choose a BMS ID directly for backwards compatibility. Automatic natural-order assignment remains the default. This supersedes the earlier statement that a slot view was not planned.
 - **Outcome:** the BMS Sounds dock switches between the automatic resource list and a virtualized slots view of all usable WAV IDs, including empty slots. Choosing a slot and assigning a file uses that exact ID; occupied slots require explicit replacement confirmation. Other formats keep their resource list.
 - **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/sys/sound_list_projection.h`, `include/wormedit/core/resource_assignment.h`, `src/sys/compose_sound_actions.cpp`, `docs/references/bms-command-memo.md`.
-- **Files owned:** `include/wormedit/core/resource_assignment.h`, `src/core/resource_assignment.cpp`, `src/sys/sound_list_projection.cpp/.h`, `src/sys/compose_sound_actions.cpp/.h`, `src/sys/compose_actions.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/frontend.h`, `tests/core/resource_assignment_tests.cpp`, `tests/sys/sound_list_projection_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** `include/wormedit/core/resource_assignment.h`, `src/core/resource_assignment.cpp`, `src/sys/sound_list_projection.cpp/.h`, `src/sys/compose_sound_actions.cpp/.h`, `src/sys/compose_actions.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/frontend.h`, `tests/core/resource_assignment_tests.cpp`, `tests/sys/sound_list_projection_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/workspace_projection.cpp/.h`, `src/sys/application_frame_projection.cpp`, `src/sys/main.cpp`.
+- **Supporting scope (user approved, 2026-10-04):** `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/workspace_projection.cpp/.h`, `src/sys/application_frame_projection.cpp`, and `src/sys/main.cpp` are owned for retained slots state, projection requests, and selected-slot file-drop routing.
 - **Steps:**
   1. Add a revision-checked assign-to-slot command for an exact supported WAV ID. An empty slot creates a resource; confirmed replacement relinks the occupied resource in one undo step, retaining its ID and note references.
   2. Project a bounded visible slot window with ID, empty/occupied state, file name, uses and missing state; reserve 00 and use supported base-36 capacity.
@@ -329,4 +330,5 @@ Apply the stale-plan check (rule 9) first.
 - **Invariants:** automatic allocation stays the default; selecting or viewing slots never renumbers resources; direct assignment never silently invokes automatic ID allocation or Renumber by name.
 - **Reject/failure behavior:** invalid/reserved IDs, stale revisions, invalid files and unconfirmed replacements leave the document unchanged.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^core\.|sound_list_projection'`; `ctest --test-dir build -L event-harness --output-on-failure`; isolated Xvfb assignment to a chosen empty slot and confirmed replacement on a BMS fixture.
+- **Verification (2026-10-04):** Application build passed; core/projection filter passed 1,267/1,267; event harness passed 58/58; full application suite passed 1,892/1,892. Affected sources were checked with `clang-tidy -p build`, with no new cognitive-complexity violations. Isolated Xvfb saved an exact empty WAV Z9 assignment, preserved the document on occupied-slot cancellation, and saved a confirmed WAV 01 replacement retaining resource 31, every chart/note link, unrelated resources and existing audio assets.
 - **Out of scope:** base-62 codec support; BMP/BGA slots mode; automatic group allocation (T-351).

@@ -196,3 +196,50 @@ TEST_CASE("sound layer conflicts distinguish matching layers from unlayered note
     chart.measures.front().notes.front().semantic_layers.push_back(layer_id_t{8});
     CHECK(project_keysound_list(song, &chart, 100).rows.front().note_layer_conflict_mask == 0b01);
 }
+
+TEST_CASE("BMS slots project empty and occupied IDs in a bounded window",
+          "[unit][sys][sounds][sound-slots]") {
+    auto song = catalog();
+    song.resources[1].target_identities = {{format_family_t::bms, "0a", "wav"}};
+    song.resources[2].target_identities = {{format_family_t::bms, "ZZ", "WAV"}};
+    auto list = project_sound_slots(song, {.first_row = 8, .row_limit = 3});
+    require_sound_projection(list.rows.size() == 3);
+    check_sound_projection(list.total_matching == 1295);
+    check_sound_projection(list.first_row == 8);
+    check_sound_projection(list.rows[0].identifier == "09");
+    check_sound_projection(!list.rows[0].resource);
+    check_sound_projection(list.rows[0].name == "(empty)");
+    check_sound_projection(list.rows[1].identifier == "0A");
+    check_sound_projection(list.rows[1].resource == resource_id_t{2});
+    check_sound_projection(list.rows[1].use_count == 2);
+    check_sound_projection(list.rows[1].placeable);
+    check_sound_projection(!list.rows[1].missing);
+    list = project_sound_slots(song, {.search = "zz", .selected_slot = 1295});
+    check_sound_projection(list.selected_row == 0);
+    require_sound_projection(list.rows.size() == 1);
+    check_sound_projection(list.rows[0].number == 1295);
+    check_sound_projection(list.rows[0].missing);
+    check_sound_projection(!list.rows[0].placeable);
+}
+
+TEST_CASE("BMS slot window clamps limits and filters names without changing assignments",
+          "[unit][sys][sounds][sound-slots]") {
+    auto song = catalog();
+    song.resources[1].target_identities = {{format_family_t::bms, "01", "WAV"}};
+    const auto identity = song.resources[1].target_identities.front().identifier;
+    auto list = project_sound_slots(song, {.row_limit = 2000});
+    check_sound_projection(list.rows.size() == 128);
+    check_sound_projection(list.rows.front().number == 1);
+    list = project_sound_slots(song, {.search = "kIcK", .selected_slot = 1});
+    check_sound_projection(list.selected_row == 0);
+    require_sound_projection(list.rows.size() == 1);
+    check_sound_projection(list.rows.front().identifier == "01");
+    check_sound_projection(list.total_matching == 1);
+    list = project_sound_slots(song, {.first_row = 1294, .row_limit = 64});
+    require_sound_projection(list.rows.size() == 1);
+    check_sound_projection(list.rows.front().identifier == "ZZ");
+    list = project_sound_slots(song, {.first_row = SIZE_MAX, .row_limit = SIZE_MAX});
+    check_sound_projection(list.rows.empty());
+    check_sound_projection(list.first_row == 1295);
+    check_sound_projection(song.resources[1].target_identities.front().identifier == identity);
+}

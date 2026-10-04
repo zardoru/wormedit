@@ -22,6 +22,7 @@ remains serialized.
 | --- | --- | --- | --- |
 | `/home/zardoru/devel/wormedit-notifications` | `coord/notifications` | T-221, T-222, T-223 | [Notifications](notifications.md) |
 | `/home/zardoru/devel/wormedit-tap-apply` | `coord/tap-apply` | T-239, T-81, T-51 | [Timing](tap-apply.md) |
+| `/home/zardoru/devel/wormedit-audio-notifications` | `coord/audio-notifications` | T-223 N7 audio/decode/waveform | Brief assigned to timing coordinator after T-81 |
 
 ## Ownership and scheduling
 
@@ -68,3 +69,13 @@ must not merge or push main.
   sandbox approval is disabled. Windowless event checks are recorded separately.
 
 Logs are under `/tmp/wormedit-batch-implementation/`.
+
+N7 scheduling extension (2026-10-04): notifications Sol approved independent
+`audio_transport_frame.{h,cpp}`, `audio_source_registration.{h,cpp}`,
+`waveform_analysis_runtime.{h,cpp}`, isolated `main.cpp` glue, new
+`tests/sys/audio_notification_tests.cpp` and narrow test manifest wiring.
+These files are untouched in the notifications worktree. The timing coordinator
+moves to this third worktree after committing T-81; each worktree keeps its own
+written Sol/Luna task list. Root alone integrates shared main changes. This
+parallel producer cut depends on the integrated sink, with no Compose migration
+dependency; T-223 remains incomplete until all of its slices and gates pass.

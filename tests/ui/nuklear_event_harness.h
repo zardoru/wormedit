@@ -5,8 +5,11 @@
 #include <SDL3/SDL.h>
 
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 struct event_step_t {
@@ -41,6 +44,8 @@ class nuklear_event_harness_t {
     [[nodiscard]] auto ready() const noexcept -> bool { return initialized_ && view_valid_; }
     [[nodiscard]] auto view() noexcept -> WormUiWorkspaceView& { return view_; }
     [[nodiscard]] auto drawn_text() const noexcept -> const std::string& { return drawn_text_; }
+    [[nodiscard]] auto drawn_text_center(std::string_view text) const
+        -> std::optional<std::pair<float, float>>;
     // Event objects are consumed synchronously and never retained. Any pointer
     // payload inside an SDL_Event must remain valid for this call. The explicit
     // modifier state overrides key.mod and SDL state, then restores SDL state.
@@ -59,4 +64,5 @@ class nuklear_event_harness_t {
     bool view_valid_{};
     WormUiWorkspaceView view_{};
     std::string drawn_text_;
+    std::vector<WormUiTestingDrawnText> drawn_text_bounds_;
 };

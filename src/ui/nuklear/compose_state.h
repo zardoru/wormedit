@@ -422,6 +422,10 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t bga_renumber_revision{};
     std::vector<std::uint64_t> bga_renumber_resources;
     std::uint64_t bga_project_id{}, bga_chart_id{};
+    bool bga_auto_increment_on_place{};
+    bool armed_from_bga_dock{};
+    bool bga_reveal_primary{};
+    std::vector<std::uint64_t> bga_advance_ids;
     std::vector<std::uint64_t> bga_staged_ids;
     std::vector<std::string> bga_staged_paths;
     std::vector<const char*> bga_staged_path_pointers;

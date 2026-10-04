@@ -10,7 +10,10 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
+#include <numeric>
+#include <span>
 #include <system_error>
 #include <unordered_set>
 #include <vector>
@@ -109,8 +112,7 @@ auto sound_count_text(std::size_t count) -> std::string {
     return std::to_string(count) + (count == 1 ? " sound" : " sounds");
 }
 
-auto imported_bms_id_ranges(const song_document_t& document, std::size_t count) -> std::size_t {
-    if (count == 0 || count > document.resources.size()) return 0;
+auto bms_wav_identifier_value(const resource_entry_t& resource) -> std::optional<std::size_t> {
     constexpr auto base = std::size_t{36};
     const auto digit = [base](unsigned char value) -> int {
         if (value >= 'a' && value <= 'z')
@@ -119,23 +121,50 @@ auto imported_bms_id_ranges(const song_document_t& document, std::size_t count) 
         if (value >= 'A' && value <= 'Z') return value - 'A' + 10;
         return -1;
     };
+    const auto identities = std::span{resource.target_identities};
+    const auto identity = std::ranges::find_if(identities, [](const auto& item) {
+        return item.family == format_family_t::bms && item.namespace_name == "WAV";
+    });
+    if (identity == identities.end() || identity->identifier.size() != 2) return std::nullopt;
+    const auto high = digit(static_cast<unsigned char>(identity->identifier[0]));
+    const auto low = digit(static_cast<unsigned char>(identity->identifier[1]));
+    if (high < 0 || low < 0) return std::nullopt;
+    return static_cast<std::size_t>(high) * base + static_cast<std::size_t>(low);
+}
+
+auto imported_bms_id_ranges(const song_document_t& document, std::size_t first_resource,
+                            std::span<const std::size_t> entry_indexes) -> std::size_t {
     auto ranges = std::size_t{};
     auto previous = std::optional<std::size_t>{};
-    const auto begin = document.resources.size() - count;
-    for (std::size_t index = begin; index < document.resources.size(); ++index) {
-        const auto& identities = document.resources[index].target_identities;
-        const auto identity = std::ranges::find_if(identities, [](const auto& item) {
-            return item.family == format_family_t::bms && item.namespace_name == "WAV";
-        });
-        if (identity == identities.end() || identity->identifier.size() != 2) continue;
-        const auto high = digit(static_cast<unsigned char>(identity->identifier[0]));
-        const auto low = digit(static_cast<unsigned char>(identity->identifier[1]));
-        if (high < 0 || low < 0) continue;
-        const auto value = static_cast<std::size_t>(high) * base + static_cast<std::size_t>(low);
-        if (!previous || value != *previous + 1) ++ranges;
-        previous = value;
+    for (const auto entry_index : entry_indexes) {
+        const auto resource_index = first_resource + entry_index;
+        if (resource_index >= document.resources.size()) continue;
+        const auto value = bms_wav_identifier_value(document.resources[resource_index]);
+        if (!value) continue;
+        if (!previous || *value != *previous + 1) ++ranges;
+        previous = *value;
     }
     return ranges;
+}
+
+auto imported_bms_id_ranges(const song_document_t& document, std::size_t count) -> std::size_t {
+    if (count == 0 || count > document.resources.size()) return 0;
+    std::vector<std::size_t> entries(count);
+    std::iota(entries.begin(), entries.end(), 0);
+    return imported_bms_id_ranges(document, document.resources.size() - count, entries);
+}
+
+auto ungrouped_entry_indexes(std::size_t entry_count,
+                             std::span<const bulk_sound_import_group_t> groups)
+    -> std::vector<std::size_t> {
+    std::vector<bool> grouped(entry_count);
+    for (const auto& group : groups)
+        for (const auto index : group.entry_indexes)
+            if (index < grouped.size()) grouped[index] = true;
+    std::vector<std::size_t> ungrouped;
+    for (std::size_t index = 0; index < grouped.size(); ++index)
+        if (!grouped[index]) ungrouped.push_back(index);
+    return ungrouped;
 }
 
 } // namespace
@@ -296,7 +325,142 @@ auto import_picked_files(const WormUiWorkspaceAction& action, document_history_t
     return import_keysound_files(history, workspace, chart, paths);
 }
 
+auto confirmed_import_entries(const WormUiWorkspaceAction& action, const song_document_t& document,
+                              bool bms_chart, std::string& reason)
+    -> std::optional<std::vector<bulk_sound_import_entry_t>> {
+    if (!action.sound_import_items || action.sound_import_item_count == 0 ||
+        action.sound_import_item_count > maximum_bulk_sound_import) {
+        reason = "Sound import needs between 1 and 1295 files.";
+        return std::nullopt;
+    }
+    const auto known = sample_source_paths(document);
+    auto planned = std::unordered_set<std::string>{};
+    auto entries = std::vector<bulk_sound_import_entry_t>{};
+    entries.reserve(action.sound_import_item_count);
+    constexpr auto minimum_kind = std::uint8_t{1};
+    constexpr auto maximum_kind = std::uint8_t{3};
+    for (std::size_t index = 0; index < action.sound_import_item_count; ++index) {
+        const auto& item = action.sound_import_items[index];
+        if (!item.path || !item.name || item.kind < minimum_kind ||
+            item.kind > maximum_kind) {
+            reason = "The reviewed sound list contains an invalid item.";
+            return std::nullopt;
+        }
+        const auto path = std::filesystem::path{item.path}.lexically_normal();
+        std::error_code error;
+        if (!path.is_absolute() || !std::filesystem::is_regular_file(path, error) || error) {
+            reason = "A reviewed audio file is no longer readable: " + path.generic_string();
+            return std::nullopt;
+        }
+        const auto key = path.generic_string();
+        if (known.contains(key) || !planned.insert(key).second) {
+            reason = "A reviewed audio file is already in the sound list or appears twice.";
+            return std::nullopt;
+        }
+        const auto stream = probe_audio(path);
+        if (!stream) {
+            reason = "A reviewed file is no longer decodable audio: " + key;
+            return std::nullopt;
+        }
+        auto name = std::string{item.name};
+        if (name.empty() || name.size() > 255) {
+            reason = "Sound names must contain 1 to 255 bytes.";
+            return std::nullopt;
+        }
+        entries.push_back({.asset = {.source_path = path, .role = resource_role_t::sample,
+            .name = std::move(name), .allocate_bms_identifier =
+                bms_chart, .audio_stream = stream},
+            .kind = static_cast<sound_kind_t>(item.kind)});
+    }
+    return entries;
+}
+
+auto confirmed_import_groups(const WormUiWorkspaceAction& action, std::size_t entry_count,
+                            std::string& reason)
+    -> std::optional<std::vector<bulk_sound_import_group_t>> {
+    auto groups = std::vector<bulk_sound_import_group_t>{};
+    if (action.sound_import_group_count != 0 && !action.sound_import_groups) {
+        reason = "The reviewed group list is invalid.";
+        return std::nullopt;
+    }
+    groups.reserve(action.sound_import_group_count);
+    for (std::size_t index = 0; index < action.sound_import_group_count; ++index) {
+        const auto& group = action.sound_import_groups[index];
+        if (!group.name || !group.member_indices || group.member_count == 0) {
+            reason = "A reviewed group has no valid members.";
+            return std::nullopt;
+        }
+        if (std::ranges::any_of(std::span{group.member_indices, group.member_count},
+                                [entry_count](const auto member) { return member >= entry_count; })) {
+            reason = "A reviewed group contains an invalid file index.";
+            return std::nullopt;
+        }
+        auto row = bulk_sound_import_group_t{.name = group.name};
+        if (group.existing_group_id != 0)
+            row.existing_group = sound_group_id_t{group.existing_group_id};
+        row.entry_indexes.assign(group.member_indices,
+                                 group.member_indices + group.member_count);
+        groups.push_back(std::move(row));
+    }
+    return groups;
+}
+
+auto confirm_import(const WormUiWorkspaceAction& action, document_history_t& history,
+                    workspace_controller_t& workspace, chart_id_t chart) -> std::string {
+    if (action.sound_import_project_id != history.document.id.value ||
+        action.compose_input_chart_id != chart.value ||
+        action.compose_input_document_revision != history.document.revision)
+        return "The sound import target changed; review the files again.";
+    const auto target = std::ranges::find(history.document.charts, chart,
+                                          &chart_document_t::id);
+    if (target == history.document.charts.end())
+        return "Select a difficulty before adding sounds.";
+    auto reason = std::string{};
+    auto entries = confirmed_import_entries(action, history.document,
+        target->source_family == format_family_t::bms, reason);
+    if (!entries) return reason;
+    auto groups = confirmed_import_groups(action, entries->size(), reason);
+    if (!groups) return reason;
+    const bool bms_chart = target->source_family == format_family_t::bms;
+    const bool has_groups = !groups->empty();
+    const auto imported_resource_begin = history.document.resources.size();
+    const auto loose_entries = ungrouped_entry_indexes(entries->size(), *groups);
+    auto import = bulk_sound_import_action_t{.chart = chart, .entries = std::move(*entries),
+                                             .groups = std::move(*groups)};
+    const auto applied = apply_bulk_sound_import(
+        history, action.compose_input_document_revision, import);
+    if (!applied.diagnostics.empty()) return applied.diagnostics.front().message;
+    if (!applied.applied) return "Sound import made no document change.";
+    const auto rebound = rebind_workspace(workspace, history);
+    if (!rebound)
+        return rebound.diagnostics.empty() ? "Sounds added, but workspace rebinding failed."
+                                          : rebound.diagnostics.front().message;
+    auto message = "Added " + sound_count_text(action.sound_import_item_count);
+    const auto range_count = bms_chart
+        ? imported_bms_id_ranges(history.document, imported_resource_begin, loose_entries) : 0;
+    if (range_count > 1) {
+        message += has_groups ? ". Ungrouped files split across " : ". Group split across ";
+        message += std::to_string(range_count) +
+                   " ID ranges; Renumber by name can rejoin them";
+    }
+    return message + ".";
+}
+
 } // namespace
+
+auto prepare_keysound_import(const song_document_t& document, chart_id_t chart,
+                             std::span<const std::string> paths) -> prepared_keysound_import_t {
+    const auto target = std::ranges::find(document.charts, chart, &chart_document_t::id);
+    if (target == document.charts.end())
+        return {.message = "Select a difficulty before adding sounds."};
+    auto plan = plan_sound_import(document, target->source_family == format_family_t::bms,
+                                  {paths.begin(), paths.end()});
+    auto message = "Prepared " + sound_count_text(plan.entries.size()) + skipped_suffix(plan);
+    if (plan.entries.size() > maximum_bulk_sound_import)
+        message += ". This exceeds the 1295-file limit; remove files before confirming";
+    return {.entries = std::move(plan.entries), .skipped_unreadable = plan.skipped_unreadable,
+            .skipped_existing = plan.skipped_existing, .message = std::move(message)};
+}
 
 auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action,
                                    document_history_t& history, workspace_controller_t& workspace,
@@ -305,6 +469,8 @@ auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action,
     switch (action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES:
         return import_picked_files(action, history, workspace, chart);
+    case WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT:
+        return confirm_import(action, history, workspace, chart);
     case WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT:
         return assign_picked_slot(action, history, workspace, chart);
     case WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS: return delete_sounds(action, history, workspace);

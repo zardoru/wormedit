@@ -4,11 +4,13 @@
 #include <wormedit/core/resource_assignment.h>
 
 #include <string>
+#include <optional>
+#include <cstddef>
 #include <vector>
 
 namespace wormedit {
 
-inline constexpr std::size_t maximum_bulk_sound_import = 1'000;
+inline constexpr std::size_t maximum_bulk_sound_import = 1'295;
 
 struct bulk_sound_import_entry_t {
     // role is forced to sample; the catalog role set is derived from `kind`.
@@ -17,16 +19,26 @@ struct bulk_sound_import_entry_t {
     std::vector<std::string> tags;
 };
 
+struct bulk_sound_import_group_t {
+    std::string name;
+    std::optional<sound_group_id_t> existing_group;
+    // Indexes into the entries vector; each entry belongs to at most one group.
+    std::vector<std::size_t> entry_indexes;
+};
+
 struct bulk_sound_import_action_t {
     // Chart that receives stems as BMSON sound channels. Empty, or a chart
     // that is not BMSON, registers stems as catalog sounds only.
     chart_id_t chart;
     std::vector<bulk_sound_import_entry_t> entries;
+    std::vector<bulk_sound_import_group_t> groups;
 };
 
-// Registers 1..1000 probed audio files as assets and resources in one history
+// Registers 1..1295 probed audio files as assets and resources in one history
 // step, in list order. BMS WAV identifiers are allocated as one contiguous run
 // when possible, or in the fewest largest free ranges while preserving order.
+// Entries assigned to a group receive their own contiguous WAV ID run, and the
+// group edits commit with the import in the same history step.
 // Each stem imported into a BMSON chart also gets a sound
 // channel with a restart event at the first row and a linked semantic BGM
 // marker in its own BGM lane, so it appears in Compose. File copying stays with

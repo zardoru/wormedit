@@ -38,6 +38,7 @@ struct bga_dock_runtime_t::state_t {
     bga_list_t list;
     std::vector<WormUiComposeBgaRowView> rows;
     std::vector<std::uint64_t> ids;
+    std::vector<std::uint64_t> advance_ids;
     std::string search;
     song_id_t project;
     std::uint64_t revision{}, next_content{1};
@@ -99,8 +100,9 @@ void bga_dock_runtime_t::project(const song_document_t& document, const std::fil
         request.sort_by_id ? dock_sort_t::bms_id : dock_sort_t::natural_name,
         request.ids_available});
     state.update_images(document, base);
-    state.ids.clear(); state.rows.clear();
+    state.ids.clear(); state.advance_ids.clear(); state.rows.clear();
     for (const auto id : state.list.matching_ids) state.ids.push_back(id.value);
+    for (const auto id : state.list.advance_ids) state.advance_ids.push_back(id.value);
     for (const auto& source : state.list.rows) {
         WormUiComposeBgaRowView row{.resource_id = source.resource.value,
             .slot = source.slot.c_str(), .name = source.name.c_str(), .use_count = source.use_count,
@@ -117,6 +119,8 @@ void bga_dock_runtime_t::project(const song_document_t& document, const std::fil
     view.bga_rows = state.rows.data(); view.bga_row_count = state.rows.size();
     view.bga_first_row = state.list.first_row; view.bga_total_matching = state.list.total_matching;
     view.bga_matching_ids = state.ids.data();
+    view.bga_advance_ids = state.advance_ids.data();
+    view.bga_advance_count = state.advance_ids.size();
     view.bga_ids_available = request.ids_available;
     view.bga_ids_used = state.list.bms_capacity.used;
     view.bga_ids_total = state.list.bms_capacity.total;

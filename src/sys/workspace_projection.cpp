@@ -1082,6 +1082,9 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
     result.view.project_title = document.metadata.title.c_str();
     result.view.artist = document.metadata.artist.c_str();
     result.view.project_id = document.id.value;
+    result.view.document_revision = document.revision;
+    result.view.selected_chart_id = source.selected_difficulty
+        ? source.selected_difficulty->id.value : 0;
     result.view.selected_difficulty = source.selected_difficulty.has_value()
                                           ? source.selected_difficulty->difficulty_name.c_str()
                                           : "No difficulty";

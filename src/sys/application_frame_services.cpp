@@ -77,7 +77,8 @@ auto collect_dropped_sound(const SDL_Event& event, SDL_Window* window,
                            std::vector<std::string>& pending_sound_paths,
                            std::string& status) -> bool {
     if (event.type != SDL_EVENT_DROP_FILE || !event.drop.data ||
-        workspace.active_tab != workspace_tab_t::compose ||
+        (workspace.active_tab != workspace_tab_t::compose &&
+         workspace.active_tab != workspace_tab_t::audio_slices) ||
         (event.drop.windowID != 0 && event.drop.windowID != SDL_GetWindowID(window)) ||
         !worm_ui_frontend_sound_list_contains(event.drop.windowID, event.drop.x, event.drop.y))
         return false;
@@ -85,11 +86,8 @@ auto collect_dropped_sound(const SDL_Event& event, SDL_Window* window,
     if (dropped.size() >= WORM_UI_PROJECT_PATH_CAPACITY ||
         !std::filesystem::path{dropped}.is_absolute()) {
         status = "Drop absolute local audio files within the path limit.";
-    } else if (pending_sound_paths.size() < WORM_UI_SOUND_DROP_CAPACITY) {
-        pending_sound_paths.emplace_back(dropped);
     } else {
-        status = "Only the first " + std::to_string(WORM_UI_SOUND_DROP_CAPACITY) +
-                 " dropped sounds were taken.";
+        pending_sound_paths.emplace_back(dropped);
     }
     return true;
 }

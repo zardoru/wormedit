@@ -1324,19 +1324,24 @@ static auto compose_dock_layout(nk_context* context, const WormUiComposeView* vi
     const auto compose_body_height = std::max(
         64.0f, compose_body_bounds.y + compose_body_bounds.h - body_top -
                    context->style.window.spacing.y);
-    const auto inspector_drawn = state.inspector_visible && compose_body_bounds.w >= 540.0f &&
+    const auto sounds_requested = state.sounds_panel_visible && view->keysounds_available &&
+        wormedit::ui::compose_notes_editable(compose_mode_of(*view));
+    const auto compact_sounds_layout = sounds_requested && compose_body_bounds.w < 1100.0f;
+    const auto inspector_drawn = state.inspector_visible && !compact_sounds_layout &&
+        compose_body_bounds.w >= 540.0f &&
         wormedit::ui::compose_inspector_available(compose_mode_of(*view));
     const auto inspector_width = inspector_drawn
                                      ? std::clamp(compose_body_bounds.w * 0.24f, 280.0f, 380.0f)
                                      : 0.0f;
-    const auto layers_drawn = state.layers_panel_visible && compose_body_bounds.w >= 540.0f &&
+    const auto layers_drawn = state.layers_panel_visible && !compact_sounds_layout &&
+        compose_body_bounds.w >= 540.0f &&
         wormedit::ui::compose_notes_editable(compose_mode_of(*view));
     close_hidden_layer_actions(layers_drawn);
     worm_ui_nuklear_dismiss_layer_popup(context);
     const auto layers_width = layers_drawn ? 240.0f : 0.0f;
-    const auto sounds_drawn = state.sounds_panel_visible && view->keysounds_available &&
-        compose_body_bounds.w >= 860.0f + layers_width &&
-        wormedit::ui::compose_notes_editable(compose_mode_of(*view));
+    const auto sounds_drawn = sounds_requested &&
+        (compact_sounds_layout ? compose_body_bounds.w >= 540.0f
+                               : compose_body_bounds.w >= 860.0f + layers_width);
     const auto sounds_width = sounds_drawn
                                   ? std::clamp(compose_body_bounds.w * 0.2f, 292.0f, 340.0f)
                                   : 0.0f;

@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -72,13 +73,21 @@ TEST_CASE("non-audio files and duplicates are skipped with a message", "[unit][f
     CHECK(none.phase == phase_t::closed);
 }
 
-TEST_CASE("the list is bounded at 1000 files", "[unit][frontend][sounds]") {
+TEST_CASE("over-capacity imports remain reviewable and cannot be partially confirmed",
+          "[unit][frontend][sounds]") {
     worm_ui_sound_import_state_t state;
     std::vector<std::string> many;
-    for (int index = 0; index < 1'005; ++index) many.push_back("/s/f" + std::to_string(index) + ".wav");
-    CHECK(worm_ui_nuklear_sound_import_add(state, many, true) == worm_ui_sound_import_capacity);
+    for (int index = 0; index < 1'300; ++index) many.push_back("/s/f" + std::to_string(index) + ".wav");
+    CHECK(worm_ui_nuklear_sound_import_add(state, many, true) == many.size());
+    CHECK(state.items.size() == many.size());
+    CHECK(state.message.find("maximum is 1295") != std::string::npos);
+    CHECK_FALSE(worm_ui_nuklear_sound_import_confirm(state).has_value());
+    CHECK(state.items.size() == many.size());
+    CHECK(state.message.find("exceeds the 1295-file limit") != std::string::npos);
+    for (std::size_t index = 0; index < 5; ++index)
+        worm_ui_nuklear_sound_import_remove(state, state.items.size() - 1);
     CHECK(state.items.size() == worm_ui_sound_import_capacity);
-    CHECK(state.message.find("5 file(s) skipped") != std::string::npos);
+    CHECK(worm_ui_nuklear_sound_import_confirm(state).has_value());
 }
 
 TEST_CASE("list edits keep order and ignore bad input", "[unit][frontend][sounds]") {
@@ -103,16 +112,22 @@ TEST_CASE("list edits keep order and ignore bad input", "[unit][frontend][sounds
     CHECK(state.phase == phase_t::review_list);
 }
 
-TEST_CASE("confirm hands over the list in order and closes", "[unit][frontend][sounds]") {
+TEST_CASE("confirm snapshots the list and retains it until commit success", "[unit][frontend][sounds]") {
     worm_ui_sound_import_state_t state;
     const auto input = paths({"/s/a.wav", "/s/b.ogg"});
     worm_ui_nuklear_sound_import_add(state, input, false);
     worm_ui_nuklear_sound_import_rename(state, 0, "  Kick  ");
     const auto taken = worm_ui_nuklear_sound_import_confirm(state);
-    REQUIRE(taken.size() == 2);
-    CHECK(taken[0].name == "Kick");
-    CHECK(taken[0].path == "/s/a.wav");
-    CHECK(taken[1].name == "b");
+    REQUIRE(taken.has_value());
+    REQUIRE(taken->items.size() == 2);
+    CHECK(taken->items[0].name == "Kick");
+    CHECK(taken->items[0].path == "/s/a.wav");
+    CHECK(taken->items[1].name == "b");
+    CHECK(state.items.size() == 2);
+    worm_ui_nuklear_sound_import_commit_failed(state, "revision changed");
+    CHECK(state.phase == phase_t::review_list);
+    CHECK(state.message == "revision changed");
+    worm_ui_nuklear_sound_import_commit_succeeded(state);
     CHECK(state.phase == phase_t::closed);
     CHECK(state.items.empty());
 }
@@ -122,7 +137,7 @@ TEST_CASE("confirm refuses empty names and cancel clears everything", "[unit][fr
     const auto input = paths({"/s/a.wav", "/s/b.wav"});
     worm_ui_nuklear_sound_import_add(state, input, false);
     worm_ui_nuklear_sound_import_rename(state, 1, "   ");
-    CHECK(worm_ui_nuklear_sound_import_confirm(state).empty());
+    CHECK_FALSE(worm_ui_nuklear_sound_import_confirm(state).has_value());
     CHECK(state.phase == phase_t::review_list);
     CHECK(state.items.size() == 2);
     CHECK(state.message == "Every sound needs a name.");
@@ -130,4 +145,57 @@ TEST_CASE("confirm refuses empty names and cancel clears everything", "[unit][fr
     CHECK(state.phase == phase_t::closed);
     CHECK(state.items.empty());
     CHECK(state.message.empty());
+}
+
+TEST_CASE("group proposals accept edits, member moves, and leave all ungrouped") {
+    worm_ui_sound_import_state_t state;
+    const auto input = paths({"/s/kick_01.wav", "/s/kick_02.wav", "/s/loose.wav"});
+    worm_ui_nuklear_sound_import_add(state, input, true);
+    const std::array existing{worm_ui_sound_import_existing_group_t{
+        .id = wormedit::sound_group_id_t{21}, .name = "Drums"}};
+    worm_ui_nuklear_sound_import_set_target(state, 5, 6, 7);
+    worm_ui_nuklear_sound_import_suggest_groups(state, existing);
+    REQUIRE(state.phase == phase_t::review_groups);
+    REQUIRE(state.groups.size() == 1);
+    CHECK(state.groups[0].name == "kick");
+    CHECK(state.items[0].group_index == 0);
+
+    worm_ui_nuklear_sound_import_rename_group(state, 0, " Kicks ");
+    const auto snapshot = worm_ui_nuklear_sound_import_confirm(state);
+    REQUIRE(snapshot.has_value());
+    REQUIRE(snapshot->groups.size() == 1);
+    CHECK(snapshot->groups[0].name == "Kicks");
+    CHECK(snapshot->groups[0].member_indexes == std::vector<std::size_t>{0, 1});
+    CHECK(state.project_id == 5);
+    CHECK(state.chart_id == 6);
+    CHECK(state.document_revision == 7);
+
+    worm_ui_nuklear_sound_import_move_member(state, 0, std::nullopt);
+    worm_ui_nuklear_sound_import_move_member(state, 2, 0);
+    worm_ui_nuklear_sound_import_set_group_accepted(state, 0, false);
+    CHECK_FALSE(worm_ui_nuklear_sound_import_confirm(state)->groups.size());
+    worm_ui_nuklear_sound_import_leave_all_ungrouped(state);
+    CHECK_FALSE(state.items[1].group_index.has_value());
+    CHECK_FALSE(state.groups[0].accepted);
+    const auto ungrouped = worm_ui_nuklear_sound_import_confirm(state);
+    REQUIRE(ungrouped.has_value());
+    CHECK(ungrouped->groups.empty());
+}
+
+TEST_CASE("existing group matches are represented as joins and group names validate") {
+    worm_ui_sound_import_state_t state;
+    const auto input = paths({"/s/Drums.wav"});
+    worm_ui_nuklear_sound_import_add(state, input, true);
+    const std::array existing{worm_ui_sound_import_existing_group_t{
+        .id = wormedit::sound_group_id_t{21}, .name = "Drums"}};
+    worm_ui_nuklear_sound_import_suggest_groups(state, existing);
+    REQUIRE(state.groups.size() == 1);
+    CHECK(state.groups[0].existing_group == wormedit::sound_group_id_t{21});
+    const auto snapshot = worm_ui_nuklear_sound_import_confirm(state);
+    REQUIRE(snapshot.has_value());
+    REQUIRE(snapshot->groups.size() == 1);
+    CHECK(snapshot->groups[0].existing_group == wormedit::sound_group_id_t{21});
+    worm_ui_nuklear_sound_import_rename_group(state, 0, "");
+    CHECK_FALSE(worm_ui_nuklear_sound_import_confirm(state).has_value());
+    CHECK(state.message == "Group names must contain 1 to 64 bytes.");
 }

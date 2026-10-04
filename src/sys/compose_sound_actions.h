@@ -4,6 +4,7 @@
 #include "ui/frontend.h"
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/sound_import.h>
 #include <wormedit/core/workspace.h>
 
 #include <optional>
@@ -11,6 +12,18 @@
 #include <string>
 
 namespace wormedit::sys {
+
+struct prepared_keysound_import_t {
+    std::vector<bulk_sound_import_entry_t> entries;
+    std::size_t skipped_unreadable{};
+    std::size_t skipped_existing{};
+    std::string message;
+};
+
+// Stages only decodable audio candidates; it never mutates the document.
+[[nodiscard]] auto prepare_keysound_import(const song_document_t& document, chart_id_t chart,
+                                           std::span<const std::string> paths)
+    -> prepared_keysound_import_t;
 
 // Registers dropped or picked audio files as keysounds in one undo step. Files
 // that are not decodable audio, or that already back a sample, are skipped and

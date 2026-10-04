@@ -21,6 +21,8 @@ struct bga_list_request_t {
 struct bga_list_t {
     std::vector<bga_list_row_t> rows;
     std::vector<resource_id_t> matching_ids;
+    // Placeable image/video resources in the same complete filtered/sorted order.
+    std::vector<resource_id_t> advance_ids;
     std::size_t total_matching{}, first_row{};
     bms_identifier_capacity_t bms_capacity{};
 };

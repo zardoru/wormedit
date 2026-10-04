@@ -390,6 +390,12 @@ void render_sound_columns(struct nk_context* context, const WormUiAudioSlicesVie
     nk_layout_row(context, NK_DYNAMIC, height, 7, ratios);
     nk_spacing(context, 1);
     if (nk_group_begin(context, "sound_list", NK_WINDOW_BORDER)) {
+        const auto bounds = nk_window_get_content_region(context);
+        audio.sound_list_valid = true;
+        audio.sound_list_x = bounds.x;
+        audio.sound_list_y = bounds.y;
+        audio.sound_list_width = bounds.w;
+        audio.sound_list_height = bounds.h;
         render_sound_list_column(context, view, action);
         nk_group_end(context);
     }
@@ -419,7 +425,10 @@ void worm_ui_nuklear_render_audio_slices(struct nk_context* context,
         return;
     }
     cancel_stale_offset_drag(*view, *action, window_focused);
-    if (show_asset_catalog && view->sound_rows) {
+    audio.sound_list_valid = false;
+    if (show_asset_catalog) {
+        nk_layout_row_dynamic(context, 25, 1);
+        if (nk_button_label(context, "Add sounds…")) action->sound_import_pick_requested = true;
         render_sound_columns(context, *view, *action);
         return;
     }

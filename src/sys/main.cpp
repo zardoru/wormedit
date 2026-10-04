@@ -2656,7 +2656,34 @@ void apply_compare_scroll_action(compare_scene_cache_t& cache,
                  action.compare_scroll_delta / cache.pixels_per_measure);
 }
 
-// Adds files dropped on the Compose keysound listbox; always empties the pending list.
+auto stage_sound_import(const wormedit::song_document_t& document, wormedit::chart_id_t chart,
+                        std::span<const std::string> paths) -> std::string {
+    const auto target = std::ranges::find(document.charts, chart, &wormedit::chart_document_t::id);
+    if (target == document.charts.end()) return "Select a difficulty before adding sounds.";
+    auto prepared = wormedit::sys::prepare_keysound_import(document, chart, paths);
+    if (prepared.entries.empty()) return prepared.message;
+    std::vector<WormUiSoundImportItem> items;
+    std::vector<std::string> source_paths;
+    source_paths.reserve(prepared.entries.size());
+    for (const auto& entry : prepared.entries)
+        source_paths.push_back(entry.asset.source_path.generic_string());
+    for (std::size_t index = 0; index < prepared.entries.size(); ++index) {
+        const auto& entry = prepared.entries[index];
+        items.push_back({source_paths[index].c_str(), entry.asset.name.c_str(),
+                         static_cast<std::uint8_t>(entry.kind)});
+    }
+    std::vector<WormUiSoundImportGroup> groups;
+    for (const auto& group : document.sound_groups)
+        groups.push_back({group.name.c_str(), group.id.value, nullptr, 0});
+    const bool has_bgm = !target->sound_channels.empty() ||
+        std::ranges::any_of(target->measures, [](const auto& measure) { return !measure.bgm_events.empty(); });
+    const auto staged = worm_ui_frontend_stage_sound_import(document.id.value, chart.value,
+        document.revision, items.data(), items.size(), groups.data(), groups.size(), has_bgm,
+        prepared.message.c_str());
+    return staged ? "Review the sounds before importing." : "The sound import could not be staged.";
+}
+
+// Stages dropped files for review; direct single-slot assignment keeps its own confirmation.
 void import_dropped_keysounds(bool session_loaded, wormedit::document_history_t& history,
                               wormedit::workspace_controller_t& workspace,
                               std::vector<std::string>& pending_paths, std::string& status) {
@@ -2664,16 +2691,52 @@ void import_dropped_keysounds(bool session_loaded, wormedit::document_history_t&
     if (session_loaded && workspace.selected_chart) {
         const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
                                              &wormedit::chart_document_t::id);
-        const auto direct = chart != history.document.charts.end() &&
+        const auto direct = workspace.active_tab == wormedit::workspace_tab_t::compose &&
+            chart != history.document.charts.end() &&
             chart->source_family == wormedit::format_family_t::bms &&
             worm_ui_frontend_stage_sound_slot_file(history.document.id.value,
                 chart->id.value, history.document.revision, pending_paths.front().c_str(),
                 pending_paths.size());
         if (!direct)
-            status = wormedit::sys::import_keysound_files(history, workspace, *workspace.selected_chart,
-                                                          pending_paths);
+            status = stage_sound_import(history.document, *workspace.selected_chart, pending_paths);
     }
     pending_paths.clear();
+}
+
+auto dispatch_reviewed_sound_import(const WormUiWorkspaceAction& action,
+    wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
+    wormedit::sys::application_command_state_t& application,
+    const std::optional<wormedit::editor_interaction_state_t>& interaction,
+    std::string& status) -> bool {
+    const auto request = action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
+    const auto confirm = action.compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
+    if (!request && !confirm) return false;
+    const auto chart = wormedit::chart_id_t{action.compose_input_chart_id};
+    if ((action.sound_import_project_id && action.sound_import_project_id != history.document.id.value) ||
+        !workspace.selected_chart || chart != *workspace.selected_chart ||
+        action.compose_input_document_revision != history.document.revision) {
+        status = "The import target changed. Cancel and choose the files again.";
+        if (confirm) worm_ui_frontend_sound_import_result(false, status.c_str());
+        return true;
+    }
+    if (request) {
+        std::vector<std::string> paths;
+        for (std::size_t index = 0; action.compose_import_paths &&
+                                   index < action.compose_import_path_count; ++index)
+            if (action.compose_import_paths[index]) paths.emplace_back(action.compose_import_paths[index]);
+        status = stage_sound_import(history.document, chart, paths);
+        return true;
+    }
+    if (interaction && editor_interaction_has_pending_gesture(*interaction)) {
+        status = "Finish or cancel the Compose gesture before importing sounds.";
+        worm_ui_frontend_sound_import_result(false, status.c_str());
+        return true;
+    }
+    const auto before = history.document.revision;
+    const auto result = wormedit::sys::dispatch_compose_sound_action(action, history, workspace, chart, application);
+    status = result.value_or("The sound import was not handled.");
+    worm_ui_frontend_sound_import_result(history.document.revision != before, status.c_str());
+    return true;
 }
 
 auto compare_jump_interaction(const wormedit::document_history_t& history,
@@ -2779,6 +2842,9 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
             // by the same input frame, preventing duplicate mutations.
         } else if (dispatch_clipboard_menu(context, action)) {
             // Clipboard menu actions use the same typed registry as shortcuts.
+        } else if (dispatch_reviewed_sound_import(action, history, workspace,
+                       application_command_state, compose_interaction_state, status)) {
+            // Import review is shared by Compose and the Sounds screen.
         } else if (action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK) {
             status = toggle_compose_audio_offset_lock(action, history, workspace,
                 application_command_state, context.compose_scene_cache_ref,

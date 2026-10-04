@@ -65,8 +65,7 @@ void SDLCALL picker_callback(void* /*userdata*/, const char* const* filelist, in
     std::lock_guard lock{state.mutex};
     state.open = false;
     state.callback_ready = true;
-    for (std::size_t index = 0; filelist && filelist[index] &&
-                                state.paths.size() < WORM_UI_SOUND_DROP_CAPACITY; ++index)
+    for (std::size_t index = 0; filelist && filelist[index]; ++index)
         state.paths.emplace_back(filelist[index]);
 }
 
@@ -654,12 +653,14 @@ void render_sound_slot_row(const SoundsPanel& panel, std::size_t index) {
         worm_ui_keysound_select_all(state.keysound_selection, resource);
         state.armed_resource_id = slot.resource_id;
         state.armed_from_sounds_dock = true;
+        state.armed_from_bga_dock = false;
         state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
         if (state.sounds_preview_on_click && raise(panel, WORM_UI_COMPOSE_ACTION_AUDITION_SOUND))
             panel.action->compose_resource_id = slot.resource_id;
     } else {
         state.armed_resource_id = 0;
         state.armed_from_sounds_dock = false;
+        state.armed_from_bga_dock = false;
         state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     }
 }
@@ -918,6 +919,7 @@ void click_row(const SoundsPanel& panel, std::size_t shown_index, std::uint64_t 
     state.armed_resource_id = primary && !primary->missing ? primary->resource_id : 0;
     state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
     state.armed_from_sounds_dock = true;
+    state.armed_from_bga_dock = false;
     if (state.sounds_preview_on_click && !ctrl && !shift && id == state.armed_resource_id &&
         raise(panel, WORM_UI_COMPOSE_ACTION_AUDITION_SOUND))
         panel.action->compose_resource_id = id;

@@ -64,6 +64,13 @@ auto bgm_marker_count(const chart_document_t& chart) -> std::size_t {
     return count;
 }
 
+auto same_resource_group_links(const std::vector<resource_entry_t>& left,
+                               const std::vector<resource_entry_t>& right) -> bool {
+    return std::ranges::equal(left, right, [](const auto& first, const auto& second) {
+        return first.id == second.id && first.sound_group == second.sound_group;
+    });
+}
+
 } // namespace
 
 TEST_CASE("bulk import adds stems as BMSON channels visible as BGM markers in one undo step",
@@ -205,6 +212,116 @@ TEST_CASE("fragmented BMS capacity splits an import across the largest gaps in o
     CHECK(history.undo.size() == 1);
 }
 
+TEST_CASE("grouped bulk import creates and joins groups with independent contiguous ID runs",
+          "[unit][core][sounds][import][sound-groups]") {
+    auto song = bmson_song();
+    const auto existing_group = sound_group_id_t{55};
+    song.sound_groups.push_back({.id = existing_group, .name = "Loops"});
+    song.resources.front().sound_group = existing_group;
+    auto history = make_document_history(song);
+    const auto before = history.document;
+    auto first = entry("kick_01", sound_kind_t::keysound);
+    auto second = entry("kick_02", sound_kind_t::keysound);
+    auto joining = entry("loops_03", sound_kind_t::keysound);
+    first.asset.allocate_bms_identifier = true;
+    second.asset.allocate_bms_identifier = true;
+    joining.asset.allocate_bms_identifier = true;
+    auto action = bulk_sound_import_action_t{
+        .entries = {first, second, joining},
+        .groups = {{.name = "Kicks", .entry_indexes = {0, 1}},
+                   {.name = "Loops", .existing_group = existing_group,
+                    .entry_indexes = {2}}}};
+
+    REQUIRE(apply_bulk_sound_import(history, history.document.revision,
+                                    reserved(std::move(action), history.document)));
+    const auto start = before.resources.size();
+    REQUIRE(history.document.sound_groups.size() == 2);
+    CHECK(history.document.sound_groups.back().name == "Kicks");
+    CHECK(history.document.resources[start].sound_group == history.document.sound_groups.back().id);
+    CHECK(history.document.resources[start + 1].sound_group == history.document.sound_groups.back().id);
+    CHECK(history.document.resources[start + 2].sound_group == existing_group);
+    CHECK(history.document.resources[start].target_identities.back().identifier == "01");
+    CHECK(history.document.resources[start + 1].target_identities.back().identifier == "02");
+    CHECK(history.document.resources[start + 2].target_identities.back().identifier == "03");
+    CHECK(history.document.resources.front().sound_group == existing_group);
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.sound_groups == before.sound_groups);
+    CHECK(same_resource_group_links(history.document.resources, before.resources));
+}
+
+TEST_CASE("grouped import rejects name collisions and fragmented group ID runs atomically",
+          "[unit][core][sounds][import][sound-groups]") {
+    auto history = make_document_history(bmson_song());
+    auto first = entry("a", sound_kind_t::keysound);
+    auto second = entry("b", sound_kind_t::keysound);
+    first.asset.allocate_bms_identifier = true;
+    second.asset.allocate_bms_identifier = true;
+    auto action = bulk_sound_import_action_t{
+        .entries = {first, second},
+        .groups = {{.name = "Same", .entry_indexes = {0}},
+                   {.name = "same", .entry_indexes = {1}}}};
+    const auto before = history.document;
+    auto result = apply_bulk_sound_import(history, before.revision,
+                                          reserved(action, history.document));
+    CHECK_FALSE(result);
+    CHECK(same_resource_group_links(history.document.resources, before.resources));
+    CHECK(history.document.sound_groups == before.sound_groups);
+    CHECK(history.undo.empty());
+
+    constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    auto& identities = history.document.resources.front().target_identities;
+    for (std::size_t value = 1; value < 36 * 36; ++value) {
+        if (value == 1 || value == 3) continue;
+        identities.push_back({format_family_t::bms,
+            std::string{digits[value / 36], digits[value % 36]}, "WAV"});
+    }
+    const auto fragmented_before = history.document;
+    action.groups = {{.name = "Two", .entry_indexes = {0, 1}}};
+    result = apply_bulk_sound_import(history, fragmented_before.revision,
+                                     reserved(action, history.document));
+    CHECK_FALSE(result);
+    CHECK_FALSE(result.diagnostics.empty());
+    CHECK(same_resource_group_links(history.document.resources, fragmented_before.resources));
+    CHECK(history.document.sound_groups == fragmented_before.sound_groups);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("group ID runs pack larger groups first while preserving entry order",
+          "[unit][core][sounds][import][sound-groups][bms-identifiers]") {
+    auto history = make_document_history(bmson_song());
+    constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    auto& identities = history.document.resources.front().target_identities;
+    identities.clear();
+    for (std::size_t value = 1; value < 36 * 36; ++value) {
+        if (value == 1 || value == 2 || (value >= 4 && value <= 7)) continue;
+        identities.push_back({format_family_t::bms,
+            std::string{digits[value / 36], digits[value % 36]}, "WAV"});
+    }
+    auto entries = std::vector<bulk_sound_import_entry_t>{};
+    for (const auto name : {"small1", "small2", "large1", "large2", "large3", "large4"}) {
+        auto item = entry(name, sound_kind_t::keysound);
+        item.asset.allocate_bms_identifier = true;
+        entries.push_back(std::move(item));
+    }
+    auto action = bulk_sound_import_action_t{
+        .entries = std::move(entries),
+        .groups = {{.name = "Small", .entry_indexes = {0, 1}},
+                   {.name = "Large", .entry_indexes = {2, 3, 4, 5}}}};
+    const auto before = history.document;
+
+    REQUIRE(apply_bulk_sound_import(history, before.revision,
+                                    reserved(std::move(action), before)));
+    const auto start = before.resources.size();
+    CHECK(history.document.resources[start].target_identities.back().identifier == "01");
+    CHECK(history.document.resources[start + 1].target_identities.back().identifier == "02");
+    CHECK(history.document.resources[start + 2].target_identities.back().identifier == "04");
+    CHECK(history.document.resources[start + 3].target_identities.back().identifier == "05");
+    CHECK(history.document.resources[start + 4].target_identities.back().identifier == "06");
+    CHECK(history.document.resources[start + 5].target_identities.back().identifier == "07");
+    CHECK(history.undo.size() == 1);
+}
+
 TEST_CASE("bulk import handles fifty files in one step", "[unit][core][sounds][import]") {
     auto history = make_document_history(bmson_song());
     const auto chart_id = history.document.charts.front().id;
@@ -245,4 +362,29 @@ TEST_CASE("an invalid entry rejects the whole bulk import", "[unit][core][sounds
     for (std::size_t index = 0; index <= maximum_bulk_sound_import; ++index)
         too_many.entries.push_back(entry("n" + std::to_string(index), sound_kind_t::sample));
     rejects(too_many, revision);
+}
+
+TEST_CASE("group import takes the first fitting BMS ID gap",
+          "[unit][core][sounds][import][sound-groups][bms-identifiers]") {
+    auto history = make_document_history(bmson_song());
+    constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    auto& identities = history.document.resources.front().target_identities;
+    identities.clear();
+    for (std::size_t value = 1; value < 36 * 36; ++value) {
+        if ((value >= 1 && value <= 4) || value == 6 || value == 7) continue;
+        identities.push_back({format_family_t::bms,
+            std::string{digits[value / 36], digits[value % 36]}, "WAV"});
+    }
+    auto first = entry("first", sound_kind_t::keysound);
+    auto second = entry("second", sound_kind_t::keysound);
+    first.asset.allocate_bms_identifier = true;
+    second.asset.allocate_bms_identifier = true;
+    auto action = bulk_sound_import_action_t{
+        .entries = {first, second},
+        .groups = {{.name = "Drums", .entry_indexes = {0, 1}}}};
+    const auto start = history.document.resources.size();
+    REQUIRE(apply_bulk_sound_import(history, history.document.revision,
+                                   reserved(std::move(action), history.document)));
+    CHECK(history.document.resources[start].target_identities.back().identifier == "01");
+    CHECK(history.document.resources[start + 1].target_identities.back().identifier == "02");
 }

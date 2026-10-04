@@ -284,6 +284,51 @@ TEST_CASE("Compose placement picker advances only when armed and stops at exhaus
     worm_ui_nuklear_reset_compose_state();
 }
 
+TEST_CASE("BGA placement advances in dock order and reveals an off-screen successor",
+          "[unit][frontend][compose][bga][advance]") {
+    worm_ui_nuklear_reset_compose_state();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.armed_resource_id = 1400;
+    state.armed_from_bga_dock = true;
+    state.bga_auto_increment_on_place = true;
+    state.auto_increment_on_place = false;
+    state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
+    state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::place;
+    state.bga_advance_ids = {1400, 1700, 1500};
+    const std::array selected{std::uint64_t{1400}};
+    worm_ui_keysound_select_all(state.bga_selection, selected);
+
+    worm_ui_nuklear_advance_resource_picker(1400, 0);
+    CHECK(state.armed_resource_id == 1700);
+    CHECK(state.bga_selection.primary == 1700);
+    CHECK(state.bga_reveal_primary);
+    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
+    worm_ui_nuklear_reset_compose_state();
+}
+
+TEST_CASE("BGA advance preserves the last resource when order ends and ignores stale rows",
+          "[unit][frontend][compose][bga][advance]") {
+    worm_ui_nuklear_reset_compose_state();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.armed_resource_id = 1500;
+    state.armed_from_bga_dock = true;
+    state.bga_auto_increment_on_place = true;
+    state.auto_increment_on_place = true;
+    state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
+    state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::place;
+    state.bga_advance_ids = {1400, 1500};
+    worm_ui_nuklear_advance_resource_picker(1400, 1600);
+    CHECK(state.armed_resource_id == 1500);
+    CHECK(state.bga_auto_increment_on_place);
+    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
+
+    worm_ui_nuklear_advance_resource_picker(1500, 0);
+    CHECK(state.armed_resource_id == 1500);
+    CHECK_FALSE(state.bga_auto_increment_on_place);
+    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+    worm_ui_nuklear_reset_compose_state();
+}
+
 TEST_CASE("Compose file picker ignores stale callbacks after frontend reset",
           "[unit][frontend][compose]") {
     worm_ui_nuklear_reset_compose_state();

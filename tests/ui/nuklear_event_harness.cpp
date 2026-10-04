@@ -5,6 +5,7 @@
 #include "ui/nuklear/setup_state.h"
 #include "ui/nuklear/timing_stage_editor.h"
 
+#include <algorithm>
 #include <deque>
 #include <string>
 
@@ -22,6 +23,9 @@ class modifier_scope_t {
 
 void initialize_compose_view(WormUiWorkspaceView& workspace, int width, int height) {
     workspace.project_loaded = true;
+    workspace.project_id = 1;
+    workspace.selected_chart_id = 1;
+    workspace.document_revision = 1;
     workspace.project_title = "Event harness chart";
     workspace.artist = "Test artist";
     workspace.selected_difficulty = "Normal";
@@ -97,6 +101,11 @@ auto nuklear_event_harness_t::frame(std::span<const SDL_Event> events, SDL_Keymo
     auto action = worm_ui_frontend_compose(&view_);
     drawn_text_.resize(worm_ui_frontend_copy_drawn_text_for_testing(nullptr, 0));
     (void)worm_ui_frontend_copy_drawn_text_for_testing(drawn_text_.data(), drawn_text_.size());
+    const auto text_count = std::min<std::size_t>(
+        worm_ui_frontend_copy_drawn_text_bounds_for_testing(nullptr, 0), 4096);
+    drawn_text_bounds_.resize(text_count);
+    (void)worm_ui_frontend_copy_drawn_text_bounds_for_testing(
+        drawn_text_bounds_.data(), drawn_text_bounds_.size());
     worm_ui_frontend_render(width_, height_);
     return workspace_action_snapshot_t{action};
 }
@@ -109,11 +118,25 @@ auto nuklear_event_harness_t::run_script(std::span<const event_step_t> steps)
     return actions;
 }
 
+auto nuklear_event_harness_t::drawn_text_center(std::string_view sought) const
+    -> std::optional<std::pair<float, float>> {
+    std::optional<std::pair<float, float>> center;
+    for (const auto& item : drawn_text_bounds_) {
+        if (std::string_view{item.text} != sought) continue;
+        center = std::pair{item.x + item.width * 0.5f, item.y + item.height * 0.5f};
+    }
+    return center;
+}
+
 struct workspace_action_snapshot_t::storage_t {
     WormUiWorkspaceAction action;
     std::deque<std::string> strings;
     std::vector<const char*> tags;
     std::vector<std::uint64_t> sound_resources;
+    std::vector<const char*> import_paths;
+    std::vector<WormUiSoundImportItem> import_items;
+    std::vector<WormUiSoundImportGroup> import_groups;
+    std::deque<std::vector<std::size_t>> import_members;
 
     auto own(const char* text) -> const char* {
         if (!text) return nullptr;
@@ -121,7 +144,35 @@ struct workspace_action_snapshot_t::storage_t {
         return strings.back().c_str();
     }
 
+    void own_sound_import(const WormUiWorkspaceAction& source) {
+        for (std::size_t index = 0; source.compose_import_paths &&
+                                   index < source.compose_import_path_count; ++index)
+            import_paths.push_back(own(source.compose_import_paths[index]));
+        action.compose_import_paths = source.compose_import_paths ? import_paths.data() : nullptr;
+        for (std::size_t index = 0; source.sound_import_items &&
+                                   index < source.sound_import_item_count; ++index) {
+            auto item = source.sound_import_items[index];
+            item.path = own(item.path);
+            item.name = own(item.name);
+            import_items.push_back(item);
+        }
+        action.sound_import_items = source.sound_import_items ? import_items.data() : nullptr;
+        for (std::size_t index = 0; source.sound_import_groups &&
+                                   index < source.sound_import_group_count; ++index) {
+            auto group = source.sound_import_groups[index];
+            group.name = own(group.name);
+            if (group.member_indices) {
+                import_members.emplace_back(group.member_indices,
+                                             group.member_indices + group.member_count);
+                group.member_indices = import_members.back().data();
+            }
+            import_groups.push_back(group);
+        }
+        action.sound_import_groups = source.sound_import_groups ? import_groups.data() : nullptr;
+    }
+
     explicit storage_t(const WormUiWorkspaceAction& source) : action{source} {
+        own_sound_import(source);
         if (source.compose_sound_resource_ids) {
             sound_resources.assign(source.compose_sound_resource_ids,
                 source.compose_sound_resource_ids + source.compose_sound_resource_count);

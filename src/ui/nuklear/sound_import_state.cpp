@@ -2,13 +2,14 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
 #include <filesystem>
 #include <string_view>
 #include <utility>
 
 namespace {
 
-constexpr std::size_t maximum_name_bytes = 128;
+constexpr std::size_t maximum_name_bytes = 255;
 
 auto lower_extension(const std::string& path) -> std::string {
     auto extension = std::filesystem::path{path}.extension().string();
@@ -77,7 +78,6 @@ auto worm_ui_nuklear_sound_import_add(worm_ui_sound_import_state_t& state,
     std::size_t added = 0;
     std::size_t skipped_type = 0;
     std::size_t skipped_duplicate = 0;
-    std::size_t skipped_capacity = 0;
     for (const auto& path : paths) {
         if (!worm_ui_nuklear_sound_import_is_audio_path(path)) {
             ++skipped_type;
@@ -85,8 +85,6 @@ auto worm_ui_nuklear_sound_import_add(worm_ui_sound_import_state_t& state,
                        return item.path == path;
                    })) {
             ++skipped_duplicate;
-        } else if (state.items.size() >= worm_ui_sound_import_capacity) {
-            ++skipped_capacity;
         } else {
             state.items.push_back({path, display_name(path), default_kind(path, chart_has_bgm)});
             ++added;
@@ -97,9 +95,83 @@ auto worm_ui_nuklear_sound_import_add(worm_ui_sound_import_state_t& state,
         state.message = std::to_string(skipped_type) + " file(s) skipped: not wav, ogg, flac or mp3.";
     else if (skipped_duplicate != 0)
         state.message = std::to_string(skipped_duplicate) + " file(s) skipped: already in the list.";
-    else if (skipped_capacity != 0)
-        state.message = std::to_string(skipped_capacity) + " file(s) skipped: the list holds 1000.";
+    else if (state.items.size() > worm_ui_sound_import_capacity)
+        state.message = "This import has " + std::to_string(state.items.size()) +
+                        " files; the maximum is 1295. Remove files before confirming.";
     return added;
+}
+
+void worm_ui_nuklear_sound_import_set_target(worm_ui_sound_import_state_t& state,
+                                            std::uint64_t project, std::uint64_t chart,
+                                            std::uint64_t revision) {
+    state.project_id = project;
+    state.chart_id = chart;
+    state.document_revision = revision;
+}
+
+void worm_ui_nuklear_sound_import_suggest_groups(
+    worm_ui_sound_import_state_t& state,
+    std::span<const worm_ui_sound_import_existing_group_t> existing_groups) {
+    state.groups.clear();
+    for (auto& item : state.items) item.group_index.reset();
+    auto names = std::vector<std::string>{};
+    names.reserve(state.items.size());
+    for (const auto& item : state.items) names.push_back(item.path);
+    auto groups = std::vector<wormedit::sound_group_t>{};
+    groups.reserve(existing_groups.size());
+    for (const auto& group : existing_groups)
+        groups.push_back({.id = group.id, .name = group.name});
+    const auto proposals = wormedit::propose_sound_groups(names, groups);
+    for (const auto& proposal : proposals.groups) {
+        const auto group_index = state.groups.size();
+        state.groups.push_back({.name = proposal.name, .existing_group = proposal.existing_group});
+        for (const auto& member : proposal.members) {
+            const auto item = std::ranges::find(state.items, member, &worm_ui_sound_import_item_t::path);
+            if (item != state.items.end()) item->group_index = group_index;
+        }
+    }
+    if (!state.groups.empty()) state.phase = worm_ui_sound_import_phase_t::review_groups;
+}
+
+void worm_ui_nuklear_sound_import_set_group_accepted(worm_ui_sound_import_state_t& state,
+                                                     std::size_t group, bool accepted) {
+    if (group < state.groups.size()) state.groups[group].accepted = accepted;
+}
+
+void worm_ui_nuklear_sound_import_set_group_expanded(worm_ui_sound_import_state_t& state,
+                                                    std::size_t group, bool expanded) {
+    if (group >= state.groups.size()) return;
+    if (expanded) {
+        for (auto& row : state.groups) row.expanded = false;
+        state.ungrouped_expanded = false;
+    }
+    state.groups[group].expanded = expanded;
+}
+
+void worm_ui_nuklear_sound_import_set_ungrouped_expanded(
+    worm_ui_sound_import_state_t& state, bool expanded) {
+    if (expanded) for (auto& group : state.groups) group.expanded = false;
+    state.ungrouped_expanded = expanded;
+}
+
+void worm_ui_nuklear_sound_import_rename_group(worm_ui_sound_import_state_t& state,
+                                              std::size_t group, std::string name) {
+    constexpr std::size_t max_group_name_bytes = 64;
+    if (group >= state.groups.size()) return;
+    if (name.size() > max_group_name_bytes) name.resize(max_group_name_bytes);
+    state.groups[group].name = std::move(name);
+}
+
+void worm_ui_nuklear_sound_import_move_member(worm_ui_sound_import_state_t& state,
+                                             std::size_t member,
+                                             std::optional<std::size_t> group) {
+    if (member >= state.items.size() || (group && *group >= state.groups.size())) return;
+    state.items[member].group_index = group;
+}
+
+void worm_ui_nuklear_sound_import_leave_all_ungrouped(worm_ui_sound_import_state_t& state) {
+    for (auto& group : state.groups) group.accepted = false;
+    for (auto& item : state.items) item.group_index.reset();
 }
 
 void worm_ui_nuklear_sound_import_set_kind(worm_ui_sound_import_state_t& state,
@@ -137,17 +209,48 @@ void worm_ui_nuklear_sound_import_move(worm_ui_sound_import_state_t& state, std:
 }
 
 auto worm_ui_nuklear_sound_import_confirm(worm_ui_sound_import_state_t& state)
-    -> std::vector<worm_ui_sound_import_item_t> {
+    -> std::optional<worm_ui_sound_import_commit_t> {
     state.message.clear();
-    if (state.items.empty()) return {};
-    for (auto& item : state.items) item.name = trimmed(std::move(item.name));
+    if (state.items.empty()) {
+        state.message = "Add at least one audio file before confirming.";
+        return std::nullopt;
+    }
+    if (state.items.size() > worm_ui_sound_import_capacity) {
+        state.message = "This import exceeds the 1295-file limit. Remove files before confirming.";
+        return std::nullopt;
+    }
+    for (auto& item : state.items) item.name = trimmed(item.name);
     if (std::ranges::any_of(state.items, [](const auto& item) { return item.name.empty(); })) {
         state.message = "Every sound needs a name.";
-        return {};
+        return std::nullopt;
     }
-    auto taken = std::move(state.items);
+    for (const auto& group : state.groups) {
+        if (group.accepted && (trimmed(group.name).empty() || group.name.size() > 64)) {
+            state.message = "Group names must contain 1 to 64 bytes.";
+            return std::nullopt;
+        }
+    }
+    auto commit = worm_ui_sound_import_commit_t{.items = state.items};
+    for (auto& group : state.groups) {
+        if (!group.accepted) continue;
+        auto row = worm_ui_sound_import_group_commit_t{
+            .name = trimmed(group.name), .existing_group = group.existing_group};
+        for (std::size_t index = 0; index < state.items.size(); ++index)
+            if (state.items[index].group_index == std::optional<std::size_t>{
+                    static_cast<std::size_t>(&group - state.groups.data())})
+                row.member_indexes.push_back(index);
+        if (!row.member_indexes.empty()) commit.groups.push_back(std::move(row));
+    }
+    return commit;
+}
+
+void worm_ui_nuklear_sound_import_commit_failed(worm_ui_sound_import_state_t& state,
+                                               std::string reason) {
+    state.message = std::move(reason);
+}
+
+void worm_ui_nuklear_sound_import_commit_succeeded(worm_ui_sound_import_state_t& state) {
     state = {};
-    return taken;
 }
 
 void worm_ui_nuklear_sound_import_cancel(worm_ui_sound_import_state_t& state) {

@@ -372,6 +372,8 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/setup_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/setup_state.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/sound_import_state.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/sound_import_dialog.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/sound_import_runtime.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/keysound_list_state.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_sounds_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bga_panel.cpp"

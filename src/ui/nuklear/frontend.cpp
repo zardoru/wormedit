@@ -10,6 +10,7 @@
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/sound_import_runtime.h"
 #include "ui/nuklear/compose_bga_panel.h"
 #include "ui/nuklear/compose_input_panel.h"
 #include "ui/nuklear/chrome.h"
@@ -543,6 +544,7 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
     g_notification_project_modal = false;
     g_save_project_requested = false;
     g_save_project_request_id = 0;
+    worm_ui_nuklear_reset_sound_import();
     g_notification_escape_captured = false;
     worm_ui_nuklear_reset_external_player_panel();
     g_compose_area_shortcuts_active = false;
@@ -566,6 +568,7 @@ bool worm_ui_frontend_init_headless(int width, int height) {
 }
 
 void worm_ui_frontend_shutdown(void) {
+    worm_ui_nuklear_reset_sound_import();
     g_save_project_requested = false;
     g_save_project_request_id = 0;
     reset_compose_note_menu();
@@ -709,7 +712,11 @@ bool worm_ui_frontend_sound_list_contains(uint32_t window_id, float x, float y) 
         (window_id != 0 && window_id != SDL_GetWindowID(g_window)) || !std::isfinite(x) ||
         !std::isfinite(y))
         return false;
-    return worm_ui_nuklear_sound_list_contains(x, y);
+    const auto& audio = worm_ui_nuklear_audio_state();
+    return worm_ui_nuklear_sound_list_contains(x, y) ||
+        (audio.sound_list_valid && x >= audio.sound_list_x && y >= audio.sound_list_y &&
+         x < audio.sound_list_x + audio.sound_list_width &&
+         y < audio.sound_list_y + audio.sound_list_height);
 }
 
 static bool notification_document_gesture_active() {
@@ -934,6 +941,17 @@ static bool capture_inline_offset_key(const SDL_KeyboardEvent& event) {
 }
 
 static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
+        if (worm_ui_nuklear_sound_import_active()) {
+            if (event.down && !event.repeat && event.key == SDLK_ESCAPE)
+                worm_ui_nuklear_reset_sound_import();
+            else {
+                SDL_Event copy{};
+                copy.type = event.type;
+                copy.key = event;
+                (void)nk_sdl_handle_event(g_context, &copy);
+            }
+            return true;
+        }
         if (capture_sound_slot_key(event)) return true;
         if (capture_inline_offset_key(event)) return true;
         if (capture_tap_timing_key(event)) return true;
@@ -1931,6 +1949,7 @@ static void confirm_new_project_wizard(WormUiWorkspaceAction& action) {
 
 static bool project_modal_active(const WormUiWorkspaceView& view) {
     return view.close_confirmation.visible || g_new_project_wizard.open ||
+           worm_ui_nuklear_sound_import_active() ||
            (view.pending_bms_encoding_path && view.pending_bms_encoding_path[0]);
 }
 
@@ -2278,15 +2297,7 @@ static void retire_unavailable_layer_actions(const WormUiWorkspaceView& view) {
     state.semantic_layer_color_editor_visible = false;
 }
 
-WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
-    remember_notification_frame(view);
-    worm_ui_nuklear_begin_image_quad_frame();
-    WormUiWorkspaceAction action{};
-    action.kind = WORM_UI_WORKSPACE_ACTION_NONE;
-    action.tab = WORM_UI_WORKSPACE_TAB_SETUP;
-    action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_NONE;
-    action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
-    consume_project_file_dialog(action);
+static void consume_pending_save_request(const WormUiWorkspaceView* view, WormUiWorkspaceAction& action) {
     if (g_save_project_requested) {
         const bool same_project = view && view->project_id == g_save_project_request_id;
         const bool eligible = same_project && view->project_loaded && action.kind == WORM_UI_WORKSPACE_ACTION_NONE &&
@@ -2301,6 +2312,19 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
                 start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
         }
     }
+}
+
+WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
+    if (view && !view->project_loaded) worm_ui_nuklear_reset_sound_import();
+    remember_notification_frame(view);
+    worm_ui_nuklear_begin_image_quad_frame();
+    WormUiWorkspaceAction action{};
+    action.kind = WORM_UI_WORKSPACE_ACTION_NONE;
+    action.tab = WORM_UI_WORKSPACE_TAB_SETUP;
+    action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_NONE;
+    action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
+    consume_project_file_dialog(action);
+    consume_pending_save_request(view, action);
     if (!g_context || (!g_window && !g_headless) || !view) {
         worm_ui_nuklear_compose_discard_frame_input();
         expose_shortcut_input(&action);
@@ -2334,7 +2358,9 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
 
     if (!view->project_loaded) {
         worm_ui_nuklear_compose_discard_frame_input();
-        render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
+        worm_ui_nuklear_audio_state().sound_list_valid = false;
+    worm_ui_nuklear_compose_state().sound_list_valid = false;
+    render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
         render_auxiliary_windows(WorkspaceRenderContext{*view, action, width, height});
         render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
         expose_shortcut_input(&action);
@@ -2349,8 +2375,13 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
                                           compose_tab_active && !project_modal_active(*view), g_window_focused,
                                           &action);
 
+    worm_ui_nuklear_audio_state().sound_list_valid = false;
+    worm_ui_nuklear_compose_state().sound_list_valid = false;
     render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
     render_auxiliary_windows(WorkspaceRenderContext{*view, action, width, height});
+    if (action.sound_import_pick_requested) worm_ui_nuklear_sound_import_pick(g_window, *view);
+    worm_ui_nuklear_consume_sound_picker(*view, action);
+    worm_ui_nuklear_render_pending_sound_import(g_context, *view, action, width, height);
     render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
     const bool compose_lane_focused =
         !worm_ui_nuklear_compose_state().bgm_column_count_edit.input_owned &&
@@ -2384,6 +2415,29 @@ size_t worm_ui_frontend_copy_drawn_text_for_testing(char* output, size_t capacit
         ++length;
     }
     return length;
+}
+
+size_t worm_ui_frontend_copy_drawn_text_bounds_for_testing(WormUiTestingDrawnText* output,
+                                                            size_t capacity) {
+    size_t count = 0;
+    if (!g_headless || !g_context) return count;
+    const struct nk_command* command{};
+    nk_foreach(command, g_context) {
+        if (command->type != NK_COMMAND_TEXT) continue;
+        const auto* text = reinterpret_cast<const struct nk_command_text*>(command);
+        if (output && count < capacity) {
+            auto& target = output[count];
+            target.x = text->x;
+            target.y = text->y;
+            target.width = text->w;
+            target.height = text->h;
+            const auto length = std::min(static_cast<size_t>(text->length), sizeof(target.text) - 1);
+            std::memcpy(target.text, text->string, length);
+            target.text[length] = '\0';
+        }
+        ++count;
+    }
+    return count;
 }
 
 void worm_ui_frontend_render(int window_width, int window_height) {

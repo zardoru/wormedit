@@ -75,7 +75,7 @@ void update_selection_state(const WormUiComposeView& view,
     if (selected_object_id == 0 || view.selected_assigned_resource_id == 0) return;
     // The Sounds dock owns the armed sound; painted notes must not re-arm their own sound over
     // the advanced one.
-    if (state.armed_from_sounds_dock) return;
+    if (state.armed_from_sounds_dock || state.armed_from_bga_dock) return;
 
     state.armed_resource_id = view.selected_assigned_resource_id;
     const auto* assigned = find_resource(view, view.selected_assigned_resource_id);
@@ -296,9 +296,8 @@ void render_bmson_controls(const ResourcePanel& panel) {
 void render_filter_and_search(const ResourcePanel& panel) {
     auto* context = panel.context;
     auto* state = panel.state;
-    nk_layout_row_dynamic(context, 24, 3);
+    nk_layout_row_dynamic(context, 24, 2);
     constexpr std::array filters{
-        worm_ui_nuklear_compose_resource_filter_t::sample,
         worm_ui_nuklear_compose_resource_filter_t::bgm,
         worm_ui_nuklear_compose_resource_filter_t::bga,
     };
@@ -311,6 +310,11 @@ void render_filter_and_search(const ResourcePanel& panel) {
         if (state->resource_filter != candidate)
             state->resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
         state->resource_filter = candidate;
+    }
+    if (state->resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample) {
+        nk_layout_row_dynamic(context, 18, 1);
+        nk_label(context, "Select samples in the Sounds dock.", NK_TEXT_LEFT);
+        return;
     }
     nk_layout_row_dynamic(context, 19, 1);
     nk_label(context, "Search", NK_TEXT_LEFT);
@@ -366,6 +370,9 @@ void render_assign_disarm(const ResourcePanel& panel,
     if (disarm_clicked) {
         state->armed_resource_id = 0;
         state->auto_increment_on_place = false;
+        state->armed_from_sounds_dock = false;
+        state->armed_from_bga_dock = false;
+        state->bga_auto_increment_on_place = false;
         state->resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     }
 }
@@ -466,6 +473,7 @@ void render_armed_placement_controls(const ResourcePanel& panel,
                                     const WormUiComposeResourceView* armed) {
     render_armed_resource_status(panel, armed);
     render_assign_disarm(panel, armed);
+    if (panel.state->resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample) return;
     const auto can_place = resource_can_place(panel, armed);
     render_place_at_cursor(panel, armed, can_place && armed);
     render_pointer_modes(panel, pointer_place_allowed(panel, can_place));
@@ -483,15 +491,13 @@ void render_create_resource(const ResourcePanel& panel) {
     nk_layout_row_dynamic(context, 24, 1);
     if (!can_create) nk_widget_disable_begin(context);
     const auto* label = visual ? "Create BGA from selected image"
-        : filter == worm_ui_nuklear_compose_resource_filter_t::sample
-            ? "Create Sample from waveform" : "Create BGM from waveform";
+                               : "Create BGM from waveform";
     const auto clicked = nk_button_label(context, label);
     if (!can_create) nk_widget_disable_end(context);
     if (!clicked || !can_create || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action->compose_resource_asset_id = asset_id;
     action->compose_resource_role = visual ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGA
-        : filter == worm_ui_nuklear_compose_resource_filter_t::sample
-            ? WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE : WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
+                                           : WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
     action->compose_action = WORM_UI_COMPOSE_ACTION_CREATE_RESOURCE;
 }
 
@@ -540,16 +546,15 @@ void render_import_action(const ResourcePanel& panel) {
     if (!can_import) nk_widget_disable_begin(context);
     const auto filter = state->resource_filter;
     const auto* label = filter == worm_ui_nuklear_compose_resource_filter_t::bga
-        ? "Link image as BGA"
-        : filter == worm_ui_nuklear_compose_resource_filter_t::bgm
-            ? "Link audio as BGM" : "Link audio as Sample";
+        ? "Link image as BGA" : "Link audio as BGM";
     nk_layout_row_dynamic(context, 24, 1);
     const auto clicked = nk_button_label(context, label);
     if (!can_import) nk_widget_disable_end(context);
     if (!clicked || !can_import || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     std::snprintf(action->compose_import_path, sizeof(action->compose_import_path), "%s",
                   state->resource_import_path.data());
-    action->compose_resource_role = filter_role(filter);
+    action->compose_resource_role = filter == worm_ui_nuklear_compose_resource_filter_t::bga
+        ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGA : WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
     action->compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET;
 }
 
@@ -646,6 +651,8 @@ void render_resource_usage_and_arm(const ResourcePanel& panel,
     if (arm_clicked) {
         state->armed_resource_id = resource.resource_id;
         state->armed_from_sounds_dock = false;
+        state->armed_from_bga_dock = false;
+        state->bga_auto_increment_on_place = false;
         state->resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     }
     nk_layout_row_end(context);
@@ -822,8 +829,10 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
     const auto* armed = armed_resource(panel);
     render_armed_placement_controls(panel, armed);
     render_bmson_controls(panel);
-    render_create_resource(panel);
-    render_import_controls(panel);
-    render_resource_list(panel, export_group);
+    if (state->resource_filter != worm_ui_nuklear_compose_resource_filter_t::sample) {
+        render_create_resource(panel);
+        render_import_controls(panel);
+        render_resource_list(panel, export_group);
+    }
     nk_tree_pop(context);
 }

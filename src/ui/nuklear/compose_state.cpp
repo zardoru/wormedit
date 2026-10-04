@@ -13,6 +13,7 @@
 #include <limits>
 #include <mutex>
 #include <numeric>
+#include <span>
 #include <string_view>
 #include <utility>
 
@@ -27,6 +28,11 @@ auto compose_layer_fill(const Note& note) -> nk_color {
 auto compose_snap_fill(std::uint8_t snap_class) -> nk_color {
     const auto color = wormedit::ui::arrow_snap_color(snap_class);
     return nk_rgb(color.red, color.green, color.blue);
+}
+auto next_ordered_resource(std::span<const std::uint64_t> ids,
+                           std::uint64_t placed_resource_id) -> std::uint64_t {
+    const auto current = std::ranges::find(ids, placed_resource_id);
+    return current != ids.end() && current + 1 != ids.end() ? *(current + 1) : 0;
 }
 }
 
@@ -324,10 +330,32 @@ void worm_ui_nuklear_retire_bgm_column_count_input_owner(
 void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
                                               std::uint64_t next_resource_id) {
     auto& state = worm_ui_nuklear_compose_state();
-    if (!state.auto_increment_on_place || placed_resource_id == 0 ||
-        state.armed_resource_id != placed_resource_id) {
+    if (placed_resource_id == 0 || state.armed_resource_id != placed_resource_id) {
         return;
     }
+    if (state.armed_from_bga_dock) {
+        if (!state.bga_auto_increment_on_place ||
+            state.resource_filter != worm_ui_nuklear_compose_resource_filter_t::bga) return;
+        if (std::ranges::find(state.bga_advance_ids, placed_resource_id) ==
+            state.bga_advance_ids.end()) {
+            state.bga_auto_increment_on_place = false;
+            state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+            return;
+        }
+        next_resource_id = next_ordered_resource(state.bga_advance_ids, placed_resource_id);
+        if (next_resource_id) {
+            const std::array next{next_resource_id};
+            worm_ui_keysound_clear(state.bga_selection);
+            worm_ui_keysound_select_all(state.bga_selection, next);
+            state.bga_reveal_primary = true;
+        } else {
+            state.bga_auto_increment_on_place = false;
+            state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+        }
+        if (next_resource_id) state.armed_resource_id = next_resource_id;
+        return;
+    }
+    if (!state.auto_increment_on_place) return;
     if (state.armed_from_sounds_dock) {
         next_resource_id = next_visible_keysound(state.keysound_advance_rows, placed_resource_id);
         if (next_resource_id) {

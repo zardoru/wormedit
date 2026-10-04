@@ -3,6 +3,7 @@
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/audio_state.h"
+#include "ui/nuklear/sound_import_runtime.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -1293,6 +1294,7 @@ TEST_CASE("BGA dock reuses list selection and arms resources outside the drawer 
         {.resource_id = 1500, .slot = "02", .name = "missing.png", .missing = true}}};
     view.bga_rows = rows.data(); view.bga_row_count = rows.size();
     view.bga_total_matching = ids.size(); view.bga_matching_ids = ids.data(); view.bga_search = "";
+    view.bga_advance_ids = ids.data(); view.bga_advance_count = 1;
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
     state.bga_panel_visible = true;
@@ -1852,7 +1854,8 @@ void expect_sound_sections(const nuklear_event_harness_t& harness) {
 }
 
 void select_and_filter_sound(nuklear_event_harness_t& harness) {
-    const auto selected = click_at(harness, 100, 234);
+    // The Add toolbar precedes the section header and two sound rows.
+    const auto selected = click_at(harness, 100, 263);
     const auto action = std::ranges::find_if(selected, [](const auto& frame) {
         return frame.get().kind == WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET;
     });
@@ -1890,4 +1893,98 @@ TEST_CASE("Sounds section separators preserve row selection and search at normal
 TEST_CASE("Sounds section separators preserve row selection and search at narrow width",
           "[frontend-state][event-harness][sounds-separators]") {
     check_separated_sound_columns(800);
+}
+
+namespace {
+void stage_grouped_import(nuklear_event_harness_t& harness) {
+    const std::array<WormUiSoundImportItem, 3> items{{
+        {"/tmp/kick01.wav", "kick01.wav", WORM_UI_SOUND_IMPORT_KEYSOUND},
+        {"/tmp/kick02.wav", "kick02.wav", WORM_UI_SOUND_IMPORT_KEYSOUND},
+        {"/tmp/loose.wav", "loose.wav", WORM_UI_SOUND_IMPORT_SAMPLE}}};
+    const auto& view = harness.view();
+    REQUIRE(worm_ui_frontend_stage_sound_import(view.project_id, view.selected_chart_id,
+        view.document_revision, items.data(), items.size(), nullptr, 0, true, ""));
+}
+
+void check_retained_import_after_failure() {
+    const auto& state = worm_ui_nuklear_pending_sound_import();
+    CHECK(state.items.size() == 3);
+    CHECK(state.groups.size() == 1);
+    CHECK(state.message == "No contiguous WAV run is available.");
+    CHECK(state.phase == worm_ui_sound_import_phase_t::review_groups);
+}
+} // namespace
+
+TEST_CASE("Sound group import review captures shortcuts and Escape cancels without an action",
+          "[frontend-state][event-harness][sound-import]") {
+    nuklear_event_harness_t harness;
+    (void)harness.frame();
+    stage_grouped_import(harness);
+    (void)harness.frame();
+    CHECK(harness.drawn_text().find("Groups") != std::string::npos);
+    CHECK(harness.drawn_text().find("kick") != std::string::npos);
+    const auto save = key_event(SDL_EVENT_KEY_DOWN, SDLK_S, SDL_SCANCODE_S);
+    CHECK(harness.frame(std::span{&save, 1}, SDL_KMOD_CTRL).get().shortcut_event_count == 0);
+    const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    CHECK(harness.frame(std::span{&escape, 1}).get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK_FALSE(worm_ui_nuklear_sound_import_active());
+}
+
+TEST_CASE("Sound group name field replaces selected text from captured keyboard and text input",
+          "[frontend-state][event-harness][sound-import]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    (void)harness.frame();
+    stage_grouped_import(harness);
+    (void)harness.frame();
+    REQUIRE(worm_ui_nuklear_pending_sound_import().groups.size() == 1);
+    CHECK(worm_ui_nuklear_pending_sound_import().groups.front().name == "kick");
+
+    // The centered 720x680 review window places its group-name field near this point.
+    (void)click_at(harness, 550.0F, 350.0F);
+    const auto select_all = key_event(SDL_EVENT_KEY_DOWN, SDLK_A, SDL_SCANCODE_A);
+    (void)harness.frame(std::span{&select_all, 1}, SDL_KMOD_CTRL);
+    const auto release_a = key_event(SDL_EVENT_KEY_UP, SDLK_A, SDL_SCANCODE_A);
+    (void)harness.frame(std::span{&release_a, 1}, SDL_KMOD_CTRL);
+    SDL_Event replacement{};
+    replacement.type = SDL_EVENT_TEXT_INPUT;
+    replacement.text.type = SDL_EVENT_TEXT_INPUT;
+    for (const char character : std::string_view{"Drums"}) {
+        const char codepoint[]{character, '\0'};
+        replacement.text.text = codepoint;
+        (void)harness.frame(std::span{&replacement, 1});
+    }
+
+    CHECK(worm_ui_nuklear_pending_sound_import().groups.front().name == "Drums");
+}
+
+TEST_CASE("Sound import failure retains group edits and changing projects discards the review",
+          "[frontend-state][event-harness][sound-import]") {
+    nuklear_event_harness_t harness;
+    (void)harness.frame();
+    stage_grouped_import(harness);
+    worm_ui_frontend_sound_import_result(false, "No contiguous WAV run is available.");
+    check_retained_import_after_failure();
+    ++harness.view().project_id;
+    CHECK(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK_FALSE(worm_ui_nuklear_sound_import_active());
+}
+
+TEST_CASE("Import action snapshots own item strings and group member indexes",
+          "[frontend-state][event-harness][sound-import]") {
+    std::string path = "/tmp/kick01.wav", name = "Kick", group_name = "Drums";
+    WormUiSoundImportItem item{path.c_str(), name.c_str(), WORM_UI_SOUND_IMPORT_KEYSOUND};
+    std::array<std::size_t, 1> members{0};
+    WormUiSoundImportGroup group{group_name.c_str(), 22, members.data(), members.size()};
+    WormUiWorkspaceAction action{};
+    action.sound_import_items = &item; action.sound_import_item_count = 1;
+    action.sound_import_groups = &group; action.sound_import_group_count = 1;
+    workspace_action_snapshot_t snapshot{action};
+    path = name = group_name = "overwritten";
+    members[0] = 99;
+    CHECK(std::string{snapshot.get().sound_import_items[0].path} == "/tmp/kick01.wav");
+    CHECK(std::string{snapshot.get().sound_import_items[0].name} == "Kick");
+    CHECK(std::string{snapshot.get().sound_import_groups[0].name} == "Drums");
+    CHECK(snapshot.get().sound_import_groups[0].member_indices[0] == 0);
+    CHECK(snapshot.get().sound_import_groups[0].existing_group_id == 22);
 }

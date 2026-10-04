@@ -68,10 +68,11 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 
 ## T-365 Remove the inspector sample list
 
-- **Status:** ready
+- **Status:** done (2026-10-04; sample selection through the Sounds dock)
 - **Outcome:** the Compose inspector no longer duplicates the sample picker; the Sounds dock remains the sample selection and placement entry point.
 - **Read first:** `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`.
-- **Files owned:** `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_resources.cpp/.h`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_state.h`, `tests/ui/nuklear_event_harness_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_resources.cpp/.h`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_state.h`, `tests/ui/nuklear_event_harness_tests.cpp`, new `tests/ui/inspector_resource_workflow_tests.cpp`, `tests/CMakeLists.txt`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `tests/ui/nuklear_event_harness.cpp/.h`.
+- **Supporting scope (coordinator approved, 2026-10-04):** New `tests/ui/inspector_resource_workflow_tests.cpp` adds isolated ownership of actual input-harness workflows; `tests/CMakeLists.txt` registers it. `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp` and `tests/ui/nuklear_event_harness.cpp/.h` expose rendered text bounds to the no-window harness so resource controls can be clicked at their actual positions.
 - **Steps:**
   1. Audit the inspector's resource section and separate sample-list controls from other resource/placement functions before removing the sample list.
   2. Remove duplicate sample rows and sample-only controls; preserve any still-needed BGM/BGA controls and make the Sounds dock readily reachable.
@@ -80,6 +81,8 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 - **Reject/failure behavior:** Missing or closed dock state cannot strand the user without an accessible sample picker.
 - **Verify:** `cmake --build build`; `ctest --test-dir build -L event-harness --output-on-failure`; `ctest --test-dir build --output-on-failure -R '^core\.|^frontend-state\.|^frame-timing\.|^documentation\.'`; affected-source `clang-tidy -p build <source-file>` with no new complexity violations; isolated Xvfb check of the card's workflow.
 - **Out of scope:** removing the resource catalog; redesigning the full inspector.
+
+- **Verification (2026-10-04):** `cmake --build build` passed; `ctest --test-dir build -L event-harness --output-on-failure`: `100% tests passed out of 74`; required core/frontend/frame/documentation filter: `100% tests passed out of 1635`; full suite: `100% tests passed out of 1935`. Affected sources checked with `clang-tidy -p build`, with no new cognitive-complexity violations. The event harness verifies sample arming/painting, generic Arm/Disarm provenance, preserved BGM/BGA controls, compact access and toolbar close/reopen. Isolated normal and 700-pixel Compose captures confirm the Sounds dock remains reachable without duplicate inspector sample rows. Captures are under `/tmp/wormedit-import-bga-batch/`; the final real-window smoke command passed and its PNG was inspected.
 
 ## T-366 Add standard BMS 5K without an auxiliary lane
 
@@ -101,11 +104,11 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 
 ## T-367 Advance after placement in the BGA listing
 
-- **Status:** ready
+- **Status:** done (2026-10-04; independent BGA advance after successful placement)
 - **Outcome:** the BGA dock offers advance-after-place that arms the next eligible image/video resource after successful event placement.
-- **Read first:** `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/sys/bga_list_projection.cpp`, `src/sys/compose_input.cpp`.
-- **Files owned:** `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `src/sys/bga_list_projection.cpp/.h`, `src/sys/bga_dock_runtime.cpp/.h`, `tests/sys/bga_list_projection_tests.cpp`, `tests/ui/keysound_list_state_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
-- **Supporting scope (coordinator approved, 2026-10-04):** `src/ui/nuklear/compose_state.cpp` and `tests/ui/nuklear_compose_state_tests.cpp` are owned for the shared successful-placement advance callback and its separate BGA state regression coverage.
+- **Read first:** `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/sys/bga_list_projection.cpp`, `src/sys/compose_input.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `src/sys/bga_list_projection.cpp/.h`, `src/sys/bga_dock_runtime.cpp/.h`, `tests/sys/bga_list_projection_tests.cpp`, `tests/ui/keysound_list_state_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, new `tests/ui/bga_advance_workflow_tests.cpp`, `tests/CMakeLists.txt`.
+- **Supporting scope (coordinator approved, 2026-10-04):** `src/ui/nuklear/compose_state.cpp` and `tests/ui/nuklear_compose_state_tests.cpp` are owned for the shared successful-placement advance callback and its separate BGA state regression coverage. `src/ui/nuklear/compose_resources.cpp` and `src/ui/nuklear/compose_sounds_panel.cpp` clear BGA advance provenance when another resource picker arms or disarms; their current T-365/T-355 owners incorporate these supporting changes to avoid concurrent edits. New `tests/ui/bga_advance_workflow_tests.cpp` adds actual input-harness coverage; `tests/CMakeLists.txt` registers it.
 - **Steps:**
   1. Reuse the successful-placement advance mechanism from the Sounds dock, keeping separate BGA toggle and selection state.
   2. Advance in the BGA listing's current sort/filter order, skip unusable resources and reveal the successor beyond the visible window.
@@ -114,6 +117,8 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 - **Reject/failure behavior:** No eligible successor retains the last valid armed resource; stale rows are not armed.
 - **Verify:** `cmake --build build`; `ctest --test-dir build -L event-harness --output-on-failure`; `ctest --test-dir build --output-on-failure -R '^core\.|^frontend-state\.|^frame-timing\.|^documentation\.'`; affected-source `clang-tidy -p build <source-file>` with no new complexity violations; isolated Xvfb check of the card's workflow.
 - **Out of scope:** bulk ID allocation; BGA video decoding; sound advancement (T-361).
+
+- **Verification (2026-10-04):** `cmake --build build` passed; `ctest --test-dir build -L event-harness --output-on-failure`: `100% tests passed out of 74`; required core/frontend/frame/documentation filter: `100% tests passed out of 1635`; full suite: `100% tests passed out of 1935`. Affected sources checked with `clang-tidy -p build`, with no new cognitive-complexity violations. The event harness verifies sort/search requests, actual pointer placement, no advancement before successful notification, off-window successors and end-of-order stop; projection/state tests cover missing/nonvisual assets, stale callbacks and natural/BMP order. Actual isolated saved events used resources 25, 21 and 23 in natural-name order, retaining the final selection and turning placement/advance off. Original BMP identities and playable measures stayed unchanged. Captures are under `/tmp/wormedit-import-bga-batch/`; the final real-window smoke command passed and its PNG was inspected.
 
 ## T-368 Center the minimap span when zoomed in
 

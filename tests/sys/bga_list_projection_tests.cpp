@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <source_location>
 #include <array>
+#include <algorithm>
 using namespace wormedit;
 using namespace wormedit::sys;
 namespace {
@@ -37,11 +38,15 @@ TEST_CASE("BGA projection searches and builds only the requested window with ID 
     check_bga(result.matching_ids[0] == resource_id_t{101});
     check_bga(result.matching_ids[1] == resource_id_t{1010});
     check_bga(result.matching_ids[2] == resource_id_t{1011});
+    check_bga(result.advance_ids.size() == 10);
+    check_bga(std::ranges::find(result.advance_ids, resource_id_t{101}) == result.advance_ids.end());
     check_bga(result.rows.front().missing);
     check_bga(result.rows.front().slot == "101");
     const auto used = project_bga_list(images(), {.search = "Image102"});
     check_bga(used.rows.front().video);
     check_bga(used.rows.front().use_count == 2);
+    check_bga(used.advance_ids.size() == 11);
+    check_bga(used.advance_ids == used.matching_ids);
 }
 
 TEST_CASE("BGA dock sorts matching rows naturally before the requested window", "[sys][bga][dock]") {
@@ -61,6 +66,7 @@ TEST_CASE("BGA dock sorts matching rows naturally before the requested window", 
     check_bga(result.rows[0].name == "snd1.bmp");
     check_bga(result.rows[1].name == "snd2.bmp");
     check_bga(result.matching_ids[0] == resource_id_t{3});
+    check_bga(result.advance_ids == result.matching_ids);
     const auto by_id = project_bga_list(document, {.search = "snd", .row_limit = 2,
                                                    .sort = dock_sort_t::bms_id});
     require_bga(by_id.rows.size() == 2);
@@ -73,6 +79,26 @@ TEST_CASE("BGA dock sorts matching rows naturally before the requested window", 
     require_bga(without_ids.rows.size() == 2);
     check_bga(without_ids.rows[0].name == "snd1.bmp");
     check_bga(without_ids.rows[1].name == "snd2.bmp");
+    check_bga(without_ids.advance_ids == without_ids.matching_ids);
+}
+
+TEST_CASE("BGA advance order spans off-screen matches and skips unavailable or nonvisual assets",
+          "[sys][bga][advance]") {
+    auto document = images();
+    document.resources[3].missing = true;
+    document.visual_assets[4].kind = asset_kind_t::storyboard;
+    document.resources[5].asset = asset_id_t{9999};
+    const auto result = project_bga_list(document, {.search = "Image", .row_limit = 2});
+
+    require_bga(result.rows.size() == 2);
+    check_bga(result.matching_ids.size() == 1200);
+    check_bga(result.total_matching == 1200);
+    check_bga(result.advance_ids.size() == 1196);
+    check_bga(result.advance_ids.front() == resource_id_t{1});
+    check_bga(result.advance_ids[1] == resource_id_t{2});
+    check_bga(std::ranges::find(result.advance_ids, resource_id_t{4}) == result.advance_ids.end());
+    check_bga(std::ranges::find(result.advance_ids, resource_id_t{5}) == result.advance_ids.end());
+    check_bga(std::ranges::find(result.advance_ids, resource_id_t{6}) == result.advance_ids.end());
 }
 TEST_CASE("BGA search matches names and BMP IDs and clamps its window", "[sys][bga]") {
     const auto document = images();

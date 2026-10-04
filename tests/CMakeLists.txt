@@ -502,6 +502,8 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
     add_executable(wormedit_frontend_event_harness_tests
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
+        ui/bga_advance_workflow_tests.cpp
+        ui/inspector_resource_workflow_tests.cpp
         ${WORMEDIT_UI_FRONTEND_SOURCES}
         "${CMAKE_SOURCE_DIR}/src/common/static_interval_index.cpp"
         "${CMAKE_SOURCE_DIR}/src/sys/frame_timing.cpp")
@@ -581,6 +583,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         target_sources(wormedit_frame_timing_tests PRIVATE
             sys/compose_beat_fit_tests.cpp
             sys/application_commands_tests.cpp
+            ../src/sys/compose_sound_actions.cpp
             ../src/sys/application_command_dispatch.cpp
             ../src/sys/transport_player_actions.cpp
             ../src/sys/application_defaults.cpp

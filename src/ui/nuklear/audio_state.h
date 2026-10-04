@@ -15,6 +15,8 @@ struct worm_ui_nuklear_audio_state_t {
     bool offset_escape_pending{};
     bool offset_cancel_pending{};
     char search_text[128]{};
+    bool sound_list_valid{};
+    float sound_list_x{}, sound_list_y{}, sound_list_width{}, sound_list_height{};
 };
 
 [[nodiscard]] auto worm_ui_nuklear_audio_state() noexcept -> worm_ui_nuklear_audio_state_t&;

@@ -35,6 +35,17 @@ auto bga_resource_less(const resource_entry_t& left, const resource_entry_t& rig
     }
     return left.id.value < right.id.value;
 }
+auto bga_asset(const song_document_t& document, const resource_entry_t& resource)
+    -> const visual_asset_t* {
+    const auto asset = std::ranges::find(document.visual_assets, resource.asset,
+                                         &visual_asset_t::id);
+    return asset == document.visual_assets.end() ? nullptr : &*asset;
+}
+auto bga_placeable(const song_document_t& document, const resource_entry_t& resource) -> bool {
+    const auto* asset = bga_asset(document, resource);
+    return !resource.missing && asset &&
+           (asset->kind == asset_kind_t::image || asset->kind == asset_kind_t::video);
+}
 auto bga_uses(const song_document_t& document) -> std::unordered_map<std::uint64_t, std::uint32_t> {
     std::unordered_map<std::uint64_t, std::uint32_t> uses;
     for (const auto& chart : document.charts)
@@ -53,7 +64,6 @@ auto project_bga_list(const song_document_t& document, const bga_list_request_t&
         if (folded(bga_slot(resource)).find(query) != std::string::npos ||
             folded(resource.name).find(query) != std::string::npos) {
             matching.push_back(&resource);
-            result.matching_ids.push_back(resource.id);
         }
     }
     const auto sort = request.ids_available ? request.sort : dock_sort_t::natural_name;
@@ -61,18 +71,23 @@ auto project_bga_list(const song_document_t& document, const bga_list_request_t&
         return bga_resource_less(*left, *right, sort);
     });
     result.matching_ids.clear();
-    for (const auto* resource : matching) result.matching_ids.push_back(resource->id);
+    result.matching_ids.reserve(matching.size());
+    result.advance_ids.reserve(matching.size());
+    for (const auto* resource : matching) {
+        result.matching_ids.push_back(resource->id);
+        if (bga_placeable(document, *resource)) result.advance_ids.push_back(resource->id);
+    }
     result.total_matching = matching.size();
     result.first_row = std::min(request.first_row, matching.size());
     const auto end = result.first_row + std::min(request.row_limit, matching.size() - result.first_row);
     for (auto index = result.first_row; index < end; ++index) {
         const auto& resource = *matching[index];
-        const auto asset = std::ranges::find(document.visual_assets, resource.asset, &visual_asset_t::id);
+        const auto* asset = bga_asset(document, resource);
         const auto count = uses.find(resource.id.value);
         result.rows.push_back({resource.id, bga_slot(resource), resource.name,
             count == uses.end() ? 0 : count->second,
-            resource.missing || asset == document.visual_assets.end(),
-            asset != document.visual_assets.end() && asset->kind == asset_kind_t::video});
+            resource.missing || asset == nullptr,
+            asset != nullptr && asset->kind == asset_kind_t::video});
     }
     return result;
 }

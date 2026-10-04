@@ -76,7 +76,7 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY 128
 #define WORM_UI_COMPOSE_RESOURCE_CAPACITY 128
 #define WORM_UI_COMPOSE_KEYSOUND_CAPACITY 4096
-#define WORM_UI_SOUND_DROP_CAPACITY 1000
+#define WORM_UI_SOUND_DROP_CAPACITY 1295
 #define WORM_UI_COMPOSE_KEYSOUND_LAYER_CAPACITY 64
 #define WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY 32
 #define WORM_UI_TIMING_SPEED_CAPACITY 4096
@@ -1125,6 +1125,8 @@ typedef struct WormUiComposeView {
     size_t bga_ids_used, bga_ids_total, bga_largest_free_run;
     bool bga_ids_available;
     const uint64_t* bga_matching_ids;
+    const uint64_t* bga_advance_ids;
+    size_t bga_advance_count;
     const char* bga_search;
     bool paint_ghost_visible;
     WormUiComposeNoteView paint_ghost;
@@ -1794,6 +1796,8 @@ typedef struct WormUiWorkspaceView {
     bool project_loaded;
     bool project_has_native_path;
     uint64_t project_id;
+    uint64_t selected_chart_id;
+    uint64_t document_revision;
     // A dropped MP3/OGG awaiting confirmation as a new project's audio.
     const char* pending_new_project_audio_path;
     // A BMS-family source whose text encoding must be selected before opening.
@@ -1844,6 +1848,19 @@ typedef struct WormUiWorkspaceView {
     WormUiPlayerPreviewView player_preview;
     struct WormUiExternalPlayerView external_player;
 } WormUiWorkspaceView;
+
+typedef struct WormUiSoundImportItem {
+    const char* path;
+    const char* name;
+    uint8_t kind;
+} WormUiSoundImportItem;
+
+typedef struct WormUiSoundImportGroup {
+    const char* name;
+    uint64_t existing_group_id;
+    const size_t* member_indices;
+    size_t member_count;
+} WormUiSoundImportGroup;
 
 typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_NONE = 0,
@@ -1897,6 +1914,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE,
     /* Keysound listbox actions. The sound list is compose_sound_resource_ids. */
     WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES,
+    WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT,
     WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT,
     WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES,
     WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA,
@@ -2283,6 +2301,12 @@ typedef struct WormUiWorkspaceAction {
     bool compose_renumber_bga;
     const char* const* compose_import_paths;
     size_t compose_import_path_count;
+    bool sound_import_pick_requested;
+    uint64_t sound_import_project_id;
+    const WormUiSoundImportItem* sound_import_items;
+    size_t sound_import_item_count;
+    const WormUiSoundImportGroup* sound_import_groups;
+    size_t sound_import_group_count;
     uint16_t compose_sound_slot;
     bool compose_sound_slot_confirmed;
     size_t compose_output_group_index;
@@ -2346,17 +2370,29 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer);
 bool worm_ui_frontend_init_headless(int width, int height);
 // Read queued draw text before render clears it; returns required bytes (no terminator).
 size_t worm_ui_frontend_copy_drawn_text_for_testing(char* output, size_t capacity);
+typedef struct WormUiTestingDrawnText {
+    float x, y, width, height;
+    char text[128];
+} WormUiTestingDrawnText;
+// Copy bounded text command labels and their window-coordinate rectangles for event tests.
+size_t worm_ui_frontend_copy_drawn_text_bounds_for_testing(WormUiTestingDrawnText* output,
+                                                            size_t capacity);
 void worm_ui_frontend_shutdown(void);
 void worm_ui_frontend_begin_input(void);
 bool worm_ui_frontend_handle_event(const SDL_Event* event);
 WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_id, float x,
                                                                 float y);
-/* True when a window position lies over the Compose keysound listbox, where dropped audio
-   files are added as sounds. Only meaningful while the Compose tab is showing. */
+/* True when a window position lies over the currently rendered Compose or Audio/Slices
+   sound listbox, where dropped audio files are added as sounds. */
 bool worm_ui_frontend_sound_list_contains(uint32_t window_id, float x, float y);
 void worm_ui_frontend_end_input(void);
 bool worm_ui_frontend_request_new_project(void);
 bool worm_ui_frontend_request_save_project(uint64_t project_id);
+bool worm_ui_frontend_stage_sound_import(uint64_t project, uint64_t chart, uint64_t revision,
+    const WormUiSoundImportItem* items, size_t item_count,
+    const WormUiSoundImportGroup* existing_groups, size_t group_count,
+    bool chart_has_bgm, const char* message);
+void worm_ui_frontend_sound_import_result(bool applied, const char* message);
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view);
 // Draw a recoverable workspace error when the model could not produce a view.
 WormUiWorkspaceAction worm_ui_frontend_workspace_error(

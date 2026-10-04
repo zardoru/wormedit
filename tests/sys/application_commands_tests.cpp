@@ -3,6 +3,7 @@
 #include "sys/application_command_dispatch.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_semantic_layer_commands.h"
+#include "sys/compose_sound_actions.h"
 
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/timing_lane_controller.h>
@@ -12,6 +13,11 @@
 
 #include <limits>
 #include <string>
+#include <fstream>
+#include <iterator>
+#include <span>
+#include <filesystem>
+#include <wormedit/formats/bmson.h>
 
 using namespace wormedit::sys;
 
@@ -133,6 +139,191 @@ struct AreaFixture {
 } // namespace
 
 #ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+namespace {
+auto sound_fixture_path(std::string_view filename) -> std::string {
+    return (std::filesystem::path{__FILE__}.parent_path().parent_path() / "fixtures" /
+            "audio" / filename).string();
+}
+
+auto sound_import_song() -> wormedit::song_document_t {
+    const auto path = std::filesystem::path{__FILE__}.parent_path().parent_path() / "fixtures" / "bmson" /
+                      "published-vox-slicing.bmson";
+    std::ifstream stream(path, std::ios::binary);
+    const std::string bytes{std::istreambuf_iterator<char>(stream),
+                            std::istreambuf_iterator<char>()};
+    const auto parsed = wormedit::parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
+    REQUIRE(parsed.song);
+    return *parsed.song;
+}
+
+struct SoundImportDispatchFixture {
+    wormedit::document_history_t history{wormedit::make_document_history(sound_import_song())};
+    wormedit::workspace_controller_t workspace;
+    wormedit::sys::application_command_state_t application_state;
+    wormedit::chart_id_t chart{history.document.charts.front().id};
+
+    SoundImportDispatchFixture() {
+        const auto created = wormedit::make_workspace_controller(history);
+        REQUIRE(created);
+        workspace = *created.workspace;
+    }
+
+    auto dispatch(const WormUiSoundImportItem* items, std::size_t item_count,
+                  const WormUiSoundImportGroup* groups, std::size_t group_count)
+        -> std::optional<std::string> {
+        WormUiWorkspaceAction action{};
+        action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
+        action.sound_import_project_id = history.document.id.value;
+        action.compose_input_chart_id = chart.value;
+        action.compose_input_document_revision = history.document.revision;
+        action.sound_import_items = items;
+        action.sound_import_item_count = item_count;
+        action.sound_import_groups = groups;
+        action.sound_import_group_count = group_count;
+        return dispatch_compose_sound_action(action, history, workspace, chart, application_state);
+    }
+};
+
+void leave_two_fragmented_bms_ids(wormedit::song_document_t& document) {
+    constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    document.charts.front().source_family = wormedit::format_family_t::bms;
+    for (auto& resource : document.resources)
+        std::erase_if(resource.target_identities, [](const auto& identity) {
+            return identity.family == wormedit::format_family_t::bms &&
+                   identity.namespace_name == "WAV";
+        });
+    auto& identities = document.resources.front().target_identities;
+    for (std::size_t value = 1; value < 36 * 36; ++value) {
+        if (value == 1 || value == 3) continue;
+        identities.push_back({wormedit::format_family_t::bms,
+            std::string{digits[value / 36], digits[value % 36]}, "WAV"});
+    }
+}
+} // namespace
+
+namespace {
+auto reviewed_sound_import_dispatch_commits_once() -> bool {
+    using namespace wormedit;
+    SoundImportDispatchFixture fixture;
+    const auto existing_group = sound_group_id_t{55};
+    fixture.history.document.sound_groups.push_back({.id = existing_group, .name = "Loops"});
+    fixture.history.document.resources.front().sound_group = existing_group;
+    const auto before_resources = fixture.history.document.resources.size();
+    const auto kick_main = sound_fixture_path("keysound-c4.ogg");
+    const auto loop_main = sound_fixture_path("keysound-e4.ogg");
+    const auto kick_layer = sound_fixture_path("keysound-g4.ogg");
+    const std::array items{
+        WormUiSoundImportItem{kick_main.c_str(), "Kick Main", 2},
+        WormUiSoundImportItem{loop_main.c_str(), "Loop Main", 2},
+        WormUiSoundImportItem{kick_layer.c_str(), "Kick Layer", 2}};
+    const std::array kick_members{std::size_t{0}, std::size_t{2}};
+    const std::array loop_members{std::size_t{1}};
+    const std::array groups{
+        WormUiSoundImportGroup{"Renamed Kicks", 0, kick_members.data(), kick_members.size()},
+        WormUiSoundImportGroup{"Renamed Loops", existing_group.value, loop_members.data(),
+                               loop_members.size()}};
+
+    const auto result = fixture.dispatch(items.data(), items.size(), groups.data(), groups.size());
+    if (!result || result->find("Added 3") == std::string::npos ||
+        fixture.history.document.resources.size() != before_resources + 3 ||
+        fixture.history.document.sound_groups.size() != 2) return false;
+    if (fixture.history.document.resources[before_resources].name != "Kick Main" ||
+        fixture.history.document.resources[before_resources + 1].name != "Loop Main" ||
+        fixture.history.document.resources[before_resources + 2].name != "Kick Layer") return false;
+    const auto kicks = fixture.history.document.sound_groups.back();
+    if (kicks.name != "Renamed Kicks" ||
+        fixture.history.document.resources[before_resources].sound_group != kicks.id ||
+        fixture.history.document.resources[before_resources + 2].sound_group != kicks.id ||
+        fixture.history.document.sound_groups.front().name != "Renamed Loops" ||
+        fixture.history.document.resources[before_resources + 1].sound_group != existing_group ||
+        fixture.history.document.resources.front().sound_group != existing_group ||
+        fixture.history.undo.size() != 1 || !undo_document_command(fixture.history)) return false;
+    return fixture.history.document.resources.size() == before_resources &&
+           fixture.history.document.sound_groups.size() == 1 &&
+           fixture.history.document.sound_groups.front().name == "Loops" &&
+           fixture.history.document.resources.front().sound_group == existing_group;
+}
+
+auto rejected_sound_imports_leave_history_unchanged() -> bool {
+    using namespace wormedit;
+    SoundImportDispatchFixture fixture;
+    const auto before_resources = fixture.history.document.resources;
+    const auto before_groups = fixture.history.document.sound_groups;
+    const auto before_assets = fixture.history.document.audio_assets.size();
+    const auto before_revision = fixture.history.document.revision;
+    const auto one_path = sound_fixture_path("keysound-c4.ogg");
+    const auto two_path = sound_fixture_path("keysound-e4.ogg");
+    const std::array items{
+        WormUiSoundImportItem{one_path.c_str(), "One", 2},
+        WormUiSoundImportItem{two_path.c_str(), "Two", 2}};
+    const std::array first{std::size_t{0}};
+    const std::array second{std::size_t{1}};
+    const std::array duplicate_names{
+        WormUiSoundImportGroup{"Same", 0, first.data(), first.size()},
+        WormUiSoundImportGroup{"same", 0, second.data(), second.size()}};
+
+    const auto rejected = fixture.dispatch(items.data(), items.size(), duplicate_names.data(),
+                                           duplicate_names.size());
+    if (!rejected || rejected->find("already in use") == std::string::npos ||
+        fixture.history.document.revision != before_revision ||
+        fixture.history.document.resources.size() != before_resources.size() ||
+        fixture.history.document.resources.front().name != before_resources.front().name ||
+        fixture.history.document.resources.front().asset != before_resources.front().asset ||
+        fixture.history.document.sound_groups != before_groups ||
+        fixture.history.document.audio_assets.size() != before_assets ||
+        !fixture.history.undo.empty()) return false;
+
+    auto missing_items = items;
+    missing_items[1].path = "/tmp/wormedit-missing-reviewed-sound.wav";
+    const auto missing = fixture.dispatch(missing_items.data(), missing_items.size(), nullptr, 0);
+    return missing && missing->find("no longer readable") != std::string::npos &&
+           fixture.history.document.revision == before_revision &&
+           fixture.history.document.resources.size() == before_resources.size() &&
+           fixture.history.document.sound_groups == before_groups &&
+           fixture.history.document.audio_assets.size() == before_assets &&
+           fixture.history.undo.empty();
+}
+
+auto fragmented_ungrouped_sound_import_reports_ranges() -> bool {
+    using namespace wormedit;
+    SoundImportDispatchFixture fixture;
+    leave_two_fragmented_bms_ids(fixture.history.document);
+    const auto first_path = sound_fixture_path("keysound-c4.ogg");
+    const auto second_path = sound_fixture_path("keysound-e4.ogg");
+    const std::array items{
+        WormUiSoundImportItem{first_path.c_str(), "Loose 1", 2},
+        WormUiSoundImportItem{second_path.c_str(), "Loose 2", 2}};
+    const auto message = fixture.dispatch(items.data(), items.size(), nullptr, 0);
+    if (!message || message->find("Group split across 2 ID ranges") == std::string::npos ||
+        fixture.history.document.resources.size() < 2) return false;
+    const auto& first = fixture.history.document.resources[fixture.history.document.resources.size() - 2];
+    const auto& second = fixture.history.document.resources.back();
+    return std::ranges::any_of(first.target_identities, [](const auto& identity) {
+               return identity.family == format_family_t::bms && identity.namespace_name == "WAV" &&
+                      identity.identifier == "01";
+           }) &&
+           std::ranges::any_of(second.target_identities, [](const auto& identity) {
+               return identity.family == format_family_t::bms && identity.namespace_name == "WAV" &&
+                      identity.identifier == "03";
+           }) && fixture.history.undo.size() == 1;
+}
+} // namespace
+
+TEST_CASE("confirmed sound import dispatches reviewed names and memberships in one undo step",
+          "[unit][sys][sounds][import]") {
+    CHECK(reviewed_sound_import_dispatch_commits_once());
+}
+
+TEST_CASE("confirmed sound import dispatch rejects invalid proposals without mutation",
+          "[unit][sys][sounds][import]") {
+    CHECK(rejected_sound_imports_leave_history_unchanged());
+}
+
+TEST_CASE("confirmed ungrouped BMS import reports fragmented WAV ranges",
+          "[unit][sys][sounds][import][bms-identifiers]") {
+    CHECK(fragmented_ungrouped_sound_import_reports_ranges());
+}
+
 namespace {
 struct TimingInsertFixture {
     AreaFixture fixture;

@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <span>
 #include <string>
 #include <unordered_map>
 namespace {
@@ -28,6 +29,12 @@ auto grouped_count(std::size_t value) -> std::string {
 }
 struct Picker { std::mutex mutex; bool open{}; std::vector<std::string> paths; };
 Picker picker;
+auto advance_eligible(const WormUiComposeView& view, std::uint64_t resource_id) -> bool {
+    return view.bga_advance_ids &&
+           std::ranges::find(view.bga_advance_ids,
+                             view.bga_advance_ids + view.bga_advance_count,
+                             resource_id) != view.bga_advance_ids + view.bga_advance_count;
+}
 void SDLCALL picked(void*, const char* const* paths, int) {
     std::lock_guard lock{picker.mutex};
     picker.open = false;
@@ -86,13 +93,13 @@ auto thumbnail(const WormUiComposeView& view, const WormUiComposeBgaRowView& row
 void toolbar(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear_compose_state_t& state,
               WormUiWorkspaceAction& action) {
     nk_layout_row_template_begin(context, 27);
-    IconButton::layout_columns(context, view.bga_ids_available ? 7 : 5);
+    IconButton::layout_columns(context, view.bga_ids_available ? 8 : 6);
     nk_layout_row_template_end(context);
     const auto active = state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place &&
         state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::bga;
-    const auto matching = std::span(view.bga_matching_ids, view.bga_total_matching);
-    const auto can_paint = state.armed_resource_id && state.armed_resource_id == state.bga_selection.primary &&
-        std::ranges::find(matching, state.armed_resource_id) != matching.end() &&
+    const auto can_paint = state.armed_resource_id &&
+        state.armed_resource_id == state.bga_selection.primary &&
+        advance_eligible(view, state.armed_resource_id) &&
         !view.note_paint_mode_active && !view.semantic_layer_paint_mode_active && !view.timing_focus;
     if (!can_paint && !active) nk_widget_disable_begin(context);
     if (IconButton{Glyph::paintbrush, "Paint selected BGA on the chart", active}.render(context) && (can_paint || active)) {
@@ -100,8 +107,12 @@ void toolbar(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear
                                             : worm_ui_nuklear_compose_resource_pointer_mode_t::place;
         state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
         state.armed_from_sounds_dock = false;
+        state.armed_from_bga_dock = !active && can_paint;
     }
     if (!can_paint && !active) nk_widget_disable_end(context);
+    if (IconButton{Glyph::chevron_right, "Advance after place: arm the next available BGA shown",
+                   state.bga_auto_increment_on_place}.render(context))
+        state.bga_auto_increment_on_place = !state.bga_auto_increment_on_place;
     if (DrawnIconButton{icons::plus, "Add BGA images (or drop images here)"}.render(context)) open_picker();
     if (DrawnIconButton{icons::trash, "Remove unused BGA resources"}.render(context))
         (void)raise(action, view, WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA);
@@ -209,9 +220,33 @@ void row(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear_com
     const auto modifiers = SDL_GetModState();
     worm_ui_keysound_click(state.bga_selection, {view.bga_matching_ids, view.bga_total_matching}, index,
         (modifiers & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0, (modifiers & SDL_KMOD_SHIFT) != 0);
-    state.armed_resource_id = value.missing ? 0 : state.bga_selection.primary;
+    const auto eligible = advance_eligible(view, state.bga_selection.primary);
+    state.armed_resource_id = eligible ? state.bga_selection.primary : 0;
     state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
     state.armed_from_sounds_dock = false;
+    state.armed_from_bga_dock = eligible;
+    if (!eligible) state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+}
+
+void sync_advance_ids(const WormUiComposeView& view, worm_ui_nuklear_compose_state_t& state) {
+    if (view.bga_advance_count && view.bga_advance_ids)
+        state.bga_advance_ids.assign(view.bga_advance_ids,
+                                     view.bga_advance_ids + view.bga_advance_count);
+    else
+        state.bga_advance_ids.clear();
+}
+
+void reveal_armed_bga(nk_context* context, const WormUiComposeView& view,
+                      worm_ui_nuklear_compose_state_t& state) {
+    if (!state.bga_reveal_primary) return;
+    const auto matches = std::span(view.bga_matching_ids, view.bga_total_matching);
+    const auto found = std::ranges::find(matches, state.bga_selection.primary);
+    if (found != matches.end()) {
+        const auto index = static_cast<std::size_t>(found - matches.begin());
+        const auto y = index * static_cast<std::size_t>(36.0f + context->style.window.spacing.y);
+        nk_group_set_scroll(context, "Compose BGA list", 0, static_cast<nk_uint>(y));
+    }
+    state.bga_reveal_primary = false;
 }
 }
 void worm_ui_nuklear_bga_set_renderer(SDL_Renderer* value) {
@@ -223,6 +258,7 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
     if (!context || !view || !action || !state) return;
     if (state->bga_project_id != view->project_id || state->bga_chart_id != view->chart_id) {
         state->bga_selection = {}; state->bga_search.fill(0); state->bga_first_row = 0;
+        state->bga_advance_ids.clear(); state->armed_from_bga_dock = false;
         state->bga_project_id = view->project_id; state->bga_chart_id = view->chart_id;
         worm_ui_nuklear_bga_set_renderer(renderer);
     }
@@ -233,6 +269,7 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
     nk_layout_row_dynamic(context, 20, 1);
     nk_label(context, "BGA", NK_TEXT_LEFT);
     import_picked(*action, *view, *state);
+    sync_advance_ids(*view, *state);
     toolbar(context, *view, *state, *action);
     nk_layout_row_dynamic(context, 25, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state->bga_search.data(),
@@ -244,6 +281,7 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
                                     state->bga_renumber_release_pending;
     if (block_list_pointer) nk_widget_disable_begin(context);
     nk_layout_row_dynamic(context, height, 1);
+    reveal_armed_bga(context, *view, *state);
     struct nk_list_view list{};
     const auto matching = view->bga_search && std::strcmp(view->bga_search, state->bga_search.data()) == 0;
     if (nk_list_view_begin(context, &list, "Compose BGA list", NK_WINDOW_BORDER, 36,

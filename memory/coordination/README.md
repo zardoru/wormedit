@@ -143,3 +143,24 @@ and the frontend bridge uses a scoped noexcept callback with UI-thread
 consumption. Coordinator verification includes actual failed/too-long picker
 callbacks, cancellation/stale callbacks/shutdown, filesystem copy and export
 completion. N4 input/actions and recovery/final glue remain active.
+
+Root verification of `b57b47f` passes the full Debug build and eight relevant
+picker/worker/projection cases (`root-projection-dialog-resource-build.log`,
+`root-projection-dialog-resource-tests.log`, `root-projection-edge-tests.log`).
+Import compatibility is integrated as `4d2a8e9`: root Debug build and 1,374
+core/converter/documentation tests pass (`root-osutest-build.log`,
+`root-osutest-tests.log`). The independent main pipeline loads all eight real
+charts, saves/reopens exact native documents, exports/reimports osu, preserves
+note/lane/hold inventory, and measures actual core endpoint timing. Maximum
+error is 5.169 ms on native import and 5.168 ms after reimport. Original inputs
+remain unchanged; artifacts are in `osutest-load/root-final/` below the log
+directory. Normal resolution is bounded at 960 divisions per standard measure,
+with quantization warnings and explicit source-time origin.
+
+The first N4 input increment is held for corrections before integration:
+ordinary generic gesture cancellation and fit previews must be hints, fit/edit
+commits must preserve typed results, paste must retain diagnostic/rebind
+metadata, and no-op/cancellation changes must preserve original batch-stop
+semantics. Notifications Sol owns those corrections and recovery/final main;
+the new `/root/compose_actions_61` Sol and its Luna executor own the separately
+prepared Compose action worktree and supporting area metadata.

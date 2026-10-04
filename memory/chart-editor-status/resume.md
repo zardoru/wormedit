@@ -24,7 +24,13 @@ medium coordinator and Luna medium executor fixing the eight rejected charts
 in `/home/zardoru/Documents/charts/osutest/`. The user accepts import
 quantization; use a bounded 960 grid, preserve source-time duration and explicit
 native audio offset, measure real core timing and validate native/export
-roundtrips. Inputs remain read-only. Notifications T-221–T-223 continue. The readiness pilot did not complete feature cards;
+roundtrips. This import fix is now integrated as `4d2a8e9`: root Debug build,
+1,374 selected tests, and all eight real-chart native/export/reimport pipelines
+pass. Note/lane/hold inventory is preserved; maximum actual endpoint error is
+5.169 ms on import and 5.168 ms after reimport. Inputs remain read-only.
+Notifications T-221–T-223 continue; N4 input requires reviewed severity and
+batch-stop corrections, while a separate Sol 6.1/Luna action worktree handles
+the remaining Compose widget producers. The readiness pilot did not complete feature cards;
 implementation status requires reviewed code and actual verification.
 
 Completed batch (2026-10-04): T-349 BGM layer colors, assignment/filter/paint parity; T-350 exact seek/overview timing hover; T-356 manual sound grouping with optional atomic contiguous IDs; and T-364 precise Find Uses with positioned/source navigation are done. Application build and full suite pass 2,025/2,025; event harness 97/97; required core/frontend/frame/documentation partition 1,723/1,723. Isolated real-window colors, tooltips, group review/undo and usage navigation passed; artifacts `/tmp/wormedit-bgm-hover-groups-batch/`. The following T-357/T-368/T-373 batch is also complete (see below).

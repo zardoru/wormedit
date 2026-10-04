@@ -177,21 +177,11 @@ void tick_application_autosave(native_project_autosave_loop_t& autosave_loop,
 
 void rebind_workspace_after_edit(workspace_controller_t& workspace,
                                  const document_history_t& history,
-                                 std::string& status) {
+                                 notification_sink_t notifications, workspace_edit_feedback_t& feedback) {
     // Every document mutation must leave the next frame bound to its new
     // revision. Keep this boundary authoritative even when a command path
     // forgets its local rebind after committing.
-    if (workspace.song == history.document.id &&
-        (workspace.document_revision != history.document.revision ||
-         workspace.history.undo_depth != history.undo.size() ||
-         workspace.history.redo_depth != history.redo.size() ||
-         workspace.history.dirty != is_document_dirty(history))) {
-        const auto rebound = rebind_workspace(workspace, history);
-        if (!rebound)
-            status = rebound.diagnostics.empty()
-                         ? "Workspace could not follow the latest document edit."
-                         : rebound.diagnostics.front().message;
-    }
+    feedback.rebind(workspace, history, notifications);
 }
 
 void render_application_frame(WormWindow& window) {

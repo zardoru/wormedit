@@ -4,6 +4,7 @@
 #include "sys/metadata_drop_state.h"
 #include "sys/resource_job_state.h"
 #include "sys/sound_drop_transaction.h"
+#include "sys/workspace_edit_feedback.h"
 
 #include <wormedit/core/autosave_loop.h>
 #include <wormedit/core/workspace.h>
@@ -49,7 +50,7 @@ void tick_application_autosave(native_project_autosave_loop_t& autosave_loop,
 
 void rebind_workspace_after_edit(workspace_controller_t& workspace,
                                  const document_history_t& history,
-                                 std::string& status);
+                                 notification_sink_t notifications, workspace_edit_feedback_t& feedback);
 
 void render_application_frame(WormWindow& window);
 

@@ -153,7 +153,7 @@ auto navigate_beat_bookmark(document_history_t& history, editor_interaction_stat
     if (playing) {
         std::string status;
         const auto sought = seek_playhead_to(*chart, application, target, status);
-        return {.accepted = sought, .status = std::move(status)};
+        return {.accepted = sought, .status = std::move(status), .feedback_posted = sought && application.transport_seek_posts_feedback};
     }
     const auto jumped = dispatch_editor_action(history, state,
         jump_edit_cursor_action_t{target, marker.document_revision});
@@ -179,7 +179,7 @@ auto navigate_to_bookmark(document_history_t& history, editor_interaction_state_
         if (is_playing(application)) {
             std::string status;
             const auto sought = seek_playhead_to(*chart, application, *bookmark->position, status);
-            return {.accepted = sought, .status = std::move(status)};
+            return {.accepted = sought, .status = std::move(status), .feedback_posted = sought && application.transport_seek_posts_feedback};
         }
         const auto jumped = dispatch_editor_action(history, state,
             jump_edit_cursor_action_t{*bookmark->position, expected_revision});
@@ -196,7 +196,8 @@ auto navigate_to_bookmark(document_history_t& history, editor_interaction_state_
             return fail("Audio-time bookmark seek is unavailable.");
         return {.accepted = true,
                 .status = application.transport_seek_audio_milliseconds(
-                    *bookmark->audio_milliseconds)};
+                    *bookmark->audio_milliseconds),
+                .feedback_posted = application.transport_seek_posts_feedback};
     }
     const auto position = beat_position_for_audio_milliseconds(*chart,
                                                                *bookmark->audio_milliseconds);

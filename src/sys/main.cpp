@@ -5,6 +5,7 @@
 
 #include "sys/application_commands.h"
 #include "sys/application_startup.h"
+#include "sys/application_startup_feedback.h"
 #include "sys/application_frame_services.h"
 #include "sys/application_frame_projection.h"
 #include "sys/application_command_dispatch.h"
@@ -1140,27 +1141,33 @@ void configure_transport_play_pause(auto& state, auto& history, auto& workspace,
 
 void configure_transport_seek_commands(auto& state, auto& history, auto& workspace,
     auto& compose_interaction_state, auto& compose_scene_cache, auto& audition_output,
-    auto& preview_session, auto& preview_state, auto& preview_output) {
+    auto& preview_session, auto& preview_state, auto& preview_output, auto& notifications) {
+    state.transport_seek_posts_feedback = true;
     state.transport_seek = [&](std::uint64_t frame) -> std::string {
         if (!preview_output.playing() && !preview_state.paused &&
             workspace.active_tab == wormedit::workspace_tab_t::compose &&
             compose_interaction_state && workspace.selected_chart &&
             compose_interaction_state->chart == *workspace.selected_chart) {
             if (wormedit::sys::editor_interaction_has_pending_gesture(*compose_interaction_state))
-                return "Finish or cancel the active Compose gesture before seeking.";
+                return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
+                    wormedit::notification_source_t::input, "Finish or cancel the active Compose gesture before seeking.");
             return wormedit::sys::seek_stopped_compose_transport(
-                history, *compose_interaction_state, compose_scene_cache, frame);
+                history, *compose_interaction_state, compose_scene_cache, frame, notifications);
         }
-        return preview_state.seek(frame, history.document, workspace, audition_output,
-                                  preview_session, preview_output);
+        const auto result = preview_state.seek(frame, history.document, workspace, audition_output,
+                                               preview_session, preview_output);
+        return post_callback_feedback(notifications, preview_state.feedback.severity,
+                                      wormedit::notification_source_t::audio, result);
     };
     state.transport_audio_milliseconds = [&]() {
         return preview_state.audio_milliseconds(history.document, workspace, preview_session);
     };
     state.transport_seek_audio_milliseconds = [&](std::int64_t milliseconds) -> std::string {
-        return preview_state.seek_audio_milliseconds(
+        const auto result = preview_state.seek_audio_milliseconds(
             milliseconds, history.document, workspace, audition_output,
             preview_session, preview_output);
+        return post_callback_feedback(notifications, preview_state.feedback.severity,
+                                      wormedit::notification_source_t::audio, result);
     };
 }
 
@@ -1232,7 +1239,7 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
                                       wormedit::notification_source_t::audio, result);
     };
     configure_transport_seek_commands(state, history, workspace, compose_interaction_state,
-        compose_scene_cache, audition_output, preview_session, preview_state, preview_output);
+        compose_scene_cache, audition_output, preview_session, preview_state, preview_output, notifications);
     state.transport_stop = [&] {
         state.minimap_start_frame.reset();
         preview_state.stop(audition_output, preview_output);
@@ -2261,14 +2268,7 @@ void install_startup_recovery_scan(
 void post_initial_application_feedback(wormedit::notification_sink_t& notifications,
     bool loaded_primary, const std::filesystem::path& requested_primary_path,
     const wormedit::platform_recovery_directory_result_t& recovery) {
-    const auto message = wormedit::sys::select_initial_application_status(
-        loaded_primary, requested_primary_path, recovery);
-    const auto severity = !recovery ? wormedit::notification_severity_t::error
-        : loaded_primary ? wormedit::notification_severity_t::success
-        : !requested_primary_path.empty() ? wormedit::notification_severity_t::error
-                                         : wormedit::notification_severity_t::info;
-    notifications.post(severity, loaded_primary && recovery ? wormedit::notification_source_t::document
-                                                            : wormedit::notification_source_t::recovery, message);
+    notifications.post(wormedit::sys::initial_application_feedback(loaded_primary, requested_primary_path, recovery));
 }
 
 void post_shortcut_startup_diagnostic(
@@ -2303,6 +2303,7 @@ void reset_project_edit_state(application_command_state_t& current) {
     next.transport_play_pause = std::move(current.transport_play_pause);
     next.transport_play_from_start = std::move(current.transport_play_from_start);
     next.transport_seek = std::move(current.transport_seek);
+    next.transport_seek_posts_feedback = current.transport_seek_posts_feedback;
     next.transport_audio_milliseconds = std::move(current.transport_audio_milliseconds);
     next.transport_seek_audio_milliseconds = std::move(current.transport_seek_audio_milliseconds);
     next.transport_stop = std::move(current.transport_stop);
@@ -3207,7 +3208,7 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
                 sample_rate, audio_offset_drag, audio_offset_drag_tab, context.notification_sink_ref));
         } else if (const auto common_status = wormedit::sys::dispatch_transport_player_action(
                        action, application_command_state, stepmania_export_policy, context.notification_sink_ref)) {
-            status = *common_status;
+            // Typed producer callbacks already publish this transport outcome.
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE) {
             static_cast<void>(dispatch_sound_usage_jump(action, history, workspace, compose_interaction_state,
                                                         context.notification_sink_ref));
@@ -3825,6 +3826,7 @@ int main(int argc, char** argv) {
     post_initial_application_feedback(notification_sink, startup.loaded_primary, requested_primary_path, platform_recovery);
     std::string status;
     std::string close_feedback;
+    wormedit::sys::workspace_edit_feedback_t workspace_edit_feedback;
     wormedit::sys::notification_history_runtime_t notification_history;
     WormUiNotificationAction pending_notification{};
     seed_notification_smoke(notifications);
@@ -4201,7 +4203,7 @@ int main(int argc, char** argv) {
             }
 #endif
 
-            wormedit::sys::rebind_workspace_after_edit(workspace, history, status);
+            wormedit::sys::rebind_workspace_after_edit(workspace, history, notification_sink, workspace_edit_feedback);
             model = wormedit::sys::build_workspace_frame_model(
                 compare_scene_cache, workspace, history.document);
         }

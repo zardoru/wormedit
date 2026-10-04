@@ -18,6 +18,7 @@ struct bookmark_command_outcome_t {
     bool document_changed{};
     std::string status;
     diagnostic_list_t diagnostics;
+    bool feedback_posted{};
 };
 
 // The local position of an absolute row, or nothing past the last row.

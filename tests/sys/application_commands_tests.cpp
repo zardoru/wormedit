@@ -889,6 +889,28 @@ TEST_CASE("Application numbered layer selection resets No layer target",
 }
 
 
+TEST_CASE("bookmark dispatcher preserves one typed seek producer warning", "[unit][sys][commands][notification]") {
+    using namespace wormedit;
+    TimingInsertFixture fixture;
+    auto& chart = fixture.fixture.history.document.charts.front();
+    chart.bookmarks.push_back({.id = object_id_t{1001}, .label = "Next",
+        .anchor = marker_anchor_t::beat, .position = local_position_t{measure_id_t{1}, 900}});
+    fixture.application_state.transport_preview_playing = [] { return true; };
+    fixture.application_state.preview_playhead_absolute_row = 0.0;
+    fixture.application_state.transport_seek_posts_feedback = true;
+    fixture.application_state.transport_seek = [&](std::uint64_t) {
+        fixture.sink.post(notification_severity_t::warning, notification_source_t::audio, "Opaque seek failure.");
+        return std::string{"Opaque seek failure."};
+    };
+    check_layer_command(fixture.invoke(application_command_kind_t::navigation_previous_bookmark).accepted);
+    fixture.center.drain_inbox(notification_time_t{0});
+    const auto entries = fixture.center.snapshot(notification_capacity);
+    require_layer_command(entries.size() == 1);
+    check_layer_command(entries[0].severity == notification_severity_t::warning);
+    check_layer_command(entries[0].source == notification_source_t::audio);
+    check_layer_command(entries[0].count == 1);
+}
+
 #else
 namespace {
 void check_area_unchanged(const AreaFixture& fixture, const std::optional<std::string>& original) {
@@ -1429,6 +1451,7 @@ TEST_CASE("transport UI playback callback owns notification publication", "[unit
     check_transport_notification(entries[0].severity == notification_severity_t::error);
     check_transport_notification(entries[0].count == 1);
 }
+
 
 TEST_CASE("bookmark commands parse to their application kinds", "[unit][sys][commands]") {
     using kind = application_command_kind_t;

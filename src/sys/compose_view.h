@@ -376,6 +376,9 @@ struct application_command_state_t {
     std::function<std::string()> transport_play_pause;
     std::function<std::string()> transport_play_from_start;
     std::function<std::string(std::uint64_t)> transport_seek;
+    // Production seek callbacks publish typed outcomes themselves. Legacy or
+    // test callbacks leave this false so their consumer can publish the result.
+    bool transport_seek_posts_feedback{};
     std::function<std::optional<std::int64_t>()> transport_audio_milliseconds;
     std::function<std::string(std::int64_t)> transport_seek_audio_milliseconds;
     std::function<void()> transport_stop;

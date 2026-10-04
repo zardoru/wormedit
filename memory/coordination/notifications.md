@@ -234,3 +234,17 @@ build and direct docs/whitespace checks pass; tidy reports only the three existi
 main/refresh/build_speed_graph violations. Evidence: `notifications-drop-build.log`,
 `notifications-drop-tests.log`, `notifications-drop-main-test-tidy.log`. Remaining
 T-221 globals: authoritative rebind failure edge suppression and seek/bookmark.
+
+Final global follow-up: startup context omits the already producer-posted platform
+failure; document load/failure and recovery discovery retain explicit classification.
+Seek callbacks post producer metadata, and bookmark outcomes carry publication
+ownership without altering callback/acceptance behavior. Authoritative rebind retries
+each frame but suppresses the same identity/revision/history failure until success
+or stamp change. App/core/frontend/frame targets build; 6/6 focused regressions
+pass (`notifications-final-global-target-build.log`, `notifications-final-global-tests.log`).
+Configured source/test tidy reports only prior violations. Docs/diff gates pass.
+Full target build additionally exposed missing N6b resource-runtime test wiring,
+which remains in the active executor increment. T-221 implementation review is
+complete for globals; its manual visual gate remains pending, so card stays ready.
+Root authorizes N4 after this implementation review without falsely marking T-221
+done. N6b owns compose_actions.cpp exclusively until its reviewed boundary.

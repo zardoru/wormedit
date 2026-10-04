@@ -3943,6 +3943,8 @@ TEST_CASE("Compose BMS layout picker includes DP5 without free zones",
 
 TEST_CASE("Stopped BMS transport seek moves cursor and viewport without editing",
           "[sys][compose][seek-bar][regression]") {
+    notification_center_t center;
+    notification_sink_t sink{center};
     const std::string source = "#PLAYER 1\n#BPM 154\n#WAV01 synth.wav\n"
         "#00011:01\n#00012:01\n#00013:01\n#00014:01\n#00015:01\n#00016:01\n#04011:01\n";
     auto parsed = parse_bms_bytes(std::as_bytes(std::span(source.data(), source.size())),
@@ -3953,16 +3955,26 @@ TEST_CASE("Stopped BMS transport seek moves cursor and viewport without editing"
     fixture.project();
     const auto before = fixture.interaction->cursor;
     const auto status = seek_stopped_compose_transport(fixture.history, *fixture.interaction,
-        fixture.cache, 20 * 44'100);
+        fixture.cache, 20 * 44'100, sink);
     expect_compose_test(status == "Compose cursor moved to the seek position.");
     expect_compose_test(fixture.interaction->cursor != before);
     expect_compose_test(fixture.interaction->viewport_scroll_pixels > 0);
     expect_compose_test(!fixture.interaction->virtual_bms_cursor_row);
     expect_compose_test(fixture.history.undo.empty());
+    center.drain_inbox(notification_time_t{0});
+    auto messages = center.snapshot(notification_capacity);
+    expect_compose_test(messages.size() == 1);
+    expect_compose_test(messages[0].severity == notification_severity_t::hint);
+    expect_compose_test(messages[0].source == notification_source_t::input);
     const auto sought = fixture.interaction->cursor;
     ++fixture.history.document.revision;
-    (void)seek_stopped_compose_transport(fixture.history, *fixture.interaction, fixture.cache, 0);
+    (void)seek_stopped_compose_transport(fixture.history, *fixture.interaction, fixture.cache, 0, sink);
     expect_compose_test(fixture.interaction->cursor == sought);
+    center.drain_inbox(notification_time_t{1});
+    messages = center.snapshot(notification_capacity);
+    expect_compose_test(messages.size() == 2);
+    expect_compose_test(messages[0].severity == notification_severity_t::warning);
+    expect_compose_test(messages[0].message == "Compose seek is unavailable until the chart is ready.");
 }
 
 namespace {

@@ -119,6 +119,25 @@ TEST_CASE("playing bookmark navigation seeks once instead of moving the cursor",
     CHECK(seeks == 1);
     CHECK(frame > 0);
     CHECK((fixture.state.cursor == before));
+    CHECK_FALSE(result.feedback_posted);
+}
+
+TEST_CASE("playing bookmark navigation retains producer publication ownership", "[unit][sys][bookmark-commands][notification]") {
+    fixture_t fixture{{measure_id_t{3}, 0}};
+    fixture.application.transport_preview_playing = [] { return true; };
+    fixture.application.preview_playhead_absolute_row = 0.0;
+    fixture.application.transport_seek_posts_feedback = true;
+    fixture.application.transport_seek = [](std::uint64_t) { return std::string{"Opaque producer feedback."}; };
+    const auto result = navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+                                               marker_navigation_direction_t::next);
+    CHECK(result.accepted);
+    CHECK(result.feedback_posted);
+    CHECK(result.status == "Opaque producer feedback.");
+    fixture.application.transport_seek = {};
+    const auto rejected = navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+                                                 marker_navigation_direction_t::next);
+    CHECK_FALSE(rejected.accepted);
+    CHECK_FALSE(rejected.feedback_posted);
 }
 
 TEST_CASE("add bookmark uses the cursor or the snapped playhead and refuses duplicates",

@@ -71,19 +71,23 @@ auto move_compose_minimap_cursor(document_history_t& history, editor_interaction
 }
 auto seek_stopped_compose_transport(document_history_t& history,
     editor_interaction_state_t& state, const compose_scene_cache_t& cache,
-    std::uint64_t frame) -> std::string {
+    std::uint64_t frame, std::optional<notification_sink_t> notifications) -> std::string {
+    const auto feedback = [&](notification_severity_t severity, const char* message) {
+        if (notifications) notifications->post(severity, notification_source_t::input, message);
+        return std::string{message};
+    };
     if (cache.chart != state.chart || cache.revision != history.document.revision ||
         !cache.marker_timing_index || !cache.cached_measure_index)
-        return "Compose seek is unavailable until the chart is ready.";
+        return feedback(notification_severity_t::warning, "Compose seek is unavailable until the chart is ready.");
     const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
-    if (chart == history.document.charts.end()) return "The selected chart is unavailable.";
+    if (chart == history.document.charts.end()) return feedback(notification_severity_t::warning, "The selected chart is unavailable.");
     const auto target = target_at_frame(frame, audio::output_sample_rate,
         *cache.marker_timing_index, edit_snap_denominator(*chart, state));
-    if (!target) return "The requested chart position is unavailable.";
+    if (!target) return feedback(notification_severity_t::warning, "The requested chart position is unavailable.");
     const auto moved = move_compose_minimap_cursor(history, state, *cache.cached_measure_index,
         *cache.marker_timing_index, *target);
-    return moved.accepted ? "Compose cursor moved to the seek position."
-                          : "The requested chart position could not be reached.";
+    return moved.accepted ? feedback(notification_severity_t::hint, "Compose cursor moved to the seek position.")
+                          : feedback(notification_severity_t::warning, "The requested chart position could not be reached.");
 }
 
 void retain_compose_minimap_start(application_command_state_t& application,

@@ -423,6 +423,7 @@ auto navigation_commands(command_context_t& context) -> std::optional<command_re
 
 void post_bookmark_outcome(notification_sink_t& sink, command_kind_t kind,
                            const bookmark_command_outcome_t& outcome) {
+    if (outcome.feedback_posted) return;
     const bool adding = kind == command_kind_t::markers_add_bookmark;
     const auto source = adding ? notification_source_t::edit : notification_source_t::input;
     if (outcome.accepted) {

@@ -95,7 +95,7 @@ Metadata/resource and selection producer increment `92ccc16` has an integrated
 Debug build and 52 relevant metadata/transport tests passing.
 
 Root integration follow-up: `656031b`/`bb7f1bc` pass the full Debug build and
-313 relevant audio/import/notification tests. Two stale object files needed a
+352 relevant audio/import/notification tests. Two stale object files needed a
 forced incremental rebuild after the API signature change; no source correction
 was needed. Logs: `root-audio-import-final-build.log` and
 `root-audio-import-tests.log` in the artifact directory.

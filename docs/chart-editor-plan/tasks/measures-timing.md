@@ -180,13 +180,13 @@ stale-plan check (rule 9) first.
 
 ## T-81 Snap fit drags to the nearest onset
 
-- **Status:** ready
+- **Status:** blocked-on-user
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** No onset snapping exists. Input runs before waveform-overlay projection, and the existing Ctrl bit already means BPM-step quantization. One-query-per-drag candidates require unowned `src/sys/compose_view.h` state (and, for direct input data, `src/sys/compose_input.h`/`src/sys/main.cpp`); an independent modifier or distinct tick would also need `src/ui/frontend.h`/`src/ui/nuklear/compose_canvas.cpp`. Any chosen modifier must avoid BPM-step rounding moving the snapped target off its onset. Do not retain global drag state to bypass the existing state owner.
 - **Outcome:** holding the snap modifier during an interval-fit drag snaps the target frame to the nearest onset within 30 ms.
 - **Read first:** `include/wormedit/audio/onset.h`, `src/sys/compose_input.cpp` (fit drag update), `src/sys/compose_waveform_overlays.cpp`.
 - **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/ui/nuklear/compose_input_panel.cpp`. User-approved supporting scope (2026-10-03): `src/sys/compose_view.h`, `src/sys/compose_input.h`, `src/sys/main.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`.
-- **Steps:** 0. Scope extension approved by the user (2026-10-03). 1. Query onsets for the visible range once per drag. 2. Snap and draw a tick at the chosen onset.
+- **Steps:** STOP — identify the intended snap modifier; existing Ctrl already quantizes BPM, and supporting-file approval does not settle the gesture. 0. Scope extension approved by the user (2026-10-03). 1. Query onsets for the visible range once per drag. 2. Snap and draw a tick at the chosen onset.
 - **Invariants:** without the modifier, behavior is unchanged.
 - **Reject/failure behavior:** no onset in range → unsnapped.
 - **Verify:** standard build/test; manual drag.
@@ -260,7 +260,7 @@ Verification (2026-09-30): seven bridge regressions pass (62 assertions), includ
 
 ## T-239 Apply the tapped BPM and offset to the chart
 
-- **Status:** blocked-on T-237
+- **Status:** ready
 - **Outcome:** "Apply" in the assistant sets the chart's initial BPM (raw, 1-rounded, or 0.5-rounded, chosen in the panel) and moves the audio offset so the estimated downbeat nearest the chart start becomes beat zero, as one undoable command; the result is previewed as a ghost grid on the waveform before Apply, like the existing offset drag.
 - **Read first:** `include/wormedit/core/bpm_editor.h` (`apply_bpm_edit`), `include/wormedit/core/audio_offset_editor.h` (`apply_audio_offset_edit`, offset drag preview), `include/wormedit/core/command.h`.
 - **Files owned:** new `include/wormedit/core/tap_timing_apply.h`, new `src/core/tap_timing_apply.cpp`, new `tests/core/tap_timing_apply_tests.cpp`, `src/sys/tap_timing_runtime.cpp`, `src/ui/nuklear/tap_timing_panel.cpp`, `src/sys/compose_waveform_overlays.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.

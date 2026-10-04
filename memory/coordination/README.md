@@ -93,3 +93,15 @@ single-process aggregate event run exposed seven fixture/state-order failures;
 it is not recorded as passing. Standard isolated CTest cases remain passing.
 Metadata/resource and selection producer increment `92ccc16` has an integrated
 Debug build and 52 relevant metadata/transport tests passing.
+
+Root integration follow-up: `656031b`/`bb7f1bc` pass the full Debug build and
+313 relevant audio/import/notification tests. Two stale object files needed a
+forced incremental rebuild after the API signature change; no source correction
+was needed. Logs: `root-audio-import-final-build.log` and
+`root-audio-import-tests.log` in the artifact directory.
+
+The aggregate event issue reproduces with all seven new timing/onset cases
+excluded: 115 existing cases yield the same seven failures and 27 failed
+assertions (`root-existing-aggregate-events.log`). It is an existing
+single-process harness ordering issue, distinct from the passing 122 standard
+CTest-isolated cases; no aggregate pass is claimed.

@@ -141,6 +141,29 @@ TEST_CASE("wormedit-convert turns a StepMania chart into osu!mania and re-import
     CHECK(count_notes(*reparsed.song) == 4);
 }
 
+TEST_CASE("wormedit-convert reports import quantization without rejecting the chart",
+          "[unit][tools][convert][osu-mania]") {
+    const scratch_directory_t scratch{"osu-import-warning"};
+    const auto output = scratch.path() / "out";
+    std::filesystem::create_directories(output);
+    const auto input = write_source(
+        scratch, "quantized.osu",
+        "osu file format v14\n[General]\nMode:3\n"
+        "[Metadata]\nTitle:Quantized\nArtist:Test\nCreator:Test\nVersion:Test\n"
+        "[Difficulty]\nCircleSize:4\n[TimingPoints]\n"
+        "0,500,4,2,0,100,1,0\n1000.123456789,400,4,2,0,100,1,0\n"
+        "[HitObjects]\n64,192,1000,1,0,0:0:0:0:\n");
+    const auto run = run_tool(scratch, {{"input", input.string()},
+                                       {"target", "native_project"},
+                                       {"output_directory", output.string()}});
+    INFO(run.result.dump(2));
+    CHECK(run.status == 0);
+    REQUIRE(run.result["ok"].get<bool>());
+    REQUIRE(run.result["artifacts"].size() == 1);
+    REQUIRE(run.result["import_warnings"].size() == 1);
+    CHECK(run.result["import_warnings"][0].get<std::string>().find("960") != std::string::npos);
+}
+
 TEST_CASE("wormedit-convert re-exports an unedited BMS chart byte for byte",
           "[unit][tools][convert]") {
     const scratch_directory_t scratch{"bms-bms"};

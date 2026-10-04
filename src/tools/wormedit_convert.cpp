@@ -249,7 +249,8 @@ auto run_request(const json& body) -> std::pair<int, json> {
         return {2, fail_json("output_directory must be an existing directory")};
     }
     const auto converted = convert_document(*opened.document, request.conversion);
-    json result{{"ok", false}, {"artifacts", json::array()}, {"diagnostics", json::array()}};
+    json result{{"ok", false}, {"artifacts", json::array()}, {"diagnostics", json::array()},
+                {"import_warnings", opened.warnings}};
     for (const auto& diagnostic : converted.diagnostics) {
         result["diagnostics"].push_back(diagnostic_json(diagnostic));
     }

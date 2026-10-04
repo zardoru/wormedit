@@ -17,6 +17,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <unordered_set>
 #include <vector>
@@ -279,6 +280,12 @@ template <typename ParseResult>
 void take_parsed_document(ParseResult parsed, std::string_view format,
                           project_open_result_t& result) {
     if (parsed.song && !parsed.has_errors()) {
+        if constexpr (std::is_same_v<ParseResult, osu_mania_parse_result_t>) {
+            for (const auto& diagnostic : parsed.diagnostics) {
+                if (diagnostic.severity == diagnostic_severity_t::warning)
+                    result.warnings.push_back(diagnostic.message);
+            }
+        }
         result.document = std::move(parsed.song);
         return;
     }

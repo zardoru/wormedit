@@ -35,6 +35,7 @@ enum class osu_mania_parse_diagnostic_code_t {
     event_limit,
     source_limit,
     internal_conversion_error,
+    timing_quantization,
 };
 
 struct osu_mania_parse_diagnostic_t {
@@ -112,7 +113,10 @@ struct osu_mania_write_result_t {
 // the song is published only when the entire source has passed validation.
 // Hit-object milliseconds remain available exactly in chart format metadata
 // under osu.hitobject.<object-id>.time/.end_time while measure rows are derived
-// from the ordered uninherited timing-point phase resets.
+// from the ordered uninherited timing-point phase resets on a 960-division grid.
+// Off-grid spans use bounded microsecond timing and adjusted editable BPMs;
+// quantization emits a warning. Raw timing provenance is retained, and the
+// source-time origin is explicit, including negative-time prefix measures.
 [[nodiscard]] auto parse_osu_mania_bytes(std::span<const std::byte> bytes,
                                          osu_mania_parse_options_t options = {})
     -> osu_mania_parse_result_t;

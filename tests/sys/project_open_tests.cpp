@@ -152,6 +152,22 @@ TEST_CASE("opening chart files keeps their source directory and leaves them unsa
     }
 }
 
+TEST_CASE("osu imports surface bounded timing quantization warnings",
+          "[unit][sys][project-open][osu-mania]") {
+    temporary_project_file_t temporary{".osu"};
+    temporary.write("osu file format v14\n[General]\nMode:3\n"
+                    "[Metadata]\nTitle:Quantized\nArtist:Test\nCreator:Test\nVersion:Test\n"
+                    "[Difficulty]\nCircleSize:4\n[TimingPoints]\n"
+                    "0,500,4,2,0,100,1,0\n1000.123456789,400,4,2,0,100,1,0\n"
+                    "[HitObjects]\n64,192,1000,1,0,0:0:0:0:\n");
+    const auto opened = wormedit::sys::open_project_file(temporary.path);
+    INFO(opened.error);
+    REQUIRE(opened.document);
+    CHECK(opened.error.empty());
+    REQUIRE(opened.warnings.size() == 1);
+    CHECK(opened.warnings.front().find("960") != std::string::npos);
+}
+
 TEST_CASE("dropped project extension filter matches every supported opener",
           "[unit][sys][project-open]") {
     constexpr std::array accepted{".wormedit", ".bms", ".bme", ".bml", ".pms",

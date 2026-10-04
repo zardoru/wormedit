@@ -1,16 +1,20 @@
 #include <wormedit/formats/osu_mania.h>
+#include <wormedit/formats/native_project.h>
+#include <wormedit/core/timing.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -40,10 +44,114 @@ auto parse_inline(std::string_view source) -> wormedit::osu_mania_parse_result_t
     return wormedit::parse_osu_mania_bytes(bytes(source));
 }
 
+auto timing_fixture(std::string_view timing, std::string_view hits,
+                     std::string_view version = "14") -> std::string {
+    return "osu file format v" + std::string(version) +
+           "\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n[TimingPoints]\n" +
+           std::string(timing) + "[HitObjects]\n" + std::string(hits);
+}
+
+auto source_note(const wormedit::chart_document_t& chart, std::string_view prefix)
+    -> const wormedit::note_t* {
+    for (const auto& measure : chart.measures)
+        for (const auto& note : measure.notes)
+            if (note.provenance.source_spelling.starts_with(prefix)) return &note;
+    return nullptr;
+}
+
+auto timing_errors(const wormedit::timing_build_result_t& built) -> std::string {
+    std::string result;
+    for (const auto& diagnostic : built.diagnostics) result += diagnostic.message + "\n";
+    return result;
+}
+
+void check_core_note_time(const wormedit::chart_document_t& chart, std::string_view source_prefix,
+                          long double milliseconds, long double tolerance) {
+    const auto built = wormedit::build_timing_index(chart);
+    INFO(timing_errors(built));
+    REQUIRE(built);
+    const auto indexed = wormedit::build_measure_index(chart);
+    const auto* measures = std::get_if<wormedit::measure_index_t>(&indexed);
+    REQUIRE(measures);
+    const auto* note = source_note(chart, source_prefix);
+    REQUIRE(note);
+    const auto time = wormedit::timing_at(*built.index, *measures, note->position);
+    REQUIRE(time);
+    const auto actual_ms = static_cast<long double>(time.seconds->numerator) * 1000.0L /
+                           time.seconds->denominator;
+    CHECK(std::fabs(actual_ms - milliseconds) <= tolerance);
+    if (actual_ms >= 0) CHECK(wormedit::sample_frame_at(*time.seconds, 48'000));
+}
+
+auto native_reopen(const wormedit::song_document_t& song) -> wormedit::song_document_t {
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.bytes);
+    auto parsed = wormedit::parse_native_project(*written.bytes);
+    REQUIRE(parsed.song);
+    return std::move(*parsed.song);
+}
+
+void check_hold_endpoint(const wormedit::note_t& note, const wormedit::measure_index_t& measures,
+                          const wormedit::timing_index_t& timing) {
+    REQUIRE(note.end);
+    CHECK(wormedit::absolute_row(measures, *note.end) > wormedit::absolute_row(measures, note.position));
+    CHECK(wormedit::timing_at(timing, measures, *note.end));
+}
+
+void check_positive_holds(const wormedit::chart_document_t& chart, std::size_t expected) {
+    const auto timing = wormedit::build_timing_index(chart);
+    REQUIRE(timing);
+    const auto indexed = wormedit::build_measure_index(chart);
+    const auto* measures = std::get_if<wormedit::measure_index_t>(&indexed);
+    REQUIRE(measures);
+    std::size_t count{};
+    for (const auto& measure : chart.measures)
+        for (const auto& note : measure.notes) {
+            check_hold_endpoint(note, *measures, *timing.index);
+            ++count;
+        }
+    CHECK(count == expected);
+}
+
+void check_simple_bpm(std::string_view beat, std::int64_t expected) {
+    const auto source = timing_fixture("0," + std::string(beat) + ",4,0,0,100,1,0\n",
+                                      "64,192,1000,1,0,0:0:0:0:\n");
+    const auto parsed = parse_inline(source);
+    REQUIRE(parsed.song);
+    const auto& chart = parsed.song->charts.front();
+    REQUIRE(chart.bpms.size() == 1);
+    CHECK((chart.bpms.front().beats_per_minute == wormedit::signed_rational_t{expected, 1}));
+    CHECK(wormedit::build_timing_index(chart));
+}
+
 auto write_inline(const wormedit::song_document_t& song,
                   wormedit::osu_mania_write_options_t options = {})
     -> wormedit::osu_mania_write_result_t {
     return wormedit::write_osu_mania(song, options);
+}
+
+void check_origin_roundtrip(int origin) {
+    const auto time = std::to_string(origin);
+    const auto source = timing_fixture(time + ",500,4,0,0,100,1,0\n",
+        "64,192," + time + ",1,0,0:0:0:0:\n");
+    const auto parsed = parse_inline(source);
+    REQUIRE(parsed.song);
+    check_core_note_time(parsed.song->charts.front(), "64,192," + time + ",", origin, 1.0e-9L);
+    const auto reopened = native_reopen(*parsed.song);
+    CHECK(reopened.charts.front().beat_zero_audio_offset_seconds ==
+          parsed.song->charts.front().beat_zero_audio_offset_seconds);
+    const auto written = write_inline(reopened);
+    REQUIRE(written.text);
+    const auto reimported = parse_inline(*written.text);
+    REQUIRE(reimported.song);
+    check_core_note_time(reimported.song->charts.front(), "64,192," + time + ",", origin, 1.0e-9L);
+}
+
+void check_zero_origin_output(const std::string& text) {
+    const auto reimported = parse_inline(text);
+    REQUIRE(reimported.song);
+    CHECK(reimported.song->charts.front().beat_zero_audio_offset_seconds.numerator == 0);
+    check_core_note_time(reimported.song->charts.front(), "64,192,0,", 0, 1.0e-9L);
 }
 
 constexpr std::string_view rewiring_source = R"osu(osu file format v14
@@ -148,6 +256,28 @@ auto lane_for_source_time(const wormedit::chart_document_t& chart, std::int64_t 
     return std::nullopt;
 }
 
+auto lane_near_source_time(const wormedit::chart_document_t& chart, std::int64_t x,
+                          std::int64_t time, std::int64_t maximum_error)
+    -> std::optional<wormedit::lane_id_t> {
+    const auto prefix = std::to_string(x) + ",192,";
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            const auto& source = note.provenance.source_spelling;
+            if (!source.starts_with(prefix)) continue;
+            const auto begin = prefix.size();
+            const auto end = source.find(',', begin);
+            if (end == std::string::npos) continue;
+            std::int64_t candidate{};
+            const auto parsed = std::from_chars(source.data() + begin, source.data() + end,
+                                                candidate);
+            if (parsed.ec == std::errc{} && parsed.ptr == source.data() + end &&
+                std::llabs(candidate - time) <= maximum_error)
+                return note.lane;
+        }
+    }
+    return std::nullopt;
+}
+
 auto note_source_times(const wormedit::chart_document_t& chart) -> std::vector<std::int64_t> {
     std::vector<std::int64_t> result;
     for (const auto& measure : chart.measures) {
@@ -169,6 +299,21 @@ auto note_source_times(const wormedit::chart_document_t& chart) -> std::vector<s
     return result;
 }
 
+void check_quantized_source_times(const wormedit::chart_document_t& before,
+                                  const wormedit::chart_document_t& after) {
+    const auto original = note_source_times(before);
+    const auto exported = note_source_times(after);
+    REQUIRE(exported.size() == original.size());
+    for (std::size_t index = 0; index < original.size(); ++index)
+        CHECK(std::llabs(exported[index] - original[index]) <= 1);
+}
+
+auto position_near_source_time(const wormedit::chart_document_t& chart, std::int64_t time)
+    -> std::optional<wormedit::local_position_t> {
+    const auto exact = position_for_source_time(chart, time);
+    return exact ? exact : position_for_source_time(chart, time + 1);
+}
+
 } // namespace
 
 TEST_CASE("osu!mania import rewires measures at effective timing points only",
@@ -183,8 +328,9 @@ TEST_CASE("osu!mania import rewires measures at effective timing points only",
     REQUIRE(chart.measures.size() == 4);
     CHECK((chart.measures[1].definition.length == wormedit::rational_t{3, 4}));
     CHECK_FALSE(chart.measures[1].definition.meter.has_value());
-    CHECK((chart.measures[2].definition.length == wormedit::rational_t{999, 2000}));
-    CHECK_FALSE(chart.measures[2].definition.meter.has_value());
+    CHECK((chart.measures[2].definition.length == wormedit::rational_t{1, 2}));
+    CHECK((chart.measures[2].definition.meter ==
+           std::optional<wormedit::meter_t>{wormedit::meter_t{2, 4}}));
     CHECK((chart.measures[3].definition.length == wormedit::rational_t{3, 4}));
     REQUIRE(chart.measures[3].definition.meter.has_value());
     CHECK((*chart.measures[3].definition.meter == wormedit::meter_t{3, 4}));
@@ -222,7 +368,7 @@ TEST_CASE("osu!mania import rewires measures at effective timing points only",
     REQUIRE(chart.scrolls.size() == 1);
     CHECK(chart.scrolls.front().position.measure == chart.measures[1].id);
     CHECK((chart.scrolls.front().multiplier == wormedit::signed_rational_t{2, 1}));
-    REQUIRE(chart.bpms.size() == 4);
+    REQUIRE(chart.bpms.size() == 5);
     CHECK(chart.bpms[0].position.measure == chart.measures[1].id);
     CHECK(chart.bpms[1].position.measure == chart.measures[2].id);
     CHECK(chart.bpms[2].position == chart.bpms[3].position);
@@ -259,6 +405,173 @@ TEST_CASE("osu!mania import rewires measures at effective timing points only",
     CHECK(chart.bga_events.size() == 2);
     const auto diagnostics = wormedit::validate_document(*result.song);
     CHECK(diagnostics.empty());
+}
+
+TEST_CASE("osu!mania accepts decimal resets and preserves positive tiny hold spans",
+          "[unit][format][osu-mania][timing][quantization]") {
+    constexpr std::string_view source = R"osu(osu file format v128
+[General]
+Mode:3
+[Difficulty]
+CircleSize:4
+[TimingPoints]
+0,500,4,0,0,100,1,0
+1000.1234,499.875,4,0,0,100,1,0
+2000.2345,500.125,4,0,0,100,1,0
+3000.3456,499.75,4,0,0,100,1,0
+[HitObjects]
+64,192,1000.1,128,0,1000.2:0:0:0:
+)osu";
+    const auto imported = parse_inline(source);
+    REQUIRE(imported.song.has_value());
+    CHECK_FALSE(imported.has_errors());
+    CHECK(std::ranges::any_of(imported.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::osu_mania_parse_diagnostic_code_t::timing_quantization &&
+               diagnostic.severity == wormedit::diagnostic_severity_t::warning;
+    }));
+    const auto& chart = imported.song->charts.front();
+    CHECK(chart.divisions_per_standard_measure == 960);
+    check_positive_holds(chart, 1);
+    CHECK(wormedit::validate_document(*imported.song).empty());
+}
+
+TEST_CASE("osu!mania preserves colliding positive holds including the last editable row",
+          "[unit][format][osu-mania][timing][quantization]") {
+    const auto source = timing_fixture("0,500,4,0,0,100,1,0\n",
+        "64,192,20.1,128,0,20.2:0:0:0:\n"
+        "128,192,1999.8,128,0,1999.9:0:0:0:\n", "128");
+    const auto parsed = parse_inline(source);
+    REQUIRE(parsed.song);
+    CHECK(wormedit::validate_document(*parsed.song).empty());
+    const auto& chart = parsed.song->charts.front();
+    REQUIRE(chart.measures.size() == 2);
+    check_positive_holds(chart, 2);
+    check_core_note_time(chart, "64,192,20.1,", 20.1L, 3.0L);
+    check_core_note_time(chart, "128,192,1999.8,", 1999.8L, 3.0L);
+    const auto limited = wormedit::parse_osu_mania_bytes(bytes(source), {.max_measures = 1});
+    CHECK_FALSE(limited.song);
+    CHECK(has_code(limited, wormedit::osu_mania_parse_diagnostic_code_t::measure_limit));
+}
+
+TEST_CASE("osu!mania retains source origin and initializes a prefix with the source tempo",
+          "[unit][format][osu-mania][timing][native-project]") {
+    const auto source = timing_fixture("1000,400,4,0,0,100,1,0\n",
+        "64,192,0,1,0,0:0:0:0:\n128,192,1000,1,0,0:0:0:0:\n");
+    const auto parsed = parse_inline(source);
+    REQUIRE(parsed.song);
+    const auto& chart = parsed.song->charts.front();
+    CHECK((chart.beat_zero_audio_offset_seconds == wormedit::signed_rational_t{-3, 5}));
+    const auto initial = std::ranges::find_if(chart.bpms, [&](const auto& bpm) {
+        return bpm.position == wormedit::local_position_t{chart.measures.front().id, 0};
+    });
+    REQUIRE(initial != chart.bpms.end());
+    CHECK((initial->beats_per_minute == wormedit::signed_rational_t{150, 1}));
+    check_core_note_time(chart, "64,192,0,", 0, 1.0e-9L);
+    check_core_note_time(chart, "128,192,1000,", 1000, 1.0e-9L);
+    const auto reopened = native_reopen(*parsed.song);
+    check_core_note_time(reopened.charts.front(), "64,192,0,", 0, 1.0e-9L);
+}
+
+TEST_CASE("osu!mania source origins survive native and osu writing without legacy inference",
+          "[unit][format][osu-mania][timing][native-project][writer]") {
+    for (const auto origin : {-1500, 0, 1000}) check_origin_roundtrip(origin);
+}
+
+TEST_CASE("osu!mania preserves ordinary exact constant BPM values",
+          "[unit][format][osu-mania][timing]") {
+    check_simple_bpm("500", 120);
+    check_simple_bpm("400", 150);
+    check_simple_bpm("379.74683544304", 158);
+}
+
+TEST_CASE("osu!mania bounds many short decimal measures without losing a positive hold",
+          "[unit][format][osu-mania][timing][quantization]") {
+    std::string timing;
+    for (int index = 0; index < 256; ++index)
+        timing += std::to_string(index * 7.123456789) + "," +
+                  std::to_string(500.0 + index * 0.0003) + ",4,0,0,100,1,0\n";
+    const auto parsed = parse_inline(timing_fixture(timing,
+        "64,192,0,1,0,0:0:0:0:\n192,192,2000,128,0,2001:0:0:0:\n"));
+    REQUIRE(parsed.song);
+    const auto& chart = parsed.song->charts.front();
+    CHECK(chart.divisions_per_standard_measure == 960);
+    CHECK(chart.measures.size() >= 256);
+    CHECK(wormedit::validate_document(*parsed.song).empty());
+    check_core_note_time(chart, "64,192,0,", 0, 1.0e-9L);
+    check_core_note_time(chart, "192,192,2000,", 2000, 3.0L);
+}
+
+TEST_CASE("osu!mania fast and near-stop reset geometry has bounded playback timing",
+          "[unit][format][osu-mania][timing][quantization]") {
+    constexpr std::string_view timing =
+        "-1518,379.74683544304,4,2,0,10,1,0\n"
+        "82222.110759493,0.059990521497603,4,2,0,10,1,0\n"
+        "82223.070607837,379.74683544304,4,2,0,10,1,0\n"
+        "106710.83112752,60000000,4,2,0,10,1,0\n"
+        "107470.3247984,379.74683544304,4,2,0,10,1,0\n";
+    const auto parsed = parse_inline(timing_fixture(timing,
+        "64,192,82223,1,0,0:0:0:0:\n"
+        "128,192,106716,1,0,0:0:0:0:\n"
+        "192,192,106715,128,0,107660:0:0:0:\n"));
+    REQUIRE(parsed.song);
+    CHECK(wormedit::validate_document(*parsed.song).empty());
+    const auto& chart = parsed.song->charts.front();
+    CHECK(chart.divisions_per_standard_measure == 960);
+    check_core_note_time(chart, "64,192,82223,", 82223, 0.001L);
+    check_core_note_time(chart, "128,192,106716,", 106716, 6.0L);
+    check_core_note_time(chart, "192,192,106715,", 106715, 6.0L);
+    const auto written = write_inline(*parsed.song);
+    REQUIRE(written.text);
+    const auto reimported = parse_inline(*written.text);
+    REQUIRE(reimported.song);
+    CHECK(wormedit::build_timing_index(reimported.song->charts.front()));
+}
+
+TEST_CASE("osu!mania keeps zero source origin after a BPM edit with retained provenance",
+          "[unit][format][osu-mania][timing][writer]") {
+    auto parsed = parse_inline(timing_fixture(
+        "0,500,4,0,0,100,1,0\n1000,500,4,0,0,100,1,0\n",
+        "64,192,0,1,0,0:0:0:0:\n192,192,1000,1,0,0:0:0:0:\n"));
+    REQUIRE(parsed.song);
+    auto& chart = parsed.song->charts.front();
+    REQUIRE(chart.bpms.size() == 2);
+    chart.bpms.front().beats_per_minute = {240, 1};
+    const auto written = write_inline(*parsed.song);
+    REQUIRE(written.text);
+    CHECK(written.text->find("64,192,0,1,") != std::string::npos);
+    CHECK(written.text->find("192,192,500,1,") != std::string::npos);
+    check_zero_origin_output(*written.text);
+}
+
+TEST_CASE("osu!mania keeps near-stop timing distinct inside a suppressed-barline measure",
+          "[unit][format][osu-mania][timing][quantization]") {
+    const auto parsed = parse_inline(timing_fixture(
+        "0,500,4,0,0,100,1,0\n"
+        "1000,60000000,4,0,0,100,1,8\n"
+        "1759.493,500,4,0,0,100,1,8\n",
+        "64,192,1005,1,0,0:0:0:0:\n"
+        "192,192,1004,128,0,1800:0:0:0:\n"));
+    REQUIRE(parsed.song);
+    const auto& chart = parsed.song->charts.front();
+    REQUIRE(chart.bpms.size() == 3);
+    CHECK(chart.bpms[1].position != chart.bpms[2].position);
+    check_core_note_time(chart, "64,192,1005,", 1005, 6.0L);
+    check_core_note_time(chart, "192,192,1004,", 1004, 6.0L);
+    CHECK(wormedit::validate_document(*parsed.song).empty());
+}
+
+TEST_CASE("osu!mania rejects source-grid bounds and effective timing product overflow",
+          "[unit][format][osu-mania][timing][negative][bounds]") {
+    for (const auto time : {"9223372036854776", "-9223372036854776"}) {
+        const auto parsed = parse_inline(timing_fixture(std::string(time) + ",500,4,0,0,100,1,0\n", ""));
+        CHECK_FALSE(parsed.song);
+        CHECK(has_code(parsed, wormedit::osu_mania_parse_diagnostic_code_t::invalid_timing_point));
+    }
+    const auto large_span = parse_inline(timing_fixture(
+        "-9223372036854774,10000000000000000,4,0,0,100,1,0\n"
+        "9223372036854774,10000000000000000,4,0,0,100,1,0\n", ""));
+    CHECK_FALSE(large_span.song);
+    CHECK(has_code(large_span, wormedit::osu_mania_parse_diagnostic_code_t::invalid_timing_point));
 }
 
 TEST_CASE("osu!mania fixtures preserve source bytes, tags, bookmarks, kiai and samples",
@@ -716,7 +1029,7 @@ TEST_CASE("osu!mania key counts 1 through 18 preserve rewired measure geometry",
         REQUIRE(round_tripped.lane_layouts.size() == 1);
         REQUIRE(round_tripped.lane_layouts.front().layout.lanes.size() ==
                 static_cast<std::size_t>(keys));
-        CHECK(note_source_times(round_tripped) == note_source_times(source_chart));
+        check_quantized_source_times(source_chart, round_tripped);
 
         REQUIRE(round_tripped.measures.size() == source_chart.measures.size());
         for (std::size_t measure = 0; measure < source_chart.measures.size(); ++measure) {
@@ -730,7 +1043,7 @@ TEST_CASE("osu!mania key counts 1 through 18 preserve rewired measure geometry",
             const auto time = 400 + lane * 10;
             const auto prefix = std::to_string(x) + ",192," + std::to_string(time) + ",";
             const auto before = lane_for_source(source_chart, prefix);
-            const auto after = lane_for_source(round_tripped, prefix);
+            const auto after = lane_near_source_time(round_tripped, x, time, 1);
             REQUIRE(before.has_value());
             REQUIRE(after.has_value());
             CHECK(
@@ -742,8 +1055,9 @@ TEST_CASE("osu!mania key counts 1 through 18 preserve rewired measure geometry",
         }
 
         for (const auto time : boundary_times) {
+            CAPTURE(time);
             const auto before = position_for_source_time(source_chart, time);
-            const auto after = position_for_source_time(round_tripped, time);
+            const auto after = position_near_source_time(round_tripped, time);
             REQUIRE(before.has_value());
             REQUIRE(after.has_value());
             CHECK(after->measure == before->measure);

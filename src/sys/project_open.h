@@ -22,7 +22,7 @@ struct project_open_result_t {
     // needs the caller to choose an encoding before retrying this same path.
     bool needs_encoding_choice{};
     std::string error;
-    // Nonfatal asset-resolution conflicts requiring an explicit choice.
+    // Nonfatal osu import quantization and asset-resolution diagnostics.
     std::vector<std::string> warnings;
 
     [[nodiscard]] explicit operator bool() const noexcept { return document.has_value(); }

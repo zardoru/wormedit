@@ -4,6 +4,7 @@
 #include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/snap.h>
 
 #include <algorithm>
 #include <array>
@@ -106,6 +107,7 @@ struct measure_geometry_t {
     long double begin{};
     long double end{};
     std::uint64_t capacity{};
+    std::vector<std::pair<long double, std::uint64_t>> row_boundaries;
 };
 
 struct timing_geometry_plan_t {
@@ -840,13 +842,6 @@ auto rationalize(long double value, std::uint64_t maximum_denominator = 1'000'00
     return result.value;
 }
 
-auto checked_lcm(std::uint64_t left, std::uint64_t right) -> std::optional<std::uint64_t> {
-    const auto common = std::gcd(left, right);
-    if (left / common > std::numeric_limits<std::uint64_t>::max() / right)
-        return std::nullopt;
-    return (left / common) * right;
-}
-
 auto format_double(long double value) -> std::string {
     char buffer[96];
     const auto converted =
@@ -1039,12 +1034,25 @@ auto quarter_beats_between(const std::vector<timing_point_t>& anchors, long doub
 }
 
 template <typename fail_t>
+auto quantized_measure_length(long double beats, bool& quantized, fail_t&& fail) -> rational_t {
+    constexpr auto divisions = default_divisions_per_standard_measure;
+    const auto raw_rows = beats * static_cast<long double>(divisions) / 4.0L;
+    if (!std::isfinite(raw_rows) || raw_rows > static_cast<long double>(divisions) * 1'000'000.0L)
+        fail(osu_mania_parse_diagnostic_code_t::measure_limit,
+             "osu! timing span exceeds the bounded editor measure limit");
+    const auto rows = std::max<std::uint64_t>(1, static_cast<std::uint64_t>(std::llround(raw_rows)));
+    quantized = quantized || std::fabs(raw_rows - static_cast<long double>(rows)) > 1.0e-9L;
+    const auto divisor = std::gcd(rows, divisions);
+    return {rows / divisor, divisions / divisor};
+}
+
+template <typename fail_t>
 auto derive_measure_lengths(const std::vector<timeline_line_t>& timeline,
-                           const std::vector<timing_point_t>& anchors, fail_t&& fail)
-    -> std::pair<std::vector<rational_t>, std::uint64_t> {
+                           const std::vector<timing_point_t>& anchors, bool& quantized,
+                           fail_t&& fail) -> std::pair<std::vector<rational_t>, std::uint64_t> {
     std::vector<rational_t> lengths;
     lengths.reserve(timeline.size() - 1);
-    auto divisions = default_divisions_per_standard_measure;
+    constexpr std::uint64_t divisions = default_divisions_per_standard_measure;
     for (std::size_t index = 0; index + 1 < timeline.size(); ++index) {
         const auto& begin = timeline[index];
         const auto end = timeline[index + 1].time;
@@ -1053,25 +1061,41 @@ auto derive_measure_lengths(const std::vector<timeline_line_t>& timeline,
         if (!std::isfinite(duration) || duration <= 0.0L || !std::isfinite(beats) || beats <= 0.0L)
             fail(osu_mania_parse_diagnostic_code_t::internal_conversion_error,
                  "measure timeline contains a non-positive interval");
-        const auto length = rationalize(beats / 4.0L);
-        if (!length)
-            fail(osu_mania_parse_diagnostic_code_t::internal_conversion_error,
-                 "measure duration cannot be represented as a bounded exact ratio");
-        const auto required = checked_lcm(divisions, length->denominator);
-        if (!required || *required > 1'000'000'000'000ULL)
-            fail(osu_mania_parse_diagnostic_code_t::internal_conversion_error,
-                 "osu! timing requires an editor division count beyond the supported bound");
-        divisions = *required;
-        lengths.push_back(*length);
+        lengths.push_back(quantized_measure_length(beats, quantized, fail));
     }
     return {std::move(lengths), divisions};
+}
+
+auto measure_row_boundaries(long double begin, long double end,
+                            const std::vector<timing_point_t>& anchors,
+                            std::uint64_t& capacity, bool& quantized)
+    -> std::vector<std::pair<long double, std::uint64_t>> {
+    std::vector<std::pair<long double, std::uint64_t>> result{{begin, 0}};
+    for (const auto& anchor : anchors)
+        if (anchor.time > begin && anchor.time < end) result.emplace_back(anchor.time, 0);
+    result.emplace_back(end, 0);
+    if (capacity < result.size() - 1) {
+        capacity = result.size() - 1;
+        quantized = true;
+    }
+    const auto beats = quarter_beats_between(anchors, begin, end);
+    for (std::size_t index = 1; index + 1 < result.size(); ++index) {
+        const auto fraction = quarter_beats_between(anchors, begin, result[index].first) / beats;
+        const auto nearest = static_cast<std::uint64_t>(std::llround(fraction * capacity));
+        const auto maximum = capacity - (result.size() - index - 1);
+        const auto aligned = std::clamp(nearest, result[index - 1].second + 1, maximum);
+        quantized = quantized || aligned != nearest;
+        result[index].second = aligned;
+    }
+    result.back().second = capacity;
+    return result;
 }
 
 template <typename fail_t>
 auto make_editable_measures(const std::vector<rational_t>& lengths,
                             const std::vector<timeline_line_t>& timeline,
                             const std::vector<timing_point_t>& anchors, std::uint64_t divisions,
-                            fail_t&& fail) -> editable_measure_plan_t {
+                            bool& quantized, fail_t&& fail) -> editable_measure_plan_t {
     editable_measure_plan_t result;
     result.measures.reserve(lengths.size());
     result.geometries.reserve(lengths.size());
@@ -1084,10 +1108,14 @@ auto make_editable_measures(const std::vector<rational_t>& lengths,
         measure.id = measure_id_t{static_cast<std::uint64_t>(index + 1)};
         measure.definition = {.length = lengths[index], .meter = std::nullopt};
         const auto& line = timeline[index];
+        auto rows = *capacity.row_capacity;
+        auto boundaries = measure_row_boundaries(line.time, timeline[index + 1].time,
+                                                 anchors, rows, quantized);
+        const auto common = std::gcd(rows, divisions);
+        measure.definition.length = {rows / common, divisions / common};
         const auto expected = static_cast<long double>(line.meter_numerator) /
                               static_cast<long double>(line.meter_denominator);
-        const auto actual = static_cast<long double>(lengths[index].numerator) /
-                            static_cast<long double>(lengths[index].denominator);
+        const auto actual = static_cast<long double>(rows) / divisions;
         const bool crosses_timing_point = std::ranges::any_of(anchors, [&](const auto& anchor) {
             return anchor.time > line.time && anchor.time < timeline[index + 1].time;
         });
@@ -1097,7 +1125,7 @@ auto make_editable_measures(const std::vector<rational_t>& lengths,
                                                static_cast<std::uint32_t>(line.meter_denominator)};
         result.measures.push_back(std::move(measure));
         result.geometries.push_back(
-            {line.time, timeline[index + 1].time, *capacity.row_capacity});
+            {line.time, timeline[index + 1].time, rows, std::move(boundaries)});
     }
     if (result.measures.empty())
         fail(osu_mania_parse_diagnostic_code_t::internal_conversion_error,
@@ -1118,14 +1146,189 @@ auto position_at_time(long double time, const std::vector<measure_geometry_t>& g
     if (index >= geometries.size() || time < geometries[index].begin - 1.0e-12L ||
         time >= geometries[index].end + 1.0e-12L)
         return std::nullopt;
-    const auto total_beats = quarter_beats_between(anchors, geometries[index].begin,
-                                                  geometries[index].end);
-    auto fraction = quarter_beats_between(anchors, geometries[index].begin, time) / total_beats;
+    const auto& boundaries = geometries[index].row_boundaries;
+    const auto after = std::upper_bound(boundaries.begin(), boundaries.end(), time,
+        [](long double value, const auto& boundary) { return value < boundary.first; });
+    const auto right = after == boundaries.end() ? std::prev(after) : after;
+    const auto left = std::prev(right);
+    const auto total_beats = quarter_beats_between(anchors, left->first, right->first);
+    auto fraction = quarter_beats_between(anchors, left->first, time) / total_beats;
     if (fraction < 0.0L && fraction > -1.0e-12L) fraction = 0.0L;
     auto row = static_cast<std::uint64_t>(
-        std::llround(fraction * static_cast<long double>(geometries[index].capacity)));
+        std::llround(fraction * static_cast<long double>(right->second - left->second))) +
+        left->second;
     if (row >= geometries[index].capacity) row = geometries[index].capacity - 1;
     return local_position_t{measures[index].id, row};
+}
+
+template <typename fail_t>
+auto source_microseconds(long double milliseconds, fail_t&& fail, std::size_t order = 0)
+    -> std::int64_t {
+    const auto rounded = std::round(milliseconds * 1000.0L);
+    constexpr auto exclusive_limit = 0x1p63L;
+    if (!std::isfinite(rounded) || rounded < -exclusive_limit || rounded >= exclusive_limit)
+        fail(osu_mania_parse_diagnostic_code_t::invalid_timing_point,
+             "timing point exceeds the supported microsecond source grid", order);
+    return static_cast<std::int64_t>(rounded);
+}
+
+template <typename fail_t>
+auto source_origin_seconds(long double milliseconds, fail_t&& fail) -> signed_rational_t {
+    const auto microseconds = source_microseconds(milliseconds, fail);
+    const auto magnitude = microseconds < 0
+                               ? static_cast<std::uint64_t>(-(microseconds + 1)) + 1
+                               : static_cast<std::uint64_t>(microseconds);
+    const auto common = std::gcd(magnitude, std::uint64_t{1'000'000});
+    return {microseconds / static_cast<std::int64_t>(common), 1'000'000 / common};
+}
+
+template <typename fail_t>
+auto osu_measure_index(const chart_document_t& chart, fail_t&& fail) -> measure_index_t {
+    auto built = build_measure_index(chart);
+    if (!std::holds_alternative<measure_index_t>(built))
+        fail(osu_mania_parse_diagnostic_code_t::internal_conversion_error,
+             "derived osu! measure geometry is invalid");
+    return std::get<measure_index_t>(std::move(built));
+}
+
+template <typename fail_t>
+auto span_bpm(std::uint64_t rows, std::uint64_t divisions, std::uint64_t microseconds,
+              fail_t&& fail, std::size_t order) -> signed_rational_t {
+    // Cross-reduce before multiplication; timing over the complete span then
+    // cancels the row count and retains a common microsecond denominator.
+    auto factor = std::uint64_t{240'000'000};
+    auto common = std::gcd(rows, divisions);
+    rows /= common;
+    divisions /= common;
+    common = std::gcd(factor, microseconds);
+    factor /= common;
+    microseconds /= common;
+    common = std::gcd(rows, microseconds);
+    rows /= common;
+    microseconds /= common;
+    common = std::gcd(factor, divisions);
+    factor /= common;
+    divisions /= common;
+    if (microseconds == 0 || divisions > UINT64_MAX / microseconds || rows > UINT64_MAX / factor)
+        fail(osu_mania_parse_diagnostic_code_t::invalid_timing_point,
+             "effective editor BPM exceeds the bounded timing representation", order);
+    const auto numerator = rows * factor;
+    const auto denominator = divisions * microseconds;
+    if (numerator > static_cast<std::uint64_t>(INT64_MAX) || denominator > INT64_MAX)
+        fail(osu_mania_parse_diagnostic_code_t::invalid_timing_point,
+             "effective editor BPM exceeds the bounded timing representation", order);
+    return {static_cast<std::int64_t>(numerator), denominator};
+}
+
+auto simple_exact_tail_bpm(const timing_point_t& point, std::uint64_t rows,
+                           std::uint64_t divisions, long double duration_ms)
+    -> std::optional<signed_rational_t> {
+    const auto original = rationalize(60'000.0L / point.beat_length);
+    if (!original || original->numerator > 1'000'000 || original->denominator > 1'000'000)
+        return std::nullopt;
+    const auto exact_ms = static_cast<long double>(rows) * 240'000.0L / divisions *
+                          original->denominator / original->numerator;
+    if (std::fabs(exact_ms - duration_ms) > 1.0e-8L) return std::nullopt;
+    // Only the final span may retain a non-microsecond period: it cannot cause
+    // an LCM cascade. The small coefficients also bound subsequent queries.
+    return signed_rational_t{static_cast<std::int64_t>(original->numerator), original->denominator};
+}
+
+template <typename position_t, typename fail_t>
+auto adjusted_osu_bpms(const chart_document_t& chart,
+                       const std::vector<timing_point_t>& anchors, long double chart_end,
+                       position_t&& position_at,
+                       fail_t&& fail) -> std::unordered_map<std::size_t, signed_rational_t> {
+    const auto measures = osu_measure_index(chart, fail);
+    std::unordered_map<std::size_t, signed_rational_t> result;
+    for (std::size_t index = 0; index < anchors.size(); ++index) {
+        const auto& begin = anchors[index];
+        const auto end_time = index + 1 < anchors.size() ? anchors[index + 1].time : chart_end;
+        const auto begin_position = position_at(begin.time);
+        const auto end_position = index + 1 < anchors.size() ? position_at(end_time) : std::nullopt;
+        if (!begin_position || (index + 1 < anchors.size() && !end_position))
+            fail(osu_mania_parse_diagnostic_code_t::internal_conversion_error,
+                 "timing point falls outside the derived measure timeline", begin.order);
+        const auto first = absolute_row(measures, *begin_position);
+        const auto last = end_position ? absolute_row(measures, *end_position)
+                                       : std::optional<std::uint64_t>{measures.total_rows};
+        if (!first || !last || *last <= *first) continue;
+        const auto first_us = source_microseconds(begin.time, fail, begin.order);
+        const auto last_us = source_microseconds(end_time, fail, begin.order);
+        // Positive source spans below one microsecond remain editable. Their
+        // bounded minimum duration contributes at most one microsecond each.
+        const auto elapsed = static_cast<std::uint64_t>(last_us) -
+                             static_cast<std::uint64_t>(first_us);
+        const auto exact_tail = index + 1 == anchors.size()
+            ? simple_exact_tail_bpm(begin, *last - *first,
+                chart.divisions_per_standard_measure, end_time - begin.time)
+            : std::nullopt;
+        result.emplace(begin.order, exact_tail ? *exact_tail : span_bpm(*last - *first,
+            chart.divisions_per_standard_measure, std::max<std::uint64_t>(1, elapsed),
+            fail, begin.order));
+    }
+    return result;
+}
+
+template <typename position_t, typename fail_t>
+void ensure_hold_tail_room(chart_document_t& chart, std::vector<measure_geometry_t>& geometries,
+                           const std::vector<hit_object_t>& objects, long double beat_length,
+                           std::size_t maximum_measures, position_t&& position_at, fail_t&& fail) {
+    const auto index = osu_measure_index(chart, fail);
+    const bool needs_tail = std::ranges::any_of(objects, [&](const auto& object) {
+        if (!object.end_time || *object.end_time <= object.time) return false;
+        const auto head = position_at(object.time);
+        const auto tail = position_at(*object.end_time);
+        if (!head || !tail) return false;
+        const auto first = absolute_row(index, *head);
+        const auto last = absolute_row(index, *tail);
+        return first && last && *first == *last && *first == index.total_rows - 1;
+    });
+    if (!needs_tail) return;
+    if (chart.measures.size() >= maximum_measures)
+        fail(osu_mania_parse_diagnostic_code_t::measure_limit,
+             "preserving a positive hold requires one additional tail measure");
+    const auto begin = geometries.back().end;
+    const auto end = begin + beat_length * 4.0L;
+    if (!std::isfinite(end) || end <= begin)
+        fail(osu_mania_parse_diagnostic_code_t::invalid_timing_point,
+             "positive hold tail produces an invalid measure");
+    chart.measures.push_back({.id = measure_id_t{chart.measures.back().id.value + 1},
+                              .definition = {{1, 1}, meter_t{4, 4}}});
+    geometries.push_back({begin, end, chart.divisions_per_standard_measure,
+                         {{begin, 0}, {end, chart.divisions_per_standard_measure}}});
+}
+
+template <typename fail_t>
+auto positive_hold_end(const measure_index_t& measures, local_position_t head,
+                       local_position_t tail, bool& quantized, fail_t&& fail, std::size_t order)
+    -> local_position_t {
+    const auto begin = absolute_row(measures, head);
+    const auto end = absolute_row(measures, tail);
+    if (begin && end && *end > *begin) return tail;
+    const auto next = begin ? position_at_absolute_row(measures, *begin + 1) : std::nullopt;
+    if (!next)
+        fail(osu_mania_parse_diagnostic_code_t::internal_conversion_error,
+             "positive hold has no bounded editable endpoint", order);
+    quantized = true;
+    return *next;
+}
+
+template <typename position_t, typename object_id_t, typename fail_t>
+void append_initial_osu_bpm(chart_document_t& chart, const std::vector<timing_point_t>& anchors,
+                            long double origin, position_t&& position_at,
+                            object_id_t&& take_object_id, fail_t&& fail) {
+    const auto measures = osu_measure_index(chart, fail);
+    const auto position = position_at(anchors.front().time);
+    const auto row = position ? absolute_row(measures, *position) : std::nullopt;
+    if (!row || *row == 0) return;
+    const auto begin_us = source_microseconds(origin, fail);
+    const auto end_us = source_microseconds(anchors.front().time, fail, anchors.front().order);
+    const auto elapsed = static_cast<std::uint64_t>(end_us) - static_cast<std::uint64_t>(begin_us);
+    chart.bpms.push_back({.id = take_object_id(anchors.front().order),
+                          .position = {chart.measures.front().id, 0},
+                          .beats_per_minute = span_bpm(*row, chart.divisions_per_standard_measure,
+                              std::max<std::uint64_t>(1, elapsed), fail, anchors.front().order)});
 }
 
 template <typename fail_t>
@@ -1225,14 +1428,18 @@ void append_osu_hit_notes(chart_document_t& chart, const std::vector<hit_object_
                           const std::vector<std::optional<resource_id_t>>& samples,
                           std::int64_t keys, position_t&& position_at,
                           object_id_t&& take_object_id, format_metadata_t& source_group,
+                          bool& quantized,
                           fail_t&& fail) {
+    const auto measures = osu_measure_index(chart, fail);
     for (std::size_t index = 0; index < objects.size(); ++index) {
         const auto& object = objects[index];
         const auto position = position_at(object.time);
-        const auto end = object.end_time ? position_at(*object.end_time) : std::nullopt;
+        auto end = object.end_time ? position_at(*object.end_time) : std::nullopt;
         if (!position || (object.end_time && !end))
             fail(osu_mania_parse_diagnostic_code_t::internal_conversion_error,
                  "hit object falls outside the derived measure timeline", object.order);
+        if (object.end_time && *object.end_time > object.time)
+            end = positive_hold_end(measures, *position, *end, quantized, fail, object.order);
         const auto id = take_object_id(object.order);
         const auto column = std::min(static_cast<std::uint64_t>(object.x * keys / 512),
                                      static_cast<std::uint64_t>(keys - 1));
@@ -1258,6 +1465,7 @@ void append_osu_hit_notes(chart_document_t& chart, const std::vector<hit_object_
 template <typename position_t, typename object_id_t, typename fail_t>
 void append_osu_timing_points(chart_document_t& chart,
                               const std::vector<timing_point_t>& points,
+                              const std::unordered_map<std::size_t, signed_rational_t>& adjusted_bpms,
                               position_t&& position_at, object_id_t&& take_object_id,
                               fail_t&& fail) {
     for (const auto& point : points) {
@@ -1268,7 +1476,16 @@ void append_osu_timing_points(chart_document_t& chart,
         const source_provenance_t provenance{format_family_t::osu_mania, "osu-mania",
                                              "TimingPoints", point.raw_line, point.order};
         if (point.uninherited) {
-            const auto bpm = rationalize(60'000.0L / point.beat_length);
+            const auto adjusted = adjusted_bpms.find(point.order);
+            const auto bpm = adjusted == adjusted_bpms.end()
+                                 ? rationalize(60'000.0L / point.beat_length)
+                                 : std::optional<rational_t>{};
+            if (adjusted != adjusted_bpms.end()) {
+                chart.bpms.push_back({.id = take_object_id(point.order), .position = *position,
+                                      .beats_per_minute = adjusted->second,
+                                      .provenance = provenance});
+                continue;
+            }
             if (!bpm || bpm->numerator > static_cast<std::uint64_t>(INT64_MAX))
                 fail(osu_mania_parse_diagnostic_code_t::invalid_timing_point,
                      "BPM cannot be represented by the exact editor timing model", point.order);
@@ -1452,7 +1669,8 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
         const auto& anchors = geometry.anchors;
         const auto& timeline = geometry.timeline;
         const auto& suppressed_lines = geometry.suppressed_lines;
-        auto [measure_lengths, divisions] = derive_measure_lengths(timeline, anchors, fail);
+        bool timing_quantized{};
+        auto [measure_lengths, divisions] = derive_measure_lengths(timeline, anchors, timing_quantized, fail);
 
         song_document_t song;
         song.id = song_id_t{1};
@@ -1460,10 +1678,12 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
         chart.id = chart_id_t{1};
         chart.source_family = format_family_t::osu_mania;
         chart.divisions_per_standard_measure = divisions;
+        chart.beat_zero_audio_offset_seconds = source_origin_seconds(timeline.front().time, fail);
         const auto source_bytes =
             std::make_shared<const std::vector<std::byte>>(bytes.begin(), bytes.end());
         auto source_group = make_source_group(source_bytes, fields, event_lines, timing_lines,
                                               hit_lines);
+        retain_osu_source_value(source_group, "osu.import.explicit_source_origin", "1", 0, false);
 
         populate_osu_metadata(song, chart, fields, std::move(embedded_storyboard), source_group);
         id_allocator_t object_ids;
@@ -1474,12 +1694,15 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
                      "chart object ID space is exhausted", source_order);
             return *id;
         };
-        auto measure_plan = make_editable_measures(measure_lengths, timeline, anchors, divisions, fail);
+        auto measure_plan = make_editable_measures(measure_lengths, timeline, anchors, divisions,
+                                                   timing_quantized, fail);
         chart.measures = std::move(measure_plan.measures);
         auto geometries = std::move(measure_plan.geometries);
         const auto position_at = [&](long double time) {
             return position_at_time(time, geometries, chart.measures, anchors);
         };
+        ensure_hold_tail_room(chart, geometries, hit_objects, anchors.back().beat_length,
+                               options.max_measures, position_at, fail);
 
         append_osu_layout(chart, keys, take_object_id);
 
@@ -1495,9 +1718,14 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
         (void)sample_source_lane;
 
         append_osu_hit_notes(chart, hit_objects, hit_samples, keys, position_at,
-                             take_object_id, source_group, fail);
+                             take_object_id, source_group, timing_quantized, fail);
 
-        append_osu_timing_points(chart, timing_points, position_at, take_object_id, fail);
+        const auto adjusted_bpms = adjusted_osu_bpms(chart, anchors, geometries.back().end,
+                                                    position_at, fail);
+        append_osu_timing_points(chart, timing_points, adjusted_bpms, position_at,
+                                 take_object_id, fail);
+        append_initial_osu_bpm(chart, anchors, timeline.front().time, position_at,
+                               take_object_id, fail);
         append_osu_kiai(chart, timing_points, position_at, take_object_id);
         for (const auto& [source_order, displacement] : suppressed_lines) {
             retain_osu_source_value(source_group, "osu.suppressed_bar_line_displacement_ms", format_double(displacement),
@@ -1519,6 +1747,12 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
 
         song.charts.push_back(std::move(chart));
         result.song = std::move(song);
+        if (timing_quantized)
+            result.diagnostics.push_back({diagnostic_severity_t::warning,
+                osu_mania_parse_diagnostic_code_t::timing_quantization,
+                "osu! timing was quantized to the 960-division editor grid; editable BPMs "
+                "retain bounded source-time alignment and original timestamps are preserved",
+                0, std::nullopt});
     } catch (const parse_abort_t&) {
         result.song.reset();
     } catch (const std::exception& error) {
@@ -2195,6 +2429,13 @@ auto infer_osu_offset_ms(const chart_document_t& chart, const measure_index_t& m
                          const std::vector<positioned_bpm_write_t>& bpms,
                          const std::unordered_map<std::uint64_t, retained_osu_note_times_t>& retained,
                          relative_time_t&& relative_milliseconds_at) -> std::optional<long double> {
+    const bool explicit_origin = std::ranges::any_of(chart.metadata.format_groups, [](const auto& group) {
+        return group.family == format_family_t::osu_mania &&
+               std::ranges::any_of(group.ordered_fields, [](const auto& field) {
+                   return field.first == "osu.import.explicit_source_origin" && field.second == "1";
+               });
+    });
+    if (explicit_origin) return std::nullopt;
     if (chart.source_family != format_family_t::osu_mania ||
         chart.beat_zero_audio_offset_seconds.numerator != 0)
         return std::nullopt;

@@ -46,6 +46,7 @@
 #include <SDL3/SDL_filesystem.h>
 #include <wormedit/core/virtual_canvas.h>
 #include "sys/project_open.h"
+#include "sys/project_import_feedback.h"
 #include "sys/project_save_paths.h"
 #include "sys/player_preview_presenter.h"
 #include "sys/waveform_view_projection.h"
@@ -2257,6 +2258,19 @@ void install_startup_recovery_scan(
         (void)controller.replace_scan(std::move(startup.recovery_scan));
 }
 
+void post_initial_application_feedback(wormedit::notification_sink_t& notifications,
+    bool loaded_primary, const std::filesystem::path& requested_primary_path,
+    const wormedit::platform_recovery_directory_result_t& recovery) {
+    const auto message = wormedit::sys::select_initial_application_status(
+        loaded_primary, requested_primary_path, recovery);
+    const auto severity = !recovery ? wormedit::notification_severity_t::error
+        : loaded_primary ? wormedit::notification_severity_t::success
+        : !requested_primary_path.empty() ? wormedit::notification_severity_t::error
+                                         : wormedit::notification_severity_t::info;
+    notifications.post(severity, loaded_primary && recovery ? wormedit::notification_source_t::document
+                                                            : wormedit::notification_source_t::recovery, message);
+}
+
 void post_shortcut_startup_diagnostic(
     wormedit::notification_sink_t& sink, const wormedit::shortcut_profile_startup_result_t& result) {
     if (!result.diagnostics.empty())
@@ -2309,11 +2323,12 @@ void reset_project_edit_state(application_command_state_t& current) {
 
 template <typename Context>
 void post_project_feedback(Context& context, wormedit::notification_severity_t severity,
-                           wormedit::notification_source_t source, std::string message) {
+                           wormedit::notification_source_t source, std::string message, std::string_view detail = {}) {
     // The close confirmation retains its own scoped feedback; it is not a
     // global notification producer or a replacement status-line channel.
     context.close_feedback_ref = std::move(message);
-    context.notification_sink_ref.post(severity, source, context.close_feedback_ref);
+    context.notification_sink_ref.post(wormedit::notification_post_t{.severity = severity, .source = source,
+        .message = context.close_feedback_ref, .detail = std::string(detail), .target = {}});
 }
 
 template <typename Context>
@@ -2667,11 +2682,9 @@ void open_project_session(Context& context, const WormUiWorkspaceAction& action)
             ? "Project opened: " + opened.source_path.string()
             : "Chart imported from " + opened.source_path.string() + ". Save it as a project.");
         if (!opened.warnings.empty()) {
-            auto warning = "Chart imported with audio warning: " + opened.warnings.front();
-            if (opened.warnings.size() > 1)
-                warning += " (" + std::to_string(opened.warnings.size()) + " resolution warnings total)";
+            auto warning = wormedit::sys::project_import_warning(opened.warnings);
             post_project_feedback(context, wormedit::notification_severity_t::warning,
-                                  wormedit::notification_source_t::import_, std::move(warning));
+                wormedit::notification_source_t::import_, std::move(warning.message), warning.detail);
         }
     }
 }
@@ -2827,7 +2840,8 @@ auto dispatch_clipboard_menu(Context& context, const WormUiWorkspaceAction& acti
         context.compose_interaction_state_ref, context.application_command_state_ref);
     const auto result = wormedit::invoke_command(registry, {id},
         application_command_focus(action, context.workspace_ref));
-    if (!result.diagnostics.empty()) context.status_ref = result.diagnostics.front().message;
+    if (!result.diagnostics.empty())
+        post_shortcut_rejection(context.notification_sink_ref, registry, result);
     return true;
 }
 
@@ -3808,8 +3822,8 @@ int main(int argc, char** argv) {
         wormedit::native_project_autosave_loop_t::clock_t::now(), autosave_scheduler,
         startup.primary_version, initial_autosave_sequence,
         std::chrono::minutes{5}, std::chrono::seconds{30}, notification_sink);
-    std::string status = wormedit::sys::select_initial_application_status(
-        startup.loaded_primary, requested_primary_path, platform_recovery);
+    post_initial_application_feedback(notification_sink, startup.loaded_primary, requested_primary_path, platform_recovery);
+    std::string status;
     std::string close_feedback;
     wormedit::sys::notification_history_runtime_t notification_history;
     WormUiNotificationAction pending_notification{};
@@ -4122,7 +4136,7 @@ int main(int argc, char** argv) {
                 window, metadata_drop, workspace, history, asset_base,
                 can_offer_audio_project_drop(session_loaded, fresh_blank_project, history),
                 pending_audio_project_path, pending_chart_project_path, sound_drop_transaction, pending_sound_batches, pending_bga_paths,
-                status))
+                notification_sink))
             confirm_unsaved_changes(pending_close, close_target_t::application, workspace_frame_action_context,
                 program_preferences.preferences.general.confirm_unsaved_close);
         import_dropped_keysounds(session_loaded, history, workspace, pending_sound_batches, notification_sink);

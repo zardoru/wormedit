@@ -5,6 +5,7 @@
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_video.h>
 #include <wormedit/core/command.h>
+#include <wormedit/core/notifications.h>
 #include <wormedit/core/workspace.h>
 
 #include <cstddef>
@@ -30,7 +31,7 @@ struct metadata_drop_state_t {
     void handle_file_drop(const SDL_Event& event, SDL_Window* window_handle,
                           const workspace_controller_t& workspace,
                           const document_history_t& history,
-                          const std::filesystem::path& asset_base, std::string& status);
+                          const std::filesystem::path& asset_base, const notification_sink_t& notifications);
 };
 
 } // namespace wormedit::sys

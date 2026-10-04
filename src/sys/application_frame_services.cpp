@@ -22,13 +22,13 @@ namespace {
 auto offer_dropped_audio_project(const SDL_Event& event, SDL_Window* window,
                                  bool offer_audio_project_drop,
                                  std::string& pending_audio_project_path,
-                                 std::string& status) -> bool {
+                                 notification_sink_t& notifications) -> bool {
     if (!offer_audio_project_drop || event.type != SDL_EVENT_DROP_FILE || !event.drop.data ||
         (event.drop.windowID != 0 && event.drop.windowID != SDL_GetWindowID(window))) return false;
     const std::string_view dropped{event.drop.data};
     if (dropped.size() >= WORM_UI_PROJECT_PATH_CAPACITY ||
         !std::filesystem::path{dropped}.is_absolute()) {
-        status = "Drop an absolute local MP3 or Ogg file within the path limit.";
+        notifications.post(notification_severity_t::warning, notification_source_t::import_, "Drop an absolute local MP3 or Ogg file within the path limit.");
         return true;
     }
     auto extension = std::filesystem::path{dropped}.extension().string();
@@ -36,20 +36,20 @@ auto offer_dropped_audio_project(const SDL_Event& event, SDL_Window* window,
                    [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
     if (extension != ".mp3" && extension != ".ogg") return false;
     pending_audio_project_path.assign(dropped);
-    status = "Choose the chart layout to import this audio as a new project.";
+    notifications.post(notification_severity_t::hint, notification_source_t::import_, "Choose the chart layout to import this audio as a new project.");
     return true;
 }
 
 auto offer_dropped_chart_project(const SDL_Event& event, SDL_Window* window,
                                  std::string& pending_chart_project_path,
-                                 std::string& status) -> bool {
+                                 notification_sink_t& notifications) -> bool {
     if (event.type != SDL_EVENT_DROP_FILE || !event.drop.data ||
         (event.drop.windowID != 0 && event.drop.windowID != SDL_GetWindowID(window))) return false;
     const std::filesystem::path dropped{event.drop.data};
     if (!is_supported_project_file_extension(dropped)) return false;
     if (!dropped.is_absolute() ||
         std::string_view{event.drop.data}.size() >= WORM_UI_PROJECT_PATH_CAPACITY) {
-        status = "Drop an absolute local chart or project file within the path limit.";
+        notifications.post(notification_severity_t::warning, notification_source_t::import_, "Drop an absolute local chart or project file within the path limit.");
         return true;
     }
     pending_chart_project_path = dropped.string();
@@ -83,16 +83,16 @@ auto collect_dropped_sound(const SDL_Event& event, SDL_Window* window,
 
 auto collect_dropped_bga(const SDL_Event& event, SDL_Window* window,
                          const workspace_controller_t& workspace,
-                         std::vector<std::string>& paths, std::string& status) -> bool {
+                         std::vector<std::string>& paths, notification_sink_t& notifications) -> bool {
     if (event.type != SDL_EVENT_DROP_FILE || !event.drop.data ||
         workspace.active_tab != workspace_tab_t::compose ||
         (event.drop.windowID && event.drop.windowID != SDL_GetWindowID(window)) ||
         !worm_ui_frontend_bga_list_contains(event.drop.windowID, event.drop.x, event.drop.y)) return false;
     const std::string_view path{event.drop.data};
     if (path.size() >= WORM_UI_PROJECT_PATH_CAPACITY || !std::filesystem::path{path}.is_absolute())
-        status = "Drop absolute local image files within the path limit.";
+        notifications.post(notification_severity_t::warning, notification_source_t::import_, "Drop absolute local image files within the path limit.");
     else if (paths.size() < WORM_UI_SOUND_DROP_CAPACITY) paths.emplace_back(path);
-    else status = "Image drop batch is full.";
+    else notifications.post(notification_severity_t::warning, notification_source_t::import_, "Image drop batch is full.");
     return true;
 }
 
@@ -108,7 +108,7 @@ auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_dr
                           sound_drop_transaction_t& sound_drop_transaction,
                           std::vector<sound_drop_batch_t>& pending_sound_batches,
                           std::vector<std::string>& pending_bga_paths,
-                          std::string& status) -> bool {
+                          notification_sink_t& notifications) -> bool {
     bool running = true;
     SDL_Event event;
     worm_ui_frontend_begin_input();
@@ -118,15 +118,15 @@ auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_dr
         const bool sound_drop = collect_dropped_sound(event, window.handle, workspace,
                                                       history, sound_drop_transaction, pending_sound_batches);
         const bool bga_drop = !sound_drop && collect_dropped_bga(event, window.handle, workspace,
-                                                              pending_bga_paths, status);
+                                                              pending_bga_paths, notifications);
         const bool project_chart_drop = !bga_drop && !sound_drop && offer_dropped_chart_project(
-            event, window.handle, pending_chart_project_path, status);
+            event, window.handle, pending_chart_project_path, notifications);
         const bool project_audio_drop = !bga_drop && !sound_drop && !project_chart_drop &&
             offer_dropped_audio_project(
-            event, window.handle, offer_audio_project_drop, pending_audio_project_path, status);
+            event, window.handle, offer_audio_project_drop, pending_audio_project_path, notifications);
         if (!bga_drop && !sound_drop && !project_chart_drop && !project_audio_drop)
             metadata_drop.handle_file_drop(event, window.handle, workspace, history,
-                                           asset_base, status);
+                                           asset_base, notifications);
         worm_ui_frontend_handle_event(&event);
     }
     worm_ui_frontend_end_input();

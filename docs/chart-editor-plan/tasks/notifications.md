@@ -101,6 +101,11 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 - **Sound/BGA producer extension (2026-10-04):** Sol owns `src/sys/compose_sound_actions.h/.cpp`, `src/sys/compose_bga_actions.h/.cpp`, existing `tests/sys/application_commands_tests.cpp` and `tests/sys/bga_actions_tests.cpp` for explicit import/edit/no-op/diagnostic outcomes. Optional sink parameters preserve string-return consumers until T-222 updates Compose; main review/drop bridges pass the sink and retain only scoped dialog feedback. No import behavior or new messages are authorized by this extension.
 
+- **Collector producer extension (2026-10-04):** Sol owns `src/sys/application_frame_services.h/.cpp`, `src/sys/metadata_drop_state.h/.cpp`, new `tests/sys/global_drop_notification_tests.cpp` and narrow `tests/CMakeLists.txt` event-harness wiring for event-specific import validation and guidance; real frontend code supplies drop hit testing. Resource/export poll consumers stay explicitly T-223 until N6b typed completion.
+
+- **User import-fix text override (2026-10-04):** Root explicitly approves changing main's expanded import-warning prefix to `Chart imported with warning: …` and retaining all `opened.warnings` in explicit detail within the existing 4 KiB UTF-8 bound. Actual first diagnostic text/count stay identical. This user-authorized import-fix scope overrides historical migration-only prefix preservation; severity/source remain explicit warning/import. Import lead owns loader/CLI propagation, so Sol does not edit `src/sys/project_open.cpp` or `src/tools/wormedit_convert.cpp`.
+- **Import warning formatter support (2026-10-04):** Sol additionally owns new `src/sys/project_import_feedback.h` and formatter/sink checks in `tests/sys/global_drop_notification_tests.cpp`. The helper retains all warning bytes and keeps the main session opener below the complexity limit; empty warnings remain quiet.
+
 ## T-222 Route Compose, Timing, and dialog messages through notifications
 
 - **Status:** blocked-on T-221

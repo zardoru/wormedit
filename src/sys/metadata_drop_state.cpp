@@ -36,7 +36,7 @@ void metadata_drop_state_t::publish(WormUiMetadataView& view) const {
 void metadata_drop_state_t::handle_file_drop(
     const SDL_Event& event, SDL_Window* window_handle,
     const workspace_controller_t& workspace, const document_history_t& history,
-    const std::filesystem::path& asset_base, std::string& status) {
+    const std::filesystem::path& asset_base, const notification_sink_t& notifications) {
     if (event.type != SDL_EVENT_DROP_FILE || !event.drop.data ||
         (event.drop.windowID != 0 &&
          event.drop.windowID != SDL_GetWindowID(window_handle)) ||
@@ -47,7 +47,8 @@ void metadata_drop_state_t::handle_file_drop(
     if (dropped.size() > WORM_UI_COMPOSE_IMPORT_PATH_BYTES ||
         !std::filesystem::path{dropped}.is_absolute()) {
         clear_paths();
-        status = "Drop an absolute local file path within the import limit.";
+        notifications.post(notification_severity_t::warning, notification_source_t::import_,
+                           "Drop an absolute local file path within the import limit.");
         return;
     }
 
@@ -60,8 +61,9 @@ void metadata_drop_state_t::handle_file_drop(
             output_path = relative->generic_string();
             output_group_index = target.output_group_index;
         } else {
-            status = "Drop an existing output file or directory inside the saved "
-                     "project; directories need extensionless names.";
+            notifications.post(notification_severity_t::warning, notification_source_t::import_,
+                "Drop an existing output file or directory inside the saved "
+                "project; directories need extensionless names.");
         }
     } else {
         music_path.assign(dropped);

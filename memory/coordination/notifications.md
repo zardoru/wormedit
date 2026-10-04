@@ -222,3 +222,15 @@ offset suite passes 20/20, direct sound producer case passes 3 assertions. Tidy
 reports only existing main/refresh/build_speed_graph and old command-test functions.
 Remaining T-221: event drop collection, startup/clipboard bridge, and seek/bookmark
 publication. N4 and N6b remain pending; no card is marked done.
+
+Collector/startup/clipboard increment: event drop validation/guidance posts at
+its typed import producer; actual frontend metadata drop rejection/staging and
+unrelated/idle events pass. Startup uses explicit recovery/document branch metadata;
+clipboard skips producer-owned duplicate errors. User-authorized expanded import
+warnings now use the generic prefix, retain first text/count and all diagnostics
+in one explicit detail payload (existing 4 KiB UTF-8 bound). Formatter/sink positive
+and empty-warning negative checks pass: 4/4 focused cases. Offline app/harness
+build and direct docs/whitespace checks pass; tidy reports only the three existing
+main/refresh/build_speed_graph violations. Evidence: `notifications-drop-build.log`,
+`notifications-drop-tests.log`, `notifications-drop-main-test-tidy.log`. Remaining
+T-221 globals: authoritative rebind failure edge suppression and seek/bookmark.

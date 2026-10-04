@@ -11,7 +11,9 @@ The [coordination index](../coordination/README.md) owns the notifications
 (T-221–T-223) and timing (T-239/T-81/T-51) worktree batches, reviewed briefs,
 shared-file integration, and verification gates. Notifications implements
 T-221–T-223; timing T-239/T-51 is integrated as `f2f838b`, with automated
-worktree checks passed and root checks underway. Required manual/Xvfb gates
+worktree checks and root integrated Debug build/full suite 2,108/2,108 passed
+(including 121 event-harness cases; `/tmp/wormedit-batch-implementation/root-timing-suite.log`).
+Required manual/Xvfb gates
 remain unperformed because sandbox sockets and escalation are unavailable.
 The user selected Ctrl+Alt for T-81 conditional on no collisions; its next
 implementation batch is underway after the collision audit. The readiness pilot did not complete feature cards;

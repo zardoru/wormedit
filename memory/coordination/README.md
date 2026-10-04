@@ -11,7 +11,9 @@ Pilot review complete: root integrated both coordinator commits after reviewing
 their reports, source evidence, and diffs. T-221/T-223/T-239 have completed
 prerequisites; T-222 waits for T-221 implementation. Timing's runnable order is
 T-239 then T-51 are integrated as `f2f838b`; their automated checks pass in the
-worktree, with root integration checks underway and manual visual gates pending.
+worktree and root: integrated Debug build and full suite 2,108/2,108 pass,
+including 121 event-harness cases (`/tmp/wormedit-batch-implementation/root-timing-suite.log`).
+Required manual visual gates remain pending.
 The user chose Ctrl+Alt for T-81 on 2026-10-04, conditional on no collisions;
 timing now audits that gesture and implements the next batch. Main integration
 remains serialized.

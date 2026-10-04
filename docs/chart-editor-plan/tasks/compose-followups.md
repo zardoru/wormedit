@@ -14,6 +14,8 @@ and the [keysound listbox (T-335)](sounds-tab.md):
 7. Show measure, beat and time in a tooltip over the seek bar and song overview (T-350).
 8. Keep related sounds together in name order (snd01, snd02, …) and show how many BMS IDs are left (T-351 core, T-352 docks).
 9. Group related sounds, suggest groups at import with a review step, and filter the dock by group and layer (T-353–T-357).
+10. Support bulk file drops in BMS slots mode as well as automatic mode (T-359, user request 2026-10-04).
+11. Add a timeline lane for BGA editing in Compose (T-360, user request 2026-10-04).
 
 Findings (2026-10-03):
 
@@ -332,3 +334,38 @@ Apply the stale-plan check (rule 9) first.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^core\.|sound_list_projection'`; `ctest --test-dir build -L event-harness --output-on-failure`; isolated Xvfb assignment to a chosen empty slot and confirmed replacement on a BMS fixture.
 - **Verification (2026-10-04):** Application build passed; core/projection filter passed 1,267/1,267; event harness passed 58/58; full application suite passed 1,892/1,892. Affected sources were checked with `clang-tidy -p build`, with no new cognitive-complexity violations. Isolated Xvfb saved an exact empty WAV Z9 assignment, preserved the document on occupied-slot cancellation, and saved a confirmed WAV 01 replacement retaining resource 31, every chart/note link, unrelated resources and existing audio assets.
 - **Out of scope:** base-62 codec support; BMP/BGA slots mode; automatic group allocation (T-351).
+
+## T-359 Import multiple sounds starting at the selected BMS WAV slot
+
+- **Status:** ready (T-358 is done)
+- **Request (user, 2026-10-04):** Bulk drag-and-drop onto the Sounds dock must also be supported in slots mode; T-358 currently rejects multiple files.
+- **Outcome:** dropping multiple audio files onto the BMS Sounds dock, or choosing multiple files with Add, assigns them in natural filename order to successive WAV IDs starting at the selected slot, in one undo step; a review explicitly confirms any occupied-slot replacements.
+- **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/sys/application_frame_services.cpp`, `src/sys/compose_sound_actions.cpp`, `include/wormedit/core/resource_assignment.h`, `include/wormedit/core/natural_order.h`.
+- **Files owned:** `include/wormedit/core/resource_assignment.h`, `src/core/resource_assignment.cpp`, `src/sys/compose_sound_actions.cpp/.h`, `src/sys/compose_actions.cpp`, `src/sys/application_frame_services.cpp/.h`, `src/sys/main.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/frontend.cpp`, `tests/core/resource_assignment_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
+- **Steps:**
+  1. Add a revision-checked bulk exact-slot command that validates the complete batch, sorts by the existing natural filename comparator, and maps files to selected-slot + index without skipping occupied IDs or wrapping beyond ZZ. Reuse T-358's exact assignment semantics and commit the complete result once.
+  2. Collect the entire SDL drop transaction through its completion event before importing; retain all paths and the starting project/chart/revision/slot snapshot. Enable multi-file Add in slots mode. Support up to the 1,295-slot base-36 capacity without silently truncating at the current 1,000-file limit; retain automatic mode's existing allocation policy.
+  3. Stage a bounded, scrollable review of destination IDs, incoming filenames and existing occupants. Require explicit confirmation for replacements; Cancel, Escape, a stale revision or a mode/project/chart change discards the batch. Wire the confirmed batch through the standard action path, with no fallback to automatic allocation.
+  4. Add core and event-harness coverage for natural ordering, non-01 starts, occupied/empty mixtures, cancellation, invalid files, stale targets, reserved/overflow IDs, 1,200-file batches, one-step undo/redo and drop events spread across frames. Verify picker and drop use the same batch path.
+- **Invariants:** 00 stays reserved; occupied resources retain their stable resource IDs, metadata and note/BGM links; unrelated resources and IDs remain unchanged; all accepted files are assigned atomically. One-file slots assignment and default automatic mode continue to work.
+- **Reject/failure behavior:** an unreadable/undecodable file, duplicate input path, oversized batch, insufficient range through ZZ, ambiguous occupied ID or unconfirmed replacement rejects the whole batch with a reason. No partial import, silent truncation, skipped occupied slots or automatic reassignment.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^core\.|^frame-timing\.'`; `ctest --test-dir build -L event-harness --output-on-failure`; `ctest --test-dir build --output-on-failure -R '^documentation.chart_editor_state$'`; affected-source `clang-tidy -p build <source-file>` with no new complexity violations; isolated Xvfb bulk drop into empty and mixed occupied slots, saved-document comparison of exact IDs and preserved note links, cancellation and one-step undo.
+- **Out of scope:** base-62 codec support; BMP/BGA slots; named-group proposals/review (T-354–T-356); renumbering existing sounds outside the destination range.
+
+## T-360 Add a BGA event editing lane to the Compose timeline
+
+- **Status:** ready (T-347 is done)
+- **Request (user, 2026-10-04):** Add a lane for BGA editing, in addition to the existing BGA resource dock.
+- **Outcome:** a dedicated, labeled BGA timeline lane shows background image/video events at their chart positions and allows placing the dock's armed resource, selecting, moving, replacing and deleting events through normal Compose gestures.
+- **Read first:** `include/wormedit/core/editor_scene.h`, `include/wormedit/core/interaction.h`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`.
+- **Files owned:** `include/wormedit/core/editor_scene.h`, `src/core/editor_scene.cpp`, `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/core/interaction_hit_test.cpp`, `src/core/interaction_selection.cpp`, `include/wormedit/core/resource_assignment.h`, `src/core/resource_assignment.cpp`, `src/sys/compose_view.cpp/.h`, `src/sys/compose_input.cpp/.h`, `src/sys/compose_actions.cpp`, `src/sys/workspace_projection.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp/.h`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_bga_panel.cpp`, `tests/core/editor_scene_tests.cpp`, `tests/core/interaction_tests.cpp`, `tests/core/resource_assignment_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
+- **Steps:**
+  1. Apply the stale-plan check to background BGA event projection, hit testing and resource-pointer placement; reuse existing commands and gesture paths rather than introducing a second editing system.
+  2. Project a dedicated BGA background lane with event IDs, resource names/BMS BMP IDs, selection and missing-resource state. Share the field's beat mapping, snap, zoom and scroll direction, including virtual BMS measures and charts without playable lanes.
+  3. Render the lane header and visible event markers with a lane visibility control; keep the lane distinct from the resource dock and playable/BGM lanes. Overlapping imported events must remain identifiable rather than being silently hidden or merged.
+  4. Route lane hit tests through normal selection/move/delete and the existing armed BGA resource place/replace commands. Placement affects only the BGA lane; preserve event identity when moving or replacing, and cancel previews on Escape without committing.
+  5. Add scene, command and event-harness tests for placement, hit selection, snapped movement, replacement, deletion, overlap ambiguity, missing resources, undo/redo, upscroll/downscroll and lane-less BMS charts. Check imported BGA events and saved/exported positions in the real isolated window.
+- **Invariants:** drawing, visibility and selection do not edit the document; note/BGM events and resource/BMS identities remain unchanged by BGA lane edits; each completed gesture is one undo step. Existing poor/layer/video/storyboard event kinds remain lossless.
+- **Reject/failure behavior:** stale targets, incompatible resources and ambiguous replacements leave the document unchanged and report the reason; cancelled gestures restore their original positions.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^core\.|^frame-timing\.'`; `ctest --test-dir build -L event-harness --output-on-failure`; `ctest --test-dir build --output-on-failure -R '^documentation.chart_editor_state$'`; affected-source `clang-tidy -p build <source-file>` with no new complexity violations; isolated Xvfb BMS fixture showing imported and newly edited BGA markers, saved-position/export comparison and undo verification.
+- **Out of scope:** BGA playback preview; video decoding/thumbnails; new visual event types; separate poor/layer/storyboard editing lanes; direct BMP slots and ID renumbering.

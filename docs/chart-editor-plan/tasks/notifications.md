@@ -174,7 +174,7 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 ## T-374 Bound notification history activation to intended controls
 
-- **Status:** ready for integration; actual screenshot reproduction pending (2026-10-04)
+- **Status:** integrated defensive hardening; actual screenshot reproduction pending (2026-10-04)
 - **Outcome:** clicking blank Compose canvas cannot open Notifications; the unread badge and View menu still open history through their intended controls.
 - **Read first:** `src/ui/nuklear/frontend.cpp`, `tests/ui/nuklear_event_harness.h/.cpp`, `docs/frontend-event-harness.md`.
 - **Files owned:** Luna exclusively owns `src/ui/nuklear/frontend.cpp` and new `tests/ui/notification_hit_region_event_harness_tests.cpp`; Sol owns narrow `tests/CMakeLists.txt` wiring and `memory/coordination/notification-ux.md`.
@@ -186,7 +186,7 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 ## T-375 Keep routine feedback transient outside notification history
 
-- **Status:** ready for integration; final integrated suite pending (2026-10-04)
+- **Status:** done (2026-10-04; root Debug build and all 2,242 CTest cases pass)
 - **Outcome:** explicit bounded thread-safe transient hints remain visible for four seconds without filling or evicting persistent history; routine transport/navigation uses them while meaningful edits and actual warnings/errors remain persistent.
 - **Read first:** `include/wormedit/core/notifications.h`, `src/core/notifications.cpp`, `src/sys/application_command_dispatch.cpp`, `src/sys/transport_player_actions.cpp`, `src/sys/compose_input.cpp`.
 - **Files owned:** Sol owns `include/wormedit/core/notifications.h`, `src/core/notifications.cpp`, `tests/core/notifications_tests.cpp`, `src/sys/main.cpp`, `src/sys/application_command_dispatch.cpp`, `src/sys/transport_player_actions.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_actions.cpp`, `src/sys/compose_audition_requests.cpp`, `tests/sys/compose_notification_tests.cpp`, `tests/sys/compose_beat_fit_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/sys/audition_notification_tests.cpp`, narrow `tests/CMakeLists.txt`, and `memory/coordination/notification-ux.md`.
@@ -202,3 +202,5 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 - **T-374/T-375 implementation evidence (2026-10-04):** `memory/coordination/notification-ux.md` records real SDL baseline nonreproduction, defensive badge bounds ownership, exact projection fixture, latest-only transient contract and reviewed typed producer routing. Independent Debug app/core/frame/frontend targets build; core 1381 cases and focused frame 77 cases pass. Screenshot manual reproduction and root final integrated CTest remain pending; do not infer the original click cause from defensive hardening.
 
 - **T-374 actual event evidence:** six isolated cases pass, including 120 blank-canvas points, intended badge/View opens, stale popup/new badge, open history/long feedback and disappearing badge press/release. Press-triggered activation is preserved; the original user middle-click cause remains unreproduced.
+
+- **Root integration verification (2026-10-04):** accepted `3feaced`; Debug build and all 2,242/2,242 CTest cases pass, including 133 isolated event-harness cases. Logs: `/tmp/wormedit-batch-implementation/root-ux-main-build.log` and `root-ux-main-suite.log`. T-374 original middle-click/manual reproduction remains pending; no root-cause claim.

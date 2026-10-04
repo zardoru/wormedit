@@ -4,6 +4,16 @@
 
 ## Immediate work
 
+Latest integrated checkpoint (2026-10-04): notification UX `3feaced` follows the
+completed timing/notification producer/import/playback batches. Root Debug build
+and all 2,242/2,242 CTest cases pass, including 133 isolated event-harness cases
+(`root-ux-main-suite.log`). T-375 routine transport/audition/navigation feedback
+expires after four seconds outside history; important results/errors retain history.
+T-374 adds current visible badge bounds with tested badge/View positives and blank
+canvas negatives, but the original middle-click cause remains unreproduced. Manual
+real-window verification remains unavailable under the recorded Xvfb approval block.
+The following pilot entries retain earlier integration evidence.
+
 Worktree coordination pilot (2026-10-04): the user requests GPT-6.1 Sol medium
 coordinators with Luna medium executors and root as final integrator for main.
 Implementation batches are authorized and underway after `59962da`.

@@ -90,3 +90,13 @@ The 120-point blank grid, intended badge/View positives, stale popup/new badge,
 open history/long feedback and disappearing-under-press cases pass. One legitimate
 badge press opens once; disappearing badge release does not produce a second open.
 Sol reviewed exact child source and logs; no proved original screenshot cause.
+
+## Root integration
+
+Accepted as `3feaced` on main. Independent root Debug build and all 2,242/2,242
+CTest cases pass, including 133 isolated event-harness cases. Logs:
+`/tmp/wormedit-batch-implementation/root-ux-main-build.log` and
+`root-ux-main-suite.log` (161.34 seconds). T-375 is complete; T-374 is defensive
+hardening with original middle-click/manual reproduction pending. The existing
+automatic approval rejection for Xvfb escalation remains in force; no bypass
+or real-window success is claimed.

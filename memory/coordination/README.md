@@ -25,7 +25,7 @@ remains serialized.
 | `/home/zardoru/devel/wormedit-audio-notifications` | `coord/compose-notifications` | Audio then Compose widget producers, integrated | [Actions](compose-actions-notifications.md) |
 | `/home/zardoru/devel/wormedit-osutest-load` | `coord/osutest-playback` | Real osu!mania import and partial-measure playback, integrated | [Playback](osutest-playback.md) |
 | `/home/zardoru/devel/wormedit-osutest-cursor` | `coord/osutest-cursor` | Exact fractional cursor frame conversion, integrated | [Cursor](osutest-cursor.md) |
-| `/home/zardoru/devel/wormedit-notification-ux` | `coord/notification-ux` | T-374 blank-area click, T-375 transient feedback, active | Sol 6.1 medium with Luna medium; dedicated brief in that worktree |
+| `/home/zardoru/devel/wormedit-notification-ux` | `coord/notification-ux` | T-374 badge ownership hardening, T-375 transient feedback, integrated | [Notification UX](notification-ux.md); original click reproduction pending |
 
 The completed audio worktree is now reused on `coord/compose-notifications`
 at `b57b47f` for the remaining Compose action producers; its original
@@ -196,7 +196,12 @@ frame arithmetic: all pass, 951 previously valid rejected positions are fixed,
 and timing fractions are unchanged. A bounded wide-arithmetic fallback avoids
 intermediate overflow while true quotient/rounding overflow still rejects.
 
-The user's later requests start a separate T-374/T-375 batch: blank Compose
-clicks must not open history, and routine trace feedback must stay outside
-durable history. Sol and Luna implement this in `wormedit-notification-ux`.
-Required manual visual gates remain pending under the established Xvfb block.
+The user's later T-374/T-375 batch is integrated as `3feaced`. Routine transport,
+audition and navigation hints use bounded four-second status-line feedback outside
+history; warnings, errors and meaningful edits remain durable. The badge checks
+its current visible widget bounds while preserving backend activation semantics.
+Root Debug build and all **2,242/2,242** CTest cases pass, including 133 isolated
+event-harness cases (`root-ux-main-build.log`, `root-ux-main-suite.log`). The
+original middle-canvas click is unreproduced; T-374 is hardening with manual
+reproduction pending, not a proved root-cause fix. Required manual visual gates
+remain pending under the established Xvfb block.

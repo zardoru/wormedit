@@ -32,14 +32,22 @@ User playback regression: `b88e4b7` fixes partial unmetered metronome measures
 that blocked seven charts and selects the actual fatal diagnostic over preceding
 warnings. All eight real charts now start, advance, pause and resume with their
 music registered through SDL dummy audio; 1,370 core and 76 focused preview
-tests pass in the worktree. Main Debug build and 136 focused checks pass;
-independent import-coordinator review is underway.
-Notifications T-221–T-223 continue; reviewed N4 input and batch-stop corrections
+tests pass in the worktree. Main build/checks and independent Sol review pass.
+Fractional cursor arithmetic is fixed as `3cdc1a6`: bounded portable wide
+arithmetic avoids intermediate product overflow, preserving exact rounding and
+genuine overflow rejection. Root verifies all 27,468 cursor queries across the
+eight charts; the coordinator verifies actual mid-chart audio start/pause/resume.
+Notifications T-221–T-223 implementation is integrated; reviewed N4 input and batch-stop corrections
 are integrated as `68d8b2f`/`4ea6383` (root build and 352 assertions in 16 focused
 cases pass). Recovery/history/audition producers are integrated as `73b3194`
-with root build, 53 recovery/settings and 30 audition assertions passing, while
-a separate Sol 6.1/Luna action worktree handles
-the remaining Compose widget producers. The readiness pilot did not complete feature cards;
+with root build, 53 recovery/settings and 30 audition assertions passing.
+Compose widget producers are integrated as `6473d8c` and final main/projection
+status retirement as `50dd2cc`. Main Debug build and all 2,228 tests pass,
+including 127 current isolated input events. Manual visual gates remain pending.
+New user priority: T-374 blank-area clicks opening Notifications and T-375 routine
+trace feedback retained in history. `wormedit-notification-ux` has Sol 6.1 medium
+and Luna medium implementing both with actual click and transient-retention tests.
+The readiness pilot did not complete feature cards;
 implementation status requires reviewed code and actual verification.
 
 Completed batch (2026-10-04): T-349 BGM layer colors, assignment/filter/paint parity; T-350 exact seek/overview timing hover; T-356 manual sound grouping with optional atomic contiguous IDs; and T-364 precise Find Uses with positioned/source navigation are done. Application build and full suite pass 2,025/2,025; event harness 97/97; required core/frontend/frame/documentation partition 1,723/1,723. Isolated real-window colors, tooltips, group review/undo and usage navigation passed; artifacts `/tmp/wormedit-bgm-hover-groups-batch/`. The following T-357/T-368/T-373 batch is also complete (see below).

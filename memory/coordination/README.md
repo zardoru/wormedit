@@ -22,8 +22,10 @@ remains serialized.
 | --- | --- | --- | --- |
 | `/home/zardoru/devel/wormedit-notifications` | `coord/notifications` | T-221, T-222, T-223 | [Notifications](notifications.md) |
 | `/home/zardoru/devel/wormedit-tap-apply` | `coord/tap-apply` | T-239, T-81, T-51 | [Timing](tap-apply.md) |
-| `/home/zardoru/devel/wormedit-audio-notifications` | `coord/audio-notifications` | T-223 N7 audio/decode/waveform | [Audio notifications](audio-notifications.md) |
-| `/home/zardoru/devel/wormedit-osutest-load` | `coord/osutest-load` | Real osu!mania import compatibility | Dedicated brief and Sol 6.1 medium coordinator in that worktree |
+| `/home/zardoru/devel/wormedit-audio-notifications` | `coord/compose-notifications` | Audio then Compose widget producers, integrated | [Actions](compose-actions-notifications.md) |
+| `/home/zardoru/devel/wormedit-osutest-load` | `coord/osutest-playback` | Real osu!mania import and partial-measure playback, integrated | [Playback](osutest-playback.md) |
+| `/home/zardoru/devel/wormedit-osutest-cursor` | `coord/osutest-cursor` | Exact fractional cursor frame conversion, integrated | [Cursor](osutest-cursor.md) |
+| `/home/zardoru/devel/wormedit-notification-ux` | `coord/notification-ux` | T-374 blank-area click, T-375 transient feedback, active | Sol 6.1 medium with Luna medium; dedicated brief in that worktree |
 
 The completed audio worktree is now reused on `coord/compose-notifications`
 at `b57b47f` for the remaining Compose action producers; its original
@@ -179,3 +181,22 @@ All eight real schedules compile and runtime start/advance/pause/resume checks
 with real music registered pass under SDL dummy audio. Worktree application
 build, 1,370 core cases, 76 focused preview cases and three timing-settings cases
 pass; root integrated build passes. The import Sol independently audits this fix.
+
+## Current integrated verification
+
+Actions `6473d8c`, final main/projection retirement `50dd2cc`, and cursor
+conversion `3cdc1a6` are accepted. Main Debug build and all **2,228/2,228**
+CTest cases pass (`root-notification-cursor-suite.log`), including the current
+127 isolated event-harness cases. Root's actual action/marker check passes
+7,165 assertions in 29 cases, preserving validation and published-cap order.
+Configured production complexity checks report only unchanged existing scores.
+The final main global status-reference/string grep returns no matches.
+Root independently checks all 27,468 actual chart cursor queries against integer
+frame arithmetic: all pass, 951 previously valid rejected positions are fixed,
+and timing fractions are unchanged. A bounded wide-arithmetic fallback avoids
+intermediate overflow while true quotient/rounding overflow still rejects.
+
+The user's later requests start a separate T-374/T-375 batch: blank Compose
+clicks must not open history, and routine trace feedback must stay outside
+durable history. Sol and Luna implement this in `wormedit-notification-ux`.
+Required manual visual gates remain pending under the established Xvfb block.

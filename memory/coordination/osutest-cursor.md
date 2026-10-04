@@ -62,6 +62,12 @@ charts, 321 in BEGINNER). Integer and half-row positions already succeeded.
 
 ## Final verification evidence
 
+Root integration `3cdc1a6`: Debug build and full 2,228-case main CTest suite pass.
+Root's new linked cursor probe independently passes all 27,468 queries against
+the integer oracle, with exactly 951 prior failures fixed and unchanged time
+fractions. Root's previously failing large-component 90-second sample probe now
+returns the correct 4,320,000 frame; all eight sample-frame unit cases pass.
+
 The isolated core test target built at j4. Luna's focused sample-frame tests
 passed 29 assertions across 8 cases. Coordinator ran all core and documentation
 CTest cases: **1,382/1,382 passed** (1,381 core and 1 documentation). Configured

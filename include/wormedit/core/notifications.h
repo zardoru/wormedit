@@ -161,4 +161,22 @@ class notification_center_t {
     notification_time_t frame_time_{};
 };
 
+// Non-owning, thread-safe posting handle. The owner must declare the center
+// before every runtime/scheduler that receives a sink, then join all posting
+// workers before destroying the center on normal and exceptional exits. The
+// sink never accesses UI state.
+class notification_sink_t {
+  public:
+    explicit notification_sink_t(notification_center_t& center) noexcept : center_(&center) {}
+
+    void post(notification_severity_t severity, notification_source_t source,
+              std::string_view message) const noexcept;
+    void post(const notification_post_t& request) const noexcept;
+    void post_diagnostics(notification_source_t source,
+                          const diagnostic_list_t& diagnostics) const noexcept;
+
+  private:
+    notification_center_t* center_;
+};
+
 } // namespace wormedit

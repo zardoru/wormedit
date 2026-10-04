@@ -184,6 +184,55 @@ void notification_center_t::post_diagnostics(notification_source_t source,
     }
 }
 
+void notification_sink_t::post(notification_severity_t severity, notification_source_t source,
+                               std::string_view message) const noexcept {
+    if (message.empty())
+        return;
+    try {
+        center_->post(notification_post_t{.severity = severity,
+                                          .source = source,
+                                          .message = std::string{message},
+                                          .detail = {},
+                                          .target = {}});
+    } catch (...) {
+        // Posting must not escape into worker/runtime code.
+    }
+}
+
+void notification_sink_t::post(const notification_post_t& request) const noexcept {
+    if (request.message.empty())
+        return;
+    try {
+        center_->post(notification_post_t{.severity = request.severity,
+                                          .source = request.source,
+                                          .message = request.message,
+                                          .detail = request.detail,
+                                          .target = request.target});
+    } catch (...) {
+        // Copying and center posting can allocate or call an injected clock.
+    }
+}
+
+void notification_sink_t::post_diagnostics(notification_source_t source,
+                                           const diagnostic_list_t& diagnostics) const noexcept {
+    for (const auto& diagnostic : diagnostics) {
+        if (diagnostic.message.empty())
+            continue;
+        try {
+            notification_post_t request{.severity = diagnostic_severity(diagnostic.severity),
+                                        .source = source,
+                                        .message = diagnostic.message,
+                                        .detail = {},
+                                        .target = {}};
+            if (diagnostic.object)
+                request.target = *diagnostic.object;
+            center_->post(std::move(request));
+        } catch (...) {
+            // Keep attempting later diagnostics if one entry cannot be posted.
+        }
+    }
+}
+
 auto notification_center_t::drain_inbox(notification_time_t now) -> std::size_t {
     {
         const std::scoped_lock lock{inbox_mutex_};

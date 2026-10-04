@@ -2040,6 +2040,8 @@ typedef struct WormUiComposeInputAction {
        object_id is the area's head event (0 when creating). */
     uint8_t span_edge;
     double span_anchor_y_pixels;
+    /* NOTE_PAINT_BEGIN: sample resource written into every note of the stroke; 0 paints silent notes. */
+    uint64_t resource_id;
 } WormUiComposeInputAction;
 
 /* Which part of a span (Kiai area, Speed transition, SV recipe) a drag holds; carried in
@@ -2166,7 +2168,6 @@ typedef struct WormUiWorkspaceAction {
     size_t metadata_output_group_index;
     const char* metadata_output_path;
     WormUiComposeActionKind compose_action;
-    bool compose_activate_sound_paint;
     uint64_t compose_area_begin_row;
     uint64_t compose_area_end_row;
     bool compose_area_virtual;

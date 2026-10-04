@@ -73,6 +73,9 @@ void update_selection_state(const WormUiComposeView& view,
     state.resource_selection_object_id = selected_object_id;
     state.resource_selection_assigned_id = view.selected_assigned_resource_id;
     if (selected_object_id == 0 || view.selected_assigned_resource_id == 0) return;
+    // The Sounds dock owns the armed sound; painted notes must not re-arm their own sound over
+    // the advanced one.
+    if (state.armed_from_sounds_dock) return;
 
     state.armed_resource_id = view.selected_assigned_resource_id;
     const auto* assigned = find_resource(view, view.selected_assigned_resource_id);
@@ -408,9 +411,8 @@ void render_place_at_cursor(const ResourcePanel& panel,
 auto pointer_place_allowed(const ResourcePanel& panel, bool can_place) -> bool {
     const auto& view = *panel.view;
     const auto filter = panel.state->resource_filter;
-    const auto activating_sound = panel.action->compose_activate_sound_paint;
-    return can_place && (activating_sound || !view.note_paint_mode_active) &&
-           (activating_sound || !view.semantic_layer_paint_mode_active) && !view.timing_stage_active &&
+    return can_place && !view.note_paint_mode_active &&
+           !view.semantic_layer_paint_mode_active && !view.timing_stage_active &&
            (filter != worm_ui_nuklear_compose_resource_filter_t::bgm ||
             view.bgm_lane_count != 0);
 }

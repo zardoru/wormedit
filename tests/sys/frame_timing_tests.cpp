@@ -32,7 +32,12 @@
 
 // The real Compose input selector is linked below. Its unrelated UI-only
 // resource-placement notification has no recipient in this headless harness.
-void worm_ui_frontend_resource_placed(uint64_t, uint64_t) {}
+namespace {
+std::vector<uint64_t> placed_resource_notifications;
+}
+void worm_ui_frontend_resource_placed(uint64_t placed, uint64_t) {
+    placed_resource_notifications.push_back(placed);
+}
 
 namespace {
 thread_local bool count_allocations = false;
@@ -3449,6 +3454,61 @@ TEST_CASE("Pointer note placement preserves the yellow cursor and normal scrolli
     check_note_placement_preserves_cursor(1, true);
     check_note_placement_preserves_cursor(2, false);
     check_note_placement_preserves_cursor(2, true);
+}
+
+namespace {
+auto paint_stroke_inputs(compose_test_fixture_t& fixture, std::uint64_t sound) -> WormUiWorkspaceAction {
+    auto& state = *fixture.interaction;
+    const local_position_t position{fixture.history.document.charts.front().measures.front().id, 240};
+    const auto& chart = fixture.history.document.charts.front();
+    const auto view = inspect_editor_interaction(fixture.history, state);
+    const auto y = editor_position_y_pixels(chart,
+        std::get<editor_interaction_view_model_t>(view), position);
+    expect_compose_test(y.has_value());
+    auto action = cursor_placement_action(fixture);
+    action.compose_input_count = 2;
+    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
+        .x_pixels = fixture.flattened.view.compose.playable_field_left_pixels + 20,
+        .y_pixels = compose_source_y(*y, state.viewport_height_pixels,
+            compose_field_downscroll(chart, fixture.application.editor_preferences)),
+        .resource_id = sound};
+    action.compose_inputs[1] = action.compose_inputs[0];
+    action.compose_inputs[1].kind = WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE;
+    return action;
+}
+} // namespace
+
+TEST_CASE("Note paint begin input carries the armed sound into the document and advances once",
+          "[sys][compose][paint][sound]") {
+    compose_test_fixture_t fixture{cursor_placement_song()};
+    fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
+    fixture.project();
+    const auto sound = fixture.history.document.resources.front().id;
+    fixture.application.note_paint_mode_active = true;
+    placed_resource_notifications.clear();
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    const auto count_notes_with_sound = [&] {
+        std::size_t count{};
+        for (const auto& measure : fixture.history.document.charts.front().measures)
+            for (const auto& note : measure.notes)
+                if (note.sound == sound) ++count;
+        return count;
+    };
+    const auto before = count_notes_with_sound();
+    auto action = paint_stroke_inputs(fixture, sound.value);
+    (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
+    expect_compose_test(count_notes_with_sound() == before + 1);
+    expect_compose_test(placed_resource_notifications == std::vector<uint64_t>{sound.value});
+
+    // A silent stroke is committed without notifying the dock.
+    fixture.project();
+    placed_resource_notifications.clear();
+    auto silent = paint_stroke_inputs(fixture, 0);
+    (void)dispatch_compose_input_action(silent, fixture.history, *fixture.binding.workspace,
+        *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
+    expect_compose_test(placed_resource_notifications.empty());
 }
 
 TEST_CASE("Compose BMS layout picker includes DP5 without free zones",

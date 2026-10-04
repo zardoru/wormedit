@@ -1611,21 +1611,65 @@ static bool draw_compose_note_glyph(const ComposePaintContext& paint,
     return true;
 }
 
+static auto note_label_is_light(struct nk_color fill) -> bool {
+    return (fill.r * 299 + fill.g * 587 + fill.b * 114) / 1000 >= 150;
+}
+
+// Longest UTF-8 prefix of text that, followed by an ellipsis, fits in max_width.
+// Returns -1 when not even one character plus the ellipsis fits.
+static auto fit_label_prefix(const nk_user_font* font, const char* text, int length,
+                             float max_width) -> int {
+    constexpr const char* ellipsis = "\xE2\x80\xA6";
+    const auto ellipsis_width = font->width(font->userdata, font->height, ellipsis, 3);
+    int best = -1;
+    for (int end = 1; end < length; ++end) {
+        if ((static_cast<unsigned char>(text[end]) & 0xC0U) == 0x80U) continue;
+        const auto width = font->width(font->userdata, font->height, text, end);
+        if (width + ellipsis_width > max_width) break;
+        best = end;
+    }
+    return best;
+}
+
+// Marker for "this note has a sound" when no readable label fits the tile.
+static void draw_compose_note_sound_dot(const ComposePaintContext& paint, struct nk_rect tile,
+                                        struct nk_color fill) {
+    const auto size = std::min(4.0f, std::min(tile.w, tile.h) - 2.0f);
+    if (size < 2.0f) return;
+    const auto light = note_label_is_light(fill);
+    field_rect(paint, nk_rect(tile.x + (tile.w - size) * 0.5f, tile.y + (tile.h - size) * 0.5f,
+                              size, size),
+               size * 0.5f, light ? nk_rgb(16, 24, 36) : nk_rgb(248, 251, 255), 2);
+}
+
 static void draw_compose_note_sound_label(const ComposePaintContext& paint,
                                           const WormUiComposeNoteView& note,
                                           struct nk_rect tile, struct nk_color fill) {
     if (note.glyph > 1 || note.tail || !note.sound_label || !note.sound_label[0]) return;
     const auto* font = paint.context->style.font;
-    const auto length = static_cast<int>(strlen(note.sound_label));
-    const auto text_width = font->width(font->userdata, font->height, note.sound_label, length);
-    if (tile.h < font->height || tile.w < text_width + 4.0f) return;
-
+    if (tile.h < font->height) {
+        draw_compose_note_sound_dot(paint, tile, fill);
+        return;
+    }
+    auto text = std::string{note.sound_label};
+    auto text_width = font->width(font->userdata, font->height, text.c_str(),
+                                  static_cast<int>(text.size()));
+    if (tile.w < text_width + 4.0f) {
+        const auto keep = fit_label_prefix(font, text.c_str(), static_cast<int>(text.size()),
+                                           tile.w - 4.0f);
+        if (keep < 0) {
+            draw_compose_note_sound_dot(paint, tile, fill);
+            return;
+        }
+        text = text.substr(0, static_cast<std::size_t>(keep)) + "\xE2\x80\xA6";
+        text_width = font->width(font->userdata, font->height, text.c_str(),
+                                 static_cast<int>(text.size()));
+    }
     const auto text_bounds = nk_rect(tile.x + (tile.w - text_width) * 0.5f,
                                      tile.y + (tile.h - font->height) * 0.5f,
                                      text_width, font->height);
-    const auto luminance = (fill.r * 299 + fill.g * 587 + fill.b * 114) / 1000;
-    const auto light_fill = luminance >= 150;
-    field_text(paint, text_bounds, note.sound_label, length, font,
+    const auto light_fill = note_label_is_light(fill);
+    field_text(paint, text_bounds, text.c_str(), static_cast<int>(text.size()), font,
                  light_fill ? nk_rgba(0, 0, 0, 0) : nk_rgba(13, 21, 31, 220),
                  light_fill ? nk_rgb(16, 24, 36) : nk_rgb(248, 251, 255), 2);
 }
@@ -2025,14 +2069,17 @@ static void draw_compose_note_tooltip(const ComposePaintContext& paint) {
     if (!view.hover_note_visible || !view.hover_tooltip || view.hover_tooltip[0] == '\0') {
         return;
     }
-    const char* resource_detail = nullptr;
+    std::string resource_text;
     for (size_t index = 0; index < view.note_endpoint_count; ++index) {
         const auto& note = view.note_endpoints[index];
         if (note.note_id == view.hover_note_id && note.sound_detail && note.sound_detail[0]) {
-            resource_detail = note.sound_detail;
+            resource_text = note.sound_detail;
+            if (note.sound_label && note.sound_label[0] && resource_text != note.sound_label)
+                resource_text += std::string{"  (ID "} + note.sound_label + ")";
             break;
         }
     }
+    const char* resource_detail = resource_text.empty() ? nullptr : resource_text.c_str();
     const auto* font = paint.context->style.font;
     const auto title = compose_note_tooltip_title(view);
     const auto title_length = static_cast<int>(title.size());

@@ -1316,6 +1316,20 @@ auto dispatch_alt_pointer_gesture(const WormUiComposeInputAction& input,
     return update_alt_pointer_gesture(input, context, position_at_compose_y);
 }
 
+auto note_paint_sound(const WormUiComposeInputAction& input)
+    -> std::optional<wormedit::resource_id_t> {
+    if (input.resource_id == 0) return std::nullopt;
+    return wormedit::resource_id_t{input.resource_id};
+}
+
+// One stroke uses one sound: the dock advances once after a commit that created notes with it.
+void advance_sound_after_paint_commit(const wormedit::editor_interaction_state_t& state,
+                                      const wormedit::editor_interaction_result_t& result,
+                                      std::optional<wormedit::resource_id_t> sound) {
+    if (!sound || !result.document_changed || state.selected_notes.empty()) return;
+    worm_ui_frontend_resource_placed(sound->value, 0);
+}
+
 template <typename HitTargetAt>
 auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
                                  compose_gesture_context_t& context, HitTargetAt&& hit_target_at)
@@ -1352,7 +1366,8 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
         result = dispatch_editor_action(
             history, state,
             begin_note_paint_gesture_action_t{
-                .lane = target->lane, .position = target->position, .pointer_captured = captured});
+                .lane = target->lane, .position = target->position, .pointer_captured = captured,
+                .sound = note_paint_sound(input)});
         accepted = "Note-paint stroke started.";
     } else if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE) {
         result = dispatch_editor_action(
@@ -1361,10 +1376,14 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
                 .lane = target->lane, .position = target->position, .pointer_captured = captured});
         accepted = "Note-paint preview updated.";
     } else {
+        const auto stroke_sound = state.pending_note_paint_gesture
+                                      ? state.pending_note_paint_gesture->sound
+                                      : std::nullopt;
         result = dispatch_editor_action(
             history, state,
             end_note_paint_gesture_action_t{
                 .lane = target->lane, .position = target->position, .pointer_captured = captured});
+        advance_sound_after_paint_commit(state, result, stroke_sound);
         accepted = result.document_changed ? "Note-paint stroke committed."
                                            : "Note-paint stroke released.";
     }

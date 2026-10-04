@@ -2459,8 +2459,15 @@ auto append_note_paint_target(note_paint_context_t& context, lane_id_t lane,
     };
 }
 
+auto is_paint_sample_resource(const song_document_t& document, resource_id_t id) -> bool {
+    const auto found = std::ranges::find(document.resources, id, &resource_entry_t::id);
+    return found != document.resources.end() &&
+           std::ranges::find(found->roles, resource_role_t::sample) != found->roles.end();
+}
+
 auto begin_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
-                              local_position_t position, bool pointer_captured)
+                              local_position_t position, bool pointer_captured,
+                              std::optional<resource_id_t> sound)
     -> editor_interaction_result_t {
     auto& state = context.state;
     if (state.armed_note_kind == note_kind_t::hold || state.armed_note_kind == note_kind_t::roll)
@@ -2470,6 +2477,10 @@ auto begin_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "pointer capture is required to begin note painting")});
+    if (sound && !is_paint_sample_resource(context.history.document, *sound))
+        return diagnostic_result(context.history, state,
+                                 {error(diagnostic_code_t::invalid_id,
+                                        "paint sound is not an existing sample resource")});
     if (state.pending_hold || state.pending_note_duration_gesture || state.pending_note_move_gesture ||
         state.pending_note_paint_gesture || state.pending_semantic_layer_paint_gesture ||
         state.pending_editor_area_selection || state.pending_space_range_selection)
@@ -2498,6 +2509,7 @@ auto begin_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
         .targets = std::move(targets),
         .last_lane = lane,
         .last_position = *target,
+        .sound = sound,
     };
     pending.visited.reserve(64);
     pending.visited.insert({lane, *row});
@@ -2522,7 +2534,8 @@ struct prepared_note_paint_t {
 };
 
 auto prepare_note_paint_document(const document_history_t& history, chart_id_t chart_id,
-                                const note_paint_plan_t& plan, note_kind_t kind)
+                                const note_paint_plan_t& plan, note_kind_t kind,
+                                std::optional<resource_id_t> sound)
     -> std::variant<prepared_note_paint_t, diagnostic_list_t> {
     const auto first_id = plan.additions.empty()
                               ? std::optional<object_id_t>{}
@@ -2547,6 +2560,11 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
     for (auto& measure : prepared_chart->measures)
         prepared_measures.emplace(measure.id.value, &measure);
     auto next_id = first_id ? first_id->value : 0;
+    if (sound && !is_paint_sample_resource(history.document, *sound))
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
+                                       "paint sound is not an existing sample resource")};
+    const auto layers = sound ? sound_default_layers_for_placement(*prepared_chart, *sound)
+                              : std::vector<layer_id_t>{};
     prepared.painted_notes.reserve(plan.additions.size());
     for (const auto& target : plan.additions) {
         const auto found = prepared_measures.find(target.position.measure.value);
@@ -2557,7 +2575,11 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
         found->second->notes.push_back({.id = id,
                                         .position = target.position,
                                         .lane = target.lane,
-                                        .kind = kind});
+                                        .kind = kind,
+                                        .end = std::nullopt,
+                                        .sound = sound,
+                                        .sound_channel_event = std::nullopt,
+                                        .semantic_layers = layers});
         prepared.painted_notes.push_back(id);
     }
     return prepared;
@@ -2589,7 +2611,8 @@ auto end_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_id,
                                         "paint gesture contains no note changes")});
-    auto prepared = prepare_note_paint_document(context.history, state.chart, plan, state.armed_note_kind);
+    auto prepared = prepare_note_paint_document(context.history, state.chart, plan, state.armed_note_kind,
+                                           pending.sound);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&prepared))
         return diagnostic_result(context.history, state, *diagnostics);
     auto result = std::get<prepared_note_paint_t>(std::move(prepared));
@@ -2620,7 +2643,7 @@ auto dispatch_note_paint_gesture(note_paint_context_t& context, const editor_ui_
             using action_t = std::decay_t<decltype(typed_action)>;
             if constexpr (std::is_same_v<action_t, begin_note_paint_gesture_action_t>)
                 return begin_note_paint_gesture(context, typed_action.lane, typed_action.position,
-                                                typed_action.pointer_captured);
+                                                typed_action.pointer_captured, typed_action.sound);
             else if constexpr (std::is_same_v<action_t, update_note_paint_gesture_action_t>)
                 return append_note_paint_target(context, typed_action.lane, typed_action.position,
                                                 typed_action.pointer_captured);

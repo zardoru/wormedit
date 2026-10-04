@@ -6,19 +6,27 @@
 
 namespace wormedit::sys {
 
-auto compose_resource_sound_label(const resource_entry_t& resource)
-    -> std::pair<std::string, std::string> {
+// The one place that picks the short on-note label. It is keyed by format family:
+// BMS shows the object ID (for example "0A"). osu!mania would show its sample
+// name here later; until then every other family falls back to the file stem.
+static auto short_sound_label(const resource_entry_t& resource, const std::string& name)
+    -> std::string {
     const auto bms_identity = std::ranges::find_if(
         resource.target_identities, [](const auto& identity) {
             return identity.family == format_family_t::bms;
         });
+    if (bms_identity != resource.target_identities.end() && !bms_identity->identifier.empty())
+        return bms_identity->identifier;
+    return std::filesystem::path{name}.stem().string();
+}
+
+auto compose_resource_sound_label(const resource_entry_t& resource)
+    -> std::pair<std::string, std::string> {
     const auto name = resource.name.empty()
                           ? "Resource " + std::to_string(resource.id.value)
                           : resource.name;
-    const auto label = bms_identity != resource.target_identities.end()
-                           ? bms_identity->identifier
-                           : std::filesystem::path{name}.stem().string();
-    return {label.empty() ? std::to_string(resource.id.value) : label, name};
+    auto label = short_sound_label(resource, name);
+    return {label.empty() ? std::to_string(resource.id.value) : std::move(label), name};
 }
 
 auto compose_note_sound_text(std::optional<resource_id_t> sound,

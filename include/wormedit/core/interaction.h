@@ -293,6 +293,9 @@ struct begin_note_paint_gesture_action_t {
     lane_id_t lane;
     local_position_t position;
     bool pointer_captured{true};
+    // Sample-role resource written into every new note of the stroke (with
+    // its sound_layer_defaults). Empty paints silent notes.
+    std::optional<resource_id_t> sound;
 };
 
 struct update_note_paint_gesture_action_t {
@@ -506,6 +509,7 @@ struct pending_note_paint_gesture_t {
     std::unordered_set<paint_cell_key_t, paint_cell_hash_t> visited;
     lane_id_t last_lane;
     local_position_t last_position;
+    std::optional<resource_id_t> sound;
 };
 
 struct note_paint_gesture_preview_t {

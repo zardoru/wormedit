@@ -2081,6 +2081,86 @@ TEST_CASE("note paint interpolates snap rows, suppresses duplicates, and commits
     CHECK(note_count(history) == 0);
 }
 
+namespace {
+
+auto make_paint_sound_song() -> song_document_t {
+    auto song = make_song();
+    song.audio_assets = {{.id = asset_id_t{1}}};
+    song.resources = {{.id = resource_id_t{7}, .name = "Kick", .asset = asset_id_t{1},
+                       .roles = {resource_role_t::sample}},
+                      {.id = resource_id_t{8}, .name = "Backing", .asset = asset_id_t{1},
+                       .roles = {resource_role_t::bgm}}};
+    auto& chart = song.charts.front();
+    chart.semantic_layers = {{.id = layer_id_t{3}, .name = "Open", .color = {255, 0, 0, 255}},
+                             {.id = layer_id_t{4}, .name = "Locked", .color = {0, 255, 0, 255},
+                              .locked = true}};
+    chart.sound_layer_defaults = {{.resource = resource_id_t{7},
+                                   .layers = {layer_id_t{3}, layer_id_t{4}}}};
+    return song;
+}
+
+auto paint_stroke(document_history_t& history, editor_interaction_state_t& state,
+                  std::optional<resource_id_t> sound) -> editor_interaction_result_t {
+    const auto begun = dispatch_editor_action(
+        history, state,
+        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true, sound});
+    if (!begun) return begun;
+    return dispatch_editor_action(
+        history, state,
+        end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true});
+}
+
+}  // namespace
+
+TEST_CASE("note paint writes the armed sound and its unlocked default layers into new notes",
+          "[unit][core][interaction][paint][sound]") {
+    for (const auto kind : {note_kind_t::tap, note_kind_t::mine}) {
+        auto history = make_document_history(make_paint_sound_song());
+        auto state = make_state(history);
+        state.armed_note_kind = kind;
+        const auto committed = paint_stroke(history, state, resource_id_t{7});
+        REQUIRE(committed);
+        CHECK(committed.document_changed);
+        const auto& notes = history.document.charts.front().measures.front().notes;
+        REQUIRE(notes.size() == 3);
+        for (const auto& note : notes) {
+            CHECK(note.kind == kind);
+            CHECK(note.sound == resource_id_t{7});
+            CHECK(note.semantic_layers == std::vector<layer_id_t>{layer_id_t{3}});
+        }
+        CHECK(history.undo.size() == 1);
+        REQUIRE(undo_document_command(history));
+        CHECK(note_count(history) == 0);
+    }
+}
+
+TEST_CASE("note paint without a sound leaves notes silent and unlayered",
+          "[unit][core][interaction][paint][sound]") {
+    auto history = make_document_history(make_paint_sound_song());
+    auto state = make_state(history);
+    REQUIRE(paint_stroke(history, state, std::nullopt));
+    for (const auto& note : history.document.charts.front().measures.front().notes) {
+        CHECK_FALSE(note.sound.has_value());
+        CHECK(note.semantic_layers.empty());
+    }
+}
+
+TEST_CASE("note paint rejects a sound that is not an existing sample and changes nothing",
+          "[unit][core][interaction][paint][sound]") {
+    for (const auto bad : {resource_id_t{8}, resource_id_t{99}}) {
+        auto history = make_document_history(make_paint_sound_song());
+        auto state = make_state(history);
+        const auto revision = history.document.revision;
+        const auto rejected = paint_stroke(history, state, bad);
+        CHECK_FALSE(rejected);
+        CHECK(has_code(rejected.diagnostics, diagnostic_code_t::invalid_id));
+        CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+        CHECK(history.document.revision == revision);
+        CHECK(note_count(history) == 0);
+        CHECK(history.undo.empty());
+    }
+}
+
 TEST_CASE("note painting rejects active area and Space range selection gestures",
           "[unit][core][interaction][paint][selection]") {
     for (const auto selection_kind : {0, 1}) {

@@ -1045,7 +1045,7 @@ TEST_CASE("Clicking selected and unselected notes emits one audition selection",
 
 namespace { void check_bga_dock(bool value) { CHECK(value); } }
 
-TEST_CASE("Selecting a sound transfers note painting to sound placement and preserves advance",
+TEST_CASE("Selecting a sound keeps note painting armed with that sound and preserves advance",
           "[frontend-state][event-harness][sound-paint]") {
     nuklear_event_harness_t harness{1600, 900};
     REQUIRE(harness.ready());
@@ -1062,13 +1062,12 @@ TEST_CASE("Selecting a sound transfers note painting to sound placement and pres
     view.note_paint_mode_active = true;
     (void)harness.frame();
     const auto actions = click_at(harness, state.sound_list_x + 70, state.sound_list_y + 110);
-    CHECK(std::ranges::any_of(actions, [](const auto& action) {
-        return action.get().compose_activate_sound_paint;
+    CHECK_FALSE(std::ranges::any_of(actions, [](const auto& action) {
+        return action.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
     }));
     CHECK(state.armed_resource_id == 1400);
-    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
-    view.note_paint_mode_active = false;
-    (void)harness.frame();
+    CHECK(state.armed_from_sounds_dock);
+    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
     worm_ui_nuklear_advance_resource_picker(1400, 0);
     CHECK(state.armed_resource_id == 1500);
     CHECK(state.keysound_selection.primary == 1500);
@@ -1103,4 +1102,67 @@ TEST_CASE("BGA dock reuses list selection and arms resources outside the drawer 
     state.bga_panel_visible = false;
     (void)harness.frame();
     CHECK_FALSE(state.bga_list_valid);
+}
+
+namespace {
+auto find_compose_input(const std::vector<workspace_action_snapshot_t>& frames,
+                        WormUiComposeInputKind kind) -> const WormUiComposeInputAction* {
+    for (const auto& frame : frames)
+        for (size_t index = 0; index < frame.get().compose_input_count; ++index)
+            if (frame.get().compose_inputs[index].kind == kind)
+                return &frame.get().compose_inputs[index];
+    return nullptr;
+}
+}
+
+TEST_CASE("Note paint carries the Sounds dock sound whichever was picked first",
+          "[unit][frontend-state][event-harness][paint][sound]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    const std::array<WormUiComposeKeysoundRowView, 2> rows{{
+        {.resource_id = 40, .slot = "0A", .name = "kick.wav"},
+        {.resource_id = 50, .slot = "0B", .name = "gone.wav", .missing = true}}};
+    view.keysounds = rows.data();
+    view.keysound_count = view.keysound_total_count = rows.size();
+    view.keysounds_available = true;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+
+    // Tool first, then sound: the sound pick leaves note paint and the place mode alone.
+    view.note_paint_mode_active = true;
+    state.armed_resource_id = 40;
+    state.armed_from_sounds_dock = true;
+    state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+    (void)harness.frame();
+    auto frames = click_at(harness, 300, 400);
+    const auto* begin = find_compose_input(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN);
+    REQUIRE(begin != nullptr);
+    CHECK(begin->resource_id == 40);
+    CHECK(find_compose_input(frames, WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE) == nullptr);
+    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+
+    // Sound first, then tool: the same armed sound rides the same stroke.
+    view.note_paint_mode_active = false;
+    (void)harness.frame();
+    view.note_paint_mode_active = true;
+    (void)harness.frame();
+    frames = click_at(harness, 300, 400);
+    begin = find_compose_input(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN);
+    REQUIRE(begin != nullptr);
+    CHECK(begin->resource_id == 40);
+
+    // A missing or non-dock sound never rides along; the stroke stays silent.
+    state.armed_resource_id = 50;
+    frames = click_at(harness, 300, 400);
+    begin = find_compose_input(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN);
+    REQUIRE(begin != nullptr);
+    CHECK(begin->resource_id == 0);
+    state.armed_resource_id = 40;
+    state.armed_from_sounds_dock = false;
+    frames = click_at(harness, 300, 400);
+    begin = find_compose_input(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN);
+    REQUIRE(begin != nullptr);
+    CHECK(begin->resource_id == 0);
+    state = {};
 }

@@ -1950,9 +1950,13 @@ void check_short_chart_anchor_frame(compose_test_fixture_t& fixture, int height,
                                                 row, playing, {}, 0.35));
     project_anchor_scene(fixture, height);
     expect_compose_test(fixture.interaction->cursor.row == (row == 0 ? 0 : 720));
-    if (playing && row == 0)
-        expect_compose_test(fixture.interaction->viewport_scroll_pixels ==
-                           -fixture.interaction->viewport_height_pixels * 0.35);
+    const auto source_anchor = fixture.interaction->scroll_direction == editor_field_scroll_direction_t::down
+        ? fixture.interaction->viewport_height_pixels - *fixture.interaction->fixed_cursor_screen_y_pixels
+        : *fixture.interaction->fixed_cursor_screen_y_pixels;
+    if (playing && row == 0) {
+        INFO("height " << height << " scroll " << fixture.interaction->viewport_scroll_pixels << " anchor " << source_anchor);
+        expect_compose_test(std::abs(fixture.interaction->viewport_scroll_pixels + source_anchor) < 1e-9);
+    }
     expect_compose_test(fixture.history.undo.empty());
 }
 }
@@ -2820,7 +2824,13 @@ TEST_CASE("Compose pinch dispatch preserves anchor and cancels prior viewport mo
         expect_compose_test(std::abs((after.viewport_scroll_pixels + anchor) /
             after.pixels_per_standard_measure - (before.viewport_scroll_pixels + anchor) /
             before.pixels_per_standard_measure) < 1e-9);
-        expect_compose_test(after.cursor == before.cursor);
+        expect_compose_test(after.fixed_cursor_screen_y_pixels == before.fixed_cursor_screen_y_pixels);
+        const auto index = std::get<measure_index_t>(build_measure_index(fixture.history.document.charts.front()));
+        const auto cursor_row = static_cast<double>(*absolute_row(index, after.cursor)) + after.cursor_subrow;
+        const auto source_anchor = after.scroll_direction == editor_field_scroll_direction_t::down
+            ? after.viewport_height_pixels - *after.fixed_cursor_screen_y_pixels : *after.fixed_cursor_screen_y_pixels;
+        expect_compose_test(std::abs(cursor_row * after.pixels_per_standard_measure / 960 -
+            after.viewport_scroll_pixels - source_anchor) < 1e-9);
         expect_compose_test(after.selected_objects == before.selected_objects);
         expect_compose_test(after.selected_notes == before.selected_notes);
         expect_compose_test(fixture.history.document.revision == revision && fixture.history.undo.empty());
@@ -3411,6 +3421,9 @@ void check_note_placement_preserves_cursor(int mode, bool downscroll) {
     expect_compose_test(fixture.interaction->fixed_cursor_screen_y_pixels == 48);
     expect_compose_test(fixture.interaction->cursor_subrow == 7);
     fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.cursor != nullptr);
+    INFO("drawn cursor " << fixture.flattened.view.compose.cursor->bounds.top << " anchor " << *fixture.interaction->fixed_cursor_screen_y_pixels);
+    expect_compose_test(std::abs(fixture.flattened.view.compose.cursor->bounds.top - 47) < 1e-9);
     const auto scroll = fixture.interaction->viewport_scroll_pixels;
     auto action = cursor_placement_action(fixture);
     action.compose_viewport_input_count = 1;

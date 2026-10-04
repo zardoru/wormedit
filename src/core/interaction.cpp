@@ -1478,8 +1478,7 @@ auto proposed_playhead_cursor(const document_history_t& history,
     -> std::variant<editor_interaction_state_t, diagnostic_list_t> {
     auto proposed = state;
     if (proposed.cursor == position && !proposed.virtual_bms_cursor_row) return proposed;
-    proposed.cursor = position;
-    proposed.virtual_bms_cursor_row.reset();
+    place_cursor_at(proposed, position);
     if (!interaction_detail::keep_cursor_visible(chart, index, proposed))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
                                       "playhead cursor cannot keep the viewport valid")};
@@ -1519,8 +1518,8 @@ auto prepare_follow_view_state(const document_history_t& history, const chart_do
         proposed.pixels_per_standard_measure, proposed.viewport_height_pixels, proposed.viewport_end_margin_fraction);
     if (!maximum || !std::isfinite(proposed.viewport_scroll_pixels))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution, "playhead viewport geometry is invalid")};
-    proposed.viewport_scroll_pixels = std::clamp(proposed.viewport_scroll_pixels,
-        -proposed.viewport_height_pixels * proposed.viewport_minimum_margin_fraction, *maximum);
+    set_viewport_scroll_pixels(proposed, std::clamp(proposed.viewport_scroll_pixels,
+        -proposed.viewport_height_pixels * proposed.viewport_minimum_margin_fraction, *maximum));
     auto view = make_view(history, proposed, &index);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&view)) return *diagnostics;
     return proposed;
@@ -1557,9 +1556,9 @@ auto follow_editor_playhead(document_history_t& history, editor_interaction_stat
         return {.diagnostics = {error(diagnostic_code_t::invalid_resolution,
                                      "playhead viewport geometry is invalid")}};
     if (std::abs(target_scroll - proposed.viewport_scroll_pixels) >= 0.001)
-        proposed.viewport_scroll_pixels = std::clamp(target_scroll,
-            -proposed.viewport_height_pixels * proposed.viewport_minimum_margin_fraction, *maximum);
-    proposed.cursor_subrow = cursor_subrow;
+        set_viewport_scroll_pixels(proposed, std::clamp(target_scroll,
+            -proposed.viewport_height_pixels * proposed.viewport_minimum_margin_fraction, *maximum));
+    set_cursor_subrow(proposed, cursor_subrow);
     auto view = make_view(history, proposed, &index);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&view))
         return {.diagnostics = *diagnostics};
@@ -1672,22 +1671,20 @@ auto recover_editor_interaction(const document_history_t& history,
     if (std::isfinite(previous.pixels_per_standard_measure) &&
         previous.pixels_per_standard_measure >= minimum_pixels_per_standard_measure &&
         previous.pixels_per_standard_measure <= maximum_pixels_per_standard_measure) {
-        result.state->pixels_per_standard_measure = previous.pixels_per_standard_measure;
+        set_cursor_scale(*result.state, previous.pixels_per_standard_measure);
     }
     const auto maximum_scroll = maximum_viewport_scroll(
         *chart, index, result.state->pixels_per_standard_measure,
         result.state->viewport_height_pixels);
     if (maximum_scroll && std::isfinite(previous.viewport_scroll_pixels)) {
-        result.state->viewport_scroll_pixels =
-            std::clamp(previous.viewport_scroll_pixels,
-                       minimum_viewport_scroll(result.state->viewport_height_pixels), *maximum_scroll);
+        set_viewport_scroll_pixels(*result.state, std::clamp(previous.viewport_scroll_pixels,
+                       minimum_viewport_scroll(result.state->viewport_height_pixels), *maximum_scroll));
     }
     if (previous.fixed_cursor_screen_y_pixels &&
         std::isfinite(*previous.fixed_cursor_screen_y_pixels) &&
         *previous.fixed_cursor_screen_y_pixels >= 0.0 &&
         *previous.fixed_cursor_screen_y_pixels <= result.state->viewport_height_pixels) {
-        result.state->fixed_cursor_screen_y_pixels = previous.fixed_cursor_screen_y_pixels;
-        result.state->scroll_direction = previous.scroll_direction;
+        set_cursor_screen_anchor(*result.state, previous.fixed_cursor_screen_y_pixels, previous.scroll_direction);
     }
     if (note_kind_allowed(*chart, previous.armed_note_kind))
         result.state->armed_note_kind = previous.armed_note_kind;
@@ -2449,7 +2446,7 @@ auto append_note_paint_target(note_paint_context_t& context, lane_id_t lane,
     pending.last_lane = lane;
     pending.last_position = *target;
     state.active_lane = lane;
-    state.cursor = *target;
+    place_cursor_at(state, *target);
     const auto view = make_view(context.history, state);
     return {
         .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
@@ -2506,7 +2503,7 @@ auto begin_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
     pending.visited.insert({lane, *row});
     state.pending_note_paint_gesture = std::move(pending);
     state.active_lane = lane;
-    state.cursor = *target;
+    place_cursor_at(state, *target);
     const auto view = make_view(context.history, state);
     return {
         .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
@@ -2602,7 +2599,7 @@ auto end_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
     state.pending_note_paint_gesture.reset();
     set_selected_notes(state, std::move(result.painted_notes));
     state.active_lane = lane;
-    state.cursor = pending.last_position;
+    place_cursor_at(state, pending.last_position);
     const auto view = make_view(context.history, state);
     return {
         .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
@@ -2661,48 +2658,10 @@ auto update_fixed_scroll_cursor(editor_scroll_context_t& context,
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
                                        "fixed cursor scroll anchor is invalid")};
     }
-    proposed.fixed_cursor_screen_y_pixels = anchor_y;
-    proposed.scroll_direction = action.direction;
-    auto canvas_rows = context.index.total_rows;
-    if (chart_has_virtual_tail(context.chart)) {
-        const auto built_canvas = build_virtual_canvas(context.chart);
-        if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas))
-            return *diagnostics;
-        canvas_rows = std::get<virtual_canvas_t>(built_canvas).total_rows;
-    }
-    const auto pixels_per_row =
-        static_cast<long double>(context.state.pixels_per_standard_measure) /
-        context.chart.divisions_per_standard_measure;
-    const auto field_y = action.direction == editor_field_scroll_direction_t::down
-                             ? context.state.viewport_height_pixels - anchor_y
-                             : anchor_y;
-    const auto raw_row = (static_cast<long double>(proposed.viewport_scroll_pixels) + field_y) /
-                         pixels_per_row;
-    if (!std::isfinite(raw_row) || canvas_rows == 0 ||
-        context.state.active_snap_denominator == 0 ||
-        context.chart.divisions_per_standard_measure % context.state.active_snap_denominator != 0) {
+    set_cursor_screen_anchor(proposed, anchor_y, action.direction);
+    if (!synchronize_editor_cursor_to_viewport(context.chart, context.index, proposed))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
-                                       "fixed cursor scroll cannot resolve a snap")};
-    }
-    const auto step = context.chart.divisions_per_standard_measure /
-                      context.state.active_snap_denominator;
-    const auto bounded_row = std::clamp(raw_row, 0.0L, static_cast<long double>(canvas_rows - 1));
-    auto cursor_row = static_cast<std::uint64_t>(std::floor(bounded_row / step)) * step;
-    if (step < canvas_rows - cursor_row &&
-        bounded_row - cursor_row > static_cast<long double>(step) / 2.0L)
-        cursor_row += step;
-    const auto position = position_at(context.index, cursor_row);
-    proposed.virtual_bms_cursor_row = position ? std::nullopt : std::optional{cursor_row};
-    // Draw the cursor at the anchored field position, not the snapped row beside it.
-    proposed.cursor_subrow = static_cast<double>(bounded_row - static_cast<long double>(cursor_row));
-    if (position) {
-        proposed.cursor = *position;
-        const auto replacement = transition_lane(context.chart, context.index,
-                                                 context.state.cursor, *position,
-                                                 context.state.active_lane);
-        if (replacement)
-            proposed.active_lane = *replacement;
-    }
+                                       "fixed cursor scroll cannot resolve chart geometry")};
     return std::monostate{};
 }
 
@@ -2752,8 +2711,8 @@ auto scroll_editor_view(editor_scroll_context_t context,
                                  {error(diagnostic_code_t::invalid_resolution,
                                         "editor viewport geometry is invalid")});
     auto proposed = context.state;
-    proposed.viewport_scroll_pixels = std::clamp(
-        next_scroll, minimum_viewport_scroll(context.state.viewport_height_pixels), *maximum_scroll);
+    set_viewport_scroll_pixels(proposed, std::clamp(
+        next_scroll, minimum_viewport_scroll(context.state.viewport_height_pixels), *maximum_scroll));
     auto cursor_update = update_fixed_scroll_cursor(context, action, proposed);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&cursor_update))
         return diagnostic_result(context.history, context.state, *diagnostics);
@@ -2807,7 +2766,7 @@ auto remove_note_for_keyboard_hold(hold_gesture_context_t& context, lane_id_t la
     auto command = commit_document_command(context.history, std::move(proposed), "Remove note");
     if (!command)
         return diagnostic_result(context.history, state, std::move(command.diagnostics));
-    state.cursor = *snapped;
+    place_cursor_at(state, *snapped);
     state.active_lane = lane;
     const auto view = make_view(context.history, state);
     return editor_interaction_result_t{
@@ -2950,7 +2909,7 @@ auto begin_hold_action(hold_gesture_context_t& context, local_position_t positio
         .placement_preview =
             hold_placement_preview(std::get<hold_placement_plan_t>(plan)),
     };
-    state.cursor = *snapped;
+    place_cursor_at(state, *snapped);
     return space_selection_view_result(make_view(history, state));
 }
 
@@ -2999,7 +2958,7 @@ auto update_hold_preview(hold_gesture_context_t& context, local_position_t posit
         : std::optional{*snapped};
     state.pending_hold->placement_preview =
         hold_placement_preview(std::get<hold_placement_plan_t>(plan));
-    state.cursor = *snapped;
+    place_cursor_at(state, *snapped);
     state.active_lane = pending.lane;
     return space_selection_view_result(make_view(history, state));
 }
@@ -3070,7 +3029,7 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position)
     if (!command)
         return diagnostic_result(history, state, std::move(command.diagnostics));
     state.pending_hold.reset();
-    state.cursor = *snapped;
+    place_cursor_at(state, *snapped);
     state.active_lane = pending.lane;
     auto result = space_selection_view_result(make_view(history, state));
     result.accepted = true;
@@ -3081,7 +3040,7 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position)
 auto update_keyboard_holds(hold_gesture_context_t& context, local_position_t position)
     -> editor_interaction_result_t {
     const auto before = context.state;
-    context.state.virtual_bms_cursor_row.reset();
+    place_cursor_at(context.state, context.state.cursor);
     for (auto& pending : context.state.additional_keyboard_holds) {
         std::swap(*context.state.pending_hold, pending);
         auto result = update_hold_gesture(context, hold_gesture_source_t::keyboard_lane, position);
@@ -3106,9 +3065,7 @@ auto update_canvas_keyboard_holds(hold_gesture_context_t& context, std::uint64_t
     for (auto& hold : state.additional_keyboard_holds)
         hold.preview_canvas_row = row;
     const auto authored = position_at(context.index, row);
-    state.virtual_bms_cursor_row = authored ? std::nullopt : std::optional{row};
-    if (authored)
-        state.cursor = *authored;
+    place_cursor_on_canvas_row(state, authored, row);
     if (!context.keep_cursor_visible(state)) {
         state = before;
         return diagnostic_result(context.history, state,
@@ -3512,8 +3469,8 @@ auto commit_virtual_hold(virtual_note_context_t& context,
                        : "Place tap in virtual BMS measure");
     if (!command)
         return diagnostic_result(context.history, context.state, std::move(command.diagnostics));
-    context.state.cursor = *end;
-    context.state.virtual_bms_cursor_row.reset();
+    place_cursor_at(context.state, *end);
+    place_cursor_at(context.state, context.state.cursor);
     context.state.active_lane = action.lane;
     auto view = make_view(context.history, context.state);
     return {.accepted = true,
@@ -3622,8 +3579,8 @@ auto place_virtual_bms_tap(virtual_note_context_t& context,
     if (!command)
         return diagnostic_result(context.history, context.state, std::move(command.diagnostics));
     context.state.active_lane = action.lane;
-    context.state.cursor = position;
-    context.state.virtual_bms_cursor_row.reset();
+    place_cursor_at(context.state, position);
+    place_cursor_at(context.state, context.state.cursor);
     auto view = make_view(context.history, context.state);
     return {.accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
             .document_changed = true,
@@ -3674,6 +3631,10 @@ auto adjust_editor_zoom(document_history_t& history, editor_interaction_state_t&
         minimum_pixels_per_standard_measure, maximum_pixels_per_standard_measure);
     auto anchor_y = static_cast<double>(absolute) * current /
         static_cast<double>(chart.divisions_per_standard_measure) - state.viewport_scroll_pixels;
+    if (state.fixed_cursor_screen_y_pixels)
+        anchor_y = state.scroll_direction == editor_field_scroll_direction_t::down
+            ? state.viewport_height_pixels - *state.fixed_cursor_screen_y_pixels
+            : *state.fixed_cursor_screen_y_pixels;
     if (action.anchor_screen_y_pixels) {
         anchor_y = *action.anchor_screen_y_pixels;
         if (!std::isfinite(anchor_y) || anchor_y < 0.0 || anchor_y > state.viewport_height_pixels)
@@ -3693,8 +3654,13 @@ auto adjust_editor_zoom(document_history_t& history, editor_interaction_state_t&
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_resolution,
                    "editor zoom would overflow viewport coordinates")});
-    state.pixels_per_standard_measure = next;
-    state.viewport_scroll_pixels = scroll;
+    auto proposed = state;
+    set_cursor_scale(proposed, next);
+    set_viewport_scroll_pixels(proposed, scroll);
+    if (!synchronize_editor_cursor_to_viewport(chart, index, proposed))
+        return diagnostic_result(history, state,
+            {error(diagnostic_code_t::invalid_resolution, "zoom cannot resolve the fixed cursor")});
+    state = std::move(proposed);
     return interaction_view_result(history, state, false);
 }
 
@@ -3785,7 +3751,7 @@ auto place_tap(tap_placement_context_t& context, const place_tap_action_t& actio
     auto command = commit_document_command(history, std::move(proposed), std::move(label));
     if (!command)
         return diagnostic_result(history, state, std::move(command.diagnostics));
-    state.cursor = *snapped;
+    place_cursor_at(state, *snapped);
     const auto view = make_view(history, state);
     return {.accepted = true,
             .document_changed = true,
@@ -4392,7 +4358,7 @@ auto apply_duration_resize_plan(document_history_t& history,
     state.pending_note_duration_gesture.reset();
     set_selected_notes(state, plan.notes);
     state.active_lane = plan.reference_lane;
-    state.cursor = plan.reference_end;
+    place_cursor_at(state, plan.reference_end);
     auto result = interaction_view_result(history, state, changed);
     result.accepted = true;
     return result;
@@ -4452,7 +4418,7 @@ auto apply_note_move_plan(document_history_t& history, editor_interaction_state_
     state.pending_note_move_gesture.reset();
     set_selected_notes(state, plan.notes);
     state.active_lane = plan.reference_lane;
-    state.cursor = plan.reference_position;
+    place_cursor_at(state, plan.reference_position);
     auto result = interaction_view_result(history, state, changed);
     result.accepted = true;
     return result;
@@ -4538,18 +4504,7 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
 
 auto dispatch_editor_action(document_history_t& history, editor_interaction_state_t& state,
                             const editor_ui_action_t& action) -> editor_interaction_result_t {
-    const auto cursor = state.cursor;
-    const auto virtual_row = state.virtual_bms_cursor_row;
-    const auto subrow = state.cursor_subrow;
-    auto result = dispatch_editor_action_impl(history, state, action);
-    // The sub-row offset only describes the position the cursor was last placed at;
-    // an action that moves the cursor without recomputing it drops the stale offset.
-    if ((state.cursor != cursor || state.virtual_bms_cursor_row != virtual_row) &&
-        state.cursor_subrow == subrow) {
-        state.cursor_subrow = 0.0;
-        if (result.view) result.view->cursor_subrow = 0.0;
-    }
-    return result;
+    return dispatch_editor_action_impl(history, state, action);
 }
 
 namespace {

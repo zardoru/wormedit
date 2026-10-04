@@ -114,8 +114,8 @@ Apply the stale-plan check (rule 9) first.
 - **Status:** done
 - **Outcome:** the Sounds dock toolbar has an "Advance after place" toggle (an icon with a tooltip). While it is on, each successful placement of the armed sound arms the next row in the dock's current visible order (search filter and sort applied), scrolls it into view, and highlights it. After the last row, paint mode turns off.
 - **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.h`, `src/ui/nuklear/compose_state.cpp` (`worm_ui_nuklear_advance_resource_picker`), `src/sys/compose_input.cpp` (`next_eligible_placement_resource` callers).
-- **Files owned:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/compose_state.cpp/.h`, `tests/ui/keysound_list_state_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `src/ui/nuklear/compose_resources.cpp`.
-- **Ownership expansion:** user authorized supporting files on 2026-10-03; resource drawer arming clears dock provenance, and Compose state tests cover selection and rejected-placement behavior.
+- **Files owned:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/compose_state.cpp/.h`, `tests/ui/keysound_list_state_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `src/ui/nuklear/compose_resources.cpp`, `src/ui/frontend.h`, `src/sys/compose_actions.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
+- **Ownership expansion:** user authorized supporting files on 2026-10-03; sound selection transfers active note painting to resource placement through a revision-checked frontend action. Event-harness coverage checks that transfer and advancement from an existing selection. Resource drawer arming clears dock provenance, and Compose state tests cover selection and rejected-placement behavior.
 - **Steps:**
   1. Add a pure `next_visible_keysound(list_state, placed_id)` that returns the next row ID in visible order, skipping missing sounds.
   2. When the placed sound came from the dock, the frontend uses that helper instead of the catalog-order `next_resource_id`. The drawer path is unchanged.
@@ -125,6 +125,7 @@ Apply the stale-plan check (rule 9) first.
 - **Reject/failure behavior:** a rejected or undone placement does not advance.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^frontend-state\.|keysound'`; isolated Xvfb: place three notes with a search filter active and confirm three different sounds.
 - **Verification evidence:** 2026-10-03: `100% tests passed out of 162` (frontend state/keysounds). Isolated Xvfb placed filtered sound IDs 01, 02 and 04 in order and stopped painting after the last row; `/tmp/followups-advance-checked.png` inspected. Clang-tidy reports no new functions above 25.
+- **Regression verification (2026-10-03):** selecting a sound while note painting, or enabling Advance with a sound selected, activates sound placement and preserves audition. Advancement replaces the primary selection before scrolling. Real-window Xvfb check placed filtered WAV IDs 01, 02 and 04; `/tmp/sound-paint-from-note.png` inspected. Build passed; `100% tests passed out of 1805` (117.14 s); new functions pass clang-tidy complexity checks.
 - **Out of scope:** stroke painting of sounds (T-335 out of scope).
 
 ## T-347 Add a BGA dock beside the keysound dock (absorbs T-230)

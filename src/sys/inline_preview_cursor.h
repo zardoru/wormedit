@@ -37,9 +37,11 @@ struct inline_preview_cursor_t {
         if (!model) return;
         const auto y = editor_position_y_pixels(*chart, *model, state->cursor);
         if (!y) return;
-        const auto drawn = *y + state->cursor_subrow * state->pixels_per_standard_measure /
-                                    chart->divisions_per_standard_measure;
-        const auto fraction = drawn / state->viewport_height_pixels;
+        const auto drawn = model->fixed_cursor_screen_y_pixels.value_or(*y +
+            state->cursor_subrow * state->pixels_per_standard_measure / chart->divisions_per_standard_measure);
+        const auto source = state->scroll_direction == editor_field_scroll_direction_t::down
+            ? state->viewport_height_pixels - drawn : drawn;
+        const auto fraction = source / state->viewport_height_pixels;
         if (std::isfinite(fraction) && fraction >= 0.0 && fraction <= 1.0)
             follow_anchor_fraction = fraction;
     }

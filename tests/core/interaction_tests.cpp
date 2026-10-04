@@ -4600,7 +4600,7 @@ TEST_CASE("Cursor pose helpers round-trip every cursor field",
     state.virtual_bms_cursor_row = 7;
     place_cursor_at(state, pose.cursor);
     CHECK_FALSE(state.virtual_bms_cursor_row);
-    CHECK(state.cursor_subrow == 2.25);
+    CHECK(state.cursor_subrow == 0.0);
 }
 
 namespace {
@@ -4792,4 +4792,37 @@ TEST_CASE("Mouse box stays exact while its retained area follows the active snap
           "[unit][core][interaction][selection][area][regression]") {
     check_retained_area_snap(true);
     check_retained_area_snap(false);
+}
+
+TEST_CASE("Pointer zoom synchronizes the edit row beneath a fixed cursor line",
+          "[unit][core][interaction][cursor][zoom]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    const auto& chart = history.document.charts.front();
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    configure_cursor_viewport(state, 400, editor_field_scroll_direction_t::down);
+    REQUIRE(dispatch_editor_action(history, state,
+        scroll_editor_view_action_t{200.3, 320, editor_field_scroll_direction_t::down}));
+    REQUIRE(dispatch_editor_action(history, state, adjust_editor_zoom_action_t{1.5, 20}));
+    const auto row = static_cast<double>(*absolute_row(index, state.cursor)) + state.cursor_subrow;
+    CHECK(row * state.pixels_per_standard_measure / chart.divisions_per_standard_measure -
+        state.viewport_scroll_pixels == Catch::Approx(80));
+    CHECK(state.fixed_cursor_screen_y_pixels == 320);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Paused seeks align the chart position with the fixed screen anchor",
+          "[unit][core][interaction][cursor][transport]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    const auto& chart = history.document.charts.front();
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    configure_cursor_viewport(state, 400, editor_field_scroll_direction_t::down);
+    REQUIRE(sys::follow_compose_playhead(history, state, 1234.5, false,
+        {chart.id, history.document.revision, &index}));
+    const auto row = static_cast<double>(*absolute_row(index, state.cursor)) + state.cursor_subrow;
+    CHECK(row * state.pixels_per_standard_measure / chart.divisions_per_standard_measure -
+        state.viewport_scroll_pixels == Catch::Approx(80));
+    CHECK(state.fixed_cursor_screen_y_pixels == 320);
+    CHECK(history.undo.empty());
 }

@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <algorithm>
 #include <cstdio>
 #include <string>
 #include <utility>
@@ -1043,6 +1044,35 @@ TEST_CASE("Clicking selected and unselected notes emits one audition selection",
 }
 
 namespace { void check_bga_dock(bool value) { CHECK(value); } }
+
+TEST_CASE("Selecting a sound transfers note painting to sound placement and preserves advance",
+          "[frontend-state][event-harness][sound-paint]") {
+    nuklear_event_harness_t harness{1600, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    const std::array<WormUiComposeKeysoundRowView, 2> rows{{
+        {.resource_id = 1400, .slot = "01", .name = "kick.wav"},
+        {.resource_id = 1500, .slot = "02", .name = "kick2.wav"}}};
+    view.keysounds = rows.data(); view.keysound_count = rows.size();
+    view.keysounds_available = true;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.sounds_panel_visible = true;
+    state.auto_increment_on_place = true;
+    view.note_paint_mode_active = true;
+    (void)harness.frame();
+    const auto actions = click_at(harness, state.sound_list_x + 70, state.sound_list_y + 110);
+    CHECK(std::ranges::any_of(actions, [](const auto& action) {
+        return action.get().compose_activate_sound_paint;
+    }));
+    CHECK(state.armed_resource_id == 1400);
+    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
+    view.note_paint_mode_active = false;
+    (void)harness.frame();
+    worm_ui_nuklear_advance_resource_picker(1400, 0);
+    CHECK(state.armed_resource_id == 1500);
+    CHECK(state.keysound_selection.primary == 1500);
+}
 
 TEST_CASE("BGA dock reuses list selection and arms resources outside the drawer window", "[frontend-state][event-harness][bga]") {
     nuklear_event_harness_t harness{1600, 900};

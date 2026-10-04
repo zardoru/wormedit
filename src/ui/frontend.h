@@ -2166,6 +2166,7 @@ typedef struct WormUiWorkspaceAction {
     size_t metadata_output_group_index;
     const char* metadata_output_path;
     WormUiComposeActionKind compose_action;
+    bool compose_activate_sound_paint;
     uint64_t compose_area_begin_row;
     uint64_t compose_area_end_row;
     bool compose_area_virtual;

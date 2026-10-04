@@ -408,8 +408,9 @@ void render_place_at_cursor(const ResourcePanel& panel,
 auto pointer_place_allowed(const ResourcePanel& panel, bool can_place) -> bool {
     const auto& view = *panel.view;
     const auto filter = panel.state->resource_filter;
-    return can_place && !view.note_paint_mode_active &&
-           !view.semantic_layer_paint_mode_active && !view.timing_stage_active &&
+    const auto activating_sound = panel.action->compose_activate_sound_paint;
+    return can_place && (activating_sound || !view.note_paint_mode_active) &&
+           (activating_sound || !view.semantic_layer_paint_mode_active) && !view.timing_stage_active &&
            (filter != worm_ui_nuklear_compose_resource_filter_t::bgm ||
             view.bgm_lane_count != 0);
 }

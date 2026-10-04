@@ -204,7 +204,7 @@ TEST_CASE("field scene leaves a blank margin before chart row zero",
                                [](const auto& line) { return line.y_pixels < 38.4 - 0.001; }));
 }
 
-TEST_CASE("field cursor follows its chart row when scroll reaches the first measure",
+TEST_CASE("field cursor stays at its screen anchor when scroll reaches the first measure",
           "[unit][core][editor-scene][scroll][cursor]") {
     const auto chart = scene_chart();
     const auto built = wormedit::build_editor_field_scene_index(chart, 7);
@@ -222,9 +222,7 @@ TEST_CASE("field cursor follows its chart row when scroll reaches the first meas
              .fixed_cursor_screen_y_pixels = visible.viewport_height_pixels * 0.5});
         REQUIRE(result);
         REQUIRE(result.scene->cursor);
-        const auto expected_y = direction == wormedit::editor_field_scroll_direction_t::down
-                                    ? visible.viewport_height_pixels * 0.8
-                                    : visible.viewport_height_pixels * 0.2;
+        const auto expected_y = visible.viewport_height_pixels * 0.5;
         CHECK(result.scene->cursor->bounds.top == Catch::Approx(expected_y - 1.0));
     }
 }
@@ -276,8 +274,8 @@ TEST_CASE("field scene scroll direction anchors rectangular heads and keeps arro
     REQUIRE(down.scene->bgm_events.size() == 1);
     REQUIRE(up.scene->cursor.has_value());
     REQUIRE(down.scene->cursor.has_value());
-    CHECK(up.scene->cursor->bounds.top == Catch::Approx(191.0));
-    CHECK(down.scene->cursor->bounds.top == Catch::Approx(-1.0));
+    CHECK(up.scene->cursor->bounds.top == Catch::Approx(71.0));
+    CHECK(down.scene->cursor->bounds.top == Catch::Approx(71.0));
     CHECK(up.scene->bgm_events.front().bounds.top == Catch::Approx(96.0));
     CHECK(down.scene->bgm_events.front().bounds.bottom == Catch::Approx(96.0));
     CHECK(std::ranges::all_of(down.scene->lanes, [](const auto& lane) {

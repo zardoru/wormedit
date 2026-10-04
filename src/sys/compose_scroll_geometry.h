@@ -6,8 +6,8 @@ namespace wormedit::sys {
 
 // The first row settles one fifth of the viewport from the #000-facing edge.
 inline auto compose_cursor_screen_anchor(double viewport_height, bool downscroll) -> double {
-    return viewport_height * (downscroll ? 1.0 - editor_cursor_edge_margin_fraction
-                                         : editor_cursor_edge_margin_fraction);
+    return editor_cursor_screen_anchor(viewport_height, downscroll
+        ? editor_field_scroll_direction_t::down : editor_field_scroll_direction_t::up);
 }
 
 // The visual axis reverses in downscroll; horizontal BGM wheel input does not.

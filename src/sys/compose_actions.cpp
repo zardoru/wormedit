@@ -2639,6 +2639,21 @@ auto dispatch_compose_view_action(
     return compose_result_status(result, status);
 }
 
+auto activate_sound_dock_paint(const WormUiWorkspaceAction& action,
+    const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
+    const std::optional<wormedit::editor_interaction_state_t>& interaction,
+    application_command_state_t& application) -> bool {
+    if (!action.compose_activate_sound_paint || !interaction ||
+        workspace.active_tab != wormedit::workspace_tab_t::compose ||
+        interaction->chart.value != action.compose_input_chart_id ||
+        history.document.revision != action.compose_input_document_revision ||
+        editor_interaction_has_pending_gesture(*interaction) ||
+        !wormedit::ui::compose_notes_editable(compose_mode_of(application))) return false;
+    application.note_paint_mode_active = false;
+    application.semantic_layer_paint_mode_active = false;
+    return true;
+}
+
 auto dispatch_compose_workspace_action(
     const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace,
@@ -2650,6 +2665,8 @@ auto dispatch_compose_workspace_action(
     runtime::output_group_export_t& export_runtime, bool metadata_import_busy,
     metadata_drop_state_t& metadata_drop, runtime::metadata_asset_t& metadata_asset_runtime,
     std::string& status) -> bool {
+    const auto activated_sound_paint = activate_sound_dock_paint(action, history, workspace,
+        interaction_state, application_state);
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE ||
         action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE) {
         status = dispatch_bms_branch_choice_action(action, history, workspace, interaction_state);
@@ -2664,7 +2681,7 @@ auto dispatch_compose_workspace_action(
         return true;
     }
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE && !action.compose_area_clear_requested) {
-        return false;
+        return activated_sound_paint;
     }
 
     if (!interaction_state &&

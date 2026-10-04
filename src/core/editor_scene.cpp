@@ -1619,12 +1619,26 @@ auto compose_scene_grid(scene_geometry_context_t& context, std::uint64_t visible
     return true;
 }
 
+auto scene_cursor_row(const scene_geometry_context_t& context) -> std::optional<std::uint64_t> {
+    const auto anchor = context.request.fixed_cursor_screen_y_pixels
+        ? context.request.fixed_cursor_screen_y_pixels : context.view.fixed_cursor_screen_y_pixels;
+    if (!anchor) return context.view.virtual_bms_cursor_row
+        ? context.view.virtual_bms_cursor_row : absolute_row(context.index.measures, context.view.cursor);
+    const auto source = context.request.scroll_direction == editor_field_scroll_direction_t::down
+        ? context.view.viewport_height_pixels - *anchor : *anchor;
+    const auto row = (context.view.viewport_scroll_pixels + source) *
+        static_cast<long double>(context.chart.divisions_per_standard_measure) /
+        context.view.pixels_per_standard_measure;
+    if (!context.canvas_rows) return std::nullopt;
+    const auto high = std::min(context.query_high, static_cast<long double>(context.canvas_rows - 1));
+    return static_cast<std::uint64_t>(std::clamp(row, std::min(std::max(0.0L, context.query_low), high), high));
+}
+
 template <typename Consume, typename YForRow, typename BandForRow>
 auto compose_scene_cursor(scene_geometry_context_t& context, Consume&& consume, YForRow&& y_for_row,
                           BandForRow&& band_for_row) -> bool {
-    const auto row = context.view.virtual_bms_cursor_row
-                         ? context.view.virtual_bms_cursor_row
-                         : absolute_row(context.index.measures, context.view.cursor);
+    (void)y_for_row;
+    const auto row = scene_cursor_row(context);
     if (!row || static_cast<long double>(*row) < context.query_low ||
         static_cast<long double>(*row) > context.query_high) {
         return true;
@@ -1633,7 +1647,9 @@ auto compose_scene_cursor(scene_geometry_context_t& context, Consume&& consume, 
     if (band == nullptr) {
         return true;
     }
-    const auto* lane = lane_bounds(*band, context.view.active_lane);
+    auto* lane = lane_bounds(*band, context.view.active_lane);
+    if (!lane && (context.request.fixed_cursor_screen_y_pixels || context.view.fixed_cursor_screen_y_pixels))
+        lane = band->lanes.empty() ? nullptr : &band->lanes.front();
     if (lane == nullptr) {
         return true;
     }
@@ -1643,12 +1659,11 @@ auto compose_scene_cursor(scene_geometry_context_t& context, Consume&& consume, 
                   "field-scene cursor exceeds its configured primitive cap"));
         return false;
     }
-    const auto y = y_for_row(*row);
-    const auto subrow = context.view.cursor_subrow;
-    const auto y_offset = subrow != 0.0 && std::isfinite(subrow)
-        ? (y_for_row(static_cast<long double>(*row) + 1.0L) - y) * subrow : 0.0;
+    const auto y = editor_cursor_screen_y_pixels(context.view, *row,
+        context.chart.divisions_per_standard_measure, context.request.scroll_direction,
+        context.request.fixed_cursor_screen_y_pixels);
     context.scene.cursor = editor_field_cursor_geometry_t{
-        .lane = context.view.active_lane, .bounds = {lane->left, y + y_offset - 1.0, lane->right, y + y_offset + 1.0}};
+        .lane = lane->lane, .bounds = {lane->left, y - 1.0, lane->right, y + 1.0}};
     return true;
 }
 

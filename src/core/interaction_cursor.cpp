@@ -140,8 +140,7 @@ static auto apply_cursor_navigation_target(cursor_navigation_context_t& context,
         return context.update_keyboard_holds(*target);
     }
     auto proposed = state;
-    proposed.virtual_bms_cursor_row = target ? std::nullopt : std::optional{canvas_row};
-    if (target) proposed.cursor = *target;
+    place_cursor_on_canvas_row(proposed, target, canvas_row);
     if (!context.keep_cursor_visible(proposed))
         return diagnostic_result(context.history, state,
             {error(diagnostic_code_t::invalid_resolution,
@@ -256,8 +255,8 @@ auto keep_cursor_visible(const chart_document_t& chart, const measure_index_t& i
         const auto anchor = candidate.scroll_direction == editor_field_scroll_direction_t::down
             ? candidate.viewport_height_pixels - *candidate.fixed_cursor_screen_y_pixels
             : *candidate.fixed_cursor_screen_y_pixels;
-        candidate.viewport_scroll_pixels = std::clamp(cursor_top - anchor,
-            minimum_viewport_scroll(candidate.viewport_height_pixels), *maximum);
+        set_viewport_scroll_pixels(candidate, std::clamp(cursor_top - anchor,
+            minimum_viewport_scroll(candidate.viewport_height_pixels), *maximum));
         return std::isfinite(candidate.viewport_scroll_pixels);
     }
     constexpr double top_fraction = 0.2;
@@ -267,13 +266,13 @@ auto keep_cursor_visible(const chart_document_t& chart, const measure_index_t& i
     const auto comfort_bottom = candidate.viewport_scroll_pixels +
                                 candidate.viewport_height_pixels * bottom_fraction;
     if (cursor_top < comfort_top)
-        candidate.viewport_scroll_pixels = cursor_top -
-            candidate.viewport_height_pixels * top_fraction;
+        set_viewport_scroll_pixels(candidate, cursor_top -
+            candidate.viewport_height_pixels * top_fraction);
     else if (cursor_bottom > comfort_bottom)
-        candidate.viewport_scroll_pixels = cursor_bottom -
-            candidate.viewport_height_pixels * bottom_fraction;
-    candidate.viewport_scroll_pixels = std::clamp(candidate.viewport_scroll_pixels,
-        minimum_viewport_scroll(candidate.viewport_height_pixels), *maximum);
+        set_viewport_scroll_pixels(candidate, cursor_bottom -
+            candidate.viewport_height_pixels * bottom_fraction);
+    set_viewport_scroll_pixels(candidate, std::clamp(candidate.viewport_scroll_pixels,
+        minimum_viewport_scroll(candidate.viewport_height_pixels), *maximum));
     return std::isfinite(candidate.viewport_scroll_pixels);
 }
 
@@ -289,8 +288,7 @@ auto jump_edit_cursor(cursor_navigation_context_t& context,
             {error(diagnostic_code_t::row_out_of_range,
                    "cursor jump target lies outside chart geometry")});
     auto proposed = state;
-    proposed.cursor = action.position;
-    proposed.virtual_bms_cursor_row.reset();
+    place_cursor_on_picked_row(proposed, action.position);
     if (!context.keep_cursor_visible(proposed))
         return diagnostic_result(context.history, state,
             {error(diagnostic_code_t::invalid_resolution,
@@ -342,11 +340,10 @@ auto select_bms_canvas_measure(cursor_navigation_context_t& context,
             return diagnostic_result(context.history, state,
                 {error(diagnostic_code_t::row_out_of_range,
                        "selected measure is missing authored geometry")});
-        proposed.cursor = *first;
-        proposed.virtual_bms_cursor_row.reset();
+        place_cursor_on_picked_row(proposed, *first);
         proposed.retained_selection_range = normalized_position_span(context.index, *first, *last);
     } else {
-        proposed.virtual_bms_cursor_row = measure->begin_row;
+        place_cursor_on_canvas_row(proposed, std::nullopt, measure->begin_row);
         proposed.retained_selection_range.reset();
     }
     if (!context.keep_cursor_visible(proposed))
@@ -371,3 +368,40 @@ auto select_bms_canvas_measure(cursor_navigation_context_t& context,
 }
 
 } // namespace wormedit::interaction_detail
+
+namespace wormedit {
+namespace {
+auto cursor_canvas_rows(const chart_document_t& chart, const measure_index_t& index)
+    -> std::optional<std::uint64_t> {
+    if (!chart_has_virtual_tail(chart)) return index.total_rows;
+    const auto built = build_virtual_canvas(chart);
+    const auto* canvas = std::get_if<virtual_canvas_t>(&built);
+    return canvas ? std::optional{canvas->total_rows} : std::nullopt;
+}
+}
+auto synchronize_editor_cursor_to_viewport(const chart_document_t& chart,
+    const measure_index_t& index, editor_interaction_state_t& state) -> bool {
+    if (!state.fixed_cursor_screen_y_pixels) return true;
+    const auto rows = cursor_canvas_rows(chart, index);
+    if (!rows || !*rows || !state.active_snap_denominator || !chart.divisions_per_standard_measure ||
+        chart.divisions_per_standard_measure % state.active_snap_denominator) return false;
+    const auto source = state.scroll_direction == editor_field_scroll_direction_t::down
+        ? state.viewport_height_pixels - *state.fixed_cursor_screen_y_pixels
+        : *state.fixed_cursor_screen_y_pixels;
+    const auto raw = (state.viewport_scroll_pixels + source) *
+        static_cast<long double>(chart.divisions_per_standard_measure) / state.pixels_per_standard_measure;
+    if (!std::isfinite(raw)) return false;
+    const auto bounded = std::clamp(raw, 0.0L, static_cast<long double>(*rows - 1));
+    const auto step = chart.divisions_per_standard_measure / state.active_snap_denominator;
+    auto row = static_cast<std::uint64_t>(std::floor(bounded / step)) * step;
+    if (step < *rows - row && bounded - row > static_cast<long double>(step) / 2) row += step;
+    const auto position = position_at_absolute_row(index, row);
+    const auto from = state.cursor;
+    place_cursor_on_canvas_row(state, position, row, static_cast<double>(bounded - row));
+    if (position) {
+        const auto lane = interaction_detail::transition_lane(chart, index, from, *position, state.active_lane);
+        if (lane) state.active_lane = *lane;
+    }
+    return true;
+}
+} // namespace wormedit

@@ -2873,7 +2873,14 @@ std::optional<wormedit::editor_interaction_view_model_t> inspect_compose_interac
     auto& retained_state = input.retained_state;
     auto& flattened = input.flattened;
     auto& view = input.view;
-    retained_state->viewport_height_pixels = view.viewport_height_pixels;
+    const auto geometry_changed = retained_state->viewport_height_pixels != view.viewport_height_pixels ||
+        retained_state->scroll_direction != (input.downscroll ? wormedit::editor_field_scroll_direction_t::down
+                                                            : wormedit::editor_field_scroll_direction_t::up);
+    wormedit::configure_cursor_viewport(*retained_state, view.viewport_height_pixels,
+        input.downscroll ? wormedit::editor_field_scroll_direction_t::down
+                         : wormedit::editor_field_scroll_direction_t::up);
+    if (geometry_changed && !editor_interaction_has_pending_gesture(*retained_state))
+        (void)wormedit::synchronize_editor_cursor_to_viewport(input.chart, input.measures, *retained_state);
     auto inspected = wormedit::inspect_editor_interaction(history, *retained_state);
     if (!std::holds_alternative<wormedit::editor_interaction_view_model_t>(inspected)) {
         auto recovered = wormedit::recover_editor_interaction(history, *retained_state);
@@ -3858,15 +3865,14 @@ void populate_bgm_only_compose_projection(
     std::optional<wormedit::editor_interaction_state_t> projection_state{
         std::in_place};
     projection_state->chart = chart.id;
-    projection_state->pixels_per_standard_measure = view.pixels_per_standard_measure;
-    projection_state->viewport_height_pixels = view.viewport_height_pixels;
+    wormedit::set_cursor_scale(*projection_state, view.pixels_per_standard_measure);
+    wormedit::configure_cursor_viewport(*projection_state, view.viewport_height_pixels,
+        downscroll ? wormedit::editor_field_scroll_direction_t::down
+                   : wormedit::editor_field_scroll_direction_t::up);
     projection_state->viewport_minimum_margin_fraction =
         wormedit::editor_cursor_edge_margin_fraction;
     projection_state->viewport_end_margin_fraction =
         wormedit::editor_cursor_edge_margin_fraction;
-    projection_state->scroll_direction = downscroll
-        ? wormedit::editor_field_scroll_direction_t::down
-        : wormedit::editor_field_scroll_direction_t::up;
     projection_state->active_snap_denominator = 1;
     const auto cached_view_matches = cache.interaction_view &&
         cache.interaction_view->chart == chart.id &&
@@ -3877,6 +3883,9 @@ void populate_bgm_only_compose_projection(
     wormedit::restore_cursor_pose(*projection_state, {
         .cursor = {measures.entries.front().id, 0},
         .viewport_scroll_pixels = viewport_scroll_pixels,
+        .fixed_cursor_screen_y_pixels = compose_cursor_screen_anchor(view.viewport_height_pixels, downscroll),
+        .scroll_direction = downscroll ? wormedit::editor_field_scroll_direction_t::down
+                                      : wormedit::editor_field_scroll_direction_t::up,
     });
 
     wormedit::editor_interaction_view_model_t interaction_view{};

@@ -43,7 +43,12 @@ namespace wormedit::sys {
     if (!std::isfinite(following_anchor_fraction) || following_anchor_fraction < 0.0 ||
         following_anchor_fraction > 1.0) return std::nullopt;
     const auto following_anchor = state.viewport_height_pixels * following_anchor_fraction;
-    const auto target = anchored                     ? playhead_y - following_anchor
+    const auto fixed_anchor = state.fixed_cursor_screen_y_pixels
+        ? (state.scroll_direction == editor_field_scroll_direction_t::down
+            ? state.viewport_height_pixels - *state.fixed_cursor_screen_y_pixels
+            : *state.fixed_cursor_screen_y_pixels) : following_anchor;
+    const auto target = state.fixed_cursor_screen_y_pixels ? playhead_y - fixed_anchor
+                      : anchored                     ? playhead_y - following_anchor
                       : visible_y < comfort_top    ? playhead_y - comfort_top
                       : visible_y > comfort_bottom ? playhead_y - comfort_bottom
                                                    : static_cast<long double>(previous_scroll);

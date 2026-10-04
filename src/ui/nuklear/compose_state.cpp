@@ -343,6 +343,7 @@ void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
         next_resource_id = next_visible_keysound(state.keysound_advance_rows, placed_resource_id);
         if (next_resource_id) {
             const std::array next{next_resource_id};
+            worm_ui_keysound_clear(state.keysound_selection);
             worm_ui_keysound_select_all(state.keysound_selection, next);
             state.keysound_reveal_primary = true;
         }

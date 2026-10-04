@@ -229,8 +229,16 @@ void post_edit_rejection(wormedit::notification_sink_t& notifications,
 auto post_callback_feedback(wormedit::notification_sink_t& notifications,
                             wormedit::notification_severity_t severity,
                             wormedit::notification_source_t source, std::string message) -> std::string {
-    notifications.post(severity, source, message);
+    if (severity == wormedit::notification_severity_t::hint) notifications.post_transient_hint(source, message);
+    else notifications.post(severity, source, message);
     return message;
+}
+
+auto routine_transport_severity(wormedit::notification_severity_t severity, bool accepted)
+    -> wormedit::notification_severity_t {
+    if (!accepted || severity == wormedit::notification_severity_t::warning ||
+        severity == wormedit::notification_severity_t::error) return severity;
+    return wormedit::notification_severity_t::hint;
 }
 
 void remember_snap_denominator(application_command_state_t& application_state,
@@ -984,8 +992,9 @@ void configure_transport_play_pause(auto& state, auto& history, auto& workspace,
             inline_preview_cursor.capture(compose_cursor);
         }
         if (preview_output.playing()) inline_preview_cursor.capture_follow_anchor(history, compose_cursor);
-        return post_callback_feedback(notifications, preview_state.feedback.severity,
-                                      wormedit::notification_source_t::audio, result);
+        return post_callback_feedback(notifications,
+            routine_transport_severity(preview_state.feedback.severity, preview_state.feedback.accepted),
+            wormedit::notification_source_t::audio, result);
     };
 }
 
@@ -1085,8 +1094,9 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
             std::nullopt, true);
         if (starting && preview_output.playing()) inline_preview_cursor.capture(compose_cursor);
         if (preview_output.playing()) inline_preview_cursor.capture_follow_anchor(history, compose_cursor);
-        return post_callback_feedback(notifications, preview_state.feedback.severity,
-                                      wormedit::notification_source_t::audio, result);
+        return post_callback_feedback(notifications,
+            routine_transport_severity(preview_state.feedback.severity, preview_state.feedback.accepted),
+            wormedit::notification_source_t::audio, result);
     };
     configure_transport_seek_commands(state, history, workspace, compose_interaction_state,
         compose_scene_cache, audition_output, preview_session, preview_state, preview_output, notifications);
@@ -1110,7 +1120,7 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
         preview_state.stop(audition_output, preview_output);
         const bool restored = inline_preview_cursor.restore(
             history, compose_interaction_state ? &*compose_interaction_state : nullptr);
-        return post_callback_feedback(notifications, wormedit::notification_severity_t::success,
+        return post_callback_feedback(notifications, wormedit::notification_severity_t::hint,
                                       wormedit::notification_source_t::audio,
                                       restored ? "Chart preview stopped; cursor restored." : "Chart preview stopped.");
     };
@@ -1738,7 +1748,7 @@ void move_staged_timing_event(const WormUiWorkspaceAction& action,
         !wormedit::move_existing_timing_lane_pseudonote(history, stage, *target, timing_locked)) {
         post_edit_rejection(notifications, stage.diagnostics, "The timing marker cannot move to that row.");
     } else {
-        notifications.post(wormedit::notification_severity_t::hint,
+        notifications.post_transient_hint(
                            wormedit::notification_source_t::edit,
                            "Timing marker moved in the staged preview; apply to commit.");
     }
@@ -1805,7 +1815,7 @@ void dispatch_timing_stage_action(
                                                 active_snap_denominator);
             if (candidate.status == status_t::editing) {
                 timing_stage = std::move(candidate);
-                notifications.post(wormedit::notification_severity_t::hint,
+                notifications.post_transient_hint(
                                    wormedit::notification_source_t::edit,
                                    timing_stage->existing_event.has_value()
                                        ? "Timing event loaded; apply to update it."
@@ -1825,7 +1835,7 @@ void dispatch_timing_stage_action(
         if (timing_stage) {
             wormedit::cancel_timing_lane_pseudonote(*timing_stage);
             timing_stage.reset();
-            notifications.post(wormedit::notification_severity_t::hint,
+            notifications.post_transient_hint(
                                wormedit::notification_source_t::edit, "Timing event staging cancelled.");
         }
     } else if (timing_stage) {
@@ -2176,7 +2186,9 @@ void post_project_feedback(Context& context, wormedit::notification_severity_t s
     // The close confirmation retains its own scoped feedback; it is not a
     // global notification producer or a replacement status-line channel.
     context.close_feedback_ref = std::move(message);
-    context.notification_sink_ref.post(wormedit::notification_post_t{.severity = severity, .source = source,
+    if (severity == wormedit::notification_severity_t::hint)
+        context.notification_sink_ref.post_transient_hint(source, context.close_feedback_ref);
+    else context.notification_sink_ref.post(wormedit::notification_post_t{.severity = severity, .source = source,
         .message = context.close_feedback_ref, .detail = std::string(detail), .target = {}});
 }
 
@@ -2610,12 +2622,12 @@ auto dispatch_project_session_action(Context& context,
                                      const WormUiWorkspaceAction& action) -> bool {
     if (action.kind == WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING) {
         context.pending_bms_encoding_path_ref.clear();
-        post_project_feedback(context, wormedit::notification_severity_t::info, wormedit::notification_source_t::import_, "BMS import canceled.");
+        post_project_feedback(context, wormedit::notification_severity_t::hint, wormedit::notification_source_t::import_, "BMS import canceled.");
         return true;
     }
     if (action.kind == WORM_UI_WORKSPACE_ACTION_CANCEL_AUDIO_PROJECT) {
         context.pending_audio_project_path_ref.clear();
-        post_project_feedback(context, wormedit::notification_severity_t::info, wormedit::notification_source_t::import_, "Audio import canceled.");
+        post_project_feedback(context, wormedit::notification_severity_t::hint, wormedit::notification_source_t::import_, "Audio import canceled.");
         return true;
     }
     if (action.kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT) {
@@ -3080,7 +3092,7 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
             const auto dispatched = wormedit::invoke_command(
                 command_registry, command, application_command_focus(action, workspace));
             if (dispatched.status == wormedit::command_dispatch_status_t::disabled) {
-                context.notification_sink_ref.post(wormedit::notification_severity_t::hint,
+                context.notification_sink_ref.post_transient_hint(
                     wormedit::notification_source_t::input, "No beat-anchored bookmarks or section boundaries are available.");
             } else if (dispatched.status != wormedit::command_dispatch_status_t::invoked &&
                        !dispatched.diagnostics.empty()) {
@@ -3549,7 +3561,7 @@ auto dispatch_registered_application_command(
         if (!worm_ui_frontend_request_new_project())
             return wormedit::sys::reject_application_command(notifications, "Finish the open project dialog first.",
                                                              severity_t::warning, source_t::document);
-        notifications.post(severity_t::hint, source_t::document, "Choose the layout for the new project.");
+        notifications.post_transient_hint(source_t::document, "Choose the layout for the new project.");
         return wormedit::command_invocation_result_t{.accepted = true};
     }
     if (command->kind == wormedit::sys::application_command_kind_t::document_save_project) {
@@ -3573,7 +3585,8 @@ auto dispatch_registered_application_command(
         if (state.status) {
             const bool guidance = result == wormedit::sys::tap_timing_result_t::ignored ||
                                   result == wormedit::sys::tap_timing_result_t::not_playing;
-            notifications.post(guidance ? severity_t::hint : severity_t::warning, source_t::input, state.status);
+            static_cast<void>(post_callback_feedback(notifications,
+                guidance ? severity_t::hint : severity_t::warning, source_t::input, state.status));
         }
         return wormedit::command_invocation_result_t{.accepted = true};
     }

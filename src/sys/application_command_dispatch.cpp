@@ -73,7 +73,8 @@ auto clear_selection_or_cancel_preview(wormedit::document_history_t& history,
 auto post_command_message(notification_sink_t& sink, notification_severity_t severity,
                           notification_source_t source, std::string_view message)
     -> void {
-    sink.post(severity, source, message);
+    if (severity == notification_severity_t::hint) sink.post_transient_hint(source, message);
+    else sink.post(severity, source, message);
 }
 
 auto notification_severity(wormedit::diagnostic_severity_t severity)
@@ -224,7 +225,7 @@ auto transport_command(command_context_t& context) -> std::optional<command_resu
             return reject_application_command(context.sink, "Chart preview is unavailable.",
                 notification_severity_t::warning, notification_source_t::audio);
         if (hard_stop)
-            post_command_message(context.sink, notification_severity_t::success,
+            post_command_message(context.sink, notification_severity_t::hint,
                                  notification_source_t::audio, "Audio preview stopped.");
         return command_result_t{.accepted = true};
     }
@@ -245,9 +246,9 @@ auto transport_command(command_context_t& context) -> std::optional<command_resu
     if (kind == command_kind_t::transport_stop) {
         if (!app.transport_stop || !app.transport_active || !app.transport_active())
             return reject_application_command(context.sink, "No audio preview is playing.",
-                notification_severity_t::info, notification_source_t::audio);
+                notification_severity_t::hint, notification_source_t::audio);
         app.transport_stop();
-        post_command_message(context.sink, notification_severity_t::success,
+        post_command_message(context.sink, notification_severity_t::hint,
                              notification_source_t::audio, "Audio preview stopped.");
         return command_result_t{.accepted = true};
     }

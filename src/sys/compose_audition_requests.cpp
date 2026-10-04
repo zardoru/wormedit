@@ -20,8 +20,9 @@ auto audition_diagnostic_severity(diagnostic_severity_t severity) -> notificatio
 }
 void post_audition_started(const notification_sink_t& notifications, bool started,
     std::string_view diagnostic, std::string_view success, std::string_view failure) {
-    notifications.post(started ? notification_severity_t::hint : notification_severity_t::error,
-        notification_source_t::audio, started ? success : diagnostic.empty() ? failure : diagnostic);
+    if (started) notifications.post_transient_hint(notification_source_t::audio, success);
+    else notifications.post(notification_severity_t::error, notification_source_t::audio,
+                            diagnostic.empty() ? failure : diagnostic);
 }
 
 void pause_preview(audio::preview_session_t& preview_session,

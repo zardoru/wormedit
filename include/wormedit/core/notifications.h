@@ -80,6 +80,8 @@ struct notification_entry_t {
     notification_time_t timestamp{};
     std::uint32_t count{1};
     bool read{false};
+    // Last delivery order, distinct from stable history identity when deduped.
+    std::uint64_t post_sequence{};
 };
 
 struct notification_unread_counts_t {
@@ -87,7 +89,7 @@ struct notification_unread_counts_t {
     std::size_t errors{};
 };
 
-// Every accepted post ends up in exactly one bucket once the inbox is drained:
+// Every accepted persistent post ends up in exactly one bucket once the inbox is drained:
 // posted == stored + merged + evicted + dismissed.
 struct notification_statistics_t {
     std::uint64_t posted{};
@@ -116,6 +118,10 @@ class notification_center_t {
     ~notification_center_t() = default;
 
     void post(notification_post_t request);
+    // Latest-only, status-line feedback: never enters history or its statistics,
+    // unread counts or eviction policy. The pending and displayed slots each
+    // retain at most one UTF-8-bounded message. Visible only after frame drain.
+    void post_transient_hint(notification_source_t source, std::string message);
     void post(notification_severity_t severity, notification_source_t source,
               std::string message);
     // Maps diagnostic info/warning/error to the same severities; a diagnostic
@@ -140,7 +146,8 @@ class notification_center_t {
         -> std::span<const notification_entry_t>;
     // The newest non-hint entry while it is younger than the hold time at the
     // last drain, otherwise the newest hint, or nullptr if none exists. A hint
-    // therefore never replaces a non-hint posted in the same frame.
+    // therefore never replaces a non-hint posted in the same frame. Explicit
+    // transient hints expire four seconds after posting and never enter history.
     [[nodiscard]] auto current_line() const -> const notification_entry_t*;
     [[nodiscard]] auto unread_counts() const -> notification_unread_counts_t;
     [[nodiscard]] auto size() const noexcept -> std::size_t;
@@ -151,6 +158,7 @@ class notification_center_t {
 
     mutable std::mutex inbox_mutex_;
     std::vector<notification_entry_t> inbox_;
+    std::optional<notification_entry_t> transient_inbox_;
     notification_id_t next_id_{1};
     notification_time_t last_post_time_{};
     notification_statistics_t inbox_statistics_;
@@ -159,6 +167,7 @@ class notification_center_t {
     std::vector<notification_entry_t> ring_;
     notification_statistics_t ring_statistics_;
     notification_time_t frame_time_{};
+    std::optional<notification_entry_t> transient_line_;
 };
 
 // Non-owning, thread-safe posting handle. The owner must declare the center
@@ -173,6 +182,7 @@ class notification_sink_t {
 
     void post(notification_severity_t severity, notification_source_t source,
               std::string_view message) const noexcept;
+    void post_transient_hint(notification_source_t source, std::string_view message) const noexcept;
     void post(const notification_post_t& request) const noexcept;
     void post_diagnostics(notification_source_t source,
                           const diagnostic_list_t& diagnostics) const noexcept;

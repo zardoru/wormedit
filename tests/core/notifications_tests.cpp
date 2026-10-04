@@ -712,3 +712,136 @@ TEST_CASE("notification sink long-message detail keeps the existing UTF8 bound",
 }
 
 } // namespace
+
+namespace {
+void expect_transient(bool value) { REQUIRE(value); }
+}
+
+TEST_CASE("Transient hints are latest-only frame feedback outside durable history", "[unit][core][notifications][transient]") {
+    manual_clock_t clock;
+    notification_center_t center{clock.function()};
+    notification_sink_t sink{center};
+    sink.post_transient_hint(notification_source_t::audio, "Started.");
+    sink.post_transient_hint(notification_source_t::audio, "Paused.");
+    expect_transient(center.current_line() == nullptr);
+    expect_transient(center.drain_inbox(clock.now()) == 1);
+    expect_transient(current_message(center) == "Paused.");
+    expect_transient(center.current_line()->severity == notification_severity_t::hint);
+    expect_transient(center.size() == 0 && center.snapshot(256).empty());
+    expect_transient(center.borrowed_snapshot(256).empty());
+    expect_transient(center.statistics().posted == 0 && accounted(center));
+    expect_transient(center.unread_counts().warnings == 0 && center.unread_counts().errors == 0);
+    clock.advance(4s);
+    center.drain_inbox(clock.now());
+    expect_transient(center.current_line() == nullptr);
+}
+
+TEST_CASE("Transient hints never displace active success or warning and expire independently", "[unit][core][notifications][transient]") {
+    manual_clock_t clock;
+    notification_center_t center{clock.function()};
+    notification_sink_t sink{center};
+    sink.post(notification_severity_t::success, notification_source_t::edit, "Edit applied.");
+    center.drain_inbox(clock.now());
+    clock.advance(1s);
+    sink.post_transient_hint(notification_source_t::input, "Gesture canceled.");
+    center.drain_inbox(clock.now());
+    expect_transient(current_message(center) == "Edit applied.");
+    clock.advance(3s);
+    center.drain_inbox(clock.now());
+    expect_transient(current_message(center) == "Gesture canceled.");
+    clock.advance(1s);
+    center.drain_inbox(clock.now());
+    expect_transient(center.current_line() == nullptr);
+    sink.post(notification_post_t{.severity = notification_severity_t::warning,
+        .source = notification_source_t::audio, .message = "Device failed.",
+        .detail = "Original diagnostic details", .target = object_id_t{42}});
+    sink.post_transient_hint(notification_source_t::audio, "Stopped.");
+    center.drain_inbox(clock.now());
+    expect_transient(current_message(center) == "Device failed.");
+    const auto rows = center.snapshot(256);
+    expect_transient(rows.size() == 2);
+    expect_transient(rows[0].detail == "Original diagnostic details");
+    expect_transient(rows[0].target == notification_target_t{object_id_t{42}});
+    expect_transient(center.unread_counts().warnings == 1);
+}
+
+TEST_CASE("Concurrent transient traffic cannot fill or evict persistent history", "[unit][core][notifications][transient]") {
+    manual_clock_t clock;
+    notification_center_t center{clock.function()};
+    notification_sink_t sink{center};
+    for (std::size_t index = 0; index < notification_capacity; ++index)
+        sink.post(notification_severity_t::warning, notification_source_t::system,
+            "Warning " + std::to_string(index));
+    center.drain_inbox(clock.now());
+    std::vector<std::jthread> workers;
+    for (int worker = 0; worker < 4; ++worker)
+        workers.emplace_back([&sink, worker] {
+            for (int index = 0; index < 1000; ++index)
+                sink.post_transient_hint(notification_source_t::audio,
+                    "Routine " + std::to_string(worker) + ":" + std::to_string(index));
+        });
+    workers.clear();
+    clock.advance(5s);
+    sink.post_transient_hint(notification_source_t::audio, "Final routine feedback.");
+    expect_transient(center.drain_inbox(clock.now()) == 1);
+    expect_transient(current_message(center) == "Final routine feedback.");
+    expect_transient(center.size() == notification_capacity);
+    expect_transient(center.unread_counts().warnings == notification_capacity);
+    expect_transient(center.statistics().evicted == 0);
+    expect_transient(center.statistics().posted == notification_capacity && accounted(center));
+}
+
+TEST_CASE("Transient sink bounds UTF8 and ignores empty and clock failures", "[unit][core][notifications][transient]") {
+    manual_clock_t clock;
+    notification_center_t center{clock.function()};
+    notification_sink_t sink{center};
+    sink.post_transient_hint(notification_source_t::input, {});
+    expect_transient(center.drain_inbox(clock.now()) == 0);
+    std::string message;
+    for (int index = 0; index < 200; ++index) message += "é";
+    sink.post_transient_hint(notification_source_t::input, message);
+    center.drain_inbox(clock.now());
+    const auto* line = center.current_line();
+    expect_transient(line != nullptr);
+    expect_transient(line->message.size() <= notification_message_max_bytes);
+    expect_transient(line->message.ends_with(ellipsis));
+    expect_transient(line->detail.empty());
+    notification_center_t throwing{[]() -> notification_time_t { throw std::runtime_error("clock"); }};
+    notification_sink_t failed{throwing};
+    failed.post_transient_hint(notification_source_t::audio, "ignored");
+    expect_transient(throwing.drain_inbox(notification_time_t{}) == 0);
+    expect_transient(throwing.current_line() == nullptr);
+}
+
+TEST_CASE("Transient and durable hints preserve same-clock posting order", "[notifications][transient]") {
+    notification_center_t center{[] { return 0ns; }};
+    notification_sink_t sink{center};
+    SECTION("durable follows transient") {
+        sink.post_transient_hint(notification_source_t::input, "Transient first");
+        sink.post(notification_severity_t::hint, notification_source_t::input, "Durable last");
+        center.drain_inbox(0ns);
+        expect_transient(current_message(center) == "Durable last");
+    }
+    SECTION("transient follows durable") {
+        sink.post(notification_severity_t::hint, notification_source_t::input, "Durable first");
+        sink.post_transient_hint(notification_source_t::input, "Transient last");
+        center.drain_inbox(0ns);
+        expect_transient(current_message(center) == "Transient last");
+    }
+    expect_transient(center.size() == 1 && center.statistics().posted == 1);
+}
+
+TEST_CASE("Same-clock durable hint repeat keeps identity and latest delivery order", "[notifications][transient]") {
+    notification_center_t center{[] { return 0ns; }};
+    notification_sink_t sink{center};
+    sink.post(notification_severity_t::hint, notification_source_t::input, "Durable A");
+    center.drain_inbox(0ns);
+    const auto original_id = center.snapshot(1)[0].id;
+    sink.post_transient_hint(notification_source_t::input, "Transient B");
+    sink.post(notification_severity_t::hint, notification_source_t::input, "Durable A");
+    center.drain_inbox(0ns);
+    const auto entries = center.snapshot(1);
+    expect_transient(entries.size() == 1 && entries[0].id == original_id && entries[0].count == 2);
+    expect_transient(current_message(center) == "Durable A");
+    expect_transient(center.statistics().posted == 2 && center.statistics().merged == 1);
+}

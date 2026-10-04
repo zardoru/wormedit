@@ -248,9 +248,10 @@ TEST_CASE("Beat fit notifications distinguish previews commits and unchanged rel
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, 180);
     fixture.center.drain_inbox(notification_time_t{0});
     auto entries = fixture.center.snapshot(notification_capacity);
-    expect_fit(entries.size() == 2);
-    expect_fit(entries[0].severity == notification_severity_t::hint);
-    expect_fit(entries[1].severity == notification_severity_t::hint);
+    expect_fit(entries.empty());
+    expect_fit(fixture.center.current_line() != nullptr);
+    expect_fit(fixture.center.current_line()->severity == notification_severity_t::hint);
+    expect_fit(fixture.center.current_line()->source == notification_source_t::input);
     fixture.send(WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE, 180);
     fixture.center.drain_inbox(notification_time_t{1});
     entries = fixture.center.snapshot(notification_capacity);
@@ -273,8 +274,9 @@ TEST_CASE("Offset fit stages hint feedback and cancel preserves timing", "[unit]
     fixture.send(WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE, 180);
     fixture.center.drain_inbox(notification_time_t{0});
     const auto entries = fixture.center.snapshot(notification_capacity);
-    expect_fit(entries.size() == 3);
-    for (const auto& entry : entries) expect_fit(entry.severity == notification_severity_t::hint);
+    expect_fit(entries.empty());
+    expect_fit(fixture.center.current_line() != nullptr);
+    expect_fit(fixture.center.current_line()->severity == notification_severity_t::hint);
     expect_fit(fixture.history.undo.empty());
     expect_fit(fixture.action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_COMMIT);
 }

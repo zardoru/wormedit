@@ -85,7 +85,7 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 - **Reject/failure behavior:** none.
 - **Verify:** standard build/test; `grep -n "std::string& status" src/sys/main.cpp` returns nothing.
 - **Out of scope:** Compose/Timing view strings (T-222), workers (T-223).
-- **Approved implementation scope (2026-10-04):** the user authorized the full T-221/T-222/T-223 batch; root approved the exact N1–N7 supporting paths in `memory/coordination/notifications.md`. T-221 additionally owns `include/wormedit/core/notifications.h`, `src/core/notifications.cpp`, `tests/core/notifications_tests.cpp`, `tests/sys/application_command_notification_tests.cpp`, `tests/CMakeLists.txt`, `src/sys/options_runtime.h`, and `src/sys/options_runtime.cpp`, for the missing sink API, typed outcomes, and focused regressions. Executors receive exclusive subsets before editing; coordinator records further producer extensions here before use.
+- **Approved implementation scope (2026-10-04):** the user authorized the full T-221/T-222/T-223 batch; root approved the exact N1–N7 supporting paths in `memory/coordination/notifications.md`. T-221 additionally owns `include/wormedit/core/notifications.h`, `src/core/notifications.cpp`, `tests/core/notifications_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/CMakeLists.txt`, `src/sys/options_runtime.h`, and `src/sys/options_runtime.cpp`, for the missing sink API, typed outcomes, and focused regressions. Executors receive exclusive subsets before editing; coordinator records further producer extensions here before use.
 - **Staged acceptance:** T-221 removes global application message-producing status-reference seams. Compose/view/worker seams and history/close-dialog fallback state remain explicitly excluded until T-222/T-223. The zero `std::string& status` main grep is the final full-batch gate, not permission to migrate excluded producers early. Sink posts are noexcept, suppress empty messages, preserve explicit producer classification and original text/order, and contain posting failures. The center must be declared before every posting scheduler/runtime, with joins completed before destruction on all exits.
 - **Coordinator supporting extension (2026-10-04):** `tests/ui/nuklear_options_state_tests.cpp` is added to Files owned for existing Options producer tests: explicit typed success/info/warning/error results and no repeat on NONE/projection, preserving acceptance/failure state. Sol owns Options/main integration while N1 Luna owns only notification core files.
 - **Coordinator producer extension (2026-10-04):** `src/sys/project_view.h`, `src/sys/project_view.cpp`, and `tests/sys/project_view_tests.cpp` are added to Files owned for typed project-chart outcomes; this resolves classification at the result producer before main consumes it. Sol owns these paths during the N1 core brief.
@@ -171,3 +171,34 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 - **Reject/failure behavior:** unresolvable targets post without Go to.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`.
 - **Out of scope:** the Compare/Validate list (T-47) — it may later read the same entries.
+
+## T-374 Bound notification history activation to intended controls
+
+- **Status:** ready for integration; actual screenshot reproduction pending (2026-10-04)
+- **Outcome:** clicking blank Compose canvas cannot open Notifications; the unread badge and View menu still open history through their intended controls.
+- **Read first:** `src/ui/nuklear/frontend.cpp`, `tests/ui/nuklear_event_harness.h/.cpp`, `docs/frontend-event-harness.md`.
+- **Files owned:** Luna exclusively owns `src/ui/nuklear/frontend.cpp` and new `tests/ui/notification_hit_region_event_harness_tests.cpp`; Sol owns narrow `tests/CMakeLists.txt` wiring and `memory/coordination/notification-ux.md`.
+- **Steps:** 1. Reproduce actual SDL-event routing at 1913×1040 with unread warnings and blank right canvas. 2. Identify the real hit/layout/input ownership cause and fix only that cause. 3. Test blank press/release, positive badge/View activation and existing input capture/drag regressions.
+- **Invariants:** preserve chart input, focus, capture, clipping, logical-pixel layout and intended history controls; never infer the cause from screenshot alone.
+- **Reject/failure behavior:** blank-area interaction emits no history action; existing gestures remain transactional and owned.
+- **Verify:** `cmake --build build --target wormedit_frontend_event_harness_tests -j4`; `ctest --test-dir build -L event-harness --output-on-failure`; configured clang-tidy and documentation validation.
+- **Out of scope:** toast/history visual redesign, document mutations, playback timing, main integration.
+
+## T-375 Keep routine feedback transient outside notification history
+
+- **Status:** ready for integration; final integrated suite pending (2026-10-04)
+- **Outcome:** explicit bounded thread-safe transient hints remain visible for four seconds without filling or evicting persistent history; routine transport/navigation uses them while meaningful edits and actual warnings/errors remain persistent.
+- **Read first:** `include/wormedit/core/notifications.h`, `src/core/notifications.cpp`, `src/sys/application_command_dispatch.cpp`, `src/sys/transport_player_actions.cpp`, `src/sys/compose_input.cpp`.
+- **Files owned:** Sol owns `include/wormedit/core/notifications.h`, `src/core/notifications.cpp`, `tests/core/notifications_tests.cpp`, `src/sys/main.cpp`, `src/sys/application_command_dispatch.cpp`, `src/sys/transport_player_actions.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_actions.cpp`, `src/sys/compose_audition_requests.cpp`, `tests/sys/compose_notification_tests.cpp`, `tests/sys/compose_beat_fit_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/sys/audition_notification_tests.cpp`, narrow `tests/CMakeLists.txt`, and `memory/coordination/notification-ux.md`.
+- **Steps:** 1. Add explicit transient center/sink delivery with bounded latest-message storage and expiry. 2. Route typed routine transport and common navigation/cancellation hints through the transient channel; retain diagnostic/error/edit history. 3. Test interleaving priority/expiry, concurrent latest delivery, no history eviction/unread changes, real producer start/pause/resume/stop and actual failures.
+- **Invariants:** no prose-based severity/retention inference; noexcept sink, center-before-schedulers lifetime, bounded UTF-8 messages, persistent dedupe/detail/copy/Go-to/unread semantics unchanged. Transient feedback cannot displace active non-hint success/warning/error.
+- **Reject/failure behavior:** empty/failed transient posts are quiet; true audio errors stay persistent.
+- **Verify:** `cmake --build build -j4`; `ctest --test-dir build --output-on-failure`; configured clang-tidy, docs validation and diff checks.
+- **Out of scope:** filtering all audio history, original assets, timing/count-in fixes, bypassing the established isolated-Xvfb sandbox block.
+- **User policy override:** explicit routine feedback retention supersedes the historical Design statement that history lists everything; persistent posts still retain all existing history behavior.
+
+- **T-375 supporting scope approval (2026-10-04, before edits):** `src/sys/compose_area_actions.cpp` typed area-feedback helper also owns navigation hint publication; route only explicit hint severity to transient, preserve mutation/diagnostic retention.
+
+- **T-374/T-375 implementation evidence (2026-10-04):** `memory/coordination/notification-ux.md` records real SDL baseline nonreproduction, defensive badge bounds ownership, exact projection fixture, latest-only transient contract and reviewed typed producer routing. Independent Debug app/core/frame/frontend targets build; core 1381 cases and focused frame 77 cases pass. Screenshot manual reproduction and root final integrated CTest remain pending; do not infer the original click cause from defensive hardening.
+
+- **T-374 actual event evidence:** six isolated cases pass, including 120 blank-canvas points, intended badge/View opens, stale popup/new badge, open history/long feedback and disappearing badge press/release. Press-triggered activation is preserved; the original user middle-click cause remains unreproduced.

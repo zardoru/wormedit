@@ -1757,7 +1757,13 @@ static void render_notification_badge(const WormUiNotificationView& view,
         nk_label(g_context, label, NK_TEXT_LEFT);
         return;
     }
-    if (nk_button_label(g_context, label))
+    const auto bounds = nk_widget_bounds(g_context);
+    const auto hovered_visible_badge = nk_widget_is_hovered(g_context) != 0;
+    const auto clicked = nk_button_label(g_context, label) != 0;
+    const auto click_matches_visible_badge =
+        nk_input_is_mouse_hovering_rect(&g_context->input, bounds) != 0 &&
+        hovered_visible_badge;
+    if (clicked && click_matches_visible_badge)
         action.notifications = {WORM_UI_NOTIFICATION_ACTION_OPEN_HISTORY, 0};
 }
 

@@ -105,11 +105,19 @@ auto compose_notification_severity(diagnostic_severity_t severity) -> notificati
     return notification_severity_t::error;
 }
 
+void post_typed_compose_feedback(const notification_sink_t& notifications,
+    notification_severity_t severity, notification_source_t source, std::string_view message) {
+    if (severity == notification_severity_t::hint) notifications.post_transient_hint(source, message);
+    else notifications.post(severity, source, message);
+}
+
 auto publish_compose_feedback(compose_action_context_t& context, std::string message,
                               notification_severity_t severity, notification_source_t source)
     -> std::string {
-    if (context.notifications && !message.empty())
-        context.notifications->post(severity, source, message);
+    if (context.notifications && !message.empty()) {
+        if (severity == notification_severity_t::hint) context.notifications->post_transient_hint(source, message);
+        else context.notifications->post(severity, source, message);
+    }
     return message;
 }
 
@@ -2968,7 +2976,7 @@ auto dispatch_compose_workspace_action(
     notification_sink_t notifications) -> bool {
     const auto report = [&](std::string message, notification_severity_t severity,
                             notification_source_t source) {
-        if (!message.empty()) notifications.post(severity, source, message);
+        post_typed_compose_feedback(notifications, severity, source, message);
         return message;
     };
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE ||

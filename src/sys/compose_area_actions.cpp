@@ -18,8 +18,10 @@ struct area_action_context_t {
 auto area_feedback(area_action_context_t& context, std::string message,
                    wormedit::notification_severity_t severity,
                    wormedit::notification_source_t source) -> std::string {
-    if (context.notifications && !message.empty())
-        context.notifications->post(severity, source, message);
+    if (context.notifications && !message.empty()) {
+        if (severity == notification_severity_t::hint) context.notifications->post_transient_hint(source, message);
+        else context.notifications->post(severity, source, message);
+    }
     return message;
 }
 auto area_rejection(area_action_context_t& context, std::string message) -> std::string {

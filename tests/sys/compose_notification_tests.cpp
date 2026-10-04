@@ -100,8 +100,9 @@ void check_legacy_seek(compose_notification_fixture_t& fixture) {
         fixture.state, &fixture.application, &fixture.sink);
     CHECK(status == "Legacy seek performed.");
     const auto entries = fixture.drain();
-    REQUIRE(entries.size() == 1);
-    expect_entry(entries[0], notification_severity_t::hint, notification_source_t::input,
+    REQUIRE(entries.empty());
+    REQUIRE(fixture.center.current_line() != nullptr);
+    expect_entry(*fixture.center.current_line(), notification_severity_t::hint, notification_source_t::input,
                  "Legacy seek performed.");
 }
 
@@ -118,19 +119,19 @@ void check_producer_seek(compose_notification_fixture_t& fixture) {
         fixture.state, &fixture.application, &fixture.sink);
     CHECK(status == "Audio seek was clamped.");
     const auto entries = fixture.drain();
-    REQUIRE(entries.size() == 2);
+    REQUIRE(entries.size() == 1);
     expect_entry(entries[0], notification_severity_t::warning, notification_source_t::audio,
                  "Audio seek was clamped.");
-    CHECK(entries[1].message == "Legacy seek performed.");
-    CHECK(fixture.center.statistics().posted == 2);
+    CHECK(fixture.center.statistics().posted == 1);
 }
 
 void check_navigation_hint(compose_notification_fixture_t& fixture) {
     const auto revision = fixture.history.document.revision;
     CHECK(fixture.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL) == "Compose navigation canceled.");
     const auto entries = fixture.drain();
-    REQUIRE(entries.size() == 1);
-    expect_entry(entries[0], notification_severity_t::hint, notification_source_t::input,
+    REQUIRE(entries.empty());
+    REQUIRE(fixture.center.current_line() != nullptr);
+    expect_entry(*fixture.center.current_line(), notification_severity_t::hint, notification_source_t::input,
                  "Compose navigation canceled.");
     CHECK(fixture.history.document.revision == revision);
 }
@@ -139,7 +140,7 @@ void check_stale_rejection(compose_notification_fixture_t& fixture,
                            std::uint64_t revision) {
     CHECK_FALSE(dispatch_stale(fixture, revision).empty());
     const auto entries = fixture.drain();
-    REQUIRE(entries.size() == 2);
+    REQUIRE(entries.size() == 1);
     expect_entry(entries[0], notification_severity_t::warning, notification_source_t::input,
                  "Compose input ignored because the chart or document revision changed.");
     CHECK(fixture.history.document.revision == revision);
@@ -164,9 +165,8 @@ TEST_CASE("Compose edit success stays current after a later navigation cancellat
     }
     CHECK(fixture.input(kind) == message);
     const auto entries = fixture.drain();
-    REQUIRE(entries.size() == 2);
-    expect_entry(entries[0], notification_severity_t::hint, notification_source_t::input, message);
-    expect_entry(entries[1], notification_severity_t::success, notification_source_t::edit,
+    REQUIRE(entries.size() == 1);
+    expect_entry(entries[0], notification_severity_t::success, notification_source_t::edit,
                  "Semantic-layer membership updated.");
     REQUIRE(fixture.center.current_line() != nullptr);
     CHECK(fixture.center.current_line()->severity == notification_severity_t::success);
@@ -225,8 +225,9 @@ TEST_CASE("Viewport wheel seek feedback keeps explicit callback ownership", "[un
         fixture.application, fixture.cache, 0, &fixture.sink); };
     CHECK(dispatch() == "Legacy wheel seek.");
     auto entries = fixture.drain();
-    REQUIRE(entries.size() == 1);
-    expect_entry(entries[0], notification_severity_t::hint, notification_source_t::input,
+    REQUIRE(entries.empty());
+    REQUIRE(fixture.center.current_line() != nullptr);
+    expect_entry(*fixture.center.current_line(), notification_severity_t::hint, notification_source_t::input,
         "Legacy wheel seek.");
     fixture.application.transport_seek_posts_feedback = true;
     fixture.application.transport_seek = [&](std::uint64_t) {
@@ -236,10 +237,10 @@ TEST_CASE("Viewport wheel seek feedback keeps explicit callback ownership", "[un
     };
     CHECK(dispatch() == "Producer wheel seek clamped.");
     entries = fixture.drain();
-    REQUIRE(entries.size() == 2);
+    REQUIRE(entries.size() == 1);
     expect_entry(entries[0], notification_severity_t::warning, notification_source_t::audio,
         "Producer wheel seek clamped.");
-    CHECK(fixture.center.statistics().posted == 2);
+    CHECK(fixture.center.statistics().posted == 1);
 }
 
 TEST_CASE("Paste cancellation keeps the original stop boundary", "[unit][sys][compose-notification]") {
@@ -261,9 +262,11 @@ TEST_CASE("Paste cancellation keeps the original stop boundary", "[unit][sys][co
         fixture.viewport, fixture.navigation, fixture.application, fixture.cache, 0,
         &fixture.sink) == "Paste preview cancelled.");
     const auto entries = fixture.drain();
-    REQUIRE(entries.size() == 2);
-    expect_entry(entries[0], notification_severity_t::hint, notification_source_t::input,
-        "Paste preview cancelled.");
+    REQUIRE(entries.size() == 1);
+    expect_entry(entries[0], notification_severity_t::success, notification_source_t::edit,
+                 "Semantic-layer membership updated.");
+    expect_entry(*fixture.center.current_line(), notification_severity_t::success, notification_source_t::edit,
+                 "Semantic-layer membership updated.");
     CHECK(fixture.history.document.revision == revision);
     CHECK(fixture.history.undo.size() == undo_size);
 }

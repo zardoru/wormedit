@@ -8,7 +8,10 @@ namespace {
 auto publish_transport_feedback(const std::optional<notification_sink_t>& notifications,
     notification_severity_t severity, std::string message,
     notification_source_t source = notification_source_t::audio) -> std::string {
-    if (notifications) notifications->post(severity, source, message);
+    if (notifications) {
+        if (severity == notification_severity_t::hint) notifications->post_transient_hint(source, message);
+        else notifications->post(severity, source, message);
+    }
     return message;
 }
 
@@ -110,7 +113,7 @@ auto dispatch_transport_player_action(
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP:
         if (application_state.transport_stop) {
             application_state.transport_stop();
-            return publish_transport_feedback(notifications, notification_severity_t::success, "Audio preview stopped.");
+            return publish_transport_feedback(notifications, notification_severity_t::hint, "Audio preview stopped.");
         }
         return publish_transport_feedback(notifications, notification_severity_t::warning, "Audio preview is unavailable.");
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK:

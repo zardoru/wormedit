@@ -104,8 +104,8 @@ TEST_CASE("Catalog SDL start failure and real dummy success use typed audition f
     request = resource_id_t{1};
     fixture.catalog(request);
     entries = fixture.entries();
-    expect_audition(entries.size() == 3);
-    expect_audition(entries[0].severity == notification_severity_t::hint);
-    expect_audition(entries[0].message == "Audio preview started.");
+    expect_audition(entries.size() == 2);
+    expect_audition(entries[0].severity == notification_severity_t::success);
+    expect_audition(fixture.center.statistics().posted == 2);
     expect_audition(fixture.center.current_line()->message == "Edit applied.");
 }

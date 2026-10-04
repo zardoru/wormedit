@@ -62,6 +62,7 @@ auto try_merge(std::vector<notification_entry_t>& entries, const notification_en
         return false;
     newest.count = saturating_count(newest.count, incoming.count);
     newest.timestamp = std::max(newest.timestamp, incoming.timestamp);
+    newest.post_sequence = std::max(newest.post_sequence, incoming.post_sequence);
     newest.read = false;
     return true;
 }
@@ -155,10 +156,25 @@ void notification_center_t::post(notification_post_t request) {
     // Taking the time under the lock keeps inbox order and timestamps aligned.
     last_post_time_ = std::max(last_post_time_, clock_());
     entry.id = next_id_++;
+    entry.post_sequence = entry.id;
     entry.first_timestamp = last_post_time_;
     entry.timestamp = last_post_time_;
     ++inbox_statistics_.posted;
     insert_bounded(inbox_, std::move(entry), inbox_statistics_);
+}
+
+void notification_center_t::post_transient_hint(notification_source_t source, std::string message) {
+    if (message.empty()) return;
+    truncate_notification_text(message, notification_message_max_bytes);
+    notification_entry_t entry{.severity = notification_severity_t::hint, .source = source,
+                               .message = std::move(message), .detail = {}, .target = {}};
+    const std::scoped_lock lock{inbox_mutex_};
+    last_post_time_ = std::max(last_post_time_, clock_());
+    entry.id = next_id_++;
+    entry.post_sequence = entry.id;
+    entry.first_timestamp = last_post_time_;
+    entry.timestamp = last_post_time_;
+    transient_inbox_ = std::move(entry);
 }
 
 void notification_center_t::post(notification_severity_t severity, notification_source_t source,
@@ -200,6 +216,16 @@ void notification_sink_t::post(notification_severity_t severity, notification_so
     }
 }
 
+void notification_sink_t::post_transient_hint(notification_source_t source,
+    std::string_view message) const noexcept {
+    if (message.empty()) return;
+    try {
+        center_->post_transient_hint(source, std::string{message});
+    } catch (...) {
+        // Transient feedback has the same non-owning/noexcept posting contract.
+    }
+}
+
 void notification_sink_t::post(const notification_post_t& request) const noexcept {
     if (request.message.empty())
         return;
@@ -238,11 +264,14 @@ void notification_sink_t::post_diagnostics(notification_source_t source,
 }
 
 auto notification_center_t::drain_inbox(notification_time_t now) -> std::size_t {
+    std::optional<notification_entry_t> transient;
     {
         const std::scoped_lock lock{inbox_mutex_};
         inbox_.swap(draining_);
+        transient.swap(transient_inbox_);
     }
-    const auto drained = draining_.size();
+    const auto drained = draining_.size() + (transient ? 1 : 0);
+    if (transient) transient_line_ = std::move(transient);
     for (auto& entry : draining_)
         insert_bounded(ring_, std::move(entry), ring_statistics_);
     draining_.clear();
@@ -291,8 +320,6 @@ auto notification_center_t::borrowed_snapshot(std::size_t max) const noexcept
 }
 
 auto notification_center_t::current_line() const -> const notification_entry_t* {
-    if (ring_.empty())
-        return nullptr;
     const auto newest_non_hint =
         std::find_if(ring_.rbegin(), ring_.rend(), [](const notification_entry_t& entry) {
             return entry.severity != notification_severity_t::hint;
@@ -304,6 +331,10 @@ auto notification_center_t::current_line() const -> const notification_entry_t* 
         std::find_if(ring_.rbegin(), ring_.rend(), [](const notification_entry_t& entry) {
             return entry.severity == notification_severity_t::hint;
         });
+    if (transient_line_ && frame_time_ - transient_line_->timestamp < notification_current_line_hold &&
+        (newest_hint == ring_.rend() || transient_line_->timestamp > newest_hint->timestamp ||
+         (transient_line_->timestamp == newest_hint->timestamp && transient_line_->post_sequence > newest_hint->post_sequence)))
+        return &*transient_line_;
     return newest_hint == ring_.rend() ? nullptr : &*newest_hint;
 }
 

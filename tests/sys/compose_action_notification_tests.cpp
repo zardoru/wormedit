@@ -139,9 +139,10 @@ TEST_CASE("Compose area navigation and validation keep typed source and unchange
         check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR)) == "Selected area cleared.");
         check_action_false(fixture.state.retained_selection_range.has_value());
         const auto entries = fixture.entries();
-        require_action(entries.size() == 1);
-        check_action(entries.front().severity == notification_severity_t::hint);
-        check_action(entries.front().source == notification_source_t::input);
+        require_action(entries.empty());
+        require_action(fixture.center.current_line() != nullptr);
+        check_action(fixture.center.current_line()->severity == notification_severity_t::hint);
+        check_action(fixture.center.current_line()->source == notification_source_t::input);
     }
     SECTION("invalid geometry is rejected") {
         auto action = fixture.action(WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET);
@@ -268,9 +269,10 @@ TEST_CASE("Compose measure navigation posts a hint without editing", "[compose-a
     INFO(message);
     check_action(message == "Compose cursor moved to the requested measure.");
     const auto entries = fixture.entries();
-    require_action(entries.size() == 1);
-    check_action(entries.front().severity == notification_severity_t::hint);
-    check_action(entries.front().source == notification_source_t::input);
+    require_action(entries.empty());
+    require_action(fixture.center.current_line() != nullptr);
+    check_action(fixture.center.current_line()->severity == notification_severity_t::hint);
+    check_action(fixture.center.current_line()->source == notification_source_t::input);
     check_action((fixture.state.cursor == local_position_t{measure_id_t{1}, 0}));
     check_action(fixture.history.undo.empty());
 }
@@ -406,9 +408,10 @@ TEST_CASE("Compose label search navigates with a hint and preserves document his
     std::snprintf(action.compose_note_label, sizeof(action.compose_note_label), "%s", "Chorus");
     check_action(fixture.dispatch(action) == "Selected 1 note(s) with that label.");
     const auto entries = fixture.entries();
-    require_action(entries.size() == 1);
-    check_action(entries.front().severity == notification_severity_t::hint);
-    check_action(entries.front().source == notification_source_t::input);
+    require_action(entries.empty());
+    require_action(fixture.center.current_line() != nullptr);
+    check_action(fixture.center.current_line()->severity == notification_severity_t::hint);
+    check_action(fixture.center.current_line()->source == notification_source_t::input);
     check_action(fixture.state.cursor.row == 240);
     check_action(fixture.state.selected_notes == std::vector{object_id_t{4}});
     check_action(fixture.history.undo.empty());
@@ -448,9 +451,16 @@ TEST_CASE("Compose recipe form preview and edit preserve typed helper outcomes",
         check_action((fixture.history.document.charts.front().sv_recipes.front().parameters.value_to == signed_rational_t{2, 1}));
     }
     const auto entries = fixture.entries();
-    require_action(entries.size() == 1);
-    check_action(entries.front().severity == expected);
-    check_action(entries.front().source == source);
+    if (expected == notification_severity_t::hint) {
+        require_action(entries.empty());
+        require_action(fixture.center.current_line() != nullptr);
+        check_action(fixture.center.current_line()->severity == expected);
+        check_action(fixture.center.current_line()->source == source);
+    } else {
+        require_action(entries.size() == 1);
+        check_action(entries.front().severity == expected);
+        check_action(entries.front().source == source);
+    }
 }
 
 TEST_CASE("Compose bookmark rename separates no-op from validation without changing legacy flags", "[compose-action-notifications]") {

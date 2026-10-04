@@ -1746,3 +1746,58 @@ TEST_CASE("Go To Bookmark command rejects a missing or blocked chooser callback"
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).accepted);
 }
 #endif
+
+namespace {
+void check_transient_transport(bool value) { CHECK(value); }
+void require_transient_transport(bool value) { REQUIRE(value); }
+}
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Space and explicit stop commands keep routine feedback out of history", "[commands][notification][transient]") {
+    using namespace wormedit;
+    TimingInsertFixture fixture;
+    auto& state = fixture.application_state;
+    int stops{};
+    state.transport_preview_playing = [] { return true; };
+    state.transport_active = [] { return true; };
+    state.transport_stop = [&] { ++stops; };
+    SECTION("Space hard stop") {
+        require_transient_transport(fixture.invoke(application_command_kind_t::transport_play_stop).accepted);
+    }
+    SECTION("explicit stop") {
+        require_transient_transport(fixture.invoke(application_command_kind_t::transport_stop).accepted);
+    }
+    fixture.center.drain_inbox(notification_time_t{0});
+    check_transient_transport(stops == 1);
+    check_transient_transport(fixture.center.snapshot(256).empty());
+    require_transient_transport(fixture.center.current_line() != nullptr);
+    check_transient_transport(fixture.center.current_line()->message == "Audio preview stopped.");
+    check_transient_transport(fixture.center.statistics().posted == 0);
+}
+
+#endif
+#ifndef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Toolbar stop is transient while genuine audio failure remains durable", "[commands][notification][transient]") {
+    using namespace wormedit;
+    notification_center_t center{[] { return notification_time_t{0}; }};
+    notification_sink_t sink{center};
+    application_command_state_t state;
+    stepmania_export_policy_t policy;
+    int stops{};
+    state.transport_stop = [&] { ++stops; };
+    WormUiWorkspaceAction action{};
+    action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP;
+    check_transient_transport(dispatch_transport_player_action(action, state, policy, sink) == "Audio preview stopped.");
+    center.drain_inbox(notification_time_t{0});
+    check_transient_transport(stops == 1 && center.size() == 0);
+    require_transient_transport(center.current_line() != nullptr);
+    check_transient_transport(center.current_line()->message == "Audio preview stopped.");
+    state.transport_stop = {};
+    check_transient_transport(dispatch_transport_player_action(action, state, policy, sink) == "Audio preview is unavailable.");
+    center.drain_inbox(notification_time_t{0});
+    const auto entries = center.snapshot(256);
+    require_transient_transport(entries.size() == 1);
+    check_transient_transport(entries[0].severity == notification_severity_t::warning);
+    check_transient_transport(center.unread_counts().warnings == 1);
+}
+
+#endif

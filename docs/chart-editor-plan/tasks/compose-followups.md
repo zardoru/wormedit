@@ -154,7 +154,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-348 Let BGM events belong to one semantic layer
 
-- **Status:** ready
+- **Status:** done (2026-10-04)
 - **Outcome:** `bgm_event_t` carries `semantic_layers` (at most one, matching notes). Assign, remove, toggle and clear (T-338) accept BGM event IDs next to note IDs. Deleting a layer with unlink also unlinks BGM events. Sound layer defaults (T-335) apply to placed BGM events. Native projects save and load it, and exporters ignore it.
 - **Read first:** `include/wormedit/core/document.h` (`note_t`, `bgm_event_t`), `include/wormedit/core/semantic_layer_editor.h`, `src/formats/native_project.cpp` (note `semantic_layers`, `sound_layer_defaults`), `tests/core/semantic_layer_editor_tests.cpp`.
 - **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, `include/wormedit/core/semantic_layer_editor.h`, `src/core/semantic_layer_editor.cpp`, `src/core/resource_assignment.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/core/semantic_layer_editor_tests.cpp`, `tests/formats/native_project_tests.cpp`.
@@ -166,11 +166,12 @@ Apply the stale-plan check (rule 9) first.
 - **Invariants:** exported charts are unchanged; one layer per object ([open question 10](../decisions/open-questions.md)).
 - **Reject/failure behavior:** stale revision, unknown ID or locked layer leaves the document and history untouched.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.|native_project'`.
+- **Verification evidence:** application build passed; core/native gate passed 1,308/1,308 (`/tmp/wormedit-bgm-core-gates-passed.log`), including native round-trip and byte-identical BMS/BMSON export. Mixed edits, stale/locked rejection, unlink, placement defaults and membership validation passed. Owned production files passed clang-tidy without new cognitive-complexity warnings.
 - **Out of scope:** UI (T-349).
 
 ## T-349 Color, assign and filter BGM events by semantic layer in Compose
 
-- **Status:** blocked-on T-348
+- **Status:** ready (T-348 is done)
 - **Outcome:** in Layer view BGM events fill with their layer color (unassigned grey). Selected BGM events count toward the layer actions (panel row click, "Layer ▸" note menu, No layer), and layer paint and solo/hide/require/exclude filters treat BGM events like notes.
 - **Read first:** `src/sys/compose_view.cpp` (BGM event projection, layer filters), `src/sys/compose_actions.cpp` (semantic layer dispatch), `src/ui/nuklear/compose_canvas.cpp` (BGM event drawing), `src/ui/nuklear/compose_note_menu.cpp`.
 - **Files owned:** `src/sys/compose_view.cpp`, `src/sys/compose_view.h`, `src/sys/compose_actions.cpp`, `src/sys/compose_input.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_note_menu.cpp`, `src/ui/nuklear/compose_layers_panel.cpp`, `tests/sys/application_commands_tests.cpp`.
@@ -189,7 +190,8 @@ Apply the stale-plan check (rule 9) first.
 - **Status:** ready
 - **Outcome:** hovering the transport seek bar or the song overview shows a tooltip such as "Measure 12 · beat 3 · 1:23.456" for the position under the pointer. It uses exact timing, including BPM changes, stops and the audio offset, and matches where a click would seek.
 - **Read first:** `src/ui/nuklear/frontend.cpp` (`render_transport_seek_bar`, `render_status_minimap`), `src/ui/nuklear/compose_panel.cpp` (`worm_ui_nuklear_render_compose_bgm_bar`), `src/sys/compose_view.cpp` (seek/overview projection), `include/wormedit/core/timing.h`.
-- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/frontend.h`, `src/sys/compose_view.cpp`, `src/sys/compose_view.h`, `src/sys/main.cpp`, `tests/sys/application_commands_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/frontend.h`, `src/sys/compose_view.cpp`, `src/sys/compose_view.h`, `src/sys/main.cpp`, `tests/sys/application_commands_tests.cpp`, `src/sys/compose_hover_timing.cpp/.h`, `tests/sys/compose_hover_timing_tests.cpp`, `tests/ui/compose_hover_timing_event_harness_tests.cpp`, `src/sys/application_frame_projection.cpp/.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Supporting scope:** Coordinator-approved supporting scope: isolate exact hover conversion and regression coverage; pass context-bound hover input through application frame projection and register the new sources/tests.
 - **Steps:**
   1. The frontend reports the hovered source frame (or none) in the action each frame. The application converts it with the timing index into measure, beat (1-based, by the measure's meter) and seconds, and projects it on the next frame.
   2. Draw the tooltip only while the projected frame matches the hovered frame, so it never shows a stale value.
@@ -294,7 +296,8 @@ Apply the stale-plan check (rule 9) first.
 - **Status:** ready (T-355 is done)
 - **Outcome:** with sounds selected in the dock, the right-click menu and toolbar offer "Group…" (new name, or pick an existing group), "Ungroup", and "Suggest groups…" (runs T-354 on the selected ungrouped sounds and opens the T-355 review without importing). Grouping offers "Keep IDs together" (on by default), which renumbers the group into one contiguous run (T-351) in the same undo step.
 - **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.h`, `include/wormedit/core/sound_groups.h`, `src/ui/nuklear/sound_import_dialog.h`.
-- **Files owned:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/sound_import_dialog.cpp`, `src/sys/compose_sound_actions.cpp/.h`, `src/ui/frontend.h`, `tests/sys/application_commands_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/sound_import_dialog.cpp`, `src/sys/compose_sound_actions.cpp/.h`, `src/ui/frontend.h`, `tests/sys/application_commands_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `include/wormedit/core/sound_groups.h`, `src/core/sound_groups.cpp`, `tests/core/sound_groups_tests.cpp`, `tests/sys/manual_sound_group_command_tests.cpp`, `tests/ui/manual_sound_group_event_harness_tests.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp`, `src/sys/workspace_projection.cpp/.h`, `src/sys/application_frame_projection.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `src/ui/nuklear/sound_import_dialog.h`, `src/sys/compose_actions.cpp`, `src/ui/nuklear/compose_panel.cpp`, `tests/sys/frame_projection_arena_tests.cpp`, `src/sys/sound_list_projection.cpp/.h`, `tests/ui/nuklear_event_harness.cpp`, `tests/ui/inspector_resource_workflow_tests.cpp`.
+- **Supporting scope:** Coordinator-approved supporting scope: extend the existing group command so grouping and contiguous ID allocation commit atomically; retain existing-resource review identity, wire scalar actions and group choices, and register focused regression tests. The dialog header exposes retained review rendering; Compose action routing and canvas modal guards prevent input leaking through the review. Arena projection regression verifies group choices and stable membership survive source mutation and frame moves. Sound list projection carries group IDs while it already visits resources, avoiding an extra quadratic scan. The harness snapshot owns transient group assignment payloads so workflow assertions remain valid after later frames. Existing Sounds/inspector workflow tests use actual text bounds after the added toolbar changes row positions. Coordinator owns shared frontend/projection contracts and build registration; timing-hover owns its separate frontend/main sections.
 - **Steps:**
   1. Wire Group/Ungroup through T-353, plus the optional renumber, as one command.
   2. Reuse the review step for "Suggest groups…" with existing sounds.

@@ -1,5 +1,6 @@
 #include <wormedit/core/storyboard.h>
 #include <wormedit/formats/bms.h>
+#include <wormedit/formats/bms_writer.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
 
@@ -13,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <string>
@@ -65,8 +67,9 @@ auto rich_bmson_song() -> wormedit::song_document_t {
         if (!measure.notes.empty()) {
             measure.notes.front().semantic_layers = {wormedit::layer_id_t{900}};
             measure.notes.front().label = "pickup";
-            break;
         }
+        if (!measure.bgm_events.empty())
+            measure.bgm_events.front().semantic_layers = {wormedit::layer_id_t{900}};
     }
     chart.bookmarks.push_back({
         .id = wormedit::object_id_t{901},
@@ -139,6 +142,93 @@ auto rich_bmson_song() -> wormedit::song_document_t {
     return song;
 }
 
+auto prepare_bgm_event(wormedit::song_document_t& song, bool assign_layer) -> bool {
+    auto& chart = song.charts.front();
+    const auto lane_id = wormedit::object_id_t{987'654'322};
+    const auto audio_resource = std::ranges::find_if(song.resources, [](const auto& resource) {
+        return std::ranges::any_of(resource.roles, [](const auto role) {
+            return role == wormedit::resource_role_t::sample ||
+                   role == wormedit::resource_role_t::bgm ||
+                   role == wormedit::resource_role_t::music;
+        });
+    });
+    if (chart.source_family == wormedit::format_family_t::bmson &&
+        audio_resource == song.resources.end()) return false;
+    const auto sound = chart.source_family == wormedit::format_family_t::bmson
+                           ? std::optional{audio_resource->id}
+                           : std::optional<wormedit::resource_id_t>{};
+    if (chart.bgm_source_lanes.empty())
+        chart.bgm_source_lanes.push_back({.id = lane_id, .name = "BGM"});
+    const auto any_events = std::ranges::any_of(chart.measures, [](const auto& measure) {
+        return !measure.bgm_events.empty();
+    });
+    if (!any_events && !chart.measures.empty()) {
+        chart.measures.front().bgm_events.push_back({.id = wormedit::object_id_t{987'654'321},
+            .position = {chart.measures.front().id, 0},
+            .source_lane = chart.bgm_source_lanes.front().id, .sound = sound});
+    }
+    if (assign_layer && std::ranges::none_of(chart.semantic_layers, [](const auto& layer) {
+            return layer.id == wormedit::layer_id_t{900};
+        })) {
+        chart.semantic_layers.push_back({.id = wormedit::layer_id_t{900}, .name = "BGM",
+                                         .color = {20, 40, 60, 255}});
+    }
+    auto found_event = false;
+    for (auto& measure : chart.measures)
+        for (auto& event : measure.bgm_events) {
+            if (!event.sound && sound) event.sound = sound;
+            if (assign_layer) event.semantic_layers = {wormedit::layer_id_t{900}};
+            found_event = true;
+        }
+    return found_event;
+}
+
+struct export_parity_result_t {
+    bool matches{};
+    std::string diagnostic;
+};
+
+auto bms_layer_export_matches() -> export_parity_result_t {
+    const auto bytes = read_binary(fixture_path("bms", "bgm-columns-per-measure.bms"));
+    auto imported = wormedit::parse_bms_bytes(bytes);
+    if (!imported.song) return {.diagnostic = "BMS fixture did not parse"};
+    if (!prepare_bgm_event(*imported.song, false))
+        return {.diagnostic = "BMS fixture has no usable BGM event"};
+    auto layered = *imported.song;
+    if (!prepare_bgm_event(layered, true))
+        return {.diagnostic = "Could not assign the BGM semantic layer"};
+    const wormedit::bms_write_options_t normalized{
+        .lane_profile_id = "bms-5k-outside-scratch",
+        .output_encoding = wormedit::text_encoding_t::utf8};
+    const auto plain = wormedit::write_bms(*imported.song, normalized);
+    const auto tagged = wormedit::write_bms(layered, normalized);
+    if (!plain.bytes || !tagged.bytes) {
+        const auto& diagnostics = plain.bytes ? tagged.diagnostics : plain.diagnostics;
+        return {.diagnostic = diagnostics.empty() ? "BMS writer returned no output"
+                                                   : diagnostics.front().message};
+    }
+    return {.matches = *plain.bytes == *tagged.bytes};
+}
+
+auto bmson_layer_export_matches() -> export_parity_result_t {
+    const auto bytes = read_binary(fixture_path("bmson", "slicing-and-mixed-sounds.bmson"));
+    auto imported = wormedit::parse_bmson_bytes(bytes);
+    if (!imported.song) return {.diagnostic = "BMSON fixture did not parse"};
+    if (!prepare_bgm_event(*imported.song, false))
+        return {.diagnostic = "BMSON fixture has no usable BGM event"};
+    auto layered = *imported.song;
+    if (!prepare_bgm_event(layered, true))
+        return {.diagnostic = "Could not assign the BGM semantic layer"};
+    const auto plain = wormedit::write_bmson(*imported.song);
+    const auto tagged = wormedit::write_bmson(layered);
+    if (!plain.json || !tagged.json) {
+        const auto& diagnostics = plain.json ? tagged.diagnostics : plain.diagnostics;
+        return {.diagnostic = diagnostics.empty() ? "BMSON writer returned no output"
+                                                   : diagnostics.front().message};
+    }
+    return {.matches = *plain.json == *tagged.json};
+}
+
 auto empty_group_schema_keeps_previous_bytes() -> bool {
     const auto song = rich_bmson_song();
     const auto written = wormedit::write_native_project(song);
@@ -182,10 +272,12 @@ auto populated_sound_group_round_trips() -> bool {
 TEST_CASE("native project deterministically round-trips rich editor state",
           "[unit][format][native-project]") {
     const auto song = rich_bmson_song();
-    REQUIRE_FALSE(song.charts.empty());
-    REQUIRE(wormedit::validate_document(song).empty());
+    auto round_trip_song = song;
+    REQUIRE_FALSE(round_trip_song.charts.empty());
+    REQUIRE(prepare_bgm_event(round_trip_song, true));
+    REQUIRE(wormedit::validate_document(round_trip_song).empty());
 
-    const auto written = wormedit::write_native_project(song);
+    const auto written = wormedit::write_native_project(round_trip_song);
     REQUIRE(written.bytes.has_value());
     CHECK_FALSE(written.has_errors());
     CHECK(written.bytes->find("\"wormedit-project\"") != std::string::npos);
@@ -198,6 +290,13 @@ TEST_CASE("native project deterministically round-trips rich editor state",
     CHECK_FALSE(parsed.has_errors());
     CHECK(parsed.song->revision == 42);
     CHECK(parsed.song->charts.front().semantic_layers.front().name == "Vocals");
+    const auto has_layered_bgm = std::ranges::any_of(
+        parsed.song->charts.front().measures, [](const auto& measure) {
+            return std::ranges::any_of(measure.bgm_events, [](const auto& event) {
+                return event.semantic_layers == std::vector{wormedit::layer_id_t{900}};
+            });
+        });
+    CHECK(has_layered_bgm);
     CHECK(parsed.song->midi_assets.front().events.front().data ==
           std::vector<std::byte>{std::byte{0x90}, std::byte{0x3c}, std::byte{0x7f}});
     REQUIRE_FALSE(parsed.song->generator_recipes.empty());
@@ -255,6 +354,16 @@ TEST_CASE("native project deterministically round-trips rich editor state",
             return event.sound_channel_event.has_value();
         }));
     }
+}
+
+TEST_CASE("BMS and BMSON exporters ignore BGM semantic layer membership",
+          "[unit][format][semantic-layer][export]") {
+    const auto bms = bms_layer_export_matches();
+    INFO(bms.diagnostic);
+    CHECK(bms.matches);
+    const auto bmson = bmson_layer_export_matches();
+    INFO(bmson.diagnostic);
+    CHECK(bmson.matches);
 }
 
 TEST_CASE("native projects round-trip flat sound groups without changing empty-group files",

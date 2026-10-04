@@ -1,4 +1,5 @@
 #include <wormedit/core/semantic_layer_editor.h>
+#include <wormedit/core/resource_assignment.h>
 #include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -57,6 +58,27 @@ auto semantic_layer_song() -> song_document_t {
     return song;
 }
 
+auto bgm_placement_song() -> song_document_t {
+    auto song = semantic_layer_song();
+    song.audio_assets.push_back({.id = asset_id_t{50}, .source_path = "music.wav"});
+    song.resources.push_back({.id = resource_id_t{51}, .asset = asset_id_t{50},
+                              .roles = {resource_role_t::bgm}});
+    song.charts.front().sound_layer_defaults.push_back(
+        {.resource = resource_id_t{51}, .layers = {layer_id_t{7}}});
+    REQUIRE(validate_document(song).empty());
+    return song;
+}
+
+auto semantic_layer_bgm_song() -> song_document_t {
+    auto song = semantic_layer_song();
+    auto& chart = song.charts.front();
+    chart.bgm_source_lanes.push_back({.id = object_id_t{33}, .name = "Music"});
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{23},
+        .position = {measure_id_t{3}, 360}, .source_lane = object_id_t{33}});
+    REQUIRE(validate_document(song).empty());
+    return song;
+}
+
 auto has_code(const document_command_result_t& result, diagnostic_code_t code) -> bool {
     return std::ranges::any_of(result.diagnostics,
                                [code](const auto& diagnostic) { return diagnostic.code == code; });
@@ -71,6 +93,12 @@ auto note_by_id(chart_document_t& chart, object_id_t id) -> note_t& {
     }
     FAIL("note ID was not found in test fixture");
     return chart.measures.front().notes.front();
+}
+
+auto mixed_layer_membership(const chart_document_t& chart, std::vector<layer_id_t> expected)
+    -> bool {
+    return note_by_id(const_cast<chart_document_t&>(chart), object_id_t{21}).semantic_layers == expected &&
+           chart.measures.front().bgm_events.front().semantic_layers == expected;
 }
 
 
@@ -306,6 +334,102 @@ TEST_CASE("semantic layer membership is bounded, atomic, and leaves gameplay dat
     CHECK(note_by_id(history.document.charts.front(), object_id_t{20}).semantic_layers ==
           std::vector{layer_id_t{7}});
     CHECK(is_document_dirty(history));
+}
+
+TEST_CASE("semantic layer membership edits notes and BGM events in one undo step",
+          "[unit][core][semantic-layer-editor][bgm]") {
+    auto history = make_document_history(semantic_layer_bgm_song());
+    const auto assigned = apply_semantic_layer_edit(
+        history, 4, assign_notes_to_semantic_layer_action_t{
+            .chart = chart_id_t{2}, .layer = layer_id_t{7}, .notes = {object_id_t{21}},
+            .bgm_events = {object_id_t{23}}});
+    REQUIRE(assigned);
+    REQUIRE(history.undo.size() == 1);
+    CHECK(mixed_layer_membership(history.document.charts.front(), {layer_id_t{7}}));
+    REQUIRE(undo_document_command(history));
+    CHECK(mixed_layer_membership(history.document.charts.front(), {}));
+    REQUIRE(redo_document_command(history));
+}
+
+TEST_CASE("stale mixed semantic layer edit leaves note and BGM untouched",
+          "[unit][core][semantic-layer-editor][bgm][stale]") {
+    auto history = make_document_history(semantic_layer_bgm_song());
+    const auto stale = apply_semantic_layer_edit(
+        history, 3, assign_notes_to_semantic_layer_action_t{
+            .chart = chart_id_t{2}, .layer = layer_id_t{7}, .notes = {object_id_t{21}},
+            .bgm_events = {object_id_t{23}}});
+    CHECK_FALSE(stale);
+    CHECK(history.document.revision == 4);
+    CHECK(history.undo.empty());
+    CHECK(note_by_id(history.document.charts.front(), object_id_t{21}).semantic_layers.empty());
+    CHECK(history.document.charts.front().measures.front().bgm_events.front().semantic_layers.empty());
+}
+
+TEST_CASE("locked BGM layer rejects a mixed clear atomically",
+          "[unit][core][semantic-layer-editor][bgm][locked]") {
+    auto locked_song = semantic_layer_bgm_song();
+    locked_song.charts.front().semantic_layers.front().locked = true;
+    locked_song.charts.front().measures.front().bgm_events.front().semantic_layers = {layer_id_t{7}};
+    auto locked_history = make_document_history(std::move(locked_song));
+    const auto before_revision = locked_history.document.revision;
+    const auto rejected = apply_semantic_layer_edit(
+        locked_history, before_revision, clear_semantic_layer_membership_action_t{
+            .chart = chart_id_t{2}, .notes = {object_id_t{21}},
+            .bgm_events = {object_id_t{23}}});
+    CHECK_FALSE(rejected);
+    CHECK(has_code(rejected, diagnostic_code_t::unsupported_feature));
+    CHECK(locked_history.document.revision == before_revision);
+    CHECK(note_by_id(locked_history.document.charts.front(), object_id_t{21}).semantic_layers.empty());
+    CHECK(locked_history.document.charts.front().measures.front().bgm_events.front().semantic_layers ==
+          std::vector{layer_id_t{7}});
+    CHECK(locked_history.undo.empty());
+}
+
+TEST_CASE("deleting a semantic layer with unlink removes BGM membership",
+          "[unit][core][semantic-layer-editor][bgm]") {
+    auto song = semantic_layer_song();
+    auto& chart = song.charts.front();
+    chart.bgm_source_lanes.push_back({.id = object_id_t{33}, .name = "Music"});
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{23},
+        .position = {measure_id_t{3}, 360}, .source_lane = object_id_t{33},
+        .semantic_layers = {layer_id_t{7}}});
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    const auto removed = apply_semantic_layer_edit(
+        history, 4, delete_semantic_layer_action_t{chart_id_t{2}, layer_id_t{7}, true});
+    REQUIRE(removed);
+    CHECK(history.document.charts.front().measures.front().bgm_events.front().semantic_layers.empty());
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().measures.front().bgm_events.front().semantic_layers ==
+          std::vector{layer_id_t{7}});
+}
+
+TEST_CASE("BGM placement receives the sound's semantic layer defaults",
+          "[unit][core][semantic-layer-editor][bgm]") {
+    auto history = make_document_history(bgm_placement_song());
+    const auto placed = apply_resource_placement(
+        history, 4, {.chart = chart_id_t{2}, .resource = resource_id_t{51},
+                     .position = {measure_id_t{3}, 600},
+                     .kind = resource_placement_kind_t::bgm_event});
+    REQUIRE(placed);
+    const auto& events = history.document.charts.front().measures.front().bgm_events;
+    REQUIRE(events.size() == 1);
+    CHECK(events.front().semantic_layers == std::vector{layer_id_t{7}});
+}
+
+TEST_CASE("document validation rejects unknown and multiple BGM semantic layers",
+          "[unit][core][semantic-layer-editor][bgm][validation]") {
+    auto song = semantic_layer_song();
+    auto& chart = song.charts.front();
+    chart.bgm_source_lanes.push_back({.id = object_id_t{33}, .name = "Music"});
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{23},
+        .position = {measure_id_t{3}, 360}, .source_lane = object_id_t{33}});
+    REQUIRE(validate_document(song).empty());
+    auto& event = chart.measures.front().bgm_events.front();
+    event.semantic_layers = {layer_id_t{99}};
+    CHECK_FALSE(validate_document(song).empty());
+    event.semantic_layers = {layer_id_t{7}, layer_id_t{7}};
+    CHECK_FALSE(validate_document(song).empty());
 }
 
 TEST_CASE("clearing mixed semantic layers is one undoable revision and preserves gameplay",

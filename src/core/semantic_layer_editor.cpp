@@ -158,7 +158,13 @@ auto unique_layer(chart_document_t& chart, layer_id_t id, document_command_resul
 struct chart_note_index_t {
     std::unordered_map<std::uint64_t, std::size_t> object_id_counts;
     std::unordered_map<std::uint64_t, note_t*> notes;
+    std::unordered_map<std::uint64_t, bgm_event_t*> bgm_events;
 };
+
+void index_bgm_event_pointers(chart_document_t& chart, chart_note_index_t& index) {
+    for (auto& measure : chart.measures)
+        for (auto& event : measure.bgm_events) index.bgm_events.try_emplace(event.id.value, &event);
+}
 
 auto build_chart_note_index(chart_document_t& chart, std::size_t maximum_chart_objects,
                             std::size_t expected_selection_size, document_command_result_t& result)
@@ -217,6 +223,7 @@ auto build_chart_note_index(chart_document_t& chart, std::size_t maximum_chart_o
             return std::nullopt;
         }
     }
+    index_bgm_event_pointers(chart, index);
     return index;
 }
 
@@ -266,6 +273,8 @@ auto layer_membership_note_count(const chart_document_t& chart, layer_id_t layer
                 ++count;
             }
         }
+        for (const auto& event : measure.bgm_events)
+            if (std::ranges::find(event.semantic_layers, layer) != event.semantic_layers.end()) ++count;
     }
     return count;
 }
@@ -385,6 +394,40 @@ auto validate_clear_note_layers(const membership_layer_index_t& layers, const no
     return true;
 }
 
+auto validate_bgm_layers(const membership_layer_index_t& layers, const bgm_event_t& event,
+                         document_command_result_t& result) -> bool {
+    if (event.semantic_layers.size() > 1) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "BGM event has multiple semantic layer memberships");
+        return false;
+    }
+    for (const auto layer : event.semantic_layers)
+        if (!editable_membership_layer(layers, layer, result)) return false;
+    return true;
+}
+
+auto unique_bgm_event(chart_note_index_t& index, object_id_t id,
+                      document_command_result_t& result) -> bgm_event_t* {
+    const auto count = index.object_id_counts.find(id.value);
+    if (!id || count == index.object_id_counts.end() || count->second == 0) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "semantic layer selection refers to an unknown BGM event");
+        return nullptr;
+    }
+    if (count->second != 1) {
+        reject(result, diagnostic_code_t::duplicate_id,
+               "BGM event ID is ambiguous because it appears more than once in the chart");
+        return nullptr;
+    }
+    const auto event = index.bgm_events.find(id.value);
+    if (event == index.bgm_events.end()) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "semantic layer selection ID does not identify a BGM event");
+        return nullptr;
+    }
+    return event->second;
+}
+
 auto collect_replacement_notes(chart_document_t& chart, const std::vector<object_id_t>& notes,
                                const membership_layer_index_t& layers,
                                const semantic_layer_edit_limits_t& limits,
@@ -430,6 +473,94 @@ auto replace_note_memberships(chart_document_t& chart, const std::vector<object_
         changed = changed || note->semantic_layers != desired;
         note->semantic_layers = desired;
     }
+    return changed;
+}
+
+auto collect_bgm_memberships(chart_document_t& chart, const std::vector<object_id_t>& ids,
+                             const membership_layer_index_t& layers,
+                             const semantic_layer_edit_limits_t& limits,
+                             document_command_result_t& result)
+    -> std::optional<std::vector<bgm_event_t*>> {
+    auto indexed = build_chart_note_index(chart, limits.maximum_chart_objects, ids.size(), result);
+    if (!indexed) return std::nullopt;
+    std::unordered_set<std::uint64_t> selected_ids;
+    std::vector<bgm_event_t*> selected;
+    selected.reserve(ids.size());
+    for (const auto id : ids) {
+        if (!selected_ids.insert(id.value).second) {
+            reject(result, diagnostic_code_t::duplicate_id,
+                   "semantic layer BGM selection contains a duplicate event ID");
+            return std::nullopt;
+        }
+        auto* match = unique_bgm_event(*indexed, id, result);
+        if (!match || !validate_bgm_layers(layers, *match, result)) return std::nullopt;
+        selected.push_back(match);
+    }
+    return selected;
+}
+
+auto changed_bgm_membership(const bgm_event_t& event, std::optional<layer_id_t> target,
+                           bool toggle, membership_operation_t operation, bool replace_mode)
+    -> std::vector<layer_id_t> {
+    if (!target) return replace_mode ? std::vector<layer_id_t>{} : event.semantic_layers;
+    if (replace_mode || operation != membership_operation_t::remove) {
+        const auto has_layer = event.semantic_layers.size() == 1 &&
+                               event.semantic_layers.front() == *target;
+        const auto clear = (toggle || operation == membership_operation_t::toggle) && has_layer;
+        return clear ? std::vector<layer_id_t>{} : std::vector{*target};
+    }
+    auto desired = event.semantic_layers;
+    const auto membership = std::ranges::find(desired, *target);
+    const auto present = membership != desired.end();
+    const auto should_have = operation == membership_operation_t::assign ? true
+                             : operation == membership_operation_t::remove ? false
+                                                                           : !present;
+    if (should_have && !present) desired.push_back(*target);
+    if (!should_have && present) desired.erase(membership);
+    return desired;
+}
+
+auto apply_bgm_memberships(chart_document_t& chart, const std::vector<object_id_t>& ids,
+                           std::optional<layer_id_t> target, bool toggle,
+                           membership_operation_t operation, bool replace_mode,
+                           const semantic_layer_edit_limits_t& limits,
+                           document_command_result_t& result) -> bool {
+    const auto layers = membership_layer_index(chart);
+    if (target && !editable_membership_layer(layers, *target, result)) return false;
+    auto selected = collect_bgm_memberships(chart, ids, layers, limits, result);
+    if (!selected) return false;
+    bool changed = false;
+    for (auto* event : *selected) {
+        auto desired = changed_bgm_membership(*event, target, toggle, operation, replace_mode);
+        changed = changed || desired != event->semantic_layers;
+        event->semantic_layers = std::move(desired);
+    }
+    return changed;
+}
+
+auto apply_mixed_membership(chart_document_t& chart, const std::vector<object_id_t>& notes,
+                            const std::vector<object_id_t>& bgm_events,
+                            std::optional<layer_id_t> target, bool toggle,
+                            membership_operation_t operation,
+                            bool replace_mode,
+                            const semantic_layer_edit_limits_t& limits,
+                            document_command_result_t& result) -> bool {
+    if (notes.size() > limits.maximum_note_selection ||
+        bgm_events.size() > limits.maximum_note_selection - notes.size()) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "semantic layer selection exceeds the configured cap");
+        return false;
+    }
+    auto changed = false;
+    if (!notes.empty() || bgm_events.empty())
+        changed = replace_mode
+                      ? replace_note_memberships(chart, notes, target, toggle, limits, result)
+                      : target ? apply_membership(chart, *target, notes, operation, limits, result)
+                               : false;
+    if (!result.diagnostics.empty()) return false;
+    if (!bgm_events.empty())
+        changed = apply_bgm_memberships(chart, bgm_events, target, toggle, operation,
+                                        replace_mode, limits, result) || changed;
     return changed;
 }
 
@@ -547,6 +678,8 @@ auto delete_semantic_layer(chart_document_t& chart,
             for (auto& note : measure.notes) {
                 std::erase(note.semantic_layers, edit.layer);
             }
+            for (auto& event : measure.bgm_events)
+                std::erase(event.semantic_layers, edit.layer);
         }
     }
     for (auto& entry : chart.sound_layer_defaults) std::erase(entry.layers, edit.layer);
@@ -656,14 +789,22 @@ auto apply_typed_semantic_edit(chart_document_t& chart, const edit_t& edit,
                 .changed = reorder_semantic_layers(chart, edit, limits, result)};
     } else if constexpr (std::is_same_v<edit_t, clear_semantic_layer_membership_action_t>) {
         return {.label = "Clear semantic layer membership",
-                .changed = replace_note_memberships(chart, edit.notes, std::nullopt, false, limits, result)};
+                .changed = apply_mixed_membership(chart, edit.notes, edit.bgm_events,
+                                                   std::nullopt, false,
+                                                   membership_operation_t::remove, true,
+                                                   limits, result)};
     } else if constexpr (std::is_same_v<edit_t, replace_notes_semantic_layer_action_t>) {
         return {.label = "Replace semantic layer membership",
-                .changed = replace_note_memberships(chart, edit.notes, edit.layer, edit.toggle, limits, result)};
+                .changed = apply_mixed_membership(chart, edit.notes, edit.bgm_events,
+                                                   edit.layer, edit.toggle,
+                                                   membership_operation_t::assign, true,
+                                                   limits, result)};
     } else {
         const auto operation = membership_operation(edit);
         return {.label = semantic_edit_label<edit_t>(operation),
-                .changed = apply_membership(chart, edit.layer, edit.notes, operation, limits, result)};
+                .changed = apply_mixed_membership(chart, edit.notes, edit.bgm_events,
+                                                   edit.layer, false, operation, false,
+                                                   limits, result)};
     }
 }
 

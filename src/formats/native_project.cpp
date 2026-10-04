@@ -261,6 +261,7 @@ void to_json(json& value, const bgm_event_t& event) {
     if (event.sound_channel_event.has_value()) {
         value["sound_channel_event"] = *event.sound_channel_event;
     }
+    if (!event.semantic_layers.empty()) value["semantic_layers"] = event.semantic_layers;
 }
 
 void from_json(const json& value, bgm_event_t& event) {
@@ -268,6 +269,7 @@ void from_json(const json& value, bgm_event_t& event) {
     value.at("position").get_to(event.position);
     value.at("source_lane").get_to(event.source_lane);
     value.at("sound").get_to(event.sound);
+    event.semantic_layers = value.value("semantic_layers", std::vector<layer_id_t>{});
     value.at("structural_slot").get_to(event.structural_slot);
     value.at("branch").get_to(event.branch);
     value.at("provenance").get_to(event.provenance);

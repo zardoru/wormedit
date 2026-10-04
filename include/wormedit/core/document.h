@@ -320,6 +320,7 @@ struct bgm_event_t {
     std::size_t structural_slot{};
     std::optional<branch_id_t> branch;
     source_provenance_t provenance;
+    std::vector<layer_id_t> semantic_layers;
 };
 
 struct measure_chunk_t {

@@ -88,23 +88,27 @@ struct assign_notes_to_semantic_layer_action_t {
     chart_id_t chart;
     layer_id_t layer;
     std::vector<object_id_t> notes;
+    std::vector<object_id_t> bgm_events;
 };
 
 struct remove_notes_from_semantic_layer_action_t {
     chart_id_t chart;
     layer_id_t layer;
     std::vector<object_id_t> notes;
+    std::vector<object_id_t> bgm_events;
 };
 
 struct toggle_semantic_layer_membership_action_t {
     chart_id_t chart;
     layer_id_t layer;
     std::vector<object_id_t> notes;
+    std::vector<object_id_t> bgm_events;
 };
 
 struct clear_semantic_layer_membership_action_t {
     chart_id_t chart;
     std::vector<object_id_t> notes;
+    std::vector<object_id_t> bgm_events;
 };
 
 // Compose assignment replaces previous memberships. Toggle clears notes already
@@ -114,6 +118,7 @@ struct replace_notes_semantic_layer_action_t {
     layer_id_t layer;
     std::vector<object_id_t> notes;
     bool toggle{};
+    std::vector<object_id_t> bgm_events;
 };
 
 using semantic_layer_edit_action_t =

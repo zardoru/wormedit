@@ -501,7 +501,9 @@ auto place_bgm_event(resource_placement_context_t& context) -> bool {
     context.measure.bgm_events.push_back({.id = event_id, .position = context.position,
         .source_lane = lane, .sound = context.action.resource,
         .sound_channel_event = std::nullopt, .structural_slot = 0,
-        .branch = std::nullopt, .provenance = {}});
+        .branch = std::nullopt, .provenance = {},
+        .semantic_layers = sound_default_layers_for_placement(context.chart,
+                                                              context.action.resource)});
     return true;
 }
 

@@ -871,6 +871,16 @@ auto validate_chart_bgm(chart_object_validation_t& context, measure_id_t measure
     }
     validate_semantic_sound_link(context.sound_links, bgm.id, bgm.sound_channel_event, false,
                                  bgm.sound);
+    if (bgm.semantic_layers.size() > 1) {
+        add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
+                       "BGM event may belong to at most one semantic layer", bgm.id);
+    }
+    for (const auto layer : bgm.semantic_layers) {
+        if (!layer || !context.layer_ids.contains(layer.value)) {
+            add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
+                           "BGM event refers to an unknown semantic layer", bgm.id);
+        }
+    }
 }
 
 auto validate_chart_notes_and_bgm(chart_object_validation_t& context) -> void {

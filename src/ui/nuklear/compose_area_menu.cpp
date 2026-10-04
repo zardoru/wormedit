@@ -1,6 +1,8 @@
 #include "sys/compose_scroll_geometry.h"
 #include "ui/nuklear/compose_area_menu.h"
+#include "ui/nuklear/chrome.h"
 #include "ui/nuklear/compose_note_menu.h"
+#include "ui/nuklear/popup_lifecycle.h"
 #include "wormedit/nuklear_config.h"
 #include <cstring>
 
@@ -9,8 +11,18 @@ ComposeAreaCapture capture;
 bool consumed{};
 bool band_visible{};
 bool menu_open{};
-std::uint64_t menu_chart{}, menu_revision{};
+bool menu_release_pending{};
+bool opened_this_frame{};
+wormedit::ui::chrome::PopupContextStamp menu_context{};
 struct nk_rect menu_bounds{};
+
+void close_menu(nk_context* context, bool dismiss_existing_popup = true) {
+    menu_open = false;
+    consumed = true;
+    wormedit::ui::chrome::popup_arm_release(menu_release_pending);
+    if (context && dismiss_existing_popup)
+        wormedit::ui::chrome::dismiss_popup(context, "Area actions", menu_bounds);
+}
 
 
 void menu_entry(nk_context* context, const char* title, bool enabled, const char* reason,
@@ -20,7 +32,7 @@ void menu_entry(nk_context* context, const char* title, bool enabled, const char
         nk_widget_disable_begin(context);
     if (nk_button_label(context, title)) {
         action.compose_action = kind;
-        menu_open = false;
+        close_menu(context, false);
         nk_popup_close(context);
     }
     if (!enabled) {
@@ -34,14 +46,19 @@ void render_menu(nk_context* context, const WormUiComposeView& view,
                  WormUiWorkspaceAction& action) {
     if (!menu_open)
         return;
-    if (view.chart_id != menu_chart || view.document_revision != menu_revision ||
-        !view.area_range_available) {
-        menu_open = false;
+    const auto current = wormedit::ui::chrome::PopupContextStamp{
+        view.project_id, view.chart_id, view.document_revision, 0};
+    const auto bounds = wormedit::ui::chrome::popup_screen_bounds(context, menu_bounds);
+    if (!wormedit::ui::chrome::popup_context_matches(menu_context, current) ||
+        !view.area_range_available || wormedit::ui::chrome::popup_dismiss_requested(
+            context, bounds, !opened_this_frame)) {
+        close_menu(context);
+        opened_this_frame = false;
         return;
     }
     if (!nk_popup_begin(context, NK_POPUP_STATIC, "Area actions",
                         NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, menu_bounds)) {
-        menu_open = false;
+        close_menu(context);
         return;
     }
     menu_entry(context, "Quantize selection", view.selected_note_count != 0, "Select notes first",
@@ -108,17 +125,25 @@ struct nk_rect compose_area_band_rect(const WormUiComposeView& view, struct nk_r
 
 
 auto compose_area_pointer_consumed() -> bool {
-    return consumed;
+    return consumed || menu_open || menu_release_pending;
+}
+auto compose_area_menu_open() -> bool {
+    return menu_open;
+}
+auto compose_area_menu_consumed() -> bool {
+    return menu_open || menu_release_pending || consumed;
 }
 auto compose_area_band_visible() -> bool {
     return band_visible;
 }
 auto compose_area_capture_active() -> bool {
-    return capture.active || menu_open;
+    return capture.active || menu_open || menu_release_pending;
 }
 void reset_compose_area_menu() {
     capture = {};
     menu_open = false;
+    menu_release_pending = false;
+    opened_this_frame = false;
     consumed = false;
     band_visible = false;
 }
@@ -129,6 +154,7 @@ void cancel_compose_area_capture(WormUiWorkspaceAction& action) {
     else
         action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR;
     capture.active = false;
+    if (menu_open) wormedit::ui::chrome::popup_arm_release(menu_release_pending);
     menu_open = false;
     consumed = true;
 }
@@ -136,6 +162,8 @@ void cancel_compose_area_capture(WormUiWorkspaceAction& action) {
 void process_compose_area_menu(nk_context* context, const WormUiComposeView& view,
                                WormUiWorkspaceAction& action, struct nk_rect viewport,
                                double input_right, bool focused) {
+    opened_this_frame = false;
+    (void)wormedit::ui::chrome::popup_update_release_pending(context, menu_release_pending);
     if (compose_note_menu_consumed()) { consumed = false; return; }
     band_visible = view.scene_available && view.area_range_available;
     consumed = capture.active || menu_open;
@@ -148,8 +176,8 @@ void process_compose_area_menu(nk_context* context, const WormUiComposeView& vie
         consumed = false;
         return;
     }
-    if (!focused)
-        menu_open = false;
+    if (!focused && menu_open)
+        close_menu(context);
     if (capture.active) {
         update_capture(context, view, action, viewport, focused);
         return;
@@ -162,8 +190,8 @@ void process_compose_area_menu(nk_context* context, const WormUiComposeView& vie
         nk_input_is_mouse_hovering_rect(&context->input, rect) && mouse.pos.x < input_right;
     if (nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) && inside) {
         menu_open = true;
-        menu_chart = view.chart_id;
-        menu_revision = view.document_revision;
+        menu_context = {view.project_id, view.chart_id, view.document_revision, 0};
+        opened_this_frame = true;
         const auto content = nk_window_get_content_region(context);
         menu_bounds = nk_rect(
             std::clamp(mouse.pos.x - content.x, 0.0f, std::max(0.0f, content.w - 340)),

@@ -61,6 +61,7 @@ static bool open_bga_stack_for_event(const WormUiComposeView& view, std::uint64_
     if (target == events.end() || target->overlap_count <=
             WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD) return false;
     state.bga_stack_open = true;
+    state.bga_stack_release_pending = true;
     state.bga_stack_project_id = view.project_id;
     state.bga_stack_chart_id = view.chart_id;
     state.bga_stack_revision = view.document_revision;

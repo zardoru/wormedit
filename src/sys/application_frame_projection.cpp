@@ -97,12 +97,14 @@ auto project_application_frame(application_frame_projection_context_t context)
         worm_ui_frontend_keysound_dock_request(&keysound_request);
         WormUiSoundUsageRequest sound_usage_request{};
         worm_ui_frontend_sound_usage_request(&sound_usage_request);
+        WormUiBookmarkChooserRequest bookmark_request{};
+        worm_ui_frontend_bookmark_chooser_request(&bookmark_request);
         flattened = flatten_workspace(
             context.model, context.history.document, context.status,
                               context.recovery_controller.view(), context.recovery_scan_configured,
                               context.stepmania_export_policy, context.frame_arena,
             keysound_request.sort_by_id ? dock_sort_t::bms_id : dock_sort_t::natural_name,
-            keysound_request, sound_usage_request);
+            keysound_request, sound_usage_request, bookmark_request);
         flattened.rebind_view_pointers();
         flattened.view.transport_metronome_enabled =
             context.application_command_state.transport_metronome_enabled;

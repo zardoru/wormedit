@@ -2,6 +2,7 @@
 #include "wormedit/core/document.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/popup_lifecycle.h"
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/vector_icons.h"
 #include <SDL3/SDL.h>
@@ -321,10 +322,12 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
 
 static bool bga_stack_is_valid(const WormUiComposeView& view,
                                const worm_ui_nuklear_compose_state_t& state) {
+    const auto expected = wormedit::ui::chrome::PopupContextStamp{
+        state.bga_stack_project_id, state.bga_stack_chart_id, state.bga_stack_revision, 0};
+    const auto current = wormedit::ui::chrome::PopupContextStamp{
+        view.project_id, view.chart_id, view.document_revision, 0};
     return view.scene_available && view.bga_lane_visible &&
-        view.project_id == state.bga_stack_project_id &&
-        view.chart_id == state.bga_stack_chart_id &&
-        view.document_revision == state.bga_stack_revision &&
+        wormedit::ui::chrome::popup_context_matches(expected, current) &&
         std::ranges::any_of(std::span(view.bga_events, view.bga_event_count), [&](const auto& event) {
             return event.canvas_row == state.bga_stack_row &&
                    event.overlap_count > WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD;
@@ -358,54 +361,31 @@ static bool draw_bga_stack_row(nk_context* context, const WormUiComposeBgaEventV
     return true;
 }
 
-static auto bga_stack_outside_press(nk_context* context) -> bool {
-    const auto region = nk_window_get_content_region(context);
-    const auto bounds = nk_rect(region.x + 24, region.y + 48, 300, 360);
-    const auto pressed = nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT) ||
-                         nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT);
-    return pressed && !nk_input_is_mouse_hovering_rect(&context->input, bounds);
-}
-
-static void clear_bga_stack_release_if_mouse_up(
-    const nk_context* context, worm_ui_nuklear_compose_state_t& state) {
-    if (!context->input.mouse.buttons[NK_BUTTON_LEFT].down &&
-        !context->input.mouse.buttons[NK_BUTTON_RIGHT].down)
-        state.bga_stack_release_pending = false;
-}
-
 void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const WormUiComposeView* view,
     WormUiWorkspaceAction* action, worm_ui_nuklear_compose_state_t* state) {
     if (!context || !view || !action || !state) return;
-    if (state->bga_stack_release_pending) {
-        if (!context->input.mouse.buttons[NK_BUTTON_LEFT].down &&
-            !context->input.mouse.buttons[NK_BUTTON_RIGHT].down)
-            state->bga_stack_release_pending = false;
-        return;
-    }
+    if (wormedit::ui::chrome::popup_update_release_pending(
+            context, state->bga_stack_release_pending)) return;
     if (!state->bga_stack_open) return;
+    const auto local_bounds = nk_rect(24, 48, 300, 360);
+    const auto screen_bounds = wormedit::ui::chrome::popup_screen_bounds(context, local_bounds);
     if (!bga_stack_is_valid(*view, *state)) {
         state->bga_stack_open = false;
-        state->bga_stack_release_pending = true;
-        wormedit::ui::chrome::dismiss_popup(context, "BGA events at measure",
-                                            nk_rect(24, 48, 300, 360));
-        clear_bga_stack_release_if_mouse_up(context, *state);
+        wormedit::ui::chrome::popup_arm_release(state->bga_stack_release_pending);
+        wormedit::ui::chrome::dismiss_popup(context, "BGA events at measure", local_bounds);
         return;
     }
-    const auto escape_pressed = nk_input_is_key_pressed(&context->input, NK_KEY_TEXT_RESET_MODE);
-    if (escape_pressed || bga_stack_outside_press(context)) {
+    if (wormedit::ui::chrome::popup_dismiss_requested(context, screen_bounds)) {
         state->bga_stack_open = false;
-        state->bga_stack_release_pending = true;
-        wormedit::ui::chrome::dismiss_popup(context, "BGA events at measure",
-                                            nk_rect(24, 48, 300, 360));
-        clear_bga_stack_release_if_mouse_up(context, *state);
+        wormedit::ui::chrome::popup_arm_release(state->bga_stack_release_pending);
+        wormedit::ui::chrome::dismiss_popup(context, "BGA events at measure", local_bounds);
         return;
     }
     if (!nk_popup_begin(context, NK_POPUP_STATIC, "BGA events at measure",
                         NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR,
-                        nk_rect(24, 48, 300, 360))) {
+                        local_bounds)) {
         state->bga_stack_open = false;
-        state->bga_stack_release_pending = true;
-        clear_bga_stack_release_if_mouse_up(context, *state);
+        wormedit::ui::chrome::popup_arm_release(state->bga_stack_release_pending);
         return;
     }
     nk_layout_row_dynamic(context, 24, 1);
@@ -434,14 +414,13 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const WormUiCo
     }
     if (selected_event) {
         nk_popup_close(context);
-        state->bga_stack_release_pending = true;
+        wormedit::ui::chrome::popup_arm_release(state->bga_stack_release_pending);
     }
     nk_layout_row_dynamic(context, 28, 1);
     if (nk_button_label(context, "Close")) {
         state->bga_stack_open = false;
         nk_popup_close(context);
-        state->bga_stack_release_pending = true;
+        wormedit::ui::chrome::popup_arm_release(state->bga_stack_release_pending);
     }
     nk_popup_end(context);
-    clear_bga_stack_release_if_mouse_up(context, *state);
 }

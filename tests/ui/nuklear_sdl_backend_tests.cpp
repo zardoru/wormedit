@@ -8,6 +8,7 @@
 #include <vector>
 #include <algorithm>
 #include <cstdio>
+#include <string_view>
 #include <source_location>
 #include <limits>
 
@@ -456,4 +457,21 @@ TEST_CASE("SDL backend records diagnostic window GPU work apart from the applica
     expect_backend(last.diagnostic.clip_rect_changes < last.diagnostic.draw_calls);
     expect_backend(last.application.clip_rect_changes == plain.application.clip_rect_changes);
     expect_backend(last.application.texture_switches == plain.application.texture_switches);
+}
+
+TEST_CASE("SDL text input decodes multi-codepoint UTF-8 commits", "[frontend-state][backend][text-input]") {
+    backend_fixture_t backend;
+    nk_input_begin(backend.context);
+    SDL_Event event{};
+    event.type = SDL_EVENT_TEXT_INPUT;
+    event.text.type = SDL_EVENT_TEXT_INPUT;
+    event.text.windowID = SDL_GetWindowID(backend.window);
+    event.text.text = "Aé🎵";
+    expect_backend(nk_sdl_handle_event(backend.context, &event) == 1);
+    const auto& keyboard = backend.context->input.keyboard;
+    expect_backend(std::string_view(keyboard.text, keyboard.text_len) == "Aé🎵");
+    event.text.text = nullptr;
+    expect_backend(nk_sdl_handle_event(backend.context, &event) == 1);
+    expect_backend(std::string_view(keyboard.text, keyboard.text_len) == "Aé🎵");
+    nk_input_end(backend.context);
 }

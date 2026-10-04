@@ -2141,6 +2141,7 @@ void reset_project_edit_state(application_command_state_t& current) {
     next.transport_preview_paused = std::move(current.transport_preview_paused);
     next.transport_preview_end_frame = std::move(current.transport_preview_end_frame);
     next.minimap_click_moves_paused_playhead = current.minimap_click_moves_paused_playhead;
+    next.open_bookmark_chooser = std::move(current.open_bookmark_chooser);
     next.transport_play_pause = std::move(current.transport_play_pause);
     next.transport_play_from_start = std::move(current.transport_play_from_start);
     next.transport_seek = std::move(current.transport_seek);
@@ -3634,6 +3635,7 @@ int main(int argc, char** argv) {
     wormedit::viewport_input_controller_t compose_viewport_input;
     wormedit::editor_navigation_input_controller_t compose_navigation_input;
     application_command_state_t application_command_state;
+    application_command_state.open_bookmark_chooser = worm_ui_frontend_open_bookmark_chooser;
     external_player_runtime_t external_player_runtime;
     wormedit::sys::project_chart_runtime_t project_chart_runtime;
     wormedit::sys::options_runtime_t options_runtime;

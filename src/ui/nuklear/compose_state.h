@@ -2,6 +2,8 @@
 
 #include "ui/frontend.h"
 #include "ui/nuklear/keysound_list_state.h"
+#include "ui/nuklear/compose_bookmark_chooser.h"
+#include "ui/nuklear/compose_bookmark_rename.h"
 #include "ui/nuklear/sound_slot_batch.h"
 
 #include <array>
@@ -308,7 +310,14 @@ struct worm_ui_nuklear_compose_state_t {
     float inline_timing_anchor_screen_y{};
     std::array<char, 64> inline_timing_text{};
     std::array<char, 128> inline_timing_error{};
+    bookmark_chooser_state_t bookmark_chooser;
+    bookmark_rename_editor_t bookmark_rename;
     bool go_to_measure_open{};
+    std::uint64_t resource_export_group_project_id{};
+    std::uint64_t resource_export_group_chart_id{};
+    std::uint64_t resource_export_group_revision{};
+    bool resource_export_group_popup_open{};
+    bool resource_export_group_release_pending{};
     bool go_to_measure_cancel_pending{};
     bool go_to_measure_focus_pending{};
     std::uint64_t go_to_measure_chart_id{};

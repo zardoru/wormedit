@@ -4,6 +4,7 @@
 #include "ui/nuklear/bms_branch_panel.h"
 #include "ui/nuklear/compose_markers.h"
 #include "ui/nuklear/compose_canvas.h"
+#include "ui/nuklear/compose_bookmark_rename.h"
 #include "ui/nuklear/compose_toolbar.h"
 #include "ui/nuklear/compose_recipe_menu.h"
 #include "ui/nuklear/compose_inspector.h"
@@ -825,7 +826,17 @@ static auto begin_compose_timing_marker_drag(const ComposePointerEventContext& i
 
 auto process_compose_timing_marker_pointer(const ComposePointerEventContext& input,
                                                   bool paint_pointer_consumed) -> bool {
+    if (state.bookmark_rename.active || state.bookmark_rename.release_pending) return true;
     if (compose_area_pointer_consumed() || compose_note_menu_consumed()) return true;
+    const auto rename_press = !paint_pointer_consumed &&
+        nk_input_is_mouse_pressed(&input.context->input, NK_BUTTON_LEFT) && input.left_down &&
+        input.pointer_started_in_view && input.window_focused && input.view->visible &&
+        input.view->scene_available && !input.view->input_occluded &&
+        input.pointer_modifiers == 0 && !state.action_overflowed;
+    if (rename_press && begin_compose_bookmark_rename_at_pointer(
+            state.bookmark_rename, *input.view, input.pointer_started_x,
+            input.pointer_started_y, true, true))
+        return true;
     if (update_compose_timing_marker_drag(input)) return true;
     return begin_compose_timing_marker_drag(input, paint_pointer_consumed);
 }
@@ -916,6 +927,7 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
             &WormUiComposeBgaEventView::event_id);
         if (stacked != std::span(view.bga_events, view.bga_event_count).end() &&
             stacked->overlap_count > WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD) {
+            state.bga_stack_release_pending = true;
             state.bga_stack_open = true;
             state.bga_stack_project_id = view.project_id;
             state.bga_stack_chart_id = view.chart_id;
@@ -978,6 +990,7 @@ static auto update_bga_event_move_capture(const ComposePointerEventContext& inpu
                 &WormUiComposeBgaEventView::event_id);
             if (selected != events.end() && selected->overlap_count >
                     WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD) {
+                state.bga_stack_release_pending = true;
                 state.bga_stack_open = true;
                 state.bga_stack_project_id = input.view->project_id;
                 state.bga_stack_chart_id = input.view->chart_id;

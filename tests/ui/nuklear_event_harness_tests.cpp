@@ -739,7 +739,10 @@ TEST_CASE("Compose toolbar color views change frontend state without document ac
 
 namespace {
 void check_layer_row_action(const workspace_action_snapshot_t& snapshot,
-                            WormUiComposeActionKind kind, std::uint64_t layer) {
+                            WormUiComposeActionKind kind, std::uint64_t layer,
+                            const std::source_location location =
+                                std::source_location::current()) {
+    INFO("assertion caller line " << location.line());
     REQUIRE(snapshot.get().compose_action == kind);
     CHECK(snapshot.get().compose_semantic_layer_id == layer);
 }
@@ -819,14 +822,17 @@ auto right_click_at(nuklear_event_harness_t& harness, float x, float y)
 
 void check_layer_menu(bool condition) { CHECK(condition); }
 
-void check_layer_menu_no_actions(const std::vector<workspace_action_snapshot_t>& frames) {
+void check_layer_menu_no_actions(const std::vector<workspace_action_snapshot_t>& frames,
+                                 const std::source_location location =
+                                     std::source_location::current()) {
     for (const auto& frame : frames) {
-        INFO("compose action " << frame.get().compose_action << ", compose inputs "
+        INFO("assertion caller line " << location.line() << ", compose action "
+             << frame.get().compose_action << ", compose inputs "
              << frame.get().compose_input_count << ", viewport inputs "
              << frame.get().compose_viewport_input_count);
-        check_layer_menu(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-        check_layer_menu(frame.get().compose_input_count == 0);
-        check_layer_menu(frame.get().compose_viewport_input_count == 0);
+        CHECK(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        CHECK(frame.get().compose_input_count == 0);
+        CHECK(frame.get().compose_viewport_input_count == 0);
     }
 }
 
@@ -917,6 +923,7 @@ TEST_CASE("Layer row menu discards both halves of an outside click",
     const auto outside = click_at(fixture.harness, 500, 400);
     check_layer_menu_no_actions(outside);
     check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
+    (void)fixture.harness.frame();
     check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_release_pending);
 }
 
@@ -935,6 +942,7 @@ TEST_CASE("Layer row menu owns Escape and outside clicks ahead of notification t
     check_layer_menu(closed.get().notifications.kind == WORM_UI_NOTIFICATION_ACTION_NONE);
     const std::array release{key_event(SDL_EVENT_KEY_UP, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
     (void)fixture.harness.frame(release);
+    (void)fixture.harness.frame();
     fixture.open();
     const auto outside = click_at(fixture.harness, 1200, 820);
     check_layer_menu_no_actions(outside);
@@ -950,11 +958,13 @@ TEST_CASE("Layer row menu releases its popup after a stale revision or hidden pa
     ++fixture.harness.view().compose.document_revision;
     (void)fixture.harness.frame();
     check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
+    (void)fixture.harness.frame();
     fixture.open();
     worm_ui_nuklear_compose_state().layers_panel_visible = false;
     (void)fixture.harness.frame();
     check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
     check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_close_pending);
+    (void)fixture.harness.frame();
     (void)click_at(fixture.harness, 315, 122);
     check_layer_menu(worm_ui_nuklear_compose_state().color_view ==
                      worm_ui_nuklear_compose_color_view_t::snap);
@@ -1119,6 +1129,7 @@ TEST_CASE("Note menu closes on Escape and focus loss without leaking canvas inpu
     check_layer_menu(closed.get().shortcut_text_entry_active);
     const std::array released{key_event(SDL_EVENT_KEY_UP, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
     (void)fixture.harness.frame(released);
+    (void)fixture.harness.frame();
     fixture.open();
     SDL_Event lost{};
     lost.type = SDL_EVENT_WINDOW_FOCUS_LOST;
@@ -1142,6 +1153,7 @@ TEST_CASE("Note menu owns Escape and outside presses ahead of notification toast
     check_layer_menu(closed.get().notifications.kind == WORM_UI_NOTIFICATION_ACTION_NONE);
     const std::array release{key_event(SDL_EVENT_KEY_UP, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
     (void)fixture.harness.frame(release);
+    (void)fixture.harness.frame();
     fixture.open();
     const auto outside = click_at(fixture.harness, 1200, 820);
     for (const auto& frame : outside) {

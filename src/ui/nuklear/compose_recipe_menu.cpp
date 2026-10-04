@@ -1,14 +1,26 @@
 #include "ui/nuklear/compose_recipe_menu.h"
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/nuklear/compose_panel_internal.h"
+#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/popup_lifecycle.h"
 #include "wormedit/nuklear_config.h"
 
 #include <algorithm>
 
 namespace {
 bool menu_open{};
-std::uint64_t menu_chart{}, menu_revision{}, menu_recipe{};
+bool release_pending{};
+bool opened_this_frame{};
+wormedit::ui::chrome::PopupContextStamp menu_context{};
+std::uint64_t menu_recipe{};
 struct nk_rect menu_bounds{};
+
+void close_menu(nk_context* context, bool dismiss_existing_popup = true) {
+    menu_open = false;
+    wormedit::ui::chrome::popup_arm_release(release_pending);
+    if (context && dismiss_existing_popup)
+        wormedit::ui::chrome::dismiss_popup(context, "SV recipe actions", menu_bounds);
+}
 
 // Command ids carried in WormUiComposeInputAction::span_edge by RECIPE_COMMAND.
 enum recipe_command_t : std::uint8_t { toggle_enabled = 0, materialize = 1, remove = 2 };
@@ -21,7 +33,7 @@ void queue_command(const WormUiComposeView& view, WormUiWorkspaceAction& action,
                          WORM_UI_TIMING_LANE_SCROLL, view.chart_id, view.document_revision);
     if (action.compose_input_count != 0)
         action.compose_inputs[action.compose_input_count - 1].span_edge = command;
-    menu_open = false;
+    close_menu(nullptr, false);
 }
 
 void menu_entry(nk_context* context, const char* title, bool enabled, const char* reason,
@@ -49,13 +61,18 @@ auto find_area(const WormUiComposeView& view, std::uint64_t id) -> const WormUiC
 void render_menu(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceAction& action) {
     if (!menu_open) return;
     const auto* area = find_area(view, menu_recipe);
-    if (view.chart_id != menu_chart || view.document_revision != menu_revision || !area) {
-        menu_open = false;
+    const auto current = wormedit::ui::chrome::PopupContextStamp{
+        view.project_id, view.chart_id, view.document_revision, menu_recipe};
+    const auto bounds = wormedit::ui::chrome::popup_screen_bounds(context, menu_bounds);
+    if (!wormedit::ui::chrome::popup_context_matches(menu_context, current) || !area ||
+        wormedit::ui::chrome::popup_dismiss_requested(context, bounds, !opened_this_frame)) {
+        close_menu(context);
+        opened_this_frame = false;
         return;
     }
     if (!nk_popup_begin(context, NK_POPUP_STATIC, "SV recipe actions",
                         NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, menu_bounds)) {
-        menu_open = false;
+        close_menu(context);
         return;
     }
     menu_entry(context, area->enabled ? "Disable recipe" : "Enable recipe", true, "", view, action,
@@ -90,30 +107,38 @@ auto area_at(const WormUiComposeView& view, struct nk_rect viewport, float x, fl
 auto compose_recipe_menu_open() -> bool {
     return menu_open;
 }
+auto compose_recipe_menu_consumed() -> bool {
+    return menu_open || release_pending;
+}
 
 void reset_compose_recipe_menu() {
     menu_open = false;
+    release_pending = false;
+    opened_this_frame = false;
 }
 
 void process_compose_recipe_menu(nk_context* context, const WormUiComposeView& view,
                                  WormUiWorkspaceAction& action, struct nk_rect viewport,
                                  double input_right, bool focused) {
+    opened_this_frame = false;
+    (void)wormedit::ui::chrome::popup_update_release_pending(context, release_pending);
     if (!view.scene_available || view.viewport_width_pixels <= 0 || view.viewport_height_pixels <= 0 ||
         !focused) {
-        menu_open = false;
+        if (menu_open) close_menu(context);
         return;
     }
     const auto& mouse = context->input.mouse;
     if (nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) && mouse.pos.x < input_right) {
         if (const auto* area = area_at(view, viewport, mouse.pos.x, mouse.pos.y)) {
             menu_open = true;
-            menu_chart = view.chart_id;
-            menu_revision = view.document_revision;
+            menu_context = {view.project_id, view.chart_id, view.document_revision,
+                            area->recipe_id};
             menu_recipe = area->recipe_id;
             const auto content = nk_window_get_content_region(context);
             menu_bounds = nk_rect(
                 std::clamp(mouse.pos.x - content.x, 0.0f, std::max(0.0f, content.w - 240)),
                 std::clamp(mouse.pos.y - content.y, 0.0f, std::max(0.0f, content.h - 180)), 240, 180);
+            opened_this_frame = true;
         }
     }
     render_menu(context, view, action);

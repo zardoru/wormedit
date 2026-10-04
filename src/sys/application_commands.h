@@ -40,6 +40,7 @@ enum class application_command_kind_t {
     navigation_next_marker,
     navigation_previous_bookmark,
     navigation_next_bookmark,
+    navigation_go_to_bookmark,
     markers_add_bookmark,
     view_notifications,
     workspace_options,

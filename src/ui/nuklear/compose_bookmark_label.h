@@ -1,7 +1,9 @@
 #pragma once
 
 #include <functional>
+#include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -24,6 +26,16 @@ struct bookmark_label_field_t {
 };
 
 using bookmark_text_width_t = std::function<float(std::string_view)>;
+
+struct bookmark_rename_line_t {
+    std::uint64_t bookmark_id{};
+    double y{};
+};
+
+// A narrow target at the label-side edge keeps ordinary note placement available along the line.
+[[nodiscard]] auto bookmark_rename_target_at(std::span<const bookmark_rename_line_t> lines,
+                                             double x, double y, double right_edge)
+    -> std::optional<std::uint64_t>;
 
 // Places a bookmark name right-aligned on the field's right edge (4 px padding),
 // sitting just above its line at `line_y` and inside the field. Names longer

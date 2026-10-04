@@ -418,6 +418,7 @@ TEST_CASE("default registry seeds discoverable editor commands and visible tab r
           shortcut_chord_t{.key = shortcut_key_t::n,
                            .modifiers = shortcut_modifier_t::primary | shortcut_modifier_t::shift});
 
+
     auto focus = focus_for_compose();
     const auto switch_tab = dispatch_shortcut(registry, {.chord = {.key = shortcut_key_t::f3}},
                                               focus, shortcut_primary_modifier_t::control);
@@ -429,6 +430,31 @@ TEST_CASE("default registry seeds discoverable editor commands and visible tab r
     const auto hidden = dispatch_shortcut(registry, {.chord = {.key = shortcut_key_t::f3}}, focus,
                                           shortcut_primary_modifier_t::control);
     CHECK(hidden.status == command_dispatch_status_t::no_match);
+}
+
+TEST_CASE("Go To Bookmark is bound to Ctrl Shift G without changing Ctrl G",
+          "[unit][core][command_registry][bookmark-chooser]") {
+    const auto registry = make_default_editor_command_registry(make_invoker(
+        std::make_shared<std::vector<command_id_t>>()));
+    const auto* command = find_command(registry, command_id_t{"navigation.go_to_bookmark"});
+    REQUIRE(command);
+    REQUIRE(command->default_shortcuts.size() == 1);
+    CHECK(command->default_shortcuts.front() == shortcut_chord_t{
+        .key = shortcut_key_t::g,
+        .modifiers = shortcut_modifier_t::primary | shortcut_modifier_t::shift});
+    const auto focus = focus_for_compose();
+    const auto chord = dispatch_shortcut(registry,
+        {.chord = {.key = shortcut_key_t::g,
+                   .modifiers = shortcut_modifier_t::control | shortcut_modifier_t::shift}},
+        focus, shortcut_primary_modifier_t::control);
+    CHECK(chord.status == command_dispatch_status_t::invoked);
+    CHECK(chord.command == command_id_t{"navigation.go_to_bookmark"});
+    const auto old = dispatch_shortcut(registry,
+        {.chord = {.key = shortcut_key_t::g,
+                   .modifiers = static_cast<shortcut_modifiers_t>(
+                       shortcut_modifier_t::control)}},
+        focus, shortcut_primary_modifier_t::control);
+    CHECK(old.command != command_id_t{"navigation.go_to_bookmark"});
 }
 
 auto save_binding_dispatches_for_primary(const command_registry_t& registry,

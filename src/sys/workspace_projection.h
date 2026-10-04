@@ -113,6 +113,7 @@ struct flattened_workspace_t {
         std::string status;
         std::string hover_tooltip;
         std::string selected_note_label;
+        frame_span<WormUiBookmarkChooserRowView> bookmark_chooser_row;
         frame_span<WormUiComposeBookmarkView> bookmark;
         frame_span<WormUiComposeSectionView> section;
         struct {
@@ -211,7 +212,8 @@ struct flattened_workspace_t {
                                      frame_arena_t* arena = nullptr,
                                      dock_sort_t keysound_sort = dock_sort_t::natural_name,
     WormUiKeysoundDockRequest keysound_request = {},
-    WormUiSoundUsageRequest sound_usage_request = {}) -> flattened_workspace_t;
+    WormUiSoundUsageRequest sound_usage_request = {},
+    WormUiBookmarkChooserRequest bookmark_chooser_request = {}) -> flattened_workspace_t;
 
 // Borrowed notification strings remain valid until the center's next frame-
 // thread mutation. Project after draining, then draw before dispatching actions.

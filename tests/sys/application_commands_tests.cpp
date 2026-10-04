@@ -1448,3 +1448,40 @@ TEST_CASE("Note context rejects stale and unknown hits without replacing selecti
 }
 
 #endif
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+namespace {
+void check_bookmark_callback(bool value) { CHECK(value); }
+void require_bookmark_callback(bool value) { REQUIRE(value); }
+}
+TEST_CASE("Go To Bookmark command opens the retained chooser with the active context",
+          "[sys][application_commands][bookmark]") {
+    TimingInsertFixture fixture;
+    const auto revision = fixture.fixture.history.document.revision;
+    const auto cursor = fixture.compose_state->cursor;
+    unsigned calls{};
+    fixture.application_state.open_bookmark_chooser = [&](std::uint64_t project,
+        std::uint64_t chart, std::uint64_t expected_revision) {
+        ++calls;
+        check_bookmark_callback(project == fixture.fixture.history.document.id.value);
+        check_bookmark_callback(chart == fixture.compose_state->chart.value);
+        check_bookmark_callback(expected_revision == revision);
+        return true;
+    };
+    require_bookmark_callback(fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).accepted);
+    check_bookmark_callback(calls == 1);
+    check_bookmark_callback(fixture.fixture.history.document.revision == revision);
+    check_bookmark_callback(fixture.compose_state->cursor == cursor);
+    fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).accepted);
+    check_bookmark_callback(calls == 1);
+}
+
+TEST_CASE("Go To Bookmark command rejects a missing or blocked chooser callback",
+          "[sys][application_commands][bookmark]") {
+    TimingInsertFixture fixture;
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).accepted);
+    fixture.application_state.open_bookmark_chooser = [](auto, auto, auto) { return false; };
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).accepted);
+}
+#endif

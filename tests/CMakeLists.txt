@@ -28,6 +28,7 @@ add_executable(wormedit_core_tests
     ../src/sys/transport_player_actions.cpp
     ../src/sys/compose_minimap_navigation.cpp
     ../src/sys/compose_bookmark_commands.cpp
+    ../src/sys/bookmark_rename_commands.cpp
     ../src/sys/compose_playhead_skip.cpp
     ../src/sys/compose_bgm_bar.cpp
     ../src/sys/sound_list_projection.cpp
@@ -59,6 +60,7 @@ add_executable(wormedit_core_tests
     core/command_registry_tests.cpp
     sys/application_commands_tests.cpp
     sys/compose_bookmark_commands_tests.cpp
+    sys/bookmark_rename_commands_tests.cpp
     sys/compose_playhead_skip_tests.cpp
     sys/compose_bgm_bar_tests.cpp
     sys/sound_list_projection_tests.cpp
@@ -373,6 +375,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ui/nuklear_audio_state_tests.cpp
         ui/arrow_glyph_tests.cpp
         ui/compose_bookmark_label_tests.cpp
+        ui/popup_lifecycle_tests.cpp
         ui/content_margin_tests.cpp
         ui/nuklear_compose_state_tests.cpp
         ui/nuklear_metadata_state_tests.cpp
@@ -510,6 +513,10 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/minimap_center_event_harness_tests.cpp
         ui/manual_sound_group_event_harness_tests.cpp
         ui/sound_filter_event_harness_tests.cpp
+        ui/bookmark_chooser_event_harness_tests.cpp
+        ui/bookmark_rename_event_harness_tests.cpp
+        ui/popup_menu_event_harness_tests.cpp
+        ../src/sys/bookmark_rename_commands.cpp
         ui/compose_bgm_layer_tests.cpp
         ui/sound_usage_event_harness_tests.cpp
         sys/sound_drop_transaction_tests.cpp
@@ -587,9 +594,11 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/timing_view.cpp
         ../src/sys/recipe_form.cpp
         ../src/sys/workspace_projection.cpp
+        ../src/sys/bookmark_chooser_projection.cpp
         ../src/sys/sound_list_projection.cpp
         ../src/sys/sound_usage_projection.cpp
         sys/sound_usage_projection_tests.cpp
+        sys/bookmark_chooser_projection_tests.cpp
         sys/sound_usage_actions_tests.cpp
         ../src/sys/sound_usage_actions.cpp
     )
@@ -632,6 +641,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/sound_usage_projection.cpp
         ../src/sys/frame_timing.cpp
         ../src/sys/workspace_projection.cpp
+        ../src/sys/bookmark_chooser_projection.cpp
         ../src/sys/sound_list_projection.cpp
         ../src/sys/timing_view.cpp
         ../src/sys/recipe_form.cpp

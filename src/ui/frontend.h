@@ -960,6 +960,27 @@ typedef struct WormUiKeysoundDockRequest {
     size_t filter_layer_first_row, filter_layer_row_limit;
 } WormUiKeysoundDockRequest;
 
+typedef struct WormUiBookmarkChooserRequest {
+    size_t first_row, row_limit;
+    bool open;
+} WormUiBookmarkChooserRequest;
+
+typedef struct WormUiBookmarkChooserRowView {
+    uint64_t bookmark_id;
+    uint8_t anchor;
+    const char* position_label;
+    const char* name;
+    const char* display_label;
+    bool navigation_available;
+} WormUiBookmarkChooserRowView;
+
+typedef struct WormUiBookmarkChooserView {
+    uint64_t project_id, chart_id, document_revision;
+    const WormUiBookmarkChooserRowView* rows;
+    size_t row_count, total_count, first_row;
+    bool truncated;
+} WormUiBookmarkChooserView;
+
 enum {
     WORM_UI_KEYSOUND_LAYER_FILTER_ANY = 0,
     WORM_UI_KEYSOUND_LAYER_FILTER_NONE = 1,
@@ -1461,6 +1482,7 @@ typedef struct WormUiComposeView {
     size_t branch_diagnostic_count;
     size_t selected_bgm_event_count;
     size_t semantic_layer_unassigned_bgm_count;
+    WormUiBookmarkChooserView bookmark_chooser;
 } WormUiComposeView;
 
 typedef struct WormUiTimingSpeedView {
@@ -2120,6 +2142,8 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK,
     WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION,
     WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK,
+    WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK,
+    WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK,
     WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION,
     WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL,
     WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN,
@@ -2464,6 +2488,7 @@ typedef struct WormUiWorkspaceAction {
     int64_t compose_audio_offset_numerator;
     uint64_t compose_audio_offset_denominator;
     uint64_t compose_input_chart_id;
+    uint64_t compose_input_project_id;
     uint64_t compose_input_document_revision;
     size_t compose_quantize_preset_index;
     bool compose_quantize_preset_selected;
@@ -2676,6 +2701,8 @@ void worm_ui_frontend_select_sound_usage_source(uint64_t project_id, uint64_t re
 void worm_ui_frontend_bga_move_preview(uint64_t* chart_id, uint64_t* document_revision,
                                        uint64_t* event_id, double* y_pixels);
 void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request);
+void worm_ui_frontend_bookmark_chooser_request(WormUiBookmarkChooserRequest* request);
+bool worm_ui_frontend_open_bookmark_chooser(uint64_t project_id, uint64_t chart_id, uint64_t revision);
 /* Queues one dropped file for exact slot assignment; false when automatic mode is active.
    In slots mode invalid/stale requests are consumed without falling back to allocation. */
 bool worm_ui_frontend_stage_sound_slot_batch(uint64_t project, uint64_t chart, uint64_t revision,

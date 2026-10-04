@@ -44,6 +44,16 @@ struct bookmark_command_outcome_t {
                                           marker_navigation_direction_t direction)
     -> bookmark_command_outcome_t;
 
+// Navigates to an exact active-chart bookmark ID. The expected revision and
+// chart stamp reject stale chooser rows; stopped audio anchors resolve through
+// timing, while playback seeks the original audio millisecond position.
+[[nodiscard]] auto navigate_to_bookmark(document_history_t& history,
+                                        editor_interaction_state_t& state,
+                                        application_command_state_t& application,
+                                        std::uint64_t expected_revision, chart_id_t chart,
+                                        object_id_t bookmark)
+    -> bookmark_command_outcome_t;
+
 // Adds an unnamed beat bookmark at the edit cursor, or at the active-snap row nearest the
 // playhead while playing. A row that already holds a bookmark adds nothing. The caller rejects
 // the command while a Compose gesture is pending.

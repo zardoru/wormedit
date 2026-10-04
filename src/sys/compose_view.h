@@ -351,6 +351,7 @@ struct application_command_state_t {
         double cursor_subrow{};
     };
     std::optional<minimap_start_frame_t> minimap_start_frame;
+    std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_bookmark_chooser;
     std::function<std::string()> transport_play_pause;
     std::function<std::string()> transport_play_from_start;
     std::function<std::string(std::uint64_t)> transport_seek;

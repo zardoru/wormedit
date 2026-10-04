@@ -25,6 +25,23 @@ auto is_playing(const application_command_state_t& application) -> bool {
     return application.transport_preview_playing && application.transport_preview_playing();
 }
 
+auto beat_position_for_audio_milliseconds(const chart_document_t& chart,
+                                          std::int64_t milliseconds)
+    -> std::optional<local_position_t> {
+    const auto measures = build_measure_index(chart);
+    const auto timing = build_timing_index(chart);
+    if (!std::holds_alternative<measure_index_t>(measures) || !timing.index)
+        return std::nullopt;
+    const auto query = musical_position_at(*timing.index,
+                                           signed_rational_t{milliseconds, 1'000});
+    if (!query.absolute_row || query.absolute_row->numerator < 0 ||
+        query.absolute_row->denominator == 0)
+        return std::nullopt;
+    const auto row = static_cast<std::uint64_t>(query.absolute_row->numerator) /
+                     query.absolute_row->denominator;
+    return local_position_for_row(std::get<measure_index_t>(measures), row);
+}
+
 auto seek_playhead_to(const chart_document_t& chart, application_command_state_t& application,
                       local_position_t position, std::string& status) -> bool {
     const auto built = build_measure_index(chart);
@@ -143,6 +160,51 @@ auto navigate_beat_bookmark(document_history_t& history, editor_interaction_stat
     return {.accepted = jumped.accepted,
             .status = jumped.accepted ? (previous ? "Moved to the previous bookmark."
                                                   : "Moved to the next bookmark.")
+                                      : "Bookmark navigation was rejected.",
+            .diagnostics = jumped.diagnostics};
+}
+
+auto navigate_to_bookmark(document_history_t& history, editor_interaction_state_t& state,
+                          application_command_state_t& application,
+                          std::uint64_t expected_revision, chart_id_t chart_id,
+                          object_id_t bookmark_id) -> bookmark_command_outcome_t {
+    if (history.document.revision != expected_revision || state.chart != chart_id)
+        return fail("Bookmark chooser entry is stale.");
+    const auto* chart = find_chart(history, chart_id);
+    if (!chart) return fail("Bookmark chooser chart is unavailable.");
+    const auto bookmark = std::ranges::find(chart->bookmarks, bookmark_id, &bookmark_t::id);
+    if (bookmark == chart->bookmarks.end())
+        return fail("Bookmark is no longer available.");
+    if (bookmark->anchor == marker_anchor_t::beat && bookmark->position) {
+        if (is_playing(application)) {
+            std::string status;
+            const auto sought = seek_playhead_to(*chart, application, *bookmark->position, status);
+            return {.accepted = sought, .status = std::move(status)};
+        }
+        const auto jumped = dispatch_editor_action(history, state,
+            jump_edit_cursor_action_t{*bookmark->position, expected_revision});
+        return {.accepted = jumped.accepted,
+                .status = jumped.accepted ? "Moved to the selected bookmark."
+                                          : "Bookmark navigation was rejected.",
+                .diagnostics = jumped.diagnostics};
+    }
+    if (bookmark->anchor != marker_anchor_t::audio_time ||
+        !bookmark->audio_milliseconds)
+        return fail("Bookmark has no navigable position.");
+    if (is_playing(application)) {
+        if (!application.transport_seek_audio_milliseconds)
+            return fail("Audio-time bookmark seek is unavailable.");
+        return {.accepted = true,
+                .status = application.transport_seek_audio_milliseconds(
+                    *bookmark->audio_milliseconds)};
+    }
+    const auto position = beat_position_for_audio_milliseconds(*chart,
+                                                               *bookmark->audio_milliseconds);
+    if (!position) return fail("Audio-time bookmark has no musical position in this chart.");
+    const auto jumped = dispatch_editor_action(history, state,
+        jump_edit_cursor_action_t{*position, expected_revision});
+    return {.accepted = jumped.accepted,
+            .status = jumped.accepted ? "Moved to the selected bookmark."
                                       : "Bookmark navigation was rejected.",
             .diagnostics = jumped.diagnostics};
 }

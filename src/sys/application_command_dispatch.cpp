@@ -344,6 +344,19 @@ auto navigation_commands(command_context_t& context) -> std::optional<command_re
             : "Moved to the next bookmark or section boundary.");
 }
 
+auto open_bookmark_chooser_command(command_context_t& context) -> std::optional<command_result_t> {
+    if (context.command.kind != command_kind_t::navigation_go_to_bookmark) return std::nullopt;
+    auto* interaction = context.compose();
+    if (!interaction || !context.application_state.open_bookmark_chooser)
+        return reject_application_command(context.status, "Bookmark chooser requires the active Compose chart.");
+    if (editor_interaction_has_pending_gesture(*interaction))
+        return reject_application_command(context.status, "Finish or cancel the active Compose gesture first.");
+    const bool opened = context.application_state.open_bookmark_chooser(
+        context.history.document.id.value, interaction->chart.value, context.history.document.revision);
+    if (!opened) return reject_application_command(context.status, "Bookmark chooser is unavailable while another editor owns input.");
+    return command_result_t{.accepted = true};
+}
+
 // Primary+Up/Down jump bookmarks in screen direction; Primary+B adds one here.
 auto bookmark_commands(command_context_t& context) -> std::optional<command_result_t> {
     using namespace wormedit;
@@ -608,6 +621,7 @@ auto invoke_application_command(
     if (auto result = edit_commands(context)) return *result;
     if (auto result = selection_commands(context)) return *result;
     if (auto result = navigation_commands(context)) return *result;
+    if (auto result = open_bookmark_chooser_command(context)) return *result;
     if (auto result = bookmark_commands(context)) return *result;
     if (auto result = workspace_tab_command(context)) return *result;
     if (auto result = timing_insert_command(context)) return *result;

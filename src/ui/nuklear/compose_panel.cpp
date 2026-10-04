@@ -1,4 +1,6 @@
 #include "ui/nuklear/compose_note_menu.h"
+#include "ui/nuklear/compose_area_menu.h"
+#include "ui/nuklear/compose_recipe_menu.h"
 #include "ui/nuklear/compose_panel.h"
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/sdl_backend.h"
@@ -1143,9 +1145,13 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         state.layers_menu_open || state.layers_menu_release_pending ||
         state.bga_stack_open || state.bga_stack_release_pending ||
         state.bga_renumber_confirmation_open ||
-        state.bga_renumber_release_pending || compose_note_menu_consumed()) {
+        state.bga_renumber_release_pending || compose_note_menu_consumed() ||
+        state.bookmark_rename.active || state.bookmark_rename.release_pending ||
+        worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_chooser) ||
+        compose_area_menu_consumed() || compose_recipe_menu_consumed()) {
         discard_occluded_compose_input(panel);
         draw_compose_scene_canvas(context, view, canvas, viewport);
+        render_compose_bookmark_rename(context, *view, *action, state.bookmark_rename, viewport, window_focused);
         return;
     }
     const auto pointer_focus = update_compose_pointer_focus(
@@ -1157,6 +1163,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     process_compose_key_events(context, view, action, window_focused, ime_composition_active);
     if (state.go_to_measure_open) {
         draw_compose_scene_canvas(context, view, canvas, viewport);
+        render_compose_bookmark_rename(context, *view, *action, state.bookmark_rename, viewport, window_focused);
         return;
     }
 
@@ -1223,7 +1230,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     update_kiai_span_drag(pointer_event);
     update_recipe_drag(pointer_event);
     const auto compose_pointer_captured =
-        state.inline_timing_open || state.note_paint_pointer_active ||
+        state.inline_timing_open || state.bookmark_rename.active || state.bookmark_rename.release_pending || state.note_paint_pointer_active ||
         state.bmson_razor_pointer_active ||
         state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
         state.pointer_hold_active || state.lane_hold_active || state.note_move_active ||
@@ -1245,7 +1252,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     pointer_event.compose_pointer_captured = compose_pointer_captured;
     pointer_event.compose_note_double_click_in_view = compose_note_double_click_in_view;
     bool paint_pointer_consumed =
-        state.inline_timing_open || state.note_paint_pointer_active ||
+        state.inline_timing_open || state.bookmark_rename.active || state.bookmark_rename.release_pending || state.note_paint_pointer_active ||
         beat_fit_pointer_consumed ||
         state.bmson_razor_pointer_active || state.bmson_marker_move_candidate_active ||
         state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
@@ -1264,6 +1271,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     process_compose_drag_gestures(pointer_event, paint_pointer_consumed);
 
     draw_compose_scene_canvas(context, view, canvas, viewport);
+    render_compose_bookmark_rename(context, *view, *action, state.bookmark_rename, viewport, window_focused);
     render_compose_inline_timing_editor(panel, viewport);
 }
 
@@ -1530,12 +1538,15 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     nk_layout_space_end(context);
     worm_ui_nuklear_render_bga_stack_picker(context, view, action, &state);
     render_go_to_measure(context, *view, *action, window_focused);
+    (void)worm_ui_nuklear_render_compose_bookmark_chooser(context, view->bookmark_chooser, action, window_focused, &state.bookmark_chooser);
 }
 
 bool worm_ui_nuklear_compose_lane_focused(const WormUiComposeView* view, bool compose_tab_active,
                                           bool window_focused) {
     return compose_tab_active && worm_ui_nuklear_compose_canvas_input_available(
         view, window_focused, state.inline_timing_open || state.go_to_measure_open ||
-            state.layers_menu_open || state.layers_menu_input_consumed || compose_note_menu_consumed(), false) &&
+            state.layers_menu_open || state.layers_menu_input_consumed || compose_note_menu_consumed() ||
+            state.bookmark_rename.active || state.bookmark_rename.release_pending ||
+            worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_chooser), false) &&
         view->cursor && view->cursor->lane_id != 0;
 }

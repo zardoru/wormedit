@@ -1,5 +1,6 @@
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/popup_lifecycle.h"
 #include "ui/nuklear/theme.h"
 #include "wormedit/nuklear_config.h"
 
@@ -13,14 +14,16 @@ constexpr const char* title = "Note actions";
 constexpr float row_height = 24;
 struct NoteMenu {
     bool open{}, submenu{}, consumed{}, release_pending{}, close_pending{}, request_close{};
+    bool opened_this_frame{};
     std::uint64_t project{}, chart{}, revision{}, note{};
     float anchor_x{}, anchor_y{};
     struct nk_rect bounds{};
 } menu;
 
 bool current(const WormUiComposeView& view) {
-    return menu.project == view.project_id && menu.chart == view.chart_id &&
-           menu.revision == view.document_revision;
+    return wormedit::ui::chrome::popup_context_matches(
+        {menu.project, menu.chart, menu.revision, 0},
+        {view.project_id, view.chart_id, view.document_revision, 0});
 }
 
 bool raise(const WormUiComposeView& view, WormUiWorkspaceAction& action,
@@ -54,8 +57,7 @@ std::uint64_t note_at(const WormUiComposeView& view, double x, double y) {
 void close(nk_context* context, WormUiWorkspaceAction& action, const WormUiComposeView& view) {
     menu.open = false;
     menu.consumed = true;
-    menu.release_pending = context->input.mouse.buttons[NK_BUTTON_LEFT].down ||
-                           context->input.mouse.buttons[NK_BUTTON_RIGHT].down;
+    wormedit::ui::chrome::popup_arm_release(menu.release_pending);
     menu.request_close = !raise(view, action, WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
     wormedit::ui::chrome::dismiss_popup(context, title, menu.bounds);
 }
@@ -68,15 +70,6 @@ void update_bounds(nk_context* context) {
                                     std::max(0.0f, region.w - width)),
                           std::clamp(menu.anchor_y - region.y, 0.0f,
                                     std::max(0.0f, region.h - height)), width, height);
-}
-
-bool outside_press(nk_context* context) {
-    const auto region = nk_window_get_content_region(context);
-    const auto screen = nk_rect(region.x + menu.bounds.x, region.y + menu.bounds.y,
-                                menu.bounds.w, menu.bounds.h);
-    const bool pressed = nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT) ||
-                         nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT);
-    return pressed && !nk_input_is_mouse_hovering_rect(&context->input, screen);
 }
 
 void draw_layer_swatch(nk_context* context, const WormUiComposeSemanticLayerView& layer) {
@@ -115,7 +108,7 @@ void render_layer(nk_context* context, const WormUiComposeView& view,
     if (clicked && !disabled && raise(view, action, WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER, layer.layer_id)) {
         menu.open = false;
         menu.consumed = true;
-        menu.release_pending = context->input.mouse.buttons[NK_BUTTON_LEFT].down;
+        wormedit::ui::chrome::popup_arm_release(menu.release_pending);
     }
     nk_layout_row_end(context);
 }
@@ -167,10 +160,13 @@ void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceA
     }
     if (!menu.open) return;
     update_bounds(context);
-    if (!current(view) || nk_input_is_key_pressed(&context->input, NK_KEY_TEXT_RESET_MODE) || outside_press(context)) {
+    const auto bounds = wormedit::ui::chrome::popup_screen_bounds(context, menu.bounds);
+    if (!current(view) || wormedit::ui::chrome::popup_dismiss_requested(
+            context, bounds, !menu.opened_this_frame)) {
         close(context, action, view);
         return;
     }
+    menu.opened_this_frame = false;
     if (!nk_popup_begin(context, NK_POPUP_STATIC, title,
                         NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, menu.bounds)) {
         menu.open = false;
@@ -213,6 +209,7 @@ void open_at_pointer(nk_context* context, const WormUiComposeView& view,
     menu.revision = view.document_revision;
     menu.anchor_x = mouse.x;
     menu.anchor_y = mouse.y;
+    menu.opened_this_frame = true;
 }
 } // namespace
 
@@ -242,8 +239,8 @@ void dismiss_compose_note_popup(nk_context* context) {
 void process_compose_note_menu(nk_context* context, const WormUiComposeView& view,
                                WormUiWorkspaceAction& action, struct nk_rect viewport,
                                double input_right, bool focused) {
-    if (menu.release_pending && !context->input.mouse.buttons[NK_BUTTON_LEFT].down &&
-        !context->input.mouse.buttons[NK_BUTTON_RIGHT].down) menu.release_pending = false;
+    menu.opened_this_frame = false;
+    (void)wormedit::ui::chrome::popup_update_release_pending(context, menu.release_pending);
     if (!view.scene_available || !focused || view.input_occluded) return;
     if (!menu.open && !menu.consumed && !view.paste_active && !view.semantic_layer_gesture_active)
         open_at_pointer(context, view, action, viewport, input_right);

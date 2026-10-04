@@ -1,4 +1,5 @@
 #include "sys/compose_bookmark_commands.h"
+#include "sys/application_commands.h"
 
 #include <wormedit/audio/decoder.h>
 
@@ -69,6 +70,13 @@ TEST_CASE("nearest snap row picks the closest row and ties go earlier",
     CHECK(nearest_snap_row(5000.0, 960, 4, 1920) == std::optional<std::uint64_t>{1680});
     CHECK_FALSE(nearest_snap_row(10.0, 960, 7, 1920));
     CHECK_FALSE(nearest_snap_row(10.0, 960, 4, 0));
+}
+
+TEST_CASE("Go To Bookmark shortcut maps to its application command",
+          "[unit][sys][bookmark-commands]") {
+    const auto parsed = parse_application_command("navigation.go_to_bookmark");
+    REQUIRE(parsed);
+    CHECK(parsed->kind == application_command_kind_t::navigation_go_to_bookmark);
 }
 
 TEST_CASE("bookmark navigation moves the cursor over bookmarks only",
@@ -155,6 +163,68 @@ TEST_CASE("bookmark frames clamp to the preview end", "[unit][sys][bookmark-comm
           std::optional<std::uint64_t>{10});
     CHECK(bookmark_preview_frame(*timing.index, index, {measure_id_t{3}, 0}, std::nullopt) ==
           std::optional<std::uint64_t>{0});
+}
+
+TEST_CASE("bookmark chooser selection jumps to a stable beat ID and rejects stale rows",
+          "[unit][sys][bookmark-commands]") {
+    fixture_t fixture{{measure_id_t{3}, 0}};
+    const auto selected = navigate_to_bookmark(fixture.history, fixture.state,
+        fixture.application, fixture.history.document.revision, chart_id_t{2}, object_id_t{30});
+    REQUIRE(selected.accepted);
+    CHECK((fixture.state.cursor == local_position_t{measure_id_t{4}, 480}));
+
+    const auto cursor = fixture.state.cursor;
+    const auto stale = navigate_to_bookmark(fixture.history, fixture.state,
+        fixture.application, fixture.history.document.revision + 1, chart_id_t{2}, object_id_t{30});
+    CHECK_FALSE(stale.accepted);
+    CHECK(fixture.state.cursor == cursor);
+    const auto missing = navigate_to_bookmark(fixture.history, fixture.state,
+        fixture.application, fixture.history.document.revision, chart_id_t{2}, object_id_t{999});
+    CHECK_FALSE(missing.accepted);
+    CHECK(fixture.state.cursor == cursor);
+}
+
+TEST_CASE("bookmark chooser selection preserves playback for beat and audio anchors",
+          "[unit][sys][bookmark-commands]") {
+    fixture_t fixture{{measure_id_t{3}, 0}};
+    fixture.history.document.charts.front().bookmarks.push_back({
+        .id = object_id_t{32}, .label = "audio", .anchor = marker_anchor_t::audio_time,
+        .audio_milliseconds = 500});
+    fixture.application.transport_preview_playing = [] { return true; };
+    std::uint64_t frame{};
+    std::int64_t audio_ms{};
+    fixture.application.transport_preview_end_frame = [] { return std::optional<std::uint64_t>{}; };
+    fixture.application.transport_seek = [&](std::uint64_t target) {
+        frame = target;
+        return std::string{};
+    };
+    fixture.application.transport_seek_audio_milliseconds = [&](std::int64_t target) {
+        audio_ms = target;
+        return std::string{};
+    };
+    const auto before = fixture.state.cursor;
+    const auto beat = navigate_to_bookmark(fixture.history, fixture.state, fixture.application,
+        fixture.history.document.revision, chart_id_t{2}, object_id_t{30});
+    REQUIRE(beat.accepted);
+    CHECK(frame > 0);
+    CHECK(fixture.state.cursor == before);
+    const auto audio = navigate_to_bookmark(fixture.history, fixture.state, fixture.application,
+        fixture.history.document.revision, chart_id_t{2}, object_id_t{32});
+    REQUIRE(audio.accepted);
+    CHECK(audio_ms == 500);
+    CHECK(fixture.state.cursor == before);
+}
+
+TEST_CASE("stopped audio bookmark chooser selection resolves the musical row",
+          "[unit][sys][bookmark-commands]") {
+    fixture_t fixture{{measure_id_t{3}, 0}};
+    fixture.history.document.charts.front().bookmarks.push_back({
+        .id = object_id_t{32}, .label = "audio", .anchor = marker_anchor_t::audio_time,
+        .audio_milliseconds = 500});
+    const auto selected = navigate_to_bookmark(fixture.history, fixture.state,
+        fixture.application, fixture.history.document.revision, chart_id_t{2}, object_id_t{32});
+    REQUIRE(selected.accepted);
+    CHECK((fixture.state.cursor == local_position_t{measure_id_t{3}, 480}));
 }
 
 TEST_CASE("playing bookmark jumps advance from the live playhead and preserve the edit cursor",

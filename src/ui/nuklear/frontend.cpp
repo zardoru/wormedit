@@ -16,6 +16,8 @@
 #include "ui/nuklear/compose_bga_panel.h"
 #include "ui/nuklear/compose_input_panel.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/popup_lifecycle.h"
+#include "ui/nuklear/compose_recipe_menu.h"
 #include "ui/nuklear/content_margin.h"
 #include "ui/nuklear/image_quad.h"
 #include "ui/nuklear/metadata_panel.h"
@@ -63,6 +65,8 @@ class RenderSubphaseScope {
 #include <utility>
 
 using wormedit::ui::lucide::Glyph;
+static bool g_menu_popup_open{};
+static bool g_menu_popup_release_pending{};
 
 static constexpr nk_rune editor_font_glyph_ranges[]{0x0020, 0x00FF, 0x2026, 0x2026, 0};
 
@@ -489,6 +493,8 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
     worm_ui_nuklear_reset_timing_state();
     worm_ui_nuklear_reset_audio_state();
     worm_ui_nuklear_reset_compose_panel();
+    g_menu_popup_open = false;
+    g_menu_popup_release_pending = false;
 
     static struct nk_user_font test_font{
         .userdata = nk_handle_ptr(nullptr),
@@ -666,6 +672,12 @@ void worm_ui_frontend_bga_dock_request(WormUiBgaDockRequest* request) {
     request->sort_by_id = state.bga_sort_by_id;
 }
 
+void worm_ui_frontend_bookmark_chooser_request(WormUiBookmarkChooserRequest* request) {
+    if (!request) return;
+    const auto& chooser = worm_ui_nuklear_compose_state().bookmark_chooser;
+    *request = {chooser.first_row, chooser.row_limit, chooser.open};
+}
+
 void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request) {
     if (!request) return;
     const auto& state = worm_ui_nuklear_compose_state();
@@ -803,7 +815,8 @@ static bool notification_editor_text_owned() {
     const auto& compose = worm_ui_nuklear_compose_state();
     return (nuklear_text_entry_active() && !nk_window_is_active(g_context, "Notifications")) ||
         g_ime_composition_active || compose.inline_timing_open || compose.inline_offset_open ||
-        compose.go_to_measure_open;
+        compose.go_to_measure_open || compose.bookmark_rename.active ||
+        worm_ui_nuklear_bookmark_chooser_owns_input(compose.bookmark_chooser);
 }
 
 static bool notification_external_pointer_active() {
@@ -835,13 +848,28 @@ static void close_notification_history_windows() {
 
 static bool compose_popup_owns_input() {
     const auto& compose = worm_ui_nuklear_compose_state();
-    return compose.layers_menu_open || compose.keysound_slot_confirmation_open ||
+    return g_menu_popup_open || g_menu_popup_release_pending ||
+           compose_area_menu_open() || compose_area_menu_consumed() ||
+           compose_recipe_menu_open() || compose_recipe_menu_consumed() ||
+           compose.resource_export_group_popup_open || compose.resource_export_group_release_pending ||
+           compose.layers_menu_open || compose.layers_menu_release_pending || compose.keysound_slot_confirmation_open ||
            compose.keysound_slot_batch.open || compose.keysound_group_review.open ||
            compose.keysound_group_menu_open || compose.keysound_group_menu_release_pending ||
            compose.keysound_filter_popup_open || compose.keysound_filter_release_pending ||
            compose.bga_stack_open || compose.bga_stack_release_pending ||
            compose.bga_renumber_confirmation_open || compose.bga_renumber_release_pending ||
-           compose_note_menu_open();
+           compose_note_menu_open() || compose_note_menu_consumed() ||
+           worm_ui_nuklear_bookmark_chooser_owns_input(compose.bookmark_chooser);
+}
+
+bool worm_ui_frontend_open_bookmark_chooser(uint64_t project_id, uint64_t chart_id, uint64_t revision) {
+    auto& compose = worm_ui_nuklear_compose_state();
+    if (!g_context || !g_window_focused || nuklear_text_entry_active() || g_ime_composition_active ||
+        compose.inline_timing_open || compose.inline_offset_open || compose.go_to_measure_open ||
+        compose.bookmark_rename.active || compose.bookmark_rename.release_pending ||
+        compose_popup_owns_input()) return false;
+    worm_ui_nuklear_bookmark_chooser_open(compose.bookmark_chooser, project_id, chart_id, revision);
+    return true;
 }
 
 static bool notification_owns_pointer(float x, float y) {
@@ -869,7 +897,7 @@ static bool capture_notification_key(const SDL_KeyboardEvent& event) {
     const auto target = wormedit::ui::nuklear::notification_escape_target(
         g_notification_view, g_window_focused,
         nuklear_text_entry_active() || compose.inline_timing_open || compose.inline_offset_open ||
-            compose.go_to_measure_open || compose_popup_owns_input() ||
+            compose.go_to_measure_open || compose.bookmark_rename.active || compose.bookmark_rename.release_pending || compose_popup_owns_input() ||
             compose.semantic_layer_name_editor_visible || compose.semantic_layer_color_editor_visible,
         g_ime_composition_active,
         notification_editor_gesture_active() || compose.key_event_count != 0,
@@ -1037,14 +1065,33 @@ static bool capture_keysound_group_review_key(const SDL_KeyboardEvent& event) {
     return true;
 }
 
+static void forward_modal_key(const SDL_KeyboardEvent& event) {
+    SDL_Event copy{};
+    copy.type = event.type;
+    copy.key = event;
+    (void)nk_sdl_handle_event(g_context, &copy);
+}
+
+static bool capture_bookmark_editor_key(const SDL_KeyboardEvent& event) {
+    auto& compose = worm_ui_nuklear_compose_state();
+    const bool chooser = worm_ui_nuklear_bookmark_chooser_owns_input(compose.bookmark_chooser);
+    const bool rename = compose.bookmark_rename.active || compose.bookmark_rename.release_pending;
+    if (!chooser && !rename) return false;
+    forward_modal_key(event);
+    if (event.down && !event.repeat && event.key == SDLK_ESCAPE) {
+        if (chooser) worm_ui_nuklear_bookmark_chooser_cancel(g_context, compose.bookmark_chooser);
+        else cancel_compose_bookmark_rename(compose.bookmark_rename);
+    }
+    return true;
+}
+
 static bool capture_compose_modal_key(const SDL_KeyboardEvent& event) {
     const auto& compose = worm_ui_nuklear_compose_state();
-    if ((compose.keysound_filter_popup_open || compose.keysound_filter_release_pending) &&
-        event.key == SDLK_ESCAPE) {
-        SDL_Event copy{};
-        copy.type = event.type;
-        copy.key = event;
-        (void)nk_sdl_handle_event(g_context, &copy);
+    if (capture_bookmark_editor_key(event)) return true;
+    const bool escape_menu = g_menu_popup_open || g_menu_popup_release_pending ||
+        compose.keysound_filter_popup_open || compose.keysound_filter_release_pending;
+    if (escape_menu && event.key == SDLK_ESCAPE) {
+        forward_modal_key(event);
         return true;
     }
     return capture_bga_stack_key(event) || capture_keysound_group_review_key(event);
@@ -1315,8 +1362,36 @@ static void render_external_player_menu(const WormUiWorkspaceView& view,
 // nk_menu_end paints over the padding must be transparent while one is open.
 static nk_color g_menu_saved_background{};
 
+static bool begin_native_menu(const char* title, float width, float height) {
+    auto& parent = *g_context->current;
+    auto& button = g_context->input.mouse.buttons[NK_BUTTON_LEFT];
+    const auto name = nk_murmur_hash(title, static_cast<int>(std::strlen(title)), NK_PANEL_MENU);
+    const bool switching = parent.popup.win && parent.popup.type == NK_PANEL_MENU &&
+        parent.popup.name != name && nk_input_is_mouse_pressed(&g_context->input, NK_BUTTON_LEFT) &&
+        nk_input_is_mouse_hovering_rect(&g_context->input, nk_widget_bounds(g_context));
+    if (!switching)
+        return nk_menu_begin_label(g_context, title, NK_TEXT_LEFT, nk_vec2(width, height));
+    // Native menus retain one popup. Retarget it and consume the title press during
+    // begin, so Nuklear keeps the new menu open rather than toggling its header closed.
+    parent.popup.name = name;
+    const auto clicked = button.clicked;
+    button.clicked = 0;
+    const auto opened = nk_menu_begin_label(g_context, title, NK_TEXT_LEFT, nk_vec2(width, height));
+    button.clicked = clicked;
+    return opened;
+}
+
 static bool begin_menu_sized(const char* title, float width, float height) {
-    if (!nk_menu_begin_label(g_context, title, NK_TEXT_LEFT, nk_vec2(width, height))) return false;
+    if (!begin_native_menu(title, width, height)) return false;
+    const auto bounds = nk_window_get_bounds(g_context);
+    const bool over_titles = g_context->input.mouse.pos.y < bounds.y;
+    if (!g_window_focused || wormedit::ui::chrome::popup_dismiss_requested(g_context, bounds, !over_titles)) {
+        nk_popup_close(g_context);
+        nk_menu_end(g_context);
+        g_menu_popup_release_pending = true;
+        return false;
+    }
+    g_menu_popup_open = true;
     wormedit::ui::chrome::menu_panel(g_context);
     g_menu_saved_background = g_context->style.window.background;
     g_context->style.window.background = nk_rgba(0, 0, 0, 0);
@@ -1446,6 +1521,9 @@ static void render_title_label(const WormUiWorkspaceView& view) {
 
 static void render_title_bar(const WormUiWorkspaceView* view,
                              WormUiWorkspaceAction* action) {
+    const bool menu_was_open = g_menu_popup_open;
+    (void)wormedit::ui::chrome::popup_update_release_pending(g_context, g_menu_popup_release_pending);
+    g_menu_popup_open = false;
     close_unavailable_inline_offset(*view);
     const bool custom_controls = g_window &&
         (SDL_GetWindowFlags(g_window) & SDL_WINDOW_BORDERLESS) != 0;
@@ -1477,6 +1555,7 @@ static void render_title_bar(const WormUiWorkspaceView* view,
             action->kind = WORM_UI_WORKSPACE_ACTION_QUIT;
     }
     nk_menubar_end(g_context);
+    if (menu_was_open && !g_menu_popup_open) g_menu_popup_release_pending = true;
 }
 
 static void render_workspace_tabs(const WormUiWorkspaceView* view,
@@ -1833,6 +1912,7 @@ static bool history_owns_content_input(const WormUiWorkspaceView& view) {
 
 static bool options_owns_content_input(const WormUiWorkspaceView& view) {
     if (view.close_confirmation.visible) return true;
+    if (g_menu_popup_open || g_menu_popup_release_pending) return true;
     if (history_owns_content_input(view)) return true;
     const auto& compose = worm_ui_nuklear_compose_state();
     const bool text_active = nuklear_text_entry_active() || g_ime_composition_active ||
@@ -1853,6 +1933,17 @@ static bool options_owns_content_input(const WormUiWorkspaceView& view) {
     return nk_window_is_active(g_context, "Options") && nuklear_text_entry_active();
 }
 
+static void retire_bookmark_editors(const WormUiWorkspaceView& view, WormUiWorkspaceAction& action) {
+    if (view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && view.compose.visible) return;
+    auto& state = worm_ui_nuklear_compose_state();
+    worm_ui_nuklear_bookmark_chooser_cancel(g_context, state.bookmark_chooser);
+    cancel_compose_bookmark_rename(state.bookmark_rename);
+    (void)worm_ui_nuklear_render_compose_bookmark_chooser(g_context, view.compose.bookmark_chooser,
+        &action, false, &state.bookmark_chooser);
+    render_compose_bookmark_rename(g_context, view.compose, action, state.bookmark_rename,
+        nk_rect(0, 0, 0, 0), false);
+}
+
 static void render_workspace_content(const WormUiWorkspaceView& view,
                                      WormUiWorkspaceAction& action) {
     prepare_workspace_content_scroll(g_context, view.compose.visible);
@@ -1870,6 +1961,7 @@ static void render_workspace_content(const WormUiWorkspaceView& view,
                                      workspace_content_flags(view.compose.visible, padded)) != 0;
     if (padded) nk_style_pop_vec2(g_context);
     if (!open) return;
+    retire_bookmark_editors(view, action);
     if (view.setup.visible) {
         worm_ui_nuklear_render_setup_panel(g_context, &view.setup, &action);
         (void)render_recovery_panel(view, action);

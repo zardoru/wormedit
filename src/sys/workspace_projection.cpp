@@ -6,6 +6,7 @@
 #include "sys/compose_resource_presenter.h"
 #include "sys/sound_list_projection.h"
 #include "sys/sound_usage_projection.h"
+#include "sys/bookmark_chooser_projection.h"
 #include "wormedit/config.h"
 
 #include <wormedit/core/resource_file_copy.h>
@@ -325,6 +326,7 @@ struct workspace_projection_context_t {
     dock_sort_t keysound_sort;
     WormUiKeysoundDockRequest keysound_request;
     WormUiSoundUsageRequest sound_usage_request;
+    WormUiBookmarkChooserRequest bookmark_chooser_request;
 };
 
 void publish_workspace_summary(flattened_workspace_t& result, const char* text) {
@@ -1117,6 +1119,39 @@ void populate_compose_branch_outline(flattened_workspace_t& result,
     populate_compose_branch_diagnostics(result, outline);
 }
 
+void populate_bookmark_chooser(const workspace_projection_context_t& projection, chart_id_t chart) {
+    auto& result = projection.result;
+    auto& view = result.view.compose.bookmark_chooser;
+    view.project_id = projection.document.id.value;
+    view.chart_id = chart.value;
+    view.document_revision = projection.document.revision;
+    const auto& request = projection.bookmark_chooser_request;
+    if (!request.open) return;
+    const auto page = project_bookmark_chooser(projection.document, chart, request.first_row,
+                                               std::clamp(request.row_limit, std::size_t{1}, std::size_t{64}));
+    view.total_count = page.total_count;
+    view.first_row = page.first_row;
+    auto* arena = result.arena();
+    if (!arena) { view.truncated = true; return; }
+    result.compose.bookmark_chooser_row = arena_array<WormUiBookmarkChooserRowView>(*arena, page.rows.size());
+    for (const auto& row : page.rows) {
+        WormUiBookmarkChooserRowView item{};
+        item.bookmark_id = row.bookmark_id.value;
+        item.anchor = static_cast<std::uint8_t>(row.anchor);
+        item.position_label = arena_string(*arena, row.position_label);
+        item.name = arena_string(*arena, row.name);
+        item.display_label = arena_string(*arena, row.display_label);
+        item.navigation_available = row.navigation_available;
+        if (!item.position_label || !item.name || !item.display_label ||
+            !result.compose.bookmark_chooser_row.push_back(item)) {
+            view.truncated = true;
+            break;
+        }
+    }
+    view.rows = result.compose.bookmark_chooser_row.data();
+    view.row_count = result.compose.bookmark_chooser_row.size();
+}
+
 void populate_compose_tab(const workspace_projection_context_t& projection, const wormedit::workspace_compose_view_t& tab) {
     auto& result = projection.result;
     const auto& source = projection.source;
@@ -1130,6 +1165,7 @@ void populate_compose_tab(const workspace_projection_context_t& projection, cons
                     source.selected_visual_asset.value_or(wormedit::asset_id_t{}).value;
                 populate_compose_resources(projection);
                 populate_compose_keysounds(projection, tab.chart);
+                populate_bookmark_chooser(projection, tab.chart);
                 populate_compose_output_groups(projection, tab.chart);
                 populate_compose_branch_outline(result, outline);
                 append_workspace_format(projection, "Measures: %zu", static_cast<std::size_t>(tab.measure_count));
@@ -1339,6 +1375,7 @@ void flattened_workspace_t::rebind_view_pointers() {
     metadata_view.format_targets = metadata.format_target.data();
 
     auto& compose_view = view.compose;
+    compose_view.bookmark_chooser.rows = compose.bookmark_chooser_row.data();
     compose_view.resources = compose.resource.view.data();
     compose_view.keysounds = compose.keysound.row.data();
     compose_view.keysound_selected_rows = compose.keysound.selected_row.data();
@@ -1392,7 +1429,8 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                        const wormedit::stepmania_export_policy_t& stepmania_policy,
                        frame_arena_t* arena, dock_sort_t keysound_sort,
                        WormUiKeysoundDockRequest keysound_request,
-                       WormUiSoundUsageRequest sound_usage_request) -> flattened_workspace_t {
+                       WormUiSoundUsageRequest sound_usage_request,
+                       WormUiBookmarkChooserRequest bookmark_chooser_request) -> flattened_workspace_t {
     flattened_workspace_t result(arena);
     result.view.project_title = document.metadata.title.c_str();
     result.view.artist = document.metadata.artist.c_str();
@@ -1422,7 +1460,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
 
     const workspace_projection_context_t projection{
         result,        source,           document,           stepmania_policy,
-        keysound_sort, keysound_request, sound_usage_request};
+        keysound_sort, keysound_request, sound_usage_request, bookmark_chooser_request};
     std::visit(workspace_tab_visitor{projection}, source.tab_view);
     return result;
 }

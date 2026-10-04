@@ -1,4 +1,6 @@
 #include "sys/compose_actions.h"
+#include "sys/compose_bookmark_commands.h"
+#include "sys/bookmark_rename_commands.h"
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/recipe_form.h"
 #include <wormedit/core/sv_recipe.h>
@@ -86,6 +88,32 @@ struct compose_action_context_t {
     bool metadata_import_busy;
     wormedit::editor_field_scroll_direction_t scroll_direction;
 };
+
+auto dispatch_compose_bookmark_action(compose_action_context_t& context) -> std::optional<std::string> {
+    const auto& action = context.action;
+    const bool rename = action.compose_action == WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK;
+    if (!rename && action.compose_action != WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK) return std::nullopt;
+    if (action.compose_input_project_id != context.history.document.id.value ||
+        action.compose_input_chart_id != context.state.chart.value ||
+        action.compose_input_document_revision != context.history.document.revision)
+        return "Bookmark action is stale; reopen it in the active chart.";
+    if (editor_interaction_has_pending_gesture(context.state))
+        return "Finish or cancel the active Compose gesture first.";
+    if (!rename) return navigate_to_bookmark(context.history, context.state, context.application_state,
+        action.compose_input_document_revision, context.state.chart,
+        wormedit::object_id_t{action.compose_bookmark_id}).status;
+    const auto label_end = std::find(std::begin(action.compose_marker_label),
+                                    std::end(action.compose_marker_label), '\0');
+    if (label_end == std::end(action.compose_marker_label)) return "Bookmark name is too long.";
+    const auto outcome = rename_bookmark(context.history, action.compose_input_document_revision,
+        context.state.chart, wormedit::object_id_t{action.compose_bookmark_id},
+        std::string_view(action.compose_marker_label, label_end - action.compose_marker_label));
+    if (outcome.document_changed) {
+        const auto rebound = wormedit::rebind_workspace(context.workspace, context.history);
+        if (!rebound) return "Bookmark renamed, but workspace rebinding failed.";
+    }
+    return outcome.status;
+}
 
 std::optional<std::string> dispatch_compose_measure_navigation(compose_action_context_t& context) {
     using namespace wormedit;
@@ -2658,6 +2686,7 @@ auto dispatch_compose_view_action(
     }
     if (auto response = dispatch_compose_note_menu_action(context)) return *response;
     if (auto response = dispatch_compose_audio_offset(context)) return *response;
+    if (auto response = dispatch_compose_bookmark_action(context)) return *response;
     if (auto response = dispatch_compose_measure_navigation(context)) return *response;
     if (auto response = dispatch_compose_bgm_column_count(context)) return *response;
     if (auto response = dispatch_compose_lane_profile(context)) return *response;

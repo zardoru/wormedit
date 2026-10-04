@@ -1326,3 +1326,52 @@ TEST_CASE("Sound usage rows and labels remain arena owned after source changes a
     check_frame_storage(std::strcmp(view.usage_rows[0].chart_label, "Difficulty") == 0);
     check_frame_storage(std::strcmp(view.usage_rows[0].position_label, "Measure 1, row 120") == 0);
 }
+
+namespace {
+auto bookmark_arena_document() -> wormedit::song_document_t {
+    using namespace wormedit;
+    chart_document_t chart{.id = chart_id_t{2}, .divisions_per_standard_measure = 960,
+        .measures = {{.id = measure_id_t{10}, .definition = {{1, 1}, meter_t{4, 4}}}},
+        .bpms = {{.id = object_id_t{50}, .position = {measure_id_t{10}, 0}, .beats_per_minute = {120, 1}}}};
+    chart.bookmarks.push_back({.id = object_id_t{101}, .label = "Original name",
+        .anchor = marker_anchor_t::beat, .position = local_position_t{measure_id_t{10}, 240}});
+    return {.id = song_id_t{1}, .revision = 7, .charts = {std::move(chart)}};
+}
+auto project_bookmark_arena(const wormedit::song_document_t& document, frame_arena_t* arena = nullptr)
+    -> flattened_workspace_t {
+    wormedit::workspace_view_t model;
+    model.active_tab = wormedit::workspace_tab_t::compose;
+    model.tab_view = wormedit::workspace_compose_view_t{.chart = wormedit::chart_id_t{2}};
+    return flatten_workspace(model, document, "ready", {}, false, {}, arena,
+        dock_sort_t::natural_name, {}, {}, {.first_row = 0, .row_limit = 12, .open = true});
+}
+}
+
+TEST_CASE("Bookmark chooser rows and text survive document mutation and projection move",
+          "[sys][frame-arena][bookmark]") {
+    auto document = bookmark_arena_document();
+    auto frame = project_bookmark_arena(document);
+    REQUIRE(frame.view.compose.bookmark_chooser.row_count == 1);
+    document.charts.clear();
+    auto moved = std::move(frame);
+    moved.rebind_view_pointers();
+    const auto& view = moved.view.compose.bookmark_chooser;
+    check_frame_storage(view.project_id == 1);
+    check_frame_storage(view.chart_id == 2);
+    check_frame_storage(view.document_revision == 7);
+    check_frame_storage(view.rows[0].bookmark_id == 101);
+    check_frame_storage(std::strcmp(view.rows[0].name, "Original name") == 0);
+    check_frame_storage(std::strstr(view.rows[0].display_label, "Original name") != nullptr);
+}
+
+TEST_CASE("Bookmark chooser arena exhaustion publishes a consistent bounded page",
+          "[sys][frame-arena][bookmark]") {
+    auto document = bookmark_arena_document();
+    frame_arena_t arena({.chunk_bytes = 64, .maximum_bytes = 64});
+    auto frame = project_bookmark_arena(document, &arena);
+    frame.rebind_view_pointers();
+    const auto& view = frame.view.compose.bookmark_chooser;
+    CHECK(view.total_count == 1);
+    CHECK(view.truncated);
+    CHECK(view.row_count == 0);
+}

@@ -1078,15 +1078,14 @@ NK_API int nk_sdl_handle_event(struct nk_context* ctx, SDL_Event* evt) {
         ctx->input.mouse.delta.y = ctx->input.mouse.pos.y - ctx->input.mouse.prev.y;
         return 1;
 
-    case SDL_EVENT_TEXT_INPUT: {
-        nk_glyph glyph;
-        nk_size len;
-        NK_ASSERT(evt->text.text);
-        len = SDL_strlen(evt->text.text);
-        NK_ASSERT(len <= NK_UTF_SIZE);
-        NK_MEMCPY(glyph, evt->text.text, len);
-        nk_input_glyph(ctx, glyph);
-    }
+    case SDL_EVENT_TEXT_INPUT:
+        if (const auto* text = evt->text.text) {
+            while (*text) {
+                const auto rune = SDL_StepUTF8(&text, nullptr);
+                if (rune == 0) break;
+                nk_input_unicode(ctx, static_cast<nk_rune>(rune));
+            }
+        }
         return 1;
 
     case SDL_EVENT_MOUSE_WHEEL:

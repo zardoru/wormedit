@@ -337,6 +337,8 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/bms_branch_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/arrow_glyph.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bookmark_label.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bookmark_chooser.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bookmark_rename.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_markers.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_area_menu.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_recipe_menu.cpp"
@@ -398,6 +400,8 @@ if(WORMEDIT_BUILD_APP)
         src/sys/application_commands.cpp
         src/sys/compose_minimap_navigation.cpp
         src/sys/compose_bookmark_commands.cpp
+        src/sys/bookmark_chooser_projection.cpp
+        src/sys/bookmark_rename_commands.cpp
         src/sys/compose_playhead_skip.cpp
         src/sys/compose_bgm_bar.cpp
         src/sys/sound_list_projection.cpp

@@ -6,10 +6,17 @@
 #include <algorithm>
 #include <array>
 #include <ranges>
+#include <source_location>
 #include <string>
 #include <string_view>
 
 namespace {
+void check_bga(bool condition, const std::source_location location =
+                                    std::source_location::current()) {
+    INFO("assertion caller line " << location.line());
+    CHECK(condition);
+}
+
 auto mouse_button(bool down, float x, float y) -> SDL_Event {
     SDL_Event event{};
     event.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
@@ -123,6 +130,7 @@ void open_dense_stack_picker(nuklear_event_harness_t& harness,
                              const WormUiComposeBgaEventView& event) {
     const auto marker = rect_center(harness, event.bounds);
     (void)click(harness, marker.first, marker.second);
+    (void)harness.frame();
     REQUIRE(harness.drawn_text_center("Choose the event to select or edit").has_value());
 }
 
@@ -231,29 +239,39 @@ void verify_bga_stack_outside_dismissal(nuklear_event_harness_t& harness) {
     const auto down = std::array{mouse_motion(outside.first, outside.second),
                                  mouse_button(true, outside.first, outside.second)};
     const auto pressed = harness.frame(down);
-    CHECK_FALSE(worm_ui_nuklear_compose_state().bga_stack_open);
-    CHECK(worm_ui_nuklear_compose_state().bga_stack_release_pending);
-    CHECK(pressed.get().compose_input_count == 0);
-    CHECK_FALSE(harness.drawn_text_center("Choose the event to select or edit").has_value());
+    check_bga(!worm_ui_nuklear_compose_state().bga_stack_open);
+    check_bga(worm_ui_nuklear_compose_state().bga_stack_release_pending);
+    check_bga(pressed.get().compose_input_count == 0);
+    check_bga(!harness.drawn_text_center("Choose the event to select or edit").has_value());
 
     const auto up = std::array{mouse_motion(outside.first, outside.second),
                                mouse_button(false, outside.first, outside.second)};
     const auto released = harness.frame(up);
-    CHECK(released.get().compose_input_count == 0);
-    CHECK_FALSE(worm_ui_nuklear_compose_state().bga_stack_release_pending);
+    check_bga(released.get().compose_input_count == 0);
+    check_bga(worm_ui_nuklear_compose_state().bga_stack_release_pending);
+    const auto quiet = harness.frame();
+    check_bga(quiet.get().compose_input_count == 0);
+    check_bga(!worm_ui_nuklear_compose_state().bga_stack_release_pending);
 }
 
 void verify_bga_stack_escape_dismissal(nuklear_event_harness_t& harness) {
     const auto escape = escape_key();
     const auto dismissed = harness.frame(std::span{&escape, 1});
-    CHECK_FALSE(worm_ui_nuklear_compose_state().bga_stack_open);
-    CHECK_FALSE(worm_ui_nuklear_compose_state().bga_stack_release_pending);
-    CHECK(dismissed.get().compose_input_count == 0);
-    CHECK_FALSE(harness.drawn_text_center("Choose the event to select or edit").has_value());
+    check_bga(!worm_ui_nuklear_compose_state().bga_stack_open);
+    check_bga(worm_ui_nuklear_compose_state().bga_stack_release_pending);
+    check_bga(dismissed.get().compose_input_count == 0);
+    check_bga(!harness.drawn_text_center("Choose the event to select or edit").has_value());
 
-    const auto after_release = harness.frame();
-    CHECK(after_release.get().compose_input_count == 0);
-    CHECK_FALSE(worm_ui_nuklear_compose_state().bga_stack_release_pending);
+    auto key_up = escape;
+    key_up.type = SDL_EVENT_KEY_UP;
+    key_up.key.type = SDL_EVENT_KEY_UP;
+    key_up.key.down = false;
+    const auto released = harness.frame(std::span{&key_up, 1});
+    check_bga(released.get().compose_input_count == 0);
+    check_bga(worm_ui_nuklear_compose_state().bga_stack_release_pending);
+    const auto quiet = harness.frame();
+    check_bga(quiet.get().compose_input_count == 0);
+    check_bga(!worm_ui_nuklear_compose_state().bga_stack_release_pending);
 }
 }
 
@@ -403,8 +421,13 @@ TEST_CASE("dense BGA overlap marker opens a scrollable picker for every event",
     open_dense_stack_picker(harness, events.front());
     choose_last_stacked_event(harness, events);
     drag_last_stacked_event(harness, events.back());
+    (void)harness.frame();
     const auto stack_center = rect_center(harness, events.front().bounds);
     (void)click(harness, stack_center.first, stack_center.second);
+    (void)harness.frame();
+    INFO("BGA stack open=" << worm_ui_nuklear_compose_state().bga_stack_open
+         << " release pending=" << worm_ui_nuklear_compose_state().bga_stack_release_pending
+         << " text=" << harness.drawn_text());
     REQUIRE(harness.drawn_text_center("Choose the event to select or edit").has_value());
     const auto first_row = drawn_text_center_with_prefix(harness, "#100 · BACKGROUND");
     REQUIRE(first_row.has_value());

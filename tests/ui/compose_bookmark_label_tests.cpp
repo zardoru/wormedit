@@ -2,6 +2,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
+#include <cmath>
+
 using namespace wormedit::ui;
 
 namespace {
@@ -62,4 +65,18 @@ TEST_CASE("a label near the top edge stays inside the field", "[unit][ui][bookma
     const auto box = layout_bookmark_label("Top", width_of, 12.0f, 52.0f, field, std::nullopt);
     REQUIRE(box);
     CHECK(box->y == field.y);
+}
+
+TEST_CASE("bookmark rename target chooses the closest line with a stable ID tie break",
+          "[unit][ui][bookmark-label]") {
+    const std::array lines{
+        bookmark_rename_line_t{.bookmark_id = 9, .y = 100.0},
+        bookmark_rename_line_t{.bookmark_id = 3, .y = 108.0},
+        bookmark_rename_line_t{.bookmark_id = 0, .y = 100.0},
+    };
+    CHECK(bookmark_rename_target_at(lines, 198.0, 104.0, 200.0) == 3);
+    CHECK(bookmark_rename_target_at(lines, 165.0, 100.0, 200.0) == 9);
+    CHECK_FALSE(bookmark_rename_target_at(lines, 163.0, 100.0, 200.0));
+    CHECK_FALSE(bookmark_rename_target_at(lines, 198.0, 120.0, 200.0));
+    CHECK_FALSE(bookmark_rename_target_at(lines, NAN, 100.0, 200.0));
 }

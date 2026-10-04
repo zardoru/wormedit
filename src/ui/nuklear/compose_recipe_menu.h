@@ -10,4 +10,5 @@ struct nk_rect;
 void process_compose_recipe_menu(nk_context*, const WormUiComposeView&, WormUiWorkspaceAction&,
                                  struct nk_rect viewport, double input_right, bool focused);
 auto compose_recipe_menu_open() -> bool;
+auto compose_recipe_menu_consumed() -> bool;
 void reset_compose_recipe_menu();

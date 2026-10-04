@@ -25,6 +25,15 @@ remains serialized.
 | `/home/zardoru/devel/wormedit-audio-notifications` | `coord/audio-notifications` | T-223 N7 audio/decode/waveform | [Audio notifications](audio-notifications.md) |
 | `/home/zardoru/devel/wormedit-osutest-load` | `coord/osutest-load` | Real osu!mania import compatibility | Dedicated brief and Sol 6.1 medium coordinator in that worktree |
 
+The completed audio worktree is now reused on `coord/compose-notifications`
+at `b57b47f` for the remaining Compose action producers; its original
+`coord/audio-notifications` branch is retained. Root approves the exact action
+brief in `/tmp/wormedit-batch-implementation/compose-actions-brief.txt`:
+`compose_actions.{h,cpp}`, new action-notification tests, narrow test manifest,
+task-card scope and a dedicated coordination note. Any needed area-action or
+bookmark-rename support must be recorded before edits. The Sol coordinator waits
+for an agent slot; its Luna executor waits for the input executor's release.
+
 ## Ownership and scheduling
 
 - Root alone changes main, the resume checklist, and this index. Coordinators
@@ -126,3 +135,11 @@ The completed clean audio worktree is available for a separately owned Compose
 actions branch after the next reviewed notification increment and the import
 coordinator's release; its Sol 6.1 medium coordinator will have a Luna medium
 task list and wait for the current input executor's slot.
+
+Resource/export and projection/dialog increment `b57b47f` is reviewed and
+integrated; root build and focused verification are underway. Worker completion
+consumers post once, projection diagnostics track identity and repair edges,
+and the frontend bridge uses a scoped noexcept callback with UI-thread
+consumption. Coordinator verification includes actual failed/too-long picker
+callbacks, cancellation/stale callbacks/shutdown, filesystem copy and export
+completion. N4 input/actions and recovery/final glue remain active.

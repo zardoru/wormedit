@@ -3496,6 +3496,14 @@ auto corrupt_marker_anchor(chart_document_t& chart, int kind) -> const char* {
         return "An audio-time section has inconsistent span data.";
     }
 }
+void expect_marker_projection_error(const flattened_workspace_t& flattened,
+                                    std::string_view expected) {
+    expect_compose_test(!flattened.projection_feedback.empty());
+    const auto& diagnostic = flattened.projection_feedback.front();
+    expect_compose_test(diagnostic.message == expected);
+    expect_compose_test(diagnostic.severity == notification_severity_t::error);
+    expect_compose_test(diagnostic.source == notification_source_t::document);
+}
 void check_marker_rejection(int kind, std::size_t limit) {
     compose_test_fixture_t fixture(marker_arena_song());
     const auto expected = corrupt_marker_anchor(fixture.history.document.charts.front(), kind);
@@ -3503,9 +3511,7 @@ void check_marker_rejection(int kind, std::size_t limit) {
     project_geometry_arena(fixture, arena);
     const auto& view = fixture.flattened.view.compose;
     expect_compose_test(!view.scene_available);
-    REQUIRE(view.status_text);
-    INFO(view.status_text);
-    expect_compose_test(std::string_view(view.status_text) == expected);
+    expect_marker_projection_error(fixture.flattened, expected);
     expect_compose_test(fixture.history.document.revision == 1 && fixture.history.undo.empty());
 }
 void check_marker_capacity_validation_order() {
@@ -3523,8 +3529,8 @@ void check_marker_capacity_validation_order() {
         fixture.cache, 1280, 980, fixture.interaction, fixture.application, nullptr);
     const auto& view = fixture.flattened.view.compose;
     expect_compose_test(!view.scene_available);
-    REQUIRE(view.status_text);
-    expect_compose_test(std::string_view(view.status_text) == "A beat-anchored bookmark has no valid chart position.");
+    expect_marker_projection_error(fixture.flattened,
+        "A beat-anchored bookmark has no valid chart position.");
 }
 }
 TEST_CASE("Compose marker validation precedes arena exhaustion and preserves cap ordering", "[sys][frame-arena][compose-markers]") {

@@ -91,6 +91,7 @@ auto project_application_frame(application_frame_projection_context_t context)
     -> flattened_workspace_t {
     frame_phase_scope_t frame_projection(frame_phase_t::workspace);
     flattened_workspace_t flattened;
+    static const std::string empty_legacy_feedback;
     {
         frame_phase_scope_t flatten(frame_phase_t::workspace_flatten);
         WormUiKeysoundDockRequest keysound_request{};
@@ -100,7 +101,7 @@ auto project_application_frame(application_frame_projection_context_t context)
         WormUiBookmarkChooserRequest bookmark_request{};
         worm_ui_frontend_bookmark_chooser_request(&bookmark_request);
         flattened = flatten_workspace(
-            context.model, context.history.document, context.status,
+            context.model, context.history.document, empty_legacy_feedback,
                               context.recovery_controller.view(), context.recovery_scan_configured,
                               context.stepmania_export_policy, context.frame_arena,
             keysound_request.sort_by_id ? dock_sort_t::bms_id : dock_sort_t::natural_name,

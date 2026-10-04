@@ -3018,7 +3018,6 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
                                      std::optional<std::uint32_t> sample_rate,
                                      int compose_viewport_height_pixels) {
     auto& running = context.running_ref;
-    auto& status = context.status_ref;
     auto& history = context.history_ref;
     auto& workspace = context.workspace_ref;
     auto& application_command_state = context.application_command_state_ref;
@@ -3099,14 +3098,14 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
         } else if (dispatch_timing_workspace_action(action, history, workspace,
                                                    application_command_state, timing_grid,
                                                    timing_edit, context.notification_sink_ref)) {
-            // The timing dispatcher updates status and consumes this action.
+            // The timing producer publishes feedback and consumes this action.
         } else if (wormedit::sys::dispatch_compose_workspace_action(
                        action, history, workspace, compose_interaction_state,
                        compose_viewport_height_pixels, application_command_state, asset_base,
                        resource_copy_scheduler, resource_copy_runtime, export_runtime,
                        metadata_asset_runtime.import_pending(), metadata_drop,
-                       metadata_asset_runtime, status)) {
-            // The compose dispatcher updates status and consumes this action.
+                       metadata_asset_runtime, context.notification_sink_ref)) {
+            // The Compose producer publishes feedback and consumes this action.
         }
 }
 
@@ -3690,7 +3689,6 @@ int main(int argc, char** argv) {
         startup.primary_version, initial_autosave_sequence,
         std::chrono::minutes{5}, std::chrono::seconds{30}, notification_sink);
     post_initial_application_feedback(notification_sink, startup.loaded_primary, requested_primary_path, platform_recovery);
-    std::string status;
     std::string close_feedback;
     wormedit::sys::workspace_edit_feedback_t workspace_edit_feedback;
     wormedit::sys::projection_notification_feedback_t projection_feedback;
@@ -3874,7 +3872,6 @@ int main(int argc, char** argv) {
         decltype(command_registry)& command_registry_ref;
         decltype(compose_interaction_state)& compose_interaction_state_ref;
         decltype(application_command_state)& application_command_state_ref;
-        decltype(status)& status_ref;
         decltype(notification_sink)& notification_sink_ref;
         decltype(tap_event_ns)& tap_event_ns_ref;
         decltype(audio_offset_drag)& audio_offset_drag_ref;
@@ -3898,7 +3895,6 @@ int main(int argc, char** argv) {
         command_registry,
         compose_interaction_state,
         application_command_state,
-        status,
         notification_sink,
         tap_event_ns,
         audio_offset_drag,
@@ -3917,7 +3913,6 @@ int main(int argc, char** argv) {
     };
     struct workspace_frame_action_context_t {
         decltype(running)& running_ref;
-        decltype(status)& status_ref;
         decltype(notification_sink)& notification_sink_ref;
         decltype(close_feedback)& close_feedback_ref;
         decltype(history)& history_ref;
@@ -3957,7 +3952,6 @@ int main(int argc, char** argv) {
     };
     workspace_frame_action_context_t workspace_frame_action_context{
         running,
-        status,
         notification_sink,
         close_feedback,
         history,
@@ -4096,7 +4090,6 @@ int main(int argc, char** argv) {
                 {.model = *model.view,
                  .history = history,
                  .workspace = workspace,
-                 .status = status,
                  .frame_arena = &frame_projection_arena,
                  .recovery_controller = recovery_controller,
                  .recovery_scan_configured = recovery_scan_configured,

@@ -102,6 +102,15 @@ was needed. Logs: `root-audio-import-final-build.log` and
 
 The aggregate event issue reproduces with all seven new timing/onset cases
 excluded: 115 existing cases yield the same seven failures and 27 failed
-assertions (`root-existing-aggregate-events.log`). It is an existing
+assertions (`root-existing-aggregate-events.log`). This points to a
 single-process harness ordering issue, distinct from the passing 122 standard
 CTest-isolated cases; no aggregate pass is claimed.
+
+Event-drop/import-warning increment `169486a` passes the integrated Debug build
+and 14 relevant drop/import-feedback cases (`root-drop-build.log`,
+`root-drop-tests.log`). Startup recovery error deduplication and the remaining
+seek/bookmark/rebind messages are under coordinator review. The import Luna
+executor has handed off its draft; notifications receives the next Luna slot
+for N6b worker completions while the import Sol completes arithmetic and
+roundtrip review. All eight real charts pass draft native reopen and osu export
+reimport; these results are preliminary until reviewed integration.

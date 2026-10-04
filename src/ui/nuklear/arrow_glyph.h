@@ -10,7 +10,13 @@ struct arrow_point_t {
     float y;
 };
 
-// Directions use the frontend/core glyph values: left=2, down=3, up=4, right=5.
+inline constexpr std::uint8_t last_arrow_glyph = 10;
+
+[[nodiscard]] constexpr auto is_arrow_glyph(std::uint8_t glyph) -> bool {
+    return glyph >= 2 && glyph <= last_arrow_glyph;
+}
+
+// Uses the frontend/core glyph values, including diagonal arrows and Pump center.
 auto arrow_polygon(std::uint8_t direction, float x, float y, float size)
     -> std::array<arrow_point_t, 7>;
 

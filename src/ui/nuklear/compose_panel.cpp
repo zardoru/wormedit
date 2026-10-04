@@ -6,6 +6,7 @@
 #include "ui/nuklear/bms_branch_panel.h"
 #include "ui/nuklear/compose_markers.h"
 #include "ui/nuklear/compose_canvas.h"
+#include "ui/nuklear/arrow_glyph.h"
 #include "ui/nuklear/compose_toolbar.h"
 #include "ui/nuklear/compose_inspector.h"
 #include "ui/nuklear/compose_input_panel.h"
@@ -328,7 +329,7 @@ static bool compose_geometry_note_elements_valid(const WormUiComposeView* view) 
     }
     for (size_t index = 0; index < view->note_endpoint_count; ++index) {
         if (!compose_rect_valid(&view->note_endpoints[index].bounds) ||
-            view->note_endpoints[index].glyph > 5)
+            view->note_endpoints[index].glyph > wormedit::ui::last_arrow_glyph)
             return 0;
     }
     for (size_t index = 0; index < view->bgm_lane_count; ++index) {

@@ -1,5 +1,6 @@
 #include "ui/nuklear/player_preview.h"
 #include "ui/nuklear/player_preview_texture.h"
+#include "ui/nuklear/arrow_glyph.h"
 
 #include "wormedit/nuklear_config.h"
 
@@ -31,6 +32,25 @@ auto screen_rect(const WormUiPlayerPreviewRect* source, const WormUiPlayerPrevie
                    static_cast<float>(source->bottom - source->top) * scale_y);
 }
 
+void draw_extended_arrow(struct nk_command_buffer* canvas, struct nk_rect bounds,
+                          std::uint8_t glyph, struct nk_color color) {
+    const auto center_x = bounds.x + bounds.w * 0.5f;
+    const auto center_y = bounds.y + bounds.h * 0.5f;
+    if (glyph == wormedit::ui::last_arrow_glyph) {
+        nk_fill_triangle(canvas, center_x, bounds.y, bounds.x + bounds.w, center_y,
+                          center_x, bounds.y + bounds.h, color);
+        nk_fill_triangle(canvas, center_x, bounds.y, center_x, bounds.y + bounds.h,
+                          bounds.x, center_y, color);
+        return;
+    }
+    const auto left = glyph == 6 || glyph == 8;
+    const auto up = glyph == 6 || glyph == 7;
+    nk_fill_triangle(canvas, left ? bounds.x : bounds.x + bounds.w,
+                      up ? bounds.y : bounds.y + bounds.h,
+                      left ? bounds.x + bounds.w : bounds.x, center_y,
+                      center_x, up ? bounds.y + bounds.h : bounds.y, color);
+}
+
 void draw_glyph(struct nk_command_buffer* canvas, struct nk_rect bounds, std::uint8_t glyph,
                 struct nk_color color) {
     if (glyph == 2) {
@@ -45,6 +65,8 @@ void draw_glyph(struct nk_command_buffer* canvas, struct nk_rect bounds, std::ui
     } else if (glyph == 5) {
         nk_fill_triangle(canvas, bounds.x + bounds.w, bounds.y + bounds.h * 0.5f, bounds.x,
                          bounds.y, bounds.x, bounds.y + bounds.h, color);
+    } else if (wormedit::ui::is_arrow_glyph(glyph)) {
+        draw_extended_arrow(canvas, bounds, glyph, color);
     } else {
         nk_fill_rect(canvas, bounds, glyph == 1 ? 2.0f : 0.0f, color);
     }

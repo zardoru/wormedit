@@ -364,7 +364,7 @@ static void append_hover_note_holes(const ComposePaintContext& paint,
         const auto& note=paint.view->static_scene->note_endpoints[index];
         auto rect=hover_source_rect(paint,note.bounds);
         if (rect.w<=0 || rect.h<=0) continue;
-        if (note.glyph>=2 && note.glyph<=5) {
+        if (wormedit::ui::is_arrow_glyph(note.glyph)) {
             const auto width=std::max(1.0f,rect.w-2);
             const auto top=rect.y+(std::max(2.0f,rect.h)-width)*.5f;
             const auto bottom=std::max(rect.y+rect.h,top+width);
@@ -1591,7 +1591,7 @@ static void draw_compose_arrow_outline(const ComposePaintContext& paint,
 
 static bool draw_compose_note_glyph(const ComposePaintContext& paint,
                                     const WormUiComposeNoteView& note, struct nk_rect tile) {
-    if (note.glyph < 2 || note.glyph > 5 || tile.w < 10.0f) return false;
+    if (!wormedit::ui::is_arrow_glyph(note.glyph) || tile.w < 10.0f) return false;
     // Artwork alone becomes square; retained scene bounds still govern hit testing.
     const auto authored = wormedit::ui::arrow_polygon(
         note.glyph, tile.x, tile.y + (tile.h - tile.w) * .5f, tile.w);
@@ -1704,7 +1704,7 @@ static void draw_compose_paint_ghost(const ComposePaintContext& paint) {
     fill.a = 115;
     const auto rect = compose_screen_rect(&note.bounds, paint.view, paint.viewport);
     const auto tile = nk_rect(rect.x + 1, rect.y, std::max(1.0f, rect.w - 2), std::max(2.0f, rect.h));
-    if (note.glyph < 2 || note.glyph > 5 || tile.w < 10) {
+    if (!wormedit::ui::is_arrow_glyph(note.glyph) || tile.w < 10) {
         field_rect(paint, tile, 0, fill, 2);
         return;
     }
@@ -2155,7 +2155,7 @@ static void draw_compose_bgm_tooltip(const ComposePaintContext& paint,
 static bool draw_compose_paste_arrow(const ComposePaintContext& paint,
                                      const WormUiComposePasteGhostView& ghost,
                                      struct nk_rect tile, nk_color color) {
-    if (ghost.kind != 0 || ghost.glyph < 2 || ghost.glyph > 5 || tile.w < 10.0f) return false;
+    if (ghost.kind != 0 || !wormedit::ui::is_arrow_glyph(ghost.glyph) || tile.w < 10.0f) return false;
     const auto authored = wormedit::ui::arrow_polygon(
         ghost.glyph, tile.x, tile.y + (tile.h - tile.w) * .5f, tile.w);
     std::array<SDL_FPoint, 7> points{};

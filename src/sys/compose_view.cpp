@@ -442,6 +442,11 @@ auto compose_field_downscroll(const wormedit::chart_document_t& chart) -> bool {
             case wormedit::lane_glyph_t::arrow_down:
             case wormedit::lane_glyph_t::arrow_up:
             case wormedit::lane_glyph_t::arrow_right:
+            case wormedit::lane_glyph_t::arrow_up_left:
+            case wormedit::lane_glyph_t::arrow_up_right:
+            case wormedit::lane_glyph_t::arrow_down_left:
+            case wormedit::lane_glyph_t::arrow_down_right:
+            case wormedit::lane_glyph_t::arrow_center:
                 return false;
             case wormedit::lane_glyph_t::bar:
             case wormedit::lane_glyph_t::square:

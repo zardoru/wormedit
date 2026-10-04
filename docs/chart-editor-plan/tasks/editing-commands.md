@@ -252,7 +252,7 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-284 Add Pump 5K and Solo 6K arrow profiles
 
-- **Status:** ready
+- **Status:** done (2026-10-04; diagonal and center glyphs render in Compose and player preview; Pump/Solo use upscroll)
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Implementation notes (2026-10-01):** steps 2 and 3 are done and step 1 is half done. `lane_glyph_t` gained `arrow_up_left`, `arrow_up_right`, `arrow_down_left`, `arrow_down_right` and `arrow_center` appended after `arrow_right` (stored values 0-5 are unchanged; the native-project enum bound moved to `arrow_center`). `make_stepmania_pump_single_profile()`, `make_stepmania_dance_solo_profile()` and `stepmania_lane_specs()` live in `lane_profiles`; the importer takes lane names and glyphs from the same table, so `dance-solo` diagonals are now `arrow_up_left`/`arrow_up_right` instead of `bar`. Step-type mapping already worked through the `stepmania:<type>` profile id and the 5/6-column fallbacks. Paired fixtures `stepmania/pump-single.{sm,ssc}` and `dance-solo.{sm,ssc}` have import and re-export tests. **Remaining:** the arrow polygons in `src/ui/nuklear/arrow_glyph.cpp`, the `glyph >= 2 && glyph <= 5` range checks in `compose_canvas.cpp`, `compose_panel.cpp` and `player_preview.cpp`, the arrow switch in `compose_field_downscroll` (`src/sys/compose_view.cpp`, so Pump charts scroll up), and the smoke PNG. Until then the new glyphs draw as bars.
 - **Stale-plan audit (2026-10-03):** The profile/import/round-trip core exists. Diagonal/center rendering still needs range checks in unowned `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_panel.cpp`, and `src/ui/nuklear/player_preview.cpp`, plus the arrow-direction switch in unowned `src/sys/compose_view.cpp`. Updating owned polygons alone would leave the outcome incomplete.
@@ -262,7 +262,7 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 - **Steps:** 0. Scope extension approved by the user (2026-10-03). 1. Glyph values for diagonals and center; polygons in `arrow_glyph`. 2. Profiles and step-type mapping. 3. Paired SM/SSC fixtures and round-trip tests.
 - **Invariants:** existing 4K/8K behavior unchanged.
 - **Reject/failure behavior:** unknown step types keep the current custom-map behavior.
-- **Verify:** `ctest --test-dir build --output-on-failure -R 'stepmania|lane_profile'`; smoke PNG.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'StepMania|lane profile|Arrow|Pump|Solo|pump|solo'` passed 40/40. Affected-file clang-tidy found only existing complexity warnings. Isolated Xvfb captures `/tmp/wormedit-t284-pump.png` and `/tmp/wormedit-t284-solo.png` show the five/six directional glyphs; standalone polygon bounds/direction checks passed.
 - **Out of scope:** pump-double, rolls (deferred T-170).
 
 ## T-285 Name BMS double-play DP5/DP7 and add a scratchless 10K

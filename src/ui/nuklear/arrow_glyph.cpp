@@ -17,6 +17,10 @@ auto rotate_arrow_point(arrow_point_t point, std::uint8_t direction) -> arrow_po
     case 2: return {point.y, -point.x};
     case 3: return {-point.x, -point.y};
     case 5: return {-point.y, point.x};
+    case 6: return {(point.x + point.y) * 0.70710678f, (point.y - point.x) * 0.70710678f};
+    case 7: return {(point.x - point.y) * 0.70710678f, (point.x + point.y) * 0.70710678f};
+    case 8: return {(point.y - point.x) * 0.70710678f, (-point.x - point.y) * 0.70710678f};
+    case 9: return {(-point.x - point.y) * 0.70710678f, (point.x - point.y) * 0.70710678f};
     default: return point;
     }
 }
@@ -29,6 +33,11 @@ auto arrow_polygon(std::uint8_t direction, float x, float y, float size)
     std::array<arrow_point_t, 7> points{{
         {0.0f, -0.44f}, {0.44f, 0.02f}, {0.19f, 0.02f},
         {0.19f, 0.42f}, {-0.19f, 0.42f}, {-0.19f, 0.02f}, {-0.44f, 0.02f}}};
+    if (direction == last_arrow_glyph) {
+        // Center panel: a diamond, with collinear edge points to share the seven-point API.
+        points = {{{0.0f, -0.4f}, {0.2f, -0.2f}, {0.4f, 0.0f}, {0.2f, 0.2f},
+                   {0.0f, 0.4f}, {-0.4f, 0.0f}, {-0.2f, -0.2f}}};
+    }
     for (auto& point : points) {
         point = rotate_arrow_point(point, direction);
         point = {x + size * (0.5f + point.x), y + size * (0.5f + point.y)};

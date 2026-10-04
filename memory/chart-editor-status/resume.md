@@ -15,8 +15,16 @@ worktree checks and root integrated Debug build/full suite 2,108/2,108 passed
 (including 121 event-harness cases; `/tmp/wormedit-batch-implementation/root-timing-suite.log`).
 Required manual/Xvfb gates
 remain unperformed because sandbox sockets and escalation are unavailable.
-The user selected Ctrl+Alt for T-81 conditional on no collisions; its next
-implementation batch is underway after the collision audit. The readiness pilot did not complete feature cards;
+T-81 Ctrl+Alt onset snapping is integrated as `c50e61f` after a collision audit;
+integrated build, 25 focused system/detector tests and all 122 CTest-isolated
+event cases pass. Audio notifications N7 and sound/BGA import feedback are
+integrated as `656031b`/`bb7f1bc`; root integration verification continues.
+New user priority: a fourth worktree, `wormedit-osutest-load`, has a Sol 6.1
+medium coordinator and Luna medium executor fixing the eight rejected charts
+in `/home/zardoru/Documents/charts/osutest/`. The user accepts import
+quantization; use a bounded 960 grid, preserve source-time duration and explicit
+native audio offset, measure real core timing and validate native/export
+roundtrips. Inputs remain read-only. Notifications T-221–T-223 continue. The readiness pilot did not complete feature cards;
 implementation status requires reviewed code and actual verification.
 
 Completed batch (2026-10-04): T-349 BGM layer colors, assignment/filter/paint parity; T-350 exact seek/overview timing hover; T-356 manual sound grouping with optional atomic contiguous IDs; and T-364 precise Find Uses with positioned/source navigation are done. Application build and full suite pass 2,025/2,025; event harness 97/97; required core/frontend/frame/documentation partition 1,723/1,723. Isolated real-window colors, tooltips, group review/undo and usage navigation passed; artifacts `/tmp/wormedit-bgm-hover-groups-batch/`. The following T-357/T-368/T-373 batch is also complete (see below).

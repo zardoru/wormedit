@@ -22,7 +22,7 @@ remains serialized.
 | --- | --- | --- | --- |
 | `/home/zardoru/devel/wormedit-notifications` | `coord/notifications` | T-221, T-222, T-223 | [Notifications](notifications.md) |
 | `/home/zardoru/devel/wormedit-tap-apply` | `coord/tap-apply` | T-239, T-81, T-51 | [Timing](tap-apply.md) |
-| `/home/zardoru/devel/wormedit-audio-notifications` | `coord/audio-notifications` | T-223 N7 audio/decode/waveform | Dedicated brief in that worktree |
+| `/home/zardoru/devel/wormedit-audio-notifications` | `coord/audio-notifications` | T-223 N7 audio/decode/waveform | [Audio notifications](audio-notifications.md) |
 | `/home/zardoru/devel/wormedit-osutest-load` | `coord/osutest-load` | Real osu!mania import compatibility | Dedicated brief and Sol 6.1 medium coordinator in that worktree |
 
 ## Ownership and scheduling

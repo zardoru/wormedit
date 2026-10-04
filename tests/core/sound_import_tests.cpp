@@ -1,5 +1,6 @@
 #include <wormedit/core/document.h>
 #include <wormedit/core/sound_import.h>
+#include <wormedit/core/resource_assignment.h>
 #include <wormedit/formats/bmson.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -134,6 +135,74 @@ TEST_CASE("bulk import keeps list order and tags, and skips channels without a B
     CHECK(history.document.resources[resources].tags == std::vector<std::string>{"loop", "drums"});
     CHECK(history.document.resources[resources + 1].name == "b");
     CHECK(history.document.charts.front().sound_channels.size() == channels);
+}
+
+TEST_CASE("BMS bulk import allocates one contiguous run in entry order",
+          "[unit][core][sounds][import][bms-identifiers]") {
+    auto history = make_document_history(bmson_song());
+    history.document.resources.front().target_identities = {
+        {format_family_t::bms, "01", "WAV"},
+        {format_family_t::bms, "03", "WAV"},
+    };
+    auto first = entry("snd2", sound_kind_t::keysound);
+    auto second = entry("snd10", sound_kind_t::keysound);
+    first.asset.allocate_bms_identifier = true;
+    second.asset.allocate_bms_identifier = true;
+    const auto action = reserved({.entries = {first, second}}, history.document);
+    REQUIRE(apply_bulk_sound_import(history, history.document.revision, action));
+    const auto start = history.document.resources.size() - 2;
+    CHECK(history.document.resources[start].target_identities.back().identifier == "04");
+    CHECK(history.document.resources[start + 1].target_identities.back().identifier == "05");
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("BMS bulk import rejects beyond namespace capacity before changing the song",
+          "[unit][core][sounds][import][bms-identifiers]") {
+    auto history = make_document_history(bmson_song());
+    constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    auto& occupied = history.document.resources.front().target_identities;
+    for (std::size_t value = 1; value < 36 * 36; ++value)
+        occupied.push_back({format_family_t::bms,
+            std::string{digits[value / 36], digits[value % 36]}, "WAV"});
+    const auto before_resources = history.document.resources.size();
+    const auto before_revision = history.document.revision;
+    auto item = entry("over-capacity", sound_kind_t::keysound);
+    item.asset.allocate_bms_identifier = true;
+    const auto result = apply_bulk_sound_import(
+        history, before_revision, reserved({.entries = {item}}, history.document));
+    CHECK_FALSE(result);
+    REQUIRE_FALSE(result.diagnostics.empty());
+    CHECK(result.diagnostics.front().message.find("0 IDs left") != std::string::npos);
+    CHECK(history.document.resources.size() == before_resources);
+    CHECK(history.document.revision == before_revision);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("fragmented BMS capacity splits an import across the largest gaps in order",
+          "[unit][core][sounds][import][bms-identifiers]") {
+    auto history = make_document_history(bmson_song());
+    constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    auto& identities = history.document.resources.front().target_identities;
+    for (std::size_t value = 1; value < 36 * 36; ++value) {
+        if (value == 1 || (value >= 3 && value <= 5) || (value >= 8 && value <= 9)) continue;
+        identities.push_back({format_family_t::bms,
+            std::string{digits[value / 36], digits[value % 36]}, "WAV"});
+    }
+    std::vector<bulk_sound_import_entry_t> entries;
+    for (const auto name : {"snd2", "snd3", "snd4", "snd5", "snd10"}) {
+        auto item = entry(name, sound_kind_t::keysound);
+        item.asset.allocate_bms_identifier = true;
+        entries.push_back(std::move(item));
+    }
+    const auto result = apply_bulk_sound_import(
+        history, history.document.revision,
+        reserved({.entries = std::move(entries)}, history.document));
+    REQUIRE(result);
+    const auto start = history.document.resources.size() - 5;
+    const std::vector<std::string> expected{"03", "04", "05", "08", "09"};
+    for (std::size_t index = 0; index < expected.size(); ++index)
+        CHECK(history.document.resources[start + index].target_identities.back().identifier == expected[index]);
+    CHECK(history.undo.size() == 1);
 }
 
 TEST_CASE("bulk import handles fifty files in one step", "[unit][core][sounds][import]") {

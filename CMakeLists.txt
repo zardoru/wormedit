@@ -66,6 +66,7 @@ add_library(wormedit_core
     src/core/kiai_spans.cpp
     src/core/marker_navigation.cpp
     src/core/metadata_editor.cpp
+    src/core/natural_order.cpp
     src/core/chart_editor.cpp
     src/core/measure.cpp
     src/core/lane_layout_editor.cpp

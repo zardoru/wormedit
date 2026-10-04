@@ -25,7 +25,9 @@ struct bulk_sound_import_action_t {
 };
 
 // Registers 1..1000 probed audio files as assets and resources in one history
-// step, in list order. Each stem imported into a BMSON chart also gets a sound
+// step, in list order. BMS WAV identifiers are allocated as one contiguous run
+// when possible, or in the fewest largest free ranges while preserving order.
+// Each stem imported into a BMSON chart also gets a sound
 // channel with a restart event at the first row and a linked semantic BGM
 // marker in its own BGM lane, so it appears in Compose. File copying stays with
 // the caller, which reserves consecutive asset IDs from `next_resource_asset_id`

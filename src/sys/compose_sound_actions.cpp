@@ -1,6 +1,7 @@
 #include "sys/compose_sound_actions.h"
 
 #include <wormedit/core/resource_assignment.h>
+#include <wormedit/core/natural_order.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/sound_import.h>
 
@@ -9,7 +10,6 @@
 #endif
 
 #include <algorithm>
-#include <cctype>
 #include <filesystem>
 #include <system_error>
 #include <unordered_set>
@@ -19,10 +19,7 @@ namespace wormedit::sys {
 namespace {
 
 auto folded_name(const std::string& path) -> std::string {
-    auto name = std::filesystem::path{path}.filename().string();
-    std::ranges::transform(name, name.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return name;
+    return std::filesystem::path{path}.filename().string();
 }
 
 auto probe_audio(const std::filesystem::path& path) -> std::optional<audio_stream_info_t> {
@@ -65,7 +62,9 @@ struct sound_import_plan_t {
 
 auto plan_sound_import(const song_document_t& document, bool allocate_bms_identifiers,
                        std::vector<std::string> paths) -> sound_import_plan_t {
-    std::ranges::sort(paths, {}, folded_name);
+    std::ranges::sort(paths, [](const auto& left, const auto& right) {
+        return natural_name_less(folded_name(left), folded_name(right));
+    });
     const auto known = sample_source_paths(document);
     std::unordered_set<std::string> planned;
     sound_import_plan_t plan;
@@ -110,6 +109,35 @@ auto sound_count_text(std::size_t count) -> std::string {
     return std::to_string(count) + (count == 1 ? " sound" : " sounds");
 }
 
+auto imported_bms_id_ranges(const song_document_t& document, std::size_t count) -> std::size_t {
+    if (count == 0 || count > document.resources.size()) return 0;
+    constexpr auto base = std::size_t{36};
+    const auto digit = [base](unsigned char value) -> int {
+        if (value >= 'a' && value <= 'z')
+            value = static_cast<unsigned char>(value - ('a' - 'A'));
+        if (value >= '0' && value <= '9') return value - '0';
+        if (value >= 'A' && value <= 'Z') return value - 'A' + 10;
+        return -1;
+    };
+    auto ranges = std::size_t{};
+    auto previous = std::optional<std::size_t>{};
+    const auto begin = document.resources.size() - count;
+    for (std::size_t index = begin; index < document.resources.size(); ++index) {
+        const auto& identities = document.resources[index].target_identities;
+        const auto identity = std::ranges::find_if(identities, [](const auto& item) {
+            return item.family == format_family_t::bms && item.namespace_name == "WAV";
+        });
+        if (identity == identities.end() || identity->identifier.size() != 2) continue;
+        const auto high = digit(static_cast<unsigned char>(identity->identifier[0]));
+        const auto low = digit(static_cast<unsigned char>(identity->identifier[1]));
+        if (high < 0 || low < 0) continue;
+        const auto value = static_cast<std::size_t>(high) * base + static_cast<std::size_t>(low);
+        if (!previous || value != *previous + 1) ++ranges;
+        previous = value;
+    }
+    return ranges;
+}
+
 } // namespace
 
 auto import_keysound_files(document_history_t& history, workspace_controller_t& workspace,
@@ -124,6 +152,10 @@ auto import_keysound_files(document_history_t& history, workspace_controller_t& 
     if (plan.entries.empty())
         return "No sounds were added" + skipped_suffix(plan) + ".";
     const auto count = plan.entries.size();
+    const auto split_ids = target->source_family == format_family_t::bms &&
+        count <= bms_identifier_capacity(history.document, "WAV").total -
+                     bms_identifier_capacity(history.document, "WAV").used &&
+        !find_bms_identifier_run(history.document, "WAV", count).has_value();
     const auto applied = apply_bulk_sound_import(history, history.document.revision,
                                                  {.chart = {}, .entries = std::move(plan.entries)});
     if (!applied.diagnostics.empty()) return applied.diagnostics.front().message;
@@ -132,7 +164,11 @@ auto import_keysound_files(document_history_t& history, workspace_controller_t& 
     if (!rebound)
         return rebound.diagnostics.empty() ? "Sounds added, but workspace rebinding failed."
                                            : rebound.diagnostics.front().message;
-    return "Added " + sound_count_text(count) + skipped_suffix(plan) + ".";
+    auto message = "Added " + sound_count_text(count) + skipped_suffix(plan);
+    if (split_ids) message += ". Group split across " +
+        std::to_string(imported_bms_id_ranges(history.document, count)) +
+        " ID ranges; Renumber by name can rejoin it";
+    return message + ".";
 }
 
 namespace {

@@ -1,4 +1,5 @@
 #include <wormedit/core/sound_import.h>
+#include <wormedit/core/resource_assignment.h>
 
 #include <algorithm>
 #include <charconv>
@@ -57,6 +58,95 @@ auto validate_batch(const bulk_sound_import_action_t& action, document_command_r
         }
     }
     return true;
+}
+
+struct bms_id_gap_t { std::size_t begin; std::size_t length; };
+
+auto bms36_digit(unsigned char character) -> int {
+    if (character >= 'a' && character <= 'z')
+        character = static_cast<unsigned char>(character - ('a' - 'A'));
+    if (character >= '0' && character <= '9') return character - '0';
+    if (character >= 'A' && character <= 'Z') return character - 'A' + 10;
+    return -1;
+}
+
+auto used_bms_wav_ids(const song_document_t& document) -> std::vector<bool> {
+    constexpr auto base = std::size_t{36};
+    auto used = std::vector<bool>(base * base, false);
+    for (const auto& resource : document.resources)
+        for (const auto& identity : resource.target_identities) {
+            if (identity.family != format_family_t::bms || identity.namespace_name != "WAV" ||
+                identity.identifier.size() != 2) continue;
+            const auto high = bms36_digit(static_cast<unsigned char>(identity.identifier[0]));
+            const auto low = bms36_digit(static_cast<unsigned char>(identity.identifier[1]));
+            if (high >= 0 && low >= 0)
+                used[static_cast<std::size_t>(high) * base + static_cast<std::size_t>(low)] = true;
+        }
+    return used;
+}
+
+auto requested_bms_indices(const bulk_sound_import_action_t& action) -> std::vector<std::size_t> {
+    std::vector<std::size_t> result;
+    for (std::size_t index = 0; index < action.entries.size(); ++index)
+        if (action.entries[index].asset.allocate_bms_identifier) result.push_back(index);
+    return result;
+}
+
+auto free_bms_gaps(const song_document_t& document) -> std::vector<bms_id_gap_t> {
+    const auto used = used_bms_wav_ids(document);
+    auto gaps = std::vector<bms_id_gap_t>{};
+    for (std::size_t value = 1; value < used.size();) {
+        if (used[value]) { ++value; continue; }
+        const auto begin = value;
+        while (value < used.size() && !used[value]) ++value;
+        gaps.push_back({begin, value - begin});
+    }
+    std::ranges::sort(gaps, [](const auto& left, const auto& right) {
+        return left.length != right.length ? left.length > right.length : left.begin < right.begin;
+    });
+    return gaps;
+}
+
+auto split_bms_ids(const std::vector<bms_id_gap_t>& gaps, std::size_t count)
+    -> std::vector<std::string> {
+    constexpr auto base = std::size_t{36};
+    constexpr std::string_view alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    auto ids = std::vector<std::string>{};
+    auto remaining = count;
+    for (const auto& gap : gaps) {
+        const auto take = std::min(remaining, gap.length);
+        for (std::size_t offset = 0; offset < take; ++offset) {
+            const auto value = gap.begin + offset;
+            ids.emplace_back(std::string{alphabet[value / base], alphabet[value % base]});
+        }
+        remaining -= take;
+        if (remaining == 0) break;
+    }
+    return ids;
+}
+
+auto assigned_bms_ids(const song_document_t& document, const bulk_sound_import_action_t& action,
+                      document_command_result_t& result)
+    -> std::optional<std::vector<std::optional<std::string>>> {
+    auto ids = std::vector<std::optional<std::string>>(action.entries.size());
+    const auto allocated = requested_bms_indices(action);
+    if (allocated.empty()) return ids;
+    const auto capacity = bms_identifier_capacity(document, "WAV");
+    if (allocated.size() > capacity.total - capacity.used) {
+        reject(result, "BMS WAV namespace has " + std::to_string(capacity.total - capacity.used) +
+                           " IDs left; import needs " + std::to_string(allocated.size()));
+        return std::nullopt;
+    }
+    if (const auto run = find_bms_identifier_run(document, "WAV", allocated.size())) {
+        for (std::size_t offset = 0; offset < allocated.size(); ++offset)
+            ids[allocated[offset]] = (*run)[offset];
+        return ids;
+    }
+
+    const auto ids_in_order = split_bms_ids(free_bms_gaps(document), allocated.size());
+    for (std::size_t offset = 0; offset < allocated.size(); ++offset)
+        ids[allocated[offset]] = ids_in_order[offset];
+    return ids;
 }
 
 // The BMSON writer pairs a retained channel with its resource through the
@@ -120,6 +210,7 @@ auto append_stem(chart_document_t& chart, resource_entry_t& resource, std::size_
 
 auto import_entry(document_history_t& draft, const bulk_sound_import_entry_t& entry,
                   chart_id_t stem_chart, object_id_scan_t& ids,
+                  const std::optional<std::string>& bms_identifier,
                   document_command_result_t& result) -> bool {
     auto asset = entry.asset;
     asset.role = resource_role_t::sample;
@@ -130,6 +221,14 @@ auto import_entry(document_history_t& draft, const bulk_sound_import_entry_t& en
         return false;
     }
     const auto resource_id = draft.document.resources.back().id;
+    if (bms_identifier) {
+        auto& imported_resource = draft.document.resources.back();
+        std::erase_if(imported_resource.target_identities, [](const auto& identity) {
+            return identity.family == format_family_t::bms && identity.namespace_name == "WAV";
+        });
+        imported_resource.target_identities.push_back(
+            {format_family_t::bms, *bms_identifier, "WAV"});
+    }
     const auto metadata = apply_resource_sound_metadata(
         draft, draft.document.revision,
         {.resource = resource_id, .kind = entry.kind, .tags = entry.tags});
@@ -161,6 +260,8 @@ auto apply_bulk_sound_import(document_history_t& history, std::uint64_t expected
         return result;
     }
     if (!validate_batch(action, result)) return result;
+    const auto identifiers = assigned_bms_ids(history.document, action, result);
+    if (!identifiers) return result;
     auto draft = make_document_history(history.document, 1, false);
     chart_id_t stem_chart{};
     object_id_scan_t ids;
@@ -176,8 +277,8 @@ auto apply_bulk_sound_import(document_history_t& history, std::uint64_t expected
             ids = scan_chart_objects(*found);
         }
     }
-    for (const auto& entry : action.entries) {
-        if (!import_entry(draft, entry, stem_chart, ids, result)) return result;
+    for (std::size_t index = 0; index < action.entries.size(); ++index) {
+        if (!import_entry(draft, action.entries[index], stem_chart, ids, (*identifiers)[index], result)) return result;
     }
     return commit_document_command(history, std::move(draft.document), "Import sounds");
 }

@@ -7,9 +7,36 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wormedit {
+
+struct bms_identifier_capacity_t {
+    std::size_t used{};
+    std::size_t total{};
+    std::size_t largest_free_run{};
+};
+
+// BMS WAV/BMP identifiers currently use the parser/writer's supported base-36
+// alphabet (01..ZZ); 00 is reserved. Base-62 codec support is separate.
+[[nodiscard]] auto find_bms_identifier_run(const song_document_t& document,
+                                           std::string_view name_space,
+                                           std::size_t count)
+    -> std::optional<std::vector<std::string>>;
+[[nodiscard]] auto bms_identifier_capacity(const song_document_t& document,
+                                           std::string_view name_space)
+    -> bms_identifier_capacity_t;
+
+struct renumber_bms_identifiers_action_t {
+    std::string name_space;
+    // Empty means every resource of this namespace's kind.
+    std::vector<resource_id_t> resources;
+};
+
+[[nodiscard]] auto apply_bms_identifier_renumber(
+    document_history_t& history, std::uint64_t expected_revision,
+    const renumber_bms_identifiers_action_t& action) -> document_command_result_t;
 
 struct resource_assignment_limits_t {
     std::size_t maximum_selected_objects{50'000};

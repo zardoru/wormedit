@@ -1,4 +1,7 @@
 #include <wormedit/core/resource_assignment.h>
+#include <wormedit/core/natural_order.h>
+#include <wormedit/formats/bms_writer.h>
+#include <wormedit/formats/bms.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/formats/native_project.h>
 
@@ -6,6 +9,8 @@
 
 #include <algorithm>
 #include <ranges>
+#include <span>
+#include <string>
 
 using namespace wormedit;
 
@@ -112,6 +117,66 @@ auto has_code(const document_command_result_t& result, diagnostic_code_t code) -
                                [code](const auto& item) { return item.code == code; });
 }
 
+auto make_subset_renumber_history() -> document_history_t {
+    auto song = assignment_song();
+    song.resources[0].name = "snd10";
+    song.resources[1].name = "snd2";
+    song.resources[0].target_identities = {{format_family_t::bms, "01", "WAV"}};
+    song.resources[1].target_identities = {{format_family_t::bms, "04", "WAV"}};
+    song.resources[4].target_identities = {{format_family_t::bms, "05", "WAV"}};
+    auto history = make_document_history(std::move(song));
+    static_cast<void>(apply_bms_identifier_renumber(history, history.document.revision,
+        {.name_space = "WAV", .resources = {resource_id_t{1}, resource_id_t{2}}}));
+    return history;
+}
+
+auto subset_identifiers(const document_history_t& history) -> std::vector<std::string> {
+    std::vector<std::string> identifiers;
+    for (const auto name : {std::string_view{"snd2"}, std::string_view{"snd10"}}) {
+        const auto item = std::ranges::find(history.document.resources, name,
+                                            &resource_entry_t::name);
+        if (item == history.document.resources.end() || item->target_identities.empty()) return {};
+        identifiers.push_back(item->target_identities.front().identifier);
+    }
+    return identifiers;
+}
+
+void check_renumber_rejection(document_history_t& history, std::uint64_t expected,
+                              std::vector<resource_id_t> ids,
+                              const std::vector<std::string>& names_before,
+                              std::uint64_t revision) {
+    const auto result = apply_bms_identifier_renumber(history, expected,
+        {.name_space = "WAV", .resources = std::move(ids)});
+    CHECK_FALSE(result);
+    CHECK(history.document.resources[0].name == names_before[0]);
+    CHECK(history.document.resources[1].name == names_before[1]);
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+}
+
+struct renumbered_bms_fixture_t {
+    document_history_t history;
+    resource_id_t note_resource;
+    object_id_t note_id;
+};
+
+auto make_renumbered_bms_fixture() -> std::optional<renumbered_bms_fixture_t> {
+    const std::string source =
+        "#PLAYER 1\n#TITLE IDs\n#WAV01 snd10.wav\n#WAV02 snd2.wav\n#00011:01\n";
+    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
+        {.lane_profile_id = "bme-7k-outside-scratch"});
+    if (!parsed.song || parsed.song->charts.empty() || parsed.song->charts.front().measures.empty() ||
+        parsed.song->charts.front().measures.front().notes.empty()) return std::nullopt;
+    auto history = make_document_history(*parsed.song);
+    const auto& note = history.document.charts.front().measures.front().notes.front();
+    if (!note.sound) return std::nullopt;
+    const auto resource = *note.sound;
+    const auto object = note.id;
+    if (!apply_bms_identifier_renumber(history, history.document.revision,
+                                       {.name_space = "WAV"})) return std::nullopt;
+    return renumbered_bms_fixture_t{std::move(history), resource, object};
+}
+
 } // namespace
 
 TEST_CASE("ordinary BGM move preserves identity and advances occupied source lanes",
@@ -145,6 +210,118 @@ TEST_CASE("ordinary BGM move preserves identity and advances occupied source lan
     REQUIRE(undo_document_command(history));
     CHECK(history.document.charts.front().measures.front().bgm_events.front().id ==
           object_id_t{11});
+}
+
+TEST_CASE("BMS identifier runs skip undersized holes and capacity counts free ranges",
+          "[unit][core][resources][bms-identifiers]") {
+    auto song = assignment_song();
+    song.resources.front().target_identities = {{format_family_t::bms, "01", "WAV"},
+                                                {format_family_t::bms, "02", "WAV"},
+                                                {format_family_t::bms, "03", "WAV"},
+                                                {format_family_t::bms, "04", "WAV"},
+                                                {format_family_t::bms, "05", "WAV"},
+                                                {format_family_t::bms, "06", "WAV"},
+                                                {format_family_t::bms, "07", "WAV"},
+                                                {format_family_t::bms, "08", "WAV"}};
+    song.resources[1].target_identities = {{format_family_t::bms, "0C", "WAV"}};
+    const auto run = find_bms_identifier_run(song, "WAV", 5);
+    REQUIRE(run);
+    CHECK(*run == std::vector<std::string>{"0D", "0E", "0F", "0G", "0H"});
+    const auto capacity = bms_identifier_capacity(song, "WAV");
+    CHECK(capacity.used == 9);
+    CHECK(capacity.total == 1'295);
+    CHECK(capacity.largest_free_run > 5);
+}
+
+TEST_CASE("lowercase BMS base-36 aliases occupy their uppercase namespace ID",
+          "[unit][core][resources][bms-identifiers]") {
+    auto song = assignment_song();
+    for (std::size_t value = 1; value < 10; ++value)
+        song.resources.front().target_identities.push_back(
+            {format_family_t::bms, std::string{"0"} + "123456789"[value - 1], "WAV"});
+    song.resources.front().target_identities.push_back({format_family_t::bms, "0a", "WAV"});
+    const auto capacity = bms_identifier_capacity(song, "WAV");
+    CHECK(capacity.used == 10);
+    CHECK(capacity.total == 1'295);
+    CHECK(find_bms_identifier_run(song, "WAV", 1) ==
+          std::optional<std::vector<std::string>>{{"0B"}});
+}
+
+TEST_CASE("BMS identifier renumber packs a natural-name subset atomically and undoes",
+          "[unit][core][resources][bms-identifiers]") {
+    const auto history = make_subset_renumber_history();
+    CHECK(subset_identifiers(history) == std::vector<std::string>{"01", "02"});
+    CHECK(history.document.resources[4].target_identities.front().identifier == "05");
+}
+
+TEST_CASE("BMS subset renumber is one undo step",
+          "[unit][core][resources][bms-identifiers]") {
+    auto history = make_subset_renumber_history();
+    REQUIRE(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    const auto first = std::ranges::find(history.document.resources, resource_id_t{1},
+                                         &resource_entry_t::id);
+    REQUIRE(first != history.document.resources.end());
+    CHECK(first->target_identities.front().identifier == "01");
+}
+
+TEST_CASE("BMS all-kind renumber includes BGM-only resources and leaves notes intact",
+          "[unit][core][resources][bms-identifiers]") {
+    auto song = assignment_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    song.resources[0].name = "snd10";
+    song.resources[0].target_identities = {{format_family_t::bms, "07", "WAV"}};
+    song.resources[1].name = "snd2";
+    song.resources[1].roles = {resource_role_t::bgm};
+    song.resources[1].target_identities = {{format_family_t::bms, "09", "WAV"}};
+    song.resources[4].roles = {resource_role_t::preview};
+    auto history = make_document_history(std::move(song));
+    const auto result = apply_bms_identifier_renumber(history, history.document.revision,
+        {.name_space = "WAV"});
+    REQUIRE(result);
+    const auto snd10 = std::ranges::find(history.document.resources, std::string{"snd10"},
+                                         &resource_entry_t::name);
+    const auto snd2 = std::ranges::find(history.document.resources, std::string{"snd2"},
+                                        &resource_entry_t::name);
+    REQUIRE(snd10 != history.document.resources.end());
+    REQUIRE(snd2 != history.document.resources.end());
+    CHECK(snd2->target_identities.front().identifier == "01");
+    CHECK(snd10->target_identities.front().identifier == "02");
+    CHECK(history.document.charts.front().measures.front().notes.front().id == object_id_t{10});
+}
+
+TEST_CASE("BMS export applies renumbered IDs while preserving note resource links",
+          "[unit][core][resources][bms-identifiers]") {
+    const auto fixture = make_renumbered_bms_fixture();
+    REQUIRE(fixture);
+    const auto& history = fixture->history;
+    CHECK(history.document.charts.front().measures.front().notes.front().sound ==
+          std::optional<resource_id_t>{fixture->note_resource});
+    CHECK(history.document.charts.front().measures.front().notes.front().id == fixture->note_id);
+}
+
+TEST_CASE("BMS export writes the natural renumbered resource IDs",
+          "[unit][core][resources][bms-identifiers]") {
+    const auto fixture = make_renumbered_bms_fixture();
+    REQUIRE(fixture);
+    const auto exported = write_bms(fixture->history.document);
+    REQUIRE(exported.bytes);
+    CHECK(exported.bytes->find("#WAV01 snd2.wav") != std::string::npos);
+    CHECK(exported.bytes->find("#WAV02 snd10.wav") != std::string::npos);
+    CHECK(exported.bytes->find("#00011:02") != std::string::npos);
+}
+
+TEST_CASE("BMS renumber rejects stale, unknown and duplicate selections atomically",
+          "[unit][core][resources][bms-identifiers]") {
+    auto history = make_document_history(assignment_song());
+    const auto revision = history.document.revision;
+    const auto names_before = std::vector<std::string>{history.document.resources[0].name,
+                                                       history.document.resources[1].name};
+    check_renumber_rejection(history, revision + 1, {resource_id_t{1}}, names_before, revision);
+    check_renumber_rejection(history, revision, {resource_id_t{999}}, names_before, revision);
+    check_renumber_rejection(history, revision, {resource_id_t{1}, resource_id_t{1}},
+                             names_before, revision);
 }
 
 TEST_CASE("BGM move appends a lane only when needed and rejects linked markers",

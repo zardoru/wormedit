@@ -52,6 +52,7 @@ add_executable(wormedit_core_tests
     core/bpm_editor_tests.cpp
     core/bga_preview_tests.cpp
     core/chart_compare_tests.cpp
+    core/natural_order_tests.cpp
     core/command_tests.cpp
     core/compose_resource_presenter_tests.cpp
     core/command_registry_tests.cpp

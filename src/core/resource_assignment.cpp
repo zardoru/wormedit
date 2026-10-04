@@ -1,12 +1,11 @@
 #include <wormedit/core/resource_assignment.h>
+#include <wormedit/core/natural_order.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/virtual_canvas.h>
 
 #include <algorithm>
-#include <array>
-#include <cctype>
 #include <limits>
 #include <optional>
 #include <ranges>
@@ -18,6 +17,97 @@
 
 namespace wormedit {
 namespace {
+
+void reject(document_command_result_t& result, diagnostic_code_t code, std::string message);
+
+constexpr std::string_view bms36_digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+auto bms_digit_value(unsigned char character) -> int {
+    if (character >= 'a' && character <= 'z')
+        character = static_cast<unsigned char>(character - ('a' - 'A'));
+    const auto found = bms36_digits.find(static_cast<char>(character));
+    return found == std::string_view::npos ? -1 : static_cast<int>(found);
+}
+
+auto bms_occupied(const song_document_t& document, std::string_view name_space,
+                  std::size_t base, std::span<const resource_id_t> ignored = {})
+    -> std::vector<bool> {
+    auto occupied = std::vector<bool>(base * base, false);
+    for (const auto& resource : document.resources) {
+        if (std::ranges::find(ignored, resource.id) != ignored.end()) continue;
+        for (const auto& identity : resource.target_identities) {
+            if (identity.family != format_family_t::bms || identity.namespace_name != name_space ||
+                identity.identifier.size() != 2) continue;
+            const auto high = bms_digit_value(static_cast<unsigned char>(identity.identifier[0]));
+            const auto low = bms_digit_value(static_cast<unsigned char>(identity.identifier[1]));
+            if (high >= 0 && low >= 0 && static_cast<std::size_t>(high) < base &&
+                static_cast<std::size_t>(low) < base)
+                occupied[static_cast<std::size_t>(high) * base + static_cast<std::size_t>(low)] = true;
+        }
+    }
+    return occupied;
+}
+
+auto encode_bms_identifier(std::size_t value, std::size_t base) -> std::string {
+    return {bms36_digits[value / base], bms36_digits[value % base]};
+}
+
+auto has_role(const resource_entry_t& resource, resource_role_t role) -> bool;
+
+auto bms_resource_matches_namespace(const resource_entry_t& resource, std::string_view name_space)
+    -> bool {
+    if (name_space == "BMP") return has_role(resource, resource_role_t::bga);
+    return has_role(resource, resource_role_t::sample) || has_role(resource, resource_role_t::bgm) ||
+           has_role(resource, resource_role_t::music) ||
+           std::ranges::any_of(resource.target_identities, [name_space](const auto& identity) {
+               return identity.family == format_family_t::bms &&
+                      identity.namespace_name == name_space;
+           });
+}
+
+auto renumber_resources(const song_document_t& document,
+                        const renumber_bms_identifiers_action_t& action,
+                        document_command_result_t& result)
+    -> std::optional<std::vector<const resource_entry_t*>> {
+    auto ids = action.resources;
+    if (ids.empty())
+        for (const auto& resource : document.resources)
+            if (bms_resource_matches_namespace(resource, action.name_space))
+                ids.push_back(resource.id);
+    std::ranges::sort(ids, {}, &resource_id_t::value);
+    if (std::ranges::adjacent_find(ids) != ids.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "BMS identifier selection contains duplicates");
+        return std::nullopt;
+    }
+    std::vector<const resource_entry_t*> resources;
+    for (const auto id : ids) {
+        const auto item = std::ranges::find(document.resources, id, &resource_entry_t::id);
+        if (item == document.resources.end() || !bms_resource_matches_namespace(*item, action.name_space)) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "BMS identifier selection has an unknown or incompatible resource");
+            return std::nullopt;
+        }
+        resources.push_back(&*item);
+    }
+    std::ranges::sort(resources, [](const auto* left, const auto* right) {
+        if (natural_name_less(left->name, right->name)) return true;
+        if (natural_name_less(right->name, left->name)) return false;
+        return left->id.value < right->id.value;
+    });
+    return resources;
+}
+
+auto first_free_bms_start(const std::vector<bool>& occupied, std::size_t count)
+    -> std::optional<std::size_t> {
+    if (count == 0) return std::nullopt;
+    for (std::size_t candidate = 1; count <= occupied.size() - candidate; ++candidate) {
+        auto free = true;
+        for (std::size_t offset = 0; offset < count; ++offset)
+            if (occupied[candidate + offset]) { free = false; break; }
+        if (free) return candidate;
+    }
+    return std::nullopt;
+}
 
 void reject(document_command_result_t& result, diagnostic_code_t code, std::string message) {
     result.diagnostics.push_back(
@@ -123,6 +213,83 @@ auto branch_source_orders(const chart_document_t& chart)
 
 } // namespace
 
+auto find_bms_identifier_run(const song_document_t& document, std::string_view name_space,
+                             std::size_t count) -> std::optional<std::vector<std::string>> {
+    if ((name_space != "WAV" && name_space != "BMP") || count == 0) return std::nullopt;
+    constexpr auto base = std::size_t{36};
+    if (count > base * base - 1) return std::nullopt;
+    const auto occupied = bms_occupied(document, name_space, base);
+    for (std::size_t start = 1; count <= occupied.size() - start; ++start) {
+        auto free = true;
+        for (std::size_t offset = 0; offset < count; ++offset)
+            if (occupied[start + offset]) { free = false; break; }
+        if (free) {
+            std::vector<std::string> result;
+            result.reserve(count);
+            for (std::size_t offset = 0; offset < count; ++offset)
+                result.push_back(encode_bms_identifier(start + offset, base));
+            return result;
+        }
+    }
+    return std::nullopt;
+}
+
+auto bms_identifier_capacity(const song_document_t& document, std::string_view name_space)
+    -> bms_identifier_capacity_t {
+    if (name_space != "WAV" && name_space != "BMP") return {};
+    constexpr auto base = std::size_t{36};
+    const auto occupied = bms_occupied(document, name_space, base);
+    bms_identifier_capacity_t result{.used = 0, .total = base * base - 1, .largest_free_run = 0};
+    auto run = std::size_t{};
+    for (std::size_t value = 1; value < occupied.size(); ++value) {
+        if (occupied[value]) {
+            ++result.used;
+            run = 0;
+        } else {
+            result.largest_free_run = std::max(result.largest_free_run, ++run);
+        }
+    }
+    return result;
+}
+
+auto apply_bms_identifier_renumber(document_history_t& history, std::uint64_t expected_revision,
+                                   const renumber_bms_identifiers_action_t& action)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id, "BMS identifier renumber revision is stale");
+        return result;
+    }
+    const auto& ns = action.name_space;
+    if (ns != "WAV" && ns != "BMP") {
+        reject(result, diagnostic_code_t::invalid_id, "BMS identifier namespace must be WAV or BMP");
+        return result;
+    }
+    const auto resources = renumber_resources(history.document, action, result);
+    if (!resources) return result;
+    if (resources->empty()) return result;
+    constexpr auto base = std::size_t{36};
+    std::vector<resource_id_t> selected;
+    selected.reserve(resources->size());
+    for (const auto* resource : *resources) selected.push_back(resource->id);
+    const auto occupied = bms_occupied(history.document, ns, base, selected);
+    const auto start = first_free_bms_start(occupied, resources->size());
+    if (!start) {
+        reject(result, diagnostic_code_t::invalid_resolution, "BMS identifier namespace has no contiguous run for renumbering");
+        return result;
+    }
+    auto proposed = history.document;
+    for (std::size_t index = 0; index < resources->size(); ++index) {
+        auto item = std::ranges::find(proposed.resources, (*resources)[index]->id, &resource_entry_t::id);
+        std::erase_if(item->target_identities, [&ns](const auto& identity) {
+            return identity.family == format_family_t::bms && identity.namespace_name == ns;
+        });
+        item->target_identities.push_back({format_family_t::bms,
+            encode_bms_identifier(*start + index, base), ns});
+    }
+    return commit_document_command(history, std::move(proposed), "Renumber BMS identifiers");
+}
+
 auto resolve_resource_placement_position(const chart_document_t& chart,
                                          local_position_t position,
                                          std::uint64_t snap_denominator)
@@ -138,30 +305,9 @@ auto resolve_resource_placement_position(const chart_document_t& chart,
 auto next_bms_resource_identity(const song_document_t& document, bool visual_role)
     -> std::optional<target_resource_identity_t> {
     const std::string_view name_space = visual_role ? "BMP" : "WAV";
-    constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    std::array<bool, 36 * 36> occupied{};
-    const auto digit_value = [](unsigned char character) -> int {
-        const auto upper = std::toupper(character);
-        if (upper >= '0' && upper <= '9') return upper - '0';
-        if (upper >= 'A' && upper <= 'Z') return upper - 'A' + 10;
-        return -1;
-    };
-    for (const auto& existing : document.resources) {
-        for (const auto& identity : existing.target_identities) {
-            if (identity.family != format_family_t::bms ||
-                identity.namespace_name != name_space || identity.identifier.size() != 2) continue;
-            const auto high = digit_value(static_cast<unsigned char>(identity.identifier[0]));
-            const auto low = digit_value(static_cast<unsigned char>(identity.identifier[1]));
-            if (high >= 0 && low >= 0)
-                occupied[static_cast<std::size_t>(high * 36 + low)] = true;
-        }
-    }
-    for (std::size_t value = 1; value < occupied.size(); ++value) {
-        if (!occupied[value])
-            return target_resource_identity_t{format_family_t::bms,
-                std::string{digits[value / 36], digits[value % 36]}, std::string{name_space}};
-    }
-    return std::nullopt;
+    const auto run = find_bms_identifier_run(document, name_space, 1);
+    if (!run) return std::nullopt;
+    return target_resource_identity_t{format_family_t::bms, run->front(), std::string{name_space}};
 }
 
 auto validate_placement_resource(const song_document_t& document,

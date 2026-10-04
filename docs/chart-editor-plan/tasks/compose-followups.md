@@ -196,21 +196,23 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-351 Number BMS IDs in natural name order and report capacity
 
-- **Status:** ready
+- **Status:** done (2026-10-04; natural ordering, atomic contiguous/fragmented import, subset/all-kind renumber and base-36 capacity)
+- **Scope approval (user, 2026-10-04):** The atomic bulk-import step may also edit `src/core/sound_import.cpp`, `include/wormedit/core/sound_import.h`, and `tests/core/sound_import_tests.cpp`.
+- **Decision (user, 2026-10-04):** Capacity uses the codec's supported base-36 namespace (1,295 usable IDs, excluding `00`). Base-62 codec support is separate; lowercase IDs are not evidence of an expanded namespace because the current codec folds them to uppercase.
 - **Outcome:** a shared natural name order (`snd2` before `snd10`, case-insensitive) drives bulk import. Each group in an import (T-355; ungrouped files count as one batch) gets one contiguous run of IDs in that order, placed in the first gap large enough to hold the whole batch, otherwise after the highest used ID. It is never scattered across small gaps, so editors that list by ID (iBMSC, BMSE) show the group together. A new `apply_bms_identifier_renumber` command gives the chosen resources (or all of one kind) one contiguous run in that order, in one undo step. A capacity query reports used and total IDs per namespace (WAV, BMP).
 - **Read first:** `src/sys/compose_sound_actions.cpp` (`plan_sound_import`, `folded_name`), `include/wormedit/core/resource_assignment.h`, `src/core/resource_assignment.cpp` (`allocate_bms_identifier` path), `include/wormedit/core/document.h` (`target_resource_identity_t`).
-- **Files owned:** `include/wormedit/core/resource_assignment.h`, `src/core/resource_assignment.cpp`, new `include/wormedit/core/natural_order.h`, new `src/core/natural_order.cpp`, `src/sys/compose_sound_actions.cpp`, `tests/core/resource_assignment_tests.cpp`, new `tests/core/natural_order_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** `include/wormedit/core/resource_assignment.h`, `src/core/resource_assignment.cpp`, new `include/wormedit/core/natural_order.h`, new `src/core/natural_order.cpp`, `src/sys/compose_sound_actions.cpp`, `tests/core/resource_assignment_tests.cpp`, new `tests/core/natural_order_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `src/core/sound_import.cpp`, `include/wormedit/core/sound_import.h`, `tests/core/sound_import_tests.cpp`.
 - **Steps:**
   1. Add `natural_name_less` (digit runs compare by value, then case-folded text, then raw bytes as the tiebreak, so the order is total and deterministic).
   2. Add `find_bms_identifier_run(document, namespace, count)`: the first free run of `count` consecutive IDs, else the run after the highest used ID. It returns nothing when no run fits.
   3. Use both in `plan_sound_import`: sort the batch by natural name and allocate it as one run. If no run fits but enough IDs are free in total, import into the fewest runs (largest gaps first, order kept) and report "Group split across N ID ranges; Renumber by name can rejoin it".
   4. Add `renumber_bms_identifiers_action_t{namespace, resources (empty = all)}`: sort by natural name and move the set into one run, counting the set's own current IDs as free. Resources outside the set keep their IDs. Renumbering all of one kind packs them from `01`.
-  5. Add `bms_identifier_capacity(document, namespace)` → used, total (base 36 unless the chart already uses base 62), and the largest free run.
+  5. Add `bms_identifier_capacity(document, namespace)` → used, total (base 36, per the 2026-10-04 decision), and the largest free run.
   6. Import that would exceed total capacity rejects before any change, naming how many IDs are left.
   7. Tests: natural order (`snd2`/`snd10`, `a1b2`/`a1b10`, equal names); a batch of 5 skips a 3-ID gap and fills a later 5-ID gap; no fitting run appends after the highest ID; fragmented-only space splits with the report; renumber of a subset into one run; undo; capacity counts; over-capacity import rejects; BMS export writes the new IDs with unchanged notes.
 - **Invariants:** resource IDs and note references are unchanged; renumbering changes only BMS IDs; a group's IDs follow its natural name order.
 - **Reject/failure behavior:** a stale revision or an over-capacity import leaves the document untouched.
-- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.|resource_assignment|natural_order'`.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'` passed 1,242/1,242. Final focused BMS allocation/order/renumber/export checks passed 14/14 after strengthening largest-gap and unselected-ID coverage. Affected-source clang-tidy found no new complexity violations.
 - **Out of scope:** UI (T-352); choosing individual IDs.
 
 ## T-352 Sort the docks by name and show BMS ID capacity

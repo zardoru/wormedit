@@ -1490,6 +1490,60 @@ auto validate_song_resources(document_validation_work_t& work) -> void {
     }
 }
 
+auto ascii_fold(std::string_view text) -> std::string {
+    std::string folded(text);
+    for (auto& character : folded) {
+        const auto value = static_cast<unsigned char>(character);
+        if (value >= 'A' && value <= 'Z') character = static_cast<char>(value + ('a' - 'A'));
+    }
+    return folded;
+}
+
+auto validate_song_sound_groups(const song_document_t& song, diagnostic_list_t& diagnostics)
+    -> void {
+    check_unique_ids(diagnostics, song.sound_groups, [](const auto& group) { return group.id; },
+                     "sound group");
+    std::unordered_set<std::string> names;
+    std::unordered_set<std::uint64_t> group_ids;
+    std::unordered_set<std::uint64_t> populated;
+    for (const auto& group : song.sound_groups) {
+        if (group.id) group_ids.insert(group.id.value);
+        const auto folded = ascii_fold(group.name);
+        const auto first = group.name.find_first_not_of(" \t\n\r\f\v");
+        const auto last = group.name.find_last_not_of(" \t\n\r\f\v");
+        if (group.name.empty() || group.name.size() > 64 || group.name.find('\0') != std::string::npos ||
+            first != 0 || last + 1 != group.name.size() ||
+            !names.insert(folded).second) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "sound group name is empty, over 64 bytes, or duplicated ignoring case");
+        }
+    }
+    for (const auto& resource : song.resources) {
+        if (!resource.sound_group) continue;
+        const auto is_sound = std::ranges::any_of(resource.roles, [](const auto role) {
+            return role == resource_role_t::sample || role == resource_role_t::bgm ||
+                   role == resource_role_t::music || role == resource_role_t::preview;
+        });
+        if (!is_sound) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "sound group membership refers to a non-sound resource");
+            continue;
+        }
+        if (!group_ids.contains(resource.sound_group->value)) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "sound resource refers to an unknown sound group");
+        } else {
+            populated.insert(resource.sound_group->value);
+        }
+    }
+    for (const auto& group : song.sound_groups) {
+        if (group.id && !populated.contains(group.id.value)) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "sound group has no sound resources");
+        }
+    }
+}
+
 auto validate_song_recipes(document_validation_work_t& work) -> void {
     std::unordered_set<std::uint64_t> recipe_ids;
     for (const auto& recipe : work.song.generator_recipes) {
@@ -1635,6 +1689,7 @@ auto validate_document(const song_document_t& song) -> diagnostic_list_t {
     validate_song_unique_ids(work);
     collect_song_assets(work);
     validate_song_resources(work);
+    validate_song_sound_groups(song, diagnostics);
     for (const auto& chart : song.charts) {
         const auto first_diagnostic = diagnostics.size();
         validate_chart(chart, work.resource_ids, work.resource_assets, work.audio_asset_ids,

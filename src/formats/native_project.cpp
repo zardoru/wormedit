@@ -311,6 +311,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(target_resource_identity_t, family, identifie
 } // namespace wormedit
 
 namespace wormedit {
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sound_group_t, id, name)
 // sound_kind and tags are written only when set, so projects that never use
 // them keep their previous bytes and older files load with the defaults.
 void to_json(nlohmann::json& value, const resource_entry_t& resource) {
@@ -325,6 +326,7 @@ void to_json(nlohmann::json& value, const resource_entry_t& resource) {
         value["sound_kind"] = static_cast<std::uint8_t>(resource.sound_kind);
     }
     if (!resource.tags.empty()) value["tags"] = resource.tags;
+    if (resource.sound_group) value["sound_group"] = *resource.sound_group;
 }
 
 void from_json(const nlohmann::json& value, resource_entry_t& resource) {
@@ -337,6 +339,11 @@ void from_json(const nlohmann::json& value, resource_entry_t& resource) {
     value.at("provenance").get_to(resource.provenance);
     resource.sound_kind = static_cast<sound_kind_t>(value.value("sound_kind", std::uint8_t{0}));
     resource.tags = value.value("tags", std::vector<std::string>{});
+    if (value.contains("sound_group")) {
+        resource.sound_group = value.at("sound_group").get<sound_group_id_t>();
+    } else {
+        resource.sound_group.reset();
+    }
 }
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sound_layer_default_t, resource, layers)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(audio_clip_t, id, source, begin_frame, end_frame)
@@ -684,6 +691,7 @@ void to_json(json& value, const song_document_t& song) {
                  {"charts", song.charts},
                  {"output_groups", song.output_groups},
                  {"quantization_presets", song.quantization_presets}};
+    if (!song.sound_groups.empty()) value["sound_groups"] = song.sound_groups;
 }
 
 void from_json(const json& value, song_document_t& song) {
@@ -700,6 +708,7 @@ void from_json(const json& value, song_document_t& song) {
     value.at("charts").get_to(song.charts);
     value.at("output_groups").get_to(song.output_groups);
     value.at("quantization_presets").get_to(song.quantization_presets);
+    song.sound_groups = value.value("sound_groups", std::vector<sound_group_t>{});
 }
 
 namespace {

@@ -69,7 +69,8 @@ void mark_document_saved(document_history_t& history) noexcept {
 }
 
 auto commit_document_command(document_history_t& history, song_document_t proposed,
-                             std::string label) -> document_command_result_t {
+                             std::string label, document_command_options_t options)
+    -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     if (history.next_revision == std::numeric_limits<std::uint64_t>::max()) {
         result.diagnostics.push_back(
@@ -78,7 +79,7 @@ auto commit_document_command(document_history_t& history, song_document_t propos
     }
 
     proposed.revision = history.next_revision;
-    mark_retained_sources_changed(proposed);
+    if (!options.preserve_retained_source_flags) mark_retained_sources_changed(proposed);
     sync_virtual_tails(proposed);
     result.diagnostics = validate_document(proposed);
     if (std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {

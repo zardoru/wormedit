@@ -51,6 +51,7 @@ add_library(wormedit_core
     src/core/command_registry.cpp
     src/core/chart_clipboard.cpp
     src/core/document.cpp
+    src/core/sound_groups.cpp
     src/core/editor_navigation_input.cpp
     src/core/editor_scene.cpp
     src/core/bms_profile_detection.cpp

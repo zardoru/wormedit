@@ -139,6 +139,44 @@ auto rich_bmson_song() -> wormedit::song_document_t {
     return song;
 }
 
+auto empty_group_schema_keeps_previous_bytes() -> bool {
+    const auto song = rich_bmson_song();
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.bytes);
+    CHECK(written.bytes->find("sound_groups") == std::string::npos);
+    CHECK(written.bytes->find("sound_group\"") == std::string::npos);
+    const auto parsed = wormedit::parse_native_project(*written.bytes);
+    REQUIRE(parsed.song);
+    const auto rewritten = wormedit::write_native_project(*parsed.song);
+    REQUIRE(rewritten.bytes);
+    CHECK(*rewritten.bytes == *written.bytes);
+    return true;
+}
+
+auto populated_sound_group_round_trips() -> bool {
+    auto song = rich_bmson_song();
+    const auto sound = std::ranges::find_if(song.resources, [](const auto& resource) {
+        return std::ranges::find(resource.roles, wormedit::resource_role_t::sample) !=
+               resource.roles.end();
+    });
+    REQUIRE(sound != song.resources.end());
+    song.sound_groups = {{.id = wormedit::sound_group_id_t{700}, .name = "Percussion"}};
+    sound->sound_group = wormedit::sound_group_id_t{700};
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.bytes);
+    const auto parsed = wormedit::parse_native_project(*written.bytes);
+    REQUIRE(parsed.song);
+    CHECK(parsed.song->sound_groups == song.sound_groups);
+    const auto parsed_sound = std::ranges::find_if(parsed.song->resources,
+        [](const auto& resource) {
+            return std::ranges::find(resource.roles, wormedit::resource_role_t::sample) !=
+                   resource.roles.end();
+        });
+    REQUIRE(parsed_sound != parsed.song->resources.end());
+    CHECK(parsed_sound->sound_group == wormedit::sound_group_id_t{700});
+    return true;
+}
+
 } // namespace
 
 TEST_CASE("native project deterministically round-trips rich editor state",
@@ -217,6 +255,12 @@ TEST_CASE("native project deterministically round-trips rich editor state",
             return event.sound_channel_event.has_value();
         }));
     }
+}
+
+TEST_CASE("native projects round-trip flat sound groups without changing empty-group files",
+          "[unit][format][native-project][sound-groups]") {
+    CHECK(empty_group_schema_keeps_previous_bytes());
+    CHECK(populated_sound_group_round_trips());
 }
 
 TEST_CASE("native projects round-trip quantization presets",

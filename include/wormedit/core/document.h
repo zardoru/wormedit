@@ -32,6 +32,7 @@ struct measure_id_tag_t;
 struct object_id_tag_t;
 struct lane_id_tag_t;
 struct layer_id_tag_t;
+struct sound_group_id_tag_t;
 struct resource_id_tag_t;
 struct asset_id_tag_t;
 struct clip_id_tag_t;
@@ -45,6 +46,7 @@ using measure_id_t = stable_id_t<measure_id_tag_t>;
 using object_id_t = stable_id_t<object_id_tag_t>;
 using lane_id_t = stable_id_t<lane_id_tag_t>;
 using layer_id_t = stable_id_t<layer_id_tag_t>;
+using sound_group_id_t = stable_id_t<sound_group_id_tag_t>;
 using resource_id_t = stable_id_t<resource_id_tag_t>;
 using asset_id_t = stable_id_t<asset_id_tag_t>;
 using clip_id_t = stable_id_t<clip_id_tag_t>;
@@ -603,6 +605,12 @@ enum class sound_kind_t : std::uint8_t {
 inline constexpr std::size_t maximum_sound_tags = 32;
 inline constexpr std::size_t maximum_sound_tag_bytes = 64;
 
+struct sound_group_t {
+    sound_group_id_t id;
+    std::string name;
+    auto operator==(const sound_group_t&) const -> bool = default;
+};
+
 struct resource_entry_t {
     resource_id_t id;
     std::string name;
@@ -614,6 +622,7 @@ struct resource_entry_t {
     sound_kind_t sound_kind{sound_kind_t::unspecified};
     // Free-text user tags: trimmed, non-empty, unique ignoring ASCII case.
     std::vector<std::string> tags;
+    std::optional<sound_group_id_t> sound_group;
 };
 
 struct audio_clip_t {
@@ -841,6 +850,7 @@ struct song_document_t {
     std::vector<audio_asset_t> audio_assets;
     std::vector<visual_asset_t> visual_assets;
     std::vector<resource_entry_t> resources;
+    std::vector<sound_group_t> sound_groups;
     std::vector<midi_asset_t> midi_assets;
     std::vector<generator_recipe_t> generator_recipes;
     std::vector<storyboard_document_t> storyboards;

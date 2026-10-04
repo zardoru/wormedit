@@ -1298,6 +1298,14 @@ auto normalized_sound_tags(const std::vector<std::string>& tags)
     return result;
 }
 
+auto remove_empty_sound_groups(song_document_t& document) -> void {
+    std::erase_if(document.sound_groups, [&document](const auto& group) {
+        return std::ranges::none_of(document.resources, [&group](const auto& resource) {
+            return resource.sound_group == group.id;
+        });
+    });
+}
+
 } // namespace
 
 auto apply_resource_sound_metadata(document_history_t& history, std::uint64_t expected_revision,
@@ -1377,6 +1385,7 @@ auto apply_resource_deletions(document_history_t& history, std::uint64_t expecte
     auto proposed = history.document;
     std::erase_if(proposed.resources,
                   [&](const auto& entry) { return doomed.contains(entry.id.value); });
+    remove_empty_sound_groups(proposed);
     for (auto& chart : proposed.charts) {
         std::erase_if(chart.sound_layer_defaults,
                       [&](const auto& entry) { return doomed.contains(entry.resource.value); });

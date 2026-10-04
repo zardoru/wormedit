@@ -69,11 +69,19 @@ struct redivision_command_result_t {
 [[nodiscard]] auto is_document_dirty(const document_history_t& history) noexcept -> bool;
 void mark_document_saved(document_history_t& history) noexcept;
 
+struct document_command_options_t {
+    // Metadata-only commands may preserve existing retained-source flags.
+    // This never enables passthrough for a document that was already edited.
+    bool preserve_retained_source_flags{false};
+};
+
 // Publishes a complete proposed document only when its graph validates. This
 // is the common atomic boundary for future editor commands.
 [[nodiscard]] auto commit_document_command(document_history_t& history,
                                            song_document_t proposed,
-                                           std::string label) -> document_command_result_t;
+                                           std::string label,
+                                           document_command_options_t options = {})
+    -> document_command_result_t;
 
 [[nodiscard]] auto apply_quantize_command(document_history_t& history,
                                           chart_id_t chart,

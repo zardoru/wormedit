@@ -120,6 +120,7 @@ add_executable(wormedit_core_tests
     core/resource_file_copy_tests.cpp
     core/scroll_speed_editor_tests.cpp
     core/semantic_layer_editor_tests.cpp
+    core/sound_groups_tests.cpp
     core/preferences_tests.cpp
     core/shortcut_profile_storage_tests.cpp
     core/shortcut_profile_startup_tests.cpp

@@ -6,10 +6,13 @@
 
 Worktree coordination pilot (2026-10-04): the user requests GPT-6.1 Sol medium
 coordinators with Luna medium executors and root as final integrator for main.
+Implementation batches are authorized and underway after `59962da`.
 The [coordination index](../coordination/README.md) owns the notifications
 (T-221–T-223) and timing (T-239/T-81/T-51) worktree batches, reviewed briefs,
-shared-file serialization, and integration gates. This first round audits
-readiness and plans implementation; it does not complete those feature cards.
+shared-file integration, and verification gates. Notifications implements
+T-221–T-223; timing implements T-239 then T-51. T-81 remains queued for its
+snap-gesture decision. The readiness pilot did not complete feature cards;
+implementation status requires reviewed code and actual verification.
 
 Completed batch (2026-10-04): T-349 BGM layer colors, assignment/filter/paint parity; T-350 exact seek/overview timing hover; T-356 manual sound grouping with optional atomic contiguous IDs; and T-364 precise Find Uses with positioned/source navigation are done. Application build and full suite pass 2,025/2,025; event harness 97/97; required core/frontend/frame/documentation partition 1,723/1,723. Isolated real-window colors, tooltips, group review/undo and usage navigation passed; artifacts `/tmp/wormedit-bgm-hover-groups-batch/`. The following T-357/T-368/T-373 batch is also complete (see below).
 

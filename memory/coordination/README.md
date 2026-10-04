@@ -4,8 +4,8 @@ Requested 2026-10-04: root integrates main; each worktree has a `gpt-6.1-sol`
 coordinator with medium reasoning and `gpt-6-luna` executors with medium
 reasoning. Follow [the agent workflow](../agent-workflow.md).
 
-This first round audits readiness and produces reviewed implementation briefs.
-It does not implement or complete the feature cards. Starting point: `f2b35bd`.
+The first round audited readiness and produced reviewed implementation briefs.
+Implementation batches are now authorized (2026-10-04), starting at `59962da`.
 
 Pilot review complete: root integrated both coordinator commits after reviewing
 their reports, source evidence, and diffs. T-221/T-223/T-239 have completed
@@ -28,10 +28,10 @@ block independent ready cards. Shared source edits remain serialized.
 - Four active agent slots permit root, two Sol coordinators, and one Luna.
   Root grants the Luna slot to notifications first, then timing. Slot availability
   does not authorize simultaneous edits to shared files.
-- Feature implementation requires fresh ownership assignments. Root serializes
-  `src/sys/main.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, shared
-  Compose input/projection/overlay files, and build registrations across batches.
-  Narrow independent units may proceed concurrently after ownership is recorded.
+- Feature implementation requires exact local ownership assignments. Different
+  worktrees may edit the same logical paths independently; root serializes their
+  integration into main and reviews conflicting application/frontend/build
+  changes. Inside each worktree, Sol and Luna never edit the same file concurrently.
 - Coordinators request exact supporting paths before executors edit them.
   Root records approved extensions on the owning card. Unanswered design
   decisions and explicit STOP steps remain gates.
@@ -41,6 +41,6 @@ block independent ready cards. Shared source edits remain serialized.
 Root reads each committed diff, checks source claims and dependencies, and
 cherry-picks only accepted results. Run `git diff --check` and
 `ctest --test-dir build --output-on-failure -R '^documentation\.'` for this
-planning round. Future production changes additionally require the owning
+planning round. Production changes additionally require the owning
 card's build, test, complexity, and isolated visual/workflow checks. Workers
 must not merge or push main.

@@ -4,6 +4,13 @@
 
 ## Immediate work
 
+Worktree coordination pilot (2026-10-04): the user requests GPT-6.1 Sol medium
+coordinators with Luna medium executors and root as final integrator for main.
+The [coordination index](../coordination/README.md) owns the notifications
+(T-221–T-223) and timing (T-239/T-81/T-51) worktree batches, reviewed briefs,
+shared-file serialization, and integration gates. This first round audits
+readiness and plans implementation; it does not complete those feature cards.
+
 Completed batch (2026-10-04): T-349 BGM layer colors, assignment/filter/paint parity; T-350 exact seek/overview timing hover; T-356 manual sound grouping with optional atomic contiguous IDs; and T-364 precise Find Uses with positioned/source navigation are done. Application build and full suite pass 2,025/2,025; event harness 97/97; required core/frontend/frame/documentation partition 1,723/1,723. Isolated real-window colors, tooltips, group review/undo and usage navigation passed; artifacts `/tmp/wormedit-bgm-hover-groups-batch/`. The following T-357/T-368/T-373 batch is also complete (see below).
 
 Completed next batch (2026-10-04, after `f88e6f9`): T-357 Sounds sections/group/layer filters, T-368 centered zoomed minimap and T-373 BGA lane relocation are done. Application build and full suite pass 2,045/2,045, covering all 104 input-harness cases and 1,741 required core/frontend/frame/documentation tests. Root integration fixed BGA timing-click boundaries, duplicate cached BGA projection, filter popup release ownership and invalid test fixtures; new/affected helpers satisfy complexity rules. Actual saved BGA movement/one-undo preservation, narrow layout, combined filters, paged layer 65 and minimap playback/zoom/pan/drag checks passed in isolated Xvfb. Artifacts: `/tmp/wormedit-filters-bga-minimap-batch/`; full log: `/tmp/wormedit-filters-full-suite-passed.log`. The following T-370/T-371/T-372 bookmark/menu batch is also complete (see below).

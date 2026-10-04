@@ -111,3 +111,20 @@ TEST_CASE("Idle audio service and consumed selection interruption never repost",
                                   audition, preview, playhead, sink);
     verify_audio_notification(drained(center).size() == 2);
 }
+
+TEST_CASE("Preview audio tail retains the final editable playhead row", "[audio][playhead-tail]") {
+    timing_index_t timing{.divisions_per_standard_measure = 960, .total_rows = 1920};
+    timing.rows = {{.absolute_row = 0, .before_delays_seconds = {0, 1},
+                   .event_seconds = {0, 1}, .after_stops_seconds = {0, 1}, .effective_bpm = {120, 1}},
+                  {.absolute_row = 1920, .before_delays_seconds = {4, 1},
+                   .event_seconds = {4, 1}, .after_stops_seconds = {4, 1}, .effective_bpm = {120, 1}}};
+    timing.segments = {{.begin_row = 0, .end_row = 1920, .begin_seconds = {0, 1},
+                        .end_seconds = {4, 1}, .effective_bpm = {120, 1}}};
+    CHECK(preview_playhead_row_at(timing, audio::output_sample_rate * 2) == 960.0);
+    CHECK(preview_playhead_row_at(timing, audio::output_sample_rate * 4) == 1919.0);
+    CHECK(preview_playhead_row_at(timing, audio::output_sample_rate * 4 + 1) == 1919.0);
+    CHECK(preview_playhead_row_at(timing, audio::output_sample_rate * 30) == 1919.0);
+    timing.rows.back().after_stops_seconds = {4, 0};
+    CHECK_FALSE(preview_playhead_row_at(timing, audio::output_sample_rate * 30));
+    CHECK_FALSE(preview_playhead_row_at({}, audio::output_sample_rate));
+}

@@ -2,6 +2,7 @@
 
 #include <wormedit/core/timing.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -71,19 +72,34 @@ auto preview_playhead_row(const runtime::chart_preview_t& state,
                           const audio::preview_session_t& session) -> std::optional<double> {
     if (!state.timing || (!state.playing(session) && !state.paused))
         return std::nullopt;
-    const auto frame = state.current_frame(session);
-    if (frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
-        return std::nullopt;
-    const auto position = musical_position_at(
-        *state.timing, {static_cast<std::int64_t>(frame), audio::output_sample_rate});
-    if (!position || position.absolute_row->denominator == 0)
-        return std::nullopt;
-    const auto row = static_cast<double>(position.absolute_row->numerator) /
-                     static_cast<double>(position.absolute_row->denominator);
-    return std::isfinite(row) ? std::optional<double>{row} : std::nullopt;
+    return preview_playhead_row_at(*state.timing, state.current_frame(session));
 }
 
 } // namespace
+
+auto preview_playhead_row_at(const timing_index_t& timing, std::uint64_t frame)
+    -> std::optional<double> {
+    if (frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+        return std::nullopt;
+    const auto position = musical_position_at(
+        timing, {static_cast<std::int64_t>(frame), audio::output_sample_rate});
+    if (position && position.absolute_row->denominator != 0) {
+        const auto row = static_cast<double>(position.absolute_row->numerator) /
+                         static_cast<double>(position.absolute_row->denominator);
+        if (!std::isfinite(row) || timing.total_rows == 0) return std::nullopt;
+        return std::min(row, static_cast<double>(timing.total_rows - 1));
+    }
+    if (!position.error || position.error->code != timing_error_code_t::position_out_of_range ||
+        timing.rows.empty() || timing.total_rows == 0)
+        return std::nullopt;
+    const auto end = sample_frame_at(timing.rows.back().after_stops_seconds,
+                                    audio::output_sample_rate, sample_rounding_t::ceil);
+    // The chart timing index is bounded; decoded voices can legitimately outlive it.
+    // Retain an editable row for follow and backward seeks throughout that audio tail.
+    if (end.frame && frame >= *end.frame)
+        return static_cast<double>(timing.total_rows - 1);
+    return std::nullopt;
+}
 
 void post_audition_service_notifications(const sdl_audition_service_result_t& result,
                                          const notification_sink_t& notifications) {

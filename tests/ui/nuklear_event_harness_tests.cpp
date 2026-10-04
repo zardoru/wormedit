@@ -2111,3 +2111,30 @@ TEST_CASE("Import action snapshots own item strings and group member indexes",
     CHECK(snapshot.get().sound_import_groups[0].member_indices[0] == 0);
     CHECK(snapshot.get().sound_import_groups[0].existing_group_id == 22);
 }
+
+TEST_CASE("Headless Compose keeps backward wheel navigation available during trailing audio",
+          "[frontend-state][event-harness][playhead-tail]") {
+    nuklear_event_harness_t harness;
+    REQUIRE(harness.ready());
+    auto& view = harness.view();
+    view.transport_available = true;
+    view.transport_playing = true;
+    view.transport_frame = 9 * 44100;
+    view.transport_end_frame = 12 * 44100;
+    view.transport_sample_rate = 44100;
+    static_cast<void>(harness.frame());
+    SDL_Event wheel{};
+    wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.y = 1.0f;
+    wheel.wheel.mouse_x = 480.0f;
+    wheel.wheel.mouse_y = 400.0f;
+    const auto tail_action = harness.frame(std::span{&wheel, 1});
+    REQUIRE(tail_action.get().compose_viewport_input_count == 1);
+    CHECK(tail_action.get().compose_viewport_inputs[0].kind ==
+          WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL);
+    CHECK(tail_action.get().compose_viewport_inputs[0].delta_y != 0.0);
+    view.transport_playing = false;
+    const auto stopped_action = harness.frame(std::span{&wheel, 1});
+    REQUIRE(stopped_action.get().compose_viewport_input_count == 1);
+    CHECK(stopped_action.get().compose_viewport_inputs[0].delta_y != 0.0);
+}

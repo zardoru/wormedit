@@ -346,6 +346,44 @@ auto exercise_sdl_loop_restart() -> bool {
     return repeated && hard_stop;
 }
 
+auto chart_preview_end_includes_music_tail() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    song_document_t document{
+        .id = song_id_t{1},
+        .revision = 1,
+        .audio_assets = {{.id = asset_id_t{2}, .source_path = "generated:music-tail"}},
+        .resources = {{.id = resource_id_t{3}, .name = "music", .asset = asset_id_t{2},
+                       .roles = {resource_role_t::music}}},
+        .charts = {{.id = chart_id_t{4},
+                    .divisions_per_standard_measure = 960,
+                    .measures = {{.id = measure_id_t{5},
+                                  .definition = {{1, 1}, meter_t{4, 4}}}},
+                    .bpms = {{.id = object_id_t{6},
+                              .position = {measure_id_t{5}, 0},
+                              .beats_per_minute = {120, 1}}}}}};
+    decoded_source_registry_t sources;
+    const auto registered = sources.register_source({
+        .asset = asset_id_t{2},
+        .path = fixture_path("sliced-seek-source.ogg"),
+        .source = {"fixture:music-tail", "chart-preview-tail-v1"},
+    });
+    if (!registered) return false;
+    const auto music_frames = registered.binding->output_frame_count;
+    if (music_frames <= output_sample_rate * 2U) return false;
+
+    sys::runtime::chart_preview_t preview;
+    if (preview.compile_if_needed(document.charts.front(), document, sources, {}) ||
+        !preview.schedule || !preview.schedule->music)
+        return false;
+    return preview.schedule->music->frame_count == music_frames && preview.end_frame == music_frames;
+}
+
+TEST_CASE("chart preview end includes decoded music after the visual chart endpoint",
+          "[integration][sys][chart-preview][tail]") {
+    CHECK(chart_preview_end_includes_music_tail());
+}
+
 auto wait_for_session_frame(wormedit::audio::preview_session_t& session,
                             std::uint64_t frame, std::uint64_t deadline) -> bool {
     while (session.timeline_frame() < frame && SDL_GetTicks() < deadline) SDL_Delay(1);

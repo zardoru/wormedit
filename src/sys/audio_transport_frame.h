@@ -10,6 +10,10 @@
 
 namespace wormedit::sys {
 
+// Project audio tails onto the final editable chart row without truncating audio.
+[[nodiscard]] auto preview_playhead_row_at(const timing_index_t& timing, std::uint64_t frame)
+    -> std::optional<double>;
+
 // Producer metadata is chosen from service enums; these helpers also preserve
 // fallback ordering before a terminal failure.
 void post_audition_service_notifications(const sdl_audition_service_result_t& result,

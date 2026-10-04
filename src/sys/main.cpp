@@ -1118,6 +1118,16 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
     state.transport_metronome_available = preview_output.available() && !preview_metronome_bindings.empty();
     state.transport_set_metronome = [&](bool enabled) { preview_session.set_metronome_enabled(enabled); };
     preview_session.set_metronome_enabled(state.transport_metronome_enabled);
+    state.transport_set_metronome_volume = [&](std::uint8_t volume) {
+        (void)preview_session.set_metronome_volume(volume);
+    };
+    state.transport_set_metronome_count_in = [&](std::uint8_t measures) {
+        if (preview_session.set_metronome_count_in(measures))
+            preview_state.count_in_measures = measures;
+    };
+    (void)preview_session.set_metronome_volume(state.metronome_volume);
+    (void)preview_session.set_metronome_count_in(state.metronome_count_in);
+    preview_state.count_in_measures = state.metronome_count_in;
     state.transport_keep_pitch_available = preview_output.available();
     state.transport_set_keep_pitch = [&](bool enabled) { return preview_output.set_keep_pitch(enabled); };
     state.transport_set_playback_rate = [&](wormedit::rational_t rate) {
@@ -1563,7 +1573,7 @@ void refresh_application_command_states(
         application_state.timing_locked);
     set("timing.insert_bpm", compose_ready && !application_state.timing_locked);
     set("timing.insert_sv", compose_ready && !application_state.timing_locked);
-    set("timing.open_settings", false);
+    set("timing.open_settings", true);
 
     const auto palette = compose_ready
                              ? make_semantic_layer_palette_window(
@@ -2153,6 +2163,11 @@ void reset_project_edit_state(application_command_state_t& current) {
     next.transport_metronome_enabled = current.transport_metronome_enabled;
     next.transport_metronome_available = current.transport_metronome_available;
     next.transport_set_metronome = std::move(current.transport_set_metronome);
+    next.timing_settings_visible = current.timing_settings_visible;
+    next.metronome_volume = current.metronome_volume;
+    next.metronome_count_in = current.metronome_count_in;
+    next.transport_set_metronome_volume = std::move(current.transport_set_metronome_volume);
+    next.transport_set_metronome_count_in = std::move(current.transport_set_metronome_count_in);
     next.external_player = std::move(current.external_player);
     next.transport_cancel_restore = std::move(current.transport_cancel_restore);
     current = std::move(next);
@@ -3208,11 +3223,21 @@ void prepare_bound_workspace_frame(
     }
 }
 
-void dispatch_tap_panel_action(wormedit::sys::tap_timing_runtime_t& runtime,
-                               const WormUiTapTimingAction& action) {
+auto dispatch_tap_panel_action(wormedit::sys::tap_timing_runtime_t& runtime,
+                               const WormUiTapTimingAction& action,
+                               wormedit::document_history_t& history,
+                               const wormedit::sys::tap_timing_clock_t& clock,
+                               bool timing_locked)
+    -> std::optional<wormedit::document_command_result_t> {
     if (action.toggle) runtime.toggle();
     if (action.close) runtime.set_visible(false);
     if (action.reset) runtime.reset();
+    if (action.choose_bpm && action.bpm_choice <= 2)
+        runtime.set_bpm_choice(static_cast<wormedit::tap_bpm_choice_t>(action.bpm_choice));
+    if (action.apply && !action.choose_bpm) {
+        return runtime.apply(history, clock, action.apply_revision, timing_locked);
+    }
+    return std::nullopt;
 }
 
 void project_tap_timing(wormedit::sys::tap_timing_runtime_t& runtime,
@@ -3233,6 +3258,16 @@ void project_tap_timing(wormedit::sys::tap_timing_runtime_t& runtime,
     target.tap_count = state.tap_count;
     target.tap_capacity = state.tap_capacity;
     target.status = state.status;
+    target.bpm_choice = static_cast<uint8_t>(runtime.bpm_choice());
+    const auto& proposal = runtime.apply_proposal();
+    target.apply_available = proposal.has_value();
+    if (proposal) {
+        target.apply_revision = proposal->document_revision;
+        target.proposed_bpm = static_cast<double>(proposal->beats_per_minute.numerator) /
+                             proposal->beats_per_minute.denominator;
+        target.proposed_offset_ms = 1000.0 * proposal->beat_zero_audio_offset_seconds.numerator /
+                                   proposal->beat_zero_audio_offset_seconds.denominator;
+    }
     if (!state.estimate) return;
     target.estimate_available = true;
     target.stable = state.estimate->stable;
@@ -3241,6 +3276,21 @@ void project_tap_timing(wormedit::sys::tap_timing_runtime_t& runtime,
     target.offset_ms = state.estimate->phase_frame * 1000 / clock.sample_rate;
     target.deviation_ms = state.estimate->residual_standard_deviation_ms;
     target.confidence = state.estimate->confidence;
+}
+
+void prepare_tap_proposal(wormedit::sys::tap_timing_runtime_t& runtime,
+    const std::function<wormedit::sys::tap_timing_clock_t()>& read_clock,
+    const wormedit::song_document_t& document, bool locked,
+    wormedit::sys::compose_scene_cache_t& cache) {
+    if (runtime.visible()) (void)runtime.observe(read_clock());
+    runtime.prepare_apply(document, locked);
+    cache.tap_apply_proposal = runtime.apply_proposal();
+}
+
+auto tap_apply_feedback(const std::optional<wormedit::document_command_result_t>& result,
+                         const std::string& current) -> std::string {
+    if (!result) return current;
+    return *result ? "Applied initial BPM and audio offset." : "Tap timing Apply rejected.";
 }
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -3899,6 +3949,8 @@ int main(int argc, char** argv) {
             prepare_bound_workspace_frame(history, workspace, application_command_state,
                                           timing_grid, audio_offset_drag, audio_offset_drag_tab,
                                           compose_scene_cache);
+            prepare_tap_proposal(tap_runtime, tap_clock, history.document,
+                application_command_state.audio_offset_edits_locked(), compose_scene_cache);
             wormedit::sys::compose_bga_move_preview_input_t bga_move_preview{};
             bga_move_preview.project_id = history.document.id.value;
             worm_ui_frontend_bga_move_preview(&bga_move_preview.chart_id,
@@ -3959,6 +4011,9 @@ int main(int argc, char** argv) {
             flattened.view.transport_keep_pitch_available = application_command_state.transport_keep_pitch_available;
             flattened.view.notifications = notification_view;
             flattened.view.options = wormedit::sys::options_view(options_runtime);
+            flattened.view.timing_settings_visible = application_command_state.timing_settings_visible;
+            flattened.view.metronome_volume = application_command_state.metronome_volume;
+            flattened.view.metronome_count_in = application_command_state.metronome_count_in;
             flattened.view.close_confirmation = close_confirmation_view(pending_close,
                 native_project_loaded && !active_project_path.empty(), status);
             project_external_player_view(external_player_runtime, flattened.view);
@@ -3989,7 +4044,10 @@ int main(int argc, char** argv) {
                     program_preferences.preferences.general.confirm_unsaved_close, [&] {
                 dispatch_options_frame_action(options_runtime, program_preferences, action.options,
                     external_player_runtime, application_command_state, autosave_loop, status);
-                dispatch_tap_panel_action(tap_runtime, action.tap_timing);
+                const auto tap_applied = dispatch_tap_panel_action(tap_runtime, action.tap_timing,
+                    history, tap_clock(), application_command_state.audio_offset_edits_locked());
+                status = tap_apply_feedback(tap_applied, status);
+                wormedit::sys::apply_timing_settings_action(application_command_state, action.timing_settings);
                 publish_tap_assist();
                 const bool shortcut_handled = process_compose_frame_action(
                     compose_frame_action_context, action, compose_viewport_delta_seconds);

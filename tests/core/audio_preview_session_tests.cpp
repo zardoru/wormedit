@@ -378,6 +378,11 @@ TEST_CASE("preview session mixes generated metronome sources on the chart timeli
     transport_t transport{cache, 2};
     preview_transport_bridge_t bridge{transport};
     preview_session_t session{sources, transport, bridge};
+    CHECK(session.metronome_volume() == 100);
+    CHECK(session.metronome_count_in() == 0);
+    CHECK(session.set_metronome_count_in(2));
+    CHECK_FALSE(session.set_metronome_count_in(5));
+    CHECK(session.metronome_count_in() == 2);
     preview_schedule_t schedule{.sample_rate = output_sample_rate};
     schedule.metronome = {{.sample_frame = 32,
                            .measure = measure_id_t{1},
@@ -393,6 +398,10 @@ TEST_CASE("preview session mixes generated metronome sources on the chart timeli
     REQUIRE(started);
     REQUIRE(started.materialize.has_value());
     CHECK(started.materialize->scheduled_events == 1);
+    CHECK(session.set_metronome_volume(50));
+    CHECK(session.metronome_volume() == 50);
+    CHECK_FALSE(session.set_metronome_volume(101));
+    CHECK(session.metronome_volume() == 50);
 
     std::vector<float> output(96 * output_channel_count);
     const auto rendered = session.render(output);
@@ -400,7 +409,7 @@ TEST_CASE("preview session mixes generated metronome sources on the chart timeli
     CHECK(std::ranges::all_of(output.begin(), output.begin() + 32 * output_channel_count,
                               [](float sample) { return sample == 0.0F; }));
     CHECK(std::ranges::all_of(output.begin() + 32 * output_channel_count, output.end(),
-                              [](float sample) { return sample == 0.25F; }));
+                              [](float sample) { return sample == 0.125F; }));
 }
 
 TEST_CASE("preview session keeps the visual timeline moving through unavailable audio",

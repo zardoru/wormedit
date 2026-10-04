@@ -107,6 +107,7 @@ add_library(wormedit_core
     src/core/task_graph.cpp
     src/core/time_shift.cpp
     src/core/tap_tempo.cpp
+    src/core/tap_timing_apply.cpp
     src/core/timing.cpp
     src/core/timing_discontinuity.cpp
     src/core/timing_anchor_editor.cpp
@@ -333,6 +334,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/notification_toasts.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/notification_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/tap_timing_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/timing_settings_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio_state.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/bms_branch_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/arrow_glyph.cpp"

@@ -1,5 +1,6 @@
 #include "sys/chart_preview_state.h"
 #include "sys/preview_cursor_frame.h"
+#include "sys/timing_settings.h"
 
 #include <wormedit/audio/audition_resolver.h>
 #include <wormedit/audio/decoder.h>
@@ -89,7 +90,7 @@ auto chart_visual_end_frame(const timing_index_t& timing,
 bool chart_preview_t::reusable(chart_id_t chart_id, std::uint64_t document_revision,
                                std::optional<asset_id_t> selected_music_asset) const {
     return schedule && chart == chart_id && revision == document_revision &&
-           music_asset == selected_music_asset;
+           music_asset == selected_music_asset && count_in_measures == compiled_count_in_measures;
 }
 
 bool chart_preview_t::preserve_bookmark_revision(chart_id_t chart_id,
@@ -121,15 +122,20 @@ auto chart_preview_t::compile_if_needed(
                                           : std::nullopt;
     if (reusable(selected_chart.id, document.revision, selected_music_asset))
         return std::nullopt;
+    const auto retained_resume = schedule && chart == selected_chart.id &&
+        revision == document.revision && music_asset == selected_music_asset
+        ? resume_frame : 0;
 
     auto built_timing = build_timing_index(selected_chart);
     if (!built_timing)
         return built_timing.diagnostics.empty() ? "Chart timing could not be compiled."
                                                 : built_timing.diagnostics.front().message;
+    const auto count_in = timing_count_in_pulses(selected_chart, count_in_measures);
+    if (!count_in) return "Count-in exceeds the first meter's pulse limits.";
     auto built_schedule = build_preview_schedule(
         selected_chart, *built_timing.index,
         {.sample_rate = audio::output_sample_rate,
-         .include_metronome = true});
+         .include_metronome = true, .count_in_pulses = *count_in});
     if (!built_schedule)
         return built_schedule.diagnostics.empty() ? "Chart preview could not be compiled."
                                                   : built_schedule.diagnostics.front().message;
@@ -170,8 +176,9 @@ auto chart_preview_t::compile_if_needed(
     retained_metronome_bindings = metronome_bindings;
     chart = selected_chart.id;
     revision = document.revision;
+    compiled_count_in_measures = count_in_measures;
     music_asset = selected_music_asset;
-    resume_frame = 0;
+    resume_frame = std::min(retained_resume, compiled_end_frame);
     end_frame = compiled_end_frame;
     skipped_unavailable_audio_objects = resolved.skipped_unavailable_objects;
     return std::nullopt;

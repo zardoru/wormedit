@@ -198,6 +198,55 @@ TEST_CASE("transport Stop clears every voice class and silences the next callbac
                       }) == wormedit::audio::voice_schedule_status_t::stale_generation);
 }
 
+TEST_CASE("transport metronome volume changes scheduled chart and assist clicks without changing music",
+          "[unit][audio][transport][metronome-volume]") {
+    using namespace wormedit::audio;
+    decoded_block_cache_t cache;
+    transport_t transport{cache, 4};
+    const audio_source_identity_t click_source{"fixture:click", "generated:click"};
+    const audio_source_identity_t music_source{"fixture:music", "generated:music"};
+    const std::vector<float> click_pcm(16 * output_channel_count, 0.25F);
+    const std::vector<float> music_pcm(16 * output_channel_count, 0.25F);
+    REQUIRE(cache.store({.source = click_source, .block_index = 0}, 16, click_pcm) ==
+            block_store_status_t::stored);
+    REQUIRE(cache.store({.source = music_source, .block_index = 0}, 16, music_pcm) ==
+            block_store_status_t::stored);
+    const auto token = transport.start();
+    REQUIRE(token);
+    CHECK(transport.click_preview_volume() == 100);
+    const std::array voices{
+        transport_voice_t{.id = 1, .kind = voice_kind_t::click_preview,
+                          .source = click_source, .frame_count = 8},
+        transport_voice_t{.id = 2, .kind = voice_kind_t::music,
+                          .source = music_source, .frame_count = 8},
+    };
+    REQUIRE(transport.schedule_voices(*token, voices) == voice_schedule_status_t::scheduled);
+    std::array<float, 8> first{};
+    REQUIRE(transport.mix(*token, 0, first).status == transport_mix_status_t::mixed);
+    CHECK(first.front() == 0.5F);
+
+    REQUIRE(transport.set_click_preview_volume(50));
+    CHECK_FALSE(transport.set_click_preview_volume(101));
+    CHECK(transport.click_preview_volume() == 50);
+    std::array<float, 8> midpoint{};
+    REQUIRE(transport.mix(*token, 4, midpoint).status == transport_mix_status_t::mixed);
+    CHECK(midpoint.front() == 0.375F);
+
+    const std::array later_voices{
+        transport_voice_t{.id = 3, .kind = voice_kind_t::click_preview,
+                          .source = click_source, .timeline_start_frame = 8,
+                          .source_start_frame = 8, .frame_count = 4},
+        transport_voice_t{.id = 4, .kind = voice_kind_t::music,
+                          .source = music_source, .timeline_start_frame = 8,
+                          .source_start_frame = 8, .frame_count = 4},
+    };
+    REQUIRE(transport.schedule_voices(*token, later_voices) == voice_schedule_status_t::scheduled);
+    REQUIRE(transport.set_click_preview_volume(0));
+    std::array<float, 8> silent_click{};
+    REQUIRE(transport.mix(*token, 8, silent_click).status == transport_mix_status_t::mixed);
+    CHECK(silent_click.front() == 0.25F);
+}
+
 TEST_CASE("transport reports missing source blocks without emitting garbage",
           "[unit][audio][transport]") {
     wormedit::audio::decoded_block_cache_t blocks;

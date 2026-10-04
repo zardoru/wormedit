@@ -220,6 +220,16 @@ auto preview_session_t::metronome_enabled() const -> bool {
     return bridge_.metronome_enabled();
 }
 
+auto preview_session_t::set_metronome_volume(std::uint8_t volume_percent) noexcept -> bool {
+    return bridge_.set_metronome_volume(volume_percent);
+}
+
+auto preview_session_t::set_metronome_count_in(std::uint8_t measures) noexcept -> bool {
+    if (measures > 4) return false;
+    metronome_count_in_measures_.store(measures, std::memory_order_release);
+    return true;
+}
+
 auto preview_session_t::set_assist_grid(bool active,
     std::optional<preview_assist_click_grid_t> grid) -> bool {
     const std::scoped_lock lock(mutex_);

@@ -16,6 +16,7 @@
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/audio_offset_editor.h>
+#include <wormedit/core/tap_timing_apply.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/chart_clipboard.h>
 #include <wormedit/core/player_preview.h>
@@ -97,6 +98,9 @@ struct envelope_projection_ring_t {
 #endif
 
 struct compose_scene_cache_t {
+    std::optional<tap_timing_apply_proposal_t> tap_apply_proposal;
+    std::optional<tap_timing_apply_proposal_t> tap_preview_binding;
+    std::optional<timing_index_t> tap_preview_timing;
     struct channel_waveform_selection_t {
         wormedit::chart_id_t chart;
         std::uint64_t revision{};
@@ -363,6 +367,11 @@ struct application_command_state_t {
     std::function<bool()> transport_loop_selection_active;
     bool transport_metronome_enabled{};
     bool transport_metronome_available{};
+    bool timing_settings_visible{};
+    std::uint8_t metronome_volume{100};
+    std::uint8_t metronome_count_in{};
+    std::function<void(std::uint8_t)> transport_set_metronome_volume;
+    std::function<void(std::uint8_t)> transport_set_metronome_count_in;
     std::function<void(bool)> transport_set_metronome;
     std::function<std::string(external_player_action_t)> external_player;
     std::function<std::string()> transport_cancel_restore;
@@ -388,6 +397,24 @@ inline auto toggle_transport_metronome(application_command_state_t& state) -> bo
     state.transport_metronome_enabled = !state.transport_metronome_enabled;
     state.transport_set_metronome(state.transport_metronome_enabled);
     return true;
+}
+
+inline void apply_timing_settings_action(application_command_state_t& state,
+                                         const WormUiTimingSettingsAction& action) {
+    if (action.toggle) state.timing_settings_visible = !state.timing_settings_visible;
+    if (action.close) state.timing_settings_visible = false;
+    if (action.change_enable && state.transport_metronome_available && state.transport_set_metronome) {
+        state.transport_metronome_enabled = action.enabled;
+        state.transport_set_metronome(action.enabled);
+    }
+    if (action.change_volume && action.volume <= 100 && state.transport_set_metronome_volume) {
+        state.metronome_volume = action.volume;
+        state.transport_set_metronome_volume(action.volume);
+    }
+    if (action.change_count_in && action.count_in <= 4 && state.transport_set_metronome_count_in) {
+        state.metronome_count_in = action.count_in;
+        state.transport_set_metronome_count_in(action.count_in);
+    }
 }
 
 struct compose_horizontal_layout_t {

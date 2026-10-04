@@ -136,6 +136,9 @@ add_executable(wormedit_core_tests
     core/startup_session_tests.cpp
     core/task_graph_tests.cpp
     core/tap_tempo_tests.cpp
+    core/tap_timing_apply_tests.cpp
+    sys/tap_timing_apply_tests.cpp
+    sys/timing_settings_tests.cpp
     core/timing_tests.cpp
     core/timing_discontinuity_tests.cpp
     core/timing_anchor_editor_tests.cpp
@@ -507,6 +510,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
     add_executable(wormedit_frontend_event_harness_tests
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
+        ui/timing_settings_tests.cpp
         ui/sound_source_copy_event_harness_tests.cpp
         ui/sound_slot_batch_event_harness_tests.cpp
         ui/compose_hover_timing_event_harness_tests.cpp

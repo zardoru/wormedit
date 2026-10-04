@@ -35,6 +35,7 @@ struct transport_mix_context_t {
     std::uint64_t callback_end;
     std::span<float> interleaved_stereo;
     transport_mix_result_t& result;
+    float click_preview_gain{1.0F};
 };
 
 struct transport_block_window_t {
@@ -108,7 +109,8 @@ auto mix_voice(transport_mix_context_t& context, const transport_voice_t& voice)
                 static_cast<std::size_t>(timeline_frame - context.first_timeline_frame),
             .requested = static_cast<std::size_t>(std::min<std::uint64_t>(
                 overlap_end - timeline_frame, maximum_read_frames - offset_in_block)),
-            .gain = voice.gain,
+            .gain = voice.gain *
+                (voice.kind == voice_kind_t::click_preview ? context.click_preview_gain : 1.0F),
         };
         const auto available = mix_source_block(context, voice, block_index, window);
         if (available != window.requested) {
@@ -152,6 +154,12 @@ void transport_t::set_clicks_enabled(bool enabled) {
             --active_scheduled_voices_;
         }
     }
+}
+
+auto transport_t::set_click_preview_volume(std::uint8_t volume_percent) noexcept -> bool {
+    if (volume_percent > 100) return false;
+    click_volume_percent_.store(volume_percent, std::memory_order_release);
+    return true;
 }
 
 auto transport_t::start() -> std::optional<session_token_t> {
@@ -296,6 +304,8 @@ auto transport_t::mix(session_token_t token, std::uint64_t first_timeline_frame,
         result.status = transport_mix_status_t::mixed;
         transport_mix_context_t context{block_cache_, resident_.get(), first_timeline_frame, callback_end,
                                         interleaved_stereo, result};
+        context.click_preview_gain =
+            static_cast<float>(click_volume_percent_.load(std::memory_order_acquire)) / 100.0F;
         const auto clicks_enabled = clicks_enabled_.load(std::memory_order_acquire);
         for (auto& entry : scheduled_voices_) {
             if (entry.active && (entry.voice.kind != voice_kind_t::click_preview ||

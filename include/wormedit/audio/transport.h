@@ -93,6 +93,10 @@ class transport_t {
 
     // Disabling retires pending clicks and silences the next callback; other voices survive.
     void set_clicks_enabled(bool enabled);
+    [[nodiscard]] auto set_click_preview_volume(std::uint8_t volume_percent) noexcept -> bool;
+    [[nodiscard]] auto click_preview_volume() const noexcept -> std::uint8_t {
+        return click_volume_percent_.load(std::memory_order_acquire);
+    }
     [[nodiscard]] auto start() -> std::optional<session_token_t>;
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
     [[nodiscard]] auto is_current(session_token_t token) const noexcept -> bool;
@@ -143,6 +147,7 @@ class transport_t {
     std::vector<scheduled_voice_entry_t> scheduled_voices_;
     std::size_t active_scheduled_voices_{};
     std::atomic<bool> clicks_enabled_{true};
+    std::atomic<std::uint8_t> click_volume_percent_{100};
     std::optional<std::uint64_t> next_timeline_frame_;
 };
 

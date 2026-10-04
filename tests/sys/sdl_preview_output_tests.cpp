@@ -176,6 +176,30 @@ TEST_CASE("chart music preview follows the document music resource, not waveform
     CHECK(chart_music_preview_ignores_waveform_selection());
 }
 
+TEST_CASE("count-in setting recompiles preview pulses without resetting paused music position",
+          "[integration][sys][chart-preview][timing-settings]") {
+    using namespace wormedit;
+    song_document_t document{.id = {1}, .revision = 2,
+        .charts = {{.id = {1}, .beat_zero_audio_offset_seconds = {4, 1},
+            .measures = {{.id = {1}}},
+            .bpms = {{.id = {2}, .position = {{1}, 0}, .beats_per_minute = {120, 1}}}}}};
+    audio::decoded_source_registry_t sources;
+    sys::runtime::chart_preview_t preview;
+    REQUIRE_FALSE(preview.compile_if_needed(document.charts.front(), document, sources, {}));
+    CHECK(preview.reusable({1}, 2, std::nullopt));
+    preview.pause_at(3000);
+    preview.count_in_measures = 2;
+    CHECK_FALSE(preview.reusable({1}, 2, std::nullopt));
+    REQUIRE_FALSE(preview.compile_if_needed(document.charts.front(), document, sources, {}));
+    CHECK(preview.reusable({1}, 2, std::nullopt));
+    CHECK(preview.resume_frame == 3000);
+    CHECK(preview.paused);
+    REQUIRE(preview.schedule);
+    CHECK(std::ranges::count_if(preview.schedule->metronome,
+        [](const auto& click) { return click.pulse < 0; }) == 8);
+    CHECK(document.revision == 2);
+}
+
 TEST_CASE("bookmark insertion can advance only the matching compiled preview revision",
           "[integration][sys][chart-preview][bookmarks]") {
     wormedit::sys::runtime::chart_preview_t preview;

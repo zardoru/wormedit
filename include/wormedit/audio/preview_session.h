@@ -102,6 +102,14 @@ class preview_session_t {
 
     void set_metronome_enabled(bool enabled);
     [[nodiscard]] auto metronome_enabled() const -> bool;
+    [[nodiscard]] auto set_metronome_volume(std::uint8_t volume_percent) noexcept -> bool;
+    [[nodiscard]] auto metronome_volume() const noexcept -> std::uint8_t {
+        return bridge_.metronome_volume();
+    }
+    [[nodiscard]] auto set_metronome_count_in(std::uint8_t measures) noexcept -> bool;
+    [[nodiscard]] auto metronome_count_in() const noexcept -> std::uint8_t {
+        return metronome_count_in_measures_.load(std::memory_order_acquire);
+    }
     [[nodiscard]] auto set_assist_grid(bool active,
         std::optional<preview_assist_click_grid_t> grid) -> bool;
     // active() and timeline_frame() read a lock-free snapshot published by the control
@@ -133,6 +141,7 @@ class preview_session_t {
     std::uint64_t minimum_end_frame_{};
     std::optional<preview_loop_region_t> loop_region_;
     std::atomic<std::uint64_t> output_latency_frames_{};
+    std::atomic<std::uint8_t> metronome_count_in_measures_{};
 };
 
 } // namespace wormedit::audio

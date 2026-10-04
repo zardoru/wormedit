@@ -535,6 +535,23 @@ TEST_CASE("Note kind shortcut activates paint and keeps it active when repeated"
     CHECK(fixture.application_state.note_paint_mode_active);
 }
 
+TEST_CASE("Timing Settings command toggles without changing chart cursor selection or tool", "[sys][timing-settings]") {
+    TimingInsertFixture fixture;
+    const auto revision = fixture.fixture.history.document.revision;
+    const auto cursor = fixture.compose_state->cursor;
+    const auto tool = fixture.application_state.note_paint_mode_active;
+    const auto selection = fixture.compose_state->selected_objects;
+    CHECK(fixture.invoke(application_command_kind_t::timing_open_settings).accepted);
+    CHECK(fixture.application_state.timing_settings_visible);
+    CHECK(fixture.invoke(application_command_kind_t::timing_open_settings).accepted);
+    CHECK_FALSE(fixture.application_state.timing_settings_visible);
+    CHECK(fixture.fixture.history.document.revision == revision);
+    CHECK(fixture.fixture.history.undo.empty());
+    CHECK(fixture.compose_state->cursor == cursor);
+    CHECK(fixture.application_state.note_paint_mode_active == tool);
+    CHECK(fixture.compose_state->selected_objects == selection);
+}
+
 TEST_CASE("Select shortcut ends note paint without changing the armed kind", "[sys][application_commands]") {
     TimingInsertFixture fixture;
     fixture.application_state.note_paint_mode_active = true;

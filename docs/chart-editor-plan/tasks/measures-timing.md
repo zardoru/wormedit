@@ -261,9 +261,10 @@ Verification (2026-09-30): seven bridge regressions pass (62 assertions), includ
 ## T-239 Apply the tapped BPM and offset to the chart
 
 - **Status:** ready
+- **Implementation scope (coordinator, 2026-10-04):** Root approved the contract in `memory/coordination/tap-apply.md`. Supporting owners: `src/sys/tap_timing_runtime.h`, `src/sys/main.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp` (modeless pointer ownership), `src/ui/nuklear/tap_timing_panel.h`, `src/sys/compose_waveform_overlays.h`, `src/sys/compose_view.h/.cpp`, `tests/sys/tap_timing_runtime_tests.cpp`, new `tests/sys/tap_timing_apply_tests.cpp`; required for revision/session-bound Apply and its combined ghost projection. Luna owns only the three new core API/implementation/test files; Sol owns integration and manifests in this isolated tree.
 - **Outcome:** "Apply" in the assistant sets the chart's initial BPM (raw, 1-rounded, or 0.5-rounded, chosen in the panel) and moves the audio offset so the estimated downbeat nearest the chart start becomes beat zero, as one undoable command; the result is previewed as a ghost grid on the waveform before Apply, like the existing offset drag.
 - **Read first:** `include/wormedit/core/bpm_editor.h` (`apply_bpm_edit`), `include/wormedit/core/audio_offset_editor.h` (`apply_audio_offset_edit`, offset drag preview), `include/wormedit/core/command.h`.
-- **Files owned:** new `include/wormedit/core/tap_timing_apply.h`, new `src/core/tap_timing_apply.cpp`, new `tests/core/tap_timing_apply_tests.cpp`, `src/sys/tap_timing_runtime.cpp`, `src/ui/nuklear/tap_timing_panel.cpp`, `src/sys/compose_waveform_overlays.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** new `include/wormedit/core/tap_timing_apply.h`, new `src/core/tap_timing_apply.cpp`, new `tests/core/tap_timing_apply_tests.cpp`, `src/sys/tap_timing_runtime.cpp`, `src/ui/nuklear/tap_timing_panel.cpp`, `src/sys/compose_waveform_overlays.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`. Supporting ownership: `src/sys/tap_timing_runtime.h`, `src/sys/main.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp` (modeless pointer ownership), `src/ui/nuklear/tap_timing_panel.h`, `src/sys/compose_waveform_overlays.h`, `src/sys/compose_view.h/.cpp`, `tests/sys/tap_timing_runtime_tests.cpp`, new `tests/sys/tap_timing_apply_tests.cpp`.
 - **Steps:**
   1. Core: one command that updates the row-0 BPM and the signed beat-zero offset together (exact rational offset from the phase frame), revision-checked.
   2. If the chart already has later BPM changes, Apply only sets the initial segment (user decision 2026-09-30); later BPM changes keep their musical positions. Say so in the panel.
@@ -273,6 +274,8 @@ Verification (2026-09-30): seven bridge regressions pass (62 assertions), includ
 - **Reject/failure behavior:** a stale revision or unstable estimate (not "stable") disables Apply.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`; manual tap-and-apply on a fixture song.
 - **Out of scope:** multi-segment tempo detection.
+
+Implementation review (2026-10-04): Atomic Apply, rounded choices, combined cached ghost projection and revision/session rejection implemented. Core suite 1342/1342 and tap/settings focused 274 assertions in 14 cases pass; production panel event workflows 74 assertions in 6 cases pass. Required fixture tap-and-apply visual Verify remains unperformed because isolated Xvfb socket creation was sandbox-rejected; root final integration/visual gate pending. See `memory/coordination/tap-apply.md` for exact ownership and evidence.
 
 ## T-283 Ctrl-drag a single beat to fit the audio (local fit)
 

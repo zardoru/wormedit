@@ -1789,6 +1789,11 @@ typedef struct WormUiTapTimingView {
     double offset_ms;
     double deviation_ms;
     double confidence;
+    uint8_t bpm_choice;
+    bool apply_available;
+    uint64_t apply_revision;
+    double proposed_bpm;
+    double proposed_offset_ms;
     const char* status;
 } WormUiTapTimingView;
 
@@ -1796,7 +1801,22 @@ typedef struct WormUiTapTimingAction {
     bool toggle;
     bool close;
     bool reset;
+    bool choose_bpm;
+    uint8_t bpm_choice;
+    bool apply;
+    uint64_t apply_revision;
 } WormUiTapTimingAction;
+
+typedef struct WormUiTimingSettingsAction {
+    bool toggle;
+    bool close;
+    bool change_enable;
+    bool enabled;
+    bool change_volume;
+    uint8_t volume;
+    bool change_count_in;
+    uint8_t count_in;
+} WormUiTimingSettingsAction;
 
 typedef enum WormUiOptionsCategory {
     WORM_UI_OPTIONS_GENERAL = 0, WORM_UI_OPTIONS_EDITOR, WORM_UI_OPTIONS_AUDIO,
@@ -1970,6 +1990,9 @@ typedef struct WormUiWorkspaceView {
     WormUiOptionsView options;
     WormUiCloseConfirmationView close_confirmation;
     WormUiTapTimingView tap_timing;
+    bool timing_settings_visible;
+    uint8_t metronome_volume;
+    uint8_t metronome_count_in;
     bool project_loaded;
     bool project_has_native_path;
     uint64_t project_id;
@@ -2384,6 +2407,7 @@ typedef struct WormUiWorkspaceAction {
     uint64_t close_project_id, close_revision;
     WormUiProjectChartAction project_chart;
     WormUiTapTimingAction tap_timing;
+    WormUiTimingSettingsAction timing_settings;
     WormUiWorkspaceActionKind kind;
     struct WormUiExternalPlayerAction external_player;
     char project_path[WORM_UI_PROJECT_PATH_CAPACITY];
@@ -2616,6 +2640,7 @@ size_t worm_ui_frontend_copy_drawn_text_bounds_for_testing(WormUiTestingDrawnTex
                                                             size_t capacity);
 // Return the current Compose canvas viewport in window coordinates, when one was drawn this frame.
 bool worm_ui_frontend_compose_viewport_for_testing(WormUiTestingRect* output);
+bool worm_ui_frontend_window_bounds_for_testing(const char* name, WormUiTestingRect* output);
 void worm_ui_frontend_shutdown(void);
 void worm_ui_frontend_begin_input(void);
 bool worm_ui_frontend_handle_event(const SDL_Event* event);

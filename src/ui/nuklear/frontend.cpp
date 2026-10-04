@@ -2,6 +2,7 @@
 #include "ui/nuklear/external_player_panel.h"
 #include "ui/nuklear/options_window.h"
 #include "ui/nuklear/tap_timing_panel.h"
+#include "ui/nuklear/timing_settings_panel.h"
 
 #include "ui/frontend.h"
 #include "ui/nuklear/audio_panel.h"
@@ -1464,7 +1465,7 @@ static void render_preview_menu(const WormUiWorkspaceView* view,
 
 static void render_view_menu(const WormUiWorkspaceView* view,
                              WormUiWorkspaceAction* action) {
-    if (!begin_menu("View", view->compose.visible ? 4.0f : 3.0f)) return;
+    if (!begin_menu("View", view->compose.visible ? 5.0f : 4.0f)) return;
     if (view->compose.visible) {
         nk_layout_row_dynamic(g_context, 25, 1);
         if (nk_menu_item_label(g_context, "Reset editor view", NK_TEXT_LEFT) &&
@@ -1477,6 +1478,9 @@ static void render_view_menu(const WormUiWorkspaceView* view,
     nk_layout_row_dynamic(g_context, 25, 1);
     if (nk_menu_item_label(g_context, view->tap_timing.visible ? "Hide tap timing" : "Tap timing", NK_TEXT_LEFT))
         action->tap_timing.toggle = true;
+    nk_layout_row_dynamic(g_context, 25, 1);
+    if (nk_menu_item_label(g_context, "Timing Settings...", NK_TEXT_LEFT))
+        action->timing_settings.toggle = true;
     nk_layout_row_dynamic(g_context, 25, 1);
     if (nk_menu_item_label(g_context, "Notifications", NK_TEXT_LEFT) && view->notifications.history_available)
         action->notifications = {WORM_UI_NOTIFICATION_ACTION_OPEN_HISTORY, 0};
@@ -1910,10 +1914,32 @@ static bool history_owns_content_input(const WormUiWorkspaceView& view) {
         notification_history_bounds(false), g_context->input.mouse.pos.x, g_context->input.mouse.pos.y);
 }
 
+static bool modeless_window_owns_pointer(const char* name, struct nk_rect fallback) {
+    if (!g_context) return false;
+    const auto* window = nk_window_find(g_context, name);
+    const auto bounds = window ? window->bounds : fallback;
+    if (nk_input_is_mouse_hovering_rect(&g_context->input, bounds)) return true;
+    for (const auto& button : g_context->input.mouse.buttons) {
+        if ((button.down || button.clicked) &&
+            button.clicked_pos.x >= bounds.x && button.clicked_pos.x <= bounds.x + bounds.w &&
+            button.clicked_pos.y >= bounds.y && button.clicked_pos.y <= bounds.y + bounds.h)
+            return true;
+    }
+    return false;
+}
+
+static bool modeless_timing_owns_pointer(const WormUiWorkspaceView& view) {
+    return (view.timing_settings_visible && modeless_window_owns_pointer(
+                "Timing Settings", nk_rect(340, 120, 420, 430))) ||
+           (view.tap_timing.visible && modeless_window_owns_pointer(
+                "Tap timing", nk_rect(300, 110, 470, 530)));
+}
+
 static bool options_owns_content_input(const WormUiWorkspaceView& view) {
     if (view.close_confirmation.visible) return true;
     if (g_menu_popup_open || g_menu_popup_release_pending) return true;
     if (history_owns_content_input(view)) return true;
+    if (modeless_timing_owns_pointer(view)) return true;
     const auto& compose = worm_ui_nuklear_compose_state();
     const bool text_active = nuklear_text_entry_active() || g_ime_composition_active ||
                              compose.inline_timing_open || compose.go_to_measure_open ||
@@ -2491,6 +2517,7 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
     }
     render_frame_timing_overlay(frame.width, frame.height);
     worm_ui_nuklear_render_tap_timing_panel(g_context, frame.view.tap_timing, frame.action.tap_timing);
+    worm_ui_nuklear_render_timing_settings_panel(g_context, frame.view, frame.action);
     worm_ui_nuklear_render_external_player_panel(g_context, &frame.view.external_player,
                                                  &frame.action.external_player);
     worm_ui_nuklear_render_player_preview(g_context, g_renderer, &frame.view.player_preview,
@@ -2704,6 +2731,14 @@ bool worm_ui_frontend_compose_viewport_for_testing(WormUiTestingRect* output) {
     const auto viewport = compose_canvas_viewport_for_testing();
     if (!viewport) return false;
     *output = *viewport;
+    return true;
+}
+
+bool worm_ui_frontend_window_bounds_for_testing(const char* name, WormUiTestingRect* output) {
+    if (!g_headless || !g_context || !name || !output) return false;
+    const auto* window = nk_window_find(g_context, name);
+    if (!window) return false;
+    *output = {window->bounds.x, window->bounds.y, window->bounds.w, window->bounds.h};
     return true;
 }
 

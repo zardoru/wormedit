@@ -403,6 +403,10 @@ auto workspace_tab_command(command_context_t& context) -> std::optional<command_
     using namespace wormedit;
     std::optional<workspace_tab_t> tab;
     switch (context.command.kind) {
+    case command_kind_t::timing_open_settings:
+        context.application_state.timing_settings_visible =
+            !context.application_state.timing_settings_visible;
+        return command_result_t{.accepted = true};
     case command_kind_t::workspace_open_setup: tab = workspace_tab_t::setup; break;
     case command_kind_t::workspace_open_metadata: tab = workspace_tab_t::metadata; break;
     case command_kind_t::workspace_open_timing:

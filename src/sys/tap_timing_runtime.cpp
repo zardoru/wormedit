@@ -73,6 +73,8 @@ auto tap_source_frame_at_event(const tap_timing_clock_t& clock, std::uint64_t ev
     return *clock.source_frame - *elapsed;
 }
 void tap_timing_runtime_t::bind(const tap_timing_clock_t& clock, bool changed) {
+    proposal_.reset();
+    proposal_clock_.reset();
     estimator_ = tap_tempo_estimator_t{{clock.sample_rate, clock.beats_per_measure}};
     valid_begin_ns_ = changed ? std::max(clock.epoch_begin_ns, clock.observed_ns) : clock.epoch_begin_ns;
     status_ = nullptr;
@@ -95,6 +97,8 @@ auto tap_timing_runtime_t::observe(const tap_timing_clock_t& clock) -> bool {
     return true;
 }
 void tap_timing_runtime_t::reset() {
+    proposal_.reset();
+    proposal_clock_.reset();
     estimator_.reset();
     valid_begin_ns_ = clock_ ? clock_->observed_ns : 0;
     status_ = nullptr;
@@ -136,6 +140,55 @@ auto tap_timing_runtime_t::state() const -> tap_timing_state_t {
     result.beats_per_measure = clock_configuration_valid(*clock_) ? clock_->beats_per_measure : 4;
     result.tap_capacity = 4 * result.beats_per_measure;
     populate_beat_animation(result, *clock_);
+    return result;
+}
+
+void tap_timing_runtime_t::set_bpm_choice(tap_bpm_choice_t choice) {
+    if (choice_ == choice) return;
+    choice_ = choice;
+    proposal_.reset();
+    proposal_clock_.reset();
+}
+
+void tap_timing_runtime_t::prepare_apply(const song_document_t& document, bool timing_locked) {
+    const auto estimate = estimator_.estimate();
+    if (!visible_ || !clock_ || !clock_->playing || !clock_->source_frame || !estimate ||
+        clock_->revision != document.revision || timing_locked) {
+        proposal_.reset();
+        proposal_clock_.reset();
+        return;
+    }
+    if (proposal_ && proposal_clock_ && proposal_estimate_ &&
+        clock_binding(*proposal_clock_) == clock_binding(*clock_) &&
+        std::tie(proposal_estimate_->bpm, proposal_estimate_->phase_frame, proposal_estimate_->stable) ==
+        std::tie(estimate->bpm, estimate->phase_frame, estimate->stable)) return;
+    proposal_.reset();
+    proposal_clock_.reset();
+    auto proposed = propose_tap_timing_apply(document, {clock_->chart}, *estimate,
+        clock_->sample_rate, clock_->beats_per_measure, choice_, timing_locked);
+    if (!proposed || !build_tap_timing_preview(document, *proposed.proposal)) return;
+    proposal_ = std::move(proposed.proposal);
+    proposal_clock_ = clock_;
+    proposal_estimate_ = estimate;
+}
+
+auto tap_timing_runtime_t::apply(document_history_t& history, const tap_timing_clock_t& clock,
+    std::uint64_t expected_revision, bool timing_locked) -> document_command_result_t {
+    const auto captured = proposal_;
+    const auto bound = proposal_clock_;
+    const auto matching = bound && clock_binding(*bound) == clock_binding(clock);
+    const auto observed = observe(clock);
+    const auto estimate = estimator_.estimate();
+    if (!observed || !visible_ || !captured || !matching || !clock.playing ||
+        !clock.source_frame || !estimate || !estimate->stable ||
+        captured->document_revision != expected_revision) {
+        proposal_.reset();
+        status_ = "Tap result expired; play and tap again before Apply.";
+        return {.revision = history.document.revision};
+    }
+    auto result = apply_tap_timing_proposal(history, expected_revision, *captured, timing_locked);
+    if (result) reset();
+    else status_ = "Apply rejected; check timing lock and tap again.";
     return result;
 }
 

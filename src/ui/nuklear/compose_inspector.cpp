@@ -43,39 +43,6 @@ static void render_initial_bpm_control(const ComposeInspectorContext& inspector)
     }
 }
 
-static void render_timing_lane_visibility(const ComposeInspectorContext& inspector) {
-    auto* context = inspector.context;
-    const auto* view = inspector.view;
-    const auto* timing_view = inspector.timing_view;
-    auto* action = inspector.action;
-    if (!nk_tree_push(context, NK_TREE_TAB, "Timing lanes", NK_MINIMIZED)) return;
-    constexpr std::array<const char*, WORM_UI_TIMING_LANE_COUNT> labels{
-        "BPM", "SV", "SPD", "STP", "DLY", "WRP", "KIA", "ANC"};
-    for (std::size_t row = 0; row < 4; ++row) {
-        nk_layout_row_begin(context, NK_DYNAMIC, 24, 2);
-        for (std::size_t column = 0; column < 2; ++column) {
-            const auto lane = row * 2 + column;
-            const auto bit = static_cast<std::uint8_t>(1U << lane);
-            const auto visible = (view->timing_lane_visibility_mask & bit) != 0;
-            const auto editing_lane = timing_view->stage_active &&
-                                      static_cast<std::size_t>(timing_view->stage_lane) == lane;
-            char label[16]{};
-            (void)snprintf(label, sizeof(label), "%s: %s", labels[lane], visible ? "On" : "Off");
-            nk_layout_row_push(context, wormedit::ui::chrome::property_label_ratio);
-            const auto disabled = !view->scene_available || (editing_lane && visible);
-            if (disabled) nk_widget_disable_begin(context);
-            const auto clicked = nk_button_label(context, label);
-            if (disabled) nk_widget_disable_end(context);
-            if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                action->compose_timing_lane = static_cast<std::uint8_t>(lane);
-                action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY;
-            }
-        }
-        nk_layout_row_end(context);
-    }
-    nk_tree_pop(context);
-}
-
 static void render_selected_bmson_slice_controls(const ComposeInspectorContext& inspector) {
     const auto& view = *inspector.view;
     auto* context = inspector.context;
@@ -266,7 +233,9 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
     nk_labelf(inspector.context, NK_TEXT_LEFT, "%zu warp · %zu SPEEDS · %zu anchors",
               timing.warp_count, timing.speed_total_count, timing.anchor_count);
     render_initial_bpm_control(inspector);
-    render_timing_lane_visibility(inspector);
+    nk_layout_row_dynamic(inspector.context, 28, 1);
+    if (nk_button_label(inspector.context, "Timing Settings..."))
+        inspector.action->timing_settings.toggle = true;
     if (!state.inline_timing_open && inspector.timing_view->stage_active &&
         inspector.action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE &&
         nk_tree_push(inspector.context, NK_TREE_TAB, "Timing event", NK_MAXIMIZED)) {

@@ -105,6 +105,10 @@ class preview_transport_bridge_t {
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
     // Control-thread setter: re-enable from the current scheduling cursor, never missed beats.
     void set_metronome_enabled(bool enabled, std::uint64_t current_frame);
+    [[nodiscard]] auto set_metronome_volume(std::uint8_t volume_percent) noexcept -> bool;
+    [[nodiscard]] auto metronome_volume() const noexcept -> std::uint8_t {
+        return transport_.click_preview_volume();
+    }
     [[nodiscard]] auto metronome_enabled() const noexcept -> bool {
         return metronome_enabled_.load(std::memory_order_acquire);
     }

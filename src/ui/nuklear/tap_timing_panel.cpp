@@ -42,13 +42,40 @@ void draw_tap_estimate(nk_context* context, const WormUiTapTimingView& view) {
     nk_labelf(context, NK_TEXT_LEFT, "%s  |  Confidence %.0f%%", view.stable ? "Stable" : "Keep tapping",
               view.confidence * 100);
 }
+void draw_tap_apply(nk_context* context, const WormUiTapTimingView& view,
+                    WormUiTapTimingAction& action) {
+    static const char* choices[] = {"Raw BPM", "Nearest 1 BPM", "Nearest 0.5 BPM"};
+    nk_layout_row_dynamic(context, 28, 1);
+    const auto selected = wormedit::ui::chrome::safe_combo(
+        context, choices, 3, view.bpm_choice, 24, nk_vec2(210, 120));
+    if (selected != view.bpm_choice) {
+        action.choose_bpm = true;
+        action.bpm_choice = static_cast<uint8_t>(selected);
+    }
+    nk_layout_row_dynamic(context, 22, 1);
+    nk_label(context, "First tap assigns the estimated downbeat.", NK_TEXT_LEFT);
+    nk_label(context, "Later BPM changes keep their musical positions.", NK_TEXT_LEFT);
+    if (view.apply_available)
+        nk_labelf(context, NK_TEXT_LEFT, "Apply %.3f BPM, beat zero %.3f ms",
+                  view.proposed_bpm, view.proposed_offset_ms);
+    else nk_label(context, "Apply needs stable taps and unlocked timing.", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 28, 1);
+    const auto disabled = !view.apply_available || action.choose_bpm;
+    if (disabled) nk_widget_disable_begin(context);
+    if (nk_button_label(context, "Apply")) {
+        action.apply = true;
+        action.apply_revision = view.apply_revision;
+    }
+    if (disabled) nk_widget_disable_end(context);
+}
 } // namespace
 
 void worm_ui_nuklear_render_tap_timing_panel(nk_context* context,
     const WormUiTapTimingView& view, WormUiTapTimingAction& action) {
     if (!context || !view.visible) return;
-    if (nk_window_is_closed(context, "Tap timing")) nk_window_show(context, "Tap timing", NK_SHOWN);
-    if (nk_begin(context, "Tap timing", nk_rect(300, 110, 470, 370),
+    if (nk_window_is_closed(context, "Tap timing") || nk_window_is_hidden(context, "Tap timing"))
+        nk_window_show(context, "Tap timing", NK_SHOWN);
+    if (nk_begin(context, "Tap timing", nk_rect(300, 110, 470, 530),
         NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_MOVABLE | NK_WINDOW_CLOSABLE)) {
         draw_tap_circle(context, view);
         nk_layout_row_dynamic(context, 24, 1);
@@ -56,11 +83,12 @@ void worm_ui_nuklear_render_tap_timing_panel(nk_context* context,
         else if (!view.source_available) nk_label(context, "The preview needs a music track for tapping.", NK_TEXT_LEFT);
         else nk_label(context, "Tap T, or Space while this panel is focused.", NK_TEXT_LEFT);
         draw_tap_estimate(context, view);
+        draw_tap_apply(context, view, action);
         if (view.status) nk_label(context, view.status, NK_TEXT_LEFT);
         nk_layout_row_dynamic(context, 28, 1);
         if (wormedit::ui::chrome::mode_button(context, "Reset", "Clear the tap estimate", false))
             action.reset = true;
     }
     nk_end(context);
-    if (nk_window_is_closed(context, "Tap timing")) action.close = true;
+    if (nk_window_is_closed(context, "Tap timing") || nk_window_is_hidden(context, "Tap timing")) action.close = true;
 }

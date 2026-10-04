@@ -379,6 +379,10 @@ void preview_transport_bridge_t::set_metronome_enabled(bool enabled, std::uint64
     }
 }
 
+auto preview_transport_bridge_t::set_metronome_volume(std::uint8_t volume_percent) noexcept -> bool {
+    return transport_.set_click_preview_volume(volume_percent);
+}
+
 auto preview_transport_bridge_t::set_assist_grid(bool active,
     std::optional<preview_assist_click_grid_t> grid, std::uint64_t current_frame) -> bool {
     if (grid && !valid_assist_grid(*grid)) return false;

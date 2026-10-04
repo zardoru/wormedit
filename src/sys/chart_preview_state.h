@@ -29,6 +29,8 @@ struct chart_preview_t {
     std::uint64_t end_frame{};
     std::size_t skipped_unavailable_audio_objects{};
     bool paused{};
+    std::uint8_t count_in_measures{};
+    std::uint8_t compiled_count_in_measures{};
     const sdl_preview_output_t* output_observer{};
 
     [[nodiscard]] bool reusable(chart_id_t chart_id, std::uint64_t document_revision,

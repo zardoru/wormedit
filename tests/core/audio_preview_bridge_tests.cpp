@@ -33,6 +33,8 @@ auto schedule() -> preview_schedule_t {
     return {.sample_rate = output_sample_rate};
 }
 
+auto assist_grid(double phase) -> preview_assist_click_grid_t;
+
 auto transport_for(decoded_block_cache_t& cache, std::size_t capacity = 16) -> transport_t {
     return transport_t{cache, capacity};
 }
@@ -307,6 +309,45 @@ TEST_CASE("preview bridge disabled metronome skips four measures and enables at 
     require_metronome(static_cast<bool>(voices));
     require_metronome(voices.voices.front().timeline_start_frame == 500);
     require_metronome(voices.voices.back().timeline_start_frame == 1'500);
+}
+
+TEST_CASE("preview bridge volume scales chart and assist clicks through one click control",
+          "[unit][audio][preview-bridge][metronome-volume]") {
+    decoded_block_cache_t cache;
+    transport_t transport{cache, 8};
+    preview_transport_bridge_t bridge{transport};
+    const audio_source_identity_t source{"asset:click", "revision:volume"};
+    const std::vector<float> pcm(128 * output_channel_count, 0.25F);
+    REQUIRE(cache.store({.source = source, .block_index = 0}, 128, pcm) == block_store_status_t::stored);
+    auto chart = schedule();
+    chart.metronome = {{.sample_frame = 0, .accent = metronome_accent_t::regular}};
+    const std::array clicks{
+        preview_metronome_source_binding_t{
+            .accent = metronome_accent_t::regular,
+            .voice = {.source = source, .frame_count = 128, .gain = 1.0F}},
+        preview_metronome_source_binding_t{
+            .accent = metronome_accent_t::measure,
+            .voice = {.source = source, .frame_count = 128, .gain = 1.0F}},
+    };
+    REQUIRE(bridge.set_metronome_volume(50));
+    CHECK(bridge.metronome_volume() == 50);
+    CHECK_FALSE(bridge.set_metronome_volume(101));
+    const auto started = bridge.start(chart, {}, clicks);
+    REQUIRE(started);
+    REQUIRE(bridge.materialize_until(32).scheduled_events == 1);
+    std::array<float, 16> chart_mix{};
+    REQUIRE(transport.mix(*started.token, 0, chart_mix).status == transport_mix_status_t::mixed);
+    CHECK(chart_mix.front() == 0.125F);
+
+    REQUIRE(bridge.set_assist_grid(true, assist_grid(32.0), 32));
+    REQUIRE(bridge.materialize_until(96, 32).scheduled_events == 1);
+    std::array<float, 16> assist_mix{};
+    REQUIRE(transport.mix(*started.token, 32, assist_mix).status == transport_mix_status_t::mixed);
+    CHECK(assist_mix.front() == 0.125F);
+
+    const auto sought = bridge.seek(0);
+    REQUIRE(sought);
+    CHECK(bridge.metronome_volume() == 50);
 }
 
 TEST_CASE("preview bridge disabling retires queued clicks while preserving music",

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/tap_tempo.h>
+#include <wormedit/core/tap_timing_apply.h>
 #include <wormedit/audio/preview_bridge.h>
 
 #include <cstdint>
@@ -66,6 +67,14 @@ class tap_timing_runtime_t {
     auto tap(std::uint64_t event_ns, const tap_timing_clock_t& clock) -> tap_timing_result_t;
     [[nodiscard]] auto state() const -> tap_timing_state_t;
     [[nodiscard]] auto assist_publication() const -> tap_timing_assist_publication_t;
+    void set_bpm_choice(tap_bpm_choice_t choice);
+    [[nodiscard]] auto bpm_choice() const -> tap_bpm_choice_t { return choice_; }
+    void prepare_apply(const song_document_t& document, bool timing_locked);
+    [[nodiscard]] auto apply_proposal() const
+        -> const std::optional<tap_timing_apply_proposal_t>& { return proposal_; }
+    auto apply(document_history_t& history, const tap_timing_clock_t& clock,
+               std::uint64_t expected_revision, bool timing_locked)
+        -> document_command_result_t;
 
   private:
     void bind(const tap_timing_clock_t& clock, bool changed);
@@ -75,6 +84,10 @@ class tap_timing_runtime_t {
     tap_tempo_estimator_t estimator_;
     std::uint64_t valid_begin_ns_{};
     const char* status_{};
+    tap_bpm_choice_t choice_{tap_bpm_choice_t::raw};
+    std::optional<tap_timing_apply_proposal_t> proposal_;
+    std::optional<tap_timing_clock_t> proposal_clock_;
+    std::optional<tap_tempo_estimate_t> proposal_estimate_;
 };
 
 } // namespace wormedit::sys

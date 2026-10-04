@@ -1,8 +1,8 @@
 # Notifications pilot: reviewed readiness and implementation batches
 
 Date: 2026-10-04. Base: `f2b35bd`; branch: `coord/notifications`.
-Coordinator: **GPT-6.1 Sol, medium** (user correction overrides the older
-GPT-6 coordinator role in `memory/agent-workflow.md`). Executor: **GPT-6 Luna,
+Coordinator: **GPT-6.1 Sol, medium** (user preference recorded in
+`memory/agent-workflow.md`). Executor: **GPT-6 Luna,
 medium**. This pilot contains documentation only; no feature implementation.
 
 ## Readiness and review

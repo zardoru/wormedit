@@ -7,6 +7,12 @@ reasoning. Follow [the agent workflow](../agent-workflow.md).
 This first round audits readiness and produces reviewed implementation briefs.
 It does not implement or complete the feature cards. Starting point: `f2b35bd`.
 
+Pilot review complete: root integrated both coordinator commits after reviewing
+their reports, source evidence, and diffs. T-221/T-223/T-239 have completed
+prerequisites; T-222 waits for T-221 implementation. Timing's runnable order is
+T-239 then T-51; T-81 waits for the snap-gesture decision. This gate does not
+block independent ready cards. Shared source edits remain serialized.
+
 | Worktree | Branch | Batch | Reviewed task list |
 | --- | --- | --- | --- |
 | `/home/zardoru/devel/wormedit-notifications` | `coord/notifications` | T-221, T-222, T-223 | [Notifications](notifications.md) |

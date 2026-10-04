@@ -7,6 +7,7 @@
 #include "ui/nuklear/sdl_backend.h"
 
 #include "wormedit/nuklear_config.h"
+#include <wormedit/core/document.h>
 
 #include <SDL3/SDL_timer.h>
 
@@ -25,6 +26,7 @@
 
 namespace {
 wormedit::ui::field::renderer_t* tile_renderer_override{};
+std::optional<WormUiTestingRect> last_compose_viewport_for_testing;
 auto paint_field(nk_context* context) -> wormedit::ui::field::renderer_t& {
     return tile_renderer_override ? *tile_renderer_override :
         wormedit::ui::nuklear::compose_field(context);
@@ -39,7 +41,7 @@ struct static_hover_records_t {
     std::vector<std::size_t> notes, holds;
 };
 struct static_paint_indices_t {
-    std::array<wormedit::ui::field::static_interval_index_t,10> passes;
+    std::array<wormedit::ui::field::static_interval_index_t,11> passes;
     std::uint64_t style{}, generation{};
     std::size_t bytes{}, scanned{}, extracted{};
     double glyph_guard{32};
@@ -66,7 +68,7 @@ struct static_paint_indices_t {
         const auto& source=*view.static_scene;
         query_scratch.resize(std::max({source.band_count,source.lane_count,source.bgm_lane_count,
             source.grid_line_count,source.timing_marker_count,source.hold_body_count,
-            source.bgm_event_count,source.note_endpoint_count}));
+            source.bgm_event_count,source.bga_event_count,source.note_endpoint_count}));
         bytes+=query_scratch.capacity()*sizeof(std::size_t);
         glyph_guard=32;
         for (std::size_t index=0; index<source.lane_count; ++index)
@@ -83,6 +85,7 @@ struct static_paint_indices_t {
         rebuild_pass(7,source.hold_bodies,source.hold_body_count,rect);
         rebuild_pass(8,source.bgm_events,source.bgm_event_count,rect);
         rebuild_pass(9,source.note_endpoints,source.note_endpoint_count,rect);
+        rebuild_pass(10,source.bga_events,source.bga_event_count,rect);
         notes_by_id.clear();
         notes_by_id.reserve(source.note_endpoint_count+source.hold_body_count);
         for (std::size_t index=0; index<source.note_endpoint_count; ++index)
@@ -101,7 +104,8 @@ static_paint_indices_t static_paint_indices;
 static_assert(sizeof(WormUiComposeNoteView)<=96 && sizeof(WormUiComposeHoldView)<=96 &&
     sizeof(WormUiTimingMarkerView)<=96 && sizeof(WormUiComposeBgmEventView)<=96 &&
     sizeof(WormUiComposeLaneView)<=96 && sizeof(WormUiComposeBandView)<=96 &&
-    sizeof(WormUiComposeBgmLaneView)<=96 && sizeof(WormUiComposeGridLineView)<=96);
+    sizeof(WormUiComposeBgmLaneView)<=96 && sizeof(WormUiComposeBgaEventView)<=96 &&
+    sizeof(WormUiComposeGridLineView)<=96);
 struct static_paint_storage_t {
     WormUiComposeView view;
     std::vector<WormUiComposeBandView> bands;
@@ -111,6 +115,7 @@ struct static_paint_storage_t {
     std::vector<WormUiComposeHoldView> holds;
     std::vector<WormUiComposeBgmLaneView> bgm_lanes;
     std::vector<WormUiComposeBgmEventView> bgm;
+    std::vector<WormUiComposeBgaEventView> bga;
     std::vector<WormUiComposeNoteView> notes;
     template<class T>
     void select(unsigned pass, const T* source, std::vector<T>& target,
@@ -160,10 +165,19 @@ struct static_paint_storage_t {
             break;
         case 8: select(pass,source.bgm_events,bgm,view.bgm_events,view.bgm_event_count,begin,end,offset); break;
         case 9: select(pass,source.note_endpoints,notes,view.note_endpoints,view.note_endpoint_count,begin,end,offset); break;
+        case 10: select(pass,source.bga_events,bga,view.bga_events,view.bga_event_count,begin,end,offset); break;
         default: break;
         }
     }
 };
+}
+
+void reset_compose_canvas_viewport_for_testing() {
+    last_compose_viewport_for_testing.reset();
+}
+
+auto compose_canvas_viewport_for_testing() -> std::optional<WormUiTestingRect> {
+    return last_compose_viewport_for_testing;
 }
 
 static struct nk_rect compose_screen_rect(const WormUiComposeRect* source,
@@ -302,7 +316,8 @@ static void draw_indexed_region(const ComposePaintContext& paint,unsigned pass,
     shift_static_records(storage.bands,offset); shift_static_records(storage.lanes,offset);
     shift_static_records(storage.grid,offset); shift_static_records(storage.timing,offset);
     shift_static_records(storage.holds,offset); shift_static_records(storage.bgm_lanes,offset);
-    shift_static_records(storage.bgm,offset); shift_static_records(storage.notes,offset);
+    shift_static_records(storage.bgm,offset); shift_static_records(storage.bga,offset);
+    shift_static_records(storage.notes,offset);
     if (pass == 6) {
         // The interval halo includes neighboring bodies, but direct projection
         // publishes timing markers only when their centers are in the viewport.
@@ -1920,6 +1935,101 @@ static void draw_compose_bgm_lane_labels(const ComposePaintContext& paint) {
     }
 }
 
+static void draw_compose_bga_stack(const ComposePaintContext& paint,
+                                   const WormUiComposeBgaEventView& event) {
+    const auto rect = compose_screen_rect(&event.bounds, paint.view, paint.viewport);
+    if (rect.w <= 0.0f || rect.h <= 0.0f) return;
+    field_rect(paint, rect, 1.0f, nk_rgb(95, 74, 132), 4);
+    field_stroke_rect(paint, rect, 1.0f, 2.0f, nk_rgb(228, 206, 255), 4);
+    char label[32];
+    std::snprintf(label, sizeof(label), "%zu events", event.overlap_count);
+    field_text(paint, rect, label, static_cast<int>(std::strlen(label)),
+               paint.context->style.font, nk_rgb(95, 74, 132), nk_rgb(255, 255, 255), 4);
+    if (nk_input_is_mouse_hovering_rect(&paint.context->input, rect))
+        nk_tooltip(paint.context, "Choose a BGA event at this measure");
+}
+
+static void draw_compose_bga_move_ghost(const ComposePaintContext& paint,
+                                        const WormUiComposeBgaEventView& event,
+                                        const struct nk_rect& original) {
+    if (!paint.view->bga_move_preview_valid ||
+        paint.view->bga_move_preview_event_id != event.event_id) return;
+    const auto y = compose_projected_y(paint, paint.view->bga_move_preview_y_pixels);
+    const auto ghost = nk_rect(original.x, y, original.w, original.h);
+    field_rect(paint, ghost, 1.0f, nk_rgba(145, 206, 255, 135), 4);
+    field_stroke_rect(paint, ghost, 1.0f, 2.0f, nk_rgb(195, 234, 255), 4);
+}
+
+static bool is_first_bga_stack_event(const WormUiComposeView& view, size_t index) {
+    const auto row = view.bga_events[index].canvas_row;
+    return !std::ranges::any_of(std::span(view.bga_events, index),
+        [row](const auto& previous) { return previous.canvas_row == row; });
+}
+
+static void draw_compose_bga_event(const ComposePaintContext& paint, size_t index) {
+    const auto& event = paint.view->bga_events[index];
+    if (event.overlap_count > WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD) {
+        if (is_first_bga_stack_event(*paint.view, index)) draw_compose_bga_stack(paint, event);
+        return;
+    }
+    const auto rect = compose_screen_rect(&event.bounds, paint.view, paint.viewport);
+    if (rect.w <= 0.0f || rect.h <= 0.0f) return;
+    const bool video = event.kind == static_cast<std::uint8_t>(wormedit::visual_event_kind_t::video);
+    const auto fill = event.missing ? nk_rgb(123, 58, 65)
+            : video ? nk_rgb(74, 126, 151) : nk_rgb(104, 133, 78);
+    field_rect(paint, rect, 1.0f, fill, 4);
+    field_stroke_rect(paint, rect, 1.0f, event.selected ? 2.0f : 1.0f,
+                          event.selected ? nk_rgb(255, 240, 173) : nk_rgb(34, 39, 32), 4);
+    const char* label = event.bmp_id && event.bmp_id[0] ? event.bmp_id : event.name;
+    if (label && rect.w >= 18.0f && rect.h >= 13.0f) {
+        const auto text_rect = nk_rect(rect.x + 1.0f, rect.y + 1.0f,
+                                           std::max(1.0f, rect.w - 2.0f),
+                                           std::min(14.0f, rect.h - 2.0f));
+        field_text(paint, text_rect, label, static_cast<int>(strlen(label)),
+                       paint.context->style.font, fill, nk_rgb(255, 255, 245), 4);
+    }
+    if (nk_input_is_mouse_hovering_rect(&paint.context->input, rect))
+        nk_tooltip(paint.context, event.missing ? "Missing BGA resource" : event.name);
+}
+
+static void draw_compose_bga_events(const ComposePaintContext& paint) {
+    for (size_t index = 0; index < paint.view->bga_event_count; ++index)
+        draw_compose_bga_event(paint, index);
+}
+
+static void draw_compose_bga_move_preview(const ComposePaintContext& paint) {
+    if (!state.bga_event_move_active) return;
+    const auto events = std::span(paint.view->bga_events, paint.view->bga_event_count);
+    const auto event = std::ranges::find(events, state.bga_event_move_object_id,
+        &WormUiComposeBgaEventView::event_id);
+    if (event == events.end()) return;
+    const auto rect = compose_screen_rect(&event->bounds, paint.view, paint.viewport);
+    draw_compose_bga_move_ghost(paint, *event, rect);
+}
+
+static void draw_compose_bga_lane(const ComposePaintContext& paint) {
+    if (!paint.view->bga_lane_visible) return;
+    const auto bounds = compose_screen_rect(&paint.view->bga_lane_bounds, paint.view, paint.viewport);
+    if (bounds.w <= 0.0f || bounds.h <= 0.0f) return;
+    field_rect(paint, bounds, 0.0f, nk_rgba(25, 30, 39, 225), 1);
+    field_stroke_rect(paint, bounds, 0.0f, 1.0f, nk_rgb(76, 86, 101), 1);
+    const auto title = nk_rect(bounds.x + 1.0f, paint.viewport.y + 2.0f,
+                               std::max(1.0f, bounds.w - 2.0f), 14.0f);
+    field_text(paint, title, "BGA", 3, paint.context->style.font,
+               nk_rgba(25, 30, 39, 225), nk_rgb(192, 204, 221), 3);
+}
+
+static void draw_compose_bga(const ComposePaintContext& paint) {
+    if (!paint.view->bga_lane_visible) return;
+    draw_compose_bga_lane(paint);
+    const bool selected = std::ranges::any_of(
+        std::span(paint.view->bga_events, paint.view->bga_event_count),
+        [](const auto& event) { return event.selected; });
+    draw_compose_cached_pass(paint, 10, true, selected,
+        [&](const ComposePaintContext& cached) { draw_compose_bga_events(cached); });
+    draw_compose_bga_move_preview(paint);
+}
+
 static ComposeHoveredBgm draw_compose_audio_markers(const ComposePaintContext& paint,
                                                    bool draw_events=true) {
     ComposeHoveredBgm hovered{};
@@ -1938,6 +2048,7 @@ static ComposeHoveredBgm draw_compose_audio_markers(const ComposePaintContext& p
     draw_compose_bmson_marker_drafts(paint);
     draw_compose_bmson_move_preview(paint);
     draw_compose_bgm_lane_labels(paint);
+    draw_compose_bga(paint);
     return hovered;
 }
 
@@ -2262,6 +2373,8 @@ static auto compose_notes_require_direct(const WormUiComposeView& view) -> bool 
 
 void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* view,
                                       nk_command_buffer* canvas, struct nk_rect viewport) {
+    last_compose_viewport_for_testing = WormUiTestingRect{
+        viewport.x, viewport.y, viewport.w, viewport.h};
     static_paint_indices.refresh(*view);
     wormedit::ui::nuklear::begin_compose_field(context,
                                               {viewport.x, viewport.y, viewport.w, viewport.h});

@@ -2,6 +2,7 @@
 
 #include "ui/frontend.h"
 #include "ui/nuklear/keysound_list_state.h"
+#include "ui/nuklear/sound_slot_batch.h"
 
 #include <array>
 #include <cstddef>
@@ -385,6 +386,22 @@ struct worm_ui_nuklear_compose_state_t {
     bool sounds_preview_on_click{true};
     bool keysound_sort_by_id{};
     bool keysound_slots_mode{};
+    worm_ui_sound_slot_batch_t keysound_slot_batch;
+    bool bga_event_move_candidate_active{};
+    bool bga_event_move_active{};
+    std::uint64_t bga_event_move_object_id{};
+    std::uint64_t bga_event_move_chart_id{};
+    std::uint64_t bga_event_move_revision{};
+    std::uint64_t bga_event_move_anchor_row{};
+    double bga_event_move_anchor_y_pixels{};
+    double bga_event_move_current_y_pixels{};
+    float bga_event_move_anchor_screen_y{};
+    bool bga_stack_open{};
+    bool bga_stack_release_pending{};
+    std::uint64_t bga_stack_project_id{};
+    std::uint64_t bga_stack_chart_id{};
+    std::uint64_t bga_stack_revision{};
+    std::uint64_t bga_stack_row{};
     std::array<char, 64> keysound_slots_search{};
     std::size_t keysound_slots_first_row{};
     std::size_t keysound_slots_row_limit{64};

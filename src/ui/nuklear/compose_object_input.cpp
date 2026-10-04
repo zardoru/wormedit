@@ -53,6 +53,30 @@ static auto resource_pointer_can_start(const ComposePointerEventContext& input,
            !view.note_paint_mode_active && !view.semantic_layer_paint_mode_active;
 }
 
+static bool open_bga_stack_for_event(const WormUiComposeView& view, std::uint64_t event_id) {
+    if (event_id == 0) return false;
+    const auto events = std::span(view.bga_events, view.bga_event_count);
+    const auto target = std::ranges::find(events, event_id,
+        &WormUiComposeBgaEventView::event_id);
+    if (target == events.end() || target->overlap_count <=
+            WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD) return false;
+    state.bga_stack_open = true;
+    state.bga_stack_project_id = view.project_id;
+    state.bga_stack_chart_id = view.chart_id;
+    state.bga_stack_revision = view.document_revision;
+    state.bga_stack_row = target->canvas_row;
+    return true;
+}
+
+static bool prepare_bga_pointer_target(const WormUiComposeView& view, double x, double y,
+                                       bool& in_placement_pane, std::uint64_t& target_id) {
+    in_placement_pane = view.bga_lane_visible && x >= view.bga_lane_bounds.left &&
+        x < view.bga_lane_bounds.right && y >= view.bga_lane_bounds.top &&
+        y < view.bga_lane_bounds.bottom;
+    target_id = compose_bga_event_at(&view, x, y);
+    return open_bga_stack_for_event(view, target_id);
+}
+
 auto begin_compose_resource_pointer(const ComposePointerEventContext& input,
                                            bool paint_pointer_consumed) -> bool {
     if (compose_area_pointer_consumed()) return true;
@@ -79,6 +103,9 @@ auto begin_compose_resource_pointer(const ComposePointerEventContext& input,
                 break;
             }
         }
+    } else if (role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGA) {
+        if (prepare_bga_pointer_target(view, input.pointer_started_x,
+                input.pointer_started_y, in_placement_pane, target_lane_id)) return true;
     }
     const auto existing_note = role == WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE &&
                                compose_point_hits_note(&view, input.pointer_started_x,
@@ -95,6 +122,8 @@ auto begin_compose_resource_pointer(const ComposePointerEventContext& input,
     if (replacing && role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM)
         target_lane_id = compose_bgm_event_at(&view, input.pointer_started_x,
                                               input.pointer_started_y);
+    if (replacing && role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGA && target_lane_id == 0)
+        return false;
     append_compose_input(action,
                          replacing ? WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE
                                    : WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE,

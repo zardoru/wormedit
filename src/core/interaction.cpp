@@ -618,6 +618,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .cursor_subrow = state.cursor_subrow,
         .active_snap_denominator = state.active_snap_denominator,
         .snap_enabled = state.snap_enabled,
+        .bga_lane_visible = state.bga_lane_visible,
         .supported_snap_denominators = state.supported_snap_denominators,
         .document_revision = history.document.revision,
         .pixels_per_standard_measure = state.pixels_per_standard_measure,

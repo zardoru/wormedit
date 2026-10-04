@@ -172,6 +172,168 @@ struct compose_test_fixture_t {
         expect_compose_test(flattened.view.compose.scene_available);
     }
 };
+
+auto bga_virtual_preview_song() -> song_document_t {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    chart.bga_events = {{.id = object_id_t{500},
+        .position = {measure_id_t{1}, 120}, .resource = resource_id_t{501}}};
+    song.resources = {{.id = resource_id_t{501}, .name = "preview image",
+        .asset = asset_id_t{601}, .roles = {resource_role_t::bga}}};
+    song.visual_assets = {{.id = asset_id_t{601}, .kind = asset_kind_t::image}};
+    return song;
+}
+
+auto bga_authored_preview_song() -> song_document_t {
+    auto song = bga_virtual_preview_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bmson;
+    chart.bga_events.front().position.row = 60;
+    chart.measures.resize(3);
+    for (std::size_t index = 0; index < chart.measures.size(); ++index) {
+        chart.measures[index].id = measure_id_t{index + 1};
+        chart.measures[index].notes.clear();
+        chart.measures[index].bgm_events.clear();
+    }
+    return song;
+}
+
+void project_bga_preview(compose_test_fixture_t& fixture,
+                         const compose_bga_move_preview_input_t& input) {
+    fixture.flattened = {};
+    fixture.flattened.view.compose.visible = true;
+    populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.workspace,
+        fixture.cache, 1280, 980, fixture.interaction, fixture.application, nullptr, {}, &input);
+    expect_compose_test(fixture.flattened.view.compose.scene_available);
+}
+
+auto project_bga_preview_row(compose_test_fixture_t& fixture,
+                            bool downscroll, bool snap_enabled,
+                            std::uint64_t raw_row = 2 * 960 + 120) -> double {
+    auto& state = *fixture.interaction;
+    state.selected_objects = {{editor_selection_object_kind_t::bga_event, object_id_t{500}}};
+    fixture.application.edit_snap_enabled = snap_enabled;
+    state.snap_enabled = snap_enabled;
+    state.active_snap_denominator = 4;
+    state.viewport_scroll_pixels = 0;
+    state.pixels_per_standard_measure = 192;
+    state.viewport_height_pixels = fixture.flattened.view.compose.viewport_height_pixels;
+    const auto direction = downscroll ? std::uint8_t{2} : std::uint8_t{1};
+    state.scroll_direction = downscroll ? editor_field_scroll_direction_t::down
+                                        : editor_field_scroll_direction_t::up;
+    fixture.application.editor_preferences.scroll_directions[
+        static_cast<std::size_t>(editor_mode_family_t::other)] = direction;
+    const auto raw_y = static_cast<double>(raw_row) * 192.0 / 960.0;
+    const auto pointer_y = downscroll ? state.viewport_height_pixels - raw_y : raw_y;
+    const compose_bga_move_preview_input_t preview{
+        .project_id = fixture.history.document.id.value,
+        .chart_id = 1,
+        .document_revision = fixture.history.document.revision,
+        .event_id = 500,
+        .y_pixels = pointer_y};
+    project_bga_preview(fixture, preview);
+    const auto& view = fixture.flattened.view.compose;
+    INFO("preview stamps: input project=" << preview.project_id << " view=" << view.project_id
+         << " input chart=" << preview.chart_id << " view chart=" << view.chart_id
+         << " input revision=" << preview.document_revision
+         << " view revision=" << view.document_revision << " event count="
+         << view.bga_event_count << " lane visible=" << view.bga_lane_visible
+         << " selected ids=" << state.selected_objects.size() << " scroll="
+         << state.viewport_scroll_pixels << " px/measure=" << state.pixels_per_standard_measure
+         << " viewport height=" << state.viewport_height_pixels);
+    if (view.bga_event_count != 0)
+        INFO("first event=" << view.bga_events[0].event_id << " selected="
+             << view.bga_events[0].selected << " kind="
+             << static_cast<int>(view.bga_events[0].kind));
+    REQUIRE(view.bga_move_preview_valid);
+    CHECK(view.bga_move_preview_event_id == 500);
+    const auto source_y = downscroll ? view.viewport_height_pixels - view.bga_move_preview_y_pixels
+                                     : view.bga_move_preview_y_pixels;
+    const auto preview_row = (state.viewport_scroll_pixels + source_y) *
+        960.0 / state.pixels_per_standard_measure;
+    return (state.viewport_scroll_pixels + source_y) *
+        960.0 / state.pixels_per_standard_measure;
+}
+
+auto authored_release_position(const document_history_t& history,
+                               const editor_interaction_state_t& state,
+                               std::uint64_t raw_row, std::uint64_t denominator)
+    -> std::optional<local_position_t> {
+    const auto& chart = history.document.charts.front();
+    const auto model = inspect_editor_interaction(history, state);
+    REQUIRE(std::holds_alternative<editor_interaction_view_model_t>(model));
+    const auto position = editor_position_at_y_pixels(chart,
+        std::get<editor_interaction_view_model_t>(model),
+        static_cast<double>(raw_row) * 192.0 / 960.0);
+    if (!position || denominator == 0) return position;
+    const auto index = build_measure_index(chart);
+    REQUIRE(std::holds_alternative<measure_index_t>(index));
+    return snap_position(chart, std::get<measure_index_t>(index), *position, denominator);
+}
+
+auto committed_bga_row(const chart_document_t& chart) -> std::uint64_t {
+    const auto event = std::ranges::find(chart.bga_events, object_id_t{500}, &bga_event_t::id);
+    REQUIRE(event != chart.bga_events.end());
+    const auto index = build_measure_index(chart);
+    REQUIRE(std::holds_alternative<measure_index_t>(index));
+    const auto row = absolute_row(std::get<measure_index_t>(index), event->position);
+    REQUIRE(row);
+    return *row;
+}
+
+auto commit_authored_bga_move(compose_test_fixture_t& fixture,
+                              std::uint64_t raw_row) -> std::uint64_t {
+    auto history = fixture.history;
+    const auto& chart = history.document.charts.front();
+    const auto denominator = edit_snap_denominator(chart, *fixture.interaction);
+    const auto position = authored_release_position(history, *fixture.interaction,
+                                                    raw_row, denominator);
+    REQUIRE(position);
+    const auto moved = apply_bga_event_move(history, history.document.revision,
+        {.chart = chart_id_t{1}, .event = object_id_t{500}, .position = *position,
+         .snap_denominator = denominator});
+    REQUIRE(moved);
+    return committed_bga_row(history.document.charts.front());
+}
+
+auto commit_virtual_bga_move(compose_test_fixture_t& fixture,
+                             std::uint64_t raw_row) -> std::uint64_t {
+    auto history = fixture.history;
+    const auto& chart = history.document.charts.front();
+    const auto moved = apply_virtual_bms_bga_event_move(history, history.document.revision,
+        {.chart = chart_id_t{1}, .event = object_id_t{500}, .canvas_row = raw_row,
+         .snap_denominator = edit_snap_denominator(chart, *fixture.interaction)});
+    REQUIRE(moved);
+    return committed_bga_row(history.document.charts.front());
+}
+
+auto commit_bga_move_row(compose_test_fixture_t& fixture, std::uint64_t raw_row,
+                         bool virtual_destination) -> std::uint64_t {
+    return virtual_destination ? commit_virtual_bga_move(fixture, raw_row)
+                               : commit_authored_bga_move(fixture, raw_row);
+}
+
+void check_bga_preview_matches_release(compose_test_fixture_t& fixture, bool downscroll,
+                                       bool snap_enabled, std::uint64_t raw_row,
+                                       bool virtual_destination) {
+    const auto preview_row = project_bga_preview_row(fixture, downscroll, snap_enabled, raw_row);
+    const auto committed_row = commit_bga_move_row(fixture, raw_row, virtual_destination);
+    CHECK(preview_row == Catch::Approx(static_cast<double>(committed_row)));
+}
+
+void check_stale_bga_preview_is_hidden(compose_test_fixture_t& fixture) {
+    auto& state = *fixture.interaction;
+    state.selected_objects = {{editor_selection_object_kind_t::bga_event, object_id_t{500}}};
+    const compose_bga_move_preview_input_t stale{
+        .project_id = fixture.history.document.id.value,
+        .chart_id = 1,
+        .document_revision = fixture.history.document.revision + 1,
+        .event_id = 500,
+        .y_pixels = 24.0};
+    project_bga_preview(fixture, stale);
+    CHECK_FALSE(fixture.flattened.view.compose.bga_move_preview_valid);
+}
 }
 
 void project_follow_frame(document_history_t& history, workspace_controller_t& workspace,
@@ -1100,6 +1262,25 @@ TEST_CASE("Compose static style generation follows exact semantic filters withou
     expect_static_style(fixture.project()==excluded);
     fixture.interaction->viewport_scroll_pixels=65.3;
     expect_static_style(fixture.project()==excluded);
+}
+
+TEST_CASE("BGA move preview matches committed target rows for scroll and snap modes",
+          "[sys][bga-lane][preview]") {
+    compose_test_fixture_t fixture{bga_virtual_preview_song()};
+    fixture.project();
+    REQUIRE(fixture.interaction.has_value());
+    check_bga_preview_matches_release(fixture, false, true, 2 * 960 + 120, true);
+    check_bga_preview_matches_release(fixture, true, true, 2 * 960 + 120, true);
+    check_bga_preview_matches_release(fixture, false, false, 2 * 960 + 120, true);
+    check_bga_preview_matches_release(fixture, true, false, 2 * 960 + 120, true);
+    compose_test_fixture_t authored{bga_authored_preview_song()};
+    authored.project();
+    REQUIRE(authored.interaction.has_value());
+    check_bga_preview_matches_release(authored, false, true, 120, false);
+    check_bga_preview_matches_release(authored, true, true, 360, false);
+    check_bga_preview_matches_release(authored, false, false, 360, false);
+    check_bga_preview_matches_release(authored, true, false, 120, false);
+    check_stale_bga_preview_is_hidden(authored);
 }
 
 TEST_CASE("Compose static tile epoch distinguishes reloaded content with identical native IDs",

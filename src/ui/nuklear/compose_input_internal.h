@@ -26,5 +26,6 @@ auto compose_timing_target(const WormUiComposeView& view, double screen_y)
     -> WormUiTimingTarget;
 bool compose_point_hits_note(const WormUiComposeView* view, double x, double y);
 std::uint64_t compose_bgm_event_at(const WormUiComposeView* view, double x, double y);
+std::uint64_t compose_bga_event_at(const WormUiComposeView* view, double x, double y);
 bool compose_point_hits_selected_note(const WormUiComposeView* view, double x, double y);
 WormUiComposeSelectionMode compose_selection_mode(std::uint16_t modifiers);

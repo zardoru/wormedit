@@ -132,6 +132,87 @@ auto bms_wav_identifier_value(const resource_entry_t& resource) -> std::optional
     return static_cast<std::size_t>(high) * base + static_cast<std::size_t>(low);
 }
 
+struct slot_owner_t {
+    std::uint64_t id{};
+    std::string name;
+    bool ambiguous{};
+};
+
+auto resource_has_wav_slot(const resource_entry_t& resource, std::size_t wanted) -> bool {
+    constexpr auto base = std::size_t{36};
+    const auto digit = [](unsigned char value) -> int {
+        if (value >= 'a' && value <= 'z')
+            value = static_cast<unsigned char>(value - ('a' - 'A'));
+        if (value >= '0' && value <= '9') return value - '0';
+        if (value >= 'A' && value <= 'Z') return value - 'A' + 10;
+        return -1;
+    };
+    for (const auto& identity : resource.target_identities) {
+        if (identity.family != format_family_t::bms || identity.namespace_name != "WAV" ||
+            identity.identifier.size() != 2) continue;
+        const auto high = digit(static_cast<unsigned char>(identity.identifier[0]));
+        const auto low = digit(static_cast<unsigned char>(identity.identifier[1]));
+        if (high >= 0 && low >= 0 && static_cast<std::size_t>(high) * base +
+            static_cast<std::size_t>(low) == wanted) return true;
+    }
+    return false;
+}
+
+auto slot_owner(const song_document_t& document, std::size_t slot) -> slot_owner_t {
+    auto owner = slot_owner_t{};
+    for (const auto& resource : document.resources) {
+        if (!resource_has_wav_slot(resource, slot)) continue;
+        if (owner.id != 0 && owner.id != resource.id.value) {
+            owner.ambiguous = true;
+            continue;
+        }
+        owner.id = resource.id.value;
+        owner.name = resource.name;
+    }
+    return owner;
+}
+
+void set_first_error(std::string& reason, std::string next) {
+    if (reason.empty()) reason = std::move(next);
+}
+
+auto sorted_slot_paths(std::span<const std::string> paths) -> std::vector<std::string> {
+    auto sorted = std::vector<std::string>{paths.begin(), paths.end()};
+    std::ranges::sort(sorted, [](const auto& left, const auto& right) {
+        const auto left_path = std::filesystem::path{left}.lexically_normal();
+        const auto right_path = std::filesystem::path{right}.lexically_normal();
+        const auto left_name = left_path.filename().generic_string();
+        const auto right_name = right_path.filename().generic_string();
+        if (natural_name_less(left_name, right_name)) return true;
+        if (natural_name_less(right_name, left_name)) return false;
+        return left_path.generic_string() < right_path.generic_string();
+    });
+    return sorted;
+}
+
+auto prepare_slot_item(const song_document_t& document, std::size_t slot,
+                       const std::string& source, std::unordered_set<std::string>& seen,
+                       prepared_sound_slot_batch_t& prepared)
+    -> prepared_sound_slot_import_item_t {
+    auto path = std::filesystem::path{source}.lexically_normal();
+    const auto key = path.generic_string();
+    std::error_code error;
+    const auto regular = path.is_absolute() && std::filesystem::is_regular_file(path, error) && !error;
+    const auto duplicate = !seen.insert(key).second;
+    const auto stream = probe_audio(path);
+    if (!regular) set_first_error(prepared.reason, "Audio file is not readable: " + key);
+    if (duplicate) set_first_error(prepared.reason, "The selection contains the same file more than once.");
+    if (!stream) set_first_error(prepared.reason, "File is not decodable audio: " + key);
+    auto name = path.filename().generic_string();
+    if (name.empty() || name.size() > 255)
+        set_first_error(prepared.reason, "A selected filename cannot be used as a sound name.");
+    const auto owner = slot_owner(document, slot);
+    if (owner.ambiguous)
+        set_first_error(prepared.reason, "A destination WAV slot is assigned to more than one sound.");
+    return {.path = key, .name = std::move(name), .occupied_resource_id = owner.id,
+            .occupied_name = owner.name, .ambiguous = owner.ambiguous};
+}
+
 auto imported_bms_id_ranges(const song_document_t& document, std::size_t first_resource,
                             std::span<const std::size_t> entry_indexes) -> std::size_t {
     auto ranges = std::size_t{};
@@ -253,6 +334,54 @@ auto assign_picked_slot(const WormUiWorkspaceAction& action, document_history_t&
          .confirm_replacement = action.compose_sound_slot_confirmed});
     return finish_sound_edit(workspace, history, applied,
         "Assigned audio to WAV " + identifier + ".", "Sound slot assignment made no change.");
+}
+
+auto assign_picked_slot_batch(const WormUiWorkspaceAction& action, document_history_t& history,
+                              workspace_controller_t& workspace, chart_id_t chart_id)
+    -> std::string {
+    const auto chart = std::ranges::find(history.document.charts, chart_id,
+                                         &chart_document_t::id);
+    if (chart == history.document.charts.end() || chart->source_family != format_family_t::bms)
+        return "Direct sound slots are available only for a BMS chart.";
+    if (action.compose_input_chart_id != chart_id.value ||
+        action.compose_input_document_revision != history.document.revision)
+        return "The chosen sound slot is stale. Review the files again.";
+    if (action.compose_sound_slot == 0 || action.compose_sound_slot >= 1296)
+        return "Choose a sound slot from 01 through ZZ.";
+    if (!action.sound_import_items || action.sound_import_item_count == 0 ||
+        action.sound_import_item_count > maximum_bulk_sound_import)
+        return "Choose between 1 and 1295 audio files for the WAV slots.";
+
+    auto files = std::vector<import_resource_asset_action_t>{};
+    files.reserve(action.sound_import_item_count);
+    for (std::size_t index = 0; index < action.sound_import_item_count; ++index) {
+        const auto& item = action.sound_import_items[index];
+        if (!item.path || !item.name || item.kind != static_cast<std::uint8_t>(sound_kind_t::keysound))
+            return "The reviewed WAV slot list contains an invalid item.";
+        const auto path = std::filesystem::path{item.path}.lexically_normal();
+        std::error_code error;
+        if (!path.is_absolute() || !std::filesystem::is_regular_file(path, error) || error)
+            return "A reviewed audio file is no longer readable: " + path.generic_string();
+        const auto stream = probe_audio(path);
+        if (!stream)
+            return "A reviewed file is no longer decodable audio: " + path.generic_string();
+        const auto name = std::string{item.name};
+        if (name.empty() || name.size() > 255)
+            return "Sound names must contain 1 to 255 bytes.";
+        files.push_back({.source_path = path, .role = resource_role_t::sample,
+                         .name = name, .audio_stream = stream});
+    }
+    constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const auto number = action.compose_sound_slot;
+    const auto identifier = std::string{digits[number / 36], digits[number % 36]};
+    const auto applied = apply_bms_wav_slot_batch_assignment(history,
+        action.compose_input_document_revision,
+        {.first_identifier = identifier, .imported_files = std::move(files),
+         .confirm_replacements = action.compose_sound_slot_confirmed});
+    return finish_sound_edit(workspace, history, applied,
+        "Assigned " + sound_count_text(action.sound_import_item_count) +
+            " starting at WAV " + identifier + ".",
+        "WAV slot batch made no document change.");
 }
 
 auto delete_sounds(const WormUiWorkspaceAction& action, document_history_t& history,
@@ -462,6 +591,31 @@ auto prepare_keysound_import(const song_document_t& document, chart_id_t chart,
             .skipped_existing = plan.skipped_existing, .message = std::move(message)};
 }
 
+auto prepare_sound_slot_batch(const song_document_t& document, chart_id_t chart,
+                             std::uint16_t first_slot, std::span<const std::string> paths)
+    -> prepared_sound_slot_batch_t {
+    auto prepared = prepared_sound_slot_batch_t{};
+    const auto target = std::ranges::find(document.charts, chart, &chart_document_t::id);
+    if (target == document.charts.end() || target->source_family != format_family_t::bms)
+        set_first_error(prepared.reason, "Direct sound slots are available only for a BMS chart.");
+    if (first_slot == 0 || first_slot > 1295)
+        set_first_error(prepared.reason, "Choose a sound slot from 01 through ZZ.");
+    if (paths.empty() || paths.size() > maximum_bulk_sound_import)
+        set_first_error(prepared.reason, "Choose between 1 and 1295 audio files for the WAV slots.");
+    if (first_slot > 0 && first_slot <= 1295 && !paths.empty() &&
+        (paths.size() > 1295 || paths.size() - 1 > 1295 - first_slot))
+        set_first_error(prepared.reason, "The selected files exceed the remaining WAV slots through ZZ.");
+    const auto sorted = sorted_slot_paths(paths);
+    auto seen = std::unordered_set<std::string>{};
+    prepared.items.reserve(sorted.size());
+    for (std::size_t index = 0; index < sorted.size(); ++index) {
+        const auto destination = static_cast<std::size_t>(first_slot) + index;
+        prepared.items.push_back(prepare_slot_item(document, destination, sorted[index], seen,
+                                                   prepared));
+    }
+    return prepared;
+}
+
 auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action,
                                    document_history_t& history, workspace_controller_t& workspace,
                                    chart_id_t chart, application_command_state_t& application_state)
@@ -473,6 +627,8 @@ auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action,
         return confirm_import(action, history, workspace, chart);
     case WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT:
         return assign_picked_slot(action, history, workspace, chart);
+    case WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH:
+        return assign_picked_slot_batch(action, history, workspace, chart);
     case WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS: return delete_sounds(action, history, workspace);
     case WORM_UI_COMPOSE_ACTION_AUDITION_SOUND:
         return request_audition(action, history, application_state);

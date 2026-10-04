@@ -134,6 +134,11 @@ static void render_tool_group(const ComposeToolbarContext& toolbar) {
             "Timing focus: edit timing only", view->timing_focus}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS;
+    if (wormedit::ui::chrome::IconButton{Glyph::eye,
+            view->bga_lane_visible ? "Hide BGA event lane" : "Show BGA event lane",
+            view->bga_lane_visible}.render(context) &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY;
     if (!view->scene_available) nk_widget_disable_end(context);
     render_loop_selection_button(toolbar);
 }
@@ -464,7 +469,7 @@ static void layout_compose_toolbar(nk_context* context) {
     nk_layout_row_template_begin(context, 27);
     layout_toolbar_icons(context, 3); // Navigation.
     wormedit::ui::chrome::layout_separator(context);
-    layout_toolbar_icons(context, 5); // Tools.
+    layout_toolbar_icons(context, 6); // Tools.
     wormedit::ui::chrome::layout_separator(context);
     layout_toolbar_icons(context, 3); // Color views.
     wormedit::ui::chrome::layout_separator(context);

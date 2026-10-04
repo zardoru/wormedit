@@ -3,6 +3,7 @@
 #include "sys/metadata_asset_runtime.h"
 #include "sys/metadata_drop_state.h"
 #include "sys/resource_job_state.h"
+#include "sys/sound_drop_transaction.h"
 
 #include <wormedit/core/autosave_loop.h>
 #include <wormedit/core/workspace.h>
@@ -24,7 +25,8 @@ auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_dr
                           bool offer_audio_project_drop,
                           std::string& pending_audio_project_path,
                           std::string& pending_chart_project_path,
-                          std::vector<std::string>& pending_sound_paths,
+                          sound_drop_transaction_t& sound_drop_transaction,
+                          std::vector<sound_drop_batch_t>& pending_sound_batches,
                           std::vector<std::string>& pending_bga_paths,
                           std::string& status) -> bool;
 

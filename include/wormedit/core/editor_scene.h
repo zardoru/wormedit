@@ -13,9 +13,12 @@
 
 namespace wormedit {
 
+inline constexpr std::size_t bga_lane_overlap_stack_threshold{2};
+
 struct editor_field_scene_index_options_t {
     std::size_t maximum_notes{100'000};
     std::size_t maximum_bgm_events{100'000};
+    std::size_t maximum_bga_events{100'000};
     std::size_t maximum_layout_segments{4'096};
     std::size_t maximum_lane_definitions{100'000};
 };
@@ -26,6 +29,13 @@ struct editor_field_scene_bgm_source_t {
     std::uint64_t row{};
     std::optional<resource_id_t> sound;
     std::optional<bool> bmson_restart;
+};
+
+struct editor_field_scene_bga_source_t {
+    object_id_t event;
+    resource_id_t resource;
+    visual_event_kind_t kind{visual_event_kind_t::background};
+    std::uint64_t row{};
 };
 
 struct editor_field_scene_note_source_t {
@@ -62,6 +72,7 @@ struct editor_field_scene_index_t {
     // BGM events use a separate source-lane stack, but share this exact
     // revision-bound row index with the playable field.
     std::vector<editor_field_scene_bgm_source_t> bgm_events;
+    std::vector<editor_field_scene_bga_source_t> bga_events;
     std::unordered_map<std::uint64_t, std::size_t> note_indices_by_id;
     std::size_t note_tree_leaf_base{1};
     std::vector<std::uint64_t> note_tree_max_end;
@@ -156,6 +167,20 @@ struct editor_field_bgm_event_geometry_t {
     editor_field_rect_t bounds;
 };
 
+struct editor_field_bga_lane_geometry_t {
+    editor_field_rect_t bounds;
+};
+
+struct editor_field_bga_event_geometry_t {
+    object_id_t event;
+    resource_id_t resource;
+    visual_event_kind_t kind{visual_event_kind_t::background};
+    std::uint64_t row{};
+    std::size_t overlap_count{1};
+    bool selected{};
+    editor_field_rect_t bounds;
+};
+
 struct editor_field_scene_t {
     std::uint64_t visible_begin_row{};
     std::uint64_t visible_end_row{};
@@ -169,6 +194,8 @@ struct editor_field_scene_t {
     std::vector<editor_field_note_endpoint_geometry_t> note_endpoints;
     std::vector<editor_field_bgm_lane_geometry_t> bgm_lanes;
     std::vector<editor_field_bgm_event_geometry_t> bgm_events;
+    std::optional<editor_field_bga_lane_geometry_t> bga_lane;
+    std::vector<editor_field_bga_event_geometry_t> bga_events;
     std::optional<editor_field_cursor_geometry_t> cursor;
 };
 
@@ -190,6 +217,9 @@ struct editor_field_scene_request_t {
     double bgm_pane_width_pixels{};
     double bgm_lane_width_pixels{36.0};
     double bgm_horizontal_scroll_pixels{};
+    // Optional dedicated single BGA event lane adjacent to the field/BGM pane.
+    double bga_pane_left_pixels{};
+    double bga_pane_width_pixels{};
     editor_grid_density_t grid_density;
     bool include_virtual_bms_tail{};
     std::vector<editor_grid_grouping_t> authored_groupings;

@@ -45,6 +45,7 @@ struct application_frame_projection_context_t {
     player_preview_presenter_t& player_preview_presenter;
     application_command_state_t& application_command_state;
     std::optional<editor_interaction_state_t>& compose_interaction_state;
+    compose_bga_move_preview_input_t bga_move_preview{};
     const std::optional<audio_offset_drag_t>& audio_offset_drag;
     const std::optional<workspace_tab_t>& audio_offset_drag_tab;
     metadata_drop_state_t& metadata_drop;

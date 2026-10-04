@@ -35,6 +35,11 @@ auto raise(const LayersPanel& panel, WormUiComposeActionKind kind, std::uint64_t
     return true;
 }
 
+auto layer_menu_blocks_row_input(const LayersPanel& panel) -> bool {
+    return panel.state->layers_menu_open || panel.state->layers_menu_release_pending ||
+           panel.state->layers_menu_input_consumed;
+}
+
 constexpr const char* layer_menu_title = "Layer actions";
 
 struct LayerMenuEntry {
@@ -82,7 +87,7 @@ auto layer_popup_bounds(const LayersPanel& panel) -> struct nk_rect {
 void open_layer_menu(const LayersPanel& panel, const WormUiComposeSemanticLayerView& layer,
                       std::size_t index, struct nk_rect bounds) {
     auto* context = panel.context;
-    if (layer.layer_id == 0 || panel.state->layers_menu_open ||
+    if (layer.layer_id == 0 || layer_menu_blocks_row_input(panel) ||
         panel.view->input_occluded || !panel.view->scene_available ||
         wormedit::ui::chrome::popup_panel(context)) return;
     if (!nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) ||
@@ -322,7 +327,7 @@ void render_row_name(const LayersPanel& panel, const WormUiComposeSemanticLayerV
     auto* context = panel.context;
     const auto hovered = nk_widget_is_hovered(context);
     const auto clicked = nk_widget_is_mouse_clicked(context, NK_BUTTON_LEFT) &&
-                         !panel.view->input_occluded;
+                         !panel.view->input_occluded && !layer_menu_blocks_row_input(panel);
     struct nk_rect bounds{};
     if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
     open_layer_menu(panel, layer, index, bounds);
@@ -357,14 +362,16 @@ void render_row(const LayersPanel& panel, const WormUiComposeSemanticLayerView& 
     nk_layout_row_template_push_static(context, 24);
     nk_layout_row_template_end(context);
     render_row_name(panel, layer, index);
-    if (!panel.view->scene_available || panel.view->input_occluded) nk_widget_disable_begin(context);
+    const auto row_input_blocked = !panel.view->scene_available || panel.view->input_occluded ||
+                                   layer_menu_blocks_row_input(panel);
+    if (row_input_blocked) nk_widget_disable_begin(context);
     if (IconButton{layer.visible ? Glyph::eye : Glyph::eye_off,
                    layer.visible ? "Hide layer" : "Show layer"}.render(context))
         (void)raise(panel, WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, layer.layer_id);
     if (IconButton{layer.locked ? Glyph::lock : Glyph::lock_open,
                    layer.locked ? "Unlock layer" : "Lock layer"}.render(context))
         (void)raise(panel, WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK, layer.layer_id);
-    if (!panel.view->scene_available || panel.view->input_occluded) nk_widget_disable_end(context);
+    if (row_input_blocked) nk_widget_disable_end(context);
 }
 
 void render_no_layer_row(const LayersPanel& panel) {

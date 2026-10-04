@@ -38,6 +38,8 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_COMPOSE_LAYOUT_PROFILE_ID_BYTES 64
 #define WORM_UI_COMPOSE_LAYOUT_SEGMENT_CAPACITY 2048
 #define WORM_UI_COMPOSE_BGM_EVENT_CAPACITY 32768
+#define WORM_UI_COMPOSE_BGA_EVENT_CAPACITY 32768
+#define WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD 2
 #define WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY 4096
 #define WORM_UI_COMPOSE_CHANNEL_WAVEFORM_ROW_CAPACITY 4096
 #define WORM_UI_COMPOSE_WAVEFORM_OVERVIEW_CAPACITY 512
@@ -909,6 +911,19 @@ typedef struct WormUiComposeKeysoundRowView {
     uint64_t note_layer_conflict_mask;
 } WormUiComposeKeysoundRowView;
 
+typedef struct WormUiComposeBgaEventView {
+    uint64_t event_id;
+    uint64_t resource_id;
+    uint64_t canvas_row;
+    size_t overlap_count;
+    uint8_t kind;
+    const char* name;
+    const char* bmp_id;
+    bool missing;
+    bool selected;
+    WormUiComposeRect bounds;
+} WormUiComposeBgaEventView;
+
 typedef struct WormUiComposeSoundSlotRowView {
     uint16_t number;
     const char* slot;
@@ -1120,6 +1135,13 @@ typedef struct WormUiComposeView {
     const char* selected_note_label;
     uint64_t selected_note_label_note_id;
     bool focus_note_label_editor;
+    bool bga_lane_visible;
+    const WormUiComposeBgaEventView* bga_events;
+    size_t bga_event_count;
+    WormUiComposeRect bga_lane_bounds;
+    bool bga_move_preview_valid;
+    uint64_t bga_move_preview_event_id;
+    double bga_move_preview_y_pixels;
     const WormUiComposeBgaRowView* bga_rows;
     size_t bga_row_count, bga_total_matching, bga_first_row;
     size_t bga_ids_used, bga_ids_total, bga_largest_free_run;
@@ -1855,6 +1877,14 @@ typedef struct WormUiSoundImportItem {
     uint8_t kind;
 } WormUiSoundImportItem;
 
+typedef struct WormUiSoundSlotImportItem {
+    const char* path;
+    const char* name;
+    uint64_t occupied_resource_id;
+    const char* occupied_name;
+    bool ambiguous;
+} WormUiSoundSlotImportItem;
+
 typedef struct WormUiSoundImportGroup {
     const char* name;
     uint64_t existing_group_id;
@@ -1915,6 +1945,9 @@ typedef enum WormUiComposeActionKind {
     /* Keysound listbox actions. The sound list is compose_sound_resource_ids. */
     WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES,
     WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT,
+    WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH,
+    WORM_UI_COMPOSE_ACTION_STAGE_SOUND_SLOT_BATCH,
+    WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY,
     WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT,
     WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES,
     WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA,
@@ -2061,6 +2094,8 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_OFFSET_FIT_CANCEL,
     WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT,
     WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE,
+    WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK,
+    WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE,
     WORM_UI_COMPOSE_INPUT_KIAI_SPAN_SELECT,
     WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT,
     WORM_UI_COMPOSE_INPUT_RECIPE_SELECT,
@@ -2374,9 +2409,14 @@ typedef struct WormUiTestingDrawnText {
     float x, y, width, height;
     char text[128];
 } WormUiTestingDrawnText;
+typedef struct WormUiTestingRect {
+    float x, y, width, height;
+} WormUiTestingRect;
 // Copy bounded text command labels and their window-coordinate rectangles for event tests.
 size_t worm_ui_frontend_copy_drawn_text_bounds_for_testing(WormUiTestingDrawnText* output,
                                                             size_t capacity);
+// Return the current Compose canvas viewport in window coordinates, when one was drawn this frame.
+bool worm_ui_frontend_compose_viewport_for_testing(WormUiTestingRect* output);
 void worm_ui_frontend_shutdown(void);
 void worm_ui_frontend_begin_input(void);
 bool worm_ui_frontend_handle_event(const SDL_Event* event);
@@ -2456,9 +2496,17 @@ uint32_t worm_ui_frame_render_phase_begin(WormUiFrameRenderPhase phase);
 void worm_ui_frame_render_phase_end(uint32_t previous);
 
 void worm_ui_frontend_bga_dock_request(WormUiBgaDockRequest* request);
+void worm_ui_frontend_bga_move_preview(uint64_t* chart_id, uint64_t* document_revision,
+                                       uint64_t* event_id, double* y_pixels);
 void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request);
 /* Queues one dropped file for exact slot assignment; false when automatic mode is active.
    In slots mode invalid/stale requests are consumed without falling back to allocation. */
+bool worm_ui_frontend_stage_sound_slot_batch(uint64_t project, uint64_t chart, uint64_t revision,
+    uint16_t first_slot, const WormUiSoundSlotImportItem* items, size_t count, const char* reason);
+
 bool worm_ui_frontend_stage_sound_slot_file(uint64_t project, uint64_t chart, uint64_t revision,
                                             const char* path, size_t file_count);
+void worm_ui_frontend_sound_slot_batch_result(bool applied, const char* message);
+bool worm_ui_frontend_stage_sound_slot_file_at(uint64_t project, uint64_t chart,
+    uint64_t revision, uint16_t slot, uint64_t occupied_resource, const char* path);
 bool worm_ui_frontend_bga_list_contains(uint32_t window_id, float x, float y);

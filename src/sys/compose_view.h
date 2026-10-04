@@ -42,6 +42,14 @@
 
 namespace wormedit::sys {
 
+struct compose_bga_move_preview_input_t {
+    std::uint64_t project_id{};
+    std::uint64_t chart_id{};
+    std::uint64_t document_revision{};
+    std::uint64_t event_id{};
+    double y_pixels{};
+};
+
 // Shared pointer cell resolution for idle paint previews and note placement.
 [[nodiscard]] auto resolve_compose_paint_cell(
     const wormedit::chart_document_t& chart, const wormedit::editor_hit_test_index_t& index,
@@ -108,7 +116,7 @@ struct compose_scene_cache_t {
     std::uint64_t static_scene_source_generation{}, static_scene_source_style{};
     std::size_t static_scene_accounted_bytes{};
     std::optional<bool> static_scene_lane_legend;
-    std::array<wormedit::common::static_interval_index_t, 4> static_projection_indices;
+    std::array<wormedit::common::static_interval_index_t, 5> static_projection_indices;
     std::vector<std::size_t> static_projection_scratch;
     std::uint64_t static_projection_source_generation{};
     std::size_t static_projection_index_bytes{}, static_projection_scanned{},
@@ -371,6 +379,7 @@ struct compose_horizontal_layout_t {
     double field_left_pixels{};
     double playable_field_width_pixels{};
     double bgm_pane_width_pixels{};
+    double bga_pane_width_pixels{};
 };
 
 
@@ -382,7 +391,8 @@ auto compose_field_downscroll(const wormedit::chart_document_t& chart,
 auto compose_project_y(long double row, double pixels_per_row, double scroll,
                        double viewport_height, bool downscroll) -> double;
 auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_count,
-                               bool has_bgm_lanes, std::size_t visible_timing_lane_count)
+                               bool has_bgm_lanes, bool has_bga_lane,
+                               std::size_t visible_timing_lane_count)
     -> compose_horizontal_layout_t;
 auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::size_t;
 auto compose_lane_is_editable(const wormedit::lane_definition_t& lane) -> bool;
@@ -420,6 +430,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
                            std::optional<wormedit::editor_interaction_state_t>& retained_state,
                            application_command_state_t& application_state,
                            const wormedit::timing_lane_pseudonote_preview_t* timing_stage,
-                           std::span<const wormedit::local_position_t> comparison_rows = {});
+                           std::span<const wormedit::local_position_t> comparison_rows = {},
+                           const compose_bga_move_preview_input_t* bga_move_preview = nullptr);
 
 } // namespace wormedit::sys

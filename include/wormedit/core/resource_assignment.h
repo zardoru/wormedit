@@ -95,11 +95,23 @@ struct assign_bms_wav_slot_action_t {
     bool confirm_replacement{};
 };
 
+struct assign_bms_wav_slot_batch_action_t {
+    std::string first_identifier;
+    std::vector<import_resource_asset_action_t> imported_files;
+    bool confirm_replacements{};
+};
+
 // Imports one externally validated audio file and binds it to the exact BMS WAV
 // identifier. Replacing an occupied slot requires explicit confirmation.
 [[nodiscard]] auto apply_bms_wav_slot_assignment(
     document_history_t& history, std::uint64_t expected_revision,
     const assign_bms_wav_slot_action_t& action) -> document_command_result_t;
+
+// Assigns naturally ordered audio files to successive exact WAV slots in one
+// command. The batch never skips occupied slots or wraps past ZZ.
+[[nodiscard]] auto apply_bms_wav_slot_batch_assignment(
+    document_history_t& history, std::uint64_t expected_revision,
+    const assign_bms_wav_slot_batch_action_t& action) -> document_command_result_t;
 
 // Sets the song's main audio from an externally probed file. The first Music
 // resource has its asset repointed (keeping every reference); without one, the
@@ -195,6 +207,33 @@ struct move_bgm_event_action_t {
     object_id_t source_lane;
     std::uint64_t snap_denominator{};
 };
+
+struct move_bga_event_action_t {
+    chart_id_t chart;
+    object_id_t event;
+    local_position_t position;
+    std::uint64_t snap_denominator{};
+};
+
+struct move_virtual_bms_bga_event_action_t {
+    chart_id_t chart;
+    object_id_t event;
+    std::uint64_t canvas_row{};
+    std::uint64_t snap_denominator{};
+};
+
+// Moves one background image/video event, preserving its stable identity,
+// resource, kind, and source provenance.
+[[nodiscard]] auto apply_bga_event_move(document_history_t& history,
+                                        std::uint64_t expected_revision,
+                                        const move_bga_event_action_t& action)
+    -> document_command_result_t;
+
+// Materializes the virtual destination measure and moves one BGA event in a
+// single undo command, preserving the event's identity and source metadata.
+[[nodiscard]] auto apply_virtual_bms_bga_event_move(
+    document_history_t& history, std::uint64_t expected_revision,
+    const move_virtual_bms_bga_event_action_t& action) -> document_command_result_t;
 
 struct move_virtual_bms_bgm_event_action_t {
     chart_id_t chart;

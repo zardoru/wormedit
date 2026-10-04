@@ -632,6 +632,8 @@ struct editor_interaction_state_t {
     // Edit snapping applies to every pointer-driven object class; while off, edits land on the
     // chart's finest row instead of the active grid (see effective_edit_snap_denominator).
     bool snap_enabled{true};
+    // View-only BGA event lane visibility; hidden lanes have no hit geometry.
+    bool bga_lane_visible{true};
 };
 
 // The denominator pointer-driven edits of any object class should snap to.
@@ -650,6 +652,7 @@ struct editor_interaction_view_model_t {
     double cursor_subrow{};
     std::uint64_t active_snap_denominator{};
     bool snap_enabled{true};
+    bool bga_lane_visible{true};
     std::vector<std::uint64_t> supported_snap_denominators;
     std::uint64_t document_revision{};
     double pixels_per_standard_measure{default_pixels_per_standard_measure};

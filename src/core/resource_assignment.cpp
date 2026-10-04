@@ -684,6 +684,54 @@ auto apply_bgm_event_move(document_history_t& history, std::uint64_t expected_re
     return commit_document_command(history, std::move(proposed), "Move BGM event");
 }
 
+auto apply_bga_event_move(document_history_t& history, std::uint64_t expected_revision,
+                          const move_bga_event_action_t& action) -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id, "BGA move document revision is stale");
+        return result;
+    }
+    const auto source_chart = std::ranges::find(history.document.charts, action.chart,
+                                                &chart_document_t::id);
+    if (!action.chart || source_chart == history.document.charts.end() || !action.event) {
+        reject(result, diagnostic_code_t::invalid_id, "BGA move chart or event is missing");
+        return result;
+    }
+    const auto found = std::ranges::find(source_chart->bga_events, action.event, &bga_event_t::id);
+    if (found == source_chart->bga_events.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "BGA move event no longer exists");
+        return result;
+    }
+    if (found->kind != visual_event_kind_t::background && found->kind != visual_event_kind_t::video) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "Only background and video events can move in the BGA lane");
+        return result;
+    }
+    const auto built = build_measure_index(*source_chart);
+    if (!std::holds_alternative<measure_index_t>(built)) {
+        reject(result, diagnostic_code_t::invalid_measure, "BGA move chart index is invalid");
+        return result;
+    }
+    const auto target = snap_placement_position(*source_chart,
+                                                std::get<measure_index_t>(built),
+                                                action.position, action.snap_denominator);
+    if (!target) {
+        reject(result, diagnostic_code_t::row_out_of_range, "BGA move row is outside the chart");
+        return result;
+    }
+    if (*target == found->position) return result;
+    auto proposed = history.document;
+    const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.begin());
+    const auto moved = std::ranges::find(proposed.charts[chart_offset].bga_events,
+                                         action.event, &bga_event_t::id);
+    if (moved == proposed.charts[chart_offset].bga_events.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "BGA move event no longer exists");
+        return result;
+    }
+    moved->position = *target;
+    return commit_document_command(history, std::move(proposed), "Move BGA event");
+}
+
 auto apply_virtual_bms_resource_placement(
     document_history_t& history, std::uint64_t expected_revision,
     const place_virtual_bms_resource_action_t& action) -> document_command_result_t {
@@ -846,6 +894,78 @@ auto apply_virtual_bms_bgm_event_move(
     }
     return commit_document_command(history, std::move(staged.document),
                                    "Move BGM event into virtual BMS measure");
+}
+
+auto apply_virtual_bms_bga_event_move(
+    document_history_t& history, std::uint64_t expected_revision,
+    const move_virtual_bms_bga_event_action_t& action) -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id, "virtual BGA move document revision is stale");
+        return result;
+    }
+    const auto source_chart = std::ranges::find(history.document.charts, action.chart,
+                                                &chart_document_t::id);
+    if (!action.chart || source_chart == history.document.charts.end() ||
+        source_chart->source_family != format_family_t::bms || !action.event) {
+        reject(result, diagnostic_code_t::invalid_id, "virtual BGA move requires a BMS chart and event");
+        return result;
+    }
+    const auto built = build_virtual_canvas(*source_chart);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built)) {
+        result.diagnostics = *diagnostics;
+        return result;
+    }
+    const auto& canvas = std::get<virtual_canvas_t>(built);
+    if (action.canvas_row >= canvas.total_rows ||
+        (action.snap_denominator != 0 &&
+         source_chart->divisions_per_standard_measure % action.snap_denominator != 0)) {
+        reject(result, diagnostic_code_t::row_out_of_range,
+               "virtual BGA move row or snap is invalid");
+        return result;
+    }
+    auto snapped_row = action.canvas_row;
+    if (action.snap_denominator != 0) {
+        const auto rounded = snap_absolute_row(*source_chart, snapped_row, action.snap_denominator);
+        if (!rounded) {
+            reject(result, diagnostic_code_t::row_out_of_range, "virtual BGA snap row is invalid");
+            return result;
+        }
+        snapped_row = *rounded;
+    }
+    const auto destination = canvas.measure_containing(snapped_row);
+    if (!destination || destination->authored ||
+        destination->number >= bms_addressable_measure_count) {
+        reject(result, diagnostic_code_t::row_out_of_range,
+               "virtual BGA move requires an unmaterialized BMS measure");
+        return result;
+    }
+    auto proposed = history.document;
+    auto& chart = proposed.charts[static_cast<std::size_t>(
+        source_chart - history.document.charts.begin())];
+    const auto required = destination->number + 1 - chart.measures.size();
+    std::uint64_t last_measure_id{};
+    for (const auto& measure : chart.measures)
+        last_measure_id = std::max(last_measure_id, measure.id.value);
+    if (required > std::numeric_limits<std::uint64_t>::max() - last_measure_id) {
+        reject(result, diagnostic_code_t::invalid_id, "virtual BGA measure ID sequence is exhausted");
+        return result;
+    }
+    chart.measures.reserve(destination->number + 1);
+    for (std::size_t added = 0; added < required; ++added)
+        chart.measures.push_back({.id = measure_id_t{++last_measure_id},
+                                  .definition = {{1, 1}, meter_t{4, 4}}});
+    const local_position_t position{chart.measures[destination->number].id,
+                                    snapped_row - destination->begin_row};
+    auto staged = make_document_history(std::move(proposed));
+    const auto moved = apply_bga_event_move(staged, staged.document.revision,
+        {.chart = action.chart, .event = action.event, .position = position});
+    if (!moved) {
+        result.diagnostics = moved.diagnostics;
+        return result;
+    }
+    return commit_document_command(history, std::move(staged.document),
+                                   "Move BGA event into virtual BMS measure");
 }
 
 auto next_eligible_placement_resource(const song_document_t& document,
@@ -1239,6 +1359,101 @@ auto replace_imported_resource_with_exact_slot(document_history_t& draft,
     return true;
 }
 
+auto batch_slot_files(assign_bms_wav_slot_batch_action_t action,
+                      std::size_t first_slot,
+                      document_command_result_t& result)
+    -> std::optional<std::vector<import_resource_asset_action_t>> {
+    if (action.imported_files.empty() || action.imported_files.size() > 1295) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "BMS WAV slot batch needs between 1 and 1295 files");
+        return std::nullopt;
+    }
+    if (action.imported_files.size() - 1 > 1295 - first_slot) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "BMS WAV slot batch would continue beyond ZZ");
+        return std::nullopt;
+    }
+    auto paths = std::unordered_set<std::string>{};
+    for (const auto& file : action.imported_files) {
+        const auto path = file.source_path.lexically_normal();
+        if (!paths.insert(path.generic_string()).second) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "BMS WAV slot batch contains a duplicate input path");
+            return std::nullopt;
+        }
+        if (file.role != resource_role_t::sample) {
+            reject(result, diagnostic_code_t::unsupported_feature,
+                   "BMS WAV slot batch requires sample imports");
+            return std::nullopt;
+        }
+    }
+    std::ranges::sort(action.imported_files, [](const auto& left, const auto& right) {
+        const auto left_name = left.source_path.filename().generic_string();
+        const auto right_name = right.source_path.filename().generic_string();
+        if (natural_name_less(left_name, right_name)) return true;
+        if (natural_name_less(right_name, left_name)) return false;
+        return left.source_path.generic_string() < right.source_path.generic_string();
+    });
+    return std::move(action.imported_files);
+}
+
+auto batch_slot_owners(const song_document_t& document, std::size_t first_slot,
+                       std::size_t count, bool confirm_replacements,
+                       document_command_result_t& result)
+    -> std::optional<std::vector<resource_id_t>> {
+    auto owners = std::vector<resource_id_t>{};
+    auto replaced = std::unordered_set<std::uint64_t>{};
+    owners.reserve(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto owner = find_wav_slot_owner(document, first_slot + index);
+        if (owner.ambiguous) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "a destination WAV slot is assigned to more than one sound");
+            return std::nullopt;
+        }
+        if (owner.resource && !confirm_replacements) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "replacing occupied WAV slots requires explicit confirmation");
+            return std::nullopt;
+        }
+        if (owner.resource && !replaced.insert(owner.resource.value).second) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "multiple destination WAV slots refer to the same sound");
+            return std::nullopt;
+        }
+        owners.push_back(owner.resource);
+    }
+    return owners;
+}
+
+auto import_slot_batch_entry(document_history_t& draft, import_resource_asset_action_t file,
+                             std::size_t slot, resource_id_t owner,
+                             document_command_result_t& result) -> bool {
+    file.allocate_bms_identifier = false;
+    const auto imported = apply_resource_asset_import(draft, draft.document.revision, file);
+    if (!imported) {
+        result.diagnostics.insert(result.diagnostics.end(), imported.diagnostics.begin(),
+                                  imported.diagnostics.end());
+        return false;
+    }
+    if (!owner) return replace_imported_resource_with_exact_slot(
+        draft, encode_bms_identifier(slot, 36), result);
+    const auto temporary = draft.document.resources.back();
+    std::erase_if(draft.document.resources, [&temporary](const auto& resource) {
+        return resource.id == temporary.id;
+    });
+    const auto target = std::ranges::find(draft.document.resources, owner,
+                                          &resource_entry_t::id);
+    if (target == draft.document.resources.end()) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "an occupied WAV slot sound disappeared during batch import");
+        return false;
+    }
+    target->asset = temporary.asset;
+    target->missing = false;
+    return true;
+}
+
 } // namespace
 
 auto apply_bms_wav_slot_assignment(document_history_t& history,
@@ -1305,6 +1520,36 @@ auto apply_bms_wav_slot_assignment(document_history_t& history,
     if (!imported_action.name.empty()) target->name = imported_action.name;
     return commit_document_command(history, std::move(draft.document),
                                     "Replace BMS WAV slot sound");
+}
+
+auto apply_bms_wav_slot_batch_assignment(document_history_t& history,
+                                         std::uint64_t expected_revision,
+                                         const assign_bms_wav_slot_batch_action_t& action)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "BMS WAV slot batch revision is stale");
+        return result;
+    }
+    const auto first_slot = decode_supported_wav_identifier(action.first_identifier);
+    if (!first_slot) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "BMS WAV slot batch must start at a supported nonzero identifier");
+        return result;
+    }
+    auto files = batch_slot_files(action, *first_slot, result);
+    if (!files) return result;
+    const auto owners = batch_slot_owners(history.document, *first_slot, files->size(),
+                                          action.confirm_replacements, result);
+    if (!owners) return result;
+    auto draft = make_document_history(history.document, 1, false);
+    for (std::size_t index = 0; index < files->size(); ++index) {
+        if (!import_slot_batch_entry(draft, std::move((*files)[index]), *first_slot + index,
+                                     (*owners)[index], result)) return result;
+    }
+    return commit_document_command(history, std::move(draft.document),
+                                   "Assign BMS WAV slot batch");
 }
 
 auto apply_primary_music_set(document_history_t& history, std::uint64_t expected_revision,

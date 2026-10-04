@@ -95,7 +95,7 @@ void show_picker(const SoundsPanel& panel) {
     }
     static const SDL_DialogFileFilter filters[]{{"Audio files", "wav;ogg;mp3;flac"}};
     SDL_ShowOpenFileDialog(picker_callback, nullptr, SDL_GetKeyboardFocus(), filters, 1, nullptr,
-                           !panel.state->keysound_slots_mode);
+                           true);
 }
 
 auto take_picker_result(std::vector<std::string>& destination, picker_target_t& target) -> bool {
@@ -167,6 +167,19 @@ void raise_sound_slot_assignment(const SoundsPanel& panel, std::uint16_t slot,
     panel.action->compose_import_path_count = panel.state->keysound_staged_path_pointers.size();
 }
 
+void raise_sound_slot_batch_stage(const SoundsPanel& panel, std::uint16_t slot) {
+    auto& state = *panel.state;
+    if (state.keysound_staged_paths.empty() ||
+        !raise(panel, WORM_UI_COMPOSE_ACTION_STAGE_SOUND_SLOT_BATCH)) return;
+    state.keysound_staged_path_pointers.clear();
+    for (const auto& path : state.keysound_staged_paths)
+        state.keysound_staged_path_pointers.push_back(path.c_str());
+    panel.action->compose_sound_slot = slot;
+    panel.action->sound_import_project_id = panel.view->project_id;
+    panel.action->compose_import_paths = state.keysound_staged_path_pointers.data();
+    panel.action->compose_import_path_count = state.keysound_staged_path_pointers.size();
+}
+
 void process_slot_file(const SoundsPanel& panel, std::uint64_t project, std::uint64_t chart,
                        std::uint64_t revision, std::uint16_t slot,
                        std::uint64_t occupied_resource, std::string_view path) {
@@ -209,8 +222,20 @@ void import_picked_files(const SoundsPanel& panel) {
     if (take_picker_result(state.keysound_staged_paths, target)) {
         if (target.slots_mode) {
             if (state.keysound_staged_paths.empty()) return;
+            if (target.project != panel.view->project_id ||
+                target.chart != panel.view->chart_id ||
+                target.revision != panel.view->document_revision ||
+                !state.keysound_slots_mode || target.slot == 0 || target.slot > 1295) {
+                state.keysound_slot_feedback = "The WAV slot target changed; choose the files again.";
+                state.keysound_staged_paths.clear();
+                return;
+            }
+            if (state.keysound_staged_paths.size() > 1) {
+                raise_sound_slot_batch_stage(panel, target.slot);
+                return;
+            }
             if (state.keysound_staged_paths.size() != 1) {
-                state.keysound_slot_feedback = "Choose exactly one file for a BMS WAV slot.";
+                state.keysound_slot_feedback = "Choose at least one audio file.";
                 return;
             }
             state.keysound_pending_project = target.project;
@@ -420,7 +445,7 @@ void render_mode_row(const SoundsPanel& panel) {
 void render_add_sounds_button(const SoundsPanel& panel) {
     auto& state = *panel.state;
     const auto label = state.keysound_slots_mode
-        ? "Choose one file for the selected BMS WAV slot"
+        ? "Choose files for consecutive BMS WAV slots"
         : "Add sounds from files (you can also drop audio files on this list)";
     if (!toolbar_button(panel.context, !picker_open(), DrawnIconButton{icons::plus, label})) return;
     if (state.keysound_slots_mode && !state.keysound_selected_slot_resource_known) {

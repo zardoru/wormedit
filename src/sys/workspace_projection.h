@@ -150,6 +150,7 @@ struct flattened_workspace_t {
             std::vector<WormUiComposeBgmDraftView> draft;
             std::optional<WormUiComposeBgmMovePreviewView> move;
         } bgm;
+        frame_span<WormUiComposeBgaEventView> bga_event;
         struct {
             frame_span<WormUiComposeWaveformRowView> row;
             frame_span<WormUiComposeWaveformOverviewRowView> overview_row;

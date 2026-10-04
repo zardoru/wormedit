@@ -19,6 +19,7 @@ if(UNIX)
 endif()
 
 add_executable(wormedit_core_tests
+    sys/bga_lane_workflow_tests.cpp
     ../src/sys/compose_resource_presenter.cpp
     ../src/sys/compose_area_actions.cpp
     ../src/sys/application_commands.cpp
@@ -502,7 +503,12 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
     add_executable(wormedit_frontend_event_harness_tests
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
+        ui/sound_source_copy_event_harness_tests.cpp
+        ui/sound_slot_batch_event_harness_tests.cpp
+        sys/sound_drop_transaction_tests.cpp
+        ../src/sys/sound_drop_transaction.cpp
         ui/bga_advance_workflow_tests.cpp
+        ui/bga_lane_event_harness_tests.cpp
         ui/inspector_resource_workflow_tests.cpp
         ${WORMEDIT_UI_FRONTEND_SOURCES}
         "${CMAKE_SOURCE_DIR}/src/common/static_interval_index.cpp"

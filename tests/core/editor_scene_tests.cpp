@@ -654,6 +654,144 @@ TEST_CASE("field scene composes an independently scrolled BGM pane",
     CHECK_FALSE(excessive_scroll.scene.has_value());
 }
 
+TEST_CASE("field scene composes selectable BGA events in a dedicated lane",
+          "[unit][core][editor-scene][bga]") {
+    auto chart = scene_chart();
+    chart.bga_events = {
+        {.id = wormedit::object_id_t{70},
+         .position = {wormedit::measure_id_t{1}, 480},
+         .resource = wormedit::resource_id_t{90}},
+        {.id = wormedit::object_id_t{71},
+         .position = {wormedit::measure_id_t{1}, 480},
+         .resource = wormedit::resource_id_t{91},
+         .kind = wormedit::visual_event_kind_t::video},
+        {.id = wormedit::object_id_t{72},
+         .position = {wormedit::measure_id_t{1}, 480},
+         .resource = wormedit::resource_id_t{92},
+         .kind = wormedit::visual_event_kind_t::layer},
+    };
+    auto scene_view = view();
+    scene_view.selected_objects.push_back(
+        {wormedit::editor_selection_object_kind_t::bga_event, wormedit::object_id_t{71}});
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    const auto request = wormedit::editor_field_scene_request_t{
+        .field_left_pixels = 10.0,
+        .field_width_pixels = 200.0,
+        .note_head_height_pixels = 10.0,
+        .scroll_direction = wormedit::editor_field_scroll_direction_t::up,
+        .bgm_pane_left_pixels = 220.0,
+        .bgm_pane_width_pixels = 60.0,
+        .bgm_lane_width_pixels = 40.0,
+        .bga_pane_left_pixels = 290.0,
+        .bga_pane_width_pixels = 48.0,
+    };
+    const auto result = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view, request);
+    REQUIRE(result);
+    REQUIRE(result.scene->bga_lane.has_value());
+    CHECK(result.scene->bga_lane->bounds.left == 290.0);
+    CHECK(result.scene->bga_lane->bounds.right == 338.0);
+    REQUIRE(result.scene->bga_events.size() == 2);
+    CHECK(result.scene->bga_events[0].event == wormedit::object_id_t{70});
+    CHECK(result.scene->bga_events[0].resource == wormedit::resource_id_t{90});
+    CHECK(result.scene->bga_events[0].bounds.left == 290.0);
+    CHECK(result.scene->bga_events[0].bounds.right == 314.0);
+    CHECK(result.scene->bga_events[0].bounds.top == Catch::Approx(0.0));
+    CHECK(result.scene->bga_events[0].bounds.bottom == Catch::Approx(10.0));
+    CHECK(result.scene->bga_events[1].event == wormedit::object_id_t{71});
+    CHECK(result.scene->bga_events[1].kind == wormedit::visual_event_kind_t::video);
+    CHECK(result.scene->bga_events[1].selected);
+    CHECK(result.scene->bga_events[1].bounds.left == 314.0);
+    CHECK(result.scene->bga_events[1].bounds.right == 338.0);
+
+    auto downscroll_request = request;
+    downscroll_request.scroll_direction = wormedit::editor_field_scroll_direction_t::down;
+    const auto downscroll = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
+        downscroll_request);
+    REQUIRE(downscroll);
+    REQUIRE(downscroll.scene->bga_events.size() == 2);
+    CHECK(downscroll.scene->bga_events[0].bounds.top >
+          result.scene->bga_events[0].bounds.top);
+    CHECK(downscroll.scene->bga_events[0].bounds.bottom >
+          result.scene->bga_events[0].bounds.bottom);
+
+    auto hidden_view = scene_view;
+    hidden_view.bga_lane_visible = false;
+    const auto hidden = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), hidden_view, request);
+    REQUIRE(hidden);
+    CHECK_FALSE(hidden.scene->bga_lane.has_value());
+    CHECK(hidden.scene->bga_events.empty());
+}
+
+void check_lane_less_bga_result(const wormedit::editor_field_scene_t& scene);
+
+TEST_CASE("BGA lane stays available on lane-less BMS virtual canvas",
+          "[unit][core][editor-scene][bga][bms]") {
+    auto chart = scene_chart();
+    for (auto& measure : chart.measures) measure.notes.clear();
+    chart.source_family = wormedit::format_family_t::bms;
+    chart.lane_layouts.clear();
+    chart.bga_events = {{.id = wormedit::object_id_t{80},
+                         .position = {wormedit::measure_id_t{1}, 240},
+                         .resource = wormedit::resource_id_t{90}}};
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    auto scene_view = view();
+    scene_view.selected_notes.clear();
+    scene_view.selected_objects.clear();
+    scene_view.bga_lane_visible = true;
+    scene_view.viewport_scroll_pixels = 0.0;
+    scene_view.viewport_height_pixels = 240.0;
+    const auto result = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
+        {.field_left_pixels = 10.0,
+         .field_width_pixels = 100.0,
+         .bga_pane_left_pixels = 120.0,
+         .bga_pane_width_pixels = 48.0,
+         .include_virtual_bms_tail = true});
+    for (const auto& diagnostic : result.diagnostics) WARN(diagnostic.message);
+    REQUIRE(result);
+    check_lane_less_bga_result(*result.scene);
+}
+
+void check_lane_less_bga_result(const wormedit::editor_field_scene_t& scene) {
+    CHECK(scene.lanes.empty());
+    REQUIRE(scene.bga_lane.has_value());
+    REQUIRE(scene.bga_events.size() == 1);
+    CHECK(scene.bga_events.front().event == wormedit::object_id_t{80});
+}
+
+void check_dense_bga_stack(const wormedit::editor_field_scene_t& scene) {
+    REQUIRE(scene.bga_events.size() == 50);
+    for (const auto& event : scene.bga_events) {
+        CHECK(event.overlap_count == 50);
+        CHECK(event.bounds.left == 210.0);
+        CHECK(event.bounds.right == 258.0);
+    }
+}
+
+TEST_CASE("dense BGA rows use one bounded overlap stack target", "[unit][core][editor-scene][bga]") {
+    auto chart = scene_chart();
+    for (std::uint64_t index = 1; index <= 50; ++index) {
+        chart.bga_events.push_back({.id = wormedit::object_id_t{1000 + index},
+            .position = {wormedit::measure_id_t{1}, 480},
+            .resource = wormedit::resource_id_t{2000 + index}});
+    }
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    auto request = wormedit::editor_field_scene_request_t{
+        .field_width_pixels = 200.0, .note_head_height_pixels = 10.0,
+        .scroll_direction = wormedit::editor_field_scroll_direction_t::up,
+        .bga_pane_left_pixels = 210.0, .bga_pane_width_pixels = 48.0};
+    const auto result = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), view(), request);
+    REQUIRE(result);
+    check_dense_bga_stack(*result.scene);
+}
+
 TEST_CASE("field scene rejects stale indexes and returns no partial geometry at hard caps",
           "[unit][core][editor-scene][bounds]") {
     const auto chart = scene_chart();

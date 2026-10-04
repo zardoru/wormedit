@@ -1094,7 +1094,9 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     if (compose_note_menu_open() || compose_note_menu_consumed())
         process_compose_note_menu(context, *view, *action, viewport, editor_input_right, window_focused);
     if (view->input_occluded || state.layers_menu_open || state.layers_menu_release_pending ||
-        compose_note_menu_consumed()) {
+        state.bga_stack_open || state.bga_stack_release_pending ||
+        state.bga_renumber_confirmation_open ||
+        state.bga_renumber_release_pending || compose_note_menu_consumed()) {
         discard_occluded_compose_input(panel);
         draw_compose_scene_canvas(context, view, canvas, viewport);
         return;
@@ -1470,11 +1472,13 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     nk_layout_space_push(context, nk_rect(editor_left, 0.0f, editor_width - editor_left,
                                           compose_body_height));
     if (nk_group_begin(context, "Compose editor", NK_WINDOW_NO_SCROLLBAR)) {
-    render_compose_editor_canvas(panel, inspector_drawn || sounds_drawn || layers_drawn || bga_drawn, side_width);
+    render_compose_editor_canvas(panel, inspector_drawn || sounds_drawn || layers_drawn || bga_drawn,
+                                 side_width);
     nk_group_end(context);
     }
     render_compose_side_docks(context, view, timing_view, action, dock_layout);
     nk_layout_space_end(context);
+    worm_ui_nuklear_render_bga_stack_picker(context, view, action, &state);
     render_go_to_measure(context, *view, *action, window_focused);
 }
 

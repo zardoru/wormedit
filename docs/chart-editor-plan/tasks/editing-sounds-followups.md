@@ -38,10 +38,11 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 
 ## T-363 Copy sound sources into the project from the Sounds tab
 
-- **Status:** ready
+- **Status:** done (2026-10-04; Sounds source copy through the existing project-copy path)
 - **Outcome:** the Sounds tab offers Copy source into project for selected sounds, using the existing project-copy flow and relinking their sources only after successful copies.
 - **Read first:** `src/ui/nuklear/audio_panel.cpp`, `include/wormedit/core/resource_file_copy.h`, `src/sys/audio_project_import.cpp`, `src/ui/nuklear/metadata_audio_section.cpp`.
-- **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp`, `src/sys/audio_project_import.cpp/.h`, `src/core/resource_file_copy.cpp`, `include/wormedit/core/resource_file_copy.h`, `tests/core/resource_file_copy_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp`, `src/sys/audio_project_import.cpp/.h`, `src/core/resource_file_copy.cpp`, `include/wormedit/core/resource_file_copy.h`, `tests/core/resource_file_copy_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, new `tests/ui/sound_source_copy_event_harness_tests.cpp`, `tests/CMakeLists.txt`, `src/sys/compose_actions.cpp`.
+- **Supporting scope (coordinator approved, 2026-10-04):** New `tests/ui/sound_source_copy_event_harness_tests.cpp` and `tests/CMakeLists.txt` isolate the Sounds copy workflow tests. `src/sys/compose_actions.cpp` lets Audio/Slices use the existing revision-checked asset-copy path; its shared application edits belong to the coordinator.
 - **Steps:**
   1. Reuse the existing project-copy policy for destination paths, filename collisions, shared assets and unsaved projects; expose the action for the current Sounds selection.
   2. Wire a revision-checked request through the application, preserving sample identity and references while copying and relinking source assets.
@@ -50,6 +51,8 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 - **Reject/failure behavior:** A failed/cancelled copy does not relink the affected source or report success; errors identify the source and destination.
 - **Verify:** `cmake --build build`; `ctest --test-dir build -L event-harness --output-on-failure`; `ctest --test-dir build --output-on-failure -R '^core\.|^frontend-state\.|^frame-timing\.|^documentation\.'`; affected-source `clang-tidy -p build <source-file>` with no new complexity violations; isolated Xvfb check of the card's workflow.
 - **Out of scope:** export-copy destinations; moving/deleting original files.
+
+- **Verification (2026-10-04):** `cmake --build build` passed. Core/frame gates: 1,455/1,455; frontend/documentation gates: 223/223; event harness: 86/86; complete application suite: 1,978/1,978. Affected-source clang-tidy found no new cognitive-complexity violations. The event harness checks selected-asset/revision payloads and missing-source suppression; the shared copy tests cover reuse, collisions and failure without relinking. In isolated Xvfb the Sounds action copied the selected external WAV into `assets/18-lane.wav`; the saved relative path persisted and all resource IDs/chart links stayed unchanged. The 44,144-byte copy matches its original byte-for-byte. Captures and saved fixture: `/tmp/wormedit-slots-bga-batch/`; full log: `/tmp/wormedit-batch-full-passed.log`.
 
 ## T-364 Find sound uses from the Sounds tab
 

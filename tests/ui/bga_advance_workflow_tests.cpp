@@ -3,6 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <vector>
@@ -85,6 +86,14 @@ auto click(nuklear_event_harness_t& harness, float x, float y)
     const auto released = harness.frame(up);
     return {pressed, released};
 }
+auto canvas_point(nuklear_event_harness_t& harness, double x, double y)
+    -> std::pair<float, float> {
+    WormUiTestingRect viewport{};
+    REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&viewport));
+    const auto& compose = harness.view().compose;
+    return {viewport.x + static_cast<float>(x / compose.viewport_width_pixels) * viewport.width,
+            viewport.y + static_cast<float>(y / compose.viewport_height_pixels) * viewport.height};
+}
 }
 
 TEST_CASE("BGA dock auto advance follows eligible filtered order after placement notification",
@@ -120,6 +129,19 @@ TEST_CASE("BGA dock auto advance follows eligible filtered order after placement
 
     auto& state = worm_ui_nuklear_compose_state();
     state.bga_panel_visible = true;
+    (void)harness.frame();
+    // Match chart-model dimensions to the actual first-frame editor viewport.
+    // Keep the lane in the visible editor area, left of the floating dock.
+    WormUiTestingRect viewport{};
+    REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&viewport));
+    const auto lane_left = std::min(430.0, static_cast<double>(viewport.width) - 64.0);
+    REQUIRE(lane_left > 300.0);
+    view.viewport_width_pixels = viewport.width;
+    view.viewport_height_pixels = viewport.height;
+    view.playable_field_left_pixels = 50;
+    view.playable_field_right_pixels = lane_left - 20;
+    view.bga_lane_visible = true;
+    view.bga_lane_bounds = {lane_left, 0, lane_left + 48, viewport.height};
     (void)harness.frame();
     require_bga_list_valid(state);
 
@@ -168,9 +190,10 @@ TEST_CASE("BGA dock auto advance follows eligible filtered order after placement
     require_bga_auto_advance(state);
     check_sound_toggle_preserved(state.auto_increment_on_place, sounds_auto_advance);
 
-    // A chart click routes a place input with the armed resource. Until the
-    // application accepts it and sends its notification, the dock stays armed.
-    const auto chart_click = click(harness, 300, 400);
+    // Placement comes from the BGA lane. Until the application accepts it and
+    // sends its notification, the dock stays armed.
+    const auto target = canvas_point(harness, lane_left + 24, 300);
+    const auto chart_click = click(harness, target.first, target.second);
     const auto* place = find_resource_place(chart_click);
     check_resource_place(place);
     check_no_advance_before_dispatch(state);

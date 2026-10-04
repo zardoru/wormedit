@@ -2578,6 +2578,34 @@ auto dispatch_compose_area_with_quantize_report(
 
 } // namespace
 
+auto dispatch_compose_remaining_action(compose_action_context_t& context)
+    -> std::optional<std::string> {
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY) {
+        if (editor_interaction_has_pending_gesture(context.state))
+            return "Finish or cancel the active Compose gesture before changing the BGA lane.";
+        context.state.bga_lane_visible = !context.state.bga_lane_visible;
+        return context.state.bga_lane_visible ? "BGA lane shown." : "BGA lane hidden.";
+    }
+    if (auto response = dispatch_compose_view_action_group(context)) return *response;
+    if (auto response = dispatch_compose_resource_action(context)) return *response;
+    if (auto response = dispatch_compose_bmson_action(context)) return *response;
+    if (auto response = dispatch_compose_marker_action(context)) return *response;
+    if (auto response = target_captured_semantic_layer_action(context)) return *response;
+    if (auto response = dispatch_compose_semantic_layer_catalog_action(context)) return *response;
+    if (auto response = dispatch_compose_semantic_layer_state_action(context)) return *response;
+    return std::nullopt;
+}
+
+auto resource_path_tab_action(const WormUiWorkspaceAction& action,
+                              wormedit::workspace_tab_t tab) -> bool {
+    if (tab == wormedit::workspace_tab_t::audio_slices)
+        return action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
+    return tab == wormedit::workspace_tab_t::metadata &&
+        (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET ||
+         action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT ||
+         action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT);
+}
+
 auto dispatch_compose_view_action(
     const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace, wormedit::editor_interaction_state_t& state,
@@ -2586,11 +2614,7 @@ auto dispatch_compose_view_action(
     runtime::resource_copy_t& resource_copy_runtime,
     runtime::output_group_export_t& export_runtime, bool metadata_import_busy) -> std::string {
     using namespace wormedit;
-    const bool metadata_path_action =
-        workspace.active_tab == workspace_tab_t::metadata &&
-        (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET ||
-         action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT ||
-         action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT);
+    const bool metadata_path_action = resource_path_tab_action(action, workspace.active_tab);
     if ((workspace.active_tab != workspace_tab_t::compose && !metadata_path_action) ||
         !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id ||
@@ -2631,13 +2655,7 @@ auto dispatch_compose_view_action(
     if (auto response = dispatch_compose_bgm_column_count(context)) return *response;
     if (auto response = dispatch_compose_lane_profile(context)) return *response;
     if (auto response = dispatch_compose_lane_layout_profile(context)) return *response;
-    if (auto response = dispatch_compose_view_action_group(context)) return *response;
-    if (auto response = dispatch_compose_resource_action(context)) return *response;
-    if (auto response = dispatch_compose_bmson_action(context)) return *response;
-    if (auto response = dispatch_compose_marker_action(context)) return *response;
-    if (auto response = target_captured_semantic_layer_action(context)) return *response;
-    if (auto response = dispatch_compose_semantic_layer_catalog_action(context)) return *response;
-    if (auto response = dispatch_compose_semantic_layer_state_action(context)) return *response;
+    if (auto response = dispatch_compose_remaining_action(context)) return *response;
     return compose_result_status(result, status);
 }
 
@@ -2686,11 +2704,7 @@ auto dispatch_compose_workspace_action(
         return true;
     }
 
-    const bool metadata_path_action =
-        workspace.active_tab == wormedit::workspace_tab_t::metadata &&
-        (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET ||
-         action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT ||
-         action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT);
+    const bool metadata_path_action = resource_path_tab_action(action, workspace.active_tab);
     wormedit::editor_interaction_state_t metadata_interaction{};
     if (metadata_path_action && workspace.selected_chart) {
         metadata_interaction.chart = *workspace.selected_chart;

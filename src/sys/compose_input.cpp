@@ -2513,6 +2513,69 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
     return std::nullopt;
 }
 
+auto select_compose_bga_event(const WormUiComposeInputAction& input,
+                              compose_input_context_t& context,
+                              wormedit::editor_interaction_result_t& result,
+                              std::string_view& accepted) -> std::optional<std::string> {
+    using namespace wormedit;
+    const auto* chart = context.chart();
+    const auto mode = context.selection_mode(input.selection_mode);
+    if (!chart || !mode || input.object_id == 0 ||
+        input.timing_chart_id != chart->id.value ||
+        input.timing_document_revision != context.history.document.revision)
+        return "BGA event selection is stale or invalid.";
+    const auto event = std::ranges::find(chart->bga_events, object_id_t{input.object_id},
+                                         &bga_event_t::id);
+    if (event == chart->bga_events.end() ||
+        (event->kind != visual_event_kind_t::background &&
+         event->kind != visual_event_kind_t::video))
+        return "That BGA event is no longer available in the event lane.";
+    result = dispatch_editor_action(context.history, context.state,
+        select_editor_objects_action_t{{{editor_selection_object_kind_t::bga_event, event->id}},
+                                       *mode});
+    accepted = "BGA event selected.";
+    return std::nullopt;
+}
+
+auto move_compose_bga_event(const WormUiComposeInputAction& input,
+                            compose_input_context_t& context,
+                            wormedit::editor_interaction_result_t& result,
+                            std::string_view& accepted) -> std::optional<std::string> {
+    using namespace wormedit;
+    const auto* chart = context.chart();
+    const auto view = compose_view_for_state(context.history, context.state);
+    const auto object = editor_selection_object_t{editor_selection_object_kind_t::bga_event,
+                                                   object_id_t{input.object_id}};
+    if (!chart || !view || input.object_id == 0 ||
+        input.timing_chart_id != chart->id.value ||
+        input.timing_document_revision != context.history.document.revision ||
+        std::ranges::find(context.state.selected_objects, object) == context.state.selected_objects.end() ||
+        !std::isfinite(input.y_pixels))
+        return "Select the current BGA event before moving it.";
+    const auto y = std::clamp(input.y_pixels, 0.0,
+                              std::max(0.0, view->viewport_height_pixels - 0.001));
+    const auto revision = context.ui_action.compose_input_document_revision;
+    const auto snap = edit_snap_denominator(*chart, context.state);
+    const auto position = context.position_at_compose_y_unrestricted(*chart, *view, y);
+    document_command_result_t moved;
+    if (position) {
+        moved = apply_bga_event_move(context.history, revision,
+            {.chart = chart->id, .event = object.id, .position = *position,
+             .snap_denominator = snap});
+    } else if (const auto row = context.virtual_bms_row_at(*chart, *view, y)) {
+        moved = apply_virtual_bms_bga_event_move(context.history, revision,
+            {.chart = chart->id, .event = object.id, .canvas_row = *row,
+             .snap_denominator = snap});
+    } else {
+        return "BGA event move has no valid destination row.";
+    }
+    result.accepted = moved.applied;
+    result.document_changed = moved.applied;
+    result.diagnostics = moved.diagnostics;
+    accepted = "BGA event moved.";
+    return std::nullopt;
+}
+
 auto select_compose_bms_measure(const WormUiComposeInputAction& input,
                                 compose_input_context_t& context,
                                 wormedit::editor_interaction_result_t& result,
@@ -2699,8 +2762,18 @@ auto replacement_target_for_resource(const WormUiComposeInputAction& input,
                                          object_id_t{input.lane_id}};
     std::optional<editor_selection_object_t> target;
     if (spec.kind == resource_placement_kind_t::bga_background) {
+        if (input.lane_id != 0) {
+            const auto event = std::ranges::find(chart.bga_events, object_id_t{input.lane_id},
+                                                 &bga_event_t::id);
+            if (event == chart.bga_events.end() ||
+                (event->kind != visual_event_kind_t::background &&
+                 event->kind != visual_event_kind_t::video))
+                return "The selected BGA event is stale or cannot be replaced in this lane.";
+            return editor_selection_object_t{editor_selection_object_kind_t::bga_event, event->id};
+        }
         for (const auto& event : chart.bga_events) {
-            if (event.kind != visual_event_kind_t::background || event.position != position)
+            if ((event.kind != visual_event_kind_t::background &&
+                 event.kind != visual_event_kind_t::video) || event.position != position)
                 continue;
             if (target)
                 return "More than one BGA background occupies this row.";
@@ -2891,6 +2964,14 @@ auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE:
         if (const auto error = move_compose_timing_selection(input, context, result, accepted))
+            return *error;
+        return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK:
+        if (const auto error = select_compose_bga_event(input, context, result, accepted))
+            return *error;
+        return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE:
+        if (const auto error = move_compose_bga_event(input, context, result, accepted))
             return *error;
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_POINTER_CLICK:
@@ -3288,7 +3369,8 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
     const auto horizontal_layout = compose_horizontal_layout(
         ui_action.compose_input_viewport_width_pixels,
         input_chart == history.document.charts.end() ? 0 : maximum_layout_lane_count(*input_chart),
-        bgm_lane_count != 0, std::popcount(effective_compose_timing_lane_mask(application_state)));
+        bgm_lane_count != 0, state.bga_lane_visible,
+        std::popcount(effective_compose_timing_lane_mask(application_state)));
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
     const auto field_left_pixels = horizontal_layout.field_left_pixels;
     const auto field_width_pixels = horizontal_layout.playable_field_width_pixels;

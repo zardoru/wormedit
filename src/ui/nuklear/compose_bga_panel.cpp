@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_bga_panel.h"
+#include "wormedit/core/document.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/theme.h"
@@ -316,4 +317,131 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
     if (state->bga_renumber_release_pending &&
         !context->input.mouse.buttons[NK_BUTTON_LEFT].down)
         state->bga_renumber_release_pending = false;
+}
+
+static bool bga_stack_is_valid(const WormUiComposeView& view,
+                               const worm_ui_nuklear_compose_state_t& state) {
+    return view.scene_available && view.bga_lane_visible &&
+        view.project_id == state.bga_stack_project_id &&
+        view.chart_id == state.bga_stack_chart_id &&
+        view.document_revision == state.bga_stack_revision &&
+        std::ranges::any_of(std::span(view.bga_events, view.bga_event_count), [&](const auto& event) {
+            return event.canvas_row == state.bga_stack_row &&
+                   event.overlap_count > WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD;
+        });
+}
+
+static bool draw_bga_stack_row(nk_context* context, const WormUiComposeBgaEventView& event,
+                               std::uint64_t chart_id, std::uint64_t revision,
+                               WormUiWorkspaceAction& action,
+                               worm_ui_nuklear_compose_state_t& state) {
+    char label[256];
+    const auto kind = event.kind == static_cast<std::uint8_t>(wormedit::visual_event_kind_t::video)
+        ? "VIDEO" : "BACKGROUND";
+    std::snprintf(label, sizeof(label), "#%llu · %s · %s · %s",
+        static_cast<unsigned long long>(event.event_id),
+        kind,
+        event.bmp_id && event.bmp_id[0] ? event.bmp_id : "No BMP ID",
+        event.name ? event.name : "Missing resource");
+    const auto clicked = nk_button_label(context, label);
+    if (nk_widget_is_hovered(context)) nk_tooltip(context, label);
+    if (!clicked) return false;
+    if (action.compose_input_count < WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {
+        auto& input = action.compose_inputs[action.compose_input_count++];
+        input = {};
+        input.kind = WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK;
+        input.object_id = event.event_id;
+        input.timing_chart_id = chart_id;
+        input.timing_document_revision = revision;
+    }
+    state.bga_stack_open = false;
+    return true;
+}
+
+static auto bga_stack_outside_press(nk_context* context) -> bool {
+    const auto region = nk_window_get_content_region(context);
+    const auto bounds = nk_rect(region.x + 24, region.y + 48, 300, 360);
+    const auto pressed = nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT) ||
+                         nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT);
+    return pressed && !nk_input_is_mouse_hovering_rect(&context->input, bounds);
+}
+
+static void clear_bga_stack_release_if_mouse_up(
+    const nk_context* context, worm_ui_nuklear_compose_state_t& state) {
+    if (!context->input.mouse.buttons[NK_BUTTON_LEFT].down &&
+        !context->input.mouse.buttons[NK_BUTTON_RIGHT].down)
+        state.bga_stack_release_pending = false;
+}
+
+void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const WormUiComposeView* view,
+    WormUiWorkspaceAction* action, worm_ui_nuklear_compose_state_t* state) {
+    if (!context || !view || !action || !state) return;
+    if (state->bga_stack_release_pending) {
+        if (!context->input.mouse.buttons[NK_BUTTON_LEFT].down &&
+            !context->input.mouse.buttons[NK_BUTTON_RIGHT].down)
+            state->bga_stack_release_pending = false;
+        return;
+    }
+    if (!state->bga_stack_open) return;
+    if (!bga_stack_is_valid(*view, *state)) {
+        state->bga_stack_open = false;
+        state->bga_stack_release_pending = true;
+        wormedit::ui::chrome::dismiss_popup(context, "BGA events at measure",
+                                            nk_rect(24, 48, 300, 360));
+        clear_bga_stack_release_if_mouse_up(context, *state);
+        return;
+    }
+    const auto escape_pressed = nk_input_is_key_pressed(&context->input, NK_KEY_TEXT_RESET_MODE);
+    if (escape_pressed || bga_stack_outside_press(context)) {
+        state->bga_stack_open = false;
+        state->bga_stack_release_pending = true;
+        wormedit::ui::chrome::dismiss_popup(context, "BGA events at measure",
+                                            nk_rect(24, 48, 300, 360));
+        clear_bga_stack_release_if_mouse_up(context, *state);
+        return;
+    }
+    if (!nk_popup_begin(context, NK_POPUP_STATIC, "BGA events at measure",
+                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR,
+                        nk_rect(24, 48, 300, 360))) {
+        state->bga_stack_open = false;
+        state->bga_stack_release_pending = true;
+        clear_bga_stack_release_if_mouse_up(context, *state);
+        return;
+    }
+    nk_layout_row_dynamic(context, 24, 1);
+    nk_label(context, "Choose the event to select or edit", NK_TEXT_LEFT);
+    struct nk_list_view list{};
+    const auto count = static_cast<int>(std::ranges::count_if(
+        std::span(view->bga_events, view->bga_event_count), [&](const auto& event) {
+            return event.canvas_row == state->bga_stack_row;
+        }));
+    nk_layout_row_dynamic(context, 300, 1);
+    bool selected_event = false;
+    if (nk_list_view_begin(context, &list, "BGA overlap events", NK_WINDOW_BORDER, 30,
+                           std::max(1, count))) {
+        const auto events = std::span(view->bga_events, view->bga_event_count);
+        int row_index = 0;
+        for (const auto& event : events) {
+            if (event.canvas_row != state->bga_stack_row) continue;
+            if (row_index >= list.begin && row_index < list.end) {
+                nk_layout_row_dynamic(context, 28, 1);
+                selected_event = draw_bga_stack_row(context, event, view->chart_id,
+                    view->document_revision, *action, *state) || selected_event;
+            }
+            ++row_index;
+        }
+        nk_list_view_end(&list);
+    }
+    if (selected_event) {
+        nk_popup_close(context);
+        state->bga_stack_release_pending = true;
+    }
+    nk_layout_row_dynamic(context, 28, 1);
+    if (nk_button_label(context, "Close")) {
+        state->bga_stack_open = false;
+        nk_popup_close(context);
+        state->bga_stack_release_pending = true;
+    }
+    nk_popup_end(context);
+    clear_bga_stack_release_if_mouse_up(context, *state);
 }

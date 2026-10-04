@@ -62,6 +62,18 @@ TEST_CASE("project asset copy publishes bytes once and reuses an identical desti
                         std::filesystem::directory_iterator{}) == 1);
 }
 
+TEST_CASE("project asset copy leaves the project unchanged when its source is missing",
+          "[unit][core][resources]") {
+    temporary_directory_t directory;
+    const wormedit::project_asset_copy_request_t request{
+        .project_directory = directory.path,
+        .source_path = directory.path / "missing.wav",
+        .asset = wormedit::asset_id_t{12}};
+    const auto result = wormedit::copy_resource_file_into_project(request);
+    CHECK(result.status == wormedit::project_asset_copy_status_t::source_unavailable);
+    CHECK_FALSE(std::filesystem::exists(directory.path / "assets"));
+}
+
 TEST_CASE("unlinked copy cleanup removes only its own intact publication",
           "[unit][core][resources]") {
     temporary_directory_t directory;

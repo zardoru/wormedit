@@ -46,6 +46,12 @@ static void reset_timing_marker_drag_capture() {
     state.timing_marker_object_id = 0;
 }
 
+static void reset_bga_event_move_capture() {
+    state.bga_event_move_candidate_active = false;
+    state.bga_event_move_active = false;
+    state.bga_event_move_object_id = 0;
+}
+
 void set_waveform_offset_drag_action(WormUiWorkspaceAction* action,
                                             WormUiAudioOffsetDragAction kind,
                                             std::int64_t delta_frames) {
@@ -110,6 +116,7 @@ void append_compose_input(
         state.space_range_hold_moved = false;
         state.note_move_candidate_active = false;
         state.note_move_active = false;
+        reset_bga_event_move_capture();
         state.timing_stage_drag_active = false;
         state.kiai_drag_active = false;
         state.recipe_drag_active = false;
@@ -254,6 +261,7 @@ void queue_compose_wheel_input(double delta_x, double delta_y, double mouse_x,
         state.space_range_hold_moved = false;
         state.note_move_candidate_active = false;
         state.note_move_active = false;
+        reset_bga_event_move_capture();
         state.timing_stage_drag_active = false;
         state.kiai_drag_active = false;
         state.recipe_drag_active = false;
@@ -308,6 +316,7 @@ void compose_handle_focus_lost_input() {
     state.space_range_hold_moved = false;
     state.note_move_candidate_active = false;
     state.note_move_active = false;
+    reset_bga_event_move_capture();
     state.timing_stage_drag_active = false;
     state.kiai_drag_active = false;
     state.recipe_drag_active = false;
@@ -363,6 +372,22 @@ uint64_t compose_bgm_event_at(const WormUiComposeView* view, double x, double y)
             y <= event.bounds.bottom) {
             return event.event_id;
         }
+    }
+    return 0;
+}
+
+uint64_t compose_bga_event_at(const WormUiComposeView* view, double x, double y) {
+    if (!view || !view->bga_lane_visible || !std::isfinite(x) || !std::isfinite(y)) return 0;
+    for (size_t index = 0; index < view->bga_event_count; ++index) {
+        const auto& event = view->bga_events[index];
+        if (event.selected && x >= event.bounds.left && x <= event.bounds.right &&
+            y >= event.bounds.top && y <= event.bounds.bottom) return event.event_id;
+    }
+    for (size_t index = view->bga_event_count; index-- > 0;) {
+        const auto& event = view->bga_events[index];
+        if (x >= event.bounds.left && x <= event.bounds.right && y >= event.bounds.top &&
+            y <= event.bounds.bottom)
+            return event.event_id;
     }
     return 0;
 }
@@ -429,6 +454,7 @@ static void cancel_pending_compose_panel_actions(WormUiWorkspaceAction* action) 
     state.space_range_hold_moved = false;
     state.note_move_candidate_active = false;
     state.note_move_active = false;
+    reset_bga_event_move_capture();
     state.timing_stage_drag_active = false;
     state.kiai_drag_active = false;
     state.recipe_drag_active = false;
@@ -447,7 +473,8 @@ static void reset_compose_revision_state(bool chart_changed, WormUiWorkspaceActi
     }
     state.waveform_overview_drag_active = false;
     if (state.note_paint_pointer_active || state.semantic_layer_paint_pointer_active ||
-        state.space_range_hold_active || state.note_move_active || state.bmson_marker_move_active)
+        state.space_range_hold_active || state.note_move_active || state.bmson_marker_move_active ||
+        state.bga_event_move_active)
         append_compose_cancel_once(action);
     state.pointer_hold_active = false;
     state.note_paint_pointer_active = false;
@@ -460,6 +487,7 @@ static void reset_compose_revision_state(bool chart_changed, WormUiWorkspaceActi
     state.space_range_hold_moved = false;
     state.note_move_candidate_active = false;
     state.note_move_active = false;
+    reset_bga_event_move_capture();
     state.timing_stage_drag_active = false;
     state.kiai_drag_active = false;
     state.recipe_drag_active = false;
@@ -496,6 +524,7 @@ static void clear_inactive_compose_panel(WormUiWorkspaceAction* action) {
     state.space_range_hold_moved = false;
     state.area_selection_candidate_active = false;
     state.area_selection_active = false;
+    reset_bga_event_move_capture();
     state.timing_stage_drag_active = false;
     state.kiai_drag_active = false;
     state.recipe_drag_active = false;
@@ -796,8 +825,14 @@ auto process_compose_timing_marker_pointer(const ComposePointerEventContext& inp
 }
 
 static bool compose_pointer_start_hits_element(const ComposePointerEventContext& input) {
+    const auto& lane = input.view->bga_lane_bounds;
+    const bool bga_lane = input.view->bga_lane_visible &&
+        input.pointer_started_x >= lane.left && input.pointer_started_x < lane.right &&
+        input.pointer_started_y >= lane.top && input.pointer_started_y < lane.bottom;
     return compose_point_hits_note(input.view, input.pointer_started_x, input.pointer_started_y) ||
         compose_bgm_event_at(input.view, input.pointer_started_x, input.pointer_started_y) != 0 ||
+        compose_bga_event_at(input.view, input.pointer_started_x, input.pointer_started_y) != 0 ||
+        bga_lane ||
         compose_timing_marker_at(*input.view, input.pointer_started_x, input.pointer_started_y);
 }
 
@@ -867,6 +902,27 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
         state.note_move_candidate_active || state.area_selection_active ||
         state.area_selection_candidate_active)
         return false;
+    const auto bga_event_id = compose_bga_event_at(&view, input.pointer_x, input.pointer_y);
+    if (bga_event_id != 0) {
+        const auto stacked = std::ranges::find(
+            std::span(view.bga_events, view.bga_event_count), bga_event_id,
+            &WormUiComposeBgaEventView::event_id);
+        if (stacked != std::span(view.bga_events, view.bga_event_count).end() &&
+            stacked->overlap_count > WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD) {
+            state.bga_stack_open = true;
+            state.bga_stack_project_id = view.project_id;
+            state.bga_stack_chart_id = view.chart_id;
+            state.bga_stack_revision = view.document_revision;
+            state.bga_stack_row = stacked->canvas_row;
+            return true;
+        }
+        append_compose_input(action, WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK,
+            input.pointer_x, input.pointer_y, 0, false,
+            compose_selection_mode(input.pointer_modifiers),
+            WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, bga_event_id, 0, false,
+            WORM_UI_TIMING_LANE_BPM, view.chart_id, view.document_revision);
+        return true;
+    }
     if (state.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off &&
         view.selected_bmson_bgm_event_id != 0 &&
         selected_bmson_lane_at(input, input.pointer_x, input.pointer_y) &&
@@ -896,6 +952,83 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
     return true;
 }
 
+static auto update_bga_event_move_capture(const ComposePointerEventContext& input) -> bool {
+    if (!state.bga_event_move_candidate_active) return false;
+    const bool valid = input.window_focused && input.view->scene_available &&
+        input.view->chart_id == state.bga_event_move_chart_id &&
+        input.view->document_revision == state.bga_event_move_revision &&
+        state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off &&
+        !state.action_overflowed;
+    if (!valid || (!input.left_down && !input.left_released)) {
+        reset_bga_event_move_capture();
+        return true;
+    }
+    state.bga_event_move_current_y_pixels = input.pointer_y;
+    if (input.left_released) {
+        if (!state.bga_event_move_active) {
+            const auto events = std::span(input.view->bga_events, input.view->bga_event_count);
+            const auto selected = std::ranges::find(events, state.bga_event_move_object_id,
+                &WormUiComposeBgaEventView::event_id);
+            if (selected != events.end() && selected->overlap_count >
+                    WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD) {
+                state.bga_stack_open = true;
+                state.bga_stack_project_id = input.view->project_id;
+                state.bga_stack_chart_id = input.view->chart_id;
+                state.bga_stack_revision = input.view->document_revision;
+                state.bga_stack_row = selected->canvas_row;
+            }
+        }
+        if (state.bga_event_move_active)
+            append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE,
+                input.pointer_x, input.pointer_y, 0, false,
+                WORM_UI_COMPOSE_SELECTION_REPLACE,
+                WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                state.bga_event_move_object_id, 0, false, WORM_UI_TIMING_LANE_BPM,
+                state.bga_event_move_chart_id, state.bga_event_move_revision,
+                state.bga_event_move_anchor_row);
+        reset_bga_event_move_capture();
+        return true;
+    }
+    if (!state.bga_event_move_active && std::abs(input.context->input.mouse.pos.y -
+                                                  state.bga_event_move_anchor_screen_y) >= 4.0f)
+        state.bga_event_move_active = true;
+    return true;
+}
+
+static auto begin_bga_event_move_capture(const ComposePointerEventContext& input,
+                                         bool paint_pointer_consumed) -> bool {
+    if (state.action_overflowed || !input.view->scene_available || !input.pointer_started_in_view ||
+        paint_pointer_consumed ||
+        state.resource_pointer_mode != worm_ui_nuklear_compose_resource_pointer_mode_t::off ||
+        (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
+        !input.left_down || !input.window_focused || state.bga_event_move_candidate_active ||
+        state.note_move_active || state.note_move_candidate_active || state.area_selection_active ||
+        state.area_selection_candidate_active)
+        return false;
+    const auto id = compose_bga_event_at(input.view, input.pointer_started_x,
+                                         input.pointer_started_y);
+    if (id == 0) return false;
+    const auto events = std::span(input.view->bga_events, input.view->bga_event_count);
+    const auto event = std::ranges::find(events, id, &WormUiComposeBgaEventView::event_id);
+    if (event == events.end() || !event->selected)
+        return false;
+    state.bga_event_move_candidate_active = true;
+    state.bga_event_move_object_id = id;
+    state.bga_event_move_chart_id = input.view->chart_id;
+    state.bga_event_move_revision = input.view->document_revision;
+    state.bga_event_move_anchor_row = event->canvas_row;
+    state.bga_event_move_anchor_y_pixels = input.pointer_started_y;
+    state.bga_event_move_current_y_pixels = input.pointer_started_y;
+    state.bga_event_move_anchor_screen_y = input.left_clicked_screen_y;
+    return true;
+}
+
+static auto process_compose_bga_event_pointer(const ComposePointerEventContext& input,
+                                              bool paint_pointer_consumed) -> bool {
+    if (update_bga_event_move_capture(input)) return true;
+    return begin_bga_event_move_capture(input, paint_pointer_consumed);
+}
+
 void process_compose_pointer_actions(const ComposePointerEventContext& input,
                                            bool paint_pointer_consumed) {
     if (input.view->paste_active) {
@@ -910,6 +1043,7 @@ void process_compose_pointer_actions(const ComposePointerEventContext& input,
         return;
     }
     if (compose_area_pointer_consumed() || compose_note_menu_consumed()) return;
+    if (process_compose_bga_event_pointer(input, paint_pointer_consumed)) return;
     if (handle_compose_measure_click(input, paint_pointer_consumed)) return;
     if (handle_compose_alt_pointer(input, paint_pointer_consumed)) return;
     if (handle_compose_note_field_pointer_start(input, paint_pointer_consumed)) return;

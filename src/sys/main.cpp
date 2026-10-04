@@ -2683,24 +2683,99 @@ auto stage_sound_import(const wormedit::song_document_t& document, wormedit::cha
     return staged ? "Review the sounds before importing." : "The sound import could not be staged.";
 }
 
-// Stages dropped files for review; direct single-slot assignment keeps its own confirmation.
+auto stage_sound_slot_batch(const wormedit::song_document_t& document,
+    wormedit::chart_id_t chart, std::uint16_t first_slot,
+    const std::vector<std::string>& paths) -> std::string {
+    const auto prepared = wormedit::sys::prepare_sound_slot_batch(document, chart, first_slot, paths);
+    std::vector<WormUiSoundSlotImportItem> items;
+    items.reserve(prepared.items.size());
+    for (const auto& item : prepared.items)
+        items.push_back({item.path.c_str(), item.name.c_str(), item.occupied_resource_id,
+                         item.occupied_name.c_str(), item.ambiguous});
+    const auto staged = worm_ui_frontend_stage_sound_slot_batch(document.id.value,
+        chart.value, document.revision, first_slot, items.data(), items.size(),
+        prepared.reason.c_str());
+    return staged ? "Review the WAV slot assignments before importing."
+                  : "The WAV slots target is no longer active.";
+}
+
+auto stage_dropped_sound_slots(const wormedit::song_document_t& document,
+    wormedit::chart_id_t chart, std::uint16_t first_slot,
+    const std::vector<std::string>& paths) -> std::string {
+    if (paths.size() != 1) return stage_sound_slot_batch(document, chart, first_slot, paths);
+    const auto prepared = wormedit::sys::prepare_sound_slot_batch(document, chart, first_slot, paths);
+    if (!prepared.reason.empty() || prepared.items.size() != 1)
+        return stage_sound_slot_batch(document, chart, first_slot, paths);
+    const auto& item = prepared.items.front();
+    const auto staged = worm_ui_frontend_stage_sound_slot_file_at(document.id.value,
+        chart.value, document.revision, first_slot, item.occupied_resource_id, item.path.c_str());
+    return staged ? "Sound staged for the selected WAV slot."
+                  : "The WAV slots target is no longer active.";
+}
+
 void import_dropped_keysounds(bool session_loaded, wormedit::document_history_t& history,
-                              wormedit::workspace_controller_t& workspace,
-                              std::vector<std::string>& pending_paths, std::string& status) {
-    if (pending_paths.empty()) return;
-    if (session_loaded && workspace.selected_chart) {
-        const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                             &wormedit::chart_document_t::id);
-        const auto direct = workspace.active_tab == wormedit::workspace_tab_t::compose &&
-            chart != history.document.charts.end() &&
-            chart->source_family == wormedit::format_family_t::bms &&
-            worm_ui_frontend_stage_sound_slot_file(history.document.id.value,
-                chart->id.value, history.document.revision, pending_paths.front().c_str(),
-                pending_paths.size());
-        if (!direct)
-            status = stage_sound_import(history.document, *workspace.selected_chart, pending_paths);
+    wormedit::workspace_controller_t& workspace,
+    std::vector<wormedit::sys::sound_drop_batch_t>& batches, std::string& status) {
+    WormUiKeysoundDockRequest dock{};
+    worm_ui_frontend_keysound_dock_request(&dock);
+    for (const auto& batch : batches) {
+        const auto& origin = batch.origin;
+        if (!batch.accepted()) {
+            status = batch.reason;
+            continue;
+        }
+        const bool slots_mode = workspace.active_tab == wormedit::workspace_tab_t::compose && dock.slots_mode;
+        if (!session_loaded || !workspace.selected_chart ||
+            origin.project_id != history.document.id.value ||
+            origin.chart_id != workspace.selected_chart->value || origin.revision != history.document.revision ||
+            origin.tab != static_cast<WormUiWorkspaceTab>(workspace.active_tab) ||
+            origin.slots_mode != slots_mode) {
+            status = "The sound drop target changed; drop the files again.";
+            continue;
+        }
+        status = origin.slots_mode
+            ? stage_dropped_sound_slots(history.document, *workspace.selected_chart, origin.first_slot, batch.paths)
+            : stage_sound_import(history.document, *workspace.selected_chart, batch.paths);
     }
-    pending_paths.clear();
+    batches.clear();
+}
+
+auto dispatch_reviewed_sound_slot_batch(const WormUiWorkspaceAction& action,
+    wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
+    wormedit::sys::application_command_state_t& application,
+    const std::optional<wormedit::editor_interaction_state_t>& interaction,
+    std::string& status) -> bool {
+    const bool request = action.compose_action == WORM_UI_COMPOSE_ACTION_STAGE_SOUND_SLOT_BATCH;
+    const bool confirm = action.compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
+    if (!request && !confirm) return false;
+    WormUiKeysoundDockRequest dock{};
+    worm_ui_frontend_keysound_dock_request(&dock);
+    const auto chart = wormedit::chart_id_t{action.compose_input_chart_id};
+    if (!dock.slots_mode || action.sound_import_project_id != history.document.id.value ||
+        !workspace.selected_chart || chart != *workspace.selected_chart ||
+        workspace.active_tab != wormedit::workspace_tab_t::compose ||
+        action.compose_input_document_revision != history.document.revision) {
+        status = "The WAV slots target changed. Choose the files again.";
+        if (confirm) worm_ui_frontend_sound_slot_batch_result(false, status.c_str());
+        return true;
+    }
+    if (request) {
+        std::vector<std::string> paths;
+        for (std::size_t i = 0; action.compose_import_paths && i < action.compose_import_path_count; ++i)
+            paths.emplace_back(action.compose_import_paths[i] ? action.compose_import_paths[i] : "");
+        status = stage_sound_slot_batch(history.document, chart, action.compose_sound_slot, paths);
+        return true;
+    }
+    if (interaction && editor_interaction_has_pending_gesture(*interaction)) {
+        status = "Finish or cancel the Compose gesture before importing sounds.";
+        worm_ui_frontend_sound_slot_batch_result(false, status.c_str());
+        return true;
+    }
+    const auto before = history.document.revision;
+    status = wormedit::sys::dispatch_compose_sound_action(action, history, workspace, chart,
+        application).value_or("The WAV slot import was not handled.");
+    worm_ui_frontend_sound_slot_batch_result(history.document.revision != before, status.c_str());
+    return true;
 }
 
 auto dispatch_reviewed_sound_import(const WormUiWorkspaceAction& action,
@@ -2842,6 +2917,9 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
             // by the same input frame, preventing duplicate mutations.
         } else if (dispatch_clipboard_menu(context, action)) {
             // Clipboard menu actions use the same typed registry as shortcuts.
+        } else if (dispatch_reviewed_sound_slot_batch(action, history, workspace,
+                       application_command_state, compose_interaction_state, status)) {
+            // Exact-slot review commits one complete batch.
         } else if (dispatch_reviewed_sound_import(action, history, workspace,
                        application_command_state, compose_interaction_state, status)) {
             // Import review is shared by Compose and the Sounds screen.
@@ -3369,7 +3447,9 @@ int main(int argc, char** argv) {
     bool fresh_blank_project = false;
     std::string pending_audio_project_path;
     std::string pending_chart_project_path;
-    std::vector<std::string> pending_sound_paths, pending_bga_paths;
+    wormedit::sys::sound_drop_transaction_t sound_drop_transaction;
+    std::vector<wormedit::sys::sound_drop_batch_t> pending_sound_batches;
+    std::vector<std::string> pending_bga_paths;
     wormedit::sys::bga_dock_runtime_t bga_dock_runtime;
     std::string pending_bms_encoding_path;
     std::filesystem::path active_project_path =
@@ -3661,11 +3741,11 @@ int main(int argc, char** argv) {
         if (!wormedit::sys::poll_frontend_events(
                 window, metadata_drop, workspace, history, asset_base,
                 can_offer_audio_project_drop(session_loaded, fresh_blank_project, history),
-                pending_audio_project_path, pending_chart_project_path, pending_sound_paths, pending_bga_paths,
+                pending_audio_project_path, pending_chart_project_path, sound_drop_transaction, pending_sound_batches, pending_bga_paths,
                 status))
             confirm_unsaved_changes(pending_close, close_target_t::application, workspace_frame_action_context,
                 program_preferences.preferences.general.confirm_unsaved_close);
-        import_dropped_keysounds(session_loaded, history, workspace, pending_sound_paths, status);
+        import_dropped_keysounds(session_loaded, history, workspace, pending_sound_batches, status);
         import_dropped_bga(session_loaded, history, workspace, pending_bga_paths, status);
         dispatch_dropped_chart_project(workspace_frame_action_context,
             pending_chart_project_path, pending_close,
@@ -3738,6 +3818,11 @@ int main(int argc, char** argv) {
             prepare_bound_workspace_frame(history, workspace, application_command_state,
                                           timing_grid, audio_offset_drag, audio_offset_drag_tab,
                                           compose_scene_cache);
+            wormedit::sys::compose_bga_move_preview_input_t bga_move_preview{};
+            bga_move_preview.project_id = history.document.id.value;
+            worm_ui_frontend_bga_move_preview(&bga_move_preview.chart_id,
+                &bga_move_preview.document_revision, &bga_move_preview.event_id,
+                &bga_move_preview.y_pixels);
             auto flattened = wormedit::sys::project_application_frame(
                 {.model = *model.view,
                  .history = history,
@@ -3755,6 +3840,7 @@ int main(int argc, char** argv) {
                  .player_preview_presenter = player_preview_presenter,
                  .application_command_state = application_command_state,
                  .compose_interaction_state = compose_interaction_state,
+                 .bga_move_preview = bga_move_preview,
                  .audio_offset_drag = audio_offset_drag,
                  .audio_offset_drag_tab = audio_offset_drag_tab,
                  .metadata_drop = metadata_drop,

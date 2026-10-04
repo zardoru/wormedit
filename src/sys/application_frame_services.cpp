@@ -70,26 +70,29 @@ auto offer_dropped_chart_project(const SDL_Event& event, SDL_Window* window,
     return true;
 }
 
-// Files dropped onto the Compose keysound listbox join the pending sound import
-// instead of being offered as a chart or project.
 auto collect_dropped_sound(const SDL_Event& event, SDL_Window* window,
                            const workspace_controller_t& workspace,
-                           std::vector<std::string>& pending_sound_paths,
-                           std::string& status) -> bool {
-    if (event.type != SDL_EVENT_DROP_FILE || !event.drop.data ||
-        (workspace.active_tab != workspace_tab_t::compose &&
-         workspace.active_tab != workspace_tab_t::audio_slices) ||
-        (event.drop.windowID != 0 && event.drop.windowID != SDL_GetWindowID(window)) ||
-        !worm_ui_frontend_sound_list_contains(event.drop.windowID, event.drop.x, event.drop.y))
-        return false;
-    const std::string_view dropped{event.drop.data};
-    if (dropped.size() >= WORM_UI_PROJECT_PATH_CAPACITY ||
-        !std::filesystem::path{dropped}.is_absolute()) {
-        status = "Drop absolute local audio files within the path limit.";
-    } else {
-        pending_sound_paths.emplace_back(dropped);
-    }
-    return true;
+                           const document_history_t& history,
+                           sound_drop_transaction_t& transaction,
+                           std::vector<sound_drop_batch_t>& batches) -> bool {
+    WormUiKeysoundDockRequest dock{};
+    worm_ui_frontend_keysound_dock_request(&dock);
+    const sound_drop_origin_t origin{
+        .project_id = history.document.id.value,
+        .chart_id = workspace.selected_chart ? workspace.selected_chart->value : 0,
+        .revision = history.document.revision,
+        .tab = static_cast<WormUiWorkspaceTab>(workspace.active_tab),
+        .window_id = SDL_GetWindowID(window),
+        .slots_mode = workspace.active_tab == workspace_tab_t::compose && dock.slots_mode,
+        .first_slot = dock.selected_slot};
+    const bool drop_event = event.type == SDL_EVENT_DROP_BEGIN ||
+        event.type == SDL_EVENT_DROP_POSITION || event.type == SDL_EVENT_DROP_FILE ||
+        event.type == SDL_EVENT_DROP_COMPLETE;
+    const auto over_list = drop_event &&
+        worm_ui_frontend_sound_list_contains(event.drop.windowID, event.drop.x, event.drop.y);
+    auto result = transaction.handle(event, origin, over_list);
+    if (result.completed) batches.push_back(std::move(*result.completed));
+    return result.consumed;
 }
 
 auto collect_dropped_bga(const SDL_Event& event, SDL_Window* window,
@@ -116,7 +119,8 @@ auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_dr
                           bool offer_audio_project_drop,
                           std::string& pending_audio_project_path,
                           std::string& pending_chart_project_path,
-                          std::vector<std::string>& pending_sound_paths,
+                          sound_drop_transaction_t& sound_drop_transaction,
+                          std::vector<sound_drop_batch_t>& pending_sound_batches,
                           std::vector<std::string>& pending_bga_paths,
                           std::string& status) -> bool {
     bool running = true;
@@ -125,9 +129,10 @@ auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_dr
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             running = false;
-        const bool bga_drop = collect_dropped_bga(event, window.handle, workspace, pending_bga_paths, status);
-        const bool sound_drop = !bga_drop && collect_dropped_sound(event, window.handle, workspace,
-                                                      pending_sound_paths, status);
+        const bool sound_drop = collect_dropped_sound(event, window.handle, workspace,
+                                                      history, sound_drop_transaction, pending_sound_batches);
+        const bool bga_drop = !sound_drop && collect_dropped_bga(event, window.handle, workspace,
+                                                              pending_bga_paths, status);
         const bool project_chart_drop = !bga_drop && !sound_drop && offer_dropped_chart_project(
             event, window.handle, pending_chart_project_path, status);
         const bool project_audio_drop = !bga_drop && !sound_drop && !project_chart_drop &&

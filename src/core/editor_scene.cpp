@@ -365,6 +365,42 @@ auto append_scene_bgm_events(const chart_document_t& chart, editor_field_scene_i
     return true;
 }
 
+auto append_scene_bga_events(const chart_document_t& chart, editor_field_scene_index_t& index,
+                            editor_field_scene_index_options_t options,
+                            diagnostic_list_t& diagnostics) -> bool {
+    std::unordered_set<std::uint64_t> ids;
+    ids.reserve(chart.bga_events.size());
+    std::size_t supported_count{};
+    for (const auto& event : chart.bga_events) {
+        if (!event.id || !ids.insert(event.id.value).second) {
+            diagnostics.push_back(error(diagnostic_code_t::duplicate_id,
+                                        "field-scene BGA event identity is invalid", event.id));
+            continue;
+        }
+        if (event.kind != visual_event_kind_t::background &&
+            event.kind != visual_event_kind_t::video) continue;
+        if (supported_count == options.maximum_bga_events) {
+            diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                                        "field-scene BGA event count exceeds its configured cap"));
+            return false;
+        }
+        ++supported_count;
+        const auto row = absolute_row(index.measures, event.position);
+        if (!row) {
+            diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
+                                        "field-scene BGA event is outside chart geometry", event.id));
+            continue;
+        }
+        index.bga_events.push_back({.event = event.id, .resource = event.resource,
+                                    .kind = event.kind, .row = *row});
+    }
+    if (!diagnostics.empty()) return false;
+    std::ranges::sort(index.bga_events, [](const auto& left, const auto& right) {
+        return std::tie(left.row, left.event.value) < std::tie(right.row, right.event.value);
+    });
+    return true;
+}
+
 } // namespace
 
 auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t document_revision,
@@ -372,7 +408,8 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
     -> std::variant<editor_field_scene_index_t, diagnostic_list_t> {
     diagnostic_list_t diagnostics;
     if (!chart.id || chart.divisions_per_standard_measure == 0 || options.maximum_notes == 0 ||
-        options.maximum_bgm_events == 0 || options.maximum_layout_segments == 0 ||
+        options.maximum_bgm_events == 0 || options.maximum_bga_events == 0 ||
+        options.maximum_layout_segments == 0 ||
         options.maximum_lane_definitions == 0) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                     "field-scene index limits and chart identity must be valid"));
@@ -395,6 +432,9 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
         return diagnostics;
     }
     if (!append_scene_bgm_events(chart, index, options, diagnostics)) {
+        return diagnostics;
+    }
+    if (!append_scene_bga_events(chart, index, options, diagnostics)) {
         return diagnostics;
     }
     if (!diagnostics.empty()) {
@@ -471,7 +511,10 @@ auto valid_scene_request_geometry(const editor_field_scene_request_t& request,
            finite_nonnegative(request.bgm_pane_width_pixels) &&
            std::isfinite(request.bgm_pane_left_pixels + request.bgm_pane_width_pixels) &&
            std::isfinite(request.bgm_lane_width_pixels) && request.bgm_lane_width_pixels > 0.0 &&
-           finite_nonnegative(request.bgm_horizontal_scroll_pixels);
+           finite_nonnegative(request.bgm_horizontal_scroll_pixels) &&
+           finite_nonnegative(request.bga_pane_left_pixels) &&
+           finite_nonnegative(request.bga_pane_width_pixels) &&
+           std::isfinite(request.bga_pane_left_pixels + request.bga_pane_width_pixels);
 }
 
 auto valid_scene_request_limits(const editor_field_scene_request_t& request) -> bool {
@@ -1782,6 +1825,66 @@ auto compose_bgm_pane(scene_geometry_context_t& context, Operate&& operate, Cons
            append_visible_bgm_events(context, visible_lanes, operate, consume, y_for_row);
 }
 
+template <typename Operate, typename Consume, typename YForRow>
+auto compose_bga_lane(scene_geometry_context_t& context, Operate&& operate, Consume&& consume,
+                      YForRow&& y_for_row) -> bool {
+    const auto& request = context.request;
+    if (!context.view.bga_lane_visible || request.bga_pane_width_pixels <= 0.0) return true;
+    if (!operate() || !consume()) {
+        context.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                                            "field-scene BGA lane exceeds its configured cap"));
+        return false;
+    }
+    const editor_field_rect_t lane_bounds{
+        request.bga_pane_left_pixels, 0.0,
+        request.bga_pane_left_pixels + request.bga_pane_width_pixels,
+        context.view.viewport_height_pixels};
+    context.scene.bga_lane = editor_field_bga_lane_geometry_t{.bounds = lane_bounds};
+    std::unordered_set<std::uint64_t> selected;
+    selected.reserve(context.view.selected_objects.size());
+    for (const auto& object : context.view.selected_objects)
+        if (object.kind == editor_selection_object_kind_t::bga_event)
+            selected.insert(object.id.value);
+
+    const auto first_row = static_cast<std::uint64_t>(std::max(0.0L, std::ceil(context.query_low)));
+    const auto last_row = static_cast<std::uint64_t>(std::max(0.0L, std::floor(context.query_high)));
+    const auto first = std::ranges::lower_bound(context.index.bga_events, first_row, {},
+                                                &editor_field_scene_bga_source_t::row);
+    const auto after = std::ranges::upper_bound(first, context.index.bga_events.end(), last_row, {},
+                                                &editor_field_scene_bga_source_t::row);
+    for (auto event = first; event != after; ++event) {
+        if (!operate()) {
+            context.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                                                "field-scene BGA events exceed operation cap"));
+            return false;
+        }
+        const auto same_row = std::ranges::equal_range(first, after, event->row, {},
+                                                      &editor_field_scene_bga_source_t::row);
+        const auto overlap_count = static_cast<double>(std::ranges::distance(same_row));
+        const auto overlap_index = static_cast<double>(std::ranges::distance(same_row.begin(), event));
+        const bool stacked = overlap_count > bga_lane_overlap_stack_threshold;
+        const auto width = stacked ? request.bga_pane_width_pixels
+                                   : request.bga_pane_width_pixels / overlap_count;
+        const auto x = stacked ? request.bga_pane_left_pixels
+                               : request.bga_pane_left_pixels + width * overlap_index;
+        const auto y = y_for_row(event->row);
+        const auto [top, bottom] = endpoint_vertical_bounds(
+            y, request.note_head_height_pixels, lane_glyph_t::bar, request.scroll_direction);
+        const editor_field_rect_t bounds{x, top, x + width, bottom};
+        if (!rect_intersects_viewport(bounds, context.view.viewport_height_pixels)) continue;
+        if (!consume()) {
+            context.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                                                "field-scene BGA events exceed primitive cap"));
+            return false;
+        }
+        context.scene.bga_events.push_back({.event = event->event, .resource = event->resource,
+            .kind = event->kind, .row = event->row,
+            .overlap_count = static_cast<std::size_t>(overlap_count),
+            .selected = selected.contains(event->event.value), .bounds = bounds});
+    }
+    return true;
+}
+
 auto scene_canvas_rows(const chart_document_t& chart, const editor_field_scene_index_t& index,
                        const editor_field_scene_request_t& request, diagnostic_list_t& diagnostics)
     -> std::optional<std::uint64_t> {
@@ -2050,6 +2153,9 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
     if (!compose_bgm_pane(geometry, operate, consume, y_for_row)) {
         return result;
     }
+    if (!compose_bga_lane(geometry, operate, consume, y_for_row)) {
+        return result;
+    }
 
     if (!compose_scene_cursor(geometry, consume, y_for_row, visible_band_for_row)) {
         return result;
@@ -2066,7 +2172,8 @@ auto window_request_scalars(const editor_field_scene_request_t& request) {
         request.scroll_direction, request.comparison_difference_height_pixels,
         request.hold_body_width_ratio, request.bgm_pane_left_pixels,
         request.bgm_pane_width_pixels, request.bgm_lane_width_pixels,
-        request.bgm_horizontal_scroll_pixels, request.include_virtual_bms_tail,
+        request.bgm_horizontal_scroll_pixels, request.bga_pane_left_pixels,
+        request.bga_pane_width_pixels, request.include_virtual_bms_tail,
         request.solo_semantic_layer, request.maximum_grid_lines,
         request.maximum_authored_groupings, request.maximum_comparison_difference_rows,
         request.maximum_scene_primitives, request.maximum_composition_operations,
@@ -2093,6 +2200,7 @@ auto window_key_matches(const editor_field_scene_window_t& window,
         previous.document_revision == view.document_revision &&
         previous.pixels_per_standard_measure == view.pixels_per_standard_measure &&
         previous.viewport_height_pixels == scene_window_height(view, request) &&
+        previous.bga_lane_visible == view.bga_lane_visible &&
         window.request.retained_window_minimum_margin_pixels ==
             request.retained_window_minimum_margin_pixels &&
         previous.active_snap_denominator == view.active_snap_denominator &&
@@ -2225,6 +2333,8 @@ auto project_scene_window_metadata_unchecked(const chart_document_t& chart,
     if (request.bgm_pane_width_pixels > 0 &&
         !append_visible_bgm_lanes(geometry, operate, consume, bgm_lanes))
         return metadata;
+    if (!compose_bga_lane(geometry, operate, consume, y_for_row))
+        return metadata;
     const auto band_for_row = [&](std::uint64_t row) { return visible_band_at_row(bands, row); };
     if (!compose_scene_cursor(geometry, consume, y_for_row, band_for_row))
         return metadata;
@@ -2252,6 +2362,8 @@ auto project_scene_window(const chart_document_t& chart, const editor_field_scen
                          metadata.hold_clip_bottom);
     project_window_rects(window.scene->bgm_events, scene.bgm_events, shift,
                          view.viewport_height_pixels);
+    project_window_rects(window.scene->bga_events, scene.bga_events, shift,
+                         view.viewport_height_pixels);
     return result;
 }
 auto projected_window_fits_limit(const editor_field_scene_result_t& result,
@@ -2263,6 +2375,8 @@ auto projected_window_fits_limit(const editor_field_scene_result_t& result,
                        scene.comparison_differences.size() + scene.grid_lines.size() +
                        scene.hold_bodies.size() + scene.note_endpoints.size() +
                        scene.bgm_lanes.size() + scene.bgm_events.size() +
+                       static_cast<std::size_t>(scene.bga_lane.has_value()) +
+                       scene.bga_events.size() +
                        static_cast<std::size_t>(scene.cursor.has_value());
     return count <= request.maximum_scene_primitives;
 }

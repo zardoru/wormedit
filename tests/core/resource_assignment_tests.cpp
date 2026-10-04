@@ -724,6 +724,131 @@ TEST_CASE("explicit WAV slot assignment matches canonical namespace casing",
     check_wav_slot(history.undo.empty());
 }
 
+TEST_CASE("BMS WAV slot batches use natural filename order and one undo step",
+          "[unit][core][resources][bms-wav-slots]") {
+    auto history = make_document_history(assignment_song());
+    const auto revision = history.document.revision;
+    const auto result = apply_bms_wav_slot_batch_assignment(history, revision,
+        {.first_identifier = "0Z",
+         .imported_files = {wav_slot_import("/b/snd10.wav", "ten"),
+                            wav_slot_import("/a/snd2.wav", "two"),
+                            wav_slot_import("/z/snd1.wav", "one")}});
+    REQUIRE(result);
+    REQUIRE(history.undo.size() == 1);
+    REQUIRE(history.document.resources.size() == 8);
+    const auto find_import = [&](std::string_view name) -> const resource_entry_t* {
+        const auto item = std::ranges::find(history.document.resources, name,
+                                              &resource_entry_t::name);
+        return item == history.document.resources.end() ? nullptr : &*item;
+    };
+    const auto* one = find_import("one");
+    const auto* two = find_import("two");
+    const auto* ten = find_import("ten");
+    REQUIRE(one);
+    REQUIRE(two);
+    REQUIRE(ten);
+    CHECK(one->target_identities.front().identifier == "0Z");
+    CHECK(two->target_identities.front().identifier == "10");
+    CHECK(ten->target_identities.front().identifier == "11");
+    CHECK(history.document.resources[0].id == resource_id_t{1});
+    CHECK(history.document.resources[0].asset == asset_id_t{1});
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.resources.size() == 5);
+    CHECK(history.document.audio_assets.size() == 3);
+    REQUIRE(redo_document_command(history));
+    CHECK(history.document.resources.size() == 8);
+}
+
+TEST_CASE("BMS WAV slot batches replace occupied resources only when confirmed",
+          "[unit][core][resources][bms-wav-slots]") {
+    auto history = make_document_history(wav_slot_song());
+    const auto before = history.document;
+    const auto unconfirmed = apply_bms_wav_slot_batch_assignment(history,
+        history.document.revision,
+        {.first_identifier = "01",
+         .imported_files = {wav_slot_import("replace.wav", "Replacement")}});
+    CHECK_FALSE(unconfirmed);
+    CHECK(history.document.revision == before.revision);
+    CHECK(history.document.resources.front().asset == before.resources.front().asset);
+    const auto applied = apply_bms_wav_slot_batch_assignment(history,
+        history.document.revision,
+        {.first_identifier = "01",
+         .imported_files = {wav_slot_import("replace.wav", "Replacement")},
+         .confirm_replacements = true});
+    REQUIRE(applied);
+    const auto& replaced = history.document.resources.front();
+    CHECK(replaced.id == before.resources.front().id);
+    CHECK(replaced.asset != before.resources.front().asset);
+    CHECK(replaced.name == before.resources.front().name);
+    CHECK(replaced.sound_kind == before.resources.front().sound_kind);
+    CHECK(replaced.tags == before.resources.front().tags);
+    CHECK(replaced.sound_group == before.resources.front().sound_group);
+    CHECK(same_target_identities(replaced.target_identities,
+                                 before.resources.front().target_identities));
+    CHECK(history.document.charts.front().measures.front().notes.front().sound ==
+          before.charts.front().measures.front().notes.front().sound);
+    CHECK(history.document.charts.front().sound_layer_defaults ==
+          before.charts.front().sound_layer_defaults);
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("BMS WAV slot batch rejection leaves document and history untouched",
+          "[unit][core][resources][bms-wav-slots]") {
+    auto history = make_document_history(wav_slot_song());
+    const auto before = history.document;
+    const auto try_batch = [&](std::string first, std::vector<import_resource_asset_action_t> files,
+                               std::uint64_t revision, bool confirm = true) {
+        return apply_bms_wav_slot_batch_assignment(history, revision,
+            {.first_identifier = std::move(first), .imported_files = std::move(files),
+             .confirm_replacements = confirm});
+    };
+    CHECK_FALSE(try_batch("00", {wav_slot_import("x.wav", "X")}, before.revision));
+    CHECK_FALSE(try_batch("ZZ", {wav_slot_import("x.wav", "X"),
+                                  wav_slot_import("y.wav", "Y")}, before.revision));
+    CHECK_FALSE(try_batch("03", {wav_slot_import("same.wav", "X"),
+                                  wav_slot_import("same.wav", "Y")}, before.revision));
+    CHECK_FALSE(try_batch("03", {wav_slot_import("stale.wav", "X")}, before.revision - 1));
+    auto invalid = wav_slot_import("invalid.wav", "Invalid");
+    invalid.audio_stream->sample_rate = 0;
+    CHECK_FALSE(try_batch("03", {invalid}, before.revision));
+    CHECK(history.document.revision == before.revision);
+    CHECK(history.document.resources.size() == before.resources.size());
+    CHECK(history.document.audio_assets.size() == before.audio_assets.size());
+    CHECK(history.document.resources.front().asset == before.resources.front().asset);
+    CHECK(same_target_identities(history.document.resources.front().target_identities,
+                                 before.resources.front().target_identities));
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("BMS WAV slot batches accept 1200 files with one-step undo and redo",
+          "[unit][core][resources][bms-wav-slots][slow]") {
+    auto history = make_document_history(assignment_song());
+    const auto original_resources = history.document.resources.size();
+    const auto original_assets = history.document.audio_assets.size();
+    auto files = std::vector<import_resource_asset_action_t>{};
+    files.reserve(1200);
+    for (std::size_t index = 0; index < 1200; ++index) {
+        files.push_back(wav_slot_import("batch" + std::to_string(index) + ".wav",
+                                        "Batch " + std::to_string(index)));
+    }
+    const auto result = apply_bms_wav_slot_batch_assignment(history,
+        history.document.revision,
+        {.first_identifier = "01", .imported_files = std::move(files)});
+    REQUIRE(result);
+    CHECK(history.undo.size() == 1);
+    CHECK(history.document.resources.size() == original_resources + 1200);
+    CHECK(history.document.audio_assets.size() == original_assets + 1200);
+    CHECK(history.document.resources.back().target_identities.front().identifier == "XC");
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.resources.size() == original_resources);
+    CHECK(history.document.audio_assets.size() == original_assets);
+    REQUIRE(redo_document_command(history));
+    CHECK(history.undo.size() == 1);
+    CHECK(history.document.resources.size() == original_resources + 1200);
+    CHECK(history.document.audio_assets.size() == original_assets + 1200);
+    CHECK(history.document.resources.back().target_identities.front().identifier == "XC");
+}
+
 namespace { void check_import_extent(bool value) { CHECK(value); } }
 
 TEST_CASE("BGM import extends native chart measures in the same undo command",

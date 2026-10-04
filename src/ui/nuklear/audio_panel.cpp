@@ -346,18 +346,42 @@ void render_sound_list_column(struct nk_context* context, const WormUiAudioSlice
     }
 }
 
+auto selected_sound(const WormUiAudioSlicesView& view) -> const WormUiSoundRowView* {
+    for (std::size_t index = 0; index < view.sound_row_count; ++index) {
+        if (view.has_selected_asset && view.sound_rows[index].asset_id == view.selected_asset_id)
+            return &view.sound_rows[index];
+    }
+    return nullptr;
+}
+
+auto sound_source_copy_available(const WormUiAudioSlicesView& view,
+                                 const WormUiSoundRowView& sound) -> bool {
+    return view.has_chart && view.chart_id != 0 && view.document_revision != 0 &&
+           sound.asset_id != 0 && !sound.missing && sound.source_path && sound.source_path[0];
+}
+
+void render_sound_source_copy_button(struct nk_context* context,
+                                     const WormUiAudioSlicesView& view,
+                                     const WormUiSoundRowView& sound,
+                                     WormUiWorkspaceAction& action) {
+    const auto can_copy = sound_source_copy_available(view, sound);
+    if (!can_copy) nk_widget_disable_begin(context);
+    const auto clicked = nk_button_label(context, "Copy source into project");
+    if (!can_copy) nk_widget_disable_end(context);
+    if (!clicked || !can_copy || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    action.compose_resource_asset_id = sound.asset_id;
+    action.compose_input_chart_id = view.chart_id;
+    action.compose_input_document_revision = view.document_revision;
+    action.compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
+}
+
 void render_sound_properties_column(struct nk_context* context,
-                                    const WormUiAudioSlicesView& view) {
+                                    const WormUiAudioSlicesView& view,
+                                    WormUiWorkspaceAction& action) {
     nk_layout_row_dynamic(context, 22, 1);
     nk_label(context, "Properties", NK_TEXT_LEFT);
     wormedit::ui::chrome::section_separator(context);
-    const WormUiSoundRowView* selected = nullptr;
-    for (std::size_t index = 0; index < view.sound_row_count; ++index) {
-        if (view.has_selected_asset && view.sound_rows[index].asset_id == view.selected_asset_id) {
-            selected = &view.sound_rows[index];
-            break;
-        }
-    }
+    const auto* selected = selected_sound(view);
     nk_layout_row_dynamic(context, 22, 1);
     if (!selected) {
         nk_label(context, "Select a sound to see its properties.", NK_TEXT_LEFT);
@@ -380,6 +404,7 @@ void render_sound_properties_column(struct nk_context* context,
         nk_label_colored(context, "The audio file is missing.", NK_TEXT_LEFT,
                          nk_rgb(255, 120, 120));
     }
+    render_sound_source_copy_button(context, view, *selected, action);
 }
 
 void render_sound_columns(struct nk_context* context, const WormUiAudioSlicesView& view,
@@ -409,7 +434,7 @@ void render_sound_columns(struct nk_context* context, const WormUiAudioSlicesVie
     }
     wormedit::ui::chrome::toolbar_separator(context);
     if (nk_group_begin(context, "sound_properties", NK_WINDOW_BORDER)) {
-        render_sound_properties_column(context, view);
+        render_sound_properties_column(context, view, action);
         nk_group_end(context);
     }
     nk_spacing(context, 1);

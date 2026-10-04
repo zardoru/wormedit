@@ -163,7 +163,9 @@ void check_sound_layer_confirmation_choice(bool overwrite) {
     state.sound_layer_confirmation_layer = 7;
     state.sound_layer_confirmation_resources = {1, 2};
     (void)harness.frame();
-    const auto frames = click_at(harness, 760, overwrite ? 330 : 298);
+    const auto choice = harness.drawn_text_center(overwrite ? "Overwrite" : "Keep existing layers");
+    REQUIRE(choice.has_value());
+    const auto frames = click_at(harness, choice->first, choice->second);
     const auto found = std::ranges::find_if(frames, [](const auto& frame) {
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER;
     });
@@ -723,9 +725,10 @@ TEST_CASE("Compose toolbar color views change frontend state without document ac
     (void)harness.frame();
     using View = worm_ui_nuklear_compose_color_view_t;
     const auto revision = harness.view().compose.document_revision;
-    // 24 px toolbar icons: navigation, separator, five tools, separator, views.
+    // 24 px toolbar icons: navigation, separator, six tools, separator, views.
     constexpr std::array views{View::snap, View::layer, View::normal};
-    constexpr std::array positions{288.0f, 315.0f, 261.0f};
+    // The BGA lane visibility icon adds one 24 px cell before the color group.
+    constexpr std::array positions{315.0f, 342.0f, 288.0f};
     for (std::size_t index = 0; index < views.size(); ++index) {
         const auto clicks = click_at(harness, positions[index], 122.0f);
         CHECK(worm_ui_nuklear_compose_state().color_view == views[index]);
@@ -759,14 +762,18 @@ TEST_CASE("Layers dock rows choose the target and send eye and lock actions for 
     view.semantic_layer_count = layers.size();
     view.semantic_layer_total_count = layers.size();
     (void)harness.frame();
-    const auto chosen = click_at(harness, 1060, 233);
+    const auto row = harness.drawn_text_center("Lead  (3)");
+    REQUIRE(row.has_value());
+    const auto chosen = click_at(harness, row->first, row->second);
     check_layer_row_action(chosen.back(), WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER, 7);
     layers.front().selected = true;
     view.semantic_layer_target = layers.front();
     (void)harness.frame();
-    const auto eye = click_at(harness, 1200, 263);
+    const auto hidden_row = harness.drawn_text_center("Hidden  (2)");
+    REQUIRE(hidden_row.has_value());
+    const auto eye = click_at(harness, 1200, hidden_row->second);
     check_layer_row_action(eye[0], WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, 9);
-    const auto lock = click_at(harness, 1225, 263);
+    const auto lock = click_at(harness, 1225, hidden_row->second);
     check_layer_row_action(lock[0], WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK, 9);
 }
 
@@ -783,12 +790,16 @@ TEST_CASE("Layers dock No layer row requests clear assignment without eye or loc
     view.selected_note_count = 2;
     const auto revision = view.document_revision;
     (void)harness.frame();
-    const auto clicked = click_at(harness, 1060, 203);
+    const auto no_layer = harness.drawn_text_center("No layer  (4)");
+    REQUIRE(no_layer.has_value());
+    const auto clicked = click_at(harness, no_layer->first, no_layer->second);
     check_layer_row_action(clicked.back(), WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER, 0);
     CHECK(view.document_revision == revision);
     view.semantic_layer_target_none = true;
     (void)harness.frame();
-    const auto no_eye = click_at(harness, 1200, 203);
+    const auto no_layer_row = harness.drawn_text_center("No layer  (4)");
+    REQUIRE(no_layer_row.has_value());
+    const auto no_eye = click_at(harness, no_layer_row->first, no_layer_row->second);
     check_layer_row_action(no_eye.back(), WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER, 0);
 }
 
@@ -810,6 +821,9 @@ void check_layer_menu(bool condition) { CHECK(condition); }
 
 void check_layer_menu_no_actions(const std::vector<workspace_action_snapshot_t>& frames) {
     for (const auto& frame : frames) {
+        INFO("compose action " << frame.get().compose_action << ", compose inputs "
+             << frame.get().compose_input_count << ", viewport inputs "
+             << frame.get().compose_viewport_input_count);
         check_layer_menu(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
         check_layer_menu(frame.get().compose_input_count == 0);
         check_layer_menu(frame.get().compose_viewport_input_count == 0);
@@ -840,7 +854,9 @@ struct layer_menu_fixture_t {
     }
 
     void open(std::size_t index = 0) {
-        const auto clicks = right_click_at(harness, 1060, 233 + static_cast<float>(index) * 30);
+        const auto row = harness.drawn_text_center(index == 0 ? "Lead  (3)" : "Locked  (2)");
+        REQUIRE(row.has_value());
+        const auto clicks = right_click_at(harness, row->first, row->second);
         check_layer_row_action(clicks.front(), WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER,
                                layers[index].layer_id);
         layers[index].selected = true;
@@ -856,7 +872,9 @@ TEST_CASE("Layer row menu hides its captured target without assigning selected n
           "[unit][frontend-state][frontend][event-harness]") {
     layer_menu_fixture_t fixture;
     fixture.open();
-    const auto hide = click_at(fixture.harness, 1100, 305);
+    const auto hide_center = fixture.harness.drawn_text_center("Hide");
+    REQUIRE(hide_center.has_value());
+    const auto hide = click_at(fixture.harness, hide_center->first, hide_center->second);
     check_layer_row_action(hide.front(), WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, 7);
     fixture.layers.front().visible = false;
     fixture.harness.view().compose.semantic_layer_target = fixture.layers.front();
@@ -936,7 +954,7 @@ TEST_CASE("Layer row menu releases its popup after a stale revision or hidden pa
     (void)fixture.harness.frame();
     check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
     check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_close_pending);
-    (void)click_at(fixture.harness, 288, 122);
+    (void)click_at(fixture.harness, 315, 122);
     check_layer_menu(worm_ui_nuklear_compose_state().color_view ==
                      worm_ui_nuklear_compose_color_view_t::snap);
 }
@@ -945,7 +963,9 @@ TEST_CASE("Locked layer row menu disables Rename and Color",
           "[unit][frontend-state][frontend][event-harness]") {
     layer_menu_fixture_t fixture;
     fixture.open(1);
-    const auto rename = click_at(fixture.harness, 1100, 275);
+    const auto rename_center = fixture.harness.drawn_text_center("Rename…");
+    REQUIRE(rename_center.has_value());
+    const auto rename = click_at(fixture.harness, rename_center->first, rename_center->second);
     check_layer_menu_no_actions(rename);
     check_layer_menu(worm_ui_nuklear_compose_state().layers_menu_open);
     check_layer_menu(!worm_ui_nuklear_compose_state().semantic_layer_name_editor_visible);
@@ -956,7 +976,9 @@ TEST_CASE("Layer row Rename editor keeps its captured ID after target and window
           "[unit][frontend-state][frontend][event-harness]") {
     layer_menu_fixture_t fixture;
     fixture.open();
-    const auto rename = click_at(fixture.harness, 1100, 249);
+    const auto rename_center = fixture.harness.drawn_text_center("Rename…");
+    REQUIRE(rename_center.has_value());
+    const auto rename = click_at(fixture.harness, rename_center->first, rename_center->second);
     check_layer_menu_no_actions(rename);
     auto& state = worm_ui_nuklear_compose_state();
     check_layer_menu(state.semantic_layer_name_editor_visible);
@@ -1141,7 +1163,7 @@ TEST_CASE("Note menu retires chart and project changes without a lingering popup
     (void)fixture.harness.frame();
     check_layer_menu(!compose_note_menu_open());
     (void)fixture.harness.frame();
-    (void)click_at(fixture.harness, 288, 122);
+    (void)click_at(fixture.harness, 315, 122);
     check_layer_menu(worm_ui_nuklear_compose_state().color_view ==
                      worm_ui_nuklear_compose_color_view_t::snap);
 }
@@ -1169,10 +1191,10 @@ TEST_CASE("Unavailable overview tooltip stays on its row and preserves panel too
     compose.bgm_bar_reserved = true;
     compose.bgm_bar_available = false;
     (void)harness.frame();
-    hover_at(harness, 381, 174);
+    hover_at(harness, 408, 174);
     check_tooltip_text(harness, "Hide sounds list");
     check_no_tooltip_text(harness, "Audio is unavailable for this chart overview.");
-    hover_at(harness, 408, 174);
+    hover_at(harness, 435, 174);
     check_tooltip_text(harness, "Show layers");
     check_no_tooltip_text(harness, "Audio is unavailable for this chart overview.");
     hover_at(harness, 351, 120);
@@ -1186,9 +1208,9 @@ TEST_CASE("Disabled song bar icon keeps its tooltip and emits no toggle action",
     REQUIRE(harness.ready());
     harness.view().compose.bgm_bar_available = false;
     (void)harness.frame();
-    hover_at(harness, 460, 122);
+    hover_at(harness, 489, 122);
     check_tooltip_text(harness, "Song audio is unavailable");
-    const auto clicked = click_at(harness, 460, 122);
+    const auto clicked = click_at(harness, 489, 122);
     check_no_toolbar_document_actions(clicked);
     for (const auto& frame : clicked) {
         const auto& action = frame.get();
@@ -1360,7 +1382,9 @@ TEST_CASE("Sounds dock confirms renumbering the selected BMS resources", "[front
     state.keysound_renumber_revision = view.document_revision;
     state.keysound_renumber_resources = {50};
     (void)harness.frame();
-    const auto frames = click_at(harness, 760, 298);
+    const auto choice = harness.drawn_text_center("Selected");
+    REQUIRE(choice.has_value());
+    const auto frames = click_at(harness, choice->first, choice->second);
     const auto found = std::ranges::find_if(frames, [](const auto& frame) {
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
     });
@@ -1419,7 +1443,9 @@ TEST_CASE("Sounds dock cancels stale or dismissed BMS renumber confirmations", "
     state.keysound_renumber_revision = view.document_revision;
     state.keysound_renumber_resources = {50};
     (void)harness.frame();
-    frames = click_at(harness, 760, 330);
+    const auto cancel = harness.drawn_text_center("Cancel");
+    REQUIRE(cancel.has_value());
+    frames = click_at(harness, cancel->first, cancel->second);
     check_sound_renumber(!has_sound_renumber_action(frames), "cancel sends no action");
     check_sound_renumber(!state.keysound_renumber_confirmation_open, "cancel closes popup");
 }
@@ -1442,7 +1468,9 @@ TEST_CASE("Sounds dock renumber release does not audition the covered row",
     state.keysound_renumber_revision = view.document_revision;
     state.keysound_renumber_resources.clear();
     (void)harness.frame();
-    const auto frames = click_at(harness, 760, 298);
+    const auto choice = harness.drawn_text_center("All sounds");
+    REQUIRE(choice.has_value());
+    const auto frames = click_at(harness, choice->first, choice->second);
     check_sound_renumber(has_sound_renumber_action(frames), "all sounds action dispatched");
     check_sound_renumber(!has_sound_audition_action(frames), "press and release do not audition row");
     const auto renumber = std::ranges::find_if(frames, [](const auto& frame) {
@@ -1476,7 +1504,9 @@ TEST_CASE("BGA renumber release does not select the covered image",
     state.bga_renumber_revision = view.document_revision;
     state.bga_renumber_resources.clear();
     (void)harness.frame();
-    const auto frames = click_at(harness, 760, 298);
+    const auto all_bga = harness.drawn_text_center("All BGA");
+    REQUIRE(all_bga.has_value());
+    const auto frames = click_at(harness, all_bga->first, all_bga->second);
     check_sound_renumber(has_sound_renumber_action(frames), "all BGA action dispatched");
     const auto renumber = std::ranges::find_if(frames, [](const auto& frame) {
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS;
@@ -1486,6 +1516,65 @@ TEST_CASE("BGA renumber release does not select the covered image",
     check_sound_renumber(renumber->get().compose_renumber_bga, "BMP namespace");
     check_sound_renumber(state.bga_selection.primary == 0, "covered image stays unselected");
     check_sound_renumber(state.bga_selection.selected.empty(), "covered image absent from selection");
+}
+
+namespace {
+void check_modal_blocks_chart_inputs(const std::vector<workspace_action_snapshot_t>& frames) {
+    for (const auto& frame : frames) {
+        for (std::size_t index = 0; index < frame.get().compose_input_count; ++index) {
+            const auto kind = frame.get().compose_inputs[index].kind;
+            INFO("compose input kind enum value: " << static_cast<int>(kind));
+            CHECK((kind == WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE ||
+                   kind == WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL));
+        }
+    }
+    // A modal may cancel an existing pointer gesture, but no chart action such
+    // as note selection, placement, or movement can escape to the canvas.
+}
+}
+
+TEST_CASE("BGA renumber popup blocks Compose note input outside its bounds",
+          "[frontend-state][event-harness][bga][modal]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& workspace = harness.view();
+    auto& view = workspace.compose;
+    const std::array hover_motion{motion_event(300, 400)};
+    const auto hover = harness.frame(hover_motion);
+    REQUIRE(hover.get().compose_has_pointer_hover);
+    WormUiComposeNoteView note{};
+    note.bounds = {hover.get().compose_pointer_hover_x_pixels - 15,
+                   hover.get().compose_pointer_hover_y_pixels - 5,
+                   hover.get().compose_pointer_hover_x_pixels + 15,
+                   hover.get().compose_pointer_hover_y_pixels + 5};
+    note.note_id = 5;
+    note.lane_id = 1;
+    note.sound_label = "01";
+    note.sound_detail = "covered.ogg";
+    view.note_endpoints = &note;
+    view.note_endpoint_count = 1;
+    const std::array<std::uint64_t, 1> ids{80};
+    const std::array<WormUiComposeBgaRowView, 1> rows{{
+        {.resource_id = 80, .slot = "0A", .name = "cover.bmp"}}};
+    view.bga_rows = rows.data();
+    view.bga_row_count = 1;
+    view.bga_total_matching = 1;
+    view.bga_matching_ids = ids.data();
+    view.bga_search = "";
+    view.bga_ids_available = true;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.bga_panel_visible = true;
+    (void)harness.frame();
+    state.bga_renumber_confirmation_open = true;
+    state.bga_renumber_project = view.project_id;
+    state.bga_renumber_chart = view.chart_id;
+    state.bga_renumber_revision = view.document_revision;
+    state.bga_renumber_resources.clear();
+    (void)harness.frame();
+
+    const auto outside_click = click_at(harness, 300, 400);
+    check_modal_blocks_chart_inputs(outside_click);
 }
 
 namespace {
@@ -1770,7 +1859,9 @@ TEST_CASE("Occupied slot selection arms its sound and replacement requires expli
     check_sound_slots(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     check_sound_slots(state.keysound_slot_confirmation_open);
     check_sound_slots(harness.drawn_text().find("Replace occupied WAV slot 02") != std::string::npos);
-    const auto frames = click_at(harness, 760, 298);
+    const auto choice = harness.drawn_text_center("Replace");
+    REQUIRE(choice.has_value());
+    const auto frames = click_at(harness, choice->first, choice->second);
     const auto* action = find_sound_slot_action(frames);
     require_sound_slots(action != nullptr);
     check_sound_slots(action->compose_sound_slot == 2);

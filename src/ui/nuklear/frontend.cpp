@@ -6,6 +6,7 @@
 #include "ui/nuklear/audio_panel.h"
 #include "ui/nuklear/audio_state.h"
 #include "ui/nuklear/compose_panel.h"
+#include "ui/nuklear/compose_canvas.h"
 #include "ui/nuklear/compose_layers_panel.h"
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_area_menu.h"
@@ -674,6 +675,40 @@ void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request) 
     request->row_limit = state.keysound_slots_row_limit;
 }
 
+bool worm_ui_frontend_stage_sound_slot_batch(uint64_t project, uint64_t chart, uint64_t revision,
+    uint16_t first_slot, const WormUiSoundSlotImportItem* items, size_t count, const char* reason) {
+    auto& state = worm_ui_nuklear_compose_state();
+    if (!state.keysound_slots_mode) return false;
+    worm_ui_sound_slot_batch_stage(state.keysound_slot_batch, project, chart, revision,
+                                   first_slot, items, count, reason);
+    return true;
+}
+
+void worm_ui_frontend_sound_slot_batch_result(bool applied, const char* message) {
+    worm_ui_sound_slot_batch_result(worm_ui_nuklear_compose_state().keysound_slot_batch,
+                                    applied, message);
+}
+
+bool worm_ui_frontend_stage_sound_slot_file_at(uint64_t project, uint64_t chart,
+    uint64_t revision, uint16_t slot, uint64_t occupied_resource, const char* path) {
+    auto& state = worm_ui_nuklear_compose_state();
+    if (!state.keysound_slots_mode) return false;
+    if (!path || slot == 0 || slot > 1295 || state.keysound_slots_project != project ||
+        state.keysound_slots_chart != chart || state.keysound_slots_revision != revision) {
+        state.keysound_slot_feedback = "The selected WAV slot is no longer available.";
+        return true;
+    }
+    state.keysound_pending_path = path;
+    state.keysound_pending_project = project;
+    state.keysound_pending_chart = chart;
+    state.keysound_pending_revision = revision;
+    state.keysound_pending_slot = slot;
+    state.keysound_pending_occupied_resource = occupied_resource;
+    state.keysound_pending_file = true;
+    state.keysound_slot_feedback.clear();
+    return true;
+}
+
 bool worm_ui_frontend_stage_sound_slot_file(uint64_t project, uint64_t chart, uint64_t revision,
                                             const char* path, size_t file_count) {
     auto& state = worm_ui_nuklear_compose_state();
@@ -689,15 +724,8 @@ bool worm_ui_frontend_stage_sound_slot_file(uint64_t project, uint64_t chart, ui
         state.keysound_slot_feedback = "The selected WAV slot is no longer available.";
         return true;
     }
-    state.keysound_pending_path = path;
-    state.keysound_pending_project = project;
-    state.keysound_pending_chart = chart;
-    state.keysound_pending_revision = revision;
-    state.keysound_pending_slot = state.keysound_selected_slot;
-    state.keysound_pending_occupied_resource = state.keysound_selected_slot_resource;
-    state.keysound_pending_file = true;
-    state.keysound_slot_feedback.clear();
-    return true;
+    return worm_ui_frontend_stage_sound_slot_file_at(project, chart, revision,
+        state.keysound_selected_slot, state.keysound_selected_slot_resource, path);
 }
 
 bool worm_ui_frontend_bga_list_contains(uint32_t window_id, float x, float y) {
@@ -786,6 +814,9 @@ static void close_notification_history_windows() {
 static bool compose_popup_owns_input() {
     const auto& compose = worm_ui_nuklear_compose_state();
     return compose.layers_menu_open || compose.keysound_slot_confirmation_open ||
+           compose.keysound_slot_batch.open ||
+           compose.bga_stack_open || compose.bga_stack_release_pending ||
+           compose.bga_renumber_confirmation_open || compose.bga_renumber_release_pending ||
            compose_note_menu_open();
 }
 
@@ -940,7 +971,39 @@ static bool capture_inline_offset_key(const SDL_KeyboardEvent& event) {
     return true;
 }
 
+void worm_ui_frontend_bga_move_preview(uint64_t* chart_id, uint64_t* document_revision,
+                                       uint64_t* event_id, double* y_pixels) {
+    const auto& state = worm_ui_nuklear_compose_state();
+    const bool active = g_window_focused && state.bga_event_move_active;
+    if (chart_id) *chart_id = active ? state.bga_event_move_chart_id : 0;
+    if (document_revision) *document_revision = active ? state.bga_event_move_revision : 0;
+    if (event_id) *event_id = active ? state.bga_event_move_object_id : 0;
+    if (y_pixels) *y_pixels = active ? state.bga_event_move_current_y_pixels : 0.0;
+}
+
+static bool capture_bga_stack_key(const SDL_KeyboardEvent& event) {
+    if (!worm_ui_nuklear_compose_state().bga_stack_open) return false;
+    SDL_Event copy{};
+    copy.type = event.type;
+    copy.key = event;
+    (void)nk_sdl_handle_event(g_context, &copy);
+    return true;
+}
+
 static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
+        if (capture_bga_stack_key(event)) return true;
+        auto& slot_batch = worm_ui_nuklear_compose_state().keysound_slot_batch;
+        if (slot_batch.open) {
+            if (event.down && !event.repeat && event.key == SDLK_ESCAPE)
+                worm_ui_sound_slot_batch_cancel(slot_batch);
+            else {
+                SDL_Event copy{};
+                copy.type = event.type;
+                copy.key = event;
+                (void)nk_sdl_handle_event(g_context, &copy);
+            }
+            return true;
+        }
         if (worm_ui_nuklear_sound_import_active()) {
             if (event.down && !event.repeat && event.key == SDLK_ESCAPE)
                 worm_ui_nuklear_reset_sound_import();
@@ -1950,6 +2013,7 @@ static void confirm_new_project_wizard(WormUiWorkspaceAction& action) {
 static bool project_modal_active(const WormUiWorkspaceView& view) {
     return view.close_confirmation.visible || g_new_project_wizard.open ||
            worm_ui_nuklear_sound_import_active() ||
+           worm_ui_nuklear_compose_state().keysound_slot_batch.open ||
            (view.pending_bms_encoding_path && view.pending_bms_encoding_path[0]);
 }
 
@@ -2289,6 +2353,7 @@ static void retire_unavailable_layer_actions(const WormUiWorkspaceView& view) {
         view.compose.visible && !view.compose.input_occluded) return;
     auto& state = worm_ui_nuklear_compose_state();
     state.layers_menu_close_pending = state.layers_menu_close_pending || state.layers_menu_open;
+    state.bga_stack_open = false;
     state.layers_menu_open = false;
     state.layers_menu_input_consumed = false;
     state.layers_menu_release_pending = false;
@@ -2315,6 +2380,7 @@ static void consume_pending_save_request(const WormUiWorkspaceView* view, WormUi
 }
 
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
+    reset_compose_canvas_viewport_for_testing();
     if (view && !view->project_loaded) worm_ui_nuklear_reset_sound_import();
     remember_notification_frame(view);
     worm_ui_nuklear_begin_image_quad_frame();
@@ -2382,6 +2448,9 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     if (action.sound_import_pick_requested) worm_ui_nuklear_sound_import_pick(g_window, *view);
     worm_ui_nuklear_consume_sound_picker(*view, action);
     worm_ui_nuklear_render_pending_sound_import(g_context, *view, action, width, height);
+    worm_ui_nuklear_render_sound_slot_batch(g_context,
+        worm_ui_nuklear_compose_state().keysound_slot_batch, view->compose,
+        action, width, height);
     render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
     const bool compose_lane_focused =
         !worm_ui_nuklear_compose_state().bgm_column_count_edit.input_owned &&
@@ -2438,6 +2507,14 @@ size_t worm_ui_frontend_copy_drawn_text_bounds_for_testing(WormUiTestingDrawnTex
         ++count;
     }
     return count;
+}
+
+bool worm_ui_frontend_compose_viewport_for_testing(WormUiTestingRect* output) {
+    if (!g_headless || !output) return false;
+    const auto viewport = compose_canvas_viewport_for_testing();
+    if (!viewport) return false;
+    *output = *viewport;
+    return true;
 }
 
 void worm_ui_frontend_render(int window_width, int window_height) {

@@ -9,7 +9,9 @@
 
 #include <optional>
 #include <span>
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace wormedit::sys {
 
@@ -20,10 +22,31 @@ struct prepared_keysound_import_t {
     std::string message;
 };
 
+struct prepared_sound_slot_import_item_t {
+    std::string path;
+    std::string name;
+    std::uint64_t occupied_resource_id{};
+    std::string occupied_name;
+    bool ambiguous{};
+};
+
+struct prepared_sound_slot_batch_t {
+    std::vector<prepared_sound_slot_import_item_t> items;
+    std::string reason;
+};
+
 // Stages only decodable audio candidates; it never mutates the document.
 [[nodiscard]] auto prepare_keysound_import(const song_document_t& document, chart_id_t chart,
                                            std::span<const std::string> paths)
     -> prepared_keysound_import_t;
+
+// Prepares a complete direct-slot preview in natural filename order. Every
+// input is retained for review; any invalid path, duplicate, or range error
+// sets reason and the whole batch remains ineligible for confirmation.
+[[nodiscard]] auto prepare_sound_slot_batch(const song_document_t& document, chart_id_t chart,
+                                            std::uint16_t first_slot,
+                                            std::span<const std::string> paths)
+    -> prepared_sound_slot_batch_t;
 
 // Registers dropped or picked audio files as keysounds in one undo step. Files
 // that are not decodable audio, or that already back a sample, are skipped and

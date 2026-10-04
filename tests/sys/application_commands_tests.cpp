@@ -184,6 +184,38 @@ struct SoundImportDispatchFixture {
     }
 };
 
+struct SoundSlotBatchDispatchFixture {
+    wormedit::document_history_t history{wormedit::make_document_history(sound_import_song())};
+    wormedit::workspace_controller_t workspace;
+    wormedit::sys::application_command_state_t application_state;
+    wormedit::chart_id_t chart{history.document.charts.front().id};
+
+    SoundSlotBatchDispatchFixture() {
+        using namespace wormedit;
+        history.document.charts.front().source_family = format_family_t::bms;
+        history.document.resources.front().target_identities.push_back(
+            {format_family_t::bms, "05", "WAV"});
+        const auto created = make_workspace_controller(history);
+        REQUIRE(created);
+        workspace = *created.workspace;
+    }
+
+    auto dispatch(const WormUiSoundImportItem* items, std::size_t count,
+                  std::uint16_t slot, bool confirmed = false,
+                  std::uint64_t revision = 0) -> std::optional<std::string> {
+        WormUiWorkspaceAction action{};
+        action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
+        action.sound_import_project_id = history.document.id.value;
+        action.compose_input_chart_id = chart.value;
+        action.compose_input_document_revision = revision == 0 ? history.document.revision : revision;
+        action.compose_sound_slot = slot;
+        action.compose_sound_slot_confirmed = confirmed;
+        action.sound_import_items = items;
+        action.sound_import_item_count = count;
+        return dispatch_compose_sound_action(action, history, workspace, chart, application_state);
+    }
+};
+
 void leave_two_fragmented_bms_ids(wormedit::song_document_t& document) {
     constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     document.charts.front().source_family = wormedit::format_family_t::bms;
@@ -307,6 +339,82 @@ auto fragmented_ungrouped_sound_import_reports_ranges() -> bool {
                       identity.identifier == "03";
            }) && fixture.history.undo.size() == 1;
 }
+
+auto sound_slot_batch_dispatch_commits_natural_order_once() -> bool {
+    using namespace wormedit;
+    SoundSlotBatchDispatchFixture fixture;
+    const auto first = sound_fixture_path("keysound-e4.ogg");
+    const auto second = sound_fixture_path("keysound-c4.ogg");
+    const std::array items{WormUiSoundImportItem{first.c_str(), "Ten", 2},
+                           WormUiSoundImportItem{second.c_str(), "Two", 2}};
+    const auto result = fixture.dispatch(items.data(), items.size(), 10, true);
+    if (!result || result->find("Assigned 2 sounds") == std::string::npos ||
+        fixture.history.undo.size() != 1) return false;
+    const auto& resources = fixture.history.document.resources;
+    const auto ten = std::ranges::find(resources, std::string{"Ten"}, &resource_entry_t::name);
+    const auto two = std::ranges::find(resources, std::string{"Two"}, &resource_entry_t::name);
+    return ten != resources.end() && two != resources.end() &&
+        std::ranges::any_of(ten->target_identities, [](const auto& identity) {
+            return identity.family == format_family_t::bms && identity.namespace_name == "WAV" &&
+                   identity.identifier == "0B";
+        }) &&
+        std::ranges::any_of(two->target_identities, [](const auto& identity) {
+            return identity.family == format_family_t::bms && identity.namespace_name == "WAV" &&
+                   identity.identifier == "0A";
+        });
+}
+
+auto rejected_sound_slot_batches_leave_history_unchanged() -> bool {
+    using namespace wormedit;
+    SoundSlotBatchDispatchFixture fixture;
+    const auto before_revision = fixture.history.document.revision;
+    const auto before_assets = fixture.history.document.audio_assets.size();
+    const auto before_resources = fixture.history.document.resources.size();
+    const auto one = sound_fixture_path("keysound-c4.ogg");
+    const std::array occupied{WormUiSoundImportItem{one.c_str(), "Replace", 2}};
+    const auto needs_confirmation = fixture.dispatch(occupied.data(), occupied.size(), 5, false);
+    if (!needs_confirmation || needs_confirmation->find("confirmation") == std::string::npos ||
+        fixture.history.document.revision != before_revision || !fixture.history.undo.empty())
+        return false;
+    const auto missing_path = std::string{"/tmp/wormedit-absent-slot-import.wav"};
+    const std::array missing{WormUiSoundImportItem{missing_path.c_str(), "Missing", 2}};
+    const auto rejected = fixture.dispatch(missing.data(), missing.size(), 6, true);
+    return rejected && rejected->find("no longer readable") != std::string::npos &&
+        fixture.history.document.revision == before_revision &&
+        fixture.history.document.audio_assets.size() == before_assets &&
+        fixture.history.document.resources.size() == before_resources && fixture.history.undo.empty();
+}
+
+auto prepared_sound_slot_batch_maps_natural_destinations() -> bool {
+    using namespace wormedit;
+    SoundSlotBatchDispatchFixture fixture;
+    const std::array paths{sound_fixture_path("keysound-e4.ogg"),
+                           sound_fixture_path("keysound-c4.ogg")};
+    const auto prepared = prepare_sound_slot_batch(fixture.history.document, fixture.chart,
+                                                    4, paths);
+    return prepared.reason.empty() && prepared.items.size() == 2 &&
+        std::filesystem::path{prepared.items[0].path}.filename() == "keysound-c4.ogg" &&
+        std::filesystem::path{prepared.items[1].path}.filename() == "keysound-e4.ogg" &&
+        prepared.items[0].occupied_resource_id == 0 &&
+        prepared.items[1].occupied_resource_id == fixture.history.document.resources.front().id.value &&
+        prepared.items[1].occupied_name == fixture.history.document.resources.front().name;
+}
+
+auto prepared_sound_slot_batch_rejects_all_invalid_inputs() -> bool {
+    using namespace wormedit;
+    SoundSlotBatchDispatchFixture fixture;
+    const auto missing = std::string{"/tmp/wormedit-absent-prepared-slot.wav"};
+    const std::array duplicate{missing, missing};
+    const auto bad_files = prepare_sound_slot_batch(fixture.history.document, fixture.chart,
+                                                     1, duplicate);
+    const std::array valid{sound_fixture_path("keysound-c4.ogg"),
+                           sound_fixture_path("keysound-e4.ogg")};
+    const auto overflow = prepare_sound_slot_batch(fixture.history.document, fixture.chart,
+                                                    1295, valid);
+    return !bad_files.reason.empty() && bad_files.items.size() == duplicate.size() &&
+        bad_files.items[0].path == bad_files.items[1].path &&
+        !overflow.reason.empty() && overflow.items.size() == valid.size();
+}
 } // namespace
 
 TEST_CASE("confirmed sound import dispatches reviewed names and memberships in one undo step",
@@ -322,6 +430,26 @@ TEST_CASE("confirmed sound import dispatch rejects invalid proposals without mut
 TEST_CASE("confirmed ungrouped BMS import reports fragmented WAV ranges",
           "[unit][sys][sounds][import][bms-identifiers]") {
     CHECK(fragmented_ungrouped_sound_import_reports_ranges());
+}
+
+TEST_CASE("confirmed direct WAV slot batch dispatches natural order atomically",
+          "[unit][sys][sounds][bms-identifiers]") {
+    CHECK(sound_slot_batch_dispatch_commits_natural_order_once());
+}
+
+TEST_CASE("direct WAV slot batch rejection preserves history",
+          "[unit][sys][sounds][bms-identifiers]") {
+    CHECK(rejected_sound_slot_batches_leave_history_unchanged());
+}
+
+TEST_CASE("slot batch preparation keeps natural destination occupant mapping",
+          "[unit][sys][sounds][bms-identifiers]") {
+    CHECK(prepared_sound_slot_batch_maps_natural_destinations());
+}
+
+TEST_CASE("slot batch preparation rejects the complete invalid or overflowing batch",
+          "[unit][sys][sounds][bms-identifiers]") {
+    CHECK(prepared_sound_slot_batch_rejects_all_invalid_inputs());
 }
 
 namespace {

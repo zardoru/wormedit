@@ -99,6 +99,8 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 - **Transport action producer extension (2026-10-04):** Sol owns `src/sys/transport_player_actions.h/.cpp` plus existing `tests/sys/application_commands_tests.cpp` for typed branch publication of rate/metronome/loop/pitch/preview/export-policy UI actions; callback-returned playback and seek remain explicitly producer-owned, avoiding guessed severity or duplicate posts.
 
+- **Sound/BGA producer extension (2026-10-04):** Sol owns `src/sys/compose_sound_actions.h/.cpp`, `src/sys/compose_bga_actions.h/.cpp`, existing `tests/sys/application_commands_tests.cpp` and `tests/sys/bga_actions_tests.cpp` for explicit import/edit/no-op/diagnostic outcomes. Optional sink parameters preserve string-return consumers until T-222 updates Compose; main review/drop bridges pass the sink and retain only scoped dialog feedback. No import behavior or new messages are authorized by this extension.
+
 ## T-222 Route Compose, Timing, and dialog messages through notifications
 
 - **Status:** blocked-on T-221

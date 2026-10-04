@@ -4,6 +4,7 @@
 #include "ui/frontend.h"
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/notifications.h>
 #include <wormedit/core/sound_import.h>
 #include <wormedit/core/workspace.h>
 
@@ -54,7 +55,8 @@ struct prepared_sound_slot_batch_t {
 // free #WAV slot. The input order is sorted by file name for stable slots.
 [[nodiscard]] auto import_keysound_files(document_history_t& history,
                                          workspace_controller_t& workspace, chart_id_t chart,
-                                         std::span<const std::string> paths) -> std::string;
+                                         std::span<const std::string> paths,
+                                         std::optional<notification_sink_t> notifications = {}) -> std::string;
 
 // Keysound listbox actions. Returns nullopt for any other action. The status
 // message is always non-empty on success or failure.
@@ -62,7 +64,8 @@ struct prepared_sound_slot_batch_t {
                                                  document_history_t& history,
                                                  workspace_controller_t& workspace,
                                                  chart_id_t chart,
-                                                 application_command_state_t& application_state)
+                                                 application_command_state_t& application_state,
+                                                 std::optional<notification_sink_t> notifications = {})
     -> std::optional<std::string>;
 
 } // namespace wormedit::sys

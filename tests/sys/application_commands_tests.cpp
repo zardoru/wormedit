@@ -158,6 +158,8 @@ auto sound_import_song() -> wormedit::song_document_t {
 }
 
 struct SoundImportDispatchFixture {
+    wormedit::notification_center_t center;
+    wormedit::notification_sink_t sink{center};
     wormedit::document_history_t history{wormedit::make_document_history(sound_import_song())};
     wormedit::workspace_controller_t workspace;
     wormedit::sys::application_command_state_t application_state;
@@ -181,7 +183,7 @@ struct SoundImportDispatchFixture {
         action.sound_import_item_count = item_count;
         action.sound_import_groups = groups;
         action.sound_import_group_count = group_count;
-        return dispatch_compose_sound_action(action, history, workspace, chart, application_state);
+        return dispatch_compose_sound_action(action, history, workspace, chart, application_state, sink);
     }
 };
 
@@ -426,6 +428,32 @@ TEST_CASE("confirmed sound import dispatches reviewed names and memberships in o
 TEST_CASE("confirmed sound import dispatch rejects invalid proposals without mutation",
           "[unit][sys][sounds][import]") {
     CHECK(rejected_sound_imports_leave_history_unchanged());
+}
+
+namespace {
+auto sound_import_notifications_preserve_outcomes() -> bool {
+    using namespace wormedit;
+    SoundImportDispatchFixture fixture;
+    const auto path = sound_fixture_path("keysound-c4.ogg");
+    const WormUiSoundImportItem item{path.c_str(), "Imported", 2};
+    const auto accepted = fixture.dispatch(&item, 1, nullptr, 0);
+    if (!accepted || fixture.history.undo.size() != 1) return false;
+    fixture.center.drain_inbox(notification_time_t{0});
+    const auto success = fixture.center.snapshot(notification_capacity);
+    if (success.size() != 1 || success[0].severity != notification_severity_t::success ||
+        success[0].source != notification_source_t::import_ || success[0].message != *accepted) return false;
+    const auto revision = fixture.history.document.revision;
+    const auto rejected = fixture.dispatch(nullptr, 1, nullptr, 0);
+    if (!rejected || fixture.history.document.revision != revision || fixture.history.undo.size() != 1) return false;
+    fixture.center.drain_inbox(notification_time_t{0});
+    const auto failure = fixture.center.snapshot(notification_capacity);
+    return failure.size() == 2 && failure[0].severity == notification_severity_t::warning &&
+        failure[0].source == notification_source_t::import_ && failure[0].message == *rejected;
+}
+}
+
+TEST_CASE("sound import producer publishes exact accepted and rejected outcomes once", "[unit][sys][sounds][import][notification]") {
+    CHECK(sound_import_notifications_preserve_outcomes());
 }
 
 TEST_CASE("confirmed ungrouped BMS import reports fragmented WAV ranges",

@@ -166,15 +166,12 @@ inventory reads may run in parallel; root owns integration and resume updates.
 
 ## Verification and root decisions
 
-For each implementation brief: build after each source file; run its focused
-positive/negative tests plus card Verify; run configured clang-tidy on changed
-C++ (complexity ≤25, no NOLINT escape). At card integration run full build/test,
-documentation check and isolated Xvfb when UI changes. T-221's zero-status-ref
-grep is a **final batch gate**: current main worker signatures and history/close
-fallback contexts are excluded from T-221 by its scope. Root must reconcile that
-contradiction before claiming the gate satisfied; do not widen scope silently.
-Full no-message-loss acceptance compares producer inventory with posts, retaining
-original call order and exact message bytes (existing center UTF-8 bounds apply).
+Implementation gates: focused positive/negative tests, configured clang-tidy
+(new functions ≤25), build, documentation check and diffcheck. Card integration
+adds full suite and allowed headless event workflows; Xvfb is unavailable.
+T-221's final grep excludes Compose/view/worker/history/close scoped seams until
+the full batch. Every producer retains exact text and call order; existing bounded
+UTF-8 notification policy applies.
 
 Root settled sink lifetime: non-owning handle, center declared before all posting
 schedulers/runtimes; scheduler joins on normal and exceptional exits before
@@ -216,3 +213,12 @@ Own app build, 24 focused CTest cases and 2 transport direct cases/15 assertions
 pass; configured tidy has no new violation, docs/diff gates pass. N7 is delegated
 to the timing Sol coordinator in a separate isolated tree; local ownership excludes
 its audio/decode/waveform files. Remaining globals still require producer review.
+
+Reviewed next slice: sound/BGA import and edit producers retain string contracts
+with optional sink publication; main review/drop bridges post exact text once and
+keep only scoped dialog feedback. Audio offset drag and sound/validation navigation
+use explicit branch or diagnostic outcomes. App build passes, focused import/BGA/
+offset suite passes 20/20, direct sound producer case passes 3 assertions. Tidy
+reports only existing main/refresh/build_speed_graph and old command-test functions.
+Remaining T-221: event drop collection, startup/clipboard bridge, and seek/bookmark
+publication. N4 and N6b remain pending; no card is marked done.

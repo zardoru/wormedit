@@ -46,10 +46,18 @@ struct Fixture {
 };
 }
 TEST_CASE("BGA batch skips unreadable images and imports readable images in one undo step", "[bga][import]") {
+    notification_center_t center;
+    notification_sink_t sink{center};
     Fixture fixture;
     const std::array paths{fixture.image("a.ppm"), fixture.image("b.ppm"), (fixture.directory / "bad.png").string()};
-    const auto status = import_bga_files(fixture.history, fixture.workspace, chart_id_t{1}, paths);
+    const auto status = import_bga_files(fixture.history, fixture.workspace, chart_id_t{1}, paths, sink);
     INFO(status);
+    center.drain_inbox(notification_time_t{0});
+    const auto entries = center.snapshot(notification_capacity);
+    require_bga(entries.size() == 1);
+    check_bga(entries[0].severity == notification_severity_t::warning);
+    check_bga(entries[0].source == notification_source_t::import_);
+    check_bga(entries[0].message == status);
     require_bga(static_cast<bool>(fixture.history.document.resources.size() == 2));
     check_bga(fixture.history.undo.size() == 1);
     check_bga(status.find("skipped 1") != std::string::npos);
@@ -64,6 +72,8 @@ TEST_CASE("BGA batch skips unreadable images and imports readable images in one 
     check_bga(fixture.history.document.resources.empty());
 }
 TEST_CASE("BGA remove unused keeps referenced resources and rejects stale actions", "[bga][remove]") {
+    notification_center_t center;
+    notification_sink_t sink{center};
     Fixture fixture;
     const std::array paths{fixture.image("a.ppm"), fixture.image("b.ppm")};
     (void)import_bga_files(fixture.history, fixture.workspace, chart_id_t{1}, paths);
@@ -74,14 +84,23 @@ TEST_CASE("BGA remove unused keeps referenced resources and rejects stale action
     WormUiWorkspaceAction action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA;
     action.compose_input_document_revision = 0;
-    require_bga(static_cast<bool>(dispatch_compose_bga_action(action, fixture.history, fixture.workspace, chart_id_t{1})));
+    require_bga(static_cast<bool>(dispatch_compose_bga_action(action, fixture.history, fixture.workspace, chart_id_t{1}, sink)));
     check_bga(fixture.history.document.resources.size() == 2);
+    center.drain_inbox(notification_time_t{0});
+    auto entries = center.snapshot(notification_capacity);
+    require_bga(entries.size() == 1);
+    check_bga(entries[0].severity == notification_severity_t::warning);
+    check_bga(entries[0].source == notification_source_t::edit);
     action.compose_input_document_revision = fixture.history.document.revision;
     const auto before = fixture.history.undo.size();
-    require_bga(static_cast<bool>(dispatch_compose_bga_action(action, fixture.history, fixture.workspace, chart_id_t{1})));
+    require_bga(static_cast<bool>(dispatch_compose_bga_action(action, fixture.history, fixture.workspace, chart_id_t{1}, sink)));
     require_bga(static_cast<bool>(fixture.history.document.resources.size() == 1));
     check_bga(fixture.history.document.resources.front().id == kept);
     check_bga(fixture.history.undo.size() == before + 1);
+    center.drain_inbox(notification_time_t{0});
+    entries = center.snapshot(notification_capacity);
+    require_bga(entries.size() == 2);
+    check_bga(entries[0].severity == notification_severity_t::success);
     require_bga(static_cast<bool>(undo_document_command(fixture.history)));
     check_bga(fixture.history.document.resources.size() == 2);
 }

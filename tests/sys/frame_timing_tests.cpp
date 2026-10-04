@@ -962,7 +962,7 @@ void populate_measure_cache_frame(document_history_t& history, workspace_control
     application_command_state_t application;
     populate_compose_view(flattened, history, workspace, cache, 1280, 980, interaction,
                           application, nullptr);
-    INFO(flattened.compose.status);
+    INFO(flattened.projection_feedback.size());
     REQUIRE(flattened.view.compose.scene_available);
 }
 }
@@ -2181,7 +2181,7 @@ void project_anchor_scene(compose_test_fixture_t& fixture, int height) {
     fixture.flattened.view.compose.visible = true;
     populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.workspace,
         fixture.cache, 1280, height, fixture.interaction, fixture.application, nullptr);
-    INFO(fixture.flattened.compose.status);
+    INFO(fixture.flattened.projection_feedback.size());
     expect_compose_test(fixture.flattened.view.compose.scene_available);
 }
 void check_short_chart_anchor_frame(compose_test_fixture_t& fixture, int height,
@@ -2608,10 +2608,38 @@ TEST_CASE("Compose geometry scene budget rejects dense excess without exceeding 
     wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 16 * 1024 * 1024});
     project_geometry_arena(fixture, arena, 2000000);
     expect_compose_test(!fixture.flattened.view.compose.scene_available);
-    expect_compose_test(fixture.flattened.view.compose.status_text != nullptr);
+    expect_compose_test(!fixture.flattened.projection_feedback.empty());
     expect_compose_test(!fixture.flattened.view.compose.static_scene);
     expect_compose_test(fixture.history.document.revision == revision && fixture.history.undo.empty());
     check_geometry_view_spans(fixture.flattened);
+}
+
+TEST_CASE("Compose projection failure posts once until repaired or revision changes", "[sys][notification][compose-geometry]") {
+    notification_center_t center;
+    notification_sink_t sink{center};
+    compose_test_fixture_t fixture(dense_song());
+    frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 16 * 1024 * 1024});
+    projection_notification_feedback_t feedback;
+    auto identity = projection_identity_t{fixture.history.document.id, fixture.history.document.revision, chart_id_t{1}, 1};
+    project_geometry_arena(fixture, arena, 2000000);
+    expect_compose_test(!fixture.flattened.projection_feedback.empty());
+    feedback.publish(identity, fixture.flattened.projection_feedback, sink);
+    center.drain_inbox(notification_time_t{0});
+    const auto first = center.snapshot(notification_capacity);
+    expect_compose_test(first.size() == 1);
+    expect_compose_test(first[0].severity == notification_severity_t::error);
+    feedback.publish(identity, fixture.flattened.projection_feedback, sink);
+    center.drain_inbox(notification_time_t{3000});
+    expect_compose_test(center.snapshot(notification_capacity)[0].count == 1);
+    feedback.publish(identity, {}, sink);
+    feedback.publish(identity, fixture.flattened.projection_feedback, sink);
+    center.drain_inbox(notification_time_t{6000});
+    expect_compose_test(center.snapshot(notification_capacity)[0].count == 2);
+    ++identity.revision;
+    feedback.publish(identity, fixture.flattened.projection_feedback, sink);
+    center.drain_inbox(notification_time_t{9000});
+    expect_compose_test(center.snapshot(notification_capacity)[0].count == 3);
+    expect_compose_test(fixture.history.undo.empty());
 }
 
 namespace {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/task_graph.h>
+#include <wormedit/core/notifications.h>
 #include <wormedit/core/workspace.h>
 
 #include "sys/thread_priority.h"
@@ -27,6 +28,7 @@ struct pending_project_resource_copy_t {
 struct output_group_export_task_result_t {
     bool published{};
     std::string message;
+    wormedit::notification_severity_t severity{wormedit::notification_severity_t::error};
 };
 
 struct pending_output_group_export_t {
@@ -39,6 +41,8 @@ struct pending_output_group_export_t {
 namespace runtime {
 
 struct resource_copy_t {
+    explicit resource_copy_t(std::optional<wormedit::notification_sink_t> notifications = {});
+
     [[nodiscard]] auto busy() const noexcept -> bool { return pending_.has_value(); }
 
     auto start(pending_project_resource_copy_t&& pending) -> bool;
@@ -47,10 +51,21 @@ struct resource_copy_t {
     void cancel();
 
 private:
+    std::optional<wormedit::notification_sink_t> notifications_;
     std::optional<pending_project_resource_copy_t> pending_;
 };
 
 struct output_group_export_t {
+    explicit output_group_export_t(std::optional<wormedit::notification_sink_t> notifications = {});
+    ~output_group_export_t() noexcept;
+
+    output_group_export_t(const output_group_export_t&) = delete;
+    auto operator=(const output_group_export_t&) -> output_group_export_t& = delete;
+
+private:
+    std::optional<wormedit::notification_sink_t> notifications_;
+
+public:
     wormedit::task_scheduler_t scheduler{1, 1, wormedit::background_scheduler_options()};
     std::optional<pending_output_group_export_t> pending;
 

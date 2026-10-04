@@ -24,7 +24,6 @@ struct timing_scene_cache_t {
     bool attempted{};
     bool truncated{};
     std::uint64_t total_rows{};
-    std::string status;
     bool compose_rows_attempted{};
     std::uint64_t compose_total_rows{};
     bool measure_attempted{};

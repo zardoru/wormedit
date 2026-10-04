@@ -450,6 +450,39 @@ auto stage_output_music(const wormedit::song_document_t& snapshot,
     return std::nullopt;
 }
 
+void complete_output_group_conversion(
+    const wormedit::song_document_t& snapshot, const wormedit::output_group_t& group,
+    wormedit::conversion_request_t& request, const std::filesystem::path& asset_base,
+    std::stop_token stop, output_group_export_task_result_t& completed) {
+    using namespace wormedit;
+    const auto converted = convert_document(snapshot, request);
+    if (!converted) {
+        const auto error = std::ranges::find_if(converted.diagnostics, [](const auto& diagnostic) {
+            return diagnostic.severity == diagnostic_severity_t::error;
+        });
+        completed.message = error == converted.diagnostics.end()
+                                ? "Output conversion failed."
+                                : error->message;
+        completed.severity = notification_severity_t::error;
+        return;
+    }
+    if (stop.stop_requested()) {
+        completed.message = "Export cancelled before publication.";
+        completed.severity = notification_severity_t::info;
+        return;
+    }
+    const auto published = publish_conversion_group_atomic(asset_base, group, request, converted);
+    completed.published = published.published;
+    completed.message = published.published ? "Output group published from the selected revision."
+                           : published.errors.empty() ? "Output group publication failed."
+                                                      : published.errors.front();
+    completed.severity = !published.published ? notification_severity_t::error
+                          : !published.warnings.empty() ? notification_severity_t::warning
+                                                        : notification_severity_t::success;
+    if (published.published && !published.warnings.empty())
+        completed.message += " " + published.warnings.front();
+}
+
 task_result_t run_output_group_export_task(const wormedit::song_document_t& snapshot,
                                            const wormedit::output_group_t& group,
                                            wormedit::conversion_request_t& request,
@@ -459,35 +492,21 @@ task_result_t run_output_group_export_task(const wormedit::song_document_t& snap
     auto completed = std::make_shared<output_group_export_task_result_t>();
     if (stop.stop_requested()) {
         completed->message = "Export cancelled before conversion.";
+        completed->severity = notification_severity_t::info;
     } else if (auto staging_error = stage_output_music(snapshot, group, asset_base, stop)) {
         completed->message = *staging_error;
+        completed->severity = stop.stop_requested() ? notification_severity_t::info
+                                                    : notification_severity_t::error;
     } else {
         const auto discovered = discover_staged_export_assets(snapshot, group, asset_base, stop);
         if (!discovered) {
             completed->message = discovered.errors.front();
-            return task_result_t::success(make_task_value(
-                std::shared_ptr<const output_group_export_task_result_t>{std::move(completed)}));
-        }
-        request.staged_assets = discovered.mappings;
-        const auto converted = convert_document(snapshot, request);
-        if (!converted) {
-            const auto error = std::ranges::find_if(converted.diagnostics, [](const auto& diagnostic) {
-                return diagnostic.severity == diagnostic_severity_t::error;
-            });
-            completed->message = error == converted.diagnostics.end()
-                                     ? "Output conversion failed."
-                                     : error->message;
-        } else if (stop.stop_requested()) {
-            completed->message = "Export cancelled before publication.";
+            completed->severity = stop.stop_requested() ? notification_severity_t::info
+                                                        : notification_severity_t::error;
         } else {
-            const auto published =
-                publish_conversion_group_atomic(asset_base, group, request, converted);
-            completed->published = published.published;
-            completed->message = published.published ? "Output group published from the selected revision."
-                                 : published.errors.empty() ? "Output group publication failed."
-                                                             : published.errors.front();
-            if (published.published && !published.warnings.empty())
-                completed->message += " " + published.warnings.front();
+            request.staged_assets = discovered.mappings;
+            complete_output_group_conversion(snapshot, group, request, asset_base, stop,
+                                             *completed);
         }
     }
     return task_result_t::success(make_task_value(

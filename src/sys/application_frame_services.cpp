@@ -140,14 +140,11 @@ void poll_application_jobs(runtime::metadata_asset_t& metadata_assets,
                            runtime::output_group_export_t& output_group_export,
                            document_history_t& history,
                            workspace_controller_t& workspace,
-                           const std::filesystem::path& asset_base,
-                           std::string& status) {
+                           const std::filesystem::path& asset_base) {
     // Metadata runtime consumes and posts each terminal outcome itself.
     static_cast<void>(metadata_assets.poll(history, workspace, asset_base));
-    if (auto completed = resource_copy.poll(history, workspace))
-        status = std::move(*completed);
-    if (auto completed = output_group_export.poll(history))
-        status = std::move(*completed);
+    static_cast<void>(resource_copy.poll(history, workspace));
+    static_cast<void>(output_group_export.poll(history));
 }
 
 auto compose_frame_delta_seconds(std::uint64_t& last_ticks) -> double {

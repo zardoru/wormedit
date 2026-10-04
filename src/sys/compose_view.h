@@ -231,7 +231,8 @@ struct compose_scene_cache_t {
     double viewport_autoscroll_anchor_y_pixels{};
     double viewport_autoscroll_pointer_x_pixels{};
     double viewport_autoscroll_pointer_y_pixels{};
-    std::string status;
+    std::string projection_error;
+    wormedit::notification_severity_t projection_error_severity{wormedit::notification_severity_t::error};
 };
 
 enum class external_player_action_t;

@@ -40,6 +40,20 @@
 
 namespace wormedit::sys {
 
+namespace {
+void report_compose_projection(flattened_workspace_t& flattened, projection_feedback_kind_t producer,
+    wormedit::notification_severity_t severity, std::string message, std::uint64_t object = 0,
+    wormedit::notification_source_t source = wormedit::notification_source_t::document) {
+    flattened.projection_feedback.push_back({producer, object, severity, source, std::move(message)});
+}
+
+void report_compose_diagnostic(flattened_workspace_t& flattened, projection_feedback_kind_t producer,
+    const wormedit::diagnostic_list_t& diagnostics, const char* fallback) {
+    report_compose_projection(flattened, producer, projection_diagnostic_severity(diagnostics),
+        diagnostics.empty() ? std::string{fallback} : diagnostics.front().message);
+}
+} // namespace
+
 auto resolve_compose_paint_cell(
     const wormedit::chart_document_t& chart, const wormedit::editor_hit_test_index_t& index,
     const wormedit::editor_interaction_view_model_t& view, double x, double y,
@@ -1567,8 +1581,8 @@ bool populate_semantic_layer_palette(
         std::clamp<std::size_t>(application_state.semantic_layer_row_count, 1,
                                WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY));
     if (!palette) {
-        flattened.compose.status = "The semantic-layer palette exceeds its UI limit.";
-        view.status_text = flattened.compose.status.c_str();
+        report_compose_projection(flattened, projection_feedback_kind_t::layer_palette,
+            wormedit::notification_severity_t::error, "The semantic-layer palette exceeds its UI limit.");
         return false;
     }
     application_state.semantic_layer_first_row = palette->first_row;
@@ -1654,8 +1668,8 @@ void append_compose_marker(compose_marker_storage_t<T>& storage, std::string_vie
 auto populate_compose_audio_bookmark(compose_marker_storage_t<WormUiComposeAudioBookmarkView>& storage,
                                      const wormedit::bookmark_t& bookmark, WormUiComposeView& view) -> bool {
     if (!bookmark.audio_milliseconds || bookmark.position) {
-        storage.flattened.compose.status = "An audio-time bookmark has inconsistent position data.";
-        view.status_text = storage.flattened.compose.status.c_str();
+        report_compose_projection(storage.flattened, projection_feedback_kind_t::audio_bookmark,
+            wormedit::notification_severity_t::error, "An audio-time bookmark has inconsistent position data.", bookmark.id.value);
         return false;
     }
     if (compose_marker_at_capacity(storage)) return true;
@@ -1672,16 +1686,16 @@ auto populate_compose_beat_bookmark(compose_marker_storage_t<WormUiComposeBookma
                                     const wormedit::bookmark_t& bookmark,
                                     const wormedit::measure_index_t& measures, WormUiComposeView& view) -> bool {
     if (!bookmark.position) {
-        storage.flattened.compose.status = "A beat-anchored bookmark has no valid chart position.";
-        view.status_text = storage.flattened.compose.status.c_str();
+        report_compose_projection(storage.flattened, projection_feedback_kind_t::beat_bookmark_position,
+            wormedit::notification_severity_t::error, "A beat-anchored bookmark has no valid chart position.", bookmark.id.value);
         return false;
     }
     if (compose_marker_at_capacity(storage)) return true;
     const auto measure = std::ranges::find(measures.entries, bookmark.position->measure,
                                           &wormedit::measure_index_entry_t::id);
     if (measure == measures.entries.end() || bookmark.position->row >= measure->row_capacity) {
-        storage.flattened.compose.status = "A beat-anchored bookmark is outside the chart measure geometry.";
-        view.status_text = storage.flattened.compose.status.c_str();
+        report_compose_projection(storage.flattened, projection_feedback_kind_t::beat_bookmark_geometry,
+            wormedit::notification_severity_t::error, "A beat-anchored bookmark is outside the chart measure geometry.", bookmark.id.value);
         return false;
     }
     append_compose_marker(storage, bookmark.label, WormUiComposeBookmarkView{
@@ -1725,8 +1739,8 @@ auto populate_compose_audio_section(compose_marker_storage_t<WormUiComposeAudioS
                                     const wormedit::section_t& section, WormUiComposeView& view) -> bool {
     if (!section.audio_millisecond_span || section.beat_span ||
         section.audio_millisecond_span->second <= section.audio_millisecond_span->first) {
-        storage.flattened.compose.status = "An audio-time section has inconsistent span data.";
-        view.status_text = storage.flattened.compose.status.c_str();
+        report_compose_projection(storage.flattened, projection_feedback_kind_t::audio_section,
+            wormedit::notification_severity_t::error, "An audio-time section has inconsistent span data.", section.id.value);
         return false;
     }
     if (compose_marker_at_capacity(storage)) return true;
@@ -1749,8 +1763,8 @@ auto populate_compose_beat_section(compose_marker_storage_t<WormUiComposeSection
                                    const wormedit::section_t& section,
                                    const wormedit::measure_index_t& measures, WormUiComposeView& view) -> bool {
     if (!section.beat_span) {
-        storage.flattened.compose.status = "A beat-anchored section has no valid chart span.";
-        view.status_text = storage.flattened.compose.status.c_str();
+        report_compose_projection(storage.flattened, projection_feedback_kind_t::beat_section_position,
+            wormedit::notification_severity_t::error, "A beat-anchored section has no valid chart span.", section.id.value);
         return false;
     }
     if (compose_marker_at_capacity(storage)) return true;
@@ -1761,8 +1775,8 @@ auto populate_compose_beat_section(compose_marker_storage_t<WormUiComposeSection
     if (begin_measure == measures.entries.end() || end_measure == measures.entries.end() ||
         section.beat_span->begin.row >= begin_measure->row_capacity ||
         section.beat_span->end.row >= end_measure->row_capacity) {
-        storage.flattened.compose.status = "A beat-anchored section is outside the chart measure geometry.";
-        view.status_text = storage.flattened.compose.status.c_str();
+        report_compose_projection(storage.flattened, projection_feedback_kind_t::beat_section_geometry,
+            wormedit::notification_severity_t::error, "A beat-anchored section is outside the chart measure geometry.", section.id.value);
         return false;
     }
     append_compose_marker(storage, section.label, WormUiComposeSectionView{
@@ -2839,9 +2853,8 @@ auto cached_compose_measures(flattened_workspace_t& flattened,
     auto measure_index = wormedit::build_measure_index(chart);
     if (!std::holds_alternative<wormedit::measure_index_t>(measure_index)) {
         const auto& diagnostics = std::get<wormedit::diagnostic_list_t>(measure_index);
-        flattened.compose.status = diagnostics.empty() ? "The chart measure geometry is invalid."
-                                                       : diagnostics.front().message;
-        flattened.view.compose.status_text = flattened.compose.status.c_str();
+        report_compose_diagnostic(flattened, projection_feedback_kind_t::measure_geometry,
+                                 diagnostics, "The chart measure geometry is invalid.");
         return nullptr;
     }
     cache.cached_measure_index = std::move(std::get<wormedit::measure_index_t>(measure_index));
@@ -2912,7 +2925,7 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         cache.hover.reset();
         cache.focus_note_label_editor = false;
         cache.viewport_autoscroll_active = false;
-        cache.status.clear();
+        cache.projection_error.clear();
         cache.paint_pointer.reset();
         cache.chart = chart.id;
         cache.revision = history.document.revision;
@@ -2927,8 +2940,9 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
             }
         } else {
             const auto& diagnostics = std::get<wormedit::diagnostic_list_t>(built);
-            cache.status = diagnostics.empty() ? "The field layout could not be indexed."
+            cache.projection_error = diagnostics.empty() ? "The field layout could not be indexed."
                                                : diagnostics.front().message;
+            cache.projection_error_severity = projection_diagnostic_severity(diagnostics);
         }
         if (cache.index) {
             cache.kiai_spans = wormedit::sys::project_kiai_spans(
@@ -2948,14 +2962,14 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         }
     }
     if (!cache.index) {
-        flattened.compose.status = cache.status;
-        view.status_text = flattened.compose.status.c_str();
+        report_compose_projection(flattened, projection_feedback_kind_t::field_index,
+                                 cache.projection_error_severity, cache.projection_error);
         return nullptr;
     }
     view.has_bgm_events = !cache.index->bgm_events.empty();
     if (chart.measures.empty()) {
-        flattened.compose.status = "This difficulty has no measures to display.";
-        view.status_text = flattened.compose.status.c_str();
+        report_compose_projection(flattened, projection_feedback_kind_t::empty_measures,
+            wormedit::notification_severity_t::hint, "This difficulty has no measures to display.");
         return nullptr;
     }
 
@@ -3010,13 +3024,8 @@ bool initialize_compose_interaction(const compose_interaction_population_context
     if (!retained_state || retained_state->chart != chart.id) {
         const auto initial = initial_interaction();
         if (!initial.state || !initial.view) {
-            if (!initial.diagnostics.empty()) {
-                flattened.compose.status = initial.diagnostics.front().message;
-            } else {
-                flattened.compose.status =
-                    "This difficulty has no editable lanes to display.";
-            }
-            view.status_text = flattened.compose.status.c_str();
+            report_compose_diagnostic(flattened, projection_feedback_kind_t::initial_interaction,
+                                     initial.diagnostics, "This difficulty has no editable lanes to display.");
             return false;
         }
         retained_state = *initial.state;
@@ -3049,8 +3058,8 @@ bool update_compose_snap_preferences(const compose_interaction_population_contex
             chart.divisions_per_standard_measure, compose_snap_preferences(application_state, chart.id),
             requested_snap_denominator(application_state, chart.id));
         if (!snap) {
-            flattened.compose.status = "The chart snap configuration is invalid.";
-            view.status_text = flattened.compose.status.c_str();
+            report_compose_projection(flattened, projection_feedback_kind_t::snap_configuration,
+                wormedit::notification_severity_t::error, "The chart snap configuration is invalid.");
             return false;
         }
         retained_state->supported_snap_denominators = snap.supported_denominators;
@@ -3080,10 +3089,8 @@ std::optional<wormedit::editor_interaction_view_model_t> inspect_compose_interac
         auto recovered = wormedit::recover_editor_interaction(history, *retained_state);
         if (!recovered.state || !recovered.view) {
             retained_state.reset();
-            flattened.compose.status = recovered.diagnostics.empty()
-                                          ? "The chart field view could not be recovered."
-                                          : recovered.diagnostics.front().message;
-            view.status_text = flattened.compose.status.c_str();
+            report_compose_diagnostic(flattened, projection_feedback_kind_t::recover_interaction,
+                                     recovered.diagnostics, "The chart field view could not be recovered.");
             return std::nullopt;
         }
         retained_state = std::move(*recovered.state);
@@ -3840,10 +3847,8 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
                                                             cache.preview_scene_request, cache.scene_window);
     frame_timing().restore(frame_scene_previous);
     if (!composed.scene || composed.has_errors()) {
-        flattened.compose.status = composed.diagnostics.empty()
-                                               ? "The chart field could not be composed."
-                                               : composed.diagnostics.front().message;
-        view.status_text = flattened.compose.status.c_str();
+        report_compose_diagnostic(flattened, projection_feedback_kind_t::field_scene,
+                                 composed.diagnostics, "The chart field could not be composed.");
         return false;
     }
     const auto& scene = *composed.scene;
@@ -4233,15 +4238,16 @@ void populate_compose_view(flattened_workspace_t& flattened,
     }
     auto& view = flattened.view.compose;
     if (!workspace.selected_chart) {
-        flattened.compose.status = "Choose a difficulty to display its chart field.";
-        view.status_text = flattened.compose.status.c_str();
+        report_compose_projection(flattened, projection_feedback_kind_t::choose_chart,
+            wormedit::notification_severity_t::hint, "Choose a difficulty to display its chart field.", 0,
+            wormedit::notification_source_t::input);
         return;
     }
     const auto chart_it = std::ranges::find(history.document.charts, *workspace.selected_chart,
                                             &wormedit::chart_document_t::id);
     if (chart_it == history.document.charts.end()) {
-        flattened.compose.status = "The selected difficulty is no longer available.";
-        view.status_text = flattened.compose.status.c_str();
+        report_compose_projection(flattened, projection_feedback_kind_t::missing_chart,
+            wormedit::notification_severity_t::warning, "The selected difficulty is no longer available.");
         return;
     }
     const auto& chart = *chart_it;

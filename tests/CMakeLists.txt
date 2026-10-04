@@ -652,6 +652,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_frame_projection_arena_tests
         sys/frame_projection_arena_tests.cpp
         sys/resource_notification_tests.cpp
+        ../src/sys/resource_job_state.cpp
         sys/metadata_notification_tests.cpp
         ../src/sys/sound_usage_projection.cpp
         ../src/sys/frame_timing.cpp

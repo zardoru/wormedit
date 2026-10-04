@@ -3,6 +3,7 @@
 #include "sys/project_import_feedback.h"
 #include "sys/application_startup_feedback.h"
 #include "sys/workspace_edit_feedback.h"
+#include "sys/frontend_notification_sink.h"
 #include <catch2/catch_test_macros.hpp>
 
 using namespace wormedit;
@@ -144,4 +145,82 @@ TEST_CASE("workspace rebind retries without repeating the same revision failure"
     check_drop_notification(entries[0].source == notification_source_t::document);
     check_drop_notification(history.document.revision == 5);
     check_drop_notification(history.undo.empty());
+}
+
+TEST_CASE("frontend notification bridge posts typed errors and unregisters safely", "[event-harness][notification][dialog]") {
+    notification_center_t center;
+    notification_sink_t sink{center};
+    nuklear_event_harness_t frontend;
+    require_drop_notification(frontend.ready());
+    {
+        frontend_notification_sink_t bridge{sink};
+        worm_ui_frontend_notify(WORM_UI_NOTIFICATION_ERROR, WORM_UI_NOTIFICATION_PRODUCER_SYSTEM, "File picker failed.");
+        worm_ui_frontend_notify(WORM_UI_NOTIFICATION_WARNING, WORM_UI_NOTIFICATION_PRODUCER_INPUT, "Selected project path is too long.");
+        worm_ui_frontend_notify(WORM_UI_NOTIFICATION_ERROR, WORM_UI_NOTIFICATION_PRODUCER_SYSTEM, "");
+    }
+    worm_ui_frontend_notify(WORM_UI_NOTIFICATION_ERROR, WORM_UI_NOTIFICATION_PRODUCER_SYSTEM, "Detached callback.");
+    center.drain_inbox(notification_time_t{0});
+    const auto entries = center.snapshot(notification_capacity);
+    require_drop_notification(entries.size() == 2);
+    check_drop_notification(entries[0].severity == notification_severity_t::warning);
+    check_drop_notification(entries[0].source == notification_source_t::input);
+    check_drop_notification(entries[1].severity == notification_severity_t::error);
+    check_drop_notification(entries[1].source == notification_source_t::system);
+}
+
+TEST_CASE("real picker callback errors publish once after consumption", "[event-harness][notification][dialog]") {
+    notification_center_t center;
+    notification_sink_t sink{center};
+    nuklear_event_harness_t frontend;
+    require_drop_notification(frontend.ready());
+    frontend_notification_sink_t bridge{sink};
+    auto generation = worm_ui_frontend_begin_project_dialog_for_testing(WORM_UI_WORKSPACE_ACTION_OPEN_FILE);
+    SDL_SetError("Injected picker failure.");
+    worm_ui_frontend_project_dialog_callback_for_testing(generation, nullptr);
+    center.drain_inbox(notification_time_t{0});
+    check_drop_notification(center.snapshot(notification_capacity).empty());
+    check_drop_notification(worm_ui_frontend_consume_project_dialog_for_testing().kind == WORM_UI_WORKSPACE_ACTION_NONE);
+    center.drain_inbox(notification_time_t{1});
+    auto entries = center.snapshot(notification_capacity);
+    require_drop_notification(entries.size() == 1);
+    check_drop_notification(entries[0].message == "Injected picker failure.");
+    check_drop_notification(entries[0].severity == notification_severity_t::error);
+    check_drop_notification(entries[0].source == notification_source_t::system);
+    static_cast<void>(worm_ui_frontend_consume_project_dialog_for_testing());
+    generation = worm_ui_frontend_begin_project_dialog_for_testing(WORM_UI_WORKSPACE_ACTION_OPEN_FILE);
+    const std::string long_path(WORM_UI_PROJECT_PATH_CAPACITY, 'a');
+    const char* files[]{long_path.c_str(), nullptr};
+    worm_ui_frontend_project_dialog_callback_for_testing(generation, files);
+    static_cast<void>(worm_ui_frontend_consume_project_dialog_for_testing());
+    center.drain_inbox(notification_time_t{2});
+    entries = center.snapshot(notification_capacity);
+    require_drop_notification(entries.size() == 2);
+    check_drop_notification(entries[0].message == "Selected project path is too long.");
+    check_drop_notification(entries[0].severity == notification_severity_t::warning);
+    check_drop_notification(entries[0].source == notification_source_t::input);
+    check_drop_notification(entries[1].count == 1);
+}
+
+TEST_CASE("real picker cancellation stale callback and shutdown stay quiet", "[event-harness][notification][dialog]") {
+    notification_center_t center;
+    notification_sink_t sink{center};
+    nuklear_event_harness_t frontend;
+    require_drop_notification(frontend.ready());
+    frontend_notification_sink_t bridge{sink};
+    const auto cancelled = worm_ui_frontend_begin_project_dialog_for_testing(WORM_UI_WORKSPACE_ACTION_OPEN_FILE);
+    const char* empty_files[]{nullptr};
+    worm_ui_frontend_project_dialog_callback_for_testing(cancelled, empty_files);
+    check_drop_notification(worm_ui_frontend_consume_project_dialog_for_testing().kind == WORM_UI_WORKSPACE_ACTION_NONE);
+    const auto current = worm_ui_frontend_begin_project_dialog_for_testing(WORM_UI_WORKSPACE_ACTION_OPEN_FILE);
+    worm_ui_frontend_project_dialog_callback_for_testing(cancelled, nullptr);
+    check_drop_notification(worm_ui_frontend_consume_project_dialog_for_testing().kind == WORM_UI_WORKSPACE_ACTION_NONE);
+    const char* files[]{"/current.wormedit", nullptr};
+    worm_ui_frontend_project_dialog_callback_for_testing(current, files);
+    const auto accepted = worm_ui_frontend_consume_project_dialog_for_testing();
+    check_drop_notification(accepted.kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE);
+    check_drop_notification(std::string_view{accepted.project_path} == "/current.wormedit");
+    worm_ui_frontend_shutdown();
+    worm_ui_frontend_notify(WORM_UI_NOTIFICATION_ERROR, WORM_UI_NOTIFICATION_PRODUCER_SYSTEM, "Detached after shutdown.");
+    center.drain_inbox(notification_time_t{0});
+    check_drop_notification(center.snapshot(notification_capacity).empty());
 }

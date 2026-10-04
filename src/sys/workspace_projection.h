@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sys/sound_list_projection.h"
+#include "sys/projection_notification_feedback.h"
 #include "ui/frontend.h"
 
 #include <wormedit/core/arena.h>
@@ -87,6 +88,7 @@ struct flattened_workspace_t {
         return owned_arena_ ? owned_arena_->committed_bytes() : 0;
     }
     WormUiWorkspaceView view{};
+    std::vector<projection_feedback_t> projection_feedback;
     // Refresh pointers into inline storage after flatten_workspace returns or this object moves.
     void rebind_view_pointers();
 
@@ -110,7 +112,6 @@ struct flattened_workspace_t {
         } output_group;
     } metadata;
     struct {
-        std::string status;
         std::string hover_tooltip;
         std::string selected_note_label;
         frame_span<WormUiBookmarkChooserRowView> bookmark_chooser_row;

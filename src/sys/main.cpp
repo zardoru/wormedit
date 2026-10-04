@@ -6,6 +6,7 @@
 #include "sys/application_commands.h"
 #include "sys/application_startup.h"
 #include "sys/application_startup_feedback.h"
+#include "sys/frontend_notification_sink.h"
 #include "sys/application_frame_services.h"
 #include "sys/application_frame_projection.h"
 #include "sys/application_command_dispatch.h"
@@ -3806,6 +3807,7 @@ int main(int argc, char** argv) {
 
     if (!wormedit::sys::initialize_application_runtime(runtime))
         return 1;
+    wormedit::sys::frontend_notification_sink_t frontend_notifications{notification_sink};
     auto& window = runtime.window;
 
     auto history = wormedit::make_document_history(std::move(startup.document), 128, true);
@@ -3827,6 +3829,7 @@ int main(int argc, char** argv) {
     std::string status;
     std::string close_feedback;
     wormedit::sys::workspace_edit_feedback_t workspace_edit_feedback;
+    wormedit::sys::projection_notification_feedback_t projection_feedback;
     wormedit::sys::notification_history_runtime_t notification_history;
     WormUiNotificationAction pending_notification{};
     seed_notification_smoke(notifications);
@@ -3849,9 +3852,9 @@ int main(int argc, char** argv) {
         startup.loaded_primary ? std::filesystem::absolute(requested_primary_path).parent_path()
                                : std::filesystem::path{};
     wormedit::task_scheduler_t resource_copy_scheduler(1, 1, wormedit::background_scheduler_options());
-    resource_copy_t resource_copy_runtime;
+    resource_copy_t resource_copy_runtime{notification_sink};
     wormedit::sys::runtime::metadata_asset_t metadata_asset_runtime{notification_sink};
-    output_group_export_t export_runtime;
+    output_group_export_t export_runtime{notification_sink};
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
     wormedit::visual::image_cache_t player_image_cache;
     wormedit::task_scheduler_t player_image_scheduler(1, 4, wormedit::background_scheduler_options());
@@ -4147,8 +4150,7 @@ int main(int argc, char** argv) {
             pending_chart_project_path, pending_close,
             program_preferences.preferences.general.confirm_unsaved_close);
         wormedit::sys::poll_application_jobs(metadata_asset_runtime, resource_copy_runtime,
-                                             export_runtime, history, workspace, asset_base,
-                                             status);
+                                             export_runtime, history, workspace, asset_base);
         const auto compose_viewport_delta_seconds =
             wormedit::sys::compose_frame_delta_seconds(compose_viewport_last_ticks);
         tick_loaded_project_autosave(session_loaded, autosave_loop, history,
@@ -4263,6 +4265,9 @@ int main(int argc, char** argv) {
 #endif
                 });
             wormedit::sys::flattened_workspace_t compare_first_pane(&frame_projection_arena);
+            projection_feedback.publish({history.document.id, history.document.revision,
+                workspace.selected_chart.value_or(wormedit::chart_id_t{}), project_chart_runtime.session_generation},
+                flattened.projection_feedback, notification_sink);
             wormedit::sys::flattened_workspace_t compare_second_pane(&frame_projection_arena);
             int compare_width = 0;
             int compare_height = 0;

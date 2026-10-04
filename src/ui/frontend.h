@@ -1896,6 +1896,14 @@ typedef enum WormUiNotificationSeverity {
     WORM_UI_NOTIFICATION_ERROR
 } WormUiNotificationSeverity;
 
+typedef enum WormUiNotificationProducerSource {
+    WORM_UI_NOTIFICATION_PRODUCER_INPUT,
+    WORM_UI_NOTIFICATION_PRODUCER_SYSTEM
+} WormUiNotificationProducerSource;
+
+typedef void (*WormUiNotificationPostCallback)(void* context, WormUiNotificationSeverity severity,
+    WormUiNotificationProducerSource source, const char* message);
+
 typedef struct WormUiNotificationToastView {
     uint64_t id;
     WormUiNotificationSeverity severity;
@@ -2628,6 +2636,16 @@ typedef struct WormUiWorkspaceAction {
 bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer);
 // Initialize the same event/action frontend without a window or renderer for integration tests.
 bool worm_ui_frontend_init_headless(int width, int height);
+// Called by frontend producers on the UI thread; the callback copies text before
+// returning and must not throw. Shutdown clears the non-owning callback.
+void worm_ui_frontend_set_notification_sink(void* context, WormUiNotificationPostCallback callback);
+void worm_ui_frontend_notify(WormUiNotificationSeverity severity,
+    WormUiNotificationProducerSource source, const char* message);
+// Exercise the real dialog callback handoff without opening a native picker.
+uint64_t worm_ui_frontend_begin_project_dialog_for_testing(WormUiWorkspaceActionKind kind);
+void worm_ui_frontend_project_dialog_callback_for_testing(uint64_t generation,
+    const char* const* files);
+WormUiWorkspaceAction worm_ui_frontend_consume_project_dialog_for_testing(void);
 // Read queued draw text before render clears it; returns required bytes (no terminator).
 size_t worm_ui_frontend_copy_drawn_text_for_testing(char* output, size_t capacity);
 typedef struct WormUiTestingDrawnText {

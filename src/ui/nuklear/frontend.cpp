@@ -122,10 +122,25 @@ struct ProjectDialogState {
     bool ready{};
     std::string path;
     std::string error;
+    WormUiNotificationSeverity severity{WORM_UI_NOTIFICATION_ERROR};
+    WormUiNotificationProducerSource source{WORM_UI_NOTIFICATION_PRODUCER_SYSTEM};
 };
 
 static ProjectDialogState g_project_dialog;
 static std::string g_project_dialog_error;
+static void* g_notification_sink_context{};
+static WormUiNotificationPostCallback g_notification_post{};
+
+void worm_ui_frontend_set_notification_sink(void* context, WormUiNotificationPostCallback callback) {
+    g_notification_sink_context = context;
+    g_notification_post = callback;
+}
+
+void worm_ui_frontend_notify(WormUiNotificationSeverity severity,
+    WormUiNotificationProducerSource source, const char* message) {
+    if (g_notification_post && message && message[0])
+        g_notification_post(g_notification_sink_context, severity, source, message);
+}
 
 struct NewProjectWizardState {
     bool open{};
@@ -204,38 +219,49 @@ static void SDLCALL project_file_dialog_callback(void* userdata,
     if (!generation) return;
     std::string path;
     std::string error;
+    auto severity = WORM_UI_NOTIFICATION_ERROR;
+    auto source = WORM_UI_NOTIFICATION_PRODUCER_SYSTEM;
     if (!files) {
         const auto* sdl_error = SDL_GetError();
         error = sdl_error && sdl_error[0] ? sdl_error : "File picker failed.";
     } else if (files[0]) {
         std::size_t length{};
         while (length < WORM_UI_PROJECT_PATH_CAPACITY && files[0][length]) ++length;
-        if (length == WORM_UI_PROJECT_PATH_CAPACITY)
+        if (length == WORM_UI_PROJECT_PATH_CAPACITY) {
             error = "Selected project path is too long.";
-        else
+            severity = WORM_UI_NOTIFICATION_WARNING;
+            source = WORM_UI_NOTIFICATION_PRODUCER_INPUT;
+        } else
             path.assign(files[0], length);
     }
     std::lock_guard lock{g_project_dialog.mutex};
     if (!g_project_dialog.active || g_project_dialog.generation != *generation) return;
     g_project_dialog.path = std::move(path);
     g_project_dialog.error = std::move(error);
+    g_project_dialog.severity = severity;
+    g_project_dialog.source = source;
     g_project_dialog.ready = true;
 }
 
+static uint64_t begin_project_file_dialog(WormUiWorkspaceActionKind kind) {
+    std::lock_guard lock{g_project_dialog.mutex};
+    if (g_project_dialog.active) return 0;
+    const auto generation = ++g_project_dialog.generation;
+    g_project_dialog.active = true;
+    g_project_dialog.ready = false;
+    g_project_dialog.kind = kind;
+    return generation;
+}
+
 static void start_project_file_dialog(WormUiWorkspaceActionKind kind) {
-    std::uint64_t generation{};
-    {
-        std::lock_guard lock{g_project_dialog.mutex};
-        if (g_project_dialog.active) return;
-        generation = ++g_project_dialog.generation;
-        g_project_dialog.active = true;
-        g_project_dialog.ready = false;
-        g_project_dialog.kind = kind;
-    }
+    const auto generation = begin_project_file_dialog(kind);
+    if (!generation) return;
     auto token = std::unique_ptr<std::uint64_t>{new (std::nothrow) std::uint64_t{generation}};
     if (!token) {
         reset_project_dialog();
         g_project_dialog_error = "File picker could not allocate callback state.";
+        worm_ui_frontend_notify(WORM_UI_NOTIFICATION_ERROR, WORM_UI_NOTIFICATION_PRODUCER_SYSTEM,
+                               g_project_dialog_error.c_str());
         return;
     }
     g_project_dialog_error.clear();
@@ -254,7 +280,7 @@ static void start_project_file_dialog(WormUiWorkspaceActionKind kind) {
 }
 
 static void consume_project_file_dialog(WormUiWorkspaceAction& action) {
-    std::lock_guard lock{g_project_dialog.mutex};
+    std::unique_lock lock{g_project_dialog.mutex};
     if (!g_project_dialog.active || !g_project_dialog.ready) return;
     g_project_dialog.active = false;
     g_project_dialog.ready = false;
@@ -268,6 +294,24 @@ static void consume_project_file_dialog(WormUiWorkspaceAction& action) {
     }
     g_project_dialog.path.clear();
     g_project_dialog.kind = WORM_UI_WORKSPACE_ACTION_NONE;
+    const auto severity = g_project_dialog.severity;
+    const auto source = g_project_dialog.source;
+    lock.unlock();
+    worm_ui_frontend_notify(severity, source, g_project_dialog_error.c_str());
+}
+
+uint64_t worm_ui_frontend_begin_project_dialog_for_testing(WormUiWorkspaceActionKind kind) {
+    return begin_project_file_dialog(kind);
+}
+
+void worm_ui_frontend_project_dialog_callback_for_testing(uint64_t generation, const char* const* files) {
+    project_file_dialog_callback(new std::uint64_t{generation}, files, 0);
+}
+
+WormUiWorkspaceAction worm_ui_frontend_consume_project_dialog_for_testing(void) {
+    WormUiWorkspaceAction action{};
+    consume_project_file_dialog(action);
+    return action;
 }
 
 static bool frontend_event_window_matches(uint32_t window_id, bool allow_zero = false) {
@@ -578,6 +622,7 @@ bool worm_ui_frontend_init_headless(int width, int height) {
 }
 
 void worm_ui_frontend_shutdown(void) {
+    worm_ui_frontend_set_notification_sink(nullptr, nullptr);
     worm_ui_nuklear_reset_sound_import();
     g_save_project_requested = false;
     g_save_project_request_id = 0;
@@ -1648,7 +1693,7 @@ static void render_status_minimap(const WormUiWorkspaceView& view,
 
 static auto workspace_status_line(const WormUiWorkspaceView& view) -> std::string {
     const auto* line = view.notifications.current_text ? view.notifications.current_text : view.status_text;
-    std::string status = !g_project_dialog_error.empty() ? g_project_dialog_error : line;
+    std::string status = line;
     return status;
 }
 

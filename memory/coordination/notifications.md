@@ -10,7 +10,8 @@ authorized full T-221/T-222/T-223 implementation; root approved the N1–N7 path
 
 - T-218, T-219 and T-220 are done in the cards and resume checklist.
 - T-221 is ready for scoped implementation briefs; its T-219 block was stale.
-- T-222 stays **blocked-on T-221**. Do not execute it during this pilot.
+- T-222 stayed **blocked-on T-221** during the documentation-only pilot;
+  implementation scheduling is recorded below after global source review.
 - T-223's T-219 prerequisite is satisfied; execution must wait for the sink
   contract and serialized ownership below. Ready does not mean independent.
 - Only the T-221/T-223 statuses were reconciled in the card file. T-224 and
@@ -64,105 +65,50 @@ versus budget reports, waveform task errors. Do not invent an all-warning or
 all-error fallback. Mixed success plus warning must retain both outcomes and
 original complete text; the exact split/detail policy needs coordinator review.
 
-## Proposed exact ownership extensions and ordered Luna briefs
+## Approved batch ownership and review order
 
-Extensions below were **approved by root for implementation** after the pilot.
-Before each implementation task, record approved paths on its card,
-assign exclusive ownership and read the producer sources for that brief. Every
-brief uses medium Luna, the workflow's full outcome/context/invariants/report
-format, and the positive/negative checks below. Never overlap shared files.
+Root approved N1–N7 supporting paths below; later exact producer extensions
+are recorded on the owning cards before editing. Medium Luna gets an exclusive
+subset and positive/negative brief; Sol reviews actual source and evidence.
 
-1. **N1 / T-221 sink contract.** Own proposed additions to
-   `include/wormedit/core/notifications.h`, `src/core/notifications.cpp`,
-   `tests/core/notifications_tests.cpp`. Specify explicit severity/source posts,
-   empty suppression, exception containment for worker posting and lifetime.
-   Prefer an application-owned non-owning handle only with provable join-before-
-   destruction; otherwise propose safe shared state explicitly. No UI pointers.
-   Positive: ordered exact-byte posts through handle; thread post visible only
-   after drain. Negative: empty value, posting failure, stopped-worker teardown;
-   document/history unchanged. Review API and teardown before N2/N5.
+- N1 sink: `include/wormedit/core/notifications.h`, `src/core/notifications.cpp`,
+  `tests/core/notifications_tests.cpp`. Ordered exact bytes, empty/exception
+  suppression, thread drain timing, join-before-center lifetime.
+- N2 dispatch: `src/sys/application_command_dispatch.h/.cpp`, proposed
+  `tests/sys/application_command_notification_tests.cpp`, `tests/CMakeLists.txt`.
+  Typed diagnostic/outcome metadata, no callback duplicates or lost rejection.
+- N3 globals: `src/sys/main.cpp`, `src/sys/metadata_actions.h/.cpp`,
+  `src/sys/options_runtime.h/.cpp`, proposed `tests/sys/application_command_notification_tests.cpp`,
+  and exact additional producer/bridge paths and tests
+  approved on T-221. Review every producer, invalid/stale unchanged-state case,
+  exact dynamic diagnostic and call order before claiming global completion.
+- N4 input/actions/projection/dialog: `src/sys/compose_input.h/.cpp`,
+  `src/sys/compose_actions.h/.cpp`, `src/sys/compose_view.h/.cpp`,
+  `src/sys/timing_view.h/.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`,
+  plus approved main/dispatch integration, `tests/core/notifications_tests.cpp`,
+  `tests/ui/nuklear_notification_state_tests.cpp`, new
+  `tests/sys/compose_notification_tests.cpp`, `tests/CMakeLists.txt`.
+  Typed success plus later navigation hint keeps success; picker posts once;
+  projection suppression uses identity/revision/producer edges, not timed dedupe.
+- N5 autosave/recovery: `src/core/autosave_loop.cpp`,
+  `include/wormedit/core/autosave_loop.h`, `tests/core/autosave_loop_tests.cpp`,
+  `src/sys/platform_recovery.h/.cpp`, `src/sys/application_frame_services.h/.cpp`,
+  `src/sys/main.cpp`. Failure/fallback/retry once; idle quiet; safe worker join.
+- N6 resource/export: `src/sys/compose_actions.cpp`, `src/sys/resource_job_state.h/.cpp`,
+  `src/sys/metadata_asset_runtime.h/.cpp`, `src/sys/application_frame_services.h/.cpp`,
+  `src/sys/main.cpp`, new `tests/sys/resource_notification_tests.cpp`, `tests/CMakeLists.txt`.
+  Typed task failure/cancel/publication, stale never relinks, terminal poll once.
+- N7 audio/decode: `src/sys/audio_transport_frame.h/.cpp`,
+  `src/sys/audio_source_registration.h/.cpp`, `src/sys/waveform_analysis_runtime.h/.cpp`,
+  `src/sys/main.cpp`, new `tests/sys/audio_notification_tests.cpp`, `tests/CMakeLists.txt`.
+  Device/source/waveform failures typed, unchanged progress quiet, cleanup preserved.
 
-2. **N2 / T-221 command dispatch.** Own
-   `src/sys/application_command_dispatch.h`,
-   `src/sys/application_command_dispatch.cpp`, `src/sys/main.cpp`, proposed
-   `tests/sys/application_command_notification_tests.cpp`, `tests/CMakeLists.txt`.
-   Replace command-context status seam with sink; use structured result metadata.
-   Keep Compose-owned result conversion behind an explicit temporary bridge for
-   N4; do not double-post diagnostics at shortcut and command boundaries.
-   Positive: undo, redo, semantic success and transport result ordering.
-   Negative: nothing-to-undo, disabled/rejected command, stale rebind, empty
-   external action; preserve rejection atomicity and exact message text.
-
-3. **N3 / T-221 application/global producers.** Own `src/sys/main.cpp`,
-   `src/sys/metadata_actions.h`, `src/sys/metadata_actions.cpp`, proposed
-   `src/sys/options_runtime.h`, `src/sys/options_runtime.cpp`,
-   `tests/sys/application_command_notification_tests.cpp`. Convert preferences,
-   options, shortcuts, timing edits and metadata dispatch function by function.
-   Return typed outcomes where producer information would otherwise be lost.
-   Before further edits, inventory remaining main helpers and propose their
-   exact missing producer/bridge/test paths; project-chart, external-player,
-   dropped-file and startup paths are not permission for arbitrary file edits.
-   Positive: multiple ordered same-frame outcomes, exact dynamic diagnostics.
-   Negative: invalid/stale input leaves document/history unchanged, no empty
-   posts, no worker/Compose migration. T-221 completion waits for all global
-   producers; N3 alone is not a claim that the whole card is done.
-
-4. **N4 / T-222 after reviewed T-221.** Own `src/sys/compose_input.cpp`,
-   `src/sys/compose_input.h`, `src/sys/compose_actions.cpp`,
-   `src/sys/compose_actions.h`, `src/sys/compose_view.cpp`,
-   `src/sys/compose_view.h`, `src/sys/timing_view.cpp`, `src/sys/timing_view.h`,
-   `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`; proposed integration
-   `src/sys/main.cpp`, `src/sys/application_command_dispatch.cpp`,
-   `tests/core/notifications_tests.cpp`, `tests/ui/nuklear_notification_state_tests.cpp`,
-   new `tests/sys/compose_notification_tests.cpp`, `tests/CMakeLists.txt`.
-   Split into sequential input/actions, projection, and dialog briefs before
-   execution; each sub-brief gets only its actual paths. Keep projection side
-   effects edge-triggered by producer identity/revision, not timed dedupe alone.
-   Positive: semantic success then cancel hint keeps success; dialog error posts
-   once, changing a projection diagnostic emits once. Negative: empty/canceled
-   picker and repeated unchanged projection emit nothing; chart/input focus,
-   navigation and history unchanged. Preserve exact text and callback handoff.
-
-5. **N5 / T-223 autosave/recovery.** Own `src/core/autosave_loop.cpp`,
-   proposed `include/wormedit/core/autosave_loop.h`,
-   `tests/core/autosave_loop_tests.cpp`, `src/sys/platform_recovery.cpp`,
-   `src/sys/platform_recovery.h`, proposed `src/sys/application_frame_services.cpp`,
-   `src/sys/application_frame_services.h`, `src/sys/main.cpp`.
-   Post once per terminal result; join scheduler while sink remains alive.
-   Positive: failed publication emits one `error/recovery`; scheduler queue
-   failure also reports. Negative: idle/canceled/successful tick emits no failure,
-   retries retain existing policy, forced worker teardown cannot access UI or
-   destroyed center. Resolve startup scan bridges before marking T-223 complete.
-
-6. **N6 / T-223 export/resource completion, after N4/N5.** Own
-   `src/sys/compose_actions.cpp`, `src/sys/resource_job_state.cpp`,
-   `src/sys/resource_job_state.h`, proposed `src/sys/metadata_asset_runtime.cpp`,
-   `src/sys/metadata_asset_runtime.h`, `src/sys/application_frame_services.cpp`,
-   `src/sys/application_frame_services.h`, `src/sys/main.cpp`, new
-   `tests/sys/resource_notification_tests.cpp`, `tests/CMakeLists.txt`.
-   Carry typed failure/cancel/publication metadata out of tasks; post at one
-   completion consumer. Positive: copy/import/publish exact text and source.
-   Negative: stale revision never relinks, failed atomic publish changes no
-   published artifact, cancel semantics preserved, poll twice never reposts.
-
-7. **N7 / T-223 audio/decode, after N6.** Own
-   `src/sys/audio_transport_frame.cpp`, `src/sys/audio_transport_frame.h`, proposed
-   `src/sys/audio_source_registration.cpp`, `src/sys/audio_source_registration.h`,
-   `src/sys/waveform_analysis_runtime.cpp`, `src/sys/waveform_analysis_runtime.h`,
-   `src/sys/main.cpp`, new `tests/sys/audio_notification_tests.cpp`,
-   `tests/CMakeLists.txt`. Positive: identical underrun repeats merge within 2 s;
-   device/source/waveform failures carry explicit source/severity. Negative:
-   different message/source/severity does not merge; unchanged progress/idle
-   emits nothing; stop/join and device close preserve playback cleanup.
-
-Ordering: N1 → N2 → N3/full T-221 review → N4 → N5 → N6 → N7.
-Root revised scheduling after reviewed N1/N2: N5 autosave may execute alongside
-Sol's N3/N4 glue because T-219 and the sink prerequisite are satisfied and its
-core files/tests have exclusive ownership. N5 Luna does not edit main or frame
-services; Sol wires those after review. T-223 internal construction/post/test
-step order remains unchanged. N6/N7 shared frontend/main paths stay serialized.
-No concurrent main, Compose, notifications core or test-wiring edits. Independent
-inventory reads may run in parallel; root owns integration and resume updates.
+Initial order was N1 → N2 → full globals review → N4 → N5 → N6 → N7.
+Root permitted independent N5, N6a and isolated N7 after reviewed sink/lifetime
+prerequisites; T-223's internal construction/post/test order stayed intact.
+Local file ownership is exclusive; different isolated trees may edit shared
+logical paths, with root reviewing conflicts and serializing integration. Root
+owns main integration, resume and shared status. Manual Xvfb remains unavailable.
 
 ## Verification and root decisions
 
@@ -248,3 +194,19 @@ which remains in the active executor increment. T-221 implementation review is
 complete for globals; its manual visual gate remains pending, so card stays ready.
 Root authorizes N4 after this implementation review without falsely marking T-221
 done. N6b owns compose_actions.cpp exclusively until its reviewed boundary.
+
+Reviewed N6b/projection/dialog: optional-sink resource/export runtimes post starts
+and consumed terminals once; worker cancellation uses stop/task metadata, and
+successful publication warnings remain explicit. Sol wires constructors and removes
+frame reposts. Real filesystem copy links once; failure/stale and cancellation
+fallback checks preserve state/text. Projection records carry producer/object keys
+and typed diagnostics; identity/revision edges reset on repair. Picker callback
+stages typed metadata under mutex and posts after UI consumption/unlock; scoped
+noexcept adapter registers in main and unregisters on shutdown/destruction.
+Actual null/long/canceled/stale callback and shutdown tests pass. App and relevant
+targets build, 9/9 focused checks pass; source/test tidy has only prior violations.
+Logs: `notifications-projection-dialog-build.log`,
+`notifications-projection-dialog-resource-tests.log`, `notifications-picker-tidy.log`.
+N4 input Luna now owns input sources/new tests; actions move to a root-created
+isolated coordinator tree using `/tmp/wormedit-batch-implementation/compose-actions-brief.txt`.
+Sol retains final main/history/recovery glue. Manual gates remain pending.

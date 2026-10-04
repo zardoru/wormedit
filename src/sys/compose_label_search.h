@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/core/notifications.h>
+
 #include <wormedit/core/document.h>
 #include <wormedit/core/interaction.h>
 
@@ -27,6 +29,7 @@ struct label_search_hit_t {
 // Applies a search step to the editor: `first` selects every match, all steps move the cursor
 // to the landing match. Returns the status line.
 [[nodiscard]] auto run_label_search(document_history_t& history, editor_interaction_state_t& state,
-                                    std::string_view text, label_search_step_t step) -> std::string;
+                                    std::string_view text, label_search_step_t step,
+                                    notification_severity_t* severity = nullptr) -> std::string;
 
 } // namespace wormedit::sys

@@ -624,6 +624,17 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         wormedit::core SDL3::SDL3 Catch2::Catch2WithMain)
     if(TARGET wormedit_audio_decoder)
         target_sources(wormedit_frame_timing_tests PRIVATE
+            sys/compose_action_notification_tests.cpp
+            ../src/sys/compose_actions.cpp
+            ../src/sys/compose_bga_actions.cpp
+            ../src/sys/compose_measure_commands.cpp
+            ../src/sys/compose_selection_transform.cpp
+            ../src/sys/compose_label_search.cpp
+            ../src/sys/bookmark_rename_commands.cpp
+            ../src/sys/application_edit_helpers.cpp
+            ../src/sys/resource_job_state.cpp
+            ../src/sys/metadata_asset_runtime.cpp
+            ../src/sys/metadata_drop_state.cpp
             sys/minimap_center_tests.cpp
             sys/compose_beat_fit_tests.cpp
             sys/compose_onset_snap_tests.cpp

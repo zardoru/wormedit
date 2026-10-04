@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/core/notifications.h>
+
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/measure_editor.h>
 
@@ -16,7 +18,8 @@ enum class cursor_measure_command_t { insert_before, insert_after, remove_empty 
 // line, with the core message on rejection.
 [[nodiscard]] auto apply_cursor_measure_command(document_history_t& history,
                                                 editor_interaction_state_t& state,
-                                                cursor_measure_command_t command) -> std::string;
+                                                cursor_measure_command_t command,
+                                                notification_severity_t* severity = nullptr) -> std::string;
 
 // Sets the time signature of the measure that contains the edit cursor to `numerator/denominator`
 // (the measure's length changes with it, as in the signature's own whole-note fraction). Both parts
@@ -25,6 +28,7 @@ enum class cursor_measure_command_t { insert_before, insert_after, remove_empty 
 [[nodiscard]] auto apply_cursor_measure_meter(document_history_t& history,
                                               editor_interaction_state_t& state,
                                               std::string_view numerator,
-                                              std::string_view denominator) -> std::string;
+                                              std::string_view denominator,
+                                              notification_severity_t* severity = nullptr) -> std::string;
 
 } // namespace wormedit::sys

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/core/notifications.h>
+
 #include <wormedit/core/document.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/lane_transform.h>
@@ -20,6 +22,7 @@ enum class selection_transform_t { mirror, rotate_left, rotate_right, shift_earl
 // by one active-snap step; failures keep the core message and leave the document untouched.
 [[nodiscard]] auto apply_selection_transform(document_history_t& history,
                                              const editor_interaction_state_t& state,
-                                             selection_transform_t transform) -> std::string;
+                                             selection_transform_t transform,
+                                             notification_severity_t* severity = nullptr) -> std::string;
 
 } // namespace wormedit::sys

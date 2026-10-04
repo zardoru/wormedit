@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/core/notifications.h>
+
 #include "ui/frontend.h"
 
 #include <wormedit/core/command.h>
@@ -31,6 +33,7 @@ struct recipe_form_preview_t {
     std::uint64_t revision{};
     sv_recipe_t candidate;
     std::string error;
+    notification_severity_t severity{notification_severity_t::hint};
 };
 
 // Builds the preview of `form` applied to the stored recipe `recipe` of `chart`. Nothing is
@@ -45,6 +48,6 @@ struct recipe_form_preview_t {
 // rejected. The document is unchanged on failure.
 [[nodiscard]] auto apply_recipe_form(document_history_t& history, chart_id_t chart,
                                      recipe_id_t recipe, const WormUiTimingRecipeForm& form,
-                                     bool& applied) -> std::string;
+                                     bool& applied, notification_severity_t* severity = nullptr) -> std::string;
 
 } // namespace wormedit::sys

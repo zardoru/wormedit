@@ -7,6 +7,15 @@
 
 namespace wormedit::sys {
 namespace {
+auto rename_feedback_severity(const diagnostic_list_t& diagnostics) -> notification_severity_t {
+    if (diagnostics.empty()) return notification_severity_t::info;
+    switch (diagnostics.front().severity) {
+    case diagnostic_severity_t::info: return notification_severity_t::info;
+    case diagnostic_severity_t::warning: return notification_severity_t::warning;
+    case diagnostic_severity_t::error: return notification_severity_t::error;
+    }
+    return notification_severity_t::error;
+}
 
 auto reject(std::string message) -> bookmark_rename_outcome_t {
     return {.status = std::move(message)};
@@ -39,9 +48,11 @@ auto rename_bookmark(document_history_t& history, std::uint64_t expected_revisio
         return {.status = applied.diagnostics.empty()
                               ? "Bookmark label was unchanged."
                               : applied.diagnostics.front().message,
-                .diagnostics = applied.diagnostics};
+                .diagnostics = applied.diagnostics,
+                .severity = rename_feedback_severity(applied.diagnostics)};
     }
-    return {.accepted = true, .document_changed = true, .status = "Bookmark renamed."};
+    return {.accepted = true, .document_changed = true, .status = "Bookmark renamed.",
+            .severity = notification_severity_t::success};
 }
 
 } // namespace wormedit::sys

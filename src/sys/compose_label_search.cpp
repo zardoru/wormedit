@@ -9,6 +9,18 @@
 namespace wormedit::sys {
 namespace {
 
+void set_feedback_severity(notification_severity_t* output, notification_severity_t value) {
+    if (output) *output = value;
+}
+auto diagnostic_feedback_severity(diagnostic_severity_t value) -> notification_severity_t {
+    switch (value) {
+    case diagnostic_severity_t::info: return notification_severity_t::info;
+    case diagnostic_severity_t::warning: return notification_severity_t::warning;
+    case diagnostic_severity_t::error: return notification_severity_t::error;
+    }
+    return notification_severity_t::error;
+}
+
 struct located_match_t {
     object_id_t id;
     local_position_t position;
@@ -66,19 +78,33 @@ auto find_label_search_hit(const chart_document_t& chart, std::string_view text,
 }
 
 auto run_label_search(document_history_t& history, editor_interaction_state_t& state,
-                      std::string_view text, label_search_step_t step) -> std::string {
+                      std::string_view text, label_search_step_t step,
+                      notification_severity_t* severity) -> std::string {
+    set_feedback_severity(severity, notification_severity_t::warning);
     const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     if (chart == history.document.charts.end()) return "The selected difficulty is no longer available.";
     if (text.empty()) return "Type a label to search for.";
     const auto hit = find_label_search_hit(*chart, text, state.cursor, step);
-    if (!hit) return "No notes have a label containing that text.";
+    if (!hit) {
+        set_feedback_severity(severity, notification_severity_t::hint);
+        return "No notes have a label containing that text.";
+    }
     if (step == label_search_step_t::first) {
         const auto selected = dispatch_editor_action(history, state, select_editor_notes_action_t{hit->matches});
-        if (!selected.accepted) return "The matching notes could not be selected.";
+        if (!selected.accepted) {
+            if (!selected.diagnostics.empty())
+                set_feedback_severity(severity, diagnostic_feedback_severity(selected.diagnostics.front().severity));
+            return "The matching notes could not be selected.";
+        }
     }
     const auto jumped = dispatch_editor_action(
         history, state, jump_edit_cursor_action_t{hit->target, history.document.revision});
-    if (!jumped.accepted) return "The cursor could not move to the matching note.";
+    if (!jumped.accepted) {
+        if (!jumped.diagnostics.empty())
+            set_feedback_severity(severity, diagnostic_feedback_severity(jumped.diagnostics.front().severity));
+        return "The cursor could not move to the matching note.";
+    }
+    set_feedback_severity(severity, notification_severity_t::hint);
     return step == label_search_step_t::first
                ? "Selected " + std::to_string(hit->matches.size()) + " note(s) with that label."
                : "Moved to the matching note.";

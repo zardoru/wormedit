@@ -11,6 +11,18 @@
 namespace wormedit::sys {
 namespace {
 
+void set_feedback_severity(notification_severity_t* output, notification_severity_t value) {
+    if (output) *output = value;
+}
+auto diagnostic_feedback_severity(diagnostic_severity_t value) -> notification_severity_t {
+    switch (value) {
+    case diagnostic_severity_t::info: return notification_severity_t::info;
+    case diagnostic_severity_t::warning: return notification_severity_t::warning;
+    case diagnostic_severity_t::error: return notification_severity_t::error;
+    }
+    return notification_severity_t::error;
+}
+
 auto parse_unsigned(const char* text) -> std::optional<std::uint64_t> {
     if (!text || text[0] == '\0') return std::nullopt;
     const auto* end = text + std::strlen(text);
@@ -190,16 +202,22 @@ auto preview_recipe_form(const chart_document_t& chart, std::uint64_t revision,
     const auto candidate = recipe_from_form(form, recipe);
     if (!candidate) {
         preview.error = "Values must be exact fractions and counts must be whole numbers.";
+        preview.severity = notification_severity_t::warning;
         return preview;
     }
     preview.candidate = *candidate;
     const auto diagnostics = validate_sv_recipe(chart, *candidate);
-    if (!diagnostics.empty()) preview.error = diagnostics.front().message;
+    if (!diagnostics.empty()) {
+        preview.error = diagnostics.front().message;
+        preview.severity = diagnostic_feedback_severity(diagnostics.front().severity);
+    }
     return preview;
 }
 
 auto apply_recipe_form(document_history_t& history, chart_id_t chart_id, recipe_id_t recipe_id,
-                       const WormUiTimingRecipeForm& form, bool& applied) -> std::string {
+                       const WormUiTimingRecipeForm& form, bool& applied,
+                       notification_severity_t* severity) -> std::string {
+    set_feedback_severity(severity, notification_severity_t::warning);
     applied = false;
     const auto chart = std::ranges::find(history.document.charts, chart_id, &chart_document_t::id);
     if (chart == history.document.charts.end()) return "The chart is no longer available.";
@@ -210,7 +228,12 @@ auto apply_recipe_form(document_history_t& history, chart_id_t chart_id, recipe_
     const auto result = apply_sv_recipe_edit(history, history.document.revision,
                                              update_sv_recipe_action_t{chart_id, recipe_id, *candidate});
     applied = result.applied;
-    if (result.applied) return "SV recipe updated.";
+    if (result.applied) {
+        set_feedback_severity(severity, notification_severity_t::success);
+        return "SV recipe updated.";
+    }
+    set_feedback_severity(severity, result.diagnostics.empty() ? notification_severity_t::info
+        : diagnostic_feedback_severity(result.diagnostics.front().severity));
     return result.diagnostics.empty() ? "SV recipe is unchanged." : result.diagnostics.front().message;
 }
 

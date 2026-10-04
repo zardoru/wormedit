@@ -13,6 +13,7 @@
 #include <wormedit/formats/bms.h>
 #include <span>
 #include <wormedit/core/command.h>
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/workspace.h>
@@ -3447,6 +3448,70 @@ void check_note_placement_preserves_cursor(int mode, bool downscroll) {
 } // namespace
 
 namespace {
+void check_ten_key_note_commit() {
+    auto song = cursor_placement_song();
+    auto& chart = song.charts.front();
+    const auto profile = *make_osu_mania_profile(10);
+    chart.lane_layouts.front().layout = profile.layout;
+    chart.input_profile = profile.input;
+    for (auto& measure : chart.measures) measure.notes.clear();
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
+    fixture.application.note_paint_mode_active = true;
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.lane_key_binding_count == 10);
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    for (const auto& binding : profile.input.bindings) {
+        auto action = cursor_placement_action(fixture);
+        action.compose_input_count = 1;
+        action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS,
+            .lane_id = binding.lane.value};
+        (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+            *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
+        expect_compose_test(fixture.interaction->pending_hold.has_value());
+        action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE;
+        (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+            *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
+        expect_compose_test(!fixture.interaction->pending_hold.has_value());
+    }
+    const auto& notes = fixture.history.document.charts.front().measures.front().notes;
+    expect_compose_test(notes.size() == 10);
+    for (const auto& binding : profile.input.bindings)
+        expect_compose_test(std::ranges::count(notes, binding.lane, &note_t::lane) == 1);
+    expect_compose_test(fixture.history.undo.size() == 10);
+}
+
+void check_latched_range_projection(bool downscroll) {
+    compose_test_fixture_t fixture{cursor_placement_song()};
+    fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
+    fixture.application.editor_preferences.scroll_directions[0] = downscroll ? 2U : 1U;
+    fixture.project();
+    auto& state = *fixture.interaction;
+    state.active_snap_denominator = 4;
+    auto action = cursor_placement_action(fixture);
+    action.compose_input_count = 1;
+    action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION;
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        state, viewport, navigation, fixture.application, fixture.cache, 0);
+    expect_compose_test(state.pending_space_range_selection.has_value());
+    fixture.project();
+    const auto& view = fixture.flattened.view.compose;
+    expect_compose_test(view.space_range_preview_visible);
+    const auto height = view.space_range_preview_bounds.bottom - view.space_range_preview_bounds.top;
+    expect_compose_test(std::abs(height - state.pixels_per_standard_measure / 4) < 1e-9);
+    (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        state, viewport, navigation, fixture.application, fixture.cache, 0);
+    expect_compose_test(!state.pending_space_range_selection.has_value());
+    expect_compose_test(state.retained_canvas_selection_range.has_value());
+    const auto range = *state.retained_canvas_selection_range;
+    expect_compose_test(range.end_row - range.begin_row ==
+        fixture.history.document.charts.front().divisions_per_standard_measure / 4);
+    expect_compose_test(fixture.history.undo.empty());
+}
+
 void check_wheel_displacement(bool downscroll, double delta,
                               WormUiComposeViewportInputKind kind, bool playing) {
     INFO("downscroll " << downscroll << ", delta " << delta
@@ -3486,6 +3551,17 @@ void check_wheel_displacement(bool downscroll, double delta,
     expect_compose_test(fixture.history.undo.empty());
 }
 } // namespace
+
+TEST_CASE("Compose 10K lane presses commit Tap notes in every number row lane",
+          "[sys][compose][lane-keys][regression]") {
+    check_ten_key_note_commit();
+}
+
+TEST_CASE("Latched range input projects and commits one snap in both scroll directions",
+          "[sys][compose][range-selection][regression]") {
+    check_latched_range_projection(false);
+    check_latched_range_projection(true);
+}
 
 TEST_CASE("Compose wheel displacement follows the same direction during editing and playback",
           "[sys][compose][playhead-skip][regression]") {
@@ -3564,6 +3640,57 @@ TEST_CASE("Note paint begin input carries the armed sound into the document and 
     (void)dispatch_compose_input_action(silent, fixture.history, *fixture.binding.workspace,
         *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
     expect_compose_test(placed_resource_notifications.empty());
+}
+
+namespace {
+void check_armed_layer_placement(int mode, bool no_layer) {
+    auto song = cursor_placement_song();
+    auto& chart = song.charts.front();
+    chart.semantic_layers = {{.id = layer_id_t{7}, .name = "Chosen"},
+                             {.id = layer_id_t{8}, .name = "Sound default"}};
+    chart.sound_layer_defaults = {{.resource = song.resources.front().id, .layers = {layer_id_t{8}}}};
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
+    fixture.application.semantic_layer_target = no_layer ? std::nullopt : std::optional{layer_id_t{7}};
+    fixture.application.semantic_layer_target_none = no_layer;
+    fixture.application.note_paint_mode_active = mode == 0;
+    fixture.project();
+    const auto sound = fixture.history.document.resources.front().id;
+    auto action = paint_stroke_inputs(fixture, sound.value);
+    if (mode == 1) {
+        place_cursor_at(*fixture.interaction,
+            {fixture.history.document.charts.front().measures.front().id, 240});
+        const auto lane = fixture.history.document.charts.front().lane_layouts.front().layout.lanes.front().id;
+        action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = lane.value};
+        action.compose_inputs[1] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = lane.value};
+    } else if (mode == 2) {
+        action.compose_input_count = 1;
+        action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE;
+        action.compose_inputs[0].object_id = sound.value;
+        action.compose_inputs[0].resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE;
+    }
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
+    const auto& notes = fixture.history.document.charts.front().measures.front().notes;
+    const auto note = std::ranges::find(notes, 240U, [](const auto& value) { return value.position.row; });
+    expect_compose_test(note != notes.end());
+    expect_compose_test(note->semantic_layers == (no_layer ? std::vector<layer_id_t>{}
+                                                          : std::vector{layer_id_t{7}}));
+    expect_compose_test(fixture.history.undo.size() == 1);
+    expect_compose_test(undo_document_command(fixture.history));
+    const auto& restored = fixture.history.document.charts.front().measures.front().notes;
+    expect_compose_test(std::ranges::none_of(restored, [](const auto& value) { return value.position.row == 240; }));
+}
+}
+
+TEST_CASE("Compose layer target arms new pointer keyboard and resource notes with one undo",
+          "[sys][compose][semantic-layer][regression]") {
+    for (const auto mode : {0, 1, 2}) {
+        check_armed_layer_placement(mode, false);
+        check_armed_layer_placement(mode, true);
+    }
 }
 
 TEST_CASE("Compose BMS layout picker includes DP5 without free zones",

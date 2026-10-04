@@ -2988,7 +2988,7 @@ std::uint64_t prepare_compose_projection_state(const compose_final_projection_co
     }
     if (retained_state->retained_canvas_selection_range) {
         const auto range = *retained_state->retained_canvas_selection_range;
-        if (range.begin_row < range.end_row && range.end_row < canvas_rows) {
+        if (range.begin_row < range.end_row && range.end_row <= canvas_rows) {
             view.area_range_available = true;
             view.area_range_virtual = !retained_state->retained_selection_range.has_value();
             view.area_range_begin_row = range.begin_row;
@@ -3048,7 +3048,7 @@ void populate_compose_pending_previews(const compose_final_projection_context_t&
                        0.0, view.viewport_height_pixels),
         };
     }
-    if (retained_state->pending_space_range_selection) {
+    if (retained_state->pending_space_range_selection && interaction_view.pending_space_range_selection) {
         const auto& pending = *retained_state->pending_space_range_selection;
         const auto cursor_row = retained_state->virtual_bms_cursor_row
                                     ? retained_state->virtual_bms_cursor_row
@@ -3056,12 +3056,13 @@ void populate_compose_pending_previews(const compose_final_projection_context_t&
         if (cursor_row) {
             const auto pixels_per_row = interaction_view.pixels_per_standard_measure /
                                         static_cast<double>(chart.divisions_per_standard_measure);
-            const auto first_row = std::min(pending.anchor_canvas_row, *cursor_row);
-            const auto last_row = std::max(pending.anchor_canvas_row, *cursor_row);
+            const auto& preview = *interaction_view.pending_space_range_selection;
+            const auto first_row = preview.first_row;
+            const auto last_row = preview.last_row;
             const auto first_y = compose_project_y(first_row, pixels_per_row,
                                                    interaction_view.viewport_scroll_pixels,
                                                    view.viewport_height_pixels, downscroll);
-            const auto last_y = compose_project_y(last_row + 1, pixels_per_row,
+            const auto last_y = compose_project_y(last_row + (pending.minimum_span_rows == 0 ? 1 : 0), pixels_per_row,
                                                   interaction_view.viewport_scroll_pixels,
                                                   view.viewport_height_pixels, downscroll);
             const auto top = std::min(first_y, last_y);
@@ -3082,7 +3083,9 @@ void populate_compose_pending_previews(const compose_final_projection_context_t&
                                   0.0, view.viewport_height_pixels);
             };
             view.space_range_anchor_y_pixels = row_center(pending.anchor_canvas_row);
-            view.space_range_tail_y_pixels = row_center(*cursor_row);
+            view.space_range_tail_y_pixels = row_center(
+                pending.minimum_span_rows != 0 && pending.anchor_canvas_row == *cursor_row
+                    ? last_row : *cursor_row);
         }
     }
 

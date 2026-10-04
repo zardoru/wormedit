@@ -715,6 +715,17 @@ TEST_CASE("Minimap mapping converts rates offsets snaps and chart endpoints with
     CHECK_FALSE(compose_minimap_target(1.1, 72001, 48000, 44100, *timing.index, 4));
 }
 
+TEST_CASE("Minimap exact starts expire when the fractional cursor changes", "[unit][sys][commands]") {
+    AreaFixture fixture;
+    application_command_state_t application;
+    application.minimap_start_frame = application_command_state_t::minimap_start_frame_t{
+        fixture.state.chart, fixture.history.document.revision, fixture.state.cursor, 44'100,
+        fixture.state.cursor_subrow};
+    REQUIRE(compose_minimap_start_frame(application, fixture.history, &fixture.state));
+    wormedit::set_cursor_subrow(fixture.state, fixture.state.cursor_subrow + 0.125);
+    CHECK_FALSE(compose_minimap_start_frame(application, fixture.history, &fixture.state));
+}
+
 TEST_CASE("Minimap audio-tail starts are bound to chart revision and cursor", "[unit][sys][commands]") {
     AreaFixture fixture;
     application_command_state_t application;

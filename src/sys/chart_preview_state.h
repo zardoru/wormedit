@@ -52,7 +52,8 @@ struct chart_preview_t {
         sdl_audition_output_t& audition_output,
         audio::preview_session_t& preview_session, sdl_preview_output_t& preview_output,
         std::optional<local_position_t> start_cursor = std::nullopt,
-        bool from_beginning = false, std::optional<std::uint64_t> exact_start_frame = std::nullopt)
+        bool from_beginning = false, std::optional<std::uint64_t> exact_start_frame = std::nullopt,
+        double start_cursor_subrow = 0.0)
         -> std::string;
     [[nodiscard]] auto seek(
         std::uint64_t frame, const song_document_t& document,

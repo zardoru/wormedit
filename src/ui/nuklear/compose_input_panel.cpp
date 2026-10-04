@@ -106,6 +106,7 @@ void append_compose_input(
         state.semantic_layer_paint_pointer_active = false;
         state.lane_hold_active = false;
         state.space_range_hold_active = false;
+        state.space_range_latched = false;
         state.space_range_hold_moved = false;
         state.note_move_candidate_active = false;
         state.note_move_active = false;
@@ -249,6 +250,7 @@ void queue_compose_wheel_input(double delta_x, double delta_y, double mouse_x,
         state.semantic_layer_paint_pointer_active = false;
         state.lane_hold_active = false;
         state.space_range_hold_active = false;
+        state.space_range_latched = false;
         state.space_range_hold_moved = false;
         state.note_move_candidate_active = false;
         state.note_move_active = false;
@@ -286,6 +288,7 @@ void queue_compose_middle_click_input(float x, float y) {
 }
 
 void compose_handle_focus_lost_input() {
+    state.alt_wheel_last_event_ms.reset();
     state.tab_navigation.cancel();
     state.raw_tab_down = false;
     state.pinch = {};
@@ -301,6 +304,7 @@ void compose_handle_focus_lost_input() {
     state.lane_hold_active = false;
     state.lane_hold_count = 0;
     state.space_range_hold_active = false;
+    state.space_range_latched = false;
     state.space_range_hold_moved = false;
     state.note_move_candidate_active = false;
     state.note_move_active = false;
@@ -421,6 +425,7 @@ static void cancel_pending_compose_panel_actions(WormUiWorkspaceAction* action) 
     reset_bmson_marker_move_capture();
     state.semantic_layer_paint_pointer_active = false;
     state.space_range_hold_active = false;
+    state.space_range_latched = false;
     state.space_range_hold_moved = false;
     state.note_move_candidate_active = false;
     state.note_move_active = false;
@@ -432,6 +437,7 @@ static void cancel_pending_compose_panel_actions(WormUiWorkspaceAction* action) 
 }
 
 static void reset_compose_revision_state(bool chart_changed, WormUiWorkspaceAction* action) {
+    state.alt_wheel_last_event_ms.reset();
     state.bgm_column_count_edit = {};
     cancel_beat_fit_drag(action);
     if (state.waveform_beat_zero_drag_active) {
@@ -450,6 +456,7 @@ static void reset_compose_revision_state(bool chart_changed, WormUiWorkspaceActi
     state.semantic_layer_paint_pointer_active = false;
     if (chart_changed) state.lane_hold_active = false;
     state.space_range_hold_active = false;
+    state.space_range_latched = false;
     state.space_range_hold_moved = false;
     state.note_move_candidate_active = false;
     state.note_move_active = false;
@@ -467,6 +474,7 @@ static void reset_compose_revision_state(bool chart_changed, WormUiWorkspaceActi
 }
 
 static void clear_inactive_compose_panel(WormUiWorkspaceAction* action) {
+    state.alt_wheel_last_event_ms.reset();
     state.bgm_column_count_edit = {};
     state.cancel_pending = false;
     cancel_beat_fit_drag(action);
@@ -484,6 +492,7 @@ static void clear_inactive_compose_panel(WormUiWorkspaceAction* action) {
     state.lane_hold_active = false;
     state.lane_hold_count = 0;
     state.space_range_hold_active = false;
+    state.space_range_latched = false;
     state.space_range_hold_moved = false;
     state.area_selection_candidate_active = false;
     state.area_selection_active = false;

@@ -215,7 +215,9 @@ struct worm_ui_nuklear_compose_state_t {
     bool lane_hold_active{};
     bool space_range_hold_active{};
     bool space_range_hold_moved{};
+    bool space_range_latched{};
     std::uint8_t shift_range_keys{};
+    std::optional<std::uint64_t> alt_wheel_last_event_ms;
     bool note_move_candidate_active{};
     bool note_move_select_on_release{};
     bool note_move_active{};
@@ -509,6 +511,9 @@ auto worm_ui_nuklear_compose_measure_number(const WormUiComposeView& view, const
     -> std::optional<std::uint64_t>;
 
 // Returns true only for the first navigation edge of a Shift range.
+auto worm_ui_nuklear_alt_wheel_step(worm_ui_nuklear_compose_state_t& state,
+    double delta, bool alt, std::uint64_t now_ms) -> int;
+
 auto worm_ui_nuklear_begin_shift_range(worm_ui_nuklear_compose_state_t& state,
     std::uint8_t shift_keys) -> bool;
 auto worm_ui_nuklear_release_shift_range(worm_ui_nuklear_compose_state_t& state,

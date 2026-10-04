@@ -126,6 +126,18 @@ static bool append_beat_fit_snap_wheel(const ComposeViewportInputContext& input,
     return true;
 }
 
+static bool append_alt_wheel_step(const ComposeViewportInputContext& input,
+                                   const worm_ui_nuklear_compose_wheel_event_t& wheel) {
+    const auto alt = (wheel.modifiers & SDL_KMOD_ALT) != 0;
+    const auto step = worm_ui_nuklear_alt_wheel_step(state, wheel.delta_y, alt, SDL_GetTicks());
+    if (!alt) return false;
+    if (step == 0) return true;
+    const auto chart_delta = wormedit::sys::compose_wheel_scroll_delta(step, input.view->downscroll);
+    append_compose_input(input.action, chart_delta > 0
+        ? WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD : WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD);
+    return true;
+}
+
 static void append_compose_wheel_inputs(const ComposeViewportInputContext& input) {
     const auto& view = *input.view;
     if (!state.action_overflowed && view.scene_available && !view.input_occluded &&
@@ -137,6 +149,7 @@ static void append_compose_wheel_inputs(const ComposeViewportInputContext& input
                 continue;
             }
             if (append_beat_fit_snap_wheel(input, wheel)) continue;
+            if (append_alt_wheel_step(input, wheel)) continue;
             const auto zoom_modifier = (wheel.modifiers & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0;
             if (input.action->compose_viewport_input_count >= WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY)
                 break;

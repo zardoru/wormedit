@@ -2003,6 +2003,7 @@ typedef enum WormUiComposeInputKind {
     // Speed span edge drag: span_edge 0 moves the event to y_pixels, 1 sets its transition length
     // from the event's row to y_pixels; object_id is the Speed event.
     WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT,
+    WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION,
 } WormUiComposeInputKind;
 
 typedef enum WormUiComposeNavigationAction {

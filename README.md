@@ -79,8 +79,8 @@ More detail, including cross-compiling the headless core for Linux and Windows a
 ## Using the editor
 
 1. **Start** from the landing screen: open an existing chart or use the wizard to create a new one or import from another format.
-2. **Compose** notes on the canvas. Select with the pointer, extend a range with Shift, and arm note kinds from the toolbar.
-3. **Play** with Space (or Ctrl+Space from the cursor), slow the rate down for tricky sections, and use the minimap to jump around.
+2. **Compose** notes on the canvas. Select with the pointer, extend a range with Shift, or press Ctrl+Space to start a range and again to finish it. Escape cancels. Alt+scroll moves to the next snap; Ctrl+scroll zooms.
+3. **Play** with Space from the fractional cursor position, slow the rate down for tricky sections, and use the minimap to jump around.
 4. **Time** the song in the Timing tab: BPM, scroll velocity, stops, and the tap-tempo assistant.
 5. **Manage** metadata, resources and difficulties from the Project tab and the Sounds/Images/Measures panels.
 6. **Save.** Saves are atomic and autosaved sessions can be recovered after a crash.

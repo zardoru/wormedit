@@ -325,6 +325,7 @@ struct application_command_state_t {
         std::uint64_t revision{};
         wormedit::local_position_t cursor;
         std::uint64_t frame{};
+        double cursor_subrow{};
     };
     std::optional<minimap_start_frame_t> minimap_start_frame;
     std::function<std::string()> transport_play_pause;

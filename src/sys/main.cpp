@@ -1069,7 +1069,8 @@ void configure_transport_play_pause(auto& state, auto& history, auto& workspace,
             selected_chart(history, workspace), history.document, audition_sources,
             preview_metronome_bindings, audition_output,
             preview_session, preview_output,
-            compose_cursor ? std::optional{compose_cursor->cursor} : std::nullopt, false, exact_start);
+            compose_cursor ? std::optional{compose_cursor->cursor} : std::nullopt, false, exact_start,
+            compose_cursor ? compose_cursor->cursor_subrow : 0.0);
         if (starting && preview_output.playing()) {
             state.minimap_start_frame.reset();
             inline_preview_cursor.capture(compose_cursor);

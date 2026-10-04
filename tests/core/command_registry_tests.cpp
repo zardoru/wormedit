@@ -443,7 +443,7 @@ TEST_CASE("timing insertion commands route through Compose focus",
               .status == command_dispatch_status_t::focus_consumed);
 }
 
-TEST_CASE("transport shortcuts distinguish cursor playback from play from start",
+TEST_CASE("transport shortcuts leave primary Space available for canvas gestures",
           "[unit][core][command_registry][transport]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
     const auto registry = make_default_editor_command_registry(make_invoker(calls));
@@ -466,9 +466,9 @@ TEST_CASE("transport shortcuts distinguish cursor playback from play from start"
                shortcut_primary_modifier_t::meta),
     };
     CHECK(commands == std::array<std::optional<command_id_t>, 4>{
-                          command_id_t{"transport.play_pause"},
+                          std::nullopt,
                           command_id_t{"transport.play_from_start"},
-                          command_id_t{"transport.play_pause"},
+                          std::nullopt,
                           command_id_t{"transport.play_from_start"}});
 }
 

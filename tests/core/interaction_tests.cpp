@@ -95,6 +95,102 @@ auto has_code(const diagnostic_list_t& diagnostics, diagnostic_code_t code) -> b
 
 } // namespace
 
+namespace {
+void expect_cursor_gesture(bool value, std::source_location where = std::source_location::current()) {
+    INFO("Cursor gesture expectation at " << where.line());
+    REQUIRE(value);
+}
+
+void check_fractional_snap_cursor(std::uint64_t row, double subrow,
+                                  interaction_direction_t direction, std::uint64_t expected) {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    place_cursor_on_picked_row(state, {measure_id_t{1}, row});
+    set_cursor_subrow(state, subrow);
+    const auto moved = dispatch_editor_action(history, state, move_edit_cursor_action_t{direction});
+    expect_cursor_gesture(moved.accepted);
+    expect_cursor_gesture(state.cursor == local_position_t{
+        measure_id_t{expected / 960 + 1}, expected % 960});
+    expect_cursor_gesture(state.cursor_subrow == 0.0);
+    expect_cursor_gesture(history.undo.empty());
+}
+} // namespace
+
+TEST_CASE("Snap cursor navigation uses strict ceil floor of the fractional cursor",
+          "[unit][core][interaction][alt-wheel]") {
+    check_fractional_snap_cursor(480, 7.0, interaction_direction_t::backward, 480);
+    check_fractional_snap_cursor(480, 7.0, interaction_direction_t::forward, 720);
+    check_fractional_snap_cursor(137, 0.25, interaction_direction_t::backward, 0);
+    check_fractional_snap_cursor(137, 0.25, interaction_direction_t::forward, 240);
+    check_fractional_snap_cursor(480, -7.0, interaction_direction_t::backward, 240);
+    check_fractional_snap_cursor(480, -7.0, interaction_direction_t::forward, 480);
+    check_fractional_snap_cursor(480, 300.0, interaction_direction_t::backward, 720);
+    check_fractional_snap_cursor(480, 300.0, interaction_direction_t::forward, 960);
+    check_fractional_snap_cursor(480, 0.0, interaction_direction_t::backward, 240);
+    check_fractional_snap_cursor(480, 0.0, interaction_direction_t::forward, 720);
+}
+
+TEST_CASE("Latched cursor range begins one snap wide follows navigation and commits",
+          "[unit][core][interaction][ctrl-space]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{501}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}},
+        {.id = object_id_t{502}, .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1}}};
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    place_cursor_on_picked_row(state, {measure_id_t{1}, 480});
+    const space_range_selection_action_t toggle{.minimum_snap_width = true};
+    const auto started = dispatch_editor_action(history, state, toggle);
+    expect_cursor_gesture(started.accepted);
+    const auto& initial = *started.view->pending_space_range_selection;
+    expect_cursor_gesture(initial.first_row == 480 && initial.last_row == 720);
+    expect_cursor_gesture(*initial.notes == std::vector<object_id_t>{object_id_t{501}});
+    const auto moved = dispatch_editor_action(history, state,
+        jump_edit_cursor_action_t{{measure_id_t{2}, 240}, history.document.revision});
+    expect_cursor_gesture(moved.accepted);
+    expect_cursor_gesture(moved.view->pending_space_range_selection->first_row == 480);
+    expect_cursor_gesture(moved.view->pending_space_range_selection->last_row == 1200);
+    const auto committed = dispatch_editor_action(history, state, toggle);
+    expect_cursor_gesture(committed.accepted && !state.pending_space_range_selection);
+    expect_cursor_gesture(state.retained_canvas_selection_range == canvas_row_span_t{480, 1200});
+    expect_cursor_gesture(state.selected_notes == std::vector<object_id_t>{object_id_t{501}, object_id_t{502}});
+    expect_cursor_gesture(history.undo.empty());
+}
+
+TEST_CASE("Latched range commits without movement and Escape cancels its preview",
+          "[unit][core][interaction][ctrl-space]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    const space_range_selection_action_t toggle{.minimum_snap_width = true};
+    expect_cursor_gesture(dispatch_editor_action(history, state, toggle).accepted);
+    expect_cursor_gesture(dispatch_editor_action(history, state, toggle).accepted);
+    expect_cursor_gesture(state.retained_canvas_selection_range == canvas_row_span_t{840, 1080});
+    const auto before = state.retained_canvas_selection_range;
+    expect_cursor_gesture(dispatch_editor_action(history, state, toggle).accepted);
+    expect_cursor_gesture(dispatch_editor_action(history, state, cancel_editor_gesture_action_t{}).accepted);
+    expect_cursor_gesture(!state.pending_space_range_selection);
+    expect_cursor_gesture(state.retained_canvas_selection_range == before);
+}
+
+TEST_CASE("Chart preview starts at the fractional cursor instead of its snapped row",
+          "[unit][core][interaction][fractional-preview]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.bpms.push_back({.id = object_id_t{900}, .position = {measure_id_t{1}, 0},
+                         .beats_per_minute = {120, 1}});
+    const auto timing = build_timing_index(chart);
+    expect_cursor_gesture(bool(timing));
+    const local_position_t cursor{measure_id_t{1}, 480};
+    expect_cursor_gesture(sys::preview_cursor_frame(chart, *timing.index, cursor) ==
+                         std::variant<std::uint64_t, std::string>{std::uint64_t{44'100}});
+    expect_cursor_gesture(sys::preview_cursor_frame(chart, *timing.index, cursor, 7.25) ==
+                         std::variant<std::uint64_t, std::string>{std::uint64_t{44'766}});
+    expect_cursor_gesture(sys::preview_cursor_frame(chart, *timing.index, cursor, -7.25) ==
+                         std::variant<std::uint64_t, std::string>{std::uint64_t{43'434}});
+    expect_cursor_gesture(std::holds_alternative<std::string>(sys::preview_cursor_frame(
+        chart, *timing.index, cursor, std::numeric_limits<double>::infinity())));
+}
+
 TEST_CASE("Escape restoration returns the Compose cursor to its preplay position",
           "[unit][core][interaction][transport]") {
     auto history = make_document_history(make_song());

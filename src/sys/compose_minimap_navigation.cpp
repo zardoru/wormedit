@@ -97,7 +97,7 @@ void retain_compose_minimap_start(application_command_state_t& application,
     if (static_cast<long double>(target.frame) / audio::output_sample_rate <=
         static_cast<long double>(end.seconds->numerator) / end.seconds->denominator) return;
     application.minimap_start_frame = application_command_state_t::minimap_start_frame_t{
-        state.chart, history.document.revision, state.cursor, target.frame};
+        state.chart, history.document.revision, state.cursor, target.frame, state.cursor_subrow};
 }
 auto compose_minimap_start_frame(application_command_state_t& application,
     const document_history_t& history, const editor_interaction_state_t* state)
@@ -105,7 +105,8 @@ auto compose_minimap_start_frame(application_command_state_t& application,
     const auto& pending = application.minimap_start_frame;
     if (!pending) return std::nullopt;
     if (!state || state->chart != pending->chart || history.document.revision != pending->revision ||
-        state->cursor != pending->cursor || state->virtual_bms_cursor_row) {
+        state->cursor != pending->cursor || state->cursor_subrow != pending->cursor_subrow ||
+        state->virtual_bms_cursor_row) {
         application.minimap_start_frame.reset();
         return std::nullopt;
     }

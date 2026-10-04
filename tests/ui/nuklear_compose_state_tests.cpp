@@ -1050,6 +1050,30 @@ TEST_CASE("Pinch invalid ratios context changes and overflow cancel retained inp
     expect_inline(!gesture.active && gesture.count == 0);
 }
 
+TEST_CASE("Alt wheel snaps once per burst and rearms on quiet zero or modifier release",
+          "[frontend][alt-wheel]") {
+    worm_ui_nuklear_compose_state_t state;
+    expect_inline(worm_ui_nuklear_alt_wheel_step(state, 0.125, true, 100) == 1);
+    expect_inline(worm_ui_nuklear_alt_wheel_step(state, 0.25, true, 110) == 0);
+    expect_inline(worm_ui_nuklear_alt_wheel_step(state, -0.5, true, 120) == 0);
+    expect_inline(worm_ui_nuklear_alt_wheel_step(state, -1, true, 269) == 0);
+    expect_inline(worm_ui_nuklear_alt_wheel_step(state, -0.125, true, 419) == -1);
+    expect_inline(worm_ui_nuklear_alt_wheel_step(state, 0, true, 420) == 0);
+    expect_inline(worm_ui_nuklear_alt_wheel_step(state, 0.25, true, 421) == 1);
+    expect_inline(worm_ui_nuklear_alt_wheel_step(state, 0.25, false, 422) == 0);
+    expect_inline(worm_ui_nuklear_alt_wheel_step(state, -0.25, true, 423) == -1);
+}
+
+TEST_CASE("Latched range selection survives Shift release",
+          "[frontend][ctrl-space]") {
+    worm_ui_nuklear_compose_state_t state;
+    state.space_range_hold_active = true;
+    state.space_range_latched = true;
+    expect_inline(!worm_ui_nuklear_release_shift_range(state, 1));
+    expect_inline(!worm_ui_nuklear_begin_shift_range(state, 1));
+    expect_inline(state.space_range_hold_active && state.space_range_latched);
+}
+
 TEST_CASE("Tab range release retires the directional repeat before its deadline", "[frontend][tab-repeat][selection]") {
     worm_ui_nuklear_compose_state_t state;
     expect_inline(worm_ui_nuklear_begin_shift_range(state, 3));

@@ -528,6 +528,15 @@ auto space_range_objects(const chart_document_t& chart, const editor_hit_test_in
     return editor_objects_in_row_range(chart, index, first, last - 1, scope);
 }
 
+auto space_range_bounds(const pending_space_range_selection_t& pending,
+                        std::uint64_t cursor_row, std::uint64_t canvas_rows)
+    -> canvas_row_span_t {
+    const auto first = std::min(pending.anchor_canvas_row, cursor_row);
+    const auto minimum_width = std::min(pending.minimum_span_rows, canvas_rows - first);
+    return {first, std::max(std::max(pending.anchor_canvas_row, cursor_row),
+                            first + minimum_width)};
+}
+
 auto make_space_range_preview(const document_history_t& history,
                               const editor_interaction_state_t& state,
                               const view_geometry_t& geometry)
@@ -543,8 +552,7 @@ auto make_space_range_preview(const document_history_t& history,
     if (pending.anchor_canvas_row >= geometry.canvas_rows)
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "Space range anchor lies outside chart geometry")};
-    const auto first = std::min(pending.anchor_canvas_row, geometry.absolute_row);
-    const auto last = std::max(pending.anchor_canvas_row, geometry.absolute_row);
+    const auto [first, last] = space_range_bounds(pending, geometry.absolute_row, geometry.canvas_rows);
     auto queried = space_range_objects(*geometry.chart, *pending.hit_index, first, last,
                                       pending.scope);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&queried)) return *diagnostics;
@@ -2535,7 +2543,8 @@ struct prepared_note_paint_t {
 
 auto prepare_note_paint_document(const document_history_t& history, chart_id_t chart_id,
                                 const note_paint_plan_t& plan, note_kind_t kind,
-                                std::optional<resource_id_t> sound)
+                                std::optional<resource_id_t> sound,
+                                const std::optional<std::vector<layer_id_t>>& armed_layers)
     -> std::variant<prepared_note_paint_t, diagnostic_list_t> {
     const auto first_id = plan.additions.empty()
                               ? std::optional<object_id_t>{}
@@ -2563,8 +2572,8 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
     if (sound && !is_paint_sample_resource(history.document, *sound))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
                                        "paint sound is not an existing sample resource")};
-    const auto layers = sound ? sound_default_layers_for_placement(*prepared_chart, *sound)
-                              : std::vector<layer_id_t>{};
+    const auto layers = armed_layers.value_or(sound
+        ? sound_default_layers_for_placement(*prepared_chart, *sound) : std::vector<layer_id_t>{});
     prepared.painted_notes.reserve(plan.additions.size());
     for (const auto& target : plan.additions) {
         const auto found = prepared_measures.find(target.position.measure.value);
@@ -2612,7 +2621,7 @@ auto end_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
                                  {error(diagnostic_code_t::invalid_id,
                                         "paint gesture contains no note changes")});
     auto prepared = prepare_note_paint_document(context.history, state.chart, plan, state.armed_note_kind,
-                                           pending.sound);
+                                           pending.sound, state.armed_note_layers);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&prepared))
         return diagnostic_result(context.history, state, *diagnostics);
     auto result = std::get<prepared_note_paint_t>(std::move(prepared));
@@ -3043,7 +3052,8 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position)
                                   .kind = placement.tail
                                       ? held_note_kind(state.armed_note_kind)
                                       : state.armed_note_kind,
-                                  .end = placement.tail});
+                                  .end = placement.tail,
+                                  .semantic_layers = state.armed_note_layers.value_or(std::vector<layer_id_t>{})});
     }
     const auto label = placement.adds_note
         ? (placement.tail ? "Place merged hold note" : "Place tap note")
@@ -3300,6 +3310,8 @@ auto begin_space_range_selection(space_range_selection_context_t& context,
         .anchor_canvas_row = context.absolute,
         .mode = action.mode,
         .scope = action.scope,
+        .minimum_span_rows = action.minimum_snap_width
+            ? context.chart.divisions_per_standard_measure / state.active_snap_denominator : 0,
     };
     return space_selection_view_result(make_view(history, state));
 }
@@ -3332,8 +3344,8 @@ auto commit_space_range_selection(space_range_selection_context_t& context)
         return diagnostic_result(history, state, *diagnostics);
     set_selected_objects(
         state, std::move(std::get<std::vector<editor_selection_object_t>>(combined)));
-    const auto first_row = std::min(pending.anchor_canvas_row, context.absolute);
-    const auto last_row = std::max(pending.anchor_canvas_row, context.absolute);
+    const auto first_row = current_view.pending_space_range_selection->first_row;
+    const auto last_row = current_view.pending_space_range_selection->last_row;
     state.retained_canvas_selection_range = first_row < last_row
         ? std::optional{canvas_row_span_t{first_row, last_row}}
         : std::nullopt;
@@ -3484,7 +3496,8 @@ auto commit_virtual_hold(virtual_note_context_t& context,
                                  .kind = placement.tail
                                      ? held_note_kind(context.state.armed_note_kind)
                                      : context.state.armed_note_kind,
-                                 .end = placement.tail});
+                                 .end = placement.tail,
+                                 .semantic_layers = context.state.armed_note_layers.value_or(std::vector<layer_id_t>{})});
     }
     auto command = commit_document_command(
         context.history, std::move(proposed),
@@ -3596,7 +3609,9 @@ auto place_virtual_bms_tap(virtual_note_context_t& context,
                                     resolved.row - resolved.measure_begin_row};
     chart->measures[resolved.measure].notes.push_back(
         {.id = *id, .position = position, .lane = action.lane, .kind = context.state.armed_note_kind,
-         .sound = action.sample});
+         .sound = action.sample,
+         .semantic_layers = context.state.armed_note_layers.value_or(action.sample
+             ? sound_default_layers_for_placement(*chart, *action.sample) : std::vector<layer_id_t>{})});
     auto command = commit_document_command(context.history, std::move(proposed),
                                            "Place tap in virtual BMS measure");
     if (!command)
@@ -3768,7 +3783,8 @@ auto place_tap(tap_placement_context_t& context, const place_tap_action_t& actio
                                      {error(diagnostic_code_t::invalid_id,
                                             "chart object ID sequence is exhausted")});
         measure->notes.push_back({.id = *id, .position = *snapped, .lane = state.active_lane,
-                                  .kind = state.armed_note_kind});
+                                  .kind = state.armed_note_kind,
+                                  .semantic_layers = state.armed_note_layers.value_or(std::vector<layer_id_t>{})});
         label = "Place note";
     }
     auto command = commit_document_command(history, std::move(proposed), std::move(label));

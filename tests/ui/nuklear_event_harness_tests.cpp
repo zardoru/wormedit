@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <string>
+#include <source_location>
 #include <utility>
 
 TEST_CASE("Sound layer confirmation waits for a choice and rejects stale documents",
@@ -53,6 +54,41 @@ auto key_event(SDL_EventType type, SDL_Keycode key, SDL_Scancode scancode, bool 
     event.key.down = type == SDL_EVENT_KEY_DOWN;
     event.key.repeat = repeat;
     return event;
+}
+
+void expect_lane_key(bool value, std::source_location source = std::source_location::current()) {
+    INFO("Lane key expectation at " << source.line());
+    REQUIRE(value);
+}
+
+void check_number_key_placement(bool paint_mode) {
+    nuklear_event_harness_t harness;
+    expect_lane_key(harness.ready());
+    constexpr std::array<SDL_Scancode, 10> keys{SDL_SCANCODE_1, SDL_SCANCODE_2,
+        SDL_SCANCODE_3, SDL_SCANCODE_4, SDL_SCANCODE_5, SDL_SCANCODE_6,
+        SDL_SCANCODE_7, SDL_SCANCODE_8, SDL_SCANCODE_9, SDL_SCANCODE_0};
+    std::array<WormUiComposeLaneKeyBinding, 10> bindings{};
+    for (std::size_t index = 0; index < keys.size(); ++index)
+        bindings[index] = {.scancode = static_cast<std::uint32_t>(keys[index]), .lane_id = index + 1};
+    auto& view = harness.view().compose;
+    view.lane_key_bindings = bindings.data();
+    view.lane_key_binding_count = bindings.size();
+    view.note_paint_mode_active = paint_mode;
+    (void)harness.frame();
+    for (std::size_t index = 0; index < keys.size(); ++index) {
+        INFO("paint mode " << paint_mode << ", lane " << index + 1);
+        const auto press = key_event(SDL_EVENT_KEY_DOWN, index == 9 ? SDLK_0 : SDLK_1 + index, keys[index]);
+        const auto down = harness.frame(std::span{&press, 1});
+        expect_lane_key(down.get().compose_input_count == 1);
+        expect_lane_key(down.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
+        expect_lane_key(down.get().compose_inputs[0].lane_id == index + 1);
+        expect_lane_key(harness.frame().get().compose_input_count == 0);
+        const auto release = key_event(SDL_EVENT_KEY_UP, press.key.key, keys[index]);
+        const auto up = harness.frame(std::span{&release, 1});
+        expect_lane_key(up.get().compose_input_count == 1);
+        expect_lane_key(up.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE);
+        expect_lane_key(up.get().compose_inputs[0].lane_id == index + 1);
+    }
 }
 
 auto button_event(bool down, float x, float y) -> SDL_Event {
@@ -125,6 +161,12 @@ auto delete_shortcut_has_compose_context(const WormUiWorkspaceAction& action) ->
 }
 
 } // namespace
+
+TEST_CASE("Headless 10K number keys complete placement with Select and Tap tools",
+          "[frontend-state][event-harness][lane-keys][regression]") {
+    check_number_key_placement(false);
+    check_number_key_placement(true);
+}
 
 TEST_CASE("Sound layer popup buttons dispatch keep and overwrite choices",
           "[unit][frontend-state][event-harness][sound-note-layers]") {
@@ -305,6 +347,84 @@ void check_snapshot_tags(const WormUiWorkspaceAction& action) {
 }
 
 } // namespace
+
+namespace {
+void expect_latched_input(bool value, std::source_location where = std::source_location::current()) {
+    INFO("Latched input expectation at " << where.line());
+    REQUIRE(value);
+}
+
+auto ctrl_space_frame(nuklear_event_harness_t& harness, bool down = true, bool repeat = false)
+    -> workspace_action_snapshot_t {
+    const auto event = key_event(down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP,
+                                 SDLK_SPACE, SDL_SCANCODE_SPACE, repeat);
+    return harness.frame(std::span{&event, 1}, SDL_KMOD_CTRL);
+}
+
+void check_cursor_wheel_direction(bool downscroll) {
+    nuklear_event_harness_t harness;
+    harness.view().compose.downscroll = downscroll;
+    (void)harness.frame();
+    SDL_Event wheel{};
+    wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.y = 0.125f;
+    wheel.wheel.mouse_x = 480;
+    wheel.wheel.mouse_y = 400;
+    const auto first = harness.frame(std::span{&wheel, 1}, SDL_KMOD_ALT);
+    expect_latched_input(first.get().compose_viewport_input_count == 0);
+    expect_latched_input(first.get().compose_input_count == 1);
+    expect_latched_input(first.get().compose_inputs[0].kind == (downscroll
+        ? WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD : WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD));
+    wheel.wheel.y = -0.125f;
+    expect_latched_input(harness.frame(std::span{&wheel, 1}, SDL_KMOD_ALT).get().compose_input_count == 0);
+    const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_LALT, SDL_SCANCODE_LALT);
+    (void)harness.frame(std::span{&release, 1});
+    const auto next = harness.frame(std::span{&wheel, 1}, SDL_KMOD_ALT);
+    expect_latched_input(next.get().compose_input_count == 1);
+    expect_latched_input(next.get().compose_inputs[0].kind == (downscroll
+        ? WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD : WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD));
+}
+} // namespace
+
+TEST_CASE("Headless Alt wheel latches fractional motion and respects field orientation",
+          "[unit][frontend-state][frontend][event-harness][alt-wheel]") {
+    check_cursor_wheel_direction(false);
+    check_cursor_wheel_direction(true);
+}
+
+TEST_CASE("Headless Ctrl Space toggles range selection independently of key release",
+          "[unit][frontend-state][frontend][event-harness][ctrl-space]") {
+    nuklear_event_harness_t harness;
+    (void)harness.frame();
+    const auto started = ctrl_space_frame(harness);
+    expect_latched_input(started.get().compose_input_count == 1);
+    expect_latched_input(started.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION);
+    expect_latched_input(worm_ui_nuklear_compose_state().space_range_latched);
+    expect_latched_input(ctrl_space_frame(harness, true, true).get().compose_input_count == 0);
+    expect_latched_input(ctrl_space_frame(harness, false).get().compose_input_count == 0);
+    (void)harness.frame();
+    expect_latched_input(worm_ui_nuklear_compose_state().space_range_latched);
+    const auto ended = ctrl_space_frame(harness);
+    expect_latched_input(ended.get().compose_input_count == 1);
+    expect_latched_input(ended.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION);
+    expect_latched_input(!worm_ui_nuklear_compose_state().space_range_hold_active);
+}
+
+TEST_CASE("Headless Escape and focus loss cancel latched selection",
+          "[unit][frontend-state][frontend][event-harness][ctrl-space]") {
+    nuklear_event_harness_t harness;
+    (void)harness.frame();
+    (void)ctrl_space_frame(harness);
+    const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    const auto cancelled = harness.frame(std::span{&escape, 1});
+    expect_latched_input(cancelled.get().compose_input_count != 0);
+    expect_latched_input(!worm_ui_nuklear_compose_state().space_range_latched);
+    (void)ctrl_space_frame(harness);
+    SDL_Event lost{};
+    lost.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+    (void)harness.frame(std::span{&lost, 1});
+    expect_latched_input(!worm_ui_nuklear_compose_state().space_range_latched);
+}
 
 TEST_CASE("Headless frontend isolates scripted Ctrl wheel zoom and release",
           "[unit][frontend-state][frontend][event-harness]") {

@@ -93,9 +93,24 @@ auto worm_ui_nuklear_begin_shift_range(worm_ui_nuklear_compose_state_t& state,
 
 auto worm_ui_nuklear_release_shift_range(worm_ui_nuklear_compose_state_t& state,
     std::uint8_t released_key) -> bool {
-    if (!state.space_range_hold_active || released_key == 0) return false;
+    if (!state.space_range_hold_active || state.space_range_latched || released_key == 0) return false;
     state.shift_range_keys &= static_cast<std::uint8_t>(~released_key);
     return state.shift_range_keys == 0;
+}
+
+auto worm_ui_nuklear_alt_wheel_step(worm_ui_nuklear_compose_state_t& state,
+    double delta, bool alt, std::uint64_t now_ms) -> int {
+    if (!alt || delta == 0.0) {
+        state.alt_wheel_last_event_ms.reset();
+        return 0;
+    }
+    if (!std::isfinite(delta)) return 0;
+    const auto previous = state.alt_wheel_last_event_ms;
+    state.alt_wheel_last_event_ms = now_ms;
+    // SDL generally emits no terminating zero event: a quiet interval ends the burst.
+    constexpr std::uint64_t quiet_interval_ms = 150;
+    if (previous && now_ms >= *previous && now_ms - *previous < quiet_interval_ms) return 0;
+    return delta > 0.0 ? 1 : -1;
 }
 
 namespace {

@@ -261,6 +261,7 @@ struct editor_object_audition_request_t {
 struct space_range_selection_action_t {
     editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
     editor_selection_scope_t scope{};
+    bool minimum_snap_width{};
 };
 
 struct begin_editor_area_selection_action_t {
@@ -535,6 +536,7 @@ struct pending_space_range_selection_t {
     std::uint64_t anchor_canvas_row{};
     editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
     editor_selection_scope_t scope{};
+    std::uint64_t minimum_span_rows{};
 };
 
 struct space_range_selection_preview_t {
@@ -587,6 +589,8 @@ struct editor_interaction_state_t {
     chart_id_t chart;
     lane_id_t active_lane;
     note_kind_t armed_note_kind{note_kind_t::tap};
+    // An explicit palette target overrides sound defaults; an empty vector means No layer.
+    std::optional<std::vector<layer_id_t>> armed_note_layers;
     local_position_t cursor;
     std::optional<std::uint64_t> virtual_bms_cursor_row;
     // Non-authoring signed offset, in chart rows, from `cursor` to where it is drawn: set while

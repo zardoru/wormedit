@@ -29,6 +29,15 @@ the fractional offset and choosing a lane valid at that position.
 
 ## Traced movement paths
 
+Alt+scroll moves to the next snap strictly above or below the fractional cursor
+position. One wheel burst produces one step; 150 ms without wheel events, a zero
+delta, or releasing Alt rearms it. Ctrl+scroll retains its zoom binding.
+
+Ctrl+Space starts a latched range one snap wide. Its tail follows cursor
+navigation and scrolling until Ctrl+Space commits it or Escape cancels it.
+Releasing the keys leaves the range active. Space starts playback from the
+fractional row beneath the cursor line.
+
 | Trigger | Path and policy |
 | --- | --- |
 | Wheel / touchpad / toolbar scroll | Compose viewport routing dispatches `scroll_editor_view_action_t`; core scroll synchronizes the logical row beneath the anchor, including keyboard hold previews. |

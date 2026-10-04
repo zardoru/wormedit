@@ -161,6 +161,17 @@ static auto apply_cursor_navigation_target(cursor_navigation_context_t& context,
             .view = std::get<editor_interaction_view_model_t>(std::move(view))};
 }
 
+static auto next_cursor_snap_row(const cursor_navigation_context_t& context,
+                                 interaction_direction_t direction, std::uint64_t step,
+                                 std::uint64_t canvas_rows) -> std::optional<std::uint64_t> {
+    const auto row = static_cast<long double>(context.absolute) + context.state.cursor_subrow;
+    const auto position = row / static_cast<long double>(step);
+    const auto target = (direction == interaction_direction_t::forward
+        ? std::floor(position) + 1.0L : std::ceil(position) - 1.0L) * step;
+    if (!std::isfinite(target) || target < 0.0L || target >= canvas_rows) return std::nullopt;
+    return static_cast<std::uint64_t>(target);
+}
+
 auto move_edit_cursor(cursor_navigation_context_t& context,
                       const move_edit_cursor_action_t& action) -> editor_interaction_result_t {
     if (action.direction != interaction_direction_t::backward &&
@@ -169,7 +180,6 @@ auto move_edit_cursor(cursor_navigation_context_t& context,
             {error(diagnostic_code_t::invalid_id, "unknown cursor direction")});
     const auto step = context.chart.divisions_per_standard_measure /
                       context.state.active_snap_denominator;
-    const auto remainder = context.absolute % step;
     auto canvas_rows = context.index.total_rows;
     if (chart_has_virtual_tail(context.chart)) {
         const auto canvas = build_virtual_canvas(context.chart);
@@ -178,14 +188,7 @@ auto move_edit_cursor(cursor_navigation_context_t& context,
                                                std::get<diagnostic_list_t>(canvas));
         canvas_rows = value->total_rows;
     }
-    std::optional<std::uint64_t> next_row;
-    if (action.direction == interaction_direction_t::backward) {
-        const auto distance = remainder == 0 ? step : remainder;
-        if (context.absolute >= distance) next_row = context.absolute - distance;
-    } else {
-        const auto distance = remainder == 0 ? step : step - remainder;
-        if (distance < canvas_rows - context.absolute) next_row = context.absolute + distance;
-    }
+    const auto next_row = next_cursor_snap_row(context, action.direction, step, canvas_rows);
     if (!next_row)
         return diagnostic_result(context.history, context.state,
             {error(diagnostic_code_t::row_out_of_range,

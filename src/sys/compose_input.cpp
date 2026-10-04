@@ -1390,6 +1390,21 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
     return compose_input_family_result_t::continue_with_result();
 }
 
+void arm_compose_note_layers(wormedit::editor_interaction_state_t& state,
+                             const application_command_state_t& app,
+                             const wormedit::chart_document_t& chart) {
+    state.armed_note_layers.reset();
+    if (app.semantic_layer_target_none) {
+        state.armed_note_layers = std::vector<wormedit::layer_id_t>{};
+        return;
+    }
+    if (!app.semantic_layer_target) return;
+    const auto layer = std::ranges::find(chart.semantic_layers, *app.semantic_layer_target,
+                                        &wormedit::semantic_layer_t::id);
+    if (layer != chart.semantic_layers.end() && !layer->locked)
+        state.armed_note_layers = std::vector{layer->id};
+}
+
 auto semantic_layer_paint_armed(const application_command_state_t& app) -> bool {
     return app.semantic_layer_paint_mode_active &&
            (app.semantic_layer_target.has_value() || app.semantic_layer_target_none);
@@ -1589,16 +1604,19 @@ auto dispatch_compose_selection_input(const WormUiComposeInputAction& input,
             accepted = "Area selection committed.";
             break;
         case WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION:
+        case WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION:
             if (!selection_mode(input.selection_mode).has_value()) {
                 return "Compose Shift range used an unknown selection mode.";
             }
             result = dispatch_editor_action(history, state,
                                             space_range_selection_action_t{
                                                 .mode = *selection_mode(input.selection_mode),
+                                                .minimum_snap_width = input.kind ==
+                                                    WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION,
                                             });
             accepted = state.pending_space_range_selection
-                           ? "Shift range selection started; navigate and release Shift to commit."
-                           : "Shift range selection committed.";
+                           ? "Range selection started."
+                           : "Range selection committed.";
             break;
     default:
         return {};
@@ -2743,7 +2761,8 @@ auto dispatch_resource_pointer(const WormUiComposeInputAction& input,
              .source_lane = spec.kind == resource_placement_kind_t::bgm_event
                                 ? object_id_t{input.lane_id}
                                 : object_id_t{},
-             .kind = spec.kind});
+             .kind = spec.kind,
+             .semantic_layers = context.state.armed_note_layers});
         if (applied.applied) {
             const auto next = next_eligible_placement_resource(context.history.document,
                                                                spec.resource, spec.required_role);
@@ -3261,6 +3280,8 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
     }
     const auto input_chart =
         std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    if (input_chart != history.document.charts.end())
+        arm_compose_note_layers(state, application_state, *input_chart);
     const auto bgm_lane_count = input_chart == history.document.charts.end()
                                     ? std::size_t{}
                                     : input_chart->bgm_source_lanes.size();

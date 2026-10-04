@@ -198,6 +198,34 @@ void expect_pitch(bool value, std::source_location where = std::source_location:
     REQUIRE(value);
 }
 
+auto fractional_preview_start(double subrow, std::optional<std::uint64_t> exact_start = std::nullopt)
+    -> std::uint64_t {
+    using namespace wormedit;
+    song_document_t document{.id = song_id_t{1}, .revision = 1,
+        .charts = {{.id = chart_id_t{1}, .divisions_per_standard_measure = 960,
+            .measures = {{.id = measure_id_t{1}}},
+            .bpms = {{.id = object_id_t{1}, .position = {measure_id_t{1}, 0},
+                      .beats_per_minute = {120, 1}}}}}};
+    audio::decoded_source_registry_t sources;
+    audio::decoded_block_cache_t cache;
+    audio::transport_t transport{cache};
+    audio::preview_transport_bridge_t preview_bridge{transport};
+    audio::audition_transport_bridge_t audition_bridge{transport};
+    audio::preview_session_t session{sources, transport, preview_bridge};
+    audio::audition_session_t audition{sources, transport, audition_bridge};
+    sys::sdl_preview_output_t output{session};
+    sys::sdl_audition_output_t audition_output{audition};
+    expect_pitch(bool(output.open()));
+    sys::runtime::chart_preview_t preview;
+    (void)preview.play_pause(&document.charts.front(), document, sources, {}, audition_output,
+        session, output, local_position_t{measure_id_t{1}, 480}, false, exact_start, subrow);
+    expect_pitch(output.playing());
+    const auto start = preview.resume_frame;
+    preview.stop(audition_output, output);
+    output.close();
+    return start;
+}
+
 struct device_capture_t {
     SDL_AudioDeviceID device;
     std::vector<float> samples = std::vector<float>(44100 * 5);
@@ -494,6 +522,16 @@ void exercise_pitch_output(wormedit::rational_t rate) {
     static_cast<void>(output.stop());
     expect_pitch(output.source_latency_frames() == 0);
 }
+}
+
+TEST_CASE("Chart playback starts from fractional cursor rows and honors exact frame overrides",
+          "[integration][audio][sdl][preview][fractional-preview]") {
+    expect_pitch(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    expect_pitch(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    expect_pitch(fractional_preview_start(7.25) == 44'766);
+    expect_pitch(fractional_preview_start(-7.25) == 43'434);
+    expect_pitch(fractional_preview_start(7.25, 12'345) == 12'345);
 }
 
 TEST_CASE("SDL keep-pitch output preserves sine and supports seeks during EOF drain",

@@ -229,7 +229,8 @@ auto chart_preview_t::play_pause(
     const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings,
     sdl_audition_output_t& audition_output, audio::preview_session_t&,
     sdl_preview_output_t& preview_output, std::optional<local_position_t> start_cursor,
-    bool from_beginning, std::optional<std::uint64_t> exact_start_frame) -> std::string {
+    bool from_beginning, std::optional<std::uint64_t> exact_start_frame,
+    double start_cursor_subrow) -> std::string {
     output_observer = &preview_output;
     if (preview_output.playing() && !from_beginning) {
         const auto frame = preview_output.timeline_frame();
@@ -252,7 +253,7 @@ auto chart_preview_t::play_pause(
         resume_frame = std::min(*exact_start_frame, end_frame);
     } else if (!paused && start_cursor) {
         const auto frame = wormedit::sys::preview_cursor_frame(*selected_chart, *timing,
-                                                               *start_cursor);
+                                                              *start_cursor, start_cursor_subrow);
         if (const auto* error = std::get_if<std::string>(&frame)) return *error;
         resume_frame = std::get<std::uint64_t>(frame);
     }

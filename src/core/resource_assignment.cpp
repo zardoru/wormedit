@@ -290,7 +290,8 @@ auto place_sample_note(resource_placement_context_t& context) -> bool {
     context.measure.notes.push_back({.id = context.first_id, .position = context.position,
         .lane = action.lane, .kind = note_kind_t::tap, .end = std::nullopt,
         .sound = action.resource, .sound_channel_event = std::nullopt,
-        .semantic_layers = sound_default_layers_for_placement(context.chart, action.resource),
+        .semantic_layers = action.semantic_layers.value_or(
+            sound_default_layers_for_placement(context.chart, action.resource)),
         .label = std::nullopt, .branch = std::nullopt, .provenance = {}});
     return true;
 }

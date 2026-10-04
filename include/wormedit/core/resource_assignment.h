@@ -134,6 +134,7 @@ struct place_resource_action_t {
     // Zero keeps an already exact cursor row. Pointer tools pass the active
     // denominator so all placement kinds use the same nearest-row policy.
     std::uint64_t snap_denominator{};
+    std::optional<std::vector<layer_id_t>> semantic_layers;
 };
 
 struct place_virtual_bms_resource_action_t {

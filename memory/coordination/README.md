@@ -114,3 +114,15 @@ executor has handed off its draft; notifications receives the next Luna slot
 for N6b worker completions while the import Sol completes arithmetic and
 roundtrip review. All eight real charts pass draft native reopen and osu export
 reimport; these results are preliminary until reviewed integration.
+
+T-221 startup/seek/rebind follow-up `c93a65d` passes the integrated Debug build
+and four focused regressions (`root-final-global-build.log`,
+`root-final-global-tests.log`). Startup context no longer repeats the platform
+recovery producer's error, seek callbacks own their typed publication, and
+authoritative workspace retries suppress unchanged failure posts. N4
+input/projection/dialog and N6b completions remain active. The final main status
+reference audit is a full-batch gate after those consumers and history actions.
+The completed clean audio worktree is available for a separately owned Compose
+actions branch after the next reviewed notification increment and the import
+coordinator's release; its Sol 6.1 medium coordinator will have a Luna medium
+task list and wait for the current input executor's slot.

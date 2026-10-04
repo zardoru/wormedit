@@ -206,3 +206,13 @@ Remaining T-221: selection/metadata/import/drop and seek bookmark producer seams
 T-222 input/projection/dialog and T-223 resource/export/audio/recovery scan remain.
 No card is marked done. Visual verification remains pending due unavailable Xvfb;
 root forbids escalation. Headless event harness remains the allowed workflow gate.
+
+N6a Luna runtime and Sol metadata edit/selection/transport setting producers are
+reviewed. Runtime posts starts and consumed completion once; frame consumers no
+longer repost metadata results. Actual invalid-audio worker decode failure posts
+one error/import, never links an asset, and quiet poll stays silent. New resource
+fixtures use unique directories to support isolated concurrent integration tests.
+Own app build, 24 focused CTest cases and 2 transport direct cases/15 assertions
+pass; configured tidy has no new violation, docs/diff gates pass. N7 is delegated
+to the timing Sol coordinator in a separate isolated tree; local ownership excludes
+its audio/decode/waveform files. Remaining globals still require producer review.

@@ -5,6 +5,13 @@
 namespace wormedit::sys {
 namespace {
 
+auto publish_transport_feedback(const std::optional<notification_sink_t>& notifications,
+    notification_severity_t severity, std::string message,
+    notification_source_t source = notification_source_t::audio) -> std::string {
+    if (notifications) notifications->post(severity, source, message);
+    return message;
+}
+
 auto stepmania_policy_from_ui(const WormUiWorkspaceAction& action)
     -> std::optional<wormedit::stepmania_export_policy_t> {
     wormedit::stepmania_export_policy_t policy;
@@ -50,80 +57,89 @@ auto stepmania_policy_from_ui(const WormUiWorkspaceAction& action)
     return policy;
 }
 
-auto toggle_metronome_status(application_command_state_t& state) -> std::string {
-    if (!toggle_transport_metronome(state)) return "Metronome is unavailable.";
-    return state.transport_metronome_enabled ? "Metronome enabled." : "Metronome disabled.";
+auto toggle_metronome_status(application_command_state_t& state,
+    const std::optional<notification_sink_t>& notifications) -> std::string {
+    if (!toggle_transport_metronome(state))
+        return publish_transport_feedback(notifications, notification_severity_t::warning, "Metronome is unavailable.");
+    return publish_transport_feedback(notifications, notification_severity_t::success,
+        state.transport_metronome_enabled ? "Metronome enabled." : "Metronome disabled.");
 }
 
 auto set_loop_selection_status(const WormUiWorkspaceAction& action,
-                               application_command_state_t& state) -> std::string {
+                               application_command_state_t& state,
+                               const std::optional<notification_sink_t>& notifications) -> std::string {
     if (!state.transport_set_loop_selection ||
         !state.transport_set_loop_selection(
             wormedit::chart_id_t{action.transport_loop_chart_id},
             action.transport_loop_document_revision,
             action.transport_loop_begin_row, action.transport_loop_end_row,
             action.transport_loop_enabled))
-        return "Loop selection is unavailable or expired.";
-    return action.transport_loop_enabled ? "Loop selection enabled."
-                                         : "Loop selection disabled.";
+        return publish_transport_feedback(notifications, notification_severity_t::warning,
+                                           "Loop selection is unavailable or expired.");
+    return publish_transport_feedback(notifications, notification_severity_t::success,
+        action.transport_loop_enabled ? "Loop selection enabled." : "Loop selection disabled.");
 }
 
 } // namespace
 
 auto dispatch_transport_player_action(
     const WormUiWorkspaceAction& action, application_command_state_t& application_state,
-    wormedit::stepmania_export_policy_t& stepmania_export_policy)
+    wormedit::stepmania_export_policy_t& stepmania_export_policy,
+    std::optional<notification_sink_t> notifications)
     -> std::optional<std::string> {
     switch (action.kind) {
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_TOGGLE_METRONOME:
-        return toggle_metronome_status(application_state);
+        return toggle_metronome_status(application_state, notifications);
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE:
-        return set_transport_rate(application_state, action.transport_rate_index)
-                   ? "Playback rate changed." : "Playback rate unchanged.";
+        if (set_transport_rate(application_state, action.transport_rate_index))
+            return publish_transport_feedback(notifications, notification_severity_t::success, "Playback rate changed.");
+        return publish_transport_feedback(notifications, notification_severity_t::warning, "Playback rate unchanged.");
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH:
         if (!application_state.transport_keep_pitch_available ||
             !application_state.transport_set_keep_pitch ||
             !application_state.transport_set_keep_pitch(action.transport_keep_pitch))
-            return "Keep pitch is unavailable.";
+            return publish_transport_feedback(notifications, notification_severity_t::warning, "Keep pitch is unavailable.");
         application_state.transport_keep_pitch = action.transport_keep_pitch;
-        return action.transport_keep_pitch ? "Keep pitch enabled." : "Keep pitch disabled.";
+        return publish_transport_feedback(notifications, notification_severity_t::success,
+            action.transport_keep_pitch ? "Keep pitch enabled." : "Keep pitch disabled.");
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_LOOP_SELECTION:
-        return set_loop_selection_status(action, application_state);
+        return set_loop_selection_status(action, application_state, notifications);
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE:
-        return application_state.transport_play_pause
-                   ? application_state.transport_play_pause()
-                   : "Chart preview is unavailable.";
+        if (application_state.transport_play_pause) return application_state.transport_play_pause();
+        return publish_transport_feedback(notifications, notification_severity_t::warning, "Chart preview is unavailable.");
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP:
         if (application_state.transport_stop) {
             application_state.transport_stop();
-            return "Audio preview stopped.";
+            return publish_transport_feedback(notifications, notification_severity_t::success, "Audio preview stopped.");
         }
-        return "Audio preview is unavailable.";
+        return publish_transport_feedback(notifications, notification_severity_t::warning, "Audio preview is unavailable.");
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK:
-        return application_state.transport_seek
-                   ? application_state.transport_seek(action.transport_seek_frame)
-                   : "Chart preview seek is unavailable.";
+        if (application_state.transport_seek) return application_state.transport_seek(action.transport_seek_frame);
+        return publish_transport_feedback(notifications, notification_severity_t::warning, "Chart preview seek is unavailable.");
     case WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW:
         application_state.player_preview_visible = !application_state.player_preview_visible;
-        return application_state.player_preview_visible ? "Player preview shown."
-                                                        : "Player preview hidden.";
+        return publish_transport_feedback(notifications, notification_severity_t::info,
+            application_state.player_preview_visible ? "Player preview shown." : "Player preview hidden.");
     case WORM_UI_WORKSPACE_ACTION_SELECT_PLAYER_PREVIEW_SKIN:
         if (action.player_preview_skin > WORM_UI_PLAYER_PREVIEW_SKIN_ARROWS) {
-            return "Unknown player-preview skin ignored.";
+            return publish_transport_feedback(notifications, notification_severity_t::warning, "Unknown player-preview skin ignored.");
         }
         application_state.player_preview_skin =
             static_cast<wormedit::player_preview_skin_t>(action.player_preview_skin);
-        return "Player-preview skin changed.";
+        return publish_transport_feedback(notifications, notification_severity_t::success, "Player-preview skin changed.");
     case WORM_UI_WORKSPACE_ACTION_SET_STEPMANIA_EXPORT_POLICY: {
         const auto candidate = stepmania_policy_from_ui(action);
         if (!candidate) {
-            return "Unknown StepMania export policy ignored.";
+            return publish_transport_feedback(notifications, notification_severity_t::warning,
+                "Unknown StepMania export policy ignored.", notification_source_t::export_);
         }
         stepmania_export_policy = *candidate;
         const auto resolved =
             wormedit::resolve_stepmania_export_policy(stepmania_export_policy);
-        return resolved ? "StepMania export policy updated."
-                        : "StepMania policy needs attention: " + resolved.message;
+        return publish_transport_feedback(notifications, resolved ? notification_severity_t::success
+                                                                : notification_severity_t::warning,
+            resolved ? "StepMania export policy updated." : "StepMania policy needs attention: " + resolved.message,
+            notification_source_t::export_);
     }
     default:
         return std::nullopt;

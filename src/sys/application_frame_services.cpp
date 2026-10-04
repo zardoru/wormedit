@@ -142,8 +142,8 @@ void poll_application_jobs(runtime::metadata_asset_t& metadata_assets,
                            workspace_controller_t& workspace,
                            const std::filesystem::path& asset_base,
                            std::string& status) {
-    if (auto completed = metadata_assets.poll(history, workspace, asset_base))
-        status = std::move(*completed);
+    // Metadata runtime consumes and posts each terminal outcome itself.
+    static_cast<void>(metadata_assets.poll(history, workspace, asset_base));
     if (auto completed = resource_copy.poll(history, workspace))
         status = std::move(*completed);
     if (auto completed = output_group_export.poll(history))

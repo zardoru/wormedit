@@ -644,6 +644,8 @@ endif()
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_frame_projection_arena_tests
         sys/frame_projection_arena_tests.cpp
+        sys/resource_notification_tests.cpp
+        sys/metadata_notification_tests.cpp
         ../src/sys/sound_usage_projection.cpp
         ../src/sys/frame_timing.cpp
         ../src/sys/workspace_projection.cpp
@@ -654,13 +656,21 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/compose_resource_presenter.cpp
         ../src/sys/metadata_view_projection.cpp
         ../src/sys/metadata_drop_state.cpp
-        ../src/sys/metadata_asset_runtime.cpp)
+        ../src/sys/metadata_asset_runtime.cpp
+        ../src/sys/metadata_actions.cpp
+        ../src/sys/application_edit_helpers.cpp)
     target_include_directories(wormedit_frame_projection_arena_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/generated")
     target_compile_definitions(wormedit_frame_projection_arena_tests PRIVATE
         $<$<CONFIG:Debug>:WORMEDIT_FRAME_ALLOCATION_HOOK=1>)
     target_link_libraries(wormedit_frame_projection_arena_tests PRIVATE
         wormedit::core SDL3::SDL3 Catch2::Catch2WithMain)
+    if(WORMEDIT_ENABLE_AUDIO_DECODER)
+        target_link_libraries(wormedit_frame_projection_arena_tests PRIVATE
+            wormedit::audio_decoder)
+        target_compile_definitions(wormedit_frame_projection_arena_tests PRIVATE
+            WORMEDIT_HAS_AUDIO_DECODER=1)
+    endif()
     # Projection tests use drop-state storage, not its desktop event dispatcher.
     # Discard that unreferenced handler rather than substituting frontend behavior.
     if(MSVC)

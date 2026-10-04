@@ -2,6 +2,7 @@
 
 #include "sys/resource_job_state.h"
 
+#include <wormedit/core/notifications.h>
 #include <wormedit/core/workspace.h>
 
 #include <filesystem>
@@ -29,7 +30,7 @@ namespace runtime {
 
 class metadata_asset_t {
 public:
-    metadata_asset_t();
+    explicit metadata_asset_t(std::optional<notification_sink_t> notifications = {});
     ~metadata_asset_t();
 
     metadata_asset_t(const metadata_asset_t&) = delete;

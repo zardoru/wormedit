@@ -5,6 +5,7 @@
 #include <wormedit/formats/conversion.h>
 
 #include <wormedit/audio/playback_rate.h>
+#include <wormedit/core/notifications.h>
 #include <optional>
 #include <string>
 
@@ -54,7 +55,8 @@ inline auto play_stop_transport(application_command_state_t& state)
 // handling, and nullopt when the caller should try another action dispatcher.
 [[nodiscard]] auto dispatch_transport_player_action(
     const WormUiWorkspaceAction& action, application_command_state_t& application_state,
-    wormedit::stepmania_export_policy_t& stepmania_export_policy)
+    wormedit::stepmania_export_policy_t& stepmania_export_policy,
+    std::optional<notification_sink_t> notifications = {})
     -> std::optional<std::string>;
 
 } // namespace wormedit::sys

@@ -1953,28 +1953,41 @@ void dispatch_timing_stage_action(
     }
 }
 
+auto post_workspace_selection_feedback(wormedit::notification_sink_t& notifications,
+    const auto& result, std::string accepted, std::string rejected) -> std::string {
+    if (result) return post_callback_feedback(notifications, wormedit::notification_severity_t::hint,
+                                             wormedit::notification_source_t::input, std::move(accepted));
+    if (!result.diagnostics.empty())
+        return post_callback_feedback(notifications, notification_severity_for(result.diagnostics.front().severity),
+                                      wormedit::notification_source_t::input, result.diagnostics.front().message);
+    return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
+                                  wormedit::notification_source_t::input, std::move(rejected));
+}
+
 auto dispatch_comparison_selection(const WormUiWorkspaceAction& action,
                                    const wormedit::document_history_t& history,
-                                   wormedit::workspace_controller_t& workspace) -> std::string {
+                                   wormedit::workspace_controller_t& workspace,
+                                   wormedit::notification_sink_t& notifications) -> std::string {
     const auto selected = wormedit::chart_id_t{action.compare_chart_id};
     const auto first = workspace.selected_chart.value_or(selected);
     auto second = selected;
     if (first == second) {
         const auto other = std::ranges::find_if(history.document.charts,
             [first](const auto& chart) { return chart.id != first; });
-        if (other == history.document.charts.end()) return "Add another difficulty to compare.";
+        if (other == history.document.charts.end()) return post_callback_feedback(notifications, wormedit::notification_severity_t::hint,
+            wormedit::notification_source_t::input, "Add another difficulty to compare.");
         second = other->id;
     }
     const auto applied = wormedit::apply_workspace_action(
         workspace, history.document, history.document.revision,
         wormedit::workspace_set_comparison_charts_action_t{{first, second}});
-    if (applied) return "Comparison difficulty selected.";
-    return applied.diagnostics.empty() ? "Comparison selection rejected."
-                                       : applied.diagnostics.front().message;
+    return post_workspace_selection_feedback(notifications, applied,
+        "Comparison difficulty selected.", "Comparison selection rejected.");
 }
 
 auto dispatch_sound_resource_selection(const WormUiWorkspaceAction& action,
-    const wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace)
+    const wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
+    wormedit::notification_sink_t& notifications)
     -> std::string {
     auto asset = wormedit::asset_id_t{action.audio_asset_id};
     if (action.audio_resource_id != 0) {
@@ -1982,49 +1995,50 @@ auto dispatch_sound_resource_selection(const WormUiWorkspaceAction& action,
             wormedit::resource_id_t{action.audio_resource_id}, &wormedit::resource_entry_t::id);
         if (resource == history.document.resources.end() ||
             (action.kind == WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET && resource->asset != asset))
-            return "The selected sound changed; select it again.";
+            return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
+            wormedit::notification_source_t::input, "The selected sound changed; select it again.");
         asset = resource->asset;
     } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SELECT_SOUND_RESOURCE) {
-        return "No sound resource was selected.";
+        return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
+            wormedit::notification_source_t::input, "No sound resource was selected.");
     }
-    if (!asset) return "Sound resource selected; no audio asset is available.";
+    if (!asset) return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
+            wormedit::notification_source_t::input, "Sound resource selected; no audio asset is available.");
     const auto applied = wormedit::apply_workspace_action(
         workspace, history.document, history.document.revision,
         wormedit::workspace_select_audio_asset_action_t{
             asset});
-    return applied ? "Audio asset selected; waveform analysis scheduled."
-                   : (applied.diagnostics.empty() ? "Audio asset selection rejected."
-                                                  : applied.diagnostics.front().message);
+    return post_workspace_selection_feedback(notifications, applied,
+        "Audio asset selected; waveform analysis scheduled.", "Audio asset selection rejected.");
 }
 
 auto dispatch_workspace_selection_action(const WormUiWorkspaceAction& action,
                                          const wormedit::document_history_t& history,
-                                         wormedit::workspace_controller_t& workspace)
+                                         wormedit::workspace_controller_t& workspace,
+                                         wormedit::notification_sink_t& notifications)
     -> std::optional<std::string> {
     switch (action.kind) {
     case WORM_UI_WORKSPACE_ACTION_SELECT_SOUND_RESOURCE:
     case WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET:
-        return dispatch_sound_resource_selection(action, history, workspace);
+        return dispatch_sound_resource_selection(action, history, workspace, notifications);
     case WORM_UI_WORKSPACE_ACTION_SELECT_VISUAL_ASSET: {
         const auto applied = wormedit::apply_workspace_action(
             workspace, history.document, history.document.revision,
             wormedit::workspace_select_visual_asset_action_t{
                 wormedit::asset_id_t{action.visual_asset_id}});
-        return applied ? "Image asset selected."
-                       : (applied.diagnostics.empty() ? "Image asset selection rejected."
-                                                      : applied.diagnostics.front().message);
+        return post_workspace_selection_feedback(notifications, applied,
+            "Image asset selected.", "Image asset selection rejected.");
     }
     case WORM_UI_WORKSPACE_ACTION_SWITCH_TAB: {
         const auto applied = wormedit::apply_workspace_action(
             workspace, history.document, history.document.revision,
             wormedit::workspace_switch_tab_action_t{
                 static_cast<wormedit::workspace_tab_t>(action.tab)});
-        return applied ? "Workspace tab changed"
-                       : (applied.diagnostics.empty() ? "Workspace action rejected"
-                                                      : applied.diagnostics.front().message);
+        return post_workspace_selection_feedback(notifications, applied,
+            "Workspace tab changed", "Workspace action rejected");
     }
     case WORM_UI_WORKSPACE_ACTION_COMPARE_SELECT_CHART: {
-        return dispatch_comparison_selection(action, history, workspace);
+        return dispatch_comparison_selection(action, history, workspace, notifications);
     }
     default:
         return std::nullopt;
@@ -3115,7 +3129,7 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
                 action, history, workspace, application_command_state.audio_offset_edits_locked(),
                 sample_rate, audio_offset_drag, audio_offset_drag_tab);
         } else if (const auto common_status = wormedit::sys::dispatch_transport_player_action(
-                       action, application_command_state, stepmania_export_policy)) {
+                       action, application_command_state, stepmania_export_policy, context.notification_sink_ref)) {
             status = *common_status;
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE) {
             status = dispatch_sound_usage_jump(action, history, workspace, compose_interaction_state);
@@ -3140,14 +3154,14 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
                 status = dispatched.diagnostics.front().message;
             }
         } else if (const auto selection_status =
-                       dispatch_workspace_selection_action(action, history, workspace)) {
-            status = *selection_status;
+                       dispatch_workspace_selection_action(action, history, workspace, context.notification_sink_ref)) {
+            static_cast<void>(selection_status);
         } else if (const auto metadata_status = wormedit::sys::dispatch_metadata_action(
                        action, history, workspace, application_command_state.audio_offset_edits_locked(),
                        metadata_drop, metadata_asset_runtime, asset_base,
                        resource_copy_scheduler, resource_copy_runtime.busy(),
-                       export_runtime.busy())) {
-            status = *metadata_status;
+                       export_runtime.busy(), context.notification_sink_ref)) {
+            static_cast<void>(metadata_status);
         } else if (dispatch_timing_workspace_action(action, history, workspace,
                                                    application_command_state, timing_grid,
                                                    timing_edit, context.notification_sink_ref)) {
@@ -3755,7 +3769,7 @@ int main(int argc, char** argv) {
                                : std::filesystem::path{};
     wormedit::task_scheduler_t resource_copy_scheduler(1, 1, wormedit::background_scheduler_options());
     resource_copy_t resource_copy_runtime;
-    wormedit::sys::runtime::metadata_asset_t metadata_asset_runtime;
+    wormedit::sys::runtime::metadata_asset_t metadata_asset_runtime{notification_sink};
     output_group_export_t export_runtime;
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
     wormedit::visual::image_cache_t player_image_cache;

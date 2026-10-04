@@ -1347,6 +1347,61 @@ TEST_CASE("Plain Space transport starts or hard stops without pausing", "[unit][
     expect_play_stop(playing);
 }
 
+namespace {
+void check_transport_notification(bool value) { CHECK(value); }
+void require_transport_notification(bool value) { REQUIRE(value); }
+}
+
+TEST_CASE("transport UI producer posts typed rejection and accepted settings once", "[unit][sys][commands][notification]") {
+    using namespace wormedit;
+    notification_center_t center;
+    notification_sink_t sink{center};
+    application_command_state_t state;
+    stepmania_export_policy_t policy;
+    WormUiWorkspaceAction action{};
+    action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH;
+    const auto rejected = dispatch_transport_player_action(action, state, policy, sink);
+    check_transport_notification(rejected == "Keep pitch is unavailable.");
+    check_transport_notification(!state.transport_keep_pitch);
+    center.drain_inbox(notification_time_t{0});
+    auto entries = center.snapshot(notification_capacity);
+    require_transport_notification(entries.size() == 1);
+    check_transport_notification(entries[0].severity == notification_severity_t::warning);
+    check_transport_notification(entries[0].source == notification_source_t::audio);
+    state.transport_keep_pitch_available = true;
+    state.transport_set_keep_pitch = [](bool) { return true; };
+    action.transport_keep_pitch = true;
+    check_transport_notification(dispatch_transport_player_action(action, state, policy, sink) == "Keep pitch enabled.");
+    check_transport_notification(state.transport_keep_pitch);
+    center.drain_inbox(notification_time_t{0});
+    entries = center.snapshot(notification_capacity);
+    require_transport_notification(entries.size() == 2);
+    check_transport_notification(entries[0].severity == notification_severity_t::success);
+    check_transport_notification(!dispatch_transport_player_action(WormUiWorkspaceAction{}, state, policy, sink));
+    center.drain_inbox(notification_time_t{0});
+    check_transport_notification(center.snapshot(notification_capacity).size() == 2);
+}
+
+TEST_CASE("transport UI playback callback owns notification publication", "[unit][sys][commands][notification]") {
+    using namespace wormedit;
+    notification_center_t center;
+    notification_sink_t sink{center};
+    application_command_state_t state;
+    stepmania_export_policy_t policy;
+    state.transport_play_pause = [&] {
+        sink.post(notification_severity_t::error, notification_source_t::audio, "device failed");
+        return std::string{"device failed"};
+    };
+    WormUiWorkspaceAction action{};
+    action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE;
+    check_transport_notification(dispatch_transport_player_action(action, state, policy, sink) == "device failed");
+    center.drain_inbox(notification_time_t{0});
+    const auto entries = center.snapshot(notification_capacity);
+    require_transport_notification(entries.size() == 1);
+    check_transport_notification(entries[0].severity == notification_severity_t::error);
+    check_transport_notification(entries[0].count == 1);
+}
+
 TEST_CASE("bookmark commands parse to their application kinds", "[unit][sys][commands]") {
     using kind = application_command_kind_t;
     const auto previous = parse_application_command("navigation.previous_bookmark");

@@ -93,6 +93,12 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 - **N2 focused executor ownership (2026-10-04):** `tests/sys/application_commands_tests.cpp` is added to Files owned to adapt existing dispatcher regressions to sink outcomes. N2 Luna exclusively owns this file and `src/sys/application_command_dispatch.cpp/.h`; Sol owns main, transport/external producer glue, and all other sources. Callback results stay producer-owned: dispatch must not infer severity from returned prose or repost a callback's typed notification.
 - **Transport producer extension (2026-10-04):** `src/sys/chart_preview_state.h`, `src/sys/chart_preview_state.cpp`, and `tests/sys/sdl_preview_output_tests.cpp` are added to Files owned. Sol attaches explicit severity/acceptance metadata at preview result creation so existing string callbacks can post once at their main-owned producer bridge; seek success no longer depends on matching returned prose. This does not change playback policy.
 
+- **N6a producer scheduling extension (2026-10-04):** T-221 adds `src/sys/metadata_asset_runtime.h/.cpp` and `tests/sys/resource_notification_tests.cpp` to resolve import/copy start classification at its producer. T-223 already owns these paths plus `tests/CMakeLists.txt`; N6a Luna exclusively owns them, with Sol owning main/metadata action/frame-service consumers. N6a can run before N4 because sink and N5 are reviewed and runtime completion has no Compose projection dependency; shared Compose/resource worker files remain serialized until later N6b.
+
+- **Metadata edit producer extension (2026-10-04):** Sol owns `src/sys/metadata_actions.h/.cpp` and new `tests/sys/metadata_notification_tests.cpp` for explicit edit diagnostic/no-op/success metadata and single producer publication. N6a keeps exclusive runtime/test wiring; Sol defers CMake wiring until that ownership is released. Main consumer changes follow the clean rebase boundary.
+
+- **Transport action producer extension (2026-10-04):** Sol owns `src/sys/transport_player_actions.h/.cpp` plus existing `tests/sys/application_commands_tests.cpp` for typed branch publication of rate/metronome/loop/pitch/preview/export-policy UI actions; callback-returned playback and seek remain explicitly producer-owned, avoiding guessed severity or duplicate posts.
+
 ## T-222 Route Compose, Timing, and dialog messages through notifications
 
 - **Status:** blocked-on T-221

@@ -11,7 +11,7 @@ enum class projection_feedback_kind_t {
     layer_palette, audio_bookmark, beat_bookmark_position, beat_bookmark_geometry,
     audio_section, beat_section_position, beat_section_geometry, measure_geometry,
     field_index, empty_measures, initial_interaction, snap_configuration,
-    recover_interaction, field_scene, choose_chart, missing_chart
+    recover_interaction, field_scene, choose_chart, missing_chart, workspace_view
 };
 
 struct projection_feedback_t {

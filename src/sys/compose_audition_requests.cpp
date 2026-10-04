@@ -10,6 +10,20 @@
 namespace wormedit::sys {
 namespace {
 
+auto audition_diagnostic_severity(diagnostic_severity_t severity) -> notification_severity_t {
+    switch (severity) {
+    case diagnostic_severity_t::info: return notification_severity_t::info;
+    case diagnostic_severity_t::warning: return notification_severity_t::warning;
+    case diagnostic_severity_t::error: return notification_severity_t::error;
+    }
+    return notification_severity_t::error;
+}
+void post_audition_started(const notification_sink_t& notifications, bool started,
+    std::string_view diagnostic, std::string_view success, std::string_view failure) {
+    notifications.post(started ? notification_severity_t::hint : notification_severity_t::error,
+        notification_source_t::audio, started ? success : diagnostic.empty() ? failure : diagnostic);
+}
+
 void pause_preview(audio::preview_session_t& preview_session,
                    sdl_preview_output_t& preview_output,
                    runtime::chart_preview_t& preview_state) {
@@ -29,10 +43,11 @@ void process_object_request(const editor_object_audition_request_t& request,
                             sdl_preview_output_t& preview_output,
                             runtime::chart_preview_t& preview_state,
                             sdl_audition_output_t& audition_output,
-                            std::string& status) {
+                            const notification_sink_t& notifications) {
     if (request.object.kind != editor_selection_object_kind_t::note &&
         request.object.kind != editor_selection_object_kind_t::bgm_event) {
-        status = "Only notes and BGM events can be prepared for audition.";
+        notifications.post(notification_severity_t::warning, notification_source_t::audio,
+            "Only notes and BGM events can be prepared for audition.");
         return;
     }
 
@@ -43,15 +58,15 @@ void process_object_request(const editor_object_audition_request_t& request,
     if (prepared) {
         pause_preview(preview_session, preview_output, preview_state);
         const auto started = audition_output.start(prepared.prepared->clips);
-        status = started                   ? "Audio preview started."
-                 : started.message.empty() ? "Audio preview could not start."
-                                           : started.message;
+        post_audition_started(notifications, static_cast<bool>(started), started.message,
+            "Audio preview started.", "Audio preview could not start.");
     } else if (!prepared.diagnostics.empty()) {
-        status = prepared.diagnostics.front().message;
+        notifications.post(audition_diagnostic_severity(prepared.diagnostics.front().severity),
+            notification_source_t::audio, prepared.diagnostics.front().message);
     } else if (prepared.status == audio::object_audition_status_t::stale_document) {
-        status = "Audio preview request expired after the document changed.";
+        notifications.post(notification_severity_t::warning, notification_source_t::audio, "Audio preview request expired after the document changed.");
     } else {
-        status = "Audio preview could not be prepared.";
+        notifications.post(notification_severity_t::error, notification_source_t::audio, "Audio preview could not be prepared.");
     }
 }
 
@@ -62,7 +77,7 @@ void process_draft_request(const bmson_draft_audition_request_t& request,
                            sdl_preview_output_t& preview_output,
                            runtime::chart_preview_t& preview_state,
                            sdl_audition_output_t& audition_output,
-                           std::string& status) {
+                           const notification_sink_t& notifications) {
     audition_sources.await_pending();
     const auto resolved = audio::resolve_bmson_draft_audition(
         history.document,
@@ -75,14 +90,13 @@ void process_draft_request(const bmson_draft_audition_request_t& request,
     if (resolved) {
         pause_preview(preview_session, preview_output, preview_state);
         const auto started = audition_output.start(resolved.clips);
-        status = started ? "Staged BMSON region audition started."
-                         : started.message.empty()
-                             ? "Staged BMSON region audition could not start."
-                             : started.message;
+        post_audition_started(notifications, static_cast<bool>(started), started.message,
+            "Staged BMSON region audition started.", "Staged BMSON region audition could not start.");
     } else if (!resolved.diagnostics.empty()) {
-        status = resolved.diagnostics.front().message;
+        notifications.post(audition_diagnostic_severity(resolved.diagnostics.front().severity),
+            notification_source_t::audio, resolved.diagnostics.front().message);
     } else {
-        status = "Staged BMSON region audition could not be prepared.";
+        notifications.post(notification_severity_t::error, notification_source_t::audio, "Staged BMSON region audition could not be prepared.");
     }
 }
 
@@ -93,13 +107,13 @@ void process_sound_audition_request(
     audio::decoded_source_registry_t& audition_sources,
     audio::preview_session_t& preview_session, sdl_preview_output_t& preview_output,
     runtime::chart_preview_t& preview_state, sdl_audition_output_t& audition_output,
-    std::string& status) {
+    const notification_sink_t& notifications) {
     const auto resource_id = std::exchange(request, std::nullopt);
     if (!resource_id) return;
     const auto resource = std::ranges::find(history.document.resources, *resource_id,
                                             &resource_entry_t::id);
     if (resource == history.document.resources.end()) {
-        status = "That sound is no longer in the list.";
+        notifications.post(notification_severity_t::warning, notification_source_t::audio, "That sound is no longer in the list.");
         return;
     }
     audition_sources.await_pending();
@@ -107,16 +121,15 @@ void process_sound_audition_request(
     const auto binding = std::ranges::find(bindings, resource->asset,
                                            &audio::audition_source_binding_t::asset);
     if (binding == bindings.end() || binding->output_frame_count == 0) {
-        status = "That sound's audio is not loaded yet.";
+        notifications.post(notification_severity_t::warning, notification_source_t::audio, "That sound's audio is not loaded yet.");
         return;
     }
     pause_preview(preview_session, preview_output, preview_state);
     const std::vector<audio::audition_clip_t> clips{
         {binding->source, 0, binding->output_frame_count, 1.0F}};
     const auto started = audition_output.start(clips);
-    status = started                   ? "Audio preview started."
-             : started.message.empty() ? "Audio preview could not start."
-                                       : started.message;
+    post_audition_started(notifications, static_cast<bool>(started), started.message,
+        "Audio preview started.", "Audio preview could not start.");
 }
 
 void process_compose_audition_requests(
@@ -125,17 +138,17 @@ void process_compose_audition_requests(
     audio::object_audition_controller_t& object_audition,
     audio::preview_session_t& preview_session, sdl_preview_output_t& preview_output,
     runtime::chart_preview_t& preview_state, sdl_audition_output_t& audition_output,
-    std::string& status) {
+    const notification_sink_t& notifications) {
     auto object_request = std::exchange(cache.audition_request, std::nullopt);
     auto draft_request = std::exchange(cache.draft_audition_request, std::nullopt);
     if (object_request) {
         process_object_request(*object_request, history, audition_sources, object_audition,
                                preview_session, preview_output, preview_state, audition_output,
-                               status);
+                               notifications);
     }
     if (draft_request) {
         process_draft_request(*draft_request, history, audition_sources, preview_session,
-                              preview_output, preview_state, audition_output, status);
+                              preview_output, preview_state, audition_output, notifications);
     }
 }
 
@@ -147,17 +160,19 @@ void process_compose_audition_requests(
 
 namespace wormedit::sys {
 
-void process_sound_audition_request(std::optional<resource_id_t>& request, std::string& status) {
-    if (std::exchange(request, std::nullopt)) status = "Audio preview is unavailable in this build.";
+void process_sound_audition_request(std::optional<resource_id_t>& request, const notification_sink_t& notifications) {
+    if (std::exchange(request, std::nullopt)) notifications.post(notification_severity_t::warning, notification_source_t::audio,
+            "Audio preview is unavailable in this build.");
 }
 
 void process_compose_audition_requests(compose_scene_cache_t& cache,
-                                       document_history_t& history, std::string& status) {
+                                       document_history_t& history, const notification_sink_t& notifications) {
     static_cast<void>(history);
     const auto object_request = std::exchange(cache.audition_request, std::nullopt);
     const auto draft_request = std::exchange(cache.draft_audition_request, std::nullopt);
     if (object_request || draft_request) {
-        status = "Audio preview is unavailable in this build.";
+        notifications.post(notification_severity_t::warning, notification_source_t::audio,
+            "Audio preview is unavailable in this build.");
     }
 }
 

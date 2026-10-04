@@ -17,29 +17,12 @@ authorized full T-221/T-222/T-223 implementation; root approved the N1–N7 path
 - Only the T-221/T-223 statuses were reconciled in the card file. T-224 and
   the root-owned resume checklist remain outside this pilot's ownership.
 
-Reviewed the actual Luna report `/tmp/wormedit-coordination-notifications-luna.md`
-against current sources, rather than treating lexical counts as message counts.
-Read AGENTS, workflow, card rules, notification cards and their Read first
-sources. Important verified boundaries:
-
-| Evidence | Consequence |
-|---|---|
-| `include/wormedit/core/notifications.h:110-127` has center post/drain, no sink | A sink API is a proposed ownership extension, not existing infrastructure. |
-| `src/sys/main.cpp:3520,3817-3819` owns center and begins frame drain | Posts later in a frame appear after the next drain; preserve this timing. |
-| `src/sys/application_command_dispatch.cpp:73-98` carries untyped strings | Use outcome/diagnostic metadata, never severity inferred by prose matching. |
-| `src/sys/timing_edit_runtime.cpp` has no status-string boundary | No edit needed there solely because the card lists it. |
-| `src/sys/metadata_actions.cpp:180-195` returns optional strings | Local `auto status` variables are results, not a global status slot. |
-| `src/sys/application_frame_services.cpp:152-168` consumes job results | This omitted bridge must be included in T-223 scope before implementation. |
-| `src/sys/main.cpp:3845-3865` consumes probe/resident/waveform results | These are T-223, not T-221, despite living in main. |
-| `src/sys/timing_view.cpp:228-251` projects staged diagnostics | Post on a result/state transition, not on every projection frame. |
-| `src/ui/nuklear/frontend.cpp:237,260,1647` supplies picker errors/override | Replace error precedence at callback/result drain, preserving callback safety. |
-
-Luna correctly identified missing sink and duplicate-post hazards. Its raw search
-counts include clears, comparisons, model enums and projections; they are not
-acceptance totals. Additional bridge/lifetime findings above refine its proposal.
-`main.cpp` declares the autosave scheduler before the center: reverse destruction
-alone is insufficient once an autosave worker can post. Shutdown/join must finish
-before center destruction on every exit, including exceptional exits.
+Reviewed `/tmp/wormedit-coordination-notifications-luna.md` against the actual
+read-first sources, AGENTS/workflow/card rules: lexical counts were not acceptance
+totals. Missing sink, mixed dispatch strings, omitted frame-service consumers,
+picker callback timing and worker/global ownership were verified before briefs.
+Center precedes schedulers; explicit noexcept shutdown joins cover exceptional
+exits. Readiness records above are historical, not final batch completion.
 
 ## Classification ledger
 
@@ -47,23 +30,18 @@ before center destruction on every exit, including exceptional exits.
 |---|---|
 | Preferences warnings | `warning/system`; preserve each original warning and order, not separator spaces used to concatenate a line. |
 | Undo/redo applied; timing committed; semantic layer added | `success/edit`; no-op undo/redo `info/edit`. |
-| Routine navigation release/cancel; staged gesture guidance | `hint/input` for navigation, `hint/edit` for staged edit guidance. |
+| Routine navigation release/cancel; staged gesture guidance | `hint/input` for navigation, `hint/input` for staged edit guidance. |
 | Invalid bounds, stale target, unavailable command, pending gesture | `warning`; source follows producer (`edit`, `input`, `import_`). |
 | Structured diagnostics | Preserve their explicit severity and original text; source comes from operation, not diagnostic wording. |
 | SDL device/mix/cache failure; missing decoded source | `error/audio` for stopped playback failures; unavailable asset counts `warning/audio`. |
-| Playback mode fallback, silenced late voices | `warning/audio`; document-selection stop `info/audio`. |
+| Playback mode fallback, silenced late voices | `warning/audio`; document-selection stop `hint/audio`. |
 | Autosave/backup/publication failure | `error/recovery` for autosave/backup; export publication `error/export_`. |
 | Resource copy/import success, published output | `success/import_` or `success/export_` according to operation. |
 | Resource finished with stale document/source | `warning/import_`; retain successful copy and absence of relink. |
 | Empty return/clear; repeat suppression; unchanged projection | No post. Retain any state clear required by existing UI behavior. |
 
-Unclear cases to resolve from typed producers before conversion: `options.status`,
-project-chart results/rebind failures, external launch errors and source choice,
-tap timing results, import staging failures, resource relink diagnostic severity,
-export cancellation, publication warnings appended to success, resident decode
-versus budget reports, waveform task errors. Do not invent an all-warning or
-all-error fallback. Mixed success plus warning must retain both outcomes and
-original complete text; the exact split/detail policy needs coordinator review.
+Mixed producer cases were resolved from typed command/runtime/diagnostic metadata;
+no prose-based classification or global all-warning/all-error fallback is permitted.
 
 ## Approved batch ownership and review order
 
@@ -231,3 +209,17 @@ fit preview/commit/no-op and paste/BGM stop boundaries. Final configured tidy ha
 only prior build_speed_graph/compose_surface_height violations. Logs:
 `notifications-n4-corrections-build.log`, `notifications-n4-corrections-final-build.log`,
 `notifications-n4-corrections-tests.log`, `notifications-n4-corrections-final-tidy.log`.
+
+Final recovery/history/audition review: extracted controller UI outcomes preserve
+existing diagnostic/path formatting; scan posts only on generation changes and
+same-generation action diagnostics stay producer-owned. Inspection is read-only,
+load replaces once, stale/validation rejection keeps history. Catalog/object/draft
+requests consume once in original order; actual SDL start errors retain text and
+successful dummy starts are hints. Main history/Go-to, workspace-error edges,
+startup device failures and inventory counts post directly. App/core/SDL build
+passes; recovery 36 assertions/3 cases and audition 30 assertions/3 cases pass.
+Logs: `notifications-recovery-audition-final-build.log`, `notifications-recovery-reviewed-tests.log` (249 assertions/21 cases),
+`notifications-audition-reviewed-tests.log` (63 assertions/7 cases), `notifications-recovery-audition-tidy.log`,
+`notifications-recovery-main-tidy.log`. Existing controller diagnostic/path limits
+and center 200-byte message/4 KiB detail limits remain. Only actions adapter and
+projection legacy fallback remain in main, pending separate actions integration.

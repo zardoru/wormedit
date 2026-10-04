@@ -35,6 +35,7 @@
 #include "sys/metadata_actions.h"
 #include "sys/metadata_view_projection.h"
 #include "sys/platform_recovery.h"
+#include "sys/recovery_notification_feedback.h"
 #include "sys/platform_shortcut_profile.h"
 #include "sys/external_player.h"
 #include "sys/preferences_runtime.h"
@@ -713,158 +714,6 @@ auto timing_stage_value(const wormedit::timing_lane_pseudonote_preview_t& previe
         return timing_stage_anchor_value(input);
     }
     return std::nullopt;
-}
-auto first_recovery_diagnostic(
-    const wormedit::native_project_recovery_controller_dispatch_result_t& result) -> std::string {
-    if (!result.diagnostics.empty()) {
-        const auto& diagnostic = result.diagnostics.front();
-        return diagnostic.path.empty()
-                   ? diagnostic.message
-                   : diagnostic.message + " (" + diagnostic.path.generic_string() + ")";
-    }
-    if (result.action_result && !result.action_result->diagnostics.empty()) {
-        const auto& diagnostic = result.action_result->diagnostics.front();
-        return diagnostic.path.empty()
-                   ? diagnostic.message
-                   : diagnostic.message + " (" + diagnostic.path.generic_string() + ")";
-    }
-    return {};
-}
-
-auto recovery_action_request(
-    const WormUiWorkspaceAction& action, const wormedit::document_history_t& history,
-    const std::optional<wormedit::native_project_document_version_t>& scanned_primary_version,
-    const wormedit::native_project_recovery_action_target_t& target,
-    std::string& error) -> wormedit::native_project_recovery_controller_action_t {
-    using namespace wormedit;
-    switch (action.kind) {
-    case WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT:
-        return inspect_native_project_recovery_action_t{.target = target};
-    case WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER:
-        if (!history.undo.empty() || !history.redo.empty()) {
-            error = "The current workspace changed after recovery discovery; save or restart "
-                    "before replacing it with a recovery candidate.";
-            return inspect_native_project_recovery_action_t{.target = target};
-        }
-        return recover_native_project_recovery_action_t{
-            .target = target,
-            .expected_session = {
-                .is_set = true,
-                .version = scanned_primary_version
-                    ? std::optional<native_project_document_version_t>{
-                          native_project_document_version_t{.project_id = history.document.id,
-                                                            .revision = history.document.revision}}
-                    : std::nullopt,
-            },
-        };
-    case WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS: {
-        const auto end = std::find(std::begin(action.recovery_save_as_destination),
-                                   std::end(action.recovery_save_as_destination), '\0');
-        const std::string destination(action.recovery_save_as_destination, end);
-        if (destination.empty()) {
-            error = "Choose a new project path before using Save as.";
-            return inspect_native_project_recovery_action_t{.target = target};
-        }
-        return save_as_native_project_recovery_action_t{
-            .target = target, .destination = std::filesystem::path{destination}};
-    }
-    case WORM_UI_WORKSPACE_ACTION_RECOVERY_DISCARD:
-        return discard_native_project_recovery_action_t{.target = target};
-    case WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE:
-        return quarantine_native_project_recovery_action_t{.target = target};
-    default:
-        error = "Invalid recovery action.";
-        return inspect_native_project_recovery_action_t{.target = target};
-    }
-}
-
-auto load_recovered_document(
-    const wormedit::native_project_recovery_action_result_t& result,
-    const WormUiWorkspaceAction& action, wormedit::native_project_recovery_controller_t& controller,
-    wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
-    wormedit::native_project_autosave_loop_t& autosave_loop, bool& recovered) -> std::string {
-    using namespace wormedit;
-    if (!result.document)
-        return "Recovery action completed without a replacement document.";
-    auto replacement_history = make_document_history(*result.document, 128, false);
-    auto replacement_binding = make_workspace_controller(replacement_history);
-    if (!replacement_binding) {
-        return "Recovered data validated, but the workspace could not be rebound; "
-               "the current workspace was kept.";
-    }
-    const auto& recovery_view = controller.view();
-    std::optional<native_project_document_version_t> recovered_save_baseline;
-    auto recovered_sequence = std::uint64_t{};
-    if (action.recovery_row_index < recovery_view.rows.size()) {
-        const auto& row = recovery_view.rows[action.recovery_row_index];
-        if (row.last_explicit_save_revision) {
-            recovered_save_baseline = native_project_document_version_t{
-                .project_id = result.document->id,
-                .revision = *row.last_explicit_save_revision};
-        }
-        if (row.recovery_session_sequence)
-            recovered_sequence = *row.recovery_session_sequence;
-    }
-    if (!autosave_loop.reset_session(native_project_autosave_loop_t::clock_t::now(),
-                                     recovered_save_baseline, recovered_sequence)) {
-        return "Wait for the current autosave to finish before recovering a session.";
-    }
-    history = std::move(replacement_history);
-    workspace = std::move(*replacement_binding.workspace);
-    recovered = true;
-    (void)controller.replace_scan({});
-    return "Recovery loaded into the current session. Review it and save explicitly.";
-}
-
-auto dispatch_recovery_ui_action(
-    const WormUiWorkspaceAction& action, wormedit::native_project_recovery_controller_t& controller,
-    wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
-    std::optional<wormedit::native_project_document_version_t> scanned_primary_version,
-    wormedit::native_project_autosave_loop_t& autosave_loop, bool& recovered) -> std::string {
-    using namespace wormedit;
-    const native_project_recovery_action_target_t target{
-        .scan_generation = action.recovery_scan_generation,
-        .row_index = action.recovery_row_index,
-        .candidate_index = action.recovery_candidate_index,
-    };
-    std::string request_error;
-    const auto request = recovery_action_request(action, history, scanned_primary_version,
-                                                 target, request_error);
-    if (!request_error.empty()) return request_error;
-    const auto dispatched = controller.dispatch(request);
-    const auto diagnostic = first_recovery_diagnostic(dispatched);
-    if (!dispatched.accepted) {
-        return diagnostic.empty() ? "Recovery action was rejected." : diagnostic;
-    }
-    if (!dispatched.action_result) {
-        return diagnostic.empty() ? "Recovery action did not produce a result." : diagnostic;
-    }
-    const auto& result = *dispatched.action_result;
-    if (result.has_errors() || !result.applied) {
-        return diagnostic.empty() ? "Recovery action did not complete." : diagnostic;
-    }
-
-    switch (action.kind) {
-    case WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT:
-        if (result.document) {
-            return "Inspected recovery candidate read-only: " + result.document->metadata.title +
-                   " (revision " + std::to_string(result.document->revision) + ").";
-        }
-        return "Recovery candidate inspected read-only.";
-    case WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER:
-        return load_recovered_document(result, action, controller, history, workspace,
-                                       autosave_loop, recovered);
-    case WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS:
-        return "Recovery candidate saved as a new project; the current workspace was unchanged.";
-    case WORM_UI_WORKSPACE_ACTION_RECOVERY_DISCARD:
-        return "Recovery artifact moved to its recoverable discarded location.";
-    case WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE:
-        return result.quarantined_path
-                   ? "Recovery artifact quarantined at " + result.quarantined_path->generic_string()
-                   : "Recovery artifact quarantined.";
-    default:
-        return "Invalid recovery action.";
-    }
 }
 
 struct AudioOffsetDragContext {
@@ -2178,20 +2027,20 @@ auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& actio
         wormedit::sys::process_compose_audition_requests(
             context.compose_scene_cache_ref, context.history_ref, context.audition_sources_ref,
             context.object_audition_ref, context.preview_session_ref, context.preview_output_ref,
-            context.preview_state_ref, context.audition_output_ref, context.status_ref);
+            context.preview_state_ref, context.audition_output_ref, context.notification_sink_ref);
 #else
         wormedit::sys::process_compose_audition_requests(
-            context.compose_scene_cache_ref, context.history_ref, context.status_ref);
+            context.compose_scene_cache_ref, context.history_ref, context.notification_sink_ref);
 #endif
     }
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     wormedit::sys::process_sound_audition_request(
         context.application_command_state_ref.pending_sound_audition, context.history_ref,
         context.audition_sources_ref, context.preview_session_ref, context.preview_output_ref,
-        context.preview_state_ref, context.audition_output_ref, context.status_ref);
+        context.preview_state_ref, context.audition_output_ref, context.notification_sink_ref);
 #else
     wormedit::sys::process_sound_audition_request(
-        context.application_command_state_ref.pending_sound_audition, context.status_ref);
+        context.application_command_state_ref.pending_sound_audition, context.notification_sink_ref);
 #endif
     if (context.workspace_ref.active_tab != wormedit::workspace_tab_t::compose) {
         context.compose_viewport_input_ref.escape();
@@ -2230,6 +2079,14 @@ auto can_offer_audio_project_drop(bool session_loaded, bool fresh_blank_project,
 }
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+void post_audio_inventory_feedback(std::optional<std::size_t> unavailable,
+    const wormedit::notification_sink_t& notifications) {
+    if (unavailable && *unavailable != 0)
+        notifications.post(wormedit::notification_severity_t::warning,
+            wormedit::notification_source_t::audio,
+            std::to_string(*unavailable) + " audio asset(s) are unavailable for preview.");
+}
+
 // Registers audio assets added or removed by document edits (linking, undo, redo) so
 // playback and the waveform see them without a save or reload.
 void reconcile_audition_sources_after_edit(
@@ -2238,12 +2095,8 @@ void reconcile_audition_sources_after_edit(
     const wormedit::notification_sink_t& notifications) {
     if (revision == reconciled_revision) return;
     reconciled_revision = revision;
-    const auto unavailable = wormedit::sys::reconcile_audition_sources(reconciliation, true);
-    if (unavailable && *unavailable != 0) {
-        notifications.post(wormedit::notification_severity_t::warning,
-            wormedit::notification_source_t::audio,
-            std::to_string(*unavailable) + " audio asset(s) are unavailable for preview.");
-    }
+    post_audio_inventory_feedback(
+        wormedit::sys::reconcile_audition_sources(reconciliation, true), notifications);
 }
 #endif
 
@@ -2343,7 +2196,9 @@ void reset_project_runtime_state(Context& context) {
     context.metadata_drop_ref.clear_paths();
     reset_project_edit_state(context.application_command_state_ref);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    (void)wormedit::sys::reconcile_audition_sources(context.audition_reconciliation_ref, true);
+    post_audio_inventory_feedback(
+        wormedit::sys::reconcile_audition_sources(context.audition_reconciliation_ref, true),
+        context.notification_sink_ref);
 #endif
 }
 
@@ -2471,7 +2326,9 @@ auto save_project_session(Context& context, const WormUiWorkspaceAction& action)
     context.asset_base_ref = destination_base;
     context.external_player_runtime_ref.source_path.clear();
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    (void)wormedit::sys::reconcile_audition_sources(context.audition_reconciliation_ref, true);
+    post_audio_inventory_feedback(
+        wormedit::sys::reconcile_audition_sources(context.audition_reconciliation_ref, true),
+        context.notification_sink_ref);
 #endif
     auto message = "Project saved to " + destination.string();
     auto severity = notification_severity_t::success;
@@ -2805,13 +2662,15 @@ auto dispatch_recovery_workspace_action(Context& context,
     if (action.kind < WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT ||
         action.kind > WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE) return false;
     if (context.autosave_loop_ref.busy()) {
-        context.status_ref = "Wait for the current autosave to finish before recovering a session.";
+        context.notification_sink_ref.post(wormedit::notification_severity_t::warning,
+            wormedit::notification_source_t::recovery,
+            "Wait for the current autosave to finish before recovering a session.");
         return true;
     }
     bool recovered = false;
-    context.status_ref = dispatch_recovery_ui_action(
+    (void)wormedit::sys::dispatch_recovery_ui_action(
         action, context.recovery_controller_ref, context.history_ref, context.workspace_ref,
-        context.scanned_primary_version_ref, context.autosave_loop_ref, recovered);
+        context.scanned_primary_version_ref, context.autosave_loop_ref, recovered, context.notification_sink_ref);
     if (recovered) {
         context.session_loaded_ref = true;
         context.native_project_loaded_ref = false;
@@ -3321,24 +3180,23 @@ struct notification_frame_context_t {
     wormedit::document_history_t& history;
     wormedit::workspace_controller_t& workspace;
     std::optional<wormedit::editor_interaction_state_t>& interaction;
-    std::string& status;
+    const wormedit::notification_sink_t& notifications;
 };
 
 void copy_notification_details(notification_frame_context_t& context, std::uint64_t id) {
     const auto* entry = wormedit::sys::find_notification(context.center, id);
     if (!entry) {
-        context.status = "Notification no longer exists";
-        context.center.post(wormedit::notification_severity_t::error,
-            wormedit::notification_source_t::input, context.status);
+        context.notifications.post(wormedit::notification_severity_t::error,
+            wormedit::notification_source_t::input, "Notification no longer exists");
         return;
     }
     const auto& text = entry->detail.empty() ? entry->message : entry->detail;
     const bool copied = SDL_SetClipboardText(text.c_str());
-    context.status = copied ? "Notification details copied."
+    const auto message = copied ? "Notification details copied."
                             : "Could not copy notification details to the clipboard.";
-    context.center.post(copied ? wormedit::notification_severity_t::success
+    context.notifications.post(copied ? wormedit::notification_severity_t::success
                               : wormedit::notification_severity_t::error,
-        wormedit::notification_source_t::input, context.status);
+        wormedit::notification_source_t::input, message);
 }
 
 void apply_notification_action(notification_frame_context_t& context,
@@ -3349,10 +3207,10 @@ void apply_notification_action(notification_frame_context_t& context,
     else if (action.kind == WORM_UI_NOTIFICATION_ACTION_GO_TO) {
         const auto error = wormedit::sys::go_to_notification(context.center, action.id,
             context.history, context.workspace, context.interaction);
-        context.status = error ? *error : "Moved to notification target.";
-        context.center.post(error ? wormedit::notification_severity_t::error
+        const auto message = error ? *error : "Moved to notification target.";
+        context.notifications.post(error ? wormedit::notification_severity_t::error
                                  : wormedit::notification_severity_t::success,
-            wormedit::notification_source_t::document, context.status);
+            wormedit::notification_source_t::document, message);
     }
 }
 
@@ -3363,23 +3221,33 @@ void begin_notification_frame(notification_frame_context_t& context,
     context.center.drain_inbox(now);
 }
 
-auto close_confirmation_view(const pending_close_t& pending, bool has_native_path, const std::string& status)
+auto close_confirmation_view(const pending_close_t& pending, bool has_native_path, const std::string& close_feedback)
     -> WormUiCloseConfirmationView {
     return {.visible = pending.target != close_target_t::none && !pending.awaiting_encoding,
         .application = pending.target == close_target_t::application, .has_native_path = has_native_path,
-        .project_id = pending.project.value, .revision = pending.revision, .status_text = status.c_str()};
+        .project_id = pending.project.value, .revision = pending.revision, .status_text = close_feedback.c_str()};
 }
 
 template <typename Model, typename Context>
 auto handle_workspace_view_error(const Model& model, Context& context,
     const WormUiNotificationView& notifications, WormUiNotificationAction& pending_notification,
-    pending_close_t& pending_close, bool confirm) -> bool {
-    if (model) return false;
+    pending_close_t& pending_close, bool confirm,
+    wormedit::sys::projection_notification_feedback_t& feedback) -> bool {
+    const wormedit::sys::projection_identity_t identity{context.history_ref.document.id,
+        context.history_ref.document.revision,
+        context.workspace_ref.selected_chart.value_or(wormedit::chart_id_t{}),
+        context.project_chart_runtime_ref.session_generation};
+    if (model) {
+        feedback.publish(identity, {}, context.notification_sink_ref);
+        return false;
+    }
     const auto diagnostic = model.diagnostics.empty() ? std::string{"Workspace view unavailable"}
         : model.diagnostics.front().message;
-    if (pending_close.target == close_target_t::none) context.status_ref = diagnostic;
+    feedback.publish(identity, {{wormedit::sys::projection_feedback_kind_t::workspace_view, 0,
+        wormedit::sys::projection_diagnostic_severity(model.diagnostics),
+        wormedit::notification_source_t::document, diagnostic}}, context.notification_sink_ref);
     const auto close = close_confirmation_view(pending_close, context.native_project_loaded_ref &&
-        !context.active_project_path_ref.empty(), context.status_ref);
+        !context.active_project_path_ref.empty(), context.close_feedback_ref);
     const auto action = worm_ui_frontend_workspace_error(diagnostic.c_str(), &notifications, &close);
     pending_notification = action.notifications;
     if (dispatch_close_confirmation(pending_close, context, action, confirm)) return true;
@@ -3387,7 +3255,9 @@ auto handle_workspace_view_error(const Model& model, Context& context,
         const auto changed = wormedit::apply_workspace_action(context.workspace_ref,
             context.history_ref.document, context.history_ref.document.revision,
             wormedit::workspace_switch_tab_action_t{wormedit::workspace_tab_t::setup});
-        if (!changed && !changed.diagnostics.empty()) context.status_ref = changed.diagnostics.front().message;
+        if (!changed && !changed.diagnostics.empty())
+            context.notification_sink_ref.post(wormedit::sys::projection_diagnostic_severity(changed.diagnostics),
+                wormedit::notification_source_t::document, changed.diagnostics.front().message);
     }
     return true;
 }
@@ -3824,6 +3694,7 @@ int main(int argc, char** argv) {
     std::string close_feedback;
     wormedit::sys::workspace_edit_feedback_t workspace_edit_feedback;
     wormedit::sys::projection_notification_feedback_t projection_feedback;
+    wormedit::sys::projection_notification_feedback_t workspace_view_feedback;
     wormedit::sys::notification_history_runtime_t notification_history;
     WormUiNotificationAction pending_notification{};
     seed_notification_smoke(notifications);
@@ -3910,23 +3781,24 @@ int main(int argc, char** argv) {
         &audition_probe_scheduler,
         &resident_loader,
     };
-    const auto initial_unavailable_audio_assets = wormedit::sys::reconcile_audition_sources(audition_reconciliation, false).value_or(0);
+    post_audio_inventory_feedback(
+        wormedit::sys::reconcile_audition_sources(audition_reconciliation, false), notification_sink);
     auto audition_reconciled_revision = history.document.revision;
-    if (initial_unavailable_audio_assets != 0) {
-        status += " " + std::to_string(initial_unavailable_audio_assets) +
-                  " audio asset(s) are unavailable for preview.";
-    }
     std::string audition_output_error;
     if (!audition_output.open(&audition_output_error)) {
-        status += " Audio output unavailable: " + audition_output_error;
+        notification_sink.post(wormedit::notification_severity_t::error,
+            wormedit::notification_source_t::audio, "Audio output unavailable: " + audition_output_error);
     }
     std::string preview_output_error;
     if (!preview_output.open(&preview_output_error)) {
-        status += " Chart preview output unavailable: " + preview_output_error;
+        notification_sink.post(wormedit::notification_severity_t::error,
+            wormedit::notification_source_t::audio, "Chart preview output unavailable: " + preview_output_error);
     }
 #endif
     wormedit::native_project_recovery_controller_t recovery_controller;
     install_startup_recovery_scan(recovery_controller, startup);
+    wormedit::sys::recovery_scan_notification_publisher_t recovery_scan_feedback;
+    recovery_scan_feedback.publish(recovery_controller.view(), notification_sink);
     const auto recovery_scan_configured = startup.recovery_scan_configured;
     auto scanned_primary_version = startup.primary_version;
 
@@ -4124,9 +3996,10 @@ int main(int argc, char** argv) {
 #endif
     };
     notification_frame_context_t notification_context{notifications, notification_history,
-        history, workspace, compose_interaction_state, status};
+        history, workspace, compose_interaction_state, notification_sink};
     while (running) {
         const auto notification_now = notification_frame_time();
+        recovery_scan_feedback.publish(recovery_controller.view(), notification_sink);
         begin_notification_frame(notification_context, pending_notification, notification_now);
         wormedit::sys::frame_timing().begin_frame();
         frame_projection_arena.reset();
@@ -4208,7 +4081,7 @@ int main(int argc, char** argv) {
             notifications, notification_now, compose_interaction_state, notification_history,
             history.document, project_chart_runtime.session_generation);
         if (!handle_workspace_view_error(model, workspace_frame_action_context, notification_view,
-                pending_notification, pending_close, program_preferences.preferences.general.confirm_unsaved_close)) {
+                pending_notification, pending_close, program_preferences.preferences.general.confirm_unsaved_close, workspace_view_feedback)) {
             prepare_bound_workspace_frame(history, workspace, application_command_state,
                                           timing_grid, audio_offset_drag, audio_offset_drag_tab,
                                           compose_scene_cache);

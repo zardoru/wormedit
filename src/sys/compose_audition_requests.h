@@ -25,7 +25,7 @@ void process_sound_audition_request(
     audio::decoded_source_registry_t& audition_sources,
     audio::preview_session_t& preview_session, sdl_preview_output_t& preview_output,
     runtime::chart_preview_t& preview_state, sdl_audition_output_t& audition_output,
-    std::string& status);
+    const notification_sink_t& notifications);
 
 void process_compose_audition_requests(
     compose_scene_cache_t& cache, document_history_t& history,
@@ -33,11 +33,11 @@ void process_compose_audition_requests(
     audio::object_audition_controller_t& object_audition,
     audio::preview_session_t& preview_session, sdl_preview_output_t& preview_output,
     runtime::chart_preview_t& preview_state, sdl_audition_output_t& audition_output,
-    std::string& status);
+    const notification_sink_t& notifications);
 #else
-void process_sound_audition_request(std::optional<resource_id_t>& request, std::string& status);
+void process_sound_audition_request(std::optional<resource_id_t>& request, const notification_sink_t& notifications);
 void process_compose_audition_requests(compose_scene_cache_t& cache,
-                                       document_history_t& history, std::string& status);
+                                       document_history_t& history, const notification_sink_t& notifications);
 #endif
 
 } // namespace wormedit::sys

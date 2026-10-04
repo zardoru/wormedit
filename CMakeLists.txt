@@ -439,6 +439,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/application_frame_services.cpp
         src/sys/sound_drop_transaction.cpp
         src/sys/application_startup.cpp
+        src/sys/recovery_notification_feedback.cpp
         src/sys/audio_project_import.cpp
         src/sys/project_open.cpp
         src/sys/project_save_paths.cpp

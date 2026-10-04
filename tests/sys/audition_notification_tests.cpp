@@ -1,0 +1,111 @@
+#include "sys/compose_audition_requests.h"
+#include <wormedit/audio/audition_resolver.h>
+#include <catch2/catch_test_macros.hpp>
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_hints.h>
+using namespace wormedit;
+using namespace wormedit::sys;
+namespace {
+void expect_audition(bool value) { REQUIRE(value); }
+struct audition_fixture_t {
+    notification_center_t center;
+    notification_sink_t sink{center};
+    audio::decoded_source_registry_t sources;
+    audio::decoded_block_cache_t blocks;
+    audio::transport_t transport{blocks};
+    audio::audition_transport_bridge_t audition_bridge{transport};
+    audio::audition_session_t audition_session{sources, transport, audition_bridge};
+    audio::object_audition_controller_t object_audition{audition_bridge};
+    audio::preview_transport_bridge_t preview_bridge{transport};
+    audio::preview_session_t preview_session{sources, transport, preview_bridge};
+    sdl_audition_output_t output{audition_session};
+    sdl_preview_output_t preview{preview_session};
+    runtime::chart_preview_t preview_state;
+    document_history_t history;
+    compose_scene_cache_t cache;
+    auto entries() -> std::vector<notification_entry_t> {
+        center.drain_inbox(notification_time_t{0});
+        return center.snapshot(notification_capacity);
+    }
+    void catalog(std::optional<resource_id_t>& request) {
+        process_sound_audition_request(request, history, sources, preview_session, preview,
+            preview_state, output, sink);
+    }
+    void compose() {
+        process_compose_audition_requests(cache, history, sources, object_audition,
+            preview_session, preview, preview_state, output, sink);
+    }
+};
+struct audio_lifetime_t { ~audio_lifetime_t() { SDL_QuitSubSystem(SDL_INIT_AUDIO); } };
+}
+TEST_CASE("Catalog audition rejects missing sources once and idle stays quiet", "[audio][audition-notification]") {
+    audition_fixture_t fixture;
+    std::optional<resource_id_t> request;
+    fixture.catalog(request);
+    fixture.compose();
+    expect_audition(fixture.entries().empty());
+    request = resource_id_t{1};
+    fixture.catalog(request);
+    auto entries = fixture.entries();
+    expect_audition(entries.size() == 1);
+    expect_audition(entries[0].severity == notification_severity_t::warning);
+    expect_audition(entries[0].source == notification_source_t::audio);
+    expect_audition(entries[0].message == "That sound is no longer in the list.");
+    expect_audition(!request);
+    fixture.catalog(request);
+    expect_audition(fixture.entries().size() == 1);
+    fixture.history.document.resources = {{.id = resource_id_t{1}, .asset = asset_id_t{1}}};
+    request = resource_id_t{1};
+    fixture.catalog(request);
+    entries = fixture.entries();
+    expect_audition(entries.size() == 2);
+    expect_audition(entries[0].message == "That sound's audio is not loaded yet.");
+    expect_audition(entries[0].severity == notification_severity_t::warning);
+    expect_audition(!request);
+}
+TEST_CASE("Object then draft audition preserve producer diagnostics and consumption order", "[audio][audition-notification]") {
+    audition_fixture_t fixture;
+    fixture.cache.audition_request = editor_object_audition_request_t{
+        .object = {editor_selection_object_kind_t::bpm_event, object_id_t{1}}};
+    fixture.cache.draft_audition_request = bmson_draft_audition_request_t{.chart = chart_id_t{2}};
+    const auto expected = audio::resolve_bmson_draft_audition(fixture.history.document,
+        {.chart = chart_id_t{2}}, {});
+    expect_audition(!expected.diagnostics.empty());
+    fixture.compose();
+    const auto entries = fixture.entries();
+    expect_audition(entries.size() == 2);
+    expect_audition(entries[0].message == expected.diagnostics.front().message);
+    expect_audition(entries[0].severity == notification_severity_t::error);
+    expect_audition(entries[1].message == "Only notes and BGM events can be prepared for audition.");
+    expect_audition(entries[1].severity == notification_severity_t::warning);
+    expect_audition(!fixture.cache.audition_request && !fixture.cache.draft_audition_request);
+    fixture.compose();
+    expect_audition(fixture.center.statistics().posted == 2);
+}
+TEST_CASE("Catalog SDL start failure and real dummy success use typed audition feedback", "[audio][audition-notification]") {
+    expect_audition(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    expect_audition(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    audio_lifetime_t lifetime;
+    audition_fixture_t fixture;
+    const auto registration = fixture.sources.register_source({.asset = asset_id_t{1},
+        .path = std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "audio/keysound-c4.ogg",
+        .source = {"fixture:keysound-c4.ogg", "notification-test"}});
+    expect_audition(static_cast<bool>(registration));
+    fixture.history.document.resources = {{.id = resource_id_t{1}, .asset = asset_id_t{1}}};
+    std::optional<resource_id_t> request{resource_id_t{1}};
+    fixture.catalog(request);
+    auto entries = fixture.entries();
+    expect_audition(entries.size() == 1);
+    expect_audition(entries[0].severity == notification_severity_t::error);
+    expect_audition(entries[0].message == "default audio output is unavailable");
+    std::string error;
+    expect_audition(fixture.output.open(&error));
+    fixture.sink.post(notification_severity_t::success, notification_source_t::edit, "Edit applied.");
+    request = resource_id_t{1};
+    fixture.catalog(request);
+    entries = fixture.entries();
+    expect_audition(entries.size() == 3);
+    expect_audition(entries[0].severity == notification_severity_t::hint);
+    expect_audition(entries[0].message == "Audio preview started.");
+    expect_audition(fixture.center.current_line()->message == "Edit applied.");
+}

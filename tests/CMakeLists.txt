@@ -43,6 +43,8 @@ add_executable(wormedit_core_tests
     ../src/sys/recipe_form.cpp
     ../src/sys/compose_quantize_preview.cpp
     ../src/sys/application_defaults.cpp
+    ../src/sys/recovery_notification_feedback.cpp
+    sys/recovery_notification_tests.cpp
     ../src/sys/project_open.cpp
     ../src/sys/project_save_paths.cpp
     core/audio_offset_editor_tests.cpp
@@ -240,6 +242,8 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
     if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         add_executable(wormedit_sdl_audio_tests
             sys/audio_transport_notification_tests.cpp
+            sys/audition_notification_tests.cpp
+            ../src/sys/compose_audition_requests.cpp
             ../src/sys/audio_transport_frame.cpp
             sys/sdl_audition_output_tests.cpp
             sys/sdl_preview_output_tests.cpp
@@ -249,7 +253,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
             ../src/sys/sdl_preview_output.cpp
         )
         target_compile_definitions(wormedit_sdl_audio_tests
-            PRIVATE WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+            PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1 WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
         )
         target_include_directories(wormedit_sdl_audio_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
         target_link_libraries(wormedit_sdl_audio_tests

@@ -42,7 +42,7 @@ every number above T-372.
 ## Rules for whoever executes a card
 
 1. Read this file, the card, and only the files the card lists under **Read first**. Do not explore the whole plan.
-2. Edit only **Files owned**. If the card cannot be finished without editing another file, stop and report; do not widen scope.
+2. **File ownership and scope extensions:** Subagents edit only **Files owned**. If another file is required, report the exact paths and reason to the coordinator and wait for its approval before editing them. Coordinator agents may approve necessary supporting-file extensions within the card's intended outcome without asking the user; record the added paths and rationale on the card, update **Files owned**, and communicate the revised ownership to affected subagents before edits. Coordinate overlapping ownership. This authority does not override **Out of scope**, explicit **STOP** steps or unanswered user decisions.
 3. Do everything under **Steps** in order. Do not reorder, merge, or skip steps.
 4. Run every command under **Verify** and paste the real output tail. A card is not done until each one passes. Never claim a test passed without running it.
 5. Do not touch anything under **Out of scope**, even if it looks broken.

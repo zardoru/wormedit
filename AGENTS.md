@@ -29,5 +29,5 @@ Codex should use its native sub-agent tools when delegating.
 
 ## Working from plan task cards
 
-- Work is planned as cards in `docs/chart-editor-plan/tasks/`; `memory/chart-editor-status/resume.md` says which is next. Follow the rules in `docs/chart-editor-plan/tasks.md`: edit only the card's owned files, do steps in order, stop on `STOP` or an unanswered open question.
+- Work is planned as cards in `docs/chart-editor-plan/tasks/`; `memory/chart-editor-status/resume.md` says which is next. Follow the rules in `docs/chart-editor-plan/tasks.md`: subagents edit only the card's owned files and escalate supporting-file extensions to their coordinator. Coordinators may approve and record those extensions within the card's intended outcome without user approval, coordinating overlapping ownership before edits. Do steps in order; stop on `STOP` or an unanswered open question, and respect explicit out-of-scope limits.
 - The `documentation.chart_editor_state` test enforces card fields and links; run it after editing any plan or status file.

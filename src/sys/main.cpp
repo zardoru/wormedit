@@ -2169,14 +2169,11 @@ auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& actio
          (context.workspace_ref.active_tab == wormedit::workspace_tab_t::compose &&
           action.compose_input_chart_id != 0)) &&
         context.compose_interaction_state_ref) {
-        const auto compose_status = dispatch_compose_input_action(
+        (void)dispatch_compose_input_action(
             action, context.history_ref, context.workspace_ref, *context.compose_interaction_state_ref,
             context.compose_viewport_input_ref, context.compose_navigation_input_ref,
             context.application_command_state_ref, context.compose_scene_cache_ref,
-            viewport_delta_seconds);
-        if (!compose_status.empty()) {
-            context.status_ref = compose_status;
-        }
+            viewport_delta_seconds, &context.notification_sink_ref);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         wormedit::sys::process_compose_audition_requests(
             context.compose_scene_cache_ref, context.history_ref, context.audition_sources_ref,
@@ -2203,14 +2200,11 @@ auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& actio
     if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
         context.compose_interaction_state_ref &&
         context.workspace_ref.active_tab == wormedit::workspace_tab_t::compose) {
-        const auto repeated = dispatch_compose_navigation_actions(
+        (void)dispatch_compose_navigation_actions(
             context.compose_navigation_input_ref.advance(
                 static_cast<std::uint64_t>(SDL_GetTicks())),
             context.history_ref, *context.compose_interaction_state_ref,
-            &context.application_command_state_ref);
-        if (!repeated.empty()) {
-            context.status_ref = repeated;
-        }
+            &context.application_command_state_ref, &context.notification_sink_ref);
     } else if (context.workspace_ref.active_tab != wormedit::workspace_tab_t::compose) {
         context.compose_navigation_input_ref.cancel();
     }

@@ -210,3 +210,12 @@ Logs: `notifications-projection-dialog-build.log`,
 N4 input Luna now owns input sources/new tests; actions move to a root-created
 isolated coordinator tree using `/tmp/wormedit-batch-implementation/compose-actions-brief.txt`.
 Sol retains final main/history/recovery glue. Manual gates remain pending.
+
+Reviewed N4 input: typed per-input/navigation/viewport publication preserves the
+revision guard, string compatibility and explicit callback publication ownership.
+Main passes the sink and removes aggregate input/navigation reposts. Real command
+edit success followed by navigation cancel retains the success line; stale/no-op,
+idle, and legacy/owned playhead and wheel seek checks pass: 6/6. App/frame build
+passes. Logs: `notifications-n4-main-build.log`, `notifications-n4-reviewed-build.log`,
+`notifications-n4-reviewed-tests.log`, `notifications-n4-tidy.log`.
+Actions remain separately owned; final recovery/history/audio bridges are pending.

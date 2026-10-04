@@ -581,6 +581,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         sys/compose_hover_timing_tests.cpp
         ../src/sys/compose_hover_timing.cpp
         sys/frame_timing_tests.cpp
+        sys/compose_notification_tests.cpp
         ui/nuklear_notification_state_tests.cpp
         ui/nuklear_notification_panel_tests.cpp
         sys/notification_history_runtime_tests.cpp

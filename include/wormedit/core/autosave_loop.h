@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/task_graph.h>
+#include <wormedit/core/notifications.h>
 #include <wormedit/formats/native_project_storage.h>
 
 #include <chrono>
@@ -40,7 +41,8 @@ class native_project_autosave_loop_t {
         std::optional<native_project_document_version_t> last_explicit_save = {},
         std::uint64_t initial_session_sequence = 0,
         clock_t::duration interval = std::chrono::minutes{5},
-        clock_t::duration retry_delay = std::chrono::seconds{30});
+        clock_t::duration retry_delay = std::chrono::seconds{30},
+        std::optional<notification_sink_t> notifications = {});
     ~native_project_autosave_loop_t();
 
     native_project_autosave_loop_t(const native_project_autosave_loop_t&) = delete;
@@ -81,6 +83,7 @@ class native_project_autosave_loop_t {
                            std::optional<native_project_autosave_result_t>& result);
 
     task_scheduler_t& scheduler_;
+    std::optional<notification_sink_t> notifications_;
     native_project_autosave_coordinator_t coordinator_;
     clock_t::duration interval_;
     clock_t::duration retry_delay_;

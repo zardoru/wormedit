@@ -331,3 +331,155 @@ TEST_CASE("autosave interval changes preserve successful cadence and survive pen
     expect_autosave_interval(!loop.tick(document, true, start + 20min, target));
     expect_autosave_interval(!loop.busy());
 }
+
+namespace {
+auto drain_notifications(wormedit::notification_center_t& center)
+    -> std::vector<wormedit::notification_entry_t> {
+    center.drain_inbox(wormedit::notification_time_t{0});
+    return center.snapshot(wormedit::notification_capacity);
+}
+
+struct autosave_notification_fixture_t {
+    using clock_t = wormedit::native_project_autosave_loop_t::clock_t;
+    temporary_directory_t directory;
+    wormedit::song_document_t document{song(83, 4)};
+    std::filesystem::path recovery{directory.path / "recovery"};
+    wormedit::native_project_autosave_target_t target{
+        wormedit::make_native_project_autosave_target(document.id, false, {}, recovery)};
+    clock_t::time_point start{};
+    wormedit::notification_center_t center;
+    wormedit::task_scheduler_t scheduler{1, 1};
+    wormedit::notification_sink_t sink{center};
+    wormedit::native_project_autosave_loop_t loop{start, scheduler, {}, 0, 5min, 10s, sink};
+
+    autosave_notification_fixture_t() { std::filesystem::create_directories(recovery); }
+
+    auto fail_replace_options() const -> wormedit::native_project_storage_options_t {
+        wormedit::native_project_storage_options_t options;
+        options.allow_stage = [](auto stage, const auto&) {
+            return stage != wormedit::native_project_storage_stage_t::replace_destination;
+        };
+        return options;
+    }
+};
+
+auto first_failure_posts_once(autosave_notification_fixture_t& fixture) -> bool {
+    if (fixture.loop.tick(fixture.document, true, fixture.start + 5min, fixture.target,
+                          fixture.fail_replace_options()))
+        return false;
+    const auto failed = wait_for_result(fixture.loop, fixture.document,
+                                        fixture.start + 5min + 1ms, fixture.target);
+    if (!failed || failed->status != wormedit::native_project_autosave_status_t::failed)
+        return false;
+    const auto entries = drain_notifications(fixture.center);
+    if (entries.size() != 1 || entries[0].message != "Autosave failed: " + failed->diagnostics.front().message +
+            " (" + failed->diagnostics.front().path.generic_string() + ")" ||
+        entries[0].severity != wormedit::notification_severity_t::error ||
+        entries[0].source != wormedit::notification_source_t::recovery)
+        return false;
+    if (fixture.loop.tick(fixture.document, true, fixture.start + 5min + 5s, fixture.target))
+        return false;
+    return drain_notifications(fixture.center).size() == 1;
+}
+
+auto retry_merges_then_success_stays_quiet(autosave_notification_fixture_t& fixture) -> bool {
+    if (fixture.loop.tick(fixture.document, true, fixture.start + 5min, fixture.target,
+                          fixture.fail_replace_options()))
+        return false;
+    if (!wait_for_result(fixture.loop, fixture.document, fixture.start + 5min + 1ms,
+                         fixture.target))
+        return false;
+    (void)drain_notifications(fixture.center);
+    if (fixture.loop.tick(fixture.document, true, fixture.start + 5min + 11s, fixture.target,
+                          fixture.fail_replace_options()))
+        return false;
+    const auto retried_failure = wait_for_result(fixture.loop, fixture.document,
+        fixture.start + 5min + 12s, fixture.target);
+    if (!retried_failure || retried_failure->status != wormedit::native_project_autosave_status_t::failed)
+        return false;
+    const auto entries = drain_notifications(fixture.center);
+    if (entries.size() != 1 || entries[0].count != 2)
+        return false;
+    if (fixture.loop.tick(fixture.document, true, fixture.start + 5min + 23s, fixture.target))
+        return false;
+    const auto recovered = wait_for_result(fixture.loop, fixture.document,
+        fixture.start + 5min + 24s, fixture.target);
+    if (!recovered || recovered->status != wormedit::native_project_autosave_status_t::published)
+        return false;
+    const auto after_success = drain_notifications(fixture.center);
+    return after_success.size() == 1 && after_success[0].count == 2;
+}
+
+auto stopped_queue_failure_is_single_and_missing_target_is_quiet() -> bool {
+    using namespace wormedit;
+    using clock_t = native_project_autosave_loop_t::clock_t;
+    const auto document = song(84, 2);
+    const auto start = clock_t::time_point{};
+    notification_center_t center;
+    task_scheduler_t scheduler(1, 1);
+    scheduler.shutdown();
+    notification_sink_t sink{center};
+    native_project_autosave_loop_t loop(start, scheduler, {}, 0, 5min, 10s, sink);
+    const native_project_autosave_target_t target{.backup_path = "stopped/project.bak"};
+    const auto failed = loop.tick(document, true, start + 5min, target);
+    if (!failed || failed->status != native_project_autosave_status_t::failed)
+        return false;
+    auto entries = drain_notifications(center);
+    if (entries.size() != 1 || entries[0].message != "Autosave failed: " + failed->diagnostics.front().message +
+            " (" + failed->diagnostics.front().path.generic_string() + ")" ||
+        entries[0].severity != notification_severity_t::error ||
+        entries[0].source != notification_source_t::recovery)
+        return false;
+    if (loop.tick(document, true, start + 5min + 1s, target) ||
+        drain_notifications(center).size() != 1)
+        return false;
+    const native_project_autosave_target_t missing{};
+    return !loop.tick(document, true, start + 6min, missing) &&
+           drain_notifications(center).size() == 1;
+}
+
+auto throwing_notification_clock_does_not_change_failed_result() -> bool {
+    using namespace wormedit;
+    using clock_t = native_project_autosave_loop_t::clock_t;
+    temporary_directory_t directory;
+    const auto document = song(85, 3);
+    const auto target = make_native_project_autosave_target(document.id, false, {}, directory.path);
+    const auto start = clock_t::time_point{};
+    notification_center_t center{[]() -> notification_time_t {
+        throw std::runtime_error{"injected notification clock failure"};
+    }};
+    task_scheduler_t scheduler(1, 1);
+    notification_sink_t sink{center};
+    native_project_autosave_loop_t loop(start, scheduler, {}, 0, 5min, 10s, sink);
+    native_project_storage_options_t fail_replace;
+    fail_replace.allow_stage = [](auto stage, const auto&) {
+        return stage != native_project_storage_stage_t::replace_destination;
+    };
+    if (loop.tick(document, true, start + 5min, target, std::move(fail_replace)))
+        return false;
+    const auto failed = wait_for_result(loop, document, start + 5min + 1ms, target);
+    if (!failed || failed->status != native_project_autosave_status_t::failed)
+        return false;
+    const auto quiet_poll = loop.tick(document, true, start + 5min + 5s, target);
+    return !quiet_poll && !loop.busy();
+}
+} // namespace
+
+TEST_CASE("autosave terminal failure posts once and quiet poll does not repeat it",
+          "[unit][core][autosave][notifications]") {
+    autosave_notification_fixture_t fixture;
+    CHECK(first_failure_posts_once(fixture));
+}
+
+TEST_CASE("autosave retry failure merges and successful retry adds no failure", "[unit][core][autosave][notifications]") {
+    autosave_notification_fixture_t fixture;
+    CHECK(retry_merges_then_success_stays_quiet(fixture));
+}
+
+TEST_CASE("autosave queue failure posts once and missing destination stays quiet", "[unit][core][autosave][notifications]") {
+    CHECK(stopped_queue_failure_is_single_and_missing_target_is_quiet());
+}
+
+TEST_CASE("autosave worker failure remains contained when notification clock throws", "[unit][core][autosave][notifications]") {
+    CHECK(throwing_notification_clock_does_not_change_failed_result());
+}

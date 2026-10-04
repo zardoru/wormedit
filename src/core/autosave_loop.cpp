@@ -5,6 +5,23 @@
 #include <utility>
 
 namespace wormedit {
+namespace {
+
+void post_autosave_failure(const std::optional<notification_sink_t>& notifications,
+                           const native_project_autosave_result_t& result) {
+    if (!notifications || result.status != native_project_autosave_status_t::failed)
+        return;
+    std::string message{"Autosave failed; the previous recovery backup was retained."};
+    if (!result.diagnostics.empty()) {
+        const auto& diagnostic = result.diagnostics.front();
+        message = "Autosave failed: " + diagnostic.message;
+        if (!diagnostic.path.empty())
+            message += " (" + diagnostic.path.generic_string() + ")";
+    }
+    notifications->post(notification_severity_t::error, notification_source_t::recovery, message);
+}
+
+} // namespace
 
 auto make_native_project_autosave_target(song_id_t project_id, bool has_native_primary,
                                          const std::filesystem::path& native_primary_path,
@@ -41,8 +58,9 @@ native_project_autosave_loop_t::native_project_autosave_loop_t(
     clock_t::time_point session_started_at, task_scheduler_t& scheduler,
     std::optional<native_project_document_version_t> last_explicit_save,
     std::uint64_t initial_session_sequence, clock_t::duration interval,
-    clock_t::duration retry_delay)
-    : scheduler_(scheduler), coordinator_(session_started_at, std::move(last_explicit_save),
+    clock_t::duration retry_delay, std::optional<notification_sink_t> notifications)
+    : scheduler_(scheduler), notifications_(std::move(notifications)),
+      coordinator_(session_started_at, std::move(last_explicit_save),
                                           interval, initial_session_sequence),
       interval_(interval),
       retry_delay_(retry_delay > clock_t::duration::zero() ? retry_delay
@@ -119,6 +137,7 @@ auto native_project_autosave_loop_t::tick(const song_document_t& song, bool dirt
              .message = added.error ? added.error->message : "could not queue autosave task",
              .path = target.backup_path});
         retry_after_ = now + retry_delay_;
+        post_autosave_failure(notifications_, failed);
         return failed;
     }
     auto submitted = scheduler_.submit(std::move(graph));
@@ -133,6 +152,7 @@ auto native_project_autosave_loop_t::tick(const song_document_t& song, bool dirt
                  submitted.error ? submitted.error->message : "could not queue autosave task",
              .path = target.backup_path});
         retry_after_ = now + retry_delay_;
+        post_autosave_failure(notifications_, failed);
         return failed;
     }
     worker_ = worker_t{.graph = std::move(submitted.graph), .task = *added.id};
@@ -170,6 +190,7 @@ void native_project_autosave_loop_t::collect_completed(
             deferred_explicit_save_.reset();
         }
         retry_after_ = now + retry_delay_;
+        post_autosave_failure(notifications_, failed);
         result = std::move(failed);
         return;
     }
@@ -181,6 +202,7 @@ void native_project_autosave_loop_t::collect_completed(
     }
     if (completion->result.status == native_project_autosave_status_t::failed)
         retry_after_ = now + retry_delay_;
+    post_autosave_failure(notifications_, completion->result);
     result = completion->result;
 }
 

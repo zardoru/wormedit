@@ -6,12 +6,23 @@
 #include <system_error>
 
 namespace wormedit {
+namespace {
 
-auto prepare_platform_recovery_directory() -> platform_recovery_directory_result_t {
+void post_recovery_directory_error(const std::optional<notification_sink_t>& notifications,
+                                  const std::string& message) {
+    if (!notifications || message.empty()) return;
+    notifications->post(notification_severity_t::error, notification_source_t::recovery, message);
+}
+
+} // namespace
+
+auto prepare_platform_recovery_directory(std::optional<notification_sink_t> notifications)
+    -> platform_recovery_directory_result_t {
     platform_recovery_directory_result_t result;
     char* preference_path = SDL_GetPrefPath("otoworld", "wormedit");
     if (preference_path == nullptr) {
         result.error = "SDL could not resolve the per-user application directory";
+        post_recovery_directory_error(notifications, result.error);
         return result;
     }
     result.path = std::filesystem::path{preference_path} / "recovery";
@@ -22,6 +33,7 @@ auto prepare_platform_recovery_directory() -> platform_recovery_directory_result
     if (error) {
         result.error = "could not create the platform recovery directory: " + error.message();
         result.path.clear();
+        post_recovery_directory_error(notifications, result.error);
     }
     return result;
 }

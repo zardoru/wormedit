@@ -1858,7 +1858,15 @@ static void draw_compose_bgm_event(const ComposePaintContext& paint,
     if (rect.w <= 0.0f || rect.h <= 0.0f) {
         return;
     }
-    const auto fill = event.has_sound ? nk_rgb(177, 116, 207) : nk_rgb(102, 88, 113);
+    auto fill = event.has_sound ? nk_rgb(177, 116, 207) : nk_rgb(102, 88, 113);
+    if (worm_ui_nuklear_compose_state().color_view ==
+        worm_ui_nuklear_compose_color_view_t::layer) {
+        fill = event.semantic_color_visible
+            ? nk_rgba(event.semantic_red, event.semantic_green,
+                      event.semantic_blue, event.semantic_alpha)
+            : wormedit::ui::theme::compose(
+                  wormedit::ui::theme::ComposeColor::semantic_layer_none);
+    }
     field_rect(paint, rect, 1.5f, fill, 3);
     field_stroke_rect(paint, rect, 1.5f, event.selected ? 2.0f : 1.0f,
                    event.selected ? nk_rgb(248, 224, 255) : nk_rgb(50, 35, 58), 3);

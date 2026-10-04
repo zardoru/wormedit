@@ -17,7 +17,7 @@ using wormedit::ui::chrome::color;
 using wormedit::ui::chrome::IconButton;
 using wormedit::ui::lucide::Glyph;
 using wormedit::ui::theme::UiColor;
-constexpr float row_height = 26.0f;
+constexpr float row_height = 38.0f;
 
 struct LayersPanel {
     nk_context* context;
@@ -78,6 +78,35 @@ auto layer_capture_current(const LayersPanel& panel) -> bool {
            state.layers_menu_revision == panel.view->document_revision;
 }
 
+void draw_layer_row_text(const LayersPanel& panel,
+                         const WormUiComposeSemanticLayerView& layer,
+                         struct nk_rect bounds) {
+    auto* context = panel.context;
+    auto* canvas = nk_window_get_canvas(context);
+    const auto text_color = color(layer.selected ? UiColor::selected_text : UiColor::text);
+    char label[256];
+    if (layer.assigned_bgm_count == 0) {
+        std::snprintf(label, sizeof(label), "%s: %zu notes", layer.name,
+                      layer.assigned_note_count);
+        nk_draw_text(canvas, nk_rect(bounds.x + 20, bounds.y + 10,
+                                     std::max(1.0f, bounds.w - 24), 16), label,
+                     static_cast<int>(std::strlen(label)), context->style.font,
+                     nk_rgba(0, 0, 0, 0), text_color);
+        return;
+    }
+    std::snprintf(label, sizeof(label), "%s", layer.name);
+    nk_draw_text(canvas, nk_rect(bounds.x + 20, bounds.y + 3,
+                                 std::max(1.0f, bounds.w - 24), 15), label,
+                 static_cast<int>(std::strlen(label)), context->style.font,
+                 nk_rgba(0, 0, 0, 0), text_color);
+    std::snprintf(label, sizeof(label), "%zu notes · %zu BGM",
+                  layer.assigned_note_count, layer.assigned_bgm_count);
+    nk_draw_text(canvas, nk_rect(bounds.x + 20, bounds.y + 20,
+                                 std::max(1.0f, bounds.w - 24), 15), label,
+                 static_cast<int>(std::strlen(label)), context->style.font,
+                 nk_rgba(0, 0, 0, 0), text_color);
+}
+
 auto layer_popup_bounds(const LayersPanel& panel) -> struct nk_rect {
     const auto region = nk_window_get_content_region(panel.context);
     return nk_rect(panel.state->layers_menu_x, panel.state->layers_menu_y,
@@ -115,8 +144,9 @@ auto layer_entry_reason(const LayersPanel& panel, const WormUiComposeSemanticLay
     if (entry.needs_idle && panel.view->semantic_layer_gesture_active)
         return "Finish or cancel the active Compose gesture";
     if (entry.needs_unlocked && layer.locked) return "Layer is locked";
-    if (entry.kind == WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER && layer.assigned_note_count)
-        return "Layer has notes; use Delete + unlink";
+    if (entry.kind == WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER &&
+        (layer.assigned_note_count || layer.assigned_bgm_count))
+        return "Layer has assigned objects; use Delete + unlink";
     if (entry.kind == WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP &&
         panel.state->layers_menu_row_index == 0) return "Layer is already first";
     if (entry.kind == WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_DOWN &&
@@ -336,19 +366,16 @@ void render_row_name(const LayersPanel& panel, const WormUiComposeSemanticLayerV
     else if (hovered) nk_fill_rect(canvas, bounds, 3.0f, color(UiColor::surface_hover));
     nk_fill_circle(canvas, nk_rect(bounds.x + 5, bounds.y + 9, 8, 8),
                    nk_rgba(layer.red, layer.green, layer.blue, layer.alpha));
-    char label[256];
-    std::snprintf(label, sizeof(label), "%s  (%zu)", layer.name, layer.assigned_note_count);
-    nk_draw_text(canvas, nk_rect(bounds.x + 20, bounds.y + 4, std::max(1.0f, bounds.w - 24),
-                                 bounds.h - 8), label, static_cast<int>(std::strlen(label)),
-                 context->style.font, nk_rgba(0, 0, 0, 0),
-                 color(layer.selected ? UiColor::selected_text : UiColor::text));
+    draw_layer_row_text(panel, layer, bounds);
     if (hovered) nk_tooltip(context, layer.locked ? "Layer is locked; click to choose its target"
-                         : panel.view->selected_note_count ? "Assign selected notes to this layer"
-                                                           : layer.name);
+                         : panel.view->selected_note_count || panel.view->selected_bgm_event_count
+                               ? "Assign selected notes and BGM events to this layer"
+                               : layer.name);
     if (clicked && panel.view->scene_available && layer.layer_id == 0) {
         (void)raise(panel, WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER);
     } else if (clicked && panel.view->scene_available)
-        (void)raise(panel, panel.view->selected_note_count && !layer.locked
+        (void)raise(panel, (panel.view->selected_note_count ||
+                            panel.view->selected_bgm_event_count) && !layer.locked
                               ? WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER
                               : WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER, layer.layer_id);
 }
@@ -381,7 +408,8 @@ void render_no_layer_row(const LayersPanel& panel) {
         .layer_id = 0, .name = "No layer", .red = neutral.r, .green = neutral.g,
         .blue = neutral.b, .alpha = neutral.a,
         .assigned_note_count = panel.view->semantic_layer_unassigned_note_count,
-        .visible = true, .locked = false, .selected = panel.view->semantic_layer_target_none};
+        .visible = true, .locked = false, .selected = panel.view->semantic_layer_target_none,
+        .assigned_bgm_count = panel.view->semantic_layer_unassigned_bgm_count};
     nk_layout_row_dynamic(panel.context, row_height, 1);
     render_row_name(panel, layer, 0);
 }

@@ -1166,3 +1166,57 @@ TEST_CASE("Warmed Compose branch projection remains stable for 1000 arena resets
     check_frame_storage(stable);
     check_frame_storage(remaining == 0);
 }
+
+TEST_CASE("Compose sound group choices retain names and stable resource membership",
+          "[sys][frame-arena][sound-group]") {
+    auto document = compose_resource_document(2);
+    document.charts.push_back({.id = wormedit::chart_id_t{1}});
+    document.sound_groups.push_back({.id = wormedit::sound_group_id_t{9}, .name = "Piano"});
+    document.resources.front().sound_group = wormedit::sound_group_id_t{9};
+    auto frame = project_resource_rows(document);
+    REQUIRE(frame.view.compose.compose_sound_group_count == 1);
+    REQUIRE(frame.view.compose.keysound_count == 2);
+    document.sound_groups.front().name = "Changed";
+    document.resources.front().sound_group.reset();
+    auto moved = std::move(frame);
+    check_frame_storage(moved.view.compose.compose_sound_groups[0].group_id == 9);
+    check_frame_storage(std::strcmp(moved.view.compose.compose_sound_groups[0].name, "Piano") == 0);
+    const auto* rows = moved.view.compose.keysounds;
+    const auto grouped = rows[0].resource_id == 1 ? 0 : 1;
+    check_frame_storage(rows[grouped].sound_group_id == 9);
+    check_frame_storage(rows[1 - grouped].sound_group_id == 0);
+    auto current = project_resource_rows(document);
+    check_frame_storage(current.view.compose.keysounds[grouped].sound_group_id == 0);
+    check_frame_storage(std::strcmp(current.view.compose.compose_sound_groups[0].name, "Changed") == 0);
+}
+
+TEST_CASE("Sound usage rows and labels remain arena owned after source changes and move",
+          "[sys][frame-arena][sound-usage]") {
+    auto document = compose_resource_document(1);
+    document.id = wormedit::song_id_t{8};
+    document.revision = 11;
+    wormedit::chart_document_t chart;
+    chart.id = wormedit::chart_id_t{12};
+    chart.metadata.name = "Difficulty";
+    chart.measures.push_back({.id = wormedit::measure_id_t{50}});
+    chart.measures.front().notes.push_back({.id = wormedit::object_id_t{60},
+        .position = {wormedit::measure_id_t{50}, 120}, .sound = wormedit::resource_id_t{1}});
+    document.charts.push_back(chart);
+    wormedit::workspace_view_t model;
+    model.active_tab = wormedit::workspace_tab_t::audio_slices;
+    model.tab_view = wormedit::workspace_audio_slices_view_t{};
+    auto frame = flatten_workspace(model, document, "ready", {}, false, {}, nullptr,
+        dock_sort_t::natural_name, {}, {.selected_project_id = 8, .selected_resource_id = 1, .find_uses_open = true});
+    REQUIRE(frame.view.audio_slices.usage_row_count == 1);
+    document.charts.front().metadata.name = "Changed";
+    document.charts.front().measures.clear();
+    auto moved = std::move(frame);
+    moved.rebind_view_pointers();
+    const auto& view = moved.view.audio_slices;
+    check_frame_storage(view.usage_valid);
+    check_frame_storage(view.usage_song_id == 8 && view.usage_document_revision == 11);
+    check_frame_storage(view.usage_total_count == 1 && !view.usage_rows_truncated);
+    check_frame_storage(view.usage_rows[0].object_id == 60);
+    check_frame_storage(std::strcmp(view.usage_rows[0].chart_label, "Difficulty") == 0);
+    check_frame_storage(std::strcmp(view.usage_rows[0].position_label, "Measure 1, row 120") == 0);
+}

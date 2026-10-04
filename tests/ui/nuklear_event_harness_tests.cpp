@@ -1,18 +1,18 @@
 #include "nuklear_event_harness.h"
-#include "ui/nuklear/compose_state.h"
-#include "ui/nuklear/compose_note_menu.h"
-#include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/audio_state.h"
+#include "ui/nuklear/compose_area_menu.h"
+#include "ui/nuklear/compose_note_menu.h"
+#include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/sound_import_runtime.h"
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <array>
 #include <algorithm>
+#include <array>
 #include <cstdio>
+#include <source_location>
 #include <string>
 #include <string_view>
-#include <source_location>
 #include <utility>
 
 TEST_CASE("Sound layer confirmation waits for a choice and rejects stale documents",
@@ -762,14 +762,14 @@ TEST_CASE("Layers dock rows choose the target and send eye and lock actions for 
     view.semantic_layer_count = layers.size();
     view.semantic_layer_total_count = layers.size();
     (void)harness.frame();
-    const auto row = harness.drawn_text_center("Lead  (3)");
+    const auto row = harness.drawn_text_center("Lead: 3 notes");
     REQUIRE(row.has_value());
     const auto chosen = click_at(harness, row->first, row->second);
     check_layer_row_action(chosen.back(), WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER, 7);
     layers.front().selected = true;
     view.semantic_layer_target = layers.front();
     (void)harness.frame();
-    const auto hidden_row = harness.drawn_text_center("Hidden  (2)");
+    const auto hidden_row = harness.drawn_text_center("Hidden: 2 notes");
     REQUIRE(hidden_row.has_value());
     const auto eye = click_at(harness, 1200, hidden_row->second);
     check_layer_row_action(eye[0], WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, 9);
@@ -790,14 +790,14 @@ TEST_CASE("Layers dock No layer row requests clear assignment without eye or loc
     view.selected_note_count = 2;
     const auto revision = view.document_revision;
     (void)harness.frame();
-    const auto no_layer = harness.drawn_text_center("No layer  (4)");
+    const auto no_layer = harness.drawn_text_center("No layer: 4 notes");
     REQUIRE(no_layer.has_value());
     const auto clicked = click_at(harness, no_layer->first, no_layer->second);
     check_layer_row_action(clicked.back(), WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER, 0);
     CHECK(view.document_revision == revision);
     view.semantic_layer_target_none = true;
     (void)harness.frame();
-    const auto no_layer_row = harness.drawn_text_center("No layer  (4)");
+    const auto no_layer_row = harness.drawn_text_center("No layer: 4 notes");
     REQUIRE(no_layer_row.has_value());
     const auto no_eye = click_at(harness, no_layer_row->first, no_layer_row->second);
     check_layer_row_action(no_eye.back(), WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER, 0);
@@ -854,7 +854,8 @@ struct layer_menu_fixture_t {
     }
 
     void open(std::size_t index = 0) {
-        const auto row = harness.drawn_text_center(index == 0 ? "Lead  (3)" : "Locked  (2)");
+        const auto row =
+            harness.drawn_text_center(index == 0 ? "Lead: 3 notes" : "Locked: 2 notes");
         REQUIRE(row.has_value());
         const auto clicks = right_click_at(harness, row->first, row->second);
         check_layer_row_action(clicks.front(), WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER,
@@ -1026,7 +1027,7 @@ struct note_menu_fixture_t {
         (void)harness.frame();
     }
 };
-}
+} // namespace
 
 TEST_CASE("Note right click opens Layer submenu and assigns its captured selection",
           "[unit][frontend-state][frontend][event-harness]") {
@@ -1180,7 +1181,7 @@ void check_tooltip_text(const nuklear_event_harness_t& harness, const char* text
 void check_no_tooltip_text(const nuklear_event_harness_t& harness, const char* text) {
     CHECK(harness.drawn_text().find(text) == std::string::npos);
 }
-}
+} // namespace
 
 TEST_CASE("Unavailable overview tooltip stays on its row and preserves panel tooltips",
           "[unit][frontend-state][frontend][event-harness][tooltip]") {
@@ -1264,7 +1265,7 @@ void check_note_click_emitted_once(bool selected) {
             count += frame.get().compose_inputs[index].kind == WORM_UI_COMPOSE_INPUT_POINTER_CLICK;
     CHECK(count == 1);
 }
-}
+} // namespace
 TEST_CASE("Clicking selected and unselected notes emits one audition selection",
           "[unit][frontend-state][event-harness][audition][regression]") {
     check_note_click_emitted_once(false);
@@ -1276,7 +1277,7 @@ void check_bga_dock(bool value) { CHECK(value); }
 void check_sound_slot_hidden(const std::string& drawn_text) {
     CHECK(drawn_text.find("0A  kick.wav") == std::string::npos);
 }
-}
+} // namespace
 
 TEST_CASE("Selecting a sound keeps note painting armed with that sound and preserves advance",
           "[frontend-state][event-harness][sound-paint]") {
@@ -1294,7 +1295,9 @@ TEST_CASE("Selecting a sound keeps note painting armed with that sound and prese
     state.auto_increment_on_place = true;
     view.note_paint_mode_active = true;
     (void)harness.frame();
-    const auto actions = click_at(harness, state.sound_list_x + 70, state.sound_list_y + 110);
+    const auto kick_row = harness.drawn_text_center("kick.wav");
+    REQUIRE(kick_row);
+    const auto actions = click_at(harness, kick_row->first, kick_row->second);
     CHECK_FALSE(std::ranges::any_of(actions, [](const auto& action) {
         return action.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
     }));
@@ -1355,7 +1358,7 @@ auto has_sound_audition_action(const std::vector<workspace_action_snapshot_t>& f
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_AUDITION_SOUND;
     });
 }
-}
+} // namespace
 
 TEST_CASE("Sounds dock confirms renumbering the selected BMS resources", "[frontend-state][event-harness][sounds][bms]") {
     nuklear_event_harness_t harness{1280, 900};
@@ -1531,7 +1534,7 @@ void check_modal_blocks_chart_inputs(const std::vector<workspace_action_snapshot
     // A modal may cancel an existing pointer gesture, but no chart action such
     // as note selection, placement, or movement can escape to the canvas.
 }
-}
+} // namespace
 
 TEST_CASE("BGA renumber popup blocks Compose note input outside its bounds",
           "[frontend-state][event-harness][bga][modal]") {
@@ -1586,7 +1589,7 @@ auto find_compose_input(const std::vector<workspace_action_snapshot_t>& frames,
                 return &frame.get().compose_inputs[index];
     return nullptr;
 }
-}
+} // namespace
 
 TEST_CASE("Note paint carries the Sounds dock sound whichever was picked first",
           "[unit][frontend-state][event-harness][paint][sound]") {
@@ -1851,7 +1854,9 @@ TEST_CASE("Occupied slot selection arms its sound and replacement requires expli
     const sound_slots_fixture_t fixture;
     configure_sound_slots(harness, fixture);
     auto& state = worm_ui_nuklear_compose_state();
-    (void)click_at(harness, state.sound_list_x + 70, state.sound_list_y + 165);
+    const auto occupied_row = harness.drawn_text_center("02  kick.wav");
+    REQUIRE(occupied_row);
+    (void)click_at(harness, occupied_row->first, occupied_row->second);
     check_sound_slots(state.keysound_selected_slot == 2);
     check_sound_slots(state.armed_resource_id == 501);
     check_sound_slots(state.keysound_selection.primary == 501);
@@ -1916,11 +1921,15 @@ TEST_CASE("Missing and empty slots disarm painting and non-BMS charts retain aut
     configure_sound_slots(harness, fixture);
     auto& state = worm_ui_nuklear_compose_state();
     state.armed_resource_id = 501;
-    (void)click_at(harness, state.sound_list_x + 70, state.sound_list_y + 196);
+    const auto missing_row = harness.drawn_text_center("03  missing.wav · missing");
+    REQUIRE(missing_row);
+    (void)click_at(harness, missing_row->first, missing_row->second);
     check_sound_slots(state.keysound_selected_slot == 3);
     check_sound_slots(state.armed_resource_id == 0);
     state.armed_resource_id = 501;
-    (void)click_at(harness, state.sound_list_x + 70, state.sound_list_y + 134);
+    const auto empty_row = harness.drawn_text_center("01  (empty)");
+    REQUIRE(empty_row);
+    (void)click_at(harness, empty_row->first, empty_row->second);
     check_sound_slots(state.keysound_selected_slot == 1);
     check_sound_slots(state.armed_resource_id == 0);
     harness.view().compose.keysound_ids_available = false;
@@ -1936,6 +1945,12 @@ TEST_CASE("Missing and empty slots disarm painting and non-BMS charts retain aut
 }
 
 namespace {
+void expect_filtered_sound_rows(const nuklear_event_harness_t& harness) {
+    CHECK(harness.drawn_text_center("Kick  ·  Keysound").has_value());
+    CHECK_FALSE(harness.drawn_text_center("Snare  ·  Keysound").has_value());
+    CHECK(harness.drawn_text().find("Snare") != std::string::npos);
+}
+
 void expect_sound_sections(const nuklear_event_harness_t& harness) {
     CHECK(harness.drawn_text().find("Sounds") != std::string::npos);
     CHECK(harness.drawn_text().find("Waveform") != std::string::npos);
@@ -1952,10 +1967,15 @@ void select_and_filter_sound(nuklear_event_harness_t& harness) {
     });
     REQUIRE(action != selected.end());
     CHECK(action->get().audio_asset_id == 22);
+    CHECK(action->get().audio_resource_id == 102);
+    auto& audio_view = harness.view().audio_slices;
+    audio_view.selected_resource_id = action->get().audio_resource_id;
+    audio_view.has_selected_asset = true;
+    audio_view.selected_asset_id = action->get().audio_asset_id;
     std::snprintf(worm_ui_nuklear_audio_state().search_text, 128, "kick");
     CHECK(harness.frame().get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
-    CHECK(harness.drawn_text().find("Kick") != std::string::npos);
-    CHECK(harness.drawn_text().find("Snare") == std::string::npos);
+    expect_filtered_sound_rows(harness);
+    CHECK(worm_ui_nuklear_audio_state().selected_resource_id == 102);
 }
 
 void check_separated_sound_columns(int width) {

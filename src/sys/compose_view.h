@@ -184,6 +184,16 @@ struct compose_scene_cache_t {
 #endif
     std::uint64_t waveform_overview_total_frames{};
     std::uint32_t waveform_overview_sample_rate{};
+    struct hover_timing_snapshot_t {
+        std::int64_t source_frame{};
+        std::uint64_t project_id{};
+        std::uint64_t chart_id{};
+        std::uint64_t document_revision{};
+        std::uint64_t audio_asset_id{};
+        std::uint64_t total_frames{};
+        std::uint32_t sample_rate{};
+        bool valid{};
+    } hover_timing;
     std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
     wormedit::editor_field_scene_request_t preview_scene_request;
     std::optional<wormedit::editor_object_hover_state_t> hover;
@@ -191,6 +201,7 @@ struct compose_scene_cache_t {
     std::optional<wormedit::editor_object_audition_request_t> audition_request;
     std::optional<bmson_draft_audition_request_t> draft_audition_request;
     std::unordered_map<std::uint64_t, std::size_t> semantic_layer_membership_counts;
+    std::unordered_map<std::uint64_t, std::size_t> semantic_layer_bgm_membership_counts;
     bool focus_note_label_editor{};
     // The song has audio (decided last frame; the surface height is needed before the waveform).
     bool bgm_bar_audio_seen{};

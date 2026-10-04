@@ -387,6 +387,13 @@ struct worm_ui_nuklear_compose_state_t {
     bool keysound_sort_by_id{};
     bool keysound_slots_mode{};
     worm_ui_sound_slot_batch_t keysound_slot_batch;
+    worm_ui_keysound_group_review_t keysound_group_review;
+    bool keysound_group_menu_open{};
+    bool keysound_group_menu_release_pending{};
+    double keysound_group_menu_anchor_x{}, keysound_group_menu_anchor_y{};
+    std::uint64_t keysound_group_menu_resource_id{};
+    std::uint64_t keysound_group_menu_project_id{}, keysound_group_menu_chart_id{};
+    std::uint64_t keysound_group_menu_revision{};
     bool bga_event_move_candidate_active{};
     bool bga_event_move_active{};
     std::uint64_t bga_event_move_object_id{};

@@ -2,9 +2,15 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
+#include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
+
+#include <wormedit/core/sound_group_proposal.h>
+#include "ui/frontend.h"
 
 // Selection, search and layer tri-state rules of the Compose keysound listbox.
 // Pure state over resource IDs: no widget toolkit and no filesystem, so the
@@ -17,6 +23,62 @@ struct worm_ui_keysound_selection_t {
     std::uint64_t anchor{};
     std::uint64_t primary{};
 };
+
+struct worm_ui_keysound_group_candidate_t {
+    std::uint64_t id{};
+    std::string name;
+};
+struct worm_ui_keysound_group_proposal_t {
+    std::string name;
+    std::uint64_t existing_group_id{};
+    bool accepted{true};
+    std::vector<std::uint64_t> member_ids;
+};
+struct worm_ui_keysound_group_assignment_t {
+    std::string name;
+    std::uint64_t existing_group_id{};
+    std::vector<std::uint64_t> sound_ids;
+};
+struct worm_ui_keysound_group_review_t {
+    bool open{};
+    bool open_pending{};
+    bool manual{};
+    bool keep_ids_together{true};
+    std::uint64_t target_group_id{};
+    std::array<char, 65> manual_group_name{};
+    std::uint64_t project_id{};
+    std::uint64_t chart_id{};
+    std::uint64_t document_revision{};
+    std::vector<worm_ui_keysound_group_candidate_t> candidates;
+    std::vector<worm_ui_keysound_group_proposal_t> groups;
+    std::vector<worm_ui_keysound_group_assignment_t> staged_assignments;
+    std::vector<WormUiSoundGroupAssignment> staged_payload;
+    std::string message;
+};
+enum class worm_ui_sound_group_review_action_t : std::uint8_t { none, confirm, cancel };
+
+void worm_ui_keysound_group_review_suggest(
+    worm_ui_keysound_group_review_t& review,
+    std::span<const worm_ui_keysound_group_candidate_t> candidates,
+    std::span<const wormedit::sound_group_t> existing_groups, std::uint64_t project,
+    std::uint64_t chart, std::uint64_t revision);
+void worm_ui_keysound_group_review_set_accepted(worm_ui_keysound_group_review_t& review,
+                                                std::size_t group, bool accepted);
+void worm_ui_keysound_group_review_rename(worm_ui_keysound_group_review_t& review,
+                                          std::size_t group, std::string name);
+void worm_ui_keysound_group_review_move(worm_ui_keysound_group_review_t& review,
+                                        std::uint64_t sound_id,
+                                        std::optional<std::size_t> group);
+void worm_ui_keysound_group_review_leave_all_ungrouped(
+    worm_ui_keysound_group_review_t& review);
+[[nodiscard]] auto worm_ui_keysound_group_review_confirm(
+    worm_ui_keysound_group_review_t& review)
+    -> std::vector<worm_ui_keysound_group_assignment_t>;
+void worm_ui_keysound_group_review_stage_payload(
+    worm_ui_keysound_group_review_t& review,
+    std::span<const worm_ui_keysound_group_assignment_t> assignments,
+    bool keep_ids_together);
+void worm_ui_keysound_group_review_cancel(worm_ui_keysound_group_review_t& review);
 
 enum class worm_ui_keysound_layer_state_t : std::uint8_t { none, some, all };
 

@@ -39,6 +39,10 @@ struct SoundsPanel {
     worm_ui_nuklear_compose_state_t* state;
 };
 
+void render_sound_row_context_menu(const SoundsPanel& panel, std::size_t shown_index,
+                                   std::uint64_t id, struct nk_rect bounds);
+void render_sound_group_context_menu(const SoundsPanel& panel);
+
 // ---- Multi-file picker. SDL may call back from another thread. ----
 
 struct picker_target_t {
@@ -534,6 +538,79 @@ void render_toolbar(const SoundsPanel& panel) {
     if (pushed) (void)nk_style_pop_vec2(context);
 }
 
+auto group_candidates(const SoundsPanel& panel, bool ungrouped_only)
+    -> std::vector<worm_ui_keysound_group_candidate_t> {
+    std::vector<worm_ui_keysound_group_candidate_t> candidates;
+    for (const auto id : panel.state->keysound_selection.selected) {
+        const auto* row = find_row(*panel.view, id);
+        if (!row || (ungrouped_only && row->sound_group_id != 0)) continue;
+        candidates.push_back({.id = id, .name = row->name ? row->name : ""});
+    }
+    return candidates;
+}
+
+void open_manual_group_review(const SoundsPanel& panel) {
+    auto& review = panel.state->keysound_group_review;
+    panel.state->keysound_group_menu_release_pending = true;
+    review = {};
+    review.manual = true;
+    review.open_pending = true;
+    review.keep_ids_together = true;
+    review.project_id = panel.view->project_id;
+    review.chart_id = panel.view->chart_id;
+    review.document_revision = panel.view->document_revision;
+    std::snprintf(review.manual_group_name.data(), review.manual_group_name.size(), "%s",
+                  "New group");
+    review.candidates = group_candidates(panel, false);
+}
+
+void open_suggested_group_review(const SoundsPanel& panel) {
+    panel.state->keysound_group_menu_release_pending = true;
+    auto candidates = group_candidates(panel, true);
+    auto existing = std::vector<wormedit::sound_group_t>{};
+    existing.reserve(panel.view->compose_sound_group_count);
+    for (std::size_t index = 0; index < panel.view->compose_sound_group_count; ++index) {
+        const auto& group = panel.view->compose_sound_groups[index];
+        existing.push_back({.id = wormedit::sound_group_id_t{group.group_id},
+                            .name = group.name ? group.name : ""});
+    }
+    worm_ui_keysound_group_review_suggest(
+        panel.state->keysound_group_review, candidates, existing, panel.view->project_id,
+        panel.view->chart_id, panel.view->document_revision);
+    panel.state->keysound_group_review.open = false;
+    panel.state->keysound_group_review.open_pending = true;
+    panel.state->keysound_group_review.keep_ids_together = true;
+}
+
+void render_group_actions(const SoundsPanel& panel) {
+    auto* context = panel.context;
+    auto& state = *panel.state;
+    const auto has_selection = !state.keysound_selection.selected.empty();
+    const auto any_grouped = std::ranges::any_of(state.keysound_selection.selected, [&](auto id) {
+        const auto* row = find_row(*panel.view, id);
+        return row && row->sound_group_id != 0;
+    });
+    nk_layout_row_template_begin(context, 24);
+    nk_layout_row_template_push_static(context, 80);
+    nk_layout_row_template_push_static(context, 76);
+    nk_layout_row_template_push_dynamic(context);
+    nk_layout_row_template_end(context);
+    const auto plain_button = [&](bool enabled, const char* label) {
+        if (!enabled) nk_widget_disable_begin(context);
+        const auto clicked = nk_button_label(context, label);
+        if (!enabled) nk_widget_disable_end(context);
+        return clicked && enabled;
+    };
+    if (plain_button(has_selection, "Group...")) open_manual_group_review(panel);
+    if (plain_button(any_grouped, "Ungroup"))
+        raise_on_selection(panel, WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS);
+    const auto has_ungrouped = std::ranges::any_of(state.keysound_selection.selected, [&](auto id) {
+        const auto* row = find_row(*panel.view, id);
+        return row && row->sound_group_id == 0;
+    });
+    if (plain_button(has_ungrouped, "Suggest groups...")) open_suggested_group_review(panel);
+}
+
 void raise_sound_renumber(const SoundsPanel& panel, bool all) {
     if (!raise(panel, WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS)) return;
     auto& state = *panel.state;
@@ -959,6 +1036,8 @@ void render_row(const SoundsPanel& panel, std::size_t shown_index) {
     const auto hovered = nk_widget_is_hovered(context);
     const auto clicked = nk_widget_is_mouse_clicked(context, NK_BUTTON_LEFT) &&
                          !panel.view->input_occluded &&
+                         !panel.state->keysound_group_menu_open &&
+                         !panel.state->keysound_group_menu_release_pending &&
                          !panel.state->keysound_renumber_confirmation_open &&
                          !panel.state->keysound_renumber_release_pending &&
                          !panel.state->keysound_slot_confirmation_open &&
@@ -972,6 +1051,27 @@ void render_row(const SoundsPanel& panel, std::size_t shown_index) {
         if (!tip.empty()) nk_tooltip(context, tip.c_str());
     }
     if (clicked) click_row(panel, shown_index, id);
+    if (!panel.state->keysound_group_menu_open &&
+        !panel.state->keysound_group_menu_release_pending &&
+        !panel.view->input_occluded &&
+        nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) &&
+        nk_input_has_mouse_click_in_rect(&context->input, NK_BUTTON_RIGHT, bounds)) {
+        auto& state = *panel.state;
+        if (!worm_ui_keysound_is_selected(state.keysound_selection, id)) {
+            worm_ui_keysound_clear(state.keysound_selection);
+            state.keysound_selection.selected.push_back(id);
+            state.keysound_selection.anchor = id;
+            state.keysound_selection.primary = id;
+        }
+        state.keysound_group_menu_open = true;
+        state.keysound_group_menu_release_pending = true;
+        state.keysound_group_menu_anchor_x = context->input.mouse.pos.x;
+        state.keysound_group_menu_anchor_y = context->input.mouse.pos.y;
+        state.keysound_group_menu_resource_id = id;
+        state.keysound_group_menu_project_id = panel.view->project_id;
+        state.keysound_group_menu_chart_id = panel.view->chart_id;
+        state.keysound_group_menu_revision = panel.view->document_revision;
+    }
 }
 
 void render_list_hint(const SoundsPanel& panel) {
@@ -982,6 +1082,86 @@ void render_list_hint(const SoundsPanel& panel) {
         nk_label_wrap(context, "No sounds yet. Drop audio files here, or use the add button.");
     else
         nk_label_wrap(context, "No sound matches the search.");
+}
+
+void render_sound_group_context_menu(const SoundsPanel& panel) {
+    auto* context = panel.context;
+    auto& state = *panel.state;
+    if (state.keysound_group_menu_release_pending) {
+        const auto mouse_down = context->input.mouse.buttons[NK_BUTTON_LEFT].down ||
+                                context->input.mouse.buttons[NK_BUTTON_RIGHT].down;
+        const auto mouse_edge = nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT) ||
+                                nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) ||
+                                nk_input_is_mouse_released(&context->input, NK_BUTTON_LEFT) ||
+                                nk_input_is_mouse_released(&context->input, NK_BUTTON_RIGHT);
+        if (mouse_down || mouse_edge) return;
+        state.keysound_group_menu_release_pending = false;
+    }
+    if (state.keysound_group_review.open_pending) {
+        state.keysound_group_review.open_pending = false;
+        state.keysound_group_review.open = true;
+    }
+    if (!state.keysound_group_menu_open) return;
+    const auto captured = state.keysound_group_menu_project_id == panel.view->project_id &&
+                          state.keysound_group_menu_chart_id == panel.view->chart_id &&
+                          state.keysound_group_menu_revision == panel.view->document_revision &&
+                          find_row(*panel.view, state.keysound_group_menu_resource_id);
+    if (!captured) {
+        state.keysound_group_menu_open = false;
+        wormedit::ui::chrome::dismiss_popup(context, "Sound group actions", nk_rect(0, 0, 1, 1));
+        return;
+    }
+    const auto region = nk_window_get_content_region(context);
+    const auto width = std::min(220.0f, region.w);
+    const auto height = std::min(96.0f, region.h);
+    const auto x = std::clamp(static_cast<float>(state.keysound_group_menu_anchor_x) - region.x,
+                              0.0f, std::max(0.0f, region.w - width));
+    const auto y = std::clamp(static_cast<float>(state.keysound_group_menu_anchor_y) - region.y,
+                              0.0f, std::max(0.0f, region.h - height));
+    const auto bounds = nk_rect(x, y, width, height);
+    const auto outside_press = nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT) ||
+                               nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT);
+    if (!nk_popup_begin(context, NK_POPUP_STATIC, "Sound group actions", NK_WINDOW_BORDER, bounds)) {
+        state.keysound_group_menu_open = false;
+        state.keysound_group_menu_release_pending =
+            context->input.mouse.buttons[NK_BUTTON_LEFT].down ||
+            context->input.mouse.buttons[NK_BUTTON_RIGHT].down;
+        return;
+    }
+    const auto actual_popup_bounds = nk_window_get_bounds(context);
+    if (nk_input_is_key_pressed(&context->input, NK_KEY_TEXT_RESET_MODE)) {
+        state.keysound_group_menu_open = false;
+        state.keysound_group_menu_release_pending = true;
+        nk_popup_close(context);
+        nk_popup_end(context);
+        return;
+    }
+    if (outside_press && !nk_input_is_mouse_hovering_rect(&context->input, actual_popup_bounds)) {
+        state.keysound_group_menu_open = false;
+        state.keysound_group_menu_release_pending = true;
+        nk_popup_close(context);
+        nk_popup_end(context);
+        return;
+    }
+    nk_layout_row_dynamic(context, 24, 1);
+    const auto group_button_activated = nk_button_label(context, "Group...");
+    if (group_button_activated) {
+        state.keysound_group_menu_open = false;
+        state.keysound_group_menu_release_pending = true;
+        nk_popup_close(context);
+        open_manual_group_review(panel);
+    } else if (nk_button_label(context, "Ungroup")) {
+        raise_on_selection(panel, WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS);
+        state.keysound_group_menu_open = false;
+        state.keysound_group_menu_release_pending = true;
+        nk_popup_close(context);
+    } else if (nk_button_label(context, "Suggest groups...")) {
+        state.keysound_group_menu_open = false;
+        state.keysound_group_menu_release_pending = true;
+        nk_popup_close(context);
+        open_suggested_group_review(panel);
+    }
+    nk_popup_end(context);
 }
 
 void render_list(const SoundsPanel& panel, float height) {
@@ -1007,6 +1187,7 @@ void render_list(const SoundsPanel& panel, float height) {
             render_row(panel, static_cast<std::size_t>(index));
     }
     nk_list_view_end(&list);
+    render_sound_group_context_menu(panel);
 }
 
 void render_title(const SoundsPanel& panel) {
@@ -1048,6 +1229,7 @@ void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
     render_title(panel);
     render_mode_row(panel);
     render_toolbar(panel);
+    render_group_actions(panel);
     if (state->keysound_slots_mode && view->keysound_ids_available)
         render_sound_slot_search(panel);
     else

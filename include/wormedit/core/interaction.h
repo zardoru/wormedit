@@ -320,11 +320,13 @@ struct begin_semantic_layer_paint_gesture_action_t {
     bool pointer_captured{true};
     bool replace_memberships{};
     bool clear_memberships{};
+    std::optional<object_id_t> bgm_event;
 };
 
 struct update_semantic_layer_paint_gesture_action_t {
     object_id_t note;
     bool pointer_captured{true};
+    std::optional<object_id_t> bgm_event;
 };
 
 struct end_semantic_layer_paint_gesture_action_t {
@@ -332,6 +334,7 @@ struct end_semantic_layer_paint_gesture_action_t {
     // target, allowing pointer release in empty field space.
     object_id_t note;
     bool pointer_captured{true};
+    std::optional<object_id_t> bgm_event;
 };
 
 struct paint_cell_key_t {
@@ -522,6 +525,7 @@ struct pending_semantic_layer_paint_gesture_t {
     layer_id_t layer;
     std::uint64_t document_revision{};
     std::shared_ptr<const std::vector<object_id_t>> notes;
+    std::shared_ptr<const std::vector<object_id_t>> bgm_events;
     std::unordered_set<std::uint64_t> visited;
     bool replace_memberships{};
     bool clear_memberships{};

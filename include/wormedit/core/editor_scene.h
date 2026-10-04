@@ -29,6 +29,8 @@ struct editor_field_scene_bgm_source_t {
     std::uint64_t row{};
     std::optional<resource_id_t> sound;
     std::optional<bool> bmson_restart;
+    std::optional<color_rgba_t> semantic_color;
+    std::vector<layer_id_t> semantic_layers;
 };
 
 struct editor_field_scene_bga_source_t {
@@ -165,6 +167,7 @@ struct editor_field_bgm_event_geometry_t {
     std::optional<bool> bmson_restart;
     bool selected{};
     editor_field_rect_t bounds;
+    std::optional<color_rgba_t> semantic_color;
 };
 
 struct editor_field_bga_lane_geometry_t {

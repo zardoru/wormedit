@@ -137,6 +137,8 @@ struct workspace_action_snapshot_t::storage_t {
     std::vector<WormUiSoundImportItem> import_items;
     std::vector<WormUiSoundImportGroup> import_groups;
     std::deque<std::vector<std::size_t>> import_members;
+    std::vector<WormUiSoundGroupAssignment> group_assignments;
+    std::deque<std::vector<std::uint64_t>> group_members;
 
     auto own(const char* text) -> const char* {
         if (!text) return nullptr;
@@ -171,8 +173,25 @@ struct workspace_action_snapshot_t::storage_t {
         action.sound_import_groups = source.sound_import_groups ? import_groups.data() : nullptr;
     }
 
+    void own_sound_groups(const WormUiWorkspaceAction& source) {
+        for (std::size_t index = 0; source.compose_sound_group_assignments &&
+                index < source.compose_sound_group_assignment_count; ++index) {
+            auto assignment = source.compose_sound_group_assignments[index];
+            assignment.name = own(assignment.name);
+            if (assignment.sound_ids) {
+                group_members.emplace_back(assignment.sound_ids,
+                                            assignment.sound_ids + assignment.sound_count);
+                assignment.sound_ids = group_members.back().data();
+            }
+            group_assignments.push_back(assignment);
+        }
+        action.compose_sound_group_assignments = source.compose_sound_group_assignments
+            ? group_assignments.data() : nullptr;
+    }
+
     explicit storage_t(const WormUiWorkspaceAction& source) : action{source} {
         own_sound_import(source);
+        own_sound_groups(source);
         if (source.compose_sound_resource_ids) {
             sound_resources.assign(source.compose_sound_resource_ids,
                 source.compose_sound_resource_ids + source.compose_sound_resource_count);

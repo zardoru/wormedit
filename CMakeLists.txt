@@ -401,6 +401,8 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_playhead_skip.cpp
         src/sys/compose_bgm_bar.cpp
         src/sys/sound_list_projection.cpp
+        src/sys/sound_usage_projection.cpp
+        src/sys/sound_usage_actions.cpp
         src/sys/compose_measure_commands.cpp
         src/sys/compose_selection_transform.cpp
         src/sys/compose_label_search.cpp
@@ -414,6 +416,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/application_command_dispatch.cpp
         src/sys/compose_resource_presenter.cpp
         src/sys/compose_view.cpp
+        src/sys/compose_hover_timing.cpp
         src/sys/compare_view.cpp
         src/sys/compose_input.cpp
         src/sys/compose_area_actions.cpp

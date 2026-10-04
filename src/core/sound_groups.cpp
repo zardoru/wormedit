@@ -1,4 +1,6 @@
 #include <wormedit/core/sound_groups.h>
+#include <wormedit/core/resource_assignment.h>
+#include <wormedit/core/natural_order.h>
 
 #include <algorithm>
 #include <ranges>
@@ -171,21 +173,142 @@ auto edit_existing_group(song_document_t& song, const sound_group_edit_action_t&
     return std::visit([&](const auto& edit) { return edit_group_action(song, edit, result); }, action);
 }
 
+auto sound_group_for_edit(const song_document_t& song,
+                          const sound_group_edit_action_t& action)
+    -> std::optional<sound_group_id_t> {
+    if (const auto* create = std::get_if<create_sound_group_action_t>(&action)) return create->group;
+    if (const auto* add = std::get_if<add_sounds_to_group_action_t>(&action)) return add->group;
+    return std::nullopt;
+}
+
+auto wav_resource(const resource_entry_t& resource) -> bool {
+    return std::ranges::any_of(resource.target_identities, [](const auto& identity) {
+        return identity.family == format_family_t::bms && identity.namespace_name == "WAV";
+    });
+}
+
+auto renumber_edited_groups(song_document_t& song,
+                            const std::vector<sound_group_id_t>& groups,
+                            document_command_result_t& result) -> bool {
+    auto allocation = song;
+    for (auto& resource : allocation.resources) {
+        if (!resource.sound_group ||
+            std::ranges::find(groups, *resource.sound_group) == groups.end() || !wav_resource(resource))
+            continue;
+        std::erase_if(resource.target_identities, [](const auto& identity) {
+            return identity.family == format_family_t::bms && identity.namespace_name == "WAV";
+        });
+    }
+    for (const auto group : groups) {
+        auto members = std::vector<const resource_entry_t*>{};
+        for (const auto& resource : song.resources)
+            if (resource.sound_group == group && wav_resource(resource)) members.push_back(&resource);
+        if (members.empty()) continue;
+        std::ranges::sort(members, [](const auto* left, const auto* right) {
+            if (natural_name_less(left->name, right->name)) return true;
+            if (natural_name_less(right->name, left->name)) return false;
+            return left->id.value < right->id.value;
+        });
+        const auto run = find_bms_identifier_run(allocation, "WAV", members.size());
+        if (!run) {
+            reject(result, "BMS WAV namespace has no contiguous run for the sound groups");
+            return false;
+        }
+        for (std::size_t index = 0; index < members.size(); ++index) {
+            auto item = std::ranges::find(allocation.resources, members[index]->id,
+                                          &resource_entry_t::id);
+            item->target_identities.push_back({format_family_t::bms, (*run)[index], "WAV"});
+        }
+    }
+    song = std::move(allocation);
+    return true;
+}
+
+auto wav_group_member_count(const song_document_t& song, sound_group_id_t group)
+    -> std::size_t {
+    return static_cast<std::size_t>(std::ranges::count_if(song.resources, [&](const auto& resource) {
+        return resource.sound_group == group && wav_resource(resource);
+    }));
+}
+
+auto action_sound_ids(const sound_group_edit_action_t& action)
+    -> std::span<const resource_id_t> {
+    return std::visit([](const auto& edit) -> std::span<const resource_id_t> {
+        using action_t = std::decay_t<decltype(edit)>;
+        if constexpr (std::is_same_v<action_t, create_sound_group_action_t> ||
+                      std::is_same_v<action_t, add_sounds_to_group_action_t>) return edit.sounds;
+        else if constexpr (std::is_same_v<action_t, ungroup_sounds_action_t>) return edit.sounds;
+        else return {};
+    }, action);
+}
+
+auto same_target(const target_resource_identity_t& left,
+                 const target_resource_identity_t& right) -> bool {
+    return left.family == right.family && left.identifier == right.identifier &&
+           left.namespace_name == right.namespace_name;
+}
+
+auto same_target_vectors(const std::vector<resource_entry_t>& left,
+                         const std::vector<resource_entry_t>& right) -> bool {
+    if (left.size() != right.size()) return false;
+    for (std::size_t index = 0; index < left.size(); ++index)
+        if (left[index].id != right[index].id ||
+            !std::ranges::equal(left[index].target_identities,
+                                right[index].target_identities, same_target)) return false;
+    return true;
+}
+
 } // namespace
 
 auto apply_sound_group_edit(document_history_t& history, std::uint64_t expected_revision,
-                            const sound_group_edit_action_t& action)
+                            const sound_group_edit_action_t& action,
+                            bool keep_bms_ids_together)
     -> document_command_result_t {
+    return apply_sound_group_edits(history, expected_revision, {action}, keep_bms_ids_together);
+}
+
+auto apply_sound_group_edits(document_history_t& history, std::uint64_t expected_revision,
+                             const std::vector<sound_group_edit_action_t>& actions,
+                             bool keep_bms_ids_together) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     if (expected_revision != history.document.revision) {
         reject(result, "sound group edit document revision is stale");
         return result;
     }
+    if (actions.empty()) {
+        reject(result, "sound group edit needs at least one change");
+        return result;
+    }
     auto proposed = history.document;
-    const auto label = edit_existing_group(proposed, action, result);
-    if (!result.diagnostics.empty() || label.empty()) return result;
+    auto labels = std::vector<std::string>{};
+    auto groups = std::vector<sound_group_id_t>{};
+    auto edited_ids = std::unordered_set<std::uint64_t>{};
+    for (const auto& action : actions) {
+        for (const auto id : action_sound_ids(action))
+            if (!edited_ids.insert(id.value).second) {
+                reject(result, "sound group batch repeats a sound");
+                return result;
+            }
+        const auto label = edit_existing_group(proposed, action, result);
+        if (!result.diagnostics.empty()) return result;
+        if (!label.empty()) labels.push_back(label);
+        if (const auto group = sound_group_for_edit(proposed, action))
+            if (std::ranges::find(groups, *group) == groups.end()) groups.push_back(*group);
+    }
+    if (labels.empty()) return result;
+    if (keep_bms_ids_together) {
+        std::ranges::sort(groups, [&](const auto left, const auto right) {
+            const auto left_count = wav_group_member_count(proposed, left);
+            const auto right_count = wav_group_member_count(proposed, right);
+            return left_count != right_count ? left_count > right_count : left.value < right.value;
+        });
+        if (!renumber_edited_groups(proposed, groups, result)) return result;
+    }
+    const auto preserve_sources = same_target_vectors(history.document.resources,
+                                                      proposed.resources);
+    const auto label = labels.size() == 1 ? labels.front() : "Edit sound groups";
     return commit_document_command(history, std::move(proposed), label,
-                                   {.preserve_retained_source_flags = true});
+                                   {.preserve_retained_source_flags = preserve_sources});
 }
 
 } // namespace wormedit

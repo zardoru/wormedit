@@ -25,6 +25,7 @@
 #include "sys/timing_view.h"
 #include "sys/timing_edit_runtime.h"
 #include "sys/compose_sound_actions.h"
+#include "sys/sound_usage_actions.h"
 #include "sys/compose_bga_actions.h"
 #include "sys/bga_dock_runtime.h"
 #include "sys/metadata_drop_state.h"
@@ -1868,20 +1869,38 @@ auto dispatch_comparison_selection(const WormUiWorkspaceAction& action,
                                        : applied.diagnostics.front().message;
 }
 
+auto dispatch_sound_resource_selection(const WormUiWorkspaceAction& action,
+    const wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace)
+    -> std::string {
+    auto asset = wormedit::asset_id_t{action.audio_asset_id};
+    if (action.audio_resource_id != 0) {
+        const auto resource = std::ranges::find(history.document.resources,
+            wormedit::resource_id_t{action.audio_resource_id}, &wormedit::resource_entry_t::id);
+        if (resource == history.document.resources.end() ||
+            (action.kind == WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET && resource->asset != asset))
+            return "The selected sound changed; select it again.";
+        asset = resource->asset;
+    } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SELECT_SOUND_RESOURCE) {
+        return "No sound resource was selected.";
+    }
+    if (!asset) return "Sound resource selected; no audio asset is available.";
+    const auto applied = wormedit::apply_workspace_action(
+        workspace, history.document, history.document.revision,
+        wormedit::workspace_select_audio_asset_action_t{
+            asset});
+    return applied ? "Audio asset selected; waveform analysis scheduled."
+                   : (applied.diagnostics.empty() ? "Audio asset selection rejected."
+                                                  : applied.diagnostics.front().message);
+}
+
 auto dispatch_workspace_selection_action(const WormUiWorkspaceAction& action,
                                          const wormedit::document_history_t& history,
                                          wormedit::workspace_controller_t& workspace)
     -> std::optional<std::string> {
     switch (action.kind) {
-    case WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET: {
-        const auto applied = wormedit::apply_workspace_action(
-            workspace, history.document, history.document.revision,
-            wormedit::workspace_select_audio_asset_action_t{
-                wormedit::asset_id_t{action.audio_asset_id}});
-        return applied ? "Audio asset selected; waveform analysis scheduled."
-                       : (applied.diagnostics.empty() ? "Audio asset selection rejected."
-                                                      : applied.diagnostics.front().message);
-    }
+    case WORM_UI_WORKSPACE_ACTION_SELECT_SOUND_RESOURCE:
+    case WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET:
+        return dispatch_sound_resource_selection(action, history, workspace);
     case WORM_UI_WORKSPACE_ACTION_SELECT_VISUAL_ASSET: {
         const auto applied = wormedit::apply_workspace_action(
             workspace, history.document, history.document.revision,
@@ -2845,6 +2864,21 @@ auto compare_jump_interaction(const wormedit::document_history_t& history,
     return setup.state;
 }
 
+auto dispatch_sound_usage_jump(const WormUiWorkspaceAction& action,
+    wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
+    std::optional<wormedit::editor_interaction_state_t>& interaction) -> std::string {
+    WormUiSoundUsageRequest request{};
+    worm_ui_frontend_sound_usage_request(&request);
+    const auto result = wormedit::sys::dispatch_sound_usage_action(
+        action, request, history, workspace, interaction);
+    if (result.source_selection) {
+        const auto& source = *result.source_selection;
+        worm_ui_frontend_select_sound_usage_source(source.project_id, source.resource_id,
+                                                   source.channel_id, source.clip_id);
+    }
+    return result.message;
+}
+
 auto dispatch_compare_diagnostic_jump(
     const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace,
@@ -2934,6 +2968,8 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
         } else if (const auto common_status = wormedit::sys::dispatch_transport_player_action(
                        action, application_command_state, stepmania_export_policy)) {
             status = *common_status;
+        } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE) {
+            status = dispatch_sound_usage_jump(action, history, workspace, compose_interaction_state);
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP) {
             status = dispatch_compare_diagnostic_jump(action, history, workspace,
                                                        compose_interaction_state);
@@ -3396,6 +3432,23 @@ auto selected_waveform_rate(const WaveformRuntime& waveform, const Workspace& wo
     return std::nullopt;
 }
 #endif
+
+void retain_compose_hover_timing(
+    wormedit::sys::compose_scene_cache_t& cache, const WormUiWorkspaceView& view,
+    const WormUiWorkspaceAction& action) {
+    auto& hover = cache.hover_timing;
+    hover.valid = action.hover_source_frame_valid && view.project_id != 0 &&
+        view.selected_chart_id != 0 && view.compose.selected_audio_asset_id != 0 &&
+        action.hover_source_total_frames != 0 && action.hover_source_sample_rate != 0;
+    if (!hover.valid) return;
+    hover.source_frame = action.hover_source_frame;
+    hover.project_id = view.project_id;
+    hover.chart_id = view.selected_chart_id;
+    hover.document_revision = view.document_revision;
+    hover.audio_asset_id = view.compose.selected_audio_asset_id;
+    hover.total_frames = action.hover_source_total_frames;
+    hover.sample_rate = action.hover_source_sample_rate;
+}
 
 } // namespace
 
@@ -3893,6 +3946,7 @@ int main(int argc, char** argv) {
             project_bga_dock(bga_dock_runtime, history, workspace, asset_base, flattened.view.compose);
             const auto frame_nuklear_previous = wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::nuklear);
             auto action = worm_ui_frontend_compose(&flattened.view);
+            retain_compose_hover_timing(compose_scene_cache, flattened.view, action);
             pending_notification = action.notifications;
             wormedit::sys::frame_timing().restore(frame_nuklear_previous);
             {

@@ -56,10 +56,11 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 
 ## T-364 Find sound uses from the Sounds tab
 
-- **Status:** ready
+- **Status:** done (2026-10-04)
 - **Outcome:** Find uses in the Sounds tab lists references to the selected sound with chart and position, and activates/navigates to a chosen reference.
 - **Read first:** `src/ui/nuklear/audio_panel.cpp`, `src/sys/sound_list_projection.cpp`, `include/wormedit/core/document.h`, `src/sys/compose_bookmark_commands.cpp`.
-- **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp`, `src/sys/workspace_projection.cpp/.h`, `src/sys/compose_actions.cpp`, new `src/sys/sound_usage_projection.cpp/.h`, new `tests/sys/sound_usage_projection_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp`, `src/sys/workspace_projection.cpp/.h`, `src/sys/application_frame_projection.cpp`, `src/sys/compose_actions.cpp`, new `src/sys/sound_usage_projection.cpp/.h`, new `src/sys/sound_usage_actions.cpp/.h`, new `tests/sys/sound_usage_projection_tests.cpp`, new `tests/sys/sound_usage_actions_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, new `tests/ui/sound_usage_event_harness_tests.cpp`, `tests/sys/frame_projection_arena_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Supporting scope (coordinator approved, 2026-10-04):** `src/sys/application_frame_projection.cpp` passes retained usage requests into the independent projection; `tests/sys/frame_projection_arena_tests.cpp` covers arena-owned result labels. Existing Sounds separator harness checks now inspect filtered list rows separately from the retained selected sound in Properties and apply emitted selection to the fixture view. Dedicated `tests/ui/sound_usage_event_harness_tests.cpp` verifies precise resource selection and usage activation without overlapping existing layer/group harness edits. New `src/sys/sound_usage_actions.cpp/.h` isolates the navigation boundary for `tests/sys/sound_usage_actions_tests.cpp` to prove stale/deleted rejection and source-only navigation without a cursor move. Audio contracts carry full stable identity and revision; positioned uses navigate to Compose, while source-only uses select their chart/channel/clip in Sounds without inventing a cursor position.
 - **Steps:**
   1. Add a deterministic usage projection for note and BGM resource references across charts, including supported sound-channel/asset references and shared-asset distinctions.
   2. Expose Find uses for a selected sound with a bounded result list showing chart, position and reference kind; route activation through normal chart selection and Compose navigation.
@@ -67,6 +68,7 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 - **Invariants:** Searching and jumping never mutate resources or chart events; results distinguish resource references from shared-asset uses.
 - **Reject/failure behavior:** Deleted/stale results refresh or report unavailable instead of jumping to an unrelated object.
 - **Verify:** `cmake --build build`; `ctest --test-dir build -L event-harness --output-on-failure`; `ctest --test-dir build --output-on-failure -R '^core\.|^frontend-state\.|^frame-timing\.|^documentation\.'`; affected-source `clang-tidy -p build <source-file>` with no new complexity violations; isolated Xvfb check of the card's workflow.
+- **Verification evidence:** Full application suite 2,025/2,025; event harness 97/97; required core/frontend/frame/documentation gates 1,723/1,723. Projection and dispatch regressions cover exact resource/shared-asset identity, bounded ordering, stale/deleted results, unchanged document addresses and source-only cursor preservation. Isolated final results, source selection, list scrolling and exact row-600 jump captures are at `/tmp/wormedit-bgm-hover-groups-batch/usage-final-*.png`. Affected new functions pass cognitive-complexity checks.
 - **Out of scope:** replacing usages; BGA usage search.
 
 ## T-365 Remove the inspector sample list
@@ -200,3 +202,20 @@ User requests (2026-10-04). Sounds tab means the dedicated Sounds screen (`audio
 - **Reject/failure behavior:** Dismissal releases retained input locks without replaying the click/key to the field.
 - **Verify:** `cmake --build build`; `ctest --test-dir build -L event-harness --output-on-failure`; `ctest --test-dir build --output-on-failure -R '^core\.|^frontend-state\.|^frame-timing\.|^documentation\.'`; affected-source `clang-tidy -p build <source-file>` with no new complexity violations; isolated Xvfb check of the card's workflow.
 - **Out of scope:** confirmation dialogs and inline editors; changing the underlying menu commands.
+
+
+## T-373 Move the BGA timeline lane between timing and playable notes
+
+- **Status:** ready (T-360 is done)
+- **Request (user, 2026-10-04):** The BGA lane at the far right is difficult to work with beside the docks; put it between the timing lanes and the note lanes. This follows [T-360](compose-followups.md#t-360-add-a-bga-event-editing-lane-to-the-compose-timeline).
+- **Outcome:** Compose displays timing lanes, then the BGA timeline lane, then playable note lanes, keeping BGA events accessible with the Sounds, BGA, Layers and inspector docks open.
+- **Read first:** `src/sys/compose_view.cpp` (`compose_horizontal_layout` and scene request), `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`.
+- **Files owned:** `src/sys/compose_view.cpp/.h`, `src/sys/compose_input.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `src/ui/nuklear/compose_panel.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/sys/bga_lane_workflow_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`.
+- **Steps:**
+  1. Make the shared horizontal layout expose the BGA lane directly after the visible timing rail, moving the playable field's left edge after it while preserving the BGM pane after the playable field.
+  2. Use the same layout in scene projection, lane headers, placement and hit-testing so BGA selection, dense overlap picking, dragging and previews agree with the displayed lane.
+  3. Add regressions for timing-lane toggles, BGA visibility, narrow widths, both scroll directions and open docks; verify actual BGA placement, selection, movement and undo with docks open in the event harness and isolated Xvfb.
+- **Invariants:** Event IDs, positions, BMS BMP identities, BGM column order and playable lane order do not change; only horizontal lane layout changes.
+- **Reject/failure behavior:** Docks and resize cannot send a BGA gesture to a playable note lane or leave an invisible active drag; stale geometry retains the existing cancellation behavior.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R 'BGA|bga|horizontal layout'`; `ctest --test-dir build --output-on-failure -L event-harness`; `ctest --test-dir build --output-on-failure -R '^documentation\.'`; affected-source `clang-tidy -p build <source-file>` with no new complexity violations; isolated Xvfb PNG with the docks open showing the timing/BGA/note lane order and an actual saved BGA edit.
+- **Out of scope:** BGA resource dock redesign; new BGA event kinds; changing vertical timing or event positions.

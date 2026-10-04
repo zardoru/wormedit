@@ -5,6 +5,7 @@
 
 #include "sys/compose_resource_presenter.h"
 #include "sys/sound_list_projection.h"
+#include "sys/sound_usage_projection.h"
 #include "wormedit/config.h"
 
 #include <wormedit/core/resource_file_copy.h>
@@ -323,6 +324,7 @@ struct workspace_projection_context_t {
     const wormedit::stepmania_export_policy_t& stepmania_policy;
     dock_sort_t keysound_sort;
     WormUiKeysoundDockRequest keysound_request;
+    WormUiSoundUsageRequest sound_usage_request;
 };
 
 void publish_workspace_summary(flattened_workspace_t& result, const char* text) {
@@ -378,7 +380,8 @@ void populate_setup_tab(const workspace_projection_context_t& projection, const 
                         stepmania_policy.file_profile == wormedit::stepmania_profile_t::sm &&
                                 stepmania_policy.timing_syntax ==
                                     wormedit::stepmania_timing_syntax_t::native_warps
-                            ? "Valid syntax policy; SM charts containing warps require a legacy "
+                                   ? "Valid syntax policy; SM charts containing warps require a "
+                                     "legacy "
                               "encoding instead."
                             : "Compatible StepMania export policy."}
                     : std::string_view{resolved.message};
@@ -691,19 +694,48 @@ auto append_keysound_row(flattened_workspace_t& result, frame_arena_t& arena,
                          const wormedit::sys::keysound_row_t& row) -> bool {
     const auto* slot = arena_string(arena, row.slot);
     const auto* name = arena_string(arena, row.name);
-    if (!slot || !name) return false;
-    return result.compose.keysound.row.push_back({.resource_id = row.resource.value, .slot = slot,
-        .name = name, .missing = row.missing, .layer_mask = row.layer_mask,
-        .note_layer_conflict_mask = row.note_layer_conflict_mask});
+    if (!slot || !name)
+        return false;
+    return result.compose.keysound.row.push_back(
+        {.resource_id = row.resource.value,
+         .slot = slot,
+         .name = name,
+         .missing = row.missing,
+         .layer_mask = row.layer_mask,
+         .note_layer_conflict_mask = row.note_layer_conflict_mask,
+         .sound_group_id = row.sound_group_id});
 }
 
 auto append_keysound_layer(flattened_workspace_t& result, frame_arena_t& arena,
                            const wormedit::sys::keysound_layer_t& layer) -> bool {
     const auto* name = arena_string(arena, layer.name);
-    if (!name) return false;
-    return result.compose.keysound.layer.push_back({.layer_id = layer.id.value, .name = name,
-        .red = layer.color.red, .green = layer.color.green, .blue = layer.color.blue,
-        .alpha = layer.color.alpha, .locked = layer.locked});
+    if (!name)
+        return false;
+    return result.compose.keysound.layer.push_back({.layer_id = layer.id.value,
+                                                    .name = name,
+                                                    .red = layer.color.red,
+                                                    .green = layer.color.green,
+                                                    .blue = layer.color.blue,
+                                                    .alpha = layer.color.alpha,
+                                                    .locked = layer.locked});
+}
+
+void populate_compose_sound_groups(const workspace_projection_context_t& projection) {
+    auto& result = projection.result;
+    auto& view = result.view.compose;
+    auto* arena = result.arena();
+    if (!arena)
+        return;
+    auto& groups = result.compose.keysound.group;
+    groups =
+        arena_array<WormUiComposeSoundGroupView>(*arena, projection.document.sound_groups.size());
+    for (const auto& group : projection.document.sound_groups) {
+        const auto* name = arena_string(*arena, group.name);
+        if (!name || !groups.push_back({.group_id = group.id.value, .name = name}))
+            break;
+    }
+    view.compose_sound_groups = groups.data();
+    view.compose_sound_group_count = groups.size();
 }
 
 void populate_compose_sound_slots(const workspace_projection_context_t& projection) {
@@ -779,6 +811,7 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
         }
     }
     view.keysound_count = result.compose.keysound.row.size();
+    populate_compose_sound_groups(projection);
     populate_compose_sound_slots(projection);
 }
 
@@ -946,12 +979,82 @@ void populate_sound_rows(const workspace_projection_context_t& projection) {
     audio.sound_rows = result.audio.sound_row.data();
     audio.sound_row_count = result.audio.sound_row.size();
 }
-void populate_audio_slices_tab(const workspace_projection_context_t& projection, const wormedit::workspace_audio_slices_view_t& tab) {
+auto usage_position_label(const song_document_t& document, const sound_usage_row_t& row)
+    -> std::string {
+    if (!row.position)
+        return "Source clip";
+    const auto chart = std::ranges::find(document.charts, row.chart, &chart_document_t::id);
+    if (chart == document.charts.end())
+        return "Unavailable position";
+    const auto measure =
+        std::ranges::find(chart->measures, row.position->measure, &measure_chunk_t::id);
+    if (measure == chart->measures.end())
+        return "Unavailable position";
+    return "Measure " + std::to_string(std::distance(chart->measures.begin(), measure) + 1) +
+           ", row " + std::to_string(row.position->row);
+}
+
+void populate_sound_usage(const workspace_projection_context_t& projection) {
     auto& result = projection.result;
-    const auto append = [&](std::string line) { append_workspace_summary(projection, std::move(line)); };
+    auto& view = result.view.audio_slices;
+    const auto& request = projection.sound_usage_request;
+    view.usage_song_id = projection.document.id.value;
+    view.usage_document_revision = projection.document.revision;
+    if (request.selected_project_id != projection.document.id.value) return;
+    view.selected_resource_id = request.selected_resource_id;
+    view.selected_channel_id = request.selected_channel_id;
+    view.selected_clip_id = request.selected_clip_id;
+    if (!request.find_uses_open || !request.selected_resource_id)
+        return;
+    const auto usage =
+        project_sound_usage(projection.document, resource_id_t{request.selected_resource_id});
+    view.usage_song_id = usage.song.value;
+    view.usage_document_revision = usage.revision;
+    view.usage_resource_id = usage.resource.value;
+    view.usage_asset_id = usage.asset.value;
+    view.usage_valid = usage.valid;
+    view.usage_total_count = usage.total_matching;
+    view.usage_rows_truncated = usage.truncated;
+    auto* arena = result.arena();
+    if (!arena) {
+        view.usage_rows_truncated = true;
+        return;
+    }
+    result.audio.usage_row = arena_array<WormUiSoundUsageRowView>(*arena, usage.rows.size());
+    for (const auto& row : usage.rows) {
+        WormUiSoundUsageRowView item{};
+        item.chart_id = row.chart.value;
+        item.measure_id = row.position ? row.position->measure.value : 0;
+        item.row = row.position ? row.position->row : 0;
+        item.position_valid = row.position.has_value();
+        item.object_id = row.object.value;
+        item.channel_id = row.channel.value;
+        item.clip_id = row.clip.value;
+        item.referenced_resource_id = row.referenced_resource.value;
+        item.referenced_asset_id = row.referenced_asset.value;
+        item.kind = static_cast<int>(row.kind);
+        item.scope = static_cast<int>(row.scope);
+        item.chart_label = arena_string(*arena, row.chart_name);
+        item.position_label = arena_string(*arena, usage_position_label(projection.document, row));
+        if (!item.chart_label || !item.position_label || !result.audio.usage_row.push_back(item)) {
+            view.usage_rows_truncated = true;
+            break;
+        }
+    }
+    view.usage_rows = result.audio.usage_row.data();
+    view.usage_row_count = result.audio.usage_row.size();
+}
+
+void populate_audio_slices_tab(const workspace_projection_context_t& projection,
+                               const wormedit::workspace_audio_slices_view_t& tab) {
+    auto& result = projection.result;
+    const auto append = [&](std::string line) {
+        append_workspace_summary(projection, std::move(line));
+    };
                 auto& audio = result.view.audio_slices;
                 audio.visible = true;
                 populate_sound_rows(projection);
+    populate_sound_usage(projection);
                 audio.assets_truncated = tab.audio_assets.size() > WORM_UI_AUDIO_ASSET_CAPACITY;
                 audio.asset_count =
                     std::min(tab.audio_assets.size(),
@@ -1042,6 +1145,7 @@ void flattened_workspace_t::rebind_view_pointers() {
 
     view.audio_slices.asset_ids = audio.asset.data();
     view.audio_slices.sound_rows = audio.sound_row.data();
+    view.audio_slices.usage_rows = audio.usage_row.data();
 }
 
 auto project_notification_view(const notification_center_t& center, notification_time_t now)
@@ -1076,8 +1180,8 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                        bool recovery_scan_configured,
                        const wormedit::stepmania_export_policy_t& stepmania_policy,
                        frame_arena_t* arena, dock_sort_t keysound_sort,
-                       WormUiKeysoundDockRequest keysound_request)
-    -> flattened_workspace_t {
+                       WormUiKeysoundDockRequest keysound_request,
+                       WormUiSoundUsageRequest sound_usage_request) -> flattened_workspace_t {
     flattened_workspace_t result(arena);
     result.view.project_title = document.metadata.title.c_str();
     result.view.artist = document.metadata.artist.c_str();
@@ -1105,8 +1209,9 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
     const char* heading = tab_labels[static_cast<std::size_t>(source.active_tab)];
     result.view.tab_heading = heading ? heading : "Compose";
 
-    const workspace_projection_context_t projection{result, source, document, stepmania_policy,
-                                                    keysound_sort, keysound_request};
+    const workspace_projection_context_t projection{
+        result,        source,           document,           stepmania_policy,
+        keysound_sort, keysound_request, sound_usage_request};
     std::visit(workspace_tab_visitor{projection}, source.tab_view);
     return result;
 }

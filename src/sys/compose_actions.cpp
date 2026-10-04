@@ -906,6 +906,8 @@ std::optional<std::string> dispatch_compose_resource_action(compose_action_conte
     case WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES:
     case WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT:
     case WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS:
+    case WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS:
+    case WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS:
     case WORM_UI_COMPOSE_ACTION_AUDITION_SOUND:
     case WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS:
     case WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER:
@@ -1657,7 +1659,7 @@ std::optional<std::string> assign_compose_layer_target(compose_action_context_t&
     if (!applied.applied) return "Semantic-layer membership was unchanged.";
     const auto rebound = wormedit::rebind_workspace(context.workspace, context.history);
     if (!rebound) return "Semantic-layer membership changed, but workspace rebinding failed.";
-    return none ? "Notes assigned to No layer." : "Semantic-layer membership updated.";
+    return none ? "Selected objects assigned to No layer." : "Semantic-layer membership updated.";
 }
 
 std::optional<std::string> dispatch_compose_note_menu_action(compose_action_context_t& context) {
@@ -1697,7 +1699,9 @@ std::optional<std::string> dispatch_compose_note_menu_action(compose_action_cont
 
 std::optional<std::string> choose_no_semantic_layer(compose_action_context_t& context) {
     if (!selected_chart(context.history, context.workspace)) return "Choose a Compose chart first.";
-    if (!context.state.selected_notes.empty()) return assign_compose_layer_target(context, true, {});
+    if (!context.state.selected_notes.empty() ||
+        !selected_compose_bgm_events(context.state).empty())
+        return assign_compose_layer_target(context, true, {});
     auto& app = context.application_state;
     app.semantic_layer_target.reset();
     app.semantic_layer_target_none = true;
@@ -2149,11 +2153,14 @@ std::optional<std::string> edit_semantic_layer_membership(compose_action_context
     const auto* chart = selected_chart(context.history, context.workspace);
     const auto candidate = explicit_id ? layer_id_t{explicit_id} : app.semantic_layer_target.value_or(layer_id_t{});
     const auto* layer = chart ? catalog_semantic_layer_by_id(*chart, candidate) : nullptr;
-    if (!chart || !layer || state.selected_notes.empty())
-        return "Choose a semantic layer and select playable notes first.";
+    if (!chart || !layer ||
+        (state.selected_notes.empty() && selected_compose_bgm_events(state).empty()))
+        return "Choose a semantic layer and select notes or BGM events first.";
     if (apply) return assign_compose_layer_target(context, false, candidate);
     return semantic_layer_edit_status(context,
-        replace_notes_semantic_layer_action_t{state.chart, candidate, state.selected_notes, true},
+        replace_notes_semantic_layer_action_t{
+            state.chart, candidate, state.selected_notes, true,
+            selected_compose_bgm_events(state)},
         "Semantic-layer membership updated.", "Semantic-layer membership was unchanged.",
         "Semantic-layer membership changed, but workspace rebinding failed.");
 }

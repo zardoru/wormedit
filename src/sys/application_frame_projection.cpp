@@ -1,4 +1,5 @@
 #include "sys/application_frame_projection.h"
+#include "sys/compose_hover_timing.h"
 #include "sys/frame_timing.h"
 
 #include "sys/bmson_waveform_projection.h"
@@ -10,7 +11,46 @@
 #include <wormedit/audio/playback_rate.h>
 #include <wormedit/window.h>
 
+#include <algorithm>
+
 namespace wormedit::sys {
+namespace {
+
+void project_hover_timing(flattened_workspace_t& flattened, const document_history_t& history,
+                          const workspace_controller_t& workspace, compose_scene_cache_t& cache) {
+    auto& view = flattened.view.compose;
+    view.hover_timing_valid = false;
+    view.hover_timing_source_frame = 0;
+    view.hover_timing_total_frames = 0;
+    view.hover_timing_sample_rate = 0;
+    view.hover_timing_label[0] = '\0';
+    const auto& hover = cache.hover_timing;
+    if (!hover.valid || !workspace.selected_chart || !cache.marker_timing_index ||
+        !cache.cached_measure_index || !view.visible || !view.scene_available ||
+        view.selected_audio_asset_id == 0 || hover.project_id != history.document.id.value ||
+        hover.chart_id != workspace.selected_chart->value ||
+        hover.document_revision != history.document.revision ||
+        hover.audio_asset_id != view.selected_audio_asset_id ||
+        !((hover.total_frames == view.waveform_overview_total_frames &&
+           hover.sample_rate == view.waveform_overview_sample_rate) ||
+          (hover.total_frames == flattened.view.transport_end_frame &&
+           hover.sample_rate == flattened.view.transport_sample_rate)))
+        return;
+    const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
+                                         &chart_document_t::id);
+    if (chart == history.document.charts.end())
+        return;
+    if (!format_compose_hover_timing(
+            *chart, *cache.cached_measure_index, *cache.marker_timing_index, hover.source_frame,
+            hover.sample_rate, view.hover_timing_label, sizeof(view.hover_timing_label)))
+        return;
+    view.hover_timing_source_frame = hover.source_frame;
+    view.hover_timing_total_frames = hover.total_frames;
+    view.hover_timing_sample_rate = hover.sample_rate;
+    view.hover_timing_valid = true;
+}
+
+} // namespace
 namespace {
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -55,12 +95,14 @@ auto project_application_frame(application_frame_projection_context_t context)
         frame_phase_scope_t flatten(frame_phase_t::workspace_flatten);
         WormUiKeysoundDockRequest keysound_request{};
         worm_ui_frontend_keysound_dock_request(&keysound_request);
-        flattened =
-            flatten_workspace(context.model, context.history.document, context.status,
+        WormUiSoundUsageRequest sound_usage_request{};
+        worm_ui_frontend_sound_usage_request(&sound_usage_request);
+        flattened = flatten_workspace(
+            context.model, context.history.document, context.status,
                               context.recovery_controller.view(), context.recovery_scan_configured,
                               context.stepmania_export_policy, context.frame_arena,
-                              keysound_request.sort_by_id ? dock_sort_t::bms_id
-                                                          : dock_sort_t::natural_name, keysound_request);
+            keysound_request.sort_by_id ? dock_sort_t::bms_id : dock_sort_t::natural_name,
+            keysound_request, sound_usage_request);
         flattened.rebind_view_pointers();
         flattened.view.transport_metronome_enabled =
             context.application_command_state.transport_metronome_enabled;
@@ -226,7 +268,8 @@ auto project_application_frame(application_frame_projection_context_t context)
         });
     }
 #endif
-    // Sticky across the waveform's analysis flicker: the row only goes away when the song has no audio.
+    // Sticky across the waveform's analysis flicker: the row only goes away when the song has no
+    // audio.
     if (flattened.view.compose.visible) {
         context.compose_scene_cache.bgm_bar_audio_seen =
             flattened.view.compose.has_bgm_events ||
@@ -234,6 +277,8 @@ auto project_application_frame(application_frame_projection_context_t context)
             flattened.view.compose.bgm_bar_row_count != 0 ||
             flattened.view.compose.waveform_overview_row_count != 0;
     }
+    project_hover_timing(flattened, context.history, context.workspace,
+                         context.compose_scene_cache);
     return flattened;
 }
 

@@ -1,3 +1,4 @@
+#include "ui/nuklear/sound_import_dialog.h"
 #include "ui/nuklear/external_player_panel.h"
 #include "ui/nuklear/options_window.h"
 #include "ui/nuklear/tap_timing_panel.h"
@@ -53,6 +54,7 @@ class RenderSubphaseScope {
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -814,7 +816,8 @@ static void close_notification_history_windows() {
 static bool compose_popup_owns_input() {
     const auto& compose = worm_ui_nuklear_compose_state();
     return compose.layers_menu_open || compose.keysound_slot_confirmation_open ||
-           compose.keysound_slot_batch.open ||
+           compose.keysound_slot_batch.open || compose.keysound_group_review.open ||
+           compose.keysound_group_menu_open || compose.keysound_group_menu_release_pending ||
            compose.bga_stack_open || compose.bga_stack_release_pending ||
            compose.bga_renumber_confirmation_open || compose.bga_renumber_release_pending ||
            compose_note_menu_open();
@@ -990,8 +993,35 @@ static bool capture_bga_stack_key(const SDL_KeyboardEvent& event) {
     return true;
 }
 
+static bool capture_keysound_group_review_key(const SDL_KeyboardEvent& event) {
+    auto& review = worm_ui_nuklear_compose_state().keysound_group_review;
+    auto& compose = worm_ui_nuklear_compose_state();
+    if (compose.keysound_group_menu_open) {
+        SDL_Event copy{};
+        copy.type = event.type;
+        copy.key = event;
+        (void)nk_sdl_handle_event(g_context, &copy);
+        return true;
+    }
+    if (!review.open) return false;
+    if (event.down && !event.repeat && event.key == SDLK_ESCAPE) {
+        review.open = false;
+        compose.keysound_group_menu_release_pending = true;
+    } else {
+        SDL_Event copy{};
+        copy.type = event.type;
+        copy.key = event;
+        (void)nk_sdl_handle_event(g_context, &copy);
+    }
+    return true;
+}
+
+static bool capture_compose_modal_key(const SDL_KeyboardEvent& event) {
+    return capture_bga_stack_key(event) || capture_keysound_group_review_key(event);
+}
+
 static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
-        if (capture_bga_stack_key(event)) return true;
+        if (capture_compose_modal_key(event)) return true;
         auto& slot_batch = worm_ui_nuklear_compose_state().keysound_slot_batch;
         if (slot_batch.open) {
             if (event.down && !event.repeat && event.key == SDLK_ESCAPE)
@@ -1909,6 +1939,36 @@ static void render_seek_grip(struct nk_rect bounds, nk_size position, nk_size st
     }
 }
 
+static void report_transport_seek_hover(const WormUiWorkspaceView& view,
+                                        WormUiWorkspaceAction& action, struct nk_rect bounds) {
+    if (view.compose.selected_audio_asset_id == 0 || view.transport_sample_rate == 0 ||
+        view.transport_end_frame == 0 || !nk_input_is_mouse_hovering_rect(&g_context->input, bounds))
+        return;
+    const auto inset_x = g_context->style.progress.padding.x + g_context->style.progress.border;
+    const auto inset_y = g_context->style.progress.padding.y + g_context->style.progress.border;
+    const auto cursor = nk_rect(bounds.x + inset_x, bounds.y + inset_y,
+                                bounds.w - 2.0f * inset_x, bounds.h - 2.0f * inset_y);
+    const auto ratio = cursor.w > 0.0f
+        ? std::max(0.0f, static_cast<float>(g_context->input.mouse.pos.x - cursor.x)) / cursor.w
+        : 0.0f;
+    constexpr nk_size seek_steps = 10'000;
+    const auto pointer_step = static_cast<nk_size>(std::clamp(
+        static_cast<float>(seek_steps) * ratio, 0.0f, static_cast<float>(seek_steps)));
+    const auto source_frame =
+        (view.transport_end_frame / seek_steps) * pointer_step +
+        ((view.transport_end_frame % seek_steps) * pointer_step) / seek_steps;
+    if (source_frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) return;
+    action.hover_source_frame = static_cast<std::int64_t>(source_frame);
+    action.hover_source_frame_valid = true;
+    action.hover_source_total_frames = view.transport_end_frame;
+    action.hover_source_sample_rate = view.transport_sample_rate;
+    const auto& compose = view.compose;
+    if (compose.hover_timing_valid && compose.hover_timing_source_frame == action.hover_source_frame &&
+        compose.hover_timing_total_frames == view.transport_end_frame &&
+        compose.hover_timing_sample_rate == view.transport_sample_rate)
+        wormedit::ui::chrome::timing_tooltip(g_context, compose.hover_timing_label);
+}
+
 static void render_transport_seek_bar(const WormUiWorkspaceView& view,
                                       WormUiWorkspaceAction& action) {
     constexpr nk_size seek_steps = 10'000;
@@ -1934,6 +1994,7 @@ static void render_transport_seek_bar(const WormUiWorkspaceView& view,
             (view.transport_end_frame / seek_steps) * seek_position +
             ((view.transport_end_frame % seek_steps) * seek_position) / seek_steps;
     }
+    report_transport_seek_hover(view, action, bounds);
     if (draggable) render_seek_grip(bounds, seek_position, seek_steps);
 }
 
@@ -2014,6 +2075,7 @@ static bool project_modal_active(const WormUiWorkspaceView& view) {
     return view.close_confirmation.visible || g_new_project_wizard.open ||
            worm_ui_nuklear_sound_import_active() ||
            worm_ui_nuklear_compose_state().keysound_slot_batch.open ||
+           worm_ui_nuklear_compose_state().keysound_group_review.open ||
            (view.pending_bms_encoding_path && view.pending_bms_encoding_path[0]);
 }
 
@@ -2413,6 +2475,9 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     if (validation_error) {
         render_workspace_error(&action, width, height, validation_error, view->close_confirmation.visible);
         render_close_confirmation(view->close_confirmation, action, width, height);
+        worm_ui_nuklear_render_keysound_group_review(g_context, view->compose, action,
+            worm_ui_nuklear_compose_state().keysound_group_review,
+            worm_ui_nuklear_compose_state().keysound_group_menu_release_pending, width, height);
         render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
         return action;
     }
@@ -2451,6 +2516,9 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     worm_ui_nuklear_render_sound_slot_batch(g_context,
         worm_ui_nuklear_compose_state().keysound_slot_batch, view->compose,
         action, width, height);
+    worm_ui_nuklear_render_keysound_group_review(g_context, view->compose, action,
+        worm_ui_nuklear_compose_state().keysound_group_review,
+            worm_ui_nuklear_compose_state().keysound_group_menu_release_pending, width, height);
     render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
     const bool compose_lane_focused =
         !worm_ui_nuklear_compose_state().bgm_column_count_edit.input_owned &&

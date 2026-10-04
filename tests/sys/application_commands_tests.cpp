@@ -1272,6 +1272,39 @@ TEST_CASE("Compose No layer assigns mixed selection in one step and binds target
     check_membership(static_cast<bool>(write_native_project(fixture.history.document).bytes == write_native_project(original).bytes));
 }
 
+TEST_CASE("Compose semantic-layer assignment includes selected BGM events with selected notes",
+          "[unit][sys][application_commands][semantic-layer][bgm]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.semantic_layers = {
+        {.id = layer_id_t{7}, .name = "Old", .color = {32, 64, 128, 255}},
+        {.id = layer_id_t{8}, .name = "Target", .color = {64, 128, 32, 255}}};
+    chart.bgm_source_lanes = {{.id = object_id_t{30}, .name = "BGM"}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{20},
+                                          .position = {measure_id_t{1}, 240},
+                                          .source_lane = object_id_t{30},
+                                          .semantic_layers = {layer_id_t{7}}}};
+    fixture.state.selected_notes = {object_id_t{1}};
+    fixture.state.selected_objects = {
+        {editor_selection_object_kind_t::note, object_id_t{1}},
+        {editor_selection_object_kind_t::bgm_event, object_id_t{20}}};
+    bool target_none = false;
+    std::optional<layer_id_t> target = layer_id_t{7};
+    const auto assigned = apply_compose_layer_assignment(
+        fixture.history, fixture.state, fixture.history.document.revision,
+        false, layer_id_t{8}, target_none, target);
+    REQUIRE(static_cast<bool>(assigned));
+    const auto& assigned_chart = fixture.history.document.charts.front();
+    CHECK(assigned_chart.measures.front().notes.front().semantic_layers ==
+          std::vector{layer_id_t{8}});
+    CHECK(assigned_chart.measures.front().bgm_events.front().semantic_layers ==
+          std::vector{layer_id_t{8}});
+    CHECK(fixture.history.undo.size() == 1);
+    CHECK(fixture.state.selected_notes == std::vector{object_id_t{1}});
+    CHECK(fixture.state.selected_objects.size() == 2);
+}
+
 TEST_CASE("Compose rejected clear and replacement preserve target and selection",
           "[unit][sys][application_commands][semantic-layer]") {
     using namespace wormedit;

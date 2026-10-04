@@ -4,6 +4,7 @@
 #include <wormedit/core/natural_order.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/sound_import.h>
+#include <wormedit/core/sound_groups.h>
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/audio/decoder.h>
@@ -415,6 +416,58 @@ auto change_sound_layers(const WormUiWorkspaceAction& action, document_history_t
                              "The sounds already had that layer state.");
 }
 
+auto group_sounds(const WormUiWorkspaceAction& action, document_history_t& history,
+                  workspace_controller_t& workspace) -> std::string {
+    if (!action.compose_sound_group_assignments || action.compose_sound_group_assignment_count == 0)
+        return "Choose at least one sound group.";
+    auto next_group = std::uint64_t{1};
+    for (const auto& group : history.document.sound_groups)
+        next_group = std::max(next_group, group.id.value + 1);
+    auto edits = std::vector<sound_group_edit_action_t>{};
+    edits.reserve(action.compose_sound_group_assignment_count);
+    for (std::size_t index = 0; index < action.compose_sound_group_assignment_count; ++index) {
+        const auto& assignment = action.compose_sound_group_assignments[index];
+        if (!assignment.sound_ids || assignment.sound_count == 0)
+            return "A sound group has no selected members.";
+        auto ids = std::vector<resource_id_t>{};
+        ids.reserve(assignment.sound_count);
+        for (std::size_t member = 0; member < assignment.sound_count; ++member)
+            ids.push_back(resource_id_t{assignment.sound_ids[member]});
+        if (assignment.group_id != 0) {
+            const auto group = std::ranges::find(history.document.sound_groups,
+                sound_group_id_t{assignment.group_id}, &sound_group_t::id);
+            if (group == history.document.sound_groups.end())
+                return "The selected sound group no longer exists.";
+            if (assignment.name && assignment.name[0] != '\0' &&
+                assignment.name != group->name)
+                edits.emplace_back(rename_sound_group_action_t{
+                    .group = group->id, .name = assignment.name});
+            edits.emplace_back(add_sounds_to_group_action_t{
+                .group = sound_group_id_t{assignment.group_id}, .sounds = std::move(ids)});
+        } else {
+            if (!assignment.name) return "A new sound group needs a name.";
+            edits.emplace_back(create_sound_group_action_t{
+                .group = sound_group_id_t{next_group++}, .name = assignment.name,
+                .sounds = std::move(ids)});
+        }
+    }
+    const auto applied = apply_sound_group_edits(
+        history, action.compose_input_document_revision, edits,
+        action.compose_sound_group_keep_ids_together);
+    return finish_sound_edit(workspace, history, applied,
+                             "Grouped selected sounds.", "The selected sounds were already grouped.");
+}
+
+auto ungroup_sounds(const WormUiWorkspaceAction& action, document_history_t& history,
+                    workspace_controller_t& workspace) -> std::string {
+    const auto ids = sound_ids(action);
+    const auto applied = apply_sound_group_edit(
+        history, action.compose_input_document_revision,
+        ungroup_sounds_action_t{.sounds = ids});
+    return finish_sound_edit(workspace, history, applied,
+                             "Ungrouped selected sounds.", "The selected sounds were already ungrouped.");
+}
+
 auto renumber_dock_ids(const WormUiWorkspaceAction& action, document_history_t& history,
                        workspace_controller_t& workspace, chart_id_t chart_id) -> std::string {
     const auto chart = std::ranges::find(history.document.charts, chart_id, &chart_document_t::id);
@@ -630,6 +683,10 @@ auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action,
     case WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH:
         return assign_picked_slot_batch(action, history, workspace, chart);
     case WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS: return delete_sounds(action, history, workspace);
+    case WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS:
+        return group_sounds(action, history, workspace);
+    case WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS:
+        return ungroup_sounds(action, history, workspace);
     case WORM_UI_COMPOSE_ACTION_AUDITION_SOUND:
         return request_audition(action, history, application_state);
     case WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER:

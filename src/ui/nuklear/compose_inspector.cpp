@@ -764,14 +764,16 @@ void render_semantic_layer_selected_panel(const ComposeInspectorContext& inspect
     const auto& layer = inspector.view->semantic_layer_target;
     if (layer.layer_id == 0 || !layer.name) return;
     nk_layout_row_dynamic(inspector.context, 22, 1);
-    nk_labelf(inspector.context, NK_TEXT_LEFT, "%s · %zu notes", layer.name, layer.assigned_note_count);
+    nk_labelf(inspector.context, NK_TEXT_LEFT, "%s · %zu notes, %zu BGM", layer.name,
+              layer.assigned_note_count, layer.assigned_bgm_count);
 }
 
 static auto semantic_layer_membership_hint(const WormUiComposeView& view,
                                           bool target_active) -> const char* {
     if (!target_active) return "Choose a layer";
     if (view.semantic_layer_target_none) return "No layer only assigns";
-    if (view.selected_note_count == 0) return "Select notes first";
+    if (view.selected_note_count == 0 && view.selected_bgm_event_count == 0)
+        return "Select notes or BGM events first";
     if (view.semantic_layer_target_locked) return "Unlock the layer first";
     if (!view.scene_available) return "Open a Compose chart";
     return nullptr;
@@ -783,10 +785,12 @@ void render_semantic_layer_membership_buttons(const ComposeInspectorContext& ins
     auto* action = inspector.action;
     const auto* view = inspector.view;
     nk_layout_row_dynamic(context, 18, 1);
-    nk_labelf(context, NK_TEXT_LEFT, "Layer (%zu)", view->selected_note_count);
+    nk_labelf(context, NK_TEXT_LEFT, "Layer (%zu notes, %zu BGM)",
+              view->selected_note_count, view->selected_bgm_event_count);
     const auto membership_enabled = view->scene_available && target_active &&
                                     !view->semantic_layer_target_locked &&
-                                    view->selected_note_count != 0;
+                                    (view->selected_note_count != 0 ||
+                                     view->selected_bgm_event_count != 0);
     const auto button = [&](const char* label, WormUiComposeActionKind kind) {
         const auto enabled = membership_enabled &&
             (!view->semantic_layer_target_none || kind == WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
@@ -802,9 +806,9 @@ void render_semantic_layer_membership_buttons(const ComposeInspectorContext& ins
     if (!view->scene_available || !target_active || view->semantic_layer_target_none) nk_widget_disable_end(context);
     if (select_clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER_NOTES;
-    button("Assign selected notes", WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
-    button("Remove selected notes", WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER);
-    button("Toggle selected notes", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER);
+    button("Assign selected objects", WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
+    button("Remove selected objects", WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER);
+    button("Toggle selected objects", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER);
     if (const auto* hint = semantic_layer_membership_hint(*view, target_active)) {
         nk_layout_row_dynamic(context, 18, 1);
         nk_label(context, hint, NK_TEXT_LEFT);

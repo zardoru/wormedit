@@ -96,6 +96,7 @@ struct keysound_row_t {
     // Bit i is set when the sound's default layers include keysound_list_t::layers[i].
     std::uint64_t layer_mask{};
     std::uint64_t note_layer_conflict_mask{};
+    std::uint64_t sound_group_id{};
 };
 
 struct keysound_list_t {

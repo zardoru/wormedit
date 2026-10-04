@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <unordered_set>
 
 namespace {
 
@@ -118,4 +119,110 @@ auto next_visible_keysound(std::span<const worm_ui_keysound_advance_row_t> shown
     if (current == shown.end()) return 0;
     const auto next = std::find_if(current + 1, shown.end(), [](const auto& row) { return !row.missing; });
     return next == shown.end() ? 0 : next->id;
+}
+
+void worm_ui_keysound_group_review_suggest(
+    worm_ui_keysound_group_review_t& review,
+    std::span<const worm_ui_keysound_group_candidate_t> candidates,
+    std::span<const wormedit::sound_group_t> existing_groups, std::uint64_t project,
+    std::uint64_t chart, std::uint64_t revision) {
+    review = {};
+    review.project_id = project;
+    review.chart_id = chart;
+    review.document_revision = revision;
+    review.candidates.assign(candidates.begin(), candidates.end());
+    std::vector<std::string> names;
+    names.reserve(candidates.size());
+    for (const auto& candidate : candidates) names.push_back(candidate.name);
+    const auto groups = std::vector<wormedit::sound_group_t>{existing_groups.begin(),
+                                                              existing_groups.end()};
+    const auto proposals = wormedit::propose_sound_groups(names, groups);
+    std::unordered_set<std::uint64_t> used;
+    for (const auto& proposal : proposals.groups) {
+        worm_ui_keysound_group_proposal_t group{.name = proposal.name,
+            .existing_group_id = proposal.existing_group ? proposal.existing_group->value : 0};
+        for (const auto& member : proposal.members) {
+            const auto candidate = std::ranges::find_if(candidates, [&](const auto& row) {
+                return row.name == member && !used.contains(row.id);
+            });
+            if (candidate == candidates.end()) continue;
+            group.member_ids.push_back(candidate->id);
+            used.insert(candidate->id);
+        }
+        if (!group.member_ids.empty()) review.groups.push_back(std::move(group));
+    }
+    review.open = !review.groups.empty();
+    if (!review.open) review.message = "No filename groups were suggested for the selected sounds.";
+}
+
+void worm_ui_keysound_group_review_set_accepted(worm_ui_keysound_group_review_t& review,
+                                                std::size_t group, bool accepted) {
+    if (group < review.groups.size()) review.groups[group].accepted = accepted;
+}
+
+void worm_ui_keysound_group_review_rename(worm_ui_keysound_group_review_t& review,
+                                          std::size_t group, std::string name) {
+    if (group >= review.groups.size()) return;
+    if (name.size() > 64) name.resize(64);
+    review.groups[group].name = std::move(name);
+}
+
+void worm_ui_keysound_group_review_move(worm_ui_keysound_group_review_t& review,
+                                        std::uint64_t sound_id,
+                                        std::optional<std::size_t> group) {
+    if (group && *group >= review.groups.size()) return;
+    for (auto& row : review.groups)
+        std::erase(row.member_ids, sound_id);
+    if (group) review.groups[*group].member_ids.push_back(sound_id);
+}
+
+void worm_ui_keysound_group_review_leave_all_ungrouped(
+    worm_ui_keysound_group_review_t& review) {
+    for (auto& group : review.groups) group.accepted = false;
+    for (auto& group : review.groups) group.member_ids.clear();
+}
+
+auto worm_ui_keysound_group_review_confirm(worm_ui_keysound_group_review_t& review)
+    -> std::vector<worm_ui_keysound_group_assignment_t> {
+    std::vector<worm_ui_keysound_group_assignment_t> assignments;
+    review.message.clear();
+    for (const auto& group : review.groups) {
+        if (!group.accepted || group.member_ids.empty()) continue;
+        auto name = group.name;
+        const auto first = name.find_first_not_of(" \t\n\r\f\v");
+        if (first == std::string::npos) {
+            review.message = "Group names must contain 1 to 64 bytes.";
+            return {};
+        }
+        const auto last = name.find_last_not_of(" \t\n\r\f\v");
+        name = name.substr(first, last - first + 1);
+        if (name.size() > 64 || name.find('\0') != std::string::npos) {
+            review.message = "Group names must contain 1 to 64 bytes.";
+            return {};
+        }
+        assignments.push_back({.name = std::move(name),
+                               .existing_group_id = group.existing_group_id,
+                               .sound_ids = group.member_ids});
+    }
+    return assignments;
+}
+
+void worm_ui_keysound_group_review_stage_payload(
+    worm_ui_keysound_group_review_t& review,
+    std::span<const worm_ui_keysound_group_assignment_t> assignments,
+    bool keep_ids_together) {
+    review.staged_assignments.assign(assignments.begin(), assignments.end());
+    review.staged_payload.clear();
+    review.staged_payload.reserve(review.staged_assignments.size());
+    for (const auto& assignment : review.staged_assignments)
+        review.staged_payload.push_back({.group_id = assignment.existing_group_id,
+            .name = nullptr, .sound_ids = assignment.sound_ids.data(),
+            .sound_count = assignment.sound_ids.size()});
+    for (std::size_t index = 0; index < review.staged_payload.size(); ++index)
+        review.staged_payload[index].name = review.staged_assignments[index].name.c_str();
+    review.keep_ids_together = keep_ids_together;
+}
+
+void worm_ui_keysound_group_review_cancel(worm_ui_keysound_group_review_t& review) {
+    review = {};
 }

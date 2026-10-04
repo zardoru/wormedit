@@ -250,7 +250,8 @@ auto project_keysound_list(const song_document_t& document, const chart_document
              .name = resource.name.empty() ? "Resource " + std::to_string(resource.id.value)
                                            : resource.name,
              .missing = resource.missing,
-             .layer_mask = chart ? keysound_layer_mask(*chart, list, resource.id) : 0});
+             .layer_mask = chart ? keysound_layer_mask(*chart, list, resource.id) : 0,
+             .sound_group_id = resource.sound_group ? resource.sound_group->value : 0});
     }
     if (chart) populate_note_conflicts(*chart, list);
     return list;

@@ -1415,23 +1415,86 @@ auto semantic_layer_paint_target_editable(const application_command_state_t& app
     return app.semantic_layer_target_none || (layer && !layer->locked);
 }
 
-template <typename HitTargetAt>
-auto dispatch_semantic_layer_paint_gesture(const WormUiComposeInputAction& input,
-                                           compose_gesture_context_t& context,
-                                           HitTargetAt&& hit_target_at)
-    -> compose_input_family_result_t {
+struct semantic_layer_paint_target_t {
+    std::optional<wormedit::object_id_t> note;
+    std::optional<wormedit::object_id_t> bgm_event;
+};
+
+auto apply_semantic_layer_paint_target(const WormUiComposeInputAction& input,
+    compose_gesture_context_t& context, const semantic_layer_paint_target_t& target,
+    const wormedit::semantic_layer_t* layer) -> compose_input_family_result_t {
     using namespace wormedit;
     auto& [history, state, application_state, result, accepted] = context;
-    if (!semantic_layer_paint_armed(application_state)) {
-        if (state.pending_semantic_layer_paint_gesture) {
-            result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
-            accepted = "Semantic-layer paint stroke canceled because paint mode is inactive.";
-        } else {
-            result.accepted = true;
-            accepted = "Semantic-layer paint input ignored because paint mode is inactive.";
-        }
-        return compose_input_family_result_t::continue_with_result();
+    const auto target_id = target.note.value_or(target.bgm_event.value_or(object_id_t{}));
+    if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN) {
+        result = begin_compose_layer_paint(history, state,
+            application_state.semantic_layer_target_none,
+            layer ? layer->id : layer_id_t{}, target_id, true, target.bgm_event);
+        accepted = target.bgm_event ? "BGM semantic-layer paint stroke started."
+                                    : "Semantic-layer paint stroke started.";
+    } else if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE) {
+        result = dispatch_editor_action(history, state,
+            update_semantic_layer_paint_gesture_action_t{
+                .note = target.note.value_or(object_id_t{}), .pointer_captured = true,
+                .bgm_event = target.bgm_event});
+        accepted = "Semantic-layer paint preview updated.";
+    } else {
+        result = finish_compose_layer_paint(history, state, target_id, target.bgm_event);
+        accepted = result.document_changed ? "Semantic-layer paint stroke committed."
+                                           : "Semantic-layer paint stroke released.";
     }
+    return compose_input_family_result_t::continue_with_result();
+}
+
+auto handle_empty_semantic_layer_paint_target(const WormUiComposeInputAction& input,
+    compose_gesture_context_t& context) -> compose_input_family_result_t {
+    using namespace wormedit;
+    auto& history = context.history;
+    auto& state = context.state;
+    auto& result = context.result;
+    auto& accepted = context.accepted;
+    if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN)
+        return "Begin semantic-layer painting over a note or BGM event.";
+    if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE) {
+        result.accepted = true;
+        accepted = "Semantic-layer paint moved between chart objects.";
+    } else {
+        result = finish_compose_layer_paint(history, state, {});
+        accepted = result.document_changed ? "Semantic-layer paint stroke committed."
+                                           : "Semantic-layer paint stroke released.";
+    }
+    return compose_input_family_result_t::continue_with_result();
+}
+
+auto handle_inactive_semantic_layer_paint(compose_gesture_context_t& context)
+    -> compose_input_family_result_t {
+    using namespace wormedit;
+    auto& history = context.history;
+    auto& state = context.state;
+    auto& result = context.result;
+    auto& accepted = context.accepted;
+    if (state.pending_semantic_layer_paint_gesture) {
+        result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+        accepted = "Semantic-layer paint stroke canceled because paint mode is inactive.";
+    } else {
+        result.accepted = true;
+        accepted = "Semantic-layer paint input ignored because paint mode is inactive.";
+    }
+    return compose_input_family_result_t::continue_with_result();
+}
+
+template <typename HitTargetAt, typename BgmEventAt>
+auto dispatch_semantic_layer_paint_gesture(const WormUiComposeInputAction& input,
+                                           compose_gesture_context_t& context,
+                                           HitTargetAt&& hit_target_at,
+                                           BgmEventAt&& bgm_event_at)
+    -> compose_input_family_result_t {
+    using namespace wormedit;
+    auto& history = context.history;
+    auto& state = context.state;
+    auto& application_state = context.application_state;
+    if (!semantic_layer_paint_armed(application_state))
+        return handle_inactive_semantic_layer_paint(context);
     const auto chart =
         std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     const auto view = compose_view_for_state(history, state);
@@ -1444,39 +1507,18 @@ auto dispatch_semantic_layer_paint_gesture(const WormUiComposeInputAction& input
     if (!semantic_layer_paint_target_editable(application_state, layer)) {
         application_state.semantic_layer_paint_mode_active = false;
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
-        return "Choose an unlocked visible semantic layer before painting note membership.";
+        return "Choose an unlocked visible semantic layer before painting chart membership.";
     }
     const auto target = hit_target_at(*chart, *view, input.x_pixels, input.y_pixels);
-    const auto beginning = input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN;
-    const auto updating = input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE;
-    if (!target || !target->note) {
-        if (beginning)
-            return "Begin semantic-layer painting over a playable note.";
-        if (updating) {
-            result.accepted = true;
-            accepted = "Semantic-layer paint moved between playable notes.";
-        } else {
-            result = finish_compose_layer_paint(history, state, {});
-            accepted = result.document_changed ? "Semantic-layer paint stroke committed."
-                                               : "Semantic-layer paint stroke released.";
-        }
-        return compose_input_family_result_t::continue_with_result();
-    }
-    if (beginning) {
-        result = begin_compose_layer_paint(history, state, application_state.semantic_layer_target_none,
-            layer ? layer->id : layer_id_t{}, *target->note, true);
-        accepted = "Semantic-layer paint stroke started.";
-    } else if (updating) {
-        result = dispatch_editor_action(history, state,
-                                        update_semantic_layer_paint_gesture_action_t{
-                                            .note = *target->note, .pointer_captured = true});
-        accepted = "Semantic-layer paint preview updated.";
-    } else {
-        result = finish_compose_layer_paint(history, state, *target->note);
-        accepted = result.document_changed ? "Semantic-layer paint stroke committed."
-                                           : "Semantic-layer paint stroke released.";
-    }
-    return compose_input_family_result_t::continue_with_result();
+    const auto bgm_event = target && target->note
+        ? std::optional<object_id_t>{}
+        : bgm_event_at(input.x_pixels, input.y_pixels);
+    const semantic_layer_paint_target_t paint_target{
+        target && target->note ? target->note : std::nullopt,
+        bgm_event};
+    if (paint_target.note || paint_target.bgm_event)
+        return apply_semantic_layer_paint_target(input, context, paint_target, layer);
+    return handle_empty_semantic_layer_paint_target(input, context);
 }
 
 template <typename HitTargetAt, typename PositionAtComposeY>
@@ -1526,13 +1568,14 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
     return compose_input_family_result_t::continue_with_result();
 }
 
-template <typename HitTargetAt, typename PositionAtComposeY>
+template <typename HitTargetAt, typename BgmEventAt, typename PositionAtComposeY>
 auto dispatch_compose_gesture_input(const WormUiComposeInputAction& input,
                                     wormedit::document_history_t& history,
                                     wormedit::editor_interaction_state_t& state,
                                     application_command_state_t& application_state,
                                     wormedit::editor_interaction_result_t& result,
                                     std::string_view& accepted, HitTargetAt&& hit_target_at,
+                                    BgmEventAt&& bgm_event_at,
                                     PositionAtComposeY&& position_at_compose_y)
     -> compose_input_family_result_t {
     auto context = compose_gesture_context_t{history, state, application_state, result, accepted};
@@ -1544,7 +1587,8 @@ auto dispatch_compose_gesture_input(const WormUiComposeInputAction& input,
     case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN:
     case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE:
     case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE:
-        return dispatch_semantic_layer_paint_gesture(input, context, hit_target_at);
+        return dispatch_semantic_layer_paint_gesture(input, context, hit_target_at,
+                                                      bgm_event_at);
     case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN:
     case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE:
     case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE:
@@ -3063,9 +3107,20 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
     const auto hit_target = [&context](const auto& chart, const auto& view, double x, double y) {
         return context.hit_target_at(chart, view, x, y);
     };
+    const auto bgm_event_at = [&context](double x, double y)
+        -> std::optional<wormedit::object_id_t> {
+        const auto& scene = context.scene_cache.scene_window.scene;
+        if (!scene) return std::nullopt;
+        for (auto event = scene->bgm_events.rbegin(); event != scene->bgm_events.rend(); ++event) {
+            const auto& bounds = event->bounds;
+            if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom)
+                return event->event;
+        }
+        return std::nullopt;
+    };
     const auto gesture = dispatch_compose_gesture_input(input, context.history, context.state,
                                                         context.application_state, result, accepted,
-                                                        hit_target, position);
+                                                        hit_target, bgm_event_at, position);
     if (gesture.handled)
         return gesture;
     const auto selection_mode = [&context](WormUiComposeSelectionMode mode) {

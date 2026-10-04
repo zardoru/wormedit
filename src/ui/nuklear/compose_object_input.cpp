@@ -353,13 +353,14 @@ auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& inpu
         return true;
     }
     if (!state.action_overflowed && view.scene_available &&
-        view.semantic_layer_paint_mode_active && input.pointer_started_in_note_field &&
+        view.semantic_layer_paint_mode_active && input.pointer_started_in_view &&
         input.window_focused && input.shortcut_event_count == 0 &&
         (input.pointer_modifiers & input.any_pointer_modifier) == 0 &&
         !state.pointer_hold_active && !state.lane_hold_active && !state.area_selection_active &&
         !state.area_selection_candidate_active) {
         paint_pointer_consumed = true;
-        if (compose_point_hits_note(&view, input.paint_anchor_x, input.paint_anchor_y)) {
+        if (compose_point_hits_note(&view, input.paint_anchor_x, input.paint_anchor_y) ||
+            compose_bgm_event_at(&view, input.paint_anchor_x, input.paint_anchor_y) != 0) {
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN,
                                  input.paint_anchor_x, input.paint_anchor_y);
             state.semantic_layer_paint_pointer_active = !state.action_overflowed && input.left_down;

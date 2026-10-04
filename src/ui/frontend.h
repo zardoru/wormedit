@@ -88,6 +88,7 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES 32
 #define WORM_UI_AUDIO_ASSET_CAPACITY 128
 #define WORM_UI_SOUND_ROW_CAPACITY 512
+#define WORM_UI_SOUND_USAGE_ROW_CAPACITY 1024
 #define WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY 4096
 #define WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY 64
 #define WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY 4096
@@ -133,6 +134,8 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_LOOP_SELECTION,
     WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET,
+    WORM_UI_WORKSPACE_ACTION_SELECT_SOUND_RESOURCE,
+    WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE,
     WORM_UI_WORKSPACE_ACTION_SELECT_VISUAL_ASSET,
     WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW,
     WORM_UI_WORKSPACE_ACTION_SELECT_PLAYER_PREVIEW_SKIN,
@@ -366,10 +369,38 @@ typedef struct WormUiSoundRowView {
     bool missing;
 } WormUiSoundRowView;
 
+typedef struct WormUiSoundUsageRowView {
+    uint64_t chart_id;
+    uint64_t measure_id;
+    uint64_t row;
+    uint64_t object_id;
+    uint64_t channel_id;
+    uint64_t clip_id;
+    uint64_t referenced_resource_id;
+    uint64_t referenced_asset_id;
+    int kind;
+    int scope;
+    bool position_valid;
+    const char* chart_label;
+    const char* position_label;
+} WormUiSoundUsageRowView;
+
 typedef struct WormUiAudioSlicesView {
     const WormUiSoundRowView* sound_rows;
     size_t sound_row_count;
     bool sound_rows_truncated;
+    uint64_t selected_resource_id;
+    uint64_t selected_channel_id;
+    uint64_t selected_clip_id;
+    const WormUiSoundUsageRowView* usage_rows;
+    size_t usage_row_count;
+    size_t usage_total_count;
+    bool usage_rows_truncated;
+    bool usage_valid;
+    uint64_t usage_song_id;
+    uint64_t usage_document_revision;
+    uint64_t usage_resource_id;
+    uint64_t usage_asset_id;
     bool visible;
     bool assets_truncated;
     const uint64_t* asset_ids;
@@ -393,6 +424,14 @@ typedef struct WormUiAudioSlicesView {
     int64_t proposed_offset_numerator;
     uint64_t proposed_offset_denominator;
 } WormUiAudioSlicesView;
+
+typedef struct WormUiSoundUsageRequest {
+    uint64_t selected_project_id;
+    uint64_t selected_resource_id;
+    uint64_t selected_channel_id;
+    uint64_t selected_clip_id;
+    bool find_uses_open;
+} WormUiSoundUsageRequest;
 
 typedef enum WormUiAudioOffsetDragAction {
     WORM_UI_AUDIO_OFFSET_DRAG_NONE = 0,
@@ -645,6 +684,11 @@ typedef struct WormUiComposeBgmEventView {
     bool selected;
     const char* sound_label;
     const char* sound_detail;
+    bool semantic_color_visible;
+    uint8_t semantic_red;
+    uint8_t semantic_green;
+    uint8_t semantic_blue;
+    uint8_t semantic_alpha;
 } WormUiComposeBgmEventView;
 
 typedef struct WormUiComposeBgmDraftView {
@@ -696,6 +740,7 @@ typedef struct WormUiComposeSemanticLayerView {
     bool visible;
     bool locked;
     bool selected;
+    size_t assigned_bgm_count;
 } WormUiComposeSemanticLayerView;
 
 typedef struct WormUiComposeBookmarkView {
@@ -899,6 +944,11 @@ typedef struct WormUiKeysoundDockRequest {
     size_t first_row, row_limit;
 } WormUiKeysoundDockRequest;
 
+typedef struct WormUiComposeSoundGroupView {
+    uint64_t group_id;
+    const char* name;
+} WormUiComposeSoundGroupView;
+
 typedef struct WormUiComposeKeysoundRowView {
     uint64_t resource_id;
     /* BMS #WAV index such as "01", or an empty string. */
@@ -909,6 +959,7 @@ typedef struct WormUiComposeKeysoundRowView {
     uint64_t layer_mask;
     /* Bit i means adding keysound_layers[i] conflicts with existing note layers. */
     uint64_t note_layer_conflict_mask;
+    uint64_t sound_group_id;
 } WormUiComposeKeysoundRowView;
 
 typedef struct WormUiComposeBgaEventView {
@@ -1155,6 +1206,11 @@ typedef struct WormUiComposeView {
     bool hover_note_visible;
     uint64_t hover_note_id;
     const char* hover_tooltip;
+    int64_t hover_timing_source_frame;
+    uint64_t hover_timing_total_frames;
+    uint32_t hover_timing_sample_rate;
+    bool hover_timing_valid;
+    char hover_timing_label[64];
     bool viewport_autoscroll_active;
     double viewport_autoscroll_anchor_x_pixels;
     double viewport_autoscroll_anchor_y_pixels;
@@ -1218,6 +1274,8 @@ typedef struct WormUiComposeView {
     /* Keysound listbox: every placeable sample, plus the chart layers its masks index. */
     const WormUiComposeKeysoundRowView* keysounds;
     size_t keysound_count;
+    const WormUiComposeSoundGroupView* compose_sound_groups;
+    size_t compose_sound_group_count;
     size_t keysound_total_count;
     bool keysounds_truncated;
     const WormUiComposeKeysoundLayerView* keysound_layers;
@@ -1328,6 +1386,8 @@ typedef struct WormUiComposeView {
     size_t branch_choice_count;
     const char* branch_diagnostics[WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY];
     size_t branch_diagnostic_count;
+    size_t selected_bgm_event_count;
+    size_t semantic_layer_unassigned_bgm_count;
 } WormUiComposeView;
 
 typedef struct WormUiTimingSpeedView {
@@ -1885,6 +1945,13 @@ typedef struct WormUiSoundSlotImportItem {
     bool ambiguous;
 } WormUiSoundSlotImportItem;
 
+typedef struct WormUiSoundGroupAssignment {
+    uint64_t group_id;
+    const char* name;
+    const uint64_t* sound_ids;
+    size_t sound_count;
+} WormUiSoundGroupAssignment;
+
 typedef struct WormUiSoundImportGroup {
     const char* name;
     uint64_t existing_group_id;
@@ -1952,6 +2019,9 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES,
     WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA,
     WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS,
+    WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS,
+    WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS,
+    WORM_UI_COMPOSE_ACTION_SUGGEST_SOUND_GROUPS,
     WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS,
     WORM_UI_COMPOSE_ACTION_AUDITION_SOUND,
     WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER,
@@ -2228,6 +2298,10 @@ typedef struct WormUiWorkspaceAction {
     WormUiWorkspaceTab tab;
     uint64_t recovery_scan_generation;
     uint64_t transport_seek_frame;
+    int64_t hover_source_frame;
+    bool hover_source_frame_valid;
+    uint64_t hover_source_total_frames;
+    uint32_t hover_source_sample_rate;
     uint64_t transport_loop_chart_id;
     uint64_t transport_loop_document_revision;
     uint64_t transport_loop_begin_row;
@@ -2236,6 +2310,22 @@ typedef struct WormUiWorkspaceAction {
     uint8_t transport_rate_index;
     bool transport_keep_pitch;
     uint64_t audio_asset_id;
+    uint64_t audio_resource_id;
+    uint64_t sound_usage_song_id;
+    uint64_t sound_usage_document_revision;
+    uint64_t sound_usage_resource_id;
+    uint64_t sound_usage_asset_id;
+    uint64_t sound_usage_chart_id;
+    uint64_t sound_usage_measure_id;
+    uint64_t sound_usage_row;
+    uint64_t sound_usage_object_id;
+    uint64_t sound_usage_channel_id;
+    uint64_t sound_usage_clip_id;
+    uint64_t sound_usage_referenced_resource_id;
+    uint64_t sound_usage_referenced_asset_id;
+    int sound_usage_kind;
+    int sound_usage_scope;
+    bool sound_usage_position_valid;
     uint64_t visual_asset_id;
     WormUiPlayerPreviewSkin player_preview_skin;
     WormUiStepmaniaFileProfile stepmania_file_profile;
@@ -2330,6 +2420,11 @@ typedef struct WormUiWorkspaceAction {
     /* Frontend-owned staging; valid through immediate workspace-action dispatch. */
     const uint64_t* compose_sound_resource_ids;
     size_t compose_sound_resource_count;
+    const WormUiSoundGroupAssignment* compose_sound_group_assignments;
+    size_t compose_sound_group_assignment_count;
+    uint64_t compose_sound_group_id;
+    bool compose_sound_group_keep_ids_together;
+    char compose_sound_group_name[65];
     bool compose_sound_overwrite_note_layers;
     /* Renumber WAV or BMP identifiers for the selected resources, or all in the namespace. */
     bool compose_renumber_all;
@@ -2496,6 +2591,9 @@ uint32_t worm_ui_frame_render_phase_begin(WormUiFrameRenderPhase phase);
 void worm_ui_frame_render_phase_end(uint32_t previous);
 
 void worm_ui_frontend_bga_dock_request(WormUiBgaDockRequest* request);
+void worm_ui_frontend_sound_usage_request(WormUiSoundUsageRequest* request);
+void worm_ui_frontend_select_sound_usage_source(uint64_t project_id, uint64_t resource_id,
+                                              uint64_t channel_id, uint64_t clip_id);
 void worm_ui_frontend_bga_move_preview(uint64_t* chart_id, uint64_t* document_revision,
                                        uint64_t* event_id, double* y_pixels);
 void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request);

@@ -1,26 +1,26 @@
 #pragma once
 
-#include "ui/frontend.h"
 #include "sys/sound_list_projection.h"
+#include "ui/frontend.h"
 
-#include <wormedit/core/interaction.h>
 #include <wormedit/core/arena.h>
-#include <wormedit/core/notifications.h>
 #include <wormedit/core/grid.h>
+#include <wormedit/core/interaction.h>
+#include <wormedit/core/notifications.h>
 #include <wormedit/core/recovery_controller.h>
-#include <wormedit/formats/conversion.h>
 #include <wormedit/core/workspace.h>
+#include <wormedit/formats/conversion.h>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <type_traits>
-#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -176,6 +176,7 @@ struct flattened_workspace_t {
             frame_span<WormUiComposeKeysoundRowView> row;
             frame_span<WormUiComposeSoundSlotRowView> slot;
             frame_span<WormUiComposeKeysoundLayerView> layer;
+            frame_span<WormUiComposeSoundGroupView> group;
         } keysound;
         struct {
             frame_span<WormUiComposeOutputGroupView> view;
@@ -187,6 +188,7 @@ struct flattened_workspace_t {
     struct {
         frame_span<std::uint64_t> asset;
         frame_span<WormUiSoundRowView> sound_row;
+        frame_span<WormUiSoundUsageRowView> usage_row;
         std::vector<WormUiAudioWaveformColumnView> waveform;
     } audio;
   private:
@@ -201,8 +203,8 @@ struct flattened_workspace_t {
                                      const stepmania_export_policy_t& stepmania_policy,
                                      frame_arena_t* arena = nullptr,
                                      dock_sort_t keysound_sort = dock_sort_t::natural_name,
-                                     WormUiKeysoundDockRequest keysound_request = {})
-    -> flattened_workspace_t;
+    WormUiKeysoundDockRequest keysound_request = {},
+    WormUiSoundUsageRequest sound_usage_request = {}) -> flattened_workspace_t;
 
 // Borrowed notification strings remain valid until the center's next frame-
 // thread mutation. Project after draining, then draw before dispatching actions.

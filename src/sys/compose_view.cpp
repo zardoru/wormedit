@@ -973,6 +973,48 @@ void project_compose_layout_and_notes(const compose_scene_projection_context_t& 
                      band_count != bands.size() || lane_count != lanes.size();
 }
 
+template <typename ConvertRect>
+void project_compose_bgm_events(flattened_workspace_t& flattened,
+                                const std::vector<wormedit::editor_field_bgm_event_geometry_t>& events,
+                                WormUiComposeView& view, ConvertRect&& convert_rect) {
+    const auto event_count = std::min(events.size(),
+        static_cast<std::size_t>(WORM_UI_COMPOSE_BGM_EVENT_CAPACITY));
+    if (!prepare_compose_geometry_rows(flattened, flattened.compose.bgm.event, event_count)) {
+        view.truncated = true;
+        return;
+    }
+    for (std::size_t index = 0; index < event_count; ++index) {
+        const auto& event = events[index];
+        const auto sound = event.sound
+            ? flattened.compose.sound_labels.find(event.sound->value)
+            : flattened.compose.sound_labels.end();
+        append_compose_geometry_row(flattened.compose.bgm.event,
+            {.bounds = convert_rect(event.bounds),
+             .event_id = event.event.value,
+             .source_lane_id = event.source_lane.value,
+             .sound_id = event.sound ? event.sound->value : 0,
+             .has_sound = event.sound.has_value(),
+             .bmson_slice = event.bmson_restart.has_value(),
+             .bmson_restart = event.bmson_restart.value_or(false),
+             .selected = event.selected,
+             .sound_label = sound == flattened.compose.sound_labels.end()
+                                ? (event.sound ? "?" : "") : sound->second.first.c_str(),
+             .sound_detail = sound == flattened.compose.sound_labels.end()
+                                ? (event.sound ? "Unknown sound resource" : "Unbound BGM slot")
+                                : sound->second.second.c_str(),
+             .semantic_color_visible = event.semantic_color.has_value(),
+             .semantic_red = static_cast<std::uint8_t>(
+                 event.semantic_color ? event.semantic_color->red : 0),
+             .semantic_green = static_cast<std::uint8_t>(
+                 event.semantic_color ? event.semantic_color->green : 0),
+             .semantic_blue = static_cast<std::uint8_t>(
+                 event.semantic_color ? event.semantic_color->blue : 0),
+             .semantic_alpha = static_cast<std::uint8_t>(
+                 event.semantic_color ? event.semantic_color->alpha : 0)}, view.truncated);
+    }
+    view.truncated = view.truncated || event_count != events.size();
+}
+
 void project_compose_bgm(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.flattened;
     const auto& scene = projection.scene;
@@ -993,37 +1035,8 @@ void project_compose_bgm(const compose_scene_projection_context_t& projection) {
                                                       .source_lane_id = lane.source_lane.value,
                                                       .source_order = lane.source_order}, view.truncated);
     }
-    const auto& bgm_events = scene.bgm_events;
-    const auto bgm_event_count =
-        std::min(bgm_events.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BGM_EVENT_CAPACITY));
-    if (!prepare_compose_geometry_rows(flattened, flattened.compose.bgm.event, bgm_event_count)) {
-        view.truncated = true;
-        return;
-    }
-    for (std::size_t index = 0; index < bgm_event_count; ++index) {
-        const auto& event = bgm_events[index];
-        const auto sound = event.sound
-                               ? flattened.compose.sound_labels.find(event.sound->value)
-                               : flattened.compose.sound_labels.end();
-        append_compose_geometry_row(flattened.compose.bgm.event,
-            {.bounds = convert_rect(event.bounds),
-             .event_id = event.event.value,
-             .source_lane_id = event.source_lane.value,
-             .sound_id = event.sound ? event.sound->value : 0,
-             .has_sound = event.sound.has_value(),
-             .bmson_slice = event.bmson_restart.has_value(),
-             .bmson_restart = event.bmson_restart.value_or(false),
-             .selected = event.selected,
-             .sound_label = sound == flattened.compose.sound_labels.end()
-                                ? (event.sound ? "?" : "")
-                                : sound->second.first.c_str(),
-             .sound_detail = sound == flattened.compose.sound_labels.end()
-                                 ? (event.sound ? "Unknown sound resource" : "Unbound BGM slot")
-                                 : sound->second.second.c_str()}, view.truncated);
-    }
-
-    view.truncated = view.truncated || bgm_lane_count != bgm_lanes.size() ||
-                     bgm_event_count != bgm_events.size();
+    project_compose_bgm_events(flattened, scene.bgm_events, view, convert_rect);
+    view.truncated = view.truncated || bgm_lane_count != bgm_lanes.size();
 }
 
 auto bga_preview_authored_row(const compose_scene_projection_context_t& projection,
@@ -1313,6 +1326,7 @@ bool initialize_compose_view_state(
     view.timing_lane_visibility_mask = effective_compose_timing_lane_mask(application_state);
     view.timing_focus = application_state.compose_timing_focus;
     view.selected_note_count = 0;
+    view.selected_bgm_event_count = 0;
     view.selected_assigned_resource_id = 0;
     view.selected_bgm_event_id = 0;
     view.selected_bmson_bgm_event_id = 0;
@@ -1410,6 +1424,7 @@ bool initialize_compose_view_state(
     view.semantic_layer_target = {};
     view.semantic_layer_target_none = false;
     view.semantic_layer_unassigned_note_count = 0;
+    view.semantic_layer_unassigned_bgm_count = 0;
     view.semantic_layer_page = 0;
     view.semantic_layer_page_count = 0;
     view.semantic_layers_truncated = false;
@@ -1472,17 +1487,26 @@ auto append_semantic_layer_row(flattened_workspace_t& flattened, compose_scene_c
             .visible = layer.visible,
             .locked = layer.locked,
             .selected = selected,
+            .assigned_bgm_count = cache.semantic_layer_bgm_membership_counts[layer.id.value],
     });
 }
 
 void populate_semantic_membership_counts(compose_scene_cache_t& cache,
                                           const wormedit::chart_document_t& chart) {
     cache.semantic_layer_membership_counts.clear();
+    cache.semantic_layer_bgm_membership_counts.clear();
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
             if (note.semantic_layers.empty()) ++cache.semantic_layer_membership_counts[0];
             for (const auto layer : note.semantic_layers) {
                 auto& count = cache.semantic_layer_membership_counts[layer.value];
+                if (count != std::numeric_limits<std::size_t>::max()) ++count;
+            }
+        }
+        for (const auto& event : measure.bgm_events) {
+            if (event.semantic_layers.empty()) ++cache.semantic_layer_bgm_membership_counts[0];
+            for (const auto layer : event.semantic_layers) {
+                auto& count = cache.semantic_layer_bgm_membership_counts[layer.value];
                 if (count != std::numeric_limits<std::size_t>::max()) ++count;
             }
         }
@@ -1531,6 +1555,8 @@ bool populate_semantic_layer_palette(
     }
     view.semantic_layer_target_none = application_state.semantic_layer_target_none;
     view.semantic_layer_unassigned_note_count = cache.semantic_layer_membership_counts[0];
+    view.semantic_layer_unassigned_bgm_count =
+        cache.semantic_layer_bgm_membership_counts[0];
     const auto palette = wormedit::make_semantic_layer_palette_window(
         chart, application_state.semantic_layer_first_row,
         std::clamp<std::size_t>(application_state.semantic_layer_row_count, 1,
@@ -1554,6 +1580,7 @@ bool populate_semantic_layer_palette(
             .blue = target->color.blue, .alpha = target->color.alpha,
             .assigned_note_count = cache.semantic_layer_membership_counts[target->id.value],
             .visible = target->visible, .locked = target->locked, .selected = true,
+            .assigned_bgm_count = cache.semantic_layer_bgm_membership_counts[target->id.value],
         };
         populate_semantic_layer_target_state(view, application_state, *target, true);
     }
@@ -2755,6 +2782,12 @@ void populate_compose_selected_bgm(
     const wormedit::chart_document_t& chart,
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
     WormUiComposeView& view) {
+    view.selected_bgm_event_count = retained_state
+        ? static_cast<std::size_t>(std::ranges::count_if(
+              retained_state->selected_objects, [](const auto& object) {
+                  return object.kind == wormedit::editor_selection_object_kind_t::bgm_event;
+              }))
+        : 0;
     if (retained_state->selected_objects.size() != 1 ||
         retained_state->selected_objects.front().kind !=
             wormedit::editor_selection_object_kind_t::bgm_event) return;

@@ -84,6 +84,7 @@ add_executable(wormedit_core_tests
     core/document_tests.cpp
     core/editor_navigation_input_tests.cpp
     core/editor_scene_tests.cpp
+    core/editor_scene_bgm_layers_tests.cpp
     core/bms_profile_detection_tests.cpp
     core/fixture_inventory_tests.cpp
     core/format_field_schema_tests.cpp
@@ -505,6 +506,10 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/nuklear_event_harness_tests.cpp
         ui/sound_source_copy_event_harness_tests.cpp
         ui/sound_slot_batch_event_harness_tests.cpp
+        ui/compose_hover_timing_event_harness_tests.cpp
+        ui/manual_sound_group_event_harness_tests.cpp
+        ui/compose_bgm_layer_tests.cpp
+        ui/sound_usage_event_harness_tests.cpp
         sys/sound_drop_transaction_tests.cpp
         ../src/sys/sound_drop_transaction.cpp
         ui/bga_advance_workflow_tests.cpp
@@ -554,6 +559,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     endif()
 
     add_executable(wormedit_frame_timing_tests
+        sys/compose_hover_timing_tests.cpp
+        ../src/sys/compose_hover_timing.cpp
         sys/frame_timing_tests.cpp
         ui/nuklear_notification_state_tests.cpp
         ui/nuklear_notification_panel_tests.cpp
@@ -578,6 +585,10 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/recipe_form.cpp
         ../src/sys/workspace_projection.cpp
         ../src/sys/sound_list_projection.cpp
+        ../src/sys/sound_usage_projection.cpp
+        sys/sound_usage_projection_tests.cpp
+        sys/sound_usage_actions_tests.cpp
+        ../src/sys/sound_usage_actions.cpp
     )
     target_include_directories(wormedit_frame_timing_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/generated")
@@ -589,6 +600,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         target_sources(wormedit_frame_timing_tests PRIVATE
             sys/compose_beat_fit_tests.cpp
             sys/application_commands_tests.cpp
+            sys/manual_sound_group_command_tests.cpp
             ../src/sys/compose_sound_actions.cpp
             ../src/sys/application_command_dispatch.cpp
             ../src/sys/transport_player_actions.cpp
@@ -613,6 +625,7 @@ endif()
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_frame_projection_arena_tests
         sys/frame_projection_arena_tests.cpp
+        ../src/sys/sound_usage_projection.cpp
         ../src/sys/frame_timing.cpp
         ../src/sys/workspace_projection.cpp
         ../src/sys/sound_list_projection.cpp

@@ -101,7 +101,9 @@ auto sample_workflow_uses_sounds(nuklear_event_harness_t& harness) -> bool {
         return false;
     auto& state = worm_ui_nuklear_compose_state();
     if (!state.sound_list_valid) return false;
-    (void)click_at(harness, state.sound_list_x + 70.0f, state.sound_list_y + 110.0f);
+    const auto sound_row = harness.drawn_text_center("kick.wav");
+    if (!sound_row) return false;
+    (void)click_at(harness, sound_row->first, sound_row->second);
     if (state.keysound_selection.primary != 40 || state.armed_resource_id != 40 ||
         !state.armed_from_sounds_dock ||
         harness.drawn_text().find("Assign selected") == std::string::npos ||

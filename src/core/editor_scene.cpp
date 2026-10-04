@@ -270,6 +270,7 @@ struct scene_bgm_index_context_t {
     std::unordered_set<std::uint64_t>& bgm_event_ids;
     const std::unordered_set<std::uint64_t>& bgm_source_lanes;
     const std::unordered_map<std::uint64_t, bool>& bmson_restart_by_event;
+    const std::unordered_map<std::uint64_t, color_rgba_t>& visible_semantic_colors;
 };
 
 auto append_scene_bgm_event(const measure_chunk_t& measure, const bgm_event_t& event,
@@ -294,6 +295,10 @@ auto append_scene_bgm_event(const measure_chunk_t& measure, const bgm_event_t& e
                                             event.id));
         return;
     }
+    const auto semantic_color = event.semantic_layers.empty()
+                                    ? context.visible_semantic_colors.end()
+                                    : context.visible_semantic_colors.find(
+                                          event.semantic_layers.front().value);
     context.index.bgm_events.push_back(
         {.event = event.id,
          .source_lane = event.source_lane,
@@ -306,7 +311,20 @@ auto append_scene_bgm_event(const measure_chunk_t& measure, const bgm_event_t& e
                         ? std::nullopt
                         : std::optional<bool>{found->second};
          }()
-         : std::nullopt});
+         : std::nullopt,
+         .semantic_color = semantic_color == context.visible_semantic_colors.end()
+                               ? std::nullopt
+                               : std::optional{semantic_color->second},
+         .semantic_layers = event.semantic_layers});
+}
+
+auto visible_semantic_layer_colors(const chart_document_t& chart)
+    -> std::unordered_map<std::uint64_t, color_rgba_t> {
+    std::unordered_map<std::uint64_t, color_rgba_t> colors;
+    colors.reserve(chart.semantic_layers.size());
+    for (const auto& layer : chart.semantic_layers)
+        if (layer.visible) colors.emplace(layer.id.value, layer.color);
+    return colors;
 }
 
 auto append_scene_bgm_events(const chart_document_t& chart, editor_field_scene_index_t& index,
@@ -346,6 +364,7 @@ auto append_scene_bgm_events(const chart_document_t& chart, editor_field_scene_i
     }
     std::unordered_set<std::uint64_t> bgm_source_lanes;
     std::unordered_set<std::uint64_t> bgm_event_ids;
+    const auto semantic_colors = visible_semantic_layer_colors(chart);
     bgm_source_lanes.reserve(chart.bgm_source_lanes.size());
     bgm_event_ids.reserve(bgm_event_count);
     for (const auto& lane : chart.bgm_source_lanes) {
@@ -356,7 +375,7 @@ auto append_scene_bgm_events(const chart_document_t& chart, editor_field_scene_i
         }
     }
     scene_bgm_index_context_t context{index, diagnostics, bgm_event_ids, bgm_source_lanes,
-                                      bmson_restart_by_event};
+                                      bmson_restart_by_event, semantic_colors};
     for (const auto& measure : chart.measures) {
         for (const auto& event : measure.bgm_events) {
             append_scene_bgm_event(measure, event, context);
@@ -1168,6 +1187,16 @@ auto note_visible_in_scene(const editor_field_scene_note_source_t& note,
            !std::ranges::any_of(request.excluded_semantic_layers, has_layer);
 }
 
+auto bgm_event_visible_in_scene(const editor_field_scene_bgm_source_t& event,
+                                const editor_field_scene_request_t& request) -> bool {
+    const auto has_layer = [&](layer_id_t layer) {
+        return std::ranges::find(event.semantic_layers, layer) != event.semantic_layers.end();
+    };
+    return (!request.solo_semantic_layer || has_layer(*request.solo_semantic_layer)) &&
+           std::ranges::all_of(request.required_semantic_layers, has_layer) &&
+           !std::ranges::any_of(request.excluded_semantic_layers, has_layer);
+}
+
 template <typename Operate>
 auto record_paint_overlaps(const editor_field_scene_note_source_t& note,
                            scene_paint_preview_t& paint, Operate&& operate) -> bool {
@@ -1768,6 +1797,7 @@ auto append_visible_bgm_events(scene_geometry_context_t& context, const visible_
     const auto after = std::ranges::upper_bound(first, context.index.bgm_events.end(), last_row, {},
                                                 &editor_field_scene_bgm_source_t::row);
     for (auto event = first; event != after; ++event) {
+        if (!bgm_event_visible_in_scene(*event, context.request)) continue;
         if (!operate()) {
             context.diagnostics.push_back(
                 error(diagnostic_code_t::invalid_resolution,
@@ -1798,7 +1828,8 @@ auto append_visible_bgm_events(scene_geometry_context_t& context, const visible_
              .sound = event->sound,
              .bmson_restart = event->bmson_restart,
              .selected = selected_events.contains(event->event.value),
-             .bounds = bounds});
+             .bounds = bounds,
+             .semantic_color = event->semantic_color});
     }
     return true;
 }

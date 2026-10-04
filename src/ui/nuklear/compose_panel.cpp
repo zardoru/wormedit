@@ -921,6 +921,37 @@ void process_bgm_bar_view_input(struct nk_context* context, WormUiWorkspaceActio
     }
 }
 
+void report_compose_bgm_hover(struct nk_context* context, const WormUiComposeView* view,
+                              WormUiWorkspaceAction* action, const BgmBarGeometry& geometry) {
+    if (!nk_input_is_mouse_hovering_rect(&context->input, geometry.bounds)) return;
+    constexpr char instructions[] =
+        "Wheel: zoom   Shift+wheel or middle-drag: pan   Middle-click: whole song";
+    if (view->selected_audio_asset_id == 0 || view->waveform_overview_total_frames == 0 ||
+        view->waveform_overview_sample_rate == 0) {
+        nk_tooltip(context, instructions);
+        return;
+    }
+    const auto frame_value = static_cast<long double>(
+        geometry.fraction_at(context->input.mouse.pos.x)) *
+        (view->waveform_overview_total_frames - 1);
+    if (frame_value > static_cast<long double>(std::numeric_limits<std::int64_t>::max())) {
+        nk_tooltip(context, instructions);
+        return;
+    }
+    const auto source_frame = static_cast<std::int64_t>(frame_value);
+    action->hover_source_frame = source_frame;
+    action->hover_source_frame_valid = true;
+    action->hover_source_total_frames = view->waveform_overview_total_frames;
+    action->hover_source_sample_rate = view->waveform_overview_sample_rate;
+    if (!view->hover_timing_valid || view->hover_timing_source_frame != source_frame ||
+        view->hover_timing_total_frames != view->waveform_overview_total_frames ||
+        view->hover_timing_sample_rate != view->waveform_overview_sample_rate) {
+        nk_tooltip(context, instructions);
+        return;
+    }
+    wormedit::ui::chrome::timing_tooltip(context, view->hover_timing_label, instructions);
+}
+
 } // namespace
 
 void worm_ui_nuklear_render_compose_bgm_bar(
@@ -938,9 +969,7 @@ void worm_ui_nuklear_render_compose_bgm_bar(
         draw_bgm_bar_grid(context, canvas, *view, geometry);
         draw_bgm_bar_bookmarks(context, canvas, *view, geometry);
         draw_bgm_bar_markers(canvas, *view, geometry);
-        if (window_focused && nk_input_is_mouse_hovering_rect(&context->input, bounds))
-            nk_tooltip(context, "Wheel: zoom   Shift+wheel or middle-drag: pan   "
-                                "Middle-click: whole song");
+        report_compose_bgm_hover(context, view, action, geometry);
     }
     const auto& button = context->input.mouse.buttons[NK_BUTTON_LEFT];
     const bool pressed = available && window_focused && button.clicked && button.down &&
@@ -1093,7 +1122,9 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         : viewport.x + viewport.w;
     if (compose_note_menu_open() || compose_note_menu_consumed())
         process_compose_note_menu(context, *view, *action, viewport, editor_input_right, window_focused);
-    if (view->input_occluded || state.layers_menu_open || state.layers_menu_release_pending ||
+    if (view->input_occluded || state.keysound_group_review.open ||
+        state.keysound_group_menu_open || state.keysound_group_menu_release_pending ||
+        state.layers_menu_open || state.layers_menu_release_pending ||
         state.bga_stack_open || state.bga_stack_release_pending ||
         state.bga_renumber_confirmation_open ||
         state.bga_renumber_release_pending || compose_note_menu_consumed()) {
@@ -1140,8 +1171,11 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     const auto pointer_started_in_note_field =
         pointer_started_in_view && pointer_started_x >= note_field_left &&
         pointer_started_x < note_field_right;
+    const auto semantic_paint_uses_bgm_pane = view->semantic_layer_paint_mode_active;
     const auto clamp_paint_x = [&](double value) {
-        return std::clamp(value, note_field_left, note_field_right);
+        return semantic_paint_uses_bgm_pane
+            ? std::clamp(value, 0.0, view->viewport_width_pixels)
+            : std::clamp(value, note_field_left, note_field_right);
     };
     const auto clamp_paint_y = [&](double value) {
         return std::clamp(value, 0.0, view->viewport_height_pixels);

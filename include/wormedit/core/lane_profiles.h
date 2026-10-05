@@ -152,6 +152,8 @@ struct stepmania_lane_spec_t {
     -> std::optional<lane_input_profile_t>;
 // osu!mania key layout: `osu-mania-Nk`, lanes "Key 1"..."Key N", 1 to 18 keys.
 [[nodiscard]] auto make_osu_mania_profile(std::uint32_t keys) -> std::optional<lane_input_profile_t>;
+// SpecialStyle 12K/16K use DP-like split stages with playable outside columns.
+[[nodiscard]] auto make_osu_mania_profile(std::uint32_t keys, bool special_style) -> std::optional<lane_input_profile_t>;
 
 // pump-single: down-left, up-left, center, up-right, down-right.
 [[nodiscard]] auto make_stepmania_pump_single_profile() -> lane_input_profile_t;

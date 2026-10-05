@@ -605,3 +605,38 @@ TEST_CASE("osu!mania style 10K uses the canonical wbwbgybwbw key colors",
     for (const auto& lane : osu.lanes) actual.push_back(lane.key_color);
     CHECK(actual == expected);
 }
+
+TEST_CASE("osu SpecialStyle 12K and 16K use outside scratch colors with playable columns",
+          "[unit][core][lane-profile][key-color]") {
+    for (const auto keys : {12U, 16U}) {
+        CAPTURE(keys);
+        auto special = make_osu_mania_profile(keys, true);
+        REQUIRE(special);
+        CHECK(special->layout.split_stage);
+        CHECK(special->layout.split_after_column == keys / 2);
+        CHECK(special->input.stage_count == 2);
+        REQUIRE(special->input.bindings.size() == keys);
+        for (std::uint32_t column = 0; column < keys; ++column) {
+            const auto& lane = special->layout.lanes[column];
+            CHECK(lane.id == lane_id_t{column + 1});
+            CHECK(lane.role == lane_role_t::playable);
+            CHECK(lane.stage == (column < keys / 2 ? stage_group_t::left : stage_group_t::right));
+            const auto expected = column == 0 || column == keys - 1 ? lane_key_color_t::scratch
+                : ((column < keys / 2 ? column - 1 : column - keys / 2) % 2 == 0
+                    ? lane_key_color_t::white : lane_key_color_t::black);
+            CHECK(lane.key_color == expected);
+        }
+        auto layout = special->layout;
+        for (auto& lane : layout.lanes) lane.key_color = lane_key_color_t::generic;
+        assign_lane_key_colors(layout);
+        for (std::uint32_t column = 0; column < keys; ++column)
+            CHECK(layout.lanes[column].key_color == special->layout.lanes[column].key_color);
+        auto ordinary = make_osu_mania_profile(keys);
+        REQUIRE(ordinary);
+        CHECK_FALSE(ordinary->layout.split_stage);
+        for (std::uint32_t column = 0; column < keys; ++column)
+            CHECK(ordinary->layout.lanes[column].key_color ==
+                  (column % 2 == 0 ? lane_key_color_t::white : lane_key_color_t::black));
+    }
+    CHECK(make_osu_mania_profile(10, true)->layout.profile_id == "osu-mania-10k");
+}

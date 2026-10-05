@@ -1987,3 +1987,61 @@ TEST_CASE("osu!mania keeps events, samples, colours and unknown keys through an 
         CHECK(*again.text == *written.text);
     }
 }
+
+namespace {
+void check_osu_split_layout(const wormedit::lane_layout_t& actual,
+                            const wormedit::lane_layout_t& expected) {
+    CHECK(actual.profile_id == expected.profile_id);
+    CHECK(actual.split_stage == expected.split_stage);
+    CHECK(actual.split_after_column == expected.split_after_column);
+    REQUIRE(actual.lanes.size() == expected.lanes.size());
+    for (std::size_t index = 0; index < expected.lanes.size(); ++index) {
+        CHECK(actual.lanes[index].id == expected.lanes[index].id);
+        CHECK(actual.lanes[index].role == expected.lanes[index].role);
+        CHECK(actual.lanes[index].stage == expected.lanes[index].stage);
+        CHECK(actual.lanes[index].display_order == expected.lanes[index].display_order);
+        CHECK(actual.lanes[index].key_color == expected.lanes[index].key_color);
+    }
+}
+} // namespace
+
+TEST_CASE("osu SpecialStyle 12K and 16K survive native and osu roundtrips",
+          "[unit][format][osu-mania][lanes]") {
+    using namespace wormedit;
+    for (const auto keys : {12U, 16U}) {
+        for (const auto style : {"", "SpecialStyle:0\n", "SpecialStyle:1\n", "SpecialStyle:2\n"}) {
+            CAPTURE(keys, style);
+            std::string source = "osu file format v14\n[General]\nMode:3\n";
+            source += style;
+            source += "[Difficulty]\nCircleSize:" + std::to_string(keys) +
+                "\n[TimingPoints]\n0,500,4,0,0,100,1,0\n[HitObjects]\n";
+            for (std::uint32_t column = 0; column < keys; ++column)
+                source += std::to_string((2 * column + 1) * 512 / (2 * keys)) +
+                    ",192," + std::to_string(column * 100) + ",1,0,0:0:0:0:\n";
+            auto imported = parse_inline(source);
+            REQUIRE(imported.song);
+            const auto& chart = imported.song->charts.front();
+            const auto& layout = chart.lane_layouts.front().layout;
+            const bool special = std::string_view(style) == "SpecialStyle:1\n";
+            CHECK(layout.split_stage == special);
+            REQUIRE(layout.lanes.size() == keys);
+            for (std::uint32_t column = 0; column < keys; ++column) {
+                const auto spelling = std::to_string((2 * column + 1) * 512 / (2 * keys)) + ",192,";
+                CHECK(lane_for_source(chart, spelling) == layout.lanes[column].id);
+                CHECK(layout.lanes[column].role == lane_role_t::playable);
+                if (!special) CHECK(layout.lanes[column].key_color ==
+                    (column % 2 == 0 ? lane_key_color_t::white : lane_key_color_t::black));
+            }
+            auto reopened = native_reopen(*imported.song);
+            check_osu_split_layout(reopened.charts.front().lane_layouts.front().layout, layout);
+            CHECK(reopened.charts.front().input_profile.profile_id == chart.input_profile.profile_id);
+            CHECK(reopened.charts.front().input_profile.bindings.size() == chart.input_profile.bindings.size());
+            auto exported = write_inline(reopened);
+            REQUIRE(exported.text);
+            auto reimported = parse_inline(*exported.text);
+            REQUIRE(reimported.song);
+            check_osu_split_layout(reimported.song->charts.front().lane_layouts.front().layout, layout);
+            CHECK(validate_document(*reimported.song).empty());
+        }
+    }
+}

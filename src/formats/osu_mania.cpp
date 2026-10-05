@@ -212,7 +212,7 @@ void retain_osu_source_value(format_metadata_t& group, std::string key, std::str
 }
 
 template <typename object_id_t>
-void append_osu_layout(chart_document_t& chart, std::int64_t keys,
+void append_osu_layout(chart_document_t& chart, std::int64_t keys, bool special_style,
                        object_id_t&& take_object_id) {
     lane_layout_t layout;
     layout.profile_id = "osu-mania-" + std::to_string(keys) + "k";
@@ -224,7 +224,13 @@ void append_osu_layout(chart_document_t& chart, std::int64_t keys,
                                 .role = lane_role_t::playable,
                                 .display_order = static_cast<std::uint32_t>(column)});
     assign_lane_key_colors(layout);
-    if (const auto input = default_input_profile_for(layout)) chart.input_profile = *input;
+    if (special_style && (keys == 12 || keys == 16)) {
+        auto profile = make_osu_mania_profile(static_cast<std::uint32_t>(keys), true);
+        layout = std::move(profile->layout);
+        chart.input_profile = std::move(profile->input);
+    } else if (const auto input = default_input_profile_for(layout)) {
+        chart.input_profile = *input;
+    }
     chart.lane_layouts.push_back({.id = take_object_id(0),
                                   .position = {chart.measures.front().id, 0},
                                   .layout = std::move(layout)});
@@ -1704,7 +1710,8 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
         ensure_hold_tail_room(chart, geometries, hit_objects, anchors.back().beat_length,
                                options.max_measures, position_at, fail);
 
-        append_osu_layout(chart, keys, take_object_id);
+        append_osu_layout(chart, keys, find_osu_value(fields, "General", "SpecialStyle") == "1",
+                          take_object_id);
 
         osu_resource_catalog_t resource_catalog{song, options, fail};
         if (const auto audio = find_osu_value(fields, "General", "AudioFilename"); audio && !audio->empty()) {

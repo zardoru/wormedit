@@ -808,21 +808,29 @@ auto make_stepmania_profile_for(std::string_view step_type) -> std::optional<lan
 }
 
 auto make_osu_mania_profile(std::uint32_t keys) -> std::optional<lane_input_profile_t> {
+    return make_osu_mania_profile(keys, false);
+}
+
+auto make_osu_mania_profile(std::uint32_t keys, bool special_style) -> std::optional<lane_input_profile_t> {
     if (keys < 1 || keys > 18) return std::nullopt;
+    const bool split = special_style && (keys == 12 || keys == 16);
     std::vector<lane_definition_t> lanes;
     lanes.reserve(keys);
     for (std::uint32_t index = 0; index < keys; ++index) {
         lanes.push_back({.id = lane_id_t{index + 1},
                          .name = "Key " + std::to_string(index + 1),
                          .role = lane_role_t::playable,
-                         .stage = stage_group_t::left,
+                         .stage = split && index >= keys / 2 ? stage_group_t::right : stage_group_t::left,
                          .display_order = index});
     }
     // The number row binds at most ten lanes; wider layouts start unbound.
     auto input = make_number_row_input_profile(lane_layout_t{.lanes = lanes})
                      .value_or(input_profile_t{.profile_id = "unbound-" + std::to_string(keys) + "k"});
-    const auto id = "osu-mania-" + std::to_string(keys) + "k";
-    return make_profile(id, std::to_string(keys) + "K", std::move(lanes), std::move(input));
+    const auto id = "osu-mania-" + std::to_string(keys) + "k" +
+                    (split ? "-specialstyle" : "");
+    if (split) input = make_two_stage_row_input(lanes, id + "-stage-rows");
+    return make_profile(id, std::to_string(keys) + "K", std::move(lanes), std::move(input),
+                        split, split ? std::optional{keys / 2} : std::nullopt);
 }
 
 auto make_stepmania_dance_solo_profile() -> lane_input_profile_t {
@@ -959,6 +967,18 @@ auto playable_lanes_of_stage(lane_layout_t& layout, stage_group_t stage)
     return lanes;
 }
 
+void color_osu_special_stage(lane_layout_t& layout, stage_group_t stage) {
+    const auto lanes = playable_lanes_of_stage(layout, stage);
+    if (lanes.empty()) return;
+    const auto scratch = stage == stage_group_t::left ? 0U : lanes.size() - 1;
+    std::size_t key = 0;
+    for (std::size_t index = 0; index < lanes.size(); ++index) {
+        if (index == scratch) lanes[index]->key_color = lane_key_color_t::scratch;
+        else lanes[index]->key_color = key++ % 2 == 0 ? lane_key_color_t::white
+                                                     : lane_key_color_t::black;
+    }
+}
+
 void color_stage(lane_layout_t& layout, stage_group_t stage, std::string_view profile) {
     const auto lanes = playable_lanes_of_stage(layout, stage);
     const auto popn = profile.starts_with("pms-");
@@ -968,7 +988,8 @@ void color_stage(lane_layout_t& layout, stage_group_t stage, std::string_view pr
             lanes[index]->key_color = piano_key_color(lanes[index]->display_order);
         } else if (popn_nine) {
             lanes[index]->key_color = pms_button_colors[index];
-        } else if (profile.starts_with("bms-") || profile.starts_with("bme-")) {
+        } else if (profile.starts_with("bms-") || profile.starts_with("bme-") ||
+                   profile == "osu-mania-12k" || profile == "osu-mania-16k") {
             lanes[index]->key_color =
                 index % 2 == 0 ? lane_key_color_t::white : lane_key_color_t::black;
         }
@@ -980,6 +1001,12 @@ void color_stage(lane_layout_t& layout, stage_group_t stage, std::string_view pr
 void assign_lane_key_colors(lane_layout_t& layout) {
     for (auto& lane : layout.lanes) {
         lane.key_color = role_key_color(lane.role).value_or(lane_key_color_t::generic);
+    }
+    if (layout.profile_id == "osu-mania-12k-specialstyle" ||
+        layout.profile_id == "osu-mania-16k-specialstyle") {
+        color_osu_special_stage(layout, stage_group_t::left);
+        color_osu_special_stage(layout, stage_group_t::right);
+        return;
     }
     if (is_osu_style_10k(layout.profile_id)) {
         color_osu_style_10k(layout);

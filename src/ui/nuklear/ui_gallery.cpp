@@ -116,8 +116,8 @@ void level_one_menu(nk_context* context, int width, int height) {
 }
 
 void level_two_dialog(nk_context* context, int width, int height) {
-    const auto bounds = nk_rect(static_cast<float>(width) * 0.5f - 120.0f,
-                                static_cast<float>(height) - 190.0f, 280.0f, 150.0f);
+    const auto bounds = nk_rect(static_cast<float>(width) * 0.5f - 170.0f,
+                                static_cast<float>(height) - 190.0f, 340.0f, 150.0f);
     const auto window = chrome::surface_window_begin(
         context, "UI gallery dialog", bounds,
         NK_WINDOW_NO_SCROLLBAR, 2);

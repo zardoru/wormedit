@@ -524,3 +524,17 @@ TEST_CASE("Compose audio offset is a document edit with one success notification
     check_action(fixture.history.undo.size() == 1);
     require_action(undo_document_command(fixture.history));
 }
+
+TEST_CASE("Compose area quantize records the applied report rows", "[compose-action-notifications]") {
+    action_notification_fixture_t fixture;
+    auto& notes = fixture.history.document.charts.front().measures.front().notes;
+    notes.push_back({.id = object_id_t{10}, .position = {measure_id_t{1}, 250},
+                     .lane = lane_id_t{1}, .kind = note_kind_t::tap});
+    fixture.state.selected_notes = {object_id_t{10}};
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE);
+    action.compose_quantize_divisions = 4;
+    require_action(fixture.dispatch(action) == "Selected notes quantized.");
+    require_action(fixture.application.quantize_applied_report.has_value());
+    check_action(fixture.application.quantize_applied_report->rows.size() == 1);
+    check_action(fixture.application.quantize_applied_report->total_rows == 1);
+}

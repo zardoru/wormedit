@@ -149,7 +149,8 @@ Every control `worm_ui_nuklear_render_compose_resources` draws today (`compose_r
 
 ## T-392 Remove or fix the empty quantize "Last applied report"
 
-- **Status:** ready
+- **Status:** done (2026-10-05; new tests pass in the headless and app builds; full headless suite passes; no real-window check)
+- **Result:** step 1 showed the cache **is** filled: `dispatch_compose_area_with_quantize_report` records the rows after an apply that changes the document (test `Compose area quantize records the applied report rows`, in the app build only because that file needs the audio decoder), and nothing clears it. The real cause of the empty heading was in the inspector: `render_quantize_report_rows` called `nk_tree_push` from one call site for both "Preview rows" and "Last applied report", and Nuklear keys a tree's open state by call site, so the applied report shared the collapsed state of the preview and always looked empty. Both trees now use distinct ids (`nk_tree_push_id`). Because the data is real and differs from the preview (the preview shows 0 moved after an apply), the section was repaired instead of removed: it draws only when rows were recorded and opens expanded. No dead view fields were removed. Harness tests: `tests/ui/quantize_report_event_harness_tests.cpp`.
 - **Outcome:** after Apply quantization, the inspector either lists the moved rows or no longer shows a "Last applied report" heading.
 - **Read first:** `src/ui/nuklear/compose_inspector.cpp` (`render_compose_quantize_section`), `src/sys/compose_view.cpp` (around `quantize_applied_row_count`).
 - **Files owned:** `src/ui/nuklear/compose_inspector.cpp`, `src/sys/compose_view.cpp`, `src/sys/compose_view.h`, `src/ui/frontend.h` (applied-row fields only), related tests, this card.

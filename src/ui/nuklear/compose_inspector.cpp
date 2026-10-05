@@ -559,10 +559,13 @@ void render_quantize_report_row(nk_context* context,
     }
 }
 
-void render_quantize_report_rows(nk_context* context, const char* title,
+// Nuklear keys a tree's open state by its call site, so the two report trees must pass distinct
+// ids; sharing one made the applied report follow the collapsed preview tree and look empty.
+void render_quantize_report_rows(nk_context* context, const char* title, int tree_id,
                                  const WormUiComposeQuantizeReportRowView* rows,
-                                 std::size_t count, std::size_t total, bool truncated) {
-    if (!nk_tree_push(context, NK_TREE_TAB, title, NK_MINIMIZED)) return;
+                                 std::size_t count, std::size_t total, bool truncated,
+                                 nk_collapse_states initial = NK_MINIMIZED) {
+    if (!nk_tree_push_id(context, NK_TREE_TAB, title, initial, tree_id)) return;
     if (truncated) {
         nk_layout_row_dynamic(context, 18, 1);
         nk_labelf(context, NK_TEXT_LEFT, "%zu rows shown of %zu", count, total);
@@ -615,14 +618,17 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
         render_quantize_preset_actions(inspector);
         nk_tree_pop(context);
     }
-    render_quantize_report_rows(context, "Preview rows", view->quantize_preview_rows,
+    render_quantize_report_rows(context, "Preview rows", 0, view->quantize_preview_rows,
                                 view->quantize_preview_row_count,
                                 view->quantize_preview_total_rows,
                                 view->quantize_preview_rows_truncated);
-    render_quantize_report_rows(context, "Last applied report", view->quantize_applied_rows,
-                                view->quantize_applied_row_count,
-                                view->quantize_applied_total_rows,
-                                view->quantize_applied_rows_truncated);
+    // Only after an apply that moved rows; an empty heading says nothing, and it opens expanded so
+    // the moved rows are visible without another click.
+    if (view->quantize_applied_row_count != 0)
+        render_quantize_report_rows(context, "Last applied report", 1, view->quantize_applied_rows,
+                                    view->quantize_applied_row_count,
+                                    view->quantize_applied_total_rows,
+                                    view->quantize_applied_rows_truncated, NK_MAXIMIZED);
 }
 
 auto semantic_layer_target_active(const WormUiComposeView* view) -> bool {

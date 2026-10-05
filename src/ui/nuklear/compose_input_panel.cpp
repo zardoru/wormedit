@@ -846,15 +846,6 @@ auto process_compose_timing_marker_pointer(const ComposePointerEventContext& inp
                                                   bool paint_pointer_consumed) -> bool {
     if (state.bookmark_rename.active || state.bookmark_rename.release_pending) return true;
     if (compose_area_pointer_consumed() || compose_note_menu_consumed()) return true;
-    const auto rename_press = !paint_pointer_consumed &&
-        nk_input_is_mouse_pressed(&input.context->input, NK_BUTTON_LEFT) && input.left_down &&
-        input.pointer_started_in_view && input.window_focused && input.view->visible &&
-        input.view->scene_available && !input.view->input_occluded &&
-        input.pointer_modifiers == 0 && !state.action_overflowed;
-    if (rename_press && begin_compose_bookmark_rename_at_pointer(
-            state.bookmark_rename, *input.view, input.pointer_started_x,
-            input.pointer_started_y, true, true))
-        return true;
     if (update_compose_timing_marker_drag(input)) return true;
     return begin_compose_timing_marker_drag(input, paint_pointer_consumed);
 }

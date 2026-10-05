@@ -68,18 +68,21 @@ TEST_CASE("a label near the top edge stays inside the field", "[unit][ui][bookma
     CHECK(box->y == field.y);
 }
 
-TEST_CASE("bookmark rename target chooses the closest line with a stable ID tie break",
+TEST_CASE("bookmark hit band spans the full width and stops at its edges",
           "[unit][ui][bookmark-label]") {
-    const std::array lines{
-        bookmark_rename_line_t{.bookmark_id = 9, .y = 100.0},
-        bookmark_rename_line_t{.bookmark_id = 3, .y = 108.0},
-        bookmark_rename_line_t{.bookmark_id = 0, .y = 100.0},
-    };
-    CHECK(bookmark_rename_target_at(lines, 198.0, 104.0, 200.0) == 3);
-    CHECK(bookmark_rename_target_at(lines, 165.0, 100.0, 200.0) == 9);
-    CHECK_FALSE(bookmark_rename_target_at(lines, 163.0, 100.0, 200.0));
-    CHECK_FALSE(bookmark_rename_target_at(lines, 198.0, 120.0, 200.0));
-    CHECK_FALSE(bookmark_rename_target_at(lines, NAN, 100.0, 200.0));
+    const std::array lines{bookmark_rename_line_t{.bookmark_id = 4, .y = 100.0}};
+    CHECK(bookmark_double_click_target_at(lines, 0.0, 100.0, 400.0, 18.0) ==
+          std::optional<std::uint64_t>{4});
+    CHECK(bookmark_double_click_target_at(lines, 10.0, 105.0, 400.0, 18.0) ==
+          std::optional<std::uint64_t>{4});
+    CHECK(bookmark_double_click_target_at(lines, 400.0, 100.0, 400.0, 18.0) ==
+          std::optional<std::uint64_t>{4});
+    // The label zone above a named line is full width too, not only the right half.
+    CHECK(bookmark_double_click_target_at(lines, 20.0, 88.0, 400.0, 18.0) ==
+          std::optional<std::uint64_t>{4});
+    CHECK_FALSE(bookmark_double_click_target_at(lines, 20.0, 120.0, 400.0, 18.0));
+    CHECK_FALSE(bookmark_double_click_target_at(lines, 401.0, 100.0, 400.0, 18.0));
+    CHECK_FALSE(bookmark_double_click_target_at(lines, NAN, 100.0, 400.0, 18.0));
 }
 
 TEST_CASE("double-click target prefers an exact line hit over a neighbor's label zone",

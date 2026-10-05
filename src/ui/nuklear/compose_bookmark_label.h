@@ -34,17 +34,13 @@ struct bookmark_rename_line_t {
     bool labelled{true};
 };
 
-// A narrow target at the label-side edge keeps ordinary note placement available along the line.
-[[nodiscard]] auto bookmark_rename_target_at(std::span<const bookmark_rename_line_t> lines,
-                                             double x, double y, double right_edge)
-    -> std::optional<std::uint64_t>;
-
-// A double-click target: the whole line across the playable field (within 6 px of it), plus the
-// label zone just above a labelled line on the right half, where the name is drawn. An exact line
-// hit always beats a label zone; among label zones the line nearest below the pointer wins, and
-// equal distances go to the lower ID.
+// The hover and double-click target: a band across the whole viewport width (`field_width`
+// document pixels), 6 px each side of a line plus `label_height` above a labelled line, where the
+// name is drawn. An exact line hit always beats a label zone; among label zones the line nearest
+// below the pointer wins, and equal distances go to the lower ID. Hover and click share this so
+// the highlight is exactly what responds.
 [[nodiscard]] auto bookmark_double_click_target_at(std::span<const bookmark_rename_line_t> lines,
-                                                   double x, double y, double right_edge,
+                                                   double x, double y, double field_width,
                                                    double label_height)
     -> std::optional<std::uint64_t>;
 

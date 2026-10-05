@@ -4,6 +4,7 @@
 #include "wormedit/nuklear_config.h"
 
 #include <cstdint>
+#include <optional>
 
 // The inline single-line label editor shared by bookmarks and note labels, so both own keyboard
 // and pointer input through the same flags. `kind` picks the commit action.
@@ -34,12 +35,13 @@ auto begin_compose_bookmark_rename(bookmark_rename_editor_t& editor,
                                    std::uint64_t bookmark_id) -> bool;
 void cancel_compose_bookmark_rename(bookmark_rename_editor_t& editor);
 
-// Pointer coordinates are in the view's document-pixel space. The bounded target sits near
-// the right edge of the playable field, so clicking a bookmark line does not steal note clicks.
-auto begin_compose_bookmark_rename_at_pointer(bookmark_rename_editor_t& editor,
-                                             const WormUiComposeView& view,
-                                             double pointer_x, double pointer_y,
-                                             bool pressed, bool available) -> bool;
+// Roughly one text line; the label box sits just above its bookmark line.
+inline constexpr double compose_bookmark_label_zone_height = 18.0;
+
+// The visible bookmark whose full-width hit band holds the pointer (document pixels). Hover
+// highlight and double-click rename both use it. Notes are the caller's concern.
+auto compose_bookmark_at(const WormUiComposeView& view, double pointer_x, double pointer_y)
+    -> std::optional<std::uint64_t>;
 
 // Double-click entry: the line or its label opens the editor. Notes are the caller's concern.
 auto begin_compose_bookmark_rename_at_double_click(bookmark_rename_editor_t& editor,

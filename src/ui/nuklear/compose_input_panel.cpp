@@ -907,7 +907,8 @@ static auto begin_bookmark_move_capture(const ComposePointerEventContext& input,
     const auto& view = *input.view;
     if (state.action_overflowed || paint_pointer_consumed || !view.scene_available ||
         !view.visible || view.input_occluded || !input.pointer_started_in_view ||
-        !input.left_down || !input.window_focused || input.pointer_modifiers != 0 ||
+        !input.left_down || !input.window_focused ||
+        (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
         input.compose_note_double_click_in_view || state.bookmark_move_candidate_active ||
         state.bookmark_rename.active || state.bookmark_rename.release_pending ||
         state.note_move_active || state.note_move_candidate_active || state.area_selection_active ||

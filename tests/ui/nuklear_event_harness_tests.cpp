@@ -869,7 +869,7 @@ struct layer_menu_fixture_t {
         layers[index].selected = true;
         harness.view().compose.semantic_layer_target = layers[index];
         (void)harness.frame();
-        check_layer_menu(worm_ui_nuklear_compose_state().layers_menu_open);
+        check_layer_menu(worm_ui_nuklear_compose_state().layers_menu.open);
     }
 };
 
@@ -887,7 +887,7 @@ TEST_CASE("Layer row menu hides its captured target without assigning selected n
     fixture.harness.view().compose.semantic_layer_target = fixture.layers.front();
     ++fixture.harness.view().compose.document_revision;
     (void)fixture.harness.frame();
-    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu.open);
     const auto eye = click_at(fixture.harness, 1200, 233);
     check_layer_row_action(eye.front(), WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, 7);
 }
@@ -910,7 +910,7 @@ TEST_CASE("Layer row menu captures keyboard shortcuts and Escape closes without 
     check_layer_menu(blocked_text.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     const std::array escape{key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
     const auto closed = fixture.harness.frame(escape);
-    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu.open);
     check_layer_menu(closed.get().shortcut_text_entry_active);
     check_layer_menu(closed.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     check_layer_menu(closed.get().compose_input_count == 0);
@@ -922,9 +922,9 @@ TEST_CASE("Layer row menu discards both halves of an outside click",
     fixture.open();
     const auto outside = click_at(fixture.harness, 500, 400);
     check_layer_menu_no_actions(outside);
-    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu.open);
     (void)fixture.harness.frame();
-    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_release_pending);
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu.release_pending);
 }
 
 TEST_CASE("Layer row menu owns Escape and outside clicks ahead of notification toasts",
@@ -938,7 +938,7 @@ TEST_CASE("Layer row menu owns Escape and outside clicks ahead of notification t
     fixture.open();
     const std::array escape{key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
     const auto closed = fixture.harness.frame(escape);
-    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu.open);
     check_layer_menu(closed.get().notifications.kind == WORM_UI_NOTIFICATION_ACTION_NONE);
     const std::array release{key_event(SDL_EVENT_KEY_UP, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
     (void)fixture.harness.frame(release);
@@ -948,7 +948,7 @@ TEST_CASE("Layer row menu owns Escape and outside clicks ahead of notification t
     check_layer_menu_no_actions(outside);
     for (const auto& frame : outside)
         check_layer_menu(frame.get().notifications.kind == WORM_UI_NOTIFICATION_ACTION_NONE);
-    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu.open);
 }
 
 TEST_CASE("Layer row menu releases its popup after a stale revision or hidden panel",
@@ -957,13 +957,13 @@ TEST_CASE("Layer row menu releases its popup after a stale revision or hidden pa
     fixture.open();
     ++fixture.harness.view().compose.document_revision;
     (void)fixture.harness.frame();
-    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu.open);
     (void)fixture.harness.frame();
     fixture.open();
     worm_ui_nuklear_compose_state().layers_panel_visible = false;
     (void)fixture.harness.frame();
-    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_open);
-    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu_close_pending);
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu.open);
+    check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu.close_pending);
     (void)fixture.harness.frame();
     (void)click_at(fixture.harness, 315, 122);
     check_layer_menu(worm_ui_nuklear_compose_state().color_view ==
@@ -978,7 +978,7 @@ TEST_CASE("Locked layer row menu disables Rename and Color",
     REQUIRE(rename_center.has_value());
     const auto rename = click_at(fixture.harness, rename_center->first, rename_center->second);
     check_layer_menu_no_actions(rename);
-    check_layer_menu(worm_ui_nuklear_compose_state().layers_menu_open);
+    check_layer_menu(worm_ui_nuklear_compose_state().layers_menu.open);
     check_layer_menu(!worm_ui_nuklear_compose_state().semantic_layer_name_editor_visible);
     check_layer_menu(!worm_ui_nuklear_compose_state().semantic_layer_color_editor_visible);
 }

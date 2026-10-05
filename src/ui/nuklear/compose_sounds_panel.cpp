@@ -657,7 +657,7 @@ auto group_candidates(const SoundsPanel& panel, bool ungrouped_only)
 
 void open_manual_group_review(const SoundsPanel& panel) {
     auto& review = panel.state->keysound_group_review;
-    wormedit::ui::chrome::popup_arm_release(panel.state->keysound_group_menu_release_pending);
+    wormedit::ui::chrome::popup_arm_release(panel.state->keysound_group_menu.release_pending);
     review = {};
     review.manual = true;
     review.open_pending = true;
@@ -671,7 +671,7 @@ void open_manual_group_review(const SoundsPanel& panel) {
 
 void open_suggested_group_review(const SoundsPanel& panel) {
     auto& review = panel.state->keysound_group_review;
-    wormedit::ui::chrome::popup_arm_release(panel.state->keysound_group_menu_release_pending);
+    wormedit::ui::chrome::popup_arm_release(panel.state->keysound_group_menu.release_pending);
     review = {};
     review.project_id = panel.view->project_id;
     review.chart_id = panel.view->chart_id;
@@ -1349,8 +1349,8 @@ void render_row(const SoundsPanel& panel, std::size_t shown_index) {
     const auto hovered = nk_widget_is_hovered(context);
     const auto clicked = nk_widget_is_mouse_clicked(context, NK_BUTTON_LEFT) &&
                          !panel.view->input_occluded &&
-                         !panel.state->keysound_group_menu_open &&
-                         !panel.state->keysound_group_menu_release_pending &&
+                         !wormedit::ui::chrome::context_menu_owns_input(
+                             panel.state->keysound_group_menu) &&
                          !panel.state->keysound_filter_popup_open &&
                          !panel.state->keysound_filter_release_pending &&
                          !panel.state->keysound_renumber_confirmation_open &&
@@ -1366,8 +1366,7 @@ void render_row(const SoundsPanel& panel, std::size_t shown_index) {
         if (!tip.empty()) wormedit::ui::nuklear::tooltip::text(context, tip);
     }
     if (clicked) click_row(panel, shown_index, id);
-    if (!panel.state->keysound_group_menu_open &&
-        !panel.state->keysound_group_menu_release_pending &&
+    if (!wormedit::ui::chrome::context_menu_owns_input(panel.state->keysound_group_menu) &&
         !panel.view->input_occluded &&
         nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) &&
         nk_input_has_mouse_click_in_rect(&context->input, NK_BUTTON_RIGHT, bounds)) {
@@ -1378,14 +1377,10 @@ void render_row(const SoundsPanel& panel, std::size_t shown_index) {
             state.keysound_selection.anchor = id;
             state.keysound_selection.primary = id;
         }
-        state.keysound_group_menu_open = true;
-        wormedit::ui::chrome::popup_arm_release(state.keysound_group_menu_release_pending);
-        state.keysound_group_menu_anchor_x = context->input.mouse.pos.x;
-        state.keysound_group_menu_anchor_y = context->input.mouse.pos.y;
-        state.keysound_group_menu_resource_id = id;
-        state.keysound_group_menu_project_id = panel.view->project_id;
-        state.keysound_group_menu_chart_id = panel.view->chart_id;
-        state.keysound_group_menu_revision = panel.view->document_revision;
+        wormedit::ui::chrome::context_menu_open(
+            state.keysound_group_menu, context->input.mouse.pos,
+            {panel.view->project_id, panel.view->chart_id, panel.view->document_revision, id});
+        wormedit::ui::chrome::popup_arm_release(state.keysound_group_menu.release_pending);
     }
 }
 
@@ -1437,73 +1432,40 @@ void render_display_row(const SoundsPanel& panel,
 }
 
 void render_sound_group_context_menu(const SoundsPanel& panel) {
+    namespace chrome = wormedit::ui::chrome;
     auto* context = panel.context;
     auto& state = *panel.state;
-    if (wormedit::ui::chrome::popup_update_release_pending(
-            context, state.keysound_group_menu_release_pending)) return;
+    auto& menu = state.keysound_group_menu;
+    // A review opens only once the gesture that requested it has been released.
+    if (menu.release_pending && !menu.open) return;
     if (state.keysound_group_review.open_pending) {
         state.keysound_group_review.open_pending = false;
         state.keysound_group_review.open = true;
     }
-    if (!state.keysound_group_menu_open) return;
-    const auto captured = wormedit::ui::chrome::popup_context_matches(
-                          {state.keysound_group_menu_project_id, state.keysound_group_menu_chart_id,
-                           state.keysound_group_menu_revision,
-                           state.keysound_group_menu_resource_id},
-                          {panel.view->project_id, panel.view->chart_id,
-                           panel.view->document_revision,
-                           state.keysound_group_menu_resource_id}) &&
-                          find_row(*panel.view, state.keysound_group_menu_resource_id);
-    if (!captured) {
-        state.keysound_group_menu_open = false;
-        wormedit::ui::chrome::popup_arm_release(state.keysound_group_menu_release_pending);
-        wormedit::ui::chrome::dismiss_popup(context, "Sound group actions", nk_rect(0, 0, 1, 1));
+    if (!menu.open) return;
+    if (!find_row(*panel.view, menu.stamp.object_id)) {
+        chrome::context_menu_close(menu, context);
         return;
     }
-    const auto region = nk_window_get_content_region(context);
-    const auto width = std::min(220.0f, region.w);
-    const auto height = std::min(96.0f, region.h);
-    const auto x = std::clamp(static_cast<float>(state.keysound_group_menu_anchor_x) - region.x,
-                              0.0f, std::max(0.0f, region.w - width));
-    const auto y = std::clamp(static_cast<float>(state.keysound_group_menu_anchor_y) - region.y,
-                              0.0f, std::max(0.0f, region.h - height));
-    const auto bounds = nk_rect(x, y, width, height);
-    if (!nk_popup_begin(context, NK_POPUP_STATIC, "Sound group actions", NK_WINDOW_BORDER, bounds)) {
-        state.keysound_group_menu_open = false;
-        wormedit::ui::chrome::popup_arm_release(state.keysound_group_menu_release_pending);
+    const chrome::PopupContextStamp current{panel.view->project_id, panel.view->chart_id,
+                                            panel.view->document_revision, menu.stamp.object_id};
+    if (!chrome::context_menu_begin(menu, context, current,
+                                    nk_vec2(chrome::context_menu_width,
+                                            chrome::context_menu_height(3))))
         return;
-    }
-    const auto actual_popup_bounds = nk_window_get_bounds(context);
-    if (wormedit::ui::chrome::popup_dismiss_requested(context, actual_popup_bounds)) {
-        state.keysound_group_menu_open = false;
-        wormedit::ui::chrome::popup_arm_release(state.keysound_group_menu_release_pending);
-        nk_popup_close(context);
-        nk_popup_end(context);
-        return;
-    }
-    nk_layout_row_dynamic(context, 24, 1);
-    const auto group_button_activated = nk_button_label(context, "Group...");
-    if (group_button_activated) {
-        state.keysound_group_menu_open = false;
-        wormedit::ui::chrome::popup_arm_release(state.keysound_group_menu_release_pending);
-        nk_popup_close(context);
+    if (chrome::context_menu_item(menu, context, "Group..."))
         open_manual_group_review(panel);
-    } else if (nk_button_label(context, "Ungroup")) {
+    else if (chrome::context_menu_item(menu, context, "Ungroup"))
         raise_on_selection(panel, WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS);
-        state.keysound_group_menu_open = false;
-        wormedit::ui::chrome::popup_arm_release(state.keysound_group_menu_release_pending);
-        nk_popup_close(context);
-    } else if (nk_button_label(context, "Suggest groups...")) {
-        state.keysound_group_menu_open = false;
-        wormedit::ui::chrome::popup_arm_release(state.keysound_group_menu_release_pending);
-        nk_popup_close(context);
+    else if (chrome::context_menu_item(menu, context, "Suggest groups..."))
         open_suggested_group_review(panel);
-    }
-    nk_popup_end(context);
+    chrome::context_menu_end(menu, context);
 }
 
 void render_list(const SoundsPanel& panel, float height) {
     auto* context = panel.context;
+    // Before rows: they open the group menu, and the opening press must survive to its first begin.
+    (void)wormedit::ui::chrome::context_menu_update(panel.state->keysound_group_menu, context);
     const auto automatic_sections = !panel.state->keysound_slots_mode &&
         panel.view->keysound_section_projection_available;
     const auto count = static_cast<int>(automatic_sections

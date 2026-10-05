@@ -907,9 +907,9 @@ static bool compose_popup_owns_input() {
            compose_area_menu_open() || compose_area_menu_consumed() ||
            compose_recipe_menu_open() || compose_recipe_menu_consumed() ||
            compose.resource_export_group_popup_open || compose.resource_export_group_release_pending ||
-           compose.layers_menu_open || compose.layers_menu_release_pending || compose.keysound_slot_confirmation_open ||
+           wormedit::ui::chrome::context_menu_owns_input(compose.layers_menu) || compose.keysound_slot_confirmation_open ||
            compose.keysound_slot_batch.open || compose.keysound_group_review.open ||
-           compose.keysound_group_menu_open || compose.keysound_group_menu_release_pending ||
+           wormedit::ui::chrome::context_menu_owns_input(compose.keysound_group_menu) ||
            compose.keysound_filter_popup_open || compose.keysound_filter_release_pending ||
            compose.bga_stack_open || compose.bga_stack_release_pending ||
            compose.bga_renumber_confirmation_open || compose.bga_renumber_release_pending ||
@@ -1102,7 +1102,7 @@ static bool capture_bga_stack_key(const SDL_KeyboardEvent& event) {
 static bool capture_keysound_group_review_key(const SDL_KeyboardEvent& event) {
     auto& review = worm_ui_nuklear_compose_state().keysound_group_review;
     auto& compose = worm_ui_nuklear_compose_state();
-    if (compose.keysound_group_menu_open) {
+    if (compose.keysound_group_menu.open) {
         SDL_Event copy{};
         copy.type = event.type;
         copy.key = event;
@@ -1112,7 +1112,7 @@ static bool capture_keysound_group_review_key(const SDL_KeyboardEvent& event) {
     if (!review.open) return false;
     if (event.down && !event.repeat && event.key == SDLK_ESCAPE) {
         review.open = false;
-        compose.keysound_group_menu_release_pending = true;
+        compose.keysound_group_menu.release_pending = true;
     } else {
         SDL_Event copy{};
         copy.type = event.type;
@@ -1417,7 +1417,7 @@ static void render_external_player_menu(const WormUiWorkspaceView& view,
 
 // Menus draw their own rounded panel (chrome::menu_panel), so the stock fill that
 // nk_menu_end paints over the padding must be transparent while one is open.
-static nk_color g_menu_saved_background{};
+static wormedit::ui::chrome::MenuSurface g_menu_saved_background{};
 
 static bool begin_native_menu(const char* title, float width, float height) {
     auto& parent = *g_context->current;
@@ -1449,9 +1449,7 @@ static bool begin_menu_sized(const char* title, float width, float height) {
         return false;
     }
     g_menu_popup_open = true;
-    wormedit::ui::chrome::menu_panel(g_context);
-    g_menu_saved_background = g_context->style.window.background;
-    g_context->style.window.background = nk_rgba(0, 0, 0, 0);
+    g_menu_saved_background = wormedit::ui::chrome::menu_surface_begin(g_context);
     return true;
 }
 
@@ -1462,18 +1460,11 @@ static bool begin_menu(const char* title, float rows, float width = 210.0f, floa
                                 2.0f * wormedit::ui::chrome::menu_padding + extra);
 }
 
-static void menu_separator() {
-    nk_layout_row_dynamic(g_context, 6, 1);
-    struct nk_rect bounds{};
-    if (nk_widget(&bounds, g_context) == NK_WIDGET_INVALID) return;
-    const auto y = bounds.y + bounds.h * 0.5f;
-    nk_stroke_line(nk_window_get_canvas(g_context), bounds.x + 4.0f, y, bounds.x + bounds.w - 4.0f, y,
-                   1.0f, wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::border));
-}
+static void menu_separator() { wormedit::ui::chrome::menu_separator(g_context); }
 
 static void end_menu() {
     nk_menu_end(g_context);
-    g_context->style.window.background = g_menu_saved_background;
+    wormedit::ui::chrome::menu_surface_end(g_context, g_menu_saved_background);
 }
 
 static void render_project_menu(const WormUiWorkspaceView* view,
@@ -2629,11 +2620,9 @@ static void retire_unavailable_layer_actions(const WormUiWorkspaceView& view) {
     if (view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && g_window_focused &&
         view.compose.visible && !view.compose.input_occluded) return;
     auto& state = worm_ui_nuklear_compose_state();
-    state.layers_menu_close_pending = state.layers_menu_close_pending || state.layers_menu_open;
+    wormedit::ui::chrome::context_menu_abandon(state.layers_menu);
     state.bga_stack_open = false;
-    state.layers_menu_open = false;
     state.layers_menu_input_consumed = false;
-    state.layers_menu_release_pending = false;
     state.semantic_layer_name_editor_visible = false;
     state.semantic_layer_name_focus_pending = false;
     state.semantic_layer_color_editor_visible = false;
@@ -2695,7 +2684,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         render_close_confirmation(view->close_confirmation, action, width, height);
         worm_ui_nuklear_render_keysound_group_review(g_context, view->compose, action,
             worm_ui_nuklear_compose_state().keysound_group_review,
-            worm_ui_nuklear_compose_state().keysound_group_menu_release_pending, width, height);
+            worm_ui_nuklear_compose_state().keysound_group_menu.release_pending, width, height);
         render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
         return action;
     }
@@ -2736,7 +2725,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         action, width, height);
     worm_ui_nuklear_render_keysound_group_review(g_context, view->compose, action,
         worm_ui_nuklear_compose_state().keysound_group_review,
-            worm_ui_nuklear_compose_state().keysound_group_menu_release_pending, width, height);
+            worm_ui_nuklear_compose_state().keysound_group_menu.release_pending, width, height);
     render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
     const bool compose_lane_focused =
         !worm_ui_nuklear_compose_state().bgm_column_count_edit.input_owned &&

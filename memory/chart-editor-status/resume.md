@@ -5,7 +5,9 @@
 ## Immediate work
 
 Context menus (2026-10-04): T-380 fixes the Compose area/SV recipe menu deadlock that
-left the canvas unresponsive after a right-click on a selected area. Full suite passes. See
+left the canvas unresponsive after a right-click on a selected area; T-381 moves all five
+right-click action menus onto one `chrome::ContextMenu` drawn like the menubar. Full
+suite 2,262/2,262 and an isolated real-window check pass. See
 [context menus](../../docs/chart-editor-plan/tasks/context-menus.md).
 
 Latest integrated checkpoint (2026-10-04): playback tail `d64c048`, viewport

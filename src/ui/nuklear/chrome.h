@@ -1,6 +1,7 @@
 #pragma once
 
 #include "wormedit/nuklear_config.h"
+#include "ui/nuklear/popup_lifecycle.h"
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/lucide_icons.h"
 #include "ui/nuklear/text_field.h"
@@ -244,6 +245,35 @@ inline void menu_panel(nk_context* context) {
     nk_fill_rect(canvas, body, menu_radius, color(UiColor::surface));
     nk_stroke_rect(canvas, body, menu_radius, 1.0f, color(UiColor::border_hover));
     nk_push_scissor(canvas, clip);
+}
+
+// Menubar menus and context menus share this surface: menu_panel() plus transparent
+// window fills, so neither the square fill Nuklear adds below the last row nor a
+// nested group's body covers the rounded panel.
+// Call right after the menu or popup begins; pass the result to menu_surface_end().
+inline auto menu_surface_begin(nk_context* context) -> MenuSurface {
+    menu_panel(context);
+    auto& window = context->style.window;
+    const MenuSurface saved{window.background, window.fixed_background};
+    window.background = nk_rgba(0, 0, 0, 0);
+    window.fixed_background = nk_style_item_color(nk_rgba(0, 0, 0, 0));
+    return saved;
+}
+
+// Call right after nk_menu_end()/nk_popup_end().
+inline void menu_surface_end(nk_context* context, MenuSurface saved) {
+    context->style.window.background = saved.background;
+    context->style.window.fixed_background = saved.fixed_background;
+}
+
+// A thin rule between menu groups; six pixels tall in the menu's row flow.
+inline void menu_separator(nk_context* context) {
+    nk_layout_row_dynamic(context, 6, 1);
+    struct nk_rect bounds{};
+    if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
+    const auto y = bounds.y + bounds.h * 0.5f;
+    nk_stroke_line(nk_window_get_canvas(context), bounds.x + 4.0f, y, bounds.x + bounds.w - 4.0f, y,
+                   1.0f, color(UiColor::border));
 }
 
 // Dropdowns, context menus and popups share one surface language with the buttons:

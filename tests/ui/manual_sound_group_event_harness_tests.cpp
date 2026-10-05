@@ -171,7 +171,7 @@ TEST_CASE("Sounds right-click menu opens Group review without editing on the pre
         return frame.get().compose_action != WORM_UI_COMPOSE_ACTION_NONE;
     }));
     const auto& state = worm_ui_nuklear_compose_state();
-    require_event(state.keysound_group_menu_open);
+    require_event(state.keysound_group_menu.open);
     check_event(state.keysound_selection.selected == std::vector<std::uint64_t>{41});
     (void)harness.frame();
     const auto group = harness.drawn_text_center("Group...");
@@ -180,7 +180,7 @@ TEST_CASE("Sounds right-click menu opens Group review without editing on the pre
     check_event(std::ranges::none_of(opened, [](const auto& frame) {
         return frame.get().compose_action != WORM_UI_COMPOSE_ACTION_NONE;
     }));
-    check_event(!state.keysound_group_menu_open);
+    check_event(!state.keysound_group_menu.open);
     (void)harness.frame();
     check_event(state.keysound_group_review.open);
     check_event(state.keysound_group_review.manual);

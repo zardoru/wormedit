@@ -4,6 +4,7 @@
 #include "ui/nuklear/keysound_list_state.h"
 #include "ui/nuklear/compose_bookmark_chooser.h"
 #include "ui/nuklear/compose_bookmark_rename.h"
+#include "ui/nuklear/context_menu.h"
 #include "ui/nuklear/sound_slot_batch.h"
 
 #include <array>
@@ -387,19 +388,12 @@ struct worm_ui_nuklear_compose_state_t {
     bool semantic_layer_color_editor_visible{};
     bool semantic_layer_name_editor_visible{};
     bool semantic_layer_name_focus_pending{};
-    bool layers_menu_open{};
+    // Stamp object id is the captured layer id.
+    wormedit::ui::chrome::ContextMenu layers_menu{.title = "Layer actions"};
     bool layers_menu_input_consumed{};
-    bool layers_menu_close_pending{};
-    bool layers_menu_release_pending{};
-    std::uint64_t layers_menu_project_id{};
-    std::uint64_t layers_menu_chart_id{};
-    std::uint64_t layers_menu_revision{};
-    std::uint64_t layers_menu_layer_id{};
     WormUiComposeSemanticLayerView layers_menu_layer{};
     std::string layers_menu_layer_name;
     std::size_t layers_menu_row_index{};
-    float layers_menu_anchor_x{}, layers_menu_anchor_y{};
-    float layers_menu_x{}, layers_menu_y{};
     bool inspector_visible{true};
     // Keysound listbox (compose_sounds_panel.cpp).
     bool sounds_panel_visible{true};
@@ -424,12 +418,9 @@ struct worm_ui_nuklear_compose_state_t {
     bool keysound_filter_release_pending{};
     worm_ui_sound_slot_batch_t keysound_slot_batch;
     worm_ui_keysound_group_review_t keysound_group_review;
-    bool keysound_group_menu_open{};
-    bool keysound_group_menu_release_pending{};
-    double keysound_group_menu_anchor_x{}, keysound_group_menu_anchor_y{};
-    std::uint64_t keysound_group_menu_resource_id{};
-    std::uint64_t keysound_group_menu_project_id{}, keysound_group_menu_chart_id{};
-    std::uint64_t keysound_group_menu_revision{};
+    // Stamp object id is the right-clicked sound. Group review dialogs also arm its
+    // release latch so their closing gesture stays away from the list.
+    wormedit::ui::chrome::ContextMenu keysound_group_menu{.title = "Sound group actions"};
     bool bga_event_move_candidate_active{};
     bool bga_event_move_active{};
     std::uint64_t bga_event_move_object_id{};

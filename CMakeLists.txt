@@ -329,6 +329,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
 
     set(WORMEDIT_UI_FRONTEND_SOURCES
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/tooltip.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/context_menu.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/external_player_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/options_window.cpp"

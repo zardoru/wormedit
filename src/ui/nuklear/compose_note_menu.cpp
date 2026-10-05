@@ -1,7 +1,7 @@
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/chrome.h"
-#include "ui/nuklear/popup_lifecycle.h"
+#include "ui/nuklear/context_menu.h"
 #include "ui/nuklear/theme.h"
 #include "wormedit/nuklear_config.h"
 
@@ -11,20 +11,22 @@
 #include <limits>
 
 namespace {
-constexpr const char* title = "Note actions";
-constexpr float row_height = 24;
+namespace chrome = wormedit::ui::chrome;
+
+constexpr float row_height = chrome::context_menu_row_height;
+constexpr float primary_width = 120;
 struct NoteMenu {
-    bool open{}, submenu{}, consumed{}, release_pending{}, close_pending{}, request_close{};
-    bool opened_this_frame{};
-    std::uint64_t project{}, chart{}, revision{}, note{};
-    float anchor_x{}, anchor_y{};
-    struct nk_rect bounds{};
+    chrome::ContextMenu popup{.title = "Note actions"};
+    bool submenu{}, consumed{}, request_close{};
+    std::uint64_t note{};
 } menu;
 
+auto stamp(const WormUiComposeView& view) -> chrome::PopupContextStamp {
+    return {view.project_id, view.chart_id, view.document_revision, 0};
+}
+
 bool current(const WormUiComposeView& view) {
-    return wormedit::ui::chrome::popup_context_matches(
-        {menu.project, menu.chart, menu.revision, 0},
-        {view.project_id, view.chart_id, view.document_revision, 0});
+    return chrome::popup_context_matches(menu.popup.stamp, stamp(view));
 }
 
 bool raise(const WormUiComposeView& view, WormUiWorkspaceAction& action,
@@ -55,22 +57,10 @@ std::uint64_t note_at(const WormUiComposeView& view, double x, double y) {
     return 0;
 }
 
-void close(nk_context* context, WormUiWorkspaceAction& action, const WormUiComposeView& view) {
-    menu.open = false;
+// The popup has closed without an assignment; tell the application.
+void finish_close(const WormUiComposeView& view, WormUiWorkspaceAction& action) {
     menu.consumed = true;
-    wormedit::ui::chrome::popup_arm_release(menu.release_pending);
     menu.request_close = !raise(view, action, WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
-    wormedit::ui::chrome::dismiss_popup(context, title, menu.bounds);
-}
-
-void update_bounds(nk_context* context) {
-    const auto region = nk_window_get_content_region(context);
-    const auto width = std::min(menu.submenu ? 392.0f : 136.0f, region.w);
-    const auto height = std::min(menu.submenu ? 422.0f : 38.0f, region.h);
-    menu.bounds = nk_rect(std::clamp(menu.anchor_x - region.x, 0.0f,
-                                    std::max(0.0f, region.w - width)),
-                          std::clamp(menu.anchor_y - region.y, 0.0f,
-                                    std::max(0.0f, region.h - height)), width, height);
 }
 
 void draw_layer_swatch(nk_context* context, const WormUiComposeSemanticLayerView& layer) {
@@ -83,14 +73,22 @@ void draw_layer_swatch(nk_context* context, const WormUiComposeSemanticLayerView
 
 bool render_layer_submenu_button(nk_context* context) {
     const auto bounds = nk_widget_bounds(context);
-    const auto clicked = nk_button_label(context, "Layer");
+    const auto clicked = chrome::context_menu_button(context, "Layer");
     const auto x = bounds.x + bounds.w - 12;
     const auto y = bounds.y + bounds.h * 0.5f;
-    const auto tint = context->style.text.color;
+    const auto tint = context->style.contextual_button.text_normal;
     auto* canvas = nk_window_get_canvas(context);
     nk_stroke_line(canvas, x - 2, y - 4, x + 2, y, 1.5f, tint);
     nk_stroke_line(canvas, x + 2, y, x - 2, y + 4, 1.5f, tint);
     return clicked;
+}
+
+auto layer_disabled_reason(const WormUiComposeView& view,
+                           const WormUiComposeSemanticLayerView& layer) -> const char* {
+    if (layer.locked) return "Layer is locked";
+    if (view.timing_focus || view.semantic_layer_gesture_active)
+        return "Finish editing before assigning layers";
+    return nullptr;
 }
 
 void render_layer(nk_context* context, const WormUiComposeView& view,
@@ -99,17 +97,12 @@ void render_layer(nk_context* context, const WormUiComposeView& view,
     nk_layout_row_push(context, 14);
     draw_layer_swatch(context, layer);
     nk_layout_row_push(context, std::max(1.0f, nk_window_get_content_region(context).w - 24));
-    const auto bounds = nk_widget_bounds(context);
-    const bool disabled = layer.locked || view.timing_focus || view.semantic_layer_gesture_active;
-    if (disabled) nk_widget_disable_begin(context);
-    const auto clicked = nk_button_label(context, layer.name);
-    if (disabled) nk_widget_disable_end(context);
-    if (disabled && nk_input_is_mouse_hovering_rect(&context->input, bounds))
-        wormedit::ui::nuklear::tooltip::text(context, layer.locked ? "Layer is locked" : "Finish editing before assigning layers");
-    if (clicked && !disabled && raise(view, action, WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER, layer.layer_id)) {
-        menu.open = false;
+    const auto clicked =
+        chrome::context_menu_button(context, layer.name, layer_disabled_reason(view, layer));
+    if (clicked && raise(view, action, WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER, layer.layer_id)) {
+        // Inside the layer list group; context_menu_end() closes the popup.
+        chrome::context_menu_close(menu.popup);
         menu.consumed = true;
-        wormedit::ui::chrome::popup_arm_release(menu.release_pending);
     }
     nk_layout_row_end(context);
 }
@@ -145,7 +138,7 @@ void render_submenu(nk_context* context, const WormUiComposeView& view, WormUiWo
                                                std::min(view.note_menu_layer_total_count - std::min(first, view.note_menu_layer_total_count),
                                                    static_cast<std::size_t>(list.end - list.begin)));
     nk_list_view_end(&list);
-    if (menu.open && view.note_menu_layer_total_count &&
+    if (menu.popup.open && view.note_menu_layer_total_count &&
         (first != view.note_menu_layer_first_row || requested > view.note_menu_layer_count) &&
         raise(view, action, WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW)) {
         action.compose_semantic_layer_first_row = first;
@@ -153,42 +146,38 @@ void render_submenu(nk_context* context, const WormUiComposeView& view, WormUiWo
     }
 }
 
-void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceAction& action) {
-    if (wormedit::ui::chrome::popup_panel(context)) return;
-    if (menu.close_pending) {
-        wormedit::ui::chrome::dismiss_popup(context, title, menu.bounds);
-        menu.close_pending = false;
-    }
-    if (!menu.open) return;
-    update_bounds(context);
-    const auto bounds = wormedit::ui::chrome::popup_screen_bounds(context, menu.bounds);
-    if (!current(view) || wormedit::ui::chrome::popup_dismiss_requested(
-            context, bounds, !menu.opened_this_frame)) {
-        close(context, action, view);
-        return;
-    }
-    menu.opened_this_frame = false;
-    if (!nk_popup_begin(context, NK_POPUP_STATIC, title,
-                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, menu.bounds)) {
-        menu.open = false;
-        menu.request_close = true;
-        return;
-    }
-    const auto expanded = menu.submenu;
-    nk_layout_row_begin(context, NK_STATIC, std::max(24.0f, menu.bounds.h - 12), expanded ? 2 : 1);
-    nk_layout_row_push(context, 120);
+void render_expanded(nk_context* context, const WormUiComposeView& view,
+                     WormUiWorkspaceAction& action) {
+    const auto region = nk_window_get_content_region(context);
+    nk_layout_row_begin(context, NK_STATIC, std::max(row_height, region.h), 2);
+    nk_layout_row_push(context, primary_width);
     if (nk_group_begin(context, "Note menu primary", NK_WINDOW_NO_SCROLLBAR)) {
-        nk_layout_row_dynamic(context, 24, 1);
-        if (render_layer_submenu_button(context)) menu.submenu = true;
+        nk_layout_row_dynamic(context, row_height, 1);
+        (void)render_layer_submenu_button(context);
         nk_group_end(context);
     }
-    if (expanded) {
-        nk_layout_row_push(context, std::max(24.0f, menu.bounds.w - 138));
-        render_submenu(context, view, action);
-    }
+    nk_layout_row_push(context,
+                       std::max(row_height, region.w - primary_width - context->style.window.spacing.x));
+    render_submenu(context, view, action);
     nk_layout_row_end(context);
-    if (!menu.open) nk_popup_close(context);
-    nk_popup_end(context);
+}
+
+void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceAction& action) {
+    if (chrome::popup_panel(context) || !menu.popup.open) return;
+    const auto size = menu.submenu
+        ? nk_vec2(392, 422)
+        : nk_vec2(primary_width + 2 * chrome::menu_padding, chrome::context_menu_height(1));
+    if (!chrome::context_menu_begin(menu.popup, context, stamp(view), size)) {
+        if (!menu.popup.open) finish_close(view, action);
+        return;
+    }
+    if (menu.submenu) {
+        render_expanded(context, view, action);
+    } else {
+        nk_layout_row_dynamic(context, row_height, 1);
+        menu.submenu = render_layer_submenu_button(context);
+    }
+    chrome::context_menu_end(menu.popup, context);
 }
 
 void open_at_pointer(nk_context* context, const WormUiComposeView& view,
@@ -203,27 +192,25 @@ void open_at_pointer(nk_context* context, const WormUiComposeView& view,
     if (!note) return;
     menu.note = note;
     if (!raise(view, action, WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU)) return;
-    menu.open = menu.consumed = true;
+    chrome::context_menu_open(menu.popup, mouse, stamp(view));
+    menu.consumed = true;
     menu.submenu = false;
-    menu.project = view.project_id;
-    menu.chart = view.chart_id;
-    menu.revision = view.document_revision;
-    menu.anchor_x = mouse.x;
-    menu.anchor_y = mouse.y;
-    menu.opened_this_frame = true;
 }
 } // namespace
 
-bool compose_note_menu_open() { return menu.open; }
-bool compose_note_menu_consumed() { return menu.consumed || menu.release_pending; }
-void begin_compose_note_menu_frame() { menu.consumed = menu.open || menu.release_pending || menu.close_pending; }
+bool compose_note_menu_open() { return menu.popup.open; }
+bool compose_note_menu_consumed() { return menu.consumed || menu.popup.release_pending; }
+void begin_compose_note_menu_frame() {
+    menu.consumed = chrome::context_menu_owns_input(menu.popup) || menu.popup.close_pending;
+}
 void reset_compose_note_menu() { menu = {}; }
 
 void prepare_compose_note_menu(const WormUiComposeView* view, bool active, bool focused,
                                WormUiWorkspaceAction* action) {
-    if (menu.open && (!active || !focused || !view || !view->visible || view->input_occluded || !current(*view))) {
-        menu.close_pending = menu.request_close = true;
-        menu.open = false;
+    if (menu.popup.open &&
+        (!active || !focused || !view || !view->visible || view->input_occluded || !current(*view))) {
+        chrome::context_menu_close(menu.popup);
+        menu.request_close = true;
         menu.consumed = true;
     }
     if (menu.request_close && active && view && action &&
@@ -231,19 +218,15 @@ void prepare_compose_note_menu(const WormUiComposeView* view, bool active, bool 
 }
 
 void dismiss_compose_note_popup(nk_context* context) {
-    if (menu.close_pending && !wormedit::ui::chrome::popup_panel(context)) {
-        wormedit::ui::chrome::dismiss_popup(context, title, menu.bounds);
-        menu.close_pending = false;
-    }
+    chrome::context_menu_retire(menu.popup, context);
 }
 
 void process_compose_note_menu(nk_context* context, const WormUiComposeView& view,
                                WormUiWorkspaceAction& action, struct nk_rect viewport,
                                double input_right, bool focused) {
-    menu.opened_this_frame = false;
-    (void)wormedit::ui::chrome::popup_update_release_pending(context, menu.release_pending);
+    (void)chrome::context_menu_update(menu.popup, context);
     if (!view.scene_available || !focused || view.input_occluded) return;
-    if (!menu.open && !menu.consumed && !view.paste_active && !view.semantic_layer_gesture_active)
+    if (!menu.popup.open && !menu.consumed && !view.paste_active && !view.semantic_layer_gesture_active)
         open_at_pointer(context, view, action, viewport, input_right);
     render(context, view, action);
 }

@@ -13,6 +13,12 @@ struct PopupContextStamp {
     std::uint64_t object_id{};
 };
 
+// Window fills saved while a menu surface hides them (see chrome::menu_surface_begin).
+struct MenuSurface {
+    nk_color background{};
+    nk_style_item fixed_background{};
+};
+
 inline auto popup_context_matches(PopupContextStamp expected,
                                   PopupContextStamp current) -> bool {
     return expected.project_id == current.project_id &&

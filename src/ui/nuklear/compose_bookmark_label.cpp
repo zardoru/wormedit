@@ -69,24 +69,6 @@ auto overlaps(const bookmark_label_box_t& a, const bookmark_label_box_t& b) -> b
 
 } // namespace
 
-auto bookmark_rename_target_at(std::span<const bookmark_rename_line_t> lines,
-                               double x, double y, double right_edge)
-    -> std::optional<std::uint64_t> {
-    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(right_edge) ||
-        x < right_edge - 36.0 || x > right_edge + 2.0) return std::nullopt;
-    auto nearest = std::optional<std::uint64_t>{};
-    auto nearest_distance = 6.0;
-    for (const auto& line : lines) {
-        if (line.bookmark_id == 0 || !std::isfinite(line.y)) continue;
-        const auto distance = std::abs(y - line.y);
-        if (distance > nearest_distance ||
-            (distance == nearest_distance && nearest && line.bookmark_id >= *nearest)) continue;
-        nearest = line.bookmark_id;
-        nearest_distance = distance;
-    }
-    return nearest;
-}
-
 namespace {
 
 // The line within `reach` pixels of `y`, nearest first and then lowest ID.
@@ -123,12 +105,12 @@ auto label_zone_target(std::span<const bookmark_rename_line_t> lines, double y,
 } // namespace
 
 auto bookmark_double_click_target_at(std::span<const bookmark_rename_line_t> lines,
-                                     double x, double y, double right_edge, double label_height)
+                                     double x, double y, double field_width, double label_height)
     -> std::optional<std::uint64_t> {
-    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(right_edge) ||
-        !std::isfinite(label_height) || x < 0.0 || x > right_edge + 2.0) return std::nullopt;
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(field_width) ||
+        !std::isfinite(label_height) || x < 0.0 || x > field_width) return std::nullopt;
     if (const auto exact = nearest_line_within(lines, y, 6.0)) return exact;
-    return x >= right_edge * 0.5 ? label_zone_target(lines, y, label_height) : std::nullopt;
+    return label_zone_target(lines, y, label_height);
 }
 
 auto layout_bookmark_label(std::string_view label, const bookmark_text_width_t& width_of,

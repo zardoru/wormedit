@@ -387,7 +387,7 @@ static auto armed_note_paint_sound(const WormUiComposeView& view) -> uint64_t {
     return 0;
 }
 
-static void append_note_paint_begin(const ComposePointerEventContext& input) {
+void append_note_paint_begin(const ComposePointerEventContext& input) {
     auto* action = input.action;
     append_compose_input(action, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
                          input.paint_anchor_x, input.paint_anchor_y);

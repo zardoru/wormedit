@@ -51,16 +51,6 @@ auto visible_bookmark_lines(const WormUiComposeView& view)
     return lines;
 }
 
-auto nearest_bookmark(const WormUiComposeView& view, double x, double y)
-    -> bookmark_candidate_t {
-    const auto id = wormedit::ui::bookmark_rename_target_at(
-        visible_bookmark_lines(view), x, y, static_cast<double>(view.playable_field_right_pixels));
-    return id ? bookmark_by_id(view, *id) : bookmark_candidate_t{};
-}
-
-// Roughly one text line; the label box is placed just above its bookmark line.
-constexpr double label_zone_height = 18.0;
-
 auto editor_popup_bounds(nk_context* context, const WormUiComposeView& view,
                          const bookmark_rename_editor_t& editor, struct nk_rect viewport)
     -> struct nk_rect {
@@ -167,22 +157,17 @@ void cancel_compose_bookmark_rename(bookmark_rename_editor_t& editor) {
         request_editor_close(editor);
 }
 
-auto begin_compose_bookmark_rename_at_pointer(bookmark_rename_editor_t& editor,
-                                             const WormUiComposeView& view,
-                                             double pointer_x, double pointer_y,
-                                             bool pressed, bool available) -> bool {
-    if (!pressed || !available || !std::isfinite(pointer_x) || !std::isfinite(pointer_y))
-        return false;
-    const auto candidate = nearest_bookmark(view, pointer_x, pointer_y);
-    return candidate.id != 0 && begin_compose_bookmark_rename(editor, view, candidate.id);
+auto compose_bookmark_at(const WormUiComposeView& view, double pointer_x, double pointer_y)
+    -> std::optional<std::uint64_t> {
+    return wormedit::ui::bookmark_double_click_target_at(
+        visible_bookmark_lines(view), pointer_x, pointer_y, view.viewport_width_pixels,
+        compose_bookmark_label_zone_height);
 }
 
 auto begin_compose_bookmark_rename_at_double_click(bookmark_rename_editor_t& editor,
                                                   const WormUiComposeView& view,
                                                   double pointer_x, double pointer_y) -> bool {
-    const auto id = wormedit::ui::bookmark_double_click_target_at(
-        visible_bookmark_lines(view), pointer_x, pointer_y,
-        static_cast<double>(view.playable_field_right_pixels), label_zone_height);
+    const auto id = compose_bookmark_at(view, pointer_x, pointer_y);
     return id && begin_compose_bookmark_rename(editor, view, *id);
 }
 

@@ -3,6 +3,8 @@
 #include "ui/nuklear/arrow_glyph.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_bookmark_label.h"
+#include "ui/nuklear/compose_bookmark_rename.h"
+#include "ui/nuklear/compose_input_internal.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/sdl_backend.h"
@@ -639,14 +641,57 @@ static void draw_compose_bookmark_label(const ComposePaintContext& paint, const 
                static_cast<int>(box->text.size()), font, nk_rgba(0, 0, 0, 0), color, 4);
 }
 
+// The bookmark under the pointer, using the same full-width band that double-click rename
+// uses. A note under the pointer wins, as it does for the click.
+static auto compose_hovered_bookmark_id(const ComposePaintContext& paint) -> std::uint64_t {
+    const auto& view = *paint.view;
+    const auto& mouse = paint.context->input.mouse.pos;
+    if (!view.visible || view.input_occluded || view.viewport_width_pixels <= 0.0 ||
+        view.viewport_height_pixels <= 0.0 || !nk_input_is_mouse_hovering_rect(
+            &paint.context->input, paint.viewport)) return 0;
+    const auto x = (static_cast<double>(mouse.x) - paint.viewport.x) *
+                   view.viewport_width_pixels / paint.viewport.w;
+    const auto y = (static_cast<double>(mouse.y) - paint.viewport.y) *
+                   view.viewport_height_pixels / paint.viewport.h;
+    if (compose_point_hits_note(&view, x, y)) return 0;
+    return compose_bookmark_at(view, x, y).value_or(0);
+}
+
+// A faint band over the hit area, so the double-click target is visible before clicking.
+static void draw_compose_bookmark_hover(const ComposePaintContext& paint, float y,
+                                        bool labelled, nk_color color) {
+    const auto scale = paint.viewport.h / static_cast<float>(paint.view->viewport_height_pixels);
+    const auto above = labelled ? static_cast<float>(compose_bookmark_label_zone_height) * scale
+                                : 6.0f * scale;
+    color.a = 36;
+    field_rect(paint, nk_rect(paint.viewport.x, y - above, paint.viewport.w, above + 6.0f * scale),
+               0.0f, color, 4);
+}
+
+// While a bookmark is dragged, a dashed-looking ghost line follows the pointer; the bookmark
+// itself moves to the snapped row on release.
+static void draw_compose_bookmark_move_ghost(const ComposePaintContext& paint) {
+    if (!state.bookmark_move_active || state.bookmark_move_chart_id != paint.view->chart_id) return;
+    const auto scale = paint.viewport.h / static_cast<float>(paint.view->viewport_height_pixels);
+    const auto y = paint.viewport.y + static_cast<float>(state.bookmark_move_current_y_pixels) * scale;
+    field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y, 1.6f,
+               nk_rgb(255, 218, 139), 4);
+}
+
 static void draw_compose_beat_bookmarks(const ComposePaintContext& paint,
     std::optional<wormedit::ui::bookmark_label_box_t>& previous) {
+    draw_compose_bookmark_move_ghost(paint);
+    const auto hovered = state.bookmark_move_active ? state.bookmark_move_id
+                                                    : compose_hovered_bookmark_id(paint);
     for (size_t index = 0; index < paint.view->beat_bookmark_count; ++index) {
         const auto& bookmark = paint.view->beat_bookmarks[index];
         if (bookmark.projection_visible) {
             const auto y = compose_projected_y(paint, bookmark.projected_y_pixels);
+            const auto hover = bookmark.bookmark_id == hovered;
+            if (hover) draw_compose_bookmark_hover(paint, y, bookmark.label && bookmark.label[0],
+                                                   nk_rgb(111, 224, 201));
             field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
-                           y, 1.3f, nk_rgb(111, 224, 201), 4);
+                           y, hover ? 2.2f : 1.3f, nk_rgb(111, 224, 201), 4);
             draw_compose_bookmark_label(paint, bookmark.label, y, nk_rgb(111, 224, 201), previous);
         }
         if (bookmark.proposed_projection_visible) {
@@ -683,14 +728,18 @@ static void draw_compose_audio_sections(const ComposePaintContext& paint) {
 
 static void draw_compose_audio_bookmarks(const ComposePaintContext& paint,
     std::optional<wormedit::ui::bookmark_label_box_t>& previous) {
+    const auto hovered = compose_hovered_bookmark_id(paint);
     for (size_t index = 0; index < paint.view->audio_bookmark_count; ++index) {
         const auto& bookmark = paint.view->audio_bookmarks[index];
         if (!bookmark.projection_visible) {
             continue;
         }
         const auto y = compose_projected_y(paint, bookmark.projected_y_pixels);
+        const auto hover = bookmark.bookmark_id == hovered;
+        if (hover) draw_compose_bookmark_hover(paint, y, bookmark.label && bookmark.label[0],
+                                               nk_rgb(232, 166, 255));
         field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
-                       1.4f, nk_rgb(232, 166, 255), 4);
+                       hover ? 2.3f : 1.4f, nk_rgb(232, 166, 255), 4);
         draw_compose_bookmark_label(paint, bookmark.label, y, nk_rgb(232, 166, 255), previous);
     }
 }

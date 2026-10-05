@@ -93,6 +93,18 @@ auto is_plain_editable_note(const note_t& note) -> bool {
            !note.label.has_value() && !note.branch.has_value();
 }
 
+// Keyboard deletion may remove a sounded note, but never use it as a merge target.
+// Preserve source-linked/labelled objects and hidden or locked memberships on this fast path.
+auto is_removable_sound_note(const chart_document_t& chart, const note_t& note) -> bool {
+    if (!note.sound || note.sound_channel_event || note.label || note.branch) return false;
+    return std::ranges::all_of(note.semantic_layers, [&](layer_id_t id) {
+        const auto layer = std::ranges::find(chart.semantic_layers, id, &semantic_layer_t::id);
+        return layer != chart.semantic_layers.end() && layer->visible && !layer->locked;
+    });
+}
+
+enum class hold_overlap_policy_t { merge_plain, remove_sound };
+
 struct hold_row_expansion_t {
     const chart_document_t& chart;
     const measure_index_t& index;
@@ -100,6 +112,7 @@ struct hold_row_expansion_t {
     std::uint64_t begin_row;
     std::uint64_t end_row;
     std::unordered_set<std::uint64_t> removals;
+    hold_overlap_policy_t overlap_policy{hold_overlap_policy_t::merge_plain};
 
     auto intersects(std::uint64_t begin, std::uint64_t end) const -> bool {
         return begin <= end_row && end >= begin_row;
@@ -114,7 +127,9 @@ struct hold_row_expansion_t {
                 const auto note_end = note.end ? absolute_row(index, *note.end) : note_begin;
                 if (!note_begin || !note_end || *note_end < *note_begin ||
                     !intersects(*note_begin, *note_end)) continue;
-                if (!is_plain_editable_note(note))
+                if (!is_plain_editable_note(note) &&
+                    !(overlap_policy == hold_overlap_policy_t::remove_sound &&
+                      is_removable_sound_note(chart, note)))
                     return diagnostic_list_t{error(diagnostic_code_t::collision,
                         "hold placement overlaps a non-editable same-lane note", note.id)};
                 removals.insert(note.id.value);
@@ -132,11 +147,13 @@ struct hold_row_expansion_t {
 };
 
 auto plan_hold_rows(const chart_document_t& chart, const measure_index_t& index,
-                    lane_id_t lane, std::uint64_t anchor_row, std::uint64_t moving_row)
+                    lane_id_t lane, std::uint64_t anchor_row, std::uint64_t moving_row,
+                    hold_overlap_policy_t overlap_policy = hold_overlap_policy_t::merge_plain)
     -> std::variant<hold_row_plan_t, diagnostic_list_t> {
     hold_row_expansion_t expansion{.chart = chart, .index = index, .lane = lane,
         .begin_row = std::min(anchor_row, moving_row),
-        .end_row = std::max(anchor_row, moving_row), .removals = {}};
+        .end_row = std::max(anchor_row, moving_row), .removals = {},
+        .overlap_policy = overlap_policy};
     while (true) {
         auto result = expansion.expand_once();
         if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&result)) return *diagnostics;
@@ -724,7 +741,8 @@ auto held_note_kind(note_kind_t armed) -> note_kind_t {
 
 auto plan_hold_placement(const chart_document_t& chart, const measure_index_t& index,
                          lane_id_t lane, local_position_t anchor, local_position_t moving,
-                         note_kind_t armed_kind = note_kind_t::hold, bool committing = false)
+                         note_kind_t armed_kind = note_kind_t::hold, bool committing = false,
+                         hold_overlap_policy_t overlap_policy = hold_overlap_policy_t::merge_plain)
     -> std::variant<hold_placement_plan_t, diagnostic_list_t> {
     const auto anchor_row = absolute_row(index, anchor);
     const auto moving_row = absolute_row(index, moving);
@@ -733,7 +751,7 @@ auto plan_hold_placement(const chart_document_t& chart, const measure_index_t& i
                                        "hold endpoints lie outside chart geometry")};
     }
 
-    auto planned = plan_hold_rows(chart, index, lane, *anchor_row, *moving_row);
+    auto planned = plan_hold_rows(chart, index, lane, *anchor_row, *moving_row, overlap_policy);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return *diagnostics;
     auto rows = std::get<hold_row_plan_t>(std::move(planned));
@@ -2790,7 +2808,8 @@ auto remove_note_for_keyboard_hold(hold_gesture_context_t& context, lane_id_t la
                                           edit_snap_denominator(context.chart, state));
     if (!snapped || !find_active_lane(context.chart, context.index, *snapped, lane))
         return std::nullopt;
-    const auto plan = plan_hold_placement(context.chart, context.index, lane, *snapped, *snapped);
+    const auto plan = plan_hold_placement(context.chart, context.index, lane, *snapped, *snapped,
+        note_kind_t::hold, false, hold_overlap_policy_t::remove_sound);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
         return diagnostic_result(context.history, state, *diagnostics);
     const auto& placement = std::get<hold_placement_plan_t>(plan);
@@ -2823,7 +2842,8 @@ auto remove_note_for_keyboard_hold(hold_gesture_context_t& context, lane_id_t la
 }
 
 auto begin_hold_gesture(hold_gesture_context_t& context, lane_id_t lane,
-                        local_position_t position, hold_gesture_source_t source)
+                        local_position_t position, hold_gesture_source_t source,
+                        std::optional<resource_id_t> sound = std::nullopt)
     -> editor_interaction_result_t {
     auto& state = context.state;
     if (state.pending_hold || state.pending_note_duration_gesture || state.pending_note_move_gesture)
@@ -2833,6 +2853,9 @@ auto begin_hold_gesture(hold_gesture_context_t& context, lane_id_t lane,
     if (source == hold_gesture_source_t::keyboard_lane)
         if (auto removed = remove_note_for_keyboard_hold(context, lane, position))
             return std::move(*removed);
+    if (sound && !is_paint_sample_resource(context.history.document, *sound))
+        return diagnostic_result(context.history, state,
+            {error(diagnostic_code_t::invalid_id, "paint sound is not an existing sample resource")});
     const auto before = state;
     state.active_lane = lane;
     auto result = context.dispatch_action(begin_hold_action_t{position});
@@ -2844,8 +2867,10 @@ auto begin_hold_gesture(hold_gesture_context_t& context, lane_id_t lane,
                           : std::nullopt;
         return result;
     }
-    if (state.pending_hold)
+    if (state.pending_hold) {
         state.pending_hold->gesture_source = source;
+        state.pending_hold->sound = sound;
+    }
     const auto view = make_view(context.history, state);
     result.view = std::holds_alternative<editor_interaction_view_model_t>(view)
                       ? std::optional{std::get<editor_interaction_view_model_t>(view)}
@@ -3032,6 +3057,9 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position)
         (state.armed_note_kind == note_kind_t::hold || state.armed_note_kind == note_kind_t::roll))
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_hold, "Move to a different row to finish the Hold or Roll gesture.")});
+    if (pending.sound && !is_paint_sample_resource(history.document, *pending.sound))
+        return diagnostic_result(history, state,
+            {error(diagnostic_code_t::invalid_id, "paint sound is not an existing sample resource")});
     const auto plan = plan_hold_placement(context.chart, context.index, pending.lane,
                                           pending.position, *snapped, state.armed_note_kind, true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
@@ -3062,7 +3090,10 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position)
                                       ? held_note_kind(state.armed_note_kind)
                                       : state.armed_note_kind,
                                   .end = placement.tail,
-                                  .semantic_layers = state.armed_note_layers.value_or(std::vector<layer_id_t>{})});
+                                  .sound = pending.sound,
+                                  .semantic_layers = state.armed_note_layers.value_or(pending.sound
+                                      ? sound_default_layers_for_placement(*chart, *pending.sound)
+                                      : std::vector<layer_id_t>{})});
     }
     const auto label = placement.adds_note
         ? (placement.tail ? "Place merged hold note" : "Place tap note")
@@ -3076,6 +3107,7 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position)
     auto result = space_selection_view_result(make_view(history, state));
     result.accepted = true;
     result.document_changed = true;
+    result.created_note = id;
     return result;
 }
 
@@ -3131,7 +3163,8 @@ auto refresh_keyboard_hold_revisions(hold_gesture_context_t& context) -> void {
         hold.document_revision = context.history.document.revision;
 }
 
-auto begin_lane_key_hold_gesture(hold_gesture_context_t& context, lane_id_t lane)
+auto begin_lane_key_hold_gesture(hold_gesture_context_t& context, lane_id_t lane,
+                                  std::optional<resource_id_t> sound)
     -> editor_interaction_result_t {
     auto& state = context.state;
     const auto before = state;
@@ -3146,6 +3179,11 @@ auto begin_lane_key_hold_gesture(hold_gesture_context_t& context, lane_id_t lane
         state.pending_hold.reset();
     }
     if (state.virtual_bms_cursor_row) {
+        if (sound && !is_paint_sample_resource(context.history.document, *sound)) {
+            state = before;
+            return diagnostic_result(context.history, state,
+                {error(diagnostic_code_t::invalid_id, "paint sound is not an existing sample resource")});
+        }
         state.pending_hold = pending_hold_t{
             .position = state.cursor,
             .lane = lane,
@@ -3153,6 +3191,7 @@ auto begin_lane_key_hold_gesture(hold_gesture_context_t& context, lane_id_t lane
             .anchor_canvas_row = *state.virtual_bms_cursor_row,
             .preview_canvas_row = *state.virtual_bms_cursor_row,
             .gesture_source = hold_gesture_source_t::keyboard_lane,
+            .sound = sound,
         };
         auto view = make_view(context.history, state);
         if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&view)) {
@@ -3163,7 +3202,7 @@ auto begin_lane_key_hold_gesture(hold_gesture_context_t& context, lane_id_t lane
                 .view = std::get<editor_interaction_view_model_t>(std::move(view))};
     }
     auto result = begin_hold_gesture(context, lane, state.cursor,
-                                     hold_gesture_source_t::keyboard_lane);
+                                     hold_gesture_source_t::keyboard_lane, sound);
     if (!result) {
         state = before;
     } else if (result.document_changed) {
@@ -3203,9 +3242,10 @@ auto release_lane_key_hold_gesture(hold_gesture_context_t& context, lane_id_t ac
             *absolute_row(context.index, state.pending_hold->position));
         const auto end = state.pending_hold->preview_canvas_row.value_or(anchor);
         const auto hold_lane = state.pending_hold->lane;
+        const auto sound = state.pending_hold->sound;
         state.pending_hold.reset();
         result = context.dispatch_action(
-            place_virtual_bms_hold_action_t{anchor, end, hold_lane});
+            place_virtual_bms_hold_action_t{anchor, end, hold_lane, sound});
     } else {
         result = release_hold_gesture(context, hold_gesture_source_t::keyboard_lane, position);
     }
@@ -3468,6 +3508,9 @@ auto commit_virtual_hold(virtual_note_context_t& context,
         (context.state.armed_note_kind == note_kind_t::hold || context.state.armed_note_kind == note_kind_t::roll))
         return diagnostic_result(context.history, context.state,
             {error(diagnostic_code_t::invalid_hold, "Move to a different row to finish the Hold or Roll gesture.")});
+    if (action.sound && !is_paint_sample_resource(context.history.document, *action.sound))
+        return diagnostic_result(context.history, context.state,
+            {error(diagnostic_code_t::invalid_id, "paint sound is not an existing sample resource")});
     auto proposed = context.history.document;
     auto* chart = find_chart(proposed, context.state.chart);
     if (const auto diagnostics = extend_virtual_chart(*chart, rows.measure_count))
@@ -3506,7 +3549,10 @@ auto commit_virtual_hold(virtual_note_context_t& context,
                                      ? held_note_kind(context.state.armed_note_kind)
                                      : context.state.armed_note_kind,
                                  .end = placement.tail,
-                                 .semantic_layers = context.state.armed_note_layers.value_or(std::vector<layer_id_t>{})});
+                                 .sound = action.sound,
+                                 .semantic_layers = context.state.armed_note_layers.value_or(action.sound
+                                     ? sound_default_layers_for_placement(*chart, *action.sound)
+                                     : std::vector<layer_id_t>{})});
     }
     auto command = commit_document_command(
         context.history, std::move(proposed),
@@ -3525,7 +3571,8 @@ auto commit_virtual_hold(virtual_note_context_t& context,
                         : std::nullopt,
             .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
                                ? std::get<diagnostic_list_t>(view)
-                               : diagnostic_list_t{}};
+                               : diagnostic_list_t{},
+            .created_note = id};
 }
 
 auto place_virtual_bms_hold(virtual_note_context_t& context,
@@ -4761,7 +4808,7 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
     };
 
     const auto handle_begin_lane_key_hold_gesture = [&](const begin_lane_key_hold_gesture_action_t& typed_action) {
-        return begin_lane_key_hold_gesture(hold_gestures, typed_action.lane);
+        return begin_lane_key_hold_gesture(hold_gestures, typed_action.lane, typed_action.sound);
     };
 
     const auto handle_release_lane_key_hold_gesture = [&](const release_lane_key_hold_gesture_action_t& typed_action) {

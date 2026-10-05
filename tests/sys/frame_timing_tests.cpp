@@ -4097,3 +4097,180 @@ TEST_CASE("Lane profile switcher hides itself for layouts it cannot represent",
     CHECK(mania.flattened.view.compose.lane_profile_choice_count >= 1);
     CHECK(mania.flattened.view.compose.lane_profile_current == 0);
 }
+
+
+namespace {
+auto lane_key_callback_song() -> song_document_t {
+    song_document_t song;
+    song.id = song_id_t{1};
+    song.audio_assets = {{.id = asset_id_t{1}}};
+    song.resources = {
+        {.id = resource_id_t{7}, .asset = asset_id_t{1}, .roles = {resource_role_t::sample}},
+        {.id = resource_id_t{8}, .asset = asset_id_t{1}, .roles = {resource_role_t::sample}}};
+    chart_document_t chart;
+    chart.id = chart_id_t{1};
+    chart.source_family = format_family_t::bms;
+    chart.divisions_per_standard_measure = 960;
+    chart.measures = {{.id = measure_id_t{1}}, {.id = measure_id_t{2}}};
+    chart.bpms = {{.id = object_id_t{2}, .position = {measure_id_t{1}, 0},
+                   .beats_per_minute = {120, 1}}};
+    chart.lane_layouts = {{.id = object_id_t{3}, .position = {measure_id_t{1}, 0},
+        .layout = {.profile_id = "lane-key-callback", .lanes = {
+            {.id = lane_id_t{1}, .name = "Key 1"}, {.id = lane_id_t{2}, .name = "Key 2"}}}}};
+    chart.semantic_layers = {{.id = layer_id_t{3}, .name = "Open"},
+                             {.id = layer_id_t{4}, .name = "Locked", .locked = true}};
+    chart.sound_layer_defaults = {{.resource = resource_id_t{7},
+                                   .layers = {layer_id_t{3}, layer_id_t{4}}}};
+    song.charts.push_back(std::move(chart));
+    return song;
+}
+
+struct lane_key_callback_fixture_t {
+    compose_test_fixture_t compose{lane_key_callback_song()};
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    lane_key_callback_fixture_t() {
+        placed_resource_notifications.clear();
+        compose.project();
+        compose.interaction->active_snap_denominator = 4;
+    }
+    ~lane_key_callback_fixture_t() { placed_resource_notifications.clear(); }
+    auto dispatch(WormUiComposeInputKind kind, std::uint64_t lane = 1,
+                  std::uint64_t sound = 7, bool successive = false) -> std::string {
+        auto action = cursor_placement_action(compose);
+        action.compose_input_project_id = compose.history.document.id.value;
+        action.compose_input_count = 1;
+        action.compose_inputs[0] = {.kind = kind, .lane_id = lane,
+                                    .successive = successive, .resource_id = sound};
+        return dispatch_compose_input_action(action, compose.history, *compose.binding.workspace,
+            *compose.interaction, viewport, navigation, compose.application, compose.cache, 0);
+    }
+    auto notes() const -> std::vector<note_t> {
+        std::vector<note_t> result;
+        for (const auto& measure : compose.history.document.charts.front().measures)
+            result.insert(result.end(), measure.notes.begin(), measure.notes.end());
+        return result;
+    }
+};
+
+void check_lane_key_callback(bool virtual_measure, bool hold) {
+    lane_key_callback_fixture_t f;
+    if (virtual_measure) {
+        for (int step = 0; step < 8; ++step)
+            (void)f.dispatch(WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD);
+        expect_compose_test(f.compose.interaction->virtual_bms_cursor_row == 1920);
+    }
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
+    expect_compose_test(f.compose.interaction->pending_hold.has_value());
+    expect_compose_test(f.compose.interaction->pending_hold->sound == resource_id_t{7});
+    expect_compose_test(f.compose.history.undo.empty());
+    expect_compose_test(placed_resource_notifications.empty());
+    if (hold) (void)f.dispatch(WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD);
+    // A different release payload must never retarget the sound captured on key-down.
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 1, 8);
+    const auto notes = f.notes();
+    expect_compose_test(notes.size() == 1);
+    expect_compose_test(notes.front().sound == resource_id_t{7});
+    expect_compose_test(notes.front().semantic_layers == std::vector{layer_id_t{3}});
+    expect_compose_test(notes.front().end.has_value() == hold);
+    expect_compose_test(placed_resource_notifications == std::vector<uint64_t>{7});
+    expect_compose_test(f.compose.history.undo.size() == 1);
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 1, 8);
+    expect_compose_test(placed_resource_notifications == std::vector<uint64_t>{7});
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_UNDO);
+    expect_compose_test(f.notes().empty());
+    expect_compose_test(f.compose.history.document.charts.front().measures.size() == 2);
+    expect_compose_test(placed_resource_notifications == std::vector<uint64_t>{7});
+}
+}
+
+TEST_CASE("Lane-key dispatcher emits one captured-sound callback per authored or virtual tap and hold",
+          "[sys][compose][lane-key-sound]") {
+    for (const bool virtual_measure : {false, true})
+        for (const bool hold : {false, true})
+            check_lane_key_callback(virtual_measure, hold);
+}
+
+TEST_CASE("Lane-key dispatcher keeps simultaneous held sounds and emits each release once",
+          "[sys][compose][lane-key-sound]") {
+    lane_key_callback_fixture_t f;
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 1, 7);
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 2, 8);
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD);
+    expect_compose_test(placed_resource_notifications.empty());
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 1, 8);
+    expect_compose_test(placed_resource_notifications == std::vector<uint64_t>{7});
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 2, 7);
+    expect_compose_test(placed_resource_notifications == std::vector<uint64_t>({7, 8}));
+    const auto notes = f.notes();
+    expect_compose_test(notes.size() == 2);
+    expect_compose_test(notes[0].lane == lane_id_t{1} && notes[0].sound == resource_id_t{7});
+    expect_compose_test(notes[1].lane == lane_id_t{2} && notes[1].sound == resource_id_t{8});
+    expect_compose_test(notes[0].end == notes[1].end);
+    expect_compose_test(f.compose.history.undo.size() == 2);
+}
+
+TEST_CASE("Lane-key dispatcher does not advance for rejection silent notes deletion or selected-note movement",
+          "[sys][compose][lane-key-sound]") {
+    lane_key_callback_fixture_t f;
+    SECTION("missing resource rejects atomically") {
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 1, 999);
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 1, 999);
+        expect_compose_test(f.notes().empty());
+        expect_compose_test(f.compose.history.undo.empty());
+    }
+    SECTION("silent insertion") {
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 1, 0);
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 1, 0);
+        const auto notes = f.notes();
+        expect_compose_test(notes.size() == 1 && !notes.front().sound);
+    }
+    SECTION("sounded note removal never re-sounds or advances") {
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE);
+        placed_resource_notifications.clear();
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 1, 8);
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 1, 8);
+        expect_compose_test(f.notes().empty());
+        expect_compose_test(f.compose.history.undo.size() == 2);
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_UNDO);
+        const auto notes = f.notes();
+        expect_compose_test(notes.size() == 1 && notes.front().sound == resource_id_t{7});
+    }
+    SECTION("Shift lane move preserves the selected sound") {
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE);
+        placed_resource_notifications.clear();
+        const auto note = f.notes().front();
+        f.compose.interaction->selected_notes = {note.id};
+        f.compose.interaction->selected_objects = {{editor_selection_object_kind_t::note, note.id}};
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 2, 8, true);
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 2, 8);
+        const auto notes = f.notes();
+        expect_compose_test(notes.size() == 1 && notes.front().lane == lane_id_t{2});
+        expect_compose_test(notes.front().sound == resource_id_t{7});
+    }
+    expect_compose_test(placed_resource_notifications.empty());
+}
+
+TEST_CASE("Lane-key dispatcher cancels held sound sources without placement callbacks",
+          "[sys][compose][lane-key-sound]") {
+    lane_key_callback_fixture_t f;
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
+    expect_compose_test(f.compose.interaction->pending_hold.has_value());
+    SECTION("explicit cancellation") {
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
+    }
+    SECTION("resource deleted after key-down") {
+        auto& document = f.compose.history.document;
+        std::erase_if(document.resources, [](const auto& sound) { return sound.id == resource_id_t{7}; });
+        document.charts.front().sound_layer_defaults.clear();
+        ++document.revision;
+    }
+    const auto revision = f.compose.history.document.revision;
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE);
+    expect_compose_test(f.notes().empty());
+    expect_compose_test(f.compose.history.document.revision == revision);
+    expect_compose_test(f.compose.history.undo.empty());
+    expect_compose_test(placed_resource_notifications.empty());
+}

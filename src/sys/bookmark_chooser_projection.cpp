@@ -128,7 +128,7 @@ auto project_bookmark_chooser(const song_document_t& document, chart_id_t chart_
         return result;
     }
     const auto& measures = std::get<measure_index_t>(measure_build);
-    const auto timing_build = build_timing_index(*chart);
+    const auto timing_build = build_timing_index(*chart, {.allow_bounded_clock = true});
     const auto* timing = timing_build.index ? &*timing_build.index : nullptr;
     std::vector<ordered_row_t> ordered;
     ordered.reserve(chart->bookmarks.size());

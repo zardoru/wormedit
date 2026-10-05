@@ -1,5 +1,6 @@
 #include <wormedit/core/timing.h>
 
+#include "timing_arithmetic.h"
 #include "wide_math.h"
 
 #include <algorithm>
@@ -41,20 +42,6 @@ auto checked_multiply(std::uint64_t left, std::uint64_t right) -> std::optional<
     return left * right;
 }
 
-auto checked_signed_multiply(std::int64_t value, std::uint64_t factor)
-    -> std::optional<std::int64_t> {
-    const auto absolute = magnitude(value);
-    const auto limit = value < 0 ? minimum_i64_magnitude : maximum_i64_magnitude;
-    if (absolute != 0 && factor > limit / absolute) {
-        return std::nullopt;
-    }
-    const auto product = absolute * factor;
-    if (value < 0 && product == minimum_i64_magnitude) {
-        return std::numeric_limits<std::int64_t>::min();
-    }
-    return value < 0 ? -static_cast<std::int64_t>(product) : static_cast<std::int64_t>(product);
-}
-
 auto normalized(signed_rational_t value) -> std::optional<signed_rational_t> {
     if (value.denominator == 0) {
         return std::nullopt;
@@ -73,50 +60,12 @@ auto normalized(signed_rational_t value) -> std::optional<signed_rational_t> {
 
 auto add_exact(signed_rational_t left, signed_rational_t right)
     -> std::optional<signed_rational_t> {
-    const auto left_normal = normalized(left);
-    const auto right_normal = normalized(right);
-    if (!left_normal || !right_normal) {
-        return std::nullopt;
-    }
-    const auto common = std::gcd(left_normal->denominator, right_normal->denominator);
-    const auto left_scale = right_normal->denominator / common;
-    const auto right_scale = left_normal->denominator / common;
-    const auto scaled_left = checked_signed_multiply(left_normal->numerator, left_scale);
-    const auto scaled_right = checked_signed_multiply(right_normal->numerator, right_scale);
-    const auto denominator = checked_multiply(left_normal->denominator, left_scale);
-    if (!scaled_left || !scaled_right || !denominator) {
-        return std::nullopt;
-    }
-    if ((*scaled_right > 0 &&
-         *scaled_left > std::numeric_limits<std::int64_t>::max() - *scaled_right) ||
-        (*scaled_right < 0 &&
-         *scaled_left < std::numeric_limits<std::int64_t>::min() - *scaled_right)) {
-        return std::nullopt;
-    }
-    return normalized({*scaled_left + *scaled_right, *denominator});
+    return timing_arithmetic::sum(left, right);
 }
 
 auto subtract_exact(signed_rational_t left, signed_rational_t right)
     -> std::optional<signed_rational_t> {
-    const auto left_normal = normalized(left);
-    const auto right_normal = normalized(right);
-    if (!left_normal || !right_normal) {
-        return std::nullopt;
-    }
-    const auto common = std::gcd(left_normal->denominator, right_normal->denominator);
-    const auto left_scale = right_normal->denominator / common;
-    const auto right_scale = left_normal->denominator / common;
-    const auto scaled_left = checked_signed_multiply(left_normal->numerator, left_scale);
-    const auto scaled_right = checked_signed_multiply(right_normal->numerator, right_scale);
-    const auto denominator = checked_multiply(left_normal->denominator, left_scale);
-    if (!scaled_left || !scaled_right || !denominator ||
-        (*scaled_right > 0 &&
-         *scaled_left < std::numeric_limits<std::int64_t>::min() + *scaled_right) ||
-        (*scaled_right < 0 &&
-         *scaled_left > std::numeric_limits<std::int64_t>::max() + *scaled_right)) {
-        return std::nullopt;
-    }
-    return normalized({*scaled_left - *scaled_right, *denominator});
+    return timing_arithmetic::sum(left, right, true);
 }
 
 auto compare_positive_fractions(std::uint64_t left_numerator, std::uint64_t left_denominator,
@@ -287,7 +236,7 @@ auto compare_row_to_integer(signed_rational_t row, std::uint64_t integer) -> std
     return compare_positive_fractions(magnitude(value->numerator), value->denominator, integer, 1);
 }
 
-auto seconds_inside_segment(const timing_segment_t& segment, signed_rational_t row)
+auto seconds_inside_exact_segment(const timing_segment_t& segment, signed_rational_t row)
     -> timing_query_result_t {
     if (segment.warped) {
         return {.seconds = segment.begin_seconds, .inside_warp = true};
@@ -308,6 +257,33 @@ auto seconds_inside_segment(const timing_segment_t& segment, signed_rational_t r
                                "scroll/speed time interpolation exceeds exact bounds")};
     }
     return {.seconds = *seconds};
+}
+
+auto seconds_inside_bounded_segment(const timing_segment_t& segment, signed_rational_t row)
+    -> timing_query_result_t {
+    if (segment.warped) {
+        return {.seconds = segment.begin_seconds, .inside_warp = true};
+    }
+    const auto offset = subtract_exact(row, {static_cast<std::int64_t>(segment.begin_row), 1});
+    const auto width = segment.end_row - segment.begin_row;
+    const auto begin = timing_arithmetic::clock_ticks(segment.begin_seconds);
+    const auto end = timing_arithmetic::clock_ticks(segment.end_seconds);
+    if (!offset || offset->numerator < 0 || width == 0 || !begin || !end) {
+        return {.error = error(timing_error_code_t::arithmetic_overflow,
+                               "bounded timing row interpolation exceeds its range")};
+    }
+    const auto seconds = timing_arithmetic::interpolate_clock(*begin, *end, *offset, width);
+    if (!seconds) {
+        return {.error = error(timing_error_code_t::arithmetic_overflow,
+                               "bounded timing interpolation exceeds its range")};
+    }
+    return {.seconds = *seconds};
+}
+
+auto seconds_inside_segment(const timing_index_t& timing, const timing_segment_t& segment,
+                            signed_rational_t row) -> timing_query_result_t {
+    return timing.bounded_clock ? seconds_inside_bounded_segment(segment, row)
+                                : seconds_inside_exact_segment(segment, row);
 }
 
 auto timing_seconds_at_row(const timing_index_t& timing, signed_rational_t absolute_row,
@@ -364,7 +340,7 @@ auto timing_seconds_at_row(const timing_index_t& timing, signed_rational_t absol
         return {.error = error(timing_error_code_t::position_out_of_range,
                                "scroll/speed query has no containing timing segment")};
     }
-    return seconds_inside_segment(segment, *row);
+    return seconds_inside_segment(timing, segment, *row);
 }
 
 auto speed_segment_value(const speed_curve_segment_t& segment, signed_rational_t row,
@@ -744,7 +720,51 @@ struct timing_compile_context_t {
     std::size_t bpm_cursor{};
     std::size_t pause_cursor{};
     std::size_t active_warps{};
+    bool bounded_clock{};
+    std::size_t bounded_clock_roundings{};
+    std::size_t maximum_bounded_clock_roundings{};
+    bool accumulation_overflow{};
 };
+
+auto accumulate_timing_interval(timing_compile_context_t& context, signed_rational_t duration,
+                                std::string message,
+                                std::optional<object_id_t> object = std::nullopt) -> bool {
+    if (!context.bounded_clock) {
+        const auto added = add_exact(context.current_time, duration);
+        if (added) {
+            context.current_time = *added;
+            return true;
+        }
+        context.accumulation_overflow = true;
+    } else {
+        if (context.bounded_clock_roundings >= context.maximum_bounded_clock_roundings) {
+            context.source.diagnostics.push_back(error(timing_error_code_t::arithmetic_overflow,
+                "bounded timing clock exceeds its configured rounding limit", object));
+            return false;
+        }
+        const auto interval_ticks = timing_arithmetic::clock_ticks(duration);
+        const auto current_ticks = timing_arithmetic::clock_ticks(context.current_time);
+        if (!interval_ticks || *interval_ticks < 0 || !current_ticks ||
+            (duration.numerator > 0 && *interval_ticks == 0)) {
+            context.source.diagnostics.push_back(error(timing_error_code_t::arithmetic_overflow,
+                "bounded timing interval is outside the clock's precision or range", object));
+            return false;
+        }
+        const auto advanced = timing_arithmetic::advance_ticks(
+            *current_ticks, static_cast<std::uint64_t>(*interval_ticks));
+        if (!advanced) {
+            context.source.diagnostics.push_back(error(timing_error_code_t::arithmetic_overflow,
+                "bounded timing clock exceeds its signed tick range", object));
+            return false;
+        }
+        context.current_time = timing_arithmetic::clock_value(*advanced);
+        ++context.bounded_clock_roundings;
+        return true;
+    }
+    context.source.diagnostics.push_back(error(timing_error_code_t::arithmetic_overflow,
+                                               std::move(message), object));
+    return false;
+}
 
 auto apply_timing_pause(timing_compile_context_t& context, const pause_event_t& pause,
                         const char* description) -> bool {
@@ -762,15 +782,9 @@ auto apply_timing_pause(timing_compile_context_t& context, const pause_event_t& 
             pause.id));
         return true;
     }
-    const auto added = add_exact(context.current_time, *duration);
-    if (!added) {
-        context.source.diagnostics.push_back(error(
-            timing_error_code_t::arithmetic_overflow,
-            std::string(description) + " accumulation exceeds exact timing bounds", pause.id));
-        return false;
-    }
-    context.current_time = *added;
-    return true;
+    return accumulate_timing_interval(
+        context, *duration,
+        std::string(description) + " accumulation exceeds exact timing bounds", pause.id);
 }
 
 auto advance_timing_boundary(timing_compile_context_t& context, std::uint64_t row) -> bool {
@@ -844,14 +858,18 @@ auto append_timing_segment(timing_compile_context_t& context, std::uint64_t row,
                       "BPM segment exceeds exact timing arithmetic bounds"));
             return false;
         }
-        const auto added = add_exact(context.current_time, *duration);
-        if (!added) {
-            context.source.diagnostics.push_back(
-                error(timing_error_code_t::arithmetic_overflow,
-                      "timing segment accumulation exceeds exact arithmetic bounds"));
+        const auto before_segment = context.current_time;
+        if (!accumulate_timing_interval(
+                context, *duration, "timing segment accumulation exceeds exact arithmetic bounds"))
             return false;
-        }
-        segment_end = *added;
+        segment_end = context.current_time;
+        context.index.segments.push_back({.begin_row = row,
+                                          .end_row = next_row,
+                                          .begin_seconds = before_segment,
+                                          .end_seconds = segment_end,
+                                          .effective_bpm = context.current_bpm,
+                                          .warped = false});
+        return true;
     }
     context.index.segments.push_back({.begin_row = row,
                                       .end_row = next_row,
@@ -878,6 +896,72 @@ auto compile_timing_rows(timing_compile_context_t& context) -> bool {
         }
     }
     return true;
+}
+
+struct timing_compile_attempt_t {
+    std::optional<timing_index_t> index;
+    bool accumulation_overflow{};
+};
+
+auto compile_timing_attempt(timing_build_context_t& source, signed_rational_t offset,
+                            bool bounded_clock, std::size_t maximum_roundings)
+    -> timing_compile_attempt_t {
+    timing_index_t index{.divisions_per_standard_measure = source.chart.divisions_per_standard_measure,
+                         .total_rows = source.measures.total_rows,
+                         .source_fingerprint = timing_fingerprint(source.chart),
+                         .discontinuity_profile = resolve_timing_discontinuity_profile(
+                             source.chart.source_family, source.options.discontinuity_profile),
+                         .bounded_clock = bounded_clock};
+    const auto& boundary_set = source.boundaries;
+    index.rows.reserve(boundary_set.size());
+    index.segments.reserve(boundary_set.size() - 1);
+    auto current_time = offset;
+    auto roundings = std::size_t{};
+    if (bounded_clock) {
+        if (source.measures.total_rows > timing_arithmetic::positive_limit /
+                                             timing_arithmetic::row_quantum) {
+            source.diagnostics.push_back(error(timing_error_code_t::arithmetic_overflow,
+                "chart rows exceed the bounded clock's nanorow range"));
+            return {};
+        }
+        const auto ticks = timing_arithmetic::clock_ticks(offset);
+        if (!ticks || maximum_roundings == 0) {
+            source.diagnostics.push_back(error(timing_error_code_t::arithmetic_overflow,
+                maximum_roundings == 0 ? "bounded timing clock rounding limit is zero"
+                                       : "beat-zero offset exceeds the bounded clock range"));
+            return {};
+        }
+        current_time = timing_arithmetic::clock_value(*ticks);
+        roundings = 1;
+    }
+    auto compilation = timing_compile_context_t{
+        source, index, std::vector<std::uint64_t>(boundary_set.begin(), boundary_set.end()),
+        current_time, {}, 0, 0, 0, bounded_clock, roundings, maximum_roundings, false};
+    if (!compile_timing_rows(compilation)) {
+        return {.accumulation_overflow = compilation.accumulation_overflow};
+    }
+    index.bounded_clock_roundings = compilation.bounded_clock_roundings;
+    return {.index = std::move(index)};
+}
+
+auto compile_timing_with_policy(timing_build_context_t& source, signed_rational_t offset,
+                                bool allow_bounded_clock, std::size_t maximum_roundings)
+    -> std::optional<timing_index_t> {
+    const auto diagnostics_begin = source.diagnostics.size();
+    auto exact = compile_timing_attempt(source, offset, false, maximum_roundings);
+    if (exact.index) return std::move(exact.index);
+    if (!allow_bounded_clock || !exact.accumulation_overflow) return std::nullopt;
+    source.diagnostics.erase(source.diagnostics.begin() +
+                                 static_cast<std::ptrdiff_t>(diagnostics_begin),
+                             source.diagnostics.end());
+    auto bounded = compile_timing_attempt(source, offset, true, maximum_roundings);
+    if (!bounded.index) return std::nullopt;
+    source.diagnostics.push_back(warning(
+        timing_error_code_t::arithmetic_overflow,
+        "Exact timing accumulation overflowed; using a bounded derived clock rounded to "
+        "1e-12 seconds at " + std::to_string(bounded.index->bounded_clock_roundings) +
+        " boundaries/intervals."));
+    return std::move(bounded.index);
 }
 
 } // namespace
@@ -933,35 +1017,25 @@ auto build_timing_index(const chart_document_t& chart, timing_build_options_t op
     if (!collect_timing_bpms(work) || !collect_timing_pauses(work) || !collect_timing_warps(work)) {
         return result;
     }
-    const auto& boundary_set = work.boundaries;
-    const auto& bpms = work.bpms;
-    const auto& pauses = work.pauses;
-    const auto& warp_edges = work.warp_edges;
     if (has_errors(result.diagnostics)) {
         return result;
     }
 
-    timing_index_t index{.divisions_per_standard_measure = chart.divisions_per_standard_measure,
-                         .total_rows = measures.total_rows,
-                         .source_fingerprint = timing_fingerprint(chart),
-                         .discontinuity_profile = resolve_timing_discontinuity_profile(
-                             chart.source_family, options.discontinuity_profile),
-                         .rows = {},
-                         .segments = {}};
-    index.rows.reserve(boundary_set.size());
-    index.segments.reserve(boundary_set.size() - 1);
-    std::vector<std::uint64_t> boundaries(boundary_set.begin(), boundary_set.end());
-    auto compilation = timing_compile_context_t{work, index, std::move(boundaries), *offset};
-    if (!compile_timing_rows(compilation)) {
+    auto index = compile_timing_with_policy(work, *offset, options.allow_bounded_clock,
+                                            std::min(options.maximum_bounded_clock_roundings,
+                                                     std::size_t{300'001}));
+    if (!index) {
         return result;
     }
 
-    result.index = std::move(index);
+    result.index = std::move(*index);
     return result;
 }
 
-auto timing_at(const timing_index_t& index, std::uint64_t absolute_row, timing_boundary_side_t side)
-    -> timing_query_result_t {
+namespace {
+
+auto timing_at_exact_integer_row(const timing_index_t& index, std::uint64_t absolute_row,
+                                timing_boundary_side_t side) -> timing_query_result_t {
     if (absolute_row > index.total_rows || index.rows.empty()) {
         return {.error = error(timing_error_code_t::position_out_of_range,
                                "timing query lies outside chart geometry")};
@@ -998,6 +1072,27 @@ auto timing_at(const timing_index_t& index, std::uint64_t absolute_row, timing_b
                                "timing query exceeds exact arithmetic bounds")};
     }
     return {.seconds = *seconds};
+}
+
+auto timing_at_bounded_integer_row(const timing_index_t& index, std::uint64_t absolute_row,
+                                  timing_boundary_side_t side) -> timing_query_result_t {
+    if (absolute_row > index.total_rows || index.rows.empty()) {
+        return {.error = error(timing_error_code_t::position_out_of_range,
+                               "timing query lies outside chart geometry")};
+    }
+    if (absolute_row > maximum_i64_magnitude) {
+        return {.error = error(timing_error_code_t::arithmetic_overflow,
+                               "bounded timing row exceeds signed position bounds")};
+    }
+    return timing_seconds_at_row(index, {static_cast<std::int64_t>(absolute_row), 1}, side);
+}
+
+} // namespace
+
+auto timing_at(const timing_index_t& index, std::uint64_t absolute_row,
+               timing_boundary_side_t side) -> timing_query_result_t {
+    return index.bounded_clock ? timing_at_bounded_integer_row(index, absolute_row, side)
+                               : timing_at_exact_integer_row(index, absolute_row, side);
 }
 
 auto timing_at(const timing_index_t& index, exact_chart_row_t absolute_row,
@@ -1274,8 +1369,35 @@ auto extrapolated_row_before_chart(const timing_index_t& index, signed_rational_
                 signed_rational_t{-row_magnitude->numerator, row_magnitude->denominator}};
 }
 
-auto row_inside_segment(const timing_index_t& index, const timing_segment_t& segment,
-                        signed_rational_t query) -> timing_position_query_result_t {
+auto extrapolated_row_before_bounded_clock(const timing_index_t& index,
+                                           signed_rational_t query)
+    -> timing_position_query_result_t {
+    const auto query_ticks = timing_arithmetic::clock_ticks(query);
+    const auto reference_ticks = timing_arithmetic::clock_ticks(
+        index.rows.front().before_delays_seconds);
+    const auto bpm = normalized(index.rows.front().effective_bpm);
+    if (!query_ticks || !reference_ticks || !bpm || bpm->numerator <= 0 ||
+        index.divisions_per_standard_measure == 0) {
+        return {.error = error(timing_error_code_t::arithmetic_overflow,
+                               "pre-zero bounded timing input exceeds clock bounds")};
+    }
+    if (*query_ticks >= *reference_ticks) return {.absolute_row = signed_rational_t{0, 1}};
+    const auto elapsed_ticks = static_cast<std::uint64_t>(*reference_ticks) -
+                               static_cast<std::uint64_t>(*query_ticks);
+    const auto row_ticks = timing_arithmetic::rounded_factor_ratio(
+        {elapsed_ticks, static_cast<std::uint64_t>(bpm->numerator),
+         index.divisions_per_standard_measure, timing_arithmetic::row_quantum},
+        {timing_arithmetic::clock_quantum, bpm->denominator, 240});
+    if (!row_ticks || *row_ticks > maximum_i64_magnitude) {
+        return {.error = error(timing_error_code_t::arithmetic_overflow,
+                               "pre-zero bounded inverse row exceeds the nanorow range")};
+    }
+    return {.absolute_row = normalized(
+                {-static_cast<std::int64_t>(*row_ticks), timing_arithmetic::row_quantum})};
+}
+
+auto row_inside_exact_segment(const timing_index_t& index, const timing_segment_t& segment,
+                              signed_rational_t query) -> timing_position_query_result_t {
     if (segment.warped) {
         return {.error = error(timing_error_code_t::invalid_document,
                                "audio time does not identify a row on a warp plateau")};
@@ -1300,6 +1422,30 @@ auto row_inside_segment(const timing_index_t& index, const timing_segment_t& seg
                                "inverse musical row exceeds exact arithmetic bounds")};
     }
     return {.absolute_row = *absolute};
+}
+
+auto row_inside_bounded_segment(const timing_segment_t& segment, signed_rational_t query)
+    -> timing_position_query_result_t {
+    if (segment.warped) {
+        return {.error = error(timing_error_code_t::invalid_document,
+                               "audio time does not identify a row on a warp plateau")};
+    }
+    const auto begin = timing_arithmetic::clock_ticks(segment.begin_seconds);
+    const auto end = timing_arithmetic::clock_ticks(segment.end_seconds);
+    const auto at = timing_arithmetic::clock_ticks(query);
+    const auto row = begin && end && at ? timing_arithmetic::interpolate_row(
+        segment.begin_row, segment.end_row, *begin, *end, *at) : std::nullopt;
+    if (!row) {
+        return {.error = error(timing_error_code_t::arithmetic_overflow,
+                               "bounded inverse row exceeds nanorow or clock range")};
+    }
+    return {.absolute_row = *row};
+}
+
+auto row_inside_segment(const timing_index_t& index, const timing_segment_t& segment,
+                        signed_rational_t query) -> timing_position_query_result_t {
+    return index.bounded_clock ? row_inside_bounded_segment(segment, query)
+                               : row_inside_exact_segment(index, segment, query);
 }
 
 auto warp_position_at(const timing_index_t& index, signed_rational_t query,
@@ -1360,34 +1506,62 @@ auto warp_position_at(const timing_index_t& index, signed_rational_t query,
         .inside_warp = row->inside_warp};
 }
 
+struct prepared_inverse_query_t {
+    signed_rational_t seconds;
+    std::optional<timing_position_query_result_t> result;
+};
+
+auto prepare_inverse_query(const timing_index_t& index, signed_rational_t query,
+                           timing_inverse_options_t options) -> prepared_inverse_query_t {
+    if (index.divisions_per_standard_measure == 0 || index.rows.empty() ||
+        index.segments.size() + 1 != index.rows.size() || index.rows.front().absolute_row != 0 ||
+        index.rows.back().absolute_row != index.total_rows) {
+        return {.result = timing_position_query_result_t{.error = error(
+            timing_error_code_t::invalid_document,
+            "inverse timing query requires a complete timing index")}};
+    }
+    const auto before = compare_exact(query, index.rows.front().before_delays_seconds);
+    const auto after = compare_exact(query, index.rows.back().after_stops_seconds);
+    if (!before || !after) {
+        return {.result = timing_position_query_result_t{.error = error(
+            timing_error_code_t::invalid_document,
+            "timing index contains an invalid rational boundary")}};
+    }
+    if (*before < 0 && options.extrapolate_before_chart) {
+        const auto position = index.bounded_clock
+            ? extrapolated_row_before_bounded_clock(index, query)
+            : extrapolated_row_before_chart(index, query);
+        return {.result = position};
+    }
+    if (*before < 0 || *after > 0) {
+        return {.result = timing_position_query_result_t{.error = error(
+            timing_error_code_t::position_out_of_range,
+            "audio time lies outside chart timing bounds")}};
+    }
+    if (index.bounded_clock) {
+        const auto ticks = timing_arithmetic::clock_ticks(query);
+        if (!ticks) {
+            return {.result = timing_position_query_result_t{.error = error(
+                timing_error_code_t::arithmetic_overflow,
+                "inverse timing input exceeds the bounded clock range")}};
+        }
+        query = timing_arithmetic::clock_value(*ticks);
+    }
+    return {.seconds = query};
+}
+
 } // namespace
 
 auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
                          timing_inverse_options_t options) -> timing_position_query_result_t {
-    const auto query = normalized(seconds);
+    auto query = normalized(seconds);
     if (!query) {
         return {.error = error(timing_error_code_t::invalid_document,
                                "inverse timing query requires valid rational seconds")};
     }
-    if (index.divisions_per_standard_measure == 0 || index.rows.empty() ||
-        index.segments.size() + 1 != index.rows.size() || index.rows.front().absolute_row != 0 ||
-        index.rows.back().absolute_row != index.total_rows) {
-        return {.error = error(timing_error_code_t::invalid_document,
-                               "inverse timing query requires a complete timing index")};
-    }
-    const auto before_chart = compare_exact(*query, index.rows.front().before_delays_seconds);
-    const auto after_chart = compare_exact(*query, index.rows.back().after_stops_seconds);
-    if (!before_chart || !after_chart) {
-        return {.error = error(timing_error_code_t::invalid_document,
-                               "timing index contains an invalid rational boundary")};
-    }
-    if (*before_chart < 0 && options.extrapolate_before_chart) {
-        return extrapolated_row_before_chart(index, *query);
-    }
-    if (*before_chart < 0 || *after_chart > 0) {
-        return {.error = error(timing_error_code_t::position_out_of_range,
-                               "audio time lies outside chart timing bounds")};
-    }
+    const auto prepared = prepare_inverse_query(index, *query, options);
+    if (prepared.result) return *prepared.result;
+    query = prepared.seconds;
 
     // A warp collapses every row in its half-open span to one audio time. Find
     // that plateau first so its endpoint choice is independent of neighboring

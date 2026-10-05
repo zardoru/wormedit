@@ -45,7 +45,7 @@ auto beat_position_for_audio_milliseconds(const chart_document_t& chart,
 auto seek_playhead_to(const chart_document_t& chart, application_command_state_t& application,
                       local_position_t position, std::string& status) -> bool {
     const auto built = build_measure_index(chart);
-    const auto timing = build_timing_index(chart);
+    const auto timing = build_timing_index(chart, {.allow_bounded_clock = true});
     if (!std::holds_alternative<measure_index_t>(built) || !timing.index) {
         status = "Bookmark time could not be resolved.";
         return false;

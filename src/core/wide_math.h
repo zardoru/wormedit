@@ -37,6 +37,11 @@ struct u128_t {
     return {left.high + (low < left.low ? 1U : 0U), low};
 }
 
+[[nodiscard]] constexpr auto add(const u128_t& left, const u128_t& right) -> u128_t {
+    const auto low = left.low + right.low;
+    return {left.high + right.high + (low < left.low ? 1U : 0U), low};
+}
+
 [[nodiscard]] constexpr auto subtract(const u128_t& left, const u128_t& right) -> u128_t {
     const auto low = left.low - right.low;
     return {left.high - right.high - (left.low < right.low ? 1U : 0U), low};

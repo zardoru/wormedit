@@ -73,6 +73,12 @@ struct timing_index_t {
     std::uint64_t source_fingerprint{};
     timing_discontinuity_profile_t discontinuity_profile{
         timing_discontinuity_profile_t::canonical};
+    // Preview/display callers may opt into a uniformly rounded derived clock
+    // if exact rational accumulation alone exceeds representable bounds. The
+    // clock uses 1e-12-second ticks. Accumulated boundary error is at most
+    // roundings/(2e12) seconds; interior interpolation adds at most 0.5 ps.
+    bool bounded_clock{};
+    std::size_t bounded_clock_roundings{};
     std::vector<timing_row_state_t> rows;
     std::vector<timing_segment_t> segments;
 };
@@ -81,6 +87,10 @@ struct timing_build_options_t {
     std::size_t maximum_boundaries{100'000};
     std::size_t maximum_timing_events{200'000};
     std::optional<timing_discontinuity_profile_t> discontinuity_profile;
+    // Default-off: retry only exact-clock accumulation overflow with a bounded
+    // derived clock. Invalid source intervals and timing conversions stay strict.
+    bool allow_bounded_clock{};
+    std::size_t maximum_bounded_clock_roundings{300'001};
 };
 
 struct timing_build_result_t {
@@ -117,7 +127,8 @@ struct timing_inverse_options_t {
 };
 
 struct timing_position_query_result_t {
-    // Exact absolute musical row; fractional rows are retained between boundaries.
+    // Exact absolute row on ordinary clocks; bounded clocks return a nanorow
+    // coordinate for interior segments. Fractional rows are retained either way.
     std::optional<signed_rational_t> absolute_row;
     bool inside_warp{};
     std::optional<timing_diagnostic_t> error;
@@ -191,6 +202,9 @@ struct beat_interval_fit_result_t {
                                      local_position_t beat, std::uint64_t target_sample_frame,
                                      std::uint32_t sample_rate) -> beat_interval_fit_result_t;
 
+// On a bounded clock, input time rounds to the nearest picosecond tick and
+// interior rows round to the nearest nanorow (<= 0.5e-9 row), in addition to
+// the clock's accumulated error and <= 0.5 ps input rounding.
 [[nodiscard]] auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
                                        timing_inverse_options_t options = {})
     -> timing_position_query_result_t;

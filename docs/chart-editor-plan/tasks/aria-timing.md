@@ -1,0 +1,22 @@
+# Bounded derived timing for dense BPM ramps
+
+## T-382 Preserve playback of valid dense BPM ramps
+
+- **Status:** ready for integration (reviewed isolated checks pass; final main build/suite/runtime pending)
+- **Outcome:** All four original x-Aria BMS charts build usable preview/display clocks without changing source BPMs or weakening default exact timing validation.
+- **Read first:** `include/wormedit/core/timing.h`, `src/core/timing.cpp`, `src/core/wide_math.h`, `tests/core/timing_tests.cpp`, `src/sys/chart_preview_state.cpp`.
+- **Files owned:** Coordinator: `src/core/timing_arithmetic.h`, `src/core/wide_math.h`, `tests/core/timing_tests.cpp`, `docs/chart-editor-plan/tasks/aria-timing.md`, `docs/chart-editor-plan/tasks.md`, `memory/coordination/aria-timing.md`. Executor: `include/wormedit/core/timing.h`, `src/core/timing.cpp`, `src/sys/chart_preview_state.cpp`, `src/core/player_preview.cpp`, `src/sys/project_view.cpp`, `src/sys/bookmark_chooser_projection.cpp`, `src/sys/compose_view.cpp`, `src/sys/compose_playhead_skip.cpp`, `src/sys/main.cpp`, `src/sys/compose_bookmark_commands.cpp` (seek-only helper; beat bookmark mutation remains strict). Supporting caller extensions require coordinator review before edits.
+- **Steps:**
+  1. Reproduce actual original chart failure and quantify exact representability with rational arithmetic.
+  2. Preserve representable exact add/subtract results using portable wide intermediate arithmetic.
+  3. Add explicit default-off bounded derived-clock policy, rebuilding the entire index on genuine accumulation overflow and supporting bounded forward/inverse queries.
+  4. Opt preview and read-only display/navigation callers into that policy, leaving mutations and exchange strict.
+  5. Test actual four original charts, limits, precision, monotonicity, scheduling, and ordinary exact compatibility; run complexity and documentation checks.
+- **Invariants:** Original mounted charts are read-only; ordinary exact clocks and source models remain unchanged; portable arithmetic supports MSVC; bounded clocks expose their precision and use one uniform quantum throughout the index.
+- **Reject/failure behavior:** Invalid input, positive intervals collapsing to zero, fallback duration beyond signed picosecond ticks, more than 300001 roundings, or total rows beyond signed nanorow range are rejected. Failed compilation publishes no partial index.
+- **Verify:** `cmake --build build --target wormedit_core_tests wormedit_audio_tests`; `ctest --test-dir build --output-on-failure -R 'timing|preview|documentation.chart_editor_state'`; actual four-chart forward/inverse/sample/schedule probe in `/tmp/wormedit-aria-timing`; `clang-tidy -p build <changed-source-file>` with new functions <=25 and existing complexity unchanged. Root performs final main application build/full suite and SDL runtime integration.
+- **Out of scope:** Lane-profile/input-key fixes (T-383), osu SpecialStyle layout (T-384), source BPM changes, enabling approximation in mutations/fit/exchange, main edits, pushes, user desktop/Xvfb retries.
+
+- **Approved precision policy:** Default `allow_bounded_clock=false`; opt-in compilation retries only genuine accumulation overflow. Clock quantum 1e-12 s, at most 300001 rounded additions, absolute signed tick limit (about 106 days); forward clock error <= (roundings+1)/(2e12) s (includes interior interpolation). Inverse uses a 1e-9 row grid, with <=0.5e-9 row rounding plus the clock error and <=0.5 ps input-time rounding. Enforce representable row-grid range and reject positive interval collapse.
+
+- **Review evidence:** `memory/coordination/aria-timing.md` records exact-overflow reproduction, explicit precision limits, portable arithmetic checks, actual original four-chart sample/schedule oracle, focused timing suite and valid baseline/new complexity comparison. Root owns final main application build/full suite and SDLdummy playback integration; real-window verification remains pending under the existing approval block.

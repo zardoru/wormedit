@@ -77,7 +77,7 @@ auto skip_playing_playhead(application_command_state_t& application, const chart
     if (!application.preview_playhead_absolute_row)
         return {.status = "The playhead row is not available yet."};
     const auto built = build_measure_index(chart);
-    const auto timing = build_timing_index(chart);
+    const auto timing = build_timing_index(chart, {.allow_bounded_clock = true});
     if (!std::holds_alternative<measure_index_t>(built) || !timing.index)
         return {.status = "The playhead could not be moved."};
     const auto& measures = std::get<measure_index_t>(built);

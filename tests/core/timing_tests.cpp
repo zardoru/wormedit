@@ -1,10 +1,13 @@
 #include <wormedit/core/timing.h>
 
+#include "../../src/core/timing_arithmetic.h"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <limits>
 #include <span>
 #include <string>
@@ -31,6 +34,35 @@ auto base_chart() -> chart_document_t {
     return chart;
 }
 
+// Structural timing data from the original x-Aria charts, with no audio/note
+// assets required. Keep the irregular meters and dense hex-BPM ramp intact.
+auto aria_timing_chart() -> chart_document_t {
+    auto chart = base_chart();
+    chart.divisions_per_standard_measure = 3840;
+    chart.beat_zero_audio_offset_seconds = {0, 1};
+    chart.measures.clear();
+    for (std::uint64_t index = 0; index < 85; ++index) {
+        rational_t length{1, 1};
+        if (index >= 49 && index <= 56) length = {1, 2};
+        if (index == 57) length = {5, 4};
+        chart.measures.push_back({.id = measure_id_t{index + 1},
+                                  .definition = {length, std::nullopt}});
+    }
+    chart.bpms = {
+        {.id = object_id_t{100}, .position = {measure_id_t{1}, 0},
+         .beats_per_minute = {130, 1}},
+        {.id = object_id_t{101}, .position = {measure_id_t{50}, 0},
+         .beats_per_minute = {65, 1}}};
+    constexpr std::array<int, 14> ramp{66, 71, 76, 81, 86, 91, 96, 101, 106, 111,
+                                       116, 121, 126, 130};
+    for (std::size_t index = 0; index < ramp.size(); ++index) {
+        chart.bpms.push_back({.id = object_id_t{102 + index},
+                              .position = {measure_id_t{59}, index * 40},
+                              .beats_per_minute = {ramp[index], 1}});
+    }
+    return chart;
+}
+
 auto seconds_at(const timing_index_t& timing, std::uint64_t row,
                 timing_boundary_side_t side = timing_boundary_side_t::event) -> signed_rational_t {
     const auto result = timing_at(timing, row, side);
@@ -43,6 +75,17 @@ auto row_at(const timing_index_t& timing, signed_rational_t seconds,
     const auto result = musical_position_at(timing, seconds, options);
     REQUIRE(result);
     return *result.absolute_row;
+}
+
+auto bounded_segment_round_trip(const timing_index_t& timing, const timing_segment_t& segment)
+    -> bool {
+    const auto forward = timing_at(timing, exact_chart_row_t{segment.begin_row, {1, 4}});
+    if (!forward) return false;
+    const auto inverse = musical_position_at(timing, *forward.seconds);
+    if (!inverse) return false;
+    const auto row = static_cast<long double>(inverse.absolute_row->numerator) /
+                     inverse.absolute_row->denominator;
+    return std::abs(row - (static_cast<long double>(segment.begin_row) + 0.25L)) < 1e-6L;
 }
 
 } // namespace
@@ -1462,4 +1505,213 @@ TEST_CASE("scroll and speed compilation rejects stale malformed and over-cap inp
     const auto overflow_index = build_scroll_speed_index(overflow_chart, *overflow_timing.index);
     REQUIRE_FALSE(overflow_index);
     CHECK(overflow_index.diagnostics.back().code == timing_error_code_t::arithmetic_overflow);
+}
+
+
+TEST_CASE("timing rational sums preserve representable wide cancellation",
+          "[unit][core][timing][wide]") {
+    using timing_arithmetic::sum;
+    const auto maximum = std::numeric_limits<std::int64_t>::max();
+    const auto minimum = std::numeric_limits<std::int64_t>::min();
+    CHECK(sum({maximum, 2}, {maximum, 2}) == signed_rational_t{maximum, 1});
+    CHECK(sum({maximum, 3}, {-maximum, 2}) == signed_rational_t{-maximum, 6});
+    CHECK(sum({minimum, 1}, {minimum, 1}, true) == signed_rational_t{0, 1});
+    CHECK(sum({minimum, 2}, {minimum, 2}) == signed_rational_t{minimum, 1});
+    CHECK(sum({1, 10'000'000'000'000'000'000ULL}, {1, 15'000'000'000'000'000'000ULL}) ==
+          signed_rational_t{1, 6'000'000'000'000'000'000ULL});
+}
+
+TEST_CASE("timing rational sums reject invalid and genuinely unrepresentable results",
+          "[unit][core][timing][wide]") {
+    using timing_arithmetic::sum;
+    CHECK_FALSE(sum({std::numeric_limits<std::int64_t>::max(), 1}, {1, 1}));
+    CHECK_FALSE(sum({std::numeric_limits<std::int64_t>::min(), 1}, {1, 1}, true));
+    CHECK_FALSE(sum({1, 0}, {1, 1}));
+    CHECK_FALSE(sum({6'566'130'408'425'776'333, 59'618'142'813'797'568}, {5, 232}));
+}
+
+TEST_CASE("bounded timing clock rounds ties evenly and rejects excessive times",
+          "[unit][core][timing][bounded]") {
+    using namespace timing_arithmetic;
+    CHECK(clock_ticks({1, 2'000'000'000'000}) == 0);
+    CHECK(clock_ticks({3, 2'000'000'000'000}) == 2);
+    CHECK(clock_ticks({-3, 2'000'000'000'000}) == -2);
+    CHECK_FALSE(clock_ticks({1, 0}));
+    CHECK_FALSE(clock_ticks({std::numeric_limits<std::int64_t>::max(), 1}));
+}
+
+TEST_CASE("bounded timing tick addition preserves the full signed range",
+          "[unit][core][timing][bounded]") {
+    using namespace timing_arithmetic;
+    CHECK(advance_ticks(std::numeric_limits<std::int64_t>::min(), negative_limit) == 0);
+    CHECK(advance_ticks(-1, positive_limit + 1) == std::numeric_limits<std::int64_t>::max());
+    CHECK_FALSE(advance_ticks(1, positive_limit));
+}
+
+TEST_CASE("bounded timing interpolation preserves half rows across negative time",
+          "[unit][core][timing][bounded]") {
+    using namespace timing_arithmetic;
+    CHECK(interpolate_clock(-10, 10, {1, 2}, 1) == signed_rational_t{0, 1});
+    CHECK(interpolate_clock(0, 3, {1, 2}, 1) == signed_rational_t{1, 500'000'000'000});
+    CHECK(interpolate_row(0, 1, -10, 10, 0) == signed_rational_t{1, 2});
+    CHECK_FALSE(interpolate_row(0, 1, 1, 1, 1));
+    CHECK_FALSE(interpolate_row(0, positive_limit / row_quantum + 1, 0, 1, 0));
+}
+
+
+TEST_CASE("dense original Aria timing requires explicit bounded clock opt in",
+          "[unit][core][timing][bounded]") {
+    const auto chart = aria_timing_chart();
+    CHECK_FALSE(build_timing_index(chart));
+    const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
+    REQUIRE(built);
+    CHECK(built.index->bounded_clock);
+    CHECK_FALSE(built.diagnostics.empty());
+    CHECK(chart.bpms.back().beats_per_minute == signed_rational_t{130, 1});
+}
+
+TEST_CASE("bounded timing opt in preserves ordinary exact clocks",
+          "[unit][core][timing][bounded]") {
+    const auto exact = build_timing_index(base_chart());
+    const auto allowed = build_timing_index(base_chart(), {.allow_bounded_clock = true});
+    REQUIRE(exact);
+    REQUIRE(allowed);
+    CHECK_FALSE(allowed.index->bounded_clock);
+    CHECK(allowed.diagnostics.empty());
+    CHECK(seconds_at(*allowed.index, 1) == seconds_at(*exact.index, 1));
+}
+
+TEST_CASE("dense Aria bounded clock retains precise chart completion samples",
+          "[unit][core][timing][bounded]") {
+    const auto built = build_timing_index(aria_timing_chart(), {.allow_bounded_clock = true});
+    REQUIRE(built);
+    const auto end = timing_at(*built.index, built.index->total_rows);
+    REQUIRE(end);
+    const auto frame = sample_frame_at(*end.seconds, 44100);
+    REQUIRE(frame);
+    CHECK(*frame.frame == 7'046'944);
+}
+
+TEST_CASE("bounded timing rejects excessive clock and row ranges",
+          "[unit][core][timing][bounded]") {
+    auto chart = aria_timing_chart();
+    chart.beat_zero_audio_offset_seconds = {10'000'000, 1};
+    CHECK_FALSE(build_timing_index(chart, {.allow_bounded_clock = true}));
+    chart.beat_zero_audio_offset_seconds = {0, 1};
+    chart.measures.back().definition.length = {3'000'000, 1};
+    chart.measures.back().definition.meter.reset();
+    CHECK_FALSE(build_timing_index(chart, {.allow_bounded_clock = true}));
+}
+
+TEST_CASE("bounded timing rejects positive intervals that collapse to zero",
+          "[unit][core][timing][bounded]") {
+    auto chart = aria_timing_chart();
+    chart.bpms.back().beats_per_minute = {std::numeric_limits<std::int64_t>::max(), 1};
+    CHECK_FALSE(build_timing_index(chart, {.allow_bounded_clock = true}));
+}
+
+
+TEST_CASE("bounded Aria forward and inverse queries cover every segment interior",
+          "[unit][core][timing][bounded]") {
+    const auto built = build_timing_index(aria_timing_chart(), {.allow_bounded_clock = true});
+    REQUIRE(built);
+    for (const auto& segment : built.index->segments) {
+        CHECK(bounded_segment_round_trip(*built.index, segment));
+    }
+}
+
+TEST_CASE("bounded Aria preview schedules playable events after the overflowing ramp",
+          "[unit][core][timing][bounded][preview]") {
+    auto chart = aria_timing_chart();
+    chart.measures.back().notes.push_back({.id = object_id_t{200},
+                                          .position = {measure_id_t{85}, 0},
+                                          .lane = lane_id_t{1}, .sound = resource_id_t{7}});
+    const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
+    REQUIRE(built);
+    const auto schedule = build_preview_schedule(chart, *built.index);
+    REQUIRE(schedule);
+    REQUIRE(schedule.schedule->playable.size() == 1);
+    CHECK(schedule.schedule->playable.front().sample_frame > 6'000'000);
+    CHECK_FALSE(schedule.schedule->metronome.empty());
+}
+
+
+TEST_CASE("bounded timing respects explicitly lowered rounding capacity",
+          "[unit][core][timing][bounded]") {
+    CHECK_FALSE(build_timing_index(aria_timing_chart(),
+        {.allow_bounded_clock = true, .maximum_bounded_clock_roundings = 1}));
+    CHECK(build_timing_index(base_chart(),
+        {.allow_bounded_clock = true, .maximum_bounded_clock_roundings = 0}));
+}
+
+
+TEST_CASE("bounded timing retains stop boundary ownership after the dense ramp",
+          "[unit][core][timing][bounded]") {
+    auto chart = aria_timing_chart();
+    chart.pauses.push_back({.id = object_id_t{300}, .position = {measure_id_t{70}, 0},
+                            .kind = pause_kind_t::stop, .duration = {1, 4},
+                            .source_unit = pause_unit_t::seconds});
+    const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
+    REQUIRE(built);
+    CHECK(row_at(*built.index, seconds_at(*built.index, 250'560)) ==
+          signed_rational_t{250'560, 1});
+    CHECK(row_at(*built.index, seconds_at(*built.index, 250'560,
+                                         timing_boundary_side_t::after_stops)) ==
+          signed_rational_t{250'560, 1});
+}
+
+TEST_CASE("bounded timing retains warp plateau entry and exit ownership",
+          "[unit][core][timing][bounded]") {
+    auto chart = aria_timing_chart();
+    chart.warps.push_back({.id = object_id_t{301},
+                           .span = {{measure_id_t{72}, 0}, {measure_id_t{73}, 0}}});
+    const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
+    REQUIRE(built);
+    const auto plateau = seconds_at(*built.index, 258'240);
+    CHECK(row_at(*built.index, plateau) == signed_rational_t{258'240, 1});
+    CHECK(row_at(*built.index, plateau, {.warp_side = timing_warp_inverse_side_t::exit}) ==
+          signed_rational_t{262'080, 1});
+}
+
+
+TEST_CASE("bounded preview clock extrapolates negative rows before a positive audio offset",
+          "[unit][core][timing][bounded][preview]") {
+    auto chart = aria_timing_chart();
+    chart.beat_zero_audio_offset_seconds = {2, 1};
+    const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
+    REQUIRE(built);
+    const auto prechart = musical_position_at(*built.index, {0, 1},
+                                               {.extrapolate_before_chart = true});
+    REQUIRE(prechart);
+    CHECK(prechart.absolute_row == signed_rational_t{-4'160, 1});
+    CHECK_FALSE(musical_position_at(*built.index, {0, 1}));
+}
+
+
+TEST_CASE("bounded clock prechart inverse preserves large in-range fractional queries",
+          "[unit][core][timing][bounded][preview]") {
+    auto chart = aria_timing_chart();
+    chart.beat_zero_audio_offset_seconds = {3'000'000, 1};
+    const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
+    REQUIRE(built);
+    const auto query = musical_position_at(*built.index, {1, 44100},
+                                            {.extrapolate_before_chart = true});
+    REQUIRE(query);
+    const auto row = static_cast<long double>(query.absolute_row->numerator) /
+                     query.absolute_row->denominator;
+    CHECK(std::abs(row - (-6'240'000'000.0L + 2080.0L / 44100)) < 1e-6L);
+    CHECK_FALSE(musical_position_at(*built.index, {-6'000'000, 1},
+                                     {.extrapolate_before_chart = true}));
+}
+
+TEST_CASE("bounded factor ratio reduces before its rounded wide quotient",
+          "[unit][core][timing][bounded][wide]") {
+    using namespace timing_arithmetic;
+    CHECK(rounded_factor_ratio({3'000'000'000'000'000'000ULL - 22'675'737, 130, 3840,
+                                 row_quantum}, {clock_quantum, 1, 240}) ==
+          6'239'999'999'952'834'467ULL);
+    CHECK_FALSE(rounded_factor_ratio({1, 1, 1, 1}, {0, 1, 1}));
+    CHECK_FALSE(factor_product(std::array<std::uint64_t, 3>{
+        std::numeric_limits<std::uint64_t>::max(),
+        std::numeric_limits<std::uint64_t>::max(), 2}));
 }

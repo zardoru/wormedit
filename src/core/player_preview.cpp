@@ -323,7 +323,7 @@ auto build_player_preview_index(const chart_document_t& chart, std::uint64_t doc
         result.diagnostics = *diagnostics;
         return result;
     }
-    auto timing = build_timing_index(chart);
+    auto timing = build_timing_index(chart, {.allow_bounded_clock = true});
     if (!timing) {
         std::ranges::transform(timing.diagnostics, std::back_inserter(result.diagnostics),
                                timing_error);

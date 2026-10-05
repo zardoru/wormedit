@@ -145,7 +145,7 @@ auto chart_preview_t::compile_if_needed(
         revision == document.revision && music_asset == selected_music_asset
         ? resume_frame : 0;
 
-    auto built_timing = build_timing_index(selected_chart);
+    auto built_timing = build_timing_index(selected_chart, {.allow_bounded_clock = true});
     if (!built_timing)
         return preview_diagnostic_feedback(*this, built_timing.diagnostics, "Chart timing could not be compiled.");
     const auto count_in = timing_count_in_pulses(selected_chart, count_in_measures);

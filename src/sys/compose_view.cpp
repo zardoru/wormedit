@@ -2961,7 +2961,7 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
             cache.recipe_areas = wormedit::sys::project_recipe_areas(
                 chart, cache.index->measures, WORM_UI_COMPOSE_RECIPE_AREA_CAPACITY);
         }
-        auto timing = wormedit::build_timing_index(chart);
+        auto timing = wormedit::build_timing_index(chart, {.allow_bounded_clock = true});
         if (timing) {
             cache.dead_spans = wormedit::sys::project_dead_spans(
                 chart, cache.index->measures, *timing.index, WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY);

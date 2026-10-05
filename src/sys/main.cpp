@@ -905,7 +905,7 @@ auto loop_region_for_selection(const wormedit::chart_document_t& chart,
     const auto end_row = absolute_row(*measures, selection.end);
     if (!begin_row || !end_row || *begin_row != requested_begin_row ||
         *end_row != requested_end_row || *begin_row >= *end_row) return std::nullopt;
-    const auto built_timing = build_timing_index(chart);
+    const auto built_timing = build_timing_index(chart, {.allow_bounded_clock = true});
     if (!built_timing) return std::nullopt;
     const auto begin = sys::preview_cursor_frame(chart, *built_timing.index, selection.begin);
     const auto end = sys::preview_cursor_frame(chart, *built_timing.index, selection.end);

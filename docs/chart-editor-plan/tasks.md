@@ -10,6 +10,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 ## Card groups
 
 - [osu!mania SpecialStyle 12K and 16K layouts](tasks/osu-specialstyle.md)
+- [Dense BPM ramp derived timing](tasks/aria-timing.md)
 
 - [Playback tail and Compose navigation](tasks/playback-tail.md)
 - [Tooltip viewport bounds](tasks/tooltip-bounds.md)

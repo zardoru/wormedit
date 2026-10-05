@@ -49,7 +49,7 @@ void project_chart_groups(const song_document_t& document, project_chart_row_t& 
 }
 
 void project_chart_length(const chart_document_t& chart, project_chart_row_t& row) {
-    const auto built = build_timing_index(chart);
+    const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
     if (!built) {
         row.length = "Unavailable";
         row.diagnostic = built.diagnostics.empty() ? "Chart timing is unavailable."

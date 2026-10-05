@@ -346,12 +346,35 @@ static bool nuklear_text_entry_active(void);
 static bool project_modal_active(const WormUiWorkspaceView& view);
 static bool notification_history_focused();
 
+// Ctrl+A with the pointer over the Sounds or BGA dock list selects the rows shown there instead
+// of the chart's notes. An empty list selects nothing and still consumes the key.
+static bool select_all_in_hovered_dock_list(const SDL_KeyboardEvent& event) {
+    constexpr auto others = SDL_KMOD_SHIFT | SDL_KMOD_ALT | SDL_KMOD_GUI;
+    if (!g_context || event.scancode != SDL_SCANCODE_A || (event.mod & SDL_KMOD_CTRL) == 0 ||
+        (event.mod & others) != 0 || nuklear_text_entry_active() ||
+        !g_compose_area_shortcuts_active) return false;
+    auto& state = worm_ui_nuklear_compose_state();
+    const auto x = g_context->input.mouse.pos.x;
+    const auto y = g_context->input.mouse.pos.y;
+    if (worm_ui_nuklear_sound_list_contains(x, y)) {
+        worm_ui_keysound_select_all(state.keysound_selection, state.keysound_shown);
+        return true;
+    }
+    const auto in_bga = state.bga_list_valid && x >= state.bga_list_x && y >= state.bga_list_y &&
+        x < state.bga_list_x + state.bga_list_width && y < state.bga_list_y + state.bga_list_height;
+    if (!in_bga) return false;
+    worm_ui_keysound_select_all(state.bga_selection, state.bga_shown);
+    return true;
+}
+
 static void queue_shortcut_key_event(const SDL_KeyboardEvent* event, bool tap_capture = false) {
     if (!event || (!g_window && !g_headless) || !g_window_focused ||
         event->type != SDL_EVENT_KEY_DOWN || !event->down ||
         !frontend_event_window_matches(event->windowID) || g_shortcut_events_overflowed) {
         return;
     }
+
+    if (!tap_capture && select_all_in_hovered_dock_list(*event)) return;
 
     if (!tap_capture && compose_area_consumes_shortcut({g_compose_area_shortcuts_active, g_window_focused,
         project_dialog_active() || g_new_project_wizard.open,

@@ -488,6 +488,8 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t keysound_revision{std::numeric_limits<std::uint64_t>::max()};
     // Scratch reused across frames so a frame with thousands of rows does not allocate.
     std::vector<std::uint64_t> keysound_shown;
+    // The BGA rows shown last frame, kept so Ctrl+A over the list can select them.
+    std::vector<std::uint64_t> bga_shown;
     std::vector<worm_ui_keysound_advance_row_t> keysound_advance_rows;
     bool armed_from_sounds_dock{};
     bool keysound_reveal_primary{};

@@ -60,7 +60,8 @@ Retirement cards remove UI only. Stored data and actions stay unless a card says
 
 ## T-388 Ctrl+A in a focused Sounds or BGA list selects the whole list
 
-- **Status:** ready
+- **Status:** done (2026-10-05; harness cases and the full headless suite pass)
+- **Result:** Ctrl+A reached `selection.select_all` through the shortcut queue in `queue_shortcut_key_event` (`frontend.cpp`). It now checks first (`select_all_in_hovered_dock_list`): with the pointer over the Sounds or BGA dock list, and no text field active, it selects the shown rows and consumes the key; an empty list selects nothing and also consumes it. Ownership is the hovered list, not a tracked last-clicked list. `bga_shown` was added to the compose state. Harness cases: Sounds, BGA (including empty) and canvas fallback in `tests/ui/dock_select_all_event_harness_tests.cpp`; they set the BGA bounds by hand because that dock is not seeded in the harness.
 - **Outcome:** with the pointer or focus on the Sounds or BGA dock list, Ctrl+A selects every shown row and does not select chart notes. An event-harness case checks both docks and the canvas fallback.
 - **Read first:** `src/ui/nuklear/compose_state.cpp` (around `worm_ui_keysound_select_all`), `src/ui/nuklear/compose_keyboard_input.cpp`, `src/sys/application_command_dispatch.cpp` (`selection_select_all`), [frontend event harness](../../frontend-event-harness.md).
 - **Files owned:** `src/ui/nuklear/compose_keyboard_input.cpp`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, this card.

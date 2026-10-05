@@ -288,24 +288,13 @@ auto Segmented::render(nk_context* context) const -> int {
 
 namespace {
 
-// Eight short strokes per long edge keep the draw list small.
-void stroke_dashed_outline(nk_context* context, struct nk_rect chip, nk_color color) {
-    constexpr int dashes = 8;
+// The add chip is outlined only (no fill) until hovered, which sets it apart from value chips.
+void draw_chip(nk_context* context, struct nk_rect chip, const char* label, bool outlined,
+               ControlState state, const ControlLook& look) {
     auto* canvas = nk_window_get_canvas(context);
-    for (int dash = 0; dash < dashes; ++dash) {
-        const auto from = chip.x + chip.w * (static_cast<float>(dash) / dashes);
-        const auto to = from + chip.w / dashes * 0.6f;
-        nk_stroke_line(canvas, from, chip.y, to, chip.y, 1.0f, color);
-        nk_stroke_line(canvas, from, chip.y + chip.h, to, chip.y + chip.h, 1.0f, color);
-    }
-}
-
-void draw_chip(nk_context* context, struct nk_rect chip, const char* label, bool dashed,
-               const ControlLook& look) {
-    auto* canvas = nk_window_get_canvas(context);
-    nk_fill_rect(canvas, chip, metrics::radius_chip, look.fill);
-    if (dashed) stroke_dashed_outline(context, chip, look.stroke);
-    else nk_stroke_rect(canvas, chip, metrics::radius_chip, 1.0f, look.stroke);
+    const bool filled = !outlined || state != ControlState::normal;
+    if (filled) nk_fill_rect(canvas, chip, metrics::radius_chip, look.fill);
+    nk_stroke_rect(canvas, chip, metrics::radius_chip, 1.0f, look.stroke);
     draw_centered_text(context, chip, label, look.text);
 }
 
@@ -326,8 +315,9 @@ auto ChipGrid::render(nk_context* context) const -> Result {
             const auto chip = nk_rect(bounds.x + metrics::gap_small * 0.5f, bounds.y,
                                       std::max(0.0f, bounds.w - metrics::gap_small), bounds.h);
             const auto hit = hit_test(context, cell, chip, enabled);
-            const auto look = chip_look(!is_add && slot == chosen, state_of(hit, enabled));
-            draw_chip(context, chip, is_add ? add_label : labels[slot], is_add, look);
+            const auto chip_state = state_of(hit, enabled);
+            const auto look = chip_look(!is_add && slot == chosen, chip_state);
+            draw_chip(context, chip, is_add ? add_label : labels[slot], is_add, chip_state, look);
             if (!enabled || !hit.clicked) continue;
             if (is_add) result.add = true;
             else result.chosen = slot;

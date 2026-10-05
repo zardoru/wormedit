@@ -214,7 +214,7 @@ struct ChipGrid {
     int count;
     int chosen{-1};
     int columns{4};
-    const char* add_label{}; // dashed trailing chip; the caller opens whatever it adds
+    const char* add_label{}; // outlined trailing chip; the caller opens whatever it adds
     bool enabled{true};
 
     // Lays out its own rows of control_compact height, `columns` chips per row, so rows align.

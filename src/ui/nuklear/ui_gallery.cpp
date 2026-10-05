@@ -75,7 +75,7 @@ void chips(nk_context* context, state_t& state) {
         nk_group_end(context);
     }
     nk_layout_row_push(context, 300);
-    note(context, "fixed columns; dashed = adds or opens");
+    note(context, "fixed columns; outlined = adds or opens");
     nk_layout_row_end(context);
 }
 

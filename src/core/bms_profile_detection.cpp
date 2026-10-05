@@ -174,6 +174,10 @@ auto profile_header_compatibility(const bms_lane_profile_descriptor_t& spec,
     return spec.player_header_two_stage == expected_two_stage;
 }
 
+auto is_scratchless_ten_key(const bms_lane_profile_descriptor_t& spec) -> bool {
+    return spec.profile.layout.profile_id == "bms-10k-scratchless";
+}
+
 auto primary_channel_families(const lane_layout_t& layout) -> channel_family_sets_t {
     channel_family_sets_t result;
     for (const auto& lane : layout.lanes) {
@@ -201,10 +205,14 @@ auto complete_primary_family_match(const lane_layout_t& layout,
 auto primary_detection_hints_match(const bms_lane_profile_descriptor_t& spec,
                                    const bms_profile_detection_request_t& request,
                                    std::string_view extension) -> bool {
-    if (spec.family == bms_lane_profile_family_t::special || request.octave_fp_header) return false;
+    const bool scratchless_ten_key = is_scratchless_ten_key(spec);
+    if ((spec.family == bms_lane_profile_family_t::special && !scratchless_ten_key) ||
+        request.octave_fp_header) return false;
     if (spec.family == bms_lane_profile_family_t::popn)
         return request.player_header == 3 && extension != ".BME";
     if (extension == ".PMS") return false;
+    if (scratchless_ten_key && extension != ".BMS" && extension != ".BME" &&
+        extension != ".BML") return false;
     if (spec.family == bms_lane_profile_family_t::bms_five_or_ten_key &&
         extension != ".BMS" && extension != ".BML") return false;
     return request.player_header &&
@@ -375,7 +383,9 @@ auto playable_channels(const bms_profile_detection_result_t& result)
 }
 
 auto make_candidates(std::span<const bms_lane_profile_descriptor_t> specs,
-                     const std::vector<const bms_raw_channel_t*>& channels)
+                     const std::vector<const bms_raw_channel_t*>& channels,
+                     const bms_profile_detection_request_t& request,
+                     std::string_view extension)
     -> std::vector<bms_profile_candidate_t> {
     const auto families = observed_channel_families(channels);
     auto candidates = std::vector<bms_profile_candidate_t>{};
@@ -392,7 +402,9 @@ auto make_candidates(std::span<const bms_lane_profile_descriptor_t> specs,
         candidate.maps_all_playable_channels = candidate.unmapped_playable_channels.empty();
         candidate.complete_channel_family_match =
             complete_channel_family_match(candidate.profile.layout, families);
-        candidate.automatic_selection_eligible = spec.family != bms_lane_profile_family_t::special;
+        candidate.automatic_selection_eligible = spec.family != bms_lane_profile_family_t::special ||
+            (is_scratchless_ten_key(spec) && candidate.complete_channel_family_match &&
+             primary_detection_hints_match(spec, request, extension));
         candidates.push_back(std::move(candidate));
     }
     return candidates;
@@ -516,7 +528,7 @@ auto select_complete_primary_profile(std::span<const bms_lane_profile_descriptor
     chosen->confidence = std::max(chosen->confidence, 0.95);
     chosen->evidence.push_back({
         .source = bms_detection_evidence_source_t::used_channel,
-        .message = "A complete standard primary channel family matches the player header; "
+        .message = "A complete primary channel family matches the player header; "
                    "unused auxiliary channels do not require a different interpretation.",
         .weight = 0.30,
     });
@@ -594,7 +606,7 @@ auto detect_bms_lane_profile(const bms_profile_detection_request_t& request)
         return result;
     }
     const auto specs = built_in_bms_lane_profiles();
-    auto candidates = make_candidates(specs, channels);
+    auto candidates = make_candidates(specs, channels, request, extension);
     score_candidates(specs, channels, extension, request, candidates, result);
     if (select_explicit_profile(request, result)) {
         return result;

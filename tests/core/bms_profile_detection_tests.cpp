@@ -266,35 +266,108 @@ TEST_CASE("a contradictory explicit profile blocks automatic reinterpretation",
     CHECK(result.custom_fallback.channels.size() == 5);
 }
 
-TEST_CASE("scratchless 10K is offered only without scratch channels and never auto-selected",
+namespace {
+const std::vector<std::string> scratchless_keys{"11", "12", "13", "14", "15",
+                                                 "21", "22", "23", "24", "25"};
+
+} // namespace
+
+TEST_CASE("complete two-stage scratchless 10K channels select the profile automatically",
           "[unit][core][bms-detection][double-play]") {
-    const std::vector<std::string> keys_only{"11", "12", "13", "14", "15",
-                                             "21", "22", "23", "24", "25"};
-    const auto plain = detect_bms_lane_profile(
-        {.file_extension = ".bms", .player_header = 3, .used_channels = keys_only});
-    const auto* offered = find_candidate(plain, "bms-10k-scratchless");
-    REQUIRE(offered != nullptr);
-    CHECK(offered->maps_all_playable_channels);
-    CHECK_FALSE(offered->automatic_selection_eligible);
-    if (plain.selected_profile)
-        CHECK(plain.selected_profile->layout.profile_id != "bms-10k-scratchless");
+    const auto bme = detect_bms_lane_profile(
+        {.file_extension = ".bme", .player_header = 3, .used_channels = scratchless_keys});
+    REQUIRE(bme.selected_profile.has_value());
+    CHECK(bme.selected_profile->layout.profile_id == "bms-10k-scratchless");
+    const auto* candidate = find_candidate(bme, "bms-10k-scratchless");
+    REQUIRE(candidate != nullptr);
+    CHECK(candidate->complete_channel_family_match);
+    CHECK(candidate->automatic_selection_eligible);
+}
 
-    const auto confirmed = detect_bms_lane_profile({.file_extension = ".bms",
-                                                    .player_header = 3,
-                                                    .used_channels = keys_only,
-                                                    .explicit_profile_id = "bms-10k-scratchless"});
-    REQUIRE(confirmed.selected_profile.has_value());
-    CHECK(confirmed.selected_profile->layout.profile_id == "bms-10k-scratchless");
+TEST_CASE("scratchless 10K accepts compatible BMS and BML headers",
+          "[unit][core][bms-detection][double-play]") {
+    for (const auto& request : std::vector<bms_profile_detection_request_t>{
+             {.file_extension = ".bms", .player_header = 2, .used_channels = scratchless_keys},
+             {.file_extension = ".bml", .player_header = 3, .used_channels = scratchless_keys}}) {
+        const auto result = detect_bms_lane_profile(request);
+        REQUIRE(result.selected_profile.has_value());
+        CHECK(result.selected_profile->layout.profile_id == "bms-10k-scratchless");
+    }
+}
 
-    auto with_scratch = keys_only;
-    with_scratch.push_back("16");
-    const auto scratch = detect_bms_lane_profile({.file_extension = ".bms",
-                                                  .player_header = 3,
-                                                  .used_channels = with_scratch,
-                                                  .explicit_profile_id = "bms-10k-scratchless"});
-    CHECK(find_candidate(scratch, "bms-10k-scratchless") == nullptr);
-    if (scratch.selected_profile)
-        CHECK(scratch.selected_profile->layout.profile_id != "bms-10k-scratchless");
+TEST_CASE("explicit standard profile keeps priority for complete scratchless channel evidence",
+          "[unit][core][bms-detection][regression]") {
+    const auto result = detect_bms_lane_profile({.file_extension = ".bme", .player_header = 3,
+        .used_channels = scratchless_keys,
+        .explicit_profile_id = "bms-10k-left-outside-right-outside"});
+    REQUIRE(result.selected_profile.has_value());
+    CHECK(result.selected_profile->layout.profile_id == "bms-10k-left-outside-right-outside");
+    CHECK(has_evidence(result.evidence, bms_detection_evidence_source_t::explicit_profile));
+}
+
+TEST_CASE("explicit scratchless profile is honored for complete scratch-free channels",
+          "[unit][core][bms-detection][regression]") {
+    const auto result = detect_bms_lane_profile({.file_extension = ".bms", .player_header = 3,
+        .used_channels = scratchless_keys, .explicit_profile_id = "bms-10k-scratchless"});
+    REQUIRE(result.selected_profile.has_value());
+    CHECK(result.selected_profile->layout.profile_id == "bms-10k-scratchless");
+    CHECK(has_evidence(result.evidence, bms_detection_evidence_source_t::explicit_profile));
+}
+
+TEST_CASE("scratchless 10K does not auto-select channels containing scratch", "[unit][core][bms-detection][negative]") {
+    auto channels = scratchless_keys;
+    channels.push_back("16");
+    const auto result = detect_bms_lane_profile(
+        {.file_extension = ".bme", .player_header = 3, .used_channels = channels});
+    CHECK_FALSE((result.selected_profile &&
+                 result.selected_profile->layout.profile_id == "bms-10k-scratchless"));
+}
+
+TEST_CASE("scratchless 10K does not auto-select channels containing auxiliary lanes", "[unit][core][bms-detection][negative]") {
+    auto channels = scratchless_keys;
+    channels.push_back("17");
+    const auto result = detect_bms_lane_profile(
+        {.file_extension = ".bme", .player_header = 3, .used_channels = channels});
+    CHECK_FALSE((result.selected_profile &&
+                 result.selected_profile->layout.profile_id == "bms-10k-scratchless"));
+}
+
+TEST_CASE("scratchless 10K does not auto-select sparse channels", "[unit][core][bms-detection][negative]") {
+    const auto result = detect_bms_lane_profile({.file_extension = ".bme", .player_header = 3,
+        .used_channels = {"11", "12", "13", "14", "15", "21", "22", "23", "24"}});
+    CHECK_FALSE((result.selected_profile &&
+                 result.selected_profile->layout.profile_id == "bms-10k-scratchless"));
+}
+
+TEST_CASE("scratchless 10K does not auto-select incompatible player headers", "[unit][core][bms-detection][negative]") {
+    const auto result = detect_bms_lane_profile(
+        {.file_extension = ".bme", .player_header = 1, .used_channels = scratchless_keys});
+    CHECK_FALSE((result.selected_profile &&
+                 result.selected_profile->layout.profile_id == "bms-10k-scratchless"));
+}
+
+TEST_CASE("scratchless 10K is not selected for PMS", "[unit][core][bms-detection][negative]") {
+    const auto result = detect_bms_lane_profile(
+        {.file_extension = ".pms", .player_header = 3, .used_channels = scratchless_keys});
+    CHECK_FALSE((result.selected_profile &&
+                 result.selected_profile->layout.profile_id == "bms-10k-scratchless"));
+}
+
+TEST_CASE("scratchless 10K is not selected for OCT or FP dialects", "[unit][core][bms-detection][negative]") {
+    const auto result = detect_bms_lane_profile({.file_extension = ".bms", .player_header = 2,
+        .octave_fp_header = true, .used_channels = scratchless_keys});
+    CHECK_FALSE((result.selected_profile &&
+                 result.selected_profile->layout.profile_id == "bms-10k-scratchless"));
+}
+
+TEST_CASE("explicit scratchless choice still rejects a chart with scratch", "[unit][core][bms-detection][negative]") {
+    auto channels = scratchless_keys;
+    channels.push_back("16");
+    const auto result = detect_bms_lane_profile({.file_extension = ".bms", .player_header = 3,
+        .used_channels = channels, .explicit_profile_id = "bms-10k-scratchless"});
+    CHECK_FALSE(result.selected_profile);
+    CHECK(result.status == bms_profile_detection_status_t::custom_required);
+    CHECK(find_candidate(result, "bms-10k-scratchless") == nullptr);
 }
 
 namespace {

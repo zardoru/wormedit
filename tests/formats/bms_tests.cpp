@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -600,6 +601,54 @@ TEST_CASE("dense standard BMS-family fixtures auto-select only separated profile
         CHECK(result.song->charts.front().lane_layouts.empty());
         CHECK(result.song->charts.front().measures.front().notes.empty());
     }
+}
+
+namespace {
+auto verify_x_aria_profile(const wormedit::bms_parse_result_t& result) -> bool {
+    if (!result.lane_profile_detection) return false;
+    const auto& detection = *result.lane_profile_detection;
+    return detection.status == wormedit::bms_profile_detection_status_t::selected &&
+           detection.selected_profile &&
+           detection.selected_profile->layout.profile_id == "bms-10k-scratchless" &&
+           detection.selected_profile->layout.lanes.size() == 10 &&
+           detection.selected_profile->input.bindings.size() == 10 &&
+           detection.selected_profile->input.stage_count == 2 &&
+           has_detection_evidence(detection,
+                                  wormedit::bms_detection_evidence_source_t::player_header);
+}
+
+auto verify_x_aria_lane_layout(const wormedit::bms_parse_result_t& result) -> bool {
+    if (!result.song) return false;
+    const auto& chart = result.song->charts.front();
+    return chart.lane_layouts.size() == 1 &&
+           chart.lane_layouts.front().layout.profile_id == "bms-10k-scratchless" &&
+           chart.lane_layouts.front().layout.lanes.size() == 10 &&
+           chart.measures.front().notes.size() == 10;
+}
+
+auto verify_x_aria_raw_channels(const wormedit::bms_parse_result_t& result) -> bool {
+    constexpr std::array<std::string_view, 10> expected{
+        "11", "12", "13", "14", "15", "21", "22", "23", "24", "25"};
+    if (!result.lane_profile_detection) return false;
+    const auto& channels = result.lane_profile_detection->custom_fallback.channels;
+    if (channels.size() != expected.size()) return false;
+    for (std::size_t index = 0; index < expected.size(); ++index) {
+        if (channels[index].raw_spelling != expected[index] ||
+            channels[index].source_order != index) return false;
+    }
+    return true;
+}
+} // namespace
+
+TEST_CASE("x-Aria HD BME selects scratchless 10K and preserves its source channels",
+          "[unit][format][bms][profile][detection][x-aria]") {
+    wormedit::bms_parse_options_t options;
+    options.file_extension = ".bme";
+    const auto result = fixture("bms/profiles/x-aria-10k-hd.bme", options);
+    REQUIRE(result.song.has_value());
+    CHECK_FALSE(result.has_errors());
+    CHECK((verify_x_aria_profile(result) && verify_x_aria_lane_layout(result) &&
+           verify_x_aria_raw_channels(result)));
 }
 
 TEST_CASE("BMS long-note channel endpoints pair across lines and measures",

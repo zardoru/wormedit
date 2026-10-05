@@ -15,6 +15,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Tooltip viewport bounds](tasks/tooltip-bounds.md)
 - [Hidden notification history releases pointer capture](tasks/hidden-notification-history.md)
 - [Context menus: Compose input release and one shared menubar-style component](tasks/context-menus.md)
+- [Recognize complete scratchless 10-key charts](tasks/aria-profile.md)
 
 - [Compose panel split: behavior-neutral extraction of `compose_panel.cpp`](tasks/compose-split.md)
 - [Compose features: inspector, BGM pane, virtual canvas, sync controls](tasks/compose-features.md)

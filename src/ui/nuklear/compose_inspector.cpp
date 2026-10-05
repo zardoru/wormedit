@@ -254,40 +254,12 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
     render_compose_marker_section(inspector);
 }
 
-void render_compose_note_label_editor(const ComposeInspectorContext& inspector) {
-    const auto* view = inspector.view;
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_labelf(context, NK_TEXT_LEFT, "Label (%zu)", view->selected_note_count);
-    const auto disabled = !view->scene_available || view->selected_note_count == 0;
-    if (disabled) nk_widget_disable_begin(context);
-    nk_layout_row_dynamic(context, 25, 1);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.note_label.data(),
-                                         state.note_label.size(), nk_filter_default);
-    if (view->focus_note_label_editor) {
-        nk_edit_focus(context, NK_EDIT_GOTO_END_ON_ACTIVATE);
-        action->compose_note_label_focus_consumed = true;
-    }
-    nk_layout_row_dynamic(context, 25, 2);
-    if (nk_button_label(context, "Apply") &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        memcpy(action->compose_note_label, state.note_label.data(),
-               sizeof(action->compose_note_label));
-        action->compose_action = WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL;
-    }
-    if (nk_button_label(context, "Clear") &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL;
-    if (disabled) nk_widget_disable_end(context);
-}
-
 void render_compose_label_search(const ComposeInspectorContext& inspector) {
     const auto* view = inspector.view;
     auto* context = inspector.context;
     auto* action = inspector.action;
     nk_layout_row_dynamic(context, 18, 1);
-    nk_label(context, "Find label", NK_TEXT_LEFT);
+    nk_label(context, "Find note label", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 25, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.label_search.data(),
                                          state.label_search.size(), nk_filter_default);

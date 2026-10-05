@@ -728,6 +728,8 @@ bool process_compose_double_clicks(const ComposeDoubleClickContext& input,
             continue;
         }
         if (click_x < input.note_field_left || click_x >= input.note_field_right) continue;
+        state.note_label_anchor_x = pointer.x;
+        state.note_label_anchor_y = pointer.y;
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK, click_x,
                              (static_cast<double>(pointer.y) - viewport.y) *
                                  input.view->viewport_height_pixels / viewport.h);

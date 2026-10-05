@@ -117,7 +117,7 @@ auto sample_workflow_uses_sounds(nuklear_event_harness_t& harness) -> bool {
 auto compact_layout_keeps_sound_picker(nuklear_event_harness_t& harness) -> bool {
     const auto& text = harness.drawn_text();
     return text.find("Sounds  1") != std::string::npos &&
-           text.find("Label (0)") == std::string::npos &&
+           text.find("Find note label") == std::string::npos &&
            text.find("Layers  0") == std::string::npos;
 }
 
@@ -147,7 +147,7 @@ auto compact_toolbar_sounds_toggle_status(nuklear_event_harness_t& harness) -> s
 
 auto wide_layout_restores_optional_docks(nuklear_event_harness_t& harness) -> bool {
     const auto& text = harness.drawn_text();
-    return text.find("Label (0)") != std::string::npos &&
+    return text.find("Find note label") != std::string::npos &&
            text.find("Layers  0") != std::string::npos;
 }
 

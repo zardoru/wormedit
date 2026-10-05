@@ -313,6 +313,9 @@ struct worm_ui_nuklear_compose_state_t {
     std::array<char, 128> inline_timing_error{};
     bookmark_chooser_state_t bookmark_chooser;
     bookmark_rename_editor_t bookmark_rename;
+    // Window position of the last note double-click, where the inline note-label editor opens.
+    float note_label_anchor_x{};
+    float note_label_anchor_y{};
     bool go_to_measure_open{};
     std::uint64_t resource_export_group_project_id{};
     std::uint64_t resource_export_group_chart_id{};

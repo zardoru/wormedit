@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_bookmark_rename.h"
+#include "ui/nuklear/compose_note_label_inline.h"
 
 #include "ui/nuklear/compose_bookmark_label.h"
 #include "ui/nuklear/chrome.h"
@@ -61,8 +62,10 @@ constexpr double label_zone_height = 18.0;
 auto editor_popup_bounds(nk_context* context, const WormUiComposeView& view,
                          const bookmark_rename_editor_t& editor, struct nk_rect viewport)
     -> struct nk_rect {
-    const auto target = bookmark_by_id(view, editor.bookmark_id);
     const auto content = nk_window_get_content_region(context);
+    if (editor.kind == inline_label_kind_t::note_label)
+        return note_label_inline_bounds(editor, content);
+    const auto target = bookmark_by_id(view, editor.bookmark_id);
     const auto field_right = view.viewport_width_pixels > 0.0
         ? viewport.x + static_cast<float>(view.playable_field_right_pixels) *
               viewport.w / static_cast<float>(view.viewport_width_pixels)
@@ -121,6 +124,10 @@ void close_pending_popup(nk_context* context, bookmark_rename_editor_t& editor) 
 void stage_rename(WormUiWorkspaceAction& action, const WormUiComposeView& view,
                   const bookmark_rename_editor_t& editor) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if (editor.kind == inline_label_kind_t::note_label) {
+        stage_note_label_inline(action, view, editor);
+        return;
+    }
     action.compose_action = WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK;
     action.compose_bookmark_id = editor.bookmark_id;
     action.compose_input_project_id = view.project_id;

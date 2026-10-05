@@ -5,7 +5,14 @@
 
 #include <cstdint>
 
+// The inline single-line label editor shared by bookmarks and note labels, so both own keyboard
+// and pointer input through the same flags. `kind` picks the commit action.
+enum class inline_label_kind_t { bookmark, note_label };
+
 struct bookmark_rename_editor_t {
+    inline_label_kind_t kind{inline_label_kind_t::bookmark};
+    float anchor_x{};
+    float anchor_y{};
     bool active{};
     bool focus_pending{};
     bool release_pending{};

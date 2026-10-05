@@ -895,8 +895,8 @@ TEST_CASE("Layer row menu hides its captured target without assigning selected n
 TEST_CASE("Layer row menu carries the retired inspector layer buttons",
           "[unit][frontend-state][frontend][event-harness]") {
     const std::array<std::pair<const char*, WormUiComposeActionKind>, 2> entries{{
-        {"Toggle selected", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER},
-        {"Clear target", WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER}}};
+        {"Add/remove selected notes", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER},
+        {"Stop targeting this layer", WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER}}};
     for (const auto& [label, kind] : entries) {
         INFO(label);
         layer_menu_fixture_t fixture;
@@ -908,12 +908,12 @@ TEST_CASE("Layer row menu carries the retired inspector layer buttons",
     }
 }
 
-TEST_CASE("Layer row menu disables Toggle selected without a selection",
+TEST_CASE("Layer row menu disables Add/remove selected notes without a selection",
           "[unit][frontend-state][frontend][event-harness]") {
     layer_menu_fixture_t fixture;
     fixture.harness.view().compose.selected_note_count = 0;
     fixture.open();
-    const auto center = fixture.harness.drawn_text_center("Toggle selected");
+    const auto center = fixture.harness.drawn_text_center("Add/remove selected notes");
     REQUIRE(center.has_value());
     const auto clicked = click_at(fixture.harness, center->first, center->second);
     check_layer_menu_no_actions(clicked);

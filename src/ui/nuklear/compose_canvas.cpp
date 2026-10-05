@@ -668,9 +668,21 @@ static void draw_compose_bookmark_hover(const ComposePaintContext& paint, float 
                0.0f, color, 4);
 }
 
+// While a bookmark is dragged, a dashed-looking ghost line follows the pointer; the bookmark
+// itself moves to the snapped row on release.
+static void draw_compose_bookmark_move_ghost(const ComposePaintContext& paint) {
+    if (!state.bookmark_move_active || state.bookmark_move_chart_id != paint.view->chart_id) return;
+    const auto scale = paint.viewport.h / static_cast<float>(paint.view->viewport_height_pixels);
+    const auto y = paint.viewport.y + static_cast<float>(state.bookmark_move_current_y_pixels) * scale;
+    field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y, 1.6f,
+               nk_rgb(255, 218, 139), 4);
+}
+
 static void draw_compose_beat_bookmarks(const ComposePaintContext& paint,
     std::optional<wormedit::ui::bookmark_label_box_t>& previous) {
-    const auto hovered = compose_hovered_bookmark_id(paint);
+    draw_compose_bookmark_move_ghost(paint);
+    const auto hovered = state.bookmark_move_active ? state.bookmark_move_id
+                                                    : compose_hovered_bookmark_id(paint);
     for (size_t index = 0; index < paint.view->beat_bookmark_count; ++index) {
         const auto& bookmark = paint.view->beat_bookmarks[index];
         if (bookmark.projection_visible) {

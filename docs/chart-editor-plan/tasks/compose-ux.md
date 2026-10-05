@@ -270,17 +270,28 @@ conditional optimization remains unproven.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'osu|native_project'`.
 - **Out of scope:** UI (T-216), playback (T-217).
 
-## T-216 Add an osu!-style hitsound panel with shortcuts
+## T-216 Add osu!-style hitsound controls to the left note palette
 
 - **Status:** blocked-on T-215
-- **Outcome:** a Compose toolbar group shows Whistle/Finish/Clap toggles and Normal-set/Addition-set pickers (Auto/Normal/Soft/Drum) reflecting the selection (mixed state shown as a dash); clicking or pressing W/E/R toggles the addition on every selected note, Shift+Q/W/E/R sets the normal set, Alt+Q/W/E/R sets the addition set (osu! editor convention, remappable); each change is one command. On osu!/Quaver charts the same controls apply to notes placed next.
-- **Read first:** `include/wormedit/core/document.h` (`osu_hitsample_t` from T-215), `src/core/command_registry.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `docs/chart-editor-plan/editing/interactions.md` (hitsound painting paragraph).
-- **Files owned:** new `include/wormedit/core/hitsound_editor.h`, new `src/core/hitsound_editor.cpp`, new `tests/core/hitsound_editor_tests.cpp`, `src/core/command_registry.cpp`, `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_toolbar.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
-- **Steps:** 1. Core batch command over a bounded note selection. 2. Registry commands with the default chords; the chords only apply in Compose focus so they do not clash with lane keys (check `diagnose_shortcut_conflicts`). 3. Toolbar group shown for osu!/Quaver charts, and for any chart when the user enables it.
-- **Invariants:** BMS keysound assignment (T-54) stays separate: this edits osu! samples, not resources.
-- **Reject/failure behavior:** stale revision or empty selection rejects.
-- **Verify:** standard build/test.
-- **Out of scope:** sample playback (T-217).
+- **Mockup:** [hitsound-palette.svg](../mockups/hitsound-palette.svg) (reference: match its structure and hierarchy)
+- **Placement (user decision 2026-10-05):** in the left note palette column, below the note-kind buttons and after a separator, not in the toolbar or the Sounds dock. The palette has plenty of vertical room, and people rarely use the Sounds dock and osu! hitsounding at the same time. Users who want custom osu! samples use the Sounds dock's grouped view.
+- **Outcome:** on osu!mania and Quaver charts, the palette shows a hitsound group of 30 px square tiles with tooltips:
+  - three addition toggles, Whistle, Finish and Clap (letter tiles `W`, `F`, `C`, accent-filled when on);
+  - two sample-set tiles, Normal set and Addition set, showing `A`, `N`, `S` or `D` (Auto, Normal, Soft, Drum). A click cycles the set, and a right-click opens a `ContextMenu` to pick one directly.
+
+  The tiles show the current selection, with a mixed state drawn as a dash. With notes selected, a click edits every selected note in one command. With nothing selected, the tiles set what the next placed notes get (the T-412 Draw tool). Keyboard: W/E/R toggle the additions, Shift+Q/W/E/R set the normal set, Alt+Q/W/E/R set the addition set (the osu! editor convention, remappable).
+- **Read first:** `include/wormedit/core/document.h` (`osu_hitsample_t` from T-215), `src/ui/nuklear/compose_toolbar.cpp` (`render_compose_note_palette_column`, `compose_note_palette_has_buttons`), `src/ui/nuklear/context_menu.h`, `src/core/command_registry.cpp`, `docs/chart-editor-plan/editing/interactions.md` (hitsound painting paragraph).
+- **Files owned:** new `include/wormedit/core/hitsound_editor.h`, new `src/core/hitsound_editor.cpp`, new `tests/core/hitsound_editor_tests.cpp`, `src/core/command_registry.cpp`, `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_panel.cpp` (palette visibility only), `tests/ui/nuklear_event_harness_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Steps:**
+  1. Add a core batch command over a bounded note selection.
+  2. Register the commands with the default chords. They apply only in Compose focus, so they don't clash with lane keys (check `diagnose_shortcut_conflicts`).
+  3. Project the selection's hitsound state (on, off or mixed for each field) and the "next note" defaults.
+  4. Draw the palette group, shown for osu! and Quaver charts and for any chart when the user enables it. Keep the palette visible when it has only hitsound tiles.
+  5. Add event-harness cases: toggle Whistle on a mixed selection (all on), cycle the normal set, pick a set from the right-click menu, and set defaults with nothing selected and then draw.
+- **Invariants:** BMS keysound assignment (T-54) stays separate. This edits osu! samples, not resources.
+- **Reject/failure behavior:** a stale revision rejects. With nothing selected, a click changes only the next-note defaults and never the document.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R 'hitsound'`; `ctest --test-dir build -L event-harness`; an Xvfb capture of the palette on an osu!mania fixture.
+- **Out of scope:** sample playback (T-217) and custom-sample management in the Sounds dock.
 
 ## T-217 Play osu! hitsounds in preview
 

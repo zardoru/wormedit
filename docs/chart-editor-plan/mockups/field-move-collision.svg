@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="470" viewBox="0 0 860 470">
+  <rect width="860" height="470" fill="#12131a"/>
+  <rect x="0" y="0" width="860" height="40" rx="0" fill="#1e1f28"/>
+  <rect x="10" y="6" width="28" height="28" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="24.0" y="25.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">▸</text>
+  <rect x="42" y="6" width="28" height="28" rx="4" fill="#c9d35e"/>
+  <text x="56.0" y="25.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#12131a">✎</text>
+  <rect x="74" y="6" width="28" height="28" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="88.0" y="25.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">◈</text>
+  <line x1="110" y1="8" x2="110" y2="32" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="122" y="25" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">Select · Draw · Layer   (Alt+1 / Alt+2 / Alt+3)</text>
+  <rect x="0" y="40" width="860" height="430" rx="0" fill="#161921"/>
+  <rect x="40" y="40" width="40" height="430" rx="0" fill="#2a273d"/>
+  <rect x="40" y="40" width="40" height="20" rx="0" fill="#8b3225"/>
+  <text x="45" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">1</text>
+  <text x="45" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f0f4fa">1</text>
+  <rect x="80" y="40" width="40" height="430" rx="0" fill="#252d3b"/>
+  <rect x="80" y="40" width="40" height="20" rx="0" fill="#4a4d5c"/>
+  <text x="85" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">2</text>
+  <text x="85" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f0f4fa">2</text>
+  <rect x="120" y="40" width="40" height="430" rx="0" fill="#212835"/>
+  <rect x="120" y="40" width="40" height="20" rx="0" fill="#1e1f28"/>
+  <text x="125" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">3</text>
+  <text x="125" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f0f4fa">3</text>
+  <rect x="160" y="40" width="40" height="430" rx="0" fill="#252d3b"/>
+  <rect x="160" y="40" width="40" height="20" rx="0" fill="#4a4d5c"/>
+  <text x="165" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">4</text>
+  <text x="165" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f0f4fa">4</text>
+  <rect x="200" y="40" width="40" height="430" rx="0" fill="#212835"/>
+  <rect x="200" y="40" width="40" height="20" rx="0" fill="#1e1f28"/>
+  <text x="205" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">5</text>
+  <text x="205" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f0f4fa">5</text>
+  <rect x="240" y="40" width="40" height="430" rx="0" fill="#252d3b"/>
+  <rect x="240" y="40" width="40" height="20" rx="0" fill="#4a4d5c"/>
+  <text x="245" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">6</text>
+  <text x="245" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f0f4fa">6</text>
+  <rect x="280" y="40" width="40" height="430" rx="0" fill="#212835"/>
+  <rect x="280" y="40" width="40" height="20" rx="0" fill="#1e1f28"/>
+  <text x="285" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">7</text>
+  <text x="285" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f0f4fa">7</text>
+  <rect x="320" y="40" width="40" height="430" rx="0" fill="#252d3b"/>
+  <rect x="320" y="40" width="40" height="20" rx="0" fill="#4a4d5c"/>
+  <text x="325" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">8</text>
+  <text x="325" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f0f4fa">8</text>
+  <rect x="384" y="40" width="44" height="430" rx="0" fill="#1a1e26"/>
+  <text x="406" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="middle" fill="#adb3c5">B1</text>
+  <rect x="428" y="40" width="44" height="430" rx="0" fill="#1d2129"/>
+  <text x="450" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="middle" fill="#adb3c5">B2</text>
+  <rect x="472" y="40" width="44" height="430" rx="0" fill="#1a1e26"/>
+  <text x="494" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="middle" fill="#adb3c5">B3</text>
+  <rect x="516" y="40" width="44" height="430" rx="0" fill="#1d2129"/>
+  <text x="538" y="55" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="middle" fill="#adb3c5">B4</text>
+  <line x1="40" y1="70" x2="560" y2="70" stroke="#4b5568" stroke-width="1.5"/>
+  <line x1="40" y1="110" x2="560" y2="110" stroke="#3a4353" stroke-width="1"/>
+  <line x1="40" y1="150" x2="560" y2="150" stroke="#3a4353" stroke-width="1"/>
+  <line x1="40" y1="190" x2="560" y2="190" stroke="#3a4353" stroke-width="1"/>
+  <line x1="40" y1="230" x2="560" y2="230" stroke="#4b5568" stroke-width="1.5"/>
+  <line x1="40" y1="270" x2="560" y2="270" stroke="#3a4353" stroke-width="1"/>
+  <line x1="40" y1="310" x2="560" y2="310" stroke="#3a4353" stroke-width="1"/>
+  <line x1="40" y1="350" x2="560" y2="350" stroke="#3a4353" stroke-width="1"/>
+  <line x1="40" y1="390" x2="560" y2="390" stroke="#4b5568" stroke-width="1.5"/>
+  <line x1="40" y1="430" x2="560" y2="430" stroke="#3a4353" stroke-width="1"/>
+  <line x1="40" y1="470" x2="560" y2="470" stroke="#3a4353" stroke-width="1"/>
+  <rect x="283" y="104" width="34" height="12" rx="2" fill="#71b8da" opacity="1.0"/>
+  <text x="300.0" y="114" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">0A</text>
+  <text x="300.0" y="114" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#ffffff">0A</text>
+  <rect x="203" y="224" width="34" height="12" rx="2" fill="#71b8da" opacity="1.0"/>
+  <text x="220.0" y="234" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">0B</text>
+  <text x="220.0" y="234" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#ffffff">0B</text>
+  <rect x="243" y="344" width="34" height="12" rx="2" fill="#b1ce81" opacity="1.0"/>
+  <text x="260.0" y="354" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">1C</text>
+  <text x="260.0" y="354" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#ffffff">1C</text>
+  <rect x="83" y="304" width="34" height="12" rx="2" fill="#71b8da" opacity="0.35"/>
+  <text x="100.0" y="314" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">05</text>
+  <text x="100.0" y="314" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#ffffff">05</text>
+  <rect x="163" y="344" width="34" height="12" rx="2" fill="#71b8da" opacity="0.35"/>
+  <text x="180.0" y="354" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">06</text>
+  <text x="180.0" y="354" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#ffffff">06</text>
+  <rect x="203" y="384" width="34" height="12" rx="2" fill="#71b8da" opacity="0.35"/>
+  <text x="220.0" y="394" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">07</text>
+  <text x="220.0" y="394" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#ffffff">07</text>
+  <rect x="83" y="144" width="34" height="12" rx="2" fill="none" stroke="#86b4ff" stroke-width="2" opacity="1.0" stroke-dasharray="4 2"/>
+  <text x="100.0" y="154" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">05</text>
+  <text x="100.0" y="154" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#ffffff">05</text>
+  <rect x="163" y="184" width="34" height="12" rx="2" fill="none" stroke="#86b4ff" stroke-width="2" opacity="1.0" stroke-dasharray="4 2"/>
+  <text x="180.0" y="194" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">06</text>
+  <text x="180.0" y="194" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#ffffff">06</text>
+  <rect x="203" y="224" width="34" height="12" rx="2" fill="#df563b" stroke="#df563b" stroke-width="2" opacity="0.75"/>
+  <text x="220.0" y="234" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">07</text>
+  <text x="220.0" y="234" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#ffffff">07</text>
+  <rect x="201" y="222" width="38" height="16" rx="3" fill="none" stroke="#df563b" stroke-width="2"/>
+  <rect x="387" y="224" width="38" height="12" rx="2" fill="#f2be66" stroke="#f2be66" stroke-width="2" opacity="0.7" stroke-dasharray="3 2"/>
+  <text x="406.0" y="234" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">0B</text>
+  <text x="406.0" y="234" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#ffffff">0B</text>
+  <path d="M238 230 C 354 215, 364 225, 386 230" fill="none" stroke="#f2be66" stroke-width="1.2"/>
+  <rect x="45" y="405" width="332" height="32" rx="9" fill="#000000" opacity="0.035"/>
+  <rect x="44" y="404" width="334" height="34" rx="10" fill="#000000" opacity="0.035"/>
+  <rect x="43" y="403" width="336" height="36" rx="11" fill="#000000" opacity="0.035"/>
+  <rect x="42" y="402" width="338" height="38" rx="12" fill="#000000" opacity="0.035"/>
+  <rect x="41" y="401" width="340" height="40" rx="13" fill="#000000" opacity="0.035"/>
+  <rect x="40" y="400" width="342" height="42" rx="14" fill="#000000" opacity="0.035"/>
+  <rect x="39" y="399" width="344" height="44" rx="15" fill="#000000" opacity="0.035"/>
+  <rect x="38" y="398" width="346" height="46" rx="16" fill="#000000" opacity="0.035"/>
+  <rect x="46" y="402" width="330" height="30" rx="8" fill="#1e1f28" stroke="#86b4ff" stroke-width="1"/>
+  <text x="58" y="422" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">✎ Draw · 0A kick.wav · right-drag erases</text>
+  <rect x="0" y="446" width="860" height="24" rx="0" fill="#1e1f28"/>
+  <text x="10" y="462" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#ff9e86">1 note would overlap — release cancels   ·   overwrite policy: 0B → BGM lane B1</text>
+  <rect x="580" y="90" width="26" height="12" rx="2" fill="none" stroke="#86b4ff" stroke-width="2" stroke-dasharray="4 2"/>
+  <text x="614" y="100" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">ghost: valid target</text>
+  <rect x="580" y="116" width="26" height="12" rx="2" fill="#df563b" stroke="#df563b" stroke-width="2" opacity="0.7"/>
+  <text x="614" y="126" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">ghost: collides (T-420)</text>
+  <rect x="580" y="142" width="26" height="12" rx="2" fill="none" stroke="#df563b" stroke-width="2"/>
+  <text x="614" y="152" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">occupant outlined</text>
+  <rect x="580" y="168" width="26" height="12" rx="2" fill="#f2be66" stroke="#f2be66" stroke-width="2" opacity="0.7" stroke-dasharray="3 2"/>
+  <text x="614" y="178" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">displaced to BGM (T-421)</text>
+</svg>

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="380" height="440" viewBox="0 0 380 440">
+  <rect width="380" height="440" fill="#12131a"/>
+  <rect x="0" y="0" width="44" height="440" rx="0" fill="#1e1f28"/>
+  <rect x="7" y="8" width="30" height="30" rx="4" fill="#c9d35e"/>
+  <text x="22.0" y="28.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#12131a">●</text>
+  <rect x="7" y="44" width="30" height="30" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="22.0" y="64.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">▮</text>
+  <rect x="7" y="80" width="30" height="30" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="22.0" y="100.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">◆</text>
+  <rect x="7" y="116" width="30" height="30" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="22.0" y="136.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">✱</text>
+  <line x1="8" y1="154" x2="36" y2="154" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="22" y="172" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="9" font-weight="normal" text-anchor="middle" fill="#717077">HS</text>
+  <rect x="7" y="178" width="30" height="30" rx="4" fill="#c9d35e"/>
+  <text x="22" y="197" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="bold" text-anchor="middle" fill="#12131a">W</text>
+  <rect x="7" y="214" width="30" height="30" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="22" y="233" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="bold" text-anchor="middle" fill="#ced2df">F</text>
+  <rect x="7" y="250" width="30" height="30" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="22" y="269" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="bold" text-anchor="middle" fill="#ced2df">C</text>
+  <line x1="15" y1="275" x2="29" y2="275" stroke="#c9d35e" stroke-width="2"/>
+  <rect x="7" y="292" width="30" height="30" rx="4" fill="#2c2e3c" stroke="#86b4ff" stroke-width="1"/>
+  <text x="22" y="312" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="bold" text-anchor="middle" fill="#f5f6fa">N</text>
+  <text x="52" y="306" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#adb3c5">normal set: Auto/Normal/Soft/Drum</text>
+  <text x="52" y="319" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#adb3c5">click cycles · right-click picks</text>
+  <rect x="7" y="328" width="30" height="30" rx="4" fill="#2c2e3c" stroke="#86b4ff" stroke-width="1"/>
+  <text x="22" y="348" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="bold" text-anchor="middle" fill="#f5f6fa">S</text>
+  <text x="52" y="342" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#adb3c5">addition set: Auto/Normal/Soft/Drum</text>
+  <text x="52" y="355" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#adb3c5">click cycles · right-click picks</text>
+  <text x="52" y="186" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#adb3c5">Whistle on for all selected</text>
+  <text x="52" y="222" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#adb3c5">Finish off</text>
+  <text x="52" y="258" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#adb3c5">Clap mixed (dash under letter)</text>
+  <text x="52" y="30" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#adb3c5">note kinds (existing palette)</text>
+  <text x="52" y="420" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#adb3c5">W/E/R toggle · Shift/Alt+Q/W/E/R set the sets</text>
+</svg>

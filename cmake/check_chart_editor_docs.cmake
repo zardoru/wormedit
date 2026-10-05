@@ -254,6 +254,15 @@ set(task_card_files
     docs/chart-editor-plan/tasks/markers.md
     docs/chart-editor-plan/tasks/semantic-layers.md
     docs/chart-editor-plan/tasks/compose-followups.md
+    docs/chart-editor-plan/tasks/compose-cleanup.md
+    docs/chart-editor-plan/tasks/compose-docks.md
+    docs/chart-editor-plan/tasks/dialogs.md
+    docs/chart-editor-plan/tasks/draw-tool.md
+    docs/chart-editor-plan/tasks/project-charts.md
+    docs/chart-editor-plan/tasks/editing-feedback.md
+    docs/chart-editor-plan/tasks/bms-editing.md
+    docs/chart-editor-plan/tasks/color-schemes.md
+    docs/chart-editor-plan/tasks/manual-tutorial.md
 )
 set(task_card_fields Status Outcome "Read first" "Files owned" Steps Invariants
     "Reject/failure behavior" Verify "Out of scope")

@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="420" viewBox="0 0 400 420">
+  <rect width="400" height="420" fill="#12131a"/>
+  <rect x="12" y="12" width="376" height="396" rx="6" fill="#1e1f28" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="24" y="38" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="bold" text-anchor="start" fill="#f5f6fa">Quantize</text>
+  <text x="112" y="38" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">12 sel → 8 move · 4 stay · 0 collide</text>
+  <text x="24" y="66" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Grid</text>
+  <text x="88" y="68" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="end" fill="#717077">even</text>
+  <rect x="96" y="52" width="48" height="24" rx="12" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="120.0" y="68" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">1/4</text>
+  <rect x="148" y="52" width="48" height="24" rx="12" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="172.0" y="68" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">1/8</text>
+  <rect x="200" y="52" width="48" height="24" rx="12" fill="#145ce3" stroke="#86b4ff" stroke-width="1"/>
+  <text x="224.0" y="68" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">1/16</text>
+  <rect x="252" y="52" width="48" height="24" rx="12" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="276.0" y="68" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">1/32</text>
+  <rect x="304" y="52" width="48" height="24" rx="12" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="328.0" y="68" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">1/64</text>
+  <text x="88" y="98" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="end" fill="#717077">triplet</text>
+  <rect x="96" y="82" width="48" height="24" rx="12" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="120.0" y="98" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">1/6</text>
+  <rect x="148" y="82" width="48" height="24" rx="12" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="172.0" y="98" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">1/12</text>
+  <rect x="200" y="82" width="48" height="24" rx="12" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="224.0" y="98" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">1/24</text>
+  <rect x="252" y="82" width="48" height="24" rx="12" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="276.0" y="98" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">1/48</text>
+  <rect x="304" y="82" width="48" height="24" rx="12" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="328.0" y="98" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">1/96</text>
+  <rect x="96" y="114" width="256" height="24" rx="12" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1" stroke-dasharray="3 2"/>
+  <text x="224.0" y="130" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#adb3c5">custom…</text>
+  <text x="24" y="168" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Space</text>
+  <rect x="96" y="152" width="232" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="170.0" y="169.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">Standard measure</text>
+  <rect x="246" y="154" width="80" height="22" rx="3" fill="#145ce3"/>
+  <text x="286.0" y="169.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">Authored</text>
+  <text x="24" y="202" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Halfway notes</text>
+  <text x="376" y="202" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="end" fill="#f2be66">2 in selection</text>
+  <rect x="24" y="210" width="340" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="26" y="212" width="120" height="22" rx="3" fill="#145ce3"/>
+  <text x="86.0" y="227.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">Round earlier</text>
+  <line x1="148" y1="215" x2="148" y2="231" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="202.0" y="227.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">Round later</text>
+  <line x1="256" y1="215" x2="256" y2="231" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="310.0" y="227.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">Block apply</text>
+  <text x="24" y="262" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Hold tails</text>
+  <text x="376" y="262" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="end" fill="#adb3c5">3 holds in selection</text>
+  <rect x="24" y="270" width="216" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="90.0" y="287.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">Leave in place</text>
+  <rect x="158" y="272" width="80" height="22" rx="3" fill="#145ce3"/>
+  <text x="198.0" y="287.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">Snap too</text>
+  <text x="24" y="320" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Presets</text>
+  <rect x="96" y="304" width="72" height="24" rx="12.0" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="132.0" y="320.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">Default</text>
+  <rect x="172" y="304" width="64" height="24" rx="12.0" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="204.0" y="320.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">Trills</text>
+  <rect x="240" y="304" width="24" height="24" rx="12.0" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1" stroke-dasharray="3 2"/>
+  <text x="252.0" y="320.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">+</text>
+  <rect x="24" y="342" width="352" height="32" rx="4" fill="#145ce3" stroke="#145ce3" stroke-width="1"/>
+  <text x="200.0" y="362.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ffffff">Apply quantization  (Q)</text>
+  <text x="24" y="396" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="10" font-weight="normal" text-anchor="start" fill="#717077">field shows before→after ghosts; halfway notes in amber (T-437)</text>
+</svg>

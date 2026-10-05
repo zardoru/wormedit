@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="360" viewBox="0 0 980 360">
+  <rect width="980" height="360" fill="#12131a"/>
+  <text x="24" y="34" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="16" font-weight="bold" text-anchor="start" fill="#f5f6fa">Charts</text>
+  <text x="98" y="34" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#adb3c5">3</text>
+  <rect x="924" y="12" width="32" height="32" rx="6" fill="#c9d35e"/>
+  <line x1="940" y1="20" x2="940" y2="36" stroke="#12131a" stroke-width="2.5"/>
+  <line x1="932" y1="28" x2="948" y2="28" stroke="#12131a" stroke-width="2.5"/>
+  <rect x="24" y="56" width="932" height="30" rx="4" fill="#1e1f28" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="28" y="76" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5"></text>
+  <text x="46" y="76" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5"></text>
+  <text x="72" y="76" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Name</text>
+  <text x="242" y="76" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Author</text>
+  <text x="392" y="76" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Rating</text>
+  <text x="458" y="76" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Mode</text>
+  <text x="554" y="76" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Keys</text>
+  <text x="600" y="76" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Groups</text>
+  <text x="710" y="76" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Notes</text>
+  <text x="776" y="76" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Length</text>
+  <text x="836" y="76" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5"></text>
+  <rect x="46" y="63" width="16" height="16" rx="3" fill="#145ce3" stroke="#145ce3" stroke-width="1.5"/>
+  <line x1="50" y1="71" x2="58" y2="71" stroke="#ffffff" stroke-width="2"/>
+  <rect x="24" y="90" width="932" height="30" rx="4" fill="#172e60"/>
+  <text x="28" y="110" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#717077">⠿</text>
+  <rect x="46" y="97" width="16" height="16" rx="3" fill="#145ce3" stroke="#145ce3" stroke-width="1.5"/>
+  <path d="M49.5 105.5 L52.8 108.8 L58.5 101.8" fill="none" stroke="#ffffff" stroke-width="2"/>
+  <text x="72" y="110" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">Simurgh [7K Another]</text>
+  <text x="242" y="110" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">BilliumMoto &amp; So…</text>
+  <text x="392" y="110" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">12</text>
+  <text x="458" y="110" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">BME 7K</text>
+  <text x="554" y="110" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">7</text>
+  <text x="600" y="110" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">Unassigned</text>
+  <text x="710" y="110" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">1002</text>
+  <text x="776" y="110" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">2:30</text>
+  <rect x="886" y="92" width="26" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="899.0" y="110.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">↗</text>
+  <rect x="918" y="92" width="26" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="931.0" y="110.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">⋯</text>
+  <text x="28" y="144" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#717077">⠿</text>
+  <rect x="46" y="131" width="16" height="16" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.5"/>
+  <text x="72" y="144" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">Simurgh [7K Hyper]</text>
+  <text x="242" y="144" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">BilliumMoto &amp; So…</text>
+  <text x="392" y="144" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">9</text>
+  <text x="458" y="144" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">BME 7K</text>
+  <text x="554" y="144" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">7</text>
+  <text x="600" y="144" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">Unassigned</text>
+  <text x="710" y="144" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">744</text>
+  <text x="776" y="144" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">2:30</text>
+  <rect x="24" y="158" width="932" height="30" rx="4" fill="#172e60"/>
+  <text x="28" y="178" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#717077">⠿</text>
+  <rect x="46" y="165" width="16" height="16" rx="3" fill="#145ce3" stroke="#145ce3" stroke-width="1.5"/>
+  <path d="M49.5 173.5 L52.8 176.8 L58.5 169.8" fill="none" stroke="#ffffff" stroke-width="2"/>
+  <text x="72" y="178" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">Simurgh [14K]</text>
+  <text x="242" y="178" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">BilliumMoto &amp; So…</text>
+  <text x="392" y="178" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#717077">Unset</text>
+  <text x="458" y="178" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">BME 14K</text>
+  <text x="554" y="178" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">14</text>
+  <text x="600" y="178" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">DP set</text>
+  <text x="710" y="178" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">1388</text>
+  <text x="776" y="178" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">2:30</text>
+  <rect x="755" y="123" width="198" height="102" rx="9" fill="#000000" opacity="0.035"/>
+  <rect x="754" y="122" width="200" height="104" rx="10" fill="#000000" opacity="0.035"/>
+  <rect x="753" y="121" width="202" height="106" rx="11" fill="#000000" opacity="0.035"/>
+  <rect x="752" y="120" width="204" height="108" rx="12" fill="#000000" opacity="0.035"/>
+  <rect x="751" y="119" width="206" height="110" rx="13" fill="#000000" opacity="0.035"/>
+  <rect x="750" y="118" width="208" height="112" rx="14" fill="#000000" opacity="0.035"/>
+  <rect x="749" y="117" width="210" height="114" rx="15" fill="#000000" opacity="0.035"/>
+  <rect x="748" y="116" width="212" height="116" rx="16" fill="#000000" opacity="0.035"/>
+  <rect x="756" y="120" width="196" height="100" rx="8" fill="#1e1f28" stroke="#86b4ff" stroke-width="1"/>
+  <text x="768" y="144" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">Open in Compose</text>
+  <text x="768" y="169" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ced2df">Duplicate</text>
+  <line x1="764" y1="182" x2="944" y2="182" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="768" y="204" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#ff9e86">Delete…</text>
+  <rect x="24" y="206" width="640" height="38" rx="6" fill="#1e1f28" stroke="#86b4ff" stroke-width="1"/>
+  <text x="38" y="230" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#f5f6fa">2 selected</text>
+  <rect x="134" y="211" width="108" height="28" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="188.0" y="229.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Set author…</text>
+  <rect x="250" y="211" width="108" height="28" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="304.0" y="229.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Set rating…</text>
+  <rect x="366" y="211" width="92" height="28" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="412.0" y="229.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Duplicate</text>
+  <rect x="466" y="211" width="84" height="28" rx="4" fill="none" stroke="#df563b" stroke-width="1"/>
+  <text x="508.0" y="229.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ff9e86">Delete…</text>
+  <text x="646" y="230" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#adb3c5">✕</text>
+  <text x="24" y="272" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">click row = select only · Ctrl/Shift extend · double-click opens · reorder only by dragging ⠿ or Alt+↑/↓</text>
+  <text x="24" y="288" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">header box: all / none / mixed (replaces “Clear selection”) · long text ellipsized + tooltip</text>
+</svg>

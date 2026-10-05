@@ -44,9 +44,18 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Compose color views and semantic-layer UX](tasks/semantic-layers.md)
 - [Compose follow-ups: palette shortcuts, ghost note, docks, BGM layers, overview tooltip](tasks/compose-followups.md)
 - [Editing and Sounds UX follow-ups: ordering, source copy, usages, profiles, bookmarks and menus](tasks/editing-sounds-followups.md)
+- [Compose cleanup: navigation repeats, retired inspector sections, labels and bookmarks](tasks/compose-cleanup.md)
+- [Compose docks, measure gestures, BMSON stems and macOS chrome](tasks/compose-docks.md)
+- [Dialogs: shared dialog surface, Unsaved changes, Tap timing, tooltip occlusion](tasks/dialogs.md)
+- [Draw tool: one way to place notes, an explicit layer brush](tasks/draw-tool.md)
+- [Project chart table: selection, row actions, reordering and batch edits](tasks/project-charts.md)
+- [Editing feedback: one-click quantize controls and visible move collisions](tasks/editing-feedback.md)
+- [BMS editing: move to BGM with group-aware lanes, move-and-deselect, select by sound](tasks/bms-editing.md)
+- [Field color schemes, including iBMSC imports](tasks/color-schemes.md)
+- [User manual and tutorial video](tasks/manual-tutorial.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-384.
+every number above T-437.
 
 ## Rules for whoever executes a card
 

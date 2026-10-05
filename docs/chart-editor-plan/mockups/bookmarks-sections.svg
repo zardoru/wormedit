@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="380" height="300" viewBox="0 0 380 300">
+  <rect width="380" height="300" fill="#12131a"/>
+  <rect x="12" y="12" width="356" height="276" rx="6" fill="#1e1f28" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="28" y="40" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="bold" text-anchor="start" fill="#f5f6fa">Bookmarks</text>
+  <rect x="244" y="22" width="26" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="257.0" y="40.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">‹</text>
+  <rect x="274" y="22" width="26" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="287.0" y="40.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">›</text>
+  <rect x="304" y="22" width="26" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="317.0" y="40.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">+</text>
+  <rect x="334" y="22" width="26" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="347.0" y="40.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df"></text>
+  <line x1="341" y1="31" x2="353" y2="31" stroke="#ced2df" stroke-width="1.4"/>
+  <line x1="345.5" y1="29" x2="348.5" y2="29" stroke="#ced2df" stroke-width="1.4"/>
+  <path d="M343 33 L344 42 L350 42 L351 33" fill="none" stroke="#ced2df" stroke-width="1.4"/>
+  <rect x="20" y="54" width="340" height="24" rx="4" fill="#172e60"/>
+  <text x="28" y="71" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">drop</text>
+  <text x="352" y="71" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="end" fill="#adb3c5">m17 · 0:42.100</text>
+  <text x="28" y="97" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">break</text>
+  <text x="352" y="97" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="end" fill="#adb3c5">m33 · 1:21.900</text>
+  <text x="28" y="123" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">outro</text>
+  <text x="352" y="123" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="end" fill="#adb3c5">m61 · 2:18.000</text>
+  <line x1="20" y1="144" x2="360" y2="144" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="28" y="172" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="bold" text-anchor="start" fill="#f5f6fa">Sections</text>
+  <rect x="244" y="154" width="26" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="257.0" y="172.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">‹</text>
+  <rect x="274" y="154" width="26" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="287.0" y="172.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">›</text>
+  <rect x="304" y="154" width="26" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="317.0" y="172.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">+</text>
+  <rect x="334" y="154" width="26" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="347.0" y="172.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df"></text>
+  <line x1="341" y1="163" x2="353" y2="163" stroke="#ced2df" stroke-width="1.4"/>
+  <line x1="345.5" y1="161" x2="348.5" y2="161" stroke="#ced2df" stroke-width="1.4"/>
+  <path d="M343 165 L344 174 L350 174 L351 165" fill="none" stroke="#ced2df" stroke-width="1.4"/>
+  <text x="28" y="203" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">verse 1</text>
+  <text x="352" y="203" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="end" fill="#adb3c5">m1–m16</text>
+  <text x="28" y="229" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">chorus</text>
+  <text x="352" y="229" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="end" fill="#adb3c5">m17–m32</text>
+  <text x="28" y="255" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">bridge</text>
+  <text x="352" y="255" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="end" fill="#adb3c5">m33–m40</text>
+  <text x="12" y="298" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5"></text>
+</svg>

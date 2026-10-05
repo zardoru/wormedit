@@ -2927,6 +2927,14 @@ struct resource_pointer_target_t {
     bool handled_virtual{};
 };
 
+// Every placement path ends here: the Sounds/BGA dock advances to the next eligible resource.
+void advance_dock_after_placement(const wormedit::song_document_t& document,
+                                  wormedit::resource_id_t placed,
+                                  wormedit::resource_role_t required_role) {
+    const auto next = wormedit::next_eligible_placement_resource(document, placed, required_role);
+    worm_ui_frontend_resource_placed(placed.value, next.value_or(wormedit::resource_id_t{}).value);
+}
+
 auto place_virtual_sample_resource(const WormUiComposeInputAction& input,
                                    compose_input_context_t& context,
                                    const wormedit::chart_document_t& chart,
@@ -2944,12 +2952,8 @@ auto place_virtual_sample_resource(const WormUiComposeInputAction& input,
         context.history, context.state,
         wormedit::place_virtual_bms_tap_action_t{virtual_hit->first, virtual_hit->second,
                                                  spec.resource});
-    if (result.document_changed) {
-        const auto next = wormedit::next_eligible_placement_resource(
-            context.history.document, spec.resource, spec.required_role);
-        worm_ui_frontend_resource_placed(input.object_id,
-                                         next.value_or(wormedit::resource_id_t{}).value);
-    }
+    if (result.document_changed)
+        advance_dock_after_placement(context.history.document, spec.resource, spec.required_role);
     accepted = "Sample placed in BMS measure.";
     return true;
 }
@@ -2977,15 +2981,13 @@ auto place_virtual_source_resource(const WormUiComposeInputAction& input,
                             ? object_id_t{input.lane_id}
                             : object_id_t{},
          .kind = spec.kind,
-         .snap_denominator = edit_snap_denominator(chart, context.state)});
+         .snap_denominator = edit_snap_denominator(chart, context.state),
+         .semantic_layers = context.state.armed_note_layers});
     result.accepted = applied.applied;
     result.document_changed = applied.applied;
     result.diagnostics = applied.diagnostics;
-    if (applied.applied) {
-        const auto next = next_eligible_placement_resource(context.history.document, spec.resource,
-                                                           spec.required_role);
-        worm_ui_frontend_resource_placed(input.object_id, next.value_or(resource_id_t{}).value);
-    }
+    if (applied.applied)
+        advance_dock_after_placement(context.history.document, spec.resource, spec.required_role);
     accepted = spec.kind == resource_placement_kind_t::bgm_event ? "BGM placed in BMS measure."
                                                                  : "BGA placed in BMS measure.";
     return true;
@@ -3109,11 +3111,9 @@ auto dispatch_resource_pointer(const WormUiComposeInputAction& input,
                                 : object_id_t{},
              .kind = spec.kind,
              .semantic_layers = context.state.armed_note_layers});
-        if (applied.applied) {
-            const auto next = next_eligible_placement_resource(context.history.document,
-                                                               spec.resource, spec.required_role);
-            worm_ui_frontend_resource_placed(input.object_id, next.value_or(resource_id_t{}).value);
-        }
+        if (applied.applied)
+            advance_dock_after_placement(context.history.document, spec.resource,
+                                         spec.required_role);
     }
     const auto unchanged = spec.replacing && !applied.applied && applied.diagnostics.empty();
     result.accepted = applied.applied || unchanged;

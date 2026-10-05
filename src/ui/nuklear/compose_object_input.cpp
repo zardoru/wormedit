@@ -377,23 +377,13 @@ auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& inpu
     return false;
 }
 
-// The Sounds dock owns the sound choice; note paint carries it with each stroke.
-static auto armed_note_paint_sound(const WormUiComposeView& view) -> uint64_t {
-    if (state.armed_resource_id == 0 || !state.armed_from_sounds_dock) return 0;
-    for (size_t index = 0; index < view.keysound_count; ++index) {
-        const auto& row = view.keysounds[index];
-        if (row.resource_id == state.armed_resource_id) return row.missing ? 0 : row.resource_id;
-    }
-    return 0;
-}
-
 static void append_note_paint_begin(const ComposePointerEventContext& input) {
     auto* action = input.action;
     append_compose_input(action, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
                          input.paint_anchor_x, input.paint_anchor_y);
     if (!state.action_overflowed && action->compose_input_count > 0)
         action->compose_inputs[action->compose_input_count - 1].resource_id =
-            armed_note_paint_sound(*input.view);
+            worm_ui_nuklear_armed_dock_sound(state, *input.view);
 }
 
 void process_note_paint_pointer(const ComposePointerEventContext& input,

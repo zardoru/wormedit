@@ -2599,8 +2599,7 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
     if (sound && !is_paint_sample_resource(history.document, *sound))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
                                        "paint sound is not an existing sample resource")};
-    const auto layers = armed_layers.value_or(sound
-        ? sound_default_layers_for_placement(*prepared_chart, *sound) : std::vector<layer_id_t>{});
+    const auto layers = resolve_placement_layers(*prepared_chart, armed_layers, sound);
     prepared.painted_notes.reserve(plan.additions.size());
     for (const auto& target : plan.additions) {
         const auto found = prepared_measures.find(target.position.measure.value);
@@ -3091,9 +3090,8 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position)
                                       : state.armed_note_kind,
                                   .end = placement.tail,
                                   .sound = pending.sound,
-                                  .semantic_layers = state.armed_note_layers.value_or(pending.sound
-                                      ? sound_default_layers_for_placement(*chart, *pending.sound)
-                                      : std::vector<layer_id_t>{})});
+                                  .semantic_layers = resolve_placement_layers(
+                                      *chart, state.armed_note_layers, pending.sound)});
     }
     const auto label = placement.adds_note
         ? (placement.tail ? "Place merged hold note" : "Place tap note")
@@ -3550,9 +3548,8 @@ auto commit_virtual_hold(virtual_note_context_t& context,
                                      : context.state.armed_note_kind,
                                  .end = placement.tail,
                                  .sound = action.sound,
-                                 .semantic_layers = context.state.armed_note_layers.value_or(action.sound
-                                     ? sound_default_layers_for_placement(*chart, *action.sound)
-                                     : std::vector<layer_id_t>{})});
+                                 .semantic_layers = resolve_placement_layers(
+                                     *chart, context.state.armed_note_layers, action.sound)});
     }
     auto command = commit_document_command(
         context.history, std::move(proposed),
@@ -3666,8 +3663,8 @@ auto place_virtual_bms_tap(virtual_note_context_t& context,
     chart->measures[resolved.measure].notes.push_back(
         {.id = *id, .position = position, .lane = action.lane, .kind = context.state.armed_note_kind,
          .sound = action.sample,
-         .semantic_layers = context.state.armed_note_layers.value_or(action.sample
-             ? sound_default_layers_for_placement(*chart, *action.sample) : std::vector<layer_id_t>{})});
+         .semantic_layers = resolve_placement_layers(*chart, context.state.armed_note_layers,
+                                                     action.sample)});
     auto command = commit_document_command(context.history, std::move(proposed),
                                            "Place tap in virtual BMS measure");
     if (!command)
@@ -3840,7 +3837,8 @@ auto place_tap(tap_placement_context_t& context, const place_tap_action_t& actio
                                             "chart object ID sequence is exhausted")});
         measure->notes.push_back({.id = *id, .position = *snapped, .lane = state.active_lane,
                                   .kind = state.armed_note_kind,
-                                  .semantic_layers = state.armed_note_layers.value_or(std::vector<layer_id_t>{})});
+                                  .semantic_layers = resolve_placement_layers(
+                                      *chart, state.armed_note_layers, std::nullopt)});
         label = "Place note";
     }
     auto command = commit_document_command(history, std::move(proposed), std::move(label));

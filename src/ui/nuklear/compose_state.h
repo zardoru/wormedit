@@ -562,6 +562,12 @@ void worm_ui_nuklear_dispatch_compose_keys(worm_ui_nuklear_compose_state_t& stat
 void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
                                               std::uint64_t next_resource_id);
 
+// The one answer to "which Sounds-dock sample would a new note carry": the armed dock sample
+// when it is still listed and not missing, else 0. Lane keys and note paint both ask this
+// instead of reading armed_resource_id themselves.
+[[nodiscard]] auto worm_ui_nuklear_armed_dock_sound(
+    const worm_ui_nuklear_compose_state_t& state, const WormUiComposeView& view) -> std::uint64_t;
+
 void worm_ui_nuklear_reset_compose_state();
 
 [[nodiscard]] auto worm_ui_nuklear_begin_inline_offset(worm_ui_nuklear_compose_state_t& state,

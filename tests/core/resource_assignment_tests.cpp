@@ -1529,6 +1529,44 @@ TEST_CASE("sound layer defaults group sounds, undo as one step and tag painted n
     CHECK(history.document.charts.front().sound_layer_defaults.empty());
 }
 
+TEST_CASE("placement layers resolve through one rule for every placement kind",
+          "[unit][core][resources][semantic-layer-editor]") {
+    auto history = make_document_history(layered_sound_song());
+    REQUIRE(apply_sound_layer_defaults(
+        history, 4, {.chart = chart_id_t{2}, .resources = {resource_id_t{1}},
+                     .layers = {layer_id_t{7}}}));
+    const auto& chart = history.document.charts.front();
+    const std::optional<std::vector<layer_id_t>> none_armed;
+    const std::optional<std::vector<layer_id_t>> no_layer{std::vector<layer_id_t>{}};
+    const std::optional<std::vector<layer_id_t>> drums{std::vector{layer_id_t{8}}};
+
+    CHECK(resolve_placement_layers(chart, none_armed, resource_id_t{1}) ==
+          std::vector<layer_id_t>{layer_id_t{7}});
+    CHECK(resolve_placement_layers(chart, none_armed, std::nullopt).empty());
+    CHECK(resolve_placement_layers(chart, no_layer, resource_id_t{1}).empty());
+    CHECK(resolve_placement_layers(chart, drums, resource_id_t{1}) ==
+          std::vector<layer_id_t>{layer_id_t{8}});
+
+    // A sample note and a BGM event take their layers from the same rule.
+    for (const auto kind : {resource_placement_kind_t::sample_note,
+                            resource_placement_kind_t::bgm_event}) {
+        auto fresh = make_document_history(layered_sound_song());
+        REQUIRE(apply_sound_layer_defaults(
+            fresh, 4, {.chart = chart_id_t{2}, .resources = {resource_id_t{1}},
+                       .layers = {layer_id_t{7}}}));
+        const auto armed = apply_resource_placement(
+            fresh, fresh.document.revision,
+            {.chart = chart_id_t{2}, .resource = resource_id_t{1},
+             .position = {measure_id_t{3}, 480}, .lane = lane_id_t{1}, .kind = kind,
+             .semantic_layers = std::vector{layer_id_t{8}}});
+        REQUIRE(armed);
+        const auto& measure = fresh.document.charts.front().measures.back();
+        const auto layers = kind == resource_placement_kind_t::sample_note
+            ? measure.notes.back().semantic_layers : measure.bgm_events.back().semantic_layers;
+        CHECK(layers == std::vector<layer_id_t>{layer_id_t{8}});
+    }
+}
+
 TEST_CASE("a sound without layer defaults paints an untagged note",
           "[unit][core][resources][semantic-layer-editor]") {
     auto history = make_document_history(layered_sound_song());

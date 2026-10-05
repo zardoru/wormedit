@@ -436,8 +436,8 @@ auto place_sample_note(resource_placement_context_t& context) -> bool {
     context.measure.notes.push_back({.id = context.first_id, .position = context.position,
         .lane = action.lane, .kind = note_kind_t::tap, .end = std::nullopt,
         .sound = action.resource, .sound_channel_event = std::nullopt,
-        .semantic_layers = action.semantic_layers.value_or(
-            sound_default_layers_for_placement(context.chart, action.resource)),
+        .semantic_layers = resolve_placement_layers(context.chart, action.semantic_layers,
+                                                    action.resource),
         .label = std::nullopt, .branch = std::nullopt, .provenance = {}});
     return true;
 }
@@ -502,8 +502,8 @@ auto place_bgm_event(resource_placement_context_t& context) -> bool {
         .source_lane = lane, .sound = context.action.resource,
         .sound_channel_event = std::nullopt, .structural_slot = 0,
         .branch = std::nullopt, .provenance = {},
-        .semantic_layers = sound_default_layers_for_placement(context.chart,
-                                                              context.action.resource)});
+        .semantic_layers = resolve_placement_layers(context.chart, context.action.semantic_layers,
+                                                    context.action.resource)});
     return true;
 }
 
@@ -809,7 +809,8 @@ auto apply_virtual_bms_resource_placement(
          .position = position,
          .lane = action.lane,
          .source_lane = action.source_lane,
-         .kind = action.kind});
+         .kind = action.kind,
+         .semantic_layers = action.semantic_layers});
     if (!placed) {
         result.diagnostics = placed.diagnostics;
         return result;

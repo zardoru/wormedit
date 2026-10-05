@@ -938,6 +938,13 @@ auto sound_default_layers_for_placement(const chart_document_t& chart, resource_
     return layers;
 }
 
+auto resolve_placement_layers(const chart_document_t& chart,
+                              const std::optional<std::vector<layer_id_t>>& armed_layers,
+                              std::optional<resource_id_t> sound) -> std::vector<layer_id_t> {
+    if (armed_layers) return *armed_layers;
+    return sound ? sound_default_layers_for_placement(chart, *sound) : std::vector<layer_id_t>{};
+}
+
 namespace {
 
 auto validate_sound_layer_defaults_request(const song_document_t& document,

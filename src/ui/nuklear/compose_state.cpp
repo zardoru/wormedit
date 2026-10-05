@@ -373,6 +373,16 @@ void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
     }
 }
 
+auto worm_ui_nuklear_armed_dock_sound(const worm_ui_nuklear_compose_state_t& state,
+                                      const WormUiComposeView& view) -> std::uint64_t {
+    if (state.armed_resource_id == 0 || !state.armed_from_sounds_dock) return 0;
+    for (std::size_t index = 0; index < view.keysound_count; ++index) {
+        const auto& row = view.keysounds[index];
+        if (row.resource_id == state.armed_resource_id) return row.missing ? 0 : row.resource_id;
+    }
+    return 0;
+}
+
 auto worm_ui_nuklear_sound_list_contains(float x, float y) -> bool {
     const auto& state = worm_ui_nuklear_compose_state();
     return state.sound_list_valid && x >= state.sound_list_x &&

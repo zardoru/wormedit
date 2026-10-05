@@ -185,4 +185,12 @@ struct sound_layer_membership_action_t {
                                                       resource_id_t resource)
     -> std::vector<layer_id_t>;
 
+// The one rule for the layers a freshly placed object gets, whatever path placed it
+// (lane key, note paint, pointer, cursor, virtual BMS canvas, BGM/BGA): an explicit
+// palette target wins (an empty vector means No layer); otherwise the sound's defaults.
+[[nodiscard]] auto resolve_placement_layers(
+    const chart_document_t& chart,
+    const std::optional<std::vector<layer_id_t>>& armed_layers,
+    std::optional<resource_id_t> sound) -> std::vector<layer_id_t>;
+
 } // namespace wormedit

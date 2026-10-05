@@ -968,11 +968,13 @@ auto apply_compose_resource_placement(compose_action_context_t& context,
             context.history, context.action.compose_input_document_revision,
             {.chart = context.state.chart, .resource = resource,
              .canvas_row = *context.state.virtual_bms_cursor_row,
-             .lane = context.state.active_lane, .kind = kind});
+             .lane = context.state.active_lane, .kind = kind,
+             .semantic_layers = context.state.armed_note_layers});
     return apply_resource_placement(
         context.history, context.action.compose_input_document_revision,
         {.chart = context.state.chart, .resource = resource,
-         .position = context.state.cursor, .lane = context.state.active_lane, .kind = kind});
+         .position = context.state.cursor, .lane = context.state.active_lane, .kind = kind,
+         .semantic_layers = context.state.armed_note_layers});
 }
 
 std::optional<std::string> finish_compose_resource_placement(

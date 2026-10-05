@@ -12,6 +12,14 @@ void cancel_compose_navigation(WormUiWorkspaceAction* action);
 void append_compose_cancel_once(WormUiWorkspaceAction* action);
 bool compose_text_owned(const nk_context* context);
 
+// Razor slicing needs a selected BGM source lane and no competing tool. Input handlers enforce this
+// themselves, so it holds whether or not the BMSON tab that shows the toggle is drawn.
+inline auto bmson_razor_eligible(const WormUiComposeView& view) -> bool {
+    return view.scene_available && view.selected_bmson_bgm_event_id != 0 &&
+           view.selected_bmson_source_lane_id != 0 && !view.note_paint_mode_active &&
+           !view.semantic_layer_paint_mode_active && !view.timing_stage_active;
+}
+
 void reset_bmson_marker_move_capture();
 void set_waveform_offset_drag_action(WormUiWorkspaceAction* action,
                                     WormUiAudioOffsetDragAction kind,

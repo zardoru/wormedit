@@ -1,5 +1,12 @@
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/compose_markers.h"
+#include "ui/nuklear/compose_note_label_inline.h"
+#include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/lucide_icons.h"
+#include "ui/nuklear/theme.h"
+#include "ui/nuklear/vector_icons.h"
+
+#include <SDL3/SDL_timer.h>
 
 #include "wormedit/nuklear_config.h"
 
@@ -9,6 +16,8 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <string>
+#include <utility>
 
 namespace {
 
@@ -20,8 +29,6 @@ struct compose_marker_state_t {
     std::uint64_t section_id{};
     std::uint64_t audio_bookmark_id{};
     std::uint64_t audio_section_id{};
-    std::array<char, WORM_UI_COMPOSE_MARKER_LABEL_BYTES + 1> bookmark_label{};
-    std::array<char, WORM_UI_COMPOSE_MARKER_LABEL_BYTES + 1> section_label{};
     std::array<char, WORM_UI_COMPOSE_MARKER_LABEL_BYTES + 1> audio_bookmark_label{};
     std::array<char, WORM_UI_COMPOSE_MARKER_LABEL_BYTES + 1> audio_section_label{};
     std::array<char, WORM_UI_COMPOSE_MARKER_TIME_BYTES> audio_bookmark_time{};
@@ -94,18 +101,8 @@ void synchronize(const WormUiComposeView& view) {
         state.document_revision == view.document_revision) {
         return;
     }
-    if (const auto* bookmark = selected_bookmark(view)) {
-        copy_label(state.bookmark_label, bookmark->label);
-    } else {
-        state.bookmark_id = 0;
-        state.bookmark_label.fill('\0');
-    }
-    if (const auto* section = selected_section(view)) {
-        copy_label(state.section_label, section->label);
-    } else {
-        state.section_id = 0;
-        state.section_label.fill('\0');
-    }
+    if (!selected_bookmark(view)) state.bookmark_id = 0;
+    if (!selected_section(view)) state.section_id = 0;
     if (const auto* bookmark = selected_audio_bookmark(view)) {
         copy_label(state.audio_bookmark_label, bookmark->label);
         copy_time(state.audio_bookmark_time, bookmark->audio_milliseconds);
@@ -129,101 +126,399 @@ void synchronize(const WormUiComposeView& view) {
     state.document_revision = view.document_revision;
 }
 
-void render_audio_navigation(struct nk_context* context, const WormUiComposeView& view,
-                             WormUiWorkspaceAction& action) {
-    const auto enabled = view.scene_available && view.audio_marker_navigation_available &&
-                         view.audio_marker_transport_available;
-    nk_layout_row_dynamic(context, 25, 2);
-    if (!enabled)
-        nk_widget_disable_begin(context);
-    const auto previous_clicked = nk_button_label(context, "Previous audio marker");
-    const auto next_clicked = nk_button_label(context, "Next audio marker");
-    if (!enabled)
-        nk_widget_disable_end(context);
-    nk_layout_row_dynamic(context, 18, 1);
-    const auto* explanation = !view.audio_marker_navigation_available
-                                  ? "No audio-time bookmarks or section boundaries"
-                              : !view.audio_marker_transport_available
-                                  ? "Start preview once to compile its seekable timeline"
-                                  : "Navigate against the exact preview clock";
-    nk_label(context, explanation, NK_TEXT_LEFT);
+// ---- Shared group chrome: a title with ‹ › + delete icon buttons, then a clickable list. ----
 
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
+constexpr float header_height = 26.0f;
+constexpr float row_height = 22.0f;
+constexpr float row_text_inset = 8.0f;
+constexpr std::uint32_t double_click_milliseconds = 400;
+
+struct header_spec_t {
+    const char* title;
+    const char* previous_tip;
+    const char* next_tip;
+    const char* add_tip;
+    const char* remove_tip;
+    bool navigation_enabled;
+    bool add_enabled;
+    bool remove_enabled;
+};
+
+struct header_clicks_t {
+    bool previous{};
+    bool next{};
+    bool add{};
+    bool remove{};
+};
+
+template <typename Button>
+auto render_header_button(struct nk_context* context, bool enabled, const Button& button) -> bool {
+    if (!enabled) nk_widget_disable_begin(context);
+    const auto clicked = button.render(context);
+    if (!enabled) nk_widget_disable_end(context);
+    return clicked && enabled;
+}
+
+// The title starts at the row-highlight edge and the buttons end flush with the opposite edge, so
+// both sides of the header keep the same margin as the list below.
+auto render_group_header(struct nk_context* context, const header_spec_t& spec) -> header_clicks_t {
+    namespace chrome = wormedit::ui::chrome;
+    namespace icons = wormedit::ui::vector_icons;
+    using wormedit::ui::lucide::Glyph;
+    nk_layout_row_template_begin(context, header_height);
+    nk_layout_row_template_push_dynamic(context);
+    chrome::IconButton::layout_columns(context, 4, 26.0f);
+    nk_layout_row_template_end(context);
+    nk_label_colored(context, spec.title, NK_TEXT_LEFT,
+                     wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_bright));
+    header_clicks_t clicks;
+    clicks.previous = render_header_button(context, spec.navigation_enabled,
+        chrome::IconButton{Glyph::chevron_left, spec.previous_tip});
+    clicks.next = render_header_button(context, spec.navigation_enabled,
+        chrome::IconButton{Glyph::chevron_right, spec.next_tip});
+    clicks.add = render_header_button(context, spec.add_enabled,
+        chrome::DrawnIconButton{icons::plus, spec.add_tip});
+    clicks.remove = render_header_button(context, spec.remove_enabled,
+        chrome::DrawnIconButton{icons::trash, spec.remove_tip});
+    return clicks;
+}
+
+struct row_spec_t {
+    std::uint64_t key;  // Unique across lists, for double-click pairing.
+    const char* label;
+    const char* detail;
+    bool selected;
+    bool interactive;
+};
+
+struct row_result_t {
+    bool clicked{};
+    bool double_clicked{};
+    struct nk_rect bounds{};
+};
+
+std::uint64_t last_click_key{};
+std::uint32_t last_click_ticks{};
+
+auto register_click(std::uint64_t key) -> bool {
+    const auto now = SDL_GetTicks();
+    const auto paired = last_click_key == key && now - last_click_ticks <= double_click_milliseconds;
+    last_click_key = paired ? 0 : key;
+    last_click_ticks = now;
+    return paired;
+}
+
+// The longest prefix of `text` that fits `width`, ending in an ellipsis when it was cut.
+auto fit_text(const nk_user_font* font, const char* text, float width) -> std::string {
+    const auto length = static_cast<int>(std::strlen(text));
+    if (!font || font->width(font->userdata, font->height, text, length) <= width) return text;
+    std::string cut = text;
+    while (!cut.empty()) {
+        do cut.pop_back();
+        while (!cut.empty() && (static_cast<unsigned char>(cut.back()) & 0xC0U) == 0x80U);
+        const auto candidate = cut + "...";
+        if (font->width(font->userdata, font->height, candidate.c_str(),
+                        static_cast<int>(candidate.size())) <= width) return candidate;
+    }
+    return "...";
+}
+
+void draw_row_text(struct nk_context* context, struct nk_rect bounds, const row_spec_t& spec) {
+    auto* canvas = nk_window_get_canvas(context);
+    const auto* font = context->style.font;
+    const auto detail_width = spec.detail && font
+        ? font->width(font->userdata, font->height, spec.detail, static_cast<int>(std::strlen(spec.detail)))
+        : 0.0f;
+    const auto text_color = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text);
+    const auto muted = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted);
+    const auto label_width = std::max(0.0f, bounds.w - 3.0f * row_text_inset - detail_width);
+    const auto label = fit_text(font, spec.label, label_width);
+    nk_draw_text(canvas, nk_rect(bounds.x + row_text_inset, bounds.y + 3.0f, label_width, bounds.h - 3.0f),
+                 label.c_str(), static_cast<int>(label.size()), font, nk_rgba(0, 0, 0, 0), text_color);
+    if (!spec.detail) return;
+    nk_draw_text(canvas, nk_rect(bounds.x + bounds.w - row_text_inset - detail_width, bounds.y + 3.0f,
+                                 detail_width + 1.0f, bounds.h - 3.0f),
+                 spec.detail, static_cast<int>(std::strlen(spec.detail)), font, nk_rgba(0, 0, 0, 0), muted);
+}
+
+auto render_list_row(struct nk_context* context, const row_spec_t& spec, bool occluded)
+    -> row_result_t {
+    nk_layout_row_dynamic(context, row_height, 1);
+    row_result_t result;
+    const auto hovered = nk_widget_is_hovered(context);
+    const auto clicked = spec.interactive && !occluded &&
+                         nk_widget_is_mouse_clicked(context, NK_BUTTON_LEFT);
+    if (nk_widget(&result.bounds, context) == NK_WIDGET_INVALID) return result;
+    auto* canvas = nk_window_get_canvas(context);
+    using wormedit::ui::theme::UiColor;
+    if (spec.selected) nk_fill_rect(canvas, result.bounds, 4.0f, wormedit::ui::theme::ui(UiColor::selected));
+    else if (hovered && spec.interactive)
+        nk_fill_rect(canvas, result.bounds, 4.0f, wormedit::ui::theme::ui(UiColor::surface_hover));
+    draw_row_text(context, result.bounds, spec);
+    if (!clicked) return result;
+    result.clicked = true;
+    result.double_clicked = register_click(spec.key);
+    return result;
+}
+
+void render_empty_list(struct nk_context* context, const char* text) {
+    nk_layout_row_dynamic(context, row_height, 1);
+    nk_label_colored(context, text, NK_TEXT_LEFT,
+                     wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted));
+}
+
+auto row_center(const row_result_t& row) -> std::pair<float, float> {
+    return {row.bounds.x + row.bounds.w * 0.5f, row.bounds.y + row.bounds.h * 0.5f};
+}
+
+constexpr std::uint64_t key_bookmark = 1ULL << 62U;
+constexpr std::uint64_t key_section = 2ULL << 62U;
+constexpr std::uint64_t key_audio_bookmark = 3ULL << 62U;
+
+void stamp_action(WormUiWorkspaceAction& action, const WormUiComposeView& view) {
+    action.compose_input_project_id = view.project_id;
+    action.compose_input_chart_id = view.chart_id;
+    action.compose_input_document_revision = view.document_revision;
+}
+
+auto raise_compose(WormUiWorkspaceAction& action, WormUiComposeActionKind kind) -> bool {
+    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
+    action.compose_action = kind;
+    return true;
+}
+
+void request_marker_navigation(WormUiWorkspaceAction& action, bool previous, bool next) {
+    if (action.kind != WORM_UI_WORKSPACE_ACTION_NONE) return;
+    if (previous) action.kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER;
+    else if (next) action.kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER;
+}
+
+// ---- Beat bookmarks ----
+
+void handle_bookmark_row(const WormUiComposeView& view, WormUiWorkspaceAction& action,
+                         const WormUiComposeBookmarkView& bookmark, const row_result_t& row) {
+    if (!row.clicked) return;
+    state.bookmark_id = bookmark.bookmark_id;
+    if (row.double_clicked) {
+        const auto [x, y] = row_center(row);
+        (void)begin_compose_bookmark_rename_anchored(worm_ui_nuklear_compose_state().bookmark_rename,
+                                                     view, bookmark.bookmark_id, x, y);
         return;
     }
-    if (previous_clicked) {
-        action.compose_action = WORM_UI_COMPOSE_ACTION_NAVIGATE_PREVIOUS_AUDIO_MARKER;
-    } else if (next_clicked) {
-        action.compose_action = WORM_UI_COMPOSE_ACTION_NAVIGATE_NEXT_AUDIO_MARKER;
+    if (!raise_compose(action, WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK)) return;
+    action.compose_bookmark_id = bookmark.bookmark_id;
+    stamp_action(action, view);
+}
+
+void apply_bookmark_header(const WormUiComposeView& view, WormUiWorkspaceAction& action,
+                           const header_clicks_t& clicks) {
+    request_marker_navigation(action, clicks.previous, clicks.next);
+    if (clicks.add && raise_compose(action, WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK)) {
+        action.compose_bookmark_id = 0;
+        action.compose_marker_label[0] = '\0';
+        state.bookmark_id = 0;
+    } else if (clicks.remove && selected_bookmark(view) &&
+               raise_compose(action, WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK)) {
+        action.compose_bookmark_id = state.bookmark_id;
     }
+}
+
+void render_bookmarks(struct nk_context* context, const WormUiComposeView& view,
+                      WormUiWorkspaceAction& action) {
+    const auto* selected = selected_bookmark(view);
+    const auto editable = view.scene_available && !view.input_occluded;
+    const header_spec_t spec{
+        "Bookmarks", "Previous marker (bookmark or section edge)",
+        "Next marker (bookmark or section edge)",
+        editable ? "Add a bookmark at the cursor" : "Open a Compose chart to add bookmarks",
+        selected ? "Delete the selected bookmark" : "Select a bookmark to delete it",
+        view.scene_available && view.beat_marker_navigation_available, editable,
+        editable && selected != nullptr};
+    apply_bookmark_header(view, action, render_group_header(context, spec));
+    if (view.beat_bookmark_count == 0) render_empty_list(context, "No bookmarks");
+    for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
+        const auto& bookmark = view.beat_bookmarks[index];
+        char position[48]{};
+        std::snprintf(position, sizeof(position), "m%llu:%llu",
+                      static_cast<unsigned long long>(bookmark.measure_number),
+                      static_cast<unsigned long long>(bookmark.row));
+        const auto row = render_list_row(context,
+            {key_bookmark | bookmark.bookmark_id, bookmark.label && bookmark.label[0] ? bookmark.label : "(unnamed)",
+             position, bookmark.bookmark_id == state.bookmark_id, view.scene_available}, view.input_occluded);
+        handle_bookmark_row(view, action, bookmark, row);
+    }
+    if (view.beat_bookmarks_truncated) render_empty_list(context, "Only the first 64 are shown");
+    if (!selected) return;
+    nk_layout_row_dynamic(context, 24, 1);
+    if (!editable) nk_widget_disable_begin(context);
+    const auto move = nk_button_label(context, "Move selected bookmark to cursor");
+    if (!editable) nk_widget_disable_end(context);
+    if (move && editable && raise_compose(action, WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION))
+        action.compose_bookmark_id = selected->bookmark_id;
+}
+
+// ---- Beat sections ----
+
+void format_section_range(char (&text)[64], const WormUiComposeSectionView& section) {
+    std::snprintf(text, sizeof(text), "m%llu-m%llu",
+                  static_cast<unsigned long long>(section.begin_measure_number),
+                  static_cast<unsigned long long>(section.end_measure_number));
+}
+
+void handle_section_row(const WormUiComposeView& view, const WormUiComposeSectionView& section,
+                        const row_result_t& row) {
+    if (!row.clicked) return;
+    state.section_id = section.section_id;
+    if (!row.double_clicked) return;
+    const auto [x, y] = row_center(row);
+    (void)begin_compose_section_label_inline(worm_ui_nuklear_compose_state().bookmark_rename, view,
+                                             section.section_id, x, y);
+}
+
+void apply_section_header(const WormUiComposeView& view, WormUiWorkspaceAction& action,
+                          const header_clicks_t& clicks) {
+    request_marker_navigation(action, clicks.previous, clicks.next);
+    if (clicks.add && raise_compose(action, WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION)) {
+        action.compose_section_id = 0;
+        action.compose_marker_label[0] = '\0';
+        state.section_id = 0;
+    } else if (clicks.remove && selected_section(view) &&
+               raise_compose(action, WORM_UI_COMPOSE_ACTION_DELETE_BEAT_SECTION)) {
+        action.compose_section_id = state.section_id;
+    }
+}
+
+void render_section_edge_buttons(struct nk_context* context, const WormUiComposeView& view,
+                                 WormUiWorkspaceAction& action,
+                                 const WormUiComposeSectionView& selected) {
+    const auto editable = view.scene_available && !view.input_occluded;
+    nk_layout_row_dynamic(context, 24, 2);
+    if (!editable) nk_widget_disable_begin(context);
+    const auto set_begin = nk_button_label(context, "Set start to cursor");
+    const auto set_end = nk_button_label(context, "Set end to cursor");
+    if (!editable) nk_widget_disable_end(context);
+    if (!editable || (!set_begin && !set_end)) return;
+    const auto kind = set_begin ? WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN
+                                : WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_END;
+    if (raise_compose(action, kind)) action.compose_section_id = selected.section_id;
+}
+
+void render_sections(struct nk_context* context, const WormUiComposeView& view,
+                     WormUiWorkspaceAction& action) {
+    const auto* selected = selected_section(view);
+    const auto editable = view.scene_available && !view.input_occluded;
+    const header_spec_t spec{
+        "Sections", "Previous marker (bookmark or section edge)",
+        "Next marker (bookmark or section edge)",
+        !editable ? "Open a Compose chart to add sections"
+        : view.beat_section_selection_span_available ? "Add a section from the selected span"
+                                                     : "Add a one-snap section at the cursor",
+        selected ? "Delete the selected section" : "Select a section to delete it",
+        view.scene_available && view.beat_marker_navigation_available, editable,
+        editable && selected != nullptr};
+    apply_section_header(view, action, render_group_header(context, spec));
+    if (view.beat_section_count == 0) render_empty_list(context, "No sections");
+    for (std::size_t index = 0; index < view.beat_section_count; ++index) {
+        const auto& section = view.beat_sections[index];
+        char range[64]{};
+        format_section_range(range, section);
+        const auto row = render_list_row(context,
+            {key_section | section.section_id, section.label && section.label[0] ? section.label : "(unnamed)",
+             range, section.section_id == state.section_id, true}, view.input_occluded);
+        handle_section_row(view, section, row);
+    }
+    if (view.beat_sections_truncated) render_empty_list(context, "Only the first 64 are shown");
+    if (selected) render_section_edge_buttons(context, view, action, *selected);
+}
+
+// ---- Audio-time markers: the same grouping, with a compact form for the typed times. ----
+
+void request_audio_navigation(WormUiWorkspaceAction& action, bool previous, bool next) {
+    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if (previous) action.compose_action = WORM_UI_COMPOSE_ACTION_NAVIGATE_PREVIOUS_AUDIO_MARKER;
+    else if (next) action.compose_action = WORM_UI_COMPOSE_ACTION_NAVIGATE_NEXT_AUDIO_MARKER;
+}
+
+auto audio_navigation_tip(const WormUiComposeView& view, bool previous) -> const char* {
+    if (!view.audio_marker_navigation_available) return "No audio-time bookmarks or section boundaries";
+    if (!view.audio_marker_transport_available) return "Start preview once to compile its seekable timeline";
+    return previous ? "Previous audio-time marker" : "Next audio-time marker";
+}
+
+void render_audio_form_fields(struct nk_context* context, bool bookmark) {
+    nk_layout_row_dynamic(context, 25, 1);
+    auto& label = bookmark ? state.audio_bookmark_label : state.audio_section_label;
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, label.data(),
+                                                           label.size(), nk_filter_default);
+    if (bookmark) {
+        nk_layout_row_dynamic(context, 25, 1);
+        (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
+            state.audio_bookmark_time.data(), state.audio_bookmark_time.size(), nk_filter_default);
+        return;
+    }
+    nk_layout_row_dynamic(context, 25, 2);
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
+        state.audio_section_begin.data(), state.audio_section_begin.size(), nk_filter_default);
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
+        state.audio_section_end.data(), state.audio_section_end.size(), nk_filter_default);
+}
+
+void fill_audio_bookmark_action(WormUiWorkspaceAction& action, bool update) {
+    action.compose_bookmark_id = state.audio_bookmark_id;
+    std::memcpy(action.compose_marker_label, state.audio_bookmark_label.data(),
+                sizeof(action.compose_marker_label));
+    std::memcpy(action.compose_marker_audio_begin, state.audio_bookmark_time.data(),
+                sizeof(action.compose_marker_audio_begin));
+    action.compose_action = update ? WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_BOOKMARK
+                                   : WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK;
+}
+
+void fill_audio_section_action(WormUiWorkspaceAction& action, bool update) {
+    action.compose_section_id = state.audio_section_id;
+    std::memcpy(action.compose_marker_label, state.audio_section_label.data(),
+                sizeof(action.compose_marker_label));
+    std::memcpy(action.compose_marker_audio_begin, state.audio_section_begin.data(),
+                sizeof(action.compose_marker_audio_begin));
+    std::memcpy(action.compose_marker_audio_end, state.audio_section_end.data(),
+                sizeof(action.compose_marker_audio_end));
+    action.compose_action = update ? WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_SECTION
+                                   : WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION;
 }
 
 void render_audio_bookmarks(struct nk_context* context, const WormUiComposeView& view,
                             WormUiWorkspaceAction& action) {
     const auto* selected = selected_audio_bookmark(view);
-    char header[384]{};
-    if (selected) {
-        std::snprintf(header, sizeof(header), "Audio bookmark %lld ms  %.250s",
-                      static_cast<long long>(selected->audio_milliseconds), selected->label);
-    } else {
-        std::snprintf(header, sizeof(header), "New audio-time bookmark%s",
-                      view.audio_bookmarks_truncated ? " (first 64 shown)" : "");
+    const auto editable = view.scene_available;
+    const auto navigation = view.audio_marker_navigation_available && view.audio_marker_transport_available;
+    const header_spec_t spec{
+        "Audio-time bookmarks", audio_navigation_tip(view, true), audio_navigation_tip(view, false),
+        editable ? "Add a bookmark at the typed time" : "Open a Compose chart to add bookmarks",
+        selected ? "Delete the selected bookmark" : "Select a bookmark to delete it",
+        view.scene_available && navigation, editable, editable && selected != nullptr};
+    const auto clicks = render_group_header(context, spec);
+    request_audio_navigation(action, clicks.previous, clicks.next);
+    if (view.audio_bookmark_count == 0) render_empty_list(context, "No audio-time bookmarks");
+    for (std::size_t index = 0; index < view.audio_bookmark_count; ++index) {
+        const auto& bookmark = view.audio_bookmarks[index];
+        char time[48]{};
+        std::snprintf(time, sizeof(time), "%lld ms", static_cast<long long>(bookmark.audio_milliseconds));
+        const auto row = render_list_row(context,
+            {key_audio_bookmark | bookmark.bookmark_id, bookmark.label && bookmark.label[0] ? bookmark.label : "(unnamed)",
+             time, bookmark.bookmark_id == state.audio_bookmark_id, true}, view.input_occluded);
+        if (!row.clicked) continue;
+        state.audio_bookmark_id = bookmark.bookmark_id;
+        copy_label(state.audio_bookmark_label, bookmark.label);
+        copy_time(state.audio_bookmark_time, bookmark.audio_milliseconds);
     }
-
-    nk_layout_row_dynamic(context, 25, 1);
-    if (wormedit::ui::chrome::safe_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
-        nk_layout_row_dynamic(context, 22, 1);
-        if (nk_combo_item_label(context, "New audio-time bookmark", NK_TEXT_LEFT)) {
-            state.audio_bookmark_id = 0;
-            state.audio_bookmark_label.fill('\0');
-            copy_time(state.audio_bookmark_time, 0);
-        }
-        for (std::size_t index = 0; index < view.audio_bookmark_count; ++index) {
-            const auto& bookmark = view.audio_bookmarks[index];
-            char item[384]{};
-            std::snprintf(item, sizeof(item), "%lld ms  %.280s",
-                          static_cast<long long>(bookmark.audio_milliseconds), bookmark.label);
-            if (nk_combo_item_label(context, item, NK_TEXT_LEFT)) {
-                state.audio_bookmark_id = bookmark.bookmark_id;
-                copy_label(state.audio_bookmark_label, bookmark.label);
-                copy_time(state.audio_bookmark_time, bookmark.audio_milliseconds);
-            }
-        }
-        nk_combo_end(context);
-    }
-    const auto enabled = view.scene_available;
-    if (!enabled)
-        nk_widget_disable_begin(context);
-    nk_layout_row_dynamic(context, 25, 1);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.audio_bookmark_label.data(),
-                                         state.audio_bookmark_label.size(), nk_filter_default);
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_label(context, "Audio time (ms)", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 25, 1);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.audio_bookmark_time.data(),
-                                         state.audio_bookmark_time.size(), nk_filter_default);
-    nk_layout_row_dynamic(context, 25, 2);
-    const auto apply_clicked = nk_button_label(context, selected ? "Apply" : "Add");
-    if (!enabled)
-        nk_widget_disable_end(context);
-    if (!enabled || !selected)
-        nk_widget_disable_begin(context);
-    const auto delete_clicked = nk_button_label(context, "Delete");
-    if (!enabled || !selected)
-        nk_widget_disable_end(context);
-
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
-        return;
-    }
-    if (apply_clicked) {
-        action.compose_bookmark_id = state.audio_bookmark_id;
-        std::memcpy(action.compose_marker_label, state.audio_bookmark_label.data(),
-                    sizeof(action.compose_marker_label));
-        std::memcpy(action.compose_marker_audio_begin, state.audio_bookmark_time.data(),
-                    sizeof(action.compose_marker_audio_begin));
-        action.compose_action = selected ? WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_BOOKMARK
-                                         : WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK;
-    } else if (delete_clicked && selected) {
+    render_audio_form_fields(context, true);
+    nk_layout_row_dynamic(context, 24, 1);
+    if (!editable || !selected) nk_widget_disable_begin(context);
+    const auto apply = nk_button_label(context, "Apply label and time to selected");
+    if (!editable || !selected) nk_widget_disable_end(context);
+    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if (clicks.add && editable) fill_audio_bookmark_action(action, false);
+    else if (apply && selected) fill_audio_bookmark_action(action, true);
+    else if (clicks.remove && selected) {
         action.compose_bookmark_id = selected->bookmark_id;
         action.compose_action = WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_BOOKMARK;
     }
@@ -232,262 +527,42 @@ void render_audio_bookmarks(struct nk_context* context, const WormUiComposeView&
 void render_audio_sections(struct nk_context* context, const WormUiComposeView& view,
                            WormUiWorkspaceAction& action) {
     const auto* selected = selected_audio_section(view);
-    char header[384]{};
-    if (selected) {
-        std::snprintf(header, sizeof(header), "Audio section %lld-%lld ms  %.230s",
-                      static_cast<long long>(selected->begin_audio_milliseconds),
-                      static_cast<long long>(selected->end_audio_milliseconds), selected->label);
-    } else {
-        std::snprintf(header, sizeof(header), "New audio-time section%s",
-                      view.audio_sections_truncated ? " (first 64 shown)" : "");
+    const auto editable = view.scene_available;
+    const auto navigation = view.audio_marker_navigation_available && view.audio_marker_transport_available;
+    const header_spec_t spec{
+        "Audio-time sections", audio_navigation_tip(view, true), audio_navigation_tip(view, false),
+        editable ? "Add a section from the typed times" : "Open a Compose chart to add sections",
+        selected ? "Delete the selected section" : "Select a section to delete it",
+        view.scene_available && navigation, editable, editable && selected != nullptr};
+    const auto clicks = render_group_header(context, spec);
+    request_audio_navigation(action, clicks.previous, clicks.next);
+    if (view.audio_section_count == 0) render_empty_list(context, "No audio-time sections");
+    for (std::size_t index = 0; index < view.audio_section_count; ++index) {
+        const auto& section = view.audio_sections[index];
+        char range[64]{};
+        std::snprintf(range, sizeof(range), "%lld-%lld ms",
+                      static_cast<long long>(section.begin_audio_milliseconds),
+                      static_cast<long long>(section.end_audio_milliseconds));
+        const auto row = render_list_row(context,
+            {key_audio_bookmark | (1ULL << 61U) | section.section_id, section.label && section.label[0] ? section.label : "(unnamed)",
+             range, section.section_id == state.audio_section_id, true}, view.input_occluded);
+        if (!row.clicked) continue;
+        state.audio_section_id = section.section_id;
+        copy_label(state.audio_section_label, section.label);
+        copy_time(state.audio_section_begin, section.begin_audio_milliseconds);
+        copy_time(state.audio_section_end, section.end_audio_milliseconds);
     }
-
-    nk_layout_row_dynamic(context, 25, 1);
-    if (wormedit::ui::chrome::safe_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
-        nk_layout_row_dynamic(context, 22, 1);
-        if (nk_combo_item_label(context, "New audio-time section", NK_TEXT_LEFT)) {
-            state.audio_section_id = 0;
-            state.audio_section_label.fill('\0');
-            copy_time(state.audio_section_begin, 0);
-            copy_time(state.audio_section_end, 1'000);
-        }
-        for (std::size_t index = 0; index < view.audio_section_count; ++index) {
-            const auto& section = view.audio_sections[index];
-            char item[384]{};
-            std::snprintf(item, sizeof(item), "%lld-%lld ms  %.260s",
-                          static_cast<long long>(section.begin_audio_milliseconds),
-                          static_cast<long long>(section.end_audio_milliseconds), section.label);
-            if (nk_combo_item_label(context, item, NK_TEXT_LEFT)) {
-                state.audio_section_id = section.section_id;
-                copy_label(state.audio_section_label, section.label);
-                copy_time(state.audio_section_begin, section.begin_audio_milliseconds);
-                copy_time(state.audio_section_end, section.end_audio_milliseconds);
-            }
-        }
-        nk_combo_end(context);
-    }
-    const auto enabled = view.scene_available;
-    if (!enabled)
-        nk_widget_disable_begin(context);
-    nk_layout_row_dynamic(context, 25, 1);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.audio_section_label.data(),
-                                         state.audio_section_label.size(), nk_filter_default);
-    nk_layout_row_dynamic(context, 18, 2);
-    nk_label(context, "Start (ms)", NK_TEXT_LEFT);
-    nk_label(context, "End (ms)", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 25, 2);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.audio_section_begin.data(),
-                                         state.audio_section_begin.size(), nk_filter_default);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.audio_section_end.data(),
-                                         state.audio_section_end.size(), nk_filter_default);
-    nk_layout_row_dynamic(context, 25, 2);
-    const auto apply_clicked = nk_button_label(context, selected ? "Apply" : "Add");
-    if (!enabled)
-        nk_widget_disable_end(context);
-    if (!enabled || !selected)
-        nk_widget_disable_begin(context);
-    const auto delete_clicked = nk_button_label(context, "Delete");
-    if (!enabled || !selected)
-        nk_widget_disable_end(context);
-
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
-        return;
-    }
-    if (apply_clicked) {
-        action.compose_section_id = state.audio_section_id;
-        std::memcpy(action.compose_marker_label, state.audio_section_label.data(),
-                    sizeof(action.compose_marker_label));
-        std::memcpy(action.compose_marker_audio_begin, state.audio_section_begin.data(),
-                    sizeof(action.compose_marker_audio_begin));
-        std::memcpy(action.compose_marker_audio_end, state.audio_section_end.data(),
-                    sizeof(action.compose_marker_audio_end));
-        action.compose_action = selected ? WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_SECTION
-                                         : WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION;
-    } else if (delete_clicked && selected) {
+    render_audio_form_fields(context, false);
+    nk_layout_row_dynamic(context, 24, 1);
+    if (!editable || !selected) nk_widget_disable_begin(context);
+    const auto apply = nk_button_label(context, "Apply label and times to selected");
+    if (!editable || !selected) nk_widget_disable_end(context);
+    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    if (clicks.add && editable) fill_audio_section_action(action, false);
+    else if (apply && selected) fill_audio_section_action(action, true);
+    else if (clicks.remove && selected) {
         action.compose_section_id = selected->section_id;
         action.compose_action = WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION;
-    }
-}
-
-void apply_bookmark_buttons(WormUiWorkspaceAction& action,
-                            const WormUiComposeBookmarkView* selected, bool apply_clicked,
-                            bool move_clicked, bool delete_clicked) {
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
-        return;
-    }
-    if (apply_clicked) {
-        action.compose_bookmark_id = state.bookmark_id;
-        std::memcpy(action.compose_marker_label, state.bookmark_label.data(),
-                    sizeof(action.compose_marker_label));
-        action.compose_action = selected ? WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK
-                                         : WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK;
-    } else if (move_clicked && selected) {
-        action.compose_bookmark_id = selected->bookmark_id;
-        action.compose_action = WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION;
-    } else if (delete_clicked && selected) {
-        action.compose_bookmark_id = selected->bookmark_id;
-        action.compose_action = WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK;
-    }
-}
-
-void render_bookmarks(struct nk_context* context, const WormUiComposeView& view,
-                      WormUiWorkspaceAction& action) {
-    const auto* selected = selected_bookmark(view);
-    char header[384]{};
-    if (selected) {
-        std::snprintf(header, sizeof(header), "Bookmark M%llu:%llu  %.260s",
-                      static_cast<unsigned long long>(selected->measure_number),
-                      static_cast<unsigned long long>(selected->row), selected->label);
-    } else {
-        std::snprintf(header, sizeof(header), "New bookmark at cursor%s",
-                      view.beat_bookmarks_truncated ? " (first 64 shown)" : "");
-    }
-
-    nk_layout_row_dynamic(context, 25, 1);
-    if (wormedit::ui::chrome::safe_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
-        nk_layout_row_dynamic(context, 22, 1);
-        if (nk_combo_item_label(context, "New bookmark at cursor", NK_TEXT_LEFT)) {
-            state.bookmark_id = 0;
-            state.bookmark_label.fill('\0');
-        }
-        for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
-            const auto& bookmark = view.beat_bookmarks[index];
-            char item[384]{};
-            std::snprintf(item, sizeof(item), "M%llu:%llu  %.280s",
-                          static_cast<unsigned long long>(bookmark.measure_number),
-                          static_cast<unsigned long long>(bookmark.row), bookmark.label);
-            if (nk_combo_item_label(context, item, NK_TEXT_LEFT)) {
-                state.bookmark_id = bookmark.bookmark_id;
-                copy_label(state.bookmark_label, bookmark.label);
-            }
-        }
-        nk_combo_end(context);
-    }
-    if (!view.scene_available) {
-        nk_widget_disable_begin(context);
-    }
-    nk_layout_row_dynamic(context, 25, 1);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.bookmark_label.data(),
-                                         state.bookmark_label.size(), nk_filter_default);
-    nk_layout_row_dynamic(context, 25, 3);
-    const auto apply_clicked =
-        nk_button_label(context, selected ? "Apply rename" : "Add at cursor");
-    if (!view.scene_available) {
-        nk_widget_disable_end(context);
-    }
-    if (!view.scene_available || !selected) {
-        nk_widget_disable_begin(context);
-    }
-    const auto move_clicked = nk_button_label(context, "Move here");
-    const auto delete_clicked = nk_button_label(context, "Delete");
-    if (!view.scene_available || !selected) {
-        nk_widget_disable_end(context);
-    }
-
-    apply_bookmark_buttons(action, selected, apply_clicked, move_clicked, delete_clicked);
-}
-
-void format_section_header(char (&header)[384], const WormUiComposeView& view,
-                           const WormUiComposeSectionView* selected) {
-    if (selected) {
-        std::snprintf(header, sizeof(header), "Section M%llu:%llu-M%llu:%llu  %.220s",
-                      static_cast<unsigned long long>(selected->begin_measure_number),
-                      static_cast<unsigned long long>(selected->begin_row),
-                      static_cast<unsigned long long>(selected->end_measure_number),
-                      static_cast<unsigned long long>(selected->end_row), selected->label);
-    } else if (view.beat_section_selection_span_available) {
-        std::snprintf(
-            header, sizeof(header), "New section M%llu:%llu-M%llu:%llu%s",
-            static_cast<unsigned long long>(view.beat_section_selection_begin_measure_number),
-            static_cast<unsigned long long>(view.beat_section_selection_begin_row),
-            static_cast<unsigned long long>(view.beat_section_selection_end_measure_number),
-            static_cast<unsigned long long>(view.beat_section_selection_end_row),
-            view.beat_sections_truncated ? " (first 64 shown)" : "");
-    } else {
-        std::snprintf(header, sizeof(header), "New one-snap section at cursor%s",
-                      view.beat_sections_truncated ? " (first 64 shown)" : "");
-    }
-}
-
-void render_section_picker(struct nk_context* context, const WormUiComposeView& view,
-                           const char* header) {
-    nk_layout_row_dynamic(context, 25, 1);
-    if (!wormedit::ui::chrome::safe_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
-        return;
-    }
-    nk_layout_row_dynamic(context, 22, 1);
-    const auto* new_section_label = view.beat_section_selection_span_available
-                                        ? "New section from selected span"
-                                        : "New one-snap section at cursor";
-    if (nk_combo_item_label(context, new_section_label, NK_TEXT_LEFT)) {
-        state.section_id = 0;
-        state.section_label.fill('\0');
-    }
-    for (std::size_t index = 0; index < view.beat_section_count; ++index) {
-        const auto& section = view.beat_sections[index];
-        char item[384]{};
-        std::snprintf(item, sizeof(item), "M%llu:%llu-M%llu:%llu  %.240s",
-                      static_cast<unsigned long long>(section.begin_measure_number),
-                      static_cast<unsigned long long>(section.begin_row),
-                      static_cast<unsigned long long>(section.end_measure_number),
-                      static_cast<unsigned long long>(section.end_row), section.label);
-        if (nk_combo_item_label(context, item, NK_TEXT_LEFT)) {
-            state.section_id = section.section_id;
-            copy_label(state.section_label, section.label);
-        }
-    }
-    nk_combo_end(context);
-}
-
-void render_sections(struct nk_context* context, const WormUiComposeView& view,
-                     WormUiWorkspaceAction& action) {
-    const auto* selected = selected_section(view);
-    char header[384]{};
-    format_section_header(header, view, selected);
-    render_section_picker(context, view, header);
-    if (!view.scene_available) {
-        nk_widget_disable_begin(context);
-    }
-    nk_layout_row_dynamic(context, 25, 1);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.section_label.data(),
-                                         state.section_label.size(), nk_filter_default);
-    nk_layout_row_dynamic(context, 25, 2);
-    const auto apply_clicked =
-        nk_button_label(context, selected                                     ? "Apply rename"
-                                 : view.beat_section_selection_span_available ? "Add selected span"
-                                                                              : "Add snap span");
-    if (!view.scene_available) {
-        nk_widget_disable_end(context);
-    }
-    if (!view.scene_available || !selected) {
-        nk_widget_disable_begin(context);
-    }
-    const auto set_begin_clicked = nk_button_label(context, "Set start");
-    nk_layout_row_dynamic(context, 25, 2);
-    const auto set_end_clicked = nk_button_label(context, "Set end");
-    const auto delete_clicked = nk_button_label(context, "Delete");
-    if (!view.scene_available || !selected) {
-        nk_widget_disable_end(context);
-    }
-
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
-        return;
-    }
-    if (apply_clicked) {
-        action.compose_section_id = state.section_id;
-        std::memcpy(action.compose_marker_label, state.section_label.data(),
-                    sizeof(action.compose_marker_label));
-        action.compose_action = selected ? WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL
-                                         : WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION;
-    } else if (set_begin_clicked && selected) {
-        action.compose_section_id = selected->section_id;
-        action.compose_action = WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN;
-    } else if (set_end_clicked && selected) {
-        action.compose_section_id = selected->section_id;
-        action.compose_action = WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_END;
-    } else if (delete_clicked && selected) {
-        action.compose_section_id = selected->section_id;
-        action.compose_action = WORM_UI_COMPOSE_ACTION_DELETE_BEAT_SECTION;
     }
 }
 
@@ -504,7 +579,6 @@ void worm_ui_nuklear_render_compose_markers(struct nk_context* context,
         return;
     }
     synchronize(*view);
-    render_audio_navigation(context, *view, *action);
     render_bookmarks(context, *view, *action);
     render_sections(context, *view, *action);
     render_audio_bookmarks(context, *view, *action);

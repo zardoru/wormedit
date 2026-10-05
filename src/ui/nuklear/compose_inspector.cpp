@@ -43,96 +43,10 @@ static void render_initial_bpm_control(const ComposeInspectorContext& inspector)
     }
 }
 
-static void render_selected_bmson_slice_controls(const ComposeInspectorContext& inspector) {
-    const auto& view = *inspector.view;
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    const bool enabled = view.scene_available && view.selected_bmson_bgm_event_id != 0 &&
-                         view.selected_bmson_source_lane_id != 0;
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_label(context, "BMSON slice", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 24, 2);
-    if (!enabled) nk_widget_disable_begin(context);
-    const auto restart_clicked = nk_button_label(context, "Restart");
-    const auto continue_clicked = nk_button_label(context, "Continue");
-    if (!enabled) nk_widget_disable_end(context);
-    if (!enabled || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE ||
-        (!restart_clicked && !continue_clicked)) return;
-    action->compose_action = restart_clicked ? WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART
-                                            : WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE;
-    action->compose_bmson_bgm_event_id = view.selected_bmson_bgm_event_id;
-    action->compose_input_chart_id = view.chart_id;
-    action->compose_input_document_revision = view.document_revision;
-}
-
-static void render_staged_bmson_regions(const ComposeInspectorContext& inspector) {
-    const auto* view = inspector.view;
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    if (view->staged_bmson_marker_count == 0 ||
-        !nk_tree_push(context, NK_TREE_TAB, "Staged BMSON regions", NK_MAXIMIZED))
-        return;
-    state.bmson_audition_index = std::clamp(state.bmson_audition_index, 1,
-                                            static_cast<int>(view->staged_bmson_marker_count));
-    nk_layout_row_dynamic(context, 24, 1);
-    nk_property_int(context, "Region", 1, &state.bmson_audition_index,
-                    static_cast<int>(view->staged_bmson_marker_count), 1, 1.0f);
-    const auto selected_index = static_cast<std::size_t>(state.bmson_audition_index - 1);
-    const auto assigned_lane = view->staged_bmson_marker_playable_lanes[selected_index];
-    nk_labelf(context, NK_TEXT_LEFT, "%s · %s",
-              view->staged_bmson_marker_restarts[selected_index] ? "Restart" : "Continue",
-              assigned_lane == 0 ? "BGM" : "Playable key lane");
-    const auto selected = static_cast<std::uint64_t>(state.bmson_audition_index);
-    if (nk_button_label(context, "Audition staged region"))
-        append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT,
-                             0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, selected);
-    nk_layout_row_dynamic(context, 24, 2);
-    if (nk_button_label(context, "Assign key"))
-        append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_ACTIVE_LANE,
-                             0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, selected);
-    if (nk_button_label(context, "Assign BGM"))
-        append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_BGM,
-                             0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, selected);
-    if (nk_button_label(context, "Restart"))
-        append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_TOGGLE_DRAFT_RESTART,
-                             0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, selected);
-    if (nk_button_label(context, "Remove"))
-        append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT,
-                             0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, selected);
-    nk_tree_pop(context);
-}
-
 static void render_compose_marker_section(const ComposeInspectorContext& inspector) {
-    const auto* view = inspector.view;
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    if (!nk_tree_push(context, NK_TREE_TAB, "Markers / sections", NK_MINIMIZED)) return;
-    nk_layout_row_begin(context, NK_DYNAMIC, 24, 2);
-    const auto disabled = !view->scene_available || !view->beat_marker_navigation_available;
-    if (disabled) nk_widget_disable_begin(context);
-    nk_layout_row_push(context, wormedit::ui::chrome::property_label_ratio);
-    const auto previous_clicked = nk_button_label(context, "Prev marker");
-    nk_layout_row_push(context, wormedit::ui::chrome::property_label_ratio);
-    const auto next_clicked = nk_button_label(context, "Next marker");
-    if (disabled) nk_widget_disable_end(context);
-    nk_layout_row_end(context);
-    nk_layout_row_dynamic(context, 36, 1);
-    nk_label_wrap(context, view->beat_marker_navigation_available
-                          ? "Navigate bookmarks and sections"
-                          : "No bookmarks or sections");
-    if (action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
-        if (previous_clicked)
-            action->kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER;
-        else if (next_clicked)
-            action->kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER;
-    }
-    worm_ui_nuklear_render_compose_markers(context, view, action);
-    nk_tree_pop(context);
+    if (!nk_tree_push(inspector.context, NK_TREE_TAB, "Bookmarks and sections", NK_MINIMIZED)) return;
+    worm_ui_nuklear_render_compose_markers(inspector.context, inspector.view, inspector.action);
+    nk_tree_pop(inspector.context);
 }
 
 // Lets the layout at the cursor switch between profiles with the same lane count.
@@ -249,37 +163,7 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
         nk_layout_row_dynamic(inspector.context, 18, 1);
         nk_label(inspector.context, "Building waveform...", NK_TEXT_LEFT);
     }
-    render_selected_bmson_slice_controls(inspector);
-    render_staged_bmson_regions(inspector);
     render_compose_marker_section(inspector);
-}
-
-void render_compose_note_label_editor(const ComposeInspectorContext& inspector) {
-    const auto* view = inspector.view;
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_labelf(context, NK_TEXT_LEFT, "Label (%zu)", view->selected_note_count);
-    const auto disabled = !view->scene_available || view->selected_note_count == 0;
-    if (disabled) nk_widget_disable_begin(context);
-    nk_layout_row_dynamic(context, 25, 1);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.note_label.data(),
-                                         state.note_label.size(), nk_filter_default);
-    if (view->focus_note_label_editor) {
-        nk_edit_focus(context, NK_EDIT_GOTO_END_ON_ACTIVATE);
-        action->compose_note_label_focus_consumed = true;
-    }
-    nk_layout_row_dynamic(context, 25, 2);
-    if (nk_button_label(context, "Apply") &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        memcpy(action->compose_note_label, state.note_label.data(),
-               sizeof(action->compose_note_label));
-        action->compose_action = WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL;
-    }
-    if (nk_button_label(context, "Clear") &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL;
-    if (disabled) nk_widget_disable_end(context);
 }
 
 void render_compose_label_search(const ComposeInspectorContext& inspector) {
@@ -287,7 +171,7 @@ void render_compose_label_search(const ComposeInspectorContext& inspector) {
     auto* context = inspector.context;
     auto* action = inspector.action;
     nk_layout_row_dynamic(context, 18, 1);
-    nk_label(context, "Find label", NK_TEXT_LEFT);
+    nk_label(context, "Find note label", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 25, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.label_search.data(),
                                          state.label_search.size(), nk_filter_default);
@@ -653,10 +537,13 @@ void render_quantize_report_row(nk_context* context,
     }
 }
 
-void render_quantize_report_rows(nk_context* context, const char* title,
+// Nuklear keys a tree's open state by its call site, so the two report trees must pass distinct
+// ids; sharing one made the applied report follow the collapsed preview tree and look empty.
+void render_quantize_report_rows(nk_context* context, const char* title, int tree_id,
                                  const WormUiComposeQuantizeReportRowView* rows,
-                                 std::size_t count, std::size_t total, bool truncated) {
-    if (!nk_tree_push(context, NK_TREE_TAB, title, NK_MINIMIZED)) return;
+                                 std::size_t count, std::size_t total, bool truncated,
+                                 nk_collapse_states initial = NK_MINIMIZED) {
+    if (!nk_tree_push_id(context, NK_TREE_TAB, title, initial, tree_id)) return;
     if (truncated) {
         nk_layout_row_dynamic(context, 18, 1);
         nk_labelf(context, NK_TEXT_LEFT, "%zu rows shown of %zu", count, total);
@@ -709,105 +596,15 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
         render_quantize_preset_actions(inspector);
         nk_tree_pop(context);
     }
-    render_quantize_report_rows(context, "Preview rows", view->quantize_preview_rows,
+    render_quantize_report_rows(context, "Preview rows", 0, view->quantize_preview_rows,
                                 view->quantize_preview_row_count,
                                 view->quantize_preview_total_rows,
                                 view->quantize_preview_rows_truncated);
-    render_quantize_report_rows(context, "Last applied report", view->quantize_applied_rows,
-                                view->quantize_applied_row_count,
-                                view->quantize_applied_total_rows,
-                                view->quantize_applied_rows_truncated);
-}
-
-auto semantic_layer_target_active(const WormUiComposeView* view) -> bool {
-    return view->semantic_layer_target_none || view->semantic_layer_target.layer_id != 0;
-}
-
-auto render_semantic_layer_palette_panel(const ComposeInspectorContext& inspector) -> bool {
-    return nk_tree_push(inspector.context, NK_TREE_TAB, "Semantic layers", NK_MAXIMIZED) != 0;
-}
-
-void render_semantic_layer_selected_panel(const ComposeInspectorContext& inspector,
-                                           std::size_t layer_count) {
-    (void)layer_count;
-    const auto& layer = inspector.view->semantic_layer_target;
-    if (layer.layer_id == 0 || !layer.name) return;
-    nk_layout_row_dynamic(inspector.context, 22, 1);
-    nk_labelf(inspector.context, NK_TEXT_LEFT, "%s · %zu notes, %zu BGM", layer.name,
-              layer.assigned_note_count, layer.assigned_bgm_count);
-}
-
-static auto semantic_layer_membership_hint(const WormUiComposeView& view,
-                                          bool target_active) -> const char* {
-    if (!target_active) return "Choose a layer";
-    if (view.semantic_layer_target_none) return "No layer only assigns";
-    if (view.selected_note_count == 0 && view.selected_bgm_event_count == 0)
-        return "Select notes or BGM events first";
-    if (view.semantic_layer_target_locked) return "Unlock the layer first";
-    if (!view.scene_available) return "Open a Compose chart";
-    return nullptr;
-}
-
-void render_semantic_layer_membership_buttons(const ComposeInspectorContext& inspector,
-                                                     bool target_active) {
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    const auto* view = inspector.view;
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_labelf(context, NK_TEXT_LEFT, "Layer (%zu notes, %zu BGM)",
-              view->selected_note_count, view->selected_bgm_event_count);
-    const auto membership_enabled = view->scene_available && target_active &&
-                                    !view->semantic_layer_target_locked &&
-                                    (view->selected_note_count != 0 ||
-                                     view->selected_bgm_event_count != 0);
-    const auto button = [&](const char* label, WormUiComposeActionKind kind) {
-        const auto enabled = membership_enabled &&
-            (!view->semantic_layer_target_none || kind == WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
-        if (!enabled) nk_widget_disable_begin(context);
-        const auto clicked = nk_button_label(context, label);
-        if (!enabled) nk_widget_disable_end(context);
-        if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-            action->compose_action = kind;
-    };
-    nk_layout_row_dynamic(context, 24, 1);
-    if (!view->scene_available || !target_active || view->semantic_layer_target_none) nk_widget_disable_begin(context);
-    const auto select_clicked = nk_button_label(context, "Select notes in layer");
-    if (!view->scene_available || !target_active || view->semantic_layer_target_none) nk_widget_disable_end(context);
-    if (select_clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER_NOTES;
-    button("Assign selected objects", WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
-    button("Remove selected objects", WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER);
-    button("Toggle selected objects", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER);
-    if (const auto* hint = semantic_layer_membership_hint(*view, target_active)) {
-        nk_layout_row_dynamic(context, 18, 1);
-        nk_label(context, hint, NK_TEXT_LEFT);
-    }
-}
-
-void render_semantic_layer_target_buttons(const ComposeInspectorContext& inspector,
-                                                 bool target_active) {
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    const auto* view = inspector.view;
-    const auto layer_paint_enabled = view->scene_available && target_active &&
-                                     !view->semantic_layer_target_locked;
-    nk_layout_row_dynamic(context, 24, 2);
-    if (!layer_paint_enabled) nk_widget_disable_begin(context);
-    const auto paint_clicked = nk_button_label(
-        context, view->semantic_layer_paint_mode_active ? "Paint: Armed" : "Paint: Off");
-    if (!layer_paint_enabled) nk_widget_disable_end(context);
-    if (paint_clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE;
-    if (!target_active || view->semantic_layer_target_none) nk_widget_disable_begin(context);
-    const auto solo_clicked =
-        nk_button_label(context, view->semantic_layer_solo_active ? "Solo: On" : "Solo: Off");
-    if (!target_active || view->semantic_layer_target_none) nk_widget_disable_end(context);
-    if (solo_clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO;
-    nk_layout_row_dynamic(context, 24, 1);
-    if (!target_active) nk_widget_disable_begin(context);
-    const auto clear_clicked = nk_button_label(context, "Clear target");
-    if (!target_active) nk_widget_disable_end(context);
-    if (clear_clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER;
+    // Only after an apply that moved rows; an empty heading says nothing, and it opens expanded so
+    // the moved rows are visible without another click.
+    if (view->quantize_applied_row_count != 0)
+        render_quantize_report_rows(context, "Last applied report", 1, view->quantize_applied_rows,
+                                    view->quantize_applied_row_count,
+                                    view->quantize_applied_total_rows,
+                                    view->quantize_applied_rows_truncated, NK_MAXIMIZED);
 }

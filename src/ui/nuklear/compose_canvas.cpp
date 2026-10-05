@@ -261,6 +261,21 @@ static void field_text(const ComposePaintContext& paint, struct nk_rect bounds, 
         wormedit::ui::nuklear::compose_field_font(font));
 }
 
+// White-on-black-outline text stays legible on any lane color: the glyph run is drawn in black
+// at the eight 1 px offsets, then in the text color.
+static void field_text_outlined(const ComposePaintContext& paint, struct nk_rect bounds,
+                                const char* text, int length, const nk_user_font* font,
+                                nk_color foreground,
+                                wormedit::ui::field::layer_t layer = 0) {
+    static constexpr std::array<std::array<float, 2>, 8> offsets{{
+        {-1.0f, -1.0f}, {0.0f, -1.0f}, {1.0f, -1.0f}, {-1.0f, 0.0f},
+        {1.0f, 0.0f}, {-1.0f, 1.0f}, {0.0f, 1.0f}, {1.0f, 1.0f}}};
+    for (const auto& offset : offsets)
+        field_text(paint, nk_rect(bounds.x + offset[0], bounds.y + offset[1], bounds.w, bounds.h),
+                   text, length, font, nk_rgba(0, 0, 0, 0), nk_rgb(0, 0, 0), layer);
+    field_text(paint, bounds, text, length, font, nk_rgba(0, 0, 0, 0), foreground, layer);
+}
+
 static auto compose_tile_request(const ComposePaintContext& paint, unsigned pass, bool scrolling)
     -> wormedit::ui::field::tile_request_t {
     const auto& view=*paint.view;
@@ -836,8 +851,8 @@ static void draw_compose_play_lane_titles(const ComposePaintContext& paint) {
             if (label_length > 0) {
                 const auto label_bounds = nk_rect(rect.x + 2.0f, rect.y + 2.0f,
                                                   std::min(28.0f, rect.w - 4.0f), 15.0f);
-                field_text(paint, label_bounds, label, static_cast<int>(strlen(label)),
-                             paint.context->style.font, nk_rgb(37, 43, 55), nk_rgb(122, 133, 153));
+                field_text_outlined(paint, label_bounds, label, static_cast<int>(strlen(label)),
+                                    paint.context->style.font, nk_rgb(240, 244, 250));
             }
         }
     }

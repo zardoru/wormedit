@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cmath>
+#include <optional>
 
 using namespace wormedit::ui;
 
@@ -79,4 +80,33 @@ TEST_CASE("bookmark rename target chooses the closest line with a stable ID tie 
     CHECK_FALSE(bookmark_rename_target_at(lines, 163.0, 100.0, 200.0));
     CHECK_FALSE(bookmark_rename_target_at(lines, 198.0, 120.0, 200.0));
     CHECK_FALSE(bookmark_rename_target_at(lines, NAN, 100.0, 200.0));
+}
+
+TEST_CASE("double-click target prefers an exact line hit over a neighbor's label zone",
+          "[unit][ui][bookmark-label]") {
+    // A at y=100 and B at y=110: y=100 is on A's line and inside B's label zone above it.
+    const std::array forward{bookmark_rename_line_t{1, 100.0}, bookmark_rename_line_t{2, 110.0}};
+    const std::array reversed{bookmark_rename_line_t{2, 110.0}, bookmark_rename_line_t{1, 100.0}};
+    CHECK(bookmark_double_click_target_at(forward, 300.0, 100.0, 400.0, 18.0) ==
+          std::optional<std::uint64_t>{1});
+    CHECK(bookmark_double_click_target_at(reversed, 300.0, 100.0, 400.0, 18.0) ==
+          std::optional<std::uint64_t>{1});
+}
+
+TEST_CASE("double-click label zones belong to labelled lines and the nearest line wins",
+          "[unit][ui][bookmark-label]") {
+    // Both lines are below y=80 (18 px zone): 100 is 20 away (out), 90 is 10 away.
+    const std::array lines{bookmark_rename_line_t{1, 90.0}, bookmark_rename_line_t{2, 95.0}};
+    CHECK(bookmark_double_click_target_at(lines, 300.0, 80.0, 400.0, 18.0) ==
+          std::optional<std::uint64_t>{1});
+    const std::array reversed{bookmark_rename_line_t{2, 95.0}, bookmark_rename_line_t{1, 90.0}};
+    CHECK(bookmark_double_click_target_at(reversed, 300.0, 80.0, 400.0, 18.0) ==
+          std::optional<std::uint64_t>{1});
+    // An unnamed bookmark draws no label, so its zone is not a target.
+    const std::array unnamed{bookmark_rename_line_t{1, 90.0, false}};
+    CHECK_FALSE(bookmark_double_click_target_at(unnamed, 300.0, 80.0, 400.0, 18.0));
+    // Equal distances go to the lower ID whatever the input order.
+    const std::array tie{bookmark_rename_line_t{5, 90.0}, bookmark_rename_line_t{3, 90.0}};
+    CHECK(bookmark_double_click_target_at(tie, 300.0, 80.0, 400.0, 18.0) ==
+          std::optional<std::uint64_t>{3});
 }

@@ -87,6 +87,50 @@ auto bookmark_rename_target_at(std::span<const bookmark_rename_line_t> lines,
     return nearest;
 }
 
+namespace {
+
+// The line within `reach` pixels of `y`, nearest first and then lowest ID.
+auto nearest_line_within(std::span<const bookmark_rename_line_t> lines, double y, double reach)
+    -> std::optional<std::uint64_t> {
+    auto result = std::optional<std::uint64_t>{};
+    auto best = reach;
+    for (const auto& line : lines) {
+        if (line.bookmark_id == 0 || !std::isfinite(line.y)) continue;
+        const auto distance = std::abs(y - line.y);
+        if (distance > best || (distance == best && result && line.bookmark_id >= *result)) continue;
+        result = line.bookmark_id;
+        best = distance;
+    }
+    return result;
+}
+
+// The labelled line whose name box (just above the line) contains `y`; the closest line wins.
+auto label_zone_target(std::span<const bookmark_rename_line_t> lines, double y,
+                       double label_height) -> std::optional<std::uint64_t> {
+    auto result = std::optional<std::uint64_t>{};
+    auto best = label_height;
+    for (const auto& line : lines) {
+        // The name sits above its line: y grows downward, so that is a smaller y.
+        const auto above = line.y - y;
+        if (line.bookmark_id == 0 || !line.labelled || !std::isfinite(line.y) || above <= 0.0 ||
+            above > best || (above == best && result && line.bookmark_id >= *result)) continue;
+        result = line.bookmark_id;
+        best = above;
+    }
+    return result;
+}
+
+} // namespace
+
+auto bookmark_double_click_target_at(std::span<const bookmark_rename_line_t> lines,
+                                     double x, double y, double right_edge, double label_height)
+    -> std::optional<std::uint64_t> {
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(right_edge) ||
+        !std::isfinite(label_height) || x < 0.0 || x > right_edge + 2.0) return std::nullopt;
+    if (const auto exact = nearest_line_within(lines, y, 6.0)) return exact;
+    return x >= right_edge * 0.5 ? label_zone_target(lines, y, label_height) : std::nullopt;
+}
+
 auto layout_bookmark_label(std::string_view label, const bookmark_text_width_t& width_of,
                            float font_height, float line_y, const bookmark_label_field_t& field,
                            const std::optional<bookmark_label_box_t>& previous)

@@ -346,12 +346,35 @@ static bool nuklear_text_entry_active(void);
 static bool project_modal_active(const WormUiWorkspaceView& view);
 static bool notification_history_focused();
 
+// Ctrl+A with the pointer over the Sounds or BGA dock list selects the rows shown there instead
+// of the chart's notes. An empty list selects nothing and still consumes the key.
+static bool select_all_in_hovered_dock_list(const SDL_KeyboardEvent& event) {
+    constexpr auto others = SDL_KMOD_SHIFT | SDL_KMOD_ALT | SDL_KMOD_GUI;
+    if (!g_context || event.scancode != SDL_SCANCODE_A || (event.mod & SDL_KMOD_CTRL) == 0 ||
+        (event.mod & others) != 0 || nuklear_text_entry_active() ||
+        !g_compose_area_shortcuts_active) return false;
+    auto& state = worm_ui_nuklear_compose_state();
+    const auto x = g_context->input.mouse.pos.x;
+    const auto y = g_context->input.mouse.pos.y;
+    if (worm_ui_nuklear_sound_list_contains(x, y)) {
+        worm_ui_keysound_select_all(state.keysound_selection, state.keysound_shown);
+        return true;
+    }
+    const auto in_bga = state.bga_list_valid && x >= state.bga_list_x && y >= state.bga_list_y &&
+        x < state.bga_list_x + state.bga_list_width && y < state.bga_list_y + state.bga_list_height;
+    if (!in_bga) return false;
+    worm_ui_keysound_select_all(state.bga_selection, state.bga_shown);
+    return true;
+}
+
 static void queue_shortcut_key_event(const SDL_KeyboardEvent* event, bool tap_capture = false) {
     if (!event || (!g_window && !g_headless) || !g_window_focused ||
         event->type != SDL_EVENT_KEY_DOWN || !event->down ||
         !frontend_event_window_matches(event->windowID) || g_shortcut_events_overflowed) {
         return;
     }
+
+    if (!tap_capture && select_all_in_hovered_dock_list(*event)) return;
 
     if (!tap_capture && compose_area_consumes_shortcut({g_compose_area_shortcuts_active, g_window_focused,
         project_dialog_active() || g_new_project_wizard.open,
@@ -1719,7 +1742,10 @@ static void render_transport_rate(const WormUiWorkspaceView& view, WormUiWorkspa
         action->transport_rate_index = static_cast<uint8_t>(target);
     }
     if (!view.transport_keep_pitch_available) nk_widget_disable_begin(g_context);
-    if (wormedit::ui::chrome::mode_button(g_context, "Keep pitch", "Preserve pitch at reduced speed", view.transport_keep_pitch) &&
+    const auto* keep_pitch_hint = view.transport_keep_pitch_available
+        ? "Preserve pitch at reduced speed" : "Keep pitch is unavailable without audio output";
+    if (wormedit::ui::chrome::IconButton{Glyph::music_2, keep_pitch_hint,
+                                         view.transport_keep_pitch}.render(g_context) &&
         view.transport_keep_pitch_available && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
         action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH;
         action->transport_keep_pitch = !view.transport_keep_pitch;
@@ -1783,6 +1809,10 @@ static void render_notification_landing_status(const WormUiWorkspaceView& view,
 static void render_status_bar(const WormUiWorkspaceView* view,
                               WormUiWorkspaceAction* action) {
     const bool snap_label_visible = view->compose.visible && view->compose.area_snap_denominator != 0;
+    // Zoom readout, moved here from the Compose toolbar; hidden when the window is too narrow.
+    const bool zoom_label_visible = view->compose.visible && snap_label_visible &&
+        std::isfinite(view->compose.pixels_per_standard_measure) &&
+        nk_window_get_bounds(g_context).w >= 900.0f;
     nk_layout_row_template_begin(g_context, 30);
     wormedit::ui::chrome::IconButton::layout_columns(g_context, 4);
     // Rate stepper: chevrons hug the value, with a gutter on both sides.
@@ -1791,8 +1821,9 @@ static void render_status_bar(const WormUiWorkspaceView* view,
     nk_layout_row_template_push_static(g_context, 40);
     wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);
     nk_layout_row_template_push_static(g_context, 10);
-    nk_layout_row_template_push_static(g_context, 100);
+    wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);  // Keep pitch.
     if (snap_label_visible) nk_layout_row_template_push_static(g_context, 64);
+    if (zoom_label_visible) nk_layout_row_template_push_static(g_context, 116);
     nk_layout_row_template_push_dynamic(g_context);
     if (notification_badge_visible(view->notifications))
         nk_layout_row_template_push_static(g_context, 180);
@@ -1827,6 +1858,9 @@ static void render_status_bar(const WormUiWorkspaceView* view,
     if (snap_label_visible)
         nk_labelf(g_context, NK_TEXT_CENTERED, "Snap 1/%llu",
                   static_cast<unsigned long long>(view->compose.area_snap_denominator));
+    if (zoom_label_visible)
+        nk_labelf(g_context, NK_TEXT_CENTERED, "%.0f px/measure",
+                  view->compose.pixels_per_standard_measure);
     const auto status = workspace_status_line(*view);
     nk_label_colored(g_context, status.c_str(), NK_TEXT_LEFT,
                       notification_status_color(view->notifications));

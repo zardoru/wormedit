@@ -106,8 +106,9 @@ auto sample_workflow_uses_sounds(nuklear_event_harness_t& harness) -> bool {
     (void)click_at(harness, sound_row->first, sound_row->second);
     if (state.keysound_selection.primary != 40 || state.armed_resource_id != 40 ||
         !state.armed_from_sounds_dock ||
-        harness.drawn_text().find("Assign selected") == std::string::npos ||
-        harness.drawn_text().find("Disarm") == std::string::npos)
+        // The inspector's resource list is retired, so its Disarm is gone. ("Assign selected" is
+        // not checked: the semantic-layer section draws "Assign selected objects".)
+        harness.drawn_text().find("Disarm") != std::string::npos)
         return false;
     const auto frames = click_at(harness, 300.0f, 400.0f);
     const auto* paint = note_paint_begin(frames);
@@ -117,7 +118,7 @@ auto sample_workflow_uses_sounds(nuklear_event_harness_t& harness) -> bool {
 auto compact_layout_keeps_sound_picker(nuklear_event_harness_t& harness) -> bool {
     const auto& text = harness.drawn_text();
     return text.find("Sounds  1") != std::string::npos &&
-           text.find("Label (0)") == std::string::npos &&
+           text.find("Find note label") == std::string::npos &&
            text.find("Layers  0") == std::string::npos;
 }
 
@@ -147,43 +148,8 @@ auto compact_toolbar_sounds_toggle_status(nuklear_event_harness_t& harness) -> s
 
 auto wide_layout_restores_optional_docks(nuklear_event_harness_t& harness) -> bool {
     const auto& text = harness.drawn_text();
-    return text.find("Label (0)") != std::string::npos &&
+    return text.find("Find note label") != std::string::npos &&
            text.find("Layers  0") != std::string::npos;
-}
-
-auto bgm_catalog_is_available(nuklear_event_harness_t& harness) -> bool {
-    const auto& text = harness.drawn_text();
-    return text.find("music.ogg") != std::string::npos &&
-           text.find("Place BGM at cursor") != std::string::npos;
-}
-
-auto bga_catalog_is_available(nuklear_event_harness_t& harness) -> bool {
-    const auto& text = harness.drawn_text();
-    return text.find("background.png") != std::string::npos &&
-           text.find("Place BGA background at cursor") != std::string::npos;
-}
-
-auto generic_arm_and_disarm_clear_provenance(nuklear_event_harness_t& harness) -> bool {
-    auto& state = worm_ui_nuklear_compose_state();
-    state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bgm;
-    state.armed_resource_id = 0;
-    state.armed_from_bga_dock = true;
-    state.bga_auto_increment_on_place = true;
-    scroll_inspector(harness, -1.0f, 20);
-    if (harness.drawn_text().find("music.ogg") == std::string::npos) return false;
-    const auto arm_center = harness.drawn_text_center("Arm");
-    if (!arm_center) return false;
-    (void)click_at(harness, arm_center->first, arm_center->second);
-    if (state.armed_resource_id != 100 || state.armed_from_bga_dock ||
-        state.bga_auto_increment_on_place)
-        return false;
-    state.armed_from_bga_dock = true;
-    state.bga_auto_increment_on_place = true;
-    const auto disarm_center = harness.drawn_text_center("Disarm");
-    if (!disarm_center) return false;
-    (void)click_at(harness, disarm_center->first, disarm_center->second);
-    return state.armed_resource_id == 0 && !state.armed_from_bga_dock &&
-           !state.bga_auto_increment_on_place;
 }
 
 } // namespace
@@ -241,51 +207,4 @@ TEST_CASE("Compact Compose layout keeps Sounds available and restores optional d
         (void)wide.frame();
         CHECK(wide_layout_restores_optional_docks(wide));
     }
-}
-
-TEST_CASE("BGM and BGA inspector catalogs stay available and generic arming clears dock provenance",
-          "[frontend-state][event-harness][inspector-resources][bgm-bga]") {
-    nuklear_event_harness_t harness{1600, 900};
-    REQUIRE(harness.ready());
-    auto& view = harness.view().compose;
-    const std::array<WormUiComposeResourceView, 2> resources{{
-        {.resource_id = 100, .asset_id = 1000, .roles = WORM_UI_COMPOSE_RESOURCE_ROLE_BGM,
-         .target_index = "BGM", .name = "music.ogg", .source_name = "music.ogg"},
-        {.resource_id = 200, .asset_id = 2000, .roles = WORM_UI_COMPOSE_RESOURCE_ROLE_BGA,
-         .target_index = "01", .name = "background.png", .source_name = "background.png"}}};
-    set_resource_fixture(view, resources.data(), resources.size());
-    auto& state = worm_ui_nuklear_compose_state();
-    state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bgm;
-    view.selected_bgm_event_id = 11;
-    view.selected_assigned_resource_id = 100;
-    (void)harness.frame();
-    scroll_inspector(harness, -1.0f, 20);
-    INFO(harness.drawn_text());
-    CHECK(bgm_catalog_is_available(harness));
-    state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
-    (void)harness.frame();
-    scroll_inspector(harness, -1.0f, 20);
-    INFO(harness.drawn_text());
-    CHECK(bga_catalog_is_available(harness));
-}
-
-TEST_CASE("Generic inspector Arm and Disarm clear BGA dock provenance",
-          "[frontend-state][event-harness][inspector-resources][provenance]") {
-    nuklear_event_harness_t harness{1600, 900};
-    REQUIRE(harness.ready());
-    auto& view = harness.view().compose;
-    const std::array<WormUiComposeResourceView, 1> resources{{
-        {.resource_id = 100, .asset_id = 1000, .roles = WORM_UI_COMPOSE_RESOURCE_ROLE_BGM,
-         .target_index = "BGM", .name = "music.ogg", .source_name = "music.ogg"}}};
-    set_resource_fixture(view, resources.data(), resources.size());
-    auto& state = worm_ui_nuklear_compose_state();
-    view.selected_bgm_event_id = 11;
-    view.selected_assigned_resource_id = 100;
-    (void)harness.frame();
-    const auto provenance_cleared = generic_arm_and_disarm_clear_provenance(harness);
-    INFO(harness.drawn_text());
-    INFO("armed resource: " << state.armed_resource_id
-         << ", BGA provenance: " << state.armed_from_bga_dock
-         << ", BGA auto increment: " << state.bga_auto_increment_on_place);
-    CHECK(provenance_cleared);
 }

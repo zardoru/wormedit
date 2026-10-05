@@ -1,11 +1,13 @@
 #include "sys/compose_bookmark_commands.h"
 #include "sys/application_commands.h"
+#include "sys/compose_playhead_skip.h"
 
 #include <wormedit/audio/decoder.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <chrono>
 #include <string>
 
 using namespace wormedit;
@@ -287,4 +289,139 @@ TEST_CASE("previous playing bookmark includes the row below a fractional playhea
                                    marker_navigation_direction_t::previous).accepted);
     CHECK(sought == audio::output_sample_rate / 4);
     CHECK((fixture.state.cursor == local_position_t{measure_id_t{3}, 0}));
+}
+
+TEST_CASE("repeated previous playing bookmark within 300 ms steps past the bookmark just reached",
+          "[unit][sys][bookmark-commands]") {
+    fixture_t fixture{{measure_id_t{3}, 0}};
+    auto& bookmarks = fixture.history.document.charts.front().bookmarks;
+    bookmarks.push_back({.id = object_id_t{32}, .anchor = marker_anchor_t::beat,
+                          .position = local_position_t{measure_id_t{3}, 240}});
+    bookmarks.push_back({.id = object_id_t{33}, .anchor = marker_anchor_t::beat,
+                          .position = local_position_t{measure_id_t{3}, 0}});
+    fixture.application.transport_preview_playing = [] { return true; };
+    auto now = std::chrono::steady_clock::time_point{} + std::chrono::seconds{10};
+    fixture.application.bookmark_clock = [&] { return now; };
+    std::vector<std::uint64_t> seeks;
+    fixture.application.transport_seek = [&](std::uint64_t frame) {
+        seeks.push_back(frame);
+        return std::string{};
+    };
+    const auto previous = [&] {
+        return navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+                                      marker_navigation_direction_t::previous);
+    };
+    constexpr auto quarter = audio::output_sample_rate / 4;
+    // The live playhead sits past bookmark B (row 1440 -> frame 6 * quarter) and does not
+    // advance between presses, as when the audio clock lags the seek.
+    fixture.application.preview_playhead_absolute_row = 1500.0;
+    REQUIRE(previous().accepted);
+    CHECK(seeks.back() == 6 * quarter);
+    now += std::chrono::milliseconds{100};
+    REQUIRE(previous().accepted);
+    CHECK(seeks.back() == quarter);
+    now += std::chrono::milliseconds{100};
+    REQUIRE(previous().accepted);
+    CHECK(seeks.back() == 0);
+    // Past the window the live playhead is the origin again.
+    now += std::chrono::milliseconds{400};
+    REQUIRE(previous().accepted);
+    CHECK(seeks.back() == 6 * quarter);
+}
+
+TEST_CASE("adding a bookmark past the last measure explains it in plain words and changes nothing",
+          "[unit][sys][bookmark-commands]") {
+    fixture_t fixture{{measure_id_t{3}, 0}};
+    fixture.state.virtual_bms_cursor_row = 5000;
+    const auto revision = fixture.history.document.revision;
+    const auto outcome = add_beat_bookmark_here(fixture.history, fixture.state, fixture.application);
+    CHECK_FALSE(outcome.accepted);
+    CHECK(outcome.status == "Bookmarks can only go inside existing measures. "
+                            "Add measures up to the cursor first.");
+    CHECK(outcome.status.find("materialized") == std::string::npos);
+    CHECK(fixture.history.document.revision == revision);
+    CHECK(fixture.history.document.charts.front().bookmarks.size() == 1);
+}
+
+namespace {
+
+struct mixed_navigation_fixture_t {
+    fixture_t fixture{{measure_id_t{3}, 0}};
+    std::chrono::steady_clock::time_point now =
+        std::chrono::steady_clock::time_point{} + std::chrono::seconds{10};
+    std::vector<std::uint64_t> seeks;
+
+    mixed_navigation_fixture_t() {
+        fixture.application.transport_preview_playing = [] { return true; };
+        fixture.application.bookmark_clock = [this] { return now; };
+        fixture.application.transport_seek = [this](std::uint64_t frame) {
+            seeks.push_back(frame);
+            return std::string{};
+        };
+    }
+    auto skip(double live_row, double amount) -> bool {
+        fixture.application.preview_playhead_absolute_row = live_row;
+        return skip_playing_playhead(fixture.application,
+                                     fixture.history.document.charts.front(), 4,
+                                     playhead_skip_unit_t::snap, amount).accepted;
+    }
+    auto previous_bookmark(double live_row) -> bool {
+        fixture.application.preview_playhead_absolute_row = live_row;
+        return navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+                                      marker_navigation_direction_t::previous).accepted;
+    }
+};
+
+constexpr auto quarter_frames = audio::output_sample_rate / 4;
+
+} // namespace
+
+TEST_CASE("a bookmark chooser jump ends a wheel skip repeat sequence",
+          "[unit][sys][bookmark-commands]") {
+    mixed_navigation_fixture_t mixed;
+    REQUIRE(mixed.skip(10.0, 1.0));                       // Notch to row 240.
+    CHECK(mixed.seeks.back() == quarter_frames);
+    const auto jumped = navigate_to_bookmark(mixed.fixture.history, mixed.fixture.state,
+        mixed.fixture.application, mixed.fixture.history.document.revision, chart_id_t{2},
+        object_id_t{30});                                 // Bookmark at row 1440.
+    REQUIRE(jumped.accepted);
+    CHECK(mixed.seeks.back() == 6 * quarter_frames);
+    mixed.now += std::chrono::milliseconds{50};
+    REQUIRE(mixed.skip(1440.0, 1.0));                     // Next notch advances from 1440.
+    CHECK(mixed.seeks.back() == 7 * quarter_frames);
+}
+
+TEST_CASE("a manual seek, stop or restart ends the repeat sequences",
+          "[unit][sys][bookmark-commands]") {
+    mixed_navigation_fixture_t mixed;
+    mixed.fixture.history.document.charts.front().bookmarks.push_back(
+        {.id = object_id_t{32}, .anchor = marker_anchor_t::beat,
+         .position = local_position_t{measure_id_t{3}, 240}});
+    REQUIRE(mixed.previous_bookmark(1500.0));             // Bookmark at 1440 recorded.
+    CHECK(mixed.seeks.back() == 6 * quarter_frames);
+    // The transport callbacks (stop, play, restart) and manual seeks call this.
+    mixed.fixture.application.invalidate_playing_seek_records();
+    mixed.now += std::chrono::milliseconds{50};
+    REQUIRE(mixed.previous_bookmark(1500.0));             // Starts again from the live playhead.
+    CHECK(mixed.seeks.back() == 6 * quarter_frames);
+    REQUIRE(mixed.skip(10.0, 1.0));
+    mixed.fixture.application.invalidate_playing_seek_records();
+    mixed.now += std::chrono::milliseconds{50};
+    REQUIRE(mixed.skip(10.0, 1.0));
+    CHECK(mixed.seeks.back() == quarter_frames);
+}
+
+TEST_CASE("bookmark steps and wheel skips do not continue each other's sequences",
+          "[unit][sys][bookmark-commands]") {
+    mixed_navigation_fixture_t mixed;
+    mixed.fixture.history.document.charts.front().bookmarks.push_back(
+        {.id = object_id_t{32}, .anchor = marker_anchor_t::beat,
+         .position = local_position_t{measure_id_t{3}, 240}});
+    REQUIRE(mixed.previous_bookmark(1500.0));             // Bookmark record: row 1440.
+    mixed.now += std::chrono::milliseconds{50};
+    REQUIRE(mixed.skip(1500.0, -1.0));                    // Wheel notch back from the live row.
+    CHECK(mixed.seeks.back() == 6 * quarter_frames);      // Row 1440: strictly before 1500.
+    mixed.now += std::chrono::milliseconds{50};
+    REQUIRE(mixed.previous_bookmark(1500.0));             // Not stepping past the old record.
+    CHECK(mixed.seeks.back() == 6 * quarter_frames);
 }

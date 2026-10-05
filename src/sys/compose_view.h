@@ -33,6 +33,7 @@
 
 #include <array>
 #include <cstddef>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -397,6 +398,30 @@ struct application_command_state_t {
     std::function<std::string(external_player_action_t)> external_player;
     std::function<std::string()> transport_cancel_restore;
     std::optional<double> preview_playhead_absolute_row;
+    // The row a playing bookmark seek last targeted, so a quick repeat steps from it rather
+    // than from a playhead the audio clock has not advanced to yet.
+    struct bookmark_seek_record_t {
+        wormedit::chart_id_t chart{};
+        std::uint64_t row{};
+        std::chrono::steady_clock::time_point at;
+    };
+    std::optional<bookmark_seek_record_t> last_playing_bookmark_seek;
+    // The target of the last playing playhead skip (wheel notch or step), for the same reason.
+    struct playhead_skip_record_t {
+        wormedit::chart_id_t chart{};
+        std::uint64_t row{};
+        bool forward{};
+        std::chrono::steady_clock::time_point at;
+    };
+    std::optional<playhead_skip_record_t> last_playhead_skip;
+    // Any other seek or a playback-session change breaks a repeat sequence: the next skip or
+    // bookmark step must start from the live playhead.
+    void invalidate_playing_seek_records() {
+        last_playing_bookmark_seek.reset();
+        last_playhead_skip.reset();
+    }
+    // Tests inject a clock; empty means steady_clock::now.
+    std::function<std::chrono::steady_clock::time_point()> bookmark_clock;
     // Wheel rows gathered during one input frame while playing; flushed as a single seek.
 };
 

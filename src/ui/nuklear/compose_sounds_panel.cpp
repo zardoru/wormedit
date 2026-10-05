@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_sounds_panel.h"
+#include "ui/nuklear/compose_bmson_tab.h"
 #include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/popup_lifecycle.h"
@@ -1560,12 +1561,39 @@ void render_sound_panel_controls(const SoundsPanel& panel) {
 
 } // namespace
 
+// Sounds and BMSON tabs; the strip exists only on BMSON charts.
+static void render_sounds_dock_tabs(const SoundsPanel& panel) {
+    nk_layout_row_dynamic(panel.context, 24, 2);
+    const auto sounds = wormedit::ui::chrome::mode_button(
+        panel.context, "Sounds", "Sample list and sound tools", !panel.state->sounds_dock_bmson_tab);
+    const auto bmson = wormedit::ui::chrome::mode_button(
+        panel.context, "BMSON", "BMSON BGM markers, razor and staged regions",
+        panel.state->sounds_dock_bmson_tab);
+    if (sounds) panel.state->sounds_dock_bmson_tab = false;
+    else if (bmson) panel.state->sounds_dock_bmson_tab = true;
+}
+
 void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
                                            const WormUiComposeView* view,
                                            WormUiWorkspaceAction* action,
                                            worm_ui_nuklear_compose_state_t* state) {
     if (!context || !view || !action || !state) return;
     const SoundsPanel panel{context, view, action, state};
+    if (!view->bmson_tools_available) state->sounds_dock_bmson_tab = false;
+    else render_sounds_dock_tabs(panel);
+    if (state->sounds_dock_bmson_tab) {
+        // The dock window has no scrollbar, so the tools get a scrollable group of their own: in a
+        // short window the lower staged-region actions stay reachable with the wheel.
+        const auto region = nk_window_get_content_region(context);
+        const auto remaining = region.y + region.h - nk_widget_position(context).y -
+                               context->style.window.spacing.y;
+        nk_layout_row_dynamic(context, std::max(remaining, 60.0f), 1);
+        if (nk_group_begin(context, "bmson-tools", 0)) {
+            worm_ui_nuklear_render_compose_bmson_tab(context, view, action, state);
+            nk_group_end(context);
+        }
+        return;
+    }
     clear_filter_release_guard_if_quiet(panel);
     publish_drop_bounds(panel);
     sync_filter_state(panel);

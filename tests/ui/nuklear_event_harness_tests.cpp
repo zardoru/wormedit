@@ -892,6 +892,33 @@ TEST_CASE("Layer row menu hides its captured target without assigning selected n
     check_layer_row_action(eye.front(), WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, 7);
 }
 
+TEST_CASE("Layer row menu carries the retired inspector layer buttons",
+          "[unit][frontend-state][frontend][event-harness]") {
+    const std::array<std::pair<const char*, WormUiComposeActionKind>, 2> entries{{
+        {"Add/remove selected notes", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER},
+        {"Stop targeting this layer", WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER}}};
+    for (const auto& [label, kind] : entries) {
+        INFO(label);
+        layer_menu_fixture_t fixture;
+        fixture.open();
+        const auto center = fixture.harness.drawn_text_center(label);
+        REQUIRE(center.has_value());
+        const auto clicked = click_at(fixture.harness, center->first, center->second);
+        check_layer_row_action(clicked.front(), kind, 7);
+    }
+}
+
+TEST_CASE("Layer row menu disables Add/remove selected notes without a selection",
+          "[unit][frontend-state][frontend][event-harness]") {
+    layer_menu_fixture_t fixture;
+    fixture.harness.view().compose.selected_note_count = 0;
+    fixture.open();
+    const auto center = fixture.harness.drawn_text_center("Add/remove selected notes");
+    REQUIRE(center.has_value());
+    const auto clicked = click_at(fixture.harness, center->first, center->second);
+    check_layer_menu_no_actions(clicked);
+}
+
 TEST_CASE("Layer row menu captures keyboard shortcuts and Escape closes without an action",
           "[unit][frontend-state][frontend][event-harness]") {
     layer_menu_fixture_t fixture;
@@ -1229,10 +1256,11 @@ TEST_CASE("Unavailable overview tooltip stays on its row and preserves panel too
     compose.bgm_bar_reserved = true;
     compose.bgm_bar_available = false;
     (void)harness.frame();
-    hover_at(harness, 408, 174);
+    // The dock toggles sit at the right edge of the toolbar (T-401).
+    hover_at(harness, 1177, 174);
     check_tooltip_text(harness, "Hide sounds list");
     check_no_tooltip_text(harness, "Audio is unavailable for this chart overview.");
-    hover_at(harness, 435, 174);
+    hover_at(harness, 1204, 174);
     check_tooltip_text(harness, "Show layers");
     check_no_tooltip_text(harness, "Audio is unavailable for this chart overview.");
     hover_at(harness, 351, 120);
@@ -1246,9 +1274,9 @@ TEST_CASE("Disabled song bar icon keeps its tooltip and emits no toggle action",
     REQUIRE(harness.ready());
     harness.view().compose.bgm_bar_available = false;
     (void)harness.frame();
-    hover_at(harness, 489, 122);
+    hover_at(harness, 1258, 122);
     check_tooltip_text(harness, "Song audio is unavailable");
-    const auto clicked = click_at(harness, 489, 122);
+    const auto clicked = click_at(harness, 1258, 122);
     check_no_toolbar_document_actions(clicked);
     for (const auto& frame : clicked) {
         const auto& action = frame.get();

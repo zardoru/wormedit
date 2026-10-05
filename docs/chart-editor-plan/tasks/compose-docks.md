@@ -73,7 +73,8 @@ window buttons.
 
 ## T-401 Right-align the dock toggles and move px/measure to the bottom
 
-- **Status:** ready
+- **Status:** done (2026-10-05; Xvfb captures at 1280 and 900 px inspected; full headless suite passes)
+- **Result:** at a window width of 1100 px or more the five dock toggles close the toolbar row at the right edge, after the BGM scroll bar's spacer. The full toolbar needs about 1,090 px, so below 1100 px the toggles **stay in their old middle position**, where moving them to the end would clip them (a deviation from "always at the right edge", kept to avoid hiding them at 900 px). `dock_toggles_at_end` in `compose_toolbar.cpp` decides for both the row template and the render order. The "N px/measure" label and its 160 px column left the toolbar; `render_status_bar` in `frontend.cpp` now draws it after "Snap 1/N" in Compose when the window is at least 900 px wide (it was shown at 1100 px or more before). The tooltip tests that hovered fixed icon positions were moved to the new ones in `nuklear_event_harness_tests.cpp`. Captures: 1280 px shows the toggles at the right and the label in the bottom row; 900 px shows them in the middle and the label in the bottom row. "Bottom status row of the field" was read as the existing bottom status bar, since the field has no row of its own.
 - **Outcome:** in the Compose toolbar, the five dock toggles sit at the right edge, and the "N px/measure" readout moves to the bottom status row of the field.
 - **Read first:** `src/ui/nuklear/compose_toolbar.cpp` (`layout_compose_toolbar`, the px/measure label), `src/ui/nuklear/compose_panel.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_panel.cpp`, `tests/ui/` toolbar layout tests, this card.
@@ -88,7 +89,8 @@ window buttons.
 
 ## T-402 Make Keep pitch an icon toggle
 
-- **Status:** ready
+- **Status:** done (2026-10-05; Xvfb capture of the transport row inspected; harness cases and the full headless suite pass)
+- **Result:** `music-2` (Lucide, same pinned commit) was added to `assets/icons/lucide`, `scripts/generate-lucide-icons.py`, `Glyph::music_2` and the regenerated `lucide_icon_pixels.h` (the generator needed `rsvg-convert` and Pillow, installed for this run). `render_transport_rate` now draws an `IconButton` with the same availability gate and `SET_KEEP_PITCH` payload; its status-bar column went from 100 px to one icon column. Tooltip: "Preserve pitch at reduced speed", or "Keep pitch is unavailable without audio output" when disabled. The capture shows the off state only; the on state uses the shared `IconButton` selected style. Tests: `tests/ui/keep_pitch_event_harness_tests.cpp`.
 - **Outcome:** the transport "Keep pitch" text button becomes an icon toggle with the tooltip "Preserve pitch at reduced speed", showing its on and off states like the other transport toggles.
 - **Read first:** `src/ui/nuklear/frontend.cpp` (`render_transport_rate`), `src/ui/nuklear/chrome.h` (`IconButton`, `mode_button`), `scripts/generate-lucide-icons.py`.
 - **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/lucide_icons.h`, `src/ui/nuklear/lucide_icon_pixels.h`, `src/ui/nuklear/lucide_icons.cpp`, `scripts/generate-lucide-icons.py` (icon list only), this card.

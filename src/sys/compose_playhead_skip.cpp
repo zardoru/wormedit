@@ -43,6 +43,17 @@ auto measure_target(const measure_index_t& measures, double playhead, double amo
     return static_cast<double>(to.absolute_begin_row) + std::max(capped, 0.0);
 }
 
+// The row a skip starts from: the previous skip's target while a same-direction repeat is
+// within the window, else the live playhead.
+auto skip_origin_row(const application_command_state_t& application, chart_id_t chart,
+                     bool forward) -> double {
+    const auto& record = application.last_playhead_skip;
+    if (record && record->chart == chart && record->forward == forward &&
+        playing_seek_now(application) - record->at <= playing_seek_repeat_window)
+        return static_cast<double>(record->row);
+    return *application.preview_playhead_absolute_row;
+}
+
 } // namespace
 
 auto is_preview_playing(const application_command_state_t& application) -> bool {
@@ -81,19 +92,28 @@ auto skip_playing_playhead(application_command_state_t& application, const chart
     if (!std::holds_alternative<measure_index_t>(built) || !timing.index)
         return {.status = "The playhead could not be moved."};
     const auto& measures = std::get<measure_index_t>(built);
-    const auto row = playhead_skip_target_row(measures, *application.preview_playhead_absolute_row,
+    const auto forward = amount > 0.0;
+    const auto row = playhead_skip_target_row(measures,
+                                              skip_origin_row(application, chart.id, forward),
                                               unit, amount, chart.divisions_per_standard_measure,
                                               snap_denominator);
     const auto position = row ? local_position_for_row(measures, *row) : std::nullopt;
-    if (!position) return {.status = "The playhead could not be moved."};
+    if (!position) {
+        application.last_playhead_skip.reset();
+        return {.status = "The playhead could not be moved."};
+    }
     const auto end = application.transport_preview_end_frame
                          ? application.transport_preview_end_frame() : std::nullopt;
     const auto frame = bookmark_preview_frame(*timing.index, measures, *position, end);
-    if (!frame || !application.transport_seek)
+    if (!frame || !application.transport_seek) {
+        application.last_playhead_skip.reset();
         return {.status = "Chart preview seek is unavailable."};
+    }
+    application.last_playing_bookmark_seek.reset();
     auto status = application.transport_seek(*frame);
     // Chain several skips of one frame from where this one landed.
     application.preview_playhead_absolute_row = static_cast<double>(*row);
+    application.last_playhead_skip = {chart.id, *row, forward, playing_seek_now(application)};
     return {.accepted = true, .status = std::move(status)};
 }
 

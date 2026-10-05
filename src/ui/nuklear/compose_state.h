@@ -313,6 +313,9 @@ struct worm_ui_nuklear_compose_state_t {
     std::array<char, 128> inline_timing_error{};
     bookmark_chooser_state_t bookmark_chooser;
     bookmark_rename_editor_t bookmark_rename;
+    // Window position of the last note double-click, where the inline note-label editor opens.
+    float note_label_anchor_x{};
+    float note_label_anchor_y{};
     bool go_to_measure_open{};
     std::uint64_t resource_export_group_project_id{};
     std::uint64_t resource_export_group_chart_id{};
@@ -401,6 +404,8 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t layers_panel_chart_id{};
     std::uint64_t layers_panel_project_id{};
     bool sounds_layers_open{};
+    // The Sounds dock's selected tab; non-BMSON charts always show Sounds.
+    bool sounds_dock_bmson_tab{};
     bool sounds_preview_on_click{true};
     bool keysound_sort_by_id{};
     bool keysound_slots_mode{};
@@ -488,6 +493,8 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t keysound_revision{std::numeric_limits<std::uint64_t>::max()};
     // Scratch reused across frames so a frame with thousands of rows does not allocate.
     std::vector<std::uint64_t> keysound_shown;
+    // The BGA rows shown last frame, kept so Ctrl+A over the list can select them.
+    std::vector<std::uint64_t> bga_shown;
     std::vector<worm_ui_keysound_advance_row_t> keysound_advance_rows;
     bool armed_from_sounds_dock{};
     bool keysound_reveal_primary{};

@@ -269,6 +269,7 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
     state->bga_list_valid = true;
     state->bga_list_x = bounds.x; state->bga_list_y = bounds.y;
     state->bga_list_width = bounds.w; state->bga_list_height = bounds.h;
+    state->bga_shown.assign(view->bga_matching_ids, view->bga_matching_ids + view->bga_total_matching);
     nk_layout_row_dynamic(context, 20, 1);
     nk_label(context, "BGA", NK_TEXT_LEFT);
     import_picked(*action, *view, *state);

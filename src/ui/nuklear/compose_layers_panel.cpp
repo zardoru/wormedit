@@ -56,6 +56,8 @@ constexpr LayerMenuEntry layer_menu_entries[]{
     {"Solo", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO, false, false},
     {"", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK, false, true},
     {"Select notes", WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER_NOTES, false, true},
+    {"Add/remove selected notes", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER, true, true},
+    {"Stop targeting this layer", WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER, false, false},
     {"Require filter", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER, true, false},
     {"Exclude filter", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER, true, false},
     {"Move up", WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP, true, true},
@@ -138,6 +140,9 @@ auto layer_entry_reason(const LayersPanel& panel, const WormUiComposeSemanticLay
     if (entry.needs_idle && panel.view->semantic_layer_gesture_active)
         return "Finish or cancel the active Compose gesture";
     if (entry.needs_unlocked && layer.locked) return "Layer is locked";
+    if (entry.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER &&
+        panel.view->selected_note_count == 0 && panel.view->selected_bgm_event_count == 0)
+        return "Select notes or BGM events first";
     if (entry.kind == WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER &&
         (layer.assigned_note_count || layer.assigned_bgm_count))
         return "Layer has assigned objects; use Delete + unlink";

@@ -175,7 +175,7 @@ static auto bmson_razor_can_start(const ComposePointerEventContext& input,
            input.window_focused && input.shortcut_event_count == 0 && input.left_down &&
            input.pointer_started_in_view &&
            state.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off &&
-           view.selected_bmson_bgm_event_id != 0 &&
+           bmson_razor_eligible(view) &&
            (input.pointer_modifiers & input.any_pointer_modifier) == 0 &&
            selected_bmson_lane_at(input, input.pointer_started_x, input.pointer_started_y);
 }
@@ -212,6 +212,9 @@ static void update_active_bmson_razor(const ComposePointerEventContext& input) {
 auto process_bmson_razor_pointer(const ComposePointerEventContext& input,
                                         bool paint_pointer_consumed) -> bool {
     if (compose_area_pointer_consumed()) return true;
+    if (state.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off &&
+        !bmson_razor_eligible(*input.view))
+        state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
     if (state.bmson_razor_pointer_active) {
         update_active_bmson_razor(input);
         return true;

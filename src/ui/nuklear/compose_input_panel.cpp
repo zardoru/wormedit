@@ -692,6 +692,17 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
     return true;
 }
 
+// A double-click on a bookmark line or label renames it, unless a note sits under the pointer
+// (that opens the note label editor).
+static bool begin_bookmark_rename_from_double_click(const ComposeDoubleClickContext& input,
+                                                    double click_x, double click_y) {
+    const auto& view = *input.view;
+    if (!view.visible || view.input_occluded || state.action_overflowed ||
+        compose_point_hits_note(input.view, click_x, click_y)) return false;
+    return begin_compose_bookmark_rename_at_double_click(state.bookmark_rename, view, click_x,
+                                                         click_y);
+}
+
 bool process_compose_double_clicks(const ComposeDoubleClickContext& input,
                                           bool compose_pointer_captured,
                                           bool window_focused) {
@@ -712,7 +723,13 @@ bool process_compose_double_clicks(const ComposeDoubleClickContext& input,
             note_double_click_in_view = true;
             continue;
         }
+        if (begin_bookmark_rename_from_double_click(input, click_x, click_y)) {
+            note_double_click_in_view = true;
+            continue;
+        }
         if (click_x < input.note_field_left || click_x >= input.note_field_right) continue;
+        state.note_label_anchor_x = pointer.x;
+        state.note_label_anchor_y = pointer.y;
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK, click_x,
                              (static_cast<double>(pointer.y) - viewport.y) *
                                  input.view->viewport_height_pixels / viewport.h);
@@ -944,7 +961,7 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
         return true;
     }
     if (state.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off &&
-        view.selected_bmson_bgm_event_id != 0 &&
+        bmson_razor_eligible(view) &&
         selected_bmson_lane_at(input, input.pointer_x, input.pointer_y) &&
         (input.pointer_modifiers & input.any_pointer_modifier) == 0) {
         append_compose_input(action, bmson_razor_input_kind(), input.pointer_x, input.pointer_y,

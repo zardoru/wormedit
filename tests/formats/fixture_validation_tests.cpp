@@ -64,6 +64,7 @@ auto explicit_fixture_profile(const std::filesystem::path& path) -> std::optiona
         {"double-scratch-fpp.bms", "bms-double-scratch-fpp"},
         {"octave-foot-pedal.bms", "bms-octave-foot-pedal"},
         {"project2dx-7k.bms", "project2dx-7k"}};
+    if (path.filename() == "x-aria-10k-hd.bme") return std::nullopt;
     const auto found = choices.find(path.filename().string());
     if (found != choices.end()) return found->second;
     if (path.extension() == ".pms") return "pms-standard-9button";

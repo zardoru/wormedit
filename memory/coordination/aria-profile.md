@@ -15,3 +15,8 @@ Focused tests, documentation validation, and changed-file complexity checks are
 complete. The compact x-Aria-shaped fixture selects the scratchless profile and
 preserves the ten raw source channels; root owns original-chart runtime probes
 and the integrated full suite.
+
+The integrated fixture-validation test initially forced every unlisted `.bme`
+fixture to the generic 7K profile. The approved narrow exception in
+`tests/formats/fixture_validation_tests.cpp` lets only `x-aria-10k-hd.bme` use
+automatic detection; the positive fixture-validation test passes afterward.

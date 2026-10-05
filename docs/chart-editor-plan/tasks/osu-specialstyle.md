@@ -2,7 +2,7 @@
 
 ## T-384 Respect SpecialStyle for 12K and 16K imports
 
-- **Status:** ready
+- **Status:** done (2026-10-04; main build, configured clang-tidy and all 2,264 CTest cases pass)
 - **Outcome:** SpecialStyle 12K imports use a DP5-like two-stage field and SpecialStyle 16K imports use a DP7-like field, with outside scratch colors and every osu column still playable; ordinary 12K/16K alternate white and black.
 - **Read first:** `AGENTS.md`, `src/core/lane_profiles.cpp`, `src/formats/osu_mania.cpp`, `tests/formats/osu_mania_tests.cpp`.
 - **Files owned:** root in `wormedit-osu-specialstyle`: `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `src/formats/osu_mania.cpp`, `tests/core/lane_profile_tests.cpp`, `tests/formats/osu_mania_tests.cpp`, this card, `docs/chart-editor-plan/tasks.md`.
@@ -15,4 +15,4 @@
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `clang-tidy -p build src/core/lane_profiles.cpp src/formats/osu_mania.cpp`; `ctest --test-dir build --output-on-failure -R documentation.chart_editor_state`.
 - **Out of scope:** BMS detection and bounded timing compilation (T-382/T-383); converting osu columns into BMS scratch objects.
 
-- **Implementation evidence:** isolated relink against read-only main dependencies passes 58 lane-profile/osu cases (7,094 assertions), including 1,755 assertions in the two new SpecialStyle cases. Configured clang-tidy passes both changed production sources with no emitted diagnostics. Main build and full CTest remain the integration checkpoint.
+- **Implementation evidence:** isolated relink against read-only main dependencies passes 58 lane-profile/osu cases (7,094 assertions), including 1,755 assertions in the two new SpecialStyle cases. Configured clang-tidy passes both changed production sources with no emitted diagnostics. Main application build and all 2,264 CTest cases pass (38.86 s); configured clang-tidy on main passes both changed production sources. Real-window visual validation remains unavailable in this sandbox; no user-desktop window was opened.

@@ -894,9 +894,8 @@ TEST_CASE("Layer row menu hides its captured target without assigning selected n
 
 TEST_CASE("Layer row menu carries the retired inspector layer buttons",
           "[unit][frontend-state][frontend][event-harness]") {
-    const std::array<std::pair<const char*, WormUiComposeActionKind>, 3> entries{{
+    const std::array<std::pair<const char*, WormUiComposeActionKind>, 2> entries{{
         {"Toggle selected", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER},
-        {"Paint: Off", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE},
         {"Clear target", WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER}}};
     for (const auto& [label, kind] : entries) {
         INFO(label);

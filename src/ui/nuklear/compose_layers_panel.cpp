@@ -57,7 +57,6 @@ constexpr LayerMenuEntry layer_menu_entries[]{
     {"", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK, false, true},
     {"Select notes", WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER_NOTES, false, true},
     {"Toggle selected", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER, true, true},
-    {"Paint", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE, true, false},
     {"Clear target", WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER, false, false},
     {"Require filter", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER, true, false},
     {"Exclude filter", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER, true, false},
@@ -184,8 +183,6 @@ auto layer_entry_label(const LayersPanel& panel, const WormUiComposeSemanticLaye
         return layer.visible ? "Hide" : "Show";
     if (entry.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK)
         return layer.locked ? "Unlock" : "Lock";
-    if (entry.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE)
-        return panel.view->semantic_layer_paint_mode_active ? "Paint: On" : "Paint: Off";
     if (entry.kind == WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO &&
         panel.view->semantic_layer_target.layer_id == layer.layer_id &&
         panel.view->semantic_layer_solo_active) return "Solo: On";

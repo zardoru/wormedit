@@ -8,8 +8,8 @@ root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 app="$root_dir/build/wormedit"
 output=${1:-/tmp/wormedit-compose-smoke.png}
 mode=${2:-compose}
-if [[ $mode != landing && $mode != wizard && $mode != compose && $mode != timing ]]; then
-    echo "Usage: $0 [capture.png] [landing|wizard|compose|timing]" >&2
+if [[ $mode != landing && $mode != wizard && $mode != compose && $mode != timing && $mode != gallery ]]; then
+    echo "Usage: $0 [capture.png] [landing|wizard|compose|timing|gallery]" >&2
     exit 1
 fi
 temp_dir=$(mktemp -d /tmp/wormedit-compose-smoke.XXXXXX)
@@ -77,6 +77,7 @@ export SDL_VIDEODRIVER=x11
 export SDL_AUDIODRIVER=dummy
 export XDG_CONFIG_HOME="$temp_dir/config"
 export XDG_DATA_HOME="$temp_dir/data"
+if [[ $mode == gallery ]]; then export WORMEDIT_UI_GALLERY=1; fi
 "$app" >"$temp_dir/wormedit.log" 2>&1 &
 app_pid=$!
 window_id=
@@ -116,11 +117,11 @@ click_at() {
     xdotool mouseup 1
     sleep 0.2
 }
-if [[ $mode != landing ]]; then
+if [[ $mode != landing && $mode != gallery ]]; then
     # The initial window has no chart. Create the standard template first.
     click_at "$((window_width / 2))" 150
 fi
-if [[ $mode != landing && $mode != wizard ]]; then
+if [[ $mode != landing && $mode != wizard && $mode != gallery ]]; then
     # The centered, 204-pixel wizard puts Create 46 pixels below the window midpoint.
     click_at "$((window_width / 2 + 160))" "$((window_height / 2 + 46))"
     # Compose is the third of six equal-width tabs (the Timing screen is retired).

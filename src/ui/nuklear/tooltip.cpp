@@ -85,6 +85,10 @@ void set_viewport(struct nk_rect viewport) noexcept {
     app_viewport = viewport;
 }
 
+auto viewport() noexcept -> const struct nk_rect& {
+    return app_viewport;
+}
+
 auto plan_text(nk_context* context, std::string_view text, float preferred_outer_width)
     -> std::optional<text_plan_t> {
     if (!context || !context->style.font || app_viewport.w <= 0.0F || app_viewport.h <= 0.0F ||

@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <chrono>
 #include <string>
 
 using namespace wormedit;
@@ -287,4 +288,42 @@ TEST_CASE("previous playing bookmark includes the row below a fractional playhea
                                    marker_navigation_direction_t::previous).accepted);
     CHECK(sought == audio::output_sample_rate / 4);
     CHECK((fixture.state.cursor == local_position_t{measure_id_t{3}, 0}));
+}
+
+TEST_CASE("repeated previous playing bookmark within 300 ms steps past the bookmark just reached",
+          "[unit][sys][bookmark-commands]") {
+    fixture_t fixture{{measure_id_t{3}, 0}};
+    auto& bookmarks = fixture.history.document.charts.front().bookmarks;
+    bookmarks.push_back({.id = object_id_t{32}, .anchor = marker_anchor_t::beat,
+                          .position = local_position_t{measure_id_t{3}, 240}});
+    bookmarks.push_back({.id = object_id_t{33}, .anchor = marker_anchor_t::beat,
+                          .position = local_position_t{measure_id_t{3}, 0}});
+    fixture.application.transport_preview_playing = [] { return true; };
+    auto now = std::chrono::steady_clock::time_point{} + std::chrono::seconds{10};
+    fixture.application.bookmark_clock = [&] { return now; };
+    std::vector<std::uint64_t> seeks;
+    fixture.application.transport_seek = [&](std::uint64_t frame) {
+        seeks.push_back(frame);
+        return std::string{};
+    };
+    const auto previous = [&] {
+        return navigate_beat_bookmark(fixture.history, fixture.state, fixture.application,
+                                      marker_navigation_direction_t::previous);
+    };
+    constexpr auto quarter = audio::output_sample_rate / 4;
+    // The live playhead sits past bookmark B (row 1440 -> frame 6 * quarter) and does not
+    // advance between presses, as when the audio clock lags the seek.
+    fixture.application.preview_playhead_absolute_row = 1500.0;
+    REQUIRE(previous().accepted);
+    CHECK(seeks.back() == 6 * quarter);
+    now += std::chrono::milliseconds{100};
+    REQUIRE(previous().accepted);
+    CHECK(seeks.back() == quarter);
+    now += std::chrono::milliseconds{100};
+    REQUIRE(previous().accepted);
+    CHECK(seeks.back() == 0);
+    // Past the window the live playhead is the origin again.
+    now += std::chrono::milliseconds{400};
+    REQUIRE(previous().accepted);
+    CHECK(seeks.back() == 6 * quarter);
 }

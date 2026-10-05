@@ -9,7 +9,8 @@ Retirement cards remove UI only. Stored data and actions stay unless a card says
 
 ## T-385 Repeated Previous Bookmark while playing keeps stepping back
 
-- **Status:** ready
+- **Status:** done (2026-10-05; new unit tests and the full headless suite pass)
+- **Result:** a repeat press within 300 ms (`playing_seek_repeat_window`) starts from the recorded seek target (`last_playing_bookmark_seek`). The record is cleared when navigating while stopped, a failed seek, and is ignored for another chart or after the window. A manual seek is covered by the window only. Test: `repeated previous playing bookmark within 300 ms ...`.
 - **Outcome:** while playing, pressing Previous Bookmark twice within 300 ms of reaching bookmark B moves to the bookmark before B, not to B again. An event-harness or system test shows this with three bookmarks.
 - **Read first:** `src/sys/compose_bookmark_commands.cpp` (`navigate_beat_bookmark`, `playing_bookmark_origin`), `src/sys/compose_playhead_skip.h`, `src/sys/application_command_dispatch.cpp` (around `navigation_previous_bookmark`).
 - **Files owned:** `src/sys/compose_bookmark_commands.cpp`, `src/sys/compose_bookmark_commands.h`, `src/sys/application_commands.h` (state field only), `tests/sys/` bookmark navigation test beside its sibling, this card, `memory/chart-editor-status/resume.md`.
@@ -25,7 +26,8 @@ Retirement cards remove UI only. Stored data and actions stay unless a card says
 
 ## T-386 Notched wheel steps while playing keep moving past the row just reached
 
-- **Status:** ready
+- **Status:** done (2026-10-05; new unit tests and the full headless suite pass)
+- **Result:** confirmed cause: the live playhead had not advanced to the first notch's target, so each notch recomputed the same row. `skip_playing_playhead` now keeps `last_playhead_skip`; a same-direction repeat within the same 300 ms window starts from it, and a reversal uses the live playhead. Test: `repeated playing skips within 300 ms ...`.
 - **Outcome:** while playing, three fast notches of a notched wheel move the playhead three snap rows, not one row three times. A test feeds three coarse wheel events within 300 ms.
 - **Read first:** `src/sys/compose_playhead_skip.h`, `src/sys/compose_playhead_skip.cpp`, `src/sys/compose_input.cpp` (wheel handling near `compose_wheel_scroll_delta`).
 - **Files owned:** `src/sys/compose_playhead_skip.cpp`, `src/sys/compose_playhead_skip.h`, `src/sys/compose_input.cpp` (wheel-while-playing branch only), the matching test under `tests/sys/`, this card.

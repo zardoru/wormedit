@@ -4,6 +4,7 @@
 #include <wormedit/core/marker_editor.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iterator>
 #include <utility>
@@ -104,9 +105,32 @@ auto bookmark_preview_frame(const timing_index_t& timing, const measure_index_t&
     return frame;
 }
 
+auto playing_seek_now(const application_command_state_t& application)
+    -> std::chrono::steady_clock::time_point {
+    return application.bookmark_clock ? application.bookmark_clock()
+                                      : std::chrono::steady_clock::now();
+}
+
 namespace {
 
-auto playing_bookmark_origin(const chart_document_t& chart,
+auto absolute_row_of(const measure_index_t& index, local_position_t position)
+    -> std::optional<std::uint64_t> {
+    const auto entry = std::ranges::find(index.entries, position.measure,
+                                         &measure_index_entry_t::id);
+    if (entry == index.entries.end()) return std::nullopt;
+    return entry->absolute_begin_row + position.row;
+}
+
+auto recent_seek_row(const application_command_state_t& application, chart_id_t chart)
+    -> std::optional<std::uint64_t> {
+    const auto& record = application.last_playing_bookmark_seek;
+    if (!record || record->chart != chart ||
+        playing_seek_now(application) - record->at > playing_seek_repeat_window)
+        return std::nullopt;
+    return record->row;
+}
+
+auto playing_bookmark_origin(const chart_document_t& chart, chart_id_t chart_id,
                               const application_command_state_t& application,
                               marker_navigation_direction_t direction)
     -> std::optional<local_position_t> {
@@ -117,6 +141,9 @@ auto playing_bookmark_origin(const chart_document_t& chart,
         return std::nullopt;
     const auto& index = std::get<measure_index_t>(built);
     if (index.total_rows == 0) return std::nullopt;
+    if (direction == marker_navigation_direction_t::previous)
+        if (const auto recent = recent_seek_row(application, chart_id))
+            return local_position_for_row(index, *recent);
     const auto row = std::clamp(*application.preview_playhead_absolute_row, 0.0,
                                 static_cast<double>(index.total_rows - 1));
     // Marker lookup is strict: a fractional playhead must include the row below
@@ -124,6 +151,17 @@ auto playing_bookmark_origin(const chart_document_t& chart,
     const auto origin = direction == marker_navigation_direction_t::previous
                             ? std::ceil(row) : std::floor(row);
     return local_position_for_row(index, static_cast<std::uint64_t>(origin));
+}
+
+void record_playing_seek(const chart_document_t& chart, chart_id_t chart_id,
+                         application_command_state_t& application, local_position_t target,
+                         bool sought) {
+    application.last_playing_bookmark_seek.reset();
+    if (!sought) return;
+    const auto built = build_measure_index(chart);
+    if (!std::holds_alternative<measure_index_t>(built)) return;
+    if (const auto row = absolute_row_of(std::get<measure_index_t>(built), target))
+        application.last_playing_bookmark_seek = {chart_id, *row, playing_seek_now(application)};
 }
 
 } // namespace
@@ -135,7 +173,8 @@ auto navigate_beat_bookmark(document_history_t& history, editor_interaction_stat
     const auto* chart = find_chart(history, state.chart);
     if (!chart) return fail("Bookmark navigation requires the active Compose chart.");
     const bool playing = is_playing(application);
-    const auto origin = playing ? playing_bookmark_origin(*chart, application, direction)
+    if (!playing) application.last_playing_bookmark_seek.reset();
+    const auto origin = playing ? playing_bookmark_origin(*chart, state.chart, application, direction)
                                 : std::optional<local_position_t>{state.cursor};
     if (!origin) return fail("The playhead row is not available yet.");
     const auto marker = navigate_markers(history.document, history.document.revision, state.chart,
@@ -153,6 +192,7 @@ auto navigate_beat_bookmark(document_history_t& history, editor_interaction_stat
     if (playing) {
         std::string status;
         const auto sought = seek_playhead_to(*chart, application, target, status);
+        record_playing_seek(*chart, state.chart, application, target, sought);
         return {.accepted = sought, .status = std::move(status), .feedback_posted = sought && application.transport_seek_posts_feedback};
     }
     const auto jumped = dispatch_editor_action(history, state,

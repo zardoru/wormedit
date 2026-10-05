@@ -7,11 +7,20 @@
 #include <wormedit/core/marker_navigation.h>
 #include <wormedit/core/timing.h>
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
 
 namespace wormedit::sys {
+
+// A repeated playing seek (bookmark step or wheel notch) this soon after the last one starts from
+// that seek's target, because the audio clock has not caught up to it yet.
+inline constexpr auto playing_seek_repeat_window = std::chrono::milliseconds{300};
+
+// The current time for repeat-window checks; tests inject `bookmark_clock`.
+[[nodiscard]] auto playing_seek_now(const application_command_state_t& application)
+    -> std::chrono::steady_clock::time_point;
 
 struct bookmark_command_outcome_t {
     bool accepted{};

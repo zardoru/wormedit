@@ -50,3 +50,49 @@ void stage_note_label_inline(WormUiWorkspaceAction& action, const WormUiComposeV
                 std::min(sizeof(action.compose_note_label), sizeof(editor.label)));
     action.compose_note_label[sizeof(action.compose_note_label) - 1] = '\0';
 }
+
+auto begin_compose_bookmark_rename_anchored(bookmark_rename_editor_t& editor,
+                                            const WormUiComposeView& view,
+                                            std::uint64_t bookmark_id, float anchor_x,
+                                            float anchor_y) -> bool {
+    if (!begin_compose_bookmark_rename(editor, view, bookmark_id)) return false;
+    editor.anchored = true;
+    editor.anchor_x = anchor_x;
+    editor.anchor_y = anchor_y;
+    return true;
+}
+
+auto begin_compose_section_label_inline(bookmark_rename_editor_t& editor,
+                                        const WormUiComposeView& view, std::uint64_t section_id,
+                                        float anchor_x, float anchor_y) -> bool {
+    if (editor.release_pending) return false;
+    const auto* sections = view.beat_sections;
+    const auto found = std::find_if(sections, sections + view.beat_section_count,
+        [&](const WormUiComposeSectionView& section) { return section.section_id == section_id; });
+    if (found == sections + view.beat_section_count) return false;
+    editor = {};
+    editor.kind = inline_label_kind_t::section_label;
+    editor.active = true;
+    editor.focus_pending = true;
+    editor.anchored = true;
+    editor.project_id = view.project_id;
+    editor.chart_id = view.chart_id;
+    editor.document_revision = view.document_revision;
+    editor.bookmark_id = section_id;
+    editor.anchor_x = anchor_x;
+    editor.anchor_y = anchor_y;
+    if (found->label) std::strncpy(editor.label, found->label, sizeof(editor.label) - 1);
+    return true;
+}
+
+void stage_section_label_inline(WormUiWorkspaceAction& action, const WormUiComposeView& view,
+                                const bookmark_rename_editor_t& editor) {
+    action.compose_action = WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL;
+    action.compose_section_id = editor.bookmark_id;
+    action.compose_input_project_id = view.project_id;
+    action.compose_input_chart_id = editor.chart_id;
+    action.compose_input_document_revision = editor.document_revision;
+    std::memcpy(action.compose_marker_label, editor.label,
+                std::min(sizeof(action.compose_marker_label), sizeof(editor.label)));
+    action.compose_marker_label[sizeof(action.compose_marker_label) - 1] = '\0';
+}

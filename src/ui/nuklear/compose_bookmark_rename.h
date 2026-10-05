@@ -7,12 +7,14 @@
 
 // The inline single-line label editor shared by bookmarks and note labels, so both own keyboard
 // and pointer input through the same flags. `kind` picks the commit action.
-enum class inline_label_kind_t { bookmark, note_label };
+enum class inline_label_kind_t { bookmark, note_label, section_label };
 
 struct bookmark_rename_editor_t {
     inline_label_kind_t kind{inline_label_kind_t::bookmark};
     float anchor_x{};
     float anchor_y{};
+    // Bookmark editors opened from the inspector list sit at the anchor, not on the canvas line.
+    bool anchored{};
     bool active{};
     bool focus_pending{};
     bool release_pending{};
@@ -21,7 +23,7 @@ struct bookmark_rename_editor_t {
     std::uint64_t project_id{};
     std::uint64_t chart_id{};
     std::uint64_t document_revision{};
-    std::uint64_t bookmark_id{};
+    std::uint64_t bookmark_id{};  // Also the section id for kind section_label.
     float popup_bounds[4]{};
     char label[WORM_UI_COMPOSE_MARKER_LABEL_BYTES + 1]{};
 };

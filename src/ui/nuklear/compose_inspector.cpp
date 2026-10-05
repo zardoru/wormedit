@@ -44,31 +44,9 @@ static void render_initial_bpm_control(const ComposeInspectorContext& inspector)
 }
 
 static void render_compose_marker_section(const ComposeInspectorContext& inspector) {
-    const auto* view = inspector.view;
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    if (!nk_tree_push(context, NK_TREE_TAB, "Markers / sections", NK_MINIMIZED)) return;
-    nk_layout_row_begin(context, NK_DYNAMIC, 24, 2);
-    const auto disabled = !view->scene_available || !view->beat_marker_navigation_available;
-    if (disabled) nk_widget_disable_begin(context);
-    nk_layout_row_push(context, wormedit::ui::chrome::property_label_ratio);
-    const auto previous_clicked = nk_button_label(context, "Prev marker");
-    nk_layout_row_push(context, wormedit::ui::chrome::property_label_ratio);
-    const auto next_clicked = nk_button_label(context, "Next marker");
-    if (disabled) nk_widget_disable_end(context);
-    nk_layout_row_end(context);
-    nk_layout_row_dynamic(context, 36, 1);
-    nk_label_wrap(context, view->beat_marker_navigation_available
-                          ? "Navigate bookmarks and sections"
-                          : "No bookmarks or sections");
-    if (action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
-        if (previous_clicked)
-            action->kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER;
-        else if (next_clicked)
-            action->kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER;
-    }
-    worm_ui_nuklear_render_compose_markers(context, view, action);
-    nk_tree_pop(context);
+    if (!nk_tree_push(inspector.context, NK_TREE_TAB, "Bookmarks and sections", NK_MINIMIZED)) return;
+    worm_ui_nuklear_render_compose_markers(inspector.context, inspector.view, inspector.action);
+    nk_tree_pop(inspector.context);
 }
 
 // Lets the layout at the cursor switch between profiles with the same lane count.

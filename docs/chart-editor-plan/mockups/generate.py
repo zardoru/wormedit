@@ -433,7 +433,7 @@ def markers():
     x, y, w = 12, 12, 356
 
     def group(top, title, rows):
-        svg.text(x + 16, top + 20, title, BRIGHT, 13, weight="bold")
+        svg.text(x + 8, top + 20, title, BRIGHT, 13, weight="bold")  # Same 8 px margin as the buttons on the right.
         bx = x + w - 8 - (4 * 30 - 4)  # Right edge flush with the row highlight.
         for glyph in ["‹", "›", "+", ""]:
             icon_button(svg, bx, top + 2, glyph, size=26)
@@ -455,8 +455,8 @@ def markers():
     group(y + 8, "Bookmarks", [("drop", "m17 · 0:42.100", True), ("break", "m33 · 1:21.900", False),
                                 ("outro", "m61 · 2:18.000", False)])
     svg.line(x + 8, y + 132, x + w - 8, y + 132, BORDER)
-    group(y + 140, "Sections", [("verse 1", "m1–m16", False), ("chorus", "m17–m32", False),
-                                ("bridge", "m33–m40", False)])
+    group(y + 140, "Sections", [("verse 1", "m1-m16", False), ("chorus", "m17-m32", False),
+                                ("bridge", "m33-m40", False)])
     svg.note(x, 298, "")
     svg.save("bookmarks-sections.svg")
 

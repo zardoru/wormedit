@@ -63,7 +63,7 @@ auto editor_popup_bounds(nk_context* context, const WormUiComposeView& view,
                          const bookmark_rename_editor_t& editor, struct nk_rect viewport)
     -> struct nk_rect {
     const auto content = nk_window_get_content_region(context);
-    if (editor.kind == inline_label_kind_t::note_label)
+    if (editor.kind != inline_label_kind_t::bookmark || editor.anchored)
         return note_label_inline_bounds(editor, content);
     const auto target = bookmark_by_id(view, editor.bookmark_id);
     const auto field_right = view.viewport_width_pixels > 0.0
@@ -126,6 +126,10 @@ void stage_rename(WormUiWorkspaceAction& action, const WormUiComposeView& view,
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     if (editor.kind == inline_label_kind_t::note_label) {
         stage_note_label_inline(action, view, editor);
+        return;
+    }
+    if (editor.kind == inline_label_kind_t::section_label) {
+        stage_section_label_inline(action, view, editor);
         return;
     }
     action.compose_action = WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK;

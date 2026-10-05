@@ -33,6 +33,8 @@ void append_beat_fit_input(WormUiWorkspaceAction* action,
 auto compose_timing_target(const WormUiComposeView& view, double screen_y)
     -> WormUiTimingTarget;
 bool compose_point_hits_note(const WormUiComposeView* view, double x, double y);
+// Starts a note paint stroke at the press position, with the armed Sounds sample if any.
+void append_note_paint_begin(const ComposePointerEventContext& input);
 std::uint64_t compose_bgm_event_at(const WormUiComposeView* view, double x, double y);
 std::uint64_t compose_bga_event_at(const WormUiComposeView* view, double x, double y);
 bool compose_point_hits_selected_note(const WormUiComposeView* view, double x, double y);

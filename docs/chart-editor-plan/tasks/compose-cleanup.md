@@ -90,6 +90,26 @@ Retirement cards remove UI only. Stored data and actions stay unless a card says
 - **Verify:** `cmake --build build`; `env -u DISPLAY -u WAYLAND_DISPLAY ctest --test-dir build --output-on-failure`; smoke capture showing the inspector without the section.
 - **Out of scope:** adding new features to the Sounds or BGA docks.
 
+### Control table (step 1, 2026-10-05)
+
+Every control `worm_ui_nuklear_render_compose_resources` draws today (`compose_resources.cpp`), and where the same action lives afterwards.
+
+| Control | Action | Replacement |
+| --- | --- | --- |
+| Export group popup, "Replace existing chart files", "Export selected group", output path label | `EXPORT_OUTPUT_GROUP` | **None.** Only this list emits it. |
+| BGM / BGA filter buttons and search | none (frontend state) | Sounds dock and BGA dock searches. |
+| "Armed: …" status line | none | Sounds and BGA docks show the armed row. |
+| Assign selected, Disarm | `ASSIGN_RESOURCE_TO_SELECTION` | Named by the user as retired. No dock emits `ASSIGN_RESOURCE_TO_SELECTION` today (grep of the two docks), so confirm that the action may become unreachable from the UI. |
+| Place BGM / BGA at cursor, Place and Replace pointer modes, Auto next after place | `PLACE_RESOURCE` and pointer modes | "Place BGM at cursor" is named by the user. The BGA dock has a Place pointer mode; the Sounds dock has paint mode. No dock has Replace mode or a place-at-cursor button, and the user did not name those. |
+| "Create BGM from waveform", "Create BGA from selected image" | `CREATE_RESOURCE` | **None.** Only this list emits it. |
+| External file path, Browse, "Link audio as BGM" / "Link image as BGA" | `IMPORT_RESOURCE_ASSET` | Metadata audio section (user: music is linked in Metadata) and the BGA dock import. |
+| Per-resource "Copy source into project" | `COPY_RESOURCE_TO_PROJECT` | `metadata_audio_section.cpp` and `audio_panel.cpp`. |
+| Per-resource "Copy source into export folder" and its destination label | `COPY_RESOURCE_TO_EXPORT` | `metadata_audio_section.cpp`. |
+| Resource rows (identity, usage, arm) and help text | arming | Sounds dock and BGA dock rows. |
+
+**STOP reached:** "Export selected group", "Create BGM from waveform / BGA from selected image" and the Replace pointer mode are not among the controls the user named and have no replacement, so step 2 has not started. The code is unchanged.
+
+
 ## T-390 Move BMSON tools into a Sounds dock tab
 
 - **Status:** done (2026-10-05; harness cases, app build and the full headless suite pass; no real-window or clang-tidy check)

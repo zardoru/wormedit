@@ -327,3 +327,17 @@ TEST_CASE("repeated previous playing bookmark within 300 ms steps past the bookm
     REQUIRE(previous().accepted);
     CHECK(seeks.back() == 6 * quarter);
 }
+
+TEST_CASE("adding a bookmark past the last measure explains it in plain words and changes nothing",
+          "[unit][sys][bookmark-commands]") {
+    fixture_t fixture{{measure_id_t{3}, 0}};
+    fixture.state.virtual_bms_cursor_row = 5000;
+    const auto revision = fixture.history.document.revision;
+    const auto outcome = add_beat_bookmark_here(fixture.history, fixture.state, fixture.application);
+    CHECK_FALSE(outcome.accepted);
+    CHECK(outcome.status == "Bookmarks can only go inside existing measures. "
+                            "Add measures up to the cursor first.");
+    CHECK(outcome.status.find("materialized") == std::string::npos);
+    CHECK(fixture.history.document.revision == revision);
+    CHECK(fixture.history.document.charts.front().bookmarks.size() == 1);
+}

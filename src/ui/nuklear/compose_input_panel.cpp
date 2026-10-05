@@ -692,6 +692,17 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
     return true;
 }
 
+// A double-click on a bookmark line or label renames it, unless a note sits under the pointer
+// (that opens the note label editor).
+static bool begin_bookmark_rename_from_double_click(const ComposeDoubleClickContext& input,
+                                                    double click_x, double click_y) {
+    const auto& view = *input.view;
+    if (!view.visible || view.input_occluded || state.action_overflowed ||
+        compose_point_hits_note(input.view, click_x, click_y)) return false;
+    return begin_compose_bookmark_rename_at_double_click(state.bookmark_rename, view, click_x,
+                                                         click_y);
+}
+
 bool process_compose_double_clicks(const ComposeDoubleClickContext& input,
                                           bool compose_pointer_captured,
                                           bool window_focused) {
@@ -709,6 +720,10 @@ bool process_compose_double_clicks(const ComposeDoubleClickContext& input,
         const auto click_y = (static_cast<double>(pointer.y) - viewport.y) *
                              input.view->viewport_height_pixels / viewport.h;
         if (begin_timing_stage_from_rail_click(input, click_x, click_y)) {
+            note_double_click_in_view = true;
+            continue;
+        }
+        if (begin_bookmark_rename_from_double_click(input, click_x, click_y)) {
             note_double_click_in_view = true;
             continue;
         }

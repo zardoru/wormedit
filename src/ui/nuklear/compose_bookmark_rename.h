@@ -32,6 +32,11 @@ auto begin_compose_bookmark_rename_at_pointer(bookmark_rename_editor_t& editor,
                                              double pointer_x, double pointer_y,
                                              bool pressed, bool available) -> bool;
 
+// Double-click entry: the line or its label opens the editor. Notes are the caller's concern.
+auto begin_compose_bookmark_rename_at_double_click(bookmark_rename_editor_t& editor,
+                                                  const WormUiComposeView& view,
+                                                  double pointer_x, double pointer_y) -> bool;
+
 auto compose_bookmark_rename_owns_input(const bookmark_rename_editor_t& editor,
                                         const WormUiComposeView& view,
                                         bool window_focused) -> bool;

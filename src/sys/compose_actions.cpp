@@ -1583,7 +1583,7 @@ std::optional<std::string> edit_beat_bookmark(compose_action_context_t& context)
     if (context.state.virtual_bms_cursor_row &&
         (operation == WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK ||
          operation == WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION))
-        return compose_action_warning(context, "Beat bookmarks require a materialized cursor measure.");
+        return compose_action_warning(context, "Bookmarks can only go inside existing measures. Add measures up to the cursor first.");
     if (editor_interaction_has_pending_gesture(context.state))
         return compose_action_warning(context, "Finish or cancel the active Compose gesture before editing bookmarks.");
     const auto* chart = selected_chart(context.history, context.workspace);

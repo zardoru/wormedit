@@ -248,3 +248,68 @@ TEST_CASE("bookmark rename cancels when the captured bookmark is deleted",
     check_rename(frame.compose_input_count == 0);
     check_rename(!worm_ui_nuklear_compose_state().bookmark_rename.active);
 }
+
+namespace {
+
+auto double_click_at(nuklear_event_harness_t& harness, double document_x, double document_y)
+    -> bool {
+    const auto viewport = compose_canvas_viewport_for_testing();
+    if (!viewport) return false;
+    const auto& view = harness.view().compose;
+    const auto x = viewport->x + static_cast<float>(document_x * viewport->width /
+                                                    view.viewport_width_pixels);
+    const auto y = viewport->y + static_cast<float>(document_y * viewport->height /
+                                                    view.viewport_height_pixels);
+    auto first_down = mouse_button(true, x, y);
+    auto second_down = mouse_button(true, x, y);
+    second_down.button.clicks = 2;
+    const std::array first{pointer_motion(x, y), first_down};
+    const std::array first_up{pointer_motion(x, y), mouse_button(false, x, y)};
+    const std::array second{pointer_motion(x, y), second_down};
+    const std::array second_up{pointer_motion(x, y), mouse_button(false, x, y)};
+    (void)harness.frame(first);
+    (void)harness.frame(first_up);
+    (void)harness.frame(second);
+    (void)harness.frame(second_up);
+    (void)harness.frame();
+    return true;
+}
+
+} // namespace
+
+TEST_CASE("double-clicking a bookmark line or label opens its rename editor",
+          "[unit][frontend-state][event-harness][bookmark-rename]") {
+    nuklear_event_harness_t harness{1280, 900};
+    require_rename(harness.ready());
+    WormUiComposeBookmarkView bookmark{};
+    seed_bookmark(harness, bookmark);
+    (void)harness.frame();
+    const auto right = harness.view().compose.playable_field_right_pixels;
+
+    // Far from the single-click strip, on the line itself: the old target missed this.
+    require_rename(double_click_at(harness, right * 0.3, bookmark.projected_y_pixels));
+    check_rename(worm_ui_nuklear_compose_state().bookmark_rename.active);
+    check_rename(worm_ui_nuklear_compose_state().bookmark_rename.bookmark_id == 91);
+
+    // Cancel, then use the label zone just above the line on the right half.
+    const std::array escape{press_escape()};
+    (void)harness.frame(escape);
+    const std::array release_events{release_escape()};
+    (void)harness.frame(release_events);
+    (void)harness.frame();
+    require_rename(!worm_ui_nuklear_compose_state().bookmark_rename.active);
+    require_rename(double_click_at(harness, right * 0.8, bookmark.projected_y_pixels - 10.0));
+    check_rename(worm_ui_nuklear_compose_state().bookmark_rename.active);
+}
+
+TEST_CASE("double-clicking empty space does not open a bookmark rename editor",
+          "[unit][frontend-state][event-harness][bookmark-rename]") {
+    nuklear_event_harness_t harness{1280, 900};
+    require_rename(harness.ready());
+    WormUiComposeBookmarkView bookmark{};
+    seed_bookmark(harness, bookmark);
+    (void)harness.frame();
+    const auto right = harness.view().compose.playable_field_right_pixels;
+    require_rename(double_click_at(harness, right * 0.3, bookmark.projected_y_pixels + 80.0));
+    check_rename(!worm_ui_nuklear_compose_state().bookmark_rename.active);
+}

@@ -87,6 +87,29 @@ auto bookmark_rename_target_at(std::span<const bookmark_rename_line_t> lines,
     return nearest;
 }
 
+auto bookmark_double_click_target_at(std::span<const bookmark_rename_line_t> lines,
+                                     double x, double y, double right_edge, double label_height)
+    -> std::optional<std::uint64_t> {
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(right_edge) ||
+        !std::isfinite(label_height) || x < 0.0 || x > right_edge + 2.0) return std::nullopt;
+    const auto in_label_zone = x >= right_edge * 0.5;
+    auto nearest = std::optional<std::uint64_t>{};
+    auto nearest_distance = 6.0;
+    for (const auto& line : lines) {
+        if (line.bookmark_id == 0 || !std::isfinite(line.y)) continue;
+        // The name sits above its line: y grows downward, so that is a smaller y.
+        const auto above = line.y - y;
+        const auto distance = std::abs(y - line.y);
+        const auto on_label = in_label_zone && above > 0.0 && above <= label_height;
+        if (!on_label && distance > nearest_distance) continue;
+        if (!on_label && nearest && distance == nearest_distance && line.bookmark_id >= *nearest)
+            continue;
+        nearest = line.bookmark_id;
+        nearest_distance = on_label ? 0.0 : distance;
+    }
+    return nearest;
+}
+
 auto layout_bookmark_label(std::string_view label, const bookmark_text_width_t& width_of,
                            float font_height, float line_y, const bookmark_label_field_t& field,
                            const std::optional<bookmark_label_box_t>& previous)

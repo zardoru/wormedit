@@ -269,7 +269,7 @@ auto add_beat_bookmark_here(document_history_t& history, editor_interaction_stat
         if (!snapped) return fail("The playhead is not on an editable row.");
         position = *snapped;
     } else if (state.virtual_bms_cursor_row) {
-        return fail("Beat bookmarks require a materialized cursor measure.");
+        return fail("Bookmarks can only go inside existing measures. Add measures up to the cursor first.");
     }
     const auto exists = std::ranges::any_of(chart->bookmarks, [&](const bookmark_t& bookmark) {
         return bookmark.anchor == marker_anchor_t::beat && bookmark.position == position;

@@ -167,7 +167,8 @@ Retirement cards remove UI only. Stored data and actions stay unless a card says
 
 ## T-395 Explain the beat-bookmark failure past the last measure in plain words
 
-- **Status:** ready
+- **Status:** done (2026-10-05; new tests and the full headless suite pass)
+- **Result:** extending measures is not part of bookmark add, so both messages (`add_beat_bookmark_here` and `edit_beat_bookmark`) now say "Bookmarks can only go inside existing measures. Add measures up to the cursor first." The document and revision stay unchanged. Test: `adding a bookmark past the last measure ...`. The beat-section message still says "materialized" (out of scope).
 - **Outcome:** adding a beat bookmark with the cursor past the last measure either creates the measures needed, as note placement does, or says "Bookmarks can only go inside existing measures. Add measures up to the cursor first." The words "materialized cursor measure" no longer appear.
 - **Read first:** `src/sys/compose_bookmark_commands.cpp` (around `virtual_bms_cursor_row`), `src/sys/compose_actions.cpp` (near line 1586), and how note placement handles `virtual_bms_cursor_row`.
 - **Files owned:** `src/sys/compose_bookmark_commands.cpp`, `src/sys/compose_actions.cpp`, the matching test under `tests/sys/`, this card.
@@ -182,7 +183,8 @@ Retirement cards remove UI only. Stored data and actions stay unless a card says
 
 ## T-396 Double-clicking a bookmark on the canvas opens its rename field
 
-- **Status:** ready
+- **Status:** done (2026-10-05; new tests and the full headless suite pass)
+- **Result:** cause: rename was only reachable by a single press in a 36 px strip at the right edge of the playable field, and no double-click path existed, so a double-click on the line or label elsewhere did nothing. `process_compose_double_clicks` now calls `begin_compose_bookmark_rename_at_double_click` (whole line within 6 px, plus an 18 px label zone above it on the right half) unless a note is under the pointer. Event-harness regressions fail without the fix. Isolated Xvfb check with xdotool not run in this session.
 - **Outcome:** in the real window, double-clicking a beat bookmark's line or label opens the T-371 inline rename field. An event-harness case drives the same click sequence the app receives.
 - **Read first:** `src/ui/nuklear/compose_bookmark_rename.cpp` (`nearest_bookmark`), `src/ui/nuklear/compose_panel.cpp` (rename call sites), `src/ui/nuklear/compose_object_input.cpp`, `scripts/smoke-compose-virtual-x.sh` (copy it with a STEPS hook for xdotool clicks).
 - **Files owned:** `src/ui/nuklear/compose_bookmark_rename.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, this card.

@@ -37,6 +37,13 @@ struct bookmark_rename_line_t {
                                              double x, double y, double right_edge)
     -> std::optional<std::uint64_t>;
 
+// A double-click target: the whole line across the playable field (within 6 px of it), plus the
+// label zone just above it on the right half, where the name is drawn. Nearest line wins.
+[[nodiscard]] auto bookmark_double_click_target_at(std::span<const bookmark_rename_line_t> lines,
+                                                   double x, double y, double right_edge,
+                                                   double label_height)
+    -> std::optional<std::uint64_t>;
+
 // Places a bookmark name right-aligned on the field's right edge (4 px padding),
 // sitting just above its line at `line_y` and inside the field. Names longer
 // than half the field width end in "…". Returns nothing for an empty or invalid

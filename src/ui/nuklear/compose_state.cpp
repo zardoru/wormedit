@@ -383,6 +383,14 @@ auto worm_ui_nuklear_armed_dock_sound(const worm_ui_nuklear_compose_state_t& sta
     return 0;
 }
 
+void worm_ui_nuklear_tag_last_compose_input_sound(const worm_ui_nuklear_compose_state_t& state,
+                                                  const WormUiComposeView& view,
+                                                  WormUiWorkspaceAction& action) {
+    if (state.action_overflowed || action.compose_input_count == 0) return;
+    action.compose_inputs[action.compose_input_count - 1].resource_id =
+        worm_ui_nuklear_armed_dock_sound(state, view);
+}
+
 auto worm_ui_nuklear_sound_list_contains(float x, float y) -> bool {
     const auto& state = worm_ui_nuklear_compose_state();
     return state.sound_list_valid && x >= state.sound_list_x &&

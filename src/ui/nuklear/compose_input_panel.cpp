@@ -924,6 +924,7 @@ static auto handle_compose_note_field_click(const ComposePointerEventContext& in
     append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
                          input.pointer_x, input.pointer_y, 0, false,
                          compose_selection_mode(input.pointer_modifiers));
+    worm_ui_nuklear_tag_last_compose_input_sound(state, *input.view, *input.action);
     return true;
 }
 

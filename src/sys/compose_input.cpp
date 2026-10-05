@@ -1399,7 +1399,8 @@ auto begin_alt_pointer_gesture(const WormUiComposeInputAction& input,
         result = dispatch_editor_action(
             history, state,
             begin_alt_pointer_hold_gesture_action_t{
-                .lane = target->lane, .position = target->position, .alt_or_option_down = true});
+                .lane = target->lane, .position = target->position, .alt_or_option_down = true,
+                .sound = note_paint_sound(input)});
         accepted = "Pointer hold started; release to finish.";
     }
     return compose_input_family_result_t::continue_with_result();
@@ -1437,6 +1438,7 @@ auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
                                                         : "Note resize released.")
                              : "Note resize preview updated.";
     } else {
+        const auto sound = state.pending_hold ? state.pending_hold->sound : std::nullopt;
         result = releasing
                      ? dispatch_editor_action(
                            history, state,
@@ -1448,6 +1450,7 @@ auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
                            update_alt_pointer_hold_gesture_action_t{.position = *position,
                                                                     .alt_or_option_down = true,
                                                                     .pointer_captured = true});
+        if (releasing) advance_sound_after_paint_commit(result, sound, result.created_note.has_value());
         accepted = releasing ? (result.document_changed ? "Pointer hold committed."
                                                         : "Pointer hold released.")
                              : "Pointer hold preview updated.";
@@ -2651,20 +2654,26 @@ auto delete_selected_compose_timing_markers(compose_input_context_t& context,
     return true;
 }
 
-auto place_note_from_pointer(compose_input_context_t& context,
+auto place_note_from_pointer(const WormUiComposeInputAction& input,
+                              compose_input_context_t& context,
                               const auto& target,
                               wormedit::editor_interaction_result_t& result,
                               std::string_view& accepted) -> void {
     using namespace wormedit;
+    // A pending hold keeps the sound captured at its first click; the end click only commits.
+    const auto sound = context.state.pending_hold ? context.state.pending_hold->sound
+                                                   : note_paint_sound(input);
     result = dispatch_editor_action(context.history, context.state,
         context.state.pending_hold
             ? editor_ui_action_t{commit_hold_action_t{target.position}}
-            : editor_ui_action_t{place_tap_action_t{target.position}});
+            : editor_ui_action_t{place_tap_action_t{target.position, sound}});
+    advance_sound_after_paint_commit(result, sound, result.created_note.has_value());
     accepted = context.state.pending_hold ? "Hold gesture started; click its end row."
                                           : "Note placed.";
 }
 
-auto place_virtual_note_from_pointer(compose_input_context_t& context,
+auto place_virtual_note_from_pointer(const WormUiComposeInputAction& input,
+                                      compose_input_context_t& context,
                                       std::uint64_t row, wormedit::lane_id_t lane,
                                       wormedit::editor_interaction_result_t& result,
                                       std::string_view& accepted) -> void {
@@ -2673,25 +2682,32 @@ auto place_virtual_note_from_pointer(compose_input_context_t& context,
     if (pending) {
         const auto anchor = pending->canvas_row;
         const auto hold_lane = pending->lane;
+        const auto sound = pending->sound;
         context.state.pending_virtual_lane_key.reset();
         result = dispatch_editor_action(context.history, context.state,
-            place_virtual_bms_hold_action_t{anchor, row, hold_lane});
+            place_virtual_bms_hold_action_t{anchor, row, hold_lane, sound});
         if (!result) context.state.pending_virtual_lane_key =
-            editor_interaction_state_t::virtual_lane_key_t{anchor, hold_lane, context.history.document.revision};
+            editor_interaction_state_t::virtual_lane_key_t{anchor, hold_lane,
+                context.history.document.revision, sound};
+        advance_sound_after_paint_commit(result, sound, result.created_note.has_value());
         accepted = "Hold gesture committed.";
     } else if (context.state.armed_note_kind == note_kind_t::hold) {
         context.state.pending_virtual_lane_key =
-            editor_interaction_state_t::virtual_lane_key_t{row, lane, context.history.document.revision};
+            editor_interaction_state_t::virtual_lane_key_t{row, lane, context.history.document.revision,
+                                                           note_paint_sound(input)};
         result.accepted = true;
         accepted = "Hold gesture started; click its end row.";
     } else {
+        const auto sound = note_paint_sound(input);
         result = dispatch_editor_action(context.history, context.state,
-            place_virtual_bms_tap_action_t{row, lane});
+            place_virtual_bms_tap_action_t{row, lane, sound});
+        advance_sound_after_paint_commit(result, sound, result.created_note.has_value());
         accepted = "Note placed in virtual BMS measure.";
     }
 }
 
-auto finish_virtual_hold_at_authored_row(compose_input_context_t& context,
+auto finish_virtual_hold_at_authored_row(const WormUiComposeInputAction& input,
+                                         compose_input_context_t& context,
                                          const wormedit::chart_document_t& chart,
                                          wormedit::local_position_t position, wormedit::lane_id_t lane,
                                          wormedit::editor_interaction_result_t& result,
@@ -2701,7 +2717,7 @@ auto finish_virtual_hold_at_authored_row(compose_input_context_t& context,
     const auto* index = std::get_if<wormedit::measure_index_t>(&built);
     const auto row = index ? wormedit::absolute_row(*index, position) : std::nullopt;
     if (!row) return false;
-    place_virtual_note_from_pointer(context, *row, lane, result, accepted);
+    place_virtual_note_from_pointer(input, context, *row, lane, result, accepted);
     return true;
 }
 
@@ -2727,7 +2743,8 @@ auto select_or_place_virtual_pointer(const WormUiComposeInputAction& input,
     if (!virtual_hit)
         return "Click inside an editable lane to select a note or position.";
     if (mode == editor_area_selection_mode_t::replace && pointer_click_places_notes(context)) {
-        place_virtual_note_from_pointer(context, virtual_hit->first, virtual_hit->second, result, accepted);
+        place_virtual_note_from_pointer(input, context, virtual_hit->first, virtual_hit->second,
+                                        result, accepted);
         return std::nullopt;
     }
     const auto built = build_virtual_canvas(chart);
@@ -2762,7 +2779,8 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
         return select_or_place_virtual_pointer(input, context, *chart, *view, *mode, result, accepted);
     const auto places_notes = pointer_click_places_notes(context);
     if (*mode == editor_area_selection_mode_t::replace && places_notes &&
-        finish_virtual_hold_at_authored_row(context, *chart, target->position, target->lane, result, accepted))
+        finish_virtual_hold_at_authored_row(input, context, *chart, target->position, target->lane,
+                                            result, accepted))
         return std::nullopt;
     context.state.active_lane = target->lane;
     // A click never moves the cursor: it keeps its fixed station and only keys and the
@@ -2771,7 +2789,7 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
                                   !context.state.pending_hold->gesture_source;
     if (*mode == editor_area_selection_mode_t::replace && places_notes &&
         (!target->note || clicked_hold_end)) {
-        place_note_from_pointer(context, *target, result, accepted);
+        place_note_from_pointer(input, context, *target, result, accepted);
         return std::nullopt;
     }
     const auto selection =

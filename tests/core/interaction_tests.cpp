@@ -5065,6 +5065,51 @@ TEST_CASE("lane-key interaction captures sound and default layers for authored a
     check_lane_sound(history.document.charts.front().measures.size() == 2);
 }
 
+TEST_CASE("alt-pointer hold captures the armed sound and default layers like a lane key",
+          "[unit][core][interaction][lane-key-sound]") {
+    auto song = make_paint_sound_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    require_lane_sound(dispatch_editor_action(history, state,
+        begin_alt_pointer_hold_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true,
+                                                resource_id_t{7}}));
+    require_lane_sound(state.pending_hold);
+    check_lane_sound(state.pending_hold->sound == resource_id_t{7});
+    const auto released = dispatch_editor_action(history, state,
+        release_alt_pointer_hold_gesture_action_t{{measure_id_t{1}, 480}, true, true});
+    require_lane_sound(released);
+    require_lane_sound(released.created_note);
+    const auto* note = find_note(history, *released.created_note);
+    require_lane_sound(note);
+    check_lane_sound(note->sound == resource_id_t{7});
+    check_lane_sound(note->semantic_layers == std::vector<layer_id_t>{layer_id_t{3}});
+}
+
+TEST_CASE("click placement captures the armed sound for taps and click-click holds",
+          "[unit][core][interaction][lane-key-sound]") {
+    const auto hold = GENERATE(false, true);
+    auto history = make_document_history(make_paint_sound_song());
+    auto state = make_state(history);
+    require_lane_sound(arm_note_kind(history, state, hold ? note_kind_t::hold : note_kind_t::tap));
+    auto placed = dispatch_editor_action(history, state,
+        place_tap_action_t{{measure_id_t{1}, 0}, resource_id_t{7}});
+    require_lane_sound(placed);
+    if (hold) {
+        require_lane_sound(state.pending_hold);
+        check_lane_sound(state.pending_hold->sound == resource_id_t{7});
+        placed = dispatch_editor_action(history, state,
+            commit_hold_action_t{{measure_id_t{1}, 480}});
+        require_lane_sound(placed);
+    }
+    require_lane_sound(placed.created_note);
+    const auto* note = find_note(history, *placed.created_note);
+    require_lane_sound(note);
+    check_lane_sound(note->sound == resource_id_t{7});
+    check_lane_sound(note->semantic_layers == std::vector<layer_id_t>{layer_id_t{3}});
+    check_lane_sound(note->end.has_value() == hold);
+}
+
 TEST_CASE("lane-key interaction rejects absent and non-sample sounds without changing the document",
           "[unit][core][interaction][lane-key-sound]") {
     const auto virtual_measure = GENERATE(false, true);

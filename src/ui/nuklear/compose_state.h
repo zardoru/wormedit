@@ -568,6 +568,12 @@ void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
 [[nodiscard]] auto worm_ui_nuklear_armed_dock_sound(
     const worm_ui_nuklear_compose_state_t& state, const WormUiComposeView& view) -> std::uint64_t;
 
+// Stamps the armed Sounds-dock sample on the compose input just appended, so every gesture that
+// can create a note (lane key, paint, Alt-hold, click) captures it the same way at press time.
+void worm_ui_nuklear_tag_last_compose_input_sound(const worm_ui_nuklear_compose_state_t& state,
+                                                  const WormUiComposeView& view,
+                                                  WormUiWorkspaceAction& action);
+
 void worm_ui_nuklear_reset_compose_state();
 
 [[nodiscard]] auto worm_ui_nuklear_begin_inline_offset(worm_ui_nuklear_compose_state_t& state,

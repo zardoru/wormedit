@@ -381,9 +381,7 @@ static void append_note_paint_begin(const ComposePointerEventContext& input) {
     auto* action = input.action;
     append_compose_input(action, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
                          input.paint_anchor_x, input.paint_anchor_y);
-    if (!state.action_overflowed && action->compose_input_count > 0)
-        action->compose_inputs[action->compose_input_count - 1].resource_id =
-            worm_ui_nuklear_armed_dock_sound(state, *input.view);
+    worm_ui_nuklear_tag_last_compose_input_sound(state, *input.view, *action);
 }
 
 void process_note_paint_pointer(const ComposePointerEventContext& input,
@@ -494,14 +492,16 @@ static void begin_area_selection_drag(const ComposePointerEventContext& input, b
 
 static void release_compose_selection_click(const ComposePointerEventContext& input) {
     if (state.area_selection_anchor_x >= input.note_field_left &&
-        state.area_selection_anchor_x < input.note_field_right)
+        state.area_selection_anchor_x < input.note_field_right) {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
                              state.area_selection_anchor_x, state.area_selection_anchor_y,
                              0, false, state.area_selection_mode);
-    else if (input.view->bms_measure_labels &&
-             state.area_selection_anchor_x < compose_measure_rail_width)
+        worm_ui_nuklear_tag_last_compose_input_sound(state, *input.view, *input.action);
+    } else if (input.view->bms_measure_labels &&
+               state.area_selection_anchor_x < compose_measure_rail_width) {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_MEASURE_SELECT,
                              state.area_selection_anchor_x, state.area_selection_anchor_y);
+    }
 }
 
 static auto update_area_selection_candidate(const ComposePointerEventContext& input,
@@ -577,6 +577,7 @@ auto handle_compose_alt_pointer(const ComposePointerEventContext& input,
         wormedit::ui::compose_notes_editable(compose_mode_of(*input.view))) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN,
                              input.pointer_x, input.pointer_y);
+        worm_ui_nuklear_tag_last_compose_input_sound(state, *input.view, *action);
         state.pointer_hold_active = !state.action_overflowed;
         return true;
     }

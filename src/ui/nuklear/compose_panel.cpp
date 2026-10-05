@@ -1103,6 +1103,21 @@ static void discard_occluded_compose_input(const ComposePanelRenderContext& pane
     discard_compose_frame_input();
 }
 
+// Area and SV recipe popups occlude the rest of Compose input while they own it,
+// so they must be serviced ahead of that gate to render, finish captures, and close.
+static auto process_compose_owned_popups(const ComposePanelRenderContext& panel,
+                                         struct nk_rect viewport, double input_right) -> bool {
+    const bool area_owned = compose_area_menu_consumed();
+    const bool recipe_owned = compose_recipe_menu_consumed();
+    if (area_owned)
+        process_compose_area_menu(panel.context, *panel.view, *panel.action, viewport,
+                                  input_right, panel.window_focused);
+    if (recipe_owned)
+        process_compose_recipe_menu(panel.context, *panel.view, *panel.action, viewport,
+                                    input_right, panel.window_focused);
+    return area_owned || recipe_owned;
+}
+
 static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
                                         bool inspector_drawn, float inspector_width) {
     auto* context = panel.context;
@@ -1137,15 +1152,16 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         : viewport.x + viewport.w;
     if (compose_note_menu_open() || compose_note_menu_consumed())
         process_compose_note_menu(context, *view, *action, viewport, editor_input_right, window_focused);
-    if (view->input_occluded || state.keysound_group_review.open ||
+    const bool owned_popup = !compose_note_menu_consumed() &&
+        process_compose_owned_popups(panel, viewport, editor_input_right);
+    if (view->input_occluded || owned_popup || state.keysound_group_review.open ||
         state.keysound_group_menu_open || state.keysound_group_menu_release_pending ||
         state.layers_menu_open || state.layers_menu_release_pending ||
         state.bga_stack_open || state.bga_stack_release_pending ||
         state.bga_renumber_confirmation_open ||
         state.bga_renumber_release_pending || compose_note_menu_consumed() ||
         state.bookmark_rename.active || state.bookmark_rename.release_pending ||
-        worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_chooser) ||
-        compose_area_menu_consumed() || compose_recipe_menu_consumed()) {
+        worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_chooser)) {
         discard_occluded_compose_input(panel);
         draw_compose_scene_canvas(context, view, canvas, viewport);
         render_compose_bookmark_rename(context, *view, *action, state.bookmark_rename, viewport, window_focused);

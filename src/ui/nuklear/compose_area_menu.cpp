@@ -182,8 +182,10 @@ void process_compose_area_menu(nk_context* context, const WormUiComposeView& vie
         update_capture(context, view, action, viewport, focused);
         return;
     }
-    if (!focused || !view.area_range_available || view.area_canvas_rows == 0)
+    if (!focused || !view.area_range_available || view.area_canvas_rows == 0) {
+        render_menu(context, view, action); // Closes an open menu whose range went away.
         return;
+    }
     const auto rect = compose_area_band_rect(view, viewport);
     const auto& mouse = context->input.mouse;
     const bool inside =

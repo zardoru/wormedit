@@ -1090,6 +1090,31 @@ TEST_CASE("Empty area band keeps its right click menu when no note was hit",
     check_layer_menu(clicked.front().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
+TEST_CASE("Area band menu stays drawn and dismissal returns Compose input",
+          "[unit][frontend-state][frontend][event-harness]") {
+    note_menu_fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    view.area_range_available = true;
+    view.area_rows_per_measure = 960;
+    view.area_canvas_rows = 9600;
+    view.area_range_begin_row = 0;
+    view.area_range_end_row = 9600;
+    (void)fixture.harness.frame();
+    (void)right_click_at(fixture.harness, 900, 400);
+    (void)fixture.harness.frame();
+    (void)fixture.harness.frame();
+    // The popup must survive past its opening frame, not flicker once.
+    CHECK(compose_area_menu_open());
+    CHECK(fixture.harness.drawn_text_center("Quantize selection").has_value());
+    (void)click_at(fixture.harness, 100, 650);
+    (void)fixture.harness.frame();
+    CHECK_FALSE(compose_area_menu_open());
+    CHECK_FALSE(compose_area_menu_consumed());
+    // A dismissed menu must not leave the canvas latched.
+    (void)click_at(fixture.harness, 900, 400);
+    CHECK_FALSE(compose_area_menu_consumed());
+}
+
 TEST_CASE("Note submenu requests a bounded scrolling window independent of hidden Layers dock",
           "[unit][frontend-state][frontend][event-harness]") {
     note_menu_fixture_t fixture;

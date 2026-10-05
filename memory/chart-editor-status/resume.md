@@ -4,6 +4,10 @@
 
 ## Immediate work
 
+Context menus (2026-10-04): T-380 fixes the Compose area/SV recipe menu deadlock that
+left the canvas unresponsive after a right-click on a selected area. Full suite passes. See
+[context menus](../../docs/chart-editor-plan/tasks/context-menus.md).
+
 Latest integrated checkpoint (2026-10-04): playback tail `d64c048`, viewport
 tooltips `34fdf42`, and hidden Notifications history `f17d4f4` are reviewed and
 integrated. Root full application build and all 2,255/2,255 CTest cases pass,

@@ -20,3 +20,7 @@ The integrated fixture-validation test initially forced every unlisted `.bme`
 fixture to the generic 7K profile. The approved narrow exception in
 `tests/formats/fixture_validation_tests.cpp` lets only `x-aria-10k-hd.bme` use
 automatic detection; the positive fixture-validation test passes afterward.
+
+## Final root integration (2026-10-04)
+
+Main includes the profile, bounded-clock, SpecialStyle 12K/16K and fixture-harness cuts. Application build and all 2,293 CTest cases pass (45.40 s). Root combined original-chart Fraction/sample oracle and SDL dummy start/advance/pause/resume/seek/EOF probes pass for all four x-Aria charts; original hashes are unchanged. No user application was restarted and no desktop window was opened. Earlier pending main/runtime gates above are now complete; real-window smoke remains blocked by the existing sandbox approval restriction.

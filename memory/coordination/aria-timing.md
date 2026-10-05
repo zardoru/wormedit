@@ -90,3 +90,7 @@ start/advance/pause/resume/seek/EOF probe remain pending integration. No worker
 claim covers these pending gates. The four-chart standalone probe intentionally
 omits the independent T-383 input-binding assertion because this worker's base
 predates that profile patch; root's final combined probe retains that assertion.
+
+## Final root integration (2026-10-04)
+
+Main includes the profile, bounded-clock, SpecialStyle 12K/16K and fixture-harness cuts. Application build and all 2,293 CTest cases pass (45.40 s). Root combined original-chart Fraction/sample oracle and SDL dummy start/advance/pause/resume/seek/EOF probes pass for all four x-Aria charts; original hashes are unchanged. No user application was restarted and no desktop window was opened. Earlier pending main/runtime gates above are now complete; real-window smoke remains blocked by the existing sandbox approval restriction.

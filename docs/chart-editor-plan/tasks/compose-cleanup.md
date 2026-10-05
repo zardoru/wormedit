@@ -76,7 +76,7 @@ Retirement cards remove UI only. Stored data and actions stay unless a card says
 
 ## T-389 Retire the inspector "Samples / BGM / BGA" resource list
 
-- **Status:** blocked-on T-390
+- **Status:** ready
 - **Outcome:** the inspector no longer shows "Samples / BGM / BGA". It loses "Link audio as BGM", "Place BGM at cursor", "Assign selected", "Disarm" and the filter/search row with it. Music is linked in Metadata, the BGM start is set by the inline offset, and sounds are assigned from the Sounds dock.
 - **Read first:** `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_inspector.cpp` (call to `worm_ui_nuklear_render_compose_resources`), `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_resources.h`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_state.h`, `CMakeLists.txt`, affected tests under `tests/ui/`, this card.
@@ -92,7 +92,8 @@ Retirement cards remove UI only. Stored data and actions stay unless a card says
 
 ## T-390 Move BMSON tools into a Sounds dock tab
 
-- **Status:** ready
+- **Status:** done (2026-10-05; harness cases, app build and the full headless suite pass; no real-window or clang-tidy check)
+- **Result:** the Sounds dock draws a Sounds/BMSON tab strip (`render_sounds_dock_tabs`, `chrome::mode_button`) only when the new `WormUiComposeView::bmson_tools_available` is set (`chart.source_family == bmson`, filled in `compose_view.cpp`). The selected tab is `sounds_dock_bmson_tab` in compose state, and a non-BMSON chart resets it to Sounds. The BGM object and marker buttons, razor modes, staged commit/cancel, slice Restart/Continue and the staged-region audition list moved unchanged into `compose_bmson_tab.cpp` (`worm_ui_nuklear_render_compose_bmson_tab`) and were deleted from `compose_resources.cpp` and `compose_inspector.cpp`; actions and payloads are the same code. Until T-389 retires the rest of "Samples / BGM / BGA", the inspector still shows that list without the BMSON controls. Harness cases: tab visibility by chart type, and the razor toggle from the tab (`tests/ui/bmson_tab_event_harness_tests.cpp`).
 - **Outcome:** the Sounds dock has two tabs, Sounds and BMSON. The BMSON tab holds the object and marker actions, razor mode, staged regions and selected-slice controls that live in the inspector today. The tab shows only for BMSON charts.
 - **Read first:** `src/ui/nuklear/compose_resources.cpp` (`render_bmson_controls` and its helpers), `src/ui/nuklear/compose_inspector.cpp` (`render_staged_bmson_regions`, `render_selected_bmson_slice_controls`), `src/ui/nuklear/compose_sounds_panel.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_sounds_panel.cpp`, new `src/ui/nuklear/compose_bmson_tab.cpp`, new `src/ui/nuklear/compose_bmson_tab.h`, `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_state.h`, `CMakeLists.txt`, `tests/ui/nuklear_event_harness_tests.cpp`, this card.

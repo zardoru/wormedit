@@ -532,6 +532,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/sound_filter_event_harness_tests.cpp
         ui/dock_select_all_event_harness_tests.cpp
         ui/note_label_inline_event_harness_tests.cpp
+        ui/bmson_tab_event_harness_tests.cpp
         ui/bookmark_chooser_event_harness_tests.cpp
         ui/bookmark_rename_event_harness_tests.cpp
         ui/popup_menu_event_harness_tests.cpp

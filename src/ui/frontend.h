@@ -1140,6 +1140,8 @@ typedef struct WormUiComposeView {
     size_t lane_layout_segment_count;
     bool downscroll;
     bool bms_measure_labels;
+    // The active chart came from BMSON, so the Sounds dock offers its BMSON tab.
+    bool bmson_tools_available;
     uint64_t compose_measure_count;
     uint32_t selected_bms_measure_number_plus_one;
     bool truncated;

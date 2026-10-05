@@ -1333,6 +1333,7 @@ bool initialize_compose_view_state(
     view.playable_field_left_pixels = compose_measure_rail_width_pixels;
     view.playable_field_right_pixels = view.viewport_width_pixels;
     view.bms_measure_labels = false;
+    view.bmson_tools_available = false;
     view.compose_measure_count = 0;
     view.selected_bms_measure_number_plus_one = 0;
     view.timing_document_begin_fraction = 0.0;
@@ -3385,6 +3386,7 @@ auto make_compose_static_view(const WormUiComposeView& view,
     retained.visible = view.visible;
     retained.scene_available = view.scene_available;
     retained.bms_measure_labels = view.bms_measure_labels;
+    retained.bmson_tools_available = view.bmson_tools_available;
     retained.downscroll = view.downscroll;
     retained.bga_lane_visible = view.bga_lane_visible;
     retained.lane_key_legend_visible = view.lane_key_legend_visible;
@@ -3750,6 +3752,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     const auto downscroll = input.downscroll;
     flattened.compose.interaction_view = interaction_view;
     view.bms_measure_labels = chart.source_family == wormedit::format_family_t::bms;
+    view.bmson_tools_available = chart.source_family == wormedit::format_family_t::bmson;
     populate_lane_profile_choices(view, chart, interaction_view.cursor);
     populate_lane_layout_editor(view, chart, input.measures, interaction_view.cursor,
                                 retained_state && retained_state->virtual_bms_cursor_row.has_value());

@@ -404,6 +404,8 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t layers_panel_chart_id{};
     std::uint64_t layers_panel_project_id{};
     bool sounds_layers_open{};
+    // The Sounds dock's selected tab; non-BMSON charts always show Sounds.
+    bool sounds_dock_bmson_tab{};
     bool sounds_preview_on_click{true};
     bool keysound_sort_by_id{};
     bool keysound_slots_mode{};

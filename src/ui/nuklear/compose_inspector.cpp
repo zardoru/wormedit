@@ -43,70 +43,6 @@ static void render_initial_bpm_control(const ComposeInspectorContext& inspector)
     }
 }
 
-static void render_selected_bmson_slice_controls(const ComposeInspectorContext& inspector) {
-    const auto& view = *inspector.view;
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    const bool enabled = view.scene_available && view.selected_bmson_bgm_event_id != 0 &&
-                         view.selected_bmson_source_lane_id != 0;
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_label(context, "BMSON slice", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 24, 2);
-    if (!enabled) nk_widget_disable_begin(context);
-    const auto restart_clicked = nk_button_label(context, "Restart");
-    const auto continue_clicked = nk_button_label(context, "Continue");
-    if (!enabled) nk_widget_disable_end(context);
-    if (!enabled || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE ||
-        (!restart_clicked && !continue_clicked)) return;
-    action->compose_action = restart_clicked ? WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART
-                                            : WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE;
-    action->compose_bmson_bgm_event_id = view.selected_bmson_bgm_event_id;
-    action->compose_input_chart_id = view.chart_id;
-    action->compose_input_document_revision = view.document_revision;
-}
-
-static void render_staged_bmson_regions(const ComposeInspectorContext& inspector) {
-    const auto* view = inspector.view;
-    auto* context = inspector.context;
-    auto* action = inspector.action;
-    if (view->staged_bmson_marker_count == 0 ||
-        !nk_tree_push(context, NK_TREE_TAB, "Staged BMSON regions", NK_MAXIMIZED))
-        return;
-    state.bmson_audition_index = std::clamp(state.bmson_audition_index, 1,
-                                            static_cast<int>(view->staged_bmson_marker_count));
-    nk_layout_row_dynamic(context, 24, 1);
-    nk_property_int(context, "Region", 1, &state.bmson_audition_index,
-                    static_cast<int>(view->staged_bmson_marker_count), 1, 1.0f);
-    const auto selected_index = static_cast<std::size_t>(state.bmson_audition_index - 1);
-    const auto assigned_lane = view->staged_bmson_marker_playable_lanes[selected_index];
-    nk_labelf(context, NK_TEXT_LEFT, "%s · %s",
-              view->staged_bmson_marker_restarts[selected_index] ? "Restart" : "Continue",
-              assigned_lane == 0 ? "BGM" : "Playable key lane");
-    const auto selected = static_cast<std::uint64_t>(state.bmson_audition_index);
-    if (nk_button_label(context, "Audition staged region"))
-        append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT,
-                             0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, selected);
-    nk_layout_row_dynamic(context, 24, 2);
-    if (nk_button_label(context, "Assign key"))
-        append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_ACTIVE_LANE,
-                             0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, selected);
-    if (nk_button_label(context, "Assign BGM"))
-        append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_BGM,
-                             0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, selected);
-    if (nk_button_label(context, "Restart"))
-        append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_TOGGLE_DRAFT_RESTART,
-                             0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, selected);
-    if (nk_button_label(context, "Remove"))
-        append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT,
-                             0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, selected);
-    nk_tree_pop(context);
-}
-
 static void render_compose_marker_section(const ComposeInspectorContext& inspector) {
     const auto* view = inspector.view;
     auto* context = inspector.context;
@@ -249,8 +185,6 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
         nk_layout_row_dynamic(inspector.context, 18, 1);
         nk_label(inspector.context, "Building waveform...", NK_TEXT_LEFT);
     }
-    render_selected_bmson_slice_controls(inspector);
-    render_staged_bmson_regions(inspector);
     render_compose_marker_section(inspector);
 }
 

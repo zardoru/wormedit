@@ -892,6 +892,34 @@ TEST_CASE("Layer row menu hides its captured target without assigning selected n
     check_layer_row_action(eye.front(), WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, 7);
 }
 
+TEST_CASE("Layer row menu carries the retired inspector layer buttons",
+          "[unit][frontend-state][frontend][event-harness]") {
+    const std::array<std::pair<const char*, WormUiComposeActionKind>, 3> entries{{
+        {"Toggle selected", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER},
+        {"Paint: Off", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE},
+        {"Clear target", WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER}}};
+    for (const auto& [label, kind] : entries) {
+        INFO(label);
+        layer_menu_fixture_t fixture;
+        fixture.open();
+        const auto center = fixture.harness.drawn_text_center(label);
+        REQUIRE(center.has_value());
+        const auto clicked = click_at(fixture.harness, center->first, center->second);
+        check_layer_row_action(clicked.front(), kind, 7);
+    }
+}
+
+TEST_CASE("Layer row menu disables Toggle selected without a selection",
+          "[unit][frontend-state][frontend][event-harness]") {
+    layer_menu_fixture_t fixture;
+    fixture.harness.view().compose.selected_note_count = 0;
+    fixture.open();
+    const auto center = fixture.harness.drawn_text_center("Toggle selected");
+    REQUIRE(center.has_value());
+    const auto clicked = click_at(fixture.harness, center->first, center->second);
+    check_layer_menu_no_actions(clicked);
+}
+
 TEST_CASE("Layer row menu captures keyboard shortcuts and Escape closes without an action",
           "[unit][frontend-state][frontend][event-harness]") {
     layer_menu_fixture_t fixture;

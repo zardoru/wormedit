@@ -164,7 +164,20 @@ Every control `worm_ui_nuklear_render_compose_resources` draws today (`compose_r
 
 ## T-393 Remove the inspector "Semantic layers" section
 
-- **Status:** ready
+- **Status:** done (2026-10-05; harness cases, app build and the full headless suite pass; no real-window check)
+- **Result:** the section and its five render helpers are gone from `compose_inspector.cpp`, `compose_inspector.h` and `compose_panel.cpp`. Button map (step 1):
+
+  | Inspector button | Layers dock |
+  | --- | --- |
+  | Select notes in layer | row menu "Select notes" (existing) |
+  | Assign selected objects | clicking a layer row with a selection (existing) |
+  | Toggle selected objects | row menu **"Toggle selected"** (added) |
+  | Remove selected objects | none; see below |
+  | Paint: Armed/Off | row menu **"Paint: On/Off"** (added) |
+  | Solo: On/Off | row menu "Solo" (existing) |
+  | Clear target | row menu **"Clear target"** (added) |
+
+  Right-clicking a layer row already makes it the target, and the three added entries act on the target the same way "Solo" does. "Toggle selected" is disabled without a selection and "Paint" on a locked layer. **Finding:** `WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER` is not dispatched anywhere (`compose_actions.cpp` returns nothing for it), so the inspector's "Remove selected objects" never did anything; it was not carried over and the enumerator is untouched. Tests: `Layer row menu carries the retired inspector layer buttons`, `... disables Toggle selected without a selection`, and an inspector check in `quantize_report_event_harness_tests.cpp` (weak: the old section sat below the visible part of the inspector in the harness).
 - **Outcome:** the inspector no longer has "Semantic layers". Selecting the notes in a layer, assigning, removing, toggling and paint mode are all available from the Layers dock.
 - **Read first:** `src/ui/nuklear/compose_inspector.cpp` (`render_semantic_layer_*`), `src/ui/nuklear/compose_panel.cpp` (`render_compose_inspector_contents`), `src/ui/nuklear/compose_layers_panel.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_inspector.h`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_layers_panel.cpp`, affected tests, this card.

@@ -1443,15 +1443,6 @@ static void render_compose_inspector_contents(nk_context* context,
     render_compose_transform_section(inspector);
     render_compose_measure_section(inspector);
 
-    const auto visible_layer_count = view->semantic_layer_count;
-    const bool semantic_target_active = semantic_layer_target_active(view);
-    if (render_semantic_layer_palette_panel(inspector)) {
-        render_semantic_layer_selected_panel(inspector, visible_layer_count);
-        render_semantic_layer_membership_buttons(inspector, semantic_target_active);
-        render_semantic_layer_target_buttons(inspector, semantic_target_active);
-        nk_tree_pop(context);
-    }
-
     render_compose_timing_inspector(inspector);
 
     worm_ui_nuklear_render_bms_branch_panel(context, view, action);

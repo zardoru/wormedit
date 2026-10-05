@@ -54,3 +54,14 @@ TEST_CASE("the quantize Last applied report opens with its moved rows",
     CHECK(harness.drawn_text().find("Last applied report") != std::string::npos);
     CHECK(harness.drawn_text().find("Note 77") != std::string::npos);
 }
+
+TEST_CASE("the inspector no longer draws a Semantic layers section",
+          "[unit][frontend-state][event-harness][inspector-sections]") {
+    nuklear_event_harness_t harness{1600, 900};
+    REQUIRE(harness.ready());
+    seed_selection(harness.view().compose);
+    (void)harness.frame();
+    CHECK(harness.drawn_text().find("Quantize (1)") != std::string::npos);
+    CHECK(harness.drawn_text().find("Semantic layers") == std::string::npos);
+    CHECK(harness.drawn_text().find("Select notes in layer") == std::string::npos);
+}

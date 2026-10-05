@@ -124,7 +124,7 @@ The causes, found while planning:
 
 ## T-436 Regularize the UI components: one set of sizes, radii, gaps and state colors
 
-- **Status:** ready
+- **Status:** done (2026-10-05; headless suite and event harness pass, 1829/1829; SDL window not built or captured in the cloud: Zar to run the gallery capture locally)
 - **Mockup:** [components.svg](../mockups/components.svg) (reference: match its structure and hierarchy)
 - **Outcome:** `src/ui/nuklear/ui_metrics.h` defines the tokens, and `chrome` provides each component once, with all its states, built on those tokens. A hidden "UI gallery" window (opened with `--ui-gallery` or a debug command) draws every component in every state, and an Xvfb capture of it matches the mockup's structure. The components later cards use (Dialog, Checkbox, Segmented, ChipGrid, SelectionBar) come only from here.
 - **Why:** the 2026-10-05 designs add a dialog, segmented controls, chips, drawn checkboxes and a selection bar. Built separately in five cards, they would drift in height, radius and state color, the way today's `mode_button`, `IconButton`, `DrawnIconButton` and ad-hoc `button_style` calls already have.
@@ -154,3 +154,13 @@ The causes, found while planning:
 - **Reject/failure behavior:** a disabled component never emits an action.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R 'components'`; `ctest --test-dir build -L event-harness`; gallery capture; `clang-tidy -p build src/ui/nuklear/components.cpp`.
 - **Out of scope:** migrating whole screens. That is done in T-407, T-411, T-415 and T-419, and in later cleanup.
+- **Result:**
+  - `ui_metrics.h` holds the tokens, `chrome::paint_surface` (levels 0-2) replaces `menu_panel`'s body (`menu_panel` now calls it at level 1 with its parent window as the clamp), and `chrome::surface_window_begin/end` give top-level windows a transparent fill plus the shadow.
+  - `components.cpp` implements `Button`, `Checkbox`, `Segmented`, `ChipGrid` and `SelectionBar` once, from the tokens. Looks come from the pure functions `button_look` and `chip_look`. Segmented keeps keyboard focus in a caller-owned flag (a click takes it, a click elsewhere drops it) and Left/Right step the selection without wrapping.
+  - `IconButton`, `DrawnIconButton` and `mode_button` already shared `button_style`; its literals now read the tokens, so call sites and colors are unchanged.
+  - Gallery: `ui_gallery.cpp`, drawn instead of the workspace when `WORMEDIT_UI_GALLERY=1` (environment variable, not a `--ui-gallery` flag, to avoid touching `main.cpp`). `scripts/smoke-compose-virtual-x.sh <out.png> gallery` captures it.
+  - Tests: `tests/ui/components_tests.cpp` (11 cases, `ctest -R components`): tokens, shadow clip, a level-2 surface emits at least 12 shadow fills outside its window and every scissor stays inside the render target (our scissors; Nuklear's own `nk_null_rect` reset is skipped), button, checkbox, segmented, chip and bar hit areas, disabled components never act, and the whole gallery draws inside the target. `clang-tidy` on `components.cpp` and `ui_gallery.cpp` is clean.
+  - Supporting-file extensions (within the card's outcome): `tooltip::viewport()` getter (the render-target clamp for top-level surfaces), `scripts/smoke-compose-virtual-x.sh` gallery mode, and the `ui_gallery.cpp` entry in `CMakeLists.txt`.
+  - Disabled/destructive/faint colors are constants in `ui_metrics.h` (`destructive`, `destructive_text`, `text_faint`) because the theme files do not carry them yet; T-270 should move them.
+  - Nested popups: they keep the parent-window clamp (`menu_panel`); Nuklear clips popup content to the parent, so widening to the render target would not show the shadow anyway. Not verified visually.
+- **Not done / unverified:** no Xvfb gallery capture and no before/after smoke comparison (this container has no Vulkan ICD or `xdotool`, and the SDL app is not built here). Buttons, chips and checkboxes have no keyboard focus because Nuklear has no widget focus; only Segmented takes keys. The chip row uses a fixed 4 px gap and the group that wraps it in the gallery may need its height tuned after the first capture.

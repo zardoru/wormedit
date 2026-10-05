@@ -518,6 +518,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/nuklear_event_harness_tests.cpp
         ui/nuklear_tooltip_tests.cpp
         ui/context_menu_tests.cpp
+        ui/components_tests.cpp
         ui/hidden_notification_history_event_harness_tests.cpp
         ui/notification_hit_region_event_harness_tests.cpp
         sys/global_drop_notification_tests.cpp

@@ -13,3 +13,5 @@ the subset; the app does not need an SVG renderer at runtime. This script needs
 
 `chevrons-left`, `chevrons-right`, and `magnet` are used by Compose audio-offset
 nudges and beat-fit BPM snapping. `metronome` is the transport metronome toggle.
+
+`music-2` is the transport Keep pitch toggle.

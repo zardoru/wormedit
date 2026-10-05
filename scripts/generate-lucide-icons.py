@@ -17,6 +17,7 @@ NAMES = (
     "play", "pause", "square", "eye", "minus", "maximize",
     "minimize-2", "x", "audio-lines", "layers", "chevrons-left",
     "chevrons-right", "magnet", "metronome", "lock", "lock-open", "eye-off",
+    "music-2",
 )
 
 

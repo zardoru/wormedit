@@ -1742,7 +1742,10 @@ static void render_transport_rate(const WormUiWorkspaceView& view, WormUiWorkspa
         action->transport_rate_index = static_cast<uint8_t>(target);
     }
     if (!view.transport_keep_pitch_available) nk_widget_disable_begin(g_context);
-    if (wormedit::ui::chrome::mode_button(g_context, "Keep pitch", "Preserve pitch at reduced speed", view.transport_keep_pitch) &&
+    const auto* keep_pitch_hint = view.transport_keep_pitch_available
+        ? "Preserve pitch at reduced speed" : "Keep pitch is unavailable without audio output";
+    if (wormedit::ui::chrome::IconButton{Glyph::music_2, keep_pitch_hint,
+                                         view.transport_keep_pitch}.render(g_context) &&
         view.transport_keep_pitch_available && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
         action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH;
         action->transport_keep_pitch = !view.transport_keep_pitch;
@@ -1818,7 +1821,7 @@ static void render_status_bar(const WormUiWorkspaceView* view,
     nk_layout_row_template_push_static(g_context, 40);
     wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);
     nk_layout_row_template_push_static(g_context, 10);
-    nk_layout_row_template_push_static(g_context, 100);
+    wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);  // Keep pitch.
     if (snap_label_visible) nk_layout_row_template_push_static(g_context, 64);
     if (zoom_label_visible) nk_layout_row_template_push_static(g_context, 116);
     nk_layout_row_template_push_dynamic(g_context);

@@ -204,9 +204,6 @@ static void render_compose_bgm_scroll_controls(const ComposeToolbarContext& tool
         append_bgm_horizontal_scroll(action, view, 80.0);
     if (!scrollable) nk_widget_disable_end(context);
     render_compose_bgm_column_count_controls(toolbar);
-    if (nk_window_get_bounds(context).w >= 1100.0f)
-        nk_labelf(context, NK_TEXT_RIGHT, "%.0f px/measure",
-                  view->pixels_per_standard_measure);
 }
 
 static void reset_bgm_column_count_draft(
@@ -465,6 +462,12 @@ static void layout_toolbar_icons(nk_context* context, int count) {
     wormedit::ui::chrome::IconButton::layout_columns(context, count, 24.0f);
 }
 
+// The full toolbar needs about 1,090 px. Narrower than that its tail is clipped, so the dock toggles
+// stay in the middle (where they are always reachable) and move to the right edge only when it fits.
+static auto dock_toggles_at_end(nk_context* context) -> bool {
+    return nk_window_get_bounds(context).w >= 1100.0f;
+}
+
 static void layout_compose_toolbar(nk_context* context) {
     const auto width = nk_window_get_bounds(context).w;
     nk_layout_row_template_begin(context, 27);
@@ -474,8 +477,10 @@ static void layout_compose_toolbar(nk_context* context) {
     wormedit::ui::chrome::layout_separator(context);
     layout_toolbar_icons(context, 3); // Color views.
     wormedit::ui::chrome::layout_separator(context);
-    layout_toolbar_icons(context, 5); // Panels.
-    wormedit::ui::chrome::layout_separator(context);
+    if (!dock_toggles_at_end(context)) {
+        layout_toolbar_icons(context, 5); // Panels.
+        wormedit::ui::chrome::layout_separator(context);
+    }
     layout_toolbar_icons(context, 3); // Audio lock, backward nudges.
     if (width >= 900.0f) nk_layout_row_template_push_static(context, 104);
     layout_toolbar_icons(context, 2); // Forward nudges.
@@ -490,7 +495,11 @@ static void layout_compose_toolbar(nk_context* context) {
     layout_toolbar_icons(context, 1);
     nk_layout_row_template_push_static(context, 42);
     layout_toolbar_icons(context, 1);
-    if (width >= 1100.0f) nk_layout_row_template_push_static(context, 160);
+    if (dock_toggles_at_end(context)) {
+        // The dock toggles close the row at the right edge, after the BGM scroll bar's spacer.
+        wormedit::ui::chrome::layout_separator(context);
+        layout_toolbar_icons(context, 5); // Panels.
+    }
     nk_layout_row_template_end(context);
 }
 
@@ -507,12 +516,18 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     wormedit::ui::chrome::toolbar_separator(context);
     render_color_view_group(toolbar);
     wormedit::ui::chrome::toolbar_separator(context);
-    render_panel_group(toolbar);
-    wormedit::ui::chrome::toolbar_separator(context);
+    if (!dock_toggles_at_end(context)) {
+        render_panel_group(toolbar);
+        wormedit::ui::chrome::toolbar_separator(context);
+    }
     render_compose_offset_toolbar(toolbar);
     wormedit::ui::chrome::toolbar_separator(context);
     render_compose_snap_controls(context);
     wormedit::ui::chrome::toolbar_separator(context);
     render_compose_bgm_scroll_controls(toolbar);
+    if (dock_toggles_at_end(context)) {
+        wormedit::ui::chrome::toolbar_separator(context);
+        render_panel_group(toolbar);
+    }
     if (spacing_pushed) (void)nk_style_pop_vec2(context);
 }

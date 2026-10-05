@@ -1806,6 +1806,10 @@ static void render_notification_landing_status(const WormUiWorkspaceView& view,
 static void render_status_bar(const WormUiWorkspaceView* view,
                               WormUiWorkspaceAction* action) {
     const bool snap_label_visible = view->compose.visible && view->compose.area_snap_denominator != 0;
+    // Zoom readout, moved here from the Compose toolbar; hidden when the window is too narrow.
+    const bool zoom_label_visible = view->compose.visible && snap_label_visible &&
+        std::isfinite(view->compose.pixels_per_standard_measure) &&
+        nk_window_get_bounds(g_context).w >= 900.0f;
     nk_layout_row_template_begin(g_context, 30);
     wormedit::ui::chrome::IconButton::layout_columns(g_context, 4);
     // Rate stepper: chevrons hug the value, with a gutter on both sides.
@@ -1816,6 +1820,7 @@ static void render_status_bar(const WormUiWorkspaceView* view,
     nk_layout_row_template_push_static(g_context, 10);
     nk_layout_row_template_push_static(g_context, 100);
     if (snap_label_visible) nk_layout_row_template_push_static(g_context, 64);
+    if (zoom_label_visible) nk_layout_row_template_push_static(g_context, 116);
     nk_layout_row_template_push_dynamic(g_context);
     if (notification_badge_visible(view->notifications))
         nk_layout_row_template_push_static(g_context, 180);
@@ -1850,6 +1855,9 @@ static void render_status_bar(const WormUiWorkspaceView* view,
     if (snap_label_visible)
         nk_labelf(g_context, NK_TEXT_CENTERED, "Snap 1/%llu",
                   static_cast<unsigned long long>(view->compose.area_snap_denominator));
+    if (zoom_label_visible)
+        nk_labelf(g_context, NK_TEXT_CENTERED, "%.0f px/measure",
+                  view->compose.pixels_per_standard_measure);
     const auto status = workspace_status_line(*view);
     nk_label_colored(g_context, status.c_str(), NK_TEXT_LEFT,
                       notification_status_color(view->notifications));

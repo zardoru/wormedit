@@ -303,6 +303,17 @@ static bool process_compose_escape(const auto& key_event,
     return false;
 }
 
+// Lane insertion uses the same Sounds-dock source and availability as note paint.
+static auto armed_lane_key_sound(const WormUiComposeView& view) -> uint64_t {
+    if (view.selected_note_count != 0 || state.armed_resource_id == 0 ||
+        !state.armed_from_sounds_dock) return 0;
+    for (size_t index = 0; index < view.keysound_count; ++index) {
+        const auto& row = view.keysounds[index];
+        if (row.resource_id == state.armed_resource_id) return row.missing ? 0 : row.resource_id;
+    }
+    return 0;
+}
+
 static void process_compose_lane_key(const auto& key_event, const WormUiComposeView* view,
                                     WormUiWorkspaceAction* action) {
     if (!wormedit::ui::compose_notes_editable(compose_mode_of(*view))) return;
@@ -312,6 +323,9 @@ static void process_compose_lane_key(const auto& key_event, const WormUiComposeV
         if (binding.scancode != key_event.scancode || binding.lane_id == 0) continue;
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 0.0, 0.0,
                              binding.lane_id, (key_event.modifiers & SDL_KMOD_SHIFT) != 0);
+        if (!state.action_overflowed && action->compose_input_count > 0)
+            action->compose_inputs[action->compose_input_count - 1].resource_id =
+                armed_lane_key_sound(*view);
         if ((key_event.modifiers & SDL_KMOD_SHIFT) == 0 && !state.action_overflowed &&
             state.lane_hold_count < state.lane_holds.size()) {
             state.lane_hold_active = true;

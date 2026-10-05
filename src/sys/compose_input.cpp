@@ -690,6 +690,20 @@ auto dispatch_compose_cursor_input(const WormUiComposeInputAction& input,
     return compose_input_family_result_t::continue_with_result();
 }
 
+auto note_paint_sound(const WormUiComposeInputAction& input)
+    -> std::optional<wormedit::resource_id_t> {
+    if (input.resource_id == 0) return std::nullopt;
+    return wormedit::resource_id_t{input.resource_id};
+}
+
+// A stroke or lane-key release advances once, only after creating notes with its sound.
+void advance_sound_after_paint_commit(const wormedit::editor_interaction_result_t& result,
+                                      std::optional<wormedit::resource_id_t> sound,
+                                      bool notes_created) {
+    if (!sound || !result.document_changed || !notes_created) return;
+    worm_ui_frontend_resource_placed(sound->value, 0);
+}
+
 auto dispatch_compose_lane_key_press(const WormUiComposeInputAction& input,
                                      wormedit::document_history_t& history,
                                      wormedit::editor_interaction_state_t& state,
@@ -707,10 +721,20 @@ auto dispatch_compose_lane_key_press(const WormUiComposeInputAction& input,
                                     : "Selected notes assigned to lane.";
     } else {
         result = dispatch_editor_action(
-            history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{input.lane_id}});
+            history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{input.lane_id},
+                                                               note_paint_sound(input)});
         accepted = "Lane hold started; move the edit cursor and release the key to finish.";
     }
     return compose_input_family_result_t::continue_with_result();
+}
+
+auto lane_key_sound(const wormedit::editor_interaction_state_t& state, std::uint64_t lane)
+    -> std::optional<wormedit::resource_id_t> {
+    if (state.pending_hold && (lane == 0 || state.pending_hold->lane.value == lane))
+        return state.pending_hold->sound;
+    const auto found = std::ranges::find(state.additional_keyboard_holds, wormedit::lane_id_t{lane},
+                                        &wormedit::pending_hold_t::lane);
+    return found == state.additional_keyboard_holds.end() ? std::nullopt : found->sound;
 }
 
 auto dispatch_compose_lane_key_release(const WormUiComposeInputAction& input,
@@ -754,8 +778,10 @@ auto dispatch_compose_lane_key_release(const WormUiComposeInputAction& input,
     } else if ((state.pending_hold.has_value() &&
                 state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) ||
                !state.additional_keyboard_holds.empty()) {
+        const auto sound = lane_key_sound(state, input.lane_id);
         result = dispatch_editor_action(
             history, state, release_lane_key_hold_gesture_action_t{lane_id_t{input.lane_id}});
+        advance_sound_after_paint_commit(result, sound, result.created_note.has_value());
         accepted = result.document_changed ? "Lane hold committed." : "Lane hold released.";
     } else {
         result.accepted = true;
@@ -1439,20 +1465,6 @@ auto dispatch_alt_pointer_gesture(const WormUiComposeInputAction& input,
     return update_alt_pointer_gesture(input, context, position_at_compose_y);
 }
 
-auto note_paint_sound(const WormUiComposeInputAction& input)
-    -> std::optional<wormedit::resource_id_t> {
-    if (input.resource_id == 0) return std::nullopt;
-    return wormedit::resource_id_t{input.resource_id};
-}
-
-// One stroke uses one sound: the dock advances once after a commit that created notes with it.
-void advance_sound_after_paint_commit(const wormedit::editor_interaction_state_t& state,
-                                      const wormedit::editor_interaction_result_t& result,
-                                      std::optional<wormedit::resource_id_t> sound) {
-    if (!sound || !result.document_changed || state.selected_notes.empty()) return;
-    worm_ui_frontend_resource_placed(sound->value, 0);
-}
-
 template <typename HitTargetAt>
 auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
                                  compose_gesture_context_t& context, HitTargetAt&& hit_target_at)
@@ -1506,7 +1518,7 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
             history, state,
             end_note_paint_gesture_action_t{
                 .lane = target->lane, .position = target->position, .pointer_captured = captured});
-        advance_sound_after_paint_commit(state, result, stroke_sound);
+        advance_sound_after_paint_commit(result, stroke_sound, !state.selected_notes.empty());
         accepted = result.document_changed ? "Note-paint stroke committed."
                                            : "Note-paint stroke released.";
     }

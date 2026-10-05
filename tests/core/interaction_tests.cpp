@@ -8,6 +8,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <array>
@@ -5001,4 +5002,193 @@ TEST_CASE("Paused seeks align the chart position with the fixed screen anchor",
         state.viewport_scroll_pixels == Catch::Approx(80));
     CHECK(state.fixed_cursor_screen_y_pixels == 320);
     CHECK(history.undo.empty());
+}
+
+namespace {
+template <typename T>
+void require_lane_sound(const T& value, std::source_location source = std::source_location::current()) {
+    INFO("Lane sound requirement at " << source.line());
+    REQUIRE(static_cast<bool>(value));
+}
+void check_lane_sound(bool value, std::source_location source = std::source_location::current()) {
+    INFO("Lane sound check at " << source.line());
+    CHECK(value);
+}
+template <typename T>
+void check_lane_sound_false(const T& value, std::source_location source = std::source_location::current()) {
+    check_lane_sound(!value, source);
+}
+void require_lane_sound_false(bool value, std::source_location source = std::source_location::current()) {
+    require_lane_sound(!value, source);
+}
+}
+
+namespace {
+void enter_sound_test_virtual_measure(document_history_t& history, editor_interaction_state_t& state) {
+    require_lane_sound(dispatch_editor_action(history, state,
+        jump_edit_cursor_action_t{{measure_id_t{2}, 720}, history.document.revision}));
+    require_lane_sound(dispatch_editor_action(history, state,
+        move_edit_cursor_action_t{interaction_direction_t::forward}));
+    require_lane_sound(state.virtual_bms_cursor_row == 1920);
+}
+}
+
+TEST_CASE("lane-key interaction captures sound and default layers for authored and virtual notes",
+          "[unit][core][interaction][lane-key-sound]") {
+    const auto virtual_measure = GENERATE(false, true);
+    const auto hold = GENERATE(false, true);
+    auto song = make_paint_sound_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    if (virtual_measure) enter_sound_test_virtual_measure(history, state);
+    require_lane_sound(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}}));
+    require_lane_sound(state.pending_hold);
+    check_lane_sound(state.pending_hold->sound == resource_id_t{7});
+    check_lane_sound(history.undo.empty());
+    if (hold) require_lane_sound(dispatch_editor_action(history, state,
+        move_edit_cursor_action_t{interaction_direction_t::forward}));
+    const auto released = dispatch_editor_action(history, state,
+        release_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    require_lane_sound(released);
+    require_lane_sound(released.created_note);
+    const auto* note = find_note(history, *released.created_note);
+    require_lane_sound(note);
+    check_lane_sound(note->sound == resource_id_t{7});
+    check_lane_sound(note->semantic_layers == std::vector<layer_id_t>{layer_id_t{3}});
+    check_lane_sound(note->kind == (hold ? note_kind_t::hold : note_kind_t::tap));
+    check_lane_sound(note->end.has_value() == hold);
+    check_lane_sound(history.undo.size() == 1);
+    require_lane_sound(undo_document_command(history));
+    check_lane_sound(note_count(history) == 0);
+    check_lane_sound(history.document.charts.front().measures.size() == 2);
+}
+
+TEST_CASE("lane-key interaction rejects absent and non-sample sounds without changing the document",
+          "[unit][core][interaction][lane-key-sound]") {
+    const auto virtual_measure = GENERATE(false, true);
+    const auto sound = GENERATE(resource_id_t{8}, resource_id_t{999});
+    auto song = make_paint_sound_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    if (virtual_measure) enter_sound_test_virtual_measure(history, state);
+    const auto revision = history.document.revision;
+    const auto rejected = dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}, sound});
+    check_lane_sound_false(rejected);
+    require_lane_sound_false(rejected.diagnostics.empty());
+    check_lane_sound(rejected.diagnostics.front().message == "paint sound is not an existing sample resource");
+    check_lane_sound_false(state.pending_hold);
+    check_lane_sound(history.document.revision == revision);
+    check_lane_sound(history.undo.empty());
+    check_lane_sound(note_count(history) == 0);
+}
+
+TEST_CASE("lane-key interaction retains independent sounds through reverse key release",
+          "[unit][core][interaction][lane-key-sound]") {
+    auto song = make_paint_sound_song();
+    song.resources.back().roles = {resource_role_t::sample};
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    require_lane_sound(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}}));
+    require_lane_sound(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{2}, resource_id_t{8}}));
+    const auto first = dispatch_editor_action(history, state,
+        release_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    require_lane_sound(first.created_note);
+    check_lane_sound(find_note(history, *first.created_note)->sound == resource_id_t{7});
+    const auto second = dispatch_editor_action(history, state,
+        release_lane_key_hold_gesture_action_t{lane_id_t{2}});
+    require_lane_sound(second.created_note);
+    check_lane_sound(find_note(history, *second.created_note)->sound == resource_id_t{8});
+    check_lane_sound(find_note(history, *second.created_note)->semantic_layers.empty());
+    check_lane_sound(history.undo.size() == 2);
+}
+
+TEST_CASE("lane-key interaction honors explicit palette layers and kind over sound defaults",
+          "[unit][core][interaction][lane-key-sound]") {
+    auto history = make_document_history(make_paint_sound_song());
+    auto state = make_state(history);
+    state.armed_note_kind = note_kind_t::mine;
+    state.armed_note_layers = std::vector<layer_id_t>{};
+    require_lane_sound(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}}));
+    const auto released = dispatch_editor_action(history, state,
+        release_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    require_lane_sound(released.created_note);
+    const auto* note = find_note(history, *released.created_note);
+    require_lane_sound(note);
+    check_lane_sound(note->kind == note_kind_t::mine);
+    check_lane_sound(note->sound == resource_id_t{7});
+    check_lane_sound(note->semantic_layers.empty());
+}
+
+TEST_CASE("lane-key interaction removal ignores a stale armed sound and reports no placement",
+          "[unit][core][interaction][lane-key-sound]") {
+    const auto sound = GENERATE(std::optional<resource_id_t>{}, std::optional{resource_id_t{7}});
+    auto history = make_document_history(make_paint_sound_song());
+    auto state = make_state(history);
+    require_lane_sound(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}, sound}));
+    require_lane_sound(dispatch_editor_action(history, state,
+        release_lane_key_hold_gesture_action_t{lane_id_t{1}}));
+    const auto removed = dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{999}});
+    require_lane_sound(removed);
+    check_lane_sound(removed.document_changed);
+    check_lane_sound_false(removed.created_note);
+    check_lane_sound(note_count(history) == 0);
+    const auto release = dispatch_editor_action(history, state,
+        release_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    check_lane_sound_false(release.document_changed);
+    check_lane_sound_false(release.created_note);
+}
+
+TEST_CASE("lane-key interaction cancels a sound hold after a resource deletion",
+          "[unit][core][interaction][lane-key-sound]") {
+    auto history = make_document_history(make_paint_sound_song());
+    auto state = make_state(history);
+    require_lane_sound(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}}));
+    history.document.resources.clear();
+    ++history.document.revision;
+    const auto revision = history.document.revision;
+    const auto release = dispatch_editor_action(history, state,
+        release_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    check_lane_sound_false(release.document_changed);
+    check_lane_sound_false(release.created_note);
+    check_lane_sound(history.document.revision == revision);
+    check_lane_sound(note_count(history) == 0);
+    check_lane_sound(history.undo.empty());
+}
+
+TEST_CASE("lane-key interaction protects hidden or locked sounded notes and never merges their sound away",
+          "[unit][core][interaction][lane-key-sound]") {
+    const auto protection = GENERATE(0, 1, 2);
+    auto history = make_document_history(make_paint_sound_song());
+    if (protection == 2) history.document.charts.front().semantic_layers.front().visible = false;
+    auto& notes = history.document.charts.front().measures.front().notes;
+    notes.push_back({.id = object_id_t{101}, .position = {measure_id_t{1}, 720},
+        .lane = lane_id_t{1}, .kind = note_kind_t::tap, .sound = resource_id_t{7},
+        .semantic_layers = {protection == 1 ? layer_id_t{4} : layer_id_t{3}}});
+    auto state = make_state(history);
+    if (protection == 0) {
+        state.cursor = {measure_id_t{1}, 480};
+        require_lane_sound(dispatch_editor_action(history, state,
+            begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}}));
+    }
+    const auto revision = history.document.revision;
+    const auto result = protection != 0
+        ? dispatch_editor_action(history, state,
+            begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}})
+        : dispatch_editor_action(history, state,
+            move_edit_cursor_action_t{interaction_direction_t::forward});
+    check_lane_sound_false(result);
+    check_lane_sound(history.document.revision == revision);
+    check_lane_sound(history.undo.empty());
+    check_lane_sound(note_count(history) == 1);
+    check_lane_sound(find_note(history, object_id_t{101})->sound == resource_id_t{7});
 }

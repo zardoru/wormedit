@@ -2225,3 +2225,58 @@ TEST_CASE("Sounds clear selection hover remains readable near the application ri
     REQUIRE(text != harness.drawn_text_bounds().end());
     check_tooltip_rectangle(*text, 960, 720);
 }
+
+namespace {
+template <typename T>
+void require_lane_key_sound(const T& value, std::source_location source = std::source_location::current()) {
+    expect_lane_key(static_cast<bool>(value), source);
+}
+}
+
+TEST_CASE("Lane keys carry the clicked Sounds dock source and leave selected notes alone",
+          "[frontend-state][event-harness][lane-key-sound]") {
+    nuklear_event_harness_t harness{1600, 900};
+    require_lane_key_sound(harness.ready());
+    auto& view = harness.view().compose;
+    const std::array<WormUiComposeKeysoundRowView, 2> rows{{
+        {.resource_id = 1400, .slot = "01", .name = "kick.wav"},
+        {.resource_id = 1500, .slot = "02", .name = "kick2.wav"}}};
+    const WormUiComposeLaneKeyBinding binding{.scancode = SDL_SCANCODE_1, .lane_id = 1};
+    view.keysounds = rows.data();
+    view.keysound_count = view.keysound_total_count = rows.size();
+    view.keysounds_available = true;
+    view.lane_key_bindings = &binding;
+    view.lane_key_binding_count = 1;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.sounds_panel_visible = true;
+    (void)harness.frame();
+    const auto row = harness.drawn_text_center("kick.wav");
+    require_lane_key_sound(row);
+    (void)click_at(harness, row->first, row->second);
+    require_lane_key_sound(state.armed_resource_id == 1400);
+    require_lane_key_sound(state.armed_from_sounds_dock);
+    // Return the pointer to the field so the dock does not own keyboard input.
+    const auto motion = motion_event(300, 400);
+    (void)harness.frame(std::span{&motion, 1});
+    const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_1, SDL_SCANCODE_1);
+    const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_1, SDL_SCANCODE_1);
+    const auto inserted = harness.frame(std::span{&press, 1});
+    require_lane_key_sound(inserted.get().compose_input_count == 1);
+    expect_lane_key(inserted.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
+    expect_lane_key(inserted.get().compose_inputs[0].resource_id == 1400);
+    expect_lane_key(harness.frame(std::span{&release, 1}).get().compose_inputs[0].kind ==
+          WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE);
+    view.selected_note_count = 1;
+    const auto moved = harness.frame(std::span{&press, 1}, SDL_KMOD_SHIFT);
+    require_lane_key_sound(moved.get().compose_input_count == 1);
+    expect_lane_key(moved.get().compose_inputs[0].successive);
+    expect_lane_key(moved.get().compose_inputs[0].resource_id == 0);
+    (void)harness.frame(std::span{&release, 1});
+    view.selected_note_count = 0;
+    state.armed_resource_id = 0;
+    const auto silent = harness.frame(std::span{&press, 1});
+    require_lane_key_sound(silent.get().compose_input_count == 1);
+    expect_lane_key(silent.get().compose_inputs[0].resource_id == 0);
+    (void)harness.frame(std::span{&release, 1});
+}

@@ -7,6 +7,7 @@
 
 #include <array>
 #include <optional>
+#include <source_location>
 #include <vector>
 
 using namespace wormedit;
@@ -303,4 +304,79 @@ TEST_CASE("Unchanged BGM move keeps the original stop boundary", "[unit][sys][co
     expect_entry(entries[0], notification_severity_t::info, notification_source_t::edit,
         "BGM event remained at its original position.");
     CHECK(fixture.history.undo.empty());
+}
+
+namespace {
+void check_dispatch_sound(bool value, std::source_location source = std::source_location::current()) {
+    INFO("Lane-key dispatch check at " << source.line());
+    CHECK(value);
+}
+template <typename T>
+void require_dispatch_sound(const T& value, std::source_location source = std::source_location::current()) {
+    INFO("Lane-key dispatch requirement at " << source.line());
+    REQUIRE(static_cast<bool>(value));
+}
+}
+
+namespace {
+auto dispatch_sound_key(compose_notification_fixture_t& f, WormUiComposeInputKind kind,
+                        std::uint64_t sound = 7) -> std::string {
+    WormUiWorkspaceAction action{};
+    action.compose_input_chart_id = f.state.chart.value;
+    action.compose_input_project_id = f.history.document.id.value;
+    action.compose_input_document_revision = f.history.document.revision;
+    action.compose_input_viewport_width_pixels = 800;
+    action.compose_inputs[0] = {.kind = kind, .lane_id = 1, .resource_id = sound};
+    action.compose_input_count = 1;
+    return dispatch_compose_input_action(action, f.history, f.workspace, f.state, f.viewport,
+        f.navigation, f.application, f.cache, 0, &f.sink);
+}
+
+void prepare_lane_sound_fixture(compose_notification_fixture_t& f) {
+    f.state.selected_notes.clear();
+    f.state.selected_objects.clear();
+    f.history.document.charts.front().measures.front().notes.clear();
+    f.history.document.audio_assets = {{.id = asset_id_t{1}}};
+    f.history.document.resources = {
+        {.id = resource_id_t{7}, .asset = asset_id_t{1}, .roles = {resource_role_t::sample}},
+        {.id = resource_id_t{8}, .asset = asset_id_t{1}, .roles = {resource_role_t::sample}}};
+}
+}
+
+TEST_CASE("Lane-key dispatcher captures the sound through release and undo",
+          "[sys][lane-key-sound]") {
+    compose_notification_fixture_t f;
+    prepare_lane_sound_fixture(f);
+    check_dispatch_sound(dispatch_sound_key(f, WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS) ==
+          "Lane hold started; move the edit cursor and release the key to finish.");
+    require_dispatch_sound(f.state.pending_hold);
+    check_dispatch_sound(f.state.pending_hold->sound == resource_id_t{7});
+    // The release's resource is deliberately different: use the captured press.
+    check_dispatch_sound(dispatch_sound_key(f, WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 8) == "Lane hold committed.");
+    const auto& notes = f.history.document.charts.front().measures.front().notes;
+    require_dispatch_sound(notes.size() == 1);
+    check_dispatch_sound(notes.front().sound == resource_id_t{7});
+    check_dispatch_sound(f.history.undo.size() == 1);
+    require_dispatch_sound(undo_document_command(f.history));
+    check_dispatch_sound(f.history.document.charts.front().measures.front().notes.empty());
+}
+
+TEST_CASE("Lane-key dispatcher rejects invalid sources and removes sounded notes without replacing them",
+          "[sys][lane-key-sound]") {
+    compose_notification_fixture_t f;
+    prepare_lane_sound_fixture(f);
+    (void)dispatch_sound_key(f, WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 999);
+    (void)dispatch_sound_key(f, WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 999);
+    check_dispatch_sound(f.history.undo.empty());
+    check_dispatch_sound(f.history.document.charts.front().measures.front().notes.empty());
+    (void)dispatch_sound_key(f, WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 7);
+    (void)dispatch_sound_key(f, WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 7);
+    require_dispatch_sound(f.history.document.charts.front().measures.front().notes.size() == 1);
+    (void)dispatch_sound_key(f, WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 8);
+    (void)dispatch_sound_key(f, WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 8);
+    check_dispatch_sound(f.history.document.charts.front().measures.front().notes.empty());
+    check_dispatch_sound(f.history.undo.size() == 2);
+    require_dispatch_sound(undo_document_command(f.history));
+    require_dispatch_sound(f.history.document.charts.front().measures.front().notes.size() == 1);
+    check_dispatch_sound(f.history.document.charts.front().measures.front().notes.front().sound == resource_id_t{7});
 }

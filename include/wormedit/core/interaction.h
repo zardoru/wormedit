@@ -93,6 +93,7 @@ struct place_virtual_bms_hold_action_t {
     std::uint64_t anchor_canvas_row{};
     std::uint64_t end_canvas_row{};
     lane_id_t lane;
+    std::optional<resource_id_t> sound;
 };
 
 // Hold authoring is a two-step gesture. Beginning stores an exact snapped
@@ -119,6 +120,7 @@ enum class hold_gesture_source_t {
 
 struct begin_lane_key_hold_gesture_action_t {
     lane_id_t lane;
+    std::optional<resource_id_t> sound;
 };
 
 struct release_lane_key_hold_gesture_action_t {
@@ -466,6 +468,8 @@ struct pending_hold_t {
     std::optional<local_position_t> preview_end;
     std::optional<pending_hold_placement_preview_t> placement_preview;
     std::optional<hold_gesture_source_t> gesture_source;
+    // Captured on key-down; changing the armed sound must not retarget a held key.
+    std::optional<resource_id_t> sound;
 
     auto operator==(const pending_hold_t&) const -> bool = default;
 };
@@ -710,6 +714,8 @@ struct editor_interaction_result_t {
     std::optional<editor_interaction_view_model_t> view;
     diagnostic_list_t diagnostics;
     std::optional<editor_object_audition_request_t> audition;
+    // Distinguishes placement from deletion/merging for advance-after-place.
+    std::optional<object_id_t> created_note;
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return accepted;

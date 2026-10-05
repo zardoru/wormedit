@@ -42,7 +42,8 @@ Retirement cards remove UI only. Stored data and actions stay unless a card says
 
 ## T-387 Outline the lane header numbers in black
 
-- **Status:** ready
+- **Status:** done (2026-10-05; 7K Xvfb capture inspected, headless suite passes)
+- **Result:** the outline is drawn in the compose canvas (`field_text_outlined`: black text at the eight 1 px offsets, then near-white), so `renderer_t::text` is unchanged and both the tile and Nuklear text paths use it. The 7K capture from `scripts/smoke-compose-virtual-x.sh` shows 1–7 readable on the dark lanes. Not captured: an 8K layout and the red scratch lane, because the smoke script only creates the default 7K project.
 - **Mockup:** [field-move-collision.svg](../mockups/field-move-collision.svg) (reference: match its structure and hierarchy)
 - **Outcome:** the lane numbers at the top of each play lane (`1`–`8` in the lane header strip) are drawn in white with a thin black outline, and stay readable on every lane color: white, grey, dark, and the red scratch or special lanes. Smoke captures of a 7K BMS layout and an 8K layout show it.
 - **Read first:** `src/ui/nuklear/compose_canvas.cpp` (`draw_compose_play_lane_titles`, `field_text`), `src/ui/field/field_renderer.cpp` (`renderer_t::text`).

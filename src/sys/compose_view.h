@@ -414,6 +414,12 @@ struct application_command_state_t {
         std::chrono::steady_clock::time_point at;
     };
     std::optional<playhead_skip_record_t> last_playhead_skip;
+    // Any other seek or a playback-session change breaks a repeat sequence: the next skip or
+    // bookmark step must start from the live playhead.
+    void invalidate_playing_seek_records() {
+        last_playing_bookmark_seek.reset();
+        last_playhead_skip.reset();
+    }
     // Tests inject a clock; empty means steady_clock::now.
     std::function<std::chrono::steady_clock::time_point()> bookmark_clock;
     // Wheel rows gathered during one input frame while playing; flushed as a single seek.

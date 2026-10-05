@@ -30,6 +30,8 @@ using bookmark_text_width_t = std::function<float(std::string_view)>;
 struct bookmark_rename_line_t {
     std::uint64_t bookmark_id{};
     double y{};
+    // Only a bookmark with a drawn name has a label zone to double-click.
+    bool labelled{true};
 };
 
 // A narrow target at the label-side edge keeps ordinary note placement available along the line.
@@ -38,7 +40,9 @@ struct bookmark_rename_line_t {
     -> std::optional<std::uint64_t>;
 
 // A double-click target: the whole line across the playable field (within 6 px of it), plus the
-// label zone just above it on the right half, where the name is drawn. Nearest line wins.
+// label zone just above a labelled line on the right half, where the name is drawn. An exact line
+// hit always beats a label zone; among label zones the line nearest below the pointer wins, and
+// equal distances go to the lower ID.
 [[nodiscard]] auto bookmark_double_click_target_at(std::span<const bookmark_rename_line_t> lines,
                                                    double x, double y, double right_edge,
                                                    double label_height)

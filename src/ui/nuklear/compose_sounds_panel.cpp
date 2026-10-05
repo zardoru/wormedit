@@ -1582,7 +1582,16 @@ void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
     if (!view->bmson_tools_available) state->sounds_dock_bmson_tab = false;
     else render_sounds_dock_tabs(panel);
     if (state->sounds_dock_bmson_tab) {
-        worm_ui_nuklear_render_compose_bmson_tab(context, view, action, state);
+        // The dock window has no scrollbar, so the tools get a scrollable group of their own: in a
+        // short window the lower staged-region actions stay reachable with the wheel.
+        const auto region = nk_window_get_content_region(context);
+        const auto remaining = region.y + region.h - nk_widget_position(context).y -
+                               context->style.window.spacing.y;
+        nk_layout_row_dynamic(context, std::max(remaining, 60.0f), 1);
+        if (nk_group_begin(context, "bmson-tools", 0)) {
+            worm_ui_nuklear_render_compose_bmson_tab(context, view, action, state);
+            nk_group_end(context);
+        }
         return;
     }
     clear_filter_release_guard_if_quiet(panel);

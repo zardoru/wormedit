@@ -109,6 +109,7 @@ auto skip_playing_playhead(application_command_state_t& application, const chart
         application.last_playhead_skip.reset();
         return {.status = "Chart preview seek is unavailable."};
     }
+    application.last_playing_bookmark_seek.reset();
     auto status = application.transport_seek(*frame);
     // Chain several skips of one frame from where this one landed.
     application.preview_playhead_absolute_row = static_cast<double>(*row);

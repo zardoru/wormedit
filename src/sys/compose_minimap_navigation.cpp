@@ -121,8 +121,10 @@ auto navigate_compose_minimap_transport(application_command_state_t& state,
     if (shift) return {};
     const bool playing = state.transport_preview_playing && state.transport_preview_playing();
     const bool paused = state.transport_preview_paused && state.transport_preview_paused();
-    if (playing || (paused && (primary != state.minimap_click_moves_paused_playhead)))
+    if (playing || (paused && (primary != state.minimap_click_moves_paused_playhead))) {
+        state.invalidate_playing_seek_records();
         return state.transport_seek ? state.transport_seek(frame) : "Chart preview seek is unavailable.";
+    }
     if (paused && state.transport_stop) state.transport_stop();
     return {};
 }

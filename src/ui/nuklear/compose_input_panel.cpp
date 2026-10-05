@@ -961,7 +961,7 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
         return true;
     }
     if (state.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off &&
-        view.selected_bmson_bgm_event_id != 0 &&
+        bmson_razor_eligible(view) &&
         selected_bmson_lane_at(input, input.pointer_x, input.pointer_y) &&
         (input.pointer_modifiers & input.any_pointer_modifier) == 0) {
         append_compose_input(action, bmson_razor_input_kind(), input.pointer_x, input.pointer_y,

@@ -191,6 +191,7 @@ auto navigate_beat_bookmark(document_history_t& history, editor_interaction_stat
     const auto target = *marker.item->beat_position;
     if (playing) {
         std::string status;
+        application.last_playhead_skip.reset();
         const auto sought = seek_playhead_to(*chart, application, target, status);
         record_playing_seek(*chart, state.chart, application, target, sought);
         return {.accepted = sought, .status = std::move(status), .feedback_posted = sought && application.transport_seek_posts_feedback};
@@ -210,6 +211,8 @@ auto navigate_to_bookmark(document_history_t& history, editor_interaction_state_
                           object_id_t bookmark_id) -> bookmark_command_outcome_t {
     if (history.document.revision != expected_revision || state.chart != chart_id)
         return fail("Bookmark chooser entry is stale.");
+    // A chooser jump is a seek of its own: it ends any repeat sequence in progress.
+    application.invalidate_playing_seek_records();
     const auto* chart = find_chart(history, chart_id);
     if (!chart) return fail("Bookmark chooser chart is unavailable.");
     const auto bookmark = std::ranges::find(chart->bookmarks, bookmark_id, &bookmark_t::id);

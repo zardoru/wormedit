@@ -969,6 +969,7 @@ void configure_transport_play_pause(auto& state, auto& history, auto& workspace,
                                  auto& audition_sources, auto& preview_metronome_bindings,
                                  auto& audition_output, auto& preview_output, auto& notifications) {
     state.transport_play_pause = [&]() -> std::string {
+        state.invalidate_playing_seek_records();
         const auto compose_cursor = workspace.active_tab == wormedit::workspace_tab_t::compose &&
                                             compose_interaction_state && workspace.selected_chart &&
                                             compose_interaction_state->chart == *workspace.selected_chart
@@ -1080,6 +1081,7 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
         inline_preview_cursor, audition_session, preview_session, preview_state,
         audition_sources, preview_metronome_bindings, audition_output, preview_output, notifications);
     state.transport_play_from_start = [&]() -> std::string {
+        state.invalidate_playing_seek_records();
         state.minimap_start_frame.reset();
         const bool starting = !preview_output.playing() && !preview_state.paused;
         const auto* compose_cursor = workspace.active_tab == wormedit::workspace_tab_t::compose &&
@@ -1101,6 +1103,7 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
     configure_transport_seek_commands(state, history, workspace, compose_interaction_state,
         compose_scene_cache, audition_output, preview_session, preview_state, preview_output, notifications);
     state.transport_stop = [&] {
+        state.invalidate_playing_seek_records();
         state.minimap_start_frame.reset();
         preview_state.stop(audition_output, preview_output);
         inline_preview_cursor.anchor.reset();

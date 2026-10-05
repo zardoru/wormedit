@@ -39,12 +39,14 @@ auto visible_bookmark_lines(const WormUiComposeView& view)
     for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
         const auto& item = view.beat_bookmarks[index];
         if (item.projection_visible)
-            lines.push_back({item.bookmark_id, item.projected_y_pixels});
+            lines.push_back({item.bookmark_id, item.projected_y_pixels,
+                             item.label != nullptr && item.label[0] != '\0'});
     }
     for (std::size_t index = 0; index < view.audio_bookmark_count; ++index) {
         const auto& item = view.audio_bookmarks[index];
         if (item.projection_visible)
-            lines.push_back({item.bookmark_id, item.projected_y_pixels});
+            lines.push_back({item.bookmark_id, item.projected_y_pixels,
+                             item.label != nullptr && item.label[0] != '\0'});
     }
     return lines;
 }

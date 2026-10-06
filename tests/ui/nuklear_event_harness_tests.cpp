@@ -2381,3 +2381,25 @@ TEST_CASE("BMS branch panel shows control nodes as a tree and unparsed statement
     CHECK(harness.drawn_text().find("#UNKNOWN x") != std::string::npos);
     CHECK(harness.drawn_text().find("#TITLE odd") == std::string::npos);
 }
+
+TEST_CASE("BMS branch dock pushes the field over and hides on a narrow window",
+          "[frontend-state][event-harness][bms-branch]") {
+    const auto field_left = [](int width, bool with_branches) {
+        nuklear_event_harness_t harness{width, 900};
+        REQUIRE(harness.ready());
+        auto& view = harness.view().compose;
+        view.branch_outline_available = with_branches;
+        worm_ui_nuklear_compose_state().branch_panel_visible = true;
+        (void)harness.frame();
+        WormUiTestingRect rect{};
+        REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&rect));
+        return std::pair{rect.x, worm_ui_frontend_compose_left_dock_pixels()};
+    };
+    const auto plain = field_left(1280, false);
+    const auto docked = field_left(1280, true);
+    CHECK(plain.second == 0);
+    CHECK(docked.second > 0);
+    CHECK(docked.first >= plain.first + static_cast<float>(docked.second) - 1.0f);
+    const auto narrow = field_left(800, true);
+    CHECK(narrow.second == 0);
+}

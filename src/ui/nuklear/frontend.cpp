@@ -944,6 +944,10 @@ static bool compose_popup_owns_input() {
            worm_ui_nuklear_bookmark_chooser_owns_input(compose.bookmark_chooser);
 }
 
+int worm_ui_frontend_compose_left_dock_pixels(void) {
+    return static_cast<int>(std::lround(worm_ui_nuklear_compose_state().branch_dock_width_drawn));
+}
+
 bool worm_ui_frontend_open_bookmark_chooser(uint64_t project_id, uint64_t chart_id, uint64_t revision) {
     auto& compose = worm_ui_nuklear_compose_state();
     if (!g_context || !g_window_focused || nuklear_text_entry_active() || g_ime_composition_active ||

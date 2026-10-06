@@ -2777,6 +2777,9 @@ void worm_ui_frontend_bga_move_preview(uint64_t* chart_id, uint64_t* document_re
 void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request);
 void worm_ui_frontend_bookmark_chooser_request(WormUiBookmarkChooserRequest* request);
 bool worm_ui_frontend_open_bookmark_chooser(uint64_t project_id, uint64_t chart_id, uint64_t revision);
+/* Width in logical pixels the BMS branch dock took from the left of the Compose field last frame;
+   the Compose projection narrows its viewport by it. Zero while the dock is hidden. */
+int worm_ui_frontend_compose_left_dock_pixels(void);
 /* Queues one dropped file for exact slot assignment; false when automatic mode is active.
    In slots mode invalid/stale requests are consumed without falling back to allocation. */
 bool worm_ui_frontend_stage_sound_slot_batch(uint64_t project, uint64_t chart, uint64_t revision,

@@ -497,6 +497,9 @@ struct worm_ui_nuklear_compose_state_t {
     bool bga_panel_visible{};
     // Measures dock: selection by measure ID, the typed meter, and the IDs staged for one action.
     bool measures_panel_visible{};
+    // The BMS branch dock on the left of the field: wanted by the user, and the width it took last frame.
+    bool branch_panel_visible{true};
+    float branch_dock_width_drawn{};
     worm_ui_keysound_selection_t measure_selection;
     std::array<char, 32> measures_meter_numerator{'4'};
     std::array<char, 32> measures_meter_denominator{'4'};

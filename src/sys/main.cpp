@@ -3828,6 +3828,7 @@ int main(int argc, char** argv) {
     wormedit::editor_navigation_input_controller_t compose_navigation_input;
     application_command_state_t application_command_state;
     application_command_state.open_bookmark_chooser = worm_ui_frontend_open_bookmark_chooser;
+    application_command_state.compose_left_dock_pixels = worm_ui_frontend_compose_left_dock_pixels;
     external_player_runtime_t external_player_runtime;
     wormedit::sys::project_chart_runtime_t project_chart_runtime;
     wormedit::sys::options_runtime_t options_runtime;

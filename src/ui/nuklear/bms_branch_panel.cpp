@@ -392,19 +392,10 @@ bool worm_ui_nuklear_bms_branch_panel_visible(const WormUiComposeView* view) {
                     view->branch_display_text_truncated || view->branch_diagnostics_truncated);
 }
 
-float worm_ui_nuklear_bms_branch_panel_height(const WormUiComposeView* view) {
-    return worm_ui_nuklear_bms_branch_panel_visible(view) ? 268.0f : 0.0f;
-}
-
 void worm_ui_nuklear_render_bms_branch_panel(struct nk_context* context,
                                              const WormUiComposeView* view,
                                              WormUiWorkspaceAction* action) {
     if (!context || !view || !action || !worm_ui_nuklear_bms_branch_panel_visible(view)) {
-        return;
-    }
-
-    nk_layout_row_dynamic(context, worm_ui_nuklear_bms_branch_panel_height(view), 1);
-    if (!nk_group_begin(context, "BMS branch controls", NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
         return;
     }
 
@@ -440,5 +431,4 @@ void worm_ui_nuklear_render_bms_branch_panel(struct nk_context* context,
             nk_label_wrap(context, diagnostic.c_str());
         }
     }
-    nk_group_end(context);
 }

@@ -193,8 +193,11 @@ auto project_application_frame(application_frame_projection_context_t context)
     }
     {
     frame_phase_scope_t compose_controls(frame_phase_t::workspace_compose_controls);
+    const auto left_dock = context.application_command_state.compose_left_dock_pixels
+        ? context.application_command_state.compose_left_dock_pixels() : 0;
     populate_compose_view(flattened, context.history, context.workspace,
-                          context.compose_scene_cache, compose_window_width, compose_window_height,
+                          context.compose_scene_cache, std::max(0, compose_window_width - left_dock),
+                          compose_window_height,
                           context.compose_interaction_state, context.application_command_state,
                           context.timing_edit.stage_view(), {}, &context.bga_move_preview);
     }

@@ -1394,6 +1394,8 @@ struct ComposeDockLayout {
     float bga_width;
     bool measures_drawn;
     float measures_width;
+    bool branch_drawn;
+    float branch_width;
     float side_width;
 };
 
@@ -1433,11 +1435,16 @@ static auto compose_dock_layout(nk_context* context, const WormUiComposeView* vi
         compose_body_bounds.w >= 860.0f + layers_width + sounds_width + bga_width &&
         wormedit::ui::compose_notes_editable(compose_mode_of(*view));
     const auto measures_width = measures_drawn ? 220.0f : 0.0f;
+    // The branch dock sits left of the field and pushes it over; below this width it hides instead.
+    const auto branch_drawn = state.branch_panel_visible && worm_ui_nuklear_bms_branch_panel_visible(view) &&
+        compose_body_bounds.w >= 900.0f;
+    const auto branch_width = branch_drawn ? std::clamp(compose_body_bounds.w * 0.2f, 260.0f, 320.0f) : 0.0f;
+    state.branch_dock_width_drawn = branch_drawn ? branch_width + 8.0f : 0.0f;
     const auto side_width = inspector_width + (measures_drawn ? measures_width + 8.0f : 0.0f) +
                             (sounds_drawn ? sounds_width + 8.0f : 0.0f) +
                             (layers_drawn ? layers_width + 8.0f : 0.0f) +
                             (bga_drawn ? bga_width + 8.0f : 0.0f);
-    return {compose_body_bounds, compose_body_height, inspector_drawn, inspector_width, layers_drawn, layers_width, sounds_drawn, sounds_width, bga_drawn, bga_width, measures_drawn, measures_width, side_width};
+    return {compose_body_bounds, compose_body_height, inspector_drawn, inspector_width, layers_drawn, layers_width, sounds_drawn, sounds_width, bga_drawn, bga_width, measures_drawn, measures_width, branch_drawn, branch_width, side_width};
 }
 
 static void render_compose_inspector_contents(nk_context* context,
@@ -1452,8 +1459,6 @@ static void render_compose_inspector_contents(nk_context* context,
     render_compose_measure_section(inspector);
 
     render_compose_timing_inspector(inspector);
-
-    worm_ui_nuklear_render_bms_branch_panel(context, view, action);
 }
 
 template <typename Render>
@@ -1469,7 +1474,7 @@ static void render_compose_dock(nk_context* context, struct nk_rect bounds, cons
 static void render_compose_side_docks(nk_context* context, const WormUiComposeView* view,
     const WormUiTimingView* timing_view, WormUiWorkspaceAction* action, const ComposeDockLayout& layout) {
     const auto [compose_body_bounds, compose_body_height, inspector_drawn, inspector_width,
-        layers_drawn, layers_width, sounds_drawn, sounds_width, bga_drawn, bga_width, measures_drawn, measures_width, side_width] = layout;
+        layers_drawn, layers_width, sounds_drawn, sounds_width, bga_drawn, bga_width, measures_drawn, measures_width, branch_drawn, branch_width, side_width] = layout;
     const auto editor_width = compose_body_bounds.w;
     const auto measures_shift = measures_drawn ? measures_width + 8.0f : 0.0f;
     if (measures_drawn) {
@@ -1531,7 +1536,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                          double_click_count, shortcut_event_count};
 
     const auto dock_layout = compose_dock_layout(context, view);
-    const auto [compose_body_bounds, compose_body_height, inspector_drawn, inspector_width, layers_drawn, layers_width, sounds_drawn, sounds_width, bga_drawn, bga_width, measures_drawn, measures_width, side_width] = dock_layout;
+    const auto [compose_body_bounds, compose_body_height, inspector_drawn, inspector_width, layers_drawn, layers_width, sounds_drawn, sounds_width, bga_drawn, bga_width, measures_drawn, measures_width, branch_drawn, branch_width, side_width] = dock_layout;
     state.sound_list_valid = false;
     state.bga_list_valid = false;
     const auto editor_width = compose_body_bounds.w;
@@ -1539,9 +1544,10 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         wormedit::ui::compose_note_palette_visible(compose_mode_of(*view)) &&
         compose_note_palette_has_buttons(*view);
     constexpr float palette_width = 36.0f;
-    const auto editor_left = palette_drawn ? palette_width : 0.0f;
+    const auto branch_left = palette_drawn ? palette_width : 0.0f;
+    const auto editor_left = branch_left + (branch_drawn ? branch_width + 8.0f : 0.0f);
     nk_layout_space_begin(context, NK_STATIC, compose_body_height,
-                          1 + (inspector_drawn ? 1 : 0) + (palette_drawn ? 1 : 0) +
+                          1 + (branch_drawn ? 1 : 0) + (inspector_drawn ? 1 : 0) + (palette_drawn ? 1 : 0) +
                               (sounds_drawn ? 1 : 0) + (layers_drawn ? 1 : 0) + (bga_drawn ? 1 : 0) +
                               (measures_drawn ? 1 : 0));
     if (palette_drawn) {
@@ -1551,6 +1557,10 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             nk_group_end(context);
         }
     }
+    if (branch_drawn)
+        render_compose_dock(context, nk_rect(branch_left, 0.0f, branch_width, compose_body_height),
+            "BMS branches", NK_WINDOW_BORDER | NK_WINDOW_TITLE,
+            [&] { worm_ui_nuklear_render_bms_branch_panel(context, view, action); });
     nk_layout_space_push(context, nk_rect(editor_left, 0.0f, editor_width - editor_left,
                                           compose_body_height));
     if (nk_group_begin(context, "Compose editor", NK_WINDOW_NO_SCROLLBAR)) {

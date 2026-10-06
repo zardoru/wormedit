@@ -3,6 +3,7 @@
 #include "ui/nuklear/vector_icons.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/bms_branch_panel.h"
 
 #include <algorithm>
 #include <array>
@@ -167,6 +168,11 @@ static void render_panel_group(const ComposeToolbarContext& toolbar) {
             state.sounds_panel_visible ? "Hide sounds list" : "Show sounds list",
             state.sounds_panel_visible}.render(context))
         state.sounds_panel_visible = !state.sounds_panel_visible;
+    if (worm_ui_nuklear_bms_branch_panel_visible(toolbar.view) &&
+        wormedit::ui::chrome::IconButton{Glyph::chevrons_right,
+            state.branch_panel_visible ? "Hide BMS branches" : "Show BMS branches",
+            state.branch_panel_visible}.render(context))
+        state.branch_panel_visible = !state.branch_panel_visible;
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::measure_list,
             state.measures_panel_visible ? "Hide measures list" : "Show measures list",
             state.measures_panel_visible}.render(context))
@@ -472,7 +478,8 @@ static auto dock_toggles_at_end(nk_context* context) -> bool {
     return nk_window_get_bounds(context).w >= 1100.0f;
 }
 
-static void layout_compose_toolbar(nk_context* context) {
+// `panel_icons` is the dock toggle count; the BMS branch toggle exists only for charts with branches.
+static void layout_compose_toolbar(nk_context* context, int panel_icons) {
     const auto width = nk_window_get_bounds(context).w;
     nk_layout_row_template_begin(context, 27);
     layout_toolbar_icons(context, 3); // Navigation.
@@ -482,7 +489,7 @@ static void layout_compose_toolbar(nk_context* context) {
     layout_toolbar_icons(context, 3); // Color views.
     wormedit::ui::chrome::layout_separator(context);
     if (!dock_toggles_at_end(context)) {
-        layout_toolbar_icons(context, 6); // Panels.
+        layout_toolbar_icons(context, panel_icons); // Panels.
         wormedit::ui::chrome::layout_separator(context);
     }
     layout_toolbar_icons(context, 3); // Audio lock, backward nudges.
@@ -502,7 +509,7 @@ static void layout_compose_toolbar(nk_context* context) {
     if (dock_toggles_at_end(context)) {
         // The dock toggles close the row at the right edge, after the BGM scroll bar's spacer.
         wormedit::ui::chrome::layout_separator(context);
-        layout_toolbar_icons(context, 6); // Panels.
+        layout_toolbar_icons(context, panel_icons); // Panels.
     }
     nk_layout_row_template_end(context);
 }
@@ -513,7 +520,7 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     const auto spacing = context->style.window.spacing;
     const bool spacing_pushed = nk_style_push_vec2(context, &context->style.window.spacing,
                                                   nk_vec2(3.0f, spacing.y)) != 0;
-    layout_compose_toolbar(context);
+    layout_compose_toolbar(context, 6 + (worm_ui_nuklear_bms_branch_panel_visible(toolbar.view) ? 1 : 0));
     render_navigation_group(toolbar);
     wormedit::ui::chrome::toolbar_separator(context);
     render_tool_group(toolbar);

@@ -484,7 +484,31 @@ static bool area_selection_drag_threshold_reached(const ComposePointerEventConte
     return std::hypot(dx, dy) >= 4.0f;
 }
 
+// With Hold or Roll armed, press-drag draws the hold (press = head, release = tail) instead of
+// starting an area selection; a press without a drag stays the click-click gesture.
+static void begin_pointer_hold_drag(const ComposePointerEventContext& input, bool released) {
+    append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN,
+                         state.area_selection_anchor_x, state.area_selection_anchor_y);
+    worm_ui_nuklear_tag_last_compose_input_sound(state, *input.view, *input.action);
+    state.area_selection_candidate_active = false;
+    state.pointer_hold_active = !state.action_overflowed;
+    state.pointer_hold_without_alt = state.pointer_hold_active;
+    if (!state.pointer_hold_active) return;
+    append_compose_input(input.action,
+                         released ? WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE
+                                  : WORM_UI_COMPOSE_INPUT_ALT_POINTER_UPDATE,
+                         input.pointer_x, input.pointer_y);
+    if (released) {
+        state.pointer_hold_active = false;
+        state.pointer_hold_without_alt = false;
+    }
+}
+
 static void begin_area_selection_drag(const ComposePointerEventContext& input, bool released) {
+    if (input.view->note_paint_mode_active && armed_kind_uses_hold_gesture(*input.view)) {
+        begin_pointer_hold_drag(input, released);
+        return;
+    }
     append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN,
                          state.area_selection_anchor_x, state.area_selection_anchor_y,
                          0, false, state.area_selection_mode);
@@ -589,17 +613,20 @@ auto handle_compose_alt_pointer(const ComposePointerEventContext& input,
                              input.pointer_x, input.pointer_y);
         worm_ui_nuklear_tag_last_compose_input_sound(state, *input.view, *action);
         state.pointer_hold_active = !state.action_overflowed;
+        state.pointer_hold_without_alt = false;
         return true;
     }
     if (state.action_overflowed || paint_pointer_consumed || !state.pointer_hold_active)
         return false;
-    if (!input.window_focused || !input.alt_down) {
+    if (!input.window_focused || (!input.alt_down && !state.pointer_hold_without_alt)) {
         append_compose_cancel_once(action);
         state.pointer_hold_active = false;
+        state.pointer_hold_without_alt = false;
     } else if (input.left_released) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE,
                              input.pointer_x, input.pointer_y);
         state.pointer_hold_active = false;
+        state.pointer_hold_without_alt = false;
     } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input)) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_ALT_POINTER_UPDATE,
                              input.pointer_x, input.pointer_y);

@@ -219,6 +219,8 @@ struct worm_ui_nuklear_compose_state_t {
     bool keyboard_focus{};
     bool action_overflowed{};
     bool pointer_hold_active{};
+    // The active pointer hold is a plain press-drag with Hold/Roll armed, so it needs no Alt.
+    bool pointer_hold_without_alt{};
     bool note_paint_pointer_active{};
     bool bmson_razor_pointer_active{};
     double bmson_razor_last_y_pixels{};

@@ -151,7 +151,7 @@ window buttons.
 
 ## T-406 Copy and paste BMSON restart and continue points
 
-- **Status:** ready
+- **Status:** done (2026-10-06; stale check: before this, a pasted stem marker kept the original `sound_channel_event` link, so two semantic markers shared one retained pulse and the channel gained no event. Now `chart_clipboard_object_t::stem` carries the channel and flags, and paste creates a fresh retained event per point in that channel; a target chart without the channel, or a pulse already at that row, rejects atomically. Tests in `tests/core/chart_clipboard_tests.cpp`; files touched: `include/wormedit/core/chart_clipboard.h`, `src/core/chart_clipboard.cpp`)
 - **Outcome:** selecting stem points and pressing Ctrl+C then Ctrl+V at another row pastes the points with their restart or continue flag, sound channel and relative timing intact. The paste is one undo step.
 - **Read first:** `src/sys/compose_clipboard_selection.h`, `include/wormedit/core/editor_scene.h` (`bmson_restart`), the core clipboard command (`grep -rn clipboard include/wormedit/core`).
 - **Files owned:** `src/sys/compose_clipboard_selection.h`, the core clipboard source and header, `tests/core/` clipboard tests, this card.

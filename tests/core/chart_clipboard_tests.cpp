@@ -242,3 +242,91 @@ TEST_CASE("Chart clipboard copies and pastes timing objects at a new anchor") {
     expect(after.speeds.back().position == local_position_t{measure_id_t{2}, 480});
     expect(after.bpms.back().id != after.bpms.front().id);
 }
+
+namespace {
+auto stem_song() -> song_document_t {
+    auto song = clipboard_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bmson;
+    chart.measures[0].notes[0].sound.reset();
+    chart.measures[1].bgm_events[0].id = object_id_t{3};
+    song.audio_assets.push_back({.id = asset_id_t{5}});
+    song.resources.push_back({.id = resource_id_t{80}, .name = "stem", .asset = asset_id_t{5},
+                              .roles = {resource_role_t::bgm}});
+    chart.sound_channels.push_back({.id = object_id_t{50}, .name = "stem",
+        .source_clip = {.source = asset_id_t{5}},
+        .events = {{.id = object_id_t{60}, .position = {measure_id_t{1}, 0}, .playable = false},
+                   {.id = object_id_t{61}, .position = {measure_id_t{1}, 480},
+                    .continuation = true, .playable = false}}});
+    chart.measures[0].bgm_events.push_back({.id = object_id_t{70}, .position = {measure_id_t{1}, 0},
+        .source_lane = object_id_t{9}, .sound = resource_id_t{80},
+        .sound_channel_event = object_id_t{60}});
+    chart.measures[0].bgm_events.push_back({.id = object_id_t{71}, .position = {measure_id_t{1}, 480},
+        .source_lane = object_id_t{9}, .sound = resource_id_t{80},
+        .sound_channel_event = object_id_t{61}});
+    return song;
+}
+
+auto stem_selection() -> editor_interaction_state_t {
+    editor_interaction_state_t state;
+    state.chart = chart_id_t{1};
+    state.selected_objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{70}},
+                              {editor_selection_object_kind_t::bgm_event, object_id_t{71}}};
+    return state;
+}
+} // namespace
+
+TEST_CASE("Chart clipboard carries BMSON stem points with their restart and continue flags") {
+    auto history = make_document_history(stem_song());
+    const auto copied = copy_chart_selection(history.document, stem_selection(), history.document.revision);
+    expect(static_cast<bool>(copied));
+    expect(copied.clipboard->objects.size() == 2);
+    for (const auto& object : copied.clipboard->objects) expect(object.stem.has_value());
+    expect(copied.clipboard->objects[0].stem->channel == object_id_t{50});
+    expect(!copied.clipboard->objects[0].stem->continuation);
+    expect(copied.clipboard->objects[1].stem->continuation);
+
+    const auto pasted = paste_chart_clipboard(history, chart_id_t{1}, *copied.clipboard,
+                                              {measure_id_t{2}, 600}, history.document.revision);
+    if (!pasted.diagnostics.empty()) WARN(pasted.diagnostics.front().message);
+    expect(pasted.applied);
+    const auto& chart = history.document.charts.front();
+    expect(chart.sound_channels.front().events.size() == 4);
+    const auto& added = chart.sound_channels.front().events;
+    expect(!added[2].continuation && added[3].continuation);
+    expect(added[2].position == (local_position_t{measure_id_t{2}, 600}));
+    expect(added[3].position == (local_position_t{measure_id_t{2}, 1080 - 960}) ||
+           added[3].position.measure == measure_id_t{3});
+    // Each pasted marker links to its own new retained event, never the original.
+    const auto& bgm = chart.measures[1].bgm_events;
+    const auto pasted_marker = std::ranges::find_if(bgm, [&](const auto& event) {
+        return event.sound_channel_event == added[2].id;
+    });
+    expect(pasted_marker != bgm.end());
+    expect(history.undo.size() == 1);
+    expect(undo_document_command(history));
+    expect(history.document.charts.front().sound_channels.front().events.size() == 2);
+}
+
+TEST_CASE("Chart clipboard rejects stem points that have no channel or collide with a pulse") {
+    auto history = make_document_history(stem_song());
+    const auto copied = copy_chart_selection(history.document, stem_selection(), history.document.revision);
+    expect(static_cast<bool>(copied));
+    const auto revision = history.document.revision;
+
+    // Onto the pulses the channel already has: the same anchor as the source.
+    const auto collision = paste_chart_clipboard(history, chart_id_t{1}, *copied.clipboard,
+                                                 {measure_id_t{1}, 0}, revision);
+    expect(!collision.applied);
+
+    // A target chart without that channel changes nothing.
+    auto other = stem_song();
+    other.charts.front().sound_channels.clear();
+    for (auto& measure : other.charts.front().measures) measure.bgm_events.clear();
+    auto other_history = make_document_history(other);
+    const auto missing = paste_chart_clipboard(other_history, chart_id_t{1}, *copied.clipboard,
+                                               {measure_id_t{2}, 600}, other_history.document.revision);
+    expect(!missing.applied);
+    expect(other_history.undo.empty());
+    expect(history.document.revision == revision);
+}

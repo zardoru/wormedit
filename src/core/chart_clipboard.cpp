@@ -48,6 +48,18 @@ auto selected_objects(const editor_interaction_state_t& state)
     return selected;
 }
 
+// The BMSON stem point behind a semantic object, if it has one.
+auto stem_of(const chart_document_t& chart, const std::optional<object_id_t>& link)
+    -> std::optional<chart_clipboard_stem_t> {
+    if (!link) return std::nullopt;
+    for (const auto& channel : chart.sound_channels) {
+        const auto event = std::ranges::find(channel.events, *link, &sound_channel_event_t::id);
+        if (event != channel.events.end())
+            return chart_clipboard_stem_t{channel.id, event->continuation, event->playable};
+    }
+    return std::nullopt;
+}
+
 auto append_note(chart_clipboard_t& clipboard, const chart_document_t& chart,
                  const measure_index_t& index, const note_t& note) -> bool {
     const auto row = absolute_row(index, note.position);
@@ -55,7 +67,8 @@ auto append_note(chart_clipboard_t& clipboard, const chart_document_t& chart,
     const auto end = note.end ? absolute_row(index, *note.end) : row;
     if (!row || !lane || !end || *end < *row) return false;
     clipboard.objects.push_back({fraction(*row, chart.divisions_per_standard_measure),
-        fraction(*end - *row, chart.divisions_per_standard_measure), *lane, note});
+        fraction(*end - *row, chart.divisions_per_standard_measure), *lane, note,
+        stem_of(chart, note.sound_channel_event)});
     return true;
 }
 
@@ -66,7 +79,8 @@ auto append_bgm(chart_clipboard_t& clipboard, const chart_document_t& chart,
                                        &bgm_source_lane_t::id);
     if (!row || lane == chart.bgm_source_lanes.end()) return false;
     clipboard.objects.push_back({fraction(*row, chart.divisions_per_standard_measure), {0, 1},
-        static_cast<std::size_t>(lane - chart.bgm_source_lanes.begin()), event});
+        static_cast<std::size_t>(lane - chart.bgm_source_lanes.begin()), event,
+        stem_of(chart, event.sound_channel_event)});
     return true;
 }
 
@@ -408,6 +422,52 @@ void append_paste_object(chart_document_t& chart, chart_clipboard_payload_t obje
 } // namespace
 
 namespace {
+// Gives a pasted stem point its own retained event in the original channel. Returns the reason
+// when the target chart has no such channel or the channel already has a pulse at that row.
+auto attach_stem(const chart_document_t& chart, const chart_clipboard_object_t& source,
+                 chart_clipboard_payload_t& payload, std::uint64_t& id,
+                 std::vector<chart_paste_stem_event_t>& events) -> std::optional<std::string> {
+    const auto channel = std::ranges::find(chart.sound_channels, source.stem->channel, &sound_channel_t::id);
+    if (channel == chart.sound_channels.end())
+        return "The target chart has no BMSON sound channel for these stem points.";
+    if (id == std::numeric_limits<std::uint64_t>::max()) return "Object IDs are exhausted.";
+    sound_channel_event_t event{.id = object_id_t{++id}, .continuation = source.stem->continuation,
+                                .playable = source.stem->playable};
+    std::optional<std::string> problem;
+    std::visit([&](auto& value) {
+        using value_t = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<value_t, note_t>) {
+            event.position = value.position;
+            event.end = value.end;
+            event.lane = value.lane;
+            value.sound_channel_event = event.id;
+        } else if constexpr (std::is_same_v<value_t, bgm_event_t>) {
+            event.position = value.position;
+            value.sound_channel_event = event.id;
+        } else {
+            problem = "Only notes and BGM markers can be stem points.";
+        }
+    }, payload);
+    if (problem) return problem;
+    const auto taken = [&](const auto& other) { return other.position == event.position; };
+    if (std::ranges::any_of(channel->events, taken) ||
+        std::ranges::any_of(events, [&](const auto& staged) {
+            return staged.channel == channel->id && staged.event.position == event.position;
+        }))
+        return "Another event in this BMSON sound channel occupies the target row.";
+    events.push_back({channel->id, event});
+    return std::nullopt;
+}
+
+void append_stem_events(chart_document_t& chart, const std::vector<chart_paste_stem_event_t>& events) {
+    for (const auto& staged : events) {
+        const auto channel = std::ranges::find(chart.sound_channels, staged.channel, &sound_channel_t::id);
+        if (channel != chart.sound_channels.end()) channel->events.push_back(staged.event);
+    }
+}
+} // namespace
+
+namespace {
 auto missing_paste_lanes(const chart_clipboard_t& clipboard, const chart_document_t& chart,
                         const measure_index_t& index, std::uint64_t anchor) -> std::size_t {
     std::size_t missing{};
@@ -456,6 +516,10 @@ auto propose_chart_paste(const song_document_t& document, chart_id_t chart_id,
         if (!object) return reject("A clipboard position, duration or lane cannot be represented exactly.");
         if (id == std::numeric_limits<std::uint64_t>::max()) return reject("Object IDs are exhausted.");
         std::visit([&id](auto& payload) { payload.id = object_id_t{++id}; }, *object);
+        if (source.stem) {
+            if (const auto problem = attach_stem(*chart, source, *object, id, result.stem_events))
+                return reject(*problem);
+        }
         result.objects.push_back(*object);
     }
     if (paste_collides(*chart, result, *index)) {
@@ -463,6 +527,7 @@ auto propose_chart_paste(const song_document_t& document, chart_id_t chart_id,
         return result;
     }
     for (const auto& object : result.objects) append_paste_object(*chart, object);
+    append_stem_events(*chart, result.stem_events);
     const auto diagnostics = validate_document(proposed);
     const auto error = std::ranges::find(diagnostics, diagnostic_severity_t::error, &diagnostic_t::severity);
     if (error != diagnostics.end()) return reject(error->message);
@@ -479,6 +544,7 @@ auto paste_chart_clipboard(document_history_t& history, chart_id_t chart_id,
     auto proposed = history.document;
     const auto chart = std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
     for (auto& object : proposal.objects) append_paste_object(*chart, std::move(object));
+    append_stem_events(*chart, proposal.stem_events);
     return commit_document_command(history, std::move(proposed), "Paste chart objects");
 }
 } // namespace wormedit

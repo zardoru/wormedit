@@ -1,3 +1,4 @@
+#include "ui/nuklear/ui_gallery.h"
 #include "ui/nuklear/sound_import_dialog.h"
 #include "ui/nuklear/external_player_panel.h"
 #include "ui/nuklear/options_window.h"
@@ -2719,6 +2720,12 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     }
     wormedit::ui::nuklear::tooltip::set_viewport(
         nk_rect(0.0F, 0.0F, static_cast<float>(width), static_cast<float>(height)));
+
+    if (wormedit::ui::gallery::requested()) {
+        static wormedit::ui::gallery::state_t gallery_state;
+        wormedit::ui::gallery::render(g_context, gallery_state, width, height);
+        return action;
+    }
 
     if (validation_error) {
         render_workspace_error(&action, width, height, validation_error, view->close_confirmation.visible);

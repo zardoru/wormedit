@@ -47,7 +47,15 @@ static void reset_timing_marker_drag_capture() {
     state.timing_marker_object_id = 0;
 }
 
+static void reset_bookmark_move_capture() {
+    state.bookmark_move_candidate_active = false;
+    state.bookmark_move_active = false;
+    state.bookmark_move_id = 0;
+}
+
 static void reset_bga_event_move_capture() {
+    // Every pointer-capture cancel site resets the bookmark drag with the BGA one.
+    reset_bookmark_move_capture();
     state.bga_event_move_candidate_active = false;
     state.bga_event_move_active = false;
     state.bga_event_move_object_id = 0;
@@ -842,19 +850,95 @@ static auto begin_compose_timing_marker_drag(const ComposePointerEventContext& i
     return true;
 }
 
+static bool compose_pointer_start_hits_element(const ComposePointerEventContext& input);
+
+static auto bookmark_move_capture_matches(const ComposePointerEventContext& input) -> bool {
+    return input.window_focused && input.view->scene_available && !input.view->input_occluded &&
+           input.view->chart_id == state.bookmark_move_chart_id &&
+           input.view->document_revision == state.bookmark_move_revision &&
+           !state.action_overflowed;
+}
+
+
+// The press was taken for a possible drag, which would have started a paint stroke. A plain
+// click on a bookmark row then paints the note as it would anywhere else.
+static void replay_bookmark_press_as_paint(const ComposePointerEventContext& input) {
+    if (!input.view->note_paint_mode_active || !input.pointer_started_in_note_field ||
+        state.action_overflowed) return;
+    append_note_paint_begin(input);
+    append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE,
+                         input.paint_pointer_x, input.paint_pointer_y);
+}
+
+// Returns true while the drag owns the pointer. A press-release without movement is handed back
+// (false) so it still works as an ordinary field click.
+static auto update_bookmark_move_capture(const ComposePointerEventContext& input) -> bool {
+    if (!state.bookmark_move_candidate_active) return false;
+    if (!bookmark_move_capture_matches(input) || (!input.left_down && !input.left_released)) {
+        reset_bookmark_move_capture();
+        return true;
+    }
+    state.bookmark_move_current_y_pixels = input.pointer_y;
+    if (input.left_released) {
+        const auto moved = state.bookmark_move_active;
+        if (moved)
+            append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE,
+                input.pointer_x, input.pointer_y, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.bookmark_move_id, 0, false,
+                WORM_UI_TIMING_LANE_BPM, state.bookmark_move_chart_id,
+                state.bookmark_move_revision);
+        reset_bookmark_move_capture();
+        if (!moved) replay_bookmark_press_as_paint(input);
+        return moved || input.view->note_paint_mode_active;
+    }
+    if (!state.bookmark_move_active && std::abs(input.context->input.mouse.pos.y -
+                                                 state.bookmark_move_anchor_screen_y) >= 4.0f)
+        state.bookmark_move_active = true;
+    return true;
+}
+
+static auto is_beat_bookmark(const WormUiComposeView& view, std::uint64_t id) -> bool {
+    return std::ranges::any_of(std::span(view.beat_bookmarks, view.beat_bookmark_count),
+                               [id](const auto& item) { return item.bookmark_id == id; });
+}
+
+static auto begin_bookmark_move_capture(const ComposePointerEventContext& input,
+                                        bool paint_pointer_consumed) -> bool {
+    const auto& view = *input.view;
+    if (state.action_overflowed || paint_pointer_consumed || !view.scene_available ||
+        !view.visible || view.input_occluded || !input.pointer_started_in_view ||
+        !input.left_down || !input.window_focused ||
+        (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
+        input.compose_note_double_click_in_view || state.bookmark_move_candidate_active ||
+        state.bookmark_rename.active || state.bookmark_rename.release_pending ||
+        state.note_move_active || state.note_move_candidate_active || state.area_selection_active ||
+        state.area_selection_candidate_active || state.bga_event_move_candidate_active ||
+        state.timing_marker_candidate_active || compose_pointer_start_hits_element(input))
+        return false;
+    const auto id = compose_bookmark_at(view, input.pointer_started_x, input.pointer_started_y);
+    if (!id || !is_beat_bookmark(view, *id)) return false;
+    state.bookmark_move_candidate_active = true;
+    state.bookmark_move_active = false;
+    state.bookmark_move_id = *id;
+    state.bookmark_move_chart_id = view.chart_id;
+    state.bookmark_move_revision = view.document_revision;
+    state.bookmark_move_current_y_pixels = input.pointer_started_y;
+    state.bookmark_move_anchor_screen_y = input.left_clicked_screen_y;
+    return true;
+}
+
+static auto process_compose_bookmark_pointer(const ComposePointerEventContext& input,
+                                             bool paint_pointer_consumed) -> bool {
+    if (update_bookmark_move_capture(input)) return true;
+    return begin_bookmark_move_capture(input, paint_pointer_consumed);
+}
+
 auto process_compose_timing_marker_pointer(const ComposePointerEventContext& input,
                                                   bool paint_pointer_consumed) -> bool {
     if (state.bookmark_rename.active || state.bookmark_rename.release_pending) return true;
     if (compose_area_pointer_consumed() || compose_note_menu_consumed()) return true;
-    const auto rename_press = !paint_pointer_consumed &&
-        nk_input_is_mouse_pressed(&input.context->input, NK_BUTTON_LEFT) && input.left_down &&
-        input.pointer_started_in_view && input.window_focused && input.view->visible &&
-        input.view->scene_available && !input.view->input_occluded &&
-        input.pointer_modifiers == 0 && !state.action_overflowed;
-    if (rename_press && begin_compose_bookmark_rename_at_pointer(
-            state.bookmark_rename, *input.view, input.pointer_started_x,
-            input.pointer_started_y, true, true))
-        return true;
+    // Before note painting, so a bookmark can be grabbed while a note tool is armed.
+    if (process_compose_bookmark_pointer(input, paint_pointer_consumed)) return true;
     if (update_compose_timing_marker_drag(input)) return true;
     return begin_compose_timing_marker_drag(input, paint_pointer_consumed);
 }
@@ -1061,6 +1145,7 @@ static auto begin_bga_event_move_capture(const ComposePointerEventContext& input
     state.bga_event_move_anchor_screen_y = input.left_clicked_screen_y;
     return true;
 }
+
 
 static auto process_compose_bga_event_pointer(const ComposePointerEventContext& input,
                                               bool paint_pointer_consumed) -> bool {

@@ -379,7 +379,7 @@ auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& inpu
     return false;
 }
 
-static void append_note_paint_begin(const ComposePointerEventContext& input) {
+void append_note_paint_begin(const ComposePointerEventContext& input) {
     auto* action = input.action;
     append_compose_input(action, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
                          input.paint_anchor_x, input.paint_anchor_y);

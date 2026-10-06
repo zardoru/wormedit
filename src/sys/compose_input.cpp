@@ -2867,6 +2867,42 @@ auto move_compose_bga_event(const WormUiComposeInputAction& input,
     return std::nullopt;
 }
 
+auto move_compose_bookmark(const WormUiComposeInputAction& input,
+                           compose_input_context_t& context,
+                           wormedit::editor_interaction_result_t& result,
+                           std::string_view& accepted) -> std::optional<std::string> {
+    using namespace wormedit;
+    const auto* chart = context.chart();
+    const auto view = compose_view_for_state(context.history, context.state);
+    if (!chart || !view || input.object_id == 0 || input.timing_chart_id != chart->id.value ||
+        input.timing_document_revision != context.history.document.revision)
+        return "The bookmark move is stale.";
+    const auto found = std::ranges::find(chart->bookmarks, object_id_t{input.object_id},
+                                         &bookmark_t::id);
+    if (found == chart->bookmarks.end() || found->anchor != marker_anchor_t::beat || !found->position)
+        return "That beat-anchored bookmark is no longer available.";
+    const auto measures = build_measure_index(*chart);
+    const auto* index = std::get_if<measure_index_t>(&measures);
+    const auto row = index ? kiai_pointer_row(context, *chart, *view, *index, input.y_pixels)
+                           : std::nullopt;
+    const auto position = row ? position_at_absolute_row(*index, *row) : std::nullopt;
+    if (!position) return "Bookmark move has no valid destination row.";
+    if (*position == *found->position) {
+        result.accepted = true;
+        accepted = "Bookmark stayed on its row.";
+        return std::nullopt;
+    }
+    const auto moved = apply_marker_edit(context.history,
+        context.ui_action.compose_input_document_revision,
+        marker_edit_action_t{update_bookmark_action_t{
+            chart->id, found->id, found->label, marker_anchor_t::beat, *position, std::nullopt}});
+    result.accepted = moved.applied;
+    result.document_changed = moved.applied;
+    result.diagnostics = moved.diagnostics;
+    accepted = "Bookmark moved.";
+    return std::nullopt;
+}
+
 auto select_compose_bms_measure(const WormUiComposeInputAction& input,
                                 compose_input_context_t& context,
                                 wormedit::editor_interaction_result_t& result,
@@ -3274,6 +3310,10 @@ auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE:
         if (const auto error = move_compose_bga_event(input, context, result, accepted))
+            return compose_input_rejection(*error, result);
+        return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE:
+        if (const auto error = move_compose_bookmark(input, context, result, accepted))
             return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_POINTER_CLICK:

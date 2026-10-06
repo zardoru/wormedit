@@ -6,6 +6,7 @@
 #include "ui/nuklear/lucide_icons.h"
 #include "ui/nuklear/text_field.h"
 #include "ui/nuklear/tooltip.h"
+#include "ui/nuklear/ui_metrics.h"
 
 #include <algorithm>
 #include <cstring>
@@ -115,7 +116,7 @@ inline auto button_style(nk_context* context, bool selected) -> nk_style_button 
     style.hover = nk_style_item_color(color(UiColor::surface_hover));
     style.active = nk_style_item_color(color(UiColor::surface_active));
     style.border = 0.0f;
-    style.rounding = 4.0f;
+    style.rounding = metrics::radius_control;
     style.text_normal = selected ? color(UiColor::selected_text) : color(UiColor::text);
     style.text_hover = color(UiColor::text_bright);
     style.text_active = color(UiColor::text_bright);
@@ -135,14 +136,108 @@ inline auto button_hovered(const nk_context* context, struct nk_rect bounds) -> 
 inline void button_feedback(nk_context* context, struct nk_rect bounds, bool selected,
                             const char* tooltip) {
     if (button_hovered(context, bounds)) {
-        nk_stroke_rect(nk_window_get_canvas(context), bounds, 4.0f, 1.0f,
+        nk_stroke_rect(nk_window_get_canvas(context), bounds, metrics::radius_control, 1.0f,
                        color(UiColor::border_hover));
         if (tooltip && tooltip[0] != '\0') nuklear::tooltip::text(context, tooltip);
     } else if (selected) {
-        nk_stroke_rect(nk_window_get_canvas(context), bounds, 4.0f, 1.0f,
+        nk_stroke_rect(nk_window_get_canvas(context), bounds, metrics::radius_control, 1.0f,
                        color(UiColor::selected));
     }
 }
+
+// Components --------------------------------------------------------------------------------
+// Each is drawn once, in components.cpp, from the tokens in ui_metrics.h. Rows that hold them
+// use metrics::control_compact / control_default / control_primary. A disabled component never
+// reports an action; its tooltip should say why it is disabled.
+
+enum class ButtonKind { primary, secondary, ghost, destructive };
+enum class ControlState { normal, hover, active, disabled };
+
+struct ControlLook {
+    nk_color fill;
+    nk_color stroke; // alpha 0 draws no border
+    nk_color text;
+};
+
+auto button_look(ButtonKind kind, ControlState state) -> ControlLook;
+auto chip_look(bool chosen, ControlState state) -> ControlLook;
+
+struct Button {
+    const char* label;
+    ButtonKind kind{ButtonKind::secondary};
+    const char* tooltip{};
+    bool enabled{true};
+
+    // Fills the next layout cell. True when clicked.
+    auto render(nk_context* context) const -> bool;
+};
+
+enum class CheckState { off, on, mixed };
+constexpr auto toggled(CheckState state) -> CheckState {
+    return state == CheckState::on ? CheckState::off : CheckState::on;
+}
+
+struct Checkbox {
+    const char* label;
+    CheckState state{CheckState::off};
+    const char* tooltip{};
+    bool enabled{true};
+
+    // The whole cell is the hit area. True when toggled; the caller stores toggled(state).
+    auto render(nk_context* context) const -> bool;
+};
+
+// Which of `count` equal segments of `bounds` holds x; -1 outside.
+auto segment_at(struct nk_rect bounds, int count, float x) -> int;
+// Left/Right step, clamped (no wrap).
+auto segment_step(int selected, int count, int delta) -> int;
+
+struct Segmented {
+    const char* const* labels;
+    int count;
+    int selected;
+    bool* focused{}; // owned by the caller; set by a click, cleared by a click elsewhere
+    const char* tooltip{};
+    bool enabled{true};
+
+    // Fills the next layout cell with equal segments. Returns the chosen index (Left/Right
+    // while focused also move it), or `selected` when nothing changed.
+    auto render(nk_context* context) const -> int;
+};
+
+struct ChipGrid {
+    struct Result {
+        int chosen{-1};
+        bool add{};
+    };
+    const char* const* labels;
+    int count;
+    int chosen{-1};
+    int columns{4};
+    const char* add_label{}; // outlined trailing chip; the caller opens whatever it adds
+    bool enabled{true};
+
+    // Lays out its own rows of control_compact height, `columns` chips per row, so rows align.
+    auto render(nk_context* context) const -> Result;
+};
+
+struct BarAction {
+    const char* label;
+    ButtonKind kind{ButtonKind::secondary};
+    const char* tooltip{};
+    bool enabled{true};
+};
+
+struct SelectionBar {
+    const char* summary;
+    const BarAction* actions;
+    int action_count;
+
+    static constexpr float height = metrics::control_primary + metrics::gap_medium;
+
+    // One full-width row. Returns the clicked action index, or -1.
+    auto render(nk_context* context) const -> int;
+};
 
 inline void layout_separator(nk_context* context) {
     nk_layout_row_template_push_static(context, 9.0f);
@@ -218,33 +313,25 @@ inline auto mode_button(nk_context* context, const char* label, const char* tool
     return clicked;
 }
 
-inline constexpr float menu_padding = 8.0f;
-inline constexpr float menu_radius = 8.0f;
+inline constexpr float menu_padding = metrics::gap_medium;
+inline constexpr float menu_radius = metrics::radius_surface;
+
+// Region a surface's shadow may paint: its reach around `bounds`, clamped to `limit`.
+// Backends reject scissors that reach outside the render target, so top-level windows pass the
+// app viewport (tooltip::viewport()) and popups pass their parent window.
+auto surface_shadow_clip(struct nk_rect bounds, int elevation, struct nk_rect limit)
+    -> struct nk_rect;
+
+// Paints one surface level: the shadow steps, then the rounded fill and 1 px border_hover
+// stroke, then restores the buffer's previous clip. Draw it before the surface's content.
+void paint_surface(struct nk_command_buffer* canvas, struct nk_rect bounds, int elevation,
+                   struct nk_rect limit);
 
 // Call right after a successful nk_menu_begin_*: paints the menu as a rounded panel with a soft
-// drop shadow. The shadow lies outside the popup, so the clip is widened while it is drawn.
+// drop shadow. Popups keep the parent window as their clamp, as Nuklear clips them there.
 inline void menu_panel(nk_context* context) {
     auto* popup = context->current;
-    auto* canvas = &popup->buffer;
-    const auto body = popup->bounds;
-    const auto clip = popup->layout->clip;
-    // Keep the widened clip inside the parent window: backends reject scissors that reach
-    // outside the render target, which would drop the whole panel.
-    const auto outer = popup->parent->bounds;
-    const auto left = std::max(body.x - 24.0f, outer.x);
-    const auto top = std::max(body.y - 16.0f, outer.y);
-    const auto right = std::min(body.x + body.w + 24.0f, outer.x + outer.w);
-    const auto bottom = std::min(body.y + body.h + 32.0f, outer.y + outer.h);
-    nk_push_scissor(canvas, nk_rect(left, top, std::max(0.0f, right - left), std::max(0.0f, bottom - top)));
-    for (int step = 1; step <= 8; ++step) {
-        const auto grow = static_cast<float>(step);
-        nk_fill_rect(canvas,
-                     nk_rect(body.x - grow, body.y - grow + 4, body.w + 2 * grow, body.h + 2 * grow),
-                     menu_radius + grow, nk_rgba(0, 0, 0, 9));
-    }
-    nk_fill_rect(canvas, body, menu_radius, color(UiColor::surface));
-    nk_stroke_rect(canvas, body, menu_radius, 1.0f, color(UiColor::border_hover));
-    nk_push_scissor(canvas, clip);
+    paint_surface(&popup->buffer, popup->bounds, 1, popup->parent->bounds);
 }
 
 // Menubar menus and context menus share this surface: menu_panel() plus transparent
@@ -264,6 +351,35 @@ inline auto menu_surface_begin(nk_context* context) -> MenuSurface {
 inline void menu_surface_end(nk_context* context, MenuSurface saved) {
     context->style.window.background = saved.background;
     context->style.window.fixed_background = saved.fixed_background;
+}
+
+// Top-level windows (dialogs, floating tools) that cast a shadow over the workspace. The
+// window's own fill is transparent and paint_surface() draws the shadow, fill and border.
+// Always pass the result to surface_window_end(), which also calls nk_end().
+struct SurfaceWindow {
+    MenuSurface saved;
+    bool open{};
+};
+
+inline auto surface_window_begin(nk_context* context, const char* name, struct nk_rect bounds,
+                                 nk_flags flags, int elevation) -> SurfaceWindow {
+    auto& window = context->style.window;
+    SurfaceWindow surface{MenuSurface{window.background, window.fixed_background}, false};
+    window.background = nk_rgba(0, 0, 0, 0);
+    window.fixed_background = nk_style_item_color(nk_rgba(0, 0, 0, 0));
+    surface.open = nk_begin(context, name, bounds, flags) != 0;
+    if (surface.open) {
+        const auto& viewport = nuklear::tooltip::viewport();
+        paint_surface(&context->current->buffer, context->current->bounds, elevation,
+                      viewport.w > 0.0f && viewport.h > 0.0f ? viewport : context->current->bounds);
+    }
+    return surface;
+}
+
+inline void surface_window_end(nk_context* context, const SurfaceWindow& surface) {
+    nk_end(context);
+    context->style.window.background = surface.saved.background;
+    context->style.window.fixed_background = surface.saved.fixed_background;
 }
 
 // A thin rule between menu groups; six pixels tall in the menu's row flow.
@@ -289,8 +405,8 @@ inline void apply_dropdown_theme(nk_context* context) {
     style.window.popup_border_color = color(UiColor::border_hover);
     style.window.combo_border = style.window.contextual_border = 1.0f;
     style.window.popup_border = 1.0f;
-    style.window.popup_padding = style.window.combo_padding = nk_vec2(4.0f, 4.0f);
-    style.window.contextual_padding = nk_vec2(4.0f, 4.0f);
+    style.window.popup_padding = style.window.combo_padding = nk_vec2(metrics::gap_small, metrics::gap_small);
+    style.window.contextual_padding = nk_vec2(metrics::gap_small, metrics::gap_small);
     // Menus are framed by menu_panel(); the stock square border stays off.
     style.window.menu_padding = nk_vec2(menu_padding, menu_padding);
     style.window.menu_border = 0.0f;
@@ -305,7 +421,7 @@ inline void apply_dropdown_theme(nk_context* context) {
     style.combo.symbol_hover = color(UiColor::text_bright);
     style.combo.symbol_active = color(UiColor::text_bright);
     style.combo.border = 1.0f;
-    style.combo.rounding = 4.0f;
+    style.combo.rounding = metrics::radius_control;
     for (auto* button : {&style.combo.button, &style.contextual_button}) {
         button->normal = surface;
         button->hover = hover;
@@ -314,7 +430,7 @@ inline void apply_dropdown_theme(nk_context* context) {
         button->text_normal = color(UiColor::text);
         button->text_hover = color(UiColor::text_bright);
         button->text_active = color(UiColor::text_bright);
-        button->rounding = 4.0f;
+        button->rounding = metrics::radius_control;
     }
     // Menu items sit flat on the menu panel and only light up on hover.
     style.contextual_button.normal = nk_style_item_color(nk_rgba(0, 0, 0, 0));
@@ -325,7 +441,7 @@ inline void apply_dropdown_theme(nk_context* context) {
     style.menu_button.active = active;
     style.menu_button.border = 0.0f;
     style.menu_button.border_color = nk_rgba(0, 0, 0, 0);
-    style.menu_button.rounding = 4.0f;
+    style.menu_button.rounding = metrics::radius_control;
     style.selectable.normal = nk_style_item_color(nk_rgba(0, 0, 0, 0));
     style.selectable.hover = hover;
     style.selectable.pressed = active;
@@ -355,7 +471,7 @@ inline void apply_theme(nk_context* context) {
     context->style.button.text_normal = color(UiColor::text);
     context->style.button.text_hover = color(UiColor::text_bright);
     context->style.button.text_active = color(UiColor::text_bright);
-    context->style.button.rounding = 4.0f;
+    context->style.button.rounding = metrics::radius_control;
     context->style.tab.background = nk_style_item_color(color(UiColor::surface));
     apply_dropdown_theme(context);
 }

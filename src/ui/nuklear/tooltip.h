@@ -22,6 +22,8 @@ struct placement_t {
 
 // The frontend sets the logical app viewport once before drawing each frame.
 void set_viewport(struct nk_rect viewport) noexcept;
+// The viewport last set; empty before the first frame. Surfaces clamp shadow scissors to it.
+[[nodiscard]] auto viewport() noexcept -> const struct nk_rect&;
 
 // Measures and wraps text to the largest readable width allowed by the viewport.
 // Explicit newlines are kept, and long words split at UTF-8 codepoint boundaries.

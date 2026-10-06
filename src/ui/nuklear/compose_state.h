@@ -428,6 +428,14 @@ struct worm_ui_nuklear_compose_state_t {
     // Stamp object id is the right-clicked sound. Group review dialogs also arm its
     // release latch so their closing gesture stays away from the list.
     wormedit::ui::chrome::ContextMenu keysound_group_menu{.title = "Sound group actions"};
+    // A beat bookmark grabbed on its line; `active` once the pointer moved past the threshold.
+    bool bookmark_move_candidate_active{};
+    bool bookmark_move_active{};
+    std::uint64_t bookmark_move_id{};
+    std::uint64_t bookmark_move_chart_id{};
+    std::uint64_t bookmark_move_revision{};
+    double bookmark_move_current_y_pixels{};
+    float bookmark_move_anchor_screen_y{};
     bool bga_event_move_candidate_active{};
     bool bga_event_move_active{};
     std::uint64_t bga_event_move_object_id{};

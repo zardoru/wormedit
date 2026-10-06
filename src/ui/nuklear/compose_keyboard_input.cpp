@@ -278,6 +278,9 @@ static bool process_compose_escape(const auto& key_event,
         state.bga_event_move_candidate_active = false;
         state.bga_event_move_active = false;
         state.bga_event_move_object_id = 0;
+        state.bookmark_move_candidate_active = false;
+        state.bookmark_move_active = false;
+        state.bookmark_move_id = 0;
         state.bga_stack_open = false;
         cancel_beat_fit_drag(action);
         cancel_offset_fit_drag(action);

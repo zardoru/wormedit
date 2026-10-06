@@ -572,6 +572,22 @@ auto apply_measure_action(measure_edit_context_t& context,
 }
 
 auto apply_measure_action(measure_edit_context_t& context,
+                          const materialize_measures_action_t& edit) -> void {
+    auto* chart = target_measure_chart(context, edit.chart);
+    if (chart == nullptr || edit.count <= chart->measures.size()) {
+        return;
+    }
+    if (!chart_has_virtual_tail(*chart) || edit.count > virtual_tail_measure_limit(*chart) ||
+        !append_default_measures(*chart, edit.count, context.limits)) {
+        reject(context.result, diagnostic_code_t::invalid_measure,
+               "the measure lies beyond the chart and its virtual canvas");
+        return;
+    }
+    context.label = "Create measures";
+    context.changed = true;
+}
+
+auto apply_measure_action(measure_edit_context_t& context,
                           const delete_measure_action_t& edit) -> void {
     auto* chart = target_measure_chart(context, edit.chart);
     if (chart == nullptr) {

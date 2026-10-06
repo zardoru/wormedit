@@ -132,3 +132,30 @@ TEST_CASE("layout edits reject mid-measure starts, duplicates, stale revisions a
         fresh, fresh.document.revision,
         delete_lane_layout_action_t{chart_id_t{9}, object_id_t{21}}));
 }
+
+TEST_CASE("the first layout of an empty chart brings its key bindings", "[core][lane-layout-editor]") {
+    auto song = layout_song(false);
+    song.charts.front().lane_layouts.clear();
+    auto history = make_document_history(song);
+    input_profile_t input{.profile_id = "two"};
+    input.bindings.push_back({.key = physical_key_t::digit_1, .lane = lane_id_t{20}});
+
+    const auto applied = apply_lane_layout_edit(
+        history, history.document.revision,
+        insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{10}, 0},
+                                    layout_with({20, 21}, "two"), input});
+    REQUIRE(applied);
+    CHECK(history.document.charts.front().input_profile.bindings.size() == 1);
+
+    // A chart that already has bindings keeps them.
+    auto other = layout_song(false);
+    other.charts.front().lane_layouts.clear();
+    other.charts.front().input_profile = {.profile_id = "kept",
+        .bindings = {{.key = physical_key_t::digit_2, .lane = lane_id_t{21}}}};
+    auto kept = make_document_history(other);
+    REQUIRE(apply_lane_layout_edit(
+        kept, kept.document.revision,
+        insert_lane_layout_action_t{chart_id_t{2}, {measure_id_t{10}, 0},
+                                    layout_with({20, 21}, "two"), input}));
+    CHECK(kept.document.charts.front().input_profile.profile_id == "kept");
+}

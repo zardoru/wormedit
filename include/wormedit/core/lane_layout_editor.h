@@ -3,6 +3,7 @@
 #include <wormedit/core/command.h>
 
 #include <cstdint>
+#include <optional>
 #include <variant>
 
 namespace wormedit {
@@ -18,6 +19,9 @@ struct insert_lane_layout_action_t {
     chart_id_t chart;
     local_position_t position;
     lane_layout_t layout;
+    // Key bindings for the new layout's lanes, taken only when the chart has none yet (an empty
+    // BMS has no playable channel to detect a profile from), so the lanes can be played at once.
+    std::optional<input_profile_t> input;
 };
 
 struct update_lane_layout_action_t {

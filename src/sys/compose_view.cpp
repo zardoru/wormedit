@@ -348,29 +348,39 @@ auto cached_lane_layout_profile_choices(wormedit::format_family_t family,
 
 void populate_lane_layout_editor(WormUiComposeView& view, const wormedit::chart_document_t& chart,
                                  const wormedit::measure_index_t& measures,
-                                 wormedit::local_position_t cursor, bool virtual_cursor) {
+                                 wormedit::local_position_t cursor, bool virtual_cursor,
+                                 std::optional<std::size_t> selected_canvas_measure) {
     view.lane_layout_profile_choice_count = 0;
     view.lane_layout_profile_current = -1;
     view.lane_layout_edit_segment_id = 0;
     view.lane_layout_edit_is_update = false;
-    view.lane_layout_edit_available = !virtual_cursor;
+    view.lane_layout_edit_available = true;
     const auto measure = std::ranges::find(measures.entries, cursor.measure,
                                            &wormedit::measure_index_entry_t::id);
-    if (measure == measures.entries.end()) {
+    // At a virtual-only cursor the target is the selected canvas measure, created on apply.
+    const auto virtual_target = virtual_cursor || measure == measures.entries.end();
+    if (virtual_target && !selected_canvas_measure) {
         view.lane_layout_edit_available = false;
         return;
     }
-    const auto measure_number = static_cast<std::size_t>(measure - measures.entries.begin()) + 1;
+    const auto measure_number = virtual_target
+        ? *selected_canvas_measure + 1
+        : static_cast<std::size_t>(measure - measures.entries.begin()) + 1;
+    if (virtual_target) cursor = {};
     view.lane_layout_edit_measure_number = static_cast<std::uint32_t>(
         std::min<std::size_t>(measure_number, std::numeric_limits<std::uint32_t>::max()));
+    const auto target_measure = virtual_target && measure_number <= measures.entries.size()
+        ? measures.entries[measure_number - 1].id : cursor.measure;
     const auto segment = std::ranges::find_if(chart.lane_layouts, [&](const auto& value) {
-        return value.position.measure == cursor.measure && value.position.row == 0;
+        return target_measure && value.position.measure == target_measure && value.position.row == 0;
     });
     if (segment != chart.lane_layouts.end()) {
         view.lane_layout_edit_segment_id = segment->id.value;
         view.lane_layout_edit_is_update = true;
     }
-    const auto* active = wormedit::active_lane_layout_segment(chart, cursor);
+    const auto* active = virtual_target
+        ? (chart.lane_layouts.empty() ? nullptr : &chart.lane_layouts.front())
+        : wormedit::active_lane_layout_segment(chart, cursor);
     const auto mode = active ? compose_mode_family(active->layout) : wormedit::editor_mode_family_t::other;
     const auto& choices = cached_lane_layout_profile_choices(chart.source_family, mode);
     auto append_choice = [&](const wormedit::lane_layout_t& layout) {
@@ -3791,7 +3801,8 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     view.bmson_tools_available = chart.source_family == wormedit::format_family_t::bmson;
     populate_lane_profile_choices(view, chart, interaction_view.cursor);
     populate_lane_layout_editor(view, chart, input.measures, interaction_view.cursor,
-                                retained_state && retained_state->virtual_bms_cursor_row.has_value());
+                                retained_state && retained_state->virtual_bms_cursor_row.has_value(),
+                                interaction_view.selected_canvas_measure);
     populate_lane_layout_segments(flattened, chart, input.measures, interaction_view, downscroll, view);
     populate_quantize_preview(cache, history.document, chart, history.document.revision,
                               *retained_state, application_state, view);

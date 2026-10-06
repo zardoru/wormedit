@@ -378,6 +378,50 @@ auto layout_with_preserved_lane_ids(const wormedit::chart_document_t& chart,
     return target;
 }
 
+// Key bindings for a built-in BMS layout whose lane IDs were just assigned, for a chart that has
+// none; the built-in lanes and the layout's lanes pair up by display order.
+auto initial_input_profile(const wormedit::chart_document_t& chart, const wormedit::lane_layout_t& layout)
+    -> std::optional<wormedit::input_profile_t> {
+    if (!chart.input_profile.bindings.empty()) return std::nullopt;
+    for (const auto& builtin : wormedit::built_in_bms_lane_profiles()) {
+        if (builtin.profile.layout.profile_id != layout.profile_id) continue;
+        auto source = builtin.profile.layout.lanes;
+        auto target = layout.lanes;
+        const auto by_order = [](const auto& left, const auto& right) { return left.display_order < right.display_order; };
+        std::ranges::stable_sort(source, by_order);
+        std::ranges::stable_sort(target, by_order);
+        if (source.size() != target.size()) return std::nullopt;
+        auto input = builtin.profile.input;
+        for (auto& binding : input.bindings) {
+            const auto found = std::ranges::find(source, binding.lane, &wormedit::lane_definition_t::id);
+            if (found == source.end()) return std::nullopt;
+            binding.lane = target[static_cast<std::size_t>(found - source.begin())].id;
+        }
+        return input;
+    }
+    return std::nullopt;
+}
+
+// A measure that so far exists only on the virtual canvas (an empty BMS, say) is created first.
+// Returns the notification when that fails; `chart` is refreshed after the history changed.
+std::optional<std::string> materialize_layout_measure(compose_action_context_t& context,
+                                                      const wormedit::chart_document_t*& chart,
+                                                      bool& materialized) {
+    if (context.action.compose_measure_number <= chart->measures.size()) return std::nullopt;
+    const auto created = wormedit::apply_measure_edit(
+        context.history, context.action.compose_input_document_revision,
+        wormedit::materialize_measures_action_t{
+            chart->id, static_cast<std::size_t>(context.action.compose_measure_number)});
+    if (!created.applied)
+        return created.diagnostics.empty()
+            ? std::optional<std::string>{compose_action_warning(context, "That measure is outside the chart.")}
+            : std::optional<std::string>{publish_compose_diagnostic(context, created.diagnostics.front())};
+    materialized = true;
+    chart = selected_chart(context.history, context.workspace);
+    if (!chart) return compose_action_warning(context, "The selected difficulty is no longer available.");
+    return std::nullopt;
+}
+
 std::optional<std::string> dispatch_compose_lane_layout_profile(compose_action_context_t& context) {
     if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE)
         return std::nullopt;
@@ -388,10 +432,11 @@ std::optional<std::string> dispatch_compose_lane_layout_profile(compose_action_c
         return compose_action_warning(context, "Lane layout change ignored because the document changed.");
     const auto* chart = selected_chart(context.history, context.workspace);
     if (!chart || chart->id.value != context.action.compose_input_chart_id ||
-        context.action.compose_measure_number == 0 ||
-        context.action.compose_measure_number > chart->measures.size())
+        context.action.compose_measure_number == 0)
         return compose_action_warning(context,
             "Lane layout change ignored because the selected difficulty changed.");
+    auto materialized = false;
+    if (auto refusal = materialize_layout_measure(context, chart, materialized)) return refusal;
     const auto measure_index = static_cast<std::size_t>(context.action.compose_measure_number - 1);
     const auto target_position = wormedit::local_position_t{chart->measures[measure_index].id, 0};
     const auto target = layout_profile_from_id(
@@ -409,11 +454,12 @@ std::optional<std::string> dispatch_compose_lane_layout_profile(compose_action_c
     if (!layout) return compose_action_warning(context,
         "Lane layout change could not preserve lane identities.");
     wormedit::lane_layout_action_t edit = wormedit::insert_lane_layout_action_t{
-        chart->id, target_position, *layout};
+        chart->id, target_position, *layout, initial_input_profile(*chart, *layout)};
     if (is_update)
         edit = wormedit::update_lane_layout_action_t{chart->id, exact_segment->id, *layout};
     const auto applied = wormedit::apply_lane_layout_edit(
-        context.history, context.action.compose_input_document_revision, edit);
+        context.history, context.history.document.revision, edit);
+    if (!applied.applied && materialized) static_cast<void>(wormedit::undo_document_command(context.history));
     if (!applied.applied)
         return applied.diagnostics.empty()
             ? std::optional<std::string>{compose_action_warning(context, "Lane layout change was rejected.")}

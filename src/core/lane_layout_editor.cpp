@@ -140,6 +140,8 @@ void apply_edit(layout_edit_context_t& context, const insert_lane_layout_action_
         reject(context.result, diagnostic_code_t::invalid_id, "object ID sequence is exhausted");
         return;
     }
+    if (edit.input && context.chart.input_profile.bindings.empty())
+        context.chart.input_profile = *edit.input;
     context.chart.lane_layouts.push_back({.id = *id, .position = edit.position, .layout = edit.layout});
     context.label = "Insert lane layout";
 }

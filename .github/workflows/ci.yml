@@ -38,14 +38,8 @@ jobs:
             preset: headless
     steps:
       - uses: actions/checkout@v4
-
-      - name: Check out frontend dependency
-        if: matrix.name == 'linux-gcc'
-        uses: actions/checkout@v4
         with:
-          repository: zardoru/libotoworm
-          ref: 2690edac3e4d8182e4af6bc6c04ad1fbd4e99ff9
-          path: .ci-deps/libotoworm
+          submodules: ${{ matrix.name == 'linux-gcc' }}
 
       - name: Install frontend build tools
         if: matrix.name == 'linux-gcc'
@@ -69,7 +63,6 @@ jobs:
           CXX: ${{ matrix.cxx }}
         run: >-
           cmake --preset ${{ matrix.preset }}
-          ${{ matrix.name == 'linux-gcc' && '-DWORMEDIT_OTOWORM_SOURCE_DIR=.ci-deps/libotoworm' || '' }}
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }} -- -k 0

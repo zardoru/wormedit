@@ -59,13 +59,12 @@ cmake --preset headless \
 
 The GUI build (`WORMEDIT_BUILD_APP=ON`, the default for a plain configure) also needs:
 
-- **[`libotoworm`](https://github.com/zardoru/libotoworm)** checked out as a sibling directory, at `../libotoworm`.
+- **[`libotoworm`](https://github.com/zardoru/libotoworm)**, vendored as the `third_party/libotoworm` git submodule (clone with `--recurse-submodules`, or run `git submodule update --init`).
 - SDL3 and Nuklear, fetched automatically by CMake (or point `SDL3_SOURCE_DIR` at a local SDL3 checkout).
 - Optional: FFmpeg development libraries (`libavformat`, `libavcodec`, `libavutil`, `libswscale`, found through `pkg-config`) enable the bounded video-frame decoder. Without them the editor builds without video previews.
 
 ```sh
-git clone https://github.com/zardoru/libotoworm.git
-git clone https://github.com/zardoru/wormedit.git
+git clone --recurse-submodules https://github.com/zardoru/wormedit.git
 cd wormedit
 cmake -S . -B build -G Ninja
 cmake --build build
@@ -115,4 +114,4 @@ Released into the public domain under [The Unlicense](LICENSE). Do what you like
 
 ## Credits
 
-The SDL/OpenGL3 Nuklear backend in `src/vendor/nuklear_sdl_gl3_sdl3.h` is a minimal SDL3 port of Nuklear's upstream `demo/sdl_opengl3/nuklear_sdl_gl3.h` and retains the original public domain attribution header. [`libotoworm`](https://github.com/zardoru/libotoworm) (MIT) is a separate project that lives in its own directory next to this one; it is not part of this repository and keeps its own license.
+The SDL/OpenGL3 Nuklear backend in `src/vendor/nuklear_sdl_gl3_sdl3.h` is a minimal SDL3 port of Nuklear's upstream `demo/sdl_opengl3/nuklear_sdl_gl3.h` and retains the original public domain attribution header. [`libotoworm`](https://github.com/zardoru/libotoworm) (MIT) is a separate project, included as a git submodule at `third_party/libotoworm`; it keeps its own license.

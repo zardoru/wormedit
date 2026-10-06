@@ -59,6 +59,24 @@
         "WORMEDIT_WINDOWS_TARGET": "$env{WORMEDIT_WINDOWS_TARGET}",
         "WORMEDIT_CROSS_EMULATOR": "$env{WORMEDIT_CROSS_EMULATOR}"
       }
+    },
+    {
+      "name": "windows-cross",
+      "displayName": "Cross-compile the Windows application",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/windows-cross",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/windows-cross.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "OFF",
+        "WORMEDIT_BUILD_APP": "ON",
+        "WORMEDIT_ENABLE_VIDEO_DECODER": "OFF",
+        "WORMEDIT_WINDOWS_C_COMPILER": "$env{WORMEDIT_WINDOWS_C_COMPILER}",
+        "WORMEDIT_WINDOWS_CXX_COMPILER": "$env{WORMEDIT_WINDOWS_CXX_COMPILER}",
+        "WORMEDIT_WINDOWS_RC_COMPILER": "$env{WORMEDIT_WINDOWS_RC_COMPILER}",
+        "WORMEDIT_WINDOWS_SYSROOT": "$env{WORMEDIT_WINDOWS_SYSROOT}",
+        "WORMEDIT_WINDOWS_TARGET": "$env{WORMEDIT_WINDOWS_TARGET}"
+      }
     }
   ],
   "buildPresets": [
@@ -77,6 +95,10 @@
     {
       "name": "windows-cross-headless",
       "configurePreset": "windows-cross-headless"
+    },
+    {
+      "name": "windows-cross",
+      "configurePreset": "windows-cross"
     }
   ],
   "testPresets": [

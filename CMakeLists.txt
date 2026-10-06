@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.25)
 
+if(POLICY CMP0177)
+    cmake_policy(SET CMP0177 NEW)
+endif()
+
 project(wormedit
     VERSION 0.1.0
     DESCRIPTION "Cross-platform rhythm chart editor"
@@ -25,6 +29,7 @@ option(WORMEDIT_BUILD_EVENT_HARNESS "Build windowless frontend event tests (requ
 option(WORMEDIT_ENABLE_LUA "Build the pinned Lua runtime adapter" OFF)
 option(WORMEDIT_ENABLE_AUDIO_DECODER "Build the headless MP3/Ogg decoder target" ON)
 option(WORMEDIT_ENABLE_IMAGE_DECODER "Build the headless bounded static-image decoder target" ON)
+option(WORMEDIT_WINDOWS_CONSOLE "Keep a console window attached to the Windows executable" OFF)
 option(WORMEDIT_ENABLE_VIDEO_DECODER "Build the optional bounded FFmpeg video-frame decoder" ON)
 set(WORMEDIT_UI_BACKEND "nuklear" CACHE STRING "Editor UI backend (nuklear, imgui, or clay)")
 set_property(CACHE WORMEDIT_UI_BACKEND PROPERTY STRINGS nuklear imgui clay)
@@ -285,8 +290,15 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
 
     find_package(Git QUIET)
 
-    set(WORMEDIT_OTOWORM_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../libotoworm" CACHE PATH
-        "Local libotoworm source directory for the application or event harness")
+    set(WORMEDIT_OTOWORM_SOURCE_DIR "${CMAKE_SOURCE_DIR}/third_party/libotoworm" CACHE PATH
+        "libotoworm source directory (the third_party submodule by default)")
+    if(NOT EXISTS "${WORMEDIT_OTOWORM_SOURCE_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR "libotoworm not found at ${WORMEDIT_OTOWORM_SOURCE_DIR}; "
+            "run: git submodule update --init")
+    endif()
+    if(WIN32)
+        include(cmake/dependencies/zlib.cmake)
+    endif()
     if(NOT TARGET otoworm::otoworm)
         add_subdirectory("${WORMEDIT_OTOWORM_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/libotoworm-build")
     endif()
@@ -296,6 +308,10 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
     # its already-required Iconv target and its headers agree.
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_compile_definitions(otoworm PRIVATE LINUX)
+    endif()
+    # libotoworm tests the legacy WIN32 symbol, which only MSVC defines on its own.
+    if(WIN32 AND NOT MSVC)
+        target_compile_definitions(otoworm PRIVATE WIN32 MINGW)
     endif()
 
     set(WORMEDIT_GIT_HASH "nogit")
@@ -513,6 +529,28 @@ if(WORMEDIT_BUILD_APP)
     if(UNIX)
         set_target_properties(wormedit PROPERTIES ENABLE_EXPORTS ON)
     endif()
+
+    if(WIN32 AND NOT WORMEDIT_WINDOWS_CONSOLE)
+        set_target_properties(wormedit PROPERTIES WIN32_EXECUTABLE ON)
+    endif()
+
+    # SDL_GetBasePath() is the executable directory, so assets/ is installed next to it.
+    if(WIN32)
+        set(WORMEDIT_INSTALL_BINDIR ".")
+    else()
+        set(WORMEDIT_INSTALL_BINDIR "bin")
+    endif()
+    install(TARGETS wormedit RUNTIME DESTINATION "${WORMEDIT_INSTALL_BINDIR}")
+    if(WIN32)
+        install(FILES "$<TARGET_FILE:SDL3::SDL3>" DESTINATION "${WORMEDIT_INSTALL_BINDIR}")
+    endif()
+    install(FILES assets/fonts/AdwaitaMono-Regular.ttf assets/fonts/LICENSE
+        DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/fonts")
+    install(FILES assets/themes/ui-dark.json assets/themes/compose-field.json
+        DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/themes")
+    install(FILES assets/icons/lucide/LICENSE
+        DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/icons/lucide")
+    install(FILES LICENSE README.md DESTINATION "${WORMEDIT_INSTALL_BINDIR}")
 
     if(WORMEDIT_ENABLE_IMAGE_DECODER)
         target_link_libraries(wormedit PRIVATE wormedit::visual_decoder)

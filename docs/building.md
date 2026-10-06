@@ -84,6 +84,22 @@ cmake --build --preset windows-cross-headless
 
 As with Linux cross-builds, enable the full application only after its Windows-target SDL3 GPU, decoder, and packaging dependencies are supplied as target packages/source builds. Host package discovery must never satisfy a Windows dependency.
 
+## Cross-compiling the Windows application from Linux
+
+The `windows-cross` preset builds the real SDL3 GPU application (`wormedit.exe`, Release, GUI subsystem) with
+MinGW-w64. The SDL3 source is reused from `build/_deps` when present, zlib is built from source for the
+Windows target (`cmake/dependencies/zlib.cmake`), and the FFmpeg video decoder is off because there is no
+Windows-target FFmpeg. Pass `-DWORMEDIT_WINDOWS_CONSOLE=ON` to keep a console attached for debugging.
+
+```sh
+scripts/windows-cross-package.sh [output-dir]        # configure, build, strip, zip (default build/dist)
+scripts/windows-install.sh <dir> [--run]             # install into a folder, optionally launch under Wine
+```
+
+Both scripts source `scripts/env-mingw.sh`, which finds `x86_64-w64-mingw32-*` on `PATH` (override with
+`MINGW_PREFIX`). The package contains `wormedit.exe`, `SDL3.dll`, `assets/`, `LICENSE` and `README.md`; assets
+are looked up next to the executable. The libstdc++/winpthread runtimes are linked statically.
+
 ## Frontend event harness
 
 See [the frontend event harness guide](frontend-event-harness.md) for windowless

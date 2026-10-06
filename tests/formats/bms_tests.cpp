@@ -364,6 +364,17 @@ TEST_CASE("BMS channel materialization respects explicit profiles and exact grid
     CHECK((denominator_only.song->charts.front().measures.front().definition.length ==
            wormedit::rational_t{1, 997}));
 
+    // Players print lengths as rounded doubles; 5/48 must not fall back to 4/4.
+    auto printed = parse("#00002:0.104166666666667\n#00102:0.333333333333333\n#00202:0.333\n");
+    REQUIRE(printed.song.has_value());
+    const auto& printed_measures = printed.song->charts.front().measures;
+    CHECK((printed_measures[0].definition.length == wormedit::rational_t{5, 48}));
+    CHECK((printed_measures[1].definition.length == wormedit::rational_t{1, 3}));
+    CHECK((printed_measures[2].definition.length == wormedit::rational_t{333, 1000}));
+    CHECK_FALSE(std::ranges::any_of(printed.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::bms_parse_diagnostic_code_t::invalid_measure;
+    }));
+
     wormedit::bms_parse_options_t bounded;
     bounded.max_chart_resolution = 960;
     auto capped = parse("#00002:1/997\n", bounded);

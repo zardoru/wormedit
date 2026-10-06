@@ -2221,9 +2221,50 @@ auto collect_resource_statement(active_statement_scan_context_t& context,
     return false;
 }
 
+using wide_t = unsigned __int128;
+
+// The fraction with the smallest denominator in the closed interval [low, high] (both positive,
+// low <= high), by continued fractions.
+auto simplest_between(wide_t low_n, wide_t low_d, wide_t high_n, wide_t high_d)
+    -> std::pair<wide_t, wide_t> {
+    const auto whole = low_n / low_d;
+    if (whole * low_d == low_n) return {whole, 1};
+    if (whole < high_n / high_d) return {whole + 1, 1};
+    const auto [tail_n, tail_d] = simplest_between(high_d, high_n - whole * high_d, low_d,
+                                                   low_n - whole * low_d);
+    return {whole * tail_n + tail_d, tail_n};
+}
+
+// Players print measure lengths as rounded doubles ("0.104166666666667" for 5/48). A decimal that
+// long cannot be a deliberate exact length, so read it as the simplest fraction that prints the
+// same; short decimals stay exact.
+auto recover_printed_fraction(std::string_view text, rational_t exact) -> rational_t {
+    constexpr std::uint64_t exact_denominator_limit = 1'000'000;
+    const auto dot = text.find('.');
+    if (dot == std::string_view::npos || exact.denominator <= exact_denominator_limit) return exact;
+    const auto digits = text.size() - dot - 1;
+    if (digits > 30) return exact;
+    wide_t scale = 1;
+    for (std::size_t digit = 0; digit < digits; ++digit) scale *= 10;
+    // exact = numerator / denominator; the printed digit count bounds the error by half a unit.
+    const wide_t denominator = exact.denominator;
+    const wide_t numerator = exact.numerator;
+    if (2 * numerator * scale <= denominator) return exact;
+    const auto low_n = (2 * numerator * scale - denominator);
+    const auto high_n = (2 * numerator * scale + denominator);
+    const auto common = 2 * denominator * scale;
+    const auto [n, d] = simplest_between(low_n, common, high_n, common);
+    if (d >= denominator || n > std::numeric_limits<std::uint64_t>::max() ||
+        d > std::numeric_limits<std::uint64_t>::max()) return exact;
+    return {static_cast<std::uint64_t>(n), static_cast<std::uint64_t>(d)};
+}
+
 auto parse_bms_measure_length(std::string_view value) -> std::optional<rational_t> {
-    if (value.find_first_of("eE") == std::string_view::npos)
-        return parse_measure_length(value).value;
+    if (value.find_first_of("eE") == std::string_view::npos) {
+        const auto parsed = parse_measure_length(value);
+        if (!parsed.value) return std::nullopt;
+        return recover_printed_fraction(value, *parsed.value);
+    }
     const auto parsed = parse_positive_rational(value);
     if (!parsed) return std::nullopt;
     return rational_t{static_cast<std::uint64_t>(parsed->numerator), parsed->denominator};

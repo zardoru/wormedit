@@ -5,6 +5,8 @@
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/measure_editor.h>
 
+#include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -30,5 +32,15 @@ enum class cursor_measure_command_t { insert_before, insert_after, remove_empty 
                                               std::string_view numerator,
                                               std::string_view denominator,
                                               notification_severity_t* severity = nullptr) -> std::string;
+
+// Sets one time signature on every listed measure of the selected chart in a single undo step.
+// Same text rules and messages as apply_cursor_measure_meter; an empty list, an unknown measure
+// or a stale revision changes nothing.
+[[nodiscard]] auto apply_measures_meter(document_history_t& history,
+                                        editor_interaction_state_t& state,
+                                        std::span<const std::uint64_t> measure_ids,
+                                        std::string_view numerator,
+                                        std::string_view denominator,
+                                        notification_severity_t* severity = nullptr) -> std::string;
 
 } // namespace wormedit::sys

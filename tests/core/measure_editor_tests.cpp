@@ -328,3 +328,56 @@ TEST_CASE("measure removal rejects stale, last-measure timing and sole measures"
         sole_history, sole_history.document.revision,
         remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{10}}));
 }
+
+TEST_CASE("mass measure definition update is one atomic undo step",
+          "[unit][core][measure-editor]") {
+    auto history = make_document_history(measure_song());
+    const auto definition = measure_definition_t{.length = {3, 4}, .meter = meter_t{3, 4}};
+
+    const auto stale = apply_measure_edit(
+        history, 4,
+        update_measures_definition_action_t{.chart = chart_id_t{2},
+                                            .measures = {measure_id_t{10}},
+                                            .definition = definition});
+    CHECK_FALSE(stale.applied);
+
+    const auto unknown = apply_measure_edit(
+        history, 5,
+        update_measures_definition_action_t{.chart = chart_id_t{2},
+                                            .measures = {measure_id_t{10}, measure_id_t{999}},
+                                            .definition = definition});
+    CHECK_FALSE(unknown.applied);
+    CHECK(has_code(unknown, diagnostic_code_t::invalid_id));
+    CHECK(history.document.charts.front().measures[0].definition.length == rational_t{1, 1});
+
+    const auto duplicate = apply_measure_edit(
+        history, 5,
+        update_measures_definition_action_t{.chart = chart_id_t{2},
+                                            .measures = {measure_id_t{10}, measure_id_t{10}},
+                                            .definition = definition});
+    CHECK_FALSE(duplicate.applied);
+
+    const auto bad = apply_measure_edit(
+        history, 5,
+        update_measures_definition_action_t{
+            .chart = chart_id_t{2},
+            .measures = {measure_id_t{10}},
+            .definition = {.length = {3, 4}, .meter = meter_t{4, 4}}});
+    CHECK_FALSE(bad.applied);
+    CHECK(history.undo.empty());
+
+    const auto ok = apply_measure_edit(
+        history, 5,
+        update_measures_definition_action_t{.chart = chart_id_t{2},
+                                            .measures = {measure_id_t{10}, measure_id_t{12}},
+                                            .definition = definition});
+    REQUIRE(ok);
+    const auto& measures = history.document.charts.front().measures;
+    CHECK(measures[0].definition.length == rational_t{3, 4});
+    CHECK(measures[1].definition.length == rational_t{1, 1});
+    CHECK(measures[2].definition.length == rational_t{3, 4});
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().measures[0].definition.length == rational_t{1, 1});
+    CHECK(history.document.charts.front().measures[2].definition.length == rational_t{1, 1});
+}

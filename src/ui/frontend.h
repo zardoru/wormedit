@@ -1072,6 +1072,15 @@ typedef struct WormUiComposeOutputGroupView {
     const char* relative_asset_directory;
 } WormUiComposeOutputGroupView;
 
+typedef struct WormUiComposeMeasureRowView {
+    uint64_t measure_id;
+    /* The number "go to measure" takes: #000-based for BMS charts, 1-based otherwise. */
+    uint64_t number;
+    uint64_t length_numerator, length_denominator;
+    bool has_meter;
+    uint32_t meter_numerator, meter_denominator;
+} WormUiComposeMeasureRowView;
+
 typedef struct WormUiComposeQuantizePresetView {
     const char* name;
     uint64_t divisions;
@@ -1158,6 +1167,11 @@ typedef struct WormUiComposeView {
     size_t quantize_selected_preset_index;
     const WormUiComposeQuantizePresetView* quantize_presets;
     size_t quantize_preset_count;
+    /* Measures dock rows in chart order, bounded; `measure_row_ids` lists their IDs for selection. */
+    const WormUiComposeMeasureRowView* measure_rows;
+    const uint64_t* measure_row_ids;
+    size_t measure_row_count;
+    bool measure_rows_truncated;
     // Dry-run counts and bounded report for the current request.
     size_t quantize_preview_moved, quantize_preview_unchanged, quantize_preview_blocked;
     size_t quantize_preview_colliding_objects;
@@ -2099,6 +2113,8 @@ typedef enum WormUiComposeActionKind {
     /* Sets the cursor measure's time signature from timing_meter_numerator_text and
        timing_meter_denominator_text. */
     WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER,
+    /* Sets the meter from timing_meter_*_text on every measure in compose_measure_ids as one undo step. */
+    WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER,
     /* The selected SV recipe form (compose_recipe_form, compose_recipe_id): preview shows the
        candidate in the lane without writing, apply stores it as one undo step, clear drops the
        preview. */
@@ -2572,6 +2588,9 @@ typedef struct WormUiWorkspaceAction {
     bool compose_renumber_bga;
     const char* const* compose_import_paths;
     size_t compose_import_path_count;
+    /* Frontend-owned staging; valid through immediate workspace-action dispatch. */
+    const uint64_t* compose_measure_ids;
+    size_t compose_measure_id_count;
     bool sound_import_pick_requested;
     uint64_t sound_import_project_id;
     const WormUiSoundImportItem* sound_import_items;

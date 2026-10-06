@@ -96,6 +96,30 @@ auto apply_cursor_measure_meter(document_history_t& history, editor_interaction_
     return result.diagnostics.empty() ? "Meter was unchanged." : result.diagnostics.front().message;
 }
 
+auto apply_measures_meter(document_history_t& history, editor_interaction_state_t& state,
+                          std::span<const std::uint64_t> measure_ids, std::string_view numerator,
+                          std::string_view denominator, notification_severity_t* severity)
+    -> std::string {
+    set_feedback_severity(severity, notification_severity_t::warning);
+    const auto top = parse_meter_part(numerator);
+    const auto bottom = parse_meter_part(denominator);
+    if (!top || !bottom) return "A meter needs a non-zero numerator and denominator.";
+    if (measure_ids.empty()) return "Select at least one measure first.";
+    update_measures_definition_action_t action{
+        .chart = state.chart,
+        .definition = {.length = {*top, *bottom}, .meter = meter_t{*top, *bottom}}};
+    for (const auto id : measure_ids) action.measures.push_back(measure_id_t{id});
+    const auto result = apply_measure_edit(history, history.document.revision, action);
+    if (result) {
+        set_feedback_severity(severity, notification_severity_t::success);
+        return measure_ids.size() == 1 ? "Meter updated."
+                                       : "Meter updated on " + std::to_string(measure_ids.size()) + " measures.";
+    }
+    set_feedback_severity(severity, result.diagnostics.empty() ? notification_severity_t::info
+        : diagnostic_feedback_severity(result.diagnostics.front().severity));
+    return result.diagnostics.empty() ? "Meter was unchanged." : result.diagnostics.front().message;
+}
+
 auto apply_cursor_measure_command(document_history_t& history, editor_interaction_state_t& state,
                                   cursor_measure_command_t command, notification_severity_t* severity) -> std::string {
     set_feedback_severity(severity, notification_severity_t::warning);

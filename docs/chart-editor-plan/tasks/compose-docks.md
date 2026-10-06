@@ -10,7 +10,7 @@ window buttons.
 
 ## T-397 Measure list dock with mass-set meter
 
-- **Status:** ready
+- **Status:** done (2026-10-06; Ctrl+A is not bound, the dock has Select all and Clear buttons instead)
 - **Outcome:** a Measures dock lists every measure with its index, meter and length, as the Sounds dock lists sounds. Selecting several rows (with Shift, Ctrl or Ctrl+A) and choosing a meter sets it on all of them in one undo step.
 - **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp` (list, selection and toolbar pattern), `src/ui/nuklear/keysound_list_state.cpp`, `src/ui/nuklear/compose_inspector.cpp` (`render_compose_meter_control`), `src/sys/compose_measure_commands.cpp`.
 - **Files owned:** new `src/ui/nuklear/compose_measures_panel.cpp`, new `src/ui/nuklear/compose_measures_panel.h`, `src/ui/nuklear/compose_panel.cpp` (dock layout), `src/ui/nuklear/compose_toolbar.cpp` (dock toggle), `src/ui/nuklear/compose_state.h`, `src/ui/frontend.h`, `src/sys/compose_view.cpp`, `src/sys/compose_measure_commands.cpp`, `src/sys/compose_measure_commands.h`, core meter command and test under `src/core/` and `tests/core/`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/ui/nuklear_event_harness_tests.cpp`, this card.

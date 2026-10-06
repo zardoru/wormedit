@@ -1809,7 +1809,29 @@ std::string set_cursor_measure_meter(compose_action_context_t& context) {
     return publish_compose_feedback(context, std::move(status), severity, notification_source_t::edit);
 }
 
+std::string set_measures_meter(compose_action_context_t& context) {
+    if (editor_interaction_has_pending_gesture(context.state))
+        return compose_action_warning(context, "Finish or cancel the active Compose gesture before editing measures.");
+    if (context.history.document.revision != context.action.compose_input_document_revision)
+        return compose_action_warning(context, "Meter edit ignored because the document changed.");
+    auto severity = notification_severity_t::warning;
+    const auto ids = std::span<const std::uint64_t>{context.action.compose_measure_ids,
+                                                    context.action.compose_measure_id_count};
+    auto status = apply_measures_meter(context.history, context.state, ids,
+                                       context.action.timing_meter_numerator_text,
+                                       context.action.timing_meter_denominator_text, &severity);
+    const auto rebound = rebind_workspace(context.workspace, context.history);
+    if (!rebound) {
+        static_cast<void>(publish_compose_feedback(context, status, severity, notification_source_t::edit));
+        status = "Meter edited, but workspace rebinding failed.";
+        return compose_action_error(context, std::move(status), notification_source_t::document);
+    }
+    return publish_compose_feedback(context, std::move(status), severity, notification_source_t::edit);
+}
+
 std::optional<std::string> dispatch_compose_marker_action(compose_action_context_t& context) {
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER)
+        return set_measures_meter(context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER)
         return set_cursor_measure_meter(context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM)

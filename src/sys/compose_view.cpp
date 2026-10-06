@@ -2683,6 +2683,34 @@ static void populate_quantize_presets(compose_scene_cache_t& cache,
     view.quantize_preset_count = cache.quantize_preset_views.size();
 }
 
+// Bounded so a huge BMS chart cannot grow the per-frame projection without limit.
+constexpr std::size_t compose_measure_row_limit = 4096;
+
+static void populate_measure_rows(compose_scene_cache_t& cache,
+                                  const wormedit::chart_document_t& chart,
+                                  WormUiComposeView& view) {
+    cache.measure_row_views.clear();
+    cache.measure_row_ids.clear();
+    const auto count = std::min(chart.measures.size(), compose_measure_row_limit);
+    const auto is_bms = chart.source_family == wormedit::format_family_t::bms;
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& definition = chart.measures[index].definition;
+        cache.measure_row_views.push_back(
+            {.measure_id = chart.measures[index].id.value,
+             .number = is_bms ? index : index + 1,
+             .length_numerator = definition.length.numerator,
+             .length_denominator = definition.length.denominator,
+             .has_meter = definition.meter.has_value(),
+             .meter_numerator = definition.meter ? definition.meter->numerator : 0,
+             .meter_denominator = definition.meter ? definition.meter->denominator : 0});
+        cache.measure_row_ids.push_back(chart.measures[index].id.value);
+    }
+    view.measure_rows = cache.measure_row_views.data();
+    view.measure_row_ids = cache.measure_row_ids.data();
+    view.measure_row_count = cache.measure_row_views.size();
+    view.measure_rows_truncated = chart.measures.size() > count;
+}
+
 static void populate_quantize_applied_report(compose_scene_cache_t& cache,
                                              const wormedit::song_document_t& document,
                                              const wormedit::chart_document_t& chart,
@@ -2720,6 +2748,7 @@ static void populate_quantize_preview(compose_scene_cache_t& cache,
     view.quantize_preview_message[0] = '\0';
     cache.quantize_preview_row_views.clear();
     populate_quantize_presets(cache, document, view);
+    populate_measure_rows(cache, chart, view);
     populate_quantize_applied_report(cache, document, chart, application, view);
     const auto request = active_quantize_request(application, document, chart,
                                                 state.active_snap_denominator);

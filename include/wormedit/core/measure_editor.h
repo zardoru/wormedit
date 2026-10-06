@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <variant>
+#include <vector>
 
 namespace wormedit {
 
@@ -25,6 +26,14 @@ struct update_measure_definition_action_t {
     measure_definition_t definition;
 };
 
+// Gives every listed measure the same definition in one undo step. Duplicate or
+// unknown IDs, an empty list, or an invalid definition reject the whole edit.
+struct update_measures_definition_action_t {
+    chart_id_t chart;
+    std::vector<measure_id_t> measures;
+    measure_definition_t definition;
+};
+
 struct delete_measure_action_t {
     chart_id_t chart;
     measure_id_t measure;
@@ -41,7 +50,7 @@ struct remove_measure_with_contents_action_t {
 
 using measure_edit_action_t =
     std::variant<insert_measure_action_t, update_measure_definition_action_t,
-                 delete_measure_action_t, remove_measure_with_contents_action_t>;
+                 update_measures_definition_action_t, delete_measure_action_t, remove_measure_with_contents_action_t>;
 
 struct measure_removal_proposal_t {
     std::size_t deleted_notes{};

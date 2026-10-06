@@ -131,6 +131,8 @@ struct compose_scene_cache_t {
     std::optional<wormedit::measure_index_t> cached_measure_index;
     quantize_preview_cache_t quantize_preview;
     std::vector<WormUiComposeQuantizePresetView> quantize_preset_views;
+    std::vector<WormUiComposeMeasureRowView> measure_row_views;
+    std::vector<std::uint64_t> measure_row_ids;
     std::vector<WormUiComposeQuantizeReportRowView> quantize_preview_row_views;
     std::vector<WormUiComposeQuantizeReportRowView> quantize_applied_row_views;
     std::unordered_map<std::uint64_t, std::uint64_t> bgm_rows_by_id;

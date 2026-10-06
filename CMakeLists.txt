@@ -404,6 +404,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_sounds_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/sound_slot_batch.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bga_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_measures_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_layers_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/timing_stage_editor.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/text_field.cpp"

@@ -139,6 +139,19 @@ inline void select_all(struct nk_command_buffer* canvas, struct nk_rect bounds,
     nk_stroke_polyline(canvas, const_cast<float*>(tick), 3, thickness, tint);
 }
 
+// Lucide "list-ordered" in outline: the Compose measures list.
+inline void measure_list(struct nk_command_buffer* canvas, struct nk_rect bounds,
+                         struct nk_color tint) {
+    const auto frame = Frame::fit(bounds);
+    const auto thickness = frame.stroke();
+    for (const auto y : {6.0f, 12.0f, 18.0f}) {
+        nk_stroke_line(canvas, frame.px(10.0f), frame.py(y), frame.px(21.0f), frame.py(y),
+                       thickness, tint);
+        nk_stroke_line(canvas, frame.px(3.0f), frame.py(y), frame.px(6.0f), frame.py(y),
+                       thickness, tint);
+    }
+}
+
 // Lucide "list-music": the Compose sounds list.
 inline void sound_list(struct nk_command_buffer* canvas, struct nk_rect bounds,
                        struct nk_color tint) {

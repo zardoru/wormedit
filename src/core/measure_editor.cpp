@@ -307,6 +307,39 @@ auto apply_measure_action(measure_edit_context_t& context,
 }
 
 auto apply_measure_action(measure_edit_context_t& context,
+                          const update_measures_definition_action_t& edit) -> void {
+    auto* chart = target_measure_chart(context, edit.chart);
+    if (chart == nullptr) {
+        return;
+    }
+    if (edit.measures.empty()) {
+        reject(context.result, diagnostic_code_t::invalid_measure, "no measures were selected");
+        return;
+    }
+    if (!validate_definition(*chart, edit.definition, context.limits, context.result)) {
+        return;
+    }
+    auto seen = std::vector<measure_id_t>{};
+    for (const auto id : edit.measures) {
+        if (std::ranges::find(seen, id) != seen.end()) {
+            reject(context.result, diagnostic_code_t::invalid_measure,
+                   "measure selection names a measure twice");
+            return;
+        }
+        seen.push_back(id);
+        const auto measure = unique_measure(*chart, id, context.result);
+        if (measure == chart->measures.end()) {
+            return;
+        }
+        if (!same_definition(measure->definition, edit.definition)) {
+            measure->definition = edit.definition;
+            context.changed = true;
+        }
+    }
+    context.label = "Update measure definitions";
+}
+
+auto apply_measure_action(measure_edit_context_t& context,
                           const delete_measure_action_t& edit) -> void {
     auto* chart = target_measure_chart(context, edit.chart);
     if (chart == nullptr) {

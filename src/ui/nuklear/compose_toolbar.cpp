@@ -167,6 +167,10 @@ static void render_panel_group(const ComposeToolbarContext& toolbar) {
             state.sounds_panel_visible ? "Hide sounds list" : "Show sounds list",
             state.sounds_panel_visible}.render(context))
         state.sounds_panel_visible = !state.sounds_panel_visible;
+    if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::measure_list,
+            state.measures_panel_visible ? "Hide measures list" : "Show measures list",
+            state.measures_panel_visible}.render(context))
+        state.measures_panel_visible = !state.measures_panel_visible;
     if (wormedit::ui::chrome::IconButton{Glyph::layers,
             state.layers_panel_visible ? "Hide layers" : "Show layers",
             state.layers_panel_visible}.render(context))

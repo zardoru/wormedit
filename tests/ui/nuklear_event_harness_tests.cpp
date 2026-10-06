@@ -1407,6 +1407,54 @@ TEST_CASE("BGA dock reuses list selection and arms resources outside the drawer 
     CHECK_FALSE(state.bga_list_valid);
 }
 
+TEST_CASE("Measures dock selects rows, jumps the cursor and applies one meter to the selection",
+          "[frontend-state][event-harness][measures]") {
+    nuklear_event_harness_t harness{1600, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    const std::array<std::uint64_t, 3> ids{11, 12, 13};
+    const std::array<WormUiComposeMeasureRowView, 3> rows{{
+        {.measure_id = 11, .number = 1, .length_numerator = 1, .length_denominator = 1,
+         .has_meter = true, .meter_numerator = 4, .meter_denominator = 4},
+        {.measure_id = 12, .number = 2, .length_numerator = 3, .length_denominator = 4,
+         .has_meter = true, .meter_numerator = 3, .meter_denominator = 4},
+        {.measure_id = 13, .number = 3, .length_numerator = 1, .length_denominator = 1,
+         .has_meter = true, .meter_numerator = 4, .meter_denominator = 4}}};
+    view.measure_rows = rows.data();
+    view.measure_row_ids = ids.data();
+    view.measure_row_count = rows.size();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.measures_panel_visible = true;
+    state.measure_selection = {};
+    (void)harness.frame();
+    const auto second = harness.drawn_text_center("2    3/4    3/4");
+    REQUIRE(second);
+    const auto jump = click_at(harness, second->first, second->second);
+    CHECK(state.measure_selection.primary == 12);
+    CHECK(std::ranges::any_of(jump, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE &&
+               frame.get().compose_measure_number == 2;
+    }));
+    (void)harness.frame();
+    const auto all = harness.drawn_text_center("Select all");
+    REQUIRE(all);
+    (void)click_at(harness, all->first, all->second);
+    CHECK(state.measure_selection.selected.size() == 3);
+    std::snprintf(state.measures_meter_numerator.data(), state.measures_meter_numerator.size(), "6");
+    std::snprintf(state.measures_meter_denominator.data(), state.measures_meter_denominator.size(), "8");
+    (void)harness.frame();
+    const auto apply = harness.drawn_text_center("Apply");
+    REQUIRE(apply);
+    const auto applied = click_at(harness, apply->first, apply->second);
+    const auto found = std::ranges::find_if(applied, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER;
+    });
+    REQUIRE(found != applied.end());
+    CHECK(found->get().compose_measure_id_count == 3);
+    CHECK(std::string(found->get().timing_meter_numerator_text) == "6");
+    CHECK(std::string(found->get().timing_meter_denominator_text) == "8");
+}
+
 namespace {
 void require_sound_renumber(bool value) { REQUIRE(value); }
 void check_sound_renumber(bool value, std::string_view description) {

@@ -391,6 +391,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ui/nuklear_setup_state_tests.cpp
         ui/sound_import_state_tests.cpp
         ui/keysound_list_state_tests.cpp
+        ui/measure_resize_tests.cpp
         ui/nuklear_timing_state_tests.cpp
         ui/nuklear_meter_state_tests.cpp
         ../src/ui/nuklear/audio_state.cpp
@@ -402,6 +403,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/setup_state.cpp
         ../src/ui/nuklear/sound_import_state.cpp
         ../src/ui/nuklear/keysound_list_state.cpp
+        ../src/ui/nuklear/measure_resize.cpp
         ../src/ui/nuklear/timing_state.cpp
         ../src/ui/nuklear/meter_state.cpp
     )
@@ -525,6 +527,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/metadata_drop_state.cpp
         ui/timing_settings_tests.cpp
         ui/compose_beat_fit_tests.cpp
+        ui/compose_measure_resize_tests.cpp
         ui/sound_source_copy_event_harness_tests.cpp
         ui/sound_slot_batch_event_harness_tests.cpp
         ui/compose_hover_timing_event_harness_tests.cpp

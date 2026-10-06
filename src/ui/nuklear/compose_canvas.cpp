@@ -1163,6 +1163,23 @@ static void draw_compose_beat_fit_overlay(const ComposePaintContext& paint) {
     }
 }
 
+// Alt+drag of a bar line: the proposed end line and the meter it would set.
+static void draw_compose_measure_resize_overlay(const ComposePaintContext& paint) {
+    if (!state.measure_resize_active) return;
+    const auto y = compose_projected_y(paint, state.measure_resize_ghost_y_pixels);
+    const auto color = state.measure_resize_valid ? nk_rgba(110, 222, 236, 215) : nk_rgba(232, 112, 112, 215);
+    if (y >= paint.viewport.y && y <= paint.viewport.y + paint.viewport.h)
+        field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y, 1.6f, color, 4);
+    const auto* label = state.measure_resize_label.data();
+    if (label[0] == '\0') return;
+    const auto bounds = nk_rect(paint.viewport.x + paint.rail.w + 4.0f,
+                                std::clamp(y - 20.0f, paint.viewport.y, paint.viewport.y + paint.viewport.h - 18.0f),
+                                std::min(310.0f, paint.viewport.w - paint.rail.w - 8.0f), 18.0f);
+    field_text(paint, bounds, label, static_cast<int>(strlen(label)), paint.context->style.font,
+               nk_rgba(18, 21, 29, 235),
+               state.measure_resize_valid ? nk_rgb(148, 229, 238) : nk_rgb(240, 150, 150), 4);
+}
+
 static void draw_compose_offset_fit_overlay(const ComposePaintContext& paint) {
     const auto& view = *paint.view;
     if (!view.offset_fit_drag_active) return;
@@ -1556,6 +1573,7 @@ static void draw_compose_timing_layer(const ComposePaintContext& paint,
     draw_compose_speed_graph(paint);
     draw_compose_proposed_grid(paint);
     draw_compose_beat_fit_overlay(paint);
+    draw_compose_measure_resize_overlay(paint);
     draw_compose_offset_fit_overlay(paint);
     draw_compose_timing_preview_legend(paint);
     draw_compose_unbound_lane_keys_hint(paint);

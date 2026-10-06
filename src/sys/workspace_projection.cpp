@@ -1048,7 +1048,11 @@ void populate_compose_branch_rows(flattened_workspace_t& result,
                 .active = row.active, .selected = row.selected,
                 .display_text_truncated = row.display_text_truncated,
                 .has_source_order = row.source_order.has_value(),
-                .source_order = row.source_order.value_or(0)})) {
+                .source_order = row.source_order.value_or(0),
+                .node_id = row.id.value,
+                .raw_statement = row.kind == wormedit::bms_control_kind_t::raw_statement,
+                .choice_block = row.kind == wormedit::bms_control_kind_t::random ||
+                                row.kind == wormedit::bms_control_kind_t::switch_block})) {
             view.branch_rows_truncated = true;
             break;
         }

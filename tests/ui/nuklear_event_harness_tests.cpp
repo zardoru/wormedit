@@ -1257,7 +1257,7 @@ TEST_CASE("Unavailable overview tooltip stays on its row and preserves panel too
     compose.bgm_bar_available = false;
     (void)harness.frame();
     // The dock toggles sit at the right edge of the toolbar (T-401).
-    hover_at(harness, 1177, 174);
+    hover_at(harness, 1150, 174);
     check_tooltip_text(harness, "Hide sounds list");
     check_no_tooltip_text(harness, "Audio is unavailable for this chart overview.");
     hover_at(harness, 1204, 174);
@@ -2339,4 +2339,45 @@ TEST_CASE("Lane keys carry the clicked Sounds dock source and leave selected not
     require_lane_key_sound(silent.get().compose_input_count == 1);
     expect_lane_key(silent.get().compose_inputs[0].resource_id == 0);
     (void)harness.frame(std::span{&release, 1});
+}
+
+TEST_CASE("BMS branch panel shows control nodes as a tree and unparsed statements per node",
+          "[frontend-state][event-harness][bms-branch]") {
+    nuklear_event_harness_t harness{1600, 1000};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    const std::array<WormUiComposeBranchRowView, 5> rows{{
+        {.display_text = "BMS program", .depth = 0, .active = true, .node_id = 1},
+        {.display_text = "#TITLE odd", .depth = 1, .active = true, .node_id = 9,
+         .raw_statement = true, .statement_id = 9},
+        {.display_text = "#RANDOM 2", .depth = 1, .active = true, .has_source_order = true,
+         .source_order = 4, .node_id = 2, .choice_block = true},
+        {.display_text = "#IF 1", .depth = 2, .active = true, .has_source_order = true,
+         .source_order = 5, .node_id = 3},
+        {.display_text = "#UNKNOWN x", .depth = 3, .active = true, .node_id = 10,
+         .raw_statement = true, .statement_id = 10}}};
+    const std::array<WormUiComposeBranchChoiceView, 1> choices{{
+        {.branch_id = 2, .kind = WORM_UI_COMPOSE_BRANCH_RANDOM, .has_source_order = true,
+         .source_order = 4, .active = true, .editable = true,
+         .has_next_value = true, .next_value = 1}}};
+    view.branch_outline_available = true;
+    view.branch_rows = rows.data(); view.branch_row_count = rows.size();
+    view.branch_choices = choices.data(); view.branch_choice_count = choices.size();
+    worm_ui_nuklear_compose_state().inspector_visible = true;
+    (void)harness.frame();
+    (void)harness.frame();
+    const auto& text = harness.drawn_text();
+    INFO(text);
+    CHECK(text.find("#RANDOM 2") != std::string::npos);
+    CHECK(text.find("#IF 1") != std::string::npos);
+    CHECK(text.find("RANDOM #4") != std::string::npos);
+    // The root is selected first, so only its own unparsed statement is listed.
+    CHECK(text.find("#TITLE odd") != std::string::npos);
+    CHECK(text.find("#UNKNOWN x") == std::string::npos);
+    const auto node = harness.drawn_text_center("#5 #IF 1");
+    REQUIRE(node);
+    (void)click_at(harness, node->first, node->second);
+    (void)harness.frame();
+    CHECK(harness.drawn_text().find("#UNKNOWN x") != std::string::npos);
+    CHECK(harness.drawn_text().find("#TITLE odd") == std::string::npos);
 }

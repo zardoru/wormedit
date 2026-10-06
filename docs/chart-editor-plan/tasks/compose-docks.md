@@ -26,7 +26,7 @@ window buttons.
 
 ## T-398 Alt+drag a bar line to change the measure's length
 
-- **Status:** ready
+- **Status:** done (2026-10-06; the gesture is UI-side: begin, preview and commit live in `compose_measure_resize_input.cpp`, and the release sends the existing mass-meter action instead of new input kinds. Supporting files added: `src/ui/nuklear/measure_resize.{h,cpp}`, `src/ui/nuklear/compose_measure_resize_input.{h,cpp}`, `tests/ui/measure_resize_tests.cpp`, `tests/ui/compose_measure_resize_tests.cpp`, `tests/CMakeLists.txt`, `CMakeLists.txt`)
 - **Outcome:** Alt+dragging the line where a measure ends moves it in steps of the active grid snap. A ghost line and a "7/8"-style label show the result, and releasing sets that measure's meter in one undo step. Escape cancels.
 - **Read first:** `src/ui/nuklear/compose_viewport_input.cpp` (`start_compose_beat_fit_drag`, a gesture with the same shape), `src/sys/compose_waveform_overlays.h`, `src/sys/compose_view.h` (`beat_fit_drag`), `src/sys/compose_measure_commands.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_viewport_input.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/frontend.h` (new input kinds), `src/sys/compose_input.cpp`, `src/sys/compose_view.h`, `src/sys/compose_view.cpp`, `src/sys/compose_measure_commands.cpp`, `src/ui/nuklear/compose_canvas.cpp` (ghost line), `tests/ui/nuklear_event_harness_tests.cpp`, the matching `tests/sys/` test, this card.
@@ -42,7 +42,7 @@ window buttons.
 
 ## T-399 Show BMS branch nodes as a tree, with node text limited to unparsed statements
 
-- **Status:** ready
+- **Status:** done (2026-10-06; rows gained `node_id`, `raw_statement` and `choice_block` in `src/ui/frontend.h` and `src/sys/workspace_projection.cpp`; the harness test is in `tests/ui/nuklear_event_harness_tests.cpp`)
 - **Outcome:** the branch panel shows `#RANDOM`/`#SWITCH` blocks and their `#IF`/`#CASE` arms as an expandable tree of nodes. Selecting a node shows only the statements the chart parser did not understand.
 - **Read first:** `src/ui/nuklear/bms_branch_panel.cpp`, `src/ui/frontend.h` (`WormUiComposeBranchRowView`, `WormUiComposeBranchChoiceView`), the view projection that fills them (`grep -rn branch_rows src/sys`).
 - **Files owned:** `src/ui/nuklear/bms_branch_panel.cpp`, `src/ui/nuklear/bms_branch_panel.h`, `src/ui/frontend.h` (branch view fields), the branch projection in `src/sys/`, `tests/ui/` branch panel test, this card.
@@ -57,7 +57,7 @@ window buttons.
 
 ## T-400 Dock the BMS branch panel to the left of the field and push the field over
 
-- **Status:** blocked-on T-399
+- **Status:** ready
 - **Outcome:** the branch panel is a fixed left dock, not a floating one, and the field and BGM area start to its right. The BGM area scrolls horizontally inside its narrower space, and nothing overlaps at 1280 px wide.
 - **Read first:** `src/ui/nuklear/compose_panel.cpp` (`ComposeDockLayout`, `render_compose_side_docks`, `compose_bgm_scroll_valid`), `src/ui/nuklear/compose_toolbar.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_panel_internal.h`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_inspector.cpp` (remove the branch call), `src/ui/nuklear/compose_state.h`, `src/sys/compose_bgm_bar.cpp` (if scroll bounds come from there), `tests/ui/nuklear_event_harness_tests.cpp`, this card.

@@ -335,6 +335,23 @@ struct worm_ui_nuklear_compose_state_t {
     worm_ui_nuklear_overview_capture_t waveform_overview_capture{};
     bool waveform_beat_zero_drag_active{};
     bool beat_fit_drag_active{};
+    // Alt+drag of a bar line: the measure whose end line is held, and the proposed result.
+    bool measure_resize_active{};
+    bool measure_resize_blocked_until_release{};
+    bool measure_resize_valid{};
+    std::uint64_t measure_resize_measure_id{};
+    std::uint64_t measure_resize_chart_id{};
+    std::uint64_t measure_resize_revision{};
+    std::uint64_t measure_resize_old_numerator{1};
+    std::uint64_t measure_resize_old_denominator{1};
+    double measure_resize_anchor_y_pixels{};
+    double measure_resize_line_y_pixels{};
+    double measure_resize_direction{1.0};
+    double measure_resize_ghost_y_pixels{};
+    float measure_resize_anchor_screen_y{};
+    std::uint32_t measure_resize_numerator{};
+    std::uint32_t measure_resize_denominator{};
+    std::array<char, 80> measure_resize_label{};
     bool offset_fit_drag_active{};
     std::uint64_t beat_fit_chart_row{};
     std::uint64_t beat_fit_chart_id{};

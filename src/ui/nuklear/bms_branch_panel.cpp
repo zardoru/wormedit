@@ -8,7 +8,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <optional>
+#include <span>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -19,6 +22,8 @@ struct branch_statement_editor_state_t {
     std::uint64_t chart_id{};
     std::uint64_t revision{};
     std::uint64_t selected_statement_id{};
+    // The control node whose unparsed statements are listed; zero until the first frame picks the root.
+    std::uint64_t selected_node_id{};
     std::array<char, branch_statement_text_capacity> text{};
     bool source_text_too_large{};
 };
@@ -269,6 +274,115 @@ void render_branch_statement_editor(struct nk_context* context, const WormUiComp
     nk_layout_row_end(context);
 }
 
+
+struct branch_tree_context_t {
+    struct nk_context* context;
+    const WormUiComposeView& view;
+    WormUiWorkspaceAction* action;
+    branch_statement_editor_state_t& state;
+};
+
+auto branch_choice_for(const WormUiComposeView& view, std::uint64_t node_id)
+    -> const WormUiComposeBranchChoiceView* {
+    const auto choices = std::span(view.branch_choices, view.branch_choice_count);
+    const auto found = std::ranges::find(choices, node_id, &WormUiComposeBranchChoiceView::branch_id);
+    return found == choices.end() ? nullptr : &*found;
+}
+
+// A control node's children are the control rows that follow it one level deeper. Unparsed
+// statements are not tree nodes; they are listed for the selected node below the tree.
+auto branch_row_has_children(const WormUiComposeView& view, std::size_t index) -> bool {
+    const auto& row = view.branch_rows[index];
+    if (row.choice_block) return true;
+    for (auto next = index + 1; next < view.branch_row_count && view.branch_rows[next].depth > row.depth; ++next)
+        if (!view.branch_rows[next].raw_statement) return true;
+    return false;
+}
+
+auto branch_node_title(const WormUiComposeBranchRowView& row) -> std::string {
+    std::string title = row.active ? "" : "(inactive) ";
+    if (row.has_source_order) title += "#" + std::to_string(row.source_order) + " ";
+    title += row.display_text;
+    if (row.display_text_truncated) title += " …";
+    return title;
+}
+
+// Pushes one control node; true when it is open and its children should be drawn.
+auto push_branch_node(const branch_tree_context_t& tree, const WormUiComposeBranchRowView& row,
+                      bool container) -> bool {
+    const auto title = branch_node_title(row);
+    nk_bool selected = row.node_id == tree.state.selected_node_id ? nk_true : nk_false;
+    nk_layout_row_dynamic(tree.context, 20.0f, 1);
+    const auto color = row.active ? nk_rgb(145, 222, 172) : nk_rgb(147, 154, 170);
+    nk_style_push_color(tree.context, &tree.context->style.text.color, color);
+    auto open = false;
+    if (container) {
+        open = nk_tree_element_push_hashed(tree.context, NK_TREE_NODE, title.c_str(), NK_MAXIMIZED,
+                                           &selected, reinterpret_cast<const char*>(&row.node_id),
+                                           static_cast<int>(sizeof(row.node_id)), 0) != 0;
+    } else {
+        (void)nk_selectable_label(tree.context, title.c_str(), NK_TEXT_LEFT, &selected);
+    }
+    nk_style_pop_color(tree.context);
+    if (selected) tree.state.selected_node_id = row.node_id;
+    return open;
+}
+
+void render_branch_tree(const branch_tree_context_t& tree) {
+    const auto& view = tree.view;
+    std::vector<std::size_t> open_depths;
+    const auto close_to = [&](std::size_t depth) {
+        while (!open_depths.empty() && open_depths.back() >= depth) {
+            nk_tree_element_pop(tree.context);
+            open_depths.pop_back();
+        }
+    };
+    for (std::size_t index = 0; index < view.branch_row_count; ++index) {
+        const auto& row = view.branch_rows[index];
+        if (row.raw_statement) continue;
+        close_to(row.depth);
+        const auto container = branch_row_has_children(view, index);
+        const auto open = push_branch_node(tree, row, container);
+        if (!container) continue;
+        if (!open) {
+            while (index + 1 < view.branch_row_count && view.branch_rows[index + 1].depth > row.depth) ++index;
+            continue;
+        }
+        open_depths.push_back(row.depth);
+        if (const auto* choice = row.choice_block ? branch_choice_for(view, row.node_id) : nullptr)
+            render_branch_choice(tree.context, *choice, tree.action);
+    }
+    close_to(0);
+}
+
+auto selected_node_index(const WormUiComposeView& view, std::uint64_t node_id) -> std::optional<std::size_t> {
+    for (std::size_t index = 0; index < view.branch_row_count; ++index)
+        if (!view.branch_rows[index].raw_statement && view.branch_rows[index].node_id == node_id) return index;
+    return std::nullopt;
+}
+
+// The selected node's own unparsed statements: raw rows one level deeper, before the next control row.
+void render_node_statements(const branch_tree_context_t& tree) {
+    const auto& view = tree.view;
+    const auto selected = selected_node_index(view, tree.state.selected_node_id);
+    if (!selected) return;
+    const auto& node = view.branch_rows[*selected];
+    nk_layout_row_dynamic(tree.context, 18.0f, 1);
+    nk_label(tree.context, "Unparsed statements in the selected node", NK_TEXT_LEFT);
+    bool any = false;
+    for (auto index = *selected + 1; index < view.branch_row_count && view.branch_rows[index].depth > node.depth; ++index) {
+        const auto& row = view.branch_rows[index];
+        if (!row.raw_statement || row.depth != node.depth + 1) continue;
+        any = true;
+        if (render_branch_row(tree.context, row, tree.state.selected_statement_id))
+            select_branch_statement(tree.state, row);
+    }
+    if (!any) {
+        nk_layout_row_dynamic(tree.context, 18.0f, 1);
+        nk_label(tree.context, "None: every statement here was understood.", NK_TEXT_LEFT);
+    }
+}
+
 } // namespace
 
 bool worm_ui_nuklear_bms_branch_panel_visible(const WormUiComposeView* view) {
@@ -294,20 +408,23 @@ void worm_ui_nuklear_render_bms_branch_panel(struct nk_context* context,
         return;
     }
 
-    for (size_t index = 0; index < view->branch_choice_count; ++index) {
-        render_branch_choice(context, view->branch_choices[index], action);
-    }
-
-    if (view->branch_choice_count != 0 && view->branch_row_count != 0) {
-        nk_layout_row_dynamic(context, 4.0f, 1);
-        nk_rule_horizontal(context, nk_rgb(68, 75, 92), nk_false);
-    }
     auto& editor_state = branch_statement_editor_state(*view);
-    for (size_t index = 0; index < view->branch_row_count; ++index) {
-        const auto& row = view->branch_rows[index];
-        if (render_branch_row(context, row, editor_state.selected_statement_id))
-            select_branch_statement(editor_state, row);
+    if (!selected_node_index(*view, editor_state.selected_node_id) && view->branch_row_count != 0) {
+        const auto first = std::ranges::find_if(std::span(view->branch_rows, view->branch_row_count),
+                                                [](const auto& row) { return !row.raw_statement; });
+        editor_state.selected_node_id = first == std::span(view->branch_rows, view->branch_row_count).end()
+                                            ? 0 : first->node_id;
     }
+    const branch_tree_context_t tree{context, *view, action, editor_state};
+    // Choices whose block row was cut by a capacity still get their controls.
+    for (size_t index = 0; index < view->branch_choice_count; ++index) {
+        const auto& choice = view->branch_choices[index];
+        const auto shown = std::ranges::any_of(std::span(view->branch_rows, view->branch_row_count),
+            [&](const auto& row) { return row.choice_block && row.node_id == choice.branch_id; });
+        if (!shown) render_branch_choice(context, choice, action);
+    }
+    render_branch_tree(tree);
+    render_node_statements(tree);
     render_branch_statement_editor(context, *view, action, editor_state);
     if (view->branch_rows_truncated || view->branch_choices_truncated ||
         view->branch_display_text_truncated || view->branch_diagnostics_truncated) {

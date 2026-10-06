@@ -482,7 +482,7 @@ static void layout_compose_toolbar(nk_context* context) {
     layout_toolbar_icons(context, 3); // Color views.
     wormedit::ui::chrome::layout_separator(context);
     if (!dock_toggles_at_end(context)) {
-        layout_toolbar_icons(context, 5); // Panels.
+        layout_toolbar_icons(context, 6); // Panels.
         wormedit::ui::chrome::layout_separator(context);
     }
     layout_toolbar_icons(context, 3); // Audio lock, backward nudges.
@@ -502,7 +502,7 @@ static void layout_compose_toolbar(nk_context* context) {
     if (dock_toggles_at_end(context)) {
         // The dock toggles close the row at the right edge, after the BGM scroll bar's spacer.
         wormedit::ui::chrome::layout_separator(context);
-        layout_toolbar_icons(context, 5); // Panels.
+        layout_toolbar_icons(context, 6); // Panels.
     }
     nk_layout_row_template_end(context);
 }

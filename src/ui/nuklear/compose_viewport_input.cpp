@@ -10,6 +10,7 @@
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_measure_resize_input.h"
 #include "ui/nuklear/timing_stage_editor.h"
 
 #include "wormedit/nuklear_config.h"
@@ -408,6 +409,7 @@ bool process_compose_beat_fit_pointer(const ComposeBeatFitInput& input) {
         cancel_unmatched_view_beat_fit(input);
         return false;
     }
+    if (process_compose_measure_resize_pointer(input)) return true;
     if (compose_offset_fit_start_allowed(input)) return start_compose_offset_fit_drag(input);
     return start_compose_beat_fit_drag(input);
 }

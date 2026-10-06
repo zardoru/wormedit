@@ -34,6 +34,7 @@
 
 #include "ui/nuklear/compose_input_internal.h"
 #include "ui/nuklear/compose_keyboard_input.h"
+#include "ui/nuklear/compose_measure_resize_input.h"
 #include "ui/nuklear/compose_area_menu.h"
 
 void queue_compose_key_input(std::uint32_t keycode, std::uint32_t scancode,
@@ -283,6 +284,7 @@ static bool process_compose_escape(const auto& key_event,
         state.bookmark_move_id = 0;
         state.bga_stack_open = false;
         cancel_beat_fit_drag(action);
+        cancel_compose_measure_resize();
         cancel_offset_fit_drag(action);
         if (state.waveform_beat_zero_drag_active) {
             set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,

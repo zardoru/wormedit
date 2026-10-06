@@ -838,6 +838,11 @@ typedef struct WormUiComposeBranchRowView {
     bool display_text_truncated;
     bool has_source_order;
     size_t source_order;
+    /* The control node this row shows. Raw statements are the lines the parser did not understand;
+       choice blocks are #RANDOM/#SWITCH, which carry a WormUiComposeBranchChoiceView by branch_id. */
+    uint64_t node_id;
+    bool raw_statement;
+    bool choice_block;
     /* Nonzero only for raw statements; identity and full text are borrowed from the retained tree. */
     uint64_t statement_id;
     const char* statement_text;

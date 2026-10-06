@@ -33,7 +33,8 @@ enum class cursor_measure_command_t { insert_before, insert_after, remove_empty 
                                               std::string_view denominator,
                                               notification_severity_t* severity = nullptr) -> std::string;
 
-// Sets one time signature on every listed measure of the selected chart in a single undo step.
+// Sets one time signature on every listed measure (chart positions, virtual tail measures included)
+// of the selected chart in a single undo step; objects keep their rows from the start of the song.
 // Same text rules and messages as apply_cursor_measure_meter; an empty list, an unknown measure
 // or a stale revision changes nothing.
 [[nodiscard]] auto apply_measures_meter(document_history_t& history,

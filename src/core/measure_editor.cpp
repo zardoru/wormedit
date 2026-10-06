@@ -1,5 +1,7 @@
 #include <wormedit/core/measure_editor.h>
+#include <wormedit/core/snap.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/virtual_canvas.h>
 
 #include <algorithm>
 #include <cmath>
@@ -337,6 +339,172 @@ auto apply_measure_action(measure_edit_context_t& context,
         }
     }
     context.label = "Update measure definitions";
+}
+
+struct rowed_note_t {
+    note_t note;
+    std::uint64_t row{};
+    std::optional<std::uint64_t> end_row;
+};
+
+struct rowed_bgm_t {
+    bgm_event_t event;
+    std::uint64_t row{};
+};
+
+struct rowed_free_t {
+    local_position_t* position{};
+    std::uint64_t row{};
+};
+
+// Creates default measures at the end until the chart has `count` of them.
+auto append_default_measures(chart_document_t& chart, std::size_t count,
+                             const measure_edit_limits_t& limits) -> bool {
+    if (count > limits.maximum_measures) return false;
+    while (chart.measures.size() < count) {
+        const auto id = next_measure_id(chart);
+        if (!id) return false;
+        chart.measures.push_back(measure_chunk_t{.id = *id});
+    }
+    return true;
+}
+
+// Takes every bucketed object out of measures from `first`, recording the absolute row it holds.
+auto lift_bucketed_objects(chart_document_t& chart, const measure_index_t& index, std::size_t first,
+                           std::vector<rowed_note_t>& notes, std::vector<rowed_bgm_t>& bgm) -> bool {
+    for (auto at = first; at < chart.measures.size(); ++at) {
+        auto& measure = chart.measures[at];
+        for (auto& note : measure.notes) {
+            const auto row = absolute_row(index, note.position);
+            const auto end = note.end ? absolute_row(index, *note.end) : std::nullopt;
+            if (!row || (note.end && !end)) return false;
+            notes.push_back({std::move(note), *row, end});
+        }
+        for (auto& event : measure.bgm_events) {
+            const auto row = absolute_row(index, event.position);
+            if (!row) return false;
+            bgm.push_back({std::move(event), *row});
+        }
+        measure.notes.clear();
+        measure.bgm_events.clear();
+    }
+    return true;
+}
+
+auto collect_free_rows(chart_document_t& chart, const measure_index_t& index,
+                       std::vector<rowed_free_t>& free_rows) -> bool {
+    auto ok = true;
+    for_each_free_position(chart, [&](local_position_t& position, free_position_kind_t) {
+        const auto row = absolute_row(index, position);
+        if (!row) ok = false;
+        else free_rows.push_back({&position, *row});
+    });
+    return ok;
+}
+
+auto resize_keeping_rows(chart_document_t& chart, std::size_t measure_index,
+                         const measure_definition_t& definition,
+                         const measure_edit_limits_t& limits) -> bool {
+    const auto old_index = build_measure_index(chart);
+    if (!std::holds_alternative<measure_index_t>(old_index)) return false;
+    std::vector<rowed_note_t> notes;
+    std::vector<rowed_bgm_t> bgm;
+    std::vector<rowed_free_t> free_rows;
+    const auto& before = std::get<measure_index_t>(old_index);
+    if (!lift_bucketed_objects(chart, before, measure_index, notes, bgm) ||
+        !collect_free_rows(chart, before, free_rows)) return false;
+    chart.measures[measure_index].definition = definition;
+    std::uint64_t last_row = 0;
+    for (const auto& item : notes) last_row = std::max({last_row, item.row, item.end_row.value_or(0)});
+    for (const auto& item : bgm) last_row = std::max(last_row, item.row);
+    for (const auto& item : free_rows) last_row = std::max(last_row, item.row);
+    // Appended measures are 4/4 at the chart resolution, so this terminates after at most
+    // last_row / rows-per-measure steps, and the measure cap bounds it.
+    auto index = build_measure_index(chart);
+    while (std::holds_alternative<measure_index_t>(index) &&
+           std::get<measure_index_t>(index).total_rows <= last_row) {
+        if (!append_default_measures(chart, chart.measures.size() + 1, limits)) return false;
+        index = build_measure_index(chart);
+    }
+    if (!std::holds_alternative<measure_index_t>(index)) return false;
+    const auto& after = std::get<measure_index_t>(index);
+    const auto place = [&](std::uint64_t row) { return position_at_absolute_row(after, row); };
+    for (auto& item : free_rows) {
+        const auto position = place(item.row);
+        if (!position) return false;
+        *item.position = *position;
+    }
+    const auto bucket_of = [&](measure_id_t id) -> measure_chunk_t& {
+        return *std::ranges::find(chart.measures, id, &measure_chunk_t::id);
+    };
+    for (auto& item : notes) {
+        const auto position = place(item.row);
+        const auto end = item.end_row ? place(*item.end_row) : std::nullopt;
+        if (!position || (item.end_row && !end)) return false;
+        item.note.position = *position;
+        item.note.end = end;
+        bucket_of(position->measure).notes.push_back(std::move(item.note));
+    }
+    for (auto& item : bgm) {
+        const auto position = place(item.row);
+        if (!position) return false;
+        item.event.position = *position;
+        bucket_of(position->measure).bgm_events.push_back(std::move(item.event));
+    }
+    for (auto at = measure_index; at < chart.measures.size(); ++at) {
+        std::ranges::stable_sort(chart.measures[at].notes, {}, [](const note_t& note) { return note.position.row; });
+        std::ranges::stable_sort(chart.measures[at].bgm_events, {}, [](const bgm_event_t& event) { return event.position.row; });
+    }
+    return true;
+}
+
+auto apply_measure_action(measure_edit_context_t& context,
+                          const resize_measure_keep_rows_action_t& edit) -> void {
+    auto* chart = target_measure_chart(context, edit.chart);
+    if (chart == nullptr) {
+        return;
+    }
+    if (edit.measure_indices.empty()) {
+        reject(context.result, diagnostic_code_t::invalid_measure, "no measures were selected");
+        return;
+    }
+    if (!validate_definition(*chart, edit.definition, context.limits, context.result)) {
+        return;
+    }
+    const auto highest = *std::ranges::max_element(edit.measure_indices);
+    if (highest >= chart->measures.size()) {
+        if (!chart_has_virtual_tail(*chart) || highest >= virtual_tail_measure_limit(*chart) ||
+            !append_default_measures(*chart, highest + 1, context.limits)) {
+            reject(context.result, diagnostic_code_t::invalid_measure,
+                   "the measure lies beyond the chart and its virtual canvas");
+            return;
+        }
+        context.changed = true;
+    }
+    auto sorted = edit.measure_indices;
+    std::ranges::sort(sorted);
+    if (std::ranges::adjacent_find(sorted) != sorted.end()) {
+        reject(context.result, diagnostic_code_t::invalid_measure,
+               "measure selection names a measure twice");
+        return;
+    }
+    for (const auto at : sorted) {
+        if (same_definition(chart->measures[at].definition, edit.definition)) continue;
+        if (!resize_keeping_rows(*chart, at, edit.definition, context.limits)) {
+            reject(context.result, diagnostic_code_t::invalid_measure,
+                   "the measure cannot be resized without losing objects beyond the chart");
+            return;
+        }
+        context.changed = true;
+    }
+    // Shortening measures can leave the chart ending before the music does; native charts grow
+    // back to cover the longest linked audio, as after a timing edit.
+    if (!extend_native_charts_to_audio_end(context.proposed)) {
+        reject(context.result, diagnostic_code_t::invalid_resolution,
+               "the chart cannot be extended to cover the audio after this resize");
+        return;
+    }
+    context.label = "Resize measures";
 }
 
 auto apply_measure_action(measure_edit_context_t& context,

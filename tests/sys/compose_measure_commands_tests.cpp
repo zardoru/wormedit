@@ -113,7 +113,7 @@ TEST_CASE("a meter rejects text that is not a bounded non-zero number", "[sys][m
 
 TEST_CASE("mass meter sets every listed measure in one undo step", "[sys][measure-commands]") {
     fixture_t fixture({measure_id_t{4}, 0});
-    const std::vector<std::uint64_t> both{3, 4};
+    const std::vector<std::uint64_t> both{0, 1};
     CHECK(apply_measures_meter(fixture.history, fixture.state, both, "3", "4") ==
           "Meter updated on 2 measures.");
     CHECK(fixture.measures()[0].definition.length == rational_t{3, 4});
@@ -124,7 +124,7 @@ TEST_CASE("mass meter sets every listed measure in one undo step", "[sys][measur
     CHECK(fixture.measures()[1].definition.length == rational_t{1, 1});
 
     const auto revision = fixture.history.document.revision;
-    const std::vector<std::uint64_t> unknown{3, 999};
+    const std::vector<std::uint64_t> unknown{0, 5000};
     CHECK(apply_measures_meter(fixture.history, fixture.state, unknown, "3", "4") !=
           "Meter updated on 2 measures.");
     CHECK(apply_measures_meter(fixture.history, fixture.state, {}, "3", "4") ==

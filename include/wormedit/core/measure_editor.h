@@ -34,6 +34,17 @@ struct update_measures_definition_action_t {
     measure_definition_t definition;
 };
 
+// Gives each listed measure (by position in the chart) the definition while every positioned object keeps its row counted from the start of the
+// song: the bar line moves, and objects that were in a shortened measure (or after it) are
+// re-bucketed into whichever measures now contain their rows. `measure_index` may name a virtual
+// tail measure of a chart that has one; the measures up to it are created first. Measures are
+// appended at the end when a shortened chart would otherwise cut objects off.
+struct resize_measure_keep_rows_action_t {
+    chart_id_t chart;
+    std::vector<std::size_t> measure_indices;
+    measure_definition_t definition;
+};
+
 struct delete_measure_action_t {
     chart_id_t chart;
     measure_id_t measure;
@@ -50,7 +61,8 @@ struct remove_measure_with_contents_action_t {
 
 using measure_edit_action_t =
     std::variant<insert_measure_action_t, update_measure_definition_action_t,
-                 update_measures_definition_action_t, delete_measure_action_t, remove_measure_with_contents_action_t>;
+                 update_measures_definition_action_t,
+                 resize_measure_keep_rows_action_t, delete_measure_action_t, remove_measure_with_contents_action_t>;
 
 struct measure_removal_proposal_t {
     std::size_t deleted_notes{};

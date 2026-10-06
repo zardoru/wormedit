@@ -2683,32 +2683,39 @@ static void populate_quantize_presets(compose_scene_cache_t& cache,
     view.quantize_preset_count = cache.quantize_preset_views.size();
 }
 
-// Bounded so a huge BMS chart cannot grow the per-frame projection without limit.
+// Bounded so a huge chart cannot grow the per-frame projection without limit.
 constexpr std::size_t compose_measure_row_limit = 4096;
 
+// One row per chart position: the authored measures, then the default 4/4 measures of the virtual
+// tail (BMS: up to #999). A row's selection key is its position, which the resize command takes.
 static void populate_measure_rows(compose_scene_cache_t& cache,
                                   const wormedit::chart_document_t& chart,
                                   WormUiComposeView& view) {
     cache.measure_row_views.clear();
     cache.measure_row_ids.clear();
-    const auto count = std::min(chart.measures.size(), compose_measure_row_limit);
+    const auto addressable = wormedit::chart_has_virtual_tail(chart)
+        ? std::max(chart.measures.size(), wormedit::virtual_tail_measure_limit(chart))
+        : chart.measures.size();
+    const auto count = std::min(addressable, compose_measure_row_limit);
     const auto is_bms = chart.source_family == wormedit::format_family_t::bms;
     for (std::size_t index = 0; index < count; ++index) {
-        const auto& definition = chart.measures[index].definition;
+        const wormedit::measure_definition_t definition =
+            index < chart.measures.size() ? chart.measures[index].definition
+                                          : wormedit::measure_definition_t{{1, 1}, wormedit::meter_t{4, 4}};
         cache.measure_row_views.push_back(
-            {.measure_id = chart.measures[index].id.value,
+            {.measure_id = index,
              .number = is_bms ? index : index + 1,
              .length_numerator = definition.length.numerator,
              .length_denominator = definition.length.denominator,
              .has_meter = definition.meter.has_value(),
              .meter_numerator = definition.meter ? definition.meter->numerator : 0,
              .meter_denominator = definition.meter ? definition.meter->denominator : 0});
-        cache.measure_row_ids.push_back(chart.measures[index].id.value);
+        cache.measure_row_ids.push_back(index);
     }
     view.measure_rows = cache.measure_row_views.data();
     view.measure_row_ids = cache.measure_row_ids.data();
     view.measure_row_count = cache.measure_row_views.size();
-    view.measure_rows_truncated = chart.measures.size() > count;
+    view.measure_rows_truncated = addressable > count;
 }
 
 static void populate_quantize_applied_report(compose_scene_cache_t& cache,

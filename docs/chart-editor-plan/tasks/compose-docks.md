@@ -10,7 +10,7 @@ window buttons.
 
 ## T-397 Measure list dock with mass-set meter
 
-- **Status:** done (2026-10-06; Ctrl+A is not bound, the dock has Select all and Clear buttons instead)
+- **Status:** done (2026-10-06; follow-up: the dock lists virtual tail measures too (BMS up to #999), and every meter edit (dock, bar-line drag, cursor meter) now uses `resize_measure_keep_rows_action_t`, so objects keep their rows from the start of the song, virtual measures are materialized on demand and native charts regrow over their audio; Ctrl+A is not bound, the dock has Select all and Clear buttons instead)
 - **Outcome:** a Measures dock lists every measure with its index, meter and length, as the Sounds dock lists sounds. Selecting several rows (with Shift, Ctrl or Ctrl+A) and choosing a meter sets it on all of them in one undo step.
 - **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp` (list, selection and toolbar pattern), `src/ui/nuklear/keysound_list_state.cpp`, `src/ui/nuklear/compose_inspector.cpp` (`render_compose_meter_control`), `src/sys/compose_measure_commands.cpp`.
 - **Files owned:** new `src/ui/nuklear/compose_measures_panel.cpp`, new `src/ui/nuklear/compose_measures_panel.h`, `src/ui/nuklear/compose_panel.cpp` (dock layout), `src/ui/nuklear/compose_toolbar.cpp` (dock toggle), `src/ui/nuklear/compose_state.h`, `src/ui/frontend.h`, `src/sys/compose_view.cpp`, `src/sys/compose_measure_commands.cpp`, `src/sys/compose_measure_commands.h`, core meter command and test under `src/core/` and `tests/core/`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/ui/nuklear_event_harness_tests.cpp`, this card.

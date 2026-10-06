@@ -1,5 +1,6 @@
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/virtual_canvas.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -380,4 +381,76 @@ TEST_CASE("mass measure definition update is one atomic undo step",
     REQUIRE(undo_document_command(history));
     CHECK(history.document.charts.front().measures[0].definition.length == rational_t{1, 1});
     CHECK(history.document.charts.front().measures[2].definition.length == rational_t{1, 1});
+}
+
+TEST_CASE("resizing a measure keeps every object on its row from the start of the song",
+          "[unit][core][measure-editor][keep-rows]") {
+    auto song = measure_song();
+    song.charts.front().measures[0].notes.push_back(
+        {.id = object_id_t{31}, .position = {measure_id_t{10}, 800}, .lane = lane_id_t{20}});
+    song.charts.front().bpms.push_back(
+        {.id = object_id_t{32}, .position = {measure_id_t{11}, 480}, .beats_per_minute = {90, 1}});
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(song);
+
+    const auto shrunk = apply_measure_edit(
+        history, 5,
+        resize_measure_keep_rows_action_t{.chart = chart_id_t{2},
+                                          .measure_indices = {0},
+                                          .definition = {.length = {3, 4}, .meter = meter_t{3, 4}}});
+    REQUIRE(shrunk);
+    const auto& chart = history.document.charts.front();
+    CHECK(chart.measures[0].definition.length == rational_t{3, 4});
+    // Row 800 now lies past the 720-row measure, in the next one.
+    CHECK(chart.measures[0].notes.empty());
+    REQUIRE(chart.measures[1].notes.size() == 1);
+    CHECK(chart.measures[1].notes[0].position == (local_position_t{measure_id_t{11}, 80}));
+    // The next measure's own objects keep their absolute rows too: 960 + 480 = 1440 -> 720 + 720.
+    CHECK(chart.bpms.back().position == (local_position_t{measure_id_t{11}, 720}));
+    CHECK(absolute_note_row(history.document) == 1920);
+
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().measures[0].notes.size() == 1);
+}
+
+TEST_CASE("resizing materializes virtual tail measures and keeps coverage",
+          "[unit][core][measure-editor][keep-rows]") {
+    auto history = make_document_history(measure_song());
+    REQUIRE(chart_has_virtual_tail(history.document.charts.front()));
+    const auto grown = apply_measure_edit(
+        history, 5,
+        resize_measure_keep_rows_action_t{.chart = chart_id_t{2},
+                                          .measure_indices = {5},
+                                          .definition = {.length = {3, 4}, .meter = meter_t{3, 4}}});
+    REQUIRE(grown);
+    const auto& chart = history.document.charts.front();
+    REQUIRE(chart.measures.size() == 6);
+    CHECK(chart.measures[5].definition.length == rational_t{3, 4});
+    CHECK(chart.measures[4].definition.length == rational_t{1, 1});
+
+    const auto beyond = apply_measure_edit(
+        history, history.document.revision,
+        resize_measure_keep_rows_action_t{.chart = chart_id_t{2},
+                                          .measure_indices = {100000},
+                                          .definition = {.length = {3, 4}, .meter = meter_t{3, 4}}});
+    CHECK_FALSE(beyond.applied);
+    CHECK(has_code(beyond, diagnostic_code_t::invalid_measure));
+}
+
+TEST_CASE("shortening measures extends a native chart back over its audio",
+          "[unit][core][measure-editor][keep-rows]") {
+    auto song = measure_song();
+    song.audio_assets.push_back({.id = asset_id_t{7}, .stream = {48'000, 2, 48'000 * 6, true}});
+    song.resources.push_back({.id = resource_id_t{8}, .asset = asset_id_t{7},
+                              .roles = {resource_role_t::music}});
+    song.charts.front().source_family = format_family_t::native_project;
+    auto history = make_document_history(song);
+    const auto before = history.document.charts.front().measures.size();
+    const auto resized = apply_measure_edit(
+        history, history.document.revision,
+        resize_measure_keep_rows_action_t{.chart = chart_id_t{2},
+                                          .measure_indices = {0, 1, 2},
+                                          .definition = {.length = {1, 4}, .meter = meter_t{1, 4}}});
+    REQUIRE(resized);
+    CHECK(history.document.charts.front().measures.size() > before);
 }

@@ -83,10 +83,10 @@ auto apply_cursor_measure_meter(document_history_t& history, editor_interaction_
     if (measure == found->measures.end()) return "The cursor is not inside a materialized measure.";
     const auto result = apply_measure_edit(
         history, history.document.revision,
-        update_measure_definition_action_t{.chart = found->id,
-                                           .measure = measure->id,
-                                           .definition = {.length = {*top, *bottom},
-                                                          .meter = meter_t{*top, *bottom}}});
+        resize_measure_keep_rows_action_t{
+            .chart = found->id,
+            .measure_indices = {static_cast<std::size_t>(measure - found->measures.begin())},
+            .definition = {.length = {*top, *bottom}, .meter = meter_t{*top, *bottom}}});
     if (result) {
         set_feedback_severity(severity, notification_severity_t::success);
         return "Meter updated.";
@@ -105,10 +105,11 @@ auto apply_measures_meter(document_history_t& history, editor_interaction_state_
     const auto bottom = parse_meter_part(denominator);
     if (!top || !bottom) return "A meter needs a non-zero numerator and denominator.";
     if (measure_ids.empty()) return "Select at least one measure first.";
-    update_measures_definition_action_t action{
+    // The IDs are chart positions; objects keep their rows from the start of the song.
+    resize_measure_keep_rows_action_t action{
         .chart = state.chart,
         .definition = {.length = {*top, *bottom}, .meter = meter_t{*top, *bottom}}};
-    for (const auto id : measure_ids) action.measures.push_back(measure_id_t{id});
+    for (const auto index : measure_ids) action.measure_indices.push_back(static_cast<std::size_t>(index));
     const auto result = apply_measure_edit(history, history.document.revision, action);
     if (result) {
         set_feedback_severity(severity, notification_severity_t::success);

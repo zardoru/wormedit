@@ -2120,6 +2120,9 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER,
     /* Sets the meter from timing_meter_*_text on every measure in compose_measure_ids as one undo step. */
     WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER,
+    /* Shift+Alt bar line drag: compose_measure_ids[0] is the measure the line ends; it takes the
+       timing_meter_*_text meter and the next measure takes compose_second_meter_*. */
+    WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE,
     /* The selected SV recipe form (compose_recipe_form, compose_recipe_id): preview shows the
        candidate in the lane without writing, apply stores it as one undo step, clear drops the
        preview. */
@@ -2596,6 +2599,7 @@ typedef struct WormUiWorkspaceAction {
     /* Frontend-owned staging; valid through immediate workspace-action dispatch. */
     const uint64_t* compose_measure_ids;
     size_t compose_measure_id_count;
+    uint32_t compose_second_meter_numerator, compose_second_meter_denominator;
     bool sound_import_pick_requested;
     uint64_t sound_import_project_id;
     const WormUiSoundImportItem* sound_import_items;

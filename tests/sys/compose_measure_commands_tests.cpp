@@ -133,3 +133,17 @@ TEST_CASE("mass meter sets every listed measure in one undo step", "[sys][measur
           "A meter needs a non-zero numerator and denominator.");
     CHECK(fixture.history.document.revision == revision);
 }
+
+TEST_CASE("moving a bar line trades length between neighbors in one undo step", "[sys][measure-commands]") {
+    fixture_t fixture({measure_id_t{3}, 0});
+    CHECK(apply_bar_line_move(fixture.history, fixture.state, 0, meter_t{7, 8}, meter_t{9, 8}) ==
+          "Bar line moved.");
+    CHECK(fixture.measures()[0].definition.length == rational_t{7, 8});
+    CHECK(fixture.measures()[1].definition.length == rational_t{9, 8});
+    CHECK(fixture.history.undo.size() == 1);
+    CHECK(apply_bar_line_move(fixture.history, fixture.state, 0, meter_t{7, 8}, meter_t{9, 8}) ==
+          "Bar line was unchanged.");
+    const auto status = apply_bar_line_move(fixture.history, fixture.state, 0, meter_t{1, 4}, meter_t{9, 8});
+    CHECK(status != "Bar line moved.");
+    CHECK(fixture.history.undo.size() == 1);
+}

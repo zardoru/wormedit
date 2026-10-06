@@ -349,6 +349,12 @@ struct worm_ui_nuklear_compose_state_t {
     double measure_resize_direction{1.0};
     double measure_resize_ghost_y_pixels{};
     float measure_resize_anchor_screen_y{};
+    // Shift+Alt: only the line moves, so the next measure trades length with this one.
+    bool measure_resize_move_line{};
+    std::uint64_t measure_resize_next_numerator{1};
+    std::uint64_t measure_resize_next_denominator{1};
+    std::uint32_t measure_resize_second_numerator{};
+    std::uint32_t measure_resize_second_denominator{};
     std::uint32_t measure_resize_numerator{};
     std::uint32_t measure_resize_denominator{};
     std::array<char, 80> measure_resize_label{};

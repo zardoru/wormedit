@@ -121,6 +121,28 @@ auto apply_measures_meter(document_history_t& history, editor_interaction_state_
     return result.diagnostics.empty() ? "Meter was unchanged." : result.diagnostics.front().message;
 }
 
+auto apply_bar_line_move(document_history_t& history, editor_interaction_state_t& state,
+                        std::uint64_t measure_index, meter_t first, meter_t second,
+                        notification_severity_t* severity) -> std::string {
+    set_feedback_severity(severity, notification_severity_t::warning);
+    if (first.numerator == 0 || first.denominator == 0 || second.numerator == 0 || second.denominator == 0)
+        return "A meter needs a non-zero numerator and denominator.";
+    const auto result = apply_measure_edit(
+        history, history.document.revision,
+        move_bar_line_action_t{
+            .chart = state.chart,
+            .measure_index = static_cast<std::size_t>(measure_index),
+            .before = {.length = {first.numerator, first.denominator}, .meter = first},
+            .after = {.length = {second.numerator, second.denominator}, .meter = second}});
+    if (result) {
+        set_feedback_severity(severity, notification_severity_t::success);
+        return "Bar line moved.";
+    }
+    set_feedback_severity(severity, result.diagnostics.empty() ? notification_severity_t::info
+        : diagnostic_feedback_severity(result.diagnostics.front().severity));
+    return result.diagnostics.empty() ? "Bar line was unchanged." : result.diagnostics.front().message;
+}
+
 auto apply_cursor_measure_command(document_history_t& history, editor_interaction_state_t& state,
                                   cursor_measure_command_t command, notification_severity_t* severity) -> std::string {
     set_feedback_severity(severity, notification_severity_t::warning);

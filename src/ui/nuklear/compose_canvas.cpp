@@ -1163,7 +1163,7 @@ static void draw_compose_beat_fit_overlay(const ComposePaintContext& paint) {
     }
 }
 
-// Holding Alt shows every measure end line that can be dragged as a band, like a bookmark's hit
+// Holding Alt (Shift+Alt moves only the line) shows every measure end line that can be dragged as a band, like a bookmark's hit
 // area; the one under the pointer is stronger and named.
 static void draw_compose_measure_resize_affordance(const ComposePaintContext& paint) {
     const auto& view = *paint.view;
@@ -1186,7 +1186,10 @@ static void draw_compose_measure_resize_affordance(const ComposePaintContext& pa
         field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y, 2.2f,
                    nk_rgba(110, 222, 236, 230), 4);
         char label[48]{};
-        snprintf(label, sizeof(label), "Drag to resize measure %u", line.measure_number - 1);
+        if ((SDL_GetModState() & SDL_KMOD_SHIFT) != 0)
+            snprintf(label, sizeof(label), "Drag to move only this bar line");
+        else
+            snprintf(label, sizeof(label), "Drag to resize measure %u", line.measure_number - 1);
         field_text(paint, nk_rect(paint.viewport.x + paint.rail.w + 4.0f, std::max(paint.viewport.y, y - 22.0f),
                                   std::min(220.0f, paint.viewport.w - paint.rail.w - 8.0f), 18.0f),
                    label, static_cast<int>(strlen(label)), paint.context->style.font,

@@ -25,3 +25,21 @@ inline constexpr std::uint64_t worm_ui_measure_resize_maximum_measures = 4;
 [[nodiscard]] auto worm_ui_resize_measure(std::uint64_t old_numerator, std::uint64_t old_denominator,
                                           double delta_whole_notes, std::uint64_t snap_denominator)
     -> worm_ui_measure_resize_t;
+
+// Shift+Alt drag: only the bar line between two measures moves. The first measure grows by the
+// pointer delta and the second shrinks by the same amount, each keeping at least one grid step.
+// Both lengths must already lie on the grid, and both results must be writable as meters.
+struct worm_ui_bar_line_move_t {
+    bool valid{};
+    std::uint32_t first_numerator{}, first_denominator{};
+    std::uint32_t second_numerator{}, second_denominator{};
+    // The first measure's snapped length in whole notes, for placing the ghost line.
+    double first_length_whole_notes{};
+    // "7/8 | 9/8", or the reason the drag cannot commit.
+    std::string label;
+};
+
+[[nodiscard]] auto worm_ui_move_bar_line(std::uint64_t first_numerator, std::uint64_t first_denominator,
+                                         std::uint64_t second_numerator, std::uint64_t second_denominator,
+                                         double delta_whole_notes, std::uint64_t snap_denominator)
+    -> worm_ui_bar_line_move_t;

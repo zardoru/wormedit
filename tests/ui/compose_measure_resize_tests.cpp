@@ -30,10 +30,12 @@ auto resize_key(SDL_Keycode key) -> SDL_Event {
 
 struct resize_fixture_t {
     nuklear_event_harness_t harness{1280, 900};
-    WormUiComposeMeasureRowView row{.measure_id = 77, .number = 1, .length_numerator = 1,
-                                    .length_denominator = 1, .has_meter = true,
-                                    .meter_numerator = 4, .meter_denominator = 4};
-    std::uint64_t id{77};
+    std::array<WormUiComposeMeasureRowView, 2> rows{{
+        {.measure_id = 77, .number = 1, .length_numerator = 1, .length_denominator = 1,
+         .has_meter = true, .meter_numerator = 4, .meter_denominator = 4},
+        {.measure_id = 78, .number = 2, .length_numerator = 1, .length_denominator = 1,
+         .has_meter = true, .meter_numerator = 4, .meter_denominator = 4}}};
+    std::array<std::uint64_t, 2> ids{77, 78};
     std::array<WormUiComposeGridLineView, 2> lines{{{.y_pixels = 100, .kind = 3, .measure_number = 1},
                                                     {.y_pixels = 500, .kind = 3, .measure_number = 2}}};
     float x{};
@@ -44,7 +46,7 @@ struct resize_fixture_t {
         require_resize(harness.ready());
         auto& v = harness.view().compose;
         v.scene_available = true;
-        v.measure_rows = &row; v.measure_row_ids = &id; v.measure_row_count = 1;
+        v.measure_rows = rows.data(); v.measure_row_ids = ids.data(); v.measure_row_count = rows.size();
         v.grid_lines = lines.data(); v.grid_line_count = lines.size();
         v.pixels_per_standard_measure = 400.0;
         v.area_snap_denominator = 8; v.edit_snap_enabled = true;
@@ -114,4 +116,26 @@ TEST_CASE("Alt press away from a bar line does not start a resize",
     const std::array press{resize_motion(f.x, f.screen_y(-120)), resize_button(f.x, f.screen_y(-120), true)};
     (void)f.harness.frame(press, SDL_KMOD_LALT);
     check_resize(!worm_ui_nuklear_compose_state().measure_resize_active);
+}
+
+TEST_CASE("Shift+Alt drag moves only the bar line and trades length with the next measure",
+          "[frontend-state][event-harness][measure-resize]") {
+    resize_fixture_t f;
+    const auto both = static_cast<SDL_Keymod>(SDL_KMOD_LALT | SDL_KMOD_LSHIFT);
+    const std::array press{resize_motion(f.x, f.y_line), resize_button(f.x, f.y_line, true)};
+    (void)f.harness.frame(press, both);
+    auto& state = worm_ui_nuklear_compose_state();
+    require_resize(state.measure_resize_active);
+    check_resize(state.measure_resize_move_line);
+    const std::array drag{resize_motion(f.x, f.screen_y(-50))};
+    (void)f.harness.frame(drag, both);
+    check_resize(std::string(state.measure_resize_label.data()) == "7/8 | 9/8");
+    const std::array release{resize_motion(f.x, f.screen_y(-50)), resize_button(f.x, f.screen_y(-50), false)};
+    const auto action = f.harness.frame(release, both);
+    require_resize(action.get().compose_action == WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE);
+    check_resize(action.get().compose_measure_ids[0] == 77);
+    check_resize(std::string(action.get().timing_meter_numerator_text) == "7");
+    check_resize(std::string(action.get().timing_meter_denominator_text) == "8");
+    check_resize(action.get().compose_second_meter_numerator == 9);
+    check_resize(action.get().compose_second_meter_denominator == 8);
 }

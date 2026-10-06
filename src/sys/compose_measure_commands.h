@@ -44,4 +44,13 @@ enum class cursor_measure_command_t { insert_before, insert_after, remove_empty 
                                         std::string_view denominator,
                                         notification_severity_t* severity = nullptr) -> std::string;
 
+// Moves the bar line that ends the measure at `measure_index` (a chart position, virtual tail
+// included): that measure takes the first meter and the next measure the second, and no other bar
+// line or object row changes. One undo step.
+[[nodiscard]] auto apply_bar_line_move(document_history_t& history,
+                                       editor_interaction_state_t& state,
+                                       std::uint64_t measure_index,
+                                       meter_t first, meter_t second,
+                                       notification_severity_t* severity = nullptr) -> std::string;
+
 } // namespace wormedit::sys

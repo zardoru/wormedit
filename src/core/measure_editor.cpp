@@ -4,10 +4,12 @@
 #include <wormedit/core/virtual_canvas.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -402,32 +404,10 @@ auto collect_free_rows(chart_document_t& chart, const measure_index_t& index,
     return ok;
 }
 
-auto resize_keeping_rows(chart_document_t& chart, std::size_t measure_index,
-                         const measure_definition_t& definition,
-                         const measure_edit_limits_t& limits) -> bool {
-    const auto old_index = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(old_index)) return false;
-    std::vector<rowed_note_t> notes;
-    std::vector<rowed_bgm_t> bgm;
-    std::vector<rowed_free_t> free_rows;
-    const auto& before = std::get<measure_index_t>(old_index);
-    if (!lift_bucketed_objects(chart, before, measure_index, notes, bgm) ||
-        !collect_free_rows(chart, before, free_rows)) return false;
-    chart.measures[measure_index].definition = definition;
-    std::uint64_t last_row = 0;
-    for (const auto& item : notes) last_row = std::max({last_row, item.row, item.end_row.value_or(0)});
-    for (const auto& item : bgm) last_row = std::max(last_row, item.row);
-    for (const auto& item : free_rows) last_row = std::max(last_row, item.row);
-    // Appended measures are 4/4 at the chart resolution, so this terminates after at most
-    // last_row / rows-per-measure steps, and the measure cap bounds it.
-    auto index = build_measure_index(chart);
-    while (std::holds_alternative<measure_index_t>(index) &&
-           std::get<measure_index_t>(index).total_rows <= last_row) {
-        if (!append_default_measures(chart, chart.measures.size() + 1, limits)) return false;
-        index = build_measure_index(chart);
-    }
-    if (!std::holds_alternative<measure_index_t>(index)) return false;
-    const auto& after = std::get<measure_index_t>(index);
+// Writes each lifted object back at the position its row now has.
+auto place_lifted_objects(chart_document_t& chart, const measure_index_t& after,
+                          std::size_t first_measure, std::vector<rowed_note_t>& notes,
+                          std::vector<rowed_bgm_t>& bgm, std::vector<rowed_free_t>& free_rows) -> bool {
     const auto place = [&](std::uint64_t row) { return position_at_absolute_row(after, row); };
     for (auto& item : free_rows) {
         const auto position = place(item.row);
@@ -451,11 +431,48 @@ auto resize_keeping_rows(chart_document_t& chart, std::size_t measure_index,
         item.event.position = *position;
         bucket_of(position->measure).bgm_events.push_back(std::move(item.event));
     }
-    for (auto at = measure_index; at < chart.measures.size(); ++at) {
+    for (auto at = first_measure; at < chart.measures.size(); ++at) {
         std::ranges::stable_sort(chart.measures[at].notes, {}, [](const note_t& note) { return note.position.row; });
         std::ranges::stable_sort(chart.measures[at].bgm_events, {}, [](const bgm_event_t& event) { return event.position.row; });
     }
     return true;
+}
+
+struct measure_assignment_t {
+    std::size_t index{};
+    measure_definition_t definition;
+};
+
+// Gives each listed measure its definition, re-bucketing everything from the first one on so
+// objects keep their rows from the start of the song.
+auto resize_keeping_rows(chart_document_t& chart, std::span<const measure_assignment_t> assignments,
+                         const measure_edit_limits_t& limits) -> bool {
+    std::size_t measure_index = assignments.front().index;
+    for (const auto& assignment : assignments) measure_index = std::min(measure_index, assignment.index);
+    const auto old_index = build_measure_index(chart);
+    if (!std::holds_alternative<measure_index_t>(old_index)) return false;
+    std::vector<rowed_note_t> notes;
+    std::vector<rowed_bgm_t> bgm;
+    std::vector<rowed_free_t> free_rows;
+    const auto& before = std::get<measure_index_t>(old_index);
+    if (!lift_bucketed_objects(chart, before, measure_index, notes, bgm) ||
+        !collect_free_rows(chart, before, free_rows)) return false;
+    for (const auto& assignment : assignments) chart.measures[assignment.index].definition = assignment.definition;
+    std::uint64_t last_row = 0;
+    for (const auto& item : notes) last_row = std::max({last_row, item.row, item.end_row.value_or(0)});
+    for (const auto& item : bgm) last_row = std::max(last_row, item.row);
+    for (const auto& item : free_rows) last_row = std::max(last_row, item.row);
+    // Appended measures are 4/4 at the chart resolution, so this terminates after at most
+    // last_row / rows-per-measure steps, and the measure cap bounds it.
+    auto index = build_measure_index(chart);
+    while (std::holds_alternative<measure_index_t>(index) &&
+           std::get<measure_index_t>(index).total_rows <= last_row) {
+        if (!append_default_measures(chart, chart.measures.size() + 1, limits)) return false;
+        index = build_measure_index(chart);
+    }
+    if (!std::holds_alternative<measure_index_t>(index)) return false;
+    return place_lifted_objects(chart, std::get<measure_index_t>(index), measure_index, notes, bgm,
+                               free_rows);
 }
 
 auto apply_measure_action(measure_edit_context_t& context,
@@ -490,7 +507,8 @@ auto apply_measure_action(measure_edit_context_t& context,
     }
     for (const auto at : sorted) {
         if (same_definition(chart->measures[at].definition, edit.definition)) continue;
-        if (!resize_keeping_rows(*chart, at, edit.definition, context.limits)) {
+        const measure_assignment_t assignment{at, edit.definition};
+        if (!resize_keeping_rows(*chart, std::span{&assignment, 1}, context.limits)) {
             reject(context.result, diagnostic_code_t::invalid_measure,
                    "the measure cannot be resized without losing objects beyond the chart");
             return;
@@ -505,6 +523,52 @@ auto apply_measure_action(measure_edit_context_t& context,
         return;
     }
     context.label = "Resize measures";
+}
+
+auto apply_measure_action(measure_edit_context_t& context,
+                          const move_bar_line_action_t& edit) -> void {
+    auto* chart = target_measure_chart(context, edit.chart);
+    if (chart == nullptr) {
+        return;
+    }
+    const auto second = edit.measure_index + 1;
+    if (second >= chart->measures.size()) {
+        if (!chart_has_virtual_tail(*chart) || second >= virtual_tail_measure_limit(*chart) ||
+            !append_default_measures(*chart, second + 1, context.limits)) {
+            reject(context.result, diagnostic_code_t::invalid_measure,
+                   "the bar line lies beyond the chart and its virtual canvas");
+            return;
+        }
+        context.changed = true;
+    }
+    if (!validate_definition(*chart, edit.before, context.limits, context.result) ||
+        !validate_definition(*chart, edit.after, context.limits, context.result)) {
+        return;
+    }
+    const auto old_rows = validate_measure(chart->divisions_per_standard_measure,
+                                           chart->measures[edit.measure_index].definition).row_capacity.value_or(0) +
+                          validate_measure(chart->divisions_per_standard_measure,
+                                           chart->measures[second].definition).row_capacity.value_or(0);
+    const auto new_rows = validate_measure(chart->divisions_per_standard_measure, edit.before).row_capacity.value_or(0) +
+                          validate_measure(chart->divisions_per_standard_measure, edit.after).row_capacity.value_or(0);
+    if (old_rows != new_rows) {
+        reject(context.result, diagnostic_code_t::invalid_measure,
+               "moving a bar line must keep the two measures' combined length");
+        return;
+    }
+    if (same_definition(chart->measures[edit.measure_index].definition, edit.before) &&
+        same_definition(chart->measures[second].definition, edit.after)) {
+        return;
+    }
+    const std::array assignments{measure_assignment_t{edit.measure_index, edit.before},
+                                 measure_assignment_t{second, edit.after}};
+    if (!resize_keeping_rows(*chart, assignments, context.limits)) {
+        reject(context.result, diagnostic_code_t::invalid_measure,
+               "the bar line cannot be moved without losing objects");
+        return;
+    }
+    context.label = "Move bar line";
+    context.changed = true;
 }
 
 auto apply_measure_action(measure_edit_context_t& context,

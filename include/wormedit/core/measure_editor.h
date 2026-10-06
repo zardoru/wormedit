@@ -45,6 +45,16 @@ struct resize_measure_keep_rows_action_t {
     measure_definition_t definition;
 };
 
+// Moves the bar line that ends `measure_index`: that measure takes `before` and the next one
+// takes `after`, whose lengths must add up to what they had. No other bar line moves, and every
+// object keeps its row from the start of the song. The next measure may be a virtual tail measure.
+struct move_bar_line_action_t {
+    chart_id_t chart;
+    std::size_t measure_index{};
+    measure_definition_t before;
+    measure_definition_t after;
+};
+
 struct delete_measure_action_t {
     chart_id_t chart;
     measure_id_t measure;
@@ -62,7 +72,7 @@ struct remove_measure_with_contents_action_t {
 using measure_edit_action_t =
     std::variant<insert_measure_action_t, update_measure_definition_action_t,
                  update_measures_definition_action_t,
-                 resize_measure_keep_rows_action_t, delete_measure_action_t, remove_measure_with_contents_action_t>;
+                 resize_measure_keep_rows_action_t, move_bar_line_action_t, delete_measure_action_t, remove_measure_with_contents_action_t>;
 
 struct measure_removal_proposal_t {
     std::size_t deleted_notes{};

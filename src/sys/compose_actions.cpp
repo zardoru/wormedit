@@ -61,6 +61,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <cstdlib>
 #include <span>
 #include <string>
 #include <string_view>
@@ -1829,7 +1830,31 @@ std::string set_measures_meter(compose_action_context_t& context) {
     return publish_compose_feedback(context, std::move(status), severity, notification_source_t::edit);
 }
 
+std::string move_bar_line(compose_action_context_t& context) {
+    if (editor_interaction_has_pending_gesture(context.state))
+        return compose_action_warning(context, "Finish or cancel the active Compose gesture before editing measures.");
+    if (context.history.document.revision != context.action.compose_input_document_revision ||
+        context.action.compose_measure_id_count != 1 || !context.action.compose_measure_ids)
+        return compose_action_warning(context, "Bar line move ignored because the document changed.");
+    auto severity = notification_severity_t::warning;
+    const auto& action = context.action;
+    const auto parse = [](const char* text) { return static_cast<std::uint32_t>(std::strtoul(text, nullptr, 10)); };
+    auto status = apply_bar_line_move(
+        context.history, context.state, action.compose_measure_ids[0],
+        {parse(action.timing_meter_numerator_text), parse(action.timing_meter_denominator_text)},
+        {action.compose_second_meter_numerator, action.compose_second_meter_denominator}, &severity);
+    const auto rebound = rebind_workspace(context.workspace, context.history);
+    if (!rebound) {
+        static_cast<void>(publish_compose_feedback(context, status, severity, notification_source_t::edit));
+        status = "Bar line moved, but workspace rebinding failed.";
+        return compose_action_error(context, std::move(status), notification_source_t::document);
+    }
+    return publish_compose_feedback(context, std::move(status), severity, notification_source_t::edit);
+}
+
 std::optional<std::string> dispatch_compose_marker_action(compose_action_context_t& context) {
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE)
+        return move_bar_line(context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER)
         return set_measures_meter(context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER)

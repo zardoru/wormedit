@@ -35,3 +35,21 @@ TEST_CASE("bar line drag is bounded and rejects unwritable meters", "[frontend-s
 
     CHECK_FALSE(worm_ui_resize_measure(1, 1, 0.0, 0).valid);
 }
+
+TEST_CASE("moving a bar line trades length between two measures", "[frontend-state][measure-resize]") {
+    const auto moved = worm_ui_move_bar_line(1, 1, 1, 1, -0.125, 8);
+    REQUIRE(moved.valid);
+    CHECK(moved.label == "7/8 | 9/8");
+    CHECK(moved.first_length_whole_notes == 0.875);
+
+    const auto floor = worm_ui_move_bar_line(1, 1, 1, 1, -5.0, 16);
+    REQUIRE(floor.valid);
+    CHECK(floor.label == "1/16 | 31/16");
+
+    const auto ceiling = worm_ui_move_bar_line(1, 1, 1, 1, 5.0, 16);
+    REQUIRE(ceiling.valid);
+    CHECK(ceiling.label == "31/16 | 1/16");
+
+    CHECK_FALSE(worm_ui_move_bar_line(1, 1, 1, 1, -1.0 / 12.0, 12).valid);
+    CHECK_FALSE(worm_ui_move_bar_line(1, 1, 1, 16, 0.0, 8).valid);
+}

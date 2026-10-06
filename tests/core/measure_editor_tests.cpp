@@ -454,3 +454,36 @@ TEST_CASE("shortening measures extends a native chart back over its audio",
     REQUIRE(resized);
     CHECK(history.document.charts.front().measures.size() > before);
 }
+
+TEST_CASE("moving a bar line changes only the two neighboring measures",
+          "[unit][core][measure-editor][keep-rows]") {
+    auto song = measure_song();
+    song.charts.front().measures[1].notes.push_back(
+        {.id = object_id_t{31}, .position = {measure_id_t{11}, 100}, .lane = lane_id_t{20}});
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(song);
+    const auto moved = apply_measure_edit(
+        history, 5,
+        move_bar_line_action_t{.chart = chart_id_t{2},
+                               .measure_index = 0,
+                               .before = {.length = {3, 4}, .meter = meter_t{3, 4}},
+                               .after = {.length = {5, 4}, .meter = meter_t{5, 4}}});
+    REQUIRE(moved);
+    const auto& chart = history.document.charts.front();
+    CHECK(chart.measures[0].definition.length == rational_t{3, 4});
+    CHECK(chart.measures[1].definition.length == rational_t{5, 4});
+    CHECK(chart.measures[2].definition.length == rational_t{1, 1});
+    // The row 1060 from the song start is now 340 into the second measure; the third is untouched.
+    CHECK(chart.measures[1].notes.front().position == (local_position_t{measure_id_t{11}, 340}));
+    CHECK(absolute_note_row(history.document) == 1920);
+    CHECK(history.undo.size() == 1);
+
+    const auto uneven = apply_measure_edit(
+        history, history.document.revision,
+        move_bar_line_action_t{.chart = chart_id_t{2},
+                               .measure_index = 0,
+                               .before = {.length = {1, 2}, .meter = meter_t{2, 4}},
+                               .after = {.length = {1, 1}, .meter = meter_t{4, 4}}});
+    CHECK_FALSE(uneven.applied);
+    CHECK(has_code(uneven, diagnostic_code_t::invalid_measure));
+}

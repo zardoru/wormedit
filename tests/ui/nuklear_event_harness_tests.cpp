@@ -1694,6 +1694,18 @@ TEST_CASE("Note paint carries the Sounds dock sound whichever was picked first",
     REQUIRE(begin != nullptr);
     CHECK(begin->resource_id == 40);
 
+    // Hold armed: the press is a click for the click-click hold gesture, never a paint stroke,
+    // and the click carries the armed sound.
+    view.armed_note_kind = 1;
+    (void)harness.frame();
+    frames = click_at(harness, 300, 400);
+    CHECK(find_compose_input(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) == nullptr);
+    const auto* hold_click = find_compose_input(frames, WORM_UI_COMPOSE_INPUT_POINTER_CLICK);
+    REQUIRE(hold_click != nullptr);
+    CHECK(hold_click->resource_id == 40);
+    view.armed_note_kind = 0;
+    (void)harness.frame();
+
     // A missing or non-dock sound never rides along; the stroke stays silent.
     state.armed_resource_id = 50;
     frames = click_at(harness, 300, 400);

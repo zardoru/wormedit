@@ -14,6 +14,8 @@
 
 #include "wormedit/nuklear_config.h"
 
+#include <wormedit/core/document.h>
+
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_timer.h>
 
@@ -384,6 +386,13 @@ static void append_note_paint_begin(const ComposePointerEventContext& input) {
     worm_ui_nuklear_tag_last_compose_input_sound(state, *input.view, *action);
 }
 
+// Hold and Roll need an explicit end, so their press goes to the click-click hold gesture and
+// never starts a paint stroke (the core rejects the stroke and the UI would keep updating it).
+static auto armed_kind_uses_hold_gesture(const WormUiComposeView& view) -> bool {
+    return view.armed_note_kind == static_cast<uint32_t>(wormedit::note_kind_t::hold) ||
+           view.armed_note_kind == static_cast<uint32_t>(wormedit::note_kind_t::roll);
+}
+
 void process_note_paint_pointer(const ComposePointerEventContext& input,
                                        bool& paint_pointer_consumed) {
     if (input.view->paste_active) { paint_pointer_consumed = true; return; }
@@ -408,7 +417,8 @@ void process_note_paint_pointer(const ComposePointerEventContext& input,
         return;
     }
     if (!state.action_overflowed && view.scene_available && view.note_paint_mode_active &&
-        input.pointer_started_in_note_field && input.window_focused &&
+        !armed_kind_uses_hold_gesture(view) && input.pointer_started_in_note_field &&
+        input.window_focused &&
         input.shortcut_event_count == 0 &&
         (input.pointer_modifiers & input.any_pointer_modifier) == 0 &&
         !state.pointer_hold_active && !state.lane_hold_active && !state.area_selection_active &&

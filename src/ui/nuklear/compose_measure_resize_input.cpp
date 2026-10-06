@@ -11,7 +11,7 @@
 #include <span>
 
 namespace {
-constexpr float hit_band_screen_pixels = 4.0f;
+constexpr float hit_band_screen_pixels = 6.0f;
 
 struct line_hit_t {
     std::uint64_t measure_id{};

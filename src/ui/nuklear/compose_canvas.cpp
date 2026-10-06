@@ -1163,6 +1163,37 @@ static void draw_compose_beat_fit_overlay(const ComposePaintContext& paint) {
     }
 }
 
+// Holding Alt shows every measure end line that can be dragged as a band, like a bookmark's hit
+// area; the one under the pointer is stronger and named.
+static void draw_compose_measure_resize_affordance(const ComposePaintContext& paint) {
+    const auto& view = *paint.view;
+    if (state.measure_resize_active || view.input_occluded || view.measure_row_count == 0 ||
+        view.viewport_height_pixels <= 0.0 || (SDL_GetModState() & SDL_KMOD_ALT) == 0) return;
+    const auto scale = paint.viewport.h / static_cast<float>(view.viewport_height_pixels);
+    const auto band = 6.0f;
+    const auto inside = nk_input_is_mouse_hovering_rect(&paint.context->input, paint.viewport);
+    const auto mouse_y = paint.context->input.mouse.pos.y;
+    for (std::size_t index = 0; index < view.grid_line_count; ++index) {
+        const auto& line = view.grid_lines[index];
+        if (line.measure_number < 2 || line.measure_number - 2 >= view.measure_row_count) continue;
+        const auto y = compose_projected_y(paint, line.y_pixels);
+        if (y < paint.viewport.y || y > paint.viewport.y + paint.viewport.h) continue;
+        const auto hovered = inside && std::abs(mouse_y - y) <= band;
+        auto color = nk_rgb(110, 222, 236);
+        color.a = hovered ? 70 : 26;
+        field_rect(paint, nk_rect(paint.viewport.x, y - band, paint.viewport.w, band * 2.0f), 0.0f, color, 4);
+        if (!hovered) continue;
+        field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y, 2.2f,
+                   nk_rgba(110, 222, 236, 230), 4);
+        char label[48]{};
+        snprintf(label, sizeof(label), "Drag to resize measure %u", line.measure_number - 1);
+        field_text(paint, nk_rect(paint.viewport.x + paint.rail.w + 4.0f, std::max(paint.viewport.y, y - 22.0f),
+                                  std::min(220.0f, paint.viewport.w - paint.rail.w - 8.0f), 18.0f),
+                   label, static_cast<int>(strlen(label)), paint.context->style.font,
+                   nk_rgba(18, 21, 29, 235), nk_rgb(148, 229, 238), 4);
+    }
+}
+
 // Alt+drag of a bar line: the proposed end line and the meter it would set.
 static void draw_compose_measure_resize_overlay(const ComposePaintContext& paint) {
     if (!state.measure_resize_active) return;
@@ -1573,6 +1604,7 @@ static void draw_compose_timing_layer(const ComposePaintContext& paint,
     draw_compose_speed_graph(paint);
     draw_compose_proposed_grid(paint);
     draw_compose_beat_fit_overlay(paint);
+    draw_compose_measure_resize_affordance(paint);
     draw_compose_measure_resize_overlay(paint);
     draw_compose_offset_fit_overlay(paint);
     draw_compose_timing_preview_legend(paint);

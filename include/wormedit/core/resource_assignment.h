@@ -196,6 +196,7 @@ struct place_virtual_bms_resource_action_t {
     object_id_t source_lane;
     resource_placement_kind_t kind{resource_placement_kind_t::sample_note};
     std::uint64_t snap_denominator{};
+    std::optional<std::vector<layer_id_t>> semantic_layers;
 };
 
 struct move_bgm_event_action_t {

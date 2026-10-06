@@ -79,6 +79,9 @@ struct cycle_edit_snap_action_t {
 // onto the current exact snap before placing or removing a tap note.
 struct place_tap_action_t {
     local_position_t position;
+    // The Sounds-dock sample captured with the click. For an armed Hold/Roll it travels with
+    // the pending gesture and is written when the end click commits.
+    std::optional<resource_id_t> sound;
 };
 
 // Absolute row in the sparse BMS canvas. A successful first edit extends the
@@ -131,6 +134,8 @@ struct begin_alt_pointer_hold_gesture_action_t {
     lane_id_t lane;
     local_position_t position;
     bool alt_or_option_down{true};
+    // Captured at press, like a lane key: later changes to the armed sound do not retarget it.
+    std::optional<resource_id_t> sound;
 };
 
 struct update_alt_pointer_hold_gesture_action_t {
@@ -608,6 +613,7 @@ struct editor_interaction_state_t {
         std::uint64_t canvas_row{};
         lane_id_t lane;
         std::uint64_t document_revision{};
+        std::optional<resource_id_t> sound;
     };
     std::optional<virtual_lane_key_t> pending_virtual_lane_key;
     std::vector<std::uint64_t> supported_snap_denominators;

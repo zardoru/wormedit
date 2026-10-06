@@ -2599,8 +2599,7 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
     if (sound && !is_paint_sample_resource(history.document, *sound))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
                                        "paint sound is not an existing sample resource")};
-    const auto layers = armed_layers.value_or(sound
-        ? sound_default_layers_for_placement(*prepared_chart, *sound) : std::vector<layer_id_t>{});
+    const auto layers = resolve_placement_layers(*prepared_chart, armed_layers, sound);
     prepared.painted_notes.reserve(plan.additions.size());
     for (const auto& target : plan.additions) {
         const auto found = prepared_measures.find(target.position.measure.value);
@@ -2948,7 +2947,8 @@ auto space_selection_view_result(
     const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& view)
     -> editor_interaction_result_t;
 
-auto begin_hold_action(hold_gesture_context_t& context, local_position_t position)
+auto begin_hold_action(hold_gesture_context_t& context, local_position_t position,
+                       std::optional<resource_id_t> sound = std::nullopt)
     -> editor_interaction_result_t {
     auto& history = context.history;
     auto& state = context.state;
@@ -2964,6 +2964,9 @@ auto begin_hold_action(hold_gesture_context_t& context, local_position_t positio
             history, state,
             {error(diagnostic_code_t::unknown_lane,
                    "active editor lane is unavailable at the hold start")});
+    if (sound && !is_paint_sample_resource(history.document, *sound))
+        return diagnostic_result(history, state,
+            {error(diagnostic_code_t::invalid_id, "paint sound is not an existing sample resource")});
     const auto plan = plan_hold_placement(context.chart, context.index, state.active_lane,
                                           *snapped, *snapped);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
@@ -2974,6 +2977,7 @@ auto begin_hold_action(hold_gesture_context_t& context, local_position_t positio
         .document_revision = history.document.revision,
         .placement_preview =
             hold_placement_preview(std::get<hold_placement_plan_t>(plan)),
+        .sound = sound,
     };
     place_cursor_at(state, *snapped);
     return space_selection_view_result(make_view(history, state));
@@ -3091,9 +3095,8 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position)
                                       : state.armed_note_kind,
                                   .end = placement.tail,
                                   .sound = pending.sound,
-                                  .semantic_layers = state.armed_note_layers.value_or(pending.sound
-                                      ? sound_default_layers_for_placement(*chart, *pending.sound)
-                                      : std::vector<layer_id_t>{})});
+                                  .semantic_layers = resolve_placement_layers(
+                                      *chart, state.armed_note_layers, pending.sound)});
     }
     const auto label = placement.adds_note
         ? (placement.tail ? "Place merged hold note" : "Place tap note")
@@ -3550,9 +3553,8 @@ auto commit_virtual_hold(virtual_note_context_t& context,
                                      : context.state.armed_note_kind,
                                  .end = placement.tail,
                                  .sound = action.sound,
-                                 .semantic_layers = context.state.armed_note_layers.value_or(action.sound
-                                     ? sound_default_layers_for_placement(*chart, *action.sound)
-                                     : std::vector<layer_id_t>{})});
+                                 .semantic_layers = resolve_placement_layers(
+                                     *chart, context.state.armed_note_layers, action.sound)});
     }
     auto command = commit_document_command(
         context.history, std::move(proposed),
@@ -3666,8 +3668,8 @@ auto place_virtual_bms_tap(virtual_note_context_t& context,
     chart->measures[resolved.measure].notes.push_back(
         {.id = *id, .position = position, .lane = action.lane, .kind = context.state.armed_note_kind,
          .sound = action.sample,
-         .semantic_layers = context.state.armed_note_layers.value_or(action.sample
-             ? sound_default_layers_for_placement(*chart, *action.sample) : std::vector<layer_id_t>{})});
+         .semantic_layers = resolve_placement_layers(*chart, context.state.armed_note_layers,
+                                                     action.sample)});
     auto command = commit_document_command(context.history, std::move(proposed),
                                            "Place tap in virtual BMS measure");
     if (!command)
@@ -3683,7 +3685,8 @@ auto place_virtual_bms_tap(virtual_note_context_t& context,
                         : std::nullopt,
             .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
                                ? std::get<diagnostic_list_t>(view)
-                               : diagnostic_list_t{}};
+                               : diagnostic_list_t{},
+            .created_note = *id};
 }
 
 auto cycle_editor_snap(document_history_t& history, editor_interaction_state_t& state,
@@ -3823,7 +3826,11 @@ auto place_tap(tap_placement_context_t& context, const place_tap_action_t& actio
             history, state,
             {error(diagnostic_code_t::collision,
                    "tap placement overlaps a same-lane hold", *overlap)});
+    if (action.sound && !is_paint_sample_resource(history.document, *action.sound))
+        return diagnostic_result(history, state,
+            {error(diagnostic_code_t::invalid_id, "paint sound is not an existing sample resource")});
     std::string label;
+    std::optional<object_id_t> created;
     if (existing != measure->notes.end()) {
         if (existing->kind != state.armed_note_kind || existing->end)
             return diagnostic_result(
@@ -3840,7 +3847,10 @@ auto place_tap(tap_placement_context_t& context, const place_tap_action_t& actio
                                             "chart object ID sequence is exhausted")});
         measure->notes.push_back({.id = *id, .position = *snapped, .lane = state.active_lane,
                                   .kind = state.armed_note_kind,
-                                  .semantic_layers = state.armed_note_layers.value_or(std::vector<layer_id_t>{})});
+                                  .sound = action.sound,
+                                  .semantic_layers = resolve_placement_layers(
+                                      *chart, state.armed_note_layers, action.sound)});
+        created = *id;
         label = "Place note";
     }
     auto command = commit_document_command(history, std::move(proposed), std::move(label));
@@ -3855,7 +3865,8 @@ auto place_tap(tap_placement_context_t& context, const place_tap_action_t& actio
                         : std::nullopt,
             .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
                                ? std::get<diagnostic_list_t>(view)
-                               : diagnostic_list_t{}};
+                               : diagnostic_list_t{},
+            .created_note = created};
 }
 
 struct semantic_paint_context_t {
@@ -4787,7 +4798,7 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
     tap_placement_context_t tap_placement{history, state, *chart, index};
     const auto handle_place_tap = [&](const place_tap_action_t& typed_action) -> editor_interaction_result_t {
         if (state.armed_note_kind == note_kind_t::hold || state.armed_note_kind == note_kind_t::roll)
-            return begin_hold_action(hold_gestures, typed_action.position);
+            return begin_hold_action(hold_gestures, typed_action.position, typed_action.sound);
         return place_tap(tap_placement, typed_action);
     };
 
@@ -4824,7 +4835,7 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
                        "Alt/Option must be held to begin a pointer hold gesture")});
         }
         return begin_hold_gesture(hold_gestures, typed_action.lane, typed_action.position,
-                                  hold_gesture_source_t::alt_pointer);
+                                  hold_gesture_source_t::alt_pointer, typed_action.sound);
 
     };
 

@@ -219,6 +219,8 @@ struct worm_ui_nuklear_compose_state_t {
     bool keyboard_focus{};
     bool action_overflowed{};
     bool pointer_hold_active{};
+    // The active pointer hold is a plain press-drag with Hold/Roll armed, so it needs no Alt.
+    bool pointer_hold_without_alt{};
     bool note_paint_pointer_active{};
     bool bmson_razor_pointer_active{};
     double bmson_razor_last_y_pixels{};
@@ -569,6 +571,18 @@ void worm_ui_nuklear_dispatch_compose_keys(worm_ui_nuklear_compose_state_t& stat
 [[nodiscard]] auto worm_ui_nuklear_sound_list_contains(float x, float y) -> bool;
 void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
                                               std::uint64_t next_resource_id);
+
+// The one answer to "which Sounds-dock sample would a new note carry": the armed dock sample
+// when it is still listed and not missing, else 0. Lane keys and note paint both ask this
+// instead of reading armed_resource_id themselves.
+[[nodiscard]] auto worm_ui_nuklear_armed_dock_sound(
+    const worm_ui_nuklear_compose_state_t& state, const WormUiComposeView& view) -> std::uint64_t;
+
+// Stamps the armed Sounds-dock sample on the compose input just appended, so every gesture that
+// can create a note (lane key, paint, Alt-hold, click) captures it the same way at press time.
+void worm_ui_nuklear_tag_last_compose_input_sound(const worm_ui_nuklear_compose_state_t& state,
+                                                  const WormUiComposeView& view,
+                                                  WormUiWorkspaceAction& action);
 
 void worm_ui_nuklear_reset_compose_state();
 

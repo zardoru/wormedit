@@ -102,6 +102,8 @@ static bool g_notification_context_initialized{};
 static bool g_notification_modal{};
 static bool g_notification_project_modal{};
 static bool g_notification_escape_captured{};
+// Esc deselects before it dismisses a toast: set each frame while Compose has something to clear.
+static bool g_compose_escape_has_selection{};
 
 static void render_notification_frame(const WormUiNotificationView& view,
     WormUiWorkspaceAction& action, int width, int height, bool project_modal);
@@ -621,6 +623,7 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
     g_notification_view = {};
     g_notification_modal = false;
     g_notification_project_modal = false;
+    g_compose_escape_has_selection = false;
     g_save_project_requested = false;
     g_save_project_request_id = 0;
     worm_ui_nuklear_reset_sound_import();
@@ -979,7 +982,8 @@ static bool capture_notification_key(const SDL_KeyboardEvent& event) {
             compose.go_to_measure_open || compose.bookmark_rename.active || compose.bookmark_rename.release_pending || compose_popup_owns_input() ||
             compose.semantic_layer_name_editor_visible || compose.semantic_layer_color_editor_visible,
         g_ime_composition_active,
-        notification_editor_gesture_active() || compose.key_event_count != 0,
+        notification_editor_gesture_active() || compose.key_event_count != 0 ||
+            g_compose_escape_has_selection,
         g_notification_modal || g_new_project_wizard.open || project_dialog_active());
     if (!target) return false;
     g_notification_state.dismiss_pending = *target;
@@ -2617,6 +2621,9 @@ static void remember_notification_frame(const WormUiWorkspaceView* view) {
     g_notification_view = view ? view->notifications : WormUiNotificationView{};
     g_notification_project_modal = view && project_modal_active(*view);
     g_notification_modal = g_notification_project_modal || (view && view->options.visible);
+    g_compose_escape_has_selection = view && view->active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE &&
+        (view->compose.selected_note_count != 0 || view->compose.selected_object_count != 0 ||
+         view->compose.selected_bgm_event_count != 0 || view->compose.area_range_available);
 }
 
 static void render_notification_history(const WormUiNotificationView& view,

@@ -3508,12 +3508,16 @@ auto dispatch_note_to_bgm_input(const WormUiComposeInputAction& input, compose_i
                                                   : std::nullopt;
         if (!context.input_is_current() || input.lane_id == 0) return std::nullopt;
         const auto outcome = wormedit::sys::move_selected_bgm_to_lane(
-            context.history, context.state, wormedit::lane_id_t{input.lane_id}, dragged);
+            context.history, context.state, wormedit::lane_id_t{input.lane_id}, dragged,
+            input.successive);
         if (!outcome.handled) return std::nullopt;
         result.accepted = outcome.command.applied;
         result.document_changed = outcome.command.applied;
         result.diagnostics = outcome.command.diagnostics;
-        accepted = outcome.command.applied ? "BGM events moved to the lane." : "The BGM events could not move to that lane.";
+        accepted = outcome.command.applied
+            ? (input.successive ? "Next selected object assigned to lane."
+                                : "BGM events moved to the lane.")
+            : "The selected objects could not move to that lane.";
         return compose_input_family_result_t::continue_with_result();
     }
     if (input.kind != WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM) return std::nullopt;

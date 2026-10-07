@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/interaction.h>
 
 #include <optional>
 #include <span>
@@ -25,5 +26,11 @@ namespace wormedit {
 [[nodiscard]] auto move_bgm_events_to_lane(document_history_t& history, std::uint64_t expected_revision,
                                            chart_id_t chart, std::span<const object_id_t> events,
                                            lane_id_t lane) -> document_command_result_t;
+
+// Assigns a mixed selected note/BGM set into a lane as one all-or-nothing undo command.
+[[nodiscard]] auto move_selected_objects_to_lane(
+    document_history_t& history, std::uint64_t expected_revision,
+    const editor_interaction_state_t& state, std::span<const object_id_t> notes,
+    std::span<const object_id_t> events, lane_id_t lane) -> document_command_result_t;
 
 } // namespace wormedit

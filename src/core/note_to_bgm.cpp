@@ -211,4 +211,47 @@ auto move_bgm_events_to_lane(document_history_t& history, std::uint64_t expected
                                    events.size() == 1 ? "Move BGM event to lane" : "Move BGM events to lane");
 }
 
+auto move_selected_objects_to_lane(document_history_t& history, std::uint64_t expected_revision,
+                                   const editor_interaction_state_t& state,
+                                   std::span<const object_id_t> notes,
+                                   std::span<const object_id_t> events, lane_id_t lane)
+    -> document_command_result_t {
+    const auto revision = history.document.revision;
+    if (expected_revision != revision)
+        return rejected(revision, diagnostic_code_t::invalid_id,
+                        "lane assignment has a stale document revision");
+    if ((!notes.empty() && notes.size() > 4096) || (!events.empty() && events.size() > 4096) ||
+        notes.size() + events.size() > 4096 || !lane)
+        return rejected(revision, diagnostic_code_t::invalid_id,
+                        "lane assignment needs 1 to 4096 selected objects and a lane");
+    if (notes.empty() && events.empty())
+        return rejected(revision, diagnostic_code_t::invalid_id,
+                        "lane assignment needs at least one selected object");
+    auto scratch = make_document_history(history.document);
+    if (!notes.empty()) {
+        auto scratch_state = state;
+        scratch_state.chart = state.chart;
+        scratch_state.selected_notes.assign(notes.begin(), notes.end());
+        std::erase_if(scratch_state.selected_objects, [](const auto& object) {
+            return object.kind == editor_selection_object_kind_t::note;
+        });
+        const auto assigned = dispatch_editor_action(
+            scratch, scratch_state,
+            assign_selected_notes_to_lane_action_t{lane, false});
+        if (!assigned.accepted)
+            return {.applied = false, .revision = revision,
+                    .diagnostics = std::move(assigned.diagnostics)};
+    }
+    if (!events.empty()) {
+        auto moved = move_bgm_events_to_lane(
+            scratch, scratch.document.revision, state.chart, events, lane);
+        if (!moved.applied) {
+            moved.revision = revision;
+            return moved;
+        }
+    }
+    return commit_document_command(history, std::move(scratch.document),
+                                   "Assign selected objects to lane");
+}
+
 } // namespace wormedit

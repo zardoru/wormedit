@@ -572,6 +572,29 @@ TEST_CASE("dragging a selected BGM marker onto a playfield lane asks to move it 
     CHECK(drop->object_id == 501);
 }
 
+TEST_CASE("Shift lane key routes successive assignment with BGM selected",
+          "[frontend-state][event-harness][bgm-to-lane]") {
+    nuklear_event_harness_t harness{1280, 800};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    const WormUiComposeLaneKeyBinding binding{.scancode = SDL_SCANCODE_1, .lane_id = 3};
+    view.lane_key_bindings = &binding;
+    view.lane_key_binding_count = 1;
+    view.selected_bgm_event_count = 1;
+    (void)harness.frame();
+    SDL_Event press{};
+    press.type = SDL_EVENT_KEY_DOWN;
+    press.key.type = SDL_EVENT_KEY_DOWN;
+    press.key.key = SDLK_1;
+    press.key.scancode = SDL_SCANCODE_1;
+    press.key.down = true;
+    const auto shifted = harness.frame(std::span{&press, 1}, SDL_KMOD_SHIFT);
+    REQUIRE(shifted.get().compose_input_count == 1);
+    CHECK(shifted.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
+    CHECK(shifted.get().compose_inputs[0].successive);
+    CHECK(shifted.get().compose_inputs[0].lane_id == 3);
+}
+
 TEST_CASE("Y-lock stops a selected BGA event from being dragged to another row",
           "[frontend-state][event-harness][bga-lane][y-lock]") {
     nuklear_event_harness_t harness{1280, 800};

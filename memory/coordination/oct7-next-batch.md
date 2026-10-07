@@ -55,3 +55,27 @@ and grow-only hard-ceiling/live soft-budget setter with snapshot-retention tests
 Luna receives the remaining T-445 preference/UI/loader/application slice after
 T-439's narrow commit. Root reviews the Sol backend, and all build writes remain
 serialized; no backend edits may be included in the T-439 commit.
+
+## Recovery and staged integration
+
+A daemon restart interrupted the original Sol/Luna threads after T-439 worker
+commit `4be11a5`. Root checked the actual branch/diff and resumed with
+`/root/budget_recovery_61` (GPT-6.1 Sol medium), which launched a fresh Luna
+medium executor for the remaining T-445 preference/UI/loader/application slice.
+No source work was lost.
+
+Root accepted T-439 final helpers/source/tidy, 34 focused cases and opt-in 181-stem
+timing (5,826 assertions; indexed max-of-five 0.729599 ms versus scan 135.302 ms
+for 32 windows). Integrated as `c03f1ac`; main application/full gates pending.
+
+Backend `2b1c145` is integrated as `9274bdc`. The normal dependency-aware audio
+target rebuild and all 10 resident CTest cases pass, including growth beyond
+the original ceiling and snapshot retention on lowering. Evidence:
+`root-oct7/keysound-audio-worker-dependency-build.log` and
+`root-oct7/keysound-audio-worker-fresh-tests.log` under workspace scratch. An
+earlier `/fast` target failed to refresh callers of the options return-type
+change; its stale-object manual run was interrupted and is not validation
+evidence. Root main build is `root-oct7/stem-budget-backend-main-build.log`.
+
+T-445 is not complete until the remaining setting/startup/live-retry slice and
+its real Options/active-loader regressions are reviewed and integrated.

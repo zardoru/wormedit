@@ -323,7 +323,7 @@ auto waveform_analysis_t::selected_channel_asset(
             const auto selection = selected_bmson_waveform_source(
                 compose_scene_cache, *chart, document.revision,
                 compose_interaction_state->selected_objects.front().id);
-            if (selection)
+            if (selection && stem_lane_for_channel(*chart, selection->channel))
                 selected_channel_waveform_asset = selection->asset;
         }
     }
@@ -443,6 +443,7 @@ auto waveform_analysis_t::wanted_stem_assets(const song_document_t& document,
     if (chart == document.charts.end() || chart->source_family != format_family_t::bmson) return wanted;
     std::unordered_set<std::uint64_t> seen;
     for (const auto* channel : visible_stems) {
+        if (!channel || !stem_lane_for_channel(*chart, channel->id)) continue;
         const auto asset = channel->source_clip.source;
         if (!asset || asset == workspace.transport.audio_asset || asset == selected_channel_asset ||
             !seen.insert(asset.value).second) continue;

@@ -61,6 +61,9 @@ struct stem_pool_fixture_t {
                 .name = "Stem", .source_clip = {.id = clip_id_t{110 + index},
                     .source = asset}, .events = {{.id = object_id_t{120 + index},
                     .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}}}});
+            chart.bgm_source_lanes.push_back({.id = object_id_t{130 + index},
+                .name = "Stem", .source_order = static_cast<std::size_t>(index),
+                .stem_channel = object_id_t{100 + index}});
         }
         document.charts.push_back(std::move(chart));
         auto& stored = document.charts.front().sound_channels;
@@ -220,6 +223,121 @@ void check_oversized_stem_suppression(
     check_audio_worker(!runtime.stem_waveform_analysis(wormedit::asset_id_t{90}));
     check_audio_worker(static_cast<bool>(runtime.stem_waveform_analysis(wormedit::asset_id_t{93})));
     check_audio_worker(runtime.stem_waveform_cache_stats().rejected_results == rejected);
+}
+
+struct mixed_stem_filter_fixture_t {
+    wormedit::audio::decoded_source_registry_t sources;
+    wormedit::song_document_t document;
+    wormedit::workspace_controller_t workspace;
+    wormedit::editor_interaction_state_t interaction;
+    wormedit::sys::compose_scene_cache_t cache;
+    std::vector<const wormedit::sound_channel_t*> channels;
+    std::array<wormedit::asset_id_t, 3> stem_assets{};
+    std::vector<wormedit::asset_id_t> packed_assets;
+};
+
+void append_filter_channel(mixed_stem_filter_fixture_t& fixture,
+                           wormedit::chart_document_t& chart, std::uint64_t index) {
+    using namespace wormedit;
+    const auto asset = asset_id_t{2000 + index};
+    const auto resource = resource_id_t{3000 + index};
+    const auto channel_id = object_id_t{4000 + index};
+    const auto event_id = object_id_t{5000 + index};
+    const bool stem = index < 3;
+    fixture.document.audio_assets.push_back({.id = asset,
+        .source_path = stem ? "silence.ogg" : "missing-packed-" + std::to_string(index) + ".ogg"});
+    fixture.document.resources.push_back({.id = resource, .name = "filter fixture",
+        .asset = asset, .roles = {resource_role_t::sample, resource_role_t::bgm}});
+    const auto row = stem ? std::uint64_t{0} : index - 3;
+    sound_channel_t channel{.id = channel_id, .name = "filter fixture",
+        .source_clip = {.id = clip_id_t{6000 + index}, .source = asset},
+        .events = {{.id = event_id, .position = {measure_id_t{1}, row},
+            .playable = stem}}};
+    chart.sound_channels.push_back(std::move(channel));
+    if (stem) {
+        chart.bgm_source_lanes.push_back({.id = object_id_t{7000 + index},
+            .name = "Stem", .source_order = static_cast<std::size_t>(index),
+            .stem_channel = channel_id});
+        fixture.stem_assets[static_cast<std::size_t>(index)] = asset;
+        return;
+    }
+    fixture.packed_assets.push_back(asset);
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{8000 + index},
+        .position = {measure_id_t{1}, row}, .source_lane = object_id_t{7999},
+        .sound = resource, .sound_channel_event = event_id});
+}
+
+void populate_mixed_stem_filter_fixture(mixed_stem_filter_fixture_t& fixture) {
+    using namespace wormedit;
+    fixture.document.id = song_id_t{700};
+    fixture.document.revision = 1;
+    chart_document_t chart;
+    chart.id = chart_id_t{701};
+    chart.source_family = format_family_t::bmson;
+    chart.measures.push_back({.id = measure_id_t{1}});
+    chart.bgm_source_lanes.push_back({.id = object_id_t{7999}, .name = "BGM", .source_order = 3});
+    for (std::uint64_t index = 0; index < 1003; ++index)
+        append_filter_channel(fixture, chart, index);
+    const auto selected = object_id_t{8003};
+    fixture.document.charts.push_back(std::move(chart));
+    const auto& channels = fixture.document.charts.front().sound_channels;
+    for (std::size_t index = 3; index < channels.size(); ++index)
+        fixture.channels.push_back(&channels[index]);
+    for (std::size_t index = 0; index < 3; ++index)
+        fixture.channels.push_back(&channels[index]);
+    fixture.workspace.active_tab = workspace_tab_t::compose;
+    fixture.workspace.selected_chart = chart_id_t{701};
+    fixture.interaction.chart = chart_id_t{701};
+    fixture.interaction.selected_objects = {{editor_selection_object_kind_t::bgm_event, selected}};
+    std::vector<audio::preview_metronome_source_binding_t> metronome;
+    const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
+    (void)sys::register_audition_sources(fixture.document, base, 1, fixture.sources, metronome);
+}
+
+auto mixed_filter_subset(const mixed_stem_filter_fixture_t& fixture)
+    -> std::vector<const wormedit::sound_channel_t*> {
+    return {fixture.channels.front(), fixture.channels.back(), fixture.channels[1],
+            fixture.channels[fixture.channels.size() - 2]};
+}
+
+auto selected_packed_marker_is_linked(const mixed_stem_filter_fixture_t& fixture) -> bool {
+    const auto& chart = fixture.document.charts.front();
+    if (chart.measures.front().bgm_events.empty() || fixture.channels.size() != 1003) return false;
+    const auto& marker = chart.measures.front().bgm_events.front();
+    return marker.sound_channel_event == fixture.channels.front()->events.front().id &&
+        marker.source_lane == chart.bgm_source_lanes.front().id;
+}
+
+auto mixed_filter_runtime_passes() -> bool {
+    using namespace wormedit;
+    mixed_stem_filter_fixture_t fixture;
+    populate_mixed_stem_filter_fixture(fixture);
+    if (fixture.packed_assets.size() != 1000 || !selected_packed_marker_is_linked(fixture))
+        return false;
+    notification_center_t notifications;
+    sys::runtime::waveform_analysis_t runtime{fixture.sources, nullptr,
+        notification_sink_t{notifications}};
+    runtime.service(fixture.document, fixture.workspace, fixture.cache, &fixture.interaction);
+    if (runtime.channel_waveform_asset() || runtime.channel_waveform_job().busy() ||
+        runtime.channel_waveform_analysis()) return false;
+    runtime.service_compose_stem_waveforms(fixture.document, fixture.workspace, fixture.cache,
+        &fixture.interaction, mixed_filter_subset(fixture));
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (runtime.stem_waveform_cache_stats().entries < fixture.stem_assets.size() &&
+           std::chrono::steady_clock::now() < deadline) {
+        runtime.service_compose_stem_waveforms(fixture.document, fixture.workspace, fixture.cache,
+            &fixture.interaction, fixture.channels);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    const auto stats = runtime.stem_waveform_cache_stats();
+    if (stats.entries != fixture.stem_assets.size() || stats.rejected_results != 0) return false;
+    for (const auto asset : fixture.stem_assets)
+        if (!runtime.stem_waveform_analysis(asset)) return false;
+    for (const auto asset : fixture.packed_assets)
+        if (runtime.stem_waveform_analysis(asset)) return false;
+    notifications.drain_inbox(notification_time_t{});
+    return notifications.size() == 0;
 }
 } // namespace
 
@@ -549,5 +667,10 @@ TEST_CASE("oversized BMSON stem results stay suppressed across viewport changes 
     service_stem_until_terminal(analysis, fixture, oversized_only, asset_id_t{90});
     check_audio_worker(analysis.stem_waveform_cache_stats().rejected_results == 1 &&
                        !analysis.stem_waveform_analysis(asset_id_t{90}));
+}
+
+TEST_CASE("BMSON stem runtime filters packed channels from actual mixed channel requests",
+          "[sys][audio-notification][stem-cache][hybrid-lanes]") {
+    check_audio_worker(mixed_filter_runtime_passes());
 }
 #endif

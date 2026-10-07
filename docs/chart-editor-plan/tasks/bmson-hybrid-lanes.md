@@ -82,15 +82,17 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
 
 ## T-460 Keep packed channels out of the stem pipeline
 
-- **Status:** blocked-on T-458
+- **Status:** done
 - **Outcome:** only channels with a stem lane enter `visible_stem_channels`, stem waveform analysis and slice derivation. On the converted dragback chart, the per-frame stem work is the same as for a chart with no stems.
 - **Read first:** `src/sys/stem_waveform_window.h`, `src/sys/waveform_analysis_runtime.cpp` (`wanted_stem_assets`), `src/sys/bmson_waveform_projection.cpp` (`drawn_stems`).
 - **Files owned:** those three, plus `tests/sys/stem_window_tests.cpp`, `tests/sys/frame_timing_tests.cpp` (production filtered projection and explicit-link fixtures), `tests/sys/audio_notification_tests.cpp` (actual filtered runtime asset requests and explicit-link fixtures), this card.
+- **Execution ownership (2026-10-07):** Sol owns the three production files, stem-window and frame-timing tests, and all build writes. Luna exclusively owns runtime request regressions and explicit-link fixtures in `tests/sys/audio_notification_tests.cpp`.
 - **Steps:**
   1. Filter channels by whether they have a stem lane, in the per-revision stem index from T-439.
   2. Test a chart with 3 stems and 1000 packed channels: the index holds 3 channels, and no analysis is requested for a packed asset.
 - **Invariants:** stem-only charts behave exactly as they do today.
 - **Reject/failure behavior:** none beyond the existing behavior.
+- **Evidence (2026-10-07 isolated worker):** normal core, frame-timing and audio target builds pass. Stem-window group passes 7693 assertions in 10 cases, including 300 visible stems, filtered 3-stem + 1000-packed index positions, conservative error fallbacks, and the 181-stem benchmark. Production waveform projection passes 162074 assertions in 20 cases; mixed projection accepts both the filtered index and an intentionally unfiltered caller list, keeps three stable stem keys, and rejects selected packed slice derivation even with a ready packed source analysis. Actual worker requests pass 95 assertions in 14 cases: three real stems finish, all 1000 packed assets stay outside the cache, selected packed markers start no channel job, and notifications stay empty. Configured clang-tidy adds no new or increased violations; the exact baseline warning-score multiset is unchanged. Generic transport/selected asset waveform code is unchanged and its existing positive worker/projection checks pass.
 - **Verify:** `ctest --test-dir build --output-on-failure -R stem`.
 - **Out of scope:** T-459's per-event waveforms, which use their own path.
 

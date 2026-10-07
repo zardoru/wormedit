@@ -849,10 +849,12 @@ struct channel_projection_fixture_t : envelope_projection_fixture_t {
             {.id = object_id_t{71001}, .source_clip = {clip_id_t{72001}, asset_id_t{7}},
              .events = {{.id = object_id_t{73001}, .position = {measure_id_t{1}, 240},
                          .lane = lane_id_t{3}, .playable = false}}}};
+        chart.bgm_source_lanes = {{.id = object_id_t{3}, .stem_channel = object_id_t{71000}},
+                                  {.id = object_id_t{4}, .stem_channel = object_id_t{71001}}};
         chart.measures.front().bgm_events = {
             {.id = object_id_t{74000}, .position = {measure_id_t{1}, 0}, .source_lane = object_id_t{3},
              .sound_channel_event = object_id_t{73000}},
-            {.id = object_id_t{74001}, .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{3},
+            {.id = object_id_t{74001}, .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{4},
              .sound_channel_event = object_id_t{73001}}};
         workspace.selected_chart = chart.id;
         flattened.view.compose.selected_bmson_bgm_event_id = 74000;
@@ -905,7 +907,7 @@ TEST_CASE("BMSON stems other than the selected one get their own lane rows or a 
     populate_bmson_waveform_projection(context);
     CHECK(fixture.flattened.view.compose.stem_waveform_count == 1);
     const auto& stem = fixture.flattened.view.compose.stem_waveforms[0];
-    CHECK(stem.source_lane_id == 3);
+    CHECK(stem.source_lane_id == 4);
     expect_gpu_work(stem.stem_key == 71001);
     CHECK((!stem.pending && stem.row_count > 0));
     CHECK(stem.row_count <= fixture.flattened.view.compose.viewport_height_pixels + 2);
@@ -965,14 +967,17 @@ namespace {
 void populate_three_hundred_stems(channel_projection_fixture_t& fixture) {
     auto& chart = fixture.history.document.charts.front();
     chart.sound_channels.clear();
+    chart.bgm_source_lanes.clear();
     chart.measures.front().bgm_events.clear();
     for (std::uint64_t index = 0; index < 300; ++index) {
         chart.sound_channels.push_back({.id = object_id_t{71000 + index},
             .source_clip = {clip_id_t{72000 + index}, asset_id_t{7}},
             .events = {{.id = object_id_t{73000 + index}, .position = {measure_id_t{1}, 0},
                         .lane = lane_id_t{3}, .playable = false}}});
+        chart.bgm_source_lanes.push_back({.id = object_id_t{50000 + index},
+            .source_order = index, .stem_channel = object_id_t{71000 + index}});
         chart.measures.front().bgm_events.push_back({.id = object_id_t{74000 + index},
-            .position = {measure_id_t{1}, 0}, .source_lane = object_id_t{3},
+            .position = {measure_id_t{1}, 0}, .source_lane = object_id_t{50000 + index},
             .sound_channel_event = object_id_t{73000 + index}});
     }
     ++fixture.history.document.revision;
@@ -4502,6 +4507,14 @@ TEST_CASE("Lane-key dispatcher cancels held sound sources without placement call
 }
 
 #include "sys/stem_waveform_window.h"
+namespace {
+void link_window_channels(chart_document_t& chart) {
+    chart.source_family = format_family_t::bmson;
+    for (std::size_t index = 0; index < chart.sound_channels.size(); ++index)
+        chart.bgm_source_lanes.push_back({.id = object_id_t{90000 + index},
+            .source_order = index, .stem_channel = chart.sound_channels[index].id});
+}
+} // namespace
 TEST_CASE("stem waveforms cover channels with events near the cursor or audio reaching it",
           "[sys][waveform-projection][bmson][stems]") {
     song_document_t song;
@@ -4517,6 +4530,7 @@ TEST_CASE("stem waveforms cover channels with events near the cursor or audio re
     // 120 BPM is two seconds per measure: the 4 s clip reaches about 3 measures, the 60 s clip 31.
     chart.sound_channels = {channel(1, 2, 1), channel(2, 40, 1), channel(3, 12, 1), channel(4, 80, 1),
                             channel(5, 2, 2), channel(6, 70, 1)};
+    link_window_channels(chart);
     const auto at = [&](std::uint64_t measure) {
         std::vector<std::uint64_t> ids;
         for (const auto* found : sys::visible_stem_channels(song, chart, measure_id_t{measure}, 10))
@@ -4531,4 +4545,76 @@ TEST_CASE("stem waveforms cover channels with events near the cursor or audio re
     CHECK(at(60) == (std::vector<std::uint64_t>{6}));
     // A cursor that is not in the chart behaves like the start.
     CHECK(at(9999) == at(1));
+}
+
+namespace {
+auto configure_mixed_projection(channel_projection_fixture_t& fixture)
+    -> std::shared_ptr<const audio::waveform_analysis_result_t> {
+    const auto path = std::filesystem::path(__FILE__).parent_path().parent_path() /
+                      "fixtures" / "audio" / "keysound-c4.ogg";
+    const auto packed_source = fixture.sources.register_source(
+        {asset_id_t{8}, path, {"waveform:packed", "immutable:v1"}});
+    expect_gpu_work(static_cast<bool>(packed_source));
+    auto packed_asset = fixture.history.document.audio_assets.back();
+    packed_asset.id = asset_id_t{8};
+    fixture.history.document.audio_assets.push_back(std::move(packed_asset));
+    auto& chart = fixture.history.document.charts.front();
+    chart.sound_channels.clear();
+    chart.bgm_source_lanes = {{.id = object_id_t{90000}, .name = "BGM 1"}};
+    chart.measures.front().bgm_events.clear();
+    for (std::uint64_t index = 0; index < 1003; ++index) {
+        const auto stem = index == 1 || index == 500 || index == 1001;
+        const auto lane = object_id_t{stem ? 90001 + index : 90000};
+        chart.sound_channels.push_back({.id = object_id_t{71000 + index},
+            .source_clip = {clip_id_t{72000 + index}, asset_id_t{stem ? 7U : 8U}},
+            .events = {{.id = object_id_t{73000 + index}, .position = {measure_id_t{1}, 0},
+                        .playable = false}}});
+        if (stem) chart.bgm_source_lanes.push_back({.id = lane,
+            .source_order = index, .stem_channel = object_id_t{71000 + index}});
+        chart.measures.front().bgm_events.push_back({.id = object_id_t{74000 + index},
+            .position = {measure_id_t{1}, 0}, .source_lane = lane,
+            .sound_channel_event = object_id_t{73000 + index}});
+    }
+    ++fixture.history.document.revision;
+    fixture.workspace.transport.audio_asset.reset();
+    fixture.flattened.view.compose.selected_bmson_bgm_event_id = 74000;
+    auto packed_analysis = std::make_shared<audio::waveform_analysis_result_t>(*fixture.channel_analysis);
+    packed_analysis->waveform->key.source = packed_source.binding->source;
+    return packed_analysis;
+}
+
+void check_mixed_production_projection(channel_projection_fixture_t& fixture,
+    const std::shared_ptr<const audio::waveform_analysis_result_t>& packed_analysis, bool supply_all) {
+    std::vector<const sound_channel_t*> all;
+    for (const auto& channel : fixture.history.document.charts.front().sound_channels)
+        all.push_back(&channel);
+    std::optional<std::span<const sound_channel_t* const>> visible;
+    if (supply_all) visible = all;
+    std::size_t requests{};
+    const bmson_waveform_projection_context_t context{fixture.flattened, fixture.history,
+        fixture.workspace, &fixture.interaction, fixture.cache, fixture.sources,
+        {std::nullopt, nullptr}, {asset_id_t{8}, packed_analysis}, 1,
+        [&](asset_id_t) { ++requests; return fixture.channel_analysis; }, visible};
+    populate_bmson_waveform_projection(context);
+    INFO("requests=" << requests << " cache entries=" << fixture.cache.stem_waveforms.size()
+         << " projected views=" << fixture.flattened.view.compose.stem_waveform_count);
+    expect_gpu_work(requests == 3 && fixture.cache.stem_waveforms.size() == 3);
+    expect_gpu_work(fixture.flattened.view.compose.stem_waveform_count == 3);
+    expect_gpu_work(fixture.cache.channel_waveform_rows.empty());
+    expect_gpu_work(!fixture.cache.channel_waveform_slices);
+    const std::vector<std::uint64_t> expected{71001, 71500, 72001};
+    std::vector<std::uint64_t> keys;
+    for (std::size_t index = 0; index < fixture.flattened.view.compose.stem_waveform_count; ++index)
+        keys.push_back(fixture.flattened.view.compose.stem_waveforms[index].stem_key);
+    std::ranges::sort(keys);
+    expect_gpu_work(keys == expected);
+}
+} // namespace
+
+TEST_CASE("BMSON production projection excludes one thousand packed channels and selected packed slices",
+          "[sys][waveform-projection][bmson][stems][hybrid-lanes]") {
+    channel_projection_fixture_t fixture;
+    const auto packed_analysis = configure_mixed_projection(fixture);
+    check_mixed_production_projection(fixture, packed_analysis, false);
+    check_mixed_production_projection(fixture, packed_analysis, true);
 }

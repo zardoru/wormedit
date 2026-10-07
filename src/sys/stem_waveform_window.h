@@ -27,10 +27,18 @@ namespace wormedit::sys {
     const auto shown = std::ceil(viewport_height_pixels / pixels_per_measure);
     return static_cast<std::size_t>(std::clamp(shown, 1.0, 64.0)) + 2;
 }
+[[nodiscard]] inline auto stem_lane_for_channel(const chart_document_t& chart, object_id_t channel)
+    -> const bgm_source_lane_t* {
+    if (chart.source_family != format_family_t::bmson) return nullptr;
+    const auto found = std::ranges::find(chart.bgm_source_lanes, std::optional{channel},
+                                       &bgm_source_lane_t::stem_channel);
+    return found == chart.bgm_source_lanes.end() ? nullptr : &*found;
+}
+
 [[nodiscard]] inline auto all_stem_channels( const chart_document_t& chart) -> std::vector<const sound_channel_t*> {
     std::vector<const sound_channel_t*> result;
     for (const auto& channel : chart.sound_channels) {
-        result.push_back(&channel);
+        if (stem_lane_for_channel(chart, channel.id)) result.push_back(&channel);
     }
     return result;
 }
@@ -127,6 +135,7 @@ struct stem_slice_scan_t {
 struct stem_visibility_interval_t { double begin{}, end{}; };
 struct stem_index_channel_t {
     std::uint64_t id{}, source_lane{};
+    std::size_t chart_position{};
     std::vector<stem_visibility_interval_t> intervals;
     std::vector<std::size_t> event_measures;
     bool conservative{};
@@ -243,31 +252,13 @@ inline void build_stem_index(stem_index_t& index, const song_document_t& documen
     const auto chart_end = stem_seconds_at(index.timing, index.measures.total_rows);
     if (!chart_end) return;
     index.built = true;
-    index.channels.reserve(chart.sound_channels.size());
-    std::unordered_map<std::uint64_t, std::pair<std::size_t, std::uint64_t>> lane_by_event;
-    std::size_t encounter_rank{};
-    for (const auto& measure : chart.measures) for (const auto& event : measure.bgm_events) {
-        if (event.sound_channel_event)
-            lane_by_event.try_emplace(event.sound_channel_event->value,
-                std::pair{encounter_rank, event.source_lane.value});
-        ++encounter_rank;
-    }
+    index.channels.reserve(std::min(chart.bgm_source_lanes.size(), chart.sound_channels.size()));
     for (std::size_t i = 0; i < chart.sound_channels.size(); ++i) {
         const auto& channel = chart.sound_channels[i];
-        stem_index_channel_t entry{.id = channel.id.value};
-        const auto linked = std::ranges::find(chart.bgm_source_lanes,
-            std::optional{channel.id}, &bgm_source_lane_t::stem_channel);
-        if (linked != chart.bgm_source_lanes.end()) entry.source_lane = linked->id.value;
-        else {
-            auto earliest_rank = std::numeric_limits<std::size_t>::max();
-            for (const auto& event : channel.events) {
-                const auto lane = lane_by_event.find(event.id.value);
-                if (lane != lane_by_event.end() && lane->second.first < earliest_rank) {
-                    earliest_rank = lane->second.first;
-                    entry.source_lane = lane->second.second;
-                }
-            }
-        }
+        const auto* lane = stem_lane_for_channel(chart, channel.id);
+        if (!lane) continue;
+        stem_index_channel_t entry{.id = channel.id.value, .source_lane = lane->id.value,
+                                   .chart_position = i};
         stem_build_channel_intervals(entry, document, channel, index, *chart_end);
         index.channels.push_back(std::move(entry));
     }
@@ -309,12 +300,19 @@ inline void update_stem_selection(stem_index_t& index, const chart_document_t& c
     if (!stem_index_current(index, document, chart, bindings) ||
         (timing && index.timing_fingerprint != timing->source_fingerprint))
         build_stem_index(index, document, chart, bindings, timing);
-    if (index.channels.size() != chart.sound_channels.size()) return all_stem_channels(chart);
+    if (!index.built) return all_stem_channels(chart);
     if (!index.selection_valid || index.cursor != cursor || index.window != window)
         update_stem_selection(index, chart, cursor, window);
     std::vector<const sound_channel_t*> result;
     result.reserve(index.selected.size());
-    for (const auto i : index.selected) if (i < chart.sound_channels.size()) result.push_back(&chart.sound_channels[i]);
+    for (const auto i : index.selected) {
+        if (i >= index.channels.size()) return all_stem_channels(chart);
+        const auto& entry = index.channels[i];
+        if (entry.chart_position >= chart.sound_channels.size() ||
+            chart.sound_channels[entry.chart_position].id.value != entry.id)
+            return all_stem_channels(chart);
+        result.push_back(&chart.sound_channels[entry.chart_position]);
+    }
     return result;
 }
 
@@ -358,6 +356,7 @@ inline void update_stem_selection(stem_index_t& index, const chart_document_t& c
     const auto chart_end = stem_seconds_at(clock, measures.total_rows).value_or(*window_end);
     std::vector<const sound_channel_t*> visible;
     for (const auto& channel : chart.sound_channels) {
+        if (!stem_lane_for_channel(chart, channel.id)) continue;
         const auto duration = stem_duration_seconds(document, channel, bindings);
         const auto inside =
             stem_channel_reaches_window(channel, index_of, measures, clock, first, last,

@@ -152,9 +152,12 @@ constexpr std::size_t maximum_stem_cuts = 4096;
 // The BGM lane explicitly linked to this channel, retained by the per-revision index.
 auto indexed_stem_lane(const stem_index_t& index, const chart_document_t& chart,
                        const sound_channel_t& channel) -> std::uint64_t {
-    if (chart.sound_channels.empty()) return 0;
-    const auto position = static_cast<std::size_t>(&channel - chart.sound_channels.data());
-    return position < index.channels.size() ? index.channels[position].source_lane : 0;
+    const auto* lane = stem_lane_for_channel(chart, channel.id);
+    if (!lane) return 0;
+    const auto entry = std::ranges::find(index.channels, channel.id.value,
+                                       &stem_index_channel_t::id);
+    return entry != index.channels.end() && entry->source_lane == lane->id.value
+               ? entry->source_lane : lane->id.value;
 }
 
 auto stem_ready(const bmson_waveform_projection_context_t& context) -> bool {
@@ -313,11 +316,13 @@ auto drawn_stems(const bmson_waveform_projection_context_t& context, const chart
             context.audition_sources.bindings(), timing);
         visible = fallback_visible;
     }
-    for (const auto* channel : visible)
-        drawn.push_back({channel, indexed_stem_lane(context.cache.stem_index, chart, *channel), selected && selected->channel == channel->id});
+    for (const auto* channel : visible) {
+        if (channel && stem_lane_for_channel(chart, channel->id))
+            drawn.push_back({channel, indexed_stem_lane(context.cache.stem_index, chart, *channel), selected && selected->channel == channel->id});
+    }
     if (selected && std::ranges::none_of(drawn, [](const auto& item) { return item.selected; })) {
         const auto found = std::ranges::find(chart.sound_channels, selected->channel, &sound_channel_t::id);
-        if (found != chart.sound_channels.end()) drawn.push_back({&*found, indexed_stem_lane(context.cache.stem_index, chart, *found), true});
+        if (found != chart.sound_channels.end() && stem_lane_for_channel(chart, found->id)) drawn.push_back({&*found, indexed_stem_lane(context.cache.stem_index, chart, *found), true});
     }
     return drawn;
 }
@@ -401,7 +406,8 @@ void populate_bmson_waveform_projection(const bmson_waveform_projection_context_
     const auto channel = selection ? std::ranges::find(chart->sound_channels, selection->channel,
                                                        &wormedit::sound_channel_t::id)
                                    : chart->sound_channels.end();
-    if (!selection || channel == chart->sound_channels.end())
+    if (!selection || channel == chart->sound_channels.end() ||
+        !stem_lane_for_channel(*chart, channel->id))
         return;
 
     const auto asset = selection->asset;

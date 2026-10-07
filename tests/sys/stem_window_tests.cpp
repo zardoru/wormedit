@@ -6,6 +6,17 @@
 
 using namespace wormedit;
 
+namespace {
+void link_stem_fixture(chart_document_t& chart) {
+    chart.source_family = format_family_t::bmson;
+    chart.bgm_source_lanes.clear();
+    for (std::size_t index = 0; index < chart.sound_channels.size(); ++index) {
+        chart.bgm_source_lanes.push_back({.id = object_id_t{10000 + index},
+            .source_order = index, .stem_channel = chart.sound_channels[index].id});
+    }
+}
+} // namespace
+
 TEST_CASE("single-event BMSON stems remain visible for decoded audio duration",
           "[sys][stem][bmson]") {
     song_document_t song;
@@ -29,6 +40,7 @@ TEST_CASE("single-event BMSON stems remain visible for decoded audio duration",
                             .source_frame_count = 6'880'000});
     }
 
+    link_stem_fixture(chart);
     for (const auto measure : {1U, 20U, 40U}) {
         const auto visible =
             sys::visible_stem_channels(song, chart, measure_id_t{measure}, 2, bindings);
@@ -68,6 +80,7 @@ TEST_CASE("stem windows use BPM changes, stops, clip offsets, and actual source 
 
     // The stop at measure 2 puts its event boundary at 12 seconds. The 11-second
     // source has ended, and the large authored clip end cannot exceed actual geometry.
+    link_stem_fixture(chart);
     const auto after_stop = sys::visible_stem_channels(song, chart, measure_id_t{2}, 0);
     CHECK(after_stop.empty());
     chart.sound_channels = {
@@ -75,6 +88,7 @@ TEST_CASE("stem windows use BPM changes, stops, clip offsets, and actual source 
          .source_clip = {.source = asset_id_t{1}, .end_frame = 1},
          .events = {{.id = object_id_t{204}, .position = {measure_id_t{1}, 0}},
                     {.id = object_id_t{205}, .position = {measure_id_t{20}, 0}}}}};
+    link_stem_fixture(chart);
     CHECK(sys::visible_stem_channels(song, chart, measure_id_t{10}, 0).empty());
     CHECK(sys::visible_stem_channels(song, chart, measure_id_t{20}, 0).size() == 1);
     // Unknown future audio keeps its placeholder only after the event can reach the window.
@@ -82,6 +96,7 @@ TEST_CASE("stem windows use BPM changes, stops, clip offsets, and actual source 
         {.id = object_id_t{102},
          .source_clip = {.source = asset_id_t{99}},
          .events = {{.id = object_id_t{202}, .position = {measure_id_t{40}, 0}}}}};
+    link_stem_fixture(chart);
     CHECK(sys::visible_stem_channels(song, chart, measure_id_t{1}, 2).empty());
     CHECK(sys::visible_stem_channels(song, chart, measure_id_t{40}, 2).size() == 1);
 }
@@ -107,6 +122,7 @@ TEST_CASE("a continuation consumes the remaining audio from its restart",
          .events = {
              {.id = object_id_t{202}, .position = {measure_id_t{60}, 0}},
              {.id = object_id_t{203}, .position = {measure_id_t{71}, 0}, .continuation = true}}}};
+    link_stem_fixture(chart);
     const auto timing = build_timing_index(chart);
     REQUIRE(timing);
     const auto near_end =
@@ -138,8 +154,9 @@ auto make_indexed_stem_fixture() -> std::pair<song_document_t, std::vector<audio
             .source_clip = {.source = asset_id_t{1}},
             .events = std::move(events)});
     }
-    chart.bgm_source_lanes = {{.id = object_id_t{9100}, .source_order = 1,
-                               .stem_channel = object_id_t{1001}}};
+    link_stem_fixture(chart);
+    chart.bgm_source_lanes[0].id = object_id_t{9101};
+    chart.bgm_source_lanes[1].id = object_id_t{9100};
     chart.warps = {{.id = object_id_t{9300}, .span = {
         .begin = {measure_id_t{10}, 0}, .end = {measure_id_t{11}, 0}}}};
     chart.measures.front().bgm_events.push_back({.id = object_id_t{9200},
@@ -213,6 +230,7 @@ void check_revision_and_document_invalidation(sys::stem_index_t& index, song_doc
                                .beats_per_minute = {120, 1}}};
     replacement_chart.sound_channels = {{.id = object_id_t{3000}, .events = {
         {.id = object_id_t{3001}, .position = {measure_id_t{1}, 0}}}}};
+    link_stem_fixture(replacement_chart);
     const auto result = sys::indexed_visible_stem_channels(index, replacement,
         replacement_chart, measure_id_t{1}, 0, {});
     REQUIRE(result.size() == 1);
@@ -277,7 +295,7 @@ TEST_CASE("indexed stem visibility matches the compatibility scan and reuses its
     check_revision_and_document_invalidation(index, song, chart, bindings);
 }
 
-TEST_CASE("indexed stem lane fallback follows chart encounter order",
+TEST_CASE("indexed stem lane uses its explicit link despite marker encounter order",
           "[sys][stem][index]") {
     auto [song, bindings] = make_indexed_stem_fixture();
     auto& chart = song.charts.front();
@@ -290,7 +308,7 @@ TEST_CASE("indexed stem lane fallback follows chart encounter order",
     chart.measures[1].bgm_events = {{.id = object_id_t{9202},
         .position = {measure_id_t{2}, 0}, .source_lane = object_id_t{9103},
         .sound_channel_event = object_id_t{2000}}};
-    chart.bgm_source_lanes.clear();
+    chart.bgm_source_lanes[0].id = object_id_t{9102};
 
     sys::stem_index_t index;
     static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart,
@@ -310,6 +328,7 @@ TEST_CASE("expired continuation events do not make a stem visible again",
     chart.sound_channels = {{.id = object_id_t{1}, .source_clip = {.source = asset_id_t{1}},
         .events = {{.id = object_id_t{2}, .position = {measure_id_t{1}, 0}},
                    {.id = object_id_t{3}, .position = {measure_id_t{20}, 0}, .continuation = true}}}};
+    link_stem_fixture(chart);
     const auto expected = sys::visible_stem_channels(song, chart, measure_id_t{20}, 0);
     sys::stem_index_t index;
     const auto actual = sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{20}, 0, {});
@@ -348,9 +367,66 @@ TEST_CASE("indexed and compatibility windows retain all 300 visible channels",
     for (std::uint64_t id = 0; id < 300; ++id)
         chart.sound_channels.push_back({.id = object_id_t{1000 + id},
             .events = {{.id = object_id_t{2000 + id}, .position = {measure_id_t{1}, 0}}}});
+    link_stem_fixture(chart);
     const std::vector<audio::decoded_source_binding_t> bindings;
     CHECK(sys::all_stem_channels(chart).size() == 300);
     CHECK(sys::visible_stem_channels(song, chart, measure_id_t{1}, 2, bindings).size() == 300);
     sys::stem_index_t index;
     CHECK(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{1}, 2, bindings).size() == 300);
+}
+
+namespace {
+auto mixed_stem_window_fixture() -> song_document_t {
+    song_document_t song;
+    auto& chart = song.charts.emplace_back();
+    chart.source_family = format_family_t::bmson;
+    chart.divisions_per_standard_measure = 960;
+    chart.measures.push_back({.id = measure_id_t{1}});
+    chart.bpms.push_back({.id = object_id_t{5000}, .position = {measure_id_t{1}, 0},
+                         .beats_per_minute = {120, 1}});
+    for (std::uint64_t index = 0; index < 1003; ++index) {
+        chart.sound_channels.push_back({.id = object_id_t{1000 + index},
+            .events = {{.id = object_id_t{3000 + index}, .position = {measure_id_t{1}, 0}}}});
+        if (index == 1 || index == 500 || index == 1001)
+            chart.bgm_source_lanes.push_back({.id = object_id_t{6000 + index},
+                .source_order = index, .stem_channel = object_id_t{1000 + index}});
+    }
+    chart.bgm_source_lanes.push_back({.id = object_id_t{9000}, .name = "BGM 1"});
+    return song;
+}
+
+void check_mixed_stem_ids(const std::vector<const sound_channel_t*>& channels) {
+    REQUIRE(channels.size() == 3);
+    CHECK(channels[0]->id == object_id_t{1001});
+    CHECK(channels[1]->id == object_id_t{1500});
+    CHECK(channels[2]->id == object_id_t{2001});
+}
+
+void check_filtered_index_positions(const sys::stem_index_t& index) {
+    REQUIRE(index.channels.size() == 3);
+    CHECK(index.channels[0].chart_position == 1);
+    CHECK(index.channels[1].chart_position == 500);
+    CHECK(index.channels[2].chart_position == 1001);
+}
+} // namespace
+
+TEST_CASE("hybrid stem index holds only three linked channels among one thousand packed channels",
+          "[sys][stem][bmson][hybrid-lanes]") {
+    auto song = mixed_stem_window_fixture();
+    auto& chart = song.charts.front();
+    sys::stem_index_t index;
+    check_mixed_stem_ids(sys::all_stem_channels(chart));
+    check_mixed_stem_ids(sys::visible_stem_channels(song, chart, measure_id_t{1}, 2));
+    check_mixed_stem_ids(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{1}, 2, {}));
+    check_filtered_index_positions(index);
+}
+
+TEST_CASE("hybrid stem compatibility fallbacks exclude every packed channel",
+          "[sys][stem][bmson][hybrid-lanes]") {
+    auto song = mixed_stem_window_fixture();
+    auto& chart = song.charts.front();
+    chart.measures.clear();
+    sys::stem_index_t index;
+    check_mixed_stem_ids(sys::visible_stem_channels(song, chart, measure_id_t{1}, 2));
+    check_mixed_stem_ids(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{1}, 2, {}));
 }

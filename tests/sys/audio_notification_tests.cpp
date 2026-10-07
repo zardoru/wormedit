@@ -7,6 +7,9 @@
 #include <chrono>
 #include <thread>
 #include <source_location>
+#include <array>
+#include <memory>
+#include <vector>
 
 namespace {
 void check_audio_worker(bool value,
@@ -32,6 +35,191 @@ void wait_for_loader(wormedit::sys::resident_sample_loader_t& loader) {
     while (loader.progress().running && std::chrono::steady_clock::now() < deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     REQUIRE_FALSE(loader.progress().running);
+}
+
+struct stem_pool_fixture_t {
+    wormedit::audio::decoded_source_registry_t sources;
+    wormedit::song_document_t document;
+    wormedit::workspace_controller_t workspace;
+    wormedit::editor_interaction_state_t interaction;
+    wormedit::sys::compose_scene_cache_t cache;
+    std::vector<const wormedit::sound_channel_t*> channels;
+
+    stem_pool_fixture_t() {
+        using namespace wormedit;
+        document.id = song_id_t{80};
+        document.revision = 1;
+        chart_document_t chart;
+        chart.id = chart_id_t{81};
+        chart.source_family = format_family_t::bmson;
+        chart.measures.push_back({.id = measure_id_t{1}});
+        for (std::uint64_t index = 0; index < 4; ++index) {
+            const auto asset = asset_id_t{90 + index};
+            document.audio_assets.push_back({.id = asset,
+                .source_path = index == 3 ? "missing-stem-test.ogg" : "silence.ogg"});
+            chart.sound_channels.push_back({.id = object_id_t{100 + index},
+                .name = "Stem", .source_clip = {.id = clip_id_t{110 + index},
+                    .source = asset}, .events = {{.id = object_id_t{120 + index},
+                    .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}}}});
+        }
+        document.charts.push_back(std::move(chart));
+        auto& stored = document.charts.front().sound_channels;
+        for (const auto& channel : stored) channels.push_back(&channel);
+        workspace.active_tab = workspace_tab_t::compose;
+        workspace.selected_chart = chart_id_t{81};
+        interaction.chart = chart_id_t{81};
+        std::vector<audio::preview_metronome_source_binding_t> metronome;
+        const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
+        check_audio_worker(sys::register_audition_sources(document, base, 1, sources, metronome) == 1);
+    }
+
+    auto select(std::initializer_list<std::size_t> indices)
+        -> std::vector<const wormedit::sound_channel_t*> {
+        std::vector<const wormedit::sound_channel_t*> result;
+        for (const auto index : indices) result.push_back(channels.at(index));
+        return result;
+    }
+};
+
+void service_stem_pool(wormedit::sys::runtime::waveform_analysis_t& runtime,
+                       stem_pool_fixture_t& fixture,
+                       const std::vector<const wormedit::sound_channel_t*>& visible) {
+    runtime.service_compose_stem_waveforms(fixture.document, fixture.workspace,
+        fixture.cache, &fixture.interaction, visible);
+}
+
+void service_stem_until_terminal(wormedit::sys::runtime::waveform_analysis_t& runtime,
+                                 stem_pool_fixture_t& fixture,
+                                 const std::vector<const wormedit::sound_channel_t*>& visible,
+                                 wormedit::asset_id_t target) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    const auto rejected_before = runtime.stem_waveform_cache_stats().rejected_results;
+    while (std::chrono::steady_clock::now() < deadline) {
+        service_stem_pool(runtime, fixture, visible);
+        const auto stats = runtime.stem_waveform_cache_stats();
+        if (runtime.stem_waveform_analysis(target) || stats.rejected_results > rejected_before) return;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    REQUIRE((runtime.stem_waveform_analysis(target) ||
+             runtime.stem_waveform_cache_stats().rejected_results > rejected_before));
+}
+
+auto one_stem_charge(stem_pool_fixture_t& fixture) -> std::size_t {
+    wormedit::sys::runtime::waveform_analysis_t runtime{fixture.sources};
+    const auto visible = fixture.select({0});
+    service_stem_until_terminal(runtime, fixture, visible, wormedit::asset_id_t{90});
+    const auto stats = runtime.stem_waveform_cache_stats();
+    REQUIRE(stats.entries == 1);
+    return stats.resident_bytes;
+}
+
+auto one_stem_charge_for(stem_pool_fixture_t& fixture, std::size_t channel_index)
+    -> std::size_t {
+    wormedit::sys::runtime::waveform_analysis_t runtime{fixture.sources};
+    const auto visible = fixture.select({channel_index});
+    service_stem_until_terminal(runtime, fixture, visible,
+        wormedit::asset_id_t{90 + channel_index});
+    const auto stats = runtime.stem_waveform_cache_stats();
+    REQUIRE(stats.entries == 1);
+    return stats.resident_bytes;
+}
+
+void service_stems_until_entries(wormedit::sys::runtime::waveform_analysis_t& runtime,
+                                 stem_pool_fixture_t& fixture,
+                                 const std::vector<const wormedit::sound_channel_t*>& visible,
+                                 std::size_t expected_entries) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (std::chrono::steady_clock::now() < deadline) {
+        service_stem_pool(runtime, fixture, visible);
+        if (runtime.stem_waveform_cache_stats().entries >= expected_entries) return;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    REQUIRE(runtime.stem_waveform_cache_stats().entries >= expected_entries);
+}
+
+auto waveform_capacity_bytes(const wormedit::audio::waveform_analysis_result_t& analysis)
+    -> std::size_t {
+    if (!analysis.waveform) return 0;
+    const auto& waveform = *analysis.waveform;
+    auto bytes = sizeof(analysis) +
+        waveform.bins.capacity() * sizeof(wormedit::audio::waveform_bin_t) +
+        waveform.coarser_levels.capacity() * sizeof(wormedit::audio::waveform_level_t) +
+        waveform.key.source.asset_identity.capacity() +
+        waveform.key.source.source_identity.capacity() + 2;
+    for (const auto& level : waveform.coarser_levels)
+        bytes += level.bins.capacity() * sizeof(wormedit::audio::waveform_bin_t);
+    return bytes;
+}
+
+void service_stem_frames(wormedit::sys::runtime::waveform_analysis_t& runtime,
+                         stem_pool_fixture_t& fixture,
+                         const std::vector<const wormedit::sound_channel_t*>& visible,
+                         std::size_t count) {
+    for (std::size_t index = 0; index < count; ++index)
+    {
+        service_stem_pool(runtime, fixture, visible);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+}
+
+void check_retained_stem(const wormedit::sys::runtime::waveform_analysis_t& runtime,
+                         const std::shared_ptr<const wormedit::audio::waveform_analysis_result_t>& held,
+                         const wormedit::sys::runtime::stem_waveform_cache_stats_t& before) {
+    check_audio_worker(runtime.stem_waveform_analysis(wormedit::asset_id_t{90}) == held);
+    check_audio_worker(runtime.stem_waveform_cache_stats().resident_bytes == before.resident_bytes);
+}
+
+void check_stem_budget_charge(
+    const std::shared_ptr<const wormedit::audio::waveform_analysis_result_t>& analysis,
+    const wormedit::sys::runtime::stem_waveform_cache_stats_t& stats) {
+    check_audio_worker(stats.entries == 1);
+    check_audio_worker(stats.resident_bytes >= waveform_capacity_bytes(*analysis));
+    check_audio_worker(stats.resident_bytes >
+        analysis->waveform->bins.size() * sizeof(wormedit::audio::waveform_bin_t));
+    check_audio_worker(stats.backing_cached_bytes <= 16U * 1024U * 1024U);
+}
+
+void check_reset_kept_external_snapshot(
+    wormedit::sys::runtime::waveform_analysis_t& runtime,
+    const std::shared_ptr<const wormedit::audio::waveform_analysis_result_t>& held) {
+    runtime.reset_sources();
+    check_audio_worker(runtime.stem_waveform_cache_stats().entries == 0);
+    check_audio_worker(runtime.stem_waveform_cache_stats().resident_bytes == 0);
+    check_audio_worker(held->waveform.has_value());
+}
+
+void check_lru_eviction(
+    const wormedit::sys::runtime::waveform_analysis_t& runtime, std::size_t budget,
+    const std::shared_ptr<const wormedit::audio::waveform_analysis_result_t>& retained,
+    const std::shared_ptr<const wormedit::audio::waveform_analysis_result_t>& evicted_snapshot) {
+    const auto stats = runtime.stem_waveform_cache_stats();
+    check_audio_worker(stats.entries == 2);
+    check_audio_worker(stats.resident_bytes <= budget);
+    check_audio_worker(stats.evictions == 1);
+    check_audio_worker(runtime.stem_waveform_analysis(wormedit::asset_id_t{90}) == retained);
+    check_audio_worker(!runtime.stem_waveform_analysis(wormedit::asset_id_t{91}));
+    check_audio_worker(evicted_snapshot->waveform.has_value());
+    check_audio_worker(static_cast<bool>(runtime.stem_waveform_analysis(wormedit::asset_id_t{92})));
+}
+
+void check_visible_pressure(
+    const wormedit::sys::runtime::waveform_analysis_t& runtime, std::size_t budget,
+    const wormedit::sys::runtime::stem_waveform_cache_stats_t& pressured,
+    const std::array<std::shared_ptr<const wormedit::audio::waveform_analysis_result_t>, 2>& held) {
+    const auto stats = runtime.stem_waveform_cache_stats();
+    check_audio_worker(pressured.rejected_results > 0);
+    check_audio_worker(stats.rejected_results == pressured.rejected_results);
+    check_audio_worker(stats.entries == 2);
+    check_audio_worker(stats.resident_bytes <= budget);
+    check_audio_worker(runtime.stem_waveform_analysis(wormedit::asset_id_t{90}) == held[0]);
+    check_audio_worker(runtime.stem_waveform_analysis(wormedit::asset_id_t{91}) == held[1]);
+}
+
+void check_oversized_stem_suppression(
+    const wormedit::sys::runtime::waveform_analysis_t& runtime, std::size_t rejected) {
+    check_audio_worker(!runtime.stem_waveform_analysis(wormedit::asset_id_t{90}));
+    check_audio_worker(static_cast<bool>(runtime.stem_waveform_analysis(wormedit::asset_id_t{93})));
+    check_audio_worker(runtime.stem_waveform_cache_stats().rejected_results == rejected);
 }
 } // namespace
 
@@ -259,5 +447,107 @@ TEST_CASE("Pending source probing completes before waveform analysis without a f
     check_audio_worker(runtime.waveform_analysis() && runtime.waveform_analysis()->waveform.has_value());
     center.drain_inbox(notification_time_t{});
     check_audio_worker(center.statistics().posted == 0);
+}
+
+TEST_CASE("BMSON stem analyses retain vector capacity and reuse snapshots across viewport exits",
+          "[sys][audio-notification][stem-cache]") {
+    using namespace wormedit;
+    stem_pool_fixture_t fixture;
+    sys::runtime::waveform_analysis_t analysis{fixture.sources};
+    const auto visible = fixture.select({0});
+    service_stem_until_terminal(analysis, fixture, visible, asset_id_t{90});
+    const auto first = analysis.stem_waveform_analysis(asset_id_t{90});
+    REQUIRE(first);
+    REQUIRE(first->waveform);
+    const auto stats = analysis.stem_waveform_cache_stats();
+    check_stem_budget_charge(first, stats);
+
+    const std::vector<const sound_channel_t*> offscreen;
+    service_stem_pool(analysis, fixture, offscreen);
+    service_stem_pool(analysis, fixture, visible);
+    check_retained_stem(analysis, first, stats);
+    check_reset_kept_external_snapshot(analysis, first);
+}
+
+TEST_CASE("BMSON stem cache evicts the least recently viewed offscreen result",
+          "[sys][audio-notification][stem-cache]") {
+    using namespace wormedit;
+    stem_pool_fixture_t fixture;
+    const auto entry_bytes = one_stem_charge(fixture);
+    const auto budget = entry_bytes * 2;
+    sys::runtime::waveform_analysis_t analysis{fixture.sources, nullptr, std::nullopt, budget};
+    const auto first_two = fixture.select({0, 1});
+    service_stems_until_entries(analysis, fixture, first_two, 2);
+    const auto first = analysis.stem_waveform_analysis(asset_id_t{90});
+    const auto least_recent = analysis.stem_waveform_analysis(asset_id_t{91});
+    REQUIRE(first);
+    REQUIRE(least_recent);
+
+    const auto touch_first = fixture.select({0});
+    service_stem_pool(analysis, fixture, touch_first);
+    const auto third = fixture.select({2});
+    service_stem_until_terminal(analysis, fixture, third, asset_id_t{92});
+    check_lru_eviction(analysis, budget, first, least_recent);
+}
+
+TEST_CASE("BMSON stem cache protects visible analyses and bounds same-window rejection retries",
+          "[sys][audio-notification][stem-cache]") {
+    using namespace wormedit;
+    stem_pool_fixture_t fixture;
+    const auto entry_bytes = one_stem_charge(fixture);
+    const auto budget = entry_bytes * 2;
+    sys::runtime::waveform_analysis_t analysis{fixture.sources, nullptr, std::nullopt, budget};
+    const auto first_two = fixture.select({0, 1});
+    service_stems_until_entries(analysis, fixture, first_two, 2);
+    const std::array retained{analysis.stem_waveform_analysis(asset_id_t{90}),
+                              analysis.stem_waveform_analysis(asset_id_t{91})};
+    REQUIRE(retained[0]);
+    REQUIRE(retained[1]);
+    const auto all_visible = fixture.select({0, 1, 2});
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (analysis.stem_waveform_cache_stats().rejected_results == 0 &&
+           std::chrono::steady_clock::now() < deadline) {
+        service_stem_pool(analysis, fixture, all_visible);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    const auto pressured = analysis.stem_waveform_cache_stats();
+    REQUIRE(pressured.rejected_results > 0);
+    service_stem_frames(analysis, fixture, all_visible, 20);
+    check_visible_pressure(analysis, budget, pressured, retained);
+
+    const auto retry_visible = fixture.select({2});
+    service_stem_until_terminal(analysis, fixture, retry_visible, asset_id_t{92});
+    check_audio_worker(static_cast<bool>(analysis.stem_waveform_analysis(asset_id_t{92})) &&
+                       analysis.stem_waveform_cache_stats().resident_bytes <= budget);
+}
+
+TEST_CASE("oversized BMSON stem results stay suppressed across viewport changes until reset",
+          "[sys][audio-notification][stem-cache]") {
+    using namespace wormedit;
+    stem_pool_fixture_t fixture;
+    const auto normal_bytes = one_stem_charge_for(fixture, 0);
+    const auto unavailable_bytes = one_stem_charge_for(fixture, 3);
+    REQUIRE(unavailable_bytes < normal_bytes);
+    sys::runtime::waveform_analysis_t analysis{fixture.sources, nullptr, std::nullopt,
+                                          unavailable_bytes};
+    const auto oversized_and_small = fixture.select({0, 3});
+    service_stem_until_terminal(analysis, fixture, oversized_and_small, asset_id_t{90});
+    service_stem_until_terminal(analysis, fixture, oversized_and_small, asset_id_t{93});
+    const auto rejected = analysis.stem_waveform_cache_stats().rejected_results;
+    REQUIRE(rejected == 1);
+    check_oversized_stem_suppression(analysis, rejected);
+
+    const auto oversized_only = fixture.select({0});
+    service_stem_frames(analysis, fixture, oversized_only, 8);
+    service_stem_pool(analysis, fixture, oversized_and_small);
+    service_stem_frames(analysis, fixture, oversized_and_small, 8);
+    check_oversized_stem_suppression(analysis, rejected);
+
+    analysis.reset_sources();
+    check_audio_worker(analysis.stem_waveform_cache_stats().entries == 0 &&
+                       analysis.stem_waveform_cache_stats().resident_bytes == 0);
+    service_stem_until_terminal(analysis, fixture, oversized_only, asset_id_t{90});
+    check_audio_worker(analysis.stem_waveform_cache_stats().rejected_results == 1 &&
+                       !analysis.stem_waveform_analysis(asset_id_t{90}));
 }
 #endif

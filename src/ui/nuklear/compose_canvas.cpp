@@ -941,7 +941,8 @@ static void draw_compose_scene_background(const ComposePaintContext& paint,
 
 static auto draw_compose_envelope_texture(const ComposePaintContext& paint,
         const WormUiComposeWaveformRowView* source, size_t count, float center, float half_width,
-        size_t slot, nk_color rms, nk_color peak, bool joined, uint64_t lane_key = 0) -> bool {
+        size_t slot, nk_color rms, nk_color peak, bool joined, uint64_t lane_key = 0,
+        std::optional<uint64_t> stem_key = std::nullopt) -> bool {
     const auto& view = *paint.view;
     const auto y_scale = paint.viewport.h / static_cast<float>(view.viewport_height_pixels);
     if (!std::isfinite(y_scale) || y_scale <= 0) return false;
@@ -960,12 +961,18 @@ static auto draw_compose_envelope_texture(const ComposePaintContext& paint,
     }
     auto key = view.document_revision ^ (view.project_id * 1099511628211ULL);
     key ^= view.chart_id * 1469598103934665603ULL;
-    key ^= view.selected_audio_asset_id * 1099511628211ULL;
-    key ^= view.channel_waveform_source_lane_id * static_cast<uint64_t>(slot);
+    if (!stem_key) {
+        key ^= view.selected_audio_asset_id * 1099511628211ULL;
+        key ^= view.channel_waveform_source_lane_id * static_cast<uint64_t>(slot);
+    }
     key ^= lane_key * 0x9E3779B97F4A7C15ULL;
     key ^= std::bit_cast<uint64_t>(view.pixels_per_standard_measure);
     key ^= std::bit_cast<uint64_t>(view.waveform_audio_offset_numerator);
     key ^= view.waveform_audio_offset_denominator;
+    if (stem_key)
+        return paint_field(paint.context).stem_envelope(*stem_key, 6, rows,
+            {center - half_width, paint.viewport.y, half_width * 2, paint.viewport.h}, origin, key,
+            {field_color(rms), field_color(peak), joined}, y_scale);
     return paint_field(paint.context).envelope(slot, 6, rows,
         {center - half_width, paint.viewport.y, half_width * 2, paint.viewport.h}, origin, key,
         {field_color(rms), field_color(peak), joined}, y_scale);
@@ -1078,8 +1085,7 @@ static auto compose_stem_lane_rect(const ComposePaintContext& paint, uint64_t la
 }
 
 // One stem piece: the waveform of the slices that sit in one lane.
-static void draw_compose_stem_piece(const ComposePaintContext& paint, const WormUiComposeStemWaveformView& stem,
-                                    size_t index) {
+static void draw_compose_stem_piece(const ComposePaintContext& paint, const WormUiComposeStemWaveformView& stem) {
     const auto rect = compose_stem_lane_rect(paint, stem.source_lane_id);
     if (!rect) return;
     if (stem.pending || stem.row_count == 0) {
@@ -1088,10 +1094,9 @@ static void draw_compose_stem_piece(const ComposePaintContext& paint, const Worm
     }
     const auto center = rect->x + rect->w * 0.5f;
     const auto half_width = rect->w * 0.43f;
-    // Only the first 64 pieces get an envelope texture; the rest draw as plain lines.
-    if (index < 64 && draw_compose_envelope_texture(paint, stem.rows, stem.row_count, center, half_width,
-            2 + index, nk_rgba(87, 157, 196, 96), nk_rgba(146, 230, 251, 190), true,
-            stem.source_lane_id)) return;
+    if (draw_compose_envelope_texture(paint, stem.rows, stem.row_count, center, half_width,
+            0, nk_rgba(87, 157, 196, 96), nk_rgba(146, 230, 251, 190), true,
+            stem.source_lane_id, stem.stem_key)) return;
     for (size_t row_index = 0; row_index < stem.row_count; ++row_index) {
         const auto& row = stem.rows[row_index];
         if (!finite_envelope_row(row)) continue;
@@ -1146,7 +1151,7 @@ static void draw_compose_stem_cuts(const ComposePaintContext& paint) {
 static void draw_compose_stem_waveforms(const ComposePaintContext& paint) {
     const auto& view = *paint.view;
     for (size_t index = 0; index < view.stem_waveform_count; ++index)
-        draw_compose_stem_piece(paint, view.stem_waveforms[index], index);
+        draw_compose_stem_piece(paint, view.stem_waveforms[index]);
     draw_compose_stem_cuts(paint);
 }
 
@@ -1181,8 +1186,48 @@ static void draw_compose_differences(const ComposePaintContext& paint) {
     }
 }
 
+static void reserve_compose_song_envelope(const ComposePaintContext& paint) {
+    const auto& view = *paint.view;
+    if (view.waveform_row_count == 0 || view.waveform_rows[0].sample_point) return;
+    const auto scale = paint.viewport.w / static_cast<float>(view.viewport_width_pixels);
+    const auto left = paint.viewport.x + static_cast<float>(view.playable_field_left_pixels) * scale;
+    const auto right = paint.viewport.x + static_cast<float>(view.playable_field_right_pixels) * scale;
+    const auto center = (left + right) * 0.5f;
+    const auto half_width = std::max(0.0f, (right - left) * 0.47f);
+    const auto y_scale = paint.viewport.h / static_cast<float>(view.viewport_height_pixels);
+    paint_field(paint.context).reserve_envelope(0,
+        {center - half_width, paint.viewport.y, half_width * 2, paint.viewport.h}, y_scale);
+}
+
+static void reserve_compose_channel_envelope(const ComposePaintContext& paint) {
+    const auto& view = *paint.view;
+    if (view.channel_waveform_row_count == 0) return;
+    const auto rect = compose_stem_lane_rect(paint, view.channel_waveform_source_lane_id);
+    if (!rect) return;
+    const auto y_scale = paint.viewport.h / static_cast<float>(view.viewport_height_pixels);
+    const auto center = rect->x + rect->w * 0.5f;
+    const auto half_width = rect->w * 0.43f;
+    paint_field(paint.context).reserve_envelope(1,
+        {center - half_width, paint.viewport.y, half_width * 2, paint.viewport.h}, y_scale);
+}
+
+static void pin_compose_stem_envelopes(const ComposePaintContext& paint) {
+    std::vector<uint64_t> keys;
+    const auto& view = *paint.view;
+    keys.reserve(view.stem_waveform_count);
+    for (size_t index = 0; index < view.stem_waveform_count; ++index) {
+        const auto& stem = view.stem_waveforms[index];
+        if (!stem.pending && stem.row_count != 0 && compose_stem_lane_rect(paint, stem.source_lane_id))
+            keys.push_back(stem.stem_key);
+    }
+    paint_field(paint.context).pin_stem_envelopes(keys);
+}
+
 static void draw_compose_waveform_layer(const ComposePaintContext& paint,
                                         const ComposeTimingLaneLayout& layout) {
+    pin_compose_stem_envelopes(paint);
+    reserve_compose_song_envelope(paint);
+    reserve_compose_channel_envelope(paint);
     draw_compose_waveform(paint);
     draw_compose_stem_waveforms(paint);
     draw_compose_channel_waveform(paint);

@@ -831,6 +831,8 @@ typedef enum WormUiShortcutModifier {
 } WormUiShortcutModifier;
 
 typedef struct WormUiComposeStemWaveformView {
+    /* Stable channel identity, independent of visible ordering and lane position. */
+    uint64_t stem_key;
     uint64_t source_lane_id;
     const WormUiComposeWaveformRowView* rows;
     size_t row_count;

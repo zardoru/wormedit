@@ -334,3 +334,22 @@ TEST_CASE("warm indexed stem selection beats the compatibility scan for 181 stem
     CHECK(indexed_ms < 2'000.0);
     CHECK(indexed_ms < reference_ms);
 }
+
+TEST_CASE("indexed and compatibility windows retain all 300 visible channels",
+          "[sys][stem][bmson][stem-300]") {
+    song_document_t song;
+    auto& chart = song.charts.emplace_back();
+    chart.source_family = format_family_t::bmson;
+    chart.divisions_per_standard_measure = 960;
+    chart.measures.push_back({.id = measure_id_t{1}});
+    chart.bpms.push_back({.id = object_id_t{900}, .position = {measure_id_t{1}, 0},
+                         .beats_per_minute = {120, 1}});
+    for (std::uint64_t id = 0; id < 300; ++id)
+        chart.sound_channels.push_back({.id = object_id_t{1000 + id},
+            .events = {{.id = object_id_t{2000 + id}, .position = {measure_id_t{1}, 0}}}});
+    const std::vector<audio::decoded_source_binding_t> bindings;
+    CHECK(sys::all_stem_channels(chart).size() == 300);
+    CHECK(sys::visible_stem_channels(song, chart, measure_id_t{1}, 2, bindings).size() == 300);
+    sys::stem_index_t index;
+    CHECK(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{1}, 2, bindings).size() == 300);
+}

@@ -29,12 +29,20 @@ namespace wormedit::sys::runtime {
     const audio::waveform_job_completion_t& completed, const char* failure_message = nullptr)
     -> std::optional<notification_post_t>;
 
+struct stem_waveform_cache_stats_t {
+    // Charge for cache-owned result/key/vector capacities and entry bookkeeping.
+    // External shared snapshots and the separately bounded backing cache are separate.
+    std::size_t resident_bytes{}, entries{}, evictions{}, rejected_results{};
+    std::size_t backing_cached_bytes{};
+};
+
 // Owns the analysis caches and jobs used by the audio and Compose waveform views.
 class waveform_analysis_t {
 public:
     explicit waveform_analysis_t(audio::decoded_source_registry_t& sources,
         audio::decoded_block_cache_t* preview_blocks = nullptr,
-        std::optional<notification_sink_t> sink = std::nullopt);
+        std::optional<notification_sink_t> sink = std::nullopt,
+        std::size_t stem_budget_bytes = 64U * 1024U * 1024U);
 
     ~waveform_analysis_t();
 
@@ -92,8 +100,7 @@ public:
     // The finished analysis of a BMSON stem asset other than the selected channel's, if any.
     [[nodiscard]] auto stem_waveform_analysis(asset_id_t asset) const
         -> std::shared_ptr<const audio::waveform_analysis_result_t>;
-    // Stem assets analyzed at once (the stems near the cursor; see stem_waveform_window.h).
-    static constexpr std::size_t maximum_stem_waveforms = 192;
+    [[nodiscard]] auto stem_waveform_cache_stats() const -> stem_waveform_cache_stats_t;
 
 private:
     void request_selected_waveform(std::optional<asset_id_t> asset,
@@ -163,7 +170,22 @@ private:
     };
     static constexpr std::size_t stem_slot_count = 3;
     std::vector<std::unique_ptr<stem_slot_t>> stem_slots_;
-    std::map<asset_id_t, std::shared_ptr<const audio::waveform_analysis_result_t>> stem_analyses_;
+    struct stem_analysis_entry_t {
+        std::shared_ptr<const audio::waveform_analysis_result_t> analysis;
+        std::size_t bytes{};
+        std::uint64_t last_viewport{};
+    };
+    using stem_analysis_map_t = std::map<asset_id_t, stem_analysis_entry_t>;
+    stem_analysis_map_t stem_analyses_;
+    std::size_t stem_budget_bytes_{};
+    stem_waveform_cache_stats_t stem_cache_stats_;
+    std::uint64_t stem_viewport_sequence_{};
+    std::set<asset_id_t> stem_visible_, stem_budget_rejected_;
+    std::map<asset_id_t, audio::audio_source_identity_t> stem_oversized_;
+    void erase_stem_analysis(stem_analysis_map_t::iterator entry, bool eviction);
+    auto evict_offscreen_stem_analysis() -> bool;
+    void retain_stem_analysis(asset_id_t asset,
+                             std::shared_ptr<const audio::waveform_analysis_result_t> analysis);
     std::set<asset_id_t> stem_attempted_;
     task_graph_handle_t detail_worker_;
     std::optional<task_id_t> detail_task_;

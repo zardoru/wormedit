@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <unordered_set>
 #include <span>
+#include <limits>
 
 namespace wormedit::sys::runtime {
 
@@ -34,11 +35,13 @@ auto waveform_source_recovered(std::optional<asset_id_t> asset,
 } // namespace
 
 waveform_analysis_t::waveform_analysis_t(audio::decoded_source_registry_t& sources,
-    audio::decoded_block_cache_t* preview_blocks, std::optional<notification_sink_t> sink)
+    audio::decoded_block_cache_t* preview_blocks, std::optional<notification_sink_t> sink,
+    std::size_t stem_budget_bytes)
     : sources_(sources), preview_blocks_(preview_blocks), sink_(std::move(sink)),
       waveform_job_(sources_, coarse_blocks_, waveform_cache_, scheduler_),
       channel_waveform_job_(sources_, coarse_blocks_, waveform_cache_, scheduler_),
-      detail_job_(sources_, decoded_blocks_, waveform_cache_, scheduler_) {
+      detail_job_(sources_, decoded_blocks_, waveform_cache_, scheduler_),
+      stem_budget_bytes_(stem_budget_bytes) {
     for (std::size_t slot = 0; slot < stem_slot_count; ++slot)
         stem_slots_.push_back(std::make_unique<stem_slot_t>(sources_, coarse_blocks_, waveform_cache_, scheduler_));
 }
@@ -113,6 +116,10 @@ void waveform_analysis_t::reset_sources() {
         slot->asset.reset();
     }
     stem_analyses_.clear();
+    stem_cache_stats_ = {};
+    stem_visible_.clear();
+    stem_budget_rejected_.clear();
+    stem_oversized_.clear();
     stem_attempted_.clear();
     attempted_waveform_asset_.reset();
     attempted_channel_asset_.reset();
@@ -352,11 +359,78 @@ void waveform_analysis_t::service_channel_waveform(
 auto waveform_analysis_t::stem_waveform_analysis(asset_id_t asset) const
     -> std::shared_ptr<const audio::waveform_analysis_result_t> {
     const auto found = stem_analyses_.find(asset);
-    return found == stem_analyses_.end() ? nullptr : found->second;
+    return found == stem_analyses_.end() ? nullptr : found->second.analysis;
+}
+
+namespace {
+auto charge_waveform_capacity(std::size_t bytes, std::size_t count, std::size_t stride = 1)
+    -> std::size_t {
+    constexpr auto maximum = std::numeric_limits<std::size_t>::max();
+    return count > (maximum - bytes) / stride ? maximum : bytes + count * stride;
+}
+auto stem_result_capacity(const audio::waveform_analysis_result_t& result) -> std::size_t {
+    auto bytes = sizeof(result);
+    if (!result.waveform) return bytes;
+    const auto& waveform = *result.waveform;
+    bytes = charge_waveform_capacity(bytes, waveform.bins.capacity(), sizeof(audio::waveform_bin_t));
+    bytes = charge_waveform_capacity(bytes, waveform.coarser_levels.capacity(), sizeof(audio::waveform_level_t));
+    for (const auto& level : waveform.coarser_levels)
+        bytes = charge_waveform_capacity(bytes, level.bins.capacity(), sizeof(audio::waveform_bin_t));
+    bytes = charge_waveform_capacity(bytes, waveform.key.source.asset_identity.capacity());
+    bytes = charge_waveform_capacity(bytes, waveform.key.source.source_identity.capacity());
+    return charge_waveform_capacity(bytes, 2); // String terminators, conservatively including SSO.
+}
+} // namespace
+
+auto waveform_analysis_t::stem_waveform_cache_stats() const -> stem_waveform_cache_stats_t {
+    auto stats = stem_cache_stats_;
+    stats.entries = stem_analyses_.size();
+    stats.backing_cached_bytes = waveform_cache_.stats().cached_bytes;
+    return stats;
+}
+void waveform_analysis_t::erase_stem_analysis(stem_analysis_map_t::iterator entry, bool eviction) {
+    stem_cache_stats_.resident_bytes -= entry->second.bytes;
+    stem_analyses_.erase(entry);
+    if (eviction) ++stem_cache_stats_.evictions;
+}
+auto waveform_analysis_t::evict_offscreen_stem_analysis() -> bool {
+    auto oldest = stem_analyses_.end();
+    for (auto entry = stem_analyses_.begin(); entry != stem_analyses_.end(); ++entry) {
+        if (stem_visible_.contains(entry->first)) continue;
+        if (oldest == stem_analyses_.end() || entry->second.last_viewport < oldest->second.last_viewport)
+            oldest = entry;
+    }
+    if (oldest == stem_analyses_.end()) return false;
+    erase_stem_analysis(oldest, true);
+    return true;
+}
+void waveform_analysis_t::retain_stem_analysis(asset_id_t asset,
+    std::shared_ptr<const audio::waveform_analysis_result_t> analysis) {
+    // Charge result plus conservative shared-control/map-node bookkeeping and key.
+    const auto bytes = charge_waveform_capacity(stem_result_capacity(*analysis),
+        sizeof(stem_analysis_entry_t) + sizeof(asset_id_t) + 8U * sizeof(void*));
+    if (bytes > stem_budget_bytes_) {
+        const auto binding = sources_.binding(asset);
+        stem_oversized_[asset] = binding ? binding->source : audio::audio_source_identity_t{};
+        ++stem_cache_stats_.rejected_results;
+        return;
+    }
+    {
+        while (stem_cache_stats_.resident_bytes > stem_budget_bytes_ - bytes)
+            if (!evict_offscreen_stem_analysis()) break;
+        if (stem_cache_stats_.resident_bytes <= stem_budget_bytes_ - bytes) {
+            const auto inserted = stem_analyses_.emplace(asset,
+                stem_analysis_entry_t{std::move(analysis), bytes, stem_viewport_sequence_}).second;
+            if (inserted) stem_cache_stats_.resident_bytes += bytes;
+            return;
+        }
+    }
+    stem_budget_rejected_.insert(asset);
+    ++stem_cache_stats_.rejected_results;
 }
 
 // The assets of the stems near the cursor in the selected BMSON chart, without the transport's
-// and the selected channel's (which have their own analyses), up to the stem limit.
+// and the selected channel's (which have their own analyses).
 auto waveform_analysis_t::wanted_stem_assets(const song_document_t& document,
                                              const workspace_controller_t& workspace,
                                              std::optional<asset_id_t> selected_channel_asset,
@@ -372,7 +446,6 @@ auto waveform_analysis_t::wanted_stem_assets(const song_document_t& document,
         const auto asset = channel->source_clip.source;
         if (!asset || asset == workspace.transport.audio_asset || asset == selected_channel_asset ||
             !seen.insert(asset.value).second) continue;
-        if (wanted.size() >= maximum_stem_waveforms) break;
         wanted.push_back(asset);
     }
     return wanted;
@@ -398,7 +471,7 @@ void waveform_analysis_t::collect_stem_waveforms(const std::vector<asset_id_t>& 
         slot->asset.reset();
         // A failed analysis is kept so the stem shows a placeholder, and retried once its
         // source registers (the decoder-unavailable case); only a missing result is not.
-        if (completed->analysis) stem_analyses_[completed->asset] = completed->analysis;
+        if (completed->analysis) retain_stem_analysis(completed->asset, completed->analysis);
         else stem_attempted_.insert(completed->asset);
         report_waveform_completion(*completed, "A BMSON stem waveform could not be analyzed.");
     }
@@ -406,13 +479,21 @@ void waveform_analysis_t::collect_stem_waveforms(const std::vector<asset_id_t>& 
 
 // Whether a wanted stem still needs an analysis, after letting a failed one retry.
 auto waveform_analysis_t::stem_needs_analysis(asset_id_t asset) -> bool {
-    if (stem_analyses_.contains(asset) &&
-        waveform_source_recovered(asset, stem_analyses_[asset], sources_))
-        stem_analyses_.erase(asset);
+    const auto found = stem_analyses_.find(asset);
+    if (found != stem_analyses_.end() &&
+        waveform_source_recovered(asset, found->second.analysis, sources_))
+        erase_stem_analysis(found, false);
+    const auto oversized = stem_oversized_.find(asset);
+    if (oversized != stem_oversized_.end()) {
+        const auto binding = sources_.binding(asset);
+        if (!binding || binding->source == oversized->second) return false;
+        stem_oversized_.erase(oversized);
+    }
     // A failed start is retried once the source has a binding (it registers in the background).
     if (stem_attempted_.contains(asset) && sources_.binding(asset)) stem_attempted_.erase(asset);
     const auto running = std::ranges::any_of(stem_slots_, [&](const auto& slot) { return slot->asset == asset; });
-    return !stem_analyses_.contains(asset) && !stem_attempted_.contains(asset) && !running;
+    return !stem_analyses_.contains(asset) && !stem_attempted_.contains(asset) &&
+           !stem_budget_rejected_.contains(asset) && !running;
 }
 
 void waveform_analysis_t::start_stem_waveforms(const std::vector<asset_id_t>& wanted) {
@@ -443,7 +524,12 @@ void waveform_analysis_t::service_stem_waveforms(
     std::unordered_set<std::uint64_t> wanted_ids;
     wanted_ids.reserve(wanted.size());
     for (const auto asset : wanted) wanted_ids.insert(asset.value);
-    std::erase_if(stem_analyses_, [&](const auto& entry) { return !wanted_ids.contains(entry.first.value); });
+    const std::set<asset_id_t> visible(wanted.begin(), wanted.end());
+    if (visible != stem_visible_) stem_budget_rejected_.clear();
+    stem_visible_ = visible;
+    ++stem_viewport_sequence_;
+    for (auto& [asset, entry] : stem_analyses_)
+        if (stem_visible_.contains(asset)) entry.last_viewport = stem_viewport_sequence_;
     std::erase_if(stem_attempted_, [&](asset_id_t asset) { return !wanted_ids.contains(asset.value); });
     collect_stem_waveforms(wanted);
     start_stem_waveforms(wanted);

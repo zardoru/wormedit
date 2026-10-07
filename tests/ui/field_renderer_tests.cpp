@@ -632,3 +632,169 @@ TEST_CASE("SDL target reset recreates waveform rings before drawing current pixe
     compare_envelope_frame(fixture, cached, 65);
     expect_field(cached.envelope_work().regenerated_rows == 66);
 }
+
+namespace {
+constexpr std::size_t pool_texture_bytes = 100U * 66U * 4U;
+void begin_stem_pool(field_submission_fixture_t& fixture, renderer_t& pool,
+                     std::span<const std::uint64_t> keys) {
+    pool.begin({0, 0, 128, 128}, {1, 1}, {}, fixture.renderer);
+    pool.pin_stem_envelopes(keys);
+}
+auto pool_stem(renderer_t& pool, std::uint64_t key, float width = 100) -> bool {
+    const auto rows = envelope_test_rows(-2, 68);
+    return pool.stem_envelope(key, 6, rows, {14, 0, width, 64}, 0, 1,
+                              {{57,137,167,96}, {114,222,239,142}, true});
+}
+void pool_reserved(renderer_t& pool) {
+    const auto rows = envelope_test_rows(-2, 68);
+    for (std::size_t slot = 0; slot < 2; ++slot)
+        expect_field(pool.envelope(slot, 6, rows, {14, 0, 100, 64}, 0, 1,
+                                   {{57,137,167,96}, {114,222,239,142}, true}));
+}
+auto draw_pool_set(field_submission_fixture_t& fixture, renderer_t& pool,
+                    std::span<const std::uint64_t> keys, std::uint64_t observed) -> SDL_Texture* {
+    begin_stem_pool(fixture, pool, keys);
+    SDL_Texture* texture{};
+    for (const auto key : keys) {
+        expect_field(pool_stem(pool, key));
+        expect_field(pool.batches().back().texture != nullptr);
+        if (key == observed) texture = pool.batches().back().texture;
+    }
+    expect_field(pool.submit(fixture.renderer));
+    return texture;
+}
+}
+TEST_CASE("A fitting viewport submits 300 stable stem textures without budget fallbacks", "[ui][field][stem-pool]") {
+    field_submission_fixture_t fixture;
+    renderer_t pool;
+    std::vector<std::uint64_t> keys;
+    for (std::uint64_t key = 0; key < 300; ++key) keys.push_back(key);
+    const auto retained = draw_pool_set(fixture, pool, keys, 150);
+    expect_field(retained != nullptr);
+    expect_field(pool.envelope_work().cached_stems == 300);
+    expect_field(pool.envelope_work().resident_bytes == 300 * pool_texture_bytes);
+    expect_field(pool.envelope_work().budget_fallbacks == 0);
+    keys.erase(keys.begin());
+    keys.push_back(900);
+    std::ranges::reverse(keys);
+    expect_field(draw_pool_set(fixture, pool, keys, 150) == retained);
+    expect_field(pool.envelope_work().regenerated_rows == 66);
+    expect_field(pool.envelope_work().budget_fallbacks == 0);
+}
+TEST_CASE("Stem pool pins the complete visible set before evicting the oldest offscreen texture", "[ui][field][stem-pool]") {
+    field_submission_fixture_t fixture;
+    renderer_t pool{3 * pool_texture_bytes};
+    const std::array<std::uint64_t, 3> initial{10, 20, 30};
+    const auto retained = draw_pool_set(fixture, pool, initial, 10);
+    const std::array<std::uint64_t, 2> shifted{40, 10};
+    expect_field(draw_pool_set(fixture, pool, shifted, 10) == retained);
+    expect_field(pool.envelope_work().evictions == 1);
+    expect_field(pool.envelope_work().resident_bytes == 3 * pool_texture_bytes);
+    const std::array<std::uint64_t, 1> oldest_survivor{30};
+    (void)draw_pool_set(fixture, pool, oldest_survivor, 30);
+    expect_field(pool.envelope_work().regenerated_rows == 0);
+    const std::array<std::uint64_t, 1> evicted{20};
+    (void)draw_pool_set(fixture, pool, evicted, 20);
+    expect_field(pool.envelope_work().regenerated_rows == 66);
+    expect_field(pool.envelope_work().evictions == 2);
+}
+TEST_CASE("Reserved envelopes remain distinct from stem keys zero and one under visible pressure", "[ui][field][stem-pool]") {
+    field_submission_fixture_t fixture;
+    renderer_t pool{3 * pool_texture_bytes};
+    const std::array<std::uint64_t, 2> keys{0, 1};
+    begin_stem_pool(fixture, pool, keys);
+    pool_reserved(pool);
+    expect_field(pool_stem(pool, 0));
+    expect_field(!pool_stem(pool, 1));
+    pool.hline(6, 14, 114, 70, 1, {114,222,239,142});
+    expect_field(pool.submit(fixture.renderer));
+    expect_field(pool.envelope_work().resident_bytes == 3 * pool_texture_bytes);
+    expect_field(pool.envelope_work().budget_fallbacks == 1);
+    expect_field(pool.envelope_work().evictions == 0);
+    begin_stem_pool(fixture, pool, {});
+    pool_reserved(pool);
+    expect_field(pool.envelope_work().regenerated_rows == 0);
+}
+TEST_CASE("Stem texture rejection keeps queued batches and byte accounting coherent", "[ui][field][stem-pool]") {
+    field_submission_fixture_t fixture;
+    renderer_t pool{pool_texture_bytes};
+    const std::array<std::uint64_t, 1> keys{42};
+    begin_stem_pool(fixture, pool, keys);
+    expect_field(pool_stem(pool, 42));
+    const auto queued = pool.batches().back().texture;
+    expect_field(!pool_stem(pool, 42, 99));
+    expect_field(pool.batches().back().texture == queued);
+    expect_field(pool.envelope_work().resident_bytes == pool_texture_bytes);
+    expect_field(pool.submit(fixture.renderer));
+    pool.invalidate_envelopes();
+    expect_field(pool.batches().empty());
+    expect_field(pool.envelope_work().resident_bytes == 0);
+    begin_stem_pool(fixture, pool, keys);
+    expect_field(!pool_stem(pool, 42, 0));
+    expect_field(pool.envelope_work().budget_fallbacks == 0);
+}
+
+TEST_CASE("Stem texture replacements reserve transient bytes before allocating under pressure", "[ui][field][stem-pool]") {
+    field_submission_fixture_t fixture;
+    renderer_t pool{2 * pool_texture_bytes};
+    const std::array<std::uint64_t, 2> both{42, 43};
+    const auto previous = draw_pool_set(fixture, pool, both, 42);
+    begin_stem_pool(fixture, pool, both);
+    expect_field(!pool_stem(pool, 42, 99));
+    expect_field(pool.envelope_work().resident_bytes == 2 * pool_texture_bytes);
+    expect_field(pool.envelope_work().budget_fallbacks == 1);
+    expect_field(pool_stem(pool, 42));
+    expect_field(pool.batches().back().texture == previous);
+    expect_field(pool_stem(pool, 43));
+    expect_field(pool.submit(fixture.renderer));
+    const std::array<std::uint64_t, 1> visible{42};
+    begin_stem_pool(fixture, pool, visible);
+    expect_field(pool_stem(pool, 42, 99));
+    expect_field(pool.batches().back().texture != previous);
+    expect_field(pool.envelope_work().evictions == 1);
+    expect_field(pool.envelope_work().resident_bytes == 99U * 66U * 4U);
+    expect_field(pool.envelope_work().peak_reserved_bytes <= 2 * pool_texture_bytes);
+    expect_field(pool.submit(fixture.renderer));
+}
+
+TEST_CASE("A newly selected reserved envelope admits before a full visible stem pool",
+          "[ui][field][stem-pool]") {
+    field_submission_fixture_t fixture;
+    renderer_t pool{2 * pool_texture_bytes};
+    const std::array<std::uint64_t, 2> keys{10, 20};
+    (void)draw_pool_set(fixture, pool, keys, 10);
+    begin_stem_pool(fixture, pool, keys);
+    expect_field(pool.reserve_envelope(1, {14, 0, 100, 64}));
+    expect_field(pool.batches().empty());
+    expect_field(pool.envelope_work().budget_fallbacks == 0);
+    expect_field(pool_stem(pool, 20));
+    const auto stem_texture = pool.batches().back().texture;
+    expect_field(!pool_stem(pool, 10));
+    const auto rows = envelope_test_rows(-2, 68);
+    expect_field(pool.envelope(1, 6, rows, {14, 0, 100, 64}, 0, 1,
+                               {{57,137,167,96}, {114,222,239,142}, true}));
+    expect_field(pool.batches().back().texture != stem_texture);
+    expect_field(pool.envelope_work().budget_fallbacks == 1);
+    expect_field(pool.envelope_work().resident_bytes == 2 * pool_texture_bytes);
+    expect_field(pool.envelope_work().peak_reserved_bytes <= 2 * pool_texture_bytes);
+    expect_field(pool.submit(fixture.renderer));
+}
+
+TEST_CASE("Reserved preflight preserves the selected waveform overlay on a shared lane",
+          "[ui][field][stem-pool]") {
+    field_submission_fixture_t fixture;
+    renderer_t pool;
+    const std::array<std::uint64_t, 1> keys{10};
+    begin_stem_pool(fixture, pool, keys);
+    const SDL_FRect bounds{14, 0, 100, 64};
+    expect_field(pool.reserve_envelope(1, bounds));
+    const auto rows = envelope_test_rows(-2, 68);
+    expect_field(pool.stem_envelope(10, 6, rows, bounds, 0, 1,
+        {{255,0,0,255}, {255,0,0,255}, true}));
+    expect_field(pool.envelope(1, 6, rows, bounds, 0, 1,
+        {{0,255,0,255}, {0,255,0,255}, true}));
+    expect_field(pool.submit(fixture.renderer));
+    expect_field(SDL_RenderPresent(fixture.renderer));
+    const auto selected = fixture.pixel(64, 30);
+    expect_field(selected.g == 255 && selected.r == 0);
+}

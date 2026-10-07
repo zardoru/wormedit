@@ -18,7 +18,6 @@ namespace wormedit::sys {
 
 // A BMSON chart can have dozens of stems, but only the ones playing near the cursor are worth
 // decoding and drawing. The window is measured in chart measures around the cursor's measure.
-inline constexpr std::size_t maximum_visible_stems = 192;
 
 // Measures to look at on each side of the cursor: what the viewport shows at the current zoom,
 // plus a margin, so a sliced chart with a hundred tiny stems only decodes the ones in view.
@@ -31,8 +30,6 @@ inline constexpr std::size_t maximum_visible_stems = 192;
 [[nodiscard]] inline auto all_stem_channels( const chart_document_t& chart) -> std::vector<const sound_channel_t*> {
     std::vector<const sound_channel_t*> result;
     for (const auto& channel : chart.sound_channels) {
-        if (result.size() == maximum_visible_stems)
-            break;
         result.push_back(&channel);
     }
     return result;
@@ -296,7 +293,7 @@ inline void update_stem_selection(stem_index_t& index, const chart_document_t& c
     const auto end_row = last < index.measures.entries.size() ? index.measures.entries[last].absolute_begin_row : index.measures.total_rows;
     const auto begin = stem_seconds_at(index.timing, begin_row);
     const auto end = stem_seconds_at(index.timing, end_row);
-    for (std::size_t i = 0; i < index.channels.size() && index.selected.size() < maximum_visible_stems; ++i)
+    for (std::size_t i = 0; i < index.channels.size(); ++i)
         if (stem_channel_index_selected(index.channels[i], first, last, begin, end))
             index.selected.push_back(i);
     index.cursor = cursor;
@@ -320,8 +317,8 @@ inline void update_stem_selection(stem_index_t& index, const chart_document_t& c
     return result;
 }
 
-// The sound channels that can be heard in the window, in chart order, at most
-// `maximum_visible_stems`: those with an event inside it, or an earlier one whose audio is long
+// The sound channels that can be heard in the window, in chart order:
+// those with an event inside it, or an earlier one whose audio is long
 // enough to reach it. A cursor outside the chart selects the first measures.
 [[nodiscard]] inline auto visible_stem_channels(
     const song_document_t& document, const chart_document_t& chart, measure_id_t cursor,
@@ -360,8 +357,6 @@ inline void update_stem_selection(stem_index_t& index, const chart_document_t& c
     const auto chart_end = stem_seconds_at(clock, measures.total_rows).value_or(*window_end);
     std::vector<const sound_channel_t*> visible;
     for (const auto& channel : chart.sound_channels) {
-        if (visible.size() >= maximum_visible_stems)
-            break;
         const auto duration = stem_duration_seconds(document, channel, bindings);
         const auto inside =
             stem_channel_reaches_window(channel, index_of, measures, clock, first, last,

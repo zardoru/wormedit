@@ -906,6 +906,7 @@ TEST_CASE("BMSON stems other than the selected one get their own lane rows or a 
     CHECK(fixture.flattened.view.compose.stem_waveform_count == 1);
     const auto& stem = fixture.flattened.view.compose.stem_waveforms[0];
     CHECK(stem.source_lane_id == 3);
+    expect_gpu_work(stem.stem_key == 71001);
     CHECK((!stem.pending && stem.row_count > 0));
     CHECK(stem.row_count <= fixture.flattened.view.compose.viewport_height_pixels + 2);
 
@@ -925,7 +926,70 @@ TEST_CASE("BMSON stems other than the selected one get their own lane rows or a 
     populate_bmson_waveform_projection(pending_context);
     CHECK(fixture.flattened.view.compose.stem_waveform_count == 1);
     CHECK(fixture.flattened.view.compose.stem_waveforms[0].pending);
+    expect_gpu_work(fixture.flattened.view.compose.stem_waveforms[0].stem_key == 71000);
     CHECK(fixture.flattened.view.compose.stem_waveforms[0].row_count == 0);
+}
+
+namespace {
+auto project_stable_stem_keys(channel_projection_fixture_t& fixture, bool pending = false)
+    -> std::vector<std::uint64_t> {
+    fixture.flattened.view.compose.selected_bmson_bgm_event_id = 0;
+    const bmson_waveform_projection_context_t context{fixture.flattened, fixture.history,
+        fixture.workspace, &fixture.interaction, fixture.cache, fixture.sources,
+        {fixture.asset, fixture.channel_analysis}, {std::nullopt, nullptr}, 1,
+        [&](asset_id_t) { return pending ? nullptr : fixture.channel_analysis; }};
+    populate_bmson_waveform_projection(context);
+    std::vector<std::uint64_t> keys;
+    for (std::size_t i = 0; i < fixture.flattened.view.compose.stem_waveform_count; ++i) {
+        const auto& view = fixture.flattened.view.compose.stem_waveforms[i];
+        expect_gpu_work(view.pending == pending);
+        expect_gpu_work((view.row_count == 0) == pending);
+        keys.push_back(view.stem_key);
+    }
+    std::ranges::sort(keys);
+    return keys;
+}
+}
+TEST_CASE("BMSON stem keys retain channel identity when visible channel order changes",
+          "[sys][waveform-projection][bmson][stem-key]") {
+    channel_projection_fixture_t fixture;
+    const auto before = project_stable_stem_keys(fixture);
+    expect_gpu_work(before == std::vector<std::uint64_t>{71000, 71001});
+    auto& chart = fixture.history.document.charts.front();
+    std::ranges::reverse(chart.sound_channels);
+    ++fixture.history.document.revision;
+    expect_gpu_work(project_stable_stem_keys(fixture) == before);
+}
+
+namespace {
+void populate_three_hundred_stems(channel_projection_fixture_t& fixture) {
+    auto& chart = fixture.history.document.charts.front();
+    chart.sound_channels.clear();
+    chart.measures.front().bgm_events.clear();
+    for (std::uint64_t index = 0; index < 300; ++index) {
+        chart.sound_channels.push_back({.id = object_id_t{71000 + index},
+            .source_clip = {clip_id_t{72000 + index}, asset_id_t{7}},
+            .events = {{.id = object_id_t{73000 + index}, .position = {measure_id_t{1}, 0},
+                        .lane = lane_id_t{3}, .playable = false}}});
+        chart.measures.front().bgm_events.push_back({.id = object_id_t{74000 + index},
+            .position = {measure_id_t{1}, 0}, .source_lane = object_id_t{3},
+            .sound_channel_event = object_id_t{73000 + index}});
+    }
+    ++fixture.history.document.revision;
+}
+}
+TEST_CASE("BMSON projection publishes all 300 visible stems with one stable piece per channel",
+          "[sys][waveform-projection][bmson][stem-key][stem-300]") {
+    channel_projection_fixture_t fixture;
+    populate_three_hundred_stems(fixture);
+    const auto before = project_stable_stem_keys(fixture);
+    expect_gpu_work(before.size() == 300);
+    expect_gpu_work(std::ranges::adjacent_find(before) == before.end());
+    expect_gpu_work(before.front() == 71000 && before.back() == 71299);
+    std::ranges::reverse(fixture.history.document.charts.front().sound_channels);
+    ++fixture.history.document.revision;
+    expect_gpu_work(project_stable_stem_keys(fixture) == before);
+    expect_gpu_work(project_stable_stem_keys(fixture, true) == before);
 }
 
 namespace {

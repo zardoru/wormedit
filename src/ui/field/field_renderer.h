@@ -5,6 +5,9 @@
 #include <span>
 #include <vector>
 #include <memory>
+#include <map>
+#include <optional>
+#include <unordered_set>
 
 namespace wormedit::ui::field {
 using layer_t = std::uint16_t;
@@ -71,12 +74,13 @@ struct envelope_style_t {
 };
 struct envelope_work_t {
     std::size_t retained_rows{}, regenerated_rows{}, raster_vertices{}, composites{};
+    std::size_t resident_bytes{}, peak_reserved_bytes{}, cached_stems{}, evictions{}, budget_fallbacks{};
 };
 struct envelope_cache_t;
 // Frontend-private geometry only: no document state or toolkit objects are retained.
 class renderer_t {
   public:
-    renderer_t();
+    explicit renderer_t(std::size_t envelope_budget_bytes = 64U * 1024U * 1024U);
     ~renderer_t();
     void invalidate_envelopes() noexcept;
     void begin(SDL_FRect viewport, SDL_FPoint scale = {1, 1}, solid_texture_t solid = {},
@@ -84,6 +88,13 @@ class renderer_t {
     auto envelope(std::size_t slot, layer_t layer, std::span<const envelope_row_t> rows,
                   SDL_FRect bounds, double world_origin, std::uint64_t generation,
                   envelope_style_t style, float y_scale = 1) -> bool;
+    // Pin the complete next visible set before any stem admission or drawing.
+    auto reserve_envelope(std::size_t slot, SDL_FRect bounds, float y_scale = 1) -> bool;
+    void pin_stem_envelopes(std::span<const std::uint64_t> keys);
+    // Each channel may enqueue one envelope per frame; repeated draws fall back safely.
+    auto stem_envelope(std::uint64_t key, layer_t layer, std::span<const envelope_row_t> rows,
+                       SDL_FRect bounds, double world_origin, std::uint64_t generation,
+                       envelope_style_t style, float y_scale = 1) -> bool;
     auto envelope_work() const noexcept -> envelope_work_t;
     void limit_geometry(std::size_t bytes) noexcept;
     auto geometry_overflow() const noexcept -> bool { return geometry_overflow_; }
@@ -137,8 +148,21 @@ class renderer_t {
     std::size_t geometry_limit_{};
     bool geometry_overflow_{};
     auto reserve_geometry(std::size_t vertices, std::size_t indices) -> bool;
-    // Slot 0 is the song waveform, 1 the selected stem, 2 and up the other stems.
-    std::array<std::unique_ptr<envelope_cache_t>, 66> envelopes_;
+    // Reserved keys are separate from all channel IDs, including 0 and 1.
+    using envelope_key_t = std::pair<bool, std::uint64_t>;
+    std::map<envelope_key_t, std::unique_ptr<envelope_cache_t>> envelopes_;
+    std::unordered_set<std::uint64_t> pinned_stems_;
+    std::size_t envelope_budget_bytes_{}, envelope_peak_bytes_{};
+    std::size_t envelope_evictions_{}, envelope_budget_fallbacks_{};
+    std::uint64_t envelope_draw_sequence_{};
+    auto envelope_bytes() const noexcept -> std::size_t;
+    auto evict_unsubmitted_stem() -> bool;
+    auto evict_offscreen_envelope(envelope_key_t except) -> bool;
+    auto envelope_dimensions(SDL_FRect bounds, float y_scale) const -> std::optional<std::pair<int, int>>;
+    auto prepare_envelope_cache(envelope_key_t key, int width, int height) -> envelope_cache_t*;
+    auto envelope_for_key(envelope_key_t key, layer_t layer, std::span<const envelope_row_t> rows,
+                          SDL_FRect bounds, double origin, std::uint64_t generation,
+                          envelope_style_t style, float y_scale) -> bool;
     std::unique_ptr<field_tile_cache_t> tiles_;
     auto submit_envelope_fallback(SDL_Renderer* renderer, SDL_Texture* texture,
                                    submission_t hooks, bool& fallback) const -> bool;

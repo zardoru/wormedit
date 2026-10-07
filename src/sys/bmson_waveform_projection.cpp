@@ -147,7 +147,6 @@ auto populate_channel_ring(const channel_ring_context_t& context, bool downscrol
 }
 
 // One more than the visible stems: the selected channel is always projected for its field taps.
-constexpr std::size_t maximum_drawn_stems = maximum_visible_stems + 1;
 constexpr std::size_t maximum_stem_cuts = 4096;
 
 // The BGM lane a stem lives in: the lane whose source order is the channel's position (what moving
@@ -321,7 +320,6 @@ auto drawn_stems(const bmson_waveform_projection_context_t& context, const chart
         const auto found = std::ranges::find(chart.sound_channels, selected->channel, &sound_channel_t::id);
         if (found != chart.sound_channels.end()) drawn.push_back({&*found, indexed_stem_lane(context.cache.stem_index, chart, *found), true});
     }
-    if (drawn.size() > maximum_drawn_stems) drawn.resize(maximum_drawn_stems);
     return drawn;
 }
 
@@ -331,13 +329,13 @@ void publish_stem(compose_scene_cache_t& cache, const drawn_stem_t& item,
                   const compose_scene_cache_t::stem_waveform_cache_t& entry) {
     if (entry.pending) {
         if (!item.selected && item.lane != 0)
-            cache.stem_waveform_views.push_back({.source_lane_id = item.lane, .rows = nullptr, .row_count = 0,
+            cache.stem_waveform_views.push_back({.stem_key = item.channel->id.value, .source_lane_id = item.lane, .rows = nullptr, .row_count = 0,
                                                  .pending = true});
         return;
     }
     for (const auto& piece : entry.pieces)
         if (!piece.rows.empty())
-            cache.stem_waveform_views.push_back({.source_lane_id = piece.lane, .rows = piece.rows.data(),
+            cache.stem_waveform_views.push_back({.stem_key = item.channel->id.value, .source_lane_id = piece.lane, .rows = piece.rows.data(),
                                                  .row_count = piece.rows.size(), .pending = false});
     for (const auto& cut : entry.cuts)
         if (cache.stem_cut_views.size() < maximum_stem_cuts) cache.stem_cut_views.push_back(cut);
@@ -360,8 +358,8 @@ void populate_stem_waveforms(const bmson_waveform_projection_context_t& context)
         ? selected_bmson_waveform_source(cache, *chart, context.history.document.revision,
               object_id_t{context.flattened.view.compose.selected_bmson_bgm_event_id})
         : std::nullopt;
-    cache.stem_waveforms.reserve(maximum_drawn_stems);
     const auto drawn = drawn_stems(context, *chart, selected);
+    cache.stem_waveforms.reserve(drawn.size());
     // Entries for channels that are no longer drawn go first.
     std::unordered_set<std::uint64_t> drawn_ids;
     drawn_ids.reserve(drawn.size());

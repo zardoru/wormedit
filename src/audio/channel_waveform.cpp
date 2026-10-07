@@ -197,6 +197,63 @@ auto channel_window_within_capacity(const aligned_waveform_request_t& request) -
                static_cast<double>(maximum_aligned_waveform_rows);
 }
 
+struct channel_slice_context_t {
+    const waveform_t& waveform;
+    const timing_index_t& timing;
+    const aligned_waveform_request_t& request;
+    long double rows_per_pixel;
+    std::size_t height;
+    std::uint32_t source_sample_rate;
+};
+
+struct row_window_t {
+    long double first, last;
+};
+
+// Rasterizes one slice's part of the viewport into the shared pixel rows. A slice that has no
+// sound in view (outside the viewport, or already past the end of the sample) adds nothing.
+auto project_channel_slice(const channel_slice_context_t& context, const derived_sound_slice_t& slice,
+                           std::optional<std::uint64_t> next_slice_row, row_window_t view,
+                           std::vector<aligned_waveform_row_t>& pixels, std::vector<bool>& occupied)
+    -> aligned_waveform_status_t {
+    const auto slice_end_row = static_cast<long double>(next_slice_row.value_or(context.timing.total_rows));
+    const auto low = std::max(view.first, static_cast<long double>(slice.absolute_row));
+    const auto high = std::min(view.last, slice_end_row);
+    if (low >= high) return aligned_waveform_status_t::projected;
+    const auto slice_begin = output_frame(slice.source_begin_frame, context.source_sample_rate, context.waveform);
+    const auto slice_end = slice.source_end_frame
+        ? output_frame(*slice.source_end_frame, context.source_sample_rate, context.waveform)
+        : std::optional{context.waveform.total_frames};
+    if (!slice_begin || !slice_end) return aligned_waveform_status_t::invalid_waveform;
+    if (*slice_begin >= *slice_end) return aligned_waveform_status_t::projected;
+    const auto origin = timing_at(context.timing, slice.absolute_row);
+    const auto begin_time = timing_at(context.timing, static_cast<std::uint64_t>(low),
+                                      timing_boundary_side_t::before_delays);
+    const auto end_time = timing_at(context.timing, static_cast<std::uint64_t>(high),
+                                    timing_boundary_side_t::after_stops);
+    if (!origin || !origin.seconds || !begin_time || !end_time) return aligned_waveform_status_t::invalid_timing;
+    const auto first_frame = source_frame_at(*begin_time.seconds, *origin.seconds, context.waveform,
+                                             *slice_begin, sample_rounding_t::floor);
+    const auto last_frame = source_frame_at(*end_time.seconds, *origin.seconds, context.waveform,
+                                            *slice_begin, sample_rounding_t::ceil);
+    if (!first_frame || !last_frame) return aligned_waveform_status_t::invalid_timing;
+    const auto begin = std::max(*first_frame, *slice_begin);
+    const auto end = std::min(*last_frame, *slice_end);
+    if (begin >= end) return aligned_waveform_status_t::projected;
+    const auto projection = project_waveform(
+        context.waveform, {.begin_frame = begin, .end_frame = end,
+                           .pixel_width = std::min(context.height * 2U, maximum_aligned_waveform_rows),
+                           .maximum_columns = maximum_aligned_waveform_rows});
+    if (!projection)
+        return projection.status == waveform_projection_status_t::capacity_exceeded
+                   ? aligned_waveform_status_t::capacity_exceeded
+                   : aligned_waveform_status_t::invalid_waveform;
+    const channel_row_context_t row_context{context.waveform, context.timing, context.request, *origin.seconds,
+                                            *slice_begin, context.rows_per_pixel, context.height};
+    rasterize_channel_columns(row_context, projection.columns, pixels, occupied);
+    return aligned_waveform_status_t::projected;
+}
+
 } // namespace
 
 auto project_channel_waveform(const waveform_t& waveform, const chart_document_t& chart,
@@ -239,20 +296,8 @@ auto project_channel_waveform(const waveform_t& waveform, const sound_channel_t&
         return result;
     const auto source_begin =
         output_frame(channel.source_clip.begin_frame, source.sample_rate, waveform);
-    const auto first_slice_frame =
-        output_frame(slices.slices.front().source_begin_frame, source.sample_rate, waveform);
-    const auto source_end =
-        slices.slices.back().source_end_frame
-            ? output_frame(*slices.slices.back().source_end_frame, source.sample_rate, waveform)
-            : std::optional{waveform.total_frames};
-    if (!source_begin || !first_slice_frame || !source_end ||
-        *source_begin >= waveform.total_frames) {
+    if (!source_begin || *source_begin >= waveform.total_frames) {
         result.status = aligned_waveform_status_t::invalid_waveform;
-        return result;
-    }
-    const auto origin = timing_at(timing, slices.slices.front().absolute_row);
-    if (!origin || !origin.seconds) {
-        result.status = aligned_waveform_status_t::invalid_timing;
         return result;
     }
     const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
@@ -267,43 +312,23 @@ auto project_channel_waveform(const waveform_t& waveform, const sound_channel_t&
                    0.0L, static_cast<long double>(timing.total_rows));
     if (first_row >= last_row || last_row < slices.slices.front().absolute_row)
         return result;
-    const auto begin_time = timing_at(timing, static_cast<std::uint64_t>(first_row),
-                                      timing_boundary_side_t::before_delays);
-    const auto end_time = timing_at(timing, static_cast<std::uint64_t>(last_row),
-                                    timing_boundary_side_t::after_stops);
-    if (!begin_time || !end_time) {
-        result.status = aligned_waveform_status_t::invalid_timing;
-        return result;
-    }
-    const auto first_frame = source_frame_at(*begin_time.seconds, *origin.seconds, waveform,
-                                             *source_begin, sample_rounding_t::floor);
-    const auto last_frame = source_frame_at(*end_time.seconds, *origin.seconds, waveform,
-                                            *source_begin, sample_rounding_t::ceil);
-    if (!first_frame || !last_frame) {
-        result.status = aligned_waveform_status_t::invalid_timing;
-        return result;
-    }
-    const auto begin = std::max(*first_frame, *first_slice_frame);
-    const auto end = std::min(*last_frame, *source_end);
-    if (begin >= end)
-        return result;
     const auto height = static_cast<std::size_t>(std::ceil(request.viewport_height_pixels));
-    const auto projection = project_waveform(
-        waveform, {.begin_frame = begin,
-                   .end_frame = end,
-                   .pixel_width = std::min(height * 2U, maximum_aligned_waveform_rows),
-                   .maximum_columns = maximum_aligned_waveform_rows});
-    if (!projection) {
-        result.status = projection.status == waveform_projection_status_t::capacity_exceeded
-                            ? aligned_waveform_status_t::capacity_exceeded
-                            : aligned_waveform_status_t::invalid_waveform;
-        return result;
-    }
     std::vector<aligned_waveform_row_t> pixels(height);
     std::vector<bool> occupied(height);
-    const channel_row_context_t row_context{waveform, timing, request, *origin.seconds,
-                                            *source_begin, rows_per_pixel, height};
-    rasterize_channel_columns(row_context, projection.columns, pixels, occupied);
+    // Each slice plays its own stretch of the sample from its own anchor (a restart rewinds the
+    // audio), so the waveform is projected slice by slice rather than as one linear run.
+    for (std::size_t index = 0; index < slices.slices.size(); ++index) {
+        const auto status = project_channel_slice(
+            {waveform, timing, request, rows_per_pixel, height, source.sample_rate},
+            slices.slices[index],
+            index + 1 < slices.slices.size() ? std::optional{slices.slices[index + 1].absolute_row}
+                                             : std::nullopt,
+            {first_row, last_row}, pixels, occupied);
+        if (status != aligned_waveform_status_t::projected) {
+            result.status = status;
+            return result;
+        }
+    }
     result.rows.reserve(height);
     for (std::size_t pixel = 0; pixel < height; ++pixel) {
         if (occupied[pixel])

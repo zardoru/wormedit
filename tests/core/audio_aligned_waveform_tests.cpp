@@ -169,15 +169,17 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
     const auto timing = wormedit::build_timing_index(chart);
     REQUIRE(timing);
     const aligned_waveform_request_t viewport{.viewport_scroll_pixels = 0.0,
-                                              .viewport_height_pixels = 960.0,
+                                              .viewport_height_pixels = 1440.0,
                                               .pixels_per_standard_measure = 960.0};
     const channel_waveform_source_geometry_t source{output_sample_rate, waveform.total_frames};
     const auto base = project_channel_waveform(waveform, chart, chart.sound_channels.front(),
                                                *timing.index, viewport, source);
     REQUIRE(base);
     REQUIRE_FALSE(base.rows.empty());
-    CHECK(loudest_row(base) >= 715.0);
-    CHECK(loudest_row(base) <= 725.0);
+    // The audio restarts at row 720, so the pulse (one second into the sample) sounds again two
+    // beats after it: at row 1200, not where one linear run from the first point would put it.
+    CHECK(loudest_row(base) >= 1195.0);
+    CHECK(loudest_row(base) <= 1205.0);
     const auto slices = wormedit::derive_sound_channel_slices(
         chart, chart.sound_channels.front(), source.sample_rate, source.total_frames);
     REQUIRE(slices);
@@ -192,8 +194,8 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
     const auto scrolled = project_channel_waveform(waveform, chart, chart.sound_channels.front(),
                                                    *timing.index, scrolled_viewport, source);
     REQUIRE(scrolled);
-    CHECK(loudest_row(scrolled) >= 475.0);
-    CHECK(loudest_row(scrolled) <= 485.0);
+    CHECK(loudest_row(scrolled) >= 955.0);
+    CHECK(loudest_row(scrolled) <= 965.0);
 
     auto slower_chart = chart_fixture();
     slower_chart.bpms.push_back({.id = wormedit::object_id_t{999'999},

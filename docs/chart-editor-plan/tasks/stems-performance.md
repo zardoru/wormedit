@@ -142,7 +142,7 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **Status:** ready
 - **Outcome:** Options › Audio has a "Keysound memory" field (256 MiB–8 GiB, default 512 MiB) persisted in `preferences.json`. Raising it takes effect for the open project without reopening it. The over-budget notification names the setting.
 - **Read first:** `include/wormedit/audio/resident_samples.h`, `src/audio/resident_samples.cpp`, `include/wormedit/core/preferences.h` (`audio_preferences_t`), `src/ui/nuklear/options_window.cpp`, `src/sys/audio_source_registration.cpp`.
-- **Files owned:** those five, plus `src/core/preferences.cpp`, `src/sys/options_runtime.cpp`, `src/ui/frontend.h` (option field), preference and resident-sample tests, this card.
+- **Files owned:** `include/wormedit/core/arena.h`, `src/core/arena.cpp` (root-approved grow-only hard ceiling), `src/sys/main.cpp` (root-approved loaded/live budget application), `src/sys/audio_source_registration.h` (root-approved retry boundary), `tests/core/arena_tests.cpp`, `tests/sys/audio_source_registration_tests.cpp` (root-approved active retry/snapshot retention), `tests/ui/nuklear_event_harness_tests.cpp` (root-approved Options Audio field/action), `tests/sys/options_runtime_tests.cpp` (root-approved production Options apply/clamping regression), those five, plus `src/core/preferences.cpp`, `src/sys/options_runtime.cpp`, `src/ui/frontend.h` (option field), preference and resident-sample tests, this card.
 - **Steps:**
   1. Add `keysound_budget_mib` to `audio_preferences_t`, with load clamping and defaulting.
   2. Make the budget mutable: raising it lets the arena accept more. Lowering it applies on the next load and never evicts samples that are playing.

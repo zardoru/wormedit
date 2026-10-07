@@ -347,8 +347,10 @@ void parse_selected_file(std::string_view extension, const std::string& source,
 
 void normalize_empty_input_profiles(song_document_t& document) {
     for (auto& chart : document.charts) {
-        if (!chart.input_profile.profile_id.empty() || !chart.input_profile.bindings.empty() ||
-            chart.lane_layouts.empty()) continue;
+        // The BMSON reader names its profile "bmson-unbound" and leaves the keys to us.
+        const auto named = !chart.input_profile.profile_id.empty() &&
+                           chart.input_profile.profile_id != "bmson-unbound";
+        if (named || !chart.input_profile.bindings.empty() || chart.lane_layouts.empty()) continue;
         const auto input = default_input_profile_for(chart.lane_layouts.front().layout);
         if (input) chart.input_profile = *input;
     }

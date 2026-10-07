@@ -627,3 +627,14 @@ TEST_CASE("project_open refuses invalid native files with contextual graph diagn
     CHECK_FALSE(opened.native_project);
     check_contextual_validation_message(opened.error);
 }
+
+TEST_CASE("an opened BMSON chart gets number-row key bindings for its lanes",
+          "[unit][sys][project-open]") {
+    const auto opened = wormedit::sys::open_project_file(
+        fixture("bmson", "zero-resolution-default.bmson"));
+    INFO(opened.error);
+    REQUIRE(opened.document.has_value());
+    const auto& chart = opened.document->charts.front();
+    CHECK(chart.input_profile.profile_id != "bmson-unbound");
+    CHECK_FALSE(chart.input_profile.bindings.empty());
+}

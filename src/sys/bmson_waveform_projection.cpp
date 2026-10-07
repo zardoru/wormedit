@@ -2,6 +2,8 @@
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 
+#include "sys/stem_waveform_window.h"
+
 #include <wormedit/audio/channel_waveform.h>
 #include <wormedit/core/sound_slice.h>
 
@@ -143,7 +145,7 @@ auto populate_channel_ring(const channel_ring_context_t& context, bool downscrol
     return true;
 }
 
-constexpr std::size_t maximum_drawn_stems = 8;
+constexpr std::size_t maximum_drawn_stems = maximum_visible_stems;
 
 // The BGM lane a stem's markers sit in: the source lane of its first linked marker.
 auto stem_source_lane(const chart_document_t& chart, const sound_channel_t& channel) -> std::uint64_t {
@@ -235,10 +237,10 @@ void populate_stem_waveforms(const bmson_waveform_projection_context_t& context)
     cache.stem_waveforms.reserve(maximum_drawn_stems);
     struct drawn_t { const sound_channel_t* channel; std::uint64_t lane; };
     std::vector<drawn_t> drawn;
-    for (const auto& channel : chart->sound_channels) {
+    for (const auto* channel : visible_stem_channels(*chart, context.interaction_state->cursor.measure)) {
         if (drawn.size() >= maximum_drawn_stems) break;
-        if (selected && selected->channel == channel.id) continue;
-        if (const auto lane = stem_source_lane(*chart, channel); lane != 0) drawn.push_back({&channel, lane});
+        if (selected && selected->channel == channel->id) continue;
+        if (const auto lane = stem_source_lane(*chart, *channel); lane != 0) drawn.push_back({channel, lane});
     }
     // Entries for channels that are no longer extra stems (deleted, or now the selected one) go first.
     std::erase_if(cache.stem_waveforms, [&](const auto& entry) {

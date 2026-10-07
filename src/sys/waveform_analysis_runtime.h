@@ -88,8 +88,8 @@ public:
     // The finished analysis of a BMSON stem asset other than the selected channel's, if any.
     [[nodiscard]] auto stem_waveform_analysis(asset_id_t asset) const
         -> std::shared_ptr<const audio::waveform_analysis_result_t>;
-    // How many stem assets are drawn at once; the rest wait for a free slot.
-    static constexpr std::size_t maximum_stem_waveforms = 8;
+    // Stem assets analyzed at once (the stems near the cursor; see stem_waveform_window.h).
+    static constexpr std::size_t maximum_stem_waveforms = 12;
 
 private:
     void request_selected_waveform(std::optional<asset_id_t> asset,
@@ -116,7 +116,8 @@ private:
                                 const editor_interaction_state_t* compose_interaction_state);
     [[nodiscard]] auto wanted_stem_assets(const song_document_t& document,
                                           const workspace_controller_t& workspace,
-                                          std::optional<asset_id_t> selected_channel_asset) const
+                                          std::optional<asset_id_t> selected_channel_asset,
+                                          const editor_interaction_state_t* interaction) const
         -> std::vector<asset_id_t>;
     void service_channel_waveform(const song_document_t& document,
                                   const workspace_controller_t& workspace,
@@ -142,9 +143,19 @@ private:
     audio::waveform_job_t waveform_job_;
     audio::waveform_job_t channel_waveform_job_;
     audio::waveform_job_t detail_job_;
-    audio::waveform_job_t stem_job_;
+    // A waveform job keeps only its latest request, so each stem analysis running at once needs
+    // its own job; the slots share the scheduler and decoded-block cache.
+    struct stem_slot_t {
+        stem_slot_t(audio::decoded_source_registry_t& sources, audio::decoded_block_cache_t& blocks,
+                    audio::waveform_cache_t& waveforms, task_scheduler_t& scheduler)
+            : job(sources, blocks, waveforms, scheduler, 1) {}
+        audio::waveform_job_t job;
+        std::optional<asset_id_t> asset;
+    };
+    static constexpr std::size_t stem_slot_count = 3;
+    std::vector<std::unique_ptr<stem_slot_t>> stem_slots_;
     std::map<asset_id_t, std::shared_ptr<const audio::waveform_analysis_result_t>> stem_analyses_;
-    std::set<asset_id_t> stem_requested_, stem_attempted_;
+    std::set<asset_id_t> stem_attempted_;
     task_graph_handle_t detail_worker_;
     std::optional<task_id_t> detail_task_;
     std::uint64_t detail_generation_{};

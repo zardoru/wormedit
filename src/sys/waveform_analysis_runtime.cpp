@@ -3,6 +3,7 @@
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 
 #include "sys/compose_input.h"
+#include "sys/stem_waveform_window.h"
 
 #include <algorithm>
 #include <span>
@@ -36,8 +37,10 @@ waveform_analysis_t::waveform_analysis_t(audio::decoded_source_registry_t& sourc
     : sources_(sources), preview_blocks_(preview_blocks), sink_(std::move(sink)),
       waveform_job_(sources_, coarse_blocks_, waveform_cache_, scheduler_),
       channel_waveform_job_(sources_, coarse_blocks_, waveform_cache_, scheduler_),
-      detail_job_(sources_, decoded_blocks_, waveform_cache_, scheduler_),
-      stem_job_(sources_, coarse_blocks_, waveform_cache_, scheduler_, maximum_stem_waveforms) {}
+      detail_job_(sources_, decoded_blocks_, waveform_cache_, scheduler_) {
+    for (std::size_t slot = 0; slot < stem_slot_count; ++slot)
+        stem_slots_.push_back(std::make_unique<stem_slot_t>(sources_, coarse_blocks_, waveform_cache_, scheduler_));
+}
 
 waveform_analysis_t::~waveform_analysis_t() {
     cancel_detail_worker();
@@ -104,9 +107,11 @@ void waveform_analysis_t::reset_sources() {
     waveform_job_asset_.reset();
     waveform_analysis_.reset();
     channel_waveform_job_.cancel();
-    stem_job_.cancel();
+    for (auto& slot : stem_slots_) {
+        slot->job.cancel();
+        slot->asset.reset();
+    }
     stem_analyses_.clear();
-    stem_requested_.clear();
     stem_attempted_.clear();
     attempted_waveform_asset_.reset();
     attempted_channel_asset_.reset();
@@ -341,18 +346,19 @@ auto waveform_analysis_t::stem_waveform_analysis(asset_id_t asset) const
     return found == stem_analyses_.end() ? nullptr : found->second;
 }
 
-// The assets of the selected BMSON chart's sound channels, without the transport's and the
-// selected channel's (which have their own analyses), up to the stem limit.
+// The assets of the stems near the cursor in the selected BMSON chart, without the transport's
+// and the selected channel's (which have their own analyses), up to the stem limit.
 auto waveform_analysis_t::wanted_stem_assets(const song_document_t& document,
                                              const workspace_controller_t& workspace,
-                                             std::optional<asset_id_t> selected_channel_asset) const
+                                             std::optional<asset_id_t> selected_channel_asset,
+                                             const editor_interaction_state_t* interaction) const
     -> std::vector<asset_id_t> {
     std::vector<asset_id_t> wanted;
-    if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart) return wanted;
+    if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart || !interaction) return wanted;
     const auto chart = std::ranges::find(document.charts, *workspace.selected_chart, &chart_document_t::id);
     if (chart == document.charts.end() || chart->source_family != format_family_t::bmson) return wanted;
-    for (const auto& channel : chart->sound_channels) {
-        const auto asset = channel.source_clip.source;
+    for (const auto* channel : visible_stem_channels(*chart, interaction->cursor.measure)) {
+        const auto asset = channel->source_clip.source;
         if (!asset || asset == workspace.transport.audio_asset || asset == selected_channel_asset ||
             std::ranges::find(wanted, asset) != wanted.end()) continue;
         if (wanted.size() >= maximum_stem_waveforms) break;
@@ -367,33 +373,44 @@ void waveform_analysis_t::service_stem_waveforms(
     const editor_interaction_state_t* compose_interaction_state) {
     const auto selected = selected_channel_asset(document, workspace, compose_scene_cache,
                                                  compose_interaction_state);
-    const auto wanted = wanted_stem_assets(document, workspace, selected);
+    const auto wanted = wanted_stem_assets(document, workspace, selected, compose_interaction_state);
     const auto is_wanted = [&](asset_id_t asset) { return std::ranges::find(wanted, asset) != wanted.end(); };
     std::erase_if(stem_analyses_, [&](const auto& entry) { return !is_wanted(entry.first); });
     std::erase_if(stem_attempted_, [&](asset_id_t asset) { return !is_wanted(asset); });
+    for (auto& slot : stem_slots_) {
+        if (!slot->asset) continue;
+        if (!is_wanted(*slot->asset)) {
+            slot->job.cancel();
+            slot->asset.reset();
+        } else if (const auto completed = slot->job.poll()) {
+            slot->asset.reset();
+            // A failed analysis is kept so the stem shows a placeholder, and retried once its
+            // source registers (the decoder-unavailable case); only a missing result is not.
+            if (completed->analysis) stem_analyses_[completed->asset] = completed->analysis;
+            else stem_attempted_.insert(completed->asset);
+            report_waveform_completion(*completed, "A BMSON stem waveform could not be analyzed.");
+        }
+    }
+    const auto in_a_slot = [&](asset_id_t asset) {
+        return std::ranges::any_of(stem_slots_, [&](const auto& slot) { return slot->asset == asset; });
+    };
     for (const auto asset : wanted) {
-        const auto source_back = stem_analyses_.contains(asset) && !stem_analyses_[asset]->waveform &&
-            waveform_source_recovered(asset, stem_analyses_[asset], sources_);
-        if (source_back) stem_analyses_.erase(asset);
-        if (stem_analyses_.contains(asset) || stem_requested_.contains(asset) ||
-            stem_attempted_.contains(asset)) continue;
-        const auto started = stem_job_.request(asset, 256);
+        const auto recovered = stem_analyses_.contains(asset) && waveform_source_recovered(
+            asset, stem_analyses_[asset], sources_);
+        if (recovered) stem_analyses_.erase(asset);
+        // A failed start is retried once the source has a binding (it registers in the background).
+        if (stem_attempted_.contains(asset) && sources_.binding(asset)) stem_attempted_.erase(asset);
+        if (stem_analyses_.contains(asset) || stem_attempted_.contains(asset) || in_a_slot(asset)) continue;
+        const auto free_slot = std::ranges::find_if(stem_slots_, [](const auto& slot) { return !slot->asset; });
+        if (free_slot == stem_slots_.end()) break;
+        const auto started = (*free_slot)->job.request(asset, 256);
         if (started) {
-            stem_requested_.insert(asset);
+            (*free_slot)->asset = asset;
         } else if (started.status != audio::waveform_job_start_status_t::capacity_exceeded) {
             stem_attempted_.insert(asset);
             if (sink_) sink_->post(notification_severity_t::error, notification_source_t::audio,
                 started.message.empty() ? "A BMSON stem waveform could not start." : started.message);
         }
-    }
-    while (const auto completed = stem_job_.poll()) {
-        stem_requested_.erase(completed->asset);
-        if (!is_wanted(completed->asset)) continue;
-        // A failed analysis is kept so the stem shows a placeholder, and retried once its source
-        // registers (the decoder-unavailable case); only a missing result is not retried.
-        if (completed->analysis) stem_analyses_[completed->asset] = completed->analysis;
-        else stem_attempted_.insert(completed->asset);
-        report_waveform_completion(*completed, "A BMSON stem waveform could not be analyzed.");
     }
 }
 

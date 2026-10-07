@@ -4305,3 +4305,25 @@ TEST_CASE("Lane-key dispatcher cancels held sound sources without placement call
     expect_compose_test(f.compose.history.undo.empty());
     expect_compose_test(placed_resource_notifications.empty());
 }
+
+#include "sys/stem_waveform_window.h"
+TEST_CASE("stem waveforms only cover channels with events near the cursor",
+          "[sys][waveform-projection][bmson][stems]") {
+    chart_document_t chart;
+    for (std::uint64_t id = 1; id <= 40; ++id) chart.measures.push_back({.id = measure_id_t{id}});
+    const auto channel = [](std::uint64_t id, std::uint64_t measure) {
+        return sound_channel_t{.id = object_id_t{id},
+            .events = {{.id = object_id_t{id + 1000}, .position = {measure_id_t{measure}, 0}}}};
+    };
+    chart.sound_channels = {channel(1, 2), channel(2, 20), channel(3, 12), channel(4, 40)};
+    const auto near_start = sys::visible_stem_channels(chart, measure_id_t{1});
+    REQUIRE(near_start.size() == 2);
+    CHECK(near_start[0]->id == object_id_t{1});
+    CHECK(near_start[1]->id == object_id_t{3});
+    const auto middle = sys::visible_stem_channels(chart, measure_id_t{20});
+    REQUIRE(middle.size() == 2);
+    CHECK(middle[0]->id == object_id_t{2});
+    CHECK(middle[1]->id == object_id_t{3});
+    // A cursor that is not in the chart behaves like the start.
+    CHECK(sys::visible_stem_channels(chart, measure_id_t{9999}).size() == 2);
+}

@@ -15,9 +15,12 @@
 #include <wormedit/core/notifications.h>
 #include <wormedit/core/task_graph.h>
 
+#include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
+#include <vector>
 
 namespace wormedit::sys::runtime {
 
@@ -82,6 +85,11 @@ public:
         -> const std::shared_ptr<const audio::waveform_analysis_result_t>& {
         return channel_waveform_analysis_;
     }
+    // The finished analysis of a BMSON stem asset other than the selected channel's, if any.
+    [[nodiscard]] auto stem_waveform_analysis(asset_id_t asset) const
+        -> std::shared_ptr<const audio::waveform_analysis_result_t>;
+    // How many stem assets are drawn at once; the rest wait for a free slot.
+    static constexpr std::size_t maximum_stem_waveforms = 8;
 
 private:
     void request_selected_waveform(std::optional<asset_id_t> asset,
@@ -102,6 +110,14 @@ private:
     bool playing_detail_{};
     audio::aligned_waveform_style_t detail_style_;
     void service_workspace_waveform(const workspace_controller_t& workspace);
+    void service_stem_waveforms(const song_document_t& document,
+                                const workspace_controller_t& workspace,
+                                compose_scene_cache_t& compose_scene_cache,
+                                const editor_interaction_state_t* compose_interaction_state);
+    [[nodiscard]] auto wanted_stem_assets(const song_document_t& document,
+                                          const workspace_controller_t& workspace,
+                                          std::optional<asset_id_t> selected_channel_asset) const
+        -> std::vector<asset_id_t>;
     void service_channel_waveform(const song_document_t& document,
                                   const workspace_controller_t& workspace,
                                   compose_scene_cache_t& compose_scene_cache,
@@ -126,6 +142,9 @@ private:
     audio::waveform_job_t waveform_job_;
     audio::waveform_job_t channel_waveform_job_;
     audio::waveform_job_t detail_job_;
+    audio::waveform_job_t stem_job_;
+    std::map<asset_id_t, std::shared_ptr<const audio::waveform_analysis_result_t>> stem_analyses_;
+    std::set<asset_id_t> stem_requested_, stem_attempted_;
     task_graph_handle_t detail_worker_;
     std::optional<task_id_t> detail_task_;
     std::uint64_t detail_generation_{};

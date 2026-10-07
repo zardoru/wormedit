@@ -120,7 +120,7 @@ window buttons.
 
 ## T-404 Draw BMSON stem waveforms in the BGM lanes
 
-- **Status:** ready
+- **Status:** done (2026-10-06; every other BMSON stem is drawn in its BGM lane next to the selected one, which keeps its existing path. The runtime keeps one `stem_job_` (up to eight assets in flight) and a bounded analysis map (`waveform_analysis_t::stem_waveform_analysis`); `populate_stem_waveforms` projects per-stem rows with the same ring as the selected channel; the contract is `WormUiComposeStemWaveformView`; the field renderer has ten envelope slots (0 song, 1 selected stem, 2+ stems); pending or failed audio shows a faint placeholder band. Slices are divided as the selected stem's are, because the same `derive_sound_channel_slices` and `project_channel_waveform` run per stem, whose restart/continue behavior `tests/core/audio_aligned_waveform_tests.cpp` already covers. New projection test in `tests/sys/frame_timing_tests.cpp`. No smoke capture of a BMSON fixture with decoded audio was taken)
 - **Outcome:** each BMSON sound channel (stem) lane draws its audio waveform along chart time, as BMSONE does, with slices visibly divided at their restart and continue points. The selected stem is no longer the only one drawn.
 - **Read first:** `src/sys/bmson_waveform_projection.h`, `src/sys/bmson_waveform_projection.cpp`, `src/sys/waveform_analysis_runtime.cpp`, `src/ui/nuklear/compose_canvas.cpp` (BGM lane drawing).
 - **Files owned:** `src/sys/bmson_waveform_projection.cpp`, `src/sys/bmson_waveform_projection.h`, `src/sys/waveform_analysis_runtime.cpp`, `src/sys/waveform_analysis_runtime.h`, `src/ui/frontend.h` (per-lane waveform view), `src/ui/nuklear/compose_canvas.cpp`, `tests/sys/` projection test, this card.
@@ -136,7 +136,7 @@ window buttons.
 
 ## T-405 Click and Shift-click restart and continue points on BMSON stem lanes
 
-- **Status:** blocked-on T-404
+- **Status:** ready
 - **Outcome:** on a stem lane, a click adds a continue point at the snapped row, Shift+click adds a restart point, and a click on an existing point toggles it between the two. The waveform split updates at once, and each gesture is one undo step.
 - **Read first:** `include/wormedit/core/bmson_sound_channel_editor.h` (`toggle_bmson_sound_channel_restart`, `set_bmson_sound_channel_restart`), `src/ui/nuklear/compose_object_input.cpp`, `src/sys/compose_input.cpp`, the razor mode in `src/ui/nuklear/compose_resources.cpp` (or the BMSON tab after T-390).
 - **Files owned:** `src/ui/nuklear/compose_object_input.cpp`, `src/sys/compose_input.cpp`, `src/ui/frontend.h` (input kinds), `src/core/bmson_sound_channel_editor.cpp` (only if an insert-point command is missing), `tests/core/` and `tests/ui/nuklear_event_harness_tests.cpp`, this card.

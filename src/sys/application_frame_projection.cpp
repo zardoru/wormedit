@@ -273,6 +273,9 @@ auto project_application_frame(application_frame_projection_context_t context)
             .channel_waveform = {context.waveform_runtime.channel_waveform_asset(),
                                  context.waveform_runtime.channel_waveform_analysis()},
             .audition_source_generation = context.audition_source_generation,
+            .stem_analysis = [&runtime = context.waveform_runtime](asset_id_t asset) {
+                return runtime.stem_waveform_analysis(asset);
+            },
         });
     }
 #endif

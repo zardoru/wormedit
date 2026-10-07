@@ -6,6 +6,9 @@
 #include <wormedit/audio/source_registry.h>
 #include <wormedit/audio/waveform_job.h>
 
+#include <functional>
+#include <memory>
+
 namespace wormedit::sys {
 
 // Projects the selected BMSON BGM channel waveform into the compose view. The
@@ -26,6 +29,9 @@ struct bmson_waveform_projection_context_t {
     waveform_analysis_slot_t transport_waveform;
     waveform_analysis_slot_t channel_waveform;
     std::uint64_t audition_source_generation;
+    // Finished analysis of a stem asset, from the analysis runtime; empty disables stem drawing.
+    std::function<std::shared_ptr<const wormedit::audio::waveform_analysis_result_t>(wormedit::asset_id_t)>
+        stem_analysis{};
 };
 
 void populate_bmson_waveform_projection(const bmson_waveform_projection_context_t& context);

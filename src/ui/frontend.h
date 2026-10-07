@@ -830,6 +830,14 @@ typedef enum WormUiShortcutModifier {
     WORM_UI_SHORTCUT_MODIFIER_META = 1 << 3,
 } WormUiShortcutModifier;
 
+typedef struct WormUiComposeStemWaveformView {
+    uint64_t source_lane_id;
+    const WormUiComposeWaveformRowView* rows;
+    size_t row_count;
+    /* The audio is still decoding or missing: draw a placeholder band instead of a waveform. */
+    bool pending;
+} WormUiComposeStemWaveformView;
+
 typedef struct WormUiComposeBranchRowView {
     const char* display_text;
     size_t depth;
@@ -1418,6 +1426,9 @@ typedef struct WormUiComposeView {
     size_t bgm_event_count;
     const WormUiComposeWaveformRowView* waveform_rows;
     size_t waveform_row_count;
+    /* BMSON stems other than the selected one, each drawn in its BGM lane. */
+    const WormUiComposeStemWaveformView* stem_waveforms;
+    size_t stem_waveform_count;
     const WormUiComposeWaveformRowView* channel_waveform_rows;
     size_t channel_waveform_row_count;
     uint64_t channel_waveform_source_lane_id;

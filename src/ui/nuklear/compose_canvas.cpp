@@ -941,7 +941,7 @@ static void draw_compose_scene_background(const ComposePaintContext& paint,
 
 static auto draw_compose_envelope_texture(const ComposePaintContext& paint,
         const WormUiComposeWaveformRowView* source, size_t count, float center, float half_width,
-        size_t slot, nk_color rms, nk_color peak, bool joined) -> bool {
+        size_t slot, nk_color rms, nk_color peak, bool joined, uint64_t lane_key = 0) -> bool {
     const auto& view = *paint.view;
     const auto y_scale = paint.viewport.h / static_cast<float>(view.viewport_height_pixels);
     if (!std::isfinite(y_scale) || y_scale <= 0) return false;
@@ -962,6 +962,7 @@ static auto draw_compose_envelope_texture(const ComposePaintContext& paint,
     key ^= view.chart_id * 1469598103934665603ULL;
     key ^= view.selected_audio_asset_id * 1099511628211ULL;
     key ^= view.channel_waveform_source_lane_id * static_cast<uint64_t>(slot);
+    key ^= lane_key * 0x9E3779B97F4A7C15ULL;
     key ^= std::bit_cast<uint64_t>(view.pixels_per_standard_measure);
     key ^= std::bit_cast<uint64_t>(view.waveform_audio_offset_numerator);
     key ^= view.waveform_audio_offset_denominator;
@@ -1061,6 +1062,35 @@ static void draw_compose_channel_waveform(const ComposePaintContext& paint) {
     }
 }
 
+// The other BMSON stems, each in its own BGM lane. A stem still decoding gets a faint
+// placeholder band so its lane reads as "audio coming" rather than empty.
+static void draw_compose_stem_waveforms(const ComposePaintContext& paint) {
+    const auto& view = *paint.view;
+    for (size_t index = 0; index < view.stem_waveform_count; ++index) {
+        const auto& stem = view.stem_waveforms[index];
+        const auto lane = std::find_if(view.bgm_lanes, view.bgm_lanes + view.bgm_lane_count,
+            [&](const auto& candidate) { return candidate.source_lane_id == stem.source_lane_id; });
+        if (lane == view.bgm_lanes + view.bgm_lane_count) continue;
+        const auto rect = compose_screen_rect(&lane->bounds, &view, paint.viewport);
+        if (rect.w <= 1.0f || rect.h <= 0.0f) continue;
+        if (stem.pending || stem.row_count == 0) {
+            field_rect(paint, rect, 0.0f, nk_rgba(146, 230, 251, stem.pending ? 22 : 0), 6);
+            continue;
+        }
+        const auto center = rect.x + rect.w * 0.5f;
+        const auto half_width = rect.w * 0.43f;
+        if (draw_compose_envelope_texture(paint, stem.rows, stem.row_count, center, half_width, 2 + index,
+                nk_rgba(87, 157, 196, 96), nk_rgba(146, 230, 251, 190), true, stem.source_lane_id)) continue;
+        for (size_t row_index = 0; row_index < stem.row_count; ++row_index) {
+            const auto& row = stem.rows[row_index];
+            if (!finite_envelope_row(row)) continue;
+            const auto y = compose_projected_y(paint, row.y_pixels);
+            field_line(paint, center - row.absolute_peak[0] * half_width, y,
+                       center + row.absolute_peak[1] * half_width, y, 1.0f, nk_rgba(146, 230, 251, 190), 6);
+        }
+    }
+}
+
 static void draw_compose_beat_fit_region(const ComposePaintContext& paint,
                                          const ComposeTimingLaneLayout& layout) {
     const auto& view = *paint.view;
@@ -1095,6 +1125,7 @@ static void draw_compose_differences(const ComposePaintContext& paint) {
 static void draw_compose_waveform_layer(const ComposePaintContext& paint,
                                         const ComposeTimingLaneLayout& layout) {
     draw_compose_waveform(paint);
+    draw_compose_stem_waveforms(paint);
     draw_compose_channel_waveform(paint);
     draw_compose_beat_fit_region(paint, layout);
     draw_compose_differences(paint);

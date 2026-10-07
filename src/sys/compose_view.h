@@ -187,6 +187,22 @@ struct compose_scene_cache_t {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     envelope_projection_ring_t waveform_envelope_ring;
     envelope_projection_ring_t channel_envelope_ring;
+    // One entry per BMSON stem drawn besides the selected channel (at most eight; the vector is
+    // reserved up front so the view's row pointers stay valid through the frame).
+    struct stem_waveform_cache_t {
+        wormedit::object_id_t channel;
+        std::uint64_t source_lane{};
+        const void* source{};
+        std::uint64_t source_generation{};
+        std::uint64_t revision{};
+        std::optional<wormedit::sound_slice_result_t> slices;
+        double scroll{}, height{}, zoom{};
+        bool valid{}, pending{};
+        std::vector<WormUiComposeWaveformRowView> rows;
+        envelope_projection_ring_t ring;
+    };
+    std::vector<stem_waveform_cache_t> stem_waveforms;
+    std::vector<WormUiComposeStemWaveformView> stem_waveform_views;
     std::optional<wormedit::audio::waveform_key_t> waveform_overview_key;
     const void* waveform_overview_identity{};
     std::uint64_t waveform_overview_revision{};

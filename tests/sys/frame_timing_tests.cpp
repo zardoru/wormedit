@@ -892,6 +892,37 @@ TEST_CASE("BMSON channel switches sharing an asset preserve independent timing a
     fixture.project_channel();
     expect_gpu_work(fixture.cache.channel_waveform_rows.front().y_pixels > 140);
 }
+TEST_CASE("BMSON stems other than the selected one get their own lane rows or a pending band",
+          "[sys][waveform-projection][bmson][stems]") {
+    channel_projection_fixture_t fixture;
+    std::shared_ptr<const audio::waveform_analysis_result_t> stem_result = fixture.channel_analysis;
+    const bmson_waveform_projection_context_t context{fixture.flattened, fixture.history, fixture.workspace,
+        &fixture.interaction, fixture.cache, fixture.sources, {fixture.asset, fixture.channel_analysis},
+        {fixture.asset, fixture.channel_analysis}, 1,
+        [&](asset_id_t) { return stem_result; }};
+
+    // Channel 71000 is selected through its marker, so only 71001 is a stem.
+    populate_bmson_waveform_projection(context);
+    CHECK(fixture.flattened.view.compose.stem_waveform_count == 1);
+    const auto& stem = fixture.flattened.view.compose.stem_waveforms[0];
+    CHECK(stem.source_lane_id == 3);
+    CHECK((!stem.pending && stem.row_count > 0));
+    CHECK(stem.row_count <= fixture.flattened.view.compose.viewport_height_pixels + 2);
+
+    // Selecting the other marker swaps which stem is the extra one.
+    fixture.flattened.view.compose.selected_bmson_bgm_event_id = 74001;
+    populate_bmson_waveform_projection(context);
+    CHECK(fixture.flattened.view.compose.stem_waveform_count == 1);
+    CHECK(fixture.cache.stem_waveforms.size() == 1);
+    CHECK(fixture.cache.stem_waveforms.front().channel == object_id_t{71000});
+
+    // Audio that has not finished decoding is a placeholder, never a blocked frame.
+    stem_result.reset();
+    populate_bmson_waveform_projection(context);
+    CHECK(fixture.flattened.view.compose.stem_waveform_count == 1);
+    CHECK(fixture.flattened.view.compose.stem_waveforms[0].pending);
+    CHECK(fixture.flattened.view.compose.stem_waveforms[0].row_count == 0);
+}
 namespace {
 auto reference_frame(const timing_index_t& timing, long double row, bool end,
                      const audio::waveform_t& waveform) -> std::uint64_t {

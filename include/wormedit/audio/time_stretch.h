@@ -32,7 +32,12 @@ public:
     [[nodiscard]] auto fade_frames() const noexcept -> std::size_t { return window_; }
 private:
     [[nodiscard]] auto sample(std::uint64_t frame, unsigned channel) const noexcept -> float;
-    [[nodiscard]] auto correlation(std::uint64_t candidate, double previous_energy) const noexcept -> double;
+    [[nodiscard]] auto correlation(std::uint64_t candidate, double previous_energy,
+                                   std::size_t sample_stride = 1) const noexcept -> double;
+    [[nodiscard]] auto search_candidates(std::uint64_t predicted, std::uint64_t first,
+                                         std::uint64_t last, double previous_energy,
+                                         std::size_t sample_stride, std::size_t candidate_stride)
+        const noexcept -> std::uint64_t;
     [[nodiscard]] auto best_candidate(std::uint64_t predicted) noexcept -> std::uint64_t;
     [[nodiscard]] auto generate() noexcept -> bool;
     [[nodiscard]] auto next_source_position() const noexcept -> long double;

@@ -334,7 +334,8 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
             .silenced_music_voices = silenced_music_voices,
         };
     }
-    session_.set_output_latency_frames(source_latency_frames());
+    // Callback publication owns ordinary latency updates; frame service must
+    // not wait for its stream lock while active audio is being rendered.
     if (stream_ != nullptr && output_drained_.load(std::memory_order_acquire) && SDL_GetAudioStreamQueued(stream_) == 0)
     {
         output_playing_.store(false, std::memory_order_release);
@@ -627,7 +628,7 @@ auto sdl_preview_output_t::render_source(std::size_t frames) noexcept -> std::si
 }
 
 auto sdl_preview_output_t::render_block(std::size_t frames) noexcept -> std::size_t {
-    if (!keep_pitch()) {
+    if (!keep_pitch() || playback_rate() == rational_t{1, 1}) {
         const auto count = source_finished_ ? 0 : render_source(frames);
         std::copy_n(source_scratch_.data(), count * 2, scratch_.data());
         output_drained_.store(source_finished_, std::memory_order_release);

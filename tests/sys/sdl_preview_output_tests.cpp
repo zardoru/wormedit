@@ -1210,6 +1210,21 @@ struct sdl_preview_output_test_access_t {
     static auto snapshot(const sdl_preview_output_t& output) -> audio::playhead_state_t {
         return output.read_output_playhead();
     }
+    static auto source_finished(const sdl_preview_output_t& output) -> bool {
+        return output.source_finished_;
+    }
+    static auto buffered_source_frames(const sdl_preview_output_t& output) -> std::uint64_t {
+        return output.buffered_source_frames_.load(std::memory_order_acquire);
+    }
+    static auto rendered_source_frame(const sdl_preview_output_t& output) -> std::uint64_t {
+        return output.rendered_source_frame_.load(std::memory_order_acquire);
+    }
+    static auto render_block(sdl_preview_output_t& output, std::size_t frames)
+        -> std::vector<float> {
+        const auto produced = output.render_block(frames);
+        return {output.scratch_.begin(), output.scratch_.begin() +
+            static_cast<std::ptrdiff_t>(produced * audio::output_channel_count)};
+    }
 };
 } // namespace wormedit::sys
 
@@ -1362,6 +1377,120 @@ auto t276_seek_stop_publications_remain_coherent(t276_output_fixture_t& fixture)
     return writer_valid && reader_valid.load(std::memory_order_relaxed) &&
         reader_count.load(std::memory_order_relaxed) > 32;
 }
+
+auto t471_service_finishes_with_stream_lock_held(t276_output_fixture_t& fixture) -> bool {
+    using access = wormedit::sys::sdl_preview_output_test_access_t;
+    if (!fixture.output.playing() || !fixture.session.active() ||
+        fixture.session.loop_region().has_value() ||
+        !access::lock_stream(fixture.output)) return false;
+    if (access::source_finished(fixture.output)) {
+        access::unlock_stream(fixture.output);
+        return false;
+    }
+    std::atomic<bool> entered{};
+    std::atomic<bool> finished{};
+    std::atomic<bool> valid{};
+    std::thread service_thread([&] {
+        entered.store(true, std::memory_order_release);
+        static_cast<void>(fixture.output.service());
+        const auto state = access::snapshot(fixture.output);
+        valid.store(state.active && state.timeline_frame >= state.start_frame &&
+            state.transport_generation != 0, std::memory_order_relaxed);
+        finished.store(true, std::memory_order_release);
+    });
+    const auto deadline = SDL_GetTicksNS() + 500'000'000ULL;
+    while (!entered.load(std::memory_order_acquire) && SDL_GetTicksNS() < deadline)
+        SDL_Delay(1);
+    while (entered.load(std::memory_order_acquire) &&
+           !finished.load(std::memory_order_acquire) && SDL_GetTicksNS() < deadline)
+        SDL_Delay(1);
+    const auto completed_while_locked = finished.load(std::memory_order_acquire);
+    access::unlock_stream(fixture.output);
+    service_thread.join();
+    return completed_while_locked && valid.load(std::memory_order_relaxed);
+}
+
+auto t471_distinct_pcm(std::size_t frames) -> std::vector<float> {
+    constexpr double pi = 3.14159265358979323846;
+    std::vector<float> source(frames * 2U);
+    for (std::size_t frame = 0; frame < frames; ++frame) {
+        const auto time = static_cast<double>(frame) / 44100.0;
+        source[frame * 2U] = static_cast<float>(0.45 * std::sin(2.0 * pi * 173.0 * time));
+        source[frame * 2U + 1U] = static_cast<float>(0.35 * std::cos(2.0 * pi * 617.0 * time));
+    }
+    for (const auto frame : {std::size_t{127}, std::size_t{2048}, frames - 1U}) {
+        source[frame * 2U] = 0.8F;
+        source[frame * 2U + 1U] = -0.7F;
+    }
+    return source;
+}
+
+auto t471_install_distinct_source(t276_output_fixture_t& fixture,
+                                  std::vector<float>& source_pcm) -> bool {
+    static_cast<void>(fixture.output.stop());
+    source_pcm = t471_distinct_pcm(fixture.source_frames);
+    const auto registered = fixture.sources.register_generated_source({
+        .source = {"t471-unity-source", "exact-pcm-v1"},
+        .interleaved_stereo = source_pcm});
+    if (!registered) return false;
+    fixture.binding.voices = {{.source = registered.binding->source,
+        .frame_count = registered.binding->output_frame_count}};
+    return static_cast<bool>(fixture.output.start(fixture.schedule,
+        std::span{&fixture.binding, 1}, {}, 0, fixture.source_frames));
+}
+
+auto t471_wait_for_output_block(t276_output_fixture_t& fixture) -> bool {
+    const auto deadline = SDL_GetTicks() + 1'000;
+    while (SDL_GetTicks() < deadline) {
+        const auto frame = wormedit::sys::sdl_preview_output_test_access_t::rendered_source_frame(
+            fixture.output);
+        const auto first = frame / wormedit::audio::maximum_read_frames;
+        const auto last = (frame + 1'024U) / wormedit::audio::maximum_read_frames;
+        const auto& source = fixture.binding.voices.front().source;
+        if (fixture.cache.contains({source, first}) && fixture.cache.contains({source, last}))
+            return true;
+        SDL_Delay(1);
+    }
+    return false;
+}
+
+auto t471_unity_render_block_is_exact_pcm(t276_output_fixture_t& fixture) -> bool {
+    using access = wormedit::sys::sdl_preview_output_test_access_t;
+    std::vector<float> source_pcm;
+    if (!t471_install_distinct_source(fixture, source_pcm) ||
+        !fixture.output.set_keep_pitch(true)) return false;
+    wait_pitch_mode(fixture.output, true, {1, 1});
+    if (!fixture.output.keep_pitch() || !t471_wait_for_output_block(fixture) ||
+        fixture.output.playback_rate() != wormedit::rational_t{1, 1} ||
+        !access::lock_stream(fixture.output)) return false;
+    const auto before = access::rendered_source_frame(fixture.output);
+    const auto before_buffer = access::buffered_source_frames(fixture.output);
+    const auto samples = access::render_block(fixture.output, 1'024);
+    const auto after = access::rendered_source_frame(fixture.output);
+    const auto after_buffer = access::buffered_source_frames(fixture.output);
+    access::unlock_stream(fixture.output);
+    if (before + 1'024U > source_pcm.size() / 2U) return false;
+    const auto exact = samples.size() == 2'048 && std::equal(samples.begin(), samples.end(),
+        source_pcm.begin() + static_cast<std::ptrdiff_t>(before * 2U));
+    return exact && before_buffer == 0 && after_buffer == 0 && after >= before &&
+        after - before == 1'024U;
+}
+
+auto t471_unity_transition_keeps_pitch_and_stop_resets_clocks(t276_output_fixture_t& fixture)
+    -> bool {
+    if (!fixture.output.set_keep_pitch(true) || !fixture.output.set_playback_rate({1, 2}))
+        return false;
+    wait_pitch_mode(fixture.output, true, {1, 2});
+    if (!fixture.output.set_playback_rate({1, 1})) return false;
+    wait_pitch_mode(fixture.output, true, {1, 1});
+    if (!fixture.output.keep_pitch() || fixture.output.playback_rate() != wormedit::rational_t{1, 1})
+        return false;
+    if (!fixture.output.set_playback_rate({1, 2})) return false;
+    wait_pitch_mode(fixture.output, true, {1, 2});
+    static_cast<void>(fixture.output.stop());
+    return fixture.output.keep_pitch() && !fixture.output.playing() &&
+        fixture.output.timeline_frame() == 0 && fixture.output.source_latency_frames() == 0;
+}
 } // namespace
 
 TEST_CASE("SDL output playhead readers finish while the audio stream lock is held",
@@ -1435,4 +1564,26 @@ TEST_CASE("SDL cached playhead preserves a completed keep-pitch source tail",
     expect_pitch(SDL_InitSubSystem(SDL_INIT_AUDIO));
     const preview_audio_subsystem_t audio_subsystem;
     expect_pitch(t276_completed_pitch_tail_retains_clock());
+}
+
+TEST_CASE("SDL service and playhead complete while an active non-EOF stream is locked",
+          "[integration][audio][sdl][preview][keep-pitch][service-lock]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    t276_output_fixture_t fixture;
+    REQUIRE(fixture.ready);
+    expect_pitch(t471_service_finishes_with_stream_lock_held(fixture));
+}
+
+TEST_CASE("SDL keep-pitch unity render block remains exact and reduced-rate transitions stop cleanly",
+          "[integration][audio][sdl][preview][keep-pitch][unity]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_FREQUENCY, "44100"));
+    const preview_audio_subsystem_t audio_subsystem;
+    t276_output_fixture_t fixture;
+    REQUIRE(fixture.ready);
+    expect_pitch(t471_unity_render_block_is_exact_pcm(fixture));
+    expect_pitch(t471_unity_transition_keeps_pitch_and_stop_resets_clocks(fixture));
 }

@@ -51,12 +51,13 @@ auto time_stretch_t::sample(std::uint64_t frame, unsigned channel) const noexcep
     return input_[(frame % capacity_) * 2 + channel];
 }
 
-auto time_stretch_t::correlation(std::uint64_t candidate, double previous_energy) const noexcept -> double {
+auto time_stretch_t::correlation(std::uint64_t candidate, double previous_energy,
+                                 std::size_t sample_stride) const noexcept -> double {
     if (candidate < input_begin_ || candidate >= input_end_) return -2.0;
     const auto first = static_cast<std::size_t>(candidate % capacity_);
     const auto count = static_cast<std::size_t>(std::min<std::uint64_t>(hop_, input_end_ - candidate));
     double dot{}, energy{};
-    for (std::size_t frame = 0; frame < count; ++frame) {
+    for (std::size_t frame = 0; frame < count; frame += sample_stride) {
         const auto current = mid_[first + frame];
         dot += previous_mid_[frame] * current;
         energy += current * current;
@@ -64,23 +65,44 @@ auto time_stretch_t::correlation(std::uint64_t candidate, double previous_energy
     return previous_energy > 1e-20 && energy > 1e-20 ? dot / std::sqrt(previous_energy * energy) : -2.0;
 }
 
+auto time_stretch_t::search_candidates(std::uint64_t predicted, std::uint64_t first,
+                                       std::uint64_t last, double previous_energy,
+                                       std::size_t sample_stride, std::size_t candidate_stride)
+    const noexcept -> std::uint64_t {
+    auto best = predicted;
+    auto best_score = correlation(best, previous_energy, sample_stride);
+    for (auto candidate = first; candidate <= last;) {
+        const auto score = correlation(candidate, previous_energy, sample_stride);
+        if (score > best_score + 1e-12) { best = candidate; best_score = score; }
+        if (last - candidate < candidate_stride) break;
+        candidate += candidate_stride;
+    }
+    return best;
+}
+
 auto time_stretch_t::best_candidate(std::uint64_t predicted) noexcept -> std::uint64_t {
-    double previous_energy{};
+    constexpr std::size_t coarse_stride = 4;
+    double previous_energy{}, coarse_energy{};
     for (std::size_t frame = 0; frame < hop_; ++frame) {
         const auto mid = (static_cast<double>(overlap_[frame * 2]) + overlap_[frame * 2 + 1]) * 0.5;
         previous_mid_[frame] = mid;
         previous_energy += mid * mid;
+        if (frame % coarse_stride == 0) coarse_energy += mid * mid;
     }
     if (previous_energy <= 1e-20) return predicted;
     const auto first = std::max(input_begin_, predicted > search_ ? predicted - search_ : 0);
     const auto last = finished_ ? predicted + search_ : std::min(predicted + search_, input_end_ - window_);
-    auto best = predicted;
-    auto best_score = correlation(best, previous_energy);
-    for (auto candidate = first; candidate <= last; ++candidate) {
-        const auto score = correlation(candidate, previous_energy);
-        if (score > best_score + 1e-12) { best = candidate; best_score = score; }
-    }
-    return best;
+    // Decimate both candidate positions and mid-channel samples, then evaluate
+    // the nearby candidates at full precision. Keep the nominal position as a
+    // full-score fallback and retain the existing deterministic tie preference.
+    const bool coarse_silent = coarse_energy <= 1e-20;
+    const auto coarse = search_candidates(predicted, first, last,
+        coarse_silent ? previous_energy : coarse_energy,
+        coarse_silent ? 1 : coarse_stride, coarse_stride);
+    const auto fine_first = std::max(first, coarse > coarse_stride ? coarse - coarse_stride : 0);
+    const auto fine_last = coarse >= last ? last :
+        coarse + std::min<std::uint64_t>(coarse_stride, last - coarse);
+    return search_candidates(predicted, fine_first, fine_last, previous_energy, 1, 1);
 }
 
 auto time_stretch_t::generate() noexcept -> bool {

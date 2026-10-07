@@ -21,7 +21,18 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-438 Attribute frame cost on BMSON playback, zooming and the dragback chart
 
-- **Status:** ready
+- **Status:** done (2026-10-07; findings below; profiled on the user's live Debug build with `perf record -e cpu-clock:u --call-graph dwarf`, not Xvfb, at the user's request)
+- **Findings (Debug build, so absolute times are inflated about 3–5×; the call shapes match Release):**
+  - **Dragback `_i.bms`, paused and playing:** workspace projection averages 12.6 ms (p99 19.3 ms): preparation 2.0, actions 1.2, flatten 5.0, frame view 1.5, compose controls 2.4. Main-thread shares:
+    - Sounds dock list, about 30%: `project_keysound_list` natural-sorts every sound on every frame (`sort_keysound_sections` → `natural_name_less`, 17%), and `collect_keysound_resources` → `is_placeable_keysound` finds each audio asset linearly (10%).
+    - Compose timing markers, about 14%: `append_compose_chart_timing_markers` (`compose_view.cpp:1979`) formats the label strings for every timing event before culling, and `absolute_row` searches measures linearly.
+    - BMS branch outline, about 10%: `make_workspace_view` → `make_branch_outline` (`workspace.cpp:754`) rebuilds the tree every frame, even for a chart with no branch statements.
+  - **BMSON playback while zooming and skipping:** the main thread accounts for 69% of samples, the SDL audio thread 25%.
+    - Stem projection, 31% of the main thread: `populate_channel_ring` → `project_channel_waveform` → `channel_pixel_for_column` (`src/audio/channel_waveform.cpp:129`). It runs an exact-rational `musical_position_at` for every *audio waveform column*, not every pixel, so zooming out costs the most. Self time is `std::gcd` (10%), and the call repeats once per stem. Zooming invalidates every ring; skipping moves the window beyond the ring.
+    - Field renderer, 13%: `renderer_t::stem_envelope` → `collect_envelope_rows` refills each stem's texture after every zoom step.
+    - Seeking, 3.7%: `preview_session_t::seek` → `pump_preview_lookahead` → `decode_block` decodes synchronously on the main thread on every skip.
+    - Audio thread: almost all of it is WSOLA `time_stretch_t::correlation` (Keep pitch at a reduced rate). In Debug, the bounds-checked `vector::operator[]` dominates.
+  - The earlier per-frame stem-selection suspects are ruled out, because T-439 already fixed them.
 - **Outcome:** this card records a table of per-phase frame times and the top 15 self-time symbols for each of the three scenarios below, with the commands that produced them. Each suspect listed above is marked as confirmed or ruled out.
 - **Read first:** `src/sys/frame_timing.cpp` (`WORMEDIT_FRAME_TIMING_REPORT`, phases), `src/sys/bmson_waveform_projection.cpp`, `src/sys/stem_waveform_window.h`, [T-275](live-transport.md).
 - **Files owned:** this card only. Any temporary probe lives in the scratchpad and is not committed.
@@ -57,20 +68,22 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 - **Integrated evidence:** main `c03f1ac`, normal application build and 2,453/2,453 tests pass. The opt-in 181-stem benchmark passes 5,826 assertions: indexed 0.686818 ms versus reference 128.896 ms (max of five, 32 windows). Production Kick retains all 12 registered stems at measures 1/20/40 in identical order. Workspace root evidence: `wormedit-scratch-builds/root-oct7/stem-budget-backend-main-ctest.log`, `stem-main-timing.log`, `stem-real-main-probe.log`. This query benchmark does not replace T-438 frame profiling.
 
-## T-440 Keep stem waveforms responsive while zooming
+## T-440 Project stem waveforms per pixel row through one shared row-to-time table
 
-- **Status:** blocked-on T-438
-- **Outcome:** during a zoom gesture, stems still draw, and frame p99 stays within the T-438 paused baseline plus 2 ms. Stems reproject only after the zoom settles (no zoom change for one frame) or within a per-frame row budget.
-- **Read first:** `src/sys/bmson_waveform_projection.cpp` (`populate_channel_ring`, `project_stem`), `src/audio/channel_waveform.cpp` (`project_channel_waveform`), T-438's findings.
-- **Files owned:** `src/sys/bmson_waveform_projection.cpp`, `src/sys/bmson_waveform_projection.h`, `tests/sys/` projection tests, this card.
+- **Status:** ready
+- **Outcome:** stem projection costs O(viewport rows × visible stems) with cheap lookups, independent of zoom level and audio length. During playback with zooming and skipping on `kick_your_ass2.bmson` and `stl_solst1`, stem projection takes under 10% of main-thread samples, down from 31% in T-438. Settled rows match today's projection, within one pixel of placement.
+- **Read first:** T-438's findings, `src/audio/channel_waveform.cpp` (`channel_pixel_for_column`, `rasterize_channel_columns`), `src/sys/bmson_waveform_projection.cpp` (`populate_channel_ring`, `project_stem`), `include/wormedit/core/timing.h` (`musical_position_at`), `src/audio/aligned_waveform.cpp`.
+- **Files owned:** `src/audio/channel_waveform.cpp`, `include/wormedit/audio/channel_waveform.h`, `src/sys/bmson_waveform_projection.cpp`, `src/sys/bmson_waveform_projection.h`, `src/sys/compose_view.h` (scene cache field for the row table), `tests/core/` channel waveform tests, `tests/sys/` projection tests, this card.
 - **Steps:**
-  1. Give each frame a shared projection budget of rows across all stems. The selected stem goes first, then stems in viewport order. A stem left over the budget keeps its previous rows, rescaled in y by `new_zoom / old_zoom` around the scroll anchor.
-  2. After the zoom settles, every stem reprojects exactly.
-  3. Test that the settled rows match exact projection, and that a zoom step never projects more than the budget.
-- **Invariants:** paused, settled rows are pixel-identical to today.
-- **Reject/failure behavior:** a stem with no previous rows shows the pending placeholder, not a blank lane.
-- **Verify:** `ctest --test-dir build --output-on-failure -R 'bmson|stem'`; repeat T-438 scenario B and record the new p99.
-- **Out of scope:** the GPU slot pool (T-443).
+  1. Build one row-to-time table per frame, keyed by (timing revision, scroll, zoom, height). Each viewport row gets its chart-time span in seconds, as a double, computed with forward timing (row → time). It is shared by every stem, the selected channel and the song waveform.
+  2. Project each stem by walking its slices against the table. For each row, map its time span into the slice's source frames and read the peak and RMS from the waveform pyramid at the matching level. No per-column inverse timing, and no exact rationals on the display path.
+  3. Ring reuse: a scroll reuses the rows already projected, as today. A zoom rebuilds only the table, and each stem re-reads its rows from the pyramid.
+  4. Keep the exact path for anything that edits audio (slice points, razor, paste); only the display changes.
+  5. Test that, for fixtures with tempo changes, stops and continuation slices, every row's peaks match the reference within one row of placement, and that the work does not depend on zoom (opt-in benchmark as in T-145).
+- **Invariants:** slice boundaries, restart and continue behavior and cut-line rows are unchanged.
+- **Reject/failure behavior:** a timing index that cannot map a row leaves that row empty, as an out-of-range column is today.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'channel_waveform|bmson|stem'`; repeat the T-438 BMSON capture and record the new share.
+- **Out of scope:** GPU refills (T-469).
 
 ## T-441 Keep long single-event stems in the window for their whole length
 
@@ -128,18 +141,20 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-444 Bring the dragback workspace projection under 3 ms
 
-- **Status:** blocked-on T-438
-- **Outcome:** with `iberai_dragback/_i.bms` open, prep, flatten and compose controls together take under 3 ms at p50 when paused, measured as in T-438.
-- **Read first:** T-438's findings, [T-275](live-transport.md), `src/sys/application_frame_projection.cpp`, `src/sys/compose_view.cpp`.
-- **Files owned:** decided after T-438. The coordinator records them here before any edit. If T-438 points at the revision split, this card becomes "do T-275".
+- **Status:** ready
+- **Outcome:** with `iberai_dragback/_i.bms` open, prep, flatten and compose controls together take under 3 ms at p50 when paused, in a Release build. A repeat of the T-438 capture shows the Sounds dock list, timing markers and branch outline each under 1% of main-thread samples.
+- **Read first:** T-438's findings, `src/sys/sound_list_projection.h` (`keysound_list_request_t`), `src/sys/workspace_projection.cpp` (`populate_compose_keysounds`), `src/sys/compose_view.cpp` (`append_compose_chart_timing_markers`), `src/core/workspace.cpp` (`make_branch_outline`).
+- **Files owned:** `src/sys/sound_list_projection.cpp`, `src/sys/sound_list_projection.h`, `src/sys/workspace_projection.cpp`, `src/sys/compose_view.cpp`, `src/sys/compose_view.h` (scene cache fields), `src/core/workspace.cpp`, `include/wormedit/core/workspace.h`, `src/sys/compare_view.cpp` (`build_workspace_frame_model`), projection equality tests, this card.
 - **Steps:**
-  1. From T-438's table, pick the top two costs.
-  2. Move each one to revision-keyed caching or to viewport-bounded iteration.
-  3. Measure again and record the result.
-- **Invariants:** the projected view is byte-identical, checked by an existing projection equality test or a new one.
+  1. Sounds dock: cache the sorted and filtered list per (document revision, chart, sort, filter request). Give `is_placeable_keysound` an asset-ID map built once per revision.
+  2. Timing markers: cache (row, short label, detail) per (revision, chart). Each frame then only culls to the viewport and projects y, and selection flags stay per frame.
+  3. Branch outline: cache per (revision, chart), and skip it entirely when the chart has no branch statements.
+  4. For each cache, test that the cached output equals the uncached output on the dragback fixture shape (600 sounds, 70 BPM events), and that a revision bump invalidates it.
+  5. Repeat the T-438 dragback capture in a Release build and record the times.
+- **Invariants:** the projected view is byte-identical.
 - **Reject/failure behavior:** a cache built for a stale revision is never shown.
-- **Verify:** T-438 scenario C before and after; `ctest --test-dir build --output-on-failure`.
-- **Out of scope:** GPU work.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'sound_list|compose|workspace'`; the capture on this card.
+- **Out of scope:** GPU work, BMSON stems (T-440).
 
 ## T-445 Let Options raise the keysound memory budget
 
@@ -158,3 +173,50 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **Out of scope:** stem waveform memory (T-443).
 
 - **T-445 integrated evidence:** main backend `9274bdc`, UI/runtime `853344b`, normal application build and all 2,461/2,461 CTest cases pass. Root corrected the existing exact notification-message expectation to include the required Options guidance. Workspace logs: `wormedit-scratch-builds/root-oct7/keysound-main-build-final.log` and `keysound-main-ctest-final.log`.
+
+## T-469 Stop refilling every stem texture on each zoom step
+
+- **Status:** blocked-on T-440
+- **Outcome:** during a continuous zoom on `stl_solst1`, the field renderer's stem envelope work (`stem_envelope` → `collect_envelope_rows`) takes under 3% of main-thread samples, down from 13%. Stems keep drawing on every frame.
+- **Read first:** T-438's findings, `src/ui/field/field_renderer.cpp` (`envelope_for_key`, `collect_envelope_rows`), `src/ui/field/field_renderer.h`, `src/ui/nuklear/compose_canvas.cpp` (`draw_compose_envelope_texture`).
+- **Files owned:** those three, plus field renderer tests, this card.
+- **Steps:**
+  1. Measure after T-440. If the share is already under 3%, set this card to done with the numbers.
+  2. Otherwise, while the zoom changes, draw the retained texture scaled in y, and refill at most a budgeted number of stems per frame, in viewport order. Refill all of them exactly once the zoom settles.
+  3. Test the per-frame refill budget and that settled pixels match.
+- **Invariants:** paused, settled pixels are identical to today.
+- **Reject/failure behavior:** a stem without a texture draws its line fallback, which is counted, as in T-443.
+- **Verify:** `ctest --test-dir build --output-on-failure -R field`; repeat the T-438 BMSON capture.
+- **Out of scope:** CPU projection (T-440).
+
+## T-470 Seek without decoding audio on the frame thread
+
+- **Status:** ready
+- **Outcome:** a skip during playback (arrow, PageUp/PageDown, wheel or minimap click) returns from `chart_preview_t::seek` without decoding audio on the main thread. Audio resumes at the new position from blocks decoded off-thread, or already resident, and the main-thread share of `decode_block` during skipping drops from 3.7% to zero.
+- **Read first:** `src/sys/chart_preview_state.cpp` (`chart_preview_t::seek`), `src/audio/preview_session.cpp` (`seek`, `prime_started`), `src/audio/preview_pump.cpp` (`pump_preview_lookahead`), `include/wormedit/audio/source_registry.h`.
+- **Files owned:** `src/audio/preview_session.cpp`, `include/wormedit/audio/preview_session.h`, `src/audio/preview_pump.cpp`, `src/sys/chart_preview_state.cpp`, `tests/core/audio_preview_bridge_tests.cpp` (or a new `audio_preview_seek_tests.cpp`), this card.
+- **Steps:**
+  1. Record on this card what `prime_started` decodes before it returns, and why. It may be needed to avoid an initial gap.
+  2. Move that priming to the existing preview decode worker. The output plays silence, or the resident keysounds, until the first block arrives, and seek returns at once.
+  3. Bound the gap: measure the time from seek to first audible frame with SDL dummy audio, and keep it under 50 ms on a warm cache.
+  4. Test rapid repeated seeks (10 within 100 ms): each seek supersedes the previous one, no stale block plays, and no decode runs on the calling thread.
+- **Invariants:** mid-slice resume (T-442) and loop regions behave as before.
+- **Reject/failure behavior:** if a decode fails after the seek, the error appears as today's notification, and the transport stays at the new position.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'audio_preview|^audio\.'`; the isolated SDL dummy-audio gap measurement on this card.
+- **Out of scope:** WSOLA cost (T-471).
+
+## T-471 Measure WSOLA time-stretch cost in Release and bound it
+
+- **Status:** ready
+- **Outcome:** this card records the audio-thread CPU share of Keep-pitch playback at 0.5× and 0.1× in a Release build. If it exceeds 10% of one core, the correlation search is reduced (decimated coarse search, then fine search around the best candidate) and stays bit-for-bit deterministic for a given input.
+- **Read first:** `include/wormedit/audio/time_stretch.h`, `src/audio/time_stretch.cpp` (`best_candidate`, `correlation`), T-233 in [frontend shell](frontend-shell.md).
+- **Files owned:** `src/audio/time_stretch.cpp`, `include/wormedit/audio/time_stretch.h`, time-stretch tests, this card.
+- **Steps:**
+  1. Build RelWithDebInfo, play Kick Your Ass at 0.5× and 0.1× with Keep pitch, and record `perf` audio-thread shares here.
+  2. If either is under 10%, stop: the Debug build's `vector::operator[]` checks explain the T-438 numbers.
+  3. Otherwise, implement a coarse-to-fine candidate search, and compare its output against the current one with the T-233 sine measurements.
+- **Invariants:** the output is deterministic, and the T-233 isolated measurements still pass.
+- **Reject/failure behavior:** none; the playback rate and Keep pitch choices are unchanged.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'time_stretch|playback_rate'`; the measurements on this card.
+- **Out of scope:** pitch-changing playback (T-45).
+

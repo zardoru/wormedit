@@ -1176,11 +1176,11 @@ struct bmson_materialization_t {
                 if (!inserted && !note.continuation) found->second = true;
                 if (note.x != 0) has_playable_at_pulse[note.y] = true;
             }
-            const auto has_bgm = std::ranges::any_of(raw_channel.notes, [&](const auto& note) {
-                return note.x == 0 && !has_playable_at_pulse[note.y];
-            });
             object_id_t bgm_source_lane{};
-            if (has_bgm) {
+            // Every stem gets its BGM column, even when all of its taps are in the field, so its
+            // waveform and slice points have a lane to be drawn in (and a tap moved back to the BGM
+            // area has a lane to land in).
+            {
                 bgm_source_lane = object_ids.take<object_id_t>();
                 chart.bgm_source_lanes.push_back({.id = bgm_source_lane,
                                                   .name = raw_channel.name,

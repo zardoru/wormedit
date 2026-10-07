@@ -1062,24 +1062,16 @@ static void draw_compose_channel_waveform(const ComposePaintContext& paint) {
     }
 }
 
-// The lane column a stem piece or cut sits in, in screen coordinates; nullopt when that lane is
-// not on screen (scrolled out of the BGM pane, or not in the current layout).
-static auto compose_stem_lane_rect(const ComposePaintContext& paint, uint64_t lane_id, bool playable)
+// The BGM lane column a stem piece or cut sits in, in screen coordinates; nullopt when that lane
+// is not on screen (scrolled out of the BGM pane).
+static auto compose_stem_lane_rect(const ComposePaintContext& paint, uint64_t lane_id)
     -> std::optional<struct nk_rect> {
     const auto& view = *paint.view;
-    const WormUiComposeRect* bounds = nullptr;
-    if (playable) {
-        const auto lanes = std::span(view.lanes, view.lane_count);
-        const auto found = std::find_if(lanes.begin(), lanes.end(),
-            [&](const auto& lane) { return lane.lane_id == lane_id; });
-        if (found != lanes.end()) bounds = &found->bounds;
-    } else {
-        const auto lanes = std::span(view.bgm_lanes, view.bgm_lane_count);
-        const auto found = std::find_if(lanes.begin(), lanes.end(),
-            [&](const auto& lane) { return lane.source_lane_id == lane_id; });
-        if (found != lanes.end()) bounds = &found->bounds;
-    }
-    if (!bounds) return std::nullopt;
+    const auto lanes = std::span(view.bgm_lanes, view.bgm_lane_count);
+    const auto found = std::find_if(lanes.begin(), lanes.end(),
+        [&](const auto& lane) { return lane.source_lane_id == lane_id; });
+    if (found == lanes.end()) return std::nullopt;
+    const WormUiComposeRect* bounds = &found->bounds;
     const auto rect = compose_screen_rect(bounds, &view, paint.viewport);
     if (rect.w <= 1.0f || rect.h <= 0.0f) return std::nullopt;
     return rect;
@@ -1088,7 +1080,7 @@ static auto compose_stem_lane_rect(const ComposePaintContext& paint, uint64_t la
 // One stem piece: the waveform of the slices that sit in one lane.
 static void draw_compose_stem_piece(const ComposePaintContext& paint, const WormUiComposeStemWaveformView& stem,
                                     size_t index) {
-    const auto rect = compose_stem_lane_rect(paint, stem.source_lane_id, stem.playable_lane);
+    const auto rect = compose_stem_lane_rect(paint, stem.source_lane_id);
     if (!rect) return;
     if (stem.pending || stem.row_count == 0) {
         field_rect(paint, *rect, 0.0f, nk_rgba(146, 230, 251, stem.pending ? 22 : 0), 6);
@@ -1099,7 +1091,7 @@ static void draw_compose_stem_piece(const ComposePaintContext& paint, const Worm
     // Only the first dozen pieces get an envelope texture; the rest draw as plain lines.
     if (index < 12 && draw_compose_envelope_texture(paint, stem.rows, stem.row_count, center, half_width,
             2 + index, nk_rgba(87, 157, 196, 96), nk_rgba(146, 230, 251, 190), true,
-            stem.source_lane_id ^ (stem.playable_lane ? 0x5bd1e995ULL : 0ULL))) return;
+            stem.source_lane_id)) return;
     for (size_t row_index = 0; row_index < stem.row_count; ++row_index) {
         const auto& row = stem.rows[row_index];
         if (!finite_envelope_row(row)) continue;
@@ -1109,7 +1101,8 @@ static void draw_compose_stem_piece(const ComposePaintContext& paint, const Worm
     }
 }
 
-// The tile of the note or BGM marker that starts a slice, if it is on screen.
+// The tile of the note or BGM marker that starts a slice, if it is on screen (it may be a note
+// in the field).
 static auto compose_stem_point_tile(const ComposePaintContext& paint, uint64_t object_id, bool playable)
     -> std::optional<std::pair<struct nk_rect, bool>> {
     const auto& view = *paint.view;
@@ -1136,17 +1129,16 @@ static void draw_compose_stem_cuts(const ComposePaintContext& paint) {
     const auto& mouse = paint.context->input.mouse.pos;
     for (size_t index = 0; index < view.stem_cut_count; ++index) {
         const auto& cut = view.stem_cuts[index];
-        const auto rect = compose_stem_lane_rect(paint, cut.lane_id, cut.playable_lane);
+        const auto rect = compose_stem_lane_rect(paint, cut.bgm_lane_id);
         if (!rect) continue;
-        const auto tile = compose_stem_point_tile(paint, cut.object_id, cut.playable_lane);
+        const auto tile = compose_stem_point_tile(paint, cut.object_id, cut.object_is_note);
         const auto hovered = tile && !view.input_occluded && mouse.x >= tile->first.x && mouse.x < tile->first.x + tile->first.w &&
                              mouse.y >= tile->first.y && mouse.y < tile->first.y + tile->first.h;
         const auto lit = hovered || (tile && tile->second);
         auto color = cut.restart ? nk_rgb(255, 164, 64) : nk_rgb(96, 214, 120);
         color.a = lit ? 255 : 120;
         const auto y = compose_projected_y(paint, cut.y_pixels);
-        // The line runs a little past the lane so it still shows beside the point's tile.
-        field_line(paint, rect->x - 6.0f, y, rect->x + rect->w + 6.0f, y, lit ? 3.0f : 2.0f, color, 9);
+        field_line(paint, rect->x, y, rect->x + rect->w, y, lit ? 3.0f : 2.0f, color, 9);
     }
 }
 

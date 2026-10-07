@@ -836,18 +836,16 @@ typedef struct WormUiComposeStemWaveformView {
     size_t row_count;
     /* The audio is still decoding or missing: draw a placeholder band instead of a waveform. */
     bool pending;
-    /* source_lane_id names a playable lane (a stem tap in the field) rather than a BGM lane. */
-    bool playable_lane;
 } WormUiComposeStemWaveformView;
 
-/* Where a stem's audio is cut: the row of one slice point, in the lane of the note or BGM marker
-   that stands for it. Continue points are green and restarts orange; they light up with the
-   point's tile. */
+/* Where a stem's audio is cut: the row of one slice point, drawn in the stem's BGM lane even when
+   a note in the field stands for the point. Continue points are green and restarts orange; they
+   light up with the point's tile (the note when object_is_note, else the BGM marker). */
 typedef struct WormUiComposeStemCutView {
     double y_pixels;
-    uint64_t lane_id;
-    bool playable_lane;
+    uint64_t bgm_lane_id;
     bool restart;
+    bool object_is_note;
     uint64_t object_id;
 } WormUiComposeStemCutView;
 

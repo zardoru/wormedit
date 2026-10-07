@@ -150,8 +150,12 @@ auto populate_channel_ring(const channel_ring_context_t& context, bool downscrol
 constexpr std::size_t maximum_drawn_stems = maximum_visible_stems + 1;
 constexpr std::size_t maximum_stem_cuts = 4096;
 
-// The BGM lane a stem's markers sit in: the source lane of its first linked marker.
+// The BGM lane a stem lives in: the lane whose source order is the channel's position (what moving
+// one of its taps to the BGM area creates), else the lane of its first BGM marker.
 auto stem_source_lane(const chart_document_t& chart, const sound_channel_t& channel) -> std::uint64_t {
+    const auto order = static_cast<std::size_t>(&channel - chart.sound_channels.data());
+    const auto by_order = std::ranges::find(chart.bgm_source_lanes, order, &bgm_source_lane_t::source_order);
+    if (by_order != chart.bgm_source_lanes.end()) return by_order->id.value;
     for (const auto& measure : chart.measures)
         for (const auto& event : measure.bgm_events)
             if (event.sound_channel_event &&
@@ -219,46 +223,29 @@ auto slice_lane_ref(const stem_split_context_t& context, const derived_sound_sli
     return std::nullopt;
 }
 
-// Splits the stem's rows by the lane of the slice each belongs to, and lists the cut lines. The
-// selected channel's BGM pieces are left to its own path, so only its field taps are kept.
+// Lists the stem's cut lines and keeps its rows for the BGM lane. The slice points come from
+// notes in the field as well as BGM markers, but all of them are drawn in the stem's own lane.
 void split_stem_by_lane(const stem_split_context_t& context) {
     auto& entry = context.entry;
     entry.pieces.clear();
     entry.cuts.clear();
-    if (!entry.slices || !*entry.slices || context.chart.divisions_per_standard_measure == 0) return;
+    if (!entry.slices || !*entry.slices || context.chart.divisions_per_standard_measure == 0 ||
+        entry.source_lane == 0) return;
     const auto& slices = entry.slices->slices;
-    const auto world_of = [&](std::uint64_t row) {
-        return static_cast<double>(row) * context.zoom /
-               static_cast<double>(context.chart.divisions_per_standard_measure);
-    };
     const auto base = std::floor(context.scroll);
-    std::vector<double> begins;
-    begins.reserve(slices.size());
-    for (const auto& slice : slices) begins.push_back(world_of(slice.absolute_row));
-    for (std::size_t index = 0; index < slices.size(); ++index) {
-        const auto ref = slice_lane_ref(context, slices[index]);
+    for (const auto& slice : slices) {
+        const auto ref = slice_lane_ref(context, slice);
         if (!ref) continue;
-        const auto y = compose_source_y(begins[index] - base, context.height, context.downscroll);
+        const auto world = static_cast<double>(slice.absolute_row) * context.zoom /
+                           static_cast<double>(context.chart.divisions_per_standard_measure);
+        const auto y = compose_source_y(world - base, context.height, context.downscroll);
         if (y >= 0.0 && y <= context.height)
-            entry.cuts.push_back({.y_pixels = y, .lane_id = ref->lane, .playable_lane = ref->playable,
-                                  .restart = slices[index].restart, .object_id = ref->object});
+            entry.cuts.push_back({.y_pixels = y, .bgm_lane_id = entry.source_lane, .restart = slice.restart,
+                                  .object_is_note = ref->playable, .object_id = ref->object});
     }
-    const auto piece_for = [&](std::uint64_t lane, bool playable) -> auto& {
-        auto found = std::ranges::find_if(entry.pieces, [&](const auto& piece) {
-            return piece.lane == lane && piece.playable == playable;
-        });
-        if (found != entry.pieces.end()) return *found;
-        entry.pieces.push_back({.lane = lane, .playable = playable, .rows = {}});
-        return entry.pieces.back();
-    };
-    for (const auto& row : entry.rows) {
-        const auto world = base + compose_source_y(row.y_pixels, context.height, context.downscroll);
-        const auto after = std::upper_bound(begins.begin(), begins.end(), world);
-        if (after == begins.begin()) continue;
-        const auto ref = slice_lane_ref(context, slices[static_cast<std::size_t>(after - begins.begin()) - 1]);
-        if (!ref || (entry.is_selected && !ref->playable)) continue;
-        piece_for(ref->lane, ref->playable).rows.push_back(row);
-    }
+    // The selected channel's waveform is drawn by its own path; everything else goes in its lane.
+    if (!entry.is_selected && !entry.rows.empty())
+        entry.pieces.push_back({.lane = entry.source_lane, .playable = false, .rows = entry.rows});
 }
 
 // Projects one stem whose audio is decoded; false leaves it as a placeholder.
@@ -336,14 +323,13 @@ void publish_stem(compose_scene_cache_t& cache, const drawn_stem_t& item,
     if (entry.pending) {
         if (!item.selected && item.lane != 0)
             cache.stem_waveform_views.push_back({.source_lane_id = item.lane, .rows = nullptr, .row_count = 0,
-                                                 .pending = true, .playable_lane = false});
+                                                 .pending = true});
         return;
     }
     for (const auto& piece : entry.pieces)
         if (!piece.rows.empty())
             cache.stem_waveform_views.push_back({.source_lane_id = piece.lane, .rows = piece.rows.data(),
-                                                 .row_count = piece.rows.size(), .pending = false,
-                                                 .playable_lane = piece.playable});
+                                                 .row_count = piece.rows.size(), .pending = false});
     for (const auto& cut : entry.cuts)
         if (cache.stem_cut_views.size() < maximum_stem_cuts) cache.stem_cut_views.push_back(cut);
 }

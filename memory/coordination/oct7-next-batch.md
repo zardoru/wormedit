@@ -33,3 +33,14 @@ T-450 is integrated as `4c446cd`. The main application build and all
 The independent root Layer 2 probe also passes distinct 04/06/07/0A kinds, exact
 retained bytes, normalized export, schema-3 recovery and duplicate refusal
 (`layer2-probe.log` in that same workspace directory).
+
+T-439 final review found the two new Catch cases exceeded complexity 25 despite
+passing behavior. Root assigned `tests/sys/frame_timing_tests.cpp` exclusively
+to the existing Sol coordinator after the Luna ownership-release acknowledgement;
+Luna retains `tests/sys/stem_window_tests.cpp`. Each splits its own test into
+cohesive helpers and runs configured tidy. Root serially rebuilds both targets
+and reruns focused and opt-in tests after both edits; no concurrent build writes.
+
+After Layer 2's completed integration and verification, root also removed its
+clean worktree, retaining `batch/layers-oct7`. Cleanup total is now 19 removed
+trees plus one missing registration pruned; main and stems/budget remain.

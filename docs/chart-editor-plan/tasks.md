@@ -53,9 +53,11 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [BMS editing: move to BGM with group-aware lanes, move-and-deselect, select by sound](tasks/bms-editing.md)
 - [Field color schemes, including iBMSC imports](tasks/color-schemes.md)
 - [User manual and tutorial video](tasks/manual-tutorial.md)
+- [BMSON stems, projection cost and audio budgets](tasks/stems-performance.md)
+- [BMSON layers and profiles, all BGA layers, one verb set for BGM and play lanes](tasks/bmson-bga-editing.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-437.
+every number above T-455.
 
 ## Rules for whoever executes a card
 

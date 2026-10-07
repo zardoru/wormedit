@@ -1,0 +1,167 @@
+# BMSON layers and profiles, all BGA layers, one verb set for BGM and play lanes (2026-10-07 feedback)
+
+[Back to the task card index](../tasks.md).
+
+User feedback from 2026-10-07, with the causes found while planning:
+
+- **BMSON lane colors do not follow the profile.** `color_stage` in `src/core/lane_profiles.cpp` colors only the `bms-`, `bme-`, `pms-`, osu! and `bmson-generic-` profiles, so `bmson-beat-*` and `bmson-popn-*` lanes get no key colors. `bmson-beat-7k` should look like BMS SP: seven keys plus a scratch.
+- **The sabun chart cannot take a lane profile.** `/mnt/pukeipukei/G/bms/bms-b/BOFXVII/iberai_dragback/sabun/_untitled.bms` has no playable channels, only `01`, `03`, `04` and `07`. It opens through `populate_bgm_only_compose_projection`, and `dispatch_compose_lane_profile` (`src/sys/compose_actions.cpp:300`) rejects with "No lane layout is active at the cursor." The "empty BMS takes its first layout" path from `e98244d` is reachable only through layout edits.
+- **Only two BGA kinds show.** The document has `background`, `poor`, `layer`, `video` and `storyboard`, with no layer 2: the BMS parser folds `0A` into `layer` (`src/formats/bms.cpp:968`), and the writer splits collisions back into `07`/`0A`. The Compose BGA lane and the selected-image preview handle only `background` and `video` (`src/sys/compose_view.cpp:1137`).
+- **The Rotterdam BGA preview is unreliable.** `rotterdam_7HYPER.bme` declares 163 `#BMP` files as `.png`, but the folder ships `.bmp` files. The name resolver tries alternate extensions only for audio (`src/sys/project_open.cpp:226`). Its 92 layer (`07`) events are also never shown in the editor.
+- **Shift+lane key on a BGM selection moves everything.** `compose_input.cpp` routes every `LANE_KEY_PRESS` with BGM selected to `move_selected_bgm_to_lane` and ignores `successive`, while play notes go through `assign_selected_notes_to_lane` (`src/core/interaction.cpp:2087`), which honors it. The two paths duplicate verbs and each has its own exceptions. A refactor is worth it.
+
+## T-446 Color and order BMSON beat and popn lanes like their BMS equivalents
+
+- **Status:** ready
+- **Outcome:** `bmson-beat-5k`/`7k` draw scratch, then alternating white and black keys, exactly like `bms-7k` (scratch on the left), and `beat-10k`/`14k` draw like BMS DP. `bmson-popn-9k` uses the PMS button colors. A core test compares the key colors and display order with the BMS profile that has the same lane count.
+- **Read first:** `src/core/lane_profiles.cpp` (`color_stage`, `assign_lane_key_colors`), `src/formats/bmson.cpp` (`select_bmson_beat_lanes`), `src/sys/compose_view.cpp:458`.
+- **Files owned:** `src/core/lane_profiles.cpp`, `src/formats/bmson.cpp` (display order only), `tests/core/lane_profile_tests.cpp`, `tests/formats/bmson_tests.cpp`, this card.
+- **Steps:**
+  1. Treat `bmson-beat-` like `bms-` in `color_stage`, and `bmson-popn-` like `pms-`.
+  2. Check the display order of the BMSON scratch (`x = 8`/`16`) against `bms-7k`/`bms-14k`, and fix the order if they differ.
+  3. Run the existing load-time repair so charts already saved get the colors.
+  4. Add a test per mode hint.
+- **Invariants:** BMSON `x` values and export are unchanged. Only colors and display order change.
+- **Reject/failure behavior:** an unknown mode hint keeps the `generic-nkeys` piano coloring.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'lane_profile|bmson'`; an isolated capture of `kick_your_ass2.bmson`.
+- **Out of scope:** user color schemes ([T-428](color-schemes.md)).
+
+## T-447 Give each BMSON sound channel its own semantic layer on import
+
+- **Status:** ready
+- **Outcome:** opening a BMSON chart with no semantic layers creates one layer per sound channel, named after its file stem, with colors from a fixed 16-color cycle. Every note and BGM marker of that channel belongs to the layer. A core test checks names, colors and membership.
+- **Read first:** `include/wormedit/core/document.h` (`semantic_layer_t`), `src/core/semantic_layer_editor.cpp`, `src/formats/bmson.cpp`, `src/sys/project_open.cpp`.
+- **Files owned:** a new `src/core/bmson_layer_defaults.cpp` and `include/wormedit/core/bmson_layer_defaults.h`, `src/sys/project_open.cpp` (call site), `CMakeLists.txt`, a new `tests/core/bmson_layer_defaults_tests.cpp`, `tests/CMakeLists.txt`, this card.
+- **Steps:**
+  1. Define the 16-color cycle as a constant table: evenly spaced hues, readable on the dark field.
+  2. Add a pure function (chart → layers + membership) that does nothing when the chart already has layers.
+  3. Apply it when a `.bmson` source file is opened, not when a native project is reopened, and not as an undo entry.
+  4. Test with 12 channels and with 20 (the cycle wraps), test that existing layers prevent it, and test that native round trips keep the layers.
+- **Invariants:** BMSON export is byte-identical with or without the layers.
+- **Reject/failure behavior:** if the function fails, the chart opens without layers and a warning is shown.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'bmson_layer|semantic'`.
+- **Out of scope:** an Options toggle. Ask the user if one is wanted.
+
+## T-448 Let a BGM-only BMS take its first lane profile
+
+- **Status:** ready
+- **Outcome:** with `sabun/_untitled.bms` open, choosing "BMS 7K" in the lane profile picker creates a 7K+scratch layout from measure 1 with key bindings. The playable lanes appear, the BGM events are unchanged, and one undo removes the layout.
+- **Read first:** `src/sys/compose_actions.cpp` (`dispatch_compose_lane_profile`, `initial_input_profile`), `src/sys/compose_view.cpp` (`populate_bgm_only_compose_projection`), `src/core/lane_profile_switch.cpp`, `git show e98244d`.
+- **Files owned:** `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/core/lane_profile_switch.cpp`, `include/wormedit/core/lane_profile_switch.h`, `tests/core/lane_profile_switch_tests.cpp`, `tests/ui/` event harness, this card.
+- **Steps:**
+  1. Reproduce headlessly with the sabun file copied into the scratchpad. Never write to `/mnt/pukeipukei`.
+  2. When no segment is active, `SET_LANE_PROFILE` offers every built-in profile and creates the first layout through the `e98244d` layout and input path, with a materialized measure if one is needed.
+  3. The BGM-only projection shows the picker.
+  4. Add a core test and an event-harness case for choosing a profile, placing a note, then undoing.
+- **Invariants:** the 559 BGM events and their columns survive a save.
+- **Reject/failure behavior:** an active gesture blocks the change with the existing warning.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'lane_profile'`; `ctest --test-dir build -L event-harness`.
+- **Out of scope:** profile detection heuristics.
+
+## T-449 Select same sound on BMSON selects the whole stem
+
+- **Status:** blocked-on T-426
+- **Outcome:** on a BMSON chart, the three [T-426](bms-editing.md) gestures use the sound channel (the stem) as the key. They select every tap and BGM marker of that channel: visible ones for Ctrl+Shift+Click, the whole chart for Ctrl+Alt+Click and Ctrl+Shift+A. Selecting a stem's cut line counts as a source.
+- **Read first:** the T-426 card and its selector, `include/wormedit/core/document.h` (`sound_channel_t`, `sound_channel_event`), `src/sys/bmson_waveform_projection.cpp` (`rebuild_point_refs`).
+- **Files owned:** the T-426 selector source and tests, `src/sys/compose_input.cpp`, this card.
+- **Steps:**
+  1. Extend the selector key with `sound_channel` for BMSON.
+  2. Map notes and BGM events through `sound_channel_event` to their channel.
+  3. Test a 3-channel fixture with mixed taps and markers, both visible-only and whole-chart.
+- **Invariants:** selection only, with no undo entry.
+- **Reject/failure behavior:** an object with no channel selects nothing.
+- **Verify:** `ctest --test-dir build --output-on-failure -R select`; `ctest --test-dir build -L event-harness`.
+- **Out of scope:** BMS behavior (T-426).
+
+## T-450 Model BMS layer 2 as its own BGA kind
+
+- **Status:** ready
+- **Outcome:** BMS `0A` events load as `visual_event_kind_t::layer2` and save back to `0A`. Native projects persist the kind with a schema migration. A round trip of a fixture with `04`, `06`, `07` and `0A` keeps each channel.
+- **Read first:** `include/wormedit/core/document.h` (`visual_event_kind_t`), `src/formats/bms.cpp:960-975`, `src/formats/bms_writer.cpp:2350-2410`, `src/formats/native_project_migrations.cpp`.
+- **Files owned:** those four, plus `src/formats/native_project.cpp`, `src/formats/bmson.cpp` (BMSON `layer_events` stay `layer`; it has no layer 2), `tests/formats/bms_tests.cpp`, `tests/formats/native_project_tests.cpp`, this card.
+- **Steps:**
+  1. Add the `layer2` enumerator, and update every `switch` the compiler flags.
+  2. Parse `0A` to `layer2`, and write `layer2` to `0A`. Keep the collision split for two `layer` events at one position.
+  3. Native migration: older files stay valid, and `0A` provenance is used to recover `layer2` where it is present.
+  4. Test the round trips.
+- **Invariants:** BMS export of existing fixtures is byte-identical.
+- **Reject/failure behavior:** a native file from a newer schema is rejected as today.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.|bms|native'`.
+- **Out of scope:** drawing (T-451).
+
+## T-451 Show every BGA layer as its own lane and composite them in the preview
+
+- **Status:** blocked-on T-450
+- **Outcome:** the BGA area shows four lanes, labeled BGA, Layer, Layer 2 and Poor, and a lane is hidden when its kind has no events and the user has not added any. The BGA preview composites base, then layer, then layer 2, with black as the transparent key for layers, as in BMS players. Placing from the BGA dock targets the lane under the pointer.
+- **Read first:** `src/sys/compose_view.cpp:1120-1200`, `src/ui/nuklear/compose_canvas.cpp:2200`, `src/sys/compose_bga_actions.cpp`, `include/wormedit/core/bga_preview.h` (`bga_layer_state_t`), `src/sys/player_preview_presenter.cpp:440`.
+- **Files owned:** those five, plus `src/core/bga_preview.cpp`, `src/sys/bga_dock_runtime.cpp`, `src/ui/frontend.h` (BGA lane kind), `src/ui/nuklear/compose_bga_panel.cpp`, BGA tests and the event harness, this card.
+- **Steps:**
+  1. Project one BGA lane per kind, with its events.
+  2. Make `bga_layer_state_t` carry `layer2`, and composite in order with the black key.
+  3. Dock placement and drags between BGA lanes change the kind, in one undo step.
+  4. Add tests: projection per kind, compositing order, and a drag from Layer to Layer 2.
+- **Invariants:** charts with only `04` events look as they do today, apart from the empty lanes, which stay hidden.
+- **Reject/failure behavior:** dropping a video onto a layer lane is rejected with a reason.
+- **Verify:** `ctest --test-dir build --output-on-failure -R bga`; an isolated capture of `rotterdam_7HYPER.bme` mid-song showing a character layer over the background.
+- **Out of scope:** the storyboard kind.
+
+## T-452 Resolve BMS image names across extensions
+
+- **Status:** ready
+- **Outcome:** `rotterdam_7HYPER.bme` resolves all 173 `#BMP` entries: names declared as `.png` find the `.bmp` files. The BGA preview shows the expected images at three sampled measures.
+- **Read first:** `src/sys/project_open.cpp:220-260` (the audio resolver), `tests/sys/project_open_tests.cpp`.
+- **Files owned:** `src/sys/project_open.cpp`, `tests/sys/project_open_tests.cpp`, this card.
+- **Steps:**
+  1. Generalize the resolver to take an extension set per asset kind. Images try `.bmp`, `.png`, `.jpg` and `.jpeg`, and video tries `.mpg`, `.mp4`, `.avi`, `.wmv` and `.webm`, with the same "exactly one match" rule.
+  2. Test a declared `.png` with only a `.bmp` on disk, an ambiguous pair, and case variations.
+  3. Open the real chart read-only, count the unresolved images, and record the result here.
+- **Invariants:** the declared name is kept for export. Only the resolved path changes.
+- **Reject/failure behavior:** an ambiguous match stays unresolved with a warning naming both files.
+- **Verify:** `ctest --test-dir build --output-on-failure -R project_open`.
+- **Out of scope:** layer display (T-451).
+
+## T-453 Audit the verbs on BGM objects and play notes
+
+- **Status:** ready
+- **Outcome:** a table on this card lists every editing verb, with its BGM path, its play-lane path, the behavior difference, and a proposed single semantic. The verbs: select, move by drag, Y-lock, lane key, Shift+lane key, move to BGM, delete, copy, paste, quantize, layer assign, select same sound, and audition.
+- **Read first:** `src/sys/compose_input.cpp`, `src/sys/compose_note_to_bgm.cpp`, `src/core/note_to_bgm.cpp`, `src/core/interaction.cpp`, `src/ui/nuklear/compose_object_input.cpp`.
+- **Files owned:** this card only.
+- **Steps:**
+  1. For each verb, follow both paths from the input kind to the core command, and record file:line.
+  2. Mark each difference as intended (the BMSON stem rules, for example) or accidental.
+  3. Propose one core entry point per verb that takes a mixed selection (`editor_selection_object_t` of notes and BGM events).
+  4. **STOP** and ask the user to approve the semantics table before T-455.
+- **Invariants:** no source changes.
+- **Reject/failure behavior:** none.
+- **Verify:** the table is complete for all listed verbs.
+- **Out of scope:** implementation.
+
+## T-454 Shift+lane key on BGM events moves one and deselects it
+
+- **Status:** ready
+- **Outcome:** with three BGM events selected, Shift+lane key moves the first one in document order into the lane and deselects it, leaving the other two selected, as for play notes. A mixed selection of notes and BGM events follows the same order. Each press is one undo step.
+- **Read first:** `src/sys/compose_input.cpp` (`WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE` / `LANE_KEY_PRESS` branch), `src/sys/compose_note_to_bgm.cpp` (`move_selected_bgm_to_lane`), `src/core/interaction.cpp` (`assign_selected_notes_to_lane`), [T-422](bms-editing.md).
+- **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose_note_to_bgm.cpp`, `src/sys/compose_note_to_bgm.h`, `tests/ui/bga_lane_event_harness_tests.cpp` (or the main harness file), this card.
+- **Steps:**
+  1. Pass `input.successive` (the Shift state) to `move_selected_bgm_to_lane`.
+  2. When it is set, take the first selected object in document order, whether note or BGM, move only that one, and remove it from the selection. Leave the moved object deselected.
+  3. Add event-harness cases: three BGM events with Shift pressed three times, then undo; and a mixed selection.
+- **Invariants:** a plain lane key still moves the whole selection.
+- **Reject/failure behavior:** a collision leaves the event selected and shows the reason.
+- **Verify:** `ctest --test-dir build -L event-harness`.
+- **Out of scope:** the general refactor (T-455).
+
+## T-455 One core entry point per editing verb for mixed selections
+
+- **Status:** blocked-on T-453
+- **Outcome:** each verb approved in T-453 has one core command that takes notes and BGM events together. `compose_input.cpp` no longer branches on "BGM selected" before choosing a verb, and every approved difference is a documented rule inside the command.
+- **Read first:** T-453's approved table, and the files it cites.
+- **Files owned:** recorded from T-453 before any edit.
+- **Steps:**
+  1. Do one verb per commit, in the order T-453 approves, starting with lane assignment (it absorbs T-454).
+  2. Each commit removes the duplicate path and moves its tests to the shared command.
+  3. After each verb, the full event harness passes.
+- **Invariants:** BMSON stem rules (continue/restart points, slice-point moves) behave as before.
+- **Reject/failure behavior:** a mixed command rejects atomically.
+- **Verify:** `ctest --test-dir build --output-on-failure`; `clang-tidy -p build` on the touched files.
+- **Out of scope:** new verbs.

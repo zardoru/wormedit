@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <numeric>
 #include <utility>
 
@@ -10,12 +11,20 @@ namespace {
 
 constexpr auto bytes_per_frame = static_cast<std::size_t>(output_channel_count) * sizeof(float);
 
+auto arena_ceiling(std::size_t budget, std::size_t chunk) -> std::size_t {
+    constexpr auto maximum = std::numeric_limits<std::size_t>::max();
+    constexpr auto half = maximum / 2;
+    if (budget > half || chunk > half - budget)
+        return maximum;
+    return (budget + chunk) * 2;
+}
+
 auto arena_options_for(const resident_sample_options_t& options) -> arena_options_t {
     const auto chunk = std::max<std::size_t>(options.chunk_bytes, 1);
     return {.chunk_bytes = chunk,
             // Live payload is capped by the budget; the rest of the headroom holds
             // stale spans until compaction and the compacted copy's first chunk.
-            .maximum_bytes = options.budget_bytes * 2U + chunk * 2U,
+            .maximum_bytes = arena_ceiling(options.budget_bytes, chunk),
             .maximum_objects = 1U << 20U};
 }
 
@@ -64,6 +73,20 @@ void resident_sample_store_t::notify(const resident_snapshot_ptr_t& snapshot) co
 auto resident_sample_store_t::snapshot() const -> resident_snapshot_ptr_t {
     const std::scoped_lock lock(mutex_);
     return current_;
+}
+
+auto resident_sample_store_t::set_budget_bytes(std::size_t budget_bytes) -> bool {
+    const std::scoped_lock lock(mutex_);
+    if (options_.budget_bytes == budget_bytes)
+        return false;
+    options_.budget_bytes = budget_bytes;
+    arena_.grow_maximum_bytes(arena_options_for(options_).maximum_bytes);
+    return true;
+}
+
+auto resident_sample_store_t::options() const -> resident_sample_options_t {
+    const std::scoped_lock lock(mutex_);
+    return options_;
 }
 
 auto resident_sample_store_t::publish_locked() -> resident_snapshot_ptr_t {
@@ -127,7 +150,8 @@ auto resident_sample_store_t::reserve(const resident_request_t& request)
     if (request.frame_count == 0 || request.frame_count > options_.maximum_frames_per_sample)
         return {resident_load_status_t::too_long, {}};
     const auto bytes = static_cast<std::size_t>(request.frame_count) * bytes_per_frame;
-    if (arena_.live_bytes() + bytes > options_.budget_bytes) {
+    const auto live_bytes = arena_.live_bytes();
+    if (live_bytes > options_.budget_bytes || bytes > options_.budget_bytes - live_bytes) {
         ++over_budget_count_;
         return {resident_load_status_t::over_budget, {}};
     }

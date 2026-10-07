@@ -83,6 +83,8 @@ class chunk_arena_core_t {
                                       arena_fit_policy_t policy) noexcept -> allocation_t;
     // Rewinds every chunk to empty and keeps it committed.
     void rewind() noexcept;
+    // Raises the allocation ceiling without moving or releasing existing chunks.
+    void grow_maximum_bytes(std::size_t maximum_bytes) noexcept;
 
     [[nodiscard]] auto options() const noexcept -> const arena_options_t&;
     [[nodiscard]] auto resource() const noexcept -> std::pmr::memory_resource*;
@@ -188,6 +190,7 @@ class append_arena_t {
     // Adds payload bytes to the stale count, clamped to appended payload.
     // Alignment padding is physical usage, not live or stale payload.
     void mark_stale(std::size_t bytes) noexcept;
+    void grow_maximum_bytes(std::size_t maximum_bytes) noexcept;
 
     [[nodiscard]] auto stale_bytes() const noexcept -> std::size_t;
     [[nodiscard]] auto live_bytes() const noexcept -> std::size_t;

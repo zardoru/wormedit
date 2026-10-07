@@ -111,9 +111,10 @@ class resident_sample_store_t {
 
     [[nodiscard]] auto snapshot() const -> resident_snapshot_ptr_t;
     [[nodiscard]] auto stats() const -> resident_sample_stats_t;
-    [[nodiscard]] auto options() const noexcept -> const resident_sample_options_t& {
-        return options_;
-    }
+    // Changes the cap for future loads; existing snapshots and samples stay resident.
+    // Returns whether the soft cap changed.
+    auto set_budget_bytes(std::size_t budget_bytes) -> bool;
+    [[nodiscard]] auto options() const -> resident_sample_options_t;
 
   private:
     struct content_t {

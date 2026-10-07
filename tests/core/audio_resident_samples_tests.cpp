@@ -275,3 +275,51 @@ TEST_CASE("readers see consistent samples while the store publishes and compacts
     CHECK(mismatches.load() == 0);
     CHECK(store.stats().compactions > 0);
 }
+
+namespace {
+void check_resident_growth_preserves_snapshot(resident_sample_store_t& store,
+                                             const resident_snapshot_ptr_t& held,
+                                             const resident_request_t& stable) {
+    CHECK(store.snapshot()->find(stable.source)->data == held->find(stable.source)->data);
+    CHECK(block_equals(*held, stable, 7.0F));
+    CHECK_FALSE(store.set_budget_bytes(5 * sample_bytes));
+}
+
+void check_resident_lowering_preserves_snapshot(resident_sample_store_t& store,
+                                               const resident_snapshot_ptr_t& held,
+                                               const std::array<resident_request_t, 2>& wanted) {
+    CHECK(load_pcm(store, wanted[1], 3.0F) == resident_load_status_t::over_budget);
+    CHECK(store.snapshot() == held);
+    CHECK(block_equals(*held, wanted[0], 7.0F));
+}
+} // namespace
+
+TEST_CASE("raising resident budget retries a sample beyond the original arena ceiling",
+          "[unit][audio][resident][budget]") {
+    auto options = small_options();
+    options.budget_bytes = sample_bytes;
+    options.chunk_bytes = sample_bytes;
+    resident_sample_store_t store{options};
+    const std::array wanted{request("stable"), request("large", 4 * sample_frames)};
+    REQUIRE(store.reconcile(wanted).size() == 2);
+    REQUIRE(load_pcm(store, wanted[0], 7.0F) == resident_load_status_t::loaded);
+    const auto held = store.snapshot();
+    CHECK(load_pcm(store, wanted[1], 3.0F) == resident_load_status_t::over_budget);
+    CHECK(store.set_budget_bytes(5 * sample_bytes));
+    CHECK(load_pcm(store, wanted[1], 3.0F) == resident_load_status_t::loaded);
+    check_resident_growth_preserves_snapshot(store, held, wanted[0]);
+}
+
+TEST_CASE("lowering resident budget keeps snapshots and blocks future loads",
+          "[unit][audio][resident][budget]") {
+    resident_sample_store_t store{small_options()};
+    const std::array wanted{request("stable"), request("later")};
+    REQUIRE(store.reconcile(wanted).size() == 2);
+    REQUIRE(load_pcm(store, wanted[0], 7.0F) == resident_load_status_t::loaded);
+    const auto held = store.snapshot();
+    const auto original_options = store.options();
+    CHECK(store.set_budget_bytes(0));
+    CHECK(store.options().budget_bytes == 0);
+    CHECK(original_options.budget_bytes == small_options().budget_bytes);
+    check_resident_lowering_preserves_snapshot(store, held, wanted);
+}

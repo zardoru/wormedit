@@ -167,6 +167,10 @@ auto chunk_arena_core_t::options() const noexcept -> const arena_options_t& {
     return options_;
 }
 
+void chunk_arena_core_t::grow_maximum_bytes(std::size_t maximum_bytes) noexcept {
+    options_.maximum_bytes = std::max(options_.maximum_bytes, maximum_bytes);
+}
+
 auto chunk_arena_core_t::resource() const noexcept -> std::pmr::memory_resource* {
     return resource_;
 }
@@ -251,6 +255,10 @@ auto append_arena_t::append(std::size_t size, std::size_t alignment) noexcept
 
 void append_arena_t::mark_stale(std::size_t bytes) noexcept {
     stale_bytes_ = bytes > payload_bytes_ - stale_bytes_ ? payload_bytes_ : stale_bytes_ + bytes;
+}
+
+void append_arena_t::grow_maximum_bytes(std::size_t maximum_bytes) noexcept {
+    core_.grow_maximum_bytes(maximum_bytes);
 }
 
 auto append_arena_t::stale_bytes() const noexcept -> std::size_t {

@@ -380,3 +380,28 @@ TEST_CASE("append arena chunks outlive the arena while a snapshot holds them",
     CHECK(resource.outstanding_bytes == 0);
     CHECK(resource.allocations == resource.deallocations);
 }
+
+namespace {
+void check_retained_arena_payload(const append_arena_t& arena,
+                                  const append_arena_span_t& first,
+                                  const arena_chunk_handle_t& retained) {
+    CHECK(arena.chunk_handle(0) == retained);
+    CHECK(holds_pattern(first.bytes, 7));
+}
+} // namespace
+
+TEST_CASE("append arena ceiling grows without relocating retained payload",
+          "[unit][arena][append][budget]") {
+    append_arena_t arena{{.chunk_bytes = 16, .maximum_bytes = 16}};
+    const auto first = arena.append(16, 1);
+    REQUIRE(first);
+    fill(first.span, 7);
+    CHECK(arena.append(16, 1).error == arena_error_t::byte_limit);
+    const auto retained = first.span.chunk;
+    arena.grow_maximum_bytes(48);
+    REQUIRE(arena.append(16, 1));
+    check_retained_arena_payload(arena, first.span, retained);
+    arena.grow_maximum_bytes(8);
+    REQUIRE(arena.append(16, 1));
+    CHECK(arena.statistics().committed_bytes == 48);
+}

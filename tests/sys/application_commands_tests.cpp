@@ -187,6 +187,11 @@ struct SoundImportDispatchFixture {
     }
 };
 
+void make_sound_import_chart_bms(wormedit::chart_document_t& chart) {
+    chart.source_family = wormedit::format_family_t::bms;
+    for (auto& lane : chart.bgm_source_lanes) lane.stem_channel.reset();
+}
+
 struct SoundSlotBatchDispatchFixture {
     wormedit::document_history_t history{wormedit::make_document_history(sound_import_song())};
     wormedit::workspace_controller_t workspace;
@@ -195,7 +200,7 @@ struct SoundSlotBatchDispatchFixture {
 
     SoundSlotBatchDispatchFixture() {
         using namespace wormedit;
-        history.document.charts.front().source_family = format_family_t::bms;
+        make_sound_import_chart_bms(history.document.charts.front());
         history.document.resources.front().target_identities.push_back(
             {format_family_t::bms, "05", "WAV"});
         const auto created = make_workspace_controller(history);
@@ -221,7 +226,7 @@ struct SoundSlotBatchDispatchFixture {
 
 void leave_two_fragmented_bms_ids(wormedit::song_document_t& document) {
     constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    document.charts.front().source_family = wormedit::format_family_t::bms;
+    make_sound_import_chart_bms(document.charts.front());
     for (auto& resource : document.resources)
         std::erase_if(resource.target_identities, [](const auto& identity) {
             return identity.family == wormedit::format_family_t::bms &&

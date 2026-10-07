@@ -1,4 +1,5 @@
 #include "sys/compose_input.h"
+#include <wormedit/core/note_to_bgm.h>
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_playhead_skip.h"
@@ -3397,6 +3398,7 @@ auto compose_input_edits_notes(WormUiComposeInputKind kind) -> bool {
     case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE:
     case WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE:
     case WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART:
+    case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM:
         return true;
     default:
         return false;
@@ -3464,6 +3466,62 @@ auto input_result_severity(const WormUiComposeInputAction& input,
     }
 }
 
+// Moves the selected playable notes to the BGM area (see `move_notes_to_bgm`). With
+// `only_stem_taps` (the Delete key on a BMSON chart) only taps that stand for a stem point are
+// moved, because deleting one would cut a slice point out of its stem; returns false when none is
+// selected so the ordinary delete runs. Moved notes leave the selection, and become the selected
+// BGM events when `keep_selected`.
+auto move_selected_notes_to_bgm(compose_input_context_t& context,
+                                wormedit::editor_interaction_result_t& result,
+                                std::string_view& accepted, std::optional<wormedit::object_id_t> lane,
+                                bool only_stem_taps, bool keep_selected) -> bool {
+    using namespace wormedit;
+    const auto* chart = context.chart();
+    if (!chart || !context.input_is_current()) return false;
+    std::vector<object_id_t> moving;
+    for (const auto id : context.state.selected_notes) {
+        const auto owner = std::ranges::find_if(chart->measures, [&](const auto& measure) {
+            return std::ranges::any_of(measure.notes, [&](const auto& note) {
+                return note.id == id && (!only_stem_taps || (note.sound_channel_event &&
+                                          chart->source_family == format_family_t::bmson));
+            });
+        });
+        if (owner != chart->measures.end()) moving.push_back(id);
+    }
+    if (moving.empty()) return false;
+    const auto moved = move_notes_to_bgm(context.history, context.history.document.revision, chart->id, moving, lane);
+    result.accepted = moved.applied;
+    result.document_changed = moved.applied;
+    result.diagnostics = moved.diagnostics;
+    accepted = moved.applied ? "Notes moved to the BGM area." : "The notes could not be moved to the BGM area.";
+    if (!moved.applied) return true;
+    const auto is_moved = [&](object_id_t id) { return std::ranges::find(moving, id) != moving.end(); };
+    std::erase_if(context.state.selected_notes, is_moved);
+    std::erase_if(context.state.selected_objects, [&](const auto& object) {
+        return object.kind == editor_selection_object_kind_t::note && is_moved(object.id);
+    });
+    if (keep_selected)
+        for (const auto id : moving)
+            context.state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, id});
+    // A mixed selection still has ordinary objects for the normal delete to remove.
+    return !only_stem_taps || (context.state.selected_notes.empty() && context.state.selected_objects.empty());
+}
+
+// The Delete key on stem taps and the drop of selected notes on the BGM area.
+auto dispatch_note_to_bgm_input(const WormUiComposeInputAction& input, compose_input_context_t& context,
+                                wormedit::editor_interaction_result_t& result, std::string_view& accepted)
+    -> std::optional<compose_input_family_result_t> {
+    using wormedit::object_id_t;
+    if (input.kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION &&
+        move_selected_notes_to_bgm(context, result, accepted, std::nullopt, true, false))
+        return compose_input_family_result_t::continue_with_result();
+    if (input.kind != WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM) return std::nullopt;
+    const auto lane = input.lane_id != 0 ? std::optional<object_id_t>{object_id_t{input.lane_id}} : std::nullopt;
+    if (!move_selected_notes_to_bgm(context, result, accepted, lane, false, true))
+        return compose_input_family_result_t{"Select playable notes before moving them to the BGM area."};
+    return compose_input_family_result_t::continue_with_result();
+}
+
 auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
                                      compose_input_context_t& context,
                                      wormedit::editor_interaction_result_t& result,
@@ -3472,6 +3530,8 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
         !wormedit::ui::compose_notes_editable(compose_mode_of(context.application_state)))
         return compose_input_family_result_t::continue_batch(
             "Note editing is unavailable in Timing focus.");
+    if (const auto to_bgm = dispatch_note_to_bgm_input(input, context, result, accepted))
+        return *to_bgm;
     if (input.kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION &&
         delete_selected_compose_kiai_span(context, result, accepted))
         return compose_input_family_result_t::continue_with_result();

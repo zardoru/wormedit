@@ -200,9 +200,22 @@ struct compose_scene_cache_t {
         bool valid{}, pending{};
         std::vector<WormUiComposeWaveformRowView> rows;
         envelope_projection_ring_t ring;
+        // The rows split by the lane of the slice they belong to, and the cut lines.
+        struct piece_t {
+            std::uint64_t lane{};
+            bool playable{};
+            std::vector<WormUiComposeWaveformRowView> rows;
+        };
+        std::vector<piece_t> pieces;
+        std::vector<WormUiComposeStemCutView> cuts;
+        struct point_ref_t { std::uint64_t object{}, lane{}; bool playable{}; };
+        std::unordered_map<std::uint64_t, point_ref_t> refs;
+        std::uint64_t refs_revision{};
+        bool is_selected{};
     };
     std::vector<stem_waveform_cache_t> stem_waveforms;
     std::vector<WormUiComposeStemWaveformView> stem_waveform_views;
+    std::vector<WormUiComposeStemCutView> stem_cut_views;
     std::optional<wormedit::audio::waveform_key_t> waveform_overview_key;
     const void* waveform_overview_identity{};
     std::uint64_t waveform_overview_revision{};

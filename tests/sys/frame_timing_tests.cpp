@@ -913,12 +913,16 @@ TEST_CASE("BMSON stems other than the selected one get their own lane rows or a 
     fixture.flattened.view.compose.selected_bmson_bgm_event_id = 74001;
     populate_bmson_waveform_projection(context);
     CHECK(fixture.flattened.view.compose.stem_waveform_count == 1);
-    CHECK(fixture.cache.stem_waveforms.size() == 1);
+    // The selected channel keeps an entry too, for its field taps and cut lines.
+    CHECK(fixture.cache.stem_waveforms.size() == 2);
     CHECK(fixture.cache.stem_waveforms.front().channel == object_id_t{71000});
 
     // Audio that has not finished decoding is a placeholder, never a blocked frame.
     stem_result.reset();
-    populate_bmson_waveform_projection(context);
+    const bmson_waveform_projection_context_t pending_context{fixture.flattened, fixture.history, fixture.workspace,
+        &fixture.interaction, fixture.cache, fixture.sources, {fixture.asset, nullptr},
+        {std::nullopt, nullptr}, 1, [&](asset_id_t) { return stem_result; }};
+    populate_bmson_waveform_projection(pending_context);
     CHECK(fixture.flattened.view.compose.stem_waveform_count == 1);
     CHECK(fixture.flattened.view.compose.stem_waveforms[0].pending);
     CHECK(fixture.flattened.view.compose.stem_waveforms[0].row_count == 0);

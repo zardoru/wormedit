@@ -836,7 +836,20 @@ typedef struct WormUiComposeStemWaveformView {
     size_t row_count;
     /* The audio is still decoding or missing: draw a placeholder band instead of a waveform. */
     bool pending;
+    /* source_lane_id names a playable lane (a stem tap in the field) rather than a BGM lane. */
+    bool playable_lane;
 } WormUiComposeStemWaveformView;
+
+/* Where a stem's audio is cut: the row of one slice point, in the lane of the note or BGM marker
+   that stands for it. Continue points are green and restarts orange; they light up with the
+   point's tile. */
+typedef struct WormUiComposeStemCutView {
+    double y_pixels;
+    uint64_t lane_id;
+    bool playable_lane;
+    bool restart;
+    uint64_t object_id;
+} WormUiComposeStemCutView;
 
 typedef struct WormUiComposeBranchRowView {
     const char* display_text;
@@ -1429,6 +1442,8 @@ typedef struct WormUiComposeView {
     /* BMSON stems other than the selected one, each drawn in its BGM lane. */
     const WormUiComposeStemWaveformView* stem_waveforms;
     size_t stem_waveform_count;
+    const WormUiComposeStemCutView* stem_cuts;
+    size_t stem_cut_count;
     const WormUiComposeWaveformRowView* channel_waveform_rows;
     size_t channel_waveform_row_count;
     uint64_t channel_waveform_source_lane_id;
@@ -2282,6 +2297,9 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE,
     /* A click on empty space in a stem lane adds a continue (or, with Shift, restart) point at the
        snapped row, in the channel of the marker named by object_id. */
+    /* The selected playable notes were dropped on the BGM area; lane_id is the BGM source lane
+       under the pointer (0 for none). BMSON stem taps return to their stem's lane. */
+    WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM,
     WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE,
     WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART,
     WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_CONTINUE,

@@ -93,7 +93,7 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY 64
 #define WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY 4096
 #define WORM_UI_PLAYER_PREVIEW_HOLD_CAPACITY 4096
-#define WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY 5
+#define WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY 6
 #define WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY 27
 #define WORM_UI_PLAYER_PREVIEW_IMAGE_MAX_DIMENSION 16384
 #define WORM_UI_COMPOSE_MIN_PIXELS_PER_MEASURE 24.0
@@ -1305,6 +1305,10 @@ typedef struct WormUiComposeView {
     const WormUiComposeBgaEventView* bga_events;
     size_t bga_event_count;
     WormUiComposeRect bga_lane_bounds;
+    uint8_t bga_revealed_lane_mask;
+    size_t bga_lane_count;
+    WormUiComposeRect bga_lane_rects[4];
+    uint8_t bga_lane_kinds[4];
     bool bga_move_preview_valid;
     uint64_t bga_move_preview_event_id;
     double bga_move_preview_y_pixels;
@@ -1652,6 +1656,7 @@ typedef enum WormUiPlayerPreviewVisualKind {
     WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER,
     WORM_UI_PLAYER_PREVIEW_VISUAL_VIDEO,
     WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD,
+    WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER2,
 } WormUiPlayerPreviewVisualKind;
 
 typedef enum WormUiPlayerPreviewVisualDiagnostic {
@@ -2379,6 +2384,7 @@ typedef enum WormUiComposeInputKind {
     // from the event's row to y_pixels; object_id is the Speed event.
     WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT,
     WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION,
+    WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL,
 } WormUiComposeInputKind;
 
 typedef enum WormUiComposeNavigationAction {
@@ -2419,6 +2425,8 @@ typedef struct WormUiComposeInputAction {
     double span_anchor_y_pixels;
     /* NOTE_PAINT_BEGIN: sample resource written into every note of the stroke; 0 paints silent notes. */
     uint64_t resource_id;
+    uint8_t bga_lane_kind;
+    bool bga_lane_kind_valid;
 } WormUiComposeInputAction;
 
 /* Which part of a span (Kiai area, Speed transition, SV recipe) a drag holds; carried in

@@ -11,6 +11,7 @@
 
 #include "wormedit/nuklear_config.h"
 #include <wormedit/core/document.h>
+#include <wormedit/core/interaction.h>
 
 #include <SDL3/SDL_timer.h>
 
@@ -2234,8 +2235,13 @@ static void draw_compose_bga_move_ghost(const ComposePaintContext& paint,
 
 static bool is_first_bga_stack_event(const WormUiComposeView& view, size_t index) {
     const auto row = view.bga_events[index].canvas_row;
+    const auto lane = wormedit::editor_bga_lane_index(
+        static_cast<wormedit::visual_event_kind_t>(view.bga_events[index].kind));
     return !std::ranges::any_of(std::span(view.bga_events, index),
-        [row](const auto& previous) { return previous.canvas_row == row; });
+        [row, lane](const auto& previous) {
+            return previous.canvas_row == row && wormedit::editor_bga_lane_index(
+                static_cast<wormedit::visual_event_kind_t>(previous.kind)) == lane;
+        });
 }
 
 static void draw_compose_bga_event(const ComposePaintContext& paint, size_t index) {
@@ -2276,25 +2282,47 @@ static void draw_compose_bga_move_preview(const ComposePaintContext& paint) {
     const auto event = std::ranges::find(events, state.bga_event_move_object_id,
         &WormUiComposeBgaEventView::event_id);
     if (event == events.end()) return;
-    const auto rect = compose_screen_rect(&event->bounds, paint.view, paint.viewport);
+    auto rect = compose_screen_rect(&event->bounds, paint.view, paint.viewport);
+    const auto target = compose_bga_lane_kind_at(*paint.view,
+        state.bga_event_move_current_x_pixels, state.bga_event_move_current_y_pixels);
+    for (size_t index = 0; target && index < std::min<size_t>(paint.view->bga_lane_count, 4); ++index) {
+        if (paint.view->bga_lane_kinds[index] != *target) continue;
+        const auto lane = compose_screen_rect(&paint.view->bga_lane_rects[index], paint.view, paint.viewport);
+        rect.x = lane.x;
+        rect.w = lane.w;
+        break;
+    }
     draw_compose_bga_move_ghost(paint, *event, rect);
 }
 
-static void draw_compose_bga_lane(const ComposePaintContext& paint) {
-    if (!paint.view->bga_lane_visible) return;
-    const auto bounds = compose_screen_rect(&paint.view->bga_lane_bounds, paint.view, paint.viewport);
+static const char* compose_bga_lane_label(std::uint8_t kind) {
+    switch (static_cast<wormedit::visual_event_kind_t>(kind)) {
+    case wormedit::visual_event_kind_t::layer: return "Layer";
+    case wormedit::visual_event_kind_t::layer2: return "Layer 2";
+    case wormedit::visual_event_kind_t::poor: return "Poor";
+    default: return "BGA";
+    }
+}
+
+static void draw_compose_bga_lane(const ComposePaintContext& paint,
+                                 const WormUiComposeRect& rect, std::uint8_t kind) {
+    const auto bounds = compose_screen_rect(&rect, paint.view, paint.viewport);
     if (bounds.w <= 0.0f || bounds.h <= 0.0f) return;
     field_rect(paint, bounds, 0.0f, nk_rgba(25, 30, 39, 225), 1);
     field_stroke_rect(paint, bounds, 0.0f, 1.0f, nk_rgb(76, 86, 101), 1);
     const auto title = nk_rect(bounds.x + 1.0f, paint.viewport.y + 2.0f,
                                std::max(1.0f, bounds.w - 2.0f), 14.0f);
-    field_text(paint, title, "BGA", 3, paint.context->style.font,
+    const auto* label = compose_bga_lane_label(kind);
+    field_text(paint, title, label, static_cast<int>(std::strlen(label)), paint.context->style.font,
                nk_rgba(25, 30, 39, 225), nk_rgb(192, 204, 221), 3);
 }
 
 static void draw_compose_bga(const ComposePaintContext& paint) {
     if (!paint.view->bga_lane_visible) return;
-    draw_compose_bga_lane(paint);
+    if (paint.view->bga_lane_count == 0)
+        draw_compose_bga_lane(paint, paint.view->bga_lane_bounds, 0);
+    for (size_t index = 0; index < std::min<size_t>(paint.view->bga_lane_count, 4); ++index)
+        draw_compose_bga_lane(paint, paint.view->bga_lane_rects[index], paint.view->bga_lane_kinds[index]);
     const bool selected = std::ranges::any_of(
         std::span(paint.view->bga_events, paint.view->bga_event_count),
         [](const auto& event) { return event.selected; });

@@ -70,6 +70,7 @@ auto valid_visual_layers(const bga_layer_state_t& layers, std::uint64_t sample_f
     return valid_visual_layer(layers.background, visual_event_kind_t::background, sample_frame) &&
            valid_visual_layer(layers.poor, visual_event_kind_t::poor, sample_frame) &&
            valid_visual_layer(layers.layer, visual_event_kind_t::layer, sample_frame) &&
+           valid_visual_layer(layers.layer2, visual_event_kind_t::layer2, sample_frame) &&
            valid_visual_layer(layers.video, visual_event_kind_t::video, sample_frame) &&
            valid_visual_layer(layers.storyboard, visual_event_kind_t::storyboard, sample_frame);
 }

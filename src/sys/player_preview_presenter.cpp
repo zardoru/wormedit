@@ -441,6 +441,7 @@ void append_player_preview_visual_layers(const Context& context, const auto& sce
     append_player_preview_visual_layer(context, scene.visual_layers.background, scene);
     append_player_preview_visual_layer(context, scene.visual_layers.poor, scene);
     append_player_preview_visual_layer(context, scene.visual_layers.layer, scene);
+    append_player_preview_visual_layer(context, scene.visual_layers.layer2, scene);
     append_player_preview_visual_layer(context, scene.visual_layers.video, scene);
     append_player_preview_visual_layer(context, scene.visual_layers.storyboard, scene);
 }

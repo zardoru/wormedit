@@ -8,6 +8,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <algorithm>
+#include <array>
+#include <fstream>
 #include <cstdint>
 #include <filesystem>
 #include <latch>
@@ -95,7 +98,64 @@ struct latch_release_t {
     }
 };
 
+struct temporary_bga_image_t {
+    std::filesystem::path path{std::filesystem::temp_directory_path() /
+        ("wormedit-bga-layer2-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".bmp")};
+    temporary_bga_image_t() {
+        constexpr std::array<std::uint8_t, 62> bytes{
+            0x42, 0x4d, 0x3e, 0, 0, 0, 0, 0, 0, 0, 0x36, 0, 0, 0, 0x28, 0,
+            0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0x18, 0, 0, 0,
+            0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 0, 0, 0};
+        std::ofstream stream{path, std::ios::binary};
+        REQUIRE(stream.write(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+    }
+    ~temporary_bga_image_t() {
+        std::error_code ignored;
+        std::filesystem::remove(path, ignored);
+    }
+};
+
+auto wait_for_bga_layers(sys::player_preview_presenter_t& presenter, WormUiPlayerPreviewView& view,
+                         const document_history_t& history, visual::image_job_t& image_job,
+                         visual::video_frame_job_t& video_job, const std::filesystem::path& directory) -> bool {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+    while (std::chrono::steady_clock::now() < deadline) {
+        presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania,
+                           0, 48'000, directory, image_job, video_job);
+        if (view.visual_layer_count == 2 && std::all_of(view.visual_layers, view.visual_layers + 2,
+            [](const auto& layer) { return layer.image_ready; })) return true;
+        std::this_thread::yield();
+    }
+    return false;
+}
+
 } // namespace
+
+TEST_CASE("player preview publishes decoded Layer 2 and base sharing one image", "[bga][player-preview][layer2]") {
+    temporary_bga_image_t image;
+    auto song = document();
+    song.visual_assets.front().kind = asset_kind_t::image;
+    song.visual_assets.front().source_path = image.path.filename();
+    song.charts.front().bga_events = {{.id = object_id_t{4}, .position = {measure_id_t{1}, 0},
+        .resource = resource_id_t{30}, .kind = visual_event_kind_t::background},
+        {.id = object_id_t{5}, .position = {measure_id_t{1}, 0},
+         .resource = resource_id_t{30}, .kind = visual_event_kind_t::layer2}};
+    const auto history = make_document_history(std::move(song));
+    visual::image_cache_t image_cache;
+    task_scheduler_t image_scheduler{1, 2};
+    visual::image_job_t image_job{image_cache, image_scheduler};
+    visual::video_frame_cache_t video_cache;
+    task_scheduler_t video_scheduler{1, 2};
+    visual::video_frame_job_t video_job{video_cache, video_scheduler};
+    sys::player_preview_presenter_t presenter;
+    WormUiPlayerPreviewView view{};
+    REQUIRE(wait_for_bga_layers(presenter, view, history, image_job, video_job, image.path.parent_path()));
+    CHECK(view.visual_layers[0].kind == WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND);
+    CHECK(view.visual_layers[1].kind == WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER2);
+    CHECK(view.visual_layers[1].image_width == 2);
+    CHECK(view.visual_layers[0].rgba_pixels == view.visual_layers[1].rgba_pixels);
+}
 
 TEST_CASE("player preview asynchronously publishes and replaces exact video frames",
           "[integration][visual][video][player-preview]") {

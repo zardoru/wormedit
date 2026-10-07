@@ -1,5 +1,7 @@
 #include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"
+#include "sys/compose_input.h"
+#include "sys/compose_scroll_geometry.h"
 #include "sys/recipe_form.h"
 #include <cstdio>
 
@@ -107,7 +109,113 @@ struct action_notification_fixture_t {
         return center.snapshot(256);
     }
 };
+
+struct bga_input_fixture_t : action_notification_fixture_t {
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    compose_scene_cache_t cache;
+    bga_input_fixture_t() {
+        history.document.visual_assets = {{.id = asset_id_t{61}, .kind = asset_kind_t::image},
+            {.id = asset_id_t{62}, .kind = asset_kind_t::video}};
+        history.document.resources = {{.id = resource_id_t{31}, .asset = asset_id_t{61}, .roles = {resource_role_t::bga}},
+            {.id = resource_id_t{32}, .asset = asset_id_t{62}, .roles = {resource_role_t::bga}}};
+        history.document.charts.front().bga_events = {{.id = object_id_t{41},
+            .position = {measure_id_t{1}, 240}, .resource = resource_id_t{31}, .kind = visual_event_kind_t::layer}};
+        state.selected_objects = {{editor_selection_object_kind_t::bga_event, object_id_t{41}}};
+        state.bga_revealed_lane_mask = 4;
+        state.viewport_height_pixels = 600;
+    }
+    auto input(WormUiComposeInputKind kind, std::uint8_t lane_kind) -> WormUiWorkspaceAction {
+        auto value = action(WORM_UI_COMPOSE_ACTION_NONE);
+        value.compose_input_viewport_width_pixels = 900;
+        value.compose_input_count = 1;
+        value.compose_inputs[0] = {.kind = kind, .object_id = 41,
+            .timing_chart_id = 1, .timing_document_revision = history.document.revision,
+            .resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGA, .x_pixels = 150,
+            .y_pixels = compose_source_y(state.pixels_per_standard_measure / 4 - state.viewport_scroll_pixels,
+                state.viewport_height_pixels, compose_field_downscroll(history.document.charts.front(), application.editor_preferences)),
+            .bga_lane_kind = lane_kind, .bga_lane_kind_valid = true};
+        return value;
+    }
+    void check_unchanged(std::uint64_t revision) const {
+        check_action(history.document.revision == revision);
+        check_action(history.undo.empty());
+        const auto& event = history.document.charts.front().bga_events.front();
+        check_action(event.kind == visual_event_kind_t::layer);
+        check_action(event.resource == resource_id_t{31});
+        check_action(event.position == local_position_t{measure_id_t{1}, 240});
+    }
+    auto dispatch_input(WormUiWorkspaceAction& value) -> std::string {
+        return dispatch_compose_input_action(value, history, workspace, state, viewport,
+            navigation, application, cache, 0, &sink);
+    }
+};
 } // namespace
+
+TEST_CASE("BGA production input changes Layer to Layer 2 with one undo", "[bga][compose-input]") {
+    bga_input_fixture_t fixture;
+    auto input = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE, 5);
+    INFO(fixture.dispatch_input(input));
+    require_action(fixture.history.undo.size() == 1);
+    const auto& event = fixture.history.document.charts.front().bga_events.front();
+    check_action(event.kind == visual_event_kind_t::layer2);
+    check_action(event.resource == resource_id_t{31});
+    check_action(event.position == local_position_t{measure_id_t{1}, 240});
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.charts.front().bga_events.front().kind == visual_event_kind_t::layer);
+}
+
+TEST_CASE("BGA production dock placement targets Layer 2", "[bga][compose-input]") {
+    bga_input_fixture_t fixture;
+    auto input = fixture.input(WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE, 5);
+    input.compose_inputs[0].object_id = 31;
+    INFO(fixture.dispatch_input(input));
+    require_action(fixture.history.undo.size() == 1);
+    require_action(fixture.history.document.charts.front().bga_events.size() == 2);
+    check_action(fixture.history.document.charts.front().bga_events.back().kind == visual_event_kind_t::layer2);
+}
+
+TEST_CASE("BGA lane reveal is view-only and rejects an unsupported kind", "[bga][compose-input]") {
+    bga_input_fixture_t fixture;
+    const auto revision = fixture.history.document.revision;
+    auto reveal = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL, 1);
+    fixture.dispatch_input(reveal);
+    check_action(fixture.state.bga_revealed_lane_mask == 12);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+    reveal = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL, 255);
+    fixture.dispatch_input(reveal);
+    check_action(fixture.state.bga_revealed_lane_mask == 12);
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("BGA production invalid and stale move payloads preserve state", "[bga][compose-input]") {
+    bga_input_fixture_t fixture;
+    const auto revision = fixture.history.document.revision;
+    auto invalid = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE, 255);
+    fixture.dispatch_input(invalid);
+    invalid = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE, 5);
+    invalid.compose_inputs[0].timing_chart_id = 99;
+    fixture.dispatch_input(invalid);
+    invalid = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE, 5);
+    invalid.compose_input_document_revision = revision + 1;
+    fixture.dispatch_input(invalid);
+    fixture.check_unchanged(revision);
+    check_action(fixture.state.selected_objects.size() == 1);
+}
+
+TEST_CASE("BGA production video overlay placement and replacement reject unchanged", "[bga][compose-input]") {
+    bga_input_fixture_t fixture;
+    const auto revision = fixture.history.document.revision;
+    auto input = fixture.input(WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE, 5);
+    input.compose_inputs[0].object_id = 32;
+    check_action(fixture.dispatch_input(input).find("Video can only") != std::string::npos);
+    input = fixture.input(WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE, 2);
+    input.compose_inputs[0].object_id = 32;
+    input.compose_inputs[0].lane_id = 41;
+    check_action(fixture.dispatch_input(input).find("Video can only") != std::string::npos);
+    fixture.check_unchanged(revision);
+}
 
 TEST_CASE("Compose dispatcher posts a semantic edit once and preserves undo", "[compose-action-notifications]") {
     action_notification_fixture_t fixture;

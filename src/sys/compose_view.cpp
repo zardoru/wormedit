@@ -533,13 +533,13 @@ auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::
 }
 
 auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_count,
-                               bool has_bgm_lanes, bool has_bga_lane,
+                               bool has_bgm_lanes, std::size_t bga_lane_count,
                                std::size_t visible_timing_lane_count)
     -> compose_horizontal_layout_t {
     constexpr double bga_pane_width = 48.0;
     const auto desired_timing_right = compose_measure_rail_width_pixels +
         compose_timing_lane_width_pixels * visible_timing_lane_count;
-    const auto reserved_bga = has_bga_lane ? bga_pane_width : 0.0;
+    const auto reserved_bga = bga_pane_width * std::min<std::size_t>(bga_lane_count, 4);
     const auto bga_left = std::clamp(
         viewport_width_pixels - compose_minimum_playable_field_width_pixels - reserved_bga,
         compose_measure_rail_width_pixels, desired_timing_right);
@@ -1155,8 +1155,7 @@ void project_compose_bga_move_preview(const compose_scene_projection_context_t& 
     const auto event = std::ranges::find(projection.scene.bga_events,
         wormedit::object_id_t{input->event_id}, &wormedit::editor_field_bga_event_geometry_t::event);
     if (event == projection.scene.bga_events.end() ||
-        (event->kind != wormedit::visual_event_kind_t::background &&
-         event->kind != wormedit::visual_event_kind_t::video) || !event->selected)
+        !wormedit::editor_bga_lane_index(event->kind) || !event->selected)
         return;
     const auto row = bga_preview_target_row(projection, *input);
     if (!row) return;
@@ -1180,7 +1179,15 @@ void project_compose_bga(const compose_scene_projection_context_t& projection) {
         view.truncated = true;
         return;
     }
-    view.bga_lane_visible = projection.interaction_view.bga_lane_visible;
+    view.bga_lane_visible = scene.bga_lane.has_value();
+    view.bga_revealed_lane_mask = projection.interaction_view.bga_revealed_lane_mask;
+    view.bga_lane_count = std::min<std::size_t>(scene.bga_lanes.size(), 4);
+    for (std::size_t index = 0; index < view.bga_lane_count; ++index) {
+        const auto& lane = scene.bga_lanes[index];
+        view.bga_lane_rects[index] = {lane.bounds.left, lane.bounds.top,
+                                      lane.bounds.right, lane.bounds.bottom};
+        view.bga_lane_kinds[index] = static_cast<std::uint8_t>(lane.kind);
+    }
     view.bga_lane_bounds = scene.bga_lane
         ? WormUiComposeRect{scene.bga_lane->bounds.left, scene.bga_lane->bounds.top,
                             scene.bga_lane->bounds.right, scene.bga_lane->bounds.bottom}
@@ -1361,6 +1368,7 @@ bool initialize_compose_view_state(
     view.bgm_bar_reserved = cache.bgm_bar_audio_seen && !application_state.bgm_bar_hidden;
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
     view.bga_lane_visible = !retained_state || retained_state->bga_lane_visible;
+    view.bga_revealed_lane_mask = retained_state ? retained_state->bga_revealed_lane_mask : 0;
     view.playable_field_left_pixels = compose_measure_rail_width_pixels;
     view.playable_field_right_pixels = view.viewport_width_pixels;
     view.bms_measure_labels = false;
@@ -3419,6 +3427,7 @@ auto compose_static_source_layout_matches(const WormUiComposeView& source,
         source.playable_field_right_pixels==view.playable_field_right_pixels &&
         source.bgm_horizontal_scroll_pixels==view.bgm_horizontal_scroll_pixels &&
         source.bga_lane_visible==view.bga_lane_visible &&
+        source.bga_revealed_lane_mask==view.bga_revealed_lane_mask &&
         source.timing_lane_visibility_mask==view.timing_lane_visibility_mask &&
         source.timing_focus==view.timing_focus &&
         source.downscroll==view.downscroll && source.lane_key_legend_visible==view.lane_key_legend_visible;
@@ -3458,6 +3467,7 @@ auto make_compose_static_view(const WormUiComposeView& view,
     retained.bmson_tools_available = view.bmson_tools_available;
     retained.downscroll = view.downscroll;
     retained.bga_lane_visible = view.bga_lane_visible;
+    retained.bga_revealed_lane_mask = view.bga_revealed_lane_mask;
     retained.lane_key_legend_visible = view.lane_key_legend_visible;
     retained.project_id = view.project_id;
     retained.chart_id = view.chart_id;
@@ -3854,10 +3864,14 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     view.lane_key_binding_count = lane_key_binding_count;
     view.lane_keys_unbound = chart.input_profile.bindings.empty();
 
+    view.bga_lane_visible = interaction_view.bga_lane_visible &&
+        wormedit::editor_bga_visible_lane_mask(chart, interaction_view.bga_revealed_lane_mask) != 0;
     const auto horizontal_layout =
         compose_horizontal_layout(view.viewport_width_pixels, maximum_layout_lane_count(chart),
                                   !chart.bgm_source_lanes.empty(),
-                                  interaction_view.bga_lane_visible,
+                                  interaction_view.bga_lane_visible ? std::popcount(
+                                      wormedit::editor_bga_visible_lane_mask(chart,
+                                          interaction_view.bga_revealed_lane_mask)) : 0,
                                   std::popcount(
                                       effective_compose_timing_lane_mask(application_state)));
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;

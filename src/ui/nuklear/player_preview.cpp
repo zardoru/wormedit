@@ -149,7 +149,7 @@ auto preview_visual_layer_valid(const WormUiPlayerPreviewVisualLayerView& layer,
     if (layer.object_id == 0 || layer.resource_id == 0 ||
         layer.event_sample_frame > view.sample_frame ||
         layer.kind < WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND ||
-        layer.kind > WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD ||
+        layer.kind > WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER2 ||
         layer.diagnostic < WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_NONE ||
         layer.diagnostic > WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_DECODE_FAILED ||
         !preview_video_clock_valid(layer, view) ||
@@ -243,6 +243,7 @@ const char* preview_visual_label(WormUiPlayerPreviewVisualKind kind) {
     case WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND: return "Background";
     case WORM_UI_PLAYER_PREVIEW_VISUAL_POOR: return "Poor";
     case WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER: return "Layer";
+    case WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER2: return "Layer 2";
     case WORM_UI_PLAYER_PREVIEW_VISUAL_VIDEO: return "Video";
     case WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD: return "Storyboard";
     }

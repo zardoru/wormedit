@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
 #include <limits>
@@ -692,18 +693,18 @@ TEST_CASE("field scene composes selectable BGA events in a dedicated lane",
     REQUIRE(result.scene->bga_lane.has_value());
     CHECK(result.scene->bga_lane->bounds.left == 290.0);
     CHECK(result.scene->bga_lane->bounds.right == 338.0);
-    REQUIRE(result.scene->bga_events.size() == 2);
+    REQUIRE(result.scene->bga_events.size() == 3);
     CHECK(result.scene->bga_events[0].event == wormedit::object_id_t{70});
     CHECK(result.scene->bga_events[0].resource == wormedit::resource_id_t{90});
     CHECK(result.scene->bga_events[0].bounds.left == 290.0);
-    CHECK(result.scene->bga_events[0].bounds.right == 314.0);
+    CHECK(result.scene->bga_events[0].bounds.right == 302.0);
     CHECK(result.scene->bga_events[0].bounds.top == Catch::Approx(0.0));
     CHECK(result.scene->bga_events[0].bounds.bottom == Catch::Approx(10.0));
     CHECK(result.scene->bga_events[1].event == wormedit::object_id_t{71});
     CHECK(result.scene->bga_events[1].kind == wormedit::visual_event_kind_t::video);
     CHECK(result.scene->bga_events[1].selected);
-    CHECK(result.scene->bga_events[1].bounds.left == 314.0);
-    CHECK(result.scene->bga_events[1].bounds.right == 338.0);
+    CHECK(result.scene->bga_events[1].bounds.left == 302.0);
+    CHECK(result.scene->bga_events[1].bounds.right == 314.0);
 
     auto downscroll_request = request;
     downscroll_request.scroll_direction = wormedit::editor_field_scroll_direction_t::down;
@@ -711,7 +712,7 @@ TEST_CASE("field scene composes selectable BGA events in a dedicated lane",
         chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
         downscroll_request);
     REQUIRE(downscroll);
-    REQUIRE(downscroll.scene->bga_events.size() == 2);
+    REQUIRE(downscroll.scene->bga_events.size() == 3);
     CHECK(downscroll.scene->bga_events[0].bounds.top >
           result.scene->bga_events[0].bounds.top);
     CHECK(downscroll.scene->bga_events[0].bounds.bottom >
@@ -1422,6 +1423,44 @@ TEST_CASE("Compose scene window rebuilds for stable input changes and falls back
     request.comparison_difference_rows = {{wormedit::measure_id_t{1}, 240}};
     check_reused_frame(chart, index, current, request, window);
     CHECK_FALSE(window.scene);
+}
+
+namespace {
+void check_bga_kind_geometry(const wormedit::editor_field_scene_t& scene, std::size_t index, wormedit::visual_event_kind_t kind) {
+    CHECK(scene.bga_lanes[index].kind == kind);
+    CHECK(scene.bga_events[index].bounds.left == 210 + 48 * index);
+    CHECK(scene.bga_events[index].overlap_count == 1);
+}
+}
+
+TEST_CASE("BGA scene separates four kinds and overlaps only within each lane", "[editor-scene][bga]") {
+    using namespace wormedit;
+    auto chart = scene_chart();
+    constexpr std::array kinds{visual_event_kind_t::background, visual_event_kind_t::layer,
+                               visual_event_kind_t::layer2, visual_event_kind_t::poor};
+    for (std::size_t index = 0; index < kinds.size(); ++index)
+        chart.bga_events.push_back({.id = object_id_t{900 + index},
+            .position = {measure_id_t{1}, 720}, .resource = resource_id_t{90 + index}, .kind = kinds[index]});
+    const auto built = build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<editor_field_scene_index_t>(built));
+    const auto projected = make_editor_field_scene(chart, std::get<editor_field_scene_index_t>(built),
+        view(), {.field_width_pixels = 200, .bga_pane_left_pixels = 210, .bga_pane_width_pixels = 192});
+    REQUIRE(projected);
+    REQUIRE(projected.scene->bga_lanes.size() == 4);
+    REQUIRE(projected.scene->bga_events.size() == 4);
+    for (std::size_t index = 0; index < kinds.size(); ++index)
+        check_bga_kind_geometry(*projected.scene, index, kinds[index]);
+}
+
+TEST_CASE("BGA visibility combines authored kinds and a bounded reveal mask", "[editor-scene][bga]") {
+    using namespace wormedit;
+    auto chart = scene_chart();
+    CHECK(editor_bga_visible_lane_mask(chart, 0) == 0);
+    CHECK(editor_bga_visible_lane_mask(chart, 0xF0) == 0);
+    CHECK(editor_bga_visible_lane_mask(chart, 4) == 4);
+    chart.bga_events = {{.kind = visual_event_kind_t::video}, {.kind = visual_event_kind_t::storyboard}};
+    CHECK(editor_bga_visible_lane_mask(chart, 4) == 5);
+    CHECK(editor_bga_visible_lane_mask(chart, 0) == 1);
 }
 
 TEST_CASE("cached BGA projection returns each event once with fresh geometry parity",

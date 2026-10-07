@@ -24,6 +24,8 @@ auto visual(std::uint64_t frame, std::uint64_t object, std::uint64_t resource,
     };
 }
 
+void check_layer2_state(bool value) { CHECK(value); }
+
 auto schedule() -> preview_schedule_t {
     return {.sample_rate = 44'100};
 }
@@ -51,8 +53,14 @@ TEST_CASE("BGA preview queue accepts Layer 2 without mapping it onto the Layer s
 
     bga_preview_queue_t queue;
     const auto started = queue.start(chart);
-    CHECK(started.status == bga_preview_status_t::ready);
-    CHECK(started.layers == bga_layer_state_t{});
+    check_layer2_state(started.status == bga_preview_status_t::ready);
+    REQUIRE(started.token);
+    const auto advanced = queue.advance(*started.token, 1);
+    REQUIRE(advanced.layers.layer2.has_value());
+    check_layer2_state(advanced.layers.layer2->resource == resource_id_t{1});
+    check_layer2_state(!started.layers.layer.has_value());
+    check_layer2_state(queue.seek(*started.token, 1).layers.layer2 == advanced.layers.layer2);
+    check_layer2_state(!queue.restart(*started.token).layers.layer2.has_value());
 }
 
 TEST_CASE("BGA preview queue preserves compiled simultaneous draw/source order",

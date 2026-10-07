@@ -2,6 +2,8 @@
 #include "ui/nuklear/tooltip.h"
 #include "wormedit/core/document.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_panel_internal.h"
+#include <wormedit/core/interaction.h>
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/popup_lifecycle.h"
 #include "ui/nuklear/theme.h"
@@ -9,6 +11,7 @@
 #include <SDL3/SDL.h>
 #include <nuklear.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -93,6 +96,31 @@ auto thumbnail(const WormUiComposeView& view, const WormUiComposeBgaRowView& row
     entry.project = view.project_id;
     return entry.value;
 }
+void reveal_bga_lane(WormUiWorkspaceAction& action, std::uint8_t kind) {
+    append_compose_input(&action, WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL);
+    if (action.compose_input_count == 0) return;
+    auto& output = action.compose_inputs[action.compose_input_count - 1];
+    output.bga_lane_kind = kind;
+    output.bga_lane_kind_valid = true;
+}
+
+void reveal_empty_base_lane(WormUiWorkspaceAction& action, const WormUiComposeView& view, bool was_active) {
+    if (!was_active && view.bga_lane_count == 0) reveal_bga_lane(action, 0);
+}
+
+void bga_lane_picker(nk_context* context, WormUiWorkspaceAction& action) {
+    nk_layout_row_dynamic(context, 25, 1);
+    if (!nk_combo_begin_label(context, "Add BGA lane", nk_vec2(150, 130))) return;
+    constexpr std::array labels{"BGA", "Layer", "Layer 2", "Poor"};
+    constexpr std::array kinds{wormedit::visual_event_kind_t::background, wormedit::visual_event_kind_t::layer,
+        wormedit::visual_event_kind_t::layer2, wormedit::visual_event_kind_t::poor};
+    nk_layout_row_dynamic(context, 25, 1);
+    for (size_t index = 0; index < labels.size(); ++index)
+        if (nk_combo_item_label(context, labels[index], NK_TEXT_LEFT))
+            reveal_bga_lane(action, static_cast<std::uint8_t>(kinds[index]));
+    nk_combo_end(context);
+}
+
 void toolbar(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear_compose_state_t& state,
               WormUiWorkspaceAction& action) {
     nk_layout_row_template_begin(context, 27);
@@ -111,6 +139,7 @@ void toolbar(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear
         state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
         state.armed_from_sounds_dock = false;
         state.armed_from_bga_dock = !active && can_paint;
+        reveal_empty_base_lane(action, view, active);
     }
     if (!can_paint && !active) nk_widget_disable_end(context);
     if (IconButton{Glyph::chevron_right, "Advance after place: arm the next available BGA shown",
@@ -280,7 +309,7 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
         static_cast<int>(state->bga_search.size()), nk_filter_default);
     const auto region = nk_window_get_content_region(context);
     const auto height = std::max(60.0f, region.y + region.h - nk_widget_position(context).y -
-        (view->bga_ids_available ? 45.0f : 5.0f));
+        (view->bga_ids_available ? 75.0f : 35.0f));
     const auto block_list_pointer = state->bga_renumber_confirmation_open ||
                                     state->bga_renumber_release_pending;
     if (block_list_pointer) nk_widget_disable_begin(context);
@@ -316,6 +345,7 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
                       view->bga_largest_free_run);
         nk_label(context, free_run, NK_TEXT_LEFT);
     }
+    bga_lane_picker(context, *action);
     renumber_confirmation(context, *view, *state, *action);
     if (state->bga_renumber_release_pending &&
         !context->input.mouse.buttons[NK_BUTTON_LEFT].down)
@@ -332,6 +362,8 @@ static bool bga_stack_is_valid(const WormUiComposeView& view,
         wormedit::ui::chrome::popup_context_matches(expected, current) &&
         std::ranges::any_of(std::span(view.bga_events, view.bga_event_count), [&](const auto& event) {
             return event.canvas_row == state.bga_stack_row &&
+                   wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(event.kind)) ==
+                   wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(state.bga_stack_kind)) &&
                    event.overlap_count > WORM_UI_COMPOSE_BGA_OVERLAP_STACK_THRESHOLD;
         });
 }
@@ -395,7 +427,9 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const WormUiCo
     struct nk_list_view list{};
     const auto count = static_cast<int>(std::ranges::count_if(
         std::span(view->bga_events, view->bga_event_count), [&](const auto& event) {
-            return event.canvas_row == state->bga_stack_row;
+            return event.canvas_row == state->bga_stack_row &&
+                wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(event.kind)) ==
+                wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(state->bga_stack_kind));
         }));
     nk_layout_row_dynamic(context, 300, 1);
     bool selected_event = false;
@@ -404,7 +438,9 @@ void worm_ui_nuklear_render_bga_stack_picker(nk_context* context, const WormUiCo
         const auto events = std::span(view->bga_events, view->bga_event_count);
         int row_index = 0;
         for (const auto& event : events) {
-            if (event.canvas_row != state->bga_stack_row) continue;
+            if (event.canvas_row != state->bga_stack_row ||
+                wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(event.kind)) !=
+                wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(state->bga_stack_kind))) continue;
             if (row_index >= list.begin && row_index < list.end) {
                 nk_layout_row_dynamic(context, 28, 1);
                 selected_event = draw_bga_stack_row(context, event, view->chart_id,

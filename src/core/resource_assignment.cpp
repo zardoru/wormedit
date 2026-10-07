@@ -20,6 +20,33 @@ namespace {
 
 void reject(document_command_result_t& result, diagnostic_code_t code, std::string message);
 
+auto resolve_bga_resource_kind(const song_document_t& document, resource_id_t id,
+                               visual_event_kind_t requested, document_command_result_t& result)
+    -> std::optional<visual_event_kind_t> {
+    const auto lane = editor_bga_lane_index(requested);
+    if (!lane) {
+        reject(result, diagnostic_code_t::unsupported_feature, "Unsupported BGA lane kind");
+        return std::nullopt;
+    }
+    const auto resource = std::ranges::find(document.resources, id, &resource_entry_t::id);
+    if (resource == document.resources.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "BGA resource is missing");
+        return std::nullopt;
+    }
+    const auto asset = std::ranges::find(document.visual_assets, resource->asset, &visual_asset_t::id);
+    if (asset == document.visual_assets.end() ||
+        (asset->kind != asset_kind_t::image && asset->kind != asset_kind_t::video)) {
+        reject(result, diagnostic_code_t::unsupported_feature, "BGA requires an image or video resource");
+        return std::nullopt;
+    }
+    if (asset->kind == asset_kind_t::video && *lane != 0) {
+        reject(result, diagnostic_code_t::unsupported_feature, "Video can only be placed in the BGA base lane");
+        return std::nullopt;
+    }
+    return *lane == 0 ? (asset->kind == asset_kind_t::video
+        ? visual_event_kind_t::video : visual_event_kind_t::background) : requested;
+}
+
 constexpr std::string_view bms36_digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 auto bms_digit_value(unsigned char character) -> int {
@@ -508,16 +535,17 @@ auto place_bgm_event(resource_placement_context_t& context) -> bool {
 }
 
 auto place_bga_background(resource_placement_context_t& context) -> bool {
+    const auto kind = context.action.bga_kind.value_or(visual_event_kind_t::background);
     if (std::ranges::any_of(context.chart.bga_events, [&](const auto& event) {
-            return event.kind == visual_event_kind_t::background &&
+            return editor_bga_lane_index(event.kind) == editor_bga_lane_index(kind) &&
                    event.position == context.position;
         })) {
         reject(context.result, diagnostic_code_t::collision,
-               "a BGA background already occupies the cursor row");
+               "a BGA event already occupies this lane and row");
         return false;
     }
     context.chart.bga_events.push_back({.id = context.first_id, .position = context.position,
-        .resource = context.action.resource, .kind = visual_event_kind_t::background,
+        .resource = context.action.resource, .kind = kind,
         .provenance = {}});
     return true;
 }
@@ -531,6 +559,12 @@ auto apply_resource_placement(document_history_t& history, std::uint64_t expecte
         return result;
     }
     if (!validate_placement_resource(history.document, action, result)) return result;
+    auto resolved_action = action;
+    if (action.kind == resource_placement_kind_t::bga_background) {
+        resolved_action.bga_kind = resolve_bga_resource_kind(history.document, action.resource,
+            action.bga_kind.value_or(visual_event_kind_t::background), result);
+        if (!resolved_action.bga_kind) return result;
+    }
     auto target = resolve_placement_target(history.document, action, result);
     if (!target) return result;
     auto proposed = history.document;
@@ -540,7 +574,7 @@ auto apply_resource_placement(document_history_t& history, std::uint64_t expecte
         reject(result, diagnostic_code_t::invalid_measure, "resource placement measure is missing");
         return result;
     }
-    resource_placement_context_t placement{result, chart, *measure, target->index, action,
+    resource_placement_context_t placement{result, chart, *measure, target->index, resolved_action,
                                             target->position, target->row, target->first_id};
     bool placed{};
     switch (action.kind) {
@@ -704,9 +738,9 @@ auto apply_bga_event_move(document_history_t& history, std::uint64_t expected_re
         reject(result, diagnostic_code_t::invalid_id, "BGA move event no longer exists");
         return result;
     }
-    if (found->kind != visual_event_kind_t::background && found->kind != visual_event_kind_t::video) {
+    if (!editor_bga_lane_index(found->kind)) {
         reject(result, diagnostic_code_t::unsupported_feature,
-               "Only background and video events can move in the BGA lane");
+               "This visual event has no editable BGA lane");
         return result;
     }
     const auto built = build_measure_index(*source_chart);
@@ -721,7 +755,10 @@ auto apply_bga_event_move(document_history_t& history, std::uint64_t expected_re
         reject(result, diagnostic_code_t::row_out_of_range, "BGA move row is outside the chart");
         return result;
     }
-    if (*target == found->position) return result;
+    const auto kind = resolve_bga_resource_kind(history.document, found->resource,
+        action.bga_kind.value_or(found->kind), result);
+    if (!kind) return result;
+    if (*target == found->position && *kind == found->kind) return result;
     auto proposed = history.document;
     const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.begin());
     const auto moved = std::ranges::find(proposed.charts[chart_offset].bga_events,
@@ -731,6 +768,7 @@ auto apply_bga_event_move(document_history_t& history, std::uint64_t expected_re
         return result;
     }
     moved->position = *target;
+    moved->kind = *kind;
     return commit_document_command(history, std::move(proposed), "Move BGA event");
 }
 
@@ -810,7 +848,8 @@ auto apply_virtual_bms_resource_placement(
          .lane = action.lane,
          .source_lane = action.source_lane,
          .kind = action.kind,
-         .semantic_layers = action.semantic_layers});
+         .semantic_layers = action.semantic_layers,
+         .bga_kind = action.bga_kind});
     if (!placed) {
         result.diagnostics = placed.diagnostics;
         return result;
@@ -962,7 +1001,7 @@ auto apply_virtual_bms_bga_event_move(
                                     snapped_row - destination->begin_row};
     auto staged = make_document_history(std::move(proposed));
     const auto moved = apply_bga_event_move(staged, staged.document.revision,
-        {.chart = action.chart, .event = action.event, .position = position});
+        {.chart = action.chart, .event = action.event, .position = position, .bga_kind = action.bga_kind});
     if (!moved) {
         result.diagnostics = moved.diagnostics;
         return result;
@@ -1836,6 +1875,22 @@ struct resource_assignment_scan_t {
     bool changed{};
 };
 
+auto prepare_assigned_bga_kinds(const song_document_t& document, chart_document_t& chart,
+                               resource_assignment_scan_t& scan) -> bool {
+    for (auto& event : chart.bga_events) {
+        if (!editor_bga_lane_index(event.kind)) continue;
+        if (!std::ranges::binary_search(scan.selected,
+            editor_selection_object_t{editor_selection_object_kind_t::bga_event, event.id})) continue;
+        const auto kind = resolve_bga_resource_kind(document, scan.resource, event.kind, scan.result);
+        if (!kind) return false;
+        if (event.kind != *kind) {
+            event.kind = *kind;
+            scan.changed = true;
+        }
+    }
+    return true;
+}
+
 template <typename Current>
 auto assign_selected_resource(resource_assignment_scan_t& scan,
     editor_selection_object_t object, Current& current, bool retained_sound_link) -> bool {
@@ -1906,6 +1961,7 @@ auto apply_resource_assignment(document_history_t& history, std::uint64_t expect
     std::vector<std::uint8_t> occurrences(selected->size());
     resource_assignment_scan_t scan{*selected, action.resource, limits.maximum_chart_objects,
                                     occurrences, result};
+    if (!prepare_assigned_bga_kinds(proposed, *chart, scan)) return result;
     if (!scan_resource_assignment_targets(*chart, scan)) return result;
     if (!scan.changed) return result;
     return commit_document_command(history, std::move(proposed), "Assign resource to selection");

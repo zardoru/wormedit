@@ -17,6 +17,13 @@
 
 namespace wormedit {
 
+// Four editor lanes: background (including video), layer, layer 2, poor.
+inline constexpr std::uint8_t editor_bga_lane_mask_all = 15;
+[[nodiscard]] auto editor_bga_lane_index(visual_event_kind_t kind)
+    -> std::optional<std::size_t>;
+[[nodiscard]] auto editor_bga_visible_lane_mask(const chart_document_t& chart,
+                                               std::uint8_t revealed) -> std::uint8_t;
+
 inline constexpr double minimum_pixels_per_standard_measure = 24.0;
 inline constexpr double maximum_pixels_per_standard_measure = 4096.0;
 inline constexpr double default_pixels_per_standard_measure = 192.0;
@@ -650,6 +657,7 @@ struct editor_interaction_state_t {
     bool y_lock{false};
     // View-only BGA event lane visibility; hidden lanes have no hit geometry.
     bool bga_lane_visible{true};
+    std::uint8_t bga_revealed_lane_mask{};
 };
 
 // The denominator pointer-driven edits of any object class should snap to.
@@ -670,6 +678,7 @@ struct editor_interaction_view_model_t {
     bool snap_enabled{true};
     bool y_lock{false};
     bool bga_lane_visible{true};
+    std::uint8_t bga_revealed_lane_mask{};
     std::vector<std::uint64_t> supported_snap_denominators;
     std::uint64_t document_revision{};
     double pixels_per_standard_measure{default_pixels_per_standard_measure};

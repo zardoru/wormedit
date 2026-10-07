@@ -402,6 +402,19 @@ uint64_t compose_bga_event_at(const WormUiComposeView* view, double x, double y)
     return 0;
 }
 
+auto compose_bga_lane_kind_at(const WormUiComposeView& view, double x, double y)
+    -> std::optional<std::uint8_t> {
+    if (!view.bga_lane_visible || !std::isfinite(x) || !std::isfinite(y)) return std::nullopt;
+    for (size_t index = 0; index < std::min<size_t>(view.bga_lane_count, 4); ++index) {
+        const auto& rect = view.bga_lane_rects[index];
+        if (x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom)
+            return view.bga_lane_kinds[index];
+    }
+    if (view.bga_lane_count == 0 && x >= view.bga_lane_bounds.left && x < view.bga_lane_bounds.right &&
+        y >= view.bga_lane_bounds.top && y < view.bga_lane_bounds.bottom) return 0;
+    return std::nullopt;
+}
+
 bool compose_point_hits_selected_note(const WormUiComposeView* view, double x, double y) {
     if (!view || !std::isfinite(x) || !std::isfinite(y)) {
         return false;
@@ -1037,6 +1050,7 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
             state.bga_stack_chart_id = view.chart_id;
             state.bga_stack_revision = view.document_revision;
             state.bga_stack_row = stacked->canvas_row;
+            state.bga_stack_kind = stacked->kind;
             return true;
         }
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK,
@@ -1087,6 +1101,7 @@ static auto update_bga_event_move_capture(const ComposePointerEventContext& inpu
         return true;
     }
     state.bga_event_move_current_y_pixels = input.pointer_y;
+    state.bga_event_move_current_x_pixels = input.pointer_x;
     if (input.left_released) {
         if (!state.bga_event_move_active) {
             const auto events = std::span(input.view->bga_events, input.view->bga_event_count);
@@ -1100,9 +1115,10 @@ static auto update_bga_event_move_capture(const ComposePointerEventContext& inpu
                 state.bga_stack_chart_id = input.view->chart_id;
                 state.bga_stack_revision = input.view->document_revision;
                 state.bga_stack_row = selected->canvas_row;
+                state.bga_stack_kind = selected->kind;
             }
         }
-        if (state.bga_event_move_active)
+        if (state.bga_event_move_active) {
             append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE,
                 input.pointer_x, input.pointer_y, 0, false,
                 WORM_UI_COMPOSE_SELECTION_REPLACE,
@@ -1110,11 +1126,19 @@ static auto update_bga_event_move_capture(const ComposePointerEventContext& inpu
                 state.bga_event_move_object_id, 0, false, WORM_UI_TIMING_LANE_BPM,
                 state.bga_event_move_chart_id, state.bga_event_move_revision,
                 state.bga_event_move_anchor_row);
+            if (input.action->compose_input_count != 0) {
+                auto& output = input.action->compose_inputs[input.action->compose_input_count - 1];
+                output.bga_lane_kind = compose_bga_lane_kind_at(*input.view,
+                    input.pointer_x, input.pointer_y).value_or(255);
+                output.bga_lane_kind_valid = true;
+            }
+        }
         reset_bga_event_move_capture();
         return true;
     }
-    if (!state.bga_event_move_active && std::abs(input.context->input.mouse.pos.y -
-                                                  state.bga_event_move_anchor_screen_y) >= 4.0f)
+    if (!state.bga_event_move_active &&
+        (std::abs(input.context->input.mouse.pos.y - state.bga_event_move_anchor_screen_y) >= 4.0f ||
+         std::abs(input.context->input.mouse.pos.x - state.bga_event_move_anchor_screen_x) >= 4.0f))
         state.bga_event_move_active = true;
     return true;
 }
@@ -1144,6 +1168,8 @@ static auto begin_bga_event_move_capture(const ComposePointerEventContext& input
     state.bga_event_move_anchor_y_pixels = input.pointer_started_y;
     state.bga_event_move_current_y_pixels = input.pointer_started_y;
     state.bga_event_move_anchor_screen_y = input.left_clicked_screen_y;
+    state.bga_event_move_anchor_screen_x = input.context->input.mouse.buttons[NK_BUTTON_LEFT].clicked_pos.x;
+    state.bga_event_move_current_x_pixels = input.pointer_started_x;
     return true;
 }
 

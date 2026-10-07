@@ -468,6 +468,9 @@ struct worm_ui_nuklear_compose_state_t {
     double bga_event_move_anchor_y_pixels{};
     double bga_event_move_current_y_pixels{};
     float bga_event_move_anchor_screen_y{};
+    float bga_event_move_anchor_screen_x{};
+    double bga_event_move_current_x_pixels{};
+    std::uint8_t bga_stack_kind{};
     bool bga_stack_open{};
     bool bga_stack_release_pending{};
     std::uint64_t bga_stack_project_id{};

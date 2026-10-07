@@ -216,11 +216,84 @@ TEST_CASE("BGA lane move rejects stale, missing, and non-lane event targets unch
     const auto missing = apply_bga_event_move(history, revision,
         {.chart = chart_id_t{7}, .event = object_id_t{99}, .position = {measure_id_t{1}, 480}});
     const auto unsupported = apply_bga_event_move(history, revision,
-        {.chart = chart_id_t{7}, .event = object_id_t{13}, .position = {measure_id_t{1}, 480}});
+        {.chart = chart_id_t{7}, .event = object_id_t{13}, .position = {measure_id_t{1}, 480},
+         .bga_kind = visual_event_kind_t::storyboard});
     CHECK_FALSE(stale);
     CHECK_FALSE(missing);
     CHECK_FALSE(unsupported);
     check_rejections_leave_state(history, before);
+}
+
+TEST_CASE("Layer to Layer 2 changes kind at the same row with one undo", "[bga][bga-lane]") {
+    using namespace wormedit;
+    auto history = bga_history();
+    const auto original = history.document.charts.front().bga_events.back();
+    REQUIRE(apply_bga_event_move(history, history.document.revision,
+        {.chart = chart_id_t{7}, .event = original.id, .position = original.position,
+         .bga_kind = visual_event_kind_t::layer2}));
+    CHECK(history.undo.size() == 1);
+    CHECK(history.document.charts.front().bga_events.back().kind == visual_event_kind_t::layer2);
+    CHECK(history.document.charts.front().bga_events.back().resource == original.resource);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().bga_events.back().kind == visual_event_kind_t::layer);
+}
+
+namespace {
+void check_stacked_bga_move(bool change_kind) {
+    using namespace wormedit;
+    auto history = bga_history();
+    const auto original = history.document.charts.front().bga_events[change_kind ? 2 : 0];
+    const auto destination = local_position_t{measure_id_t{1}, change_kind ? 360U : 240U};
+    const auto kind = change_kind ? visual_event_kind_t::layer2 : original.kind;
+    if (change_kind) history.document.charts.front().bga_events.push_back({.id = object_id_t{14},
+        .position = destination, .resource = original.resource, .kind = kind});
+    REQUIRE(apply_bga_event_move(history, history.document.revision,
+        {.chart = chart_id_t{7}, .event = original.id, .position = destination, .bga_kind = kind}));
+    CHECK(history.undo.size() == 1);
+    const auto moved = std::ranges::find(history.document.charts.front().bga_events, original.id, &bga_event_t::id);
+    CHECK(moved->position == destination);
+    CHECK(moved->kind == kind);
+    REQUIRE(undo_document_command(history));
+    check_bga_identity_at(history.document.charts.front(), original, original.position);
+}
+}
+
+TEST_CASE("BGA same-kind and kind-changing moves preserve stacked-row support", "[bga][bga-lane]") {
+    check_stacked_bga_move(false);
+    check_stacked_bga_move(true);
+}
+
+TEST_CASE("BGA overlay video move and placement reject unchanged", "[bga][bga-lane]") {
+    using namespace wormedit;
+    auto history = bga_history();
+    const auto revision = history.document.revision;
+    const auto original = history.document.charts.front().bga_events;
+    const auto moved = apply_bga_event_move(history, revision,
+        {.chart = chart_id_t{7}, .event = object_id_t{12}, .position = {measure_id_t{1}, 480},
+         .bga_kind = visual_event_kind_t::layer2});
+    CHECK_FALSE(moved);
+    REQUIRE_FALSE(moved.diagnostics.empty());
+    const auto placed = apply_resource_placement(history, revision,
+        {.chart = chart_id_t{7}, .resource = resource_id_t{32}, .position = {measure_id_t{1}, 480},
+         .kind = resource_placement_kind_t::bga_background, .bga_kind = visual_event_kind_t::layer});
+    CHECK_FALSE(placed);
+    CHECK(history.document.revision == revision);
+    check_rejections_leave_state(history, original);
+}
+
+TEST_CASE("BGA per-kind placement shares a row and a collision rejects atomically", "[bga][bga-lane]") {
+    using namespace wormedit;
+    auto history = bga_history();
+    const place_resource_action_t action{.chart = chart_id_t{7}, .resource = resource_id_t{31},
+        .position = {measure_id_t{1}, 120}, .kind = resource_placement_kind_t::bga_background,
+        .bga_kind = visual_event_kind_t::layer2};
+    REQUIRE(apply_resource_placement(history, history.document.revision, action));
+    CHECK(history.undo.size() == 1);
+    CHECK(history.document.charts.front().bga_events.back().kind == visual_event_kind_t::layer2);
+    const auto revision = history.document.revision;
+    CHECK_FALSE(apply_resource_placement(history, revision, action));
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.size() == 1);
 }
 
 TEST_CASE("BGA move materializes one virtual BMS measure in the same undo step",

@@ -37,5 +37,7 @@ bool compose_point_hits_note(const WormUiComposeView* view, double x, double y);
 void append_note_paint_begin(const ComposePointerEventContext& input);
 std::uint64_t compose_bgm_event_at(const WormUiComposeView* view, double x, double y);
 std::uint64_t compose_bga_event_at(const WormUiComposeView* view, double x, double y);
+auto compose_bga_lane_kind_at(const WormUiComposeView& view, double x, double y)
+    -> std::optional<std::uint8_t>;
 bool compose_point_hits_selected_note(const WormUiComposeView* view, double x, double y);
 WormUiComposeSelectionMode compose_selection_mode(std::uint16_t modifiers);

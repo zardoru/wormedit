@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <span>
 
 namespace {
 
@@ -102,12 +103,105 @@ auto render_center_pixel(SDL_Renderer* renderer, SDL_Texture* texture)
     return pixel;
 }
 
+auto solid_bga_layer(WormUiPlayerPreviewVisualKind kind, std::uint64_t resource,
+                     const std::array<std::uint8_t, 4>& pixels) -> WormUiPlayerPreviewVisualLayerView {
+    return {.object_id = resource, .resource_id = resource, .kind = kind,
+        .draw_order = kind == WORM_UI_PLAYER_PREVIEW_VISUAL_VIDEO ? 99U : 0U,
+        .static_image = true, .image_ready = true, .image_content_id = 1,
+        .image_width = 1, .image_height = 1, .rgba_pixels = pixels.data(), .rgba_byte_count = pixels.size()};
+}
+
+void require_bga_texture(bool value) { REQUIRE(value); }
+void check_bga_texture(bool value) { CHECK(value); }
+
+auto render_bga_composite(SDL_Renderer* renderer,
+                          std::span<const WormUiPlayerPreviewVisualLayerView> layers)
+    -> std::array<std::uint8_t, 4> {
+    nuklear_buffer_t storage;
+    nk_command_buffer canvas{};
+    nk_command_buffer_init(&canvas, &storage.value, NK_CLIPPING_OFF);
+    WormUiPlayerPreviewView view{.visual_fit = WORM_UI_VISUAL_FIT_STRETCH,
+        .project_id = 1, .document_revision = 2, .visual_layers = layers.data(), .visual_layer_count = layers.size()};
+    const auto result = worm_ui_nuklear_draw_player_preview_visual_layers(
+        &canvas, nk_rect(0, 0, 16, 16), renderer, &view);
+    require_bga_texture(result.failure_count == 0);
+    require_bga_texture(result.drew_image);
+    require_bga_texture(SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255));
+    require_bga_texture(SDL_RenderClear(renderer));
+    const auto* memory = static_cast<const nk_byte*>(nk_buffer_memory_const(&storage.value));
+    for (auto offset = canvas.begin;;) {
+        const auto* command = reinterpret_cast<const nk_command*>(memory + offset);
+        if (command->type == NK_COMMAND_IMAGE) {
+            const auto* image = reinterpret_cast<const nk_command_image*>(command);
+            require_bga_texture(SDL_RenderTexture(renderer, static_cast<SDL_Texture*>(image->img.handle.ptr), nullptr, nullptr));
+        }
+        if (offset == canvas.last) break;
+        offset = command->next;
+    }
+    surface_ptr_t capture{SDL_RenderReadPixels(renderer, nullptr)};
+    require_bga_texture(static_cast<bool>(capture));
+    std::array<std::uint8_t, 4> pixel{};
+    require_bga_texture(SDL_ReadSurfacePixel(capture.get(), 8, 8, &pixel[0], &pixel[1], &pixel[2], &pixel[3]));
+    return pixel;
+}
+
 } // namespace
 
 // image_quad.cpp references the application-side converted draw-list callback. The visual-layer
 // path exercised here records ordinary Nuklear image commands, so no converted quad is expected.
 void worm_ui_nuklear_append_image_quad(void*, short, short, unsigned short, unsigned short,
                                        nk_handle) {}
+
+TEST_CASE("BGA composites video base then Layer then Layer 2 regardless of draw order", "[bga][texture]") {
+    texture_fixture_t fixture;
+    REQUIRE(fixture.renderer);
+    const std::array<std::uint8_t, 4> red{255, 0, 0, 255}, green{0, 255, 0, 255}, blue{0, 0, 255, 255};
+    const std::array layers{solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER2, 3, blue),
+        solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER, 2, green),
+        solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_VIDEO, 1, red)};
+    CHECK(render_bga_composite(fixture.renderer.get(), layers) == blue);
+    CHECK(render_bga_composite(fixture.renderer.get(), std::span(layers).subspan(1)) == green);
+}
+
+TEST_CASE("BGA black key keeps base black opaque and separates same-resource cache roles", "[bga][texture]") {
+    texture_fixture_t fixture;
+    REQUIRE(fixture.renderer);
+    const std::array<std::uint8_t, 4> black{0, 0, 0, 255};
+    const std::array base{solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND, 4, black)};
+    const std::array overlay{solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER, 4, black)};
+    CHECK(render_bga_composite(fixture.renderer.get(), base) == black);
+    CHECK(render_bga_composite(fixture.renderer.get(), overlay) == std::array<std::uint8_t, 4>{0, 0, 255, 255});
+    CHECK(render_bga_composite(fixture.renderer.get(), base) == black);
+    CHECK(black[3] == 255);
+}
+
+TEST_CASE("BGA base preserves storyboard draw-order placement", "[bga][texture]") {
+    texture_fixture_t fixture;
+    REQUIRE(fixture.renderer);
+    const std::array<std::uint8_t, 4> red{255, 0, 0, 255}, white{255, 255, 255, 255};
+    std::array layers{solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND, 7, red),
+        solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD, 8, white)};
+    layers[0].draw_order = 2;
+    layers[1].draw_order = 0;
+    CHECK(render_bga_composite(fixture.renderer.get(), layers) == red);
+    layers[1].draw_order = 3;
+    CHECK(render_bga_composite(fixture.renderer.get(), layers) == white);
+}
+
+TEST_CASE("BGA layer preserves nonblack alpha and keys only exact RGB black", "[bga][texture]") {
+    texture_fixture_t fixture;
+    REQUIRE(fixture.renderer);
+    const std::array<std::uint8_t, 4> red_alpha{255, 0, 0, 128}, near_black{0, 0, 1, 255};
+    const std::array alpha_layer{solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER2, 5, red_alpha)};
+    const auto blended = render_bga_composite(fixture.renderer.get(), alpha_layer);
+    check_bga_texture(blended[0] >= 127);
+    check_bga_texture(blended[0] <= 128);
+    check_bga_texture(blended[2] >= 126);
+    check_bga_texture(blended[2] <= 127);
+    const std::array near_layer{solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER, 6, near_black)};
+    check_bga_texture(render_bga_composite(fixture.renderer.get(), near_layer) == near_black);
+    check_bga_texture(red_alpha[3] == 128);
+}
 
 TEST_CASE("player preview uploads and replaces renderer-backed video textures",
           "[integration][frontend][visual][player-preview][texture]") {

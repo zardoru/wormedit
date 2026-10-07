@@ -2,6 +2,8 @@
 #include <wormedit/core/virtual_canvas.h>
 
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <cmath>
 #include <limits>
 #include <ranges>
@@ -396,8 +398,7 @@ auto append_scene_bga_events(const chart_document_t& chart, editor_field_scene_i
                                         "field-scene BGA event identity is invalid", event.id));
             continue;
         }
-        if (event.kind != visual_event_kind_t::background &&
-            event.kind != visual_event_kind_t::video) continue;
+        if (!editor_bga_lane_index(event.kind)) continue;
         if (supported_count == options.maximum_bga_events) {
             diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                         "field-scene BGA event count exceeds its configured cap"));
@@ -1857,47 +1858,42 @@ auto compose_bgm_pane(scene_geometry_context_t& context, Operate&& operate, Cons
 }
 
 template <typename Operate, typename Consume, typename YForRow>
-auto compose_bga_lane(scene_geometry_context_t& context, Operate&& operate, Consume&& consume,
-                      YForRow&& y_for_row) -> bool {
+auto append_bga_lane_events(scene_geometry_context_t& context,
+                            const editor_field_bga_lane_geometry_t& lane,
+                            const std::unordered_set<std::uint64_t>& selected,
+                            Operate&& operate, Consume&& consume, YForRow&& y_for_row) -> bool {
     const auto& request = context.request;
-    if (!context.view.bga_lane_visible || request.bga_pane_width_pixels <= 0.0) return true;
-    if (!operate() || !consume()) {
-        context.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
-                                            "field-scene BGA lane exceeds its configured cap"));
-        return false;
-    }
-    const editor_field_rect_t lane_bounds{
-        request.bga_pane_left_pixels, 0.0,
-        request.bga_pane_left_pixels + request.bga_pane_width_pixels,
-        context.view.viewport_height_pixels};
-    context.scene.bga_lane = editor_field_bga_lane_geometry_t{.bounds = lane_bounds};
-    std::unordered_set<std::uint64_t> selected;
-    selected.reserve(context.view.selected_objects.size());
-    for (const auto& object : context.view.selected_objects)
-        if (object.kind == editor_selection_object_kind_t::bga_event)
-            selected.insert(object.id.value);
-
+    const auto lane_index = editor_bga_lane_index(lane.kind);
     const auto first_row = static_cast<std::uint64_t>(std::max(0.0L, std::ceil(context.query_low)));
     const auto last_row = static_cast<std::uint64_t>(std::max(0.0L, std::floor(context.query_high)));
     const auto first = std::ranges::lower_bound(context.index.bga_events, first_row, {},
                                                 &editor_field_scene_bga_source_t::row);
     const auto after = std::ranges::upper_bound(first, context.index.bga_events.end(), last_row, {},
                                                 &editor_field_scene_bga_source_t::row);
+    std::optional<std::uint64_t> overlap_row;
+    double overlap_count{};
+    double overlap_index{};
     for (auto event = first; event != after; ++event) {
+        if (editor_bga_lane_index(event->kind) != lane_index) continue;
         if (!operate()) {
             context.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                                 "field-scene BGA events exceed operation cap"));
             return false;
         }
-        const auto same_row = std::ranges::equal_range(first, after, event->row, {},
-                                                      &editor_field_scene_bga_source_t::row);
-        const auto overlap_count = static_cast<double>(std::ranges::distance(same_row));
-        const auto overlap_index = static_cast<double>(std::ranges::distance(same_row.begin(), event));
+        if (overlap_row != event->row) {
+            const auto same_row = std::ranges::equal_range(first, after, event->row, {},
+                                                          &editor_field_scene_bga_source_t::row);
+            overlap_count = static_cast<double>(std::ranges::count_if(same_row, [&](const auto& other) {
+                return editor_bga_lane_index(other.kind) == lane_index;
+            }));
+            overlap_index = 0;
+            overlap_row = event->row;
+        }
+        const auto event_overlap_index = overlap_index++;
         const bool stacked = overlap_count > bga_lane_overlap_stack_threshold;
-        const auto width = stacked ? request.bga_pane_width_pixels
-                                   : request.bga_pane_width_pixels / overlap_count;
-        const auto x = stacked ? request.bga_pane_left_pixels
-                               : request.bga_pane_left_pixels + width * overlap_index;
+        const auto lane_width = lane.bounds.right - lane.bounds.left;
+        const auto width = stacked ? lane_width : lane_width / overlap_count;
+        const auto x = stacked ? lane.bounds.left : lane.bounds.left + width * event_overlap_index;
         const auto y = y_for_row(event->row);
         const auto [top, bottom] = endpoint_vertical_bounds(
             y, request.note_head_height_pixels, lane_glyph_t::bar, request.scroll_direction);
@@ -1912,6 +1908,40 @@ auto compose_bga_lane(scene_geometry_context_t& context, Operate&& operate, Cons
             .kind = event->kind, .row = event->row,
             .overlap_count = static_cast<std::size_t>(overlap_count),
             .selected = selected.contains(event->event.value), .bounds = bounds});
+    }
+    return true;
+}
+
+template <typename Operate, typename Consume, typename YForRow>
+auto compose_bga_lane(scene_geometry_context_t& context, Operate&& operate, Consume&& consume,
+                      YForRow&& y_for_row) -> bool {
+    const auto& request = context.request;
+    if (!context.view.bga_lane_visible || request.bga_pane_width_pixels <= 0.0) return true;
+    const auto mask = editor_bga_visible_lane_mask(context.chart, context.view.bga_revealed_lane_mask);
+    if (!mask) return true;
+    const editor_field_rect_t bounds{request.bga_pane_left_pixels, 0.0,
+        request.bga_pane_left_pixels + request.bga_pane_width_pixels, context.view.viewport_height_pixels};
+    context.scene.bga_lane = editor_field_bga_lane_geometry_t{.bounds = bounds};
+    constexpr std::array kinds{visual_event_kind_t::background, visual_event_kind_t::layer,
+                               visual_event_kind_t::layer2, visual_event_kind_t::poor};
+    const auto width = request.bga_pane_width_pixels / std::popcount(mask);
+    std::unordered_set<std::uint64_t> selected;
+    selected.reserve(context.view.selected_objects.size());
+    for (const auto& object : context.view.selected_objects)
+        if (object.kind == editor_selection_object_kind_t::bga_event)
+            selected.insert(object.id.value);
+    for (std::size_t index = 0; index < kinds.size(); ++index) {
+        if (!(mask & (1U << index))) continue;
+        if (!operate() || !consume()) {
+            context.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                                                "field-scene BGA lane exceeds its configured cap"));
+            return false;
+        }
+        const auto left = bounds.left + width * context.scene.bga_lanes.size();
+        const editor_field_bga_lane_geometry_t lane{
+            .bounds = {left, bounds.top, left + width, bounds.bottom}, .kind = kinds[index]};
+        context.scene.bga_lanes.push_back(lane);
+        if (!append_bga_lane_events(context, lane, selected, operate, consume, y_for_row)) return false;
     }
     return true;
 }
@@ -2232,6 +2262,7 @@ auto window_key_matches(const editor_field_scene_window_t& window,
         previous.pixels_per_standard_measure == view.pixels_per_standard_measure &&
         previous.viewport_height_pixels == scene_window_height(view, request) &&
         previous.bga_lane_visible == view.bga_lane_visible &&
+        previous.bga_revealed_lane_mask == view.bga_revealed_lane_mask &&
         window.request.retained_window_minimum_margin_pixels ==
             request.retained_window_minimum_margin_pixels &&
         previous.active_snap_denominator == view.active_snap_denominator &&
@@ -2410,7 +2441,7 @@ auto projected_window_fits_limit(const editor_field_scene_result_t& result,
                        scene.comparison_differences.size() + scene.grid_lines.size() +
                        scene.hold_bodies.size() + scene.note_endpoints.size() +
                        scene.bgm_lanes.size() + scene.bgm_events.size() +
-                       static_cast<std::size_t>(scene.bga_lane.has_value()) +
+                       scene.bga_lanes.size() +
                        scene.bga_events.size() +
                        static_cast<std::size_t>(scene.cursor.has_value());
     return count <= request.maximum_scene_primitives;

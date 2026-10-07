@@ -398,6 +398,48 @@ TEST_CASE("BGA lane click selects an event and drag emits one move on release",
     cancel_bga_move_after_drag(harness, updated_center.first, updated_center.second, 81);
 }
 
+TEST_CASE("horizontal BGA drag emits the Layer 2 destination kind once", "[event-harness][bga-lane][bga]") {
+    nuklear_event_harness_t harness{1280, 800};
+    REQUIRE(harness.ready());
+    hide_compose_docks();
+    auto& view = harness.view().compose;
+    view.scene_available = true;
+    view.chart_id = 7;
+    view.document_revision = 11;
+    view.viewport_width_pixels = 900;
+    view.viewport_height_pixels = 600;
+    view.playable_field_left_pixels = 186;
+    view.playable_field_right_pixels = 620;
+    view.bga_lane_visible = true;
+    view.bga_lane_bounds = {42, 0, 186, 600};
+    view.bga_lane_count = 3;
+    view.bga_lane_kinds[0] = 0;
+    view.bga_lane_kinds[1] = 2;
+    view.bga_lane_kinds[2] = 5;
+    view.bga_lane_rects[0] = {42, 0, 90, 600};
+    view.bga_lane_rects[1] = {90, 0, 138, 600};
+    view.bga_lane_rects[2] = {138, 0, 186, 600};
+    WormUiComposeBgaEventView event{.event_id = 81, .resource_id = 91, .kind = 2,
+        .name = "Layer", .selected = true, .bounds = {90, 100, 138, 120}};
+    view.bga_events = &event;
+    view.bga_event_count = 1;
+    (void)harness.frame();
+    const auto start = rect_center(harness, event.bounds);
+    const auto finish = canvas_point(harness, 162, 110);
+    const auto press = std::array{mouse_motion(start.first, start.second), mouse_button(true, start.first, start.second)};
+    (void)harness.frame(press);
+    const auto motion = mouse_motion(finish.first, finish.second);
+    (void)harness.frame(std::span{&motion, 1});
+    const auto release = std::array{mouse_motion(finish.first, finish.second), mouse_button(false, finish.first, finish.second)};
+    const auto output = harness.frame(release);
+    const auto& action = output.get();
+    check_bga(action.compose_input_count == 1);
+    check_bga(action.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE);
+    check_bga(action.compose_inputs[0].bga_lane_kind_valid);
+    check_bga(action.compose_inputs[0].bga_lane_kind == 5);
+    check_bga(action.compose_inputs[0].object_id == 81);
+}
+
 TEST_CASE("armed BGA resource cannot place from playable or BGM lane clicks",
           "[frontend-state][event-harness][bga-lane]") {
     nuklear_event_harness_t harness{1280, 800};
@@ -415,6 +457,13 @@ TEST_CASE("armed BGA resource cannot place from playable or BGM lane clicks",
     view.bga_lane_bounds = {42, 0, 90, 600};
     WormUiComposeBgmLaneView bgm_lane{.bounds = {604, 0, 640, 600},
                                      .source_lane_id = 44};
+    view.playable_field_left_pixels = 138;
+    view.bga_lane_bounds.right = 138;
+    view.bga_lane_count = 2;
+    view.bga_lane_kinds[0] = 0;
+    view.bga_lane_kinds[1] = 5;
+    view.bga_lane_rects[0] = {42, 0, 90, 600};
+    view.bga_lane_rects[1] = {90, 0, 138, 600};
     view.bgm_lanes = &bgm_lane;
     view.bgm_lane_count = 1;
     (void)harness.frame();
@@ -428,11 +477,17 @@ TEST_CASE("armed BGA resource cannot place from playable or BGM lane clicks",
     const auto field_click = click(harness, field.first, field.second);
     const auto bgm_center = rect_center(harness, bgm_lane.bounds);
     const auto bgm_click = click(harness, bgm_center.first, bgm_center.second);
-    const auto bga_center = rect_center(harness, view.bga_lane_bounds);
+    const auto bga_center = rect_center(harness, view.bga_lane_rects[1]);
     const auto bga_click = click(harness, bga_center.first, bga_center.second);
     CHECK_FALSE(has_resource_place(field_click));
     CHECK_FALSE(has_resource_place(bgm_click));
     CHECK(has_resource_place(bga_click));
+    for (const auto& output : bga_click)
+        for (const auto& input : std::span(output.get().compose_inputs, output.get().compose_input_count))
+            if (input.kind == WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE) {
+                check_bga(input.bga_lane_kind_valid);
+                check_bga(input.bga_lane_kind == 5);
+            }
 }
 
 TEST_CASE("BGA event hit testing maps through the visible inspector and Sounds docks",
@@ -706,4 +761,28 @@ TEST_CASE("Y-lock stops a selected BGA event from being dragged to another row",
     const auto up = std::array{mouse_motion(center.first, moved_y), mouse_button(false, center.first, moved_y)};
     const auto released = harness.frame(up);
     CHECK_FALSE(has_input(released, WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE, 81));
+}
+
+TEST_CASE("BGA Add lane dropdown reveals an empty Layer 2", "[event-harness][bga]") {
+    nuklear_event_harness_t harness{1600, 900};
+    REQUIRE(harness.ready());
+    hide_compose_docks();
+    harness.view().compose.bga_lane_count = 0;
+    (void)harness.frame();
+    worm_ui_nuklear_compose_state().bga_panel_visible = true;
+    (void)harness.frame();
+    const auto picker = harness.drawn_text_center("Add BGA lane");
+    REQUIRE(picker);
+    (void)click(harness, picker->first, picker->second);
+    const auto layer2 = harness.drawn_text_center("Layer 2");
+    REQUIRE(layer2);
+    const auto actions = click(harness, layer2->first, layer2->second);
+    bool revealed{};
+    for (const auto& snapshot : actions) {
+        const auto& action = snapshot.get();
+        for (const auto& input : std::span(action.compose_inputs, action.compose_input_count))
+            revealed |= input.kind == WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL &&
+                input.bga_lane_kind_valid && input.bga_lane_kind == 5;
+    }
+    check_bga(revealed);
 }

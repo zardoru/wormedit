@@ -25,11 +25,11 @@ auto layer_slot(visual_event_kind_t kind) -> std::optional<std::size_t> {
     case visual_event_kind_t::layer:
         return 2;
     case visual_event_kind_t::layer2:
-        return std::nullopt;
-    case visual_event_kind_t::video:
         return 3;
-    case visual_event_kind_t::storyboard:
+    case visual_event_kind_t::video:
         return 4;
+    case visual_event_kind_t::storyboard:
+        return 5;
     }
     return std::nullopt;
 }
@@ -49,6 +49,8 @@ auto layer_value(bga_layer_state_t& state, std::size_t slot)
     case 2:
         return state.layer;
     case 3:
+        return state.layer2;
+    case 4:
         return state.video;
     default:
         return state.storyboard;

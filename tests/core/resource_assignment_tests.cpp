@@ -219,6 +219,18 @@ auto make_renumbered_bms_fixture() -> std::optional<renumbered_bms_fixture_t> {
 
 } // namespace
 
+TEST_CASE("BGA storyboard resource replacement keeps established assignment behavior", "[resource-assignment][bga]") {
+    auto song = assignment_song();
+    song.charts.front().bga_events.front().kind = visual_event_kind_t::storyboard;
+    auto history = make_document_history(std::move(song));
+    REQUIRE(apply_resource_assignment(history, history.document.revision,
+        {.chart = chart_id_t{2}, .resource = resource_id_t{4},
+         .objects = {{editor_selection_object_kind_t::bga_event, object_id_t{12}}}}));
+    CHECK(history.document.charts.front().bga_events.front().kind == visual_event_kind_t::storyboard);
+    CHECK(history.document.charts.front().bga_events.front().resource == resource_id_t{4});
+    CHECK(history.undo.size() == 1);
+}
+
 TEST_CASE("ordinary BGM move preserves identity and advances occupied source lanes",
           "[unit][core][resources][bgm-move]") {
     auto song = assignment_song();

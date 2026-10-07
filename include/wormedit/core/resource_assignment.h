@@ -186,6 +186,7 @@ struct place_resource_action_t {
     // denominator so all placement kinds use the same nearest-row policy.
     std::uint64_t snap_denominator{};
     std::optional<std::vector<layer_id_t>> semantic_layers;
+    std::optional<visual_event_kind_t> bga_kind;
 };
 
 struct place_virtual_bms_resource_action_t {
@@ -197,6 +198,7 @@ struct place_virtual_bms_resource_action_t {
     resource_placement_kind_t kind{resource_placement_kind_t::sample_note};
     std::uint64_t snap_denominator{};
     std::optional<std::vector<layer_id_t>> semantic_layers;
+    std::optional<visual_event_kind_t> bga_kind;
 };
 
 struct move_bgm_event_action_t {
@@ -214,6 +216,7 @@ struct move_bga_event_action_t {
     object_id_t event;
     local_position_t position;
     std::uint64_t snap_denominator{};
+    std::optional<visual_event_kind_t> bga_kind;
 };
 
 struct move_virtual_bms_bga_event_action_t {
@@ -221,6 +224,7 @@ struct move_virtual_bms_bga_event_action_t {
     object_id_t event;
     std::uint64_t canvas_row{};
     std::uint64_t snap_denominator{};
+    std::optional<visual_event_kind_t> bga_kind;
 };
 
 // Moves one background image/video event, preserving its stable identity,

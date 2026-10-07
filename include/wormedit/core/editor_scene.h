@@ -172,6 +172,7 @@ struct editor_field_bgm_event_geometry_t {
 
 struct editor_field_bga_lane_geometry_t {
     editor_field_rect_t bounds;
+    visual_event_kind_t kind{visual_event_kind_t::background};
 };
 
 struct editor_field_bga_event_geometry_t {
@@ -198,6 +199,7 @@ struct editor_field_scene_t {
     std::vector<editor_field_bgm_lane_geometry_t> bgm_lanes;
     std::vector<editor_field_bgm_event_geometry_t> bgm_events;
     std::optional<editor_field_bga_lane_geometry_t> bga_lane;
+    std::vector<editor_field_bga_lane_geometry_t> bga_lanes;
     std::vector<editor_field_bga_event_geometry_t> bga_events;
     std::optional<editor_field_cursor_geometry_t> cursor;
 };

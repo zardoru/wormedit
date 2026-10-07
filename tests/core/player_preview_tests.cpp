@@ -154,6 +154,33 @@ TEST_CASE("player preview skins share geometry and change presentation only",
     CHECK((tap->bounds.top + tap->bounds.bottom) / 2.0 == Catch::Approx(64.0));
 }
 
+namespace {
+void check_layer2_rejected(const player_preview_scene_result_t& result) { CHECK_FALSE(result); }
+}
+
+TEST_CASE("player preview validates Layer 2 identities, kind and frame bounds", "[player-preview][bga][layer2]") {
+    const auto built = build_player_preview_index(preview_chart(), 9);
+    REQUIRE(built);
+    auto layer_request = request(100);
+    layer_request.visual_layers.layer2 = {.sample_frame = 80, .object = object_id_t{80},
+        .resource = resource_id_t{180}, .kind = visual_event_kind_t::layer2};
+    const auto valid = make_player_preview_scene(*built.index, layer_request);
+    REQUIRE(valid);
+    CHECK(valid.scene->visual_layers.layer2 == layer_request.visual_layers.layer2);
+    auto invalid = layer_request;
+    invalid.visual_layers.layer2->kind = visual_event_kind_t::layer;
+    check_layer2_rejected(make_player_preview_scene(*built.index, invalid));
+    invalid = layer_request;
+    invalid.visual_layers.layer2->object = {};
+    check_layer2_rejected(make_player_preview_scene(*built.index, invalid));
+    invalid = layer_request;
+    invalid.visual_layers.layer2->resource = {};
+    check_layer2_rejected(make_player_preview_scene(*built.index, invalid));
+    invalid = layer_request;
+    invalid.visual_layers.layer2->sample_frame = 101;
+    check_layer2_rejected(make_player_preview_scene(*built.index, invalid));
+}
+
 TEST_CASE("player preview carries validated visual layers in the deterministic scene",
           "[unit][core][player-preview][bga]") {
     const auto built = build_player_preview_index(preview_chart(), 9);

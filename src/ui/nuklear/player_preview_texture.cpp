@@ -15,6 +15,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <new>
+#include <span>
+#include <vector>
 
 namespace {
 
@@ -26,6 +29,7 @@ struct preview_texture_t {
     std::uint64_t document_revision{};
     std::uint64_t resource_id{};
     std::uint64_t content_id{};
+    bool black_key{};
     std::uint32_t width{};
     std::uint32_t height{};
     std::size_t rgba_bytes{};
@@ -84,8 +88,44 @@ void evict_texture() {
 }
 
 template <typename ImageView>
+auto preview_upload_pixels(const ImageView& layer, bool black_key,
+                           std::vector<std::uint8_t>& keyed_pixels) -> const std::uint8_t* {
+    if (!black_key) return layer.rgba_pixels;
+    try {
+        keyed_pixels.assign(layer.rgba_pixels, layer.rgba_pixels + layer.rgba_byte_count);
+    } catch (const std::bad_alloc&) {
+        return nullptr;
+    }
+    for (std::size_t offset = 0; offset + 3 < keyed_pixels.size(); offset += 4)
+        if (keyed_pixels[offset] == 0 && keyed_pixels[offset + 1] == 0 && keyed_pixels[offset + 2] == 0)
+            keyed_pixels[offset + 3] = 0;
+    return keyed_pixels.data();
+}
+
+auto bga_composite_stage(WormUiPlayerPreviewVisualKind kind) -> int {
+    switch (kind) {
+    case WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER: return 1;
+    case WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER2: return 2;
+    case WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD: return 3;
+    default: return 0;
+    }
+}
+
+void order_bga_composite_layers(std::span<const WormUiPlayerPreviewVisualLayerView*> ordered) {
+    std::array<const WormUiPlayerPreviewVisualLayerView*, WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY> bga{};
+    std::size_t count{};
+    for (const auto* layer : ordered)
+        if (layer->kind != WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD) bga[count++] = layer;
+    std::stable_sort(bga.begin(), bga.begin() + static_cast<std::ptrdiff_t>(count),
+        [](const auto* left, const auto* right) { return bga_composite_stage(left->kind) < bga_composite_stage(right->kind); });
+    std::size_t index{};
+    for (auto& layer : ordered)
+        if (layer->kind != WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD) layer = bga[index++];
+}
+
+template <typename ImageView>
 auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
-                 const ImageView& layer) -> texture_result_t {
+                 const ImageView& layer, bool black_key = false) -> texture_result_t {
     if (!renderer || !layer.image_ready || view.project_id == 0 || view.document_revision == 0 ||
         layer.resource_id == 0 || layer.rgba_byte_count == 0 || !layer.rgba_pixels ||
         layer.rgba_byte_count > maximum_texture_bytes) {
@@ -97,7 +137,7 @@ auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
                entry.document_revision == view.document_revision &&
                entry.resource_id == layer.resource_id &&
                entry.content_id == layer.image_content_id && entry.width == layer.image_width &&
-               entry.height == layer.image_height;
+               entry.height == layer.image_height && entry.black_key == black_key;
     });
     if (found != end) {
         found->last_use = next_texture_use();
@@ -108,6 +148,10 @@ auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
         evict_texture();
     }
 
+    std::vector<std::uint8_t> keyed_pixels;
+    const auto* upload_pixels = preview_upload_pixels(layer, black_key, keyed_pixels);
+    if (!upload_pixels)
+        return {.failure = worm_ui_nuklear_preview_visual_failure_t::upload_out_of_memory};
     SDL_ClearError();
     auto* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC,
                                       static_cast<int>(layer.image_width),
@@ -121,7 +165,7 @@ auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
     }
     if (!SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_LINEAR) ||
         !SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND) ||
-        !SDL_UpdateTexture(texture, nullptr, layer.rgba_pixels,
+        !SDL_UpdateTexture(texture, nullptr, upload_pixels,
                            static_cast<int>(layer.image_width * 4U))) {
         const auto* error = SDL_GetError();
         const auto out_of_memory = error && std::strstr(error, "Out of memory");
@@ -143,6 +187,7 @@ auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
                                  .document_revision = view.document_revision,
                                  .resource_id = layer.resource_id,
                                  .content_id = layer.image_content_id,
+                                 .black_key = black_key,
                                  .width = layer.image_width,
                                  .height = layer.image_height,
                                  .rgba_bytes = layer.rgba_byte_count,
@@ -221,6 +266,7 @@ worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_visu
                   }
                   return left->kind < right->kind;
               });
+    order_bga_composite_layers(std::span(ordered).first(count));
     const auto record_failure = [&](std::uint64_t resource_id,
                                     worm_ui_nuklear_preview_visual_failure_t failure) {
         ++result.failure_count;
@@ -230,7 +276,9 @@ worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_visu
         }
     };
     for (std::size_t index = 0; index < count; ++index) {
-        const auto uploaded = texture_for(renderer, *view, *ordered[index]);
+        const auto uploaded = texture_for(renderer, *view, *ordered[index],
+            ordered[index]->kind == WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER ||
+            ordered[index]->kind == WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER2);
         if (uploaded.failure != worm_ui_nuklear_preview_visual_failure_t::none) {
             record_failure(ordered[index]->resource_id, uploaded.failure);
             continue;

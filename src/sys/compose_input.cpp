@@ -2866,8 +2866,7 @@ auto select_compose_bga_event(const WormUiComposeInputAction& input,
     const auto event = std::ranges::find(chart->bga_events, object_id_t{input.object_id},
                                          &bga_event_t::id);
     if (event == chart->bga_events.end() ||
-        (event->kind != visual_event_kind_t::background &&
-         event->kind != visual_event_kind_t::video))
+        !editor_bga_lane_index(event->kind))
         return "That BGA event is no longer available in the event lane.";
     result = dispatch_editor_action(context.history, context.state,
         select_editor_objects_action_t{{{editor_selection_object_kind_t::bga_event, event->id}},
@@ -2896,15 +2895,19 @@ auto move_compose_bga_event(const WormUiComposeInputAction& input,
     const auto revision = context.ui_action.compose_input_document_revision;
     const auto snap = edit_snap_denominator(*chart, context.state);
     const auto position = context.position_at_compose_y_unrestricted(*chart, *view, y);
+    const auto target_kind = input.bga_lane_kind_valid || input.bga_lane_kind != 0
+        ? std::optional{static_cast<visual_event_kind_t>(input.bga_lane_kind)} : std::nullopt;
+    if (target_kind && (!editor_bga_lane_index(*target_kind) || *target_kind == visual_event_kind_t::video))
+        return "Unsupported BGA destination lane.";
     document_command_result_t moved;
     if (position) {
         moved = apply_bga_event_move(context.history, revision,
             {.chart = chart->id, .event = object.id, .position = *position,
-             .snap_denominator = snap});
+             .snap_denominator = snap, .bga_kind = target_kind});
     } else if (const auto row = context.virtual_bms_row_at(*chart, *view, y)) {
         moved = apply_virtual_bms_bga_event_move(context.history, revision,
             {.chart = chart->id, .event = object.id, .canvas_row = *row,
-             .snap_denominator = snap});
+             .snap_denominator = snap, .bga_kind = target_kind});
     } else {
         return "BGA event move has no valid destination row.";
     }
@@ -3010,6 +3013,10 @@ auto resource_pointer_spec(const WormUiComposeInputAction& input, compose_input_
                           : static_cast<resource_placement_kind_t>(255);
     if (kind == static_cast<resource_placement_kind_t>(255))
         return "Resource pointer placement used an unknown role.";
+    if (kind == resource_placement_kind_t::bga_background &&
+        (!editor_bga_lane_index(static_cast<visual_event_kind_t>(input.bga_lane_kind)) ||
+         input.bga_lane_kind == static_cast<std::uint8_t>(visual_event_kind_t::video)))
+        return "Unsupported BGA destination lane.";
     const auto required = kind == resource_placement_kind_t::sample_note ? resource_role_t::sample
                           : kind == resource_placement_kind_t::bgm_event ? resource_role_t::bgm
                                                                          : resource_role_t::bga;
@@ -3028,6 +3035,13 @@ struct resource_pointer_target_t {
     std::optional<wormedit::object_id_t> note;
     bool handled_virtual{};
 };
+
+auto resource_pointer_bga_kind(const WormUiComposeInputAction& input,
+                               wormedit::resource_placement_kind_t kind)
+    -> std::optional<wormedit::visual_event_kind_t> {
+    return kind == wormedit::resource_placement_kind_t::bga_background
+        ? std::optional{static_cast<wormedit::visual_event_kind_t>(input.bga_lane_kind)} : std::nullopt;
+}
 
 // Every placement path ends here: the Sounds/BGA dock advances to the next eligible resource.
 void advance_dock_after_placement(const wormedit::song_document_t& document,
@@ -3084,7 +3098,8 @@ auto place_virtual_source_resource(const WormUiComposeInputAction& input,
                             : object_id_t{},
          .kind = spec.kind,
          .snap_denominator = edit_snap_denominator(chart, context.state),
-         .semantic_layers = context.state.armed_note_layers});
+         .semantic_layers = context.state.armed_note_layers,
+         .bga_kind = resource_pointer_bga_kind(input, spec.kind)});
     result.accepted = applied.applied;
     result.document_changed = applied.applied;
     result.diagnostics = applied.diagnostics;
@@ -3143,14 +3158,14 @@ auto replacement_target_for_resource(const WormUiComposeInputAction& input,
             const auto event = std::ranges::find(chart.bga_events, object_id_t{input.lane_id},
                                                  &bga_event_t::id);
             if (event == chart.bga_events.end() ||
-                (event->kind != visual_event_kind_t::background &&
-                 event->kind != visual_event_kind_t::video))
+                editor_bga_lane_index(event->kind) != editor_bga_lane_index(
+                    static_cast<visual_event_kind_t>(input.bga_lane_kind)))
                 return "The selected BGA event is stale or cannot be replaced in this lane.";
             return editor_selection_object_t{editor_selection_object_kind_t::bga_event, event->id};
         }
         for (const auto& event : chart.bga_events) {
-            if ((event.kind != visual_event_kind_t::background &&
-                 event.kind != visual_event_kind_t::video) || event.position != position)
+            if (editor_bga_lane_index(event.kind) != editor_bga_lane_index(
+                    static_cast<visual_event_kind_t>(input.bga_lane_kind)) || event.position != position)
                 continue;
             if (target)
                 return "More than one BGA background occupies this row.";
@@ -3212,7 +3227,8 @@ auto dispatch_resource_pointer(const WormUiComposeInputAction& input,
                                 ? object_id_t{input.lane_id}
                                 : object_id_t{},
              .kind = spec.kind,
-             .semantic_layers = context.state.armed_note_layers});
+             .semantic_layers = context.state.armed_note_layers,
+             .bga_kind = resource_pointer_bga_kind(input, spec.kind)});
         if (applied.applied)
             advance_dock_after_placement(context.history.document, spec.resource,
                                          spec.required_role);
@@ -3275,6 +3291,22 @@ auto compose_input_rejection(std::string message,
         wormedit::notification_source_t::input);
 }
 
+auto reveal_compose_bga_lane_input(const WormUiComposeInputAction& input,
+                                   compose_input_context_t& context,
+                                   wormedit::editor_interaction_result_t& result,
+                                   std::string_view& accepted) -> compose_input_family_result_t {
+    if (context.gesture_active)
+        return compose_input_rejection("Finish or cancel the active gesture before adding a BGA lane.", result);
+    const auto lane = wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(input.bga_lane_kind));
+    if (!lane || input.bga_lane_kind == static_cast<std::uint8_t>(wormedit::visual_event_kind_t::video))
+        return compose_input_rejection("Unsupported BGA lane kind.", result);
+    context.state.bga_revealed_lane_mask |= static_cast<std::uint8_t>(1U << *lane);
+    context.state.bga_lane_visible = true;
+    result.accepted = true;
+    accepted = "BGA lane shown.";
+    return compose_input_family_result_t::continue_with_result();
+}
+
 // Kiai area and SV recipe inputs from the timing lanes. Returns nothing for any other input.
 auto dispatch_timing_lane_area_input(const WormUiComposeInputAction& input,
                                      compose_input_context_t& context,
@@ -3316,6 +3348,26 @@ auto dispatch_timing_lane_area_input(const WormUiComposeInputAction& input,
     }
 }
 
+auto dispatch_compose_bga_input(const WormUiComposeInputAction& input,
+                                compose_input_context_t& context,
+                                wormedit::editor_interaction_result_t& result,
+                                std::string_view& accepted)
+    -> std::optional<compose_input_family_result_t> {
+    switch (input.kind) {
+    case WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK:
+        if (const auto error = select_compose_bga_event(input, context, result, accepted))
+            return compose_input_rejection(*error, result);
+        return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE:
+        if (const auto error = move_compose_bga_event(input, context, result, accepted))
+            return compose_input_rejection(*error, result);
+        return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL:
+        return reveal_compose_bga_lane_input(input, context, result, accepted);
+    default: return std::nullopt;
+    }
+}
+
 auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
                                       compose_input_context_t& context,
                                       wormedit::editor_interaction_result_t& result,
@@ -3327,6 +3379,8 @@ auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
             context.scene_cache, context.input_chart))
         return *status;
     if (const auto handled = dispatch_timing_lane_area_input(input, context, result, accepted))
+        return *handled;
+    if (const auto handled = dispatch_compose_bga_input(input, context, result, accepted))
         return *handled;
     switch (input.kind) {
     case WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK:
@@ -3350,14 +3404,6 @@ auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE:
         if (const auto error = move_compose_timing_selection(input, context, result, accepted))
-            return compose_input_rejection(*error, result);
-        return compose_input_family_result_t::continue_with_result();
-    case WORM_UI_COMPOSE_INPUT_BGA_EVENT_CLICK:
-        if (const auto error = select_compose_bga_event(input, context, result, accepted))
-            return compose_input_rejection(*error, result);
-        return compose_input_family_result_t::continue_with_result();
-    case WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE:
-        if (const auto error = move_compose_bga_event(input, context, result, accepted))
             return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE:
@@ -3990,7 +4036,8 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
     const auto horizontal_layout = compose_horizontal_layout(
         ui_action.compose_input_viewport_width_pixels,
         input_chart == history.document.charts.end() ? 0 : maximum_layout_lane_count(*input_chart),
-        bgm_lane_count != 0, state.bga_lane_visible,
+        bgm_lane_count != 0, state.bga_lane_visible && input_chart != history.document.charts.end()
+            ? std::popcount(editor_bga_visible_lane_mask(*input_chart, state.bga_revealed_lane_mask)) : 0,
         std::popcount(effective_compose_timing_lane_mask(application_state)));
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
     const auto bgm_pane_left_pixels = horizontal_layout.bgm_pane_left_pixels;

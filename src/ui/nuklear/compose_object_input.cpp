@@ -68,6 +68,7 @@ static bool open_bga_stack_for_event(const WormUiComposeView& view, std::uint64_
     state.bga_stack_chart_id = view.chart_id;
     state.bga_stack_revision = view.document_revision;
     state.bga_stack_row = target->canvas_row;
+    state.bga_stack_kind = target->kind;
     return true;
 }
 
@@ -78,6 +79,14 @@ static bool prepare_bga_pointer_target(const WormUiComposeView& view, double x, 
         y < view.bga_lane_bounds.bottom;
     target_id = compose_bga_event_at(&view, x, y);
     return open_bga_stack_for_event(view, target_id);
+}
+
+static void set_bga_pointer_kind(WormUiWorkspaceAction* action, std::uint8_t role,
+                                 const WormUiComposeView& view, double x, double y) {
+    if (role != WORM_UI_COMPOSE_RESOURCE_ROLE_BGA || action->compose_input_count == 0) return;
+    auto& output = action->compose_inputs[action->compose_input_count - 1];
+    output.bga_lane_kind = compose_bga_lane_kind_at(view, x, y).value_or(255);
+    output.bga_lane_kind_valid = true;
 }
 
 auto begin_compose_resource_pointer(const ComposePointerEventContext& input,
@@ -134,6 +143,7 @@ auto begin_compose_resource_pointer(const ComposePointerEventContext& input,
                          WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
                          state.armed_resource_id, role);
+    set_bga_pointer_kind(action, role, view, input.pointer_started_x, input.pointer_started_y);
     return true;
 }
 

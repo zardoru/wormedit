@@ -39,7 +39,7 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-439 Cache the stem window per revision and compute it once per frame
 
-- **Status:** ready (runs without waiting for T-438; T-438 measures the gain)
+- **Status:** done (2026-10-07; root integrated and verified)
 - **Outcome:** with 181 stems, the per-frame stem selection costs O(visible stems) instead of O(channels × events). Analysis and projection share one result per frame. `stem_source_lane` and `stem_reach_measures` come from a per-revision index.
 - **Read first:** `src/sys/stem_waveform_window.h`, `src/sys/bmson_waveform_projection.cpp`, `src/sys/waveform_analysis_runtime.cpp`, `tests/sys/frame_timing_tests.cpp`.
 - **Files owned:** `src/sys/application_frame_projection.cpp` (root-approved 2026-10-07 narrow frame-boundary ordering: defer stem analysis until compose projection has finalized cursor and viewport, then share that result with BMSON projection), `src/sys/stem_waveform_window.h` (and a new `.cpp` if it grows), `src/sys/bmson_waveform_projection.cpp`, `src/sys/bmson_waveform_projection.h`, `src/sys/waveform_analysis_runtime.cpp`, `src/sys/waveform_analysis_runtime.h`, `src/sys/compose_view.h` (`compose_scene_cache_t`), a new `tests/sys/stem_window_tests.cpp`, `tests/sys/frame_timing_tests.cpp` (root-approved 2026-10-07 prepared-span consumer regression using the real BMSON projection path), `tests/CMakeLists.txt`, this card.
@@ -53,6 +53,8 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **Reject/failure behavior:** an index built for a stale revision is never used.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R 'stem|frame_timing'`; `clang-tidy -p build src/sys/bmson_waveform_projection.cpp`.
 - **Out of scope:** the zoom path (T-440) and the reach fix (T-441).
+
+- **Integrated evidence:** main `c03f1ac`, normal application build and 2,453/2,453 tests pass. The opt-in 181-stem benchmark passes 5,826 assertions: indexed 0.686818 ms versus reference 128.896 ms (max of five, 32 windows). Production Kick retains all 12 registered stems at measures 1/20/40 in identical order. Workspace root evidence: `wormedit-scratch-builds/root-oct7/stem-budget-backend-main-ctest.log`, `stem-main-timing.log`, `stem-real-main-probe.log`. This query benchmark does not replace T-438 frame profiling.
 
 ## T-440 Keep stem waveforms responsive while zooming
 
@@ -139,10 +141,10 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-445 Let Options raise the keysound memory budget
 
-- **Status:** done
+- **Status:** done (2026-10-07; root integrated and verified)
 - **Outcome:** Options › Audio has a "Keysound memory" field (256 MiB–8 GiB, default 512 MiB) persisted in `preferences.json`. Raising it takes effect for the open project without reopening it. The over-budget notification names the setting.
 - **Read first:** `include/wormedit/audio/resident_samples.h`, `src/audio/resident_samples.cpp`, `include/wormedit/core/preferences.h` (`audio_preferences_t`), `src/ui/nuklear/options_window.cpp`, `src/sys/audio_source_registration.cpp`.
-- **Files owned:** `include/wormedit/core/arena.h`, `src/core/arena.cpp` (root-approved grow-only hard ceiling), `src/sys/main.cpp` (root-approved loaded/live budget application), `src/sys/audio_source_registration.h` (root-approved retry boundary), `tests/core/arena_tests.cpp`, `tests/sys/audio_source_registration_tests.cpp` (root-approved active retry/snapshot retention), `tests/ui/nuklear_event_harness_tests.cpp` (root-approved Options Audio field/action), `tests/ui/nuklear_options_state_tests.cpp` (root-approved production Options apply/clamping regression using its existing runtime fixture), those five, plus `src/core/preferences.cpp`, `src/sys/options_runtime.cpp`, `src/ui/frontend.h` (option field), preference and resident-sample tests, this card.
+- **Files owned:** `tests/sys/audio_notification_tests.cpp` (root-approved final integration correction: existing exact fallback-message expectation now includes the new Options guidance), `include/wormedit/core/arena.h`, `src/core/arena.cpp` (root-approved grow-only hard ceiling), `src/sys/main.cpp` (root-approved loaded/live budget application), `src/sys/audio_source_registration.h` (root-approved retry boundary), `tests/core/arena_tests.cpp`, `tests/sys/audio_source_registration_tests.cpp` (root-approved active retry/snapshot retention), `tests/ui/nuklear_event_harness_tests.cpp` (root-approved Options Audio field/action), `tests/ui/nuklear_options_state_tests.cpp` (root-approved production Options apply/clamping regression using its existing runtime fixture), those five, plus `src/core/preferences.cpp`, `src/sys/options_runtime.cpp`, `src/ui/frontend.h` (option field), preference and resident-sample tests, this card.
 - **Steps:**
   1. Add `keysound_budget_mib` to `audio_preferences_t`, with load clamping and defaulting.
   2. Make the budget mutable: raising it lets the arena accept more. Lowering it applies on the next load and never evicts samples that are playing.
@@ -152,3 +154,5 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **Reject/failure behavior:** values outside the range are clamped, and the field shows the clamped value.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'preferences|resident|budget|Options Audio'`; isolated actual-loader checks cover completed and active-pass raises, snapshot retention, latest-project retries and retry submission after scheduler capacity returns, plus the real Audio field/action. The isolated normal dependency build and 48 focused tests passed; configured clang-tidy has no new function over 25. Workspace evidence: `wormedit-scratch-builds/root-oct7/keysound-live-worker-tests-final.log` and `keysound-live-tests-tidy-final.log`.
 - **Out of scope:** stem waveform memory (T-443).
+
+- **T-445 integrated evidence:** main backend `9274bdc`, UI/runtime `853344b`, normal application build and all 2,461/2,461 CTest cases pass. Root corrected the existing exact notification-message expectation to include the required Options guidance. Workspace logs: `wormedit-scratch-builds/root-oct7/keysound-main-build-final.log` and `keysound-main-ctest-final.log`.

@@ -64,7 +64,8 @@ TEST_CASE("resident fallback and progress carry audio notification metadata once
     check_audio_worker(fallback->severity == notification_severity_t::warning);
     check_audio_worker(fallback->source == notification_source_t::audio);
     check_audio_worker(fallback->message ==
-          "1 keysound(s) exceed the resident memory budget and keep streaming from disk.");
+          "1 keysound(s) exceed the resident memory budget and keep streaming from disk. "
+          "Raise Keysound memory in Options to load them.");
     check_audio_worker(!(loader.drain_report()));
 }
 

@@ -4,10 +4,11 @@
 
 ## Immediate work
 
-Active delegated batch (2026-10-07): [next stems and layers batch](../coordination/oct7-next-batch.md).
-The stems/budget worktree implements T-439 then T-445; the layers worktree
-implements T-447 then T-450. GPT-6.1 Sol medium coordinators review Luna medium
-implementers; root owns final review and serial integration on main.
+Completed delegated batch (2026-10-07): [stems and layers batch](../coordination/oct7-next-batch.md).
+T-439 caches and shares stem selection, T-445 exposes live keysound budgets,
+T-447 adds semantic layers on BMSON import, and T-450 preserves distinct BMS
+Layer 2. Root normal application build and all **2,461 tests pass**. Only main
+remains registered after cleanup; all worker branches are retained.
 
 Completed implementation (2026-10-07): the two-worktree
 [quick-fix batch](../coordination/oct7-batch.md) integrated T-454/T-448 and
@@ -35,8 +36,8 @@ Remaining user feedback (2026-10-07): T-438–T-455 are planned in
 [stems and performance](../../docs/chart-editor-plan/tasks/stems-performance.md)
 and [BMSON/BGA editing](../../docs/chart-editor-plan/tasks/bmson-bga-editing.md).
 Next suggested work: T-438 profiling (STOP for re-ranking) before
-T-439/T-440/T-444; T-447 auto layers, T-445 keysound budget, T-450 then T-451
-BGA layers, T-443 stem pool after T-439; T-453 verb audit (STOP for approval)
+T-440/T-444; T-451 BGA rendering after completed T-450,
+T-443 stem pool after completed T-439; T-453 verb audit (STOP for approval)
 before T-455; T-449 after T-426.
 
 User feedback batch (2026-10-05): T-436 (UI component tokens and gallery) is done in code (headless suite 1829/1829; SDL gallery capture pending on Zar's machine: `scripts/smoke-compose-virtual-x.sh /tmp/g.png gallery` or `WORMEDIT_UI_GALLERY=1 build/wormedit`), so cards that build dialogs, chips, segments or checkboxes can now use `chrome::Button/Checkbox/Segmented/ChipGrid/SelectionBar` and `surface_window_begin`. T-385–T-406 planned in [Compose cleanup](../../docs/chart-editor-plan/tasks/compose-cleanup.md) and [Compose docks](../../docs/chart-editor-plan/tasks/compose-docks.md). Suggested order: T-385/T-386 (done 2026-10-05), T-395/T-396 (done 2026-10-05; T-396 lacks the Xvfb xdotool check), T-387 (done 2026-10-05; no 8K/scratch capture), T-388 (done 2026-10-05), T-391 (inline note labels; done 2026-10-05), T-390 (done 2026-10-05) then T-389 (done 2026-10-05; export group kept in the inspector pending a user decision), T-392 (done 2026-10-05), T-393 (done 2026-10-05), T-401 (done 2026-10-05), T-402 (done 2026-10-05), T-394 (done 2026-10-05; future work: unify audio-time and beat bookmarks/sections into one marker list, see its card), T-397, T-398, T-399, T-400 (all done 2026-10-06; T-400 lacks a branching-BMS smoke capture), T-404 (done 2026-10-06, no BMSON capture) then T-405 (done 2026-10-06), T-406 (done 2026-10-06), and T-403 (needs a macOS host). Dialogs and Draw tool (same day): [dialogs](../../docs/chart-editor-plan/tasks/dialogs.md) T-410 first, then T-407 then T-408/T-409/T-411; [Draw tool](../../docs/chart-editor-plan/tasks/draw-tool.md) T-412 then T-413/T-414, with T-412 landing before T-389. [Project chart table](../../docs/chart-editor-plan/tasks/project-charts.md): T-415, then T-416/T-417/T-418. [Editing feedback](../../docs/chart-editor-plan/tasks/editing-feedback.md): T-420 (high value, collision ghosts) then T-421; T-419 quantize chips, then T-437 field ghosts for quantize. [BMS editing](../../docs/chart-editor-plan/tasks/bms-editing.md): T-427 (done 2026-10-05; lane-key taps/holds use the armed sound and advance the dock), T-422 (verify Shift+lane key), T-426 select same sound, T-423 allocator then T-424, T-425 (after T-420) and T-421. [Color schemes](../../docs/chart-editor-plan/tasks/color-schemes.md): T-428 then T-429 (iBMSC color reuse approved 2026-10-05). Docs milestone (no 2026-10-05 card left ready): [manual](../../docs/chart-editor-plan/tasks/manual-tutorial.md) T-430–T-433, then about half of the deferred work as the user names it, then tutorial video T-434/T-435.

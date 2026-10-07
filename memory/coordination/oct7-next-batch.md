@@ -79,3 +79,35 @@ evidence. Root main build is `root-oct7/stem-budget-backend-main-build.log`.
 
 T-445 is not complete until the remaining setting/startup/live-retry slice and
 its real Options/active-loader regressions are reviewed and integrated.
+
+## Completed root integration
+
+All four cards are complete: T-447 `4ba5087`, T-450 `4c446cd`,
+T-439 `c03f1ac`, and T-445 backend `9274bdc` plus UI/runtime `853344b`.
+The normal main application build and all **2,461/2,461** CTest cases pass.
+Root's first full run found one stale exact notification-message expectation;
+root approved and corrected `tests/sys/audio_notification_tests.cpp` to include
+the new Options guidance, then rebuilt and reran the entire suite successfully.
+Final workspace evidence: `root-oct7/keysound-main-build-final.log` and
+`root-oct7/keysound-main-ctest-final.log` under `wormedit-scratch-builds`.
+
+The recovery Luna executor hit model-capacity failures without source edits.
+Root reassigned the remaining T-445 implementation to the authorized GPT-6.1
+Sol medium coordinator, which completed and reviewed it. Root required stronger
+active-pass skipped-load coverage and deferred retry after scheduler saturation;
+both corrections and the 48 focused worker cases passed before integration.
+Existing complexity violations were not increased; all new functions pass the
+configured threshold of 25.
+
+T-439's main benchmark passes 5,826 assertions: indexed 0.686818 ms versus
+reference 128.896 ms (max of five for 32 windows over 181 stems).
+`stem-main-timing.log` and `stem-real-main-probe.log` record matching ordering
+and all 12 real Kick stems at measures 1/20/40. This is selection timing,
+not T-438 frame profiling. Regenerated semantic-layer and Layer 2 production
+probes also pass (`layer-import-probe.log`, `layer2-probe.log`).
+
+After commits, ownership release and clean status, root removed the last worker.
+Cleanup total: **20 completed worktrees removed**, one missing registration
+pruned, all branches retained. Only main remains registered. No push, original
+chart writes or user application restart occurred. Historical worker build
+artifacts remain in workspace scratch; they are not registered worktrees.

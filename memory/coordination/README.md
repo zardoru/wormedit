@@ -1,8 +1,10 @@
 # Worktree coordination pilot
 
-Active 2026-10-07: [next stems and layers batch](oct7-next-batch.md),
-T-439/T-445 and T-447/T-450 in separate worktrees, with Sol 6.1 medium
-coordinators and Luna medium implementers; root integrates main.
+Completed 2026-10-07: [stems and layers batch](oct7-next-batch.md),
+T-439/T-445 and T-447/T-450 reviewed and integrated on main. Application build
+and all **2,461/2,461** tests pass. Sol 6.1 medium completed the final memory
+budget slice after Luna capacity failures. Root removed 20 completed worktrees
+and pruned one missing registration, retaining every branch; only main remains.
 
 Completed 2026-10-07: [six quick fixes in two worktrees](oct7-batch.md), with
 GPT-6.1 Sol medium coordinators and GPT-6 Luna medium executors. Root reviewed
@@ -63,9 +65,9 @@ on `coord/osutest-playback`; its Sol coordinator independently reviews root's fi
 for the user's Space playback regression.
 
 The worktree table above records historical assignments. On 2026-10-07 root
-removed 18 clean completed trees and pruned one missing registration at the user’s
-request, retaining every branch. Current trees are main, `wormedit-layers-oct7`
-and `wormedit-stems-budget-oct7`; new scratch artifacts use workspace storage.
+removed 20 clean completed trees and pruned one missing registration at the user’s
+request, retaining every branch. Only main remains registered; scratch artifacts
+use workspace storage.
 
 ## Ownership and scheduling
 

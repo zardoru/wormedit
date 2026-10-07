@@ -12,7 +12,7 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-446 Color and order BMSON beat and popn lanes like their BMS equivalents
 
-- **Status:** ready
+- **Status:** done (2026-10-07; root integrated and verified)
 - **Outcome:** `bmson-beat-5k`/`7k` draw scratch, then alternating white and black keys, exactly like `bms-7k` (scratch on the left), and `beat-10k`/`14k` draw like BMS DP. `bmson-popn-9k` uses the PMS button colors. A core test compares the key colors and display order with the BMS profile that has the same lane count.
 - **Read first:** `src/core/lane_profiles.cpp` (`color_stage`, `assign_lane_key_colors`), `src/formats/bmson.cpp` (`select_bmson_beat_lanes`), `src/sys/compose_view.cpp:458`.
 - **Files owned:** `src/core/lane_profiles.cpp`, `src/formats/bmson.cpp`, `tests/core/lane_profile_tests.cpp`, `tests/formats/bmson_tests.cpp`, `tests/sys/project_open_tests.cpp` (approved extension: verify BMSON source x lanes survive export and native save/reopen; listed tests lack those round trips), `src/formats/native_project.cpp` and `tests/formats/native_project_tests.cpp` (approved extension: repair old saved BMSON layouts whose generic colors were already serialized; retain authored nondefault colors), `src/formats/bmson_writer.cpp` and `tests/formats/bmson_writer_tests.cpp` (root-approved supporting extension: fix the uint32 upper-bound overflow that otherwise exports reordered source x incorrectly), this card.
@@ -25,6 +25,8 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **Reject/failure behavior:** an unknown mode hint keeps the `generic-nkeys` piano coloring.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'lane_profile|bmson'`; an isolated capture of `kick_your_ass2.bmson`. Recovery evidence: 132 tagged core/format/open/stem cases (4,357 assertions) and 3 native-color cases (79 assertions) pass in the isolated build. Source-x export also fixes an overflowing uint32 upper bound. The established Xvfb socket restriction leaves the isolated capture pending.
 - **Out of scope:** user color schemes ([T-428](color-schemes.md)).
+
+- **Integrated evidence:** main application build and all 2,434 tests pass; `/tmp/wormedit-oct7-root/audio-integrated-tests.log`. Mode colors, scratch order, authored native layouts and source-x round trips pass. The isolated GUI capture remains pending under the recorded Xvfb restriction.
 
 ## T-447 Give each BMSON sound channel its own semantic layer on import
 
@@ -108,7 +110,7 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-452 Resolve BMS image names across extensions
 
-- **Status:** ready
+- **Status:** done (2026-10-07; root integrated and verified)
 - **Outcome:** `rotterdam_7HYPER.bme` resolves all 173 `#BMP` entries: names declared as `.png` find the `.bmp` files. The BGA preview shows the expected images at three sampled measures.
 - **Read first:** `src/sys/project_open.cpp:220-260` (the audio resolver), `tests/sys/project_open_tests.cpp`.
 - **Files owned:** `src/sys/project_open.cpp`, `tests/sys/project_open_tests.cpp`, this card.
@@ -120,6 +122,8 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **Reject/failure behavior:** an ambiguous match stays unresolved with a warning naming both files.
 - **Verify:** `ctest --test-dir build --output-on-failure -R project_open`. Recovery evidence: the read-only production probe opened Rotterdam with CP932, resolved all 173 visual assets, and reported 0 unresolved (`/tmp/bmson-rotterdam-recovery.log`). Image/video exact, alternate, ambiguous, case and path-safety cases pass in the tagged core test run; authored export declarations remain intact. Visual preview sampling remains pending under the established Xvfb restriction.
 - **Out of scope:** layer display (T-451).
+
+- **Integrated evidence:** main application build and all 2,434 tests pass; `/tmp/wormedit-oct7-root/audio-integrated-tests.log`. The integrated read-only Rotterdam probe reports 173 visuals and 0 unresolved (`rotterdam-integrated.log`). GUI preview sampling remains pending under the recorded Xvfb restriction.
 
 ## T-453 Audit the verbs on BGM objects and play notes
 

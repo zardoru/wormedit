@@ -61,3 +61,14 @@ found no tests and is not PCM evidence. Root owns the new SDL dummy-audio PCM
 case, whole-application build/full suite and final card/status updates after
 integration. All four cards remain ready until those final gates. The existing
 Xvfb socket/approval restriction remains recorded; no escalation was retried.
+
+## Root integration
+
+Integrated as `7d5aa1f` and `0fdadbd`. Application build and all 2,434 tests
+pass, including the new SDL dummy mid-slice PCM case. Root logs are in
+`/tmp/wormedit-oct7-root/`: `audio-integrated-build.log`,
+`audio-integrated-tests.log`, `sdl-pcm-tidy.log`, `rotterdam-integrated.log`
+(173/0), `kick-window-integrated.log` (12/12 visible at 1/20/40), and
+`sabun-profile-final.log` (1,146 BGM events/16 columns preserved).
+Four cards are done; the earlier pending SDL gate is now satisfied. GUI
+captures/sampling remain pending under the recorded Xvfb restriction.

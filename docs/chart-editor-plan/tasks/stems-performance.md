@@ -71,7 +71,7 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-441 Keep long single-event stems in the window for their whole length
 
-- **Status:** ready
+- **Status:** done (2026-10-07; root integrated and verified)
 - **Outcome:** in `kick_your_ass2.bmson`, the `fx`, `hat` and `pc` waveforms stay visible from measure 1 to the end of their audio, at any cursor position.
 - **Read first:** `src/sys/stem_waveform_window.h` (`stem_reach_measures`), `src/sys/audio_source_registration.cpp`, `include/wormedit/audio/source_registry.h` (`decoded_source_binding_t`).
 - **Files owned:** `src/sys/stem_waveform_window.h`, `src/sys/bmson_waveform_projection.cpp`, `src/sys/waveform_analysis_runtime.cpp`, `tests/sys/stem_window_tests.cpp`, `tests/CMakeLists.txt` (approved extension: register the new stem window regression source), `src/sys/waveform_analysis_runtime.h` (approved extension: pass the already cached timing index to the shared visibility helper, avoiding a full timing rebuild each frame).
@@ -85,9 +85,11 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **Verify:** `ctest --test-dir build --output-on-failure -R stem`; an isolated Xvfb capture of Kick Your Ass at measure 30 shows the `fx` lane waveform.
 - **Out of scope:** the stem cap.
 
+- **Integrated evidence:** main application build and all 2,434 tests pass; `/tmp/wormedit-oct7-root/audio-integrated-tests.log`. The integrated production registry probe retains all 12 original Kick stems at measures 1, 20 and 40 (`kick-window-integrated.log`). The isolated GUI capture remains pending under the recorded Xvfb restriction.
+
 ## T-442 Start stem slices mid-sample at the playhead
 
-- **Status:** ready
+- **Status:** done (2026-10-07; root integrated and verified)
 - **Outcome:** starting or seeking playback inside a sounding BMSON slice plays that slice from the matching source frame at once. A probe shows non-silent PCM from the stem within 10 ms of the start.
 - **Read first:** `src/audio/preview_bridge.cpp` (`begin_session`, `seek_preview_queue`), `src/core/timing.cpp` (`build_preview_schedule`), `include/wormedit/core/sound_slice.h`, `src/audio/audition_resolver.cpp`.
 - **Files owned:** `src/audio/preview_bridge.cpp`, `include/wormedit/audio/preview_bridge.h`, `tests/core/audio_preview_bridge_tests.cpp`, `tests/sys/sdl_preview_output_tests.cpp` (approved extension: verify non-silent dummy SDL PCM for a seek inside a sounding slice), `tests/core/audio_audition_resolver_tests.cpp` (approved extension: verify a nonzero native clip offset and continuation boundaries normalize correctly when source rate differs from the fixed preview output rate), `tests/core/audio_preview_session_tests.cpp` (approved extension: assert resumed seek voice stop counts and post-stop silence), this card.
@@ -100,6 +102,8 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **Reject/failure behavior:** a slice whose audio is not resident plays from its next point, as it does today, and logs no error.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'audio_preview|^audio\.'`; an isolated SDL dummy-audio PCM check at a mid-slice seek.
 - **Out of scope:** audition clicks on single notes.
+
+- **Integrated evidence:** main application build and all 2,434 tests pass; `/tmp/wormedit-oct7-root/audio-integrated-tests.log`. The new SDL dummy mid-slice seek case passes with non-silent PCM in the first 10 ms; configured SDL test complexity has no new violations (`sdl-pcm-tidy.log`).
 
 ## T-443 Replace fixed stem slots with a budgeted pool keyed by channel
 

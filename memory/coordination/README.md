@@ -1,10 +1,11 @@
 # Worktree coordination pilot
 
-Active 2026-10-07: [six quick fixes in two worktrees](oct7-batch.md), with
-GPT-6.1 Sol medium coordinators and GPT-6 Luna medium executors. Root owns
-serial main integration. Corrected baseline build and all 2,400 tests pass.
-Editing T-454/T-448 are now integrated; full application build and 2,417/2,417
-tests pass. BMSON/audio recovery and verification continue.
+Completed 2026-10-07: [six quick fixes in two worktrees](oct7-batch.md), with
+GPT-6.1 Sol medium coordinators and GPT-6 Luna medium executors. Root reviewed
+and integrated both batches. Application build and **2,434/2,434** tests pass,
+including SDL mid-slice seek PCM. Real sabun, Kick and Rotterdam probes pass;
+original charts remain unchanged. Visual GUI checks remain pending under the
+recorded Xvfb restriction.
 
 Requested 2026-10-04: root integrates main; each worktree has a `gpt-6.1-sol`
 coordinator with medium reasoning and `gpt-6-luna` executors with medium

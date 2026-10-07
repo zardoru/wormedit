@@ -37,11 +37,22 @@ scratch probe passes native serialization of all 1,146 BGM events/16 columns,
 note placement and undo, then layout undo, with 41 initial profiles including
 distinct SpecialStyle choices. [Coordinator review](editing-oct7.md).
 
-BMSON/audio remains in progress. Whole-file formatting cleanup removed
-uncommitted patches; backups are in `/tmp/bmson-oct7-before-cleanup/`.
-Sol owns focused T-446/T-452 recovery and the shared isolated build; Luna owns
-T-441/T-442 and their separate card/source files. Post-recovery validation is
-required before any audio integration. Root's actual decoder registry probe
-successfully registers all 12 original Kick Your Ass Ogg files with source
-geometry (`/tmp/wormedit-oct7-root/kick-registry.log`), while imported document
-metadata remains unknown as recorded on T-441.
+BMSON/audio T-446/T-452 and T-441/T-442 reviewed by Sol and root and
+integrated as `7d5aa1f` and `0fdadbd`. Root application build and full
+**2,434/2,434** suite pass, including the new SDL dummy seek case producing
+non-silent PCM in the first 10 ms. Logs:
+`/tmp/wormedit-oct7-root/audio-integrated-build.log` and
+`/tmp/wormedit-oct7-root/audio-integrated-tests.log`.
+
+Final integrated read-only production probes pass: Rotterdam resolves all
+173 visuals (`rotterdam-integrated.log`); all 12 original Kick Ogg sources
+register and remain visible at measures 1/20/40 (`kick-window-integrated.log`);
+sabun retains 1,146 BGM events/16 columns through native save/reopen, placement,
+and undo (`sabun-profile-final.log`). Original chart SHA-256 hashes are unchanged.
+Configured complexity checks pass for new/affected functions; root separately
+checked the actual SDL test compilation database (`sdl-pcm-tidy.log`).
+[Coordinator evidence](bmson-audio-oct7.md) records recovery and focused checks.
+
+All six implementation cards and root baseline repair T-456 are complete.
+Required visual GUI captures/sampling remain pending under the established
+Xvfb sandbox restriction; no user desktop or original chart files were altered.

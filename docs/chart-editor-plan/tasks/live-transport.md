@@ -118,7 +118,7 @@ measurements. Apply the stale-plan check (rule 9) first.
 
 ## T-276 Read the playhead without locks
 
-- **Status:** done in code (optimized audio/SDL gates pass; root integration verification pending)
+- **Status:** done in code (2026-10-07; integrated main application build and 2,568/2,568 tests pass)
 - **Outcome:** preview and audition publish coherent timeline/start frames, activity, session generation and actual transport token through a bounded lock-free snapshot. The live SDL observer reads its callback-published audible clock without querying or locking the stream.
 - **Read first:** `src/audio/preview_session.cpp` (`playhead`, `timeline_frame`), `src/audio/audition_session.cpp`, `src/sys/sdl_preview_output.cpp` (`timeline_frame`, `publish_output_playhead`), `src/sys/chart_preview_state.cpp` (`current_frame`).
 - **Files owned:** `include/wormedit/audio/preview_session.h`, `src/audio/preview_session.cpp`, `include/wormedit/audio/audition_session.h`, `src/audio/audition_session.cpp`, `tests/core/audio_preview_session_tests.cpp`, `tests/core/audio_audition_session_tests.cpp`, `include/wormedit/audio/playhead_snapshot.h`, `tests/core/audio_playhead_snapshot_tests.cpp`, `include/wormedit/audio/block_cache.h`, `src/audio/block_cache.cpp`, `tests/core/audio_block_cache_tests.cpp`, `src/sys/sdl_preview_output.cpp`, `src/sys/sdl_preview_output.h`, `tests/sys/sdl_preview_output_tests.cpp`.

@@ -1,9 +1,14 @@
 # Worktree coordination pilot
 
-Active batch: [seek, playhead and rendering](oct7-seek-render-batch.md).
-Audio owns T-276 + T-470 together; rendering owns measurement-first T-469.
-Two Sol 6.1 medium coordinators share narrow Luna medium tasks. Implementation
-authorized and dispatched from `9d0e112`; root preserves external main edits.
+Completed in code 2026-10-07: [seek, playhead and rendering](oct7-seek-render-batch.md),
+T-276/T-470 and T-469 reviewed and integrated with Sol 6.1 medium coordinators
+and sequential Luna medium contributions. Normal main build and **2,568/2,568**
+tests pass. Optimized zoom p99 45.50→10.93 ms; first settlement costs 38.38 ms.
+Merged actual Ogg warm seeks resume within 23.13 ms with zero caller decoding;
+settled canvas pixels match exactly. User-authorized profiling edits committed
+separately as `0108809`. Live sample-share gates remain pending. Both workers
+and about 1.3 GB of generated builds removed; only main remains, branches/logs
+retained. Next performance card: measurement-first T-471.
 
 Completed in code 2026-10-07: [workspace and stem performance batch](oct7-performance-batch.md),
 T-444/T-440 reviewed and integrated with Sol 6.1 medium coordinators and Luna

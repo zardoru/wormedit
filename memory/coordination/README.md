@@ -1,5 +1,9 @@
 # Worktree coordination pilot
 
+Active 2026-10-07: [six quick fixes in two worktrees](oct7-batch.md), with
+GPT-6.1 Sol medium coordinators and GPT-6 Luna medium executors. Root owns
+serial main integration. Corrected baseline build and all 2,400 tests pass.
+
 Requested 2026-10-04: root integrates main; each worktree has a `gpt-6.1-sol`
 coordinator with medium reasoning and `gpt-6-luna` executors with medium
 reasoning. Follow [the agent workflow](../agent-workflow.md).

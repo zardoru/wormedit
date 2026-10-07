@@ -4527,14 +4527,18 @@ auto note_move_changes(const chart_document_t& chart, const note_move_plan_t& pl
     return false;
 }
 
-// A BMSON tap that stands for a stem point drags its retained slice event along: the audio stays
-// anchored at the stem's last restart, so moving a continuation only moves where the stem is cut,
-// while moving a restart moves the audio. The move is refused when two events of a channel would
-// share a row, or when the channel's slices could no longer be derived.
-auto sync_linked_sound_events(chart_document_t& chart, const note_move_plan_t& plan,
-                              const song_document_t& document) -> std::optional<diagnostic_t> {
-    std::vector<std::size_t> touched;
-    std::vector<object_id_t> moved_events;
+struct moved_stem_events_t {
+    std::vector<std::size_t> channels;
+    std::vector<object_id_t> events;
+
+    [[nodiscard]] auto contains(object_id_t id) const -> bool {
+        return std::ranges::find(events, id) != events.end();
+    }
+};
+
+// Gives each moved tap's retained slice event the tap's new position (and lane, when playable).
+auto move_linked_sound_events(chart_document_t& chart, const note_move_plan_t& plan) -> moved_stem_events_t {
+    moved_stem_events_t moved;
     for (const auto& candidate : plan.moved) {
         const auto* note = find_note(chart, candidate.id);
         if (!note || !note->sound_channel_event) continue;
@@ -4544,25 +4548,38 @@ auto sync_linked_sound_events(chart_document_t& chart, const note_move_plan_t& p
             if (event == events.end()) continue;
             event->position = candidate.position;
             if (event->playable) event->lane = candidate.lane;
-            touched.push_back(index);
-            moved_events.push_back(event->id);
+            moved.channels.push_back(index);
+            moved.events.push_back(event->id);
         }
     }
-    std::ranges::sort(touched);
-    touched.erase(std::unique(touched.begin(), touched.end()), touched.end());
-    const auto is_moved = [&](object_id_t id) { return std::ranges::find(moved_events, id) != moved_events.end(); };
-    for (const auto index : touched) {
+    std::ranges::sort(moved.channels);
+    moved.channels.erase(std::unique(moved.channels.begin(), moved.channels.end()), moved.channels.end());
+    return moved;
+}
+
+// Taps moved together may share a row; landing on a row another tap holds is refused.
+auto landed_on_taken_row(const sound_channel_t& channel, const moved_stem_events_t& moved) -> const sound_channel_event_t* {
+    for (const auto& event : channel.events) {
+        if (!moved.contains(event.id)) continue;
+        const auto taken = std::ranges::any_of(channel.events, [&](const auto& other) {
+            return !moved.contains(other.id) && other.position == event.position && other.playable == event.playable;
+        });
+        if (taken) return &event;
+    }
+    return nullptr;
+}
+
+// A BMSON tap that stands for a stem point drags its retained slice event along: the audio stays
+// anchored at the stem's last restart, so moving a continuation only moves where the stem is cut,
+// while moving a restart moves the audio. The move is refused when it lands on a row another tap
+// of the stem holds, or when the stem's slices could no longer be derived.
+auto sync_linked_sound_events(chart_document_t& chart, const note_move_plan_t& plan,
+                              const song_document_t& document) -> std::optional<diagnostic_t> {
+    const auto moved = move_linked_sound_events(chart, plan);
+    for (const auto index : moved.channels) {
         const auto& channel = chart.sound_channels[index];
-        // Taps moved together may share a row; landing on a row another tap holds is refused.
-        for (const auto& event : channel.events) {
-            if (!is_moved(event.id)) continue;
-            const auto taken = std::ranges::any_of(channel.events, [&](const auto& other) {
-                return !is_moved(other.id) && other.position == event.position && other.playable == event.playable;
-            });
-            if (taken)
-                return error(diagnostic_code_t::collision,
-                             "another point of this stem is already on that row", event.id);
-        }
+        if (const auto* taken = landed_on_taken_row(channel, moved))
+            return error(diagnostic_code_t::collision, "another point of this stem is already on that row", taken->id);
         const auto asset = std::ranges::find(document.audio_assets, channel.source_clip.source, &audio_asset_t::id);
         if (asset == document.audio_assets.end() || asset->stream.sample_rate == 0) continue;
         if (!derive_sound_channel_slices(chart, channel, asset->stream.sample_rate, asset->stream.frame_count))

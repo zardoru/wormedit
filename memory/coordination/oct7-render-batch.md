@@ -54,3 +54,12 @@ the nonoverlapping contract edits. Compose canvas stays BGA-owned until handoff.
 The stem coordinator can then implement renderer step 2 in its exclusively
 owned field files, preserving card step order. The existing Luna slot remains
 BGA-owned; a released Luna reviews/executes the remaining stem slice later.
+
+The broader T-451 Luna task produced only the queue-state slice after a long
+implementation interval. Root authorized a narrower handoff: the BGA Sol
+coordinator interrupts it, confirms source ownership release, implements lane
+projection and renderer slices in card order, and returns a concrete gesture
+or test slice to Luna. The stem Sol independently implemented step 1 stable
+ready/pending keys; root reviewed the actual diff and 41 assertions in three
+production projection cases. It proceeds with exclusively owned renderer step 2.
+No parallel writes to the same worktree paths are allowed.

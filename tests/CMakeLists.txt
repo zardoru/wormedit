@@ -160,6 +160,7 @@ add_executable(wormedit_core_tests
     formats/bmson_tests.cpp
     formats/bmson_writer_tests.cpp
     formats/conversion_tests.cpp
+    formats/slice_spans_tests.cpp
     formats/conversion_publication_tests.cpp
     formats/conversion_loss_matrix_tests.cpp
     formats/native_project_tests.cpp
@@ -224,6 +225,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         core/audio_offline_mix_tests.cpp
         core/audio_waveform_viewport_tests.cpp
         core/audio_slice_render_tests.cpp
+        formats/slice_span_render_tests.cpp
         core/audio_aligned_waveform_tests.cpp
         core/audio_waveform_job_tests.cpp
     )

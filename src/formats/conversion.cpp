@@ -1,4 +1,5 @@
 #include <wormedit/formats/conversion.h>
+#include <wormedit/formats/slice_spans.h>
 
 #include <wormedit/core/quantize.h>
 #include <wormedit/formats/bms.h>
@@ -677,6 +678,11 @@ conversion_result_t::operator bool() const noexcept {
     return !outputs.empty() && !std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
                return diagnostic.severity == diagnostic_severity_t::error;
            });
+}
+
+auto plan_conversion_slice_spans(const song_document_t& song, chart_id_t chart,
+    std::span<const slice_span_source_t> sources, const slice_span_options_t& options) -> slice_span_plan_t {
+    return build_slice_span_plan(song, chart, sources, options);
 }
 
 auto convert_document(const song_document_t& song, const conversion_request_t& request,

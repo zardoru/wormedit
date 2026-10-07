@@ -131,6 +131,7 @@ add_library(wormedit_core
     src/formats/bmson.cpp
     src/formats/bmson_writer.cpp
     src/formats/conversion.cpp
+    src/formats/slice_spans.cpp
     src/formats/conversion_publication.cpp
     src/formats/conversion_publication_storage.cpp
     src/formats/native_project.cpp
@@ -186,6 +187,7 @@ endif()
 if(WORMEDIT_ENABLE_AUDIO_DECODER)
     include(cmake/dependencies/miniaudio.cmake)
     target_sources(wormedit_audio_decoder PRIVATE
+        src/formats/slice_span_render.cpp
         src/audio/playback_rate.cpp
         src/audio/time_stretch.cpp
         src/audio/onset.cpp

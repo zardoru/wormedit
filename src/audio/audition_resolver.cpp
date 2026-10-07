@@ -341,8 +341,11 @@ class audition_resolver_index_t {
                             sound_slice_error_code_t::invalid_source_range)) {
                 code = audition_resolve_code_t::invalid_source_geometry;
             }
-            result.diagnostics.push_back(
-                error(code, "linked audition slice could not be derived", layer.id));
+            // Say why, so a bad stem is diagnosable from the message alone.
+            auto message = std::string{"linked audition slice could not be derived"};
+            if (!cached.result.diagnostics.empty())
+                message += ": " + cached.result.diagnostics.front().message;
+            result.diagnostics.push_back(error(code, std::move(message), layer.id));
             return false;
         }
         if (!emitted_slices.emplace(owner.id.value, slice->absolute_row).second)
@@ -355,6 +358,8 @@ class audition_resolver_index_t {
                        : std::optional<std::uint64_t>{binding.output_frame_count};
         if (end.has_value())
             end = std::min(*end, binding.output_frame_count);
+        // A point past the end of its sample plays nothing; that is not an error.
+        if (slice->source_end_frame && slice->source_begin_frame >= *slice->source_end_frame) return true;
         if (!begin || !end || *begin >= *end) {
             result.diagnostics.push_back(error(audition_resolve_code_t::empty_range,
                                                "audition slice has no decoded output frames",

@@ -109,14 +109,15 @@ auto append_sound_slice_group(sound_slice_build_context_t& context, std::size_t 
                                     [](const auto& item) { return !item.event->continuation; });
     const auto boundary = context.channel.source_clip.begin_frame + *relative_frame.frame;
     const auto previous_end = context.source_end ? std::min(boundary, *context.source_end) : boundary;
-    const auto source_begin = restart ? context.channel.source_clip.begin_frame : boundary;
-    if (context.source_end.has_value() && source_begin >= *context.source_end) {
-        result.diagnostics.push_back(diagnostic(
-            sound_slice_error_code_t::invalid_source_range,
-            "sound-channel slice begins at or beyond the decoded source end", event.event->id));
-        return false;
-    }
-    if (!result.slices.empty() && previous_end <= result.slices.back().source_begin_frame) {
+    auto source_begin = restart ? context.channel.source_clip.begin_frame : boundary;
+    // A continuation after the audio has ended plays nothing: the slice is kept, empty, at the end
+    // of the source, so charts that keep marking points past the end of a sample still derive.
+    const auto past_end = context.source_end.has_value() && source_begin >= *context.source_end;
+    if (past_end) source_begin = *context.source_end;
+    const auto previous_empty = !result.slices.empty() && context.source_end.has_value() &&
+                                result.slices.back().source_begin_frame >= *context.source_end;
+    if (!past_end && !previous_empty && !result.slices.empty() &&
+        previous_end <= result.slices.back().source_begin_frame) {
         result.diagnostics.push_back(diagnostic(
             sound_slice_error_code_t::invalid_source_range,
             "distinct sound-channel markers must derive a positive source-frame range",

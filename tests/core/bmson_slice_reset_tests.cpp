@@ -220,3 +220,21 @@ TEST_CASE("BMSON restart clips the previous source range before rewinding an exh
     check_slice_ends(fixture, {10'000, 10'000, 10'000, 10'000, 10'000});
     check_slice_ends(fixture, {8'000, 8'000, 8'000, 8'000, 8'000}, 8'000);
 }
+
+TEST_CASE("continuation points after the end of the sample derive as empty slices",
+          "[unit][core][bmson][slice-reset]") {
+    auto fixture = make_reset_fixture();
+    const auto& chart = fixture.history.document.charts.front();
+    // 24,000 frames at 48 kHz is half a second: the point at beat 2 (one second in) is past the end.
+    const auto derived = wormedit::derive_sound_channel_slices(chart, chart.sound_channels.front(), 48'000, 30'000);
+    REQUIRE(derived);
+    REQUIRE(derived.slices.size() == 5);
+    CHECK(derived.slices[0].source_begin_frame == 0);
+    CHECK(derived.slices[1].source_begin_frame == 24'000);
+    // The continuation at row 480 starts at 48,000 > 30,000: empty, at the end of the source.
+    CHECK(derived.slices[2].source_begin_frame == 30'000);
+    CHECK(derived.slices[2].source_end_frame == 30'000);
+    // A restart still plays from the beginning.
+    CHECK(derived.slices[3].source_begin_frame == 0);
+    CHECK(derived.slices[3].restart);
+}

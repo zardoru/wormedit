@@ -111,3 +111,5 @@ T-357, T-368 and T-373 are done (2026-10-04). Automatic Sounds rows use collapsi
 
 
 T-469 (2026-10-07): changing zoom retains compatible scaled stem textures and refills at most eight stems per frame in rotating viewport order. Uncovered regions use counted line fallbacks; first settlement refreshes remaining textures exactly once. Optimized dense canvas p99 falls 45.50→10.93 ms, with a 38.38 ms settlement; merged settled pixels equal the baseline. Main build and 2,568/2,568 tests pass. Live under-3% sample gate remains pending. [Evidence](../../coordination/oct7-seek-render-batch.md).
+
+T-472 (2026-10-07): whole-frame pacing subtracts elapsed work/presentation from a 5 ms active budget, with a 50 ms invisible-window budget and no accumulated debt. Already-paced/over-budget frames receive no extra sleep; VSync policy is retained. All 257 injected policy checks and the main 2,574-test suite pass. Live 200 Hz cadence and dense whole-frame performance remain unmeasured. [Evidence](../../coordination/oct7-wsola-batch.md).

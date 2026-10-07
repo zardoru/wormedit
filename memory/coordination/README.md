@@ -1,9 +1,13 @@
 # Worktree coordination pilot
 
-Active batch: [WSOLA Release measurements](oct7-wsola-batch.md), T-471.
-One Sol 6.1 medium coordinator and an exclusive Luna medium audit brief use
-one clean worker tree. Measure actual production SDL audio before changing
-the search; root retains main integration authority.
+Completed in code 2026-10-07: [WSOLA and frame pacing batch](oct7-wsola-batch.md),
+T-471/T-472, reviewed with Sol 6.1 medium coordinators and Luna contributions.
+Main application build and **2,574/2,574 tests pass**. Actual optimized reduced-rate
+WSOLA CPU falls about 90%; 1× Keep pitch bypasses stretching, and routine UI
+service avoids SDL's queue lock. Pacing spends only the remaining 5 ms frame
+budget. Live 200 Hz cadence, dense whole-frame p99 and older-device certification
+remain pending. Both worker trees and about 1.2 GB of builds removed; only main
+remains, branches/logs retained.
 
 Completed in code 2026-10-07: [seek, playhead and rendering](oct7-seek-render-batch.md),
 T-276/T-470 and T-469 reviewed and integrated with Sol 6.1 medium coordinators
@@ -13,7 +17,7 @@ Merged actual Ogg warm seeks resume within 23.13 ms with zero caller decoding;
 settled canvas pixels match exactly. User-authorized profiling edits committed
 separately as `0108809`. Live sample-share gates remain pending. Both workers
 and about 1.3 GB of generated builds removed; only main remains, branches/logs
-retained. Next performance card: measurement-first T-471.
+retained. Subsequent T-471/T-472 evidence is recorded above.
 
 Completed in code 2026-10-07: [workspace and stem performance batch](oct7-performance-batch.md),
 T-444/T-440 reviewed and integrated with Sol 6.1 medium coordinators and Luna

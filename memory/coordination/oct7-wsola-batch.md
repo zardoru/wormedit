@@ -1,4 +1,4 @@
-# WSOLA Release measurement batch
+# WSOLA and high-refresh pacing batch
 
 Authorized on 2026-10-07 after the completed seek/rendering batch. Root integrates
 main; one Sol 6.1 medium coordinator with narrow Luna medium briefs owns T-471
@@ -67,3 +67,54 @@ The shared Luna stays audio-owned until explicit release. Both builds must be
 quiet for actual audio timing windows. A second worker does not change monitor
 settings or access the desktop. Dense inspector/hover lookups and measure-index
 rebuilds remain audit findings, not unmeasured justifications for a scene rewrite.
+
+## Reviewed implementation and integration
+
+T-472 is integrated as `9ed59b8` (worker `f27b524`): whole-frame pacing
+uses the remaining 5 ms active budget and a 50 ms invisible-window budget.
+Already-paced or over-budget frames receive no extra delay. All 257 injected
+policy checks pass; actual display cadence remains unmeasured.
+
+T-471 uses a deterministic stride-four candidate/sample coarse search, followed
+by full-precision refinement and a predicted-position fallback. Sparse energy
+and bound arithmetic receive explicit regression coverage. Actual optimized
+Kick callback measurements reduce WSOLA one-core utilization from about 2.62%
+to 0.255–0.259% at 0.1×/0.5×, roughly 90% less work. Callback wall p99 falls
+from 0.8645/0.8612 ms to 0.0980/0.1143 ms with no measured silenced voices or
+zero postmix packets. These dummy-audio measurements precede the separate
+unity/service follow-up; the correlation kernel is unchanged by that follow-up.
+The older-device sensitivity proxy remains a proxy, not device certification.
+
+User steering added two precisely recorded SDL supporting paths before edits.
+Keep pitch now passes raw PCM through at 1× while preserving its setting and
+existing mode fades, source clocks and tails. Routine active frame service no
+longer repeats the callback-owned latency update through SDL's stream queue
+lock. Conditional exact loop/drain queries remain. Sol's independent read-only
+review approved the transitions and latency boundary; 52 focused audio tests
+pass, including exact stereo PCM and completion with the stream lock held.
+The before trace places every WSOLA/correlation call on the callback thread,
+none on main or during stopped service: the UI could wait on the callback lock,
+but stopped WSOLA was already absent, so no stopped/idle CPU reduction is claimed.
+The final exact correlation-count trace records zero process/correlation calls
+at 1× with Keep pitch enabled; reduced-rate calls remain callback-only. The
+instrumented trace establishes call attribution, not performance timings.
+
+Root independent optimized probes cover all nine supported rates and a wider
+110 Hz–15 kHz comparison. Duration, deterministic/chunk-invariant bounded PCM
+and isolated 440 Hz quality gates pass. Correlation choices change the old PCM;
+near 15 kHz at 0.1× the measured zero-crossing estimate differs by about 0.11%.
+This is not a listening test or bit-identical replacement claim. Logs remain
+under `wormedit-scratch-builds/wsola-oct7/{audio,pacing,root}`. Original Dragback,
+Kick and Solstice chart hashes remain unchanged (3/3).
+
+Root integrates audio as `80e757a`/`7ffa395` (worker `5ce61a9`/`a9347bb`).
+Normal main application build and all **2,574/2,574 tests pass** in 59.88 s,
+including 196 event-harness cases. Merged optimized probes pass 18 all-rate
+and 24 wider-tone cases and match the reviewed final outputs. Merged actual
+production SDL functional traces confirm unity zero calls and reduced-rate
+callback-only calls; these main Debug/instrumented traces supply no timing claim.
+Both clean worker trees and about 1.2 GB of generated builds are removed; only
+main remains registered, with branches/logs/probe binaries retained.
+Live 200 Hz cadence, dense-chart whole-frame p99 and older-device performance
+remain pending; existing dense inspector/hover and index audit findings are
+measurement candidates for a later batch.

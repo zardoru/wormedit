@@ -31,3 +31,22 @@ Run card checks, configured complexity <=25, docs gate, then commit and explicit
 release a clean worker. Root reviews and integrates serially, builds main, runs
 the full suite and independent measurements, commits evidence/status and removes
 the worker/build while retaining branch/logs. Original assets stay read-only.
+
+## Target hardware steering
+
+The user clarified that this Ryzen 7 5700X is too powerful to be the target gate;
+the intended floor is roughly Ryzen 2000 or a mobile Intel CPU from 2015.
+The original local-under-10% stop condition is therefore superseded by that
+steering. Root authorizes coarse/fine search after the actual baseline if it
+materially improves headroom while preserving the quality gates. A local 2%
+one-core WSOLA budget is a conservative sensitivity proxy: a fivefold cost
+would use 10%. This does not claim the specified CPUs are five times slower,
+and no target-device budget is certified without measurement on that device.
+
+Root's independent production-stretcher probe compiles the existing source at
+-O2 and -O0, tests all nine supported rates on sine and asymmetric stereo with
+transients, and verifies duration, pitch, bounded finite output, repeatability
+and byte-identical output across 512/127-frame blocks. Optimized CPU time per
+output second is about 2.65%; Debug is about 26.9%, with identical output hashes
+in all 18 cases. This isolated constructed-input evidence is supplementary;
+actual chart/SDL/perf measurements remain the algorithm decision baseline.

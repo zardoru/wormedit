@@ -51,6 +51,7 @@ User feedback from 2026-10-07, with the causes found while planning:
   5. Test that the results match the old function on the fixtures, including a chart with 181 stems, and add a timing assertion that is opt-in, like T-145.
 - **Invariants:** the same stems are drawn, in the same order, as before.
 - **Reject/failure behavior:** an index built for a stale revision is never used.
+- **Root integrated evidence:** normal main application build and all 2,495/2,495 tests pass (`next-oct7/root/final-main-ctest-verified.log`). The final merged production canvas probe renders 300 textured stems and retains all textures after reorder/selected-sound changes without regeneration or fallback (`final-canvas-stems-probe.log`). Both completed worker trees and generated builds were removed; branches and logs remain.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R 'stem|frame_timing'`; `clang-tidy -p build src/sys/bmson_waveform_projection.cpp`.
 - **Out of scope:** the zoom path (T-440) and the reach fix (T-441).
 
@@ -109,7 +110,7 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-443 Replace fixed stem slots with a budgeted pool keyed by channel
 
-- **Status:** in progress (implementation and focused gates verified; root integration and isolated capture pending)
+- **Status:** done in code (2026-10-07; root integrated and automated verification passed; original-chart GUI capture pending)
 - **Outcome:** the stem caps (192, 66 GPU slots, and 64 drawn as textures) are gone. Envelope textures are keyed by channel ID and evicted least recently used under a byte budget. Every stem in a fitting viewport draws as a texture; visible pressure is counted and falls back to lines. Scrolling retains textures for stems that stayed visible.
 - **Read first:** `src/ui/field/field_renderer.h` (`envelopes_`), `src/ui/field/field_renderer.cpp`, `src/ui/nuklear/compose_canvas.cpp` (`draw_compose_stem_piece`), `src/sys/waveform_analysis_runtime.h` (`stem_waveform_cache_stats`), `src/core/arena.cpp`.
 - **Files owned:** `src/ui/field/field_renderer.h`, `src/ui/field/field_renderer.cpp`, `src/ui/nuklear/compose_canvas.cpp` (root-approved exclusive stem/waveform envelope drawing and full-frame key pinning; BGA retains lane/event/ghost regions), `src/ui/frontend.h` (root-approved exclusive edit of `WormUiComposeStemWaveformView` for `stem_key`; BGA retains other regions until transfer), `src/sys/bmson_waveform_projection.cpp`, `src/sys/stem_waveform_window.h`, `src/sys/waveform_analysis_runtime.h`, `src/sys/waveform_analysis_runtime.cpp`, `tests/ui/field_renderer_tests.cpp` (exact existing field renderer tests), `tests/sys/stem_window_tests.cpp` (root-approved uncapped 300-channel window selection), `tests/sys/frame_timing_tests.cpp` (root-approved production stable-key/300-stem projection), `tests/sys/audio_notification_tests.cpp` (root-approved production analysis memory admission/LRU retention), this card.

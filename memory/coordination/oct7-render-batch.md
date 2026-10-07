@@ -72,3 +72,35 @@ before edits. Root serially merges both canvas diffs, preserving both contracts.
 This replaces the earlier whole-canvas wait without permitting same-worktree
 concurrent writes. T-443's step 3 runtime source is ready for narrow Luna tests;
 its Sol coordinator may proceed to step 4 cap removal/wiring in card order.
+
+## Root integration and cleanup
+
+T-443 accepted as `2c05e78` and T-451 as `7790258`. Sol 6.1 medium
+coordinators completed and reviewed the implementation, with Luna medium
+contributing the bounded runtime tests and queue state slice. Root reviewed
+the actual diffs, required transient texture reservation and selected-waveform
+priority, preserved stacked moves and storyboard ordering, and checked the
+actual Add BGA lane dropdown. Shared frontend/canvas regions merged cleanly.
+
+Before BGA integration, the normal main application build and all 2,475 tests
+passed. Root's independent production Compose canvas software probe submits
+300 textured stems, then reverses their order and changes selected audio with
+zero regenerated rows or budget fallbacks (4,368,000 resident bytes).
+`next-oct7/root/canvas-stems-probe.log` records the passing result.
+
+Both worker trees are removed after clean commits and ownership release; their
+branches remain. Only main is registered. Three older generated build trees
+plus both completed isolated worker builds were removed, reclaiming about
+13 GB. Worker test/tidy logs and root probe sources remain under
+`/home/zardoru/devel/wormedit-scratch-builds/next-oct7/`; removed worker build
+paths in earlier evidence refer to the completed runs, not reusable builds.
+Original-chart GUI captures remain pending under the established Xvfb
+restriction. No original chart, user desktop session or remote branch changed.
+
+Final normal main application build passes. Full CTest passes **2,495/2,495**
+(`root/final-main-ctest-verified.log`); final merged canvas probe also passes
+(`root/final-canvas-stems-probe.log`). The first full integration run caught
+the new dropdown bypassing the central chrome guard and an image test retaining
+the fixture's video resource/dimensions. Root and the BGA coordinator corrected
+those within the previously owned paths; all three focused regressions pass.
+Correction clang-tidy reports only unchanged existing test scores.

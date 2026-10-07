@@ -110,7 +110,7 @@ void reveal_empty_base_lane(WormUiWorkspaceAction& action, const WormUiComposeVi
 
 void bga_lane_picker(nk_context* context, WormUiWorkspaceAction& action) {
     nk_layout_row_dynamic(context, 25, 1);
-    if (!nk_combo_begin_label(context, "Add BGA lane", nk_vec2(150, 130))) return;
+    if (!wormedit::ui::chrome::safe_combo_begin_label(context, "Add BGA lane", nk_vec2(150, 130))) return;
     constexpr std::array labels{"BGA", "Layer", "Layer 2", "Poor"};
     constexpr std::array kinds{wormedit::visual_event_kind_t::background, wormedit::visual_event_kind_t::layer,
         wormedit::visual_event_kind_t::layer2, wormedit::visual_event_kind_t::poor};

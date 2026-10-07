@@ -1,8 +1,10 @@
 # Worktree coordination pilot
 
-Active: [rendering batch](oct7-render-batch.md), T-451 then T-443, with two fresh
-worktrees, Sol 6.1 medium coordinators and sequential Luna medium executors.
-Root sequences shared canvas/contract ownership and integrates main.
+Completed in code 2026-10-07: [rendering batch](oct7-render-batch.md),
+T-443 and T-451 integrated with Sol 6.1 medium coordinators and Luna medium
+contributions. Normal application build and **2,495/2,495** tests pass.
+Only main remains; worker branches/logs retained, about 13 GB of generated
+builds reclaimed. Original-chart GUI captures remain pending.
 
 Completed 2026-10-07: [stems and layers batch](oct7-next-batch.md),
 T-439/T-445 and T-447/T-450 reviewed and integrated on main. Application build

@@ -137,10 +137,13 @@ TEST_CASE("player preview publishes decoded Layer 2 and base sharing one image",
     auto song = document();
     song.visual_assets.front().kind = asset_kind_t::image;
     song.visual_assets.front().source_path = image.path.filename();
+    song.visual_assets.front().width = 2;
+    song.visual_assets.front().height = 1;
+    const auto resource = song.resources.front().id;
     song.charts.front().bga_events = {{.id = object_id_t{4}, .position = {measure_id_t{1}, 0},
-        .resource = resource_id_t{30}, .kind = visual_event_kind_t::background},
+        .resource = resource, .kind = visual_event_kind_t::background},
         {.id = object_id_t{5}, .position = {measure_id_t{1}, 0},
-         .resource = resource_id_t{30}, .kind = visual_event_kind_t::layer2}};
+         .resource = resource, .kind = visual_event_kind_t::layer2}};
     const auto history = make_document_history(std::move(song));
     visual::image_cache_t image_cache;
     task_scheduler_t image_scheduler{1, 2};

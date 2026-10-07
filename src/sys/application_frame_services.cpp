@@ -1,6 +1,7 @@
 #include "sys/application_frame_services.h"
 
 #include "sys/project_open.h"
+#include "sys/frame_pacing.h"
 
 #include "ui/frontend.h"
 #include "wormedit/window.h"
@@ -181,13 +182,17 @@ void rebind_workspace_after_edit(workspace_controller_t& workspace,
     feedback.rebind(workspace, history, notifications);
 }
 
-void render_application_frame(WormWindow& window) {
+void render_application_frame(WormWindow& window, std::uint64_t frame_start_ns) {
     int width = 0;
     int height = 0;
     worm_window_get_size(&window, &width, &height);
     worm_ui_frontend_render(width, height);
     worm_window_swap(&window);
-    SDL_Delay(1);
+    const auto flags = window.handle ? SDL_GetWindowFlags(window.handle) : SDL_WindowFlags{0};
+    const auto inactive = (flags & (SDL_WINDOW_HIDDEN | SDL_WINDOW_MINIMIZED |
+                                    SDL_WINDOW_OCCLUDED)) != 0;
+    const auto remainder = frame_pacing_remainder_ns(frame_start_ns, SDL_GetTicksNS(), inactive);
+    if (remainder != 0) SDL_DelayPrecise(remainder);
 }
 
 } // namespace wormedit::sys

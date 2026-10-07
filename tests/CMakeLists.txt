@@ -762,3 +762,11 @@ catch_discover_tests(wormedit_convert_tests
     PROPERTIES LABELS "unit;tools"
     DISCOVERY_MODE PRE_TEST
 )
+
+# Pure pacing policy has no SDL, core, or Catch dependencies.
+add_executable(wormedit_frame_pacing_tests
+    sys/frame_pacing_tests.cpp
+    ../src/sys/frame_pacing.cpp)
+target_include_directories(wormedit_frame_pacing_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+add_test(NAME frame-pacing COMMAND wormedit_frame_pacing_tests)
+set_tests_properties(frame-pacing PROPERTIES LABELS "unit;sys")

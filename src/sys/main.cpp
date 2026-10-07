@@ -4012,6 +4012,7 @@ int main(int argc, char** argv) {
     notification_frame_context_t notification_context{notifications, notification_history,
         history, workspace, compose_interaction_state, notification_sink};
     while (running) {
+        const auto frame_start_ns = SDL_GetTicksNS();
         const auto notification_now = notification_frame_time();
         recovery_scan_feedback.publish(recovery_controller.view(), notification_sink);
         begin_notification_frame(notification_context, pending_notification, notification_now);
@@ -4235,7 +4236,7 @@ int main(int argc, char** argv) {
 
         persist_session_preferences(program_preferences, application_command_state, notification_sink);
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::render);
-        wormedit::sys::render_application_frame(window);
+        wormedit::sys::render_application_frame(window, frame_start_ns);
         wormedit::sys::frame_timing().end_frame();
     }
 

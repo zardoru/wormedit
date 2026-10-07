@@ -2,6 +2,7 @@
 
 #include <wormedit/audio/decoder.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -163,6 +164,8 @@ class decode_session_t {
 
   private:
     mutable std::mutex mutex_;
+    static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
+    std::atomic<std::uint64_t> current_generation_{};
     std::uint64_t generation_{};
     bool active_{};
     std::size_t maximum_pending_blocks_{};

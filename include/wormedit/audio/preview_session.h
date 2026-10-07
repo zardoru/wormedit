@@ -51,6 +51,7 @@ struct preview_session_pump_result_t {
 
 enum class preview_session_render_status_t {
     mixed,
+    priming,
     complete,
     stopped,
     invalid_buffer,
@@ -72,7 +73,8 @@ struct preview_loop_region_t {
 };
 
 // Owns one chart-play generation and its monotonic normalized timeline.
-// start()/seek()/pump() run on the control thread; render() performs only the
+// start()/seek() enqueue initial work without decoding; pump() runs on the decode
+// worker (or explicitly in headless owners). render() performs only the
 // cache-resident transport mix. The immutable schedule must outlive the active
 // session because preview_transport_bridge_t retains its queue storage.
 class preview_session_t {
@@ -114,6 +116,7 @@ class preview_session_t {
         std::optional<preview_assist_click_grid_t> grid) -> bool;
     // active() and timeline_frame() read a lock-free snapshot published by the control
     // and render sides; they never wait on the session mutex.
+    [[nodiscard]] auto playhead() const noexcept -> playhead_state_t;
     [[nodiscard]] auto active() const -> bool;
     // Audible source-frame estimate; scheduling continues on the unadjusted
     // internal source clock. Headless sessions have zero output latency.
@@ -136,6 +139,8 @@ class preview_session_t {
     std::uint64_t generation_{};
     mutable std::mutex mutex_;
     std::optional<session_token_t> token_;
+    bool prime_pending_{};
+    preview_pump_options_t prime_options_{};
     std::uint64_t timeline_frame_{};
     std::uint64_t start_frame_{};
     std::uint64_t minimum_end_frame_{};

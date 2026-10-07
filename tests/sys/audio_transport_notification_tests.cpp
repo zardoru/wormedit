@@ -2,6 +2,9 @@
 #include <wormedit/audio/audition_bridge.h>
 #include <catch2/catch_test_macros.hpp>
 #include <array>
+#include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_timer.h>
 
 using namespace wormedit;
 using namespace wormedit::sys;
@@ -127,4 +130,53 @@ TEST_CASE("Preview audio tail retains the final editable playhead row", "[audio]
     timing.rows.back().after_stops_seconds = {4, 0};
     CHECK_FALSE(preview_playhead_row_at(timing, audio::output_sample_rate * 30));
     CHECK_FALSE(preview_playhead_row_at({}, audio::output_sample_rate));
+}
+
+namespace {
+auto deferred_seek_failure_preserves_position() -> bool {
+    audio::decoded_source_registry_t sources;
+    const auto source = sources.register_generated_source({
+        .source = {"notification-seek", "v1"}, .interleaved_stereo = std::vector<float>(88'200, 0.5F)});
+    if (!source) return false;
+    audio::decoded_block_cache_t blocks;
+    audio::transport_t transport{blocks};
+    audio::preview_transport_bridge_t preview_bridge{transport};
+    audio::preview_session_t session{sources, transport, preview_bridge};
+    audio::audition_transport_bridge_t audition_bridge{transport};
+    audio::audition_session_t audition_session{sources, transport, audition_bridge};
+    sdl_audition_output_t audition{audition_session};
+    sdl_preview_output_t output{session};
+    if (!output.open()) return false;
+    preview_schedule_t schedule{.sample_rate = audio::output_sample_rate};
+    schedule.bgm = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
+    const audio::preview_object_source_binding_t binding{
+        .object = object_id_t{1}, .voices = {{.source = source.binding->source, .frame_count = 44'100}}};
+    if (!output.start(schedule, std::span{&binding, 1})) return false;
+    sources.clear();
+    if (!output.seek(1'234)) return false;
+    notification_center_t center{[] { return notification_time_t{}; }};
+    notification_sink_t sink{center};
+    runtime::chart_preview_t state;
+    song_document_t document;
+    workspace_controller_t workspace;
+    std::optional<double> playhead;
+    const auto deadline = SDL_GetTicks() + 500;
+    while (!state.paused && SDL_GetTicks() < deadline) {
+        service_audio_transport_frame(document, workspace, state, session, audition, output,
+                                      playhead, sink);
+        SDL_Delay(1);
+    }
+    const auto rows = drained(center);
+    return state.paused && state.resume_frame == 1'234 && !output.playing() &&
+           rows.size() == 1 && rows.front().severity == notification_severity_t::error &&
+           rows.front().message == "Chart preview stopped because a decoded source is unavailable.";
+}
+}
+
+TEST_CASE("Deferred chart seek decode failure notifies and retains the requested position",
+          "[audio][notifications][audio-notifications][async-seek]") {
+    verify_audio_notification(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    verify_audio_notification(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    verify_audio_notification(deferred_seek_failure_preserves_position());
+    SDL_QuitSubSystem(SDL_INIT_AUDIO);
 }

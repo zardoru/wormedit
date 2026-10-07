@@ -207,6 +207,8 @@ auto sdl_preview_output_t::start(
         result.status = sdl_preview_start_status_t::device_failed;
         result.message = sdl_error("could not reset and resume the chart-preview audio stream");
     } else result.status = sdl_preview_start_status_t::started;
+    publish_output_playhead();
+    output_playhead_cleared_.store(!playing(), std::memory_order_release);
     stream_lock.unlock();
     return finish_start(std::move(result));
 }
@@ -255,6 +257,8 @@ auto sdl_preview_output_t::seek(std::uint64_t sample_frame) -> sdl_preview_start
         if (result.status == sdl_preview_start_status_t::device_failed)
             result.message = sdl_error("could not reset and resume the chart-preview audio stream");
     }
+    publish_output_playhead();
+    output_playhead_cleared_.store(!playing(), std::memory_order_release);
     stream_lock.unlock();
     return finish_start(std::move(result));
 }
@@ -407,6 +411,7 @@ auto sdl_preview_output_t::stop() noexcept -> audio::transport_stop_result_t {
     loop_disable_pending_.store(false, std::memory_order_release);
     set_refill_enabled(false);
     output_playing_.store(false, std::memory_order_release);
+    output_playhead_cleared_.store(true, std::memory_order_release);
     buffered_source_frames_.store(0, std::memory_order_release);
     rendered_source_frame_.store(0, std::memory_order_release);
     output_start_frame_.store(0, std::memory_order_release);
@@ -434,6 +439,7 @@ auto sdl_preview_output_t::stop() noexcept -> audio::transport_stop_result_t {
     buffered_source_frames_.store(0, std::memory_order_release);
     rendered_source_frame_.store(0, std::memory_order_release);
     output_start_frame_.store(0, std::memory_order_release);
+    clear_output_playhead();
     stream_lock.unlock();
     return stopped;
 }
@@ -463,10 +469,39 @@ auto sdl_preview_output_t::playing() const noexcept -> bool {
 }
 
 auto sdl_preview_output_t::timeline_frame() const noexcept -> std::uint64_t {
+    return read_output_playhead().timeline_frame;
+}
+
+auto sdl_preview_output_t::read_output_playhead() const noexcept -> audio::playhead_state_t {
+    auto state = output_playhead_.read();
+    if (output_playhead_cleared_.load(std::memory_order_acquire))
+        return {.generation = state.generation};
+    const auto current = session_.playhead();
+    const bool completed_tail = state.source_finished && current.generation > state.generation &&
+                               current.generation - state.generation == 1;
+    const bool replaced = current.active
+        ? current.transport_generation != state.transport_generation
+        : !completed_tail;
+    if (replaced) return {.generation = state.generation};
+    if (!playing()) state.active = false;
+    return state;
+}
+
+void sdl_preview_output_t::publish_output_playhead() noexcept {
     const auto rendered = rendered_source_frame_.load(std::memory_order_acquire);
     const auto latency = source_latency_frames();
     const auto start = output_start_frame_.load(std::memory_order_acquire);
-    return rendered > latency ? std::max(start, rendered - latency) : start;
+    const auto audible = rendered > latency ? std::max(start, rendered - latency) : start;
+    session_.set_output_latency_frames(latency);
+    output_playhead_.publish({.active = playing(), .timeline_frame = audible,
+        .start_frame = start, .generation = output_generation_,
+        .transport_generation = output_transport_generation_, .source_finished = source_finished_});
+}
+
+void sdl_preview_output_t::clear_output_playhead() noexcept {
+    output_generation_ = session_.playhead().generation;
+    output_transport_generation_ = 0;
+    output_playhead_.publish({.generation = output_generation_});
 }
 
 auto sdl_preview_output_t::source_latency_frames() const noexcept -> std::uint64_t {
@@ -481,6 +516,9 @@ auto sdl_preview_output_t::source_latency_frames() const noexcept -> std::uint64
 }
 
 void sdl_preview_output_t::reset_output(std::uint64_t frame) noexcept {
+    const auto current = session_.playhead();
+    output_generation_ = current.generation;
+    output_transport_generation_ = current.transport_generation;
     output_playing_.store(false, std::memory_order_release);
     source_finished_ = false;
     have_output_ = fading_out_ = switch_ready_ = false;
@@ -548,7 +586,7 @@ void SDLCALL sdl_preview_output_t::stream_callback(void* userdata, SDL_AudioStre
         additional_amount = static_cast<int>(std::min<long double>(bytes, std::numeric_limits<int>::max()));
     }
     if (additional_amount > 0 && output->playing()) output->render_requested(stream, additional_amount);
-    output->session_.set_output_latency_frames(output->source_latency_frames());
+    output->publish_output_playhead();
 }
 
 auto sdl_preview_output_t::render_source(std::size_t frames) noexcept -> std::size_t {
@@ -567,6 +605,7 @@ auto sdl_preview_output_t::render_source(std::size_t frames) noexcept -> std::si
     }
     if (count == 0) return 0;
     const auto rendered = session_.render(std::span{source_scratch_.data(), count * 2});
+    if (rendered.status == audio::preview_session_render_status_t::priming) return 0;
     if (rendered.status == audio::preview_session_render_status_t::underrun) {
         silenced_voices_.fetch_add(rendered.mix.dropped_voices, std::memory_order_relaxed);
         silenced_music_voices_.fetch_add(rendered.mix.dropped_music_voices, std::memory_order_relaxed);
@@ -576,6 +615,7 @@ auto sdl_preview_output_t::render_source(std::size_t frames) noexcept -> std::si
         rendered.status == audio::preview_session_render_status_t::stopped) {
         callback_failure_.store(callback_failure_t::render, std::memory_order_release);
         output_playing_.store(false, std::memory_order_release);
+        output_playhead_cleared_.store(true, std::memory_order_release);
         static_cast<void>(session_.stop());
         return 0;
     }
@@ -664,6 +704,7 @@ void sdl_preview_output_t::render_requested(SDL_AudioStream* stream,
             !SDL_PutAudioStreamData(stream, scratch_.data(), static_cast<int>(rendered_bytes))) {
             callback_failure_.store(callback_failure_t::device, std::memory_order_release);
             output_playing_.store(false, std::memory_order_release);
+            output_playhead_cleared_.store(true, std::memory_order_release);
             static_cast<void>(session_.stop());
             return;
         }

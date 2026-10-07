@@ -128,3 +128,30 @@ TEST_CASE("audition session preserves a live generation on pre-start validation 
     CHECK(session.render(malformed).status == audition_session_render_status_t::invalid_buffer);
     CHECK(all_zero(malformed));
 }
+
+namespace {
+auto audition_playhead_rejects_external_generation() -> bool {
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    const auto source = register_fixture(sources, "keysound-c4.ogg");
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    audition_transport_bridge_t bridge{transport};
+    audition_session_t session{sources, transport, bridge};
+    const audition_clip_t clip{source.source, 0, 512, 1.0F};
+    const auto started = session.start(std::span{&clip, 1});
+    if (!started) return false;
+    const auto prior = session.playhead();
+    static_cast<void>(transport.stop());
+    if (session.active() || session.timeline_frame() != 0 || session.playhead().active) return false;
+    const auto restarted = session.start(std::span{&clip, 1});
+    const auto current = session.playhead();
+    return restarted && current.active && current.generation > prior.generation &&
+           current.transport_generation == restarted.token->generation;
+}
+}
+
+TEST_CASE("audition playhead rejects transport generations stopped outside its session",
+          "[unit][audio][audition-session][playhead]") {
+    CHECK(audition_playhead_rejects_external_generation());
+}

@@ -61,6 +61,7 @@ class audition_session_t {
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
 
     // Lock-free reads of a snapshot published by start/render/stop.
+    [[nodiscard]] auto playhead() const noexcept -> playhead_state_t;
     [[nodiscard]] auto active() const -> bool;
     [[nodiscard]] auto timeline_frame() const -> std::uint64_t;
 

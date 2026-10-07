@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 
 namespace wormedit::audio {
@@ -12,13 +14,15 @@ struct playhead_state_t {
     // Increments on every start, seek, stop, or clear so a reader can tell a restarted
     // session from the one it saw before.
     std::uint64_t generation{};
+    std::uint64_t transport_generation{};
+    // Output owners may retain the audible clock while completed PCM drains.
+    bool source_finished{};
 };
 
-// Single-writer seqlock for the playhead. publish() must be serialized by the caller
-// (the session mutex); read() takes no lock and never blocks the writer. A reader that
-// keeps hitting writes retries a bounded number of times and then tries a shared best-effort
-// cache of successful reads. That cache may be stale; contention can return an empty
-// inactive state. It is not a per-reader previous-result or monotonicity guarantee.
+// Single writer, serialized by the session mutex. Readers make bounded attempts,
+// then reuse their own last coherent state. A newer publication invalidates an
+// older-generation fallback. Eight fixed thread-local slots bound storage; slot
+// eviction returns an inactive state rather than another snapshot's playhead.
 class playhead_snapshot_t {
   public:
     static constexpr int maximum_read_attempts = 64;
@@ -26,11 +30,14 @@ class playhead_snapshot_t {
     void publish(const playhead_state_t& state) noexcept {
         const auto sequence = sequence_.load(std::memory_order_relaxed);
         sequence_.store(sequence + 1, std::memory_order_relaxed);
+        published_generation_.store(state.generation, std::memory_order_release);
         std::atomic_thread_fence(std::memory_order_release);
         active_.store(state.active, std::memory_order_relaxed);
         timeline_frame_.store(state.timeline_frame, std::memory_order_relaxed);
         start_frame_.store(state.start_frame, std::memory_order_relaxed);
         generation_.store(state.generation, std::memory_order_relaxed);
+        transport_generation_.store(state.transport_generation, std::memory_order_relaxed);
+        source_finished_.store(state.source_finished, std::memory_order_relaxed);
         sequence_.store(sequence + 2, std::memory_order_release);
     }
 
@@ -42,7 +49,9 @@ class playhead_snapshot_t {
                 .active = active_.load(std::memory_order_relaxed),
                 .timeline_frame = timeline_frame_.load(std::memory_order_relaxed),
                 .start_frame = start_frame_.load(std::memory_order_relaxed),
-                .generation = generation_.load(std::memory_order_relaxed)};
+                .generation = generation_.load(std::memory_order_relaxed),
+                .transport_generation = transport_generation_.load(std::memory_order_relaxed),
+                .source_finished = source_finished_.load(std::memory_order_relaxed)};
             std::atomic_thread_fence(std::memory_order_acquire);
             if (sequence_.load(std::memory_order_relaxed) != before) continue;
             remember(state);
@@ -52,51 +61,50 @@ class playhead_snapshot_t {
     }
 
   private:
-    // Readers record each consistent result in a second seqlock-protected copy. It is
-    // consulted only after the bounded retries fail, and a reader that cannot store
-    // simply skips the update, so a whole (possibly stale or empty) state is returned.
-    void remember(const playhead_state_t& state) const noexcept {
-        const auto sequence = last_sequence_.load(std::memory_order_relaxed);
-        if ((sequence & 1U) != 0) return;  // another reader is storing; skip
-        auto expected = sequence;
-        if (!last_sequence_.compare_exchange_strong(expected, sequence + 1,
-                                                    std::memory_order_acquire)) {
-            return;
+    friend struct playhead_snapshot_test_access_t;
+    struct reader_slot_t {
+        std::uint64_t identity{};
+        playhead_state_t state{};
+    };
+    struct reader_cache_t {
+        std::array<reader_slot_t, 8> slots{};
+        std::size_t next{};
+    };
+
+    [[nodiscard]] auto reader_slot() const noexcept -> reader_slot_t& {
+        static thread_local reader_cache_t cache;
+        for (auto& slot : cache.slots) {
+            if (slot.identity == identity_) return slot;
         }
-        std::atomic_thread_fence(std::memory_order_release);
-        last_active_.store(state.active, std::memory_order_relaxed);
-        last_timeline_frame_.store(state.timeline_frame, std::memory_order_relaxed);
-        last_start_frame_.store(state.start_frame, std::memory_order_relaxed);
-        last_generation_.store(state.generation, std::memory_order_relaxed);
-        last_sequence_.store(sequence + 2, std::memory_order_release);
+        auto& slot = cache.slots[cache.next];
+        cache.next = (cache.next + 1) % cache.slots.size();
+        slot = {.identity = identity_};
+        return slot;
+    }
+
+    void remember(const playhead_state_t& state) const noexcept {
+        reader_slot().state = state;
     }
 
     [[nodiscard]] auto previous() const noexcept -> playhead_state_t {
-        for (int attempt = 0; attempt < maximum_read_attempts; ++attempt) {
-            const auto before = last_sequence_.load(std::memory_order_acquire);
-            if ((before & 1U) != 0) continue;
-            const playhead_state_t state{
-                .active = last_active_.load(std::memory_order_relaxed),
-                .timeline_frame = last_timeline_frame_.load(std::memory_order_relaxed),
-                .start_frame = last_start_frame_.load(std::memory_order_relaxed),
-                .generation = last_generation_.load(std::memory_order_relaxed)};
-            std::atomic_thread_fence(std::memory_order_acquire);
-            if (last_sequence_.load(std::memory_order_relaxed) == before) return state;
-        }
-        return {};
+        const auto state = reader_slot().state;
+        const auto generation = published_generation_.load(std::memory_order_acquire);
+        if (state.generation != generation) return {.generation = generation};
+        return state;
     }
 
+    static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
+    static_assert(std::atomic<bool>::is_always_lock_free);
+    inline static std::atomic<std::uint64_t> next_identity_{1};
+    const std::uint64_t identity_{next_identity_.fetch_add(1, std::memory_order_relaxed)};
     std::atomic<std::uint64_t> sequence_{};
     std::atomic<bool> active_{};
     std::atomic<std::uint64_t> timeline_frame_{};
     std::atomic<std::uint64_t> start_frame_{};
     std::atomic<std::uint64_t> generation_{};
-
-    mutable std::atomic<std::uint64_t> last_sequence_{};
-    mutable std::atomic<bool> last_active_{};
-    mutable std::atomic<std::uint64_t> last_timeline_frame_{};
-    mutable std::atomic<std::uint64_t> last_start_frame_{};
-    mutable std::atomic<std::uint64_t> last_generation_{};
+    std::atomic<std::uint64_t> transport_generation_{};
+    std::atomic<std::uint64_t> published_generation_{};
+    std::atomic<bool> source_finished_{};
 };
 
 } // namespace wormedit::audio

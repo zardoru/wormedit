@@ -2,6 +2,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <atomic>
+#include <chrono>
+#include <thread>
 #include <cstddef>
 #include <filesystem>
 #include <span>
@@ -261,4 +264,45 @@ TEST_CASE("fixture block decode is bounded, cached, and session-gated",
               .status == wormedit::audio::block_decode_status_t::stale_generation);
     CHECK(session.pending_count() == 0);
     CHECK(cache.contains(block_key));
+}
+
+namespace {
+void verify_cache_condition(bool value) { REQUIRE(value); }
+auto current_read_while_handoff_locked(wormedit::audio::decode_session_t& session,
+                                       wormedit::audio::session_token_t token) -> bool {
+    std::atomic<bool> finished{};
+    bool current{}, finished_before_release{};
+    std::jthread reader;
+    const auto locked = session.with_current(token, [&] {
+        reader = std::jthread([&] {
+            current = session.is_current(token);
+            finished.store(true, std::memory_order_release);
+        });
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+        while (!finished.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+        finished_before_release = finished.load(std::memory_order_acquire);
+    });
+    if (reader.joinable()) reader.join();
+    return locked && finished_before_release && current;
+}
+}
+
+TEST_CASE("current generation reads remain available during queue handoff",
+          "[unit][audio][cache]") {
+    wormedit::audio::decode_session_t session;
+    const auto first = session.start();
+    verify_cache_condition(first.has_value());
+    verify_cache_condition(current_read_while_handoff_locked(session, *first));
+    verify_cache_condition(session.publish_if_current(*first, key("asset", "source", 0)) ==
+          wormedit::audio::session_publish_status_t::accepted);
+    session.stop();
+    verify_cache_condition(!session.is_current(*first));
+    verify_cache_condition(session.pending_count() == 0);
+    const auto second = session.start();
+    verify_cache_condition(second.has_value());
+    verify_cache_condition(session.is_current(*second));
+    verify_cache_condition(!session.is_current(*first));
+    verify_cache_condition(session.publish_if_current(*first, key("asset", "source", 1)) ==
+          wormedit::audio::session_publish_status_t::stale_generation);
 }

@@ -218,12 +218,14 @@ auto decode_session_t::start() -> std::optional<session_token_t> {
     std::scoped_lock lock(mutex_);
     if (generation_ == std::numeric_limits<std::uint64_t>::max()) {
         active_ = false;
+        current_generation_.store(0, std::memory_order_release);
         ready_.clear();
         return std::nullopt;
     }
     ++generation_;
     active_ = true;
     ready_.clear();
+    current_generation_.store(generation_, std::memory_order_release);
     return session_token_t{generation_};
 }
 
@@ -234,6 +236,7 @@ void decode_session_t::stop() noexcept {
         return;
     }
     active_ = false;
+    current_generation_.store(0, std::memory_order_release);
     ready_.clear();
     if (generation_ != std::numeric_limits<std::uint64_t>::max()) {
         ++generation_;
@@ -241,8 +244,8 @@ void decode_session_t::stop() noexcept {
 }
 
 auto decode_session_t::is_current(session_token_t token) const noexcept -> bool {
-    std::scoped_lock lock(mutex_);
-    return active_ && token.generation == generation_;
+    return token.generation != 0
+        && token.generation == current_generation_.load(std::memory_order_acquire);
 }
 
 auto decode_session_t::publish_if_current(session_token_t token,

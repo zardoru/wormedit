@@ -84,6 +84,7 @@ class sdl_preview_output_t {
     [[nodiscard]] auto set_keep_pitch(bool enabled) noexcept -> bool;
     [[nodiscard]] auto keep_pitch() const noexcept -> bool;
     [[nodiscard]] auto playing() const noexcept -> bool;
+    // Callback-resolution audible clock; reading never queries or locks SDL.
     [[nodiscard]] auto timeline_frame() const noexcept -> std::uint64_t;
     [[nodiscard]] auto source_latency_frames() const noexcept -> std::uint64_t;
     [[nodiscard]] auto audio_device_id() const noexcept -> SDL_AudioDeviceID {
@@ -94,6 +95,7 @@ class sdl_preview_output_t {
     }
 
   private:
+    friend struct sdl_preview_output_test_access_t;
     static void SDLCALL stream_callback(void* userdata, SDL_AudioStream* stream,
                                         int additional_amount, int total_amount);
     void render_requested(SDL_AudioStream* stream, int additional_amount) noexcept;
@@ -112,6 +114,9 @@ class sdl_preview_output_t {
         std::uint64_t silenced_voices, std::uint64_t silenced_music_voices)
         -> std::optional<sdl_preview_service_result_t>;
     void reset_output(std::uint64_t frame) noexcept;
+    [[nodiscard]] auto read_output_playhead() const noexcept -> audio::playhead_state_t;
+    void publish_output_playhead() noexcept;
+    void clear_output_playhead() noexcept;
     [[nodiscard]] auto apply_output_mode(SDL_AudioStream* stream) noexcept -> bool;
     [[nodiscard]] auto render_source(std::size_t frames) noexcept -> std::size_t;
     [[nodiscard]] auto render_block(std::size_t frames) noexcept -> std::size_t;
@@ -130,6 +135,10 @@ class sdl_preview_output_t {
     };
 
     audio::preview_session_t& session_;
+    audio::playhead_snapshot_t output_playhead_;
+    std::atomic<bool> output_playhead_cleared_{true};
+    std::uint64_t output_generation_{};
+    std::uint64_t output_transport_generation_{};
     std::mutex refill_mutex_;
     std::condition_variable refill_ready_;
     std::jthread refill_worker_;

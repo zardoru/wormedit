@@ -3,6 +3,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <thread>
 #include <filesystem>
 #include <limits>
 #include <optional>
@@ -12,6 +15,26 @@
 #include <vector>
 
 namespace {
+
+auto start_primed(wormedit::audio::preview_session_t& session,
+                  const wormedit::preview_schedule_t& schedule,
+                  std::span<const wormedit::audio::preview_object_source_binding_t> objects,
+                  std::span<const wormedit::audio::preview_metronome_source_binding_t> metronome = {},
+                  std::uint64_t frame = 0, wormedit::audio::preview_pump_options_t options = {},
+                  std::uint64_t end = 0) -> wormedit::audio::preview_session_start_result_t {
+    auto result = session.start(schedule, objects, metronome, frame, options, end);
+    if (result) result.prime = session.pump().decode;
+    return result;
+}
+
+auto seek_primed(wormedit::audio::preview_session_t& session, std::uint64_t frame,
+                 wormedit::audio::preview_pump_options_t options = {})
+    -> wormedit::audio::preview_session_start_result_t {
+    auto result = session.seek(frame, options);
+    if (result) result.prime = session.pump().decode;
+    return result;
+}
+
 
 auto fixture_path(std::string_view name) -> std::filesystem::path {
     return std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "audio" / std::string(name);
@@ -67,7 +90,7 @@ auto preview_session_survives_underrun_and_completes() -> bool {
         .object = object_id_t{1},
         .voices = {{.source = source.source, .frame_count = 512}},
     };
-    const auto started = session.start(schedule, std::span{&binding, 1}, {}, 0,
+    const auto started = start_primed(session, schedule, std::span{&binding, 1}, {}, 0,
                                        {.lookahead_frames = 512}, 64);
     if (!started)
         return false;
@@ -101,7 +124,7 @@ auto seek_music_segment_starts_at_source_frame(wormedit::audio::preview_session_
                                                wormedit::audio::preview_transport_bridge_t& bridge)
     -> bool {
     using namespace wormedit::audio;
-    const auto seek = session.seek(500, {.lookahead_frames = maximum_read_frames});
+    const auto seek = seek_primed(session, 500, {.lookahead_frames = maximum_read_frames});
     const auto current_token = bridge.session_token();
     const auto active = seek && current_token ? transport.snapshot_active_voices(*current_token)
                                                : active_voice_snapshot_t{};
@@ -147,7 +170,7 @@ auto preview_loop_restarts_at_begin_and_stop_is_hard() -> bool {
     const preview_loop_region_t region{loop_begin, loop_end};
     if (!session.set_loop_region(region) || session.set_loop_region(preview_loop_region_t{64, 64}))
         return false;
-    const auto started = session.start(schedule, std::span{&binding, 1}, {}, 0,
+    const auto started = start_primed(session, schedule, std::span{&binding, 1}, {}, 0,
                                        {.lookahead_frames = chunk_frames});
     if (!started || session.timeline_frame() != region.begin_frame) return false;
 
@@ -169,7 +192,7 @@ auto preview_loop_restarts_at_begin_and_stop_is_hard() -> bool {
     }
     const auto boundary = session.pump({.lookahead_frames = chunk_frames});
     if (boundary.status != preview_session_pump_status_t::loop_boundary) return false;
-    const auto restarted = session.seek(region.begin_frame, {.lookahead_frames = chunk_frames});
+    const auto restarted = seek_primed(session, region.begin_frame, {.lookahead_frames = chunk_frames});
     if (!restarted || session.timeline_frame() != region.begin_frame) return false;
 
     std::vector<float> repeated_block(first_block.size());
@@ -207,7 +230,7 @@ auto preview_music_seek_geometry_is_correct() -> bool {
         .object = music_object,
         .voices = {{.source = source.source, .frame_count = source.output_frame_count}},
     };
-    const auto started = session.start(schedule, std::span{&binding, 1}, {}, 0,
+    const auto started = start_primed(session, schedule, std::span{&binding, 1}, {}, 0,
                                        {.lookahead_frames = maximum_read_frames});
     if (!started || bridge.materialize_until(3 * maximum_read_frames).status !=
                         preview_bridge_pump_status_t::ready)
@@ -266,7 +289,7 @@ auto dropped_music_segment_does_not_stop_following_segment() -> bool {
         .object = music_object,
         .voices = {{.source = source.source, .frame_count = source.output_frame_count}},
     };
-    const auto started = session.start(schedule, std::span{&binding, 1}, {}, 0,
+    const auto started = start_primed(session, schedule, std::span{&binding, 1}, {}, 0,
                                        {.lookahead_frames = maximum_read_frames});
     if (!started || bridge.materialize_until(2 * maximum_read_frames).status !=
                         preview_bridge_pump_status_t::ready ||
@@ -308,7 +331,7 @@ TEST_CASE("preview session primes advances refills and completes one chart timel
         {.object = object_id_t{2},
          .voices = {{.source = source.source, .source_start_frame = 512, .frame_count = 512}}},
     };
-    const auto started = session.start(schedule, bindings, {}, 0, {.lookahead_frames = 512});
+    const auto started = start_primed(session, schedule, bindings, {}, 0, {.lookahead_frames = 512});
     REQUIRE(started);
     REQUIRE(started.materialize.has_value());
     CHECK(started.materialize->scheduled_events == 2);
@@ -365,11 +388,11 @@ TEST_CASE("preview session seek replaces generations and hard Stop silences late
         .object = object_id_t{1},
         .voices = {{.source = source.source, .frame_count = 1'000}},
     };
-    const auto started = session.start(schedule, std::span{&binding, 1});
+    const auto started = start_primed(session, schedule, std::span{&binding, 1});
     require_session_condition(static_cast<bool>(started));
     const auto old_token = *started.token;
 
-    const auto sought = session.seek(200);
+    const auto sought = seek_primed(session, 200);
     require_session_condition(static_cast<bool>(sought));
     check_session_condition(sought.token != old_token);
     check_session_condition(session.timeline_frame() == 200);
@@ -416,7 +439,7 @@ TEST_CASE("preview session mixes generated metronome sources on the chart timeli
     };
 
     const auto started =
-        session.start(schedule, {}, std::span{&metronome, 1}, 0, {.lookahead_frames = 96});
+        start_primed(session, schedule, {}, std::span{&metronome, 1}, 0, {.lookahead_frames = 96});
     REQUIRE(started);
     REQUIRE(started.materialize.has_value());
     CHECK(started.materialize->scheduled_events == 1);
@@ -446,7 +469,7 @@ TEST_CASE("preview session keeps the visual timeline moving through unavailable 
     preview_schedule_t schedule{.sample_rate = output_sample_rate};
     schedule.playable = {
         {.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
-    const auto started = session.start(schedule, {}, {}, 0, {}, 64);
+    const auto started = start_primed(session, schedule, {}, {}, 0, {}, 64);
     REQUIRE(started);
     REQUIRE(started.materialize.has_value());
 
@@ -469,4 +492,162 @@ TEST_CASE("preview session keeps the visual timeline moving through unavailable 
 TEST_CASE("preview session remains active after an underrun and completes on its timeline",
           "[unit][audio][preview-session][underrun]") {
     CHECK(preview_session_survives_underrun_and_completes());
+}
+
+namespace {
+template <typename value_t>
+void expect_pending(const value_t& value) { REQUIRE(static_cast<bool>(value)); }
+
+struct pending_preview_fixture_t {
+    wormedit::audio::decoded_source_registry_t sources;
+    wormedit::audio::decoded_source_binding_t source{register_fixture(sources)};
+    wormedit::audio::decoded_block_cache_t cache;
+    wormedit::audio::transport_t transport{cache};
+    wormedit::audio::preview_transport_bridge_t bridge{transport};
+    wormedit::audio::preview_session_t session{sources, transport, bridge};
+    wormedit::preview_schedule_t schedule{.sample_rate = wormedit::audio::output_sample_rate};
+    wormedit::audio::preview_object_source_binding_t binding;
+
+    pending_preview_fixture_t() {
+        schedule.bgm = {{.sample_frame = 0, .object = wormedit::object_id_t{1},
+                         .resource = wormedit::resource_id_t{1}}};
+        binding = {.object = wormedit::object_id_t{1},
+                   .voices = {{.source = source.source, .frame_count = 1'000}}};
+    }
+};
+
+void verify_pending_silence(wormedit::audio::preview_session_t& session, std::uint64_t frame) {
+    std::array<float, 64> output;
+    output.fill(1.0F);
+    const auto rendered = session.render(output);
+    expect_pending(rendered.status == wormedit::audio::preview_session_render_status_t::priming);
+    expect_pending(session.timeline_frame() == frame);
+    expect_pending(std::ranges::all_of(output, [](float value) { return value == 0.0F; }));
+}
+}
+
+TEST_CASE("preview start and rapid seeks defer decoding and prime only the latest generation",
+          "[unit][audio][preview-session][async-seek]") {
+    pending_preview_fixture_t fixture;
+    const auto started = fixture.session.start(fixture.schedule, std::span{&fixture.binding, 1});
+    expect_pending(started);
+    expect_pending(!started.prime);
+    verify_pending_silence(fixture.session, 0);
+    for (std::uint64_t frame = 10; frame <= 100; frame += 10) {
+        expect_pending(fixture.session.seek(frame));
+        expect_pending(fixture.cache.stats().entries == 0);
+        expect_pending(!fixture.transport.is_current(*started.token));
+    }
+    verify_pending_silence(fixture.session, 100);
+    expect_pending(fixture.session.pump());
+    std::array<float, 64> output;
+    const auto rendered = fixture.session.render(output);
+    expect_pending(rendered.first_timeline_frame == 100);
+    expect_pending(rendered.status == wormedit::audio::preview_session_render_status_t::mixed);
+    expect_pending(std::ranges::any_of(output, [](float value) { return value != 0.0F; }));
+}
+
+TEST_CASE("Stop cancels pending preview work and external generation changes clear playheads",
+          "[unit][audio][preview-session][async-seek]") {
+    pending_preview_fixture_t fixture;
+    expect_pending(fixture.session.start(fixture.schedule, std::span{&fixture.binding, 1}));
+    static_cast<void>(fixture.session.stop());
+    expect_pending(!fixture.session.pump());
+    expect_pending(fixture.cache.stats().entries == 0);
+    expect_pending(fixture.session.start(fixture.schedule, std::span{&fixture.binding, 1}));
+    static_cast<void>(fixture.transport.stop());
+    expect_pending(!fixture.session.active());
+    expect_pending(fixture.session.timeline_frame() == 0);
+    expect_pending(!fixture.session.playhead().active);
+}
+
+namespace {
+struct in_flight_preview_fixture_t {
+    wormedit::audio::decoded_source_registry_t sources;
+    wormedit::audio::decoded_block_cache_t cache;
+    wormedit::audio::transport_t transport{cache};
+    wormedit::audio::preview_transport_bridge_t bridge{transport};
+    wormedit::audio::preview_session_t session{sources, transport, bridge};
+    wormedit::preview_schedule_t schedule{.sample_rate = wormedit::audio::output_sample_rate};
+    std::vector<wormedit::audio::preview_object_source_binding_t> bindings;
+    wormedit::audio::audio_source_identity_t source;
+
+    in_flight_preview_fixture_t() {
+        std::vector<float> pcm(2'000, -0.5F);
+        std::fill_n(pcm.begin(), 1'000, 0.5F);
+        const auto registered = sources.register_generated_source({
+            .source = {"in-flight", "v1"}, .interleaved_stereo = std::move(pcm)});
+        expect_pending(registered);
+        source = registered.binding->source;
+        schedule.bgm = {{.sample_frame = 0, .object = wormedit::object_id_t{1},
+                         .resource = wormedit::resource_id_t{1}},
+                        {.sample_frame = 128, .object = wormedit::object_id_t{2},
+                         .resource = wormedit::resource_id_t{1}}};
+        bindings = {{.object = wormedit::object_id_t{1},
+                     .voices = {{.source = source, .frame_count = 64}}},
+                    {.object = wormedit::object_id_t{2},
+                     .voices = {{.source = source, .source_start_frame = 500, .frame_count = 500}}}};
+        expect_pending(session.start(schedule, bindings, {}, 0, {.lookahead_frames = 64}));
+        expect_pending(session.pump());
+    }
+
+    auto wait_for_old_materialization() -> bool {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+        while (transport.scheduled_voice_count() != 2) {
+            if (std::chrono::steady_clock::now() >= deadline) return false;
+            std::this_thread::yield();
+        }
+        return true;
+    }
+
+    auto perform_seeks(bool stop) -> bool {
+        const auto begin = std::chrono::steady_clock::now();
+        for (std::uint64_t frame = 200; frame < 210; ++frame) {
+            if (!session.seek(frame, {.lookahead_frames = 64})) return false;
+        }
+        if (stop) static_cast<void>(session.stop());
+        return std::chrono::steady_clock::now() - begin < std::chrono::milliseconds{100};
+    }
+
+    auto supersede_blocked_pump(bool stop) -> bool {
+        wormedit::audio::preview_session_pump_result_t old_result;
+        std::jthread worker, controller;
+        std::atomic<bool> finished{};
+        bool materialized{}, completed_while_locked{}, control_result{};
+        const auto gated = cache.with_block({source, 0}, [&](const auto&) {
+            worker = std::jthread([&] { old_result = session.pump({.lookahead_frames = 256}); });
+            materialized = wait_for_old_materialization();
+            if (!materialized) return;
+            controller = std::jthread([&] {
+                control_result = perform_seeks(stop);
+                finished.store(true, std::memory_order_release);
+            });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+            while (!finished.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::yield();
+            completed_while_locked = finished.load(std::memory_order_acquire);
+        });
+        if (worker.joinable()) worker.join();
+        if (controller.joinable()) controller.join();
+        return gated && materialized && completed_while_locked && control_result &&
+               old_result.status == wormedit::audio::preview_session_pump_status_t::not_started;
+    }
+
+};
+}
+
+TEST_CASE("in-flight old preview pump cannot activate rapid-seek audio or undo Stop",
+          "[unit][audio][preview-session][async-seek]") {
+    in_flight_preview_fixture_t latest;
+    expect_pending(latest.supersede_blocked_pump(false));
+    verify_pending_silence(latest.session, 209);
+    expect_pending(latest.session.pump());
+    std::array<float, 64> output;
+    const auto mixed = latest.session.render(output);
+    expect_pending(mixed.first_timeline_frame == 209);
+    expect_pending(std::ranges::all_of(output, [](float value) { return value == -0.5F; }));
+    in_flight_preview_fixture_t stopped;
+    expect_pending(stopped.supersede_blocked_pump(true));
+    expect_pending(!stopped.session.active());
+    expect_pending(!stopped.session.pump());
 }

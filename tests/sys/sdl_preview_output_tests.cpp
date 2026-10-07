@@ -8,6 +8,7 @@
 #include <SDL3/SDL_timer.h>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdlib>
 #include <filesystem>
 #include <limits>
 #include <algorithm>
@@ -841,6 +842,7 @@ void exercise_pending_refill_failure() {
     const preview_object_source_binding_t binding{.object = object_id_t{1},
         .voices = {{.source = registered.binding->source, .frame_count = 44100 * 2}}};
     expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
+    expect_pitch(wait_for_silent_preview_frame(session, output));
     expect_pitch(sources.remove(registered.binding->asset));
     // The missing next block drops the voice and completes the session; the
     // unread worker failure must survive that completion until the frame reads it.
@@ -1094,4 +1096,343 @@ TEST_CASE("chart preview reports a fatal diagnostic after preceding timing warni
     CHECK(*failed == "measure meter cannot produce exact metronome pulse rows");
     expect_preview_feedback(fixture, notification_severity_t::error, false);
     CHECK_FALSE(fixture.preview.schedule);
+}
+
+namespace {
+struct seek_gap_capture_t {
+    std::atomic<std::uint64_t> first_audible{};
+    static void SDLCALL callback(void* userdata, const SDL_AudioSpec*, float* data, int bytes) {
+        auto& capture = *static_cast<seek_gap_capture_t*>(userdata);
+        const auto samples = std::span{data, static_cast<std::size_t>(bytes) / sizeof(float)};
+        if (std::ranges::any_of(samples, [](float value) { return std::abs(value) > 0.01F; })) {
+            std::uint64_t empty{};
+            capture.first_audible.compare_exchange_strong(empty, SDL_GetTicksNS());
+        }
+    }
+};
+
+struct seek_gap_fixture_t {
+    wormedit::audio::decoded_source_registry_t sources;
+    wormedit::audio::decoded_block_cache_t cache;
+    wormedit::audio::transport_t transport{cache};
+    wormedit::audio::preview_transport_bridge_t bridge{transport};
+    wormedit::audio::preview_session_t session{sources, transport, bridge};
+    wormedit::sys::sdl_preview_output_t output{session};
+    wormedit::preview_schedule_t schedule{.sample_rate = wormedit::audio::output_sample_rate};
+    wormedit::audio::preview_object_source_binding_t binding;
+    seek_gap_capture_t capture;
+
+    explicit seek_gap_fixture_t(const std::filesystem::path& path = {}) {
+        const auto source = path.empty()
+            ? sources.register_generated_source({.source = {"seek-gap", "v1"},
+                .interleaved_stereo = std::vector<float>(44100 * 4, 0.5F)})
+            : sources.register_source({.asset = wormedit::asset_id_t{1}, .path = path,
+                .source = {"seek-gap-ogg", "v1"}});
+        expect_pitch(static_cast<bool>(source));
+        binding = {.object = wormedit::object_id_t{1},
+                   .voices = {{.source = source.binding->source,
+                               .frame_count = source.binding->output_frame_count}}};
+        schedule.bgm = {{.sample_frame = 0, .object = wormedit::object_id_t{1},
+                         .resource = wormedit::resource_id_t{1}}};
+        expect_pitch(output.open());
+        expect_pitch(SDL_SetAudioPostmixCallback(output.audio_device_id(), capture.callback, &capture));
+        expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
+    }
+    ~seek_gap_fixture_t() {
+        static_cast<void>(SDL_SetAudioPostmixCallback(output.audio_device_id(), nullptr, nullptr));
+    }
+
+    auto warm_seek_gap(std::uint64_t frame) -> std::pair<double, double> {
+        const auto begin = SDL_GetTicksNS();
+        expect_pitch(static_cast<bool>(output.seek(frame)));
+        const auto returned = SDL_GetTicksNS();
+        capture.first_audible.store(0);
+        while (capture.first_audible.load() == 0 && SDL_GetTicksNS() - begin < 100'000'000)
+            SDL_Delay(1);
+        const auto audible = capture.first_audible.load();
+        expect_pitch(audible != 0);
+        return {static_cast<double>(returned - begin) / 1e6,
+                static_cast<double>(audible - begin) / 1e6};
+    }
+};
+}
+
+namespace {
+void verify_warm_seek_measurement(const std::filesystem::path& path = {}) {
+    expect_pitch(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    expect_pitch(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    seek_gap_fixture_t fixture{path};
+    const auto* requested_frame = std::getenv("WORMEDIT_SEEK_START_FRAME");
+    const auto first_frame = requested_frame ? std::stoull(requested_frame) : 100ULL;
+    static_cast<void>(fixture.warm_seek_gap(first_frame));
+    const wormedit::audio::audio_block_key_t warm_key{fixture.binding.voices.front().source,
+                                           first_frame / wormedit::audio::maximum_read_frames};
+    const auto deadline = SDL_GetTicks() + 500;
+    while (!fixture.cache.contains(warm_key) && SDL_GetTicks() < deadline)
+        SDL_Delay(1);
+    expect_pitch(fixture.cache.contains(warm_key));
+    std::vector<double> latency, gaps;
+    for (unsigned iteration = 0; iteration < 30; ++iteration) {
+        const auto [returned, audible] = fixture.warm_seek_gap(first_frame + iteration * 10);
+        latency.push_back(returned);
+        gaps.push_back(audible);
+    }
+    std::ranges::sort(latency);
+    std::ranges::sort(gaps);
+    WARN("SDL dummy warm source=" << path << " seek latency p50=" << latency[15]
+         << "ms p99=" << latency.back() << "ms; audible gap p50=" << gaps[15]
+         << "ms maximum=" << gaps.back() << "ms");
+    expect_pitch(gaps.back() < 50.0);
+}
+}
+
+TEST_CASE("SDL warm asynchronous seeks resume audible output within fifty milliseconds",
+          "[integration][audio][sdl][preview][async-seek]") {
+    verify_warm_seek_measurement();
+}
+
+TEST_CASE("SDL warm compressed-source seeks resume audible output within fifty milliseconds",
+          "[integration][audio][sdl][preview][async-seek][ogg-seek]") {
+    const auto* original = std::getenv("WORMEDIT_SEEK_OGG_PATH");
+    verify_warm_seek_measurement(original ? std::filesystem::path{original}
+                                        : fixture_path("polyphonic-chord.ogg"));
+}
+
+namespace wormedit::sys {
+struct sdl_preview_output_test_access_t {
+    static auto lock_stream(sdl_preview_output_t& output) -> bool {
+        return output.stream_ != nullptr && SDL_LockAudioStream(output.stream_);
+    }
+    static void unlock_stream(sdl_preview_output_t& output) {
+        if (output.stream_ != nullptr) SDL_UnlockAudioStream(output.stream_);
+    }
+    static auto snapshot(const sdl_preview_output_t& output) -> audio::playhead_state_t {
+        return output.read_output_playhead();
+    }
+};
+} // namespace wormedit::sys
+
+namespace {
+struct t276_output_fixture_t {
+    wormedit::audio::decoded_source_registry_t sources;
+    wormedit::audio::decoded_block_cache_t cache;
+    wormedit::audio::transport_t transport{cache};
+    wormedit::audio::preview_transport_bridge_t bridge{transport};
+    wormedit::audio::preview_session_t session{sources, transport, bridge};
+    wormedit::sys::sdl_preview_output_t output{session};
+    wormedit::preview_schedule_t schedule{.sample_rate = wormedit::audio::output_sample_rate};
+    wormedit::audio::preview_object_source_binding_t binding;
+    std::uint64_t source_frames{10U * wormedit::audio::output_sample_rate};
+    bool ready{};
+
+    t276_output_fixture_t() {
+        const auto source = sources.register_generated_source({
+            .source = {"t276-generated", "playhead-generation-v1"},
+            .interleaved_stereo = std::vector<float>(source_frames * 2U, 0.25F)});
+        if (!source || !output.open()) return;
+        binding = {.object = wormedit::object_id_t{1},
+                   .voices = {{.source = source.binding->source,
+                               .frame_count = source.binding->output_frame_count}}};
+        schedule.bgm = {{.sample_frame = 0, .object = wormedit::object_id_t{1},
+                         .resource = wormedit::resource_id_t{1}}};
+        ready = static_cast<bool>(output.start(schedule, std::span{&binding, 1}, {}, 0,
+                                                source_frames));
+    }
+
+    ~t276_output_fixture_t() {
+        static_cast<void>(output.stop());
+        output.close();
+    }
+};
+
+auto t276_observer_finishes_while_stream_locked(wormedit::sys::sdl_preview_output_t& output)
+    -> bool {
+    using access = wormedit::sys::sdl_preview_output_test_access_t;
+    if (!access::lock_stream(output)) return false;
+    std::atomic<bool> entered{};
+    std::atomic<bool> finished{};
+    std::atomic<std::uint64_t> frame{};
+    std::thread observer([&] {
+        entered.store(true, std::memory_order_release);
+        frame.store(output.timeline_frame(), std::memory_order_relaxed);
+        finished.store(true, std::memory_order_release);
+    });
+    const auto deadline = SDL_GetTicksNS() + 500'000'000ULL;
+    while (!entered.load(std::memory_order_acquire) && SDL_GetTicksNS() < deadline)
+        SDL_Delay(1);
+    while (entered.load(std::memory_order_acquire) &&
+           !finished.load(std::memory_order_acquire) && SDL_GetTicksNS() < deadline)
+        SDL_Delay(1);
+    const auto completed_while_locked = finished.load(std::memory_order_acquire);
+    access::unlock_stream(output);
+    observer.join();
+    return completed_while_locked && frame.load(std::memory_order_relaxed) <=
+        10U * wormedit::audio::output_sample_rate;
+}
+
+auto t276_seek_snapshot_matches(wormedit::sys::sdl_preview_output_t& output,
+                                std::uint64_t frame) -> bool {
+    using access = wormedit::sys::sdl_preview_output_test_access_t;
+    const auto sought = output.seek(frame);
+    if (!sought || !sought.session || !sought.session->token || !access::lock_stream(output))
+        return false;
+    const auto state = access::snapshot(output);
+    access::unlock_stream(output);
+    return state.active && state.start_frame == frame && state.timeline_frame >= frame &&
+        state.transport_generation == sought.session->token->generation;
+}
+
+auto t276_stop_snapshot_is_inactive_zero(wormedit::sys::sdl_preview_output_t& output,
+                                         std::uint64_t previous_generation) -> bool {
+    using access = wormedit::sys::sdl_preview_output_test_access_t;
+    static_cast<void>(output.stop());
+    if (!access::lock_stream(output)) return false;
+    const auto state = access::snapshot(output);
+    access::unlock_stream(output);
+    return !state.active && state.timeline_frame == 0 && state.start_frame == 0 &&
+        state.transport_generation == 0 && state.generation > previous_generation;
+}
+
+auto t276_start_snapshot_is_coherent(t276_output_fixture_t& fixture) -> bool {
+    using access = wormedit::sys::sdl_preview_output_test_access_t;
+    const auto started = fixture.output.start(fixture.schedule,
+        std::span{&fixture.binding, 1}, {}, 0, fixture.source_frames);
+    if (!started || !started.session || !started.session->token ||
+        !access::lock_stream(fixture.output)) return false;
+    const auto state = access::snapshot(fixture.output);
+    access::unlock_stream(fixture.output);
+    return state.active && state.timeline_frame >= state.start_frame &&
+        state.transport_generation == started.session->token->generation;
+}
+
+auto t276_mutate_seek_stop(t276_output_fixture_t& fixture, std::size_t iterations) -> bool {
+    using access = wormedit::sys::sdl_preview_output_test_access_t;
+    for (std::size_t index = 0; index < iterations; ++index) {
+        const auto frame = static_cast<std::uint64_t>(index + 1U) * 2'048U;
+        if (!t276_seek_snapshot_matches(fixture.output, frame)) return false;
+        if (!access::lock_stream(fixture.output)) return false;
+        const auto before_stop = access::snapshot(fixture.output);
+        access::unlock_stream(fixture.output);
+        if (!t276_stop_snapshot_is_inactive_zero(fixture.output, before_stop.generation) ||
+            !t276_start_snapshot_is_coherent(fixture)) return false;
+    }
+    return true;
+}
+
+auto t276_coherent_state(const wormedit::audio::playhead_state_t& state) -> bool {
+    if (state.generation == 0 || state.timeline_frame < state.start_frame) return false;
+    if (state.active) return state.transport_generation != 0;
+    return state.transport_generation != 0 ||
+        (state.timeline_frame == 0 && state.start_frame == 0);
+}
+
+auto t276_nonregressing_state(const wormedit::audio::playhead_state_t& state,
+                               std::uint64_t& generation) -> bool {
+    if (state.generation < generation) return false;
+    generation = state.generation;
+    return t276_coherent_state(state);
+}
+
+auto t276_seek_stop_publications_remain_coherent(t276_output_fixture_t& fixture) -> bool {
+    std::atomic<bool> reader_ready{};
+    std::atomic<bool> stop_reader{};
+    std::atomic<bool> reader_valid{true};
+    std::atomic<std::size_t> reader_count{};
+    std::thread reader([&] {
+        reader_ready.store(true, std::memory_order_release);
+        std::uint64_t generation{};
+        while (!stop_reader.load(std::memory_order_acquire)) {
+            if (!t276_nonregressing_state(wormedit::sys::sdl_preview_output_test_access_t::snapshot(
+                    fixture.output), generation))
+                reader_valid.store(false, std::memory_order_relaxed);
+            reader_count.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+    const auto deadline = SDL_GetTicksNS() + 1'000'000'000ULL;
+    while (!reader_ready.load(std::memory_order_acquire) && SDL_GetTicksNS() < deadline)
+        SDL_Delay(1);
+    while (reader_count.load(std::memory_order_relaxed) < 32 && SDL_GetTicksNS() < deadline)
+        SDL_Delay(1);
+    const bool reader_started = reader_ready.load(std::memory_order_acquire) &&
+        reader_count.load(std::memory_order_relaxed) >= 32;
+    const auto writer_valid = reader_started && t276_mutate_seek_stop(fixture, 5);
+    stop_reader.store(true, std::memory_order_release);
+    reader.join();
+    return writer_valid && reader_valid.load(std::memory_order_relaxed) &&
+        reader_count.load(std::memory_order_relaxed) > 32;
+}
+} // namespace
+
+TEST_CASE("SDL output playhead readers finish while the audio stream lock is held",
+          "[integration][audio][sdl][preview][playhead]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    t276_output_fixture_t fixture;
+    REQUIRE(fixture.ready);
+    expect_pitch(t276_observer_finishes_while_stream_locked(fixture.output));
+}
+
+TEST_CASE("SDL output playhead stays coherent across concurrent seek and Stop generations",
+          "[integration][audio][sdl][preview][playhead][generation]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    t276_output_fixture_t fixture;
+    REQUIRE(fixture.ready);
+    expect_pitch(t276_seek_stop_publications_remain_coherent(fixture));
+}
+
+namespace {
+auto t276_rejects_invalidated_live_clock(bool direct_session_stop) -> bool {
+    using access = wormedit::sys::sdl_preview_output_test_access_t;
+    t276_output_fixture_t fixture;
+    if (!fixture.ready || !access::lock_stream(fixture.output)) return false;
+    if (direct_session_stop) static_cast<void>(fixture.session.stop());
+    else static_cast<void>(fixture.transport.start());
+    const auto state = access::snapshot(fixture.output);
+    const auto frame = fixture.output.timeline_frame();
+    access::unlock_stream(fixture.output);
+    return !state.active && state.timeline_frame == 0 && frame == 0;
+}
+
+auto t276_completed_pitch_tail_retains_clock() -> bool {
+    using access = wormedit::sys::sdl_preview_output_test_access_t;
+    t276_output_fixture_t fixture;
+    if (!fixture.ready) return false;
+    fixture.binding.voices.front().frame_count = 2'048;
+    if (!fixture.output.set_keep_pitch(true) || !fixture.output.set_playback_rate({1, 2}) ||
+        !fixture.output.start(fixture.schedule, std::span{&fixture.binding, 1}, {}, 0, 2'048))
+        return false;
+    const auto deadline = SDL_GetTicks() + 500;
+    auto state = access::snapshot(fixture.output);
+    while ((!state.source_finished || state.timeline_frame == 0) && SDL_GetTicks() < deadline) {
+        SDL_Delay(1);
+        state = access::snapshot(fixture.output);
+    }
+    const bool valid_tail = state.source_finished && state.transport_generation != 0 &&
+                            state.timeline_frame > 0 && fixture.output.playing() && !fixture.session.active() &&
+                            fixture.session.playhead().generation - state.generation == 1;
+    static_cast<void>(fixture.session.stop());
+    const auto cancelled = access::snapshot(fixture.output);
+    return valid_tail && !cancelled.active && cancelled.timeline_frame == 0;
+}
+}
+
+TEST_CASE("SDL cached playhead rejects external replacement and direct session Stop",
+          "[integration][audio][sdl][preview][playhead]") {
+    expect_pitch(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    expect_pitch(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    expect_pitch(t276_rejects_invalidated_live_clock(false));
+    expect_pitch(t276_rejects_invalidated_live_clock(true));
+}
+
+TEST_CASE("SDL cached playhead preserves a completed keep-pitch source tail",
+          "[integration][audio][sdl][preview][playhead][tail]") {
+    expect_pitch(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    expect_pitch(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    expect_pitch(t276_completed_pitch_tail_retains_clock());
 }

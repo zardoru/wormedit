@@ -40,8 +40,12 @@ void service_chart_preview(sdl_preview_output_t& output,
         return;
     post_preview_service_notifications(*serviced, notifications);
     if (*serviced) return;
+    const auto failed_frame = output.timeline_frame();
     static_cast<void>(output.stop());
-    state.reset_transport();
+    if (serviced->status == sdl_preview_service_status_t::pump_failed)
+        state.pause_at(failed_frame);
+    else
+        state.reset_transport();
 }
 
 auto audition_failure_message(const sdl_audition_service_result_t& result) -> const char* {

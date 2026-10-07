@@ -42,6 +42,15 @@ auto materialization_status(const preview_bridge_pump_result_t& result)
                : offline_mix_status_t::incomplete_mix;
 }
 
+auto prime_offline_session(preview_session_t& session, preview_session_start_result_t started,
+                           preview_pump_options_t options) -> preview_session_start_result_t {
+    if (!started) return started;
+    const auto pumped = session.pump(options);
+    started.prime = pumped.decode;
+    if (!pumped) started.status = preview_session_start_status_t::prime_failed;
+    return started;
+}
+
 auto prime_status(const preview_session_start_result_t& started) -> offline_mix_status_t {
     if (started.materialize) {
         const auto status = materialization_status(*started.materialize);
@@ -165,7 +174,8 @@ auto render_offline_interval(decoded_source_registry_t& sources, const preview_s
     auto pump_options = options.pump;
     pump_options.lookahead_frames = static_cast<std::size_t>(
         std::min<std::uint64_t>(options.maximum_read_frames, end_frame));
-    const auto started = session.start(schedule, objects, {}, 0, pump_options, end_frame);
+    const auto started = prime_offline_session(
+        session, session.start(schedule, objects, {}, 0, pump_options, end_frame), pump_options);
     if (!started) {
         const auto failure = prime_status(started);
         static_cast<void>(session.stop());

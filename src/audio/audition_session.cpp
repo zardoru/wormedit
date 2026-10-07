@@ -118,19 +118,28 @@ auto audition_session_t::stop() noexcept -> transport_stop_result_t {
     return stopped;
 }
 
+auto audition_session_t::playhead() const noexcept -> playhead_state_t {
+    const auto state = playhead_.read();
+    if (state.active && !transport_.is_current({state.transport_generation})) {
+        return {.generation = state.generation};
+    }
+    return state;
+}
+
 auto audition_session_t::active() const -> bool {
-    return playhead_.read().active;
+    return playhead().active;
 }
 
 auto audition_session_t::timeline_frame() const -> std::uint64_t {
-    return playhead_.read().timeline_frame;
+    return playhead().timeline_frame;
 }
 
 void audition_session_t::publish_playhead() noexcept {
     playhead_.publish({.active = token_.has_value(),
                        .timeline_frame = timeline_frame_,
                        .start_frame = 0,
-                       .generation = generation_});
+                       .generation = generation_,
+                       .transport_generation = token_ ? token_->generation : 0});
 }
 
 void audition_session_t::clear_state() noexcept {

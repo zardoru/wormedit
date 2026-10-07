@@ -72,15 +72,8 @@ auto preview_session_t::prime_started(preview_bridge_start_result_t started,
         result.status = preview_session_start_status_t::materialize_failed;
         return result;
     }
-    const auto prime =
-        pump_preview_lookahead(sources_, transport_, *started.token, timeline_frame, options);
-    result.prime = prime;
-    if (!prime) {
-        static_cast<void>(bridge_.stop());
-        clear_state();
-        result.status = preview_session_start_status_t::prime_failed;
-        return result;
-    }
+    prime_pending_ = true;
+    prime_options_ = options;
     token_ = started.token;
     timeline_frame_ = timeline_frame;
     start_frame_ = timeline_frame;
@@ -106,6 +99,7 @@ auto preview_session_t::pump(preview_pump_options_t options) -> preview_session_
         }
         token = token_;
         timeline_frame = timeline_frame_;
+        if (prime_pending_) options = prime_options_;
         const auto window_end = checked_window_end(timeline_frame, options.lookahead_frames);
         if (!window_end.has_value()) {
             result.status = preview_session_pump_status_t::invalid_timeline;
@@ -118,6 +112,11 @@ auto preview_session_t::pump(preview_pump_options_t options) -> preview_session_
         }
     }
     result.decode = pump_preview_lookahead(sources_, transport_, *token, timeline_frame, options);
+    {
+        const std::scoped_lock lock(mutex_);
+        if (token_ != token) return {};
+        if (result.decode && static_cast<bool>(*result.decode)) prime_pending_ = false;
+    }
     result.status = result.decode && static_cast<bool>(*result.decode)
                         ? preview_session_pump_status_t::ready
                         : preview_session_pump_status_t::decode_failed;
@@ -142,6 +141,15 @@ auto preview_session_t::render(std::span<float> interleaved_stereo)
                 .mix = {.status = transport_mix_status_t::stale_generation}};
     }
     const auto first_frame = timeline_frame_;
+    if (!transport_.is_current(*token_)) {
+        clear_state();
+        return {.status = preview_session_render_status_t::stale_generation,
+                .first_timeline_frame = first_frame};
+    }
+    if (prime_pending_) {
+        return {.status = preview_session_render_status_t::priming,
+                .first_timeline_frame = first_frame};
+    }
     transport_mix_result_t mixed;
     if (loop_region_ && first_frame >= loop_region_->end_frame) {
         mixed.status = transport_mix_status_t::mixed;
@@ -236,12 +244,20 @@ auto preview_session_t::set_assist_grid(bool active,
     return bridge_.set_assist_grid(active, grid, timeline_frame_);
 }
 
+auto preview_session_t::playhead() const noexcept -> playhead_state_t {
+    const auto state = playhead_.read();
+    if (state.active && !transport_.is_current({state.transport_generation})) {
+        return {.generation = state.generation};
+    }
+    return state;
+}
+
 auto preview_session_t::active() const -> bool {
-    return playhead_.read().active;
+    return playhead().active;
 }
 
 auto preview_session_t::timeline_frame() const -> std::uint64_t {
-    const auto playhead = playhead_.read();
+    const auto playhead = this->playhead();
     const auto latency = output_latency_frames_.load(std::memory_order_acquire);
     const auto elapsed = playhead.timeline_frame - playhead.start_frame;
     return playhead.start_frame + (elapsed > latency ? elapsed - latency : 0);
@@ -251,11 +267,13 @@ void preview_session_t::publish_playhead() noexcept {
     playhead_.publish({.active = token_.has_value(),
                        .timeline_frame = timeline_frame_,
                        .start_frame = start_frame_,
-                       .generation = generation_});
+                       .generation = generation_,
+                       .transport_generation = token_ ? token_->generation : 0});
 }
 
 void preview_session_t::clear_state() noexcept {
     token_.reset();
+    prime_pending_ = false;
     timeline_frame_ = 0;
     start_frame_ = 0;
     output_latency_frames_.store(0, std::memory_order_release);

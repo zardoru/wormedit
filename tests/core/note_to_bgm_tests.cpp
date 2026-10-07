@@ -1,4 +1,5 @@
 #include <wormedit/core/bmson_sound_channel_editor.h>
+#include <wormedit/core/interaction.h>
 #include <wormedit/core/note_to_bgm.h>
 #include <wormedit/formats/bmson.h>
 
@@ -101,4 +102,59 @@ TEST_CASE("a BMSON stem tap goes back to its stem's BGM lane and keeps its slice
     REQUIRE(restored.bgm_events.size() == 1);
     CHECK(restored.bgm_events.front().sound_channel_event == bgm.sound_channel_event);
     CHECK(history.undo.size() == undo_before + 1);
+}
+
+#include <wormedit/core/sound_slice.h>
+
+TEST_CASE("dragging a stem tap moves its slice point and leaves the audio where it is",
+          "[unit][core][note-to-bgm][bmson][stem-move]") {
+    std::ifstream input(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / "published-vox-slicing.bmson",
+                        std::ios::binary);
+    const std::string bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
+    REQUIRE(parsed.song.has_value());
+    auto song = *parsed.song;
+    song.audio_assets.front().stream = {48'000, 2, 400'000, true};
+    auto history = make_document_history(std::move(song));
+    const auto& chart = history.document.charts.front();
+    const auto tap = std::ranges::find_if(chart.measures.front().notes, [](const auto& note) {
+        return note.position.row == 840 && note.sound_channel_event.has_value();
+    });
+    REQUIRE(tap != chart.measures.front().notes.end());
+    const auto note_id = tap->id;
+    const auto event_id = *tap->sound_channel_event;
+    const auto lane = tap->lane;
+    const auto channel_before = chart.sound_channels.front();
+    const auto slices_before = derive_sound_channel_slices(chart, channel_before, 48'000, 400'000);
+    REQUIRE(slices_before);
+    const auto before_at = std::ranges::find(slices_before.slices, 840U, &derived_sound_slice_t::absolute_row);
+    REQUIRE(before_at != slices_before.slices.end());
+
+    constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}};
+    auto setup = make_editor_interaction(history, chart.id, lane, {measure_id_t{chart.measures.front().id.value}, 840}, snaps, 4);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+    REQUIRE(dispatch_editor_action(history, state, select_editor_notes_action_t{{note_id}}));
+    REQUIRE(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{note_id}));
+    const auto next_measure = history.document.charts.front().measures[1].id;
+    const auto released = dispatch_editor_action(
+        history, state, release_note_move_gesture_action_t{{next_measure, 0}, lane});
+    REQUIRE(released);
+    REQUIRE(released.document_changed);
+
+    const auto& moved_chart = history.document.charts.front();
+    const auto& channel = moved_chart.sound_channels.front();
+    const auto event = std::ranges::find(channel.events, event_id, &sound_channel_event_t::id);
+    REQUIRE(event != channel.events.end());
+    CHECK(event->position == (local_position_t{next_measure, 0}));
+    const auto slices = derive_sound_channel_slices(moved_chart, channel, 48'000, 400'000);
+    REQUIRE(slices);
+    const auto after_at = std::ranges::find(slices.slices, 960U, &derived_sound_slice_t::absolute_row);
+    REQUIRE(after_at != slices.slices.end());
+    // The cut moved later, so the slice starts further into the same audio: nothing was re-anchored.
+    CHECK(after_at->source_begin_frame > before_at->source_begin_frame);
+    REQUIRE(undo_document_command(history));
+    const auto restored = std::ranges::find(history.document.charts.front().sound_channels.front().events,
+                                            event_id, &sound_channel_event_t::id);
+    CHECK(restored->position.row == 840);
 }

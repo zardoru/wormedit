@@ -7,6 +7,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <new>
+#if defined(__unix__) || defined(__APPLE__)
+#include <time.h>
+#endif
+#if defined(__linux__)
+#include <sys/resource.h>
+#endif
 
 // App-only debug replacement; test executables retain their existing hooks.
 #if defined(WORMEDIT_FRAME_ALLOCATION_HOOK) && !defined(NDEBUG)
@@ -117,6 +123,74 @@ void report_gpu_work(std::FILE* output, const frame_timing_t& timer,
 auto milliseconds(std::uint64_t ticks) -> double {
     return static_cast<double>(ticks) * 1000.0 / static_cast<double>(SDL_GetPerformanceFrequency());
 }
+// CPU time consumed by the calling thread, or a negative value where it is unavailable.
+auto thread_cpu_ms() -> double {
+#if defined(__unix__) || defined(__APPLE__)
+    timespec now{};
+    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &now) != 0) return -1.0;
+    return static_cast<double>(now.tv_sec) * 1000.0 + static_cast<double>(now.tv_nsec) / 1.0e6;
+#else
+    return -1.0;
+#endif
+}
+// Context switches of the calling thread so far; false where the platform does not report them.
+auto thread_switches(std::uint64_t& voluntary, std::uint64_t& involuntary) -> bool {
+#if defined(__linux__)
+    rusage usage{};
+    if (getrusage(RUSAGE_THREAD, &usage) != 0) return false;
+    voluntary = static_cast<std::uint64_t>(usage.ru_nvcsw);
+    involuntary = static_cast<std::uint64_t>(usage.ru_nivcsw);
+    return true;
+#else
+    voluntary = involuntary = 0;
+    return false;
+#endif
+}
+// WORMEDIT_FRAME_SPIKE_LOG names a file that receives one entry per frame slower than
+// WORMEDIT_FRAME_SPIKE_MS (default 12 ms): wall and CPU time of the frame and of every phase
+// that took at least a millisecond, plus the frame's context switches.
+struct spike_log_settings_t {
+    const char* path{};
+    double threshold_ms{12.0};
+};
+auto spike_log_settings() -> const spike_log_settings_t& {
+    static const spike_log_settings_t settings = [] {
+        spike_log_settings_t result;
+        const auto* path = std::getenv("WORMEDIT_FRAME_SPIKE_LOG");
+        if (path && *path) result.path = path;
+        if (const auto* threshold = std::getenv("WORMEDIT_FRAME_SPIKE_MS")) {
+            const auto parsed = std::strtod(threshold, nullptr);
+            if (parsed > 0.0) result.threshold_ms = parsed;
+        }
+        return result;
+    }();
+    return settings;
+}
+void write_spike_entry(std::FILE* output, const frame_timing_sample_t& sample) {
+    std::fprintf(output, "[%.3f s] frame %.3f ms wall", static_cast<double>(SDL_GetTicks()) / 1000.0,
+                 sample.frame_ms);
+    if (sample.cpu_measured) std::fprintf(output, ", %.3f ms cpu", sample.frame_cpu_ms);
+    if (sample.switches_measured)
+        std::fprintf(output, ", switches voluntary %llu involuntary %llu",
+                     static_cast<unsigned long long>(sample.voluntary_switches),
+                     static_cast<unsigned long long>(sample.involuntary_switches));
+    std::fprintf(output, "\n");
+    for (const auto phase : frame_phase_display_order) {
+        const auto index = static_cast<std::size_t>(phase);
+        if (!sample.measured[index] || sample.phase_ms[index] < 1.0) continue;
+        std::fprintf(output, "  %s: %.3f ms wall", frame_phase_names[index], sample.phase_ms[index]);
+        if (sample.cpu_measured) std::fprintf(output, ", %.3f ms cpu", sample.phase_cpu_ms[index]);
+        std::fprintf(output, "\n");
+    }
+}
+void log_spike_if_requested(const frame_timing_sample_t& sample) {
+    const auto& settings = spike_log_settings();
+    if (!settings.path || sample.frame_ms < settings.threshold_ms) return;
+    auto* output = std::fopen(settings.path, "a");
+    if (!output) return;
+    write_spike_entry(output, sample);
+    std::fclose(output);
+}
 void report_if_requested(const frame_timing_t& timer) {
     // Optional diagnostic artifact for a real-window run. No I/O unless explicitly enabled.
     const auto* path = std::getenv("WORMEDIT_FRAME_TIMING_REPORT");
@@ -132,12 +206,16 @@ void report_if_requested(const frame_timing_t& timer) {
         const auto phase = frame_phase_display_order[i];
         const auto index = static_cast<std::size_t>(phase);
         const auto summary = timer.summary(phase);
-        if (summary.count == 0)
+        if (summary.count == 0) {
             std::fprintf(output, "%s: N/A\n", frame_phase_names[index]);
-        else
-            std::fprintf(output, "%s: average %.6f ms, p99 %.6f ms (%zu samples)\n",
-                         frame_phase_names[index], summary.average_ms, summary.p99_ms,
-                         summary.count);
+            continue;
+        }
+        std::fprintf(output, "%s: average %.6f ms, p99 %.6f ms (%zu samples)",
+                     frame_phase_names[index], summary.average_ms, summary.p99_ms, summary.count);
+        const auto cpu = timer.cpu_summary(phase);
+        if (cpu.count != 0)
+            std::fprintf(output, "; cpu average %.6f ms, p99 %.6f ms", cpu.average_ms, cpu.p99_ms);
+        std::fprintf(output, "\n");
     }
     report_heap_allocations(output, timer);
     report_gpu_work(output, timer, frame_gpu_work_source_t::application,
@@ -170,6 +248,8 @@ auto frame_phase_parent(frame_phase_t phase) -> frame_phase_t {
         return frame_phase_t::workspace;
     if (phase == frame_phase_t::render_convert || phase == frame_phase_t::render_submit ||
         phase == frame_phase_t::render_present) return frame_phase_t::render;
+    if (phase == frame_phase_t::events_input || phase == frame_phase_t::events_drops ||
+        phase == frame_phase_t::events_jobs) return frame_phase_t::events;
     return frame_phase_t::count;
 }
 auto frame_timing() -> frame_timing_t& {
@@ -184,18 +264,24 @@ void frame_timing_t::begin_frame() {
     heap_begin_ = heap_last_ = frame_heap_allocation_snapshot();
     phase_ = frame_phase_t::count;
     begin_ = last_ = SDL_GetPerformanceCounter();
+    cpu_begin_ms_ = cpu_last_ms_ = thread_cpu_ms();
+    current_.cpu_measured = cpu_begin_ms_ >= 0.0;
+    current_.switches_measured = thread_switches(voluntary_begin_, involuntary_begin_);
     active_ = true;
 }
 void frame_timing_t::checkpoint() {
     if (!active_)
         return;
     const auto now = SDL_GetPerformanceCounter();
+    const auto cpu_now = current_.cpu_measured ? thread_cpu_ms() : -1.0;
+    const auto cpu_delta = cpu_now >= cpu_last_ms_ ? cpu_now - cpu_last_ms_ : 0.0;
     const auto heap = frame_heap_allocation_snapshot();
     const frame_heap_allocation_t delta{heap.count - heap_last_.count,
                                       heap.bytes - heap_last_.bytes};
     if (phase_ != frame_phase_t::count) {
         const auto index = static_cast<std::size_t>(phase_);
         current_.phase_ms[index] += milliseconds(now - last_);
+        current_.phase_cpu_ms[index] += cpu_delta;
         current_.measured[index] = true;
         current_.phase_heap[index].count += delta.count;
         current_.phase_heap[index].bytes += delta.bytes;
@@ -203,6 +289,7 @@ void frame_timing_t::checkpoint() {
         if (parent != frame_phase_t::count) {
             const auto parent_index = static_cast<std::size_t>(parent);
             current_.phase_ms[parent_index] += milliseconds(now - last_);
+            current_.phase_cpu_ms[parent_index] += cpu_delta;
             current_.measured[parent_index] = true;
         }
         // Scene time remains exclusive, as before. Heap accounting includes
@@ -217,6 +304,7 @@ void frame_timing_t::checkpoint() {
     }
     heap_last_ = heap;
     last_ = now;
+    if (cpu_now >= 0.0) cpu_last_ms_ = cpu_now;
 }
 auto frame_timing_t::enter(frame_phase_t phase) -> frame_phase_t {
     checkpoint();
@@ -233,12 +321,20 @@ void frame_timing_t::end_frame() {
         return;
     checkpoint();
     current_.frame_ms = milliseconds(last_ - begin_);
+    if (current_.cpu_measured) current_.frame_cpu_ms = std::max(0.0, cpu_last_ms_ - cpu_begin_ms_);
+    std::uint64_t voluntary{};
+    std::uint64_t involuntary{};
+    if (current_.switches_measured && thread_switches(voluntary, involuntary)) {
+        current_.voluntary_switches = voluntary - voluntary_begin_;
+        current_.involuntary_switches = involuntary - involuntary_begin_;
+    }
 #ifndef NDEBUG
     current_.heap_measured = heap_hook_seen;
 #endif
     current_.frame_heap = {heap_last_.count - heap_begin_.count,
                            heap_last_.bytes - heap_begin_.bytes};
     record(current_);
+    log_spike_if_requested(current_);
     active_ = false;
     if (next_ == 0)
         report_if_requested(*this);
@@ -302,15 +398,22 @@ auto frame_timing_t::sample(std::size_t index) const -> const frame_timing_sampl
     return samples_[(next_ + frame_timing_capacity - size_ + index) % frame_timing_capacity];
 }
 auto frame_timing_t::summary(frame_phase_t phase) const -> frame_timing_summary_t {
+    return summarize(phase, false);
+}
+auto frame_timing_t::cpu_summary(frame_phase_t phase) const -> frame_timing_summary_t {
+    return summarize(phase, true);
+}
+auto frame_timing_t::summarize(frame_phase_t phase, bool cpu) const -> frame_timing_summary_t {
     std::array<double, frame_timing_capacity> sorted{};
     frame_timing_summary_t result;
+    const auto index = static_cast<std::size_t>(phase);
     for (std::size_t i = 0; i < size_; ++i) {
         const auto& value = sample(i);
-        const auto index = static_cast<std::size_t>(phase);
-        if (phase != frame_phase_t::count && !value.measured[index])
+        if ((phase != frame_phase_t::count && !value.measured[index]) || (cpu && !value.cpu_measured))
             continue;
-        const auto duration =
-            phase == frame_phase_t::count ? value.frame_ms : value.phase_ms[index];
+        const auto duration = phase == frame_phase_t::count
+            ? (cpu ? value.frame_cpu_ms : value.frame_ms)
+            : (cpu ? value.phase_cpu_ms[index] : value.phase_ms[index]);
         sorted[result.count++] = duration;
         result.average_ms += duration;
     }
@@ -360,13 +463,15 @@ WormUiFrameTimingView worm_ui_frame_timing_view() {
     for (std::size_t i = 0; i < result.count; ++i)
         result.frame_ms[i] = timer.sample(i).frame_ms;
     const auto frame = timer.summary();
-    result.frame = {frame.count, frame.average_ms, frame.p99_ms};
+    const auto frame_cpu = timer.cpu_summary();
+    result.frame = {frame.count, frame.average_ms, frame.p99_ms, frame_cpu.count, frame_cpu.p99_ms};
     for (std::size_t i = 0; i < frame_phase_count; ++i) {
         const auto phase = frame_phase_display_order[i];
         const auto index = static_cast<std::size_t>(phase);
         const auto summary = timer.summary(phase);
+        const auto cpu = timer.cpu_summary(phase);
         result.phase_names[i] = frame_phase_names[index];
-        result.phases[i] = {summary.count, summary.average_ms, summary.p99_ms};
+        result.phases[i] = {summary.count, summary.average_ms, summary.p99_ms, cpu.count, cpu.p99_ms};
     }
     if (timer.size() != 0) {
         const auto& latest = timer.sample(timer.size() - 1);

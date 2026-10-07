@@ -4018,25 +4018,35 @@ int main(int argc, char** argv) {
         wormedit::sys::frame_timing().begin_frame();
         frame_projection_arena.reset();
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::events);
-        if (!wormedit::sys::poll_frontend_events(
-                window, metadata_drop, workspace, history, asset_base,
-                can_offer_audio_project_drop(session_loaded, fresh_blank_project, history),
-                pending_audio_project_path, pending_chart_project_path, sound_drop_transaction, pending_sound_batches, pending_bga_paths,
-                notification_sink))
-            confirm_unsaved_changes(pending_close, close_target_t::application, workspace_frame_action_context,
+        {
+            wormedit::sys::frame_phase_scope_t input(wormedit::sys::frame_phase_t::events_input);
+            if (!wormedit::sys::poll_frontend_events(
+                    window, metadata_drop, workspace, history, asset_base,
+                    can_offer_audio_project_drop(session_loaded, fresh_blank_project, history),
+                    pending_audio_project_path, pending_chart_project_path, sound_drop_transaction, pending_sound_batches, pending_bga_paths,
+                    notification_sink))
+                confirm_unsaved_changes(pending_close, close_target_t::application, workspace_frame_action_context,
+                    program_preferences.preferences.general.confirm_unsaved_close);
+        }
+        {
+            wormedit::sys::frame_phase_scope_t drops(wormedit::sys::frame_phase_t::events_drops);
+            import_dropped_keysounds(session_loaded, history, workspace, pending_sound_batches, notification_sink);
+            import_dropped_bga(session_loaded, history, workspace, pending_bga_paths, notification_sink);
+            dispatch_dropped_chart_project(workspace_frame_action_context,
+                pending_chart_project_path, pending_close,
                 program_preferences.preferences.general.confirm_unsaved_close);
-        import_dropped_keysounds(session_loaded, history, workspace, pending_sound_batches, notification_sink);
-        import_dropped_bga(session_loaded, history, workspace, pending_bga_paths, notification_sink);
-        dispatch_dropped_chart_project(workspace_frame_action_context,
-            pending_chart_project_path, pending_close,
-            program_preferences.preferences.general.confirm_unsaved_close);
-        wormedit::sys::poll_application_jobs(metadata_asset_runtime, resource_copy_runtime,
-                                             export_runtime, history, workspace, asset_base);
-        const auto compose_viewport_delta_seconds =
-            wormedit::sys::compose_frame_delta_seconds(compose_viewport_last_ticks);
-        tick_loaded_project_autosave(session_loaded, autosave_loop, history,
-                                     native_project_loaded, active_project_path,
-                                     platform_recovery.path, notification_sink);
+        }
+        double compose_viewport_delta_seconds{};
+        {
+            wormedit::sys::frame_phase_scope_t jobs(wormedit::sys::frame_phase_t::events_jobs);
+            wormedit::sys::poll_application_jobs(metadata_asset_runtime, resource_copy_runtime,
+                                                 export_runtime, history, workspace, asset_base);
+            compose_viewport_delta_seconds =
+                wormedit::sys::compose_frame_delta_seconds(compose_viewport_last_ticks);
+            tick_loaded_project_autosave(session_loaded, autosave_loop, history,
+                                         native_project_loaded, active_project_path,
+                                         platform_recovery.path, notification_sink);
+        }
         wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::audio_service);

@@ -2767,11 +2767,15 @@ void worm_ui_frontend_resource_placed(uint64_t placed_resource_id, uint64_t next
 void worm_ui_frontend_render(int window_width, int window_height);
 
 #define WORM_UI_FRAME_TIMING_CAPACITY 240
-#define WORM_UI_FRAME_TIMING_PHASE_COUNT 24
+#define WORM_UI_FRAME_TIMING_PHASE_COUNT 27
 typedef struct WormUiFrameTimingStats {
     size_t count;
     double average_ms;
     double p99_ms;
+    /* p99 of the main thread's CPU time; 0 samples where the platform cannot measure it. A wall
+       p99 well above it means the frame waited (preempted or blocked) rather than worked. */
+    size_t cpu_count;
+    double cpu_p99_ms;
 } WormUiFrameTimingStats;
 #define WORM_UI_FRAME_GPU_WORK_COUNT 5
 typedef struct WormUiFrameGpuWorkStats {

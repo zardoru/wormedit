@@ -2545,8 +2545,11 @@ static void render_frame_timing_overlay(int width, int height) {
                  NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_TITLE)) {
         const auto frame = timer.frame;
         nk_layout_row_dynamic(g_context, 22, 1);
-        nk_labelf(g_context, NK_TEXT_LEFT, "Last %zu frames: avg %.3f ms, p99 %.3f ms",
-                  frame.count, frame.average_ms, frame.p99_ms);
+        if (frame.cpu_count == 0)
+            nk_labelf(g_context, NK_TEXT_LEFT, "Last %zu frames: avg %.3f ms, p99 %.3f ms",
+                      frame.count, frame.average_ms, frame.p99_ms);
+        else nk_labelf(g_context, NK_TEXT_LEFT, "Last %zu frames: avg %.3f ms, p99 %.3f ms (cpu p99 %.3f)",
+                       frame.count, frame.average_ms, frame.p99_ms, frame.cpu_p99_ms);
         render_frame_time_graph(timer);
         nk_layout_row_dynamic(g_context, 22, 1);
         if (timer.heap_allocations_available)
@@ -2562,8 +2565,11 @@ static void render_frame_timing_overlay(int width, int height) {
             const auto summary = timer.phases[i];
             nk_layout_row_dynamic(g_context, 22, 1);
             if (summary.count == 0) nk_labelf(g_context, NK_TEXT_LEFT, "%s: N/A", timer.phase_names[i]);
-            else nk_labelf(g_context, NK_TEXT_LEFT, "%s: avg %.3f ms, p99 %.3f ms",
-                           timer.phase_names[i], summary.average_ms, summary.p99_ms);
+            else if (summary.cpu_count == 0)
+                nk_labelf(g_context, NK_TEXT_LEFT, "%s: avg %.3f ms, p99 %.3f ms",
+                          timer.phase_names[i], summary.average_ms, summary.p99_ms);
+            else nk_labelf(g_context, NK_TEXT_LEFT, "%s: avg %.3f ms, p99 %.3f ms (cpu p99 %.3f)",
+                           timer.phase_names[i], summary.average_ms, summary.p99_ms, summary.cpu_p99_ms);
         }
     }
     nk_end(g_context);

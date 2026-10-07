@@ -22,6 +22,9 @@
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
+#if defined(__unix__) || defined(__APPLE__)
+#include <time.h>
+#endif
 #include <array>
 #include <limits>
 #include <cmath>
@@ -95,6 +98,58 @@ TEST_CASE("Frame timing nested phases exclude child work from parent", "[sys][fr
     CHECK(workspace + scene <= sample.frame_ms + 0.001);
     CHECK_FALSE(sample.measured[1]);
 }
+
+#if defined(__unix__) || defined(__APPLE__)
+namespace {
+auto test_thread_cpu_nanoseconds() -> std::uint64_t {
+    timespec now{};
+    REQUIRE(clock_gettime(CLOCK_THREAD_CPUTIME_ID, &now) == 0);
+    return static_cast<std::uint64_t>(now.tv_sec) * 1'000'000'000ULL + now.tv_nsec;
+}
+// One frame with a spinning workspace phase (6 ms) and a sleeping scene phase (8 ms).
+void time_busy_then_waiting_frame(frame_timing_t& timer) {
+    timer.begin_frame();
+    {
+        frame_phase_scope_t busy(frame_phase_t::workspace, timer);
+        const auto until = test_thread_cpu_nanoseconds() + 6'000'000;
+        volatile std::uint64_t spin = 0;
+        while (test_thread_cpu_nanoseconds() < until) spin = spin + 1;
+    }
+    {
+        frame_phase_scope_t waiting(frame_phase_t::scene, timer);
+        SDL_Delay(8);
+    }
+    timer.end_frame();
+}
+} // namespace
+#endif
+
+#if defined(__unix__) || defined(__APPLE__)
+TEST_CASE("Frame timing separates CPU time from waiting in each phase", "[sys][frame-timing]") {
+    frame_timing_t timer;
+    time_busy_then_waiting_frame(timer);
+    REQUIRE(timer.size() == 1);
+    const auto& sample = timer.sample(0);
+    REQUIRE(sample.cpu_measured);
+    const auto busy = static_cast<std::size_t>(frame_phase_t::workspace);
+    const auto waiting = static_cast<std::size_t>(frame_phase_t::scene);
+    // CPU work remains measurable even if another task preempts this thread.
+    CHECK(sample.phase_cpu_ms[busy] >= 5.0);
+    CHECK(sample.phase_cpu_ms[waiting] <= sample.phase_ms[waiting] * 0.25);
+    CHECK(sample.frame_cpu_ms <= sample.frame_ms + 0.5);
+    CHECK(timer.cpu_summary(frame_phase_t::scene).count == 1);
+}
+#endif
+
+#if defined(__linux__)
+TEST_CASE("Frame timing counts the context switches of a frame", "[sys][frame-timing]") {
+    frame_timing_t timer;
+    time_busy_then_waiting_frame(timer);
+    const auto& sample = timer.sample(0);
+    REQUIRE(sample.switches_measured);
+    CHECK(sample.voluntary_switches >= 1); // the sleep yields the CPU
+}
+#endif
 
 TEST_CASE("Frame timing hidden collection allocates no C++ heap storage", "[sys][frame-timing]") {
     frame_timing_t timer;

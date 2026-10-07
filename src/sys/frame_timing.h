@@ -29,6 +29,9 @@ enum class frame_phase_t : std::size_t {
     render_convert,
     render_submit,
     render_present,
+    events_input,
+    events_drops,
+    events_jobs,
     count
 };
 inline constexpr std::size_t frame_timing_capacity = 240;
@@ -57,10 +60,16 @@ inline constexpr std::array<const char*, frame_phase_count> frame_phase_names{
     "  BMSON projection",
     "  Convert",
     "  Submit",
-    "  Present (VSync wait)"};
+    "  Present (VSync wait)",
+    "  Input",
+    "  Dropped files",
+    "  Jobs and autosave"};
 auto frame_phase_parent(frame_phase_t phase) -> frame_phase_t;
 inline constexpr std::array<frame_phase_t, frame_phase_count> frame_phase_display_order{
     frame_phase_t::events,
+    frame_phase_t::events_input,
+    frame_phase_t::events_drops,
+    frame_phase_t::events_jobs,
     frame_phase_t::audio,
     frame_phase_t::audio_service,
     frame_phase_t::audio_pump,
@@ -111,6 +120,15 @@ struct frame_timing_sample_t {
     double frame_ms{};
     std::array<double, frame_phase_count> phase_ms{};
     std::array<bool, frame_phase_count> measured{};
+    // Time this thread actually ran on a CPU, where the platform reports it. Wall time well
+    // above CPU time means the thread waited: preempted (involuntary switches) or blocked on a
+    // lock, the GPU or I/O (voluntary switches). Switch counts are Linux-only.
+    bool cpu_measured{};
+    double frame_cpu_ms{};
+    std::array<double, frame_phase_count> phase_cpu_ms{};
+    bool switches_measured{};
+    std::uint64_t voluntary_switches{};
+    std::uint64_t involuntary_switches{};
 };
 struct frame_timing_summary_t {
     std::size_t count{};
@@ -143,9 +161,12 @@ class frame_timing_t {
         return size_;
     }
     auto summary(frame_phase_t phase = frame_phase_t::count) const -> frame_timing_summary_t;
+    // The same statistics over thread CPU time; count is 0 where the platform cannot measure it.
+    auto cpu_summary(frame_phase_t phase = frame_phase_t::count) const -> frame_timing_summary_t;
 
   private:
     void checkpoint();
+    auto summarize(frame_phase_t phase, bool cpu) const -> frame_timing_summary_t;
     std::array<frame_timing_sample_t, frame_timing_capacity> samples_{};
     frame_timing_sample_t current_{};
     std::size_t next_{};
@@ -154,6 +175,10 @@ class frame_timing_t {
     frame_heap_allocation_t heap_last_{};
     std::uint64_t begin_{};
     std::uint64_t last_{};
+    double cpu_begin_ms_{-1.0};
+    double cpu_last_ms_{-1.0};
+    std::uint64_t voluntary_begin_{};
+    std::uint64_t involuntary_begin_{};
     frame_phase_t phase_{frame_phase_t::count};
     bool active_{};
 };

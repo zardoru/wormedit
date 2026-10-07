@@ -13,6 +13,12 @@ Sol 6.1 medium coordinators reviewed Luna medium implementations before root
 integration. T-456 aligns stale bookmark rename tests with T-396's double-click
 gesture. GUI captures/sampling remain pending under the recorded Xvfb restriction.
 
+Profile picker regression follow-up (2026-10-07): `2749c6d` fixes the
+no-interaction-state workspace boundary that silently dropped first-layout
+choices. Root build and all **2,437 tests pass**; actual dragback CP932 selection
+creates a 10K layout with 10 bindings, preserves all BGM data, and uses one undo.
+[Evidence](../coordination/profile-click-oct7.md).
+
 Remaining user feedback (2026-10-07): T-438–T-455 are planned in
 [stems and performance](../../docs/chart-editor-plan/tasks/stems-performance.md)
 and [BMSON/BGA editing](../../docs/chart-editor-plan/tasks/bmson-bga-editing.md).

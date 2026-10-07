@@ -62,6 +62,8 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'lane_profile'`; `ctest --test-dir build -L event-harness`. Isolated evidence before final SpecialStyle addition: core lane-profile tests (61 assertions/12 cases), production dispatcher tests (20 assertions/4 cases), picker event-harness test (8 assertions), clang-tidy on touched C++ sources/tests. Scratch evidence: `/tmp/wormedit-oct7-root/sabun-profile-probe.log`; scratch copy `/tmp/wormedit-oct7-root/sabun-source/_untitled.bms` (CP932); native project `/tmp/wormedit-oct7-root/sabun-profile.wormedit`. Original file SHA-256 remains `be254a5c261be9bc4c99a264798f12081bad160de352479bd5e1fe4b17d07f43`.
 - **Out of scope:** profile detection heuristics.
 
+- **Boundary correction verified (2026-10-07):** `2749c6d` fixes first-profile and initial-layout actions silently dropped when retained interaction state is absent. Sol review and root application build/full 2,437-test suite pass. The actual dragback CP932 workspace-boundary probe now produces 1 layout, 10 bindings and 1 undo, preserving every serialized BGM event and column. [Detailed evidence](../../../memory/coordination/profile-click-oct7.md).
+
 ## T-449 Select same sound on BMSON selects the whole stem
 
 - **Status:** blocked-on T-426

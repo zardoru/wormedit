@@ -7,6 +7,11 @@ including SDL mid-slice seek PCM. Real sabun, Kick and Rotterdam probes pass;
 original charts remain unchanged. Visual GUI checks remain pending under the
 recorded Xvfb restriction.
 
+Follow-up T-448 correction: [profile picker boundary](profile-click-oct7.md),
+reviewed and integrated as `2749c6d`. Root application build and 2,437/2,437
+tests pass; actual dragback first-profile selection now creates the 10K layout
+and all 10 bindings with one undo and unchanged BGM data.
+
 Requested 2026-10-04: root integrates main; each worktree has a `gpt-6.1-sol`
 coordinator with medium reasoning and `gpt-6-luna` executors with medium
 reasoning. Follow [the agent workflow](../agent-workflow.md).

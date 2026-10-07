@@ -63,3 +63,12 @@ or test slice to Luna. The stem Sol independently implemented step 1 stable
 ready/pending keys; root reviewed the actual diff and 41 assertions in three
 production projection cases. It proceeds with exclusively owned renderer step 2.
 No parallel writes to the same worktree paths are allowed.
+
+Root further narrows shared canvas ownership: T-443 may edit only stem/waveform
+envelope drawing and its key-pinning setup in its isolated compose_canvas.cpp;
+T-451 owns only BGA lane/event drawing and gesture ghosts. The two feature
+regions are independent. Any common helper required by both must be escalated
+before edits. Root serially merges both canvas diffs, preserving both contracts.
+This replaces the earlier whole-canvas wait without permitting same-worktree
+concurrent writes. T-443's step 3 runtime source is ready for narrow Luna tests;
+its Sol coordinator may proceed to step 4 cap removal/wiring in card order.

@@ -30,7 +30,7 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-447 Give each BMSON sound channel its own semantic layer on import
 
-- **Status:** implemented in isolated branch; root integration pending
+- **Status:** done (2026-10-07; root integrated and verified)
 - **Outcome:** opening a BMSON chart with no semantic layers creates one layer per sound channel, named after its file stem, with colors from a fixed 16-color cycle. Every note and BGM marker belongs to the layer keyed by its sound-channel event. Authored layers remain untouched, and a failed initialization leaves the chart open without partial layer state.
 - **Read first:** `include/wormedit/core/document.h` (`semantic_layer_t`), `src/core/semantic_layer_editor.cpp`, `src/formats/bmson.cpp`, `src/sys/project_open.cpp`.
 - **Files owned:** a new `src/core/bmson_layer_defaults.cpp` and `include/wormedit/core/bmson_layer_defaults.h`, `src/sys/project_open.cpp` (call site), `CMakeLists.txt`, a new `tests/core/bmson_layer_defaults_tests.cpp`, `tests/CMakeLists.txt`, `tests/sys/project_open_tests.cpp` (root-approved 2026-10-07 production BMSON import and native no-reseed boundary coverage), `memory/coordination/layers-oct7.md` (coordinator scope and review evidence), this card.
@@ -41,7 +41,7 @@ User feedback from 2026-10-07, with the causes found while planning:
   4. Test with 12 channels and with 20 (the cycle wraps), test that existing layers prevent it, and test that native round trips keep the layers.
 - **Invariants:** BMSON export is byte-identical with or without the layers.
 - **Reject/failure behavior:** if the function fails, the chart opens without layers and a warning is shown.
-- **Verify:** isolated `wormedit_core_tests` build passed. `ctest --test-dir /tmp/layers-oct7-headless-build --output-on-failure -R 'bmson_layer|semantic'` passed 33/33; focused BMSON default/import/native-boundary cases passed 4/4; `documentation.chart_editor_state` passed 1/1. Configured `clang-tidy` passed on all four changed source/test files with no changed-code function-complexity warnings (third-party nlohmann header warnings remain). Root integrated build/full suite is pending.
+- **Verify:** isolated `wormedit_core_tests` build passed. `ctest --test-dir /tmp/layers-oct7-headless-build --output-on-failure -R 'bmson_layer|semantic'` passed 33/33; focused BMSON default/import/native-boundary cases passed 4/4; `documentation.chart_editor_state` passed 1/1. Configured `clang-tidy` passed on all four changed source/test files with no changed-code function-complexity warnings (third-party nlohmann header warnings remain). Root integrated `4ba5087`: application build and 2,443/2,443 CTest cases passed; the subsequent Layer 2 main suite passes 2,446/2,446. Regenerated production Kick probe verifies 12 channels/layers, all 515 memberships, native round trip and identical BMSON export (`/home/zardoru/devel/wormedit-scratch-builds/root-oct7/layer-import-probe.log`).
 - **Out of scope:** an Options toggle. Ask the user if one is wanted.
 
 ## T-448 Let a BGM-only BMS take its first lane profile

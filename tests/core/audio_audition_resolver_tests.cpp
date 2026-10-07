@@ -370,6 +370,46 @@ TEST_CASE("preview binding resolver indexes exact BMSON slices for one schedule 
     CHECK(stale.diagnostics.front().code == wormedit::audio::audition_resolve_code_t::invalid_link);
 }
 
+TEST_CASE("preview points past the end of a short sample stay silent while the rest still plays",
+          "[unit][audio][audition-resolver][preview]") {
+    auto parsed = published_fixture();
+    REQUIRE(parsed.song.has_value());
+    auto song = *parsed.song;
+    auto& chart = song.charts.front();
+    const auto asset = chart.sound_channels.front().source_clip.source;
+    const auto audio_asset = std::ranges::find(song.audio_assets, asset, &wormedit::audio_asset_t::id);
+    REQUIRE(audio_asset != song.audio_assets.end());
+    audio_asset->stream.sample_rate = 48'000;
+    audio_asset->stream.frame_count.reset();
+    // A 40,000 frame sample: the BGM point's continuation starts at about 96,000, well past its end.
+    auto binding = runtime_binding(asset, 36'750);
+    binding.source_frame_count = 40'000;
+    const std::array bindings{binding};
+    const auto restart_event = std::ranges::find_if(chart.sound_channels.front().events, [](const auto& event) {
+        return event.position.row == 720 && event.playable;
+    });
+    REQUIRE(restart_event != chart.sound_channels.front().events.end());
+    const auto& restart = *std::ranges::find_if(chart.measures.front().notes, [&](const auto& note) {
+        return note.sound_channel_event == restart_event->id;
+    });
+    const auto bgm_measure = std::ranges::find_if(chart.measures, [](const auto& m) { return !m.bgm_events.empty(); });
+    REQUIRE(bgm_measure != chart.measures.end());
+    const auto& bgm = bgm_measure->bgm_events.front();
+    REQUIRE(restart.sound.has_value());
+    REQUIRE(bgm.sound.has_value());
+
+    wormedit::preview_schedule_t schedule{.sample_rate = wormedit::audio::output_sample_rate};
+    schedule.playable = {{.sample_frame = 20, .object = restart.id, .resource = *restart.sound}};
+    schedule.bgm = {{.sample_frame = 30, .object = bgm.id, .resource = *bgm.sound}};
+    const auto resolved = wormedit::audio::resolve_preview_bindings(song, chart.id, schedule, bindings);
+    CHECK(resolved.diagnostics.empty());
+    const auto has = [&](wormedit::object_id_t object) {
+        return std::ranges::any_of(resolved.bindings, [&](const auto& item) { return item.object == object; });
+    };
+    CHECK(has(restart.id));
+    CHECK_FALSE(has(bgm.id));
+}
+
 TEST_CASE("preview binding resolver can leave unavailable audio silent without losing the chart",
           "[unit][audio][audition-resolver][preview]") {
     auto parsed = published_fixture();

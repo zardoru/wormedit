@@ -5,6 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <wormedit/core/notifications.h>
+#include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/workspace.h>
 #include <chrono>
@@ -205,6 +206,88 @@ TEST_CASE("Compose pending gesture rejects an edit without changing history", "[
     check_action(fixture.history.undo.empty());
     check_action(fixture.history.document.charts.front().semantic_layers.empty());
     check_action(fixture.state.pending_hold.has_value());
+}
+
+TEST_CASE("Compose lane profile dispatcher creates the first BGM-only layout",
+          "[compose-action-notifications][lane-profile]") {
+    action_notification_fixture_t fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.lane_layouts.clear();
+    chart.input_profile.bindings.clear();
+    const auto choices = lane_profile_choices();
+    const auto bms7k = make_bms_7k_profile();
+    const auto target = std::ranges::find(choices, bms7k.layout.profile_id, [](const auto& profile) {
+        return std::string_view{profile.layout.profile_id};
+    });
+    REQUIRE(target != choices.end());
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE);
+    action.compose_lane_profile_index = static_cast<std::uint32_t>(target - choices.begin());
+    CHECK(fixture.dispatch(action).starts_with("Lane profile set to "));
+    REQUIRE(chart.lane_layouts.size() == 1);
+    CHECK(chart.lane_layouts.front().layout.profile_id == bms7k.layout.profile_id);
+    CHECK_FALSE(chart.input_profile.bindings.empty());
+}
+
+TEST_CASE("initial BGM-only profile assignment preserves its BGM event",
+          "[compose-action-notifications][lane-profile]") {
+    action_notification_fixture_t fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.lane_layouts.clear();
+    chart.input_profile.bindings.clear();
+    chart.bgm_source_lanes = {{.id = object_id_t{20}, .name = "BGM", .source_order = 0}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{21},
+        .position = {measure_id_t{1}, 120}, .source_lane = object_id_t{20}}};
+    const auto original_id = chart.measures.front().bgm_events.front().id;
+    const auto choices = lane_profile_choices();
+    const auto bms7k = make_bms_7k_profile();
+    const auto target = std::ranges::find(choices, bms7k.layout.profile_id, [](const auto& profile) {
+        return std::string_view{profile.layout.profile_id};
+    });
+    REQUIRE(target != choices.end());
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE);
+    action.compose_lane_profile_index = static_cast<std::uint32_t>(target - choices.begin());
+    REQUIRE(fixture.dispatch(action).starts_with("Lane profile set to "));
+    REQUIRE(chart.measures.front().bgm_events.size() == 1);
+    CHECK(chart.measures.front().bgm_events.front().id == original_id);
+    CHECK(chart.measures.front().bgm_events.front().position.row == 120);
+}
+
+TEST_CASE("undo removes an initial BGM-only lane profile without changing BGM",
+          "[compose-action-notifications][lane-profile]") {
+    action_notification_fixture_t fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.lane_layouts.clear();
+    chart.input_profile.bindings.clear();
+    chart.bgm_source_lanes = {{.id = object_id_t{20}, .name = "BGM", .source_order = 0}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{21},
+        .position = {measure_id_t{1}, 120}, .source_lane = object_id_t{20}}};
+    const auto original_id = chart.measures.front().bgm_events.front().id;
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE);
+    const auto choices = lane_profile_choices();
+    const auto bms7k = make_bms_7k_profile();
+    const auto target = std::ranges::find(choices, bms7k.layout.profile_id, [](const auto& profile) {
+        return std::string_view{profile.layout.profile_id};
+    });
+    require_action(target != choices.end());
+    action.compose_lane_profile_index = static_cast<std::uint32_t>(target - choices.begin());
+    require_action(fixture.dispatch(action).starts_with("Lane profile set to "));
+    require_action(fixture.history.undo.size() == 1);
+    require_action(undo_document_command(fixture.history));
+    check_action(chart.lane_layouts.empty());
+    require_action(chart.measures.front().bgm_events.size() == 1);
+    check_action(chart.measures.front().bgm_events.front().id == original_id);
+}
+
+TEST_CASE("Compose lane profile picker retains the active gesture warning without a layout",
+          "[compose-action-notifications][lane-profile]") {
+    action_notification_fixture_t fixture;
+    fixture.history.document.charts.front().lane_layouts.clear();
+    fixture.state.pending_hold = pending_hold_t{};
+    const auto action = fixture.action(WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE);
+    check_action(fixture.dispatch(action) ==
+        "Finish or cancel the active Compose gesture before changing the lane profile.");
+    CHECK(fixture.history.undo.empty());
+    CHECK(fixture.history.document.charts.front().lane_layouts.empty());
 }
 
 TEST_CASE("Compose area recipe mutation records one success and one undo", "[compose-action-notifications]") {

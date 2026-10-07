@@ -57,16 +57,23 @@ static void render_lane_profile_section(const ComposeInspectorContext& inspector
     if (view->lane_profile_choice_count == 0) return;
     if (!nk_tree_push(context, NK_TREE_TAB, "Lane profile", NK_MAXIMIZED)) return;
     std::array<const char*, WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY> names{};
+    const auto selecting_initial = view->lane_profile_current < 0;
+    const auto offset = selecting_initial ? std::size_t{1} : std::size_t{0};
+    const auto count = std::min<std::size_t>(view->lane_profile_choice_count,
+                                             names.size() - offset);
+    if (selecting_initial) names[0] = "Choose a lane profile...";
     for (std::size_t index = 0; index < view->lane_profile_choice_count; ++index)
-        names[index] = view->lane_profile_names[index];
-    const int current = std::max<int>(view->lane_profile_current, 0);
+        if (index < count) names[index + offset] = view->lane_profile_names[index];
+    const int current = selecting_initial ? 0 : view->lane_profile_current;
     nk_layout_row_dynamic(context, 26, 1);
     const int selected = wormedit::ui::chrome::safe_combo(
-        context, names.data(), static_cast<int>(view->lane_profile_choice_count), current, 24,
+        context, names.data(), static_cast<int>(count + offset), current, 24,
         nk_vec2(220.0f, 120.0f));
-    if (selected != current && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+    if (selected != current && (!selecting_initial || selected > 0) &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
         action->compose_action = WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE;
-        action->compose_lane_profile_index = static_cast<uint32_t>(selected);
+        action->compose_lane_profile_index = static_cast<uint32_t>(
+            selected - (selecting_initial ? 1 : 0));
         action->compose_input_chart_id = view->chart_id;
         action->compose_input_document_revision = view->document_revision;
     }

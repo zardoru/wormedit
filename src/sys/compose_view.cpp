@@ -253,13 +253,33 @@ static const std::vector<wormedit::lane_input_profile_t>& cached_lane_profile_ch
     return *cache[lanes];
 }
 
+static const std::vector<wormedit::lane_input_profile_t>& cached_initial_lane_profile_choices() {
+    static const auto choices = wormedit::lane_profile_choices();
+    return choices;
+}
+
 // Fills the switchable-profile list for the layout segment active at the cursor.
 static void populate_lane_profile_choices(WormUiComposeView& view, const wormedit::chart_document_t& chart,
                                    wormedit::local_position_t cursor) {
     view.lane_profile_choice_count = 0;
     view.lane_profile_current = -1;
     const auto* segment = wormedit::active_lane_layout_segment(chart, cursor);
-    if (!segment) return;
+    if (!segment) {
+        const auto& choices = cached_initial_lane_profile_choices();
+        const auto count = std::min<std::size_t>(choices.size(), WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY);
+        for (std::size_t index = 0; index < count; ++index) {
+            const auto& profile = choices[index];
+            const auto& id = profile.layout.profile_id;
+            const auto is_bms = id.starts_with("bms-") || id.starts_with("bme-") ||
+                                id.starts_with("pms-") || id.starts_with("project2dx-");
+            const auto prefix = is_bms ? "" : id.starts_with("stepmania:")
+                ? "StepMania " : "osu!mania ";
+            std::snprintf(view.lane_profile_names[index], sizeof(view.lane_profile_names[index]),
+                          "%s%s", prefix, profile.layout.display_name.c_str());
+        }
+        view.lane_profile_choice_count = static_cast<std::uint8_t>(count);
+        return;
+    }
     const auto& choices = cached_lane_profile_choices(segment->layout.lanes.size());
     const auto count = std::min<std::size_t>(choices.size(), WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY);
     for (std::size_t index = 0; index < count; ++index) {

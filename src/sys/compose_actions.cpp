@@ -304,16 +304,21 @@ std::optional<std::string> dispatch_compose_lane_profile(compose_action_context_
         return compose_action_warning(context,
             "Finish or cancel the active Compose gesture before changing the lane profile.");
     const auto* chart = selected_chart(context.history, context.workspace);
-    const auto* segment = chart ? wormedit::active_lane_layout_segment(*chart, context.state.cursor)
-                                : nullptr;
-    if (!segment) return compose_action_warning(context, "No lane layout is active at the cursor.");
-    const auto choices = wormedit::lane_profile_choices(segment->layout.lanes.size());
+    if (!chart) return compose_action_warning(context,
+        "The selected difficulty is no longer available.");
+    const auto* segment = wormedit::active_lane_layout_segment(*chart, context.state.cursor);
+    const auto choices = segment
+        ? wormedit::lane_profile_choices(segment->layout.lanes.size())
+        : wormedit::lane_profile_choices();
     if (context.action.compose_lane_profile_index >= choices.size())
         return compose_action_warning(context, "Choose a lane profile first.");
     const auto& target = choices[context.action.compose_lane_profile_index].layout;
+    const auto position = segment ? context.state.cursor
+        : wormedit::local_position_t{chart->measures.empty()
+              ? context.state.cursor.measure : chart->measures.front().id, 0};
     const auto applied = wormedit::apply_lane_profile_switch(
         context.history, context.action.compose_input_document_revision, context.state.chart,
-        context.state.cursor, target);
+        position, target);
     if (!applied.applied)
         return applied.diagnostics.empty()
             ? std::optional<std::string>{compose_action_info(context, "Lane profile unchanged.", notification_source_t::edit)}

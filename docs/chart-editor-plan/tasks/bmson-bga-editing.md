@@ -45,17 +45,17 @@ User feedback from 2026-10-07, with the causes found while planning:
 ## T-448 Let a BGM-only BMS take its first lane profile
 
 - **Status:** ready
-- **Outcome:** with `sabun/_untitled.bms` open, choosing "BMS 7K" in the lane profile picker creates a 7K+scratch layout from measure 1 with key bindings. The playable lanes appear, the BGM events are unchanged, and one undo removes the layout.
+- **Outcome:** a BGM-only chart can choose any of the 39 built-in profiles. On the sabun fixture, "BMS 7K" creates its layout and key bindings at measure 1, even with the cursor later in the chart. The playable lanes appear, note placement/undo works, and a second undo removes the layout. A native save/reopen preserves all 1,146 BGM events and 16 BGM columns (the source has 559 raw `#mmm01` lines).
 - **Read first:** `src/sys/compose_actions.cpp` (`dispatch_compose_lane_profile`, `initial_input_profile`), `src/sys/compose_view.cpp` (`populate_bgm_only_compose_projection`), `src/core/lane_profile_switch.cpp`, `git show e98244d`.
-- **Files owned:** `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/core/lane_profile_switch.cpp`, `include/wormedit/core/lane_profile_switch.h`, `tests/core/lane_profile_switch_tests.cpp`, `tests/ui/` event harness, this card.
+- **Files owned:** `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/core/lane_profile_switch.cpp`, `include/wormedit/core/lane_profile_switch.h`, `src/ui/frontend.h` (coordinator-approved: picker capacity 4 cannot hold all built-ins), `src/ui/nuklear/compose_inspector.cpp` (coordinator-approved: first profile needs a visible unselected placeholder), `tests/core/lane_profile_switch_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp` (coordinator-approved production dispatcher mutation and gesture-warning coverage), `tests/ui/` event harness, this card.
 - **Steps:**
   1. Reproduce headlessly with the sabun file copied into the scratchpad. Never write to `/mnt/pukeipukei`.
   2. When no segment is active, `SET_LANE_PROFILE` offers every built-in profile and creates the first layout through the `e98244d` layout and input path, with a materialized measure if one is needed.
   3. The BGM-only projection shows the picker.
   4. Add a core test and an event-harness case for choosing a profile, placing a note, then undoing.
-- **Invariants:** the 559 BGM events and their columns survive a save.
+- **Invariants:** all 1,146 parsed BGM events and all 16 BGM columns survive native project serialization and reopen. The raw `#mmm01` line count is 559, not the parsed event count.
 - **Reject/failure behavior:** an active gesture blocks the change with the existing warning.
-- **Verify:** `ctest --test-dir build --output-on-failure -R 'lane_profile'`; `ctest --test-dir build -L event-harness`.
+- **Verify:** core lane-profile tests (61 assertions/12 cases), production dispatcher tests (20 assertions/4 cases), picker event-harness test (8 assertions), clang-tidy on touched C++ sources/tests. Scratch evidence: `/tmp/wormedit-oct7-root/sabun-profile-probe.log`; scratch copy `/tmp/wormedit-oct7-root/sabun-source/_untitled.bms` (CP932); native project `/tmp/wormedit-oct7-root/sabun-profile.wormedit`. Original file SHA-256 remains `be254a5c261be9bc4c99a264798f12081bad160de352479bd5e1fe4b17d07f43`.
 - **Out of scope:** profile detection heuristics.
 
 ## T-449 Select same sound on BMSON selects the whole stem
@@ -141,11 +141,11 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **Status:** ready
 - **Outcome:** with three BGM events selected, Shift+lane key moves the first one in document order into the lane and deselects it, leaving the other two selected, as for play notes. A mixed selection of notes and BGM events follows the same order. Each press is one undo step.
 - **Read first:** `src/sys/compose_input.cpp` (`WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE` / `LANE_KEY_PRESS` branch), `src/sys/compose_note_to_bgm.cpp` (`move_selected_bgm_to_lane`), `src/core/interaction.cpp` (`assign_selected_notes_to_lane`), [T-422](bms-editing.md).
-- **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose_note_to_bgm.cpp`, `src/sys/compose_note_to_bgm.h`, `tests/ui/bga_lane_event_harness_tests.cpp` (or the main harness file), this card.
+- **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose_note_to_bgm.cpp`, `src/sys/compose_note_to_bgm.h`, `include/wormedit/core/note_to_bgm.h` and `src/core/note_to_bgm.cpp` (coordinator-approved targeted atomic mixed-selection lane command; no general verb refactor), `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/core/note_to_bgm_tests.cpp` (coordinator-approved helper semantics coverage), this card.
 - **Steps:**
   1. Pass `input.successive` (the Shift state) to `move_selected_bgm_to_lane`.
   2. When it is set, take the first selected object in document order, whether note or BGM, move only that one, and remove it from the selection. Leave the moved object deselected.
-  3. Add event-harness cases: three BGM events with Shift pressed three times, then undo; and a mixed selection.
+  3. Test the real helper for mixed-selection document order, one-command presses, undo, collision preservation, and the plain whole-selection path; add an event-harness case asserting the production Shift+lane key emits `successive`.
 - **Invariants:** a plain lane key still moves the whole selection.
 - **Reject/failure behavior:** a collision leaves the event selected and shows the reason.
 - **Verify:** `ctest --test-dir build -L event-harness`.

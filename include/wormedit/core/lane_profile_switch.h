@@ -13,6 +13,9 @@ namespace wormedit {
 // count matches a named StepMania step type, its arrow layout. Never includes lane scratch roles.
 [[nodiscard]] auto lane_profile_choices(std::size_t lane_count) -> std::vector<lane_input_profile_t>;
 
+// Built-in profiles offered when a chart has no playable layout yet.
+[[nodiscard]] auto lane_profile_choices() -> std::vector<lane_input_profile_t>;
+
 // The layout segment in effect at `position`: the last segment starting at or before it.
 [[nodiscard]] auto active_lane_layout_segment(const chart_document_t& chart, local_position_t position)
     -> const lane_layout_segment_t*;

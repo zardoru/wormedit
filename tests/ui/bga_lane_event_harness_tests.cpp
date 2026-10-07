@@ -2,6 +2,9 @@
 #include "ui/nuklear/compose_state.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <wormedit/core/lane_profile_switch.h>
+
+#include <cstdio>
 
 #include <algorithm>
 #include <array>
@@ -274,6 +277,33 @@ void verify_bga_stack_escape_dismissal(nuklear_event_harness_t& harness) {
     check_bga(!worm_ui_nuklear_compose_state().bga_stack_release_pending);
 }
 }
+
+TEST_CASE("BGM-only lane profile picker exposes every built-in profile to the frontend",
+          "[frontend-state][event-harness][lane-profile]") {
+    nuklear_event_harness_t harness{1600, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    const auto profiles = wormedit::lane_profile_choices();
+    REQUIRE(profiles.size() <= WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY);
+    view.lane_profile_choice_count = static_cast<std::uint8_t>(profiles.size());
+    view.lane_profile_current = -1;
+    for (std::size_t index = 0; index < profiles.size(); ++index)
+        std::snprintf(view.lane_profile_names[index], sizeof(view.lane_profile_names[index]),
+                      "%s", profiles[index].layout.display_name.c_str());
+    worm_ui_nuklear_compose_state().inspector_visible = true;
+    const auto initial = harness.frame();
+    CHECK(initial.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    const auto placeholder = harness.drawn_text_center("Choose a lane profile...");
+    REQUIRE(placeholder);
+    (void)click(harness, placeholder->first, placeholder->second);
+    CHECK(harness.drawn_text().find(profiles.front().layout.display_name) != std::string::npos);
+    const auto first = harness.drawn_text_center(profiles.front().layout.display_name);
+    REQUIRE(first);
+    const auto selected = click(harness, first->first, first->second);
+    CHECK(selected.front().get().compose_action == WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE);
+    CHECK(selected.front().get().compose_lane_profile_index == 0);
+}
+
 
 TEST_CASE("BGA lane click selects an event and drag emits one move on release",
           "[frontend-state][event-harness][bga-lane]") {

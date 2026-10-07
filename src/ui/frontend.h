@@ -2280,6 +2280,10 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE,
     WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK,
     WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE,
+    /* A click on empty space in a stem lane adds a continue (or, with Shift, restart) point at the
+       snapped row, in the channel of the marker named by object_id. */
+    WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE,
+    WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART,
     WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_CONTINUE,
     WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_RESTART,
     WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_BEGIN,

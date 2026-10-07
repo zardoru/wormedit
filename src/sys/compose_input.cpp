@@ -1070,6 +1070,42 @@ auto toggle_bmson_restart(const WormUiComposeInputAction& input, bmson_compose_c
         notification_source_t::edit);
 }
 
+// A click on empty space in a stem lane: one new point in the channel of the reference marker, at
+// the snapped row, as one undo step.
+template <typename PositionAtComposeY>
+auto insert_bmson_stem_point(const WormUiComposeInputAction& input, bmson_compose_context_t& context,
+                             PositionAtComposeY&& position_at_compose_y)
+    -> compose_input_family_result_t {
+    using namespace wormedit;
+    auto& [action, history, workspace, state, application_state, scene_cache, gesture_active] = context;
+    if (gesture_active)
+        return "Finish or cancel the active Compose gesture before adding a BMSON point.";
+    const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    const auto view = compose_view_for_state(history, state);
+    if (chart == history.document.charts.end() || !view || !std::isfinite(input.y_pixels))
+        return "The BMSON chart field is no longer available.";
+    const auto raw = position_at_compose_y(*chart, *view, input.y_pixels);
+    const auto position = raw ? resolve_resource_placement_position(
+        *chart, *raw, edit_snap_denominator(*chart, state)) : std::nullopt;
+    if (!position) return "The point could not snap to a valid chart row.";
+    const auto restart = input.kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART;
+    const auto applied = insert_bmson_bgm_marker(history, action.compose_input_document_revision, state.chart,
+                                                 object_id_t{input.object_id}, *position, restart);
+    if (!applied.diagnostics.empty())
+        return compose_input_family_result_t::stop_with_feedback(
+            applied.diagnostics.front().message, input_notification_severity(applied.diagnostics.front().severity),
+            notification_source_t::edit);
+    if (!applied.applied) return "No BMSON point was added.";
+    const auto rebound = rebind_workspace(workspace, history);
+    if (!rebound)
+        return compose_input_family_result_t::stop_with_feedback(
+            "BMSON point added, but workspace rebinding failed.", notification_severity_t::error,
+            notification_source_t::document);
+    return compose_input_family_result_t::stop_with_feedback(
+        restart ? "BMSON restart point added." : "BMSON continue point added.",
+        notification_severity_t::success, notification_source_t::edit);
+}
+
 template <typename PositionAtComposeY, typename VirtualBmsRowAt>
 auto dispatch_bmson_compose_input(
     const WormUiWorkspaceAction& ui_action, const WormUiComposeInputAction& input,
@@ -1117,6 +1153,9 @@ auto dispatch_bmson_compose_input(
         return edit_bmson_draft_marker(input, context);
     case WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE:
         return toggle_bmson_restart(input, context);
+    case WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE:
+    case WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART:
+        return insert_bmson_stem_point(input, context, position_at_compose_y);
     default:
         return {};
     }
@@ -3356,6 +3395,8 @@ auto compose_input_edits_notes(WormUiComposeInputKind kind) -> bool {
     case WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE:
     case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE:
     case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE:
+    case WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE:
+    case WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART:
         return true;
     default:
         return false;
@@ -3374,6 +3415,8 @@ auto compose_input_notification_source(WormUiComposeInputKind kind)
         kind == WORM_UI_COMPOSE_INPUT_BMSON_TOGGLE_DRAFT_RESTART ||
         kind == WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT ||
         kind == WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE ||
+        kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE ||
+        kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART ||
         kind == WORM_UI_COMPOSE_INPUT_UNDO || kind == WORM_UI_COMPOSE_INPUT_REDO ||
         kind == WORM_UI_COMPOSE_INPUT_PASTE_COMMIT ||
         kind == WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT ||

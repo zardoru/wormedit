@@ -458,3 +458,65 @@ TEST_CASE("BGA overlap picker Escape dismisses without reaching canvas input",
     prepare_bga_stack_dismissal_picker(harness, events);
     verify_bga_stack_escape_dismissal(harness);
 }
+
+namespace {
+auto any_input_of(const std::array<workspace_action_snapshot_t, 2>& actions, WormUiComposeInputKind kind) -> bool {
+    return std::ranges::any_of(actions, [&](const auto& action) {
+        const auto& value = action.get();
+        return std::ranges::any_of(std::span(value.compose_inputs, value.compose_input_count),
+            [&](const auto& input) { return input.kind == kind; });
+    });
+}
+
+struct stem_lane_fixture_t {
+    nuklear_event_harness_t harness{1280, 800};
+    WormUiComposeBgmLaneView lanes[2]{{.bounds = {604, 0, 640, 600}, .source_lane_id = 44},
+                                      {.bounds = {644, 0, 680, 600}, .source_lane_id = 45}};
+    WormUiComposeBgmEventView marker{.bounds = {604, 20, 640, 36}, .event_id = 501, .source_lane_id = 44,
+                                     .bmson_slice = true};
+    stem_lane_fixture_t() {
+        REQUIRE(harness.ready());
+        hide_compose_docks();
+        auto& view = harness.view().compose;
+        view.scene_available = true;
+        view.chart_id = 7;
+        view.document_revision = 11;
+        view.viewport_width_pixels = 900;
+        view.viewport_height_pixels = 600;
+        view.playable_field_left_pixels = 90;
+        view.playable_field_right_pixels = 600;
+        view.bgm_lanes = lanes;
+        view.bgm_lane_count = 2;
+        view.bgm_events = &marker;
+        view.bgm_event_count = 1;
+        (void)harness.frame();
+    }
+    auto at(double x, double y) { return canvas_point(harness, x, y); }
+};
+} // namespace
+
+TEST_CASE("clicking empty space in a stem lane adds a continue point, and Shift a restart point",
+          "[frontend-state][event-harness][bmson-stem]") {
+    stem_lane_fixture_t f;
+    const auto empty = f.at(622, 300);
+    const auto plain = click(f.harness, empty.first, empty.second);
+    CHECK(has_input(plain, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, 501));
+
+    const auto down = std::array{mouse_motion(empty.first, empty.second), mouse_button(true, empty.first, empty.second)};
+    const auto up = std::array{mouse_motion(empty.first, empty.second), mouse_button(false, empty.first, empty.second)};
+    const std::array shifted{f.harness.frame(down, SDL_KMOD_LSHIFT), f.harness.frame(up, SDL_KMOD_LSHIFT)};
+    CHECK(has_input(shifted, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART, 501));
+}
+
+TEST_CASE("stem point clicks ignore lanes without a stem and existing points",
+          "[frontend-state][event-harness][bmson-stem]") {
+    stem_lane_fixture_t f;
+    const auto other_lane = f.at(662, 300);
+    CHECK_FALSE(any_input_of(click(f.harness, other_lane.first, other_lane.second),
+                             WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE));
+    const auto on_point = f.at(622, 28);
+    const auto existing = click(f.harness, on_point.first, on_point.second);
+    CHECK_FALSE(any_input_of(existing, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE));
+    CHECK(has_input(existing, WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK, 501));
+
+}

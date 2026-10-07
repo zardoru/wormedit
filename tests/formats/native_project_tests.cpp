@@ -267,6 +267,83 @@ auto populated_sound_group_round_trips() -> bool {
     return true;
 }
 
+auto legacy_schema3_bms_document() -> nlohmann::json {
+    const std::string source = "#TITLE layers\n#PLAYER 1\n#BMP01 bg.png\n#BMP02 layer.png\n"
+                              "#BMP03 layer2.png\n#00004:01\n#00007:02\n#0000A:03\n";
+    const auto imported = wormedit::parse_bms_bytes(
+        std::as_bytes(std::span{source.data(), source.size()}));
+    if (!imported.song) return {};
+    const auto written = wormedit::write_native_project(*imported.song);
+    if (!written.bytes) return {};
+    auto legacy = nlohmann::json::parse(*written.bytes);
+    auto& events = legacy["document"]["charts"][0]["bga_events"];
+    for (auto& event : events) {
+        if (event["kind"] == std::uint64_t{5}) event["kind"] = std::uint64_t{2};
+    }
+    legacy["document"]["schema_version"] = std::uint64_t{3};
+    return legacy;
+}
+
+auto schema3_migrates_layer2_by_provenance(const nlohmann::json& legacy) -> bool {
+    const auto migrated = wormedit::parse_native_project(legacy.dump());
+    if (!migrated.song) return false;
+    const auto& events = migrated.song->charts.front().bga_events;
+    return events.size() == 3 && events[1].kind == wormedit::visual_event_kind_t::layer &&
+           events[2].kind == wormedit::visual_event_kind_t::layer2;
+}
+
+auto schema3_without_provenance_keeps_legacy_layer(nlohmann::json legacy) -> bool {
+    auto& event = legacy["document"]["charts"][0]["bga_events"][2];
+    event["provenance"]["source_field"] = "legacy visual layer";
+    const auto migrated = wormedit::parse_native_project(legacy.dump());
+    return migrated.song && migrated.song->charts.front().bga_events[2].kind ==
+                                wormedit::visual_event_kind_t::layer;
+}
+
+auto writing_schema3_keeps_layer2_provenance(nlohmann::json legacy) -> bool {
+    const auto parsed = wormedit::parse_native_project(legacy.dump());
+    if (!parsed.song) return false;
+    auto song = *parsed.song;
+    song.schema_version = 3;
+    for (auto& event : song.charts.front().bga_events) {
+        if (event.provenance.source_field.starts_with("0A slot "))
+            event.kind = wormedit::visual_event_kind_t::layer;
+    }
+    const auto written = wormedit::write_native_project(song);
+    if (!written.bytes) return false;
+    const auto document = nlohmann::json::parse(*written.bytes);
+    if (document["document"]["charts"][0]["bga_events"][2]["kind"] != std::uint64_t{5})
+        return false;
+    const auto roundtrip = wormedit::parse_native_project(*written.bytes);
+    return roundtrip.song && roundtrip.song->charts.front().bga_events[2].kind ==
+                                 wormedit::visual_event_kind_t::layer2;
+}
+
+struct migration_precision_result_t {
+    bool migrated{};
+    bool kind_preserved{};
+    bool family_preserved{};
+};
+
+auto migration_does_not_narrow_enum_values(const nlohmann::json& legacy)
+    -> migration_precision_result_t {
+    auto document = legacy.at("document");
+    auto& event = document["charts"][0]["bga_events"][2];
+    const auto large_kind = (std::uint64_t{1} << 32U) + 2;
+    const auto large_family = (std::uint64_t{1} << 32U) + 1;
+    event["kind"] = large_kind;
+    event["provenance"]["family"] = large_family;
+    const auto outcome = wormedit::native_project_internal::migrate_document(
+        document, 4, wormedit::native_project_internal::default_migrations());
+    return {
+        .migrated = outcome.status ==
+                    wormedit::native_project_internal::migration_status_t::migrated,
+        .kind_preserved = document["charts"][0]["bga_events"][2]["kind"] == large_kind,
+        .family_preserved =
+            document["charts"][0]["bga_events"][2]["provenance"]["family"] == large_family,
+    };
+}
+
 } // namespace
 
 namespace {
@@ -558,7 +635,7 @@ TEST_CASE("native project rejects malformed, unsupported, over-limit, and invali
                    wormedit::native_project_diagnostic_code_t::unsupported_version));
 
     auto unsupported_document_json = nlohmann::json::parse(*written.bytes);
-    unsupported_document_json["document"]["schema_version"] = 4;
+    unsupported_document_json["document"]["schema_version"] = 5;
     const auto unsupported_document =
         wormedit::parse_native_project(unsupported_document_json.dump());
     CHECK_FALSE(unsupported_document.song.has_value());
@@ -719,13 +796,13 @@ auto legacy_project_bytes() -> std::string {
 TEST_CASE("native project migrations: the current schema passes through the default table",
           "[unit][format][native-project][migration]") {
     CHECK(internal::default_migrations().front().from_version == 1);
-    CHECK(internal::default_migrations().back().from_version == 2);
+    CHECK(internal::default_migrations().back().from_version == 3);
     const auto written = wormedit::write_native_project(rich_bmson_song());
     REQUIRE(written.bytes.has_value());
     auto document = nlohmann::json::parse(*written.bytes).at("document");
-    REQUIRE(document.at("schema_version") == 3);
+    REQUIRE(document.at("schema_version") == 4);
     const auto before = document;
-    const auto outcome = internal::migrate_document(document, 3, internal::default_migrations());
+    const auto outcome = internal::migrate_document(document, 4, internal::default_migrations());
     CHECK(outcome.status == internal::migration_status_t::unchanged);
     CHECK(document == before);
 }
@@ -741,7 +818,7 @@ TEST_CASE("native project migrations: schema 1 documents gain current default fi
 
     const auto parsed = wormedit::parse_native_project(root.dump());
     REQUIRE(parsed.song.has_value());
-    CHECK(parsed.song->schema_version == 3);
+    CHECK(parsed.song->schema_version == 4);
     CHECK(parsed.song->charts.front().sv_recipes.front().expression_source.empty());
     const auto rewritten = wormedit::write_native_project(*parsed.song);
     REQUIRE(rewritten.bytes.has_value());
@@ -774,7 +851,7 @@ TEST_CASE("native project schema 2 migration adds an empty preset list",
 
     const auto parsed = wormedit::parse_native_project(root.dump());
     REQUIRE(parsed.song.has_value());
-    CHECK(parsed.song->schema_version == 3);
+    CHECK(parsed.song->schema_version == 4);
     CHECK(parsed.song->quantization_presets.empty());
 }
 
@@ -785,10 +862,23 @@ TEST_CASE("native project upgrades schema 2 in-memory documents without losing p
     const auto written = wormedit::write_native_project(song);
     REQUIRE(written.bytes.has_value());
     const auto root = nlohmann::json::parse(*written.bytes);
-    CHECK(root["document"]["schema_version"] == 3);
+    CHECK(root["document"]["schema_version"] == 4);
     const auto parsed = wormedit::parse_native_project(*written.bytes);
     REQUIRE(parsed.song.has_value());
     CHECK(parsed.song->quantization_presets == song.quantization_presets);
+}
+
+TEST_CASE("native schema 3 migration recovers Layer 2 only from BMS 0A provenance",
+          "[unit][format][native-project][migration][bga]") {
+    const auto legacy = legacy_schema3_bms_document();
+    require_bmson_condition(!legacy.empty());
+    check_bmson_condition(schema3_migrates_layer2_by_provenance(legacy));
+    check_bmson_condition(schema3_without_provenance_keeps_legacy_layer(legacy));
+    check_bmson_condition(writing_schema3_keeps_layer2_provenance(legacy));
+    const auto precision = migration_does_not_narrow_enum_values(legacy);
+    check_bmson_condition(precision.migrated);
+    check_bmson_condition(precision.kind_preserved);
+    check_bmson_condition(precision.family_preserved);
 }
 
 TEST_CASE("native project rejects preset names with embedded null bytes",

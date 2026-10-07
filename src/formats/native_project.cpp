@@ -458,10 +458,10 @@ namespace {
 
 constexpr std::string_view native_project_format = "wormedit-project";
 // The envelope (`format`, `format_version`, `document`) and the document schema evolve separately:
-// the envelope is still version 1, while the document is at schema 3 (older documents migrate on
+// the envelope is still version 1, while the document is at schema 4 (older documents migrate on
 // load; see native_project_migrations.cpp).
 constexpr std::uint32_t native_project_format_version = 1;
-constexpr std::uint32_t native_project_schema_version = 3;
+constexpr std::uint32_t native_project_schema_version = 4;
 
 auto path_to_utf8(const std::filesystem::path& path) -> std::string {
     const auto encoded = path.generic_u8string();
@@ -942,7 +942,7 @@ auto valid_chart_visual_domains(const chart_document_t& chart) -> bool {
         return false;
     }
     if (!std::ranges::all_of(chart.bga_events, [](const auto& event) {
-            return enum_at_most(event.kind, visual_event_kind_t::storyboard) &&
+            return enum_at_most(event.kind, visual_event_kind_t::layer2) &&
                    valid_provenance(event.provenance);
         })) {
         return false;
@@ -1320,7 +1320,7 @@ auto native_project_parse_result_t::has_errors() const -> bool {
 auto write_native_project(const song_document_t& song, native_project_limits_t limits)
     -> native_project_write_result_t {
     native_project_write_result_t result;
-    if (song.schema_version != 2 && song.schema_version != native_project_schema_version) {
+    if (song.schema_version < 2 || song.schema_version > native_project_schema_version) {
         result.diagnostics.push_back(
             {diagnostic_severity_t::error, native_project_diagnostic_code_t::unsupported_version,
              "document schema version is unsupported", "$.document.schema_version"});
@@ -1347,7 +1347,20 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
     }
     try {
         json serialized_document = song;
-        serialized_document["schema_version"] = native_project_schema_version;
+        if (song.schema_version < native_project_schema_version) {
+            const auto migrated = native_project_internal::migrate_document(
+                serialized_document, native_project_schema_version,
+                native_project_internal::default_migrations());
+            if (migrated.status != native_project_internal::migration_status_t::migrated &&
+                migrated.status != native_project_internal::migration_status_t::unchanged) {
+                result.diagnostics.push_back(
+                    {diagnostic_severity_t::error,
+                     native_project_diagnostic_code_t::invalid_document,
+                     "native project schema migration failed: " + migrated.message,
+                     "$.document.schema_version"});
+                return result;
+            }
+        }
         const json root{{"format", native_project_format},
                         {"format_version", native_project_format_version},
                         {"document", std::move(serialized_document)}};

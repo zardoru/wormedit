@@ -544,10 +544,12 @@ auto visual_draw_order(visual_event_kind_t kind) -> std::size_t {
         return 1;
     case visual_event_kind_t::layer:
         return 2;
-    case visual_event_kind_t::video:
+    case visual_event_kind_t::layer2:
         return 3;
-    case visual_event_kind_t::storyboard:
+    case visual_event_kind_t::video:
         return 4;
+    case visual_event_kind_t::storyboard:
+        return 5;
     }
     return 5;
 }

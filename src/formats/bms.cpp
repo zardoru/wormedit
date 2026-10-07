@@ -965,9 +965,9 @@ struct bms_channel_materializer_t {
             return;
         }
         const auto kind = channel == "06" ? visual_event_kind_t::poor
-                          : channel == "07" || channel == "0A"
-                              ? visual_event_kind_t::layer
-                              : visual_event_kind_t::background;
+                          : channel == "07" ? visual_event_kind_t::layer
+                          : channel == "0A" ? visual_event_kind_t::layer2
+                                              : visual_event_kind_t::background;
         chart.bga_events.push_back({
             .id = new_id<object_id_t>(ids),
             .position = position,

@@ -1,6 +1,7 @@
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/formats/bms.h>
+#include <wormedit/formats/bms_writer.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -10,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -45,6 +47,82 @@ auto fixture(std::string_view relative, wormedit::bms_parse_options_t options = 
     -> wormedit::bms_parse_result_t {
     const auto bytes = read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / relative);
     return wormedit::parse_bms_bytes(bytes, std::move(options));
+}
+
+auto normalized_bms(const wormedit::song_document_t& song) -> wormedit::bms_write_result_t {
+    return wormedit::write_bms(
+        song, {.lane_profile_id = "bms-5k-outside-scratch",
+              .preserve_unchanged_source = false,
+              .output_encoding = wormedit::text_encoding_t::utf8});
+}
+
+auto layer_channel_song() -> std::optional<wormedit::song_document_t> {
+    const auto parsed = parse("#TITLE layers\n#PLAYER 1\n#BMP01 bg.png\n#BMP02 poor.png\n"
+                              "#BMP03 layer.png\n#BMP04 layer2.png\n#00004:01\n#00006:02\n"
+                              "#00007:03\n#0000A:04\n");
+    return parsed.song;
+}
+
+auto bga_kinds_roundtrip(const wormedit::song_document_t& song) -> bool {
+    const auto written = normalized_bms(song);
+    if (!written.bytes) return false;
+    const auto reopened = parse(*written.bytes);
+    if (!reopened.song) return false;
+    const auto& events = reopened.song->charts.front().bga_events;
+    return std::ranges::count(events, wormedit::visual_event_kind_t::background,
+                              &wormedit::bga_event_t::kind) == 1 &&
+           std::ranges::count(events, wormedit::visual_event_kind_t::poor,
+                              &wormedit::bga_event_t::kind) == 1 &&
+           std::ranges::count(events, wormedit::visual_event_kind_t::layer,
+                              &wormedit::bga_event_t::kind) == 1 &&
+           std::ranges::count(events, wormedit::visual_event_kind_t::layer2,
+                              &wormedit::bga_event_t::kind) == 1;
+}
+
+auto layer2_reservation_survives_order(const wormedit::song_document_t& source,
+                                       bool explicit_first) -> bool {
+    auto song = source;
+    auto& events = song.charts.front().bga_events;
+    events[3].position = events[2].position;
+    events[2].provenance.source_order = explicit_first ? 20 : 10;
+    events[3].provenance.source_order = explicit_first ? 10 : 20;
+    if (explicit_first) std::swap(events[2], events[3]);
+    return bga_kinds_roundtrip(song);
+}
+
+auto bga_slot_collision_is_rejected(const wormedit::song_document_t& source,
+                                    bool duplicate_layer2) -> bool {
+    auto song = source;
+    auto duplicate = song.charts.front().bga_events[duplicate_layer2 ? 3 : 2];
+    duplicate.id = wormedit::object_id_t{999999};
+    duplicate.position = song.charts.front().bga_events[3].position;
+    song.charts.front().bga_events.push_back(duplicate);
+    const auto result = normalized_bms(song);
+    return !result.bytes && std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::bms_write_diagnostic_code_t::duplicate_event;
+    });
+}
+
+auto legacy_layer_pair_still_splits(const wormedit::song_document_t& source) -> bool {
+    auto song = source;
+    auto& events = song.charts.front().bga_events;
+    events[2].kind = wormedit::visual_event_kind_t::layer;
+    events[3].kind = wormedit::visual_event_kind_t::layer;
+    events[3].position = events[2].position;
+    const auto written = normalized_bms(song);
+    if (!written.bytes) return false;
+    const auto reparsed = parse(*written.bytes);
+    if (!reparsed.song) return false;
+    const auto& split = reparsed.song->charts.front().bga_events;
+    return std::ranges::count(split, wormedit::visual_event_kind_t::layer,
+                              &wormedit::bga_event_t::kind) == 1 &&
+           std::ranges::count(split, wormedit::visual_event_kind_t::layer2,
+                              &wormedit::bga_event_t::kind) == 1;
+}
+
+template <typename condition_t>
+void check_bms_condition(const condition_t& condition) {
+    CHECK(static_cast<bool>(condition));
 }
 
 auto is_standard_bms_5k_layout(const wormedit::lane_layout_t& layout) -> bool {
@@ -933,9 +1011,9 @@ TEST_CASE("BMS BGA channels materialize with typed events and relinkable missing
     CHECK(chart.bga_events[0].kind == wormedit::visual_event_kind_t::background);
     CHECK(chart.bga_events[1].kind == wormedit::visual_event_kind_t::poor);
     CHECK(chart.bga_events[2].kind == wormedit::visual_event_kind_t::layer);
-    CHECK(chart.bga_events[3].kind == wormedit::visual_event_kind_t::layer);
+    CHECK(chart.bga_events[3].kind == wormedit::visual_event_kind_t::layer2);
     CHECK(chart.bga_events[4].kind == wormedit::visual_event_kind_t::layer);
-    CHECK(chart.bga_events[5].kind == wormedit::visual_event_kind_t::layer);
+    CHECK(chart.bga_events[5].kind == wormedit::visual_event_kind_t::layer2);
     CHECK(chart.bga_events[0].resource == song.resources[0].id);
     CHECK(chart.bga_events[1].resource == song.resources[1].id);
     CHECK(chart.bga_events[2].resource == song.resources[2].id);
@@ -976,6 +1054,18 @@ TEST_CASE("BMS BGA channels materialize with typed events and relinkable missing
                          wormedit::bms_parse_diagnostic_code_t::unresolved_reference &&
                      diagnostic.message.find("BMP7F") != std::string::npos;
           }) == 1);
+}
+
+TEST_CASE("BMS layer 2 round trips distinctly and reserves channel 0A before legacy layers",
+          "[unit][format][bms][bga][layer2]") {
+    const auto song = layer_channel_song();
+    REQUIRE(song.has_value());
+    check_bms_condition(bga_kinds_roundtrip(*song));
+    check_bms_condition(layer2_reservation_survives_order(*song, false));
+    check_bms_condition(layer2_reservation_survives_order(*song, true));
+    check_bms_condition(bga_slot_collision_is_rejected(*song, false));
+    check_bms_condition(bga_slot_collision_is_rejected(*song, true));
+    check_bms_condition(legacy_layer_pair_still_splits(*song));
 }
 
 TEST_CASE("BMS reader grows measures through the largest channel index", "[unit][format][bms]") {

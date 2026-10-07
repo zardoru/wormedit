@@ -44,6 +44,17 @@ TEST_CASE("BGA preview queue rejects schedules beyond its configured capacity",
     CHECK_FALSE(queue.current_layers({1}).has_value());
 }
 
+TEST_CASE("BGA preview queue accepts Layer 2 without mapping it onto the Layer slot",
+          "[unit][preview][bga][layer2]") {
+    auto chart = schedule();
+    chart.bga = {visual(0, 1, 1, visual_event_kind_t::layer2, 3, 0)};
+
+    bga_preview_queue_t queue;
+    const auto started = queue.start(chart);
+    CHECK(started.status == bga_preview_status_t::ready);
+    CHECK(started.layers == bga_layer_state_t{});
+}
+
 TEST_CASE("BGA preview queue preserves compiled simultaneous draw/source order",
           "[unit][preview][bga][ordering]") {
     auto chart = schedule();

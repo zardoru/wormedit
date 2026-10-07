@@ -24,6 +24,8 @@ auto layer_slot(visual_event_kind_t kind) -> std::optional<std::size_t> {
         return 1;
     case visual_event_kind_t::layer:
         return 2;
+    case visual_event_kind_t::layer2:
+        return std::nullopt;
     case visual_event_kind_t::video:
         return 3;
     case visual_event_kind_t::storyboard:
@@ -34,7 +36,7 @@ auto layer_slot(visual_event_kind_t kind) -> std::optional<std::size_t> {
 
 auto valid_kind(visual_event_kind_t kind) -> bool {
     return static_cast<std::uint8_t>(kind) <=
-           static_cast<std::uint8_t>(visual_event_kind_t::storyboard);
+           static_cast<std::uint8_t>(visual_event_kind_t::layer2);
 }
 
 auto layer_value(bga_layer_state_t& state, std::size_t slot)

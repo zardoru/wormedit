@@ -2345,6 +2345,7 @@ struct bga_export_context_t {
     std::map<std::pair<std::size_t, std::string>, channel_line_t>& lines;
     std::map<std::pair<std::size_t, std::string>, std::size_t>& line_orders;
     std::map<std::pair<std::size_t, std::uint64_t>, std::size_t> layer_counts;
+    std::map<std::pair<std::size_t, std::uint64_t>, std::size_t> layer2_counts;
 };
 
 void export_branch_bga_event(const bga_event_t& event, bga_export_context_t& context) {
@@ -2359,8 +2360,8 @@ void export_branch_bga_event(const bga_event_t& event, bga_export_context_t& con
     const bool kind_matches =
         (field->channel == "04" && event.kind == visual_event_kind_t::background) ||
         (field->channel == "06" && event.kind == visual_event_kind_t::poor) ||
-        ((field->channel == "07" || field->channel == "0A") &&
-         event.kind == visual_event_kind_t::layer);
+        (field->channel == "07" && event.kind == visual_event_kind_t::layer) ||
+        (field->channel == "0A" && event.kind == visual_event_kind_t::layer2);
     if (!kind_matches)
         fail(bms_write_diagnostic_code_t::branch_provenance,
              "branch BGA kind no longer matches its retained BMS channel",
@@ -2398,18 +2399,54 @@ auto root_bga_channel(const bga_event_t& event, bga_export_context_t& context,
             fail(bms_write_diagnostic_code_t::invalid_geometry,
                  "BGA event is outside the chart's measure geometry", std::string(path) + ".position");
         auto& count = context.layer_counts[{event.position.measure.value, *absolute}];
-        if (count >= 2)
+        const auto key = std::pair{static_cast<std::size_t>(event.position.measure.value), *absolute};
+        const auto limit = context.layer2_counts.contains(key) ? 1U : 2U;
+        if (count >= limit)
             fail(bms_write_diagnostic_code_t::duplicate_event,
-                 "more than two layer events share a position; BMS channels 07 and 0A cannot represent the collision",
+                 "more than two layer events share a position; BMS channels 07 and 0A cannot "
+                 "represent the collision",
                  std::string(path));
         return count++ == 0 ? "07" : "0A";
     }
+    case visual_event_kind_t::layer2:
+        return "0A";
     case visual_event_kind_t::video:
     case visual_event_kind_t::storyboard:
         fail(bms_write_diagnostic_code_t::unsupported_feature,
              "BMS BGA channels cannot represent video or storyboard events", std::string(path));
     }
     return {};
+}
+
+void reserve_explicit_layer2_slots(const chart_document_t& chart,
+                                   bga_export_context_t& context) {
+    std::map<std::pair<std::size_t, std::uint64_t>, std::size_t> legacy_counts;
+    for (const auto& event : chart.bga_events) {
+        if (is_branch_source(context.tree, event.provenance) ||
+            (event.kind != visual_event_kind_t::layer && event.kind != visual_event_kind_t::layer2))
+            continue;
+        const auto absolute = absolute_row(context.index, event.position);
+        if (!absolute)
+            fail(bms_write_diagnostic_code_t::invalid_geometry,
+                 "BGA event is outside the chart's measure geometry",
+                 "$.charts[].bga_events[].position");
+        const auto key = std::pair{static_cast<std::size_t>(event.position.measure.value), *absolute};
+        if (event.kind == visual_event_kind_t::layer2) {
+            if (++context.layer2_counts[key] > 1)
+                fail(bms_write_diagnostic_code_t::duplicate_event,
+                     "more than one Layer 2 event shares a position; BMS channel 0A cannot "
+                     "represent the collision",
+                     "$.charts[].bga_events[]");
+        } else {
+            ++legacy_counts[key];
+        }
+    }
+    for (const auto& [key, count] : legacy_counts) {
+        if (count > 1 && context.layer2_counts.contains(key))
+            fail(bms_write_diagnostic_code_t::duplicate_event,
+                 "two layer events collide with an explicit Layer 2 event at one position",
+                 "$.charts[].bga_events[]");
+    }
 }
 
 void export_root_bga_event(const bga_event_t& event, bga_export_context_t& context) {
@@ -2441,6 +2478,7 @@ void export_root_bga_event(const bga_event_t& event, bga_export_context_t& conte
 }
 
 void export_bga_events(const chart_document_t& chart, bga_export_context_t& context) {
+    reserve_explicit_layer2_slots(chart, context);
     auto ordered = chart.bga_events;
     std::ranges::stable_sort(ordered, [](const auto& left, const auto& right) {
         return std::tie(left.position.measure.value, left.position.row,
@@ -3188,7 +3226,7 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     }
 
     bga_export_context_t bga_context{chart, branch_tree, index, branch_edits, visual_ids,
-                                     branch_resource_ids, channel_lines, bga_line_order, {}};
+                                     branch_resource_ids, channel_lines, bga_line_order, {}, {}};
     export_bga_events(chart, bga_context);
 
     const auto player_value = bms_player_value(layout);

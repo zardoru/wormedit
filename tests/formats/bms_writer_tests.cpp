@@ -59,6 +59,15 @@ auto occurrences(std::string_view text, std::string_view needle) -> std::size_t 
     return count;
 }
 
+auto has_distinct_layer_kinds(const wormedit::chart_document_t& chart) -> bool {
+    return std::ranges::count_if(chart.bga_events, [](const auto& event) {
+               return event.kind == wormedit::visual_event_kind_t::layer;
+           }) == 1 &&
+           std::ranges::count_if(chart.bga_events, [](const auto& event) {
+               return event.kind == wormedit::visual_event_kind_t::layer2;
+           }) == 1;
+}
+
 auto control_statement_at(const wormedit::bms_control_node_t& root, std::size_t source_order)
     -> const wormedit::bms_control_node_t* {
     const wormedit::bms_control_node_t* match{};
@@ -588,9 +597,7 @@ TEST_CASE("BMS writer round trips holds, repeated BGM lanes, structural zeros, a
     CHECK(std::ranges::count_if(chart.bga_events, [](const auto& event) {
               return event.kind == wormedit::visual_event_kind_t::poor;
           }) == 1);
-    CHECK(std::ranges::count_if(chart.bga_events, [](const auto& event) {
-              return event.kind == wormedit::visual_event_kind_t::layer;
-          }) == 2);
+    CHECK(has_distinct_layer_kinds(chart));
 }
 
 TEST_CASE("Deleting a selected imported BGM event updates repeated BMS channel lines",

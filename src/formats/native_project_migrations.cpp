@@ -41,9 +41,39 @@ auto migrate_v2_to_v3(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 2> released_migrations{{
+// Schema 4 gives BMS channel 0A its own visual kind. Older imports stored both
+// BMS 07 and 0A as `layer`; source provenance distinguishes the latter.
+auto is_legacy_bms_layer2(const nlohmann::json& event) -> bool {
+    if (!event.is_object() || !event.contains("kind") || !event.at("kind").is_number_integer() ||
+        event.at("kind") != 2 || !event.contains("provenance") ||
+        !event.at("provenance").is_object())
+        return false;
+    const auto& provenance = event.at("provenance");
+    if (!provenance.contains("family") || !provenance.at("family").is_number_integer() ||
+        provenance.at("family") != 1 || !provenance.contains("source_field") ||
+        !provenance.at("source_field").is_string())
+        return false;
+    return provenance.at("source_field").get_ref<const std::string&>().starts_with("0A slot ");
+}
+
+auto migrate_v3_to_v4(nlohmann::json& document) -> std::string {
+    if (!document.contains("charts")) return {};
+    if (!document.at("charts").is_array()) return "document charts must be an array";
+    for (auto& chart : document.at("charts")) {
+        if (!chart.is_object()) return "chart must be an object";
+        if (!chart.contains("bga_events")) continue;
+        if (!chart.at("bga_events").is_array()) return "chart bga_events must be an array";
+        for (auto& event : chart.at("bga_events")) {
+            if (is_legacy_bms_layer2(event)) event["kind"] = std::uint64_t{5};
+        }
+    }
+    return {};
+}
+
+constexpr std::array<migration_t, 3> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
+    {3, &migrate_v3_to_v4},
 }};
 
 } // namespace

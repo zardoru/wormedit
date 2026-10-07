@@ -539,6 +539,7 @@ enum class visual_event_kind_t {
     layer,
     video,
     storyboard,
+    layer2,
 };
 
 struct bga_event_t {
@@ -844,7 +845,7 @@ struct quantization_preset_t {
 };
 
 struct song_document_t {
-    std::uint32_t schema_version{3};
+    std::uint32_t schema_version{4};
     song_id_t id;
     std::uint64_t revision{};
     song_metadata_t metadata;

@@ -1,4 +1,5 @@
 #include "sys/waveform_view_projection.h"
+#include "sys/bmson_waveform_projection.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/audio/aligned_waveform.h>
@@ -132,6 +133,7 @@ struct envelope_projection_context_t {
     audio::aligned_waveform_style_t style;
     std::uint64_t revision{};
     std::uint64_t project{}, chart{};
+    const audio::display_row_table_t& row_table;
 };
 auto cpu_row_slot(std::int64_t row, std::size_t count) -> std::size_t {
     const auto remainder = row % static_cast<std::int64_t>(count);
@@ -175,7 +177,7 @@ void project_cpu_envelope_range(const envelope_projection_context_t& context,
     request.viewport_height_pixels = static_cast<double>(count);
     request.maximum_rows = audio::maximum_aligned_waveform_rows;
     auto projected = audio::project_composed_aligned_waveform(context.overview, context.detail,
-        context.timing, request, context.blocks, context.style);
+        context.row_table, request, context.blocks, context.style);
     ++ring.projection_calls;
     ring.projected_rows += count;
     for (std::size_t index = 0; index < count; ++index) {
@@ -478,6 +480,8 @@ auto populate_compose_waveform_projection(
         .viewport_height_pixels = compose.viewport_height_pixels,
         .pixels_per_standard_measure = compose.pixels_per_standard_measure,
         .maximum_rows = WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY};
+    (void)prepare_compose_display_row_table(cache,
+        request, {compose.project_id, cache.chart.value, cache.revision});
     const auto window = audio::aligned_waveform_window(waveform, *cache.marker_timing_index, request);
     const auto* selected_waveform = &waveform;
     if (window && detail_analysis && detail_analysis->waveform &&
@@ -491,7 +495,7 @@ auto populate_compose_waveform_projection(
         const envelope_projection_context_t projection{cache.waveform_envelope_ring, waveform,
             detail_analysis && detail_analysis->waveform ? &*detail_analysis->waveform : nullptr,
             *cache.marker_timing_index, request, decoded_blocks, style, cache.revision,
-            compose.project_id, cache.chart.value};
+            compose.project_id, cache.chart.value, cache.waveform_row_table};
         cached_envelope = populate_cpu_envelope(projection, flattened.compose.waveform.row);
     } else {
         cache.waveform_envelope_ring.valid = false;

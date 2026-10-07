@@ -5,9 +5,15 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <limits>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 
@@ -338,6 +344,506 @@ auto stable_sample_follow() -> bool {
     }
     return saw_pcm && saw_detail && saw_overview;
 }
+
+auto rational_as_double(wormedit::signed_rational_t value) -> double {
+    return static_cast<double>(value.numerator) / static_cast<double>(value.denominator);
+}
+
+auto expected_seconds(const wormedit::timing_index_t& timing, double row,
+                      wormedit::timing_boundary_side_t side) -> std::optional<double> {
+    const auto boundary = std::ranges::find_if(timing.rows, [row](const auto& item) {
+        return static_cast<double>(item.absolute_row) == row;
+    });
+    if (boundary != timing.rows.end()) {
+        if (side == wormedit::timing_boundary_side_t::before_delays)
+            return rational_as_double(boundary->before_delays_seconds);
+        if (side == wormedit::timing_boundary_side_t::after_stops)
+            return rational_as_double(boundary->after_stops_seconds);
+        return rational_as_double(boundary->event_seconds);
+    }
+    const auto after = std::ranges::upper_bound(timing.segments, row, {},
+        [](const auto& item) { return static_cast<double>(item.begin_row); });
+    if (after == timing.segments.begin()) return std::nullopt;
+    const auto& segment = *std::prev(after);
+    if (row >= static_cast<double>(segment.end_row)) return std::nullopt;
+    const auto begin = rational_as_double(segment.begin_seconds);
+    const auto end = rational_as_double(segment.end_seconds);
+    const auto fraction = (row - static_cast<double>(segment.begin_row)) /
+        static_cast<double>(segment.end_row - segment.begin_row);
+    return begin + (end - begin) * fraction;
+}
+
+auto display_table_matches_forward_clock() -> bool {
+    auto chart = chart_fixture();
+    const auto first_measure = chart.measures.front().id;
+    const auto second_measure = chart.measures.at(1).id;
+    chart.pauses.push_back({.id = wormedit::object_id_t{7001},
+        .position = {first_measure, 480}, .kind = wormedit::pause_kind_t::delay,
+        .duration = {1, 10}, .source_unit = wormedit::pause_unit_t::seconds});
+    chart.pauses.push_back({.id = wormedit::object_id_t{7002},
+        .position = {first_measure, 840}, .kind = wormedit::pause_kind_t::stop,
+        .duration = {1, 5}, .source_unit = wormedit::pause_unit_t::seconds});
+    chart.warps.push_back({.id = wormedit::object_id_t{7003},
+        .span = {{second_measure, 480}, {second_measure, 540}}});
+    const auto built = wormedit::build_timing_index(chart);
+    if (!built) return false;
+    using namespace wormedit::audio;
+    display_row_table_t table;
+    aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
+        .viewport_height_pixels = 32, .pixels_per_standard_measure = 960};
+    const display_row_table_identity_t identity{1, chart.id.value, 3};
+    if (!prepare_display_row_table(table, *built.index, request, identity)) return false;
+    for (const auto row : {480.0, 480.5, 840.0, 840.5, 1440.0, 1500.0}) {
+        for (const auto side : {wormedit::timing_boundary_side_t::before_delays,
+                                wormedit::timing_boundary_side_t::event,
+                                wormedit::timing_boundary_side_t::after_stops}) {
+            const auto expected = expected_seconds(*built.index, row, side);
+            const auto actual = display_seconds_at(table, row, side);
+            if (expected.has_value() != actual.has_value()) return false;
+            if (expected && std::abs(*expected - *actual) > 1e-9) return false;
+        }
+    }
+    return true;
+}
+
+auto display_table_reuses_scrolled_rows() -> bool {
+    auto chart = chart_fixture();
+    const auto built = wormedit::build_timing_index(chart);
+    if (!built) return false;
+    using namespace wormedit::audio;
+    display_row_table_t table;
+    aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
+        .viewport_height_pixels = 10, .pixels_per_standard_measure = 960};
+    const display_row_table_identity_t identity{1, chart.id.value, 1};
+    if (!prepare_display_row_table(table, *built.index, request, identity) ||
+        table.rows.size() != 12 || table.built_rows != 12 || table.reused_rows != 0) return false;
+    const auto generation = table.generation;
+    if (!prepare_display_row_table(table, *built.index, request, identity) ||
+        table.generation != generation || table.built_rows != 12 || table.reused_rows != 0)
+        return false;
+    request.viewport_scroll_pixels = 1;
+    if (!prepare_display_row_table(table, *built.index, request, identity) ||
+        table.built_rows != 1 || table.reused_rows != 11) return false;
+    return true;
+}
+
+auto display_table_rebuilds_on_clock_inputs() -> bool {
+    auto chart = chart_fixture();
+    const auto built = wormedit::build_timing_index(chart);
+    if (!built) return false;
+    using namespace wormedit::audio;
+    display_row_table_t table;
+    aligned_waveform_request_t request{.viewport_scroll_pixels = 1,
+        .viewport_height_pixels = 11, .pixels_per_standard_measure = 960};
+    const display_row_table_identity_t identity{1, chart.id.value, 1};
+    if (!prepare_display_row_table(table, *built.index, request, identity)) return false;
+    auto changed_identity = identity;
+    ++changed_identity.revision;
+    if (!prepare_display_row_table(table, *built.index, request, changed_identity) ||
+        table.reused_rows != 0) return false;
+    ++changed_identity.project;
+    if (!prepare_display_row_table(table, *built.index, request, changed_identity) ||
+        table.reused_rows != 0) return false;
+    ++changed_identity.chart;
+    if (!prepare_display_row_table(table, *built.index, request, changed_identity) ||
+        table.reused_rows != 0) return false;
+    request.pixels_per_standard_measure = 1200;
+    if (!prepare_display_row_table(table, *built.index, request, changed_identity) ||
+        table.reused_rows != 0) return false;
+    request.viewport_height_pixels = 12;
+    const auto before_height_change = table.generation;
+    if (!prepare_display_row_table(table, *built.index, request, changed_identity) ||
+        table.rows.size() != 14 || table.generation != before_height_change + 1) return false;
+    auto changed_timing = *built.index;
+    ++changed_timing.source_fingerprint;
+    if (!prepare_display_row_table(table, changed_timing, request, changed_identity) ||
+        table.reused_rows != 0) return false;
+    changed_timing.discontinuity_profile = wormedit::timing_discontinuity_profile_t::bms_legacy;
+    if (!prepare_display_row_table(table, changed_timing, request, changed_identity) ||
+        table.reused_rows != 0) return false;
+    changed_timing.bounded_clock = true;
+    ++changed_timing.bounded_clock_roundings;
+    return prepare_display_row_table(table, changed_timing, request, changed_identity) &&
+        table.reused_rows == 0;
+}
+
+auto display_channel_matches_reference() -> bool {
+    using namespace wormedit::audio;
+    auto chart = chart_fixture();
+    auto waveform = pulse_waveform();
+    waveform.total_frames = 4U * output_sample_rate;
+    waveform.bins.resize(400);
+    for (auto& bin : waveform.bins) bin.frame_count = 441;
+    const auto timing = wormedit::build_timing_index(chart);
+    if (!timing) return false;
+    const aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
+        .viewport_height_pixels = 1440, .pixels_per_standard_measure = 960};
+    const channel_waveform_source_geometry_t source{output_sample_rate, waveform.total_frames};
+    const auto& channel = chart.sound_channels.front();
+    const auto slices = wormedit::derive_sound_channel_slices(
+        chart, channel, source.sample_rate, source.total_frames);
+    display_row_table_t table;
+    if (!slices || !prepare_display_row_table(table, *timing.index, request,
+        {chart.id.value, chart.id.value, 1})) return false;
+    const auto reference = project_channel_waveform(waveform, chart, channel,
+        *timing.index, request, source);
+    const auto projected = project_channel_waveform(waveform, channel, table,
+        request, slices, source);
+    return reference && projected && !reference.rows.empty() && !projected.rows.empty() &&
+        std::abs(loudest_row(reference) - loudest_row(projected)) <= 1.0 &&
+        projected.sampled_bins <= projected.visited_slices * 8;
+}
+
+auto channel_peaks_contained(const wormedit::audio::aligned_waveform_result_t& source,
+    const wormedit::audio::aligned_waveform_result_t& target) -> bool {
+    for (const auto& row : source.rows) {
+        std::array<float, 2> peaks{};
+        for (const auto& other : target.rows) {
+            if (std::abs(other.y_pixels - row.y_pixels) > 1.0) continue;
+            for (std::size_t channel = 0; channel < peaks.size(); ++channel)
+                peaks[channel] = std::max(peaks[channel], other.absolute_peak[channel]);
+        }
+        for (std::size_t channel = 0; channel < peaks.size(); ++channel)
+            if (row.absolute_peak[channel] > peaks[channel]) return false;
+    }
+    return true;
+}
+
+auto channel_projection_matches_reference(wormedit::chart_document_t& chart,
+    const wormedit::audio::waveform_t& waveform,
+    wormedit::audio::channel_waveform_source_geometry_t source) -> bool {
+    using namespace wormedit::audio;
+    const auto timing = wormedit::build_timing_index(chart);
+    if (!timing) return false;
+    const aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
+        .viewport_height_pixels = 1920, .pixels_per_standard_measure = 960};
+    const auto& channel = chart.sound_channels.front();
+    const auto slices = wormedit::derive_sound_channel_slices(
+        chart, channel, source.sample_rate, source.total_frames);
+    display_row_table_t table;
+    if (!slices || !prepare_display_row_table(table, *timing.index, request,
+        {chart.id.value, chart.id.value, 1})) return false;
+    const auto reference = project_channel_waveform(waveform, chart, channel,
+        *timing.index, request, source);
+    const auto projected = project_channel_waveform(waveform, channel, table,
+        request, slices, source);
+    return reference && projected && !reference.rows.empty() && !projected.rows.empty() &&
+        channel_peaks_contained(reference, projected) &&
+        channel_peaks_contained(projected, reference);
+}
+
+auto display_channel_tempo_clip_and_warp_match_reference() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    const auto waveform = pulse_waveform();
+    const channel_waveform_source_geometry_t normalized_source{output_sample_rate,
+                                                                waveform.total_frames};
+    auto tempo_chart = chart_fixture();
+    tempo_chart.bpms.push_back({.id = object_id_t{8201},
+        .position = {tempo_chart.measures.front().id, 480}, .beats_per_minute = {60, 1}});
+    if (!channel_projection_matches_reference(tempo_chart, waveform, normalized_source))
+        return false;
+
+    auto clipped_chart = chart_fixture();
+    clipped_chart.sound_channels.front().source_clip.begin_frame = 24'000;
+    const channel_waveform_source_geometry_t native_source{48'000, 96'000};
+    if (!channel_projection_matches_reference(clipped_chart, waveform, native_source))
+        return false;
+
+    auto warped_chart = chart_fixture();
+    warped_chart.warps.push_back({.id = object_id_t{8202},
+        .span = {{warped_chart.measures.front().id, 480},
+                 {warped_chart.measures.front().id, 600}}});
+    return channel_projection_matches_reference(warped_chart, waveform, normalized_source);
+}
+
+auto performance_pyramid_waveform(std::uint64_t total_frames) -> wormedit::audio::waveform_t {
+    using namespace wormedit::audio;
+    waveform_t waveform;
+    waveform.key = {{"fixture:display-row", "content:pyramid"}, 256, 0, total_frames};
+    waveform.sample_rate = output_sample_rate;
+    waveform.total_frames = total_frames;
+    waveform.bins.resize(static_cast<std::size_t>(total_frames / 256));
+    for (auto& bin : waveform.bins) {
+        bin.minimum = {-0.25f, -0.25f};
+        bin.maximum = {0.25f, 0.25f};
+        bin.absolute_peak = {0.25f, 0.25f};
+        bin.rms = {0.125f, 0.125f};
+        bin.frame_count = 256;
+    }
+    std::uint64_t frames_per_bin = 512;
+    auto count = waveform.bins.size() / 2;
+    while (count != 0) {
+        waveform_level_t level{.frames_per_bin = frames_per_bin};
+        level.bins.resize(count);
+        for (auto& bin : level.bins) {
+            bin = waveform.bins.front();
+            bin.frame_count = frames_per_bin;
+        }
+        waveform.coarser_levels.push_back(std::move(level));
+        frames_per_bin *= 2;
+        count /= 2;
+    }
+    return waveform;
+}
+
+auto boundary_impulse_waveform() -> wormedit::audio::waveform_t {
+    using namespace wormedit::audio;
+    auto waveform = pulse_waveform();
+    waveform.total_frames = 4U * output_sample_rate;
+    waveform.bins.assign(400, {});
+    for (auto& bin : waveform.bins) bin.frame_count = 441;
+    waveform.bins[10].absolute_peak = {1.0f, 0.0f};
+    waveform.bins[10].rms = {0.5f, 0.0f};
+    waveform.bins[105].absolute_peak = {0.0f, 1.0f};
+    waveform.bins[105].rms = {0.0f, 0.5f};
+    return waveform;
+}
+
+auto channel_peak_near(const wormedit::audio::aligned_waveform_result_t& result,
+                       double row, std::size_t channel) -> bool {
+    return std::ranges::any_of(result.rows, [row, channel](const auto& item) {
+        return std::abs(item.y_pixels - row) <= 1.0 && item.absolute_peak[channel] == 1.0f;
+    });
+}
+
+auto continuation_delay_keeps_pre_event_source() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    auto chart = chart_fixture();
+    const auto first_measure = chart.measures.front().id;
+    for (auto& event : chart.sound_channels.front().events) {
+        if (event.position.measure == first_measure && event.position.row == 720)
+            event.continuation = true;
+    }
+    chart.pauses.push_back({.id = object_id_t{8104}, .position = {first_measure, 720},
+        .kind = pause_kind_t::delay, .duration = {1, 10}, .source_unit = pause_unit_t::seconds});
+    const auto waveform = boundary_impulse_waveform();
+    const auto timing = build_timing_index(chart);
+    if (!timing) return false;
+    const aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
+        .viewport_height_pixels = 1800, .pixels_per_standard_measure = 960};
+    const channel_waveform_source_geometry_t source{output_sample_rate, waveform.total_frames};
+    const auto& channel = chart.sound_channels.front();
+    const auto slices = derive_sound_channel_slices(chart, channel, source.sample_rate,
+                                                     source.total_frames);
+    display_row_table_t table;
+    if (!slices || !prepare_display_row_table(table, *timing.index, request)) return false;
+    const auto reference = project_channel_waveform(waveform, chart, channel,
+        *timing.index, request, source);
+    const auto projected = project_channel_waveform(waveform, channel, table,
+        request, slices, source);
+    return reference && projected && channel_peak_near(reference, 720, 1) &&
+        channel_peak_near(projected, 720, 1);
+}
+
+struct display_benchmark_result_t {
+    bool valid{};
+    std::int64_t reference_microseconds{};
+    std::int64_t display_microseconds{};
+    std::array<std::size_t, 4> visited{};
+    std::array<std::size_t, 4> sampled{};
+};
+
+auto compare_display_channel_work() -> display_benchmark_result_t {
+    using namespace wormedit::audio;
+    auto chart = chart_fixture();
+    const auto timing = wormedit::build_timing_index(chart);
+    if (!timing) return {};
+    const auto& channel = chart.sound_channels.front();
+    display_benchmark_result_t result{.valid = true};
+    std::size_t case_index{};
+    for (const auto frames : {262'144U, 1'048'576U}) {
+        auto waveform = performance_pyramid_waveform(frames);
+        const channel_waveform_source_geometry_t source{output_sample_rate, frames};
+        const auto slices = wormedit::derive_sound_channel_slices(
+            chart, channel, source.sample_rate, source.total_frames);
+        if (!slices) return {};
+        for (const auto zoom : {480.0, 3840.0}) {
+            const aligned_waveform_request_t request{.viewport_scroll_pixels = zoom / 4,
+                .viewport_height_pixels = 600, .pixels_per_standard_measure = zoom};
+            display_row_table_t table;
+            if (!prepare_display_row_table(table, *timing.index, request,
+                {chart.id.value, chart.id.value, 1})) return {};
+            const auto reference_start = std::chrono::steady_clock::now();
+            const auto reference = project_channel_waveform(waveform, chart, channel,
+                *timing.index, request, source);
+            const auto reference_end = std::chrono::steady_clock::now();
+            const auto display_start = std::chrono::steady_clock::now();
+            const auto projected = project_channel_waveform(waveform, channel, table,
+                request, slices, source);
+            const auto display_end = std::chrono::steady_clock::now();
+            result.reference_microseconds += std::chrono::duration_cast<std::chrono::microseconds>(
+                reference_end - reference_start).count();
+            result.display_microseconds += std::chrono::duration_cast<std::chrono::microseconds>(
+                display_end - display_start).count();
+            if (!reference || !projected ||
+                projected.visited_slices > table.rows.size() + slices.slices.size() ||
+                projected.sampled_bins > projected.visited_slices *
+                    (8 + 2 * std::numeric_limits<std::uint64_t>::digits)) return {};
+            result.visited[case_index] = projected.visited_slices;
+            result.sampled[case_index] = projected.sampled_bins;
+            ++case_index;
+        }
+    }
+    return result;
+}
+
+auto base_only_low_zoom_keeps_channel_peaks() -> bool {
+    using namespace wormedit::audio;
+    auto chart = chart_fixture();
+    const auto timing = wormedit::build_timing_index(chart);
+    if (!timing) return false;
+    auto waveform = performance_pyramid_waveform(1'048'576);
+    waveform.coarser_levels.clear();
+    const auto& channel = chart.sound_channels.front();
+    const channel_waveform_source_geometry_t source{output_sample_rate, waveform.total_frames};
+    const auto slices = wormedit::derive_sound_channel_slices(
+        chart, channel, source.sample_rate, source.total_frames);
+    const aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
+        .viewport_height_pixels = 32, .pixels_per_standard_measure = 120};
+    display_row_table_t table;
+    if (!slices || !prepare_display_row_table(table, *timing.index, request)) return false;
+    const auto projected = project_channel_waveform(waveform, channel, table,
+        request, slices, source);
+    return projected && !projected.rows.empty() &&
+        std::ranges::any_of(projected.rows, [](const auto& row) {
+            return row.absolute_peak[0] >= 0.25f;
+        });
+}
+
+auto display_slice_boundaries_keep_delay_and_stop_audio() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    auto chart = chart_fixture();
+    auto& channel = chart.sound_channels.front();
+    const auto first_measure = chart.measures.front().id;
+    const auto second_measure = chart.measures.at(1).id;
+    chart.pauses.push_back({.id = object_id_t{8101}, .position = {first_measure, 720},
+        .kind = pause_kind_t::delay, .duration = {1, 10}, .source_unit = pause_unit_t::seconds});
+    chart.pauses.push_back({.id = object_id_t{8102}, .position = {second_measure, 0},
+        .kind = pause_kind_t::stop, .duration = {1, 5}, .source_unit = pause_unit_t::seconds});
+    channel.events.push_back({.id = object_id_t{8103}, .position = {second_measure, 0},
+        .lane = lane_id_t{1}, .continuation = false});
+    const auto waveform = boundary_impulse_waveform();
+    const auto timing = build_timing_index(chart);
+    if (!timing) return false;
+    const aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
+        .viewport_height_pixels = 1800, .pixels_per_standard_measure = 960};
+    const channel_waveform_source_geometry_t source{output_sample_rate, waveform.total_frames};
+    const auto slices = derive_sound_channel_slices(chart, channel, source.sample_rate,
+                                                     source.total_frames);
+    display_row_table_t table;
+    if (!slices || !prepare_display_row_table(table, *timing.index, request,
+        {chart.id.value, chart.id.value, 1})) return false;
+    const auto reference = project_channel_waveform(waveform, chart, channel,
+        *timing.index, request, source);
+    const auto projected = project_channel_waveform(waveform, channel, table, request, slices, source);
+    return reference && projected && channel_peak_near(reference, 720, 1) &&
+        channel_peak_near(projected, 720, 1) && channel_peak_near(reference, 960, 0) &&
+        channel_peak_near(projected, 960, 0) && continuation_delay_keeps_pre_event_source();
+}
+
+auto display_channel_rejects_invalid_slices() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    auto chart = chart_fixture();
+    chart.warps.push_back({.id = object_id_t{8203},
+        .span = {{chart.measures.front().id, 480}, {chart.measures.at(1).id, 0}}});
+    const auto waveform = pulse_waveform();
+    const channel_waveform_source_geometry_t source{output_sample_rate, waveform.total_frames};
+    const auto timing = build_timing_index(chart);
+    if (!timing) return false;
+    const auto& channel = chart.sound_channels.front();
+    const auto slices = derive_sound_channel_slices(chart, channel, source.sample_rate,
+        source.total_frames);
+    const aligned_waveform_request_t request{.viewport_height_pixels = 600,
+        .pixels_per_standard_measure = 960};
+    display_row_table_t table;
+    if (slices || !prepare_display_row_table(table, *timing.index, request)) return false;
+    const auto projected = project_channel_waveform(waveform, channel, table,
+        request, slices, source);
+    return projected.status == aligned_waveform_status_t::invalid_timing && projected.rows.empty();
+}
+
+auto display_channel_rejects_invalid_clock_and_request() -> bool {
+    using namespace wormedit::audio;
+    const auto chart = chart_fixture();
+    const auto& channel = chart.sound_channels.front();
+    const auto waveform = pulse_waveform();
+    const channel_waveform_source_geometry_t source{output_sample_rate, waveform.total_frames};
+    const auto timing = wormedit::build_timing_index(chart);
+    if (!timing) return false;
+    const auto slices = wormedit::derive_sound_channel_slices(
+        chart, channel, source.sample_rate, source.total_frames);
+    if (!slices) return false;
+    const aligned_waveform_request_t good{.viewport_scroll_pixels = 0,
+        .viewport_height_pixels = 32, .pixels_per_standard_measure = 960};
+    display_row_table_t invalid_table;
+    const auto no_clock = project_channel_waveform(waveform, channel, invalid_table,
+                                                   good, slices, source);
+    auto invalid_request = good;
+    invalid_request.viewport_height_pixels = 0;
+    display_row_table_t table;
+    if (!prepare_display_row_table(table, *timing.index, good)) return false;
+    const auto no_request = project_channel_waveform(waveform, channel, table,
+        invalid_request, slices, source);
+    if (no_clock.status != aligned_waveform_status_t::invalid_timing || !no_clock.rows.empty() ||
+        no_request.status != aligned_waveform_status_t::invalid_request || !no_request.rows.empty())
+        return false;
+    auto short_waveform = waveform;
+    short_waveform.total_frames = 4'410;
+    short_waveform.bins.resize(10);
+    for (auto& bin : short_waveform.bins) bin.frame_count = 441;
+    const channel_waveform_source_geometry_t short_source{output_sample_rate,
+                                                           short_waveform.total_frames};
+    const auto short_slices = wormedit::derive_sound_channel_slices(
+        chart, channel, short_source.sample_rate, short_source.total_frames);
+    auto eof_view = good;
+    eof_view.viewport_scroll_pixels = 1910;
+    eof_view.viewport_height_pixels = 10;
+    display_row_table_t eof_table;
+    if (!short_slices || !prepare_display_row_table(eof_table, *timing.index, eof_view))
+        return false;
+    const auto eof = project_channel_waveform(short_waveform, channel, eof_table,
+        eof_view, short_slices, short_source);
+    return eof && eof.rows.empty();
+}
+}
+
+TEST_CASE("channel_waveform display row table follows forward timing and reuses world rows",
+          "[unit][audio][waveform][aligned][display][T440]") {
+    CHECK(display_table_matches_forward_clock());
+    CHECK(display_table_reuses_scrolled_rows());
+    CHECK(display_table_rebuilds_on_clock_inputs());
+}
+
+TEST_CASE("display channel_waveform projection stays within one row of the timing reference",
+          "[unit][audio][waveform][channel][display][T440]") {
+    CHECK(display_channel_matches_reference());
+    CHECK(display_channel_tempo_clip_and_warp_match_reference());
+}
+
+TEST_CASE("display channel_waveform assigns delay and stop time to the correct slice",
+          "[unit][audio][waveform][channel][display][T440]") {
+    CHECK(display_slice_boundaries_keep_delay_and_stop_audio());
+    CHECK(display_channel_rejects_invalid_clock_and_request());
+    CHECK(display_channel_rejects_invalid_slices());
+}
+
+TEST_CASE("display channel_waveform work stays bounded by rows and source pyramid",
+          "[.performance][audio][waveform][channel][display][T440]") {
+    const auto result = compare_display_channel_work();
+    INFO("reference projection microseconds: " << result.reference_microseconds);
+    INFO("display projection microseconds: " << result.display_microseconds);
+    for (std::size_t index = 0; index < result.visited.size(); ++index) {
+        const auto frames = index < 2 ? 262'144 : 1'048'576;
+        const auto zoom = index % 2 == 0 ? 480 : 3840;
+        SUCCEED("frames " << frames << " zoom " << zoom << " visited slices " << result.visited[index]
+                << " sampled bins " << result.sampled[index]);
+    }
+    CHECK(result.valid);
+    CHECK(base_only_low_zoom_keeps_channel_peaks());
 }
 
 TEST_CASE("aligned waveform follows 600 advancing frames without discarding covering detail", "[audio][waveform]") {
@@ -488,4 +994,50 @@ TEST_CASE("aligned waveform leaves a blank gap where a warp consumes no time",
     CHECK(count_rows_between(warped, 0.0, 479.0) > 0);
     CHECK(count_rows_between(warped, 482.0, 958.0) == 0);
     CHECK(count_rows_between(warped, 962.0, 1900.0) > 0);
+}
+
+namespace {
+auto numeric_display_pyramid() -> wormedit::audio::waveform_t {
+    auto waveform = performance_pyramid_waveform(1024);
+    const std::array<float, 4> peaks{.1f, .2f, .4f, 1.f};
+    const std::array<float, 4> rms{.1f, .3f, .2f, .8f};
+    for (std::size_t index = 0; index < 4; ++index) {
+        waveform.bins[index].minimum = {-peaks[index], -peaks[index]};
+        waveform.bins[index].maximum = {peaks[index], peaks[index]};
+        waveform.bins[index].absolute_peak = {peaks[index], peaks[index]};
+        waveform.bins[index].rms = {rms[index], rms[index]};
+    }
+    auto& pairs = waveform.coarser_levels.front().bins;
+    pairs[0].minimum = {-.2f, -.2f};
+    pairs[0].maximum = {.2f, .2f};
+    pairs[0].absolute_peak = {.2f, .2f};
+    pairs[0].rms = {std::sqrt(.05f), std::sqrt(.05f)};
+    pairs[1].minimum = {-1.f, -1.f};
+    pairs[1].maximum = {1.f, 1.f};
+    pairs[1].absolute_peak = {1.f, 1.f};
+    pairs[1].rms = {std::sqrt(.34f), std::sqrt(.34f)};
+    auto& total = waveform.coarser_levels.back().bins.front();
+    total.minimum = {-1.f, -1.f};
+    total.maximum = total.absolute_peak = {1.f, 1.f};
+    total.rms = {std::sqrt(.195f), std::sqrt(.195f)};
+    return waveform;
+}
+}
+namespace {
+void check_display_column(const std::optional<wormedit::audio::waveform_column_t>& column,
+                          float peak, float rms) {
+    REQUIRE(column);
+    CHECK(column->absolute_peak[0] == peak);
+    CHECK(column->rms[0] == rms);
+}
+}
+TEST_CASE("channel_waveform display RMS uses matching pyramid bins and refines clipped edges",
+          "[audio][waveform][channel][display][T440]") {
+    const auto waveform = numeric_display_pyramid();
+    std::size_t sampled{};
+    const auto full = wormedit::audio::sample_display_waveform_span(waveform, 0, 1024, sampled);
+    check_display_column(full, 1.f, std::sqrt(.34f));
+    const auto clipped = wormedit::audio::sample_display_waveform_span(waveform, 0, 768, sampled);
+    check_display_column(clipped, .4f, std::sqrt(.05f));
+    CHECK(base_only_low_zoom_keeps_channel_peaks());
 }

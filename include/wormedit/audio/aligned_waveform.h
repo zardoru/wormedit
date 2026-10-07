@@ -21,6 +21,57 @@ struct aligned_waveform_request_t {
     std::size_t maximum_rows{maximum_aligned_waveform_rows};
 };
 
+// Display-only clock: exact timing/editing queries remain on timing_index_t.
+struct display_timing_boundary_t {
+    double row{}, before_seconds{}, event_seconds{}, after_seconds{};
+};
+struct display_timing_segment_t {
+    double begin_row{}, end_row{}, begin_seconds{}, seconds_per_row{};
+};
+struct display_row_time_t {
+    std::int64_t world_pixel{};
+    double begin_row{}, end_row{}, begin_seconds{}, end_seconds{};
+    bool valid{};
+};
+struct display_row_table_identity_t {
+    std::uint64_t project{}, chart{}, revision{};
+    auto operator==(const display_row_table_identity_t&) const -> bool = default;
+};
+struct display_row_table_t {
+    display_row_table_identity_t identity;
+    const timing_index_t* timing_identity{};
+    std::uint64_t fingerprint{}, divisions{}, total_rows{};
+    timing_discontinuity_profile_t profile{};
+    bool bounded_clock{};
+    std::size_t clock_roundings{}, timing_row_count{}, timing_segment_count{};
+    const void* timing_rows_identity{};
+    const void* timing_segments_identity{};
+    double zoom{}, scroll{}, height{};
+    std::int64_t first_world_pixel{};
+    std::vector<display_timing_boundary_t> boundaries;
+    std::vector<display_timing_segment_t> segments;
+    std::vector<display_row_time_t> rows;
+    // Work for the last changed generation; identical same-frame prepares do
+    // not change these counters or generation.
+    std::size_t built_rows{}, reused_rows{};
+    std::uint64_t generation{};
+    std::uint64_t clock_generation{};
+    bool valid{};
+};
+// Includes one padding row at each end, shared by all envelope rings. Scroll
+// reuses overlapping world pixels; timing/identity/zoom/height changes rebuild.
+[[nodiscard]] auto prepare_display_row_table(display_row_table_t& table,
+    const timing_index_t& timing, aligned_waveform_request_t request,
+    display_row_table_identity_t identity = {}) -> bool;
+[[nodiscard]] auto display_seconds_at(const display_row_table_t& table, double row,
+    timing_boundary_side_t side = timing_boundary_side_t::event) -> std::optional<double>;
+// Complete analyzed pyramids read a bounded handful of closest-level bins.
+// A valid base-only/partial pyramid falls back to aggregating available bins.
+// Peak and RMS retain max reduction, rather than an average across a pixel.
+[[nodiscard]] auto sample_display_waveform_span(const waveform_t& waveform,
+    std::uint64_t begin, std::uint64_t end, std::size_t& sampled_bins)
+    -> std::optional<waveform_column_t>;
+
 struct aligned_waveform_window_t {
     std::uint64_t begin_frame{};
     std::uint64_t end_frame{};
@@ -71,6 +122,9 @@ struct aligned_waveform_result_t {
     std::size_t pcm_spans{};
     std::size_t detail_spans{};
     std::size_t overview_spans{};
+    // Display work counters, independent of source length/zoom when pyramids are available.
+    std::size_t sampled_bins{};
+    std::size_t visited_slices{};
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return status == aligned_waveform_status_t::projected;
@@ -81,6 +135,10 @@ struct aligned_waveform_result_t {
 // Drawing style is supplied independently of availability.
 [[nodiscard]] auto project_composed_aligned_waveform(const waveform_t& overview,
     const waveform_t* detail, const timing_index_t& timing, aligned_waveform_request_t request,
+    decoded_block_cache_t* blocks, aligned_waveform_style_t style) -> aligned_waveform_result_t;
+
+[[nodiscard]] auto project_composed_aligned_waveform(const waveform_t& overview,
+    const waveform_t* detail, const display_row_table_t& table, aligned_waveform_request_t request,
     decoded_block_cache_t* blocks, aligned_waveform_style_t style) -> aligned_waveform_result_t;
 
 struct waveform_overview_row_t {

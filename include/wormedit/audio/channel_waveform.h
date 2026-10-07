@@ -27,4 +27,11 @@ project_channel_waveform(const waveform_t& waveform, const sound_channel_t& chan
                          const sound_slice_result_t& slices,
                          channel_waveform_source_geometry_t source) -> aligned_waveform_result_t;
 
+// Display path: shared forward clock and bounded row/slice pyramid reads.
+// The timing_index_t overloads remain the exact inverse reference path.
+[[nodiscard]] auto project_channel_waveform(const waveform_t& waveform,
+    const sound_channel_t& channel, const display_row_table_t& table,
+    aligned_waveform_request_t request, const sound_slice_result_t& slices,
+    channel_waveform_source_geometry_t source) -> aligned_waveform_result_t;
+
 } // namespace wormedit::audio

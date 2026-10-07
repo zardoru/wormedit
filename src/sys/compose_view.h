@@ -29,6 +29,7 @@
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/audio/waveform.h>
+#include <wormedit/audio/aligned_waveform.h>
 #include "sys/compose_onset_snap.h"
 #endif
 
@@ -212,6 +213,7 @@ struct compose_scene_cache_t {
     bool channel_waveform_projection_valid{};
     std::vector<WormUiComposeWaveformRowView> channel_waveform_rows;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    audio::display_row_table_t waveform_row_table;
     envelope_projection_ring_t waveform_envelope_ring;
     envelope_projection_ring_t channel_envelope_ring;
     // One entry per BMSON stem drawn besides the selected channel (at most eight; the vector is

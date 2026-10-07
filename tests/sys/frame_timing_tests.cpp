@@ -4738,3 +4738,51 @@ TEST_CASE("Workspace timing cache rebuilds measure mapping for reused document I
           "[sys][compose][workspace-cache]") {
     expect_compose_test(workspace_timing_cache_rejects_reused_ids());
 }
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+TEST_CASE("Shared stem row table is prepared once for song and selected channel and reuses scroll rows",
+          "[sys][waveform-projection][bmson][stem][row-table]") {
+    channel_projection_fixture_t fixture;
+    fixture.project();
+    const auto generation = fixture.cache.waveform_row_table.generation;
+    fixture.project_channel();
+    expect_gpu_work(fixture.cache.waveform_row_table.generation == generation);
+    expect_gpu_work(fixture.cache.waveform_row_table.built_rows == 202);
+    fixture.interaction.viewport_scroll_pixels += 1;
+    fixture.project();
+    expect_gpu_work(fixture.cache.waveform_row_table.built_rows == 1);
+    expect_gpu_work(fixture.cache.waveform_row_table.reused_rows == 201);
+    const auto scrolled_generation = fixture.cache.waveform_row_table.generation;
+    fixture.project_channel();
+    expect_gpu_work(fixture.cache.waveform_row_table.generation == scrolled_generation);
+    expect_gpu_work(fixture.cache.channel_envelope_ring.projected_rows == 1);
+    expect_gpu_work(fixture.cache.channel_envelope_ring.reused_rows == 201);
+    fixture.flattened.view.compose.pixels_per_standard_measure *= 2;
+    fixture.project_channel();
+    expect_gpu_work(fixture.cache.waveform_row_table.built_rows == 202);
+    expect_gpu_work(fixture.cache.channel_envelope_ring.projected_rows == 202);
+}
+
+TEST_CASE("Stem row table retires display rings and native cut derivation when timing identity changes",
+          "[sys][waveform-projection][bmson][stem][row-table]") {
+    channel_projection_fixture_t fixture;
+    fixture.project_channel();
+    const auto generation = fixture.cache.waveform_row_table.clock_generation;
+    auto& chart = fixture.history.document.charts.front();
+    chart.bpms.front().beats_per_minute = {240, 1};
+    fixture.cache.marker_timing_index = build_timing_index(chart).index;
+    REQUIRE(fixture.cache.marker_timing_index);
+    fixture.project_channel();
+    expect_gpu_work(fixture.cache.waveform_row_table.clock_generation == generation + 1);
+    expect_gpu_work(fixture.cache.channel_envelope_ring.projected_rows == 202);
+    expect_gpu_work(fixture.cache.channel_waveform_slices.has_value());
+    const auto unchanged = fixture.cache.waveform_row_table.generation;
+    const auto projected = fixture.cache.channel_envelope_ring.projected_rows;
+    const auto calls = fixture.cache.channel_envelope_ring.projection_calls;
+    fixture.project_channel();
+    expect_gpu_work(fixture.cache.waveform_row_table.generation == unchanged);
+    // A cache hit leaves the last projection counters intact.
+    expect_gpu_work(fixture.cache.channel_envelope_ring.projected_rows == projected);
+    expect_gpu_work(fixture.cache.channel_envelope_ring.projection_calls == calls);
+}
+#endif

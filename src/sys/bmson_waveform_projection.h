@@ -39,5 +39,9 @@ struct bmson_waveform_projection_context_t {
 
 void populate_bmson_waveform_projection(const bmson_waveform_projection_context_t& context);
 
+// Shared by song, selected channel and stems; timing changes retire all display rings.
+[[nodiscard]] auto prepare_compose_display_row_table(compose_scene_cache_t& cache,
+    audio::aligned_waveform_request_t request, audio::display_row_table_identity_t identity) -> bool;
+
 } // namespace wormedit::sys
 #endif

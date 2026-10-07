@@ -73,7 +73,7 @@ void project_channel_ring_range(const channel_ring_context_t& context, std::int6
     auto& cache = context.application.cache;
     auto& ring = context.target.ring;
     const auto projected = audio::project_channel_waveform(context.waveform, context.channel,
-        *cache.marker_timing_index,
+        cache.waveform_row_table,
         {.viewport_scroll_pixels = static_cast<double>(begin),
          .viewport_height_pixels = static_cast<double>(count),
          .pixels_per_standard_measure = context.zoom,
@@ -255,7 +255,7 @@ auto project_stem(const bmson_waveform_projection_context_t& context, const char
         .sample_rate = binding->source_sample_rate, .total_frames = binding->source_frame_count};
     const auto& waveform = *analysis->waveform;
     const auto revision = context.history.document.revision;
-    if (entry.source != &waveform || entry.source_generation != context.audition_source_generation ||
+    if (!entry.slices || entry.source != &waveform || entry.source_generation != context.audition_source_generation ||
         entry.revision != revision) {
         entry.source = &waveform;
         entry.source_generation = context.audition_source_generation;
@@ -384,7 +384,32 @@ void populate_stem_waveforms(const bmson_waveform_projection_context_t& context)
 
 } // namespace
 
+auto prepare_compose_display_row_table(compose_scene_cache_t& cache,
+    audio::aligned_waveform_request_t request, audio::display_row_table_identity_t identity) -> bool {
+    if (!cache.marker_timing_index) return false;
+    const auto previous = cache.waveform_row_table.clock_generation;
+    const auto prepared = audio::prepare_display_row_table(cache.waveform_row_table,
+        *cache.marker_timing_index, request, identity);
+    if (!prepared || previous != cache.waveform_row_table.clock_generation) {
+        cache.waveform_envelope_ring.valid = cache.channel_envelope_ring.valid = false;
+        cache.channel_waveform_projection_valid = false;
+        cache.channel_waveform_slices.reset();
+        for (auto& entry : cache.stem_waveforms) {
+            entry.valid = entry.ring.valid = false;
+            entry.slices.reset();
+        }
+    }
+    return prepared;
+}
+
 void populate_bmson_waveform_projection(const bmson_waveform_projection_context_t& context) {
+    if (context.cache.marker_timing_index && context.interaction_state) {
+        const auto& compose = context.flattened.view.compose;
+        (void)prepare_compose_display_row_table(context.cache,
+            {context.interaction_state->viewport_scroll_pixels, compose.viewport_height_pixels,
+             compose.pixels_per_standard_measure},
+            {compose.project_id, context.cache.chart.value, context.history.document.revision});
+    }
     populate_stem_waveforms(context);
     if (!projection_ready(context))
         return;
@@ -428,7 +453,7 @@ void populate_bmson_waveform_projection(const bmson_waveform_projection_context_
     const auto& waveform = *analysis->waveform;
     const wormedit::audio::channel_waveform_source_geometry_t source{
         .sample_rate = binding->source_sample_rate, .total_frames = binding->source_frame_count};
-    if (cache.channel_waveform_channel != channel->id ||
+    if (!cache.channel_waveform_slices || cache.channel_waveform_channel != channel->id ||
         cache.channel_waveform_source != &*analysis->waveform ||
         cache.channel_waveform_source_generation != context.audition_source_generation) {
         cache.channel_waveform_channel = channel->id;

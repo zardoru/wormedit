@@ -183,8 +183,16 @@ auto retarget_lane_layout(const lane_layout_t& current, const lane_layout_t& tar
     if (current.lanes.size() != target.lanes.size()) return std::nullopt;
     auto ordered_current = current.lanes;
     auto ordered_target = target.lanes;
-    std::ranges::stable_sort(ordered_current, {}, &lane_definition_t::display_order);
-    std::ranges::stable_sort(ordered_target, {}, &lane_definition_t::display_order);
+    const auto order_by_visual_position = [](const lane_layout_t& layout,
+                                             std::vector<lane_definition_t>& lanes) {
+        std::ranges::stable_sort(lanes, [&layout](const auto& left, const auto& right) {
+            if (layout.split_stage && left.stage != right.stage) return left.stage < right.stage;
+            return std::pair{left.display_order, left.id.value} <
+                   std::pair{right.display_order, right.id.value};
+        });
+    };
+    order_by_visual_position(current, ordered_current);
+    order_by_visual_position(target, ordered_target);
     auto result = current;
     result.profile_id = target.profile_id;
     result.display_name = target.display_name;

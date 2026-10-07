@@ -283,3 +283,75 @@ TEST_CASE("osu!mania 10K profile carries the canonical key colors",
     CHECK(make_osu_mania_profile(14));
     CHECK_FALSE(make_osu_mania_profile(19));
 }
+
+namespace {
+
+auto visible_10k_colors(const lane_layout_t& layout) -> std::vector<lane_key_color_t> {
+    std::vector<const lane_definition_t*> lanes;
+    for (const auto& lane : layout.lanes) lanes.push_back(&lane);
+    std::ranges::sort(lanes, [&layout](const auto* left, const auto* right) {
+        if (layout.split_stage && left->stage != right->stage) return left->stage < right->stage;
+        return std::pair{left->display_order, left->id.value} <
+               std::pair{right->display_order, right->id.value};
+    });
+    std::vector<lane_key_color_t> colors;
+    for (const auto* lane : lanes) colors.push_back(lane->key_color);
+    return colors;
+}
+
+auto lane_identity_matches(const lane_layout_t& actual, const lane_layout_t& expected) -> bool {
+    if (actual.split_stage != expected.split_stage ||
+        actual.split_after_column != expected.split_after_column ||
+        actual.lanes.size() != expected.lanes.size()) return false;
+    for (std::size_t index = 0; index < actual.lanes.size(); ++index) {
+        if (actual.lanes[index].id != expected.lanes[index].id ||
+            actual.lanes[index].stage != expected.lanes[index].stage ||
+            actual.lanes[index].display_order != expected.lanes[index].display_order) return false;
+    }
+    return true;
+}
+
+auto input_bindings_match(const input_profile_t& actual, const input_profile_t& expected) -> bool {
+    if (actual.bindings.size() != expected.bindings.size()) return false;
+    for (std::size_t index = 0; index < actual.bindings.size(); ++index) {
+        if (actual.bindings[index].key != expected.bindings[index].key ||
+            actual.bindings[index].lane != expected.bindings[index].lane ||
+            actual.bindings[index].focused_stage != expected.bindings[index].focused_stage)
+            return false;
+    }
+    return true;
+}
+
+} // namespace
+
+TEST_CASE("switching between BMS scratchless and osu 10K follows visible split-stage order",
+          "[unit][core][lane-profile-switch][key-color]") {
+    const auto bms = make_bms_10k_scratchless_profile();
+    const auto osu = make_osu_mania_profile(10);
+    REQUIRE(osu);
+    auto history = make_document_history(song_document_t{
+        .id = song_id_t{1}, .revision = 4,
+        .charts = {{.id = chart_id_t{2}, .measures = {{.id = measure_id_t{3}}},
+                    .lane_layouts = {{.id = object_id_t{21},
+                                      .position = {measure_id_t{3}, 0}, .layout = bms.layout}},
+                    .input_profile = bms.input}}});
+    auto& initial_layout = history.document.charts.front().lane_layouts.front().layout;
+    for (auto& lane : initial_layout.lanes) lane.key_color = lane_key_color_t::generic;
+    const std::vector expected{lane_key_color_t::white, lane_key_color_t::black,
+        lane_key_color_t::white, lane_key_color_t::black, lane_key_color_t::pms_green,
+        lane_key_color_t::pms_yellow, lane_key_color_t::black, lane_key_color_t::white,
+        lane_key_color_t::black, lane_key_color_t::white};
+
+    require_profile(static_cast<bool>(apply_lane_profile_switch(
+        history, history.document.revision, chart_id_t{2}, {measure_id_t{3}, 0}, bms.layout)));
+    const auto after_reapply = history.document.charts.front().lane_layouts.front().layout;
+    check_profile(visible_10k_colors(after_reapply) == expected);
+    check_profile(lane_identity_matches(after_reapply, bms.layout));
+    require_profile(static_cast<bool>(apply_lane_profile_switch(
+        history, history.document.revision, chart_id_t{2}, {measure_id_t{3}, 0}, osu->layout)));
+    const auto& chart = history.document.charts.front();
+    const auto& after_switch = chart.lane_layouts.front().layout;
+    check_profile(visible_10k_colors(after_switch) == expected);
+    check_profile(lane_identity_matches(after_switch, bms.layout));
+    check_profile(input_bindings_match(chart.input_profile, bms.input));
+}

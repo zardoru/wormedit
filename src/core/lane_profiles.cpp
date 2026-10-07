@@ -924,7 +924,12 @@ void color_osu_style_10k(lane_layout_t& layout) {
     for (auto& lane : layout.lanes) {
         if (lane.role == lane_role_t::playable) lanes.push_back(&lane);
     }
-    std::ranges::stable_sort(lanes, {}, &lane_definition_t::display_order);
+    std::ranges::stable_sort(lanes, [&layout](const auto* left, const auto* right) {
+        if (layout.split_stage && left->stage != right->stage)
+            return left->stage < right->stage;
+        return std::pair{left->display_order, left->id.value} <
+               std::pair{right->display_order, right->id.value};
+    });
     if (lanes.size() != osu_10k_colors.size()) return;
     for (std::size_t index = 0; index < lanes.size(); ++index)
         lanes[index]->key_color = osu_10k_colors[index];

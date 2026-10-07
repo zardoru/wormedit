@@ -1,4 +1,5 @@
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/editor_scene.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -7,6 +8,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 using namespace wormedit;
@@ -646,25 +648,96 @@ TEST_CASE("layouts without stored colors derive them and unknown profiles stay g
     CHECK(std::ranges::count(layout.lanes, lane_key_color_t::generic, &lane_definition_t::key_color) == 7);
 }
 
+namespace {
+
+auto visual_playable_lanes(const lane_layout_t& layout)
+    -> std::vector<const lane_definition_t*> {
+    std::vector<const lane_definition_t*> lanes;
+    for (const auto& lane : layout.lanes)
+        if (lane.role == lane_role_t::playable) lanes.push_back(&lane);
+    std::ranges::sort(lanes, [&layout](const auto* left, const auto* right) {
+        if (layout.split_stage && left->stage != right->stage) return left->stage < right->stage;
+        return std::pair{left->display_order, left->id.value} <
+               std::pair{right->display_order, right->id.value};
+    });
+    return lanes;
+}
+
+auto scratchless_10k_colors_are_canonical_after_repair() -> bool {
+    using color = lane_key_color_t;
+    const std::vector<color> expected{color::white, color::black, color::white, color::black,
+                                      color::pms_green, color::pms_yellow, color::black,
+                                      color::white, color::black, color::white};
+    const auto scratchless_profile = make_bms_10k_scratchless_profile();
+    auto scratchless = scratchless_profile.layout;
+    auto colors_in_order = [](const lane_layout_t& layout) {
+        std::vector<color> colors;
+        for (const auto* lane : visual_playable_lanes(layout)) colors.push_back(lane->key_color);
+        return colors;
+    };
+    const auto initial_colors_match = colors_in_order(scratchless) == expected &&
+        std::ranges::count_if(visual_playable_lanes(scratchless), [](const auto* lane) {
+            return lane->stage == stage_group_t::left;
+        }) == 5;
+    const auto ids_and_orders = scratchless.lanes;
+    for (auto& lane : scratchless.lanes) lane.key_color = color::generic;
+    assign_lane_key_colors(scratchless);
+    auto identity_preserved = true;
+    for (std::size_t index = 0; index < scratchless.lanes.size(); ++index) {
+        identity_preserved = identity_preserved && scratchless.lanes[index].id == ids_and_orders[index].id &&
+            scratchless.lanes[index].stage == ids_and_orders[index].stage &&
+            scratchless.lanes[index].display_order == ids_and_orders[index].display_order;
+    }
+    return initial_colors_match && identity_preserved && colors_in_order(scratchless) == expected;
+}
+
+} // namespace
+
 TEST_CASE("osu!mania style 10K uses the canonical wbwbgybwbw key colors",
           "[unit][core][lane-profile][key-color]") {
     using color = lane_key_color_t;
     const std::vector<color> expected{color::white, color::black, color::white, color::black,
                                       color::pms_green, color::pms_yellow, color::black,
                                       color::white, color::black, color::white};
-    auto scratchless = make_bms_10k_scratchless_profile().layout;
-    std::ranges::sort(scratchless.lanes, {}, &lane_definition_t::display_order);
-    std::vector<color> actual;
-    for (const auto& lane : scratchless.lanes) actual.push_back(lane.key_color);
-    CHECK(actual == expected);
+    CHECK(scratchless_10k_colors_are_canonical_after_repair());
 
     lane_layout_t osu;
     osu.profile_id = "osu-mania-10k";
     for (std::uint32_t column = 0; column < 10; ++column)
         osu.lanes.push_back({.id = lane_id_t{column + 1}, .display_order = column});
     assign_lane_key_colors(osu);
-    actual.clear();
+    std::vector<color> actual;
     for (const auto& lane : osu.lanes) actual.push_back(lane.key_color);
+    CHECK(actual == expected);
+}
+
+TEST_CASE("BMS scratchless 10K colors follow rendered left-to-right lane geometry",
+          "[unit][core][lane-profile][key-color][scene]") {
+    const auto profile = make_bms_10k_scratchless_profile();
+    chart_document_t chart{.id = chart_id_t{1}, .divisions_per_standard_measure = 960};
+    chart.measures = {{.id = measure_id_t{1}}};
+    chart.bpms = {{.id = object_id_t{2}, .position = {measure_id_t{1}, 0},
+                   .beats_per_minute = {120, 1}}};
+    chart.lane_layouts = {{.id = object_id_t{3}, .position = {measure_id_t{1}, 0},
+                           .layout = profile.layout}};
+    const auto built = build_editor_field_scene_index(chart, 1);
+    REQUIRE(std::holds_alternative<editor_field_scene_index_t>(built));
+    const editor_interaction_view_model_t view{
+        .chart = chart.id, .active_lane = profile.layout.lanes.front().id,
+        .cursor = {measure_id_t{1}, 0}, .active_snap_denominator = 4,
+        .supported_snap_denominators = {4}, .document_revision = 1,
+        .pixels_per_standard_measure = 192, .viewport_height_pixels = 640};
+    const auto result = make_editor_field_scene(
+        chart, std::get<editor_field_scene_index_t>(built), view, {.field_width_pixels = 640});
+    REQUIRE(result);
+    auto lanes = result.scene->lanes;
+    std::ranges::sort(lanes, {}, [](const auto& lane) { return lane.bounds.left; });
+    std::vector<lane_key_color_t> actual;
+    for (const auto& lane : lanes) actual.push_back(lane.key_color);
+    const std::vector expected{lane_key_color_t::white, lane_key_color_t::black,
+        lane_key_color_t::white, lane_key_color_t::black, lane_key_color_t::pms_green,
+        lane_key_color_t::pms_yellow, lane_key_color_t::black, lane_key_color_t::white,
+        lane_key_color_t::black, lane_key_color_t::white};
     CHECK(actual == expected);
 }
 

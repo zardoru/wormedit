@@ -306,9 +306,15 @@ auto drawn_stems(const bmson_waveform_projection_context_t& context, const chart
                  const std::optional<compose_scene_cache_t::channel_waveform_selection_t>& selected)
     -> std::vector<drawn_stem_t> {
     std::vector<drawn_stem_t> drawn;
+    const bool cache_matches = context.cache.chart == chart.id &&
+                               context.cache.revision == context.history.document.revision;
+    const auto* timing = cache_matches && context.cache.marker_timing_index
+                             ? &*context.cache.marker_timing_index
+                             : nullptr;
     for (const auto* channel : visible_stem_channels(context.history.document, chart, context.interaction_state->cursor.measure,
             stem_window_measures(context.flattened.view.compose.viewport_height_pixels,
-                                 context.flattened.view.compose.pixels_per_standard_measure)))
+                                 context.flattened.view.compose.pixels_per_standard_measure),
+             context.audition_sources.bindings(), timing))
         drawn.push_back({channel, stem_source_lane(chart, *channel), selected && selected->channel == channel->id});
     if (selected && std::ranges::none_of(drawn, [](const auto& item) { return item.selected; })) {
         const auto found = std::ranges::find(chart.sound_channels, selected->channel, &sound_channel_t::id);

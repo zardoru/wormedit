@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <source_location>
 #include <vector>
 
 namespace {
@@ -37,6 +38,18 @@ auto assist_grid(double phase) -> preview_assist_click_grid_t;
 
 auto transport_for(decoded_block_cache_t& cache, std::size_t capacity = 16) -> transport_t {
     return transport_t{cache, capacity};
+}
+
+void check_audio_condition(bool condition,
+                           std::source_location location = std::source_location::current()) {
+    INFO("assertion at source line " << location.line());
+    CHECK(condition);
+}
+
+void require_audio_condition(bool condition,
+                             std::source_location location = std::source_location::current()) {
+    INFO("required condition at source line " << location.line());
+    REQUIRE(condition);
 }
 
 } // namespace
@@ -122,6 +135,65 @@ TEST_CASE("preview bridge preserves playable, BGM, and metronome polyphony",
     CHECK(output.front() == Catch::Approx(0.15F));
 }
 
+auto snapshot_has_voice_count(const std::optional<active_voice_snapshot_t>& snapshot,
+                              std::size_t count) -> bool {
+    return snapshot && snapshot->voices.size() == count;
+}
+
+auto has_scheduled_voice(const std::optional<active_voice_snapshot_t>& snapshot,
+                         std::uint64_t source_frame, std::uint64_t frame_count,
+                         std::uint64_t timeline_frame) -> bool {
+    return snapshot && std::ranges::any_of(snapshot->voices, [&](const auto& voice) {
+        return voice.source_start_frame == source_frame && voice.frame_count == frame_count &&
+               voice.timeline_start_frame == timeline_frame;
+    });
+}
+
+TEST_CASE("preview bridge resumes active BMSON slices at the sought source frame",
+          "[unit][audio][preview-bridge][seek][bmson]") {
+    decoded_block_cache_t cache;
+    auto transport = transport_for(cache, 16);
+    preview_transport_bridge_t bridge{transport};
+    auto chart = schedule();
+    chart.playable = {audio_event(0, 5)};
+    chart.bgm = {audio_event(0, 1),
+                 audio_event(1, 3),
+                 audio_event(2, 4),
+                 {.sample_frame = 5, .object = object_id_t{2}, .resource = resource_id_t{2}}};
+    auto first = binding(object_id_t{1});
+    first.voices.front().source_start_frame = 10;
+    first.voices.front().frame_count = 1;
+    auto exact = binding(object_id_t{2});
+    exact.voices.front().frame_count = 20;
+    auto ended = binding(object_id_t{3});
+    ended.voices.front().source_start_frame = 40;
+    ended.voices.front().frame_count = 1;
+    auto middle = binding(object_id_t{4});
+    middle.voices.front().source_start_frame = 100;
+    middle.voices.front().frame_count = 6;
+    auto playable = binding(object_id_t{5});
+    playable.voices.front().source_start_frame = 200;
+    playable.voices.front().frame_count = 10;
+    const std::array objects{first, exact, ended, middle, playable};
+    const auto started = bridge.start(chart, objects, {}, 5);
+    require_audio_condition(static_cast<bool>(started));
+    check_audio_condition(bridge.materialize_until(6).scheduled_events == 3);
+    const auto active = transport.snapshot_active_voices(*started.token);
+    check_audio_condition(snapshot_has_voice_count(active, 3));
+    check_audio_condition(has_scheduled_voice(active, 103, 3, 5));
+    check_audio_condition(has_scheduled_voice(active, 205, 5, 5));
+    check_audio_condition(has_scheduled_voice(active, 0, 20, 5));
+
+    const auto reseek = bridge.seek(10);
+    require_audio_condition(static_cast<bool>(reseek));
+    check_audio_condition(bridge.materialize_until(11).scheduled_events == 1);
+    const auto after_end = transport.snapshot_active_voices(*reseek.token);
+    check_audio_condition(snapshot_has_voice_count(after_end, 1));
+    check_audio_condition(has_scheduled_voice(after_end, 5, 15, 10));
+    check_audio_condition(bridge.stop().scheduled_voices == 1);
+    check_audio_condition(bridge.materialize_until(11).status == preview_bridge_pump_status_t::not_started);
+}
+
 TEST_CASE("preview bridge seeks and restarts with fresh session generations",
           "[unit][audio][preview-bridge][seek][generation]") {
     decoded_block_cache_t cache;
@@ -132,23 +204,35 @@ TEST_CASE("preview bridge seeks and restarts with fresh session generations",
     const std::array objects{binding(object_id_t{1}), binding(object_id_t{2}),
                              binding(object_id_t{3})};
     const auto first = bridge.start(chart, objects, {}, 20);
-    REQUIRE(first);
-    CHECK(bridge.materialize_until(40).scheduled_events == 2);
+    require_audio_condition(static_cast<bool>(first));
+    check_audio_condition(bridge.materialize_until(40).scheduled_events == 3);
+    const auto at_first_seek = transport.snapshot_active_voices(*first.token);
+    check_audio_condition(has_scheduled_voice(at_first_seek, 10, 54, 20));
+    check_audio_condition(has_scheduled_voice(at_first_seek, 0, 64, 20));
 
     const auto sought = bridge.seek(30);
-    REQUIRE(sought);
-    CHECK(sought.token != first.token);
-    CHECK(transport.scheduled_voice_count() == 0);
-    CHECK(bridge.materialize_until(40).scheduled_events == 1);
+    require_audio_condition(static_cast<bool>(sought));
+    check_audio_condition(sought.token != first.token);
+    check_audio_condition(transport.scheduled_voice_count() == 0);
+    check_audio_condition(bridge.materialize_until(40).scheduled_events == 3);
+    const auto at_second_seek = transport.snapshot_active_voices(*sought.token);
+    check_audio_condition(has_scheduled_voice(at_second_seek, 20, 44, 30));
+    check_audio_condition(has_scheduled_voice(at_second_seek, 10, 54, 30));
     std::array<float, 2> stale_output{1.0F, 1.0F};
-    CHECK(transport.mix(*first.token, 20, stale_output).status ==
+    check_audio_condition(transport.mix(*first.token, 20, stale_output).status ==
           transport_mix_status_t::stale_generation);
-    CHECK(stale_output[0] == 0.0F);
+    check_audio_condition(stale_output[0] == 0.0F);
 
     const auto restarted = bridge.restart();
-    REQUIRE(restarted);
-    CHECK(restarted.token != sought.token);
-    CHECK(bridge.materialize_until(11).scheduled_events == 1);
+    require_audio_condition(static_cast<bool>(restarted));
+    check_audio_condition(restarted.token != sought.token);
+    check_audio_condition(bridge.materialize_until(11).scheduled_events == 1);
+    check_audio_condition(has_scheduled_voice(transport.snapshot_active_voices(*restarted.token), 0, 64, 10));
+    check_audio_condition(bridge.stop().scheduled_voices == 1);
+    std::array<float, 2> stopped_output{1.0F, 1.0F};
+    check_audio_condition(transport.mix(*restarted.token, 0, stopped_output).status ==
+          transport_mix_status_t::stale_generation);
+    check_audio_condition(std::ranges::all_of(stopped_output, [](float sample) { return sample == 0.0F; }));
 }
 
 TEST_CASE("preview bridge Stop invalidates its generation and clears scheduled voices",

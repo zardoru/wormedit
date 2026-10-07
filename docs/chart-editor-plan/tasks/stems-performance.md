@@ -74,12 +74,12 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **Status:** ready
 - **Outcome:** in `kick_your_ass2.bmson`, the `fx`, `hat` and `pc` waveforms stay visible from measure 1 to the end of their audio, at any cursor position.
 - **Read first:** `src/sys/stem_waveform_window.h` (`stem_reach_measures`), `src/sys/audio_source_registration.cpp`, `include/wormedit/audio/source_registry.h` (`decoded_source_binding_t`).
-- **Files owned:** `src/sys/stem_waveform_window.h`, `src/sys/bmson_waveform_projection.cpp`, `src/sys/waveform_analysis_runtime.cpp`, `tests/sys/stem_window_tests.cpp`, this card.
+- **Files owned:** `src/sys/stem_waveform_window.h`, `src/sys/bmson_waveform_projection.cpp`, `src/sys/waveform_analysis_runtime.cpp`, `tests/sys/stem_window_tests.cpp`, `tests/CMakeLists.txt` (approved extension: register the new stem window regression source), `src/sys/waveform_analysis_runtime.h` (approved extension: pass the already cached timing index to the shared visibility helper, avoiding a full timing rebuild each frame).
 - **Steps:**
-  1. Confirm the cause: log `asset.stream.frame_count` for the 12 stems after load. If they are set, find the real cause before going on, and record it here.
+  1. Confirm the cause: log `asset.stream.frame_count` for the 12 stems after load. If they are set, find the real cause before going on, and record it here. **Observed:** all 12 Kick Your Ass assets had `sample_rate=0` and no stored `frame_count` after open; their paths resolved to Ogg files. The 30-second unknown-length fallback therefore underestimates these stems. Root's read-only loader probe: `/tmp/wormedit-oct7-root/kick-registry.log` confirms all 12 sources registered with decoded frame counts; ffprobe found 6,879,876 frames at 44,100 Hz for `fx.ogg`, and 6,880,151 frames at 44,100 Hz for `hat.ogg`/`pc.ogg`.
   2. Take the reach from the registered binding's `source_frame_count` when the stored stream lacks it. While neither is known, treat the stem as reaching the end of the chart, not 30 seconds.
   3. Compute the reach from the chart's timing, so that the time from the stem's last event to the end of its audio maps to rows, instead of using the fastest BPM.
-  4. Add a regression fixture: a 12-channel BMSON with single-event, full-length stems, with the cursor at measures 1, 20 and 40.
+  4. Add a regression fixture: a 12-channel BMSON with single-event, full-length stems, with the cursor at measures 1, 20 and 40. **Observed:** the read-only production registry probe registered all 12 original Kick assets with exact decoded frame counts (6.88M–6.90M) and the production visibility helper retained all 12 at measures 1, 20 and 40; see `/tmp/wormedit-oct7-root/kick-window-probe.log`.
 - **Invariants:** stems whose audio really ends still leave the window.
 - **Reject/failure behavior:** an asset that fails to decode keeps its placeholder band and does not vanish.
 - **Verify:** `ctest --test-dir build --output-on-failure -R stem`; an isolated Xvfb capture of Kick Your Ass at measure 30 shows the `fx` lane waveform.
@@ -90,12 +90,12 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **Status:** ready
 - **Outcome:** starting or seeking playback inside a sounding BMSON slice plays that slice from the matching source frame at once. A probe shows non-silent PCM from the stem within 10 ms of the start.
 - **Read first:** `src/audio/preview_bridge.cpp` (`begin_session`, `seek_preview_queue`), `src/core/timing.cpp` (`build_preview_schedule`), `include/wormedit/core/sound_slice.h`, `src/audio/audition_resolver.cpp`.
-- **Files owned:** `src/audio/preview_bridge.cpp`, `include/wormedit/audio/preview_bridge.h`, `src/core/timing.cpp` (the schedule carries the slice end frame), `include/wormedit/core/timing.h`, `tests/core/audio_preview_bridge_tests.cpp`, this card.
+- **Files owned:** `src/audio/preview_bridge.cpp`, `include/wormedit/audio/preview_bridge.h`, `tests/core/audio_preview_bridge_tests.cpp`, `tests/sys/sdl_preview_output_tests.cpp` (approved extension: verify non-silent dummy SDL PCM for a seek inside a sounding slice), `tests/core/audio_audition_resolver_tests.cpp` (approved extension: verify a nonzero native clip offset and continuation boundaries normalize correctly when source rate differs from the fixed preview output rate), `tests/core/audio_preview_session_tests.cpp` (approved extension: assert resumed seek voice stop counts and post-stop silence), this card.
 - **Steps:**
-  1. Make sure each BGM preview event carries its slice's source begin frame and end frame (exclusive). Add the end frame if it is missing.
-  2. In `begin_session`, for BGM events before `seek_frame` whose slice is still sounding at `seek_frame`, start them with `source_start_frame += seek_frame - sample_frame`. Restart and continuation points both follow the derived slices.
+  1. Reuse each resolved preview voice's normalized source start and frame count as the authoritative slice bounds; do not duplicate source-range metadata in the timeline schedule because its rate may differ from the decoder's source-frame rate.
+  2. In `begin_session`, for BGM events before `seek_frame` whose resolved slice is still sounding at `seek_frame`, start them with `source_start_frame += seek_frame - sample_frame`. Restart and continuation points follow the derived slice voices from the resolver.
   3. Plain BMS keysounds follow the same rule, gated on the sample still sounding, so a long BMS BGM sample resumes too.
-  4. Test with one-slice and three-slice stems: seeks at the start of a slice, in the middle, and just past its end.
+  4. Test with one-slice and three-slice stems and a nonzero clip begin: seek at a slice start, in the middle, exactly on an event, and just past its end. Verify source-rate conversion remains correct when the engine resamples.
 - **Invariants:** a seek exactly on an event behaves as today. Loop-region starts use the same path.
 - **Reject/failure behavior:** a slice whose audio is not resident plays from its next point, as it does today, and logs no error.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'audio_preview|^audio\.'`; an isolated SDL dummy-audio PCM check at a mid-slice seek.

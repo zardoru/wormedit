@@ -140,9 +140,14 @@ class preview_transport_bridge_t {
     std::size_t maximum_layers_per_object_{};
     const preview_schedule_t* schedule_{};
     std::vector<preview_object_source_binding_t> objects_;
+    std::vector<preview_object_source_binding_t> resumed_objects_;
+    std::vector<preview_audio_event_t> resumed_playable_;
+    std::vector<preview_audio_event_t> resumed_bgm_;
     std::vector<preview_metronome_source_binding_t> metronome_;
     preview_queue_head_t playable_head_;
     preview_queue_head_t bgm_head_;
+    preview_queue_head_t resumed_playable_head_;
+    preview_queue_head_t resumed_bgm_head_;
     preview_queue_head_t metronome_head_;
     bool music_pending_{};
     std::atomic<bool> metronome_enabled_{true};

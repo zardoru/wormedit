@@ -283,6 +283,51 @@ auto generated_sine(std::size_t frames) -> std::vector<float> {
     return samples;
 }
 
+void wait_capture_frames(device_capture_t& capture, wormedit::sys::sdl_preview_output_t& output,
+                         std::size_t frames);
+
+auto sdl_bmson_seek_renders_pcm() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    if (!SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy") || !SDL_InitSubSystem(SDL_INIT_AUDIO))
+        return false;
+    const preview_audio_subsystem_t audio_subsystem;
+    decoded_source_registry_t sources;
+    const auto registered = sources.register_generated_source(
+        {.source = {"generated:bmson-resume", "sdl-bmson-resume-v1"},
+         .interleaved_stereo = generated_sine(output_sample_rate)});
+    if (!registered)
+        return false;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    sys::sdl_preview_output_t output{session};
+    if (!output.open())
+        return false;
+    device_capture_t capture{output.audio_device_id()};
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.bgm = {{.sample_frame = 0, .object = object_id_t{91}, .resource = resource_id_t{1}}};
+    const preview_object_source_binding_t binding{
+        .object = object_id_t{91},
+        .voices = {{.source = registered.binding->source, .frame_count = output_sample_rate / 2}}};
+    constexpr std::uint64_t seek_frame = output_sample_rate / 20;
+    if (!output.start(schedule, std::span{&binding, 1}, {}, seek_frame))
+        return false;
+    wait_capture_frames(capture, output, output_sample_rate / 100);
+    const auto captured = std::span(capture.samples).first(output_sample_rate / 100);
+    const bool audible = std::ranges::any_of(captured, [](float value) { return std::abs(value) > 0.001F; });
+    capture.detach();
+    static_cast<void>(output.stop());
+    output.close();
+    return audible;
+}
+
+TEST_CASE("SDL dummy audio renders a resumed BMSON slice within ten milliseconds",
+          "[integration][audio][sdl][preview][seek][bmson]") {
+    CHECK(sdl_bmson_seek_renders_pcm());
+}
+
 auto exercise_sdl_loop_restart() -> bool {
     using namespace wormedit;
     using namespace wormedit::audio;

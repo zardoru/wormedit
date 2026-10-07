@@ -121,7 +121,8 @@ private:
                                           const workspace_controller_t& workspace,
                                           std::optional<asset_id_t> selected_channel_asset,
                                           const editor_interaction_state_t* interaction,
-                                          double viewport_height_pixels) const
+                                          double viewport_height_pixels,
+                                          const timing_index_t* cached_timing) const
         -> std::vector<asset_id_t>;
     void service_channel_waveform(const song_document_t& document,
                                   const workspace_controller_t& workspace,

@@ -20,6 +20,7 @@ endif()
 
 add_executable(wormedit_core_tests
     sys/bga_lane_workflow_tests.cpp
+    sys/stem_window_tests.cpp
     ../src/sys/compose_resource_presenter.cpp
     ../src/sys/compose_area_actions.cpp
     ../src/sys/application_commands.cpp

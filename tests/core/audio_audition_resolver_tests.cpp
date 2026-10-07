@@ -26,6 +26,17 @@ auto published_fixture() -> wormedit::bmson_parse_result_t {
     return bmson_fixture("published-vox-slicing.bmson");
 }
 
+auto cropped_continuation_is_normalized(const wormedit::song_document_t& song,
+                                       wormedit::chart_id_t chart,
+                                       wormedit::object_id_t note,
+                                       std::span<const wormedit::audio::audition_source_binding_t> bindings)
+    -> bool {
+    const auto resolved = wormedit::audio::resolve_object_audition(song, chart, note, bindings);
+    return resolved && resolved.clips.size() == 1 &&
+           resolved.clips.front().source_start_frame == 55'125 &&
+           resolved.clips.front().frame_count == 33'075;
+}
+
 auto runtime_binding(wormedit::asset_id_t asset, std::uint64_t frames = 200'000)
     -> wormedit::audio::audition_source_binding_t {
     return {.asset = asset,
@@ -96,6 +107,7 @@ TEST_CASE("audition resolver maps published BMSON slices into normalized transpo
     REQUIRE(cropped.clips.size() == 1);
     CHECK(cropped.clips.front().source_start_frame == 44'100);
     CHECK(cropped.clips.front().frame_count == 11'025);
+    CHECK(cropped_continuation_is_normalized(song, chart.id, shared_note->id, bindings));
 }
 
 TEST_CASE("audition resolver isolates BGM slices and falls back to whole unlinked resources",

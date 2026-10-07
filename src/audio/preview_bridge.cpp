@@ -1,5 +1,5 @@
-#include <wormedit/audio/preview_bridge.h>
 #include <wormedit/audio/decoder.h>
+#include <wormedit/audio/preview_bridge.h>
 
 #include <algorithm>
 #include <cmath>
@@ -13,6 +13,8 @@ namespace {
 enum class queue_kind_t : std::uint8_t {
     playable,
     bgm,
+    resumed_playable,
+    resumed_bgm,
     metronome,
     assist,
     music,
@@ -30,9 +32,13 @@ struct event_candidate_t {
 struct preview_queue_cursor_t {
     std::span<const preview_audio_event_t> playable;
     std::span<const preview_audio_event_t> bgm;
+    std::span<const preview_audio_event_t> resumed_playable;
+    std::span<const preview_audio_event_t> resumed_bgm;
     std::span<const preview_metronome_event_t> clicks;
     std::size_t playable_index{};
     std::size_t bgm_index{};
+    std::size_t resumed_playable_index{};
+    std::size_t resumed_bgm_index{};
     std::size_t click_index{};
     bool music_pending{};
     std::uint64_t music_timeline_frame{};
@@ -59,6 +65,18 @@ auto next_candidate(const preview_queue_cursor_t& queues) -> std::optional<event
         const auto& event = queues.bgm[queues.bgm_index];
         consider({.sample_frame = event.sample_frame,
                   .queue = queue_kind_t::bgm,
+                  .object = event.object});
+    }
+    if (queues.resumed_playable_index < queues.resumed_playable.size()) {
+        const auto& event = queues.resumed_playable[queues.resumed_playable_index];
+        consider({.sample_frame = event.sample_frame,
+                  .queue = queue_kind_t::resumed_playable,
+                  .object = event.object});
+    }
+    if (queues.resumed_bgm_index < queues.resumed_bgm.size()) {
+        const auto& event = queues.resumed_bgm[queues.resumed_bgm_index];
+        consider({.sample_frame = event.sample_frame,
+                  .queue = queue_kind_t::resumed_bgm,
                   .object = event.object});
     }
     if (queues.click_index < queues.clicks.size()) {
@@ -89,6 +107,7 @@ struct candidate_sources_t {
 
 auto sources_for_candidate(const event_candidate_t& candidate,
                            const std::vector<preview_object_source_binding_t>& objects,
+                           const std::vector<preview_object_source_binding_t>& resumed_objects,
                            const std::vector<preview_metronome_source_binding_t>& metronome)
     -> candidate_sources_t {
     if (candidate.queue == queue_kind_t::metronome || candidate.queue == queue_kind_t::assist) {
@@ -100,23 +119,33 @@ auto sources_for_candidate(const event_candidate_t& candidate,
         }
         return {{}, voice_kind_t::click_preview};
     }
+    const bool resumed = candidate.queue == queue_kind_t::resumed_playable ||
+                         candidate.queue == queue_kind_t::resumed_bgm;
+    const auto& source_objects = resumed ? resumed_objects : objects;
     const auto kind = candidate.queue == queue_kind_t::music ? voice_kind_t::music
-                      : candidate.queue == queue_kind_t::bgm ? voice_kind_t::bgm
+                      : candidate.queue == queue_kind_t::bgm || candidate.queue == queue_kind_t::resumed_bgm ? voice_kind_t::bgm
                                                             : voice_kind_t::playable_note;
-    const auto binding = std::ranges::lower_bound(objects, candidate.object, {},
+    const auto binding = std::ranges::lower_bound(source_objects, candidate.object, {},
                                                   &preview_object_source_binding_t::object);
-    if (binding != objects.end() && binding->object == candidate.object) {
+    if (binding != source_objects.end() && binding->object == candidate.object) {
         return {binding->voices, kind};
     }
     return {{}, kind};
 }
 
 void advance_candidate(const event_candidate_t& candidate, preview_queue_head_t& playable,
-                       preview_queue_head_t& bgm, preview_queue_head_t& metronome,
+                       preview_queue_head_t& bgm, preview_queue_head_t& resumed_playable,
+                       preview_queue_head_t& resumed_bgm, preview_queue_head_t& metronome,
                        bool& music_pending, std::size_t& assist_head) {
     switch (candidate.queue) {
     case queue_kind_t::playable: ++playable.index; break;
-    case queue_kind_t::bgm: ++bgm.index; break;
+    case queue_kind_t::bgm: ++bgm.index;
+        break;
+    case queue_kind_t::resumed_playable:
+        ++resumed_playable.index;
+        break;
+    case queue_kind_t::resumed_bgm:
+        ++resumed_bgm.index; break;
     case queue_kind_t::metronome: ++metronome.index; break;
     case queue_kind_t::assist: ++assist_head; break;
     case queue_kind_t::music: music_pending = false; break;
@@ -159,6 +188,50 @@ auto pump_error_for_schedule(voice_schedule_status_t status)
 
 auto valid_source(const audio_source_identity_t& source) -> bool {
     return !source.asset_identity.empty() && !source.source_identity.empty();
+}
+
+auto resumed_binding_for(const preview_audio_event_t& event,
+                         const preview_object_source_binding_t& original, std::uint64_t seek_frame)
+    -> std::optional<preview_object_source_binding_t> {
+    const auto elapsed = seek_frame - event.sample_frame;
+    preview_object_source_binding_t resumed{.object = event.object};
+    for (const auto& voice : original.voices) {
+        const auto duration = voice.frame_count;
+        if (elapsed >= duration ||
+            voice.source_start_frame > std::numeric_limits<std::uint64_t>::max() - elapsed)
+            continue;
+        auto active = voice;
+        active.source_start_frame += elapsed;
+        active.frame_count = duration - elapsed;
+        resumed.voices.push_back(std::move(active));
+    }
+    if (resumed.voices.empty())
+        return std::nullopt;
+    return resumed;
+}
+
+void prepare_resumes(std::span<const preview_audio_event_t> events, std::uint64_t seek_frame,
+                     const std::vector<preview_object_source_binding_t>& objects,
+                     std::vector<preview_object_source_binding_t>& resumed_objects,
+                     std::vector<preview_audio_event_t>& resumed_events) {
+    for (const auto& event : events) {
+        if (event.sample_frame >= seek_frame)
+            break;
+        const auto binding = std::ranges::lower_bound(objects, event.object, {},
+                                                      &preview_object_source_binding_t::object);
+        if (binding == objects.end() || binding->object != event.object)
+            continue;
+        auto resumed = resumed_binding_for(event, *binding, seek_frame);
+        if (!resumed)
+            continue;
+        resumed_objects.push_back(std::move(*resumed));
+        resumed_events.push_back({.sample_frame = seek_frame,
+                                  .object = event.object,
+                                  .resource = event.resource,
+                                  .lane = event.lane,
+                                  .source_order = event.source_order,
+                                  .secondary_order = event.secondary_order});
+    }
 }
 
 auto valid_voice_source(const preview_voice_source_t& source) -> bool {
@@ -314,6 +387,14 @@ auto preview_transport_bridge_t::begin_session(std::uint64_t seek_frame)
         return {.status = preview_bridge_start_status_t::transport_start_failed};
     }
     token_ = token;
+    resumed_objects_.clear();
+    resumed_playable_.clear();
+    resumed_bgm_.clear();
+    resumed_playable_head_ = {};
+    resumed_bgm_head_ = {};
+    prepare_resumes(schedule_->playable, seek_frame, objects_, resumed_objects_, resumed_playable_);
+    prepare_resumes(schedule_->bgm, seek_frame, objects_, resumed_objects_, resumed_bgm_);
+    std::ranges::sort(resumed_objects_, {}, &preview_object_source_binding_t::object);
     seek_preview_queue(std::span<const preview_audio_event_t>{schedule_->playable}, playable_head_,
                        seek_frame);
     seek_preview_queue(std::span<const preview_audio_event_t>{schedule_->bgm}, bgm_head_,
@@ -352,9 +433,14 @@ auto preview_transport_bridge_t::stop() noexcept -> transport_stop_result_t {
     token_.reset();
     schedule_ = nullptr;
     objects_.clear();
+    resumed_objects_.clear();
+    resumed_playable_.clear();
+    resumed_bgm_.clear();
     metronome_.clear();
     playable_head_ = {};
     bgm_head_ = {};
+    resumed_playable_head_ = {};
+    resumed_bgm_head_ = {};
     metronome_head_ = {};
     music_pending_ = false;
     music_timeline_frame_ = 0;
@@ -452,19 +538,20 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
 
     while (true) {
         const auto candidate = next_candidate(
-            {playable, bgm, clicks, playable_head_.index, bgm_head_.index,
+            {playable, bgm, resumed_playable_, resumed_bgm_, clicks, playable_head_.index, bgm_head_.index, resumed_playable_head_.index, resumed_bgm_head_.index,
              metronome_head_.index, music_pending_, music_timeline_frame_, music_source_frame_,
              music_frame_count_, std::span{assist_clicks_.data(), assist_count_}, assist_head_});
         if (!candidate.has_value() || candidate->sample_frame >= exclusive_end_frame) {
             break;
         }
 
-        const auto selected_sources = sources_for_candidate(*candidate, objects_, metronome_);
+        const auto selected_sources = sources_for_candidate(*candidate, objects_, resumed_objects_, metronome_);
         const auto sources = selected_sources.sources;
         const auto voice_kind = selected_sources.kind;
         if (sources.empty()) {
             ++result.missing_sources;
-            advance_candidate(*candidate, playable_head_, bgm_head_, metronome_head_, music_pending_, assist_head_);
+            advance_candidate(*candidate, playable_head_, bgm_head_, resumed_playable_head_,
+                              resumed_bgm_head_, metronome_head_, music_pending_, assist_head_);
             continue;
         }
         if (next_voice_id_ == 0 ||
@@ -496,7 +583,8 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
             music_frame_count_ -= music_segment;
             music_pending_ = music_frame_count_ != 0;
         } else {
-            advance_candidate(*candidate, playable_head_, bgm_head_, metronome_head_, music_pending_, assist_head_);
+            advance_candidate(*candidate, playable_head_, bgm_head_, resumed_playable_head_,
+                              resumed_bgm_head_, metronome_head_, music_pending_, assist_head_);
         }
         const auto last_voice_id = next_voice_id_ + sources.size() - 1;
         if (last_voice_id == std::numeric_limits<std::uint64_t>::max()) {
@@ -512,6 +600,8 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
 auto preview_transport_bridge_t::exhausted() const noexcept -> bool {
     return schedule_ != nullptr && playable_head_.index == schedule_->playable.size() &&
            bgm_head_.index == schedule_->bgm.size() &&
+           resumed_playable_head_.index == resumed_playable_.size() &&
+           resumed_bgm_head_.index == resumed_bgm_.size() &&
            metronome_head_.index == schedule_->metronome.size() && !music_pending_ &&
            assist_head_ == assist_count_;
 }

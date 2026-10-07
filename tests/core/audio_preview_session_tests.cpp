@@ -5,7 +5,9 @@
 #include <array>
 #include <filesystem>
 #include <limits>
+#include <optional>
 #include <ranges>
+#include <source_location>
 #include <string>
 #include <vector>
 
@@ -26,8 +28,27 @@ auto register_fixture(wormedit::audio::decoded_source_registry_t& registry)
     return *added.binding;
 }
 
+auto has_active_voice(const std::optional<wormedit::audio::active_voice_snapshot_t>& snapshot,
+                      std::uint64_t source_start, std::uint64_t frame_count) -> bool {
+    return snapshot && std::ranges::any_of(snapshot->voices, [&](const auto& voice) {
+        return voice.source_start_frame == source_start && voice.frame_count == frame_count;
+    });
+}
+
 auto any_nonzero(const std::vector<float>& samples) -> bool {
     return std::ranges::any_of(samples, [](float sample) { return sample != 0.0F; });
+}
+
+void check_session_condition(bool condition,
+                             std::source_location location = std::source_location::current()) {
+    INFO("assertion at source line " << location.line());
+    CHECK(condition);
+}
+
+void require_session_condition(bool condition,
+                               std::source_location location = std::source_location::current()) {
+    INFO("required condition at source line " << location.line());
+    REQUIRE(condition);
 }
 
 auto preview_session_survives_underrun_and_completes() -> bool {
@@ -345,21 +366,22 @@ TEST_CASE("preview session seek replaces generations and hard Stop silences late
         .voices = {{.source = source.source, .frame_count = 1'000}},
     };
     const auto started = session.start(schedule, std::span{&binding, 1});
-    REQUIRE(started);
+    require_session_condition(static_cast<bool>(started));
     const auto old_token = *started.token;
 
     const auto sought = session.seek(200);
-    REQUIRE(sought);
-    CHECK(sought.token != old_token);
-    CHECK(session.timeline_frame() == 200);
-    CHECK_FALSE(transport.is_current(old_token));
+    require_session_condition(static_cast<bool>(sought));
+    check_session_condition(sought.token != old_token);
+    check_session_condition(session.timeline_frame() == 200);
+    check_session_condition(!transport.is_current(old_token));
+    check_session_condition(has_active_voice(transport.snapshot_active_voices(*sought.token), 100, 900));
 
     const auto stopped = session.stop();
-    CHECK(stopped.scheduled_voices == 0);
+    check_session_condition(stopped.scheduled_voices == 1);
     std::vector<float> output(128 * output_channel_count, 1.0F);
     const auto rendered = session.render(output);
-    CHECK(rendered.status == preview_session_render_status_t::stopped);
-    CHECK(std::ranges::all_of(output, [](float sample) { return sample == 0.0F; }));
+    check_session_condition(rendered.status == preview_session_render_status_t::stopped);
+    check_session_condition(std::ranges::all_of(output, [](float sample) { return sample == 0.0F; }));
 }
 
 TEST_CASE("preview session mixes generated metronome sources on the chart timeline",

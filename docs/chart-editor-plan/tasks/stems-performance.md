@@ -235,12 +235,14 @@ User feedback from 2026-10-07, with the causes found while planning:
 ## T-471 Measure WSOLA time-stretch cost in Release and bound it
 
 - **Status:** ready
-- **Outcome:** this card records the audio-thread CPU share of Keep-pitch playback at 0.5× and 0.1× in a Release build. If it exceeds 10% of one core, the correlation search is reduced (decimated coarse search, then fine search around the best candidate) and stays bit-for-bit deterministic for a given input.
+- **Outcome:** record optimized Keep-pitch audio-thread CPU utilization at 0.5× and 0.1×, then bound correlation-search cost while retaining deterministic output and T-233 quality gates. The minimum reference is Ryzen 2000 or a 2015 mobile Intel CPU; actual target-device validation remains pending.
 - **Read first:** `include/wormedit/audio/time_stretch.h`, `src/audio/time_stretch.cpp` (`best_candidate`, `correlation`), T-233 in [frontend shell](frontend-shell.md).
-- **Files owned:** `src/audio/time_stretch.cpp`, `include/wormedit/audio/time_stretch.h`, time-stretch tests, this card.
+- **Files owned:** `src/audio/time_stretch.cpp`, `include/wormedit/audio/time_stretch.h`, `tests/core/audio_time_stretch_tests.cpp`, this card.
+- **Stale-plan audit:** exhaustive candidate/sample correlation remains in `best_candidate`; no optimized actual-chart CPU measurements or coarse/fine search existed. Existing mirrored mid-channel storage is retained.
+- **Baseline evidence:** fresh RelWithDebInfo (`-O2 -g -DNDEBUG`), original read-only Kick via production project loader, all 12 assets and 514 resolved bindings, production SDL dummy callback, source seek 40 s, 3 s cold-prime warmup then 25 s steady per rate, no EOF drain. At 0.5×/0.1× callback one-core utilization is **2.75944% / 2.75242%**; WSOLA process is **2.61562% / 2.62049%**, or **94.7883% / 95.2068%** of callback busy CPU. Callback wall p99 is **0.86119 / 0.8645 ms**, maximum **1.19323 / 0.995212 ms**. Warm/steady service silencing and zero postmix packets are all zero. Callback-only `perf record -e task-clock:u -F 999 --call-graph dwarf -t <tid> -- sleep 20` captures 542 samples per rate, none lost; correlation exclusive shares are **94.46% / 93.91%**, separate from utilization. Both exceed the local target-headroom proxy. At 44.1 kHz the exhaustive search scans up to 705 candidates × 441 samples × 100 output hops/s, about 31.1 million sample pairs/s. Original binary, PCM references, exact probe commands and perf data remain under `wormedit-scratch-builds/wsola-oct7/audio`.
 - **Steps:**
   1. Build RelWithDebInfo, play Kick Your Ass at 0.5× and 0.1× with Keep pitch, and record `perf` audio-thread shares here.
-  2. If either is under 10%, stop: the Debug build's `vector::operator[]` checks explain the T-438 numbers.
+  2. Compare against target-class headroom. User steering supersedes stopping solely because the local Ryzen 5700X is below 10%: use a conservative local 2% one-core WSOLA proxy (5× cost sensitivity reaches 10%, not a claim that reference devices are 5× slower). Preserve the baseline and optimize only if measured work reduction helps without degrading the isolated quality gates.
   3. Otherwise, implement a coarse-to-fine candidate search, and compare its output against the current one with the T-233 sine measurements.
 - **Invariants:** the output is deterministic, and the T-233 isolated measurements still pass.
 - **Reject/failure behavior:** none; the playback rate and Keep pitch choices are unchanged.

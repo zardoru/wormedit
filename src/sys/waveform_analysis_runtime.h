@@ -114,6 +114,9 @@ private:
                                 const workspace_controller_t& workspace,
                                 compose_scene_cache_t& compose_scene_cache,
                                 const editor_interaction_state_t* compose_interaction_state);
+    void collect_stem_waveforms(const std::vector<asset_id_t>& wanted);
+    void start_stem_waveforms(const std::vector<asset_id_t>& wanted);
+    [[nodiscard]] auto stem_needs_analysis(asset_id_t asset) -> bool;
     [[nodiscard]] auto wanted_stem_assets(const song_document_t& document,
                                           const workspace_controller_t& workspace,
                                           std::optional<asset_id_t> selected_channel_asset,

@@ -2,7 +2,7 @@
 
 Authorized on 2026-10-07 after the completed seek/rendering batch. Root integrates
 main; one Sol 6.1 medium coordinator with narrow Luna medium briefs owns T-471
-in one clean worktree. Measure before changing the algorithm.
+in one clean worktree. Measure before changing the algorithm. Dispatch base: `b456c62`.
 
 - Worker: `/home/zardoru/devel/wormedit-wsola-oct7`, branch `batch/wsola-oct7`.
 - Coordinator: `/root/budget_recovery_61`; existing Luna executor is available

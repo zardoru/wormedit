@@ -1,5 +1,10 @@
 # Worktree coordination pilot
 
+Active batch: [WSOLA Release measurements](oct7-wsola-batch.md), T-471.
+One Sol 6.1 medium coordinator and an exclusive Luna medium audit brief use
+one clean worker tree. Measure actual production SDL audio before changing
+the search; root retains main integration authority.
+
 Completed in code 2026-10-07: [seek, playhead and rendering](oct7-seek-render-batch.md),
 T-276/T-470 and T-469 reviewed and integrated with Sol 6.1 medium coordinators
 and sequential Luna medium contributions. Normal main build and **2,568/2,568**

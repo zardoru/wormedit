@@ -4,6 +4,11 @@
 
 ## Immediate work
 
+Active delegated batch (2026-10-07): [next stems and layers batch](../coordination/oct7-next-batch.md).
+The stems/budget worktree implements T-439 then T-445; the layers worktree
+implements T-447 then T-450. GPT-6.1 Sol medium coordinators review Luna medium
+implementers; root owns final review and serial integration on main.
+
 Completed implementation (2026-10-07): the two-worktree
 [quick-fix batch](../coordination/oct7-batch.md) integrated T-454/T-448 and
 T-446/T-452/T-441/T-442. Root application build and all **2,434 tests pass**,

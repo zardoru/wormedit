@@ -1,5 +1,9 @@
 # Worktree coordination pilot
 
+Active 2026-10-07: [next stems and layers batch](oct7-next-batch.md),
+T-439/T-445 and T-447/T-450 in separate worktrees, with Sol 6.1 medium
+coordinators and Luna medium implementers; root integrates main.
+
 Completed 2026-10-07: [six quick fixes in two worktrees](oct7-batch.md), with
 GPT-6.1 Sol medium coordinators and GPT-6 Luna medium executors. Root reviewed
 and integrated both batches. Application build and **2,434/2,434** tests pass,

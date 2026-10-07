@@ -14,7 +14,7 @@ namespace wormedit::sys {
 // decoding and drawing. The window is measured in chart measures around the cursor's measure.
 inline constexpr std::size_t stem_window_measures_before = 8;
 inline constexpr std::size_t stem_window_measures_after = 12;
-inline constexpr std::size_t maximum_visible_stems = 12;
+inline constexpr std::size_t maximum_visible_stems = 32;
 
 // How many measures a stem's audio can reach past the event that starts it: its length at the
 // chart's fastest tempo (a measure is four beats), rounded up, plus one. A stem whose audio length

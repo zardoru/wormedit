@@ -89,7 +89,7 @@ public:
     [[nodiscard]] auto stem_waveform_analysis(asset_id_t asset) const
         -> std::shared_ptr<const audio::waveform_analysis_result_t>;
     // Stem assets analyzed at once (the stems near the cursor; see stem_waveform_window.h).
-    static constexpr std::size_t maximum_stem_waveforms = 12;
+    static constexpr std::size_t maximum_stem_waveforms = 32;
 
 private:
     void request_selected_waveform(std::optional<asset_id_t> asset,

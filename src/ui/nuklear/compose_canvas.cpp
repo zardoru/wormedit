@@ -1088,8 +1088,8 @@ static void draw_compose_stem_piece(const ComposePaintContext& paint, const Worm
     }
     const auto center = rect->x + rect->w * 0.5f;
     const auto half_width = rect->w * 0.43f;
-    // Only the first dozen pieces get an envelope texture; the rest draw as plain lines.
-    if (index < 12 && draw_compose_envelope_texture(paint, stem.rows, stem.row_count, center, half_width,
+    // Only the first 32 pieces get an envelope texture; the rest draw as plain lines.
+    if (index < 32 && draw_compose_envelope_texture(paint, stem.rows, stem.row_count, center, half_width,
             2 + index, nk_rgba(87, 157, 196, 96), nk_rgba(146, 230, 251, 190), true,
             stem.source_lane_id)) return;
     for (size_t row_index = 0; row_index < stem.row_count; ++row_index) {

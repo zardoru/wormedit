@@ -22,13 +22,13 @@ void require_rename(bool condition, const std::source_location location =
     REQUIRE(condition);
 }
 
-auto mouse_button(bool down, float x, float y) -> SDL_Event {
+auto mouse_button(bool down, float x, float y, Uint8 clicks = 1) -> SDL_Event {
     SDL_Event event{};
     event.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
     event.button.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
     event.button.button = SDL_BUTTON_LEFT;
     event.button.down = down;
-    event.button.clicks = 1;
+    event.button.clicks = clicks;
     event.button.x = x;
     event.button.y = y;
     return event;
@@ -106,10 +106,10 @@ void seed_bookmark(nuklear_event_harness_t& harness, WormUiComposeBookmarkView& 
     view.beat_bookmark_count = 1;
 }
 
-auto click_bookmark(nuklear_event_harness_t& harness, float x, float y)
+auto click_bookmark(nuklear_event_harness_t& harness, float x, float y, Uint8 clicks = 1)
     -> std::array<workspace_action_snapshot_t, 2> {
-    const std::array down{pointer_motion(x, y), mouse_button(true, x, y)};
-    const std::array up{pointer_motion(x, y), mouse_button(false, x, y)};
+    const std::array down{pointer_motion(x, y), mouse_button(true, x, y, clicks)};
+    const std::array up{pointer_motion(x, y), mouse_button(false, x, y, clicks)};
     return {harness.frame(down), harness.frame(up)};
 }
 
@@ -119,14 +119,14 @@ void open_bookmark_editor(nuklear_event_harness_t& harness,
     const auto target = bookmark_target(harness, bookmark.projected_y_pixels);
     require_rename(target.has_value());
     const auto [x, y] = *target;
-    (void)click_bookmark(harness, x, y);
+    (void)click_bookmark(harness, x, y, 2);
     (void)harness.frame();
     require_rename(worm_ui_nuklear_compose_state().bookmark_rename.active);
 }
 
 } // namespace
 
-TEST_CASE("bookmark line opens a captured rename editor and Enter stages exact identity",
+TEST_CASE("single clicking a bookmark line does not open its rename editor",
           "[unit][frontend-state][event-harness][bookmark-rename]") {
     nuklear_event_harness_t harness{1280, 900};
     require_rename(harness.ready());
@@ -136,7 +136,22 @@ TEST_CASE("bookmark line opens a captured rename editor and Enter stages exact i
     const auto target = bookmark_target(harness, bookmark.projected_y_pixels);
     require_rename(target.has_value());
     const auto [x, y] = *target;
-    const auto clicked = click_bookmark(harness, x, y);
+    (void)click_bookmark(harness, x, y);
+    (void)harness.frame();
+    check_rename(!worm_ui_nuklear_compose_state().bookmark_rename.active);
+}
+
+TEST_CASE("double clicking a bookmark line opens a captured rename editor and Enter stages exact identity",
+          "[unit][frontend-state][event-harness][bookmark-rename]") {
+    nuklear_event_harness_t harness{1280, 900};
+    require_rename(harness.ready());
+    WormUiComposeBookmarkView bookmark{};
+    seed_bookmark(harness, bookmark);
+    (void)harness.frame();
+    const auto target = bookmark_target(harness, bookmark.projected_y_pixels);
+    require_rename(target.has_value());
+    const auto [x, y] = *target;
+    const auto clicked = click_bookmark(harness, x, y, 2);
     for (const auto& frame : clicked) {
         check_rename(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
         check_rename(frame.get().compose_input_count == 0);
@@ -178,7 +193,7 @@ TEST_CASE("Escape cancels bookmark rename and outside clicks do not place a char
     const auto target = bookmark_target(harness, bookmark.projected_y_pixels);
     require_rename(target.has_value());
     const auto [x, y] = *target;
-    (void)click_bookmark(harness, x, y);
+    (void)click_bookmark(harness, x, y, 2);
     (void)harness.frame();
     require_rename(worm_ui_nuklear_compose_state().bookmark_rename.active);
     const std::array escape{press_escape()};
@@ -207,7 +222,7 @@ TEST_CASE("blur cancels bookmark rename without forwarding the outside click",
     const auto target = bookmark_target(harness, bookmark.projected_y_pixels);
     require_rename(target.has_value());
     const auto [x, y] = *target;
-    (void)click_bookmark(harness, x, y);
+    (void)click_bookmark(harness, x, y, 2);
     (void)harness.frame();
     require_rename(worm_ui_nuklear_compose_state().bookmark_rename.active);
 

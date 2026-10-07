@@ -265,6 +265,7 @@ set(task_card_files
     docs/chart-editor-plan/tasks/manual-tutorial.md
     docs/chart-editor-plan/tasks/stems-performance.md
     docs/chart-editor-plan/tasks/bmson-bga-editing.md
+    docs/chart-editor-plan/tasks/bookmark-rename-harness.md
 )
 set(task_card_fields Status Outcome "Read first" "Files owned" Steps Invariants
     "Reject/failure behavior" Verify "Out of scope")

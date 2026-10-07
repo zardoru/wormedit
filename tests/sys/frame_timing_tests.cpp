@@ -4133,6 +4133,31 @@ TEST_CASE("Lane profile switcher hides itself for layouts it cannot represent",
     CHECK(mania.flattened.view.compose.lane_profile_current == 0);
 }
 
+TEST_CASE("BGM-only projection offers every initial profile with distinct SpecialStyle labels",
+          "[sys][lane-profile-switch][initial-profile-projection]") {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    chart.lane_layouts.clear();
+    chart.measures.front().notes.clear();
+    chart.bgm_source_lanes = {{.id = object_id_t{70001}, .name = "Autoplay"}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{70002},
+        .position = {chart.measures.front().id, 0}, .source_lane = object_id_t{70001}}};
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.project();
+    const auto& view = fixture.flattened.view.compose;
+    expect_compose_test(view.has_bgm_events);
+    expect_compose_test(view.lane_profile_choice_count == 41);
+    expect_compose_test(view.lane_profile_choice_count < WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY);
+    expect_compose_test(view.lane_profile_current == -1);
+    std::vector<std::string_view> names;
+    for (std::size_t index = 0; index < view.lane_profile_choice_count; ++index)
+        names.emplace_back(view.lane_profile_names[index]);
+    for (const auto label : {"osu!mania 12K", "osu!mania 16K",
+                             "osu!mania 12K (SpecialStyle)", "osu!mania 16K (SpecialStyle)"})
+        expect_compose_test(std::ranges::find(names, label) != names.end());
+}
+
 
 namespace {
 auto lane_key_callback_song() -> song_document_t {

@@ -12,11 +12,23 @@
 #include <fstream>
 #include <iterator>
 #include <span>
+#include <source_location>
 #include <string>
 
 using namespace wormedit;
 
 namespace {
+template <typename T>
+void check_move(const T& value, std::source_location where = std::source_location::current()) {
+    INFO("assertion caller line " << where.line());
+    CHECK(static_cast<bool>(value));
+}
+
+template <typename T>
+void require_move(const T& value, std::source_location where = std::source_location::current()) {
+    INFO("assertion caller line " << where.line());
+    REQUIRE(static_cast<bool>(value));
+}
 
 auto plain_song() -> song_document_t {
     song_document_t song;
@@ -214,21 +226,21 @@ TEST_CASE("Shift lane assignment moves mixed selected objects one at a time in d
     };
 
     auto moved = move_next();
-    REQUIRE(moved.command.applied);
-    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{3}});
-    CHECK(std::ranges::none_of(state.selected_objects, [](const auto& object) {
+    require_move(moved.command.applied);
+    check_move(state.selected_notes == std::vector<object_id_t>{object_id_t{3}});
+    check_move(std::ranges::none_of(state.selected_objects, [](const auto& object) {
         return object.id == object_id_t{1};
     }));
-    REQUIRE(move_next().command.applied);
-    CHECK(std::ranges::none_of(state.selected_objects, [](const auto& object) {
+    require_move(move_next().command.applied);
+    check_move(std::ranges::none_of(state.selected_objects, [](const auto& object) {
         return object.kind == editor_selection_object_kind_t::bgm_event &&
                object.id == object_id_t{50};
     }));
-    REQUIRE(move_next().command.applied);
-    CHECK(state.selected_notes.empty());
-    REQUIRE(history.undo.size() == 3);
-    REQUIRE(undo_document_command(history));
-    CHECK(history.document.charts.front().measures[0].bgm_events.empty());
+    require_move(move_next().command.applied);
+    check_move(state.selected_notes.empty());
+    require_move(history.undo.size() == 3);
+    require_move(undo_document_command(history));
+    check_move(history.document.charts.front().measures[0].bgm_events.empty());
 
     auto collision_song = plain_song();
     collision_song.charts.front().measures[0].bgm_events = {
@@ -240,9 +252,9 @@ TEST_CASE("Shift lane assignment moves mixed selected objects one at a time in d
         {editor_selection_object_kind_t::bgm_event, object_id_t{60}}};
     const auto rejected = sys::move_selected_bgm_to_lane(
         collision_history, collision_state, lane_id_t{1}, std::nullopt, true);
-    CHECK_FALSE(rejected.command.applied);
-    CHECK(collision_state.selected_objects.size() == 1);
-    CHECK(collision_history.undo.empty());
+    check_move(!rejected.command.applied);
+    check_move(collision_state.selected_objects.size() == 1);
+    check_move(collision_history.undo.empty());
 }
 
 TEST_CASE("three selected BGM markers move on successive presses with one undo each",
@@ -266,17 +278,17 @@ TEST_CASE("three selected BGM markers move on successive presses with one undo e
     for (std::size_t index = 0; index < expected_ids.size(); ++index) {
         const auto moved = sys::move_selected_bgm_to_lane(
             history, state, lane_id_t{2}, std::nullopt, true);
-        REQUIRE(moved.command.applied);
-        CHECK(std::ranges::none_of(state.selected_objects, [&](const auto& object) {
+        require_move(moved.command.applied);
+        check_move(std::ranges::none_of(state.selected_objects, [&](const auto& object) {
             return object.id == expected_ids[index];
         }));
-        CHECK(history.undo.size() == index + 1);
+        check_move(history.undo.size() == index + 1);
     }
-    CHECK(state.selected_objects.empty());
-    REQUIRE(history.undo.size() == 3);
-    REQUIRE(undo_document_command(history));
-    CHECK(history.document.charts.front().measures[0].bgm_events.size() == 1);
-    CHECK(history.document.charts.front().measures[0].bgm_events.front().id == expected_ids.back());
+    check_move(state.selected_objects.empty());
+    require_move(history.undo.size() == 3);
+    require_move(undo_document_command(history));
+    check_move(history.document.charts.front().measures[0].bgm_events.size() == 1);
+    check_move(history.document.charts.front().measures[0].bgm_events.front().id == expected_ids.back());
 }
 
 TEST_CASE("plain lane assignment moves a mixed selection in one undo and rejects atomically",
@@ -300,11 +312,11 @@ TEST_CASE("plain lane assignment moves a mixed selection in one undo and rejects
     const std::array events{object_id_t{80}};
     const auto moved = move_selected_objects_to_lane(
         history, history.document.revision, state, notes, events, lane_id_t{3});
-    REQUIRE(moved.applied);
-    CHECK(history.undo.size() == 1);
+    require_move(moved.applied);
+    check_move(history.undo.size() == 1);
     const auto& chart = history.document.charts.front();
-    CHECK(std::ranges::find(chart.measures[0].notes, object_id_t{1}, &note_t::id)->lane == lane_id_t{3});
-    CHECK(std::ranges::find(chart.measures[0].notes, object_id_t{80}, &note_t::id)->lane == lane_id_t{3});
+    check_move(std::ranges::find(chart.measures[0].notes, object_id_t{1}, &note_t::id)->lane == lane_id_t{3});
+    check_move(std::ranges::find(chart.measures[0].notes, object_id_t{80}, &note_t::id)->lane == lane_id_t{3});
 
     auto colliding_song = plain_song();
     colliding_song.charts.front().lane_layouts.front().layout.lanes.push_back(
@@ -318,12 +330,12 @@ TEST_CASE("plain lane assignment moves a mixed selection in one undo and rejects
     const std::array collision_events{object_id_t{81}};
     const auto rejected = move_selected_objects_to_lane(
         blocked, blocked.document.revision, state, notes, collision_events, lane_id_t{3});
-    CHECK_FALSE(rejected.applied);
-    CHECK(blocked.document.revision == before.revision);
-    CHECK(blocked.document.charts.front().measures[0].notes[0].lane ==
+    check_move(!rejected.applied);
+    check_move(blocked.document.revision == before.revision);
+    check_move(blocked.document.charts.front().measures[0].notes[0].lane ==
           before.charts.front().measures[0].notes[0].lane);
-    CHECK(blocked.document.charts.front().measures[0].bgm_events.size() == 1);
-    CHECK(blocked.undo.empty());
+    check_move(blocked.document.charts.front().measures[0].bgm_events.size() == 1);
+    check_move(blocked.undo.empty());
 }
 
 TEST_CASE("a BMSON stem marker moves to a playfield lane and back without losing its slice point",

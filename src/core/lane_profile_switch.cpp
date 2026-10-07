@@ -39,6 +39,10 @@ auto built_in_profile(std::string_view profile_id) -> std::optional<lane_input_p
         auto profile = make_osu_mania_profile(keys);
         if (profile && profile->layout.profile_id == profile_id) return profile;
     }
+    for (const auto keys : {12u, 16u}) {
+        auto profile = make_osu_mania_profile(keys, true);
+        if (profile && profile->layout.profile_id == profile_id) return profile;
+    }
     return std::nullopt;
 }
 
@@ -145,6 +149,10 @@ auto lane_profile_choices() -> std::vector<lane_input_profile_t> {
     }
     for (std::uint32_t keys = 1; keys <= 18; ++keys) {
         auto profile = make_osu_mania_profile(keys);
+        if (profile) choices.push_back(std::move(*profile));
+    }
+    for (const auto keys : {12u, 16u}) {
+        auto profile = make_osu_mania_profile(keys, true);
         if (profile) choices.push_back(std::move(*profile));
     }
     return choices;

@@ -87,7 +87,7 @@ TEST_CASE("initial profile choices include every built-in family",
     const auto bms = make_bms_7k_profile();
     const auto step = make_stepmania_profile_for("pump-double");
     const auto osu = make_osu_mania_profile(18);
-    CHECK(choices.size() == 39);
+    CHECK(choices.size() == 41);
     CHECK(std::ranges::find(choices, bms.layout.profile_id, [](const auto& profile) {
         return std::string_view{profile.layout.profile_id};
     }) != choices.end());
@@ -99,6 +99,36 @@ TEST_CASE("initial profile choices include every built-in family",
     CHECK(std::ranges::find(choices, osu->layout.profile_id, [](const auto& profile) {
         return std::string_view{profile.layout.profile_id};
     }) != choices.end());
+}
+
+TEST_CASE("first profile choices include and create both osu SpecialStyle variants",
+          "[unit][core][lane-profile-switch][osu]") {
+    const auto choices = lane_profile_choices();
+    for (const auto keys : {12u, 16u}) {
+        const auto target = make_osu_mania_profile(keys, true);
+        require_profile(target.has_value());
+        const auto choice = std::ranges::find(choices, target->layout.profile_id,
+            [](const auto& profile) { return std::string_view{profile.layout.profile_id}; });
+        require_profile(choice != choices.end());
+        auto history = make_document_history(song_document_t{.id = song_id_t{1}, .revision = 4,
+            .charts = {{.id = chart_id_t{2}, .measures = {{.id = measure_id_t{3}}}}}});
+        const auto applied = apply_lane_profile_switch(history, 4, chart_id_t{2},
+                                                       {measure_id_t{3}, 0}, choice->layout);
+        require_profile(applied.applied);
+        const auto& chart = history.document.charts.front();
+        check_profile(chart.lane_layouts.front().layout.profile_id == target->layout.profile_id);
+        check_profile(chart.lane_layouts.front().layout.lanes.size() == keys);
+        std::vector<lane_id_t> lanes;
+        std::vector<lane_id_t> bindings;
+        for (const auto& lane : chart.lane_layouts.front().layout.lanes) lanes.push_back(lane.id);
+        for (const auto& binding : chart.input_profile.bindings) bindings.push_back(binding.lane);
+        std::ranges::sort(lanes);
+        std::ranges::sort(bindings);
+        check_profile(bindings == lanes);
+        check_profile(history.undo.size() == 1);
+        require_profile(undo_document_command(history));
+        check_profile(history.document.charts.front().lane_layouts.empty());
+    }
 }
 
 TEST_CASE("a chart with no layout can insert its first built-in profile",
@@ -159,9 +189,9 @@ TEST_CASE("first profile remaps every number-row binding without lane ID aliasin
     const auto target = make_bms_7k_profile();
     const auto applied = apply_lane_profile_switch(history, 4, chart_id_t{2},
                                                    {measure_id_t{3}, 240}, target.layout);
-    REQUIRE(applied);
+    require_profile(applied.applied);
     const auto& chart = history.document.charts.front();
-    REQUIRE(chart.lane_layouts.size() == 2);
+    require_profile(chart.lane_layouts.size() == 2);
     const auto& layout = chart.lane_layouts.front().layout;
     std::vector<lane_id_t> lane_ids;
     std::vector<lane_id_t> binding_ids;
@@ -169,7 +199,7 @@ TEST_CASE("first profile remaps every number-row binding without lane ID aliasin
     for (const auto& binding : chart.input_profile.bindings) binding_ids.push_back(binding.lane);
     std::ranges::sort(lane_ids);
     std::ranges::sort(binding_ids);
-    CHECK(binding_ids == lane_ids);
+    check_profile(binding_ids == lane_ids);
 }
 
 TEST_CASE("first BMS profile materializes measure one and remains one undo command",

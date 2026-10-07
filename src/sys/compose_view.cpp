@@ -274,8 +274,9 @@ static void populate_lane_profile_choices(WormUiComposeView& view, const wormedi
                                 id.starts_with("pms-") || id.starts_with("project2dx-");
             const auto prefix = is_bms ? "" : id.starts_with("stepmania:")
                 ? "StepMania " : "osu!mania ";
+            const auto suffix = id.ends_with("-specialstyle") ? " (SpecialStyle)" : "";
             std::snprintf(view.lane_profile_names[index], sizeof(view.lane_profile_names[index]),
-                          "%s%s", prefix, profile.layout.display_name.c_str());
+                          "%s%s%s", prefix, profile.layout.display_name.c_str(), suffix);
         }
         view.lane_profile_choice_count = static_cast<std::uint8_t>(count);
         return;

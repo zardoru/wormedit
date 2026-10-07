@@ -53,3 +53,27 @@ conversion writers are outside this batch.
 Root reviews actual diffs and independent evidence, integrates serially, runs a
 normal main application build and complete suite, updates durable status and
 retires both clean workers and generated builds, retaining branches/logs.
+
+## Verification and ownership refinements
+
+Fresh optimized builds would otherwise freeze all source work. Root approves
+same-binary Release reference/cached measurements with identical chart inputs,
+retained uncached projection APIs and a narrow internal timing-cache disable
+option for tests/probes. Stop active builds cleanly before source edits, then
+resume normal dependency-aware builds. Do not describe these as untouched
+historical Release builds. Root separately captured the original main Debug
+production output and timings before either integration.
+
+T-444 supporting ownership: workspace_projection.h (optional cache argument),
+application_frame_projection.cpp (pass list cache), compare_view.h (branch cache),
+sound_list_projection_tests.cpp, workspace_tests.cpp. Shared frame_timing_tests.cpp
+is split: T-444 appends only dedicated list/timing cache cases and helpers;
+T-440 owns existing waveform fixture changes and new row-table cases. Ordinary
+retained BMS statement/sidebar rows remain visible even without choice blocks.
+
+T-440 supporting ownership: aligned_waveform.cpp/.h (shared song clock),
+waveform_view_projection.cpp (same row table), exact waveform tests recorded on
+its card. Fresh stl_solst1 has no continuation points and is now entirely packed;
+a detached dense benchmark may explicitly link its 181 retained channels as
+stems to represent a migrated legacy saved chart, clearly labeled as constructed
+intent. Fresh Kick remains the real visible-stem input. No original is changed.

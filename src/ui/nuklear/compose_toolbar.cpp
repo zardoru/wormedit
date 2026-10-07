@@ -132,6 +132,12 @@ static void render_tool_group(const ComposeToolbarContext& toolbar) {
             view->edit_snap_enabled}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_EDIT_SNAP;
+    if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::y_lock,
+            view->y_lock ? "Y-lock on: dragged notes keep their rows (click to turn off)"
+                         : "Y-lock off: lock dragged notes to their rows (click to turn on)",
+            view->y_lock}.render(context) &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_Y_LOCK;
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::timer,
             "Timing focus: edit timing only", view->timing_focus}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
@@ -484,7 +490,7 @@ static void layout_compose_toolbar(nk_context* context, int panel_icons) {
     nk_layout_row_template_begin(context, 27);
     layout_toolbar_icons(context, 3); // Navigation.
     wormedit::ui::chrome::layout_separator(context);
-    layout_toolbar_icons(context, 6); // Tools.
+    layout_toolbar_icons(context, 7); // Tools.
     wormedit::ui::chrome::layout_separator(context);
     layout_toolbar_icons(context, 3); // Color views.
     wormedit::ui::chrome::layout_separator(context);

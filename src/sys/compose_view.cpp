@@ -3122,6 +3122,7 @@ bool update_compose_snap_preferences(const compose_interaction_population_contex
         retained_state->active_snap_denominator = snap.active_denominator;
         retained_state->active_snap_was_fallback = snap.active_was_fallback;
         retained_state->snap_enabled = application_state.edit_snap_enabled;
+        retained_state->y_lock = application_state.y_lock;
     }
     return true;
 }
@@ -3237,6 +3238,7 @@ std::uint64_t prepare_compose_projection_state(const compose_final_projection_co
     view.area_rows_per_measure = chart.divisions_per_standard_measure;
     view.area_snap_denominator = retained_state->active_snap_denominator;
     view.edit_snap_enabled = retained_state->snap_enabled;
+    view.y_lock = retained_state->y_lock;
     view.area_scroll_pixels = interaction_view.viewport_scroll_pixels;
     if (view.area_range_available) {
         retained_state->retained_canvas_selection_range = wormedit::canvas_row_span_t{

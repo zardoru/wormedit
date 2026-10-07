@@ -727,8 +727,8 @@ TEST_CASE("Compose toolbar color views change frontend state without document ac
     const auto revision = harness.view().compose.document_revision;
     // 24 px toolbar icons: navigation, separator, six tools, separator, views.
     constexpr std::array views{View::snap, View::layer, View::normal};
-    // The BGA lane visibility icon adds one 24 px cell before the color group.
-    constexpr std::array positions{315.0f, 342.0f, 288.0f};
+    // The BGA lane visibility and Y-lock icons add two 27 px cells before the color group.
+    constexpr std::array positions{342.0f, 369.0f, 315.0f};
     for (std::size_t index = 0; index < views.size(); ++index) {
         const auto clicks = click_at(harness, positions[index], 122.0f);
         CHECK(worm_ui_nuklear_compose_state().color_view == views[index]);
@@ -992,7 +992,7 @@ TEST_CASE("Layer row menu releases its popup after a stale revision or hidden pa
     check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu.open);
     check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu.close_pending);
     (void)fixture.harness.frame();
-    (void)click_at(fixture.harness, 315, 122);
+    (void)click_at(fixture.harness, 342, 122);
     check_layer_menu(worm_ui_nuklear_compose_state().color_view ==
                      worm_ui_nuklear_compose_color_view_t::snap);
 }
@@ -1228,7 +1228,7 @@ TEST_CASE("Note menu retires chart and project changes without a lingering popup
     (void)fixture.harness.frame();
     check_layer_menu(!compose_note_menu_open());
     (void)fixture.harness.frame();
-    (void)click_at(fixture.harness, 315, 122);
+    (void)click_at(fixture.harness, 342, 122);
     check_layer_menu(worm_ui_nuklear_compose_state().color_view ==
                      worm_ui_nuklear_compose_color_view_t::snap);
 }

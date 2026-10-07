@@ -375,6 +375,7 @@ struct application_command_state_t {
     bool compose_timing_focus{};
     // Edit snapping for every object class; off lands edits on the chart's finest row.
     bool edit_snap_enabled{true};
+    bool y_lock{false};
     bool player_preview_visible{};
     wormedit::player_preview_skin_t player_preview_skin{wormedit::player_preview_skin_t::neutral};
     std::size_t transport_rate_index{8};

@@ -139,6 +139,18 @@ inline void select_all(struct nk_command_buffer* canvas, struct nk_rect bounds,
     nk_stroke_polyline(canvas, const_cast<float*>(tick), 3, thickness, tint);
 }
 
+// Y-lock: a vertical double arrow crossed by a bar, rows stay put while notes slide sideways.
+inline void y_lock(struct nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
+    const auto frame = Frame::fit(bounds);
+    const auto thickness = frame.stroke();
+    nk_stroke_line(canvas, frame.px(12.0f), frame.py(3.0f), frame.px(12.0f), frame.py(21.0f), thickness, tint);
+    const float top[] = {frame.px(8.0f), frame.py(7.0f), frame.px(12.0f), frame.py(3.0f), frame.px(16.0f), frame.py(7.0f)};
+    const float bottom[] = {frame.px(8.0f), frame.py(17.0f), frame.px(12.0f), frame.py(21.0f), frame.px(16.0f), frame.py(17.0f)};
+    nk_stroke_polyline(canvas, const_cast<float*>(top), 3, thickness, tint);
+    nk_stroke_polyline(canvas, const_cast<float*>(bottom), 3, thickness, tint);
+    nk_stroke_line(canvas, frame.px(4.0f), frame.py(12.0f), frame.px(20.0f), frame.py(12.0f), thickness, tint);
+}
+
 // Lucide "list-ordered" in outline: the Compose measures list.
 inline void measure_list(struct nk_command_buffer* canvas, struct nk_rect bounds,
                          struct nk_color tint) {

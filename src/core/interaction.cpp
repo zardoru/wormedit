@@ -636,6 +636,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .cursor_subrow = state.cursor_subrow,
         .active_snap_denominator = state.active_snap_denominator,
         .snap_enabled = state.snap_enabled,
+        .y_lock = state.y_lock,
         .bga_lane_visible = state.bga_lane_visible,
         .supported_snap_denominators = state.supported_snap_denominators,
         .document_revision = history.document.revision,
@@ -1259,15 +1260,21 @@ struct note_move_parameters_t {
 auto resolve_note_move_parameters(const chart_document_t& chart, const measure_index_t& index,
                                   std::vector<object_id_t>& targets, object_id_t reference_id,
                                   local_position_t reference_position, lane_id_t requested_lane,
-                                  std::uint64_t snap_denominator, bool exact)
+                                  std::uint64_t snap_denominator, bool exact, bool keep_rows)
     -> std::variant<note_move_parameters_t, diagnostic_list_t> {
     const auto* reference = find_note(chart, reference_id);
     if (!reference || (reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
             "note move requires a tap or hold reference note", reference_id)};
-    const auto snapped = exact
+    auto snapped = exact
         ? (absolute_row(index, reference_position) ? std::optional{reference_position} : std::nullopt)
         : snapped_position(chart, index, reference_position, snap_denominator);
+    // A pointer move that stays in the reference note's own grid cell (a horizontal drag) keeps
+    // its exact row instead of resnapping it; Y-lock keeps the row whatever the pointer does.
+    if (!exact && snapped) {
+        const auto home = snapped_position(chart, index, reference->position, snap_denominator);
+        if (keep_rows || (home && *home == *snapped)) snapped = reference->position;
+    }
     const auto begin = absolute_row(index, reference->position);
     const auto target = snapped ? absolute_row(index, *snapped) : std::nullopt;
     if (!snapped || !begin || !target)
@@ -1436,11 +1443,12 @@ auto validate_move_collisions(std::vector<duration_collision_interval_t>& collis
 auto plan_note_move(const chart_document_t& chart, const measure_index_t& index,
                     std::vector<object_id_t> targets, object_id_t reference_id,
                     local_position_t reference_position, lane_id_t requested_reference_lane,
-                    std::uint64_t snap_denominator, bool reference_position_is_exact = false)
+                    std::uint64_t snap_denominator, bool reference_position_is_exact = false,
+                    bool keep_rows = false)
     -> std::variant<note_move_plan_t, diagnostic_list_t> {
     auto parameters_result = resolve_note_move_parameters(chart, index, targets, reference_id,
         reference_position, requested_reference_lane, snap_denominator,
-        reference_position_is_exact);
+        reference_position_is_exact, keep_rows);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&parameters_result)) return *diagnostics;
     const auto parameters = std::get<note_move_parameters_t>(parameters_result);
     auto ids_result = valid_resize_ids(targets);
@@ -4755,7 +4763,7 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
                                     local_position_t position, lane_id_t lane,
                                     bool exact_position = false) {
         return plan_note_move(*chart, index, std::move(targets), reference, position, lane,
-                              edit_snap_denominator(*chart, state), exact_position);
+                              edit_snap_denominator(*chart, state), exact_position, state.y_lock);
     };
     const auto apply_duration_plan = [&](const duration_resize_plan_t& plan) {
         return apply_duration_resize_plan(history, state, plan);

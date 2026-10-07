@@ -5237,3 +5237,53 @@ TEST_CASE("lane-key interaction protects hidden or locked sounded notes and neve
     check_lane_sound(note_count(history) == 1);
     check_lane_sound(find_note(history, object_id_t{101})->sound == resource_id_t{7});
 }
+
+namespace {
+auto off_grid_history() -> document_history_t {
+    auto song = make_song();
+    song.charts.front().lane_layouts.front().layout.lanes[1].display_order = 1;
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{201}, .position = {measure_id_t{1}, 100}, .lane = lane_id_t{1}}};
+    REQUIRE(validate_document(song).empty());
+    return make_document_history(std::move(song));
+}
+
+auto drag_note(document_history_t& history, editor_interaction_state_t& state, local_position_t to, lane_id_t lane)
+    -> editor_interaction_result_t {
+    REQUIRE(dispatch_editor_action(history, state, select_editor_notes_action_t{{object_id_t{201}}}));
+    REQUIRE(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{201}}));
+    return dispatch_editor_action(history, state, release_note_move_gesture_action_t{to, lane});
+}
+} // namespace
+
+TEST_CASE("moving a note sideways keeps its exact row instead of resnapping it",
+          "[unit][core][interaction][y-lock]") {
+    auto history = off_grid_history();
+    auto state = make_state(history);
+    // The pointer is still in the note's own grid cell (row 100 snaps to 0 on the quarter grid).
+    const auto released = drag_note(history, state, {measure_id_t{1}, 20}, lane_id_t{2});
+    REQUIRE(released);
+    REQUIRE(released.document_changed);
+    const auto* note = find_note(history, object_id_t{201});
+    CHECK(note->lane == lane_id_t{2});
+    CHECK(note->position == (local_position_t{measure_id_t{1}, 100}));
+}
+
+TEST_CASE("moving a note vertically still snaps it to the grid", "[unit][core][interaction][y-lock]") {
+    auto history = off_grid_history();
+    auto state = make_state(history);
+    REQUIRE(drag_note(history, state, {measure_id_t{1}, 240}, lane_id_t{1}));
+    CHECK(find_note(history, object_id_t{201})->position == (local_position_t{measure_id_t{1}, 240}));
+}
+
+TEST_CASE("Y-lock keeps a dragged note on its row whatever the pointer does",
+          "[unit][core][interaction][y-lock]") {
+    auto history = off_grid_history();
+    auto state = make_state(history);
+    state.y_lock = true;
+    const auto released = drag_note(history, state, {measure_id_t{1}, 480}, lane_id_t{2});
+    REQUIRE(released);
+    const auto* note = find_note(history, object_id_t{201});
+    CHECK(note->lane == lane_id_t{2});
+    CHECK(note->position == (local_position_t{measure_id_t{1}, 100}));
+}

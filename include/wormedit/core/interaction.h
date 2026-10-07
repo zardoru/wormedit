@@ -646,6 +646,8 @@ struct editor_interaction_state_t {
     // Edit snapping applies to every pointer-driven object class; while off, edits land on the
     // chart's finest row instead of the active grid (see effective_edit_snap_denominator).
     bool snap_enabled{true};
+    // Y-lock (as in iBMSC and BMSE): pointer drags of notes change lanes only and never rows.
+    bool y_lock{false};
     // View-only BGA event lane visibility; hidden lanes have no hit geometry.
     bool bga_lane_visible{true};
 };
@@ -666,6 +668,7 @@ struct editor_interaction_view_model_t {
     double cursor_subrow{};
     std::uint64_t active_snap_denominator{};
     bool snap_enabled{true};
+    bool y_lock{false};
     bool bga_lane_visible{true};
     std::vector<std::uint64_t> supported_snap_denominators;
     std::uint64_t document_revision{};

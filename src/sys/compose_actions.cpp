@@ -587,6 +587,12 @@ std::optional<std::string> dispatch_compose_view_action_group(compose_action_con
         return compose_action_info(context, application_state.edit_snap_enabled
             ? "Snap on." : "Snap off: edits use the finest row.");
     }
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_Y_LOCK: {
+        application_state.y_lock = !application_state.y_lock;
+        state.y_lock = application_state.y_lock;
+        return compose_action_info(context, application_state.y_lock
+            ? "Y-lock on: dragged notes keep their rows." : "Y-lock off.");
+    }
     case WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY: {
         if (action.compose_timing_lane >= compose_timing_lane_count) {
             return compose_action_warning(context, "The requested timing lane does not exist.");

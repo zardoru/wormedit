@@ -44,3 +44,14 @@ and reruns focused and opt-in tests after both edits; no concurrent build writes
 After Layer 2's completed integration and verification, root also removed its
 clean worktree, retaining `batch/layers-oct7`. Cleanup total is now 19 removed
 trees plus one missing registration pruned; main and stems/budget remain.
+
+To use the released coordinator slot while Luna finishes the independent T-439
+benchmark helpers, root assigns the T-445 backend slice to Sol: exclusively
+`include/wormedit/core/arena.h`, `src/core/arena.cpp`,
+`include/wormedit/audio/resident_samples.h`, `src/audio/resident_samples.cpp`,
+`tests/core/arena_tests.cpp` and the existing resident-sample tests. These paths
+were already approved on T-445. Sol provides a locked by-value options snapshot
+and grow-only hard-ceiling/live soft-budget setter with snapshot-retention tests.
+Luna receives the remaining T-445 preference/UI/loader/application slice after
+T-439's narrow commit. Root reviews the Sol backend, and all build writes remain
+serialized; no backend edits may be included in the T-439 commit.

@@ -42,3 +42,15 @@ reuses `/root/budget_recovery_61/budget_luna` for its executor. No old worktree
 remains active. If repeated Luna model-capacity failures prevent implementation,
 root authorizes the assigned Sol 6.1 medium coordinator to implement the narrow
 brief and records the fallback; root still independently reviews final diffs.
+
+## Narrow contract ownership update
+
+To avoid an idle stem coordinator while BGA implements its wider card, root
+allows the T-443 Sol coordinator to implement step 1's `stem_key` addition
+ONLY inside `WormUiComposeStemWaveformView` in its isolated frontend.h, plus the
+already owned BMSON projection and tests. BGA does not touch that struct. This
+is an explicit exception to the earlier whole-file wait; root serially merges
+the nonoverlapping contract edits. Compose canvas stays BGA-owned until handoff.
+The stem coordinator can then implement renderer step 2 in its exclusively
+owned field files, preserving card step order. The existing Luna slot remains
+BGA-owned; a released Luna reviews/executes the remaining stem slice later.

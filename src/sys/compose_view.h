@@ -100,7 +100,32 @@ struct envelope_projection_ring_t {
 };
 #endif
 
+// Owned marker text and absolute rows; viewport placement/selection stay per frame.
+struct compose_timing_marker_payload_t {
+    std::optional<std::uint64_t> row;
+    std::uint64_t id{};
+    std::size_t source_order{}, storage_order{};
+    WormUiTimingLaneKind lane{};
+    std::string short_label, detail;
+    bool fixed_initial{};
+};
+struct compose_timing_payload_cache_t {
+    const void* document_identity{};
+    const void* chart_identity{};
+    std::uint64_t project{}, chart{}, revision{};
+    bool valid{};
+    std::vector<compose_timing_marker_payload_t> markers;
+    std::size_t build_count{};
+};
+
 struct compose_scene_cache_t {
+    keysound_list_cache_t keysound_list_cache;
+    mutable compose_timing_payload_cache_t timing_payload_cache;
+    // Internal reference-projection bypass for correctness/performance probes.
+    bool timing_payload_cache_enabled{true};
+    const void* scene_document_identity{};
+    const void* scene_chart_identity{};
+    wormedit::song_id_t scene_song;
     std::optional<tap_timing_apply_proposal_t> tap_apply_proposal;
     std::optional<tap_timing_apply_proposal_t> tap_preview_binding;
     std::optional<timing_index_t> tap_preview_timing;

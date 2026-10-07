@@ -12,6 +12,7 @@
 namespace wormedit::sys {
 
 struct compare_scene_cache_t {
+    wormedit::workspace_bms_branch_outline_cache_t branch_outline;
     compose_scene_cache_t first_scene;
     compose_scene_cache_t second_scene;
     std::optional<wormedit::editor_interaction_state_t> first_state;

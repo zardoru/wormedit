@@ -44,6 +44,7 @@ struct workspace_limits_t {
     std::size_t maximum_bms_branch_depth{512};
     std::size_t maximum_bms_branch_text_bytes{1'024};
     std::size_t maximum_bms_branch_display_bytes{4U * 1024U * 1024U};
+    auto operator==(const workspace_limits_t&) const -> bool = default;
 };
 
 // Focus is logical rather than widget/toolkit-specific. A focus target can be
@@ -244,6 +245,20 @@ struct workspace_bms_branch_outline_t {
     diagnostic_list_t diagnostics;
 };
 
+// One owned outline; branch choices and limits participate even between revisions.
+struct workspace_bms_branch_outline_cache_t {
+    const void* document_identity{};
+    const void* chart_identity{};
+    song_id_t song;
+    chart_id_t chart;
+    std::uint64_t revision{};
+    workspace_limits_t limits;
+    std::vector<std::pair<branch_id_t, std::int64_t>> choices;
+    workspace_bms_branch_outline_t outline;
+    bool valid{};
+    std::size_t build_count{};
+};
+
 struct workspace_compose_view_t {
     chart_id_t chart;
     std::size_t measure_count{};
@@ -315,7 +330,8 @@ struct workspace_view_result_t {
 // ID and revision; a null pointer preserves the normal validation behavior.
 [[nodiscard]] auto make_workspace_view(const workspace_controller_t& workspace,
                                        const song_document_t& document, workspace_tab_t tab,
-                                       const diagnostic_list_t* cached_diagnostics = nullptr)
+                                       const diagnostic_list_t* cached_diagnostics = nullptr,
+                                       workspace_bms_branch_outline_cache_t* branch_cache = nullptr)
     -> workspace_view_result_t;
 
 } // namespace wormedit

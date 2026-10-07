@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <tuple>
 #include <variant>
 
 using namespace wormedit;
@@ -661,4 +662,128 @@ TEST_CASE("BMS branch outline rejects a stale workspace revision and diagnoses s
         std::get<workspace_compose_view_t>(updated.view->tab_view).bms_branch_outline;
     CHECK(has_code(outline.diagnostics, diagnostic_code_t::invalid_id));
     CHECK_FALSE(outline.rows_truncated);
+}
+
+namespace {
+auto branch_cache_rows_equal(const workspace_bms_branch_outline_t& left,
+                              const workspace_bms_branch_outline_t& right) -> bool {
+    return std::ranges::equal(left.rows, right.rows, [](const auto& a, const auto& b) {
+        return std::tie(a.kind, a.id, a.depth, a.source_order, a.active, a.selected,
+                        a.display_text, a.display_text_truncated) ==
+               std::tie(b.kind, b.id, b.depth, b.source_order, b.active, b.selected,
+                        b.display_text, b.display_text_truncated);
+    });
+}
+auto branch_cache_choices_equal(const workspace_bms_branch_outline_t& left,
+                                 const workspace_bms_branch_outline_t& right) -> bool {
+    return std::ranges::equal(left.choices, right.choices, [](const auto& a, const auto& b) {
+        return std::tie(a.id, a.kind, a.source_order, a.active, a.editable, a.selected_value,
+                        a.previous_value, a.next_value, a.can_clear) ==
+               std::tie(b.id, b.kind, b.source_order, b.active, b.editable, b.selected_value,
+                        b.previous_value, b.next_value, b.can_clear);
+    });
+}
+auto branch_cache_outlines_equal(const workspace_bms_branch_outline_t& left,
+                                 const workspace_bms_branch_outline_t& right) -> bool {
+    const bool diagnostics = std::ranges::equal(left.diagnostics, right.diagnostics,
+        [](const auto& a, const auto& b) {
+            return std::tie(a.severity, a.code, a.message, a.object) ==
+                   std::tie(b.severity, b.code, b.message, b.object);
+        });
+    return diagnostics && branch_cache_rows_equal(left, right) &&
+        branch_cache_choices_equal(left, right) &&
+        std::tie(left.available, left.rows_truncated, left.choices_truncated,
+                 left.display_text_truncated, left.diagnostics_truncated) ==
+        std::tie(right.available, right.rows_truncated, right.choices_truncated,
+                 right.display_text_truncated, right.diagnostics_truncated);
+}
+auto branch_cache_matches_reference(const song_document_t& song,
+    const workspace_controller_t& workspace, workspace_bms_branch_outline_cache_t& cache) -> bool {
+    const auto cached = make_workspace_view(workspace, song, workspace_tab_t::compose, nullptr, &cache);
+    const auto reference = make_workspace_view(workspace, song, workspace_tab_t::compose);
+    if (!cached || !reference) return false;
+    return branch_cache_outlines_equal(
+        std::get<workspace_compose_view_t>(cached.view->tab_view).bms_branch_outline,
+        std::get<workspace_compose_view_t>(reference.view->tab_view).bms_branch_outline);
+}
+auto branch_cache_large_song() -> song_document_t {
+    auto song = bms_branch_workspace_song();
+    for (std::uint64_t id = 1; id <= 600; ++id)
+        song.resources.push_back({.id = resource_id_t{id}, .name = "sound" + std::to_string(id),
+            .asset = asset_id_t{20}, .roles = {resource_role_t::sample}});
+    auto& chart = song.charts.front();
+    chart.bpms.clear();
+    for (std::uint64_t index = 0; index < 70; ++index)
+        chart.bpms.push_back({.id = object_id_t{20000 + index},
+            .position = {measure_id_t{1}, index},
+            .beats_per_minute = {120 + static_cast<std::int64_t>(index), 1}});
+    return song;
+}
+auto branch_cache_tracks_choices_without_revision() -> bool {
+    auto song = branch_cache_large_song();
+    auto binding = make_workspace_controller(song);
+    if (!binding) return false;
+    auto& workspace = *binding.workspace;
+    workspace_bms_branch_outline_cache_t cache;
+    if (!branch_cache_matches_reference(song, workspace, cache) ||
+        !branch_cache_matches_reference(song, workspace, cache) || cache.build_count != 1)
+        return false;
+    const auto before = cache.outline;
+    song.charts.front().active_branch_selection.front().selected_value = 1;
+    return branch_cache_matches_reference(song, workspace, cache) && cache.build_count == 2 &&
+        !branch_cache_outlines_equal(before, cache.outline);
+}
+auto branch_cache_tracks_limits_revision_and_identity() -> bool {
+    auto song = branch_cache_large_song();
+    auto binding = make_workspace_controller(song);
+    if (!binding) return false;
+    auto& workspace = *binding.workspace;
+    workspace_bms_branch_outline_cache_t cache;
+    if (!branch_cache_matches_reference(song, workspace, cache)) return false;
+    workspace.limits.maximum_bms_branch_rows = 5;
+    if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count != 2 ||
+        !cache.outline.rows_truncated) return false;
+    workspace.limits.maximum_bms_branch_display_bytes = 1;
+    if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count != 3 ||
+        !cache.outline.display_text_truncated) return false;
+    ++song.revision;
+    workspace.document_revision = song.revision;
+    if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count != 4)
+        return false;
+    auto replacement = song;
+    replacement.charts.front().bms_control_tree->original_text = "different retained root";
+    if (!branch_cache_matches_reference(replacement, workspace, cache) || cache.build_count != 5)
+        return false;
+    replacement.charts.back().bms_control_tree = replacement.charts.front().bms_control_tree;
+    workspace.selected_chart = replacement.charts.back().id;
+    return branch_cache_matches_reference(replacement, workspace, cache) && cache.build_count == 6;
+}
+auto branch_cache_preserves_plain_sidebar_and_skips_absent_tree() -> bool {
+    auto song = workspace_song();
+    auto& chart = song.charts.front();
+    chart.bms_control_tree = bms_control_node_t{.id = branch_id_t{1000},
+        .kind = bms_control_kind_t::root, .children = {
+            {.id = branch_id_t{1001}, .kind = bms_control_kind_t::raw_statement,
+             .original_text = "#TITLE ordinary sidebar statement"}}};
+    auto binding = make_workspace_controller(song);
+    if (!binding) return false;
+    workspace_bms_branch_outline_cache_t cache;
+    if (!branch_cache_matches_reference(song, *binding.workspace, cache) ||
+        cache.outline.rows.size() != 2 || cache.build_count != 1) return false;
+    chart.bms_control_tree.reset();
+    return branch_cache_matches_reference(song, *binding.workspace, cache) && cache.build_count == 1;
+}
+} // namespace
+
+TEST_CASE("Workspace branch cache matches large reference views and current branch choices",
+          "[unit][core][workspace][workspace-cache]") {
+    REQUIRE(branch_cache_tracks_choices_without_revision());
+}
+TEST_CASE("Workspace branch cache keys include limits revision and document identity",
+          "[unit][core][workspace][workspace-cache]") {
+    REQUIRE(branch_cache_tracks_limits_revision_and_identity());
+}
+TEST_CASE("Workspace branch cache preserves ordinary statements and skips only absent trees",
+          "[unit][core][workspace][workspace-cache]") {
+    REQUIRE(branch_cache_preserves_plain_sidebar_and_skips_absent_tree());
 }

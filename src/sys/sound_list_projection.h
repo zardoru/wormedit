@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <span>
+#include <unordered_set>
 #include <vector>
 
 namespace wormedit::sys {
@@ -88,6 +89,7 @@ struct keysound_layer_t {
     std::string name;
     color_rgba_t color;
     bool locked{};
+    auto operator==(const keysound_layer_t&) const -> bool = default;
 };
 
 struct keysound_row_t {
@@ -100,11 +102,13 @@ struct keysound_row_t {
     std::uint64_t layer_mask{};
     std::uint64_t note_layer_conflict_mask{};
     std::uint64_t sound_group_id{};
+    auto operator==(const keysound_row_t&) const -> bool = default;
 };
 
 struct keysound_advance_row_t {
     resource_id_t resource;
     bool missing{};
+    auto operator==(const keysound_advance_row_t&) const -> bool = default;
 };
 
 struct keysound_selection_row_t {
@@ -114,6 +118,7 @@ struct keysound_selection_row_t {
     std::uint64_t note_layer_conflict_mask{};
     std::string slot;
     bool missing{};
+    auto operator==(const keysound_selection_row_t&) const -> bool = default;
 };
 
 struct keysound_list_t {
@@ -128,6 +133,7 @@ struct keysound_list_t {
         std::size_t group_sound_count{};
         bool expanded{true};
         resource_id_t resource;
+        auto operator==(const display_row_t&) const -> bool = default;
     };
     std::vector<display_row_t> display_rows;
     std::vector<resource_id_t> listed_resources;
@@ -147,6 +153,23 @@ struct keysound_list_t {
     std::string selected_filter_layer_name;
     bool selected_filter_layer_valid{};
     bms_identifier_capacity_t bms_capacity{};
+    auto operator==(const keysound_list_t& other) const -> bool {
+        return rows == other.rows && selected_rows == other.selected_rows &&
+            selection_rows == other.selection_rows && display_rows == other.display_rows &&
+            listed_resources == other.listed_resources && advance_rows == other.advance_rows &&
+            all_resources == other.all_resources && total == other.total &&
+            truncated == other.truncated && display_total == other.display_total &&
+            display_first_row == other.display_first_row &&
+            primary_display_index == other.primary_display_index &&
+            display_truncated == other.display_truncated && layers == other.layers &&
+            filter_layers == other.filter_layers && filter_layer_first == other.filter_layer_first &&
+            filter_layer_total == other.filter_layer_total &&
+            selected_filter_layer_name == other.selected_filter_layer_name &&
+            selected_filter_layer_valid == other.selected_filter_layer_valid &&
+            bms_capacity.used == other.bms_capacity.used &&
+            bms_capacity.total == other.bms_capacity.total &&
+            bms_capacity.largest_free_run == other.bms_capacity.largest_free_run;
+    }
 };
 
 enum class keysound_layer_filter_kind_t : std::uint8_t { any, no_layer, specific };
@@ -170,6 +193,68 @@ struct keysound_list_request_t {
     bool ids_available{true};
 };
 
+struct keysound_list_cache_t {
+    [[nodiscard]] auto projection_build_count() const noexcept -> std::size_t {
+        return projection_builds_;
+    }
+    [[nodiscard]] auto asset_index_build_count() const noexcept -> std::size_t {
+        return asset_index_builds_;
+    }
+
+public:
+    friend auto project_keysound_list_cached(keysound_list_cache_t&, const song_document_t&,
+        const chart_document_t*, std::size_t, dock_sort_t, bool) -> const keysound_list_t&;
+    friend auto project_keysound_list_cached(keysound_list_cache_t&, const song_document_t&,
+        const chart_document_t*, const keysound_list_request_t&) -> const keysound_list_t&;
+
+    struct identity_t {
+        std::uint64_t project_id{};
+        std::uintptr_t project_address{};
+        std::uint64_t revision{};
+        std::uint64_t chart_id{};
+        std::uintptr_t chart_address{};
+        auto operator==(const identity_t&) const -> bool = default;
+    };
+    struct legacy_key_t {
+        identity_t identity;
+        std::size_t maximum_rows{};
+        dock_sort_t sort{dock_sort_t::natural_name};
+        bool ids_available{true};
+        auto operator==(const legacy_key_t&) const -> bool = default;
+    };
+    struct request_key_t {
+        identity_t identity;
+        std::string search;
+        std::vector<std::uint64_t> selected_resource_ids;
+        bool include_selected_metadata{};
+        std::vector<std::uint64_t> group_ids;
+        bool group_filter_active{};
+        bool include_ungrouped{true};
+        keysound_layer_filter_kind_t layer_filter{keysound_layer_filter_kind_t::any};
+        std::uint64_t layer_id{};
+        std::vector<std::uint64_t> collapsed_group_ids;
+        bool ungrouped_collapsed{};
+        std::size_t first_row{}, row_limit{64};
+        std::uint64_t primary_resource_id{};
+        std::size_t filter_layer_first{}, filter_layer_limit{64};
+        dock_sort_t sort{dock_sort_t::natural_name};
+        bool ids_available{true};
+    };
+
+private:
+    [[nodiscard]] auto asset_ids_for(const song_document_t& document)
+        -> const std::unordered_set<std::uint64_t>&;
+
+    bool asset_index_valid_{};
+    identity_t asset_index_identity_;
+    std::unordered_set<std::uint64_t> audio_asset_ids_;
+    bool legacy_valid_{}, request_valid_{};
+    legacy_key_t legacy_key_;
+    request_key_t request_key_;
+    keysound_list_t legacy_result_, request_result_;
+    std::size_t projection_builds_{}, asset_index_builds_{};
+};
+
 [[nodiscard]] auto project_keysound_list(const song_document_t& document,
                                          const chart_document_t* chart,
                                          std::size_t maximum_rows,
@@ -183,6 +268,13 @@ struct keysound_list_request_t {
                                          const chart_document_t* chart,
                                          const keysound_list_request_t& request)
     -> keysound_list_t;
+[[nodiscard]] auto project_keysound_list_cached(keysound_list_cache_t& cache,
+    const song_document_t& document, const chart_document_t* chart, std::size_t maximum_rows,
+    dock_sort_t sort = dock_sort_t::natural_name, bool ids_available = true)
+    -> const keysound_list_t&;
+[[nodiscard]] auto project_keysound_list_cached(keysound_list_cache_t& cache,
+    const song_document_t& document, const chart_document_t* chart,
+    const keysound_list_request_t& request) -> const keysound_list_t&;
 
 // All supported nonzero BMS WAV slots, filtered and projected in a bounded window.
 struct sound_slot_request_t {

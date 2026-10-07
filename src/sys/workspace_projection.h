@@ -214,7 +214,8 @@ struct flattened_workspace_t {
                                      dock_sort_t keysound_sort = dock_sort_t::natural_name,
     WormUiKeysoundDockRequest keysound_request = {},
     WormUiSoundUsageRequest sound_usage_request = {},
-    WormUiBookmarkChooserRequest bookmark_chooser_request = {}) -> flattened_workspace_t;
+    WormUiBookmarkChooserRequest bookmark_chooser_request = {},
+    keysound_list_cache_t* keysound_cache = nullptr) -> flattened_workspace_t;
 
 // Borrowed notification strings remain valid until the center's next frame-
 // thread mutation. Project after draining, then draw before dispatching actions.

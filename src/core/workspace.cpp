@@ -765,6 +765,42 @@ auto make_branch_outline(const chart_document_t& chart, const workspace_limits_t
     return outline;
 }
 
+auto branch_cache_choices_match(const workspace_bms_branch_outline_cache_t& cache,
+                                 const chart_document_t& chart) -> bool {
+    return std::ranges::equal(cache.choices, chart.active_branch_selection,
+        [](const auto& retained, const auto& active) {
+            return retained.first == active.branch && retained.second == active.selected_value;
+        });
+}
+auto project_branch_outline(const song_document_t& document, const chart_document_t& chart,
+    const workspace_limits_t& limits, workspace_bms_branch_outline_cache_t* cache)
+    -> workspace_bms_branch_outline_t {
+    // Retained ordinary statements are visible too; only an absent tree is empty.
+    if (!chart.bms_control_tree) return {};
+    if (!cache) return make_branch_outline(chart, limits);
+    if (cache->valid && cache->document_identity == &document &&
+        cache->chart_identity == &chart && cache->song == document.id &&
+        cache->chart == chart.id && cache->revision == document.revision &&
+        cache->limits == limits && branch_cache_choices_match(*cache, chart))
+        return cache->outline;
+    auto outline = make_branch_outline(chart, limits);
+    cache->valid = false;
+    cache->choices.clear();
+    cache->choices.reserve(chart.active_branch_selection.size());
+    for (const auto& choice : chart.active_branch_selection)
+        cache->choices.emplace_back(choice.branch, choice.selected_value);
+    cache->outline = std::move(outline);
+    cache->document_identity = &document;
+    cache->chart_identity = &chart;
+    cache->song = document.id;
+    cache->chart = chart.id;
+    cache->revision = document.revision;
+    cache->limits = limits;
+    cache->valid = true;
+    ++cache->build_count;
+    return cache->outline;
+}
+
 } // namespace
 
 auto workspace_tab_enabled(workspace_tab_t tab) noexcept -> bool {
@@ -1283,7 +1319,8 @@ auto build_timing_tab(workspace_view_build_context_t& context) -> bool {
     return true;
 }
 
-auto build_compose_tab(workspace_view_build_context_t& context) -> bool {
+auto build_compose_tab(workspace_view_build_context_t& context,
+                       workspace_bms_branch_outline_cache_t* branch_cache) -> bool {
     const auto& [workspace, document, chart, result, view] = context;
     if (chart == nullptr) {
         add_error(result.diagnostics, diagnostic_code_t::invalid_id,
@@ -1319,7 +1356,8 @@ auto build_compose_tab(workspace_view_build_context_t& context) -> bool {
         .layout_segment_count = chart->lane_layouts.size(),
         .lane_count = lane_count,
         .layer_count = chart->semantic_layers.size(),
-        .bms_branch_outline = make_branch_outline(*chart, workspace.limits),
+        .bms_branch_outline = project_branch_outline(document, *chart, workspace.limits,
+                                                     branch_cache),
     };
     return true;
 }
@@ -1385,7 +1423,9 @@ auto make_workspace_view(const workspace_controller_t& workspace, const song_doc
 
 auto make_workspace_view(const workspace_controller_t& workspace, const song_document_t& document,
                          workspace_tab_t requested_tab,
-                         const diagnostic_list_t* cached_diagnostics) -> workspace_view_result_t {
+                         const diagnostic_list_t* cached_diagnostics,
+                         workspace_bms_branch_outline_cache_t* branch_cache)
+    -> workspace_view_result_t {
     workspace_view_result_t result;
     if (document.id != workspace.song || document.revision != workspace.document_revision) {
         add_error(result.diagnostics, diagnostic_code_t::invalid_id,
@@ -1459,7 +1499,7 @@ auto make_workspace_view(const workspace_controller_t& workspace, const song_doc
         }
         break;
     case workspace_tab_t::compose:
-        if (!build_compose_tab(context)) {
+        if (!build_compose_tab(context, branch_cache)) {
             return result;
         }
         break;

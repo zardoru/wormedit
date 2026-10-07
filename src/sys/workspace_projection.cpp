@@ -327,6 +327,7 @@ struct workspace_projection_context_t {
     WormUiKeysoundDockRequest keysound_request;
     WormUiSoundUsageRequest sound_usage_request;
     WormUiBookmarkChooserRequest bookmark_chooser_request;
+    keysound_list_cache_t* keysound_cache{};
 };
 
 void publish_workspace_summary(flattened_workspace_t& result, const char* text) {
@@ -755,23 +756,28 @@ auto request_span(const T* data, std::size_t count) -> std::span<const T> {
 }
 
 auto project_compose_keysounds(const workspace_projection_context_t& projection,
-                               const wormedit::chart_document_t& chart)
-    -> wormedit::sys::keysound_list_t {
+                               const wormedit::chart_document_t& chart,
+                               keysound_list_t& uncached)
+    -> const keysound_list_t& {
     const auto& request = projection.keysound_request;
-    if (request.slots_mode)
-        return wormedit::sys::project_keysound_list(projection.document, &chart,
-            WORM_UI_COMPOSE_KEYSOUND_CAPACITY,
-            chart.source_family == wormedit::format_family_t::bms &&
-                    (request.sort_by_id || projection.keysound_sort == dock_sort_t::bms_id)
-                ? wormedit::sys::dock_sort_t::bms_id : wormedit::sys::dock_sort_t::natural_name,
-            chart.source_family == wormedit::format_family_t::bms);
+    if (request.slots_mode) {
+        const auto sort = chart.source_family == wormedit::format_family_t::bms &&
+                (request.sort_by_id || projection.keysound_sort == dock_sort_t::bms_id)
+            ? dock_sort_t::bms_id : dock_sort_t::natural_name;
+        const bool ids = chart.source_family == wormedit::format_family_t::bms;
+        if (projection.keysound_cache)
+            return project_keysound_list_cached(*projection.keysound_cache,
+                projection.document, &chart, WORM_UI_COMPOSE_KEYSOUND_CAPACITY, sort, ids);
+        uncached = project_keysound_list(projection.document, &chart,
+            WORM_UI_COMPOSE_KEYSOUND_CAPACITY, sort, ids);
+        return uncached;
+    }
     auto layer_filter = wormedit::sys::keysound_layer_filter_kind_t::any;
     if (request.layer_filter_kind == 1)
         layer_filter = wormedit::sys::keysound_layer_filter_kind_t::no_layer;
     else if (request.layer_filter_kind == 2)
         layer_filter = wormedit::sys::keysound_layer_filter_kind_t::specific;
-    return wormedit::sys::project_keysound_list(projection.document, &chart,
-        wormedit::sys::keysound_list_request_t{
+    const keysound_list_request_t projected_request{
             .search = bounded_text(request.automatic_search, sizeof(request.automatic_search)),
             .selected_resource_ids = request_span(request.selected_resource_ids,
                                                    request.selected_resource_count),
@@ -793,7 +799,12 @@ auto project_compose_keysounds(const workspace_projection_context_t& projection,
             .sort = request.sort_by_id || projection.keysound_sort == dock_sort_t::bms_id
                 ? wormedit::sys::dock_sort_t::bms_id
                 : wormedit::sys::dock_sort_t::natural_name,
-            .ids_available = chart.source_family == wormedit::format_family_t::bms});
+            .ids_available = chart.source_family == wormedit::format_family_t::bms};
+    if (projection.keysound_cache)
+        return project_keysound_list_cached(*projection.keysound_cache,
+            projection.document, &chart, projected_request);
+    uncached = project_keysound_list(projection.document, &chart, projected_request);
+    return uncached;
 }
 
 auto append_keysound_layer(flattened_workspace_t& result, frame_arena_t& arena,
@@ -990,7 +1001,8 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
                                          &wormedit::chart_document_t::id);
     view.keysounds_available = chart != projection.document.charts.end();
     if (!arena || !view.keysounds_available) return;
-    const auto list = project_compose_keysounds(projection, *chart);
+    keysound_list_t uncached;
+    const auto& list = project_compose_keysounds(projection, *chart, uncached);
     clear_compose_keysound_counts(view);
     view.keysound_section_projection_available = !projection.keysound_request.slots_mode;
     view.keysound_total_count = list.total;
@@ -1434,7 +1446,8 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                        frame_arena_t* arena, dock_sort_t keysound_sort,
                        WormUiKeysoundDockRequest keysound_request,
                        WormUiSoundUsageRequest sound_usage_request,
-                       WormUiBookmarkChooserRequest bookmark_chooser_request) -> flattened_workspace_t {
+                       WormUiBookmarkChooserRequest bookmark_chooser_request,
+                       keysound_list_cache_t* keysound_cache) -> flattened_workspace_t {
     flattened_workspace_t result(arena);
     result.view.project_title = document.metadata.title.c_str();
     result.view.artist = document.metadata.artist.c_str();
@@ -1464,7 +1477,8 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
 
     const workspace_projection_context_t projection{
         result,        source,           document,           stepmania_policy,
-        keysound_sort, keysound_request, sound_usage_request, bookmark_chooser_request};
+        keysound_sort, keysound_request, sound_usage_request, bookmark_chooser_request,
+        keysound_cache};
     std::visit(workspace_tab_visitor{projection}, source.tab_view);
     return result;
 }

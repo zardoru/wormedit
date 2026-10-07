@@ -2,8 +2,12 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
+#include <functional>
 #include <optional>
+#include <span>
+#include <string>
 
 using namespace wormedit;
 using namespace wormedit::sys;
@@ -46,7 +50,236 @@ auto catalog() -> song_document_t {
     return song;
 }
 
+auto large_projection_catalog() -> song_document_t {
+    song_document_t song;
+    song.id = song_id_t{100};
+    song.revision = 1;
+    song.sound_groups = {{.id = sound_group_id_t{1}, .name = "Drums"},
+                         {.id = sound_group_id_t{2}, .name = "Keys"},
+                         {.id = sound_group_id_t{3}, .name = "Other"}};
+    chart_document_t chart;
+    chart.id = chart_id_t{200};
+    chart.measures.push_back({.id = measure_id_t{300}});
+    chart.semantic_layers = {{.id = layer_id_t{1}, .name = "Red"},
+                             {.id = layer_id_t{2}, .name = "Blue"}};
+    for (std::uint64_t index = 1; index <= 600; ++index) {
+        song.audio_assets.push_back({.id = asset_id_t{index},
+            .source_path = "audio/sound" + std::to_string(index) + ".ogg",
+            .stream = {.sample_rate = 48'000, .channels = 2,
+                       .frame_count = 96'000 + index, .seekable = true}});
+        song.resources.push_back({.id = resource_id_t{index},
+            .name = "sound" + std::to_string(index), .asset = asset_id_t{index},
+            .roles = {resource_role_t::sample},
+            .sound_kind = index % 10 == 0 ? sound_kind_t::stem : sound_kind_t::keysound,
+            .tags = {index % 2 == 0 ? "Even" : "Odd"},
+            .sound_group = sound_group_id_t{index % 3 + 1}});
+        chart.measures.front().notes.push_back({.id = object_id_t{10'000 + index},
+            .position = {measure_id_t{300}, index}, .sound = resource_id_t{index},
+            .semantic_layers = index % 2 == 0 ? std::vector{layer_id_t{1}}
+                                               : std::vector{layer_id_t{2}}});
+        if (index % 2 == 0)
+            chart.sound_layer_defaults.push_back({.resource = resource_id_t{index},
+                .layers = {index % 4 == 0 ? layer_id_t{1} : layer_id_t{2}}});
+    }
+    for (std::uint64_t index = 1; index <= 70; ++index)
+        chart.bpms.push_back({.id = object_id_t{20'000 + index},
+            .position = {measure_id_t{300}, index}, .beats_per_minute = {120 + static_cast<std::int64_t>(index), 1}});
+    song.charts.push_back(std::move(chart));
+    return song;
+}
+
+auto full_keysound_request(std::span<const std::uint64_t> selected,
+                           std::span<const std::uint64_t> groups,
+                           std::span<const std::uint64_t> collapsed,
+                           std::string_view search = "sound") -> keysound_list_request_t {
+    return {.search = search, .selected_resource_ids = selected,
+        .include_selected_metadata = true, .group_ids = groups,
+        .group_filter_active = true, .include_ungrouped = false,
+        .layer_filter = keysound_layer_filter_kind_t::any, .layer_id = 2,
+        .collapsed_group_ids = collapsed, .ungrouped_collapsed = false,
+        .first_row = 3, .row_limit = 17, .primary_resource_id = 55,
+        .filter_layer_first = 0, .filter_layer_limit = 64,
+        .sort = dock_sort_t::natural_name, .ids_available = true};
+}
+
+auto cached_legacy_matches_reference() -> bool {
+    auto song = large_projection_catalog();
+    const auto& chart = song.charts.front();
+    keysound_list_cache_t cache;
+    const auto& cached = project_keysound_list_cached(cache, song, &chart, 32,
+                                                       dock_sort_t::bms_id, false);
+    const auto reference = project_keysound_list(song, &chart, 32, dock_sort_t::bms_id, false);
+    if (!(cached == reference) || cache.projection_build_count() != 1 ||
+        cache.asset_index_build_count() != 1) return false;
+    const auto& hit = project_keysound_list_cached(cache, song, &chart, 32,
+                                                    dock_sort_t::bms_id, false);
+    if (&cached != &hit || cache.projection_build_count() != 1 ||
+        cache.asset_index_build_count() != 1) return false;
+    song.audio_assets.push_back({.id = asset_id_t{900}, .source_path = "audio/new.wav"});
+    song.resources.push_back({.id = resource_id_t{900}, .name = "New",
+        .asset = asset_id_t{900}, .roles = {resource_role_t::sample}});
+    ++song.revision;
+    const auto& refreshed = project_keysound_list_cached(cache, song, &chart, 32,
+                                                          dock_sort_t::bms_id, false);
+    return refreshed == project_keysound_list(song, &chart, 32, dock_sort_t::bms_id, false) &&
+        cache.projection_build_count() == 2 && cache.asset_index_build_count() == 2;
+}
+
+auto cached_request_owns_inputs_and_matches_reference() -> bool {
+    auto song = large_projection_catalog();
+    const auto& chart = song.charts.front();
+    keysound_list_cache_t cache;
+    keysound_list_t reference;
+    const keysound_list_t* first{};
+    {
+        const std::array selected{std::uint64_t{7}, std::uint64_t{19}, std::uint64_t{599}};
+        const std::array groups{std::uint64_t{1}, std::uint64_t{2}};
+        const std::array collapsed{std::uint64_t{2}};
+        const std::string search{"sound"};
+        const auto request = full_keysound_request(selected, groups, collapsed, search);
+        first = &project_keysound_list_cached(cache, song, &chart, request);
+        reference = project_keysound_list(song, &chart, request);
+    }
+    if (!first || !(*first == reference) || cache.projection_build_count() != 1 ||
+        cache.asset_index_build_count() != 1) return false;
+    const std::array selected{std::uint64_t{7}, std::uint64_t{19}, std::uint64_t{599}};
+    const std::array groups{std::uint64_t{1}, std::uint64_t{2}};
+    const std::array collapsed{std::uint64_t{2}};
+    const std::string search{"sound"};
+    const auto repeated = full_keysound_request(selected, groups, collapsed, search);
+    const auto& hit = project_keysound_list_cached(cache, song, &chart, repeated);
+    if (&hit != first || !(hit == reference) || cache.projection_build_count() != 1) return false;
+    auto changed = repeated;
+    changed.primary_resource_id = 19;
+    const auto& rebuilt = project_keysound_list_cached(cache, song, &chart, changed);
+    if (!(rebuilt == project_keysound_list(song, &chart, changed)) ||
+        cache.projection_build_count() != 2 || cache.asset_index_build_count() != 1) return false;
+    const auto& legacy = project_keysound_list_cached(cache, song, &chart, 24);
+    return legacy == project_keysound_list(song, &chart, 24) &&
+        cache.projection_build_count() == 3 && cache.asset_index_build_count() == 1;
+}
+
+auto cache_keys_include_project_chart_and_revision() -> bool {
+    auto song = large_projection_catalog();
+    auto& chart = song.charts.front();
+    keysound_list_cache_t cache;
+    const std::array groups{std::uint64_t{1}, std::uint64_t{2}, std::uint64_t{3}};
+    const std::array<std::uint64_t, 0> none{};
+    const auto request = full_keysound_request(none, groups, none);
+    const auto first = project_keysound_list_cached(cache, song, &chart, request);
+
+    auto alternate_chart = chart;
+    alternate_chart.semantic_layers.push_back({.id = layer_id_t{3}, .name = "Green"});
+    const auto alternate = project_keysound_list_cached(cache, song, &alternate_chart, request);
+    if (alternate.layers.size() != first.layers.size() + 1 ||
+        cache.asset_index_build_count() != 1) return false;
+
+    auto copy = song;
+    std::erase_if(copy.resources, [](const auto& resource) { return resource.id == resource_id_t{599}; });
+    auto& copied_chart = copy.charts.front();
+    const auto copied = project_keysound_list_cached(cache, copy, &copied_chart, request);
+    if (copied.total == first.total || cache.asset_index_build_count() != 2) return false;
+
+    const auto back_to_song = project_keysound_list_cached(cache, song, &chart, request);
+    if (back_to_song != first || cache.asset_index_build_count() != 3) return false;
+
+    song.audio_assets.push_back({.id = asset_id_t{900}, .source_path = "audio/new.ogg"});
+    song.resources.push_back({.id = resource_id_t{900}, .name = "sound900",
+        .asset = asset_id_t{900}, .roles = {resource_role_t::sample},
+        .sound_group = sound_group_id_t{3}});
+    ++song.revision;
+    const auto after_revision = project_keysound_list_cached(cache, song, &chart, request);
+    return after_revision.total == first.total + 1 && cache.asset_index_build_count() == 4 &&
+        after_revision == project_keysound_list(song, &chart, request);
+}
+
+auto every_full_request_field_invalidates() -> bool {
+    using change_t = std::function<void(keysound_list_request_t&)>;
+    const std::array selected{std::uint64_t{7}, std::uint64_t{19}};
+    const std::array groups{std::uint64_t{1}, std::uint64_t{2}};
+    const std::array collapsed{std::uint64_t{2}};
+    const std::array changed_ids{std::uint64_t{8}};
+    const std::array changed_groups{std::uint64_t{3}};
+    const std::array changed_collapsed{std::uint64_t{1}};
+    const std::array<change_t, 17> changes{
+        [](auto& request) { request.search = "sound1"; },
+        [&](auto& request) { request.selected_resource_ids = changed_ids; },
+        [](auto& request) { request.include_selected_metadata = false; },
+        [&](auto& request) { request.group_ids = changed_groups; },
+        [](auto& request) { request.group_filter_active = false; },
+        [](auto& request) { request.include_ungrouped = true; },
+        [](auto& request) { request.layer_filter = keysound_layer_filter_kind_t::no_layer; },
+        [](auto& request) { request.layer_id = 1; },
+        [&](auto& request) { request.collapsed_group_ids = changed_collapsed; },
+        [](auto& request) { request.ungrouped_collapsed = true; },
+        [](auto& request) { request.first_row = 4; },
+        [](auto& request) { request.row_limit = 18; },
+        [](auto& request) { request.primary_resource_id = 19; },
+        [](auto& request) { request.filter_layer_first = 1; },
+        [](auto& request) { request.filter_layer_limit = 63; },
+        [](auto& request) { request.sort = dock_sort_t::bms_id; },
+        [](auto& request) { request.ids_available = false; }};
+    for (const auto& change : changes) {
+        auto song = large_projection_catalog();
+        const auto& chart = song.charts.front();
+        keysound_list_cache_t cache;
+        const auto base = full_keysound_request(selected, groups, collapsed);
+        static_cast<void>(project_keysound_list_cached(cache, song, &chart, base));
+        auto changed = base;
+        change(changed);
+        const auto& rebuilt = project_keysound_list_cached(cache, song, &chart, changed);
+        if (cache.projection_build_count() != 2 || cache.asset_index_build_count() != 1 ||
+            !(rebuilt == project_keysound_list(song, &chart, changed))) return false;
+    }
+    return true;
+}
+
+auto legacy_key_fields_invalidate() -> bool {
+    auto song = large_projection_catalog();
+    const auto& chart = song.charts.front();
+    keysound_list_cache_t cache;
+    static_cast<void>(project_keysound_list_cached(cache, song, &chart, 32,
+                                                    dock_sort_t::natural_name, true));
+    const auto& row_change = project_keysound_list_cached(cache, song, &chart, 31,
+                                                           dock_sort_t::natural_name, true);
+    if (!(row_change == project_keysound_list(song, &chart, 31,
+                                               dock_sort_t::natural_name, true))) return false;
+    const auto& sort_change = project_keysound_list_cached(cache, song, &chart, 31,
+                                                            dock_sort_t::bms_id, true);
+    if (!(sort_change == project_keysound_list(song, &chart, 31, dock_sort_t::bms_id, true)))
+        return false;
+    const auto& id_change = project_keysound_list_cached(cache, song, &chart, 31,
+                                                          dock_sort_t::bms_id, false);
+    return id_change == project_keysound_list(song, &chart, 31, dock_sort_t::bms_id, false) &&
+        cache.projection_build_count() == 4 && cache.asset_index_build_count() == 1;
+}
+
 } // namespace
+
+TEST_CASE("cached legacy keysound projection matches reference and invalidates by revision",
+          "[unit][sys][sounds][cache]") {
+    check_sound_projection(cached_legacy_matches_reference());
+}
+
+TEST_CASE("cached full keysound projection owns request inputs and shares asset membership",
+          "[unit][sys][sounds][cache]") {
+    check_sound_projection(cached_request_owns_inputs_and_matches_reference());
+}
+
+TEST_CASE("keysound cache keys include project identity, chart identity and revision",
+          "[unit][sys][sounds][cache]") {
+    check_sound_projection(cache_keys_include_project_chart_and_revision());
+}
+
+TEST_CASE("every full keysound request field invalidates its cached projection",
+          "[unit][sys][sounds][cache]") {
+    check_sound_projection(every_full_request_field_invalidates());
+}
+
+TEST_CASE("legacy keysound cache includes each scalar request field",
+          "[unit][sys][sounds][cache]") {
+    check_sound_projection(legacy_key_fields_invalidate());
+}
 
 TEST_CASE("sound list shows audio resources only, with counts and inferred kinds",
           "[unit][sys][sounds]") {

@@ -1614,7 +1614,9 @@ bool populate_semantic_layer_palette(
     application_command_state_t& application_state) {
     auto& view = flattened.view.compose;
     if (!cache.attempted || cache.chart != chart.id ||
-        cache.revision != history.document.revision) {
+        cache.revision != history.document.revision ||
+        cache.scene_document_identity != &history.document ||
+        cache.scene_chart_identity != &chart || cache.scene_song != history.document.id) {
         populate_semantic_membership_counts(cache, chart);
     }
     if (application_state.semantic_layer_palette_chart != chart.id) {
@@ -2232,8 +2234,37 @@ void project_compose_markers(
     project_compose_audio_markers(input);
 }
 
+auto cached_compose_timing_payloads(const wormedit::song_document_t& document,
+    const wormedit::chart_document_t& chart, const compose_scene_cache_t& cache)
+    -> const std::vector<compose_timing_marker_payload_t>& {
+    auto& stored = cache.timing_payload_cache;
+    if (stored.valid && stored.document_identity == &document &&
+        stored.chart_identity == &chart && stored.project == document.id.value &&
+        stored.chart == chart.id.value && stored.revision == document.revision)
+        return stored.markers;
+    stored.valid = false;
+    stored.markers.clear();
+    append_compose_chart_timing_markers(chart, cache.index->measures,
+        [&](wormedit::local_position_t position, std::uint64_t id,
+            std::size_t source_order, std::size_t storage_order, WormUiTimingLaneKind lane,
+            std::string short_label, std::string detail, bool fixed_initial) {
+            stored.markers.push_back({wormedit::absolute_row(cache.index->measures, position),
+                id, source_order, storage_order, lane, std::move(short_label),
+                std::move(detail), fixed_initial});
+        });
+    stored.document_identity = &document;
+    stored.chart_identity = &chart;
+    stored.project = document.id.value;
+    stored.chart = chart.id.value;
+    stored.revision = document.revision;
+    stored.valid = true;
+    ++stored.build_count;
+    return stored.markers;
+}
+
 void populate_compose_timing_markers(
-    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    flattened_workspace_t& flattened, const wormedit::song_document_t& document,
+    const wormedit::chart_document_t& chart,
     const compose_scene_cache_t& cache,
     const wormedit::editor_interaction_view_model_t& interaction_view,
     WormUiComposeView& view, bool downscroll, double pixels_per_row,
@@ -2255,15 +2286,14 @@ void populate_compose_timing_markers(
                 pixels_per_row / total_rows,
             view.timing_document_begin_fraction, 1.0);
     }
-    const auto append_timing_marker = [&](wormedit::local_position_t position, std::uint64_t id,
+    const auto append_timing_marker = [&](std::optional<std::uint64_t> row, std::uint64_t id,
                                           std::size_t source_order, std::size_t storage_order,
-                                          WormUiTimingLaneKind lane, std::string short_label,
-                                          std::string detail, bool fixed_initial) {
+                                          WormUiTimingLaneKind lane, std::string_view short_label,
+                                          std::string_view detail, bool fixed_initial) {
         if (flattened.compose.timing_marker.size() >= WORM_UI_TIMING_MARKER_CAPACITY) {
             view.truncated = true;
             return;
         }
-        const auto row = wormedit::absolute_row(cache.index->measures, position);
         if (!row) {
             return;
         }
@@ -2274,7 +2304,7 @@ void populate_compose_timing_markers(
             return;
         }
         auto& labels = flattened.compose.timing_marker_labels.emplace_back(
-            std::move(short_label), std::move(detail));
+            short_label, detail);
         flattened.compose.timing_marker.push_back({
             .object_id = id,
             .source_order = static_cast<std::uint64_t>(source_order),
@@ -2290,7 +2320,21 @@ void populate_compose_timing_markers(
             .selected = compose_timing_marker_selected(interaction_view, lane, id),
         });
     };
-    append_compose_chart_timing_markers(chart, cache.index->measures, append_timing_marker);
+    if (cache.timing_payload_cache_enabled) {
+        for (const auto& marker : cached_compose_timing_payloads(document, chart, cache))
+            append_timing_marker(marker.row, marker.id, marker.source_order,
+                marker.storage_order, marker.lane, marker.short_label, marker.detail,
+                marker.fixed_initial);
+    } else {
+        append_compose_chart_timing_markers(chart, cache.index->measures,
+            [&](wormedit::local_position_t position, std::uint64_t id,
+                std::size_t source_order, std::size_t storage_order, WormUiTimingLaneKind lane,
+                std::string short_label, std::string detail, bool fixed_initial) {
+                append_timing_marker(wormedit::absolute_row(cache.index->measures, position),
+                    id, source_order, storage_order, lane, std::move(short_label),
+                    std::move(detail), fixed_initial);
+            });
+    }
     assign_compose_timing_marker_fractions(flattened);
     view.timing_markers = flattened.compose.timing_marker.data();
     view.timing_marker_count = flattened.compose.timing_marker.size();
@@ -2946,6 +2990,8 @@ auto cached_compose_measures(flattened_workspace_t& flattened,
     return &*cache.cached_measure_index;
 }
 
+void discard_compose_static_source(compose_scene_cache_t& cache);
+
 const wormedit::measure_index_t* prepare_compose_chart_view(
     flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
     wormedit::document_history_t& history, compose_scene_cache_t& cache,
@@ -2981,9 +3027,13 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         return nullptr;
     }
     if (!cache.attempted || cache.chart != chart.id ||
-        cache.revision != history.document.revision) {
+        cache.revision != history.document.revision ||
+        cache.scene_document_identity != &history.document ||
+        cache.scene_chart_identity != &chart || cache.scene_song != history.document.id) {
         frame_phase_scope_t frame_scene_index(frame_phase_t::scene);
         cache.index.reset();
+        cache.scene_window.scene.reset();
+        discard_compose_static_source(cache);
         cache.cached_measure_index.reset();
         cache.bgm_rows_by_id.clear();
         cache.hit_test_index.reset();
@@ -3012,6 +3062,9 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         cache.viewport_autoscroll_active = false;
         cache.projection_error.clear();
         cache.paint_pointer.reset();
+        cache.scene_document_identity = &history.document;
+        cache.scene_chart_identity = &chart;
+        cache.scene_song = history.document.id;
         cache.chart = chart.id;
         cache.revision = history.document.revision;
         cache.attempted = true;
@@ -3517,7 +3570,7 @@ void refresh_compose_static_source(const compose_scene_projection_context_t& pro
     project_compose_layout_and_notes(expanded);
     project_compose_bgm(expanded);
     project_compose_bga(expanded);
-    populate_compose_timing_markers(*storage, projection.chart, cache, cache.scene_window.view,
+    populate_compose_timing_markers(*storage, projection.history.document, projection.chart, cache, cache.scene_window.view,
         retained, projection.downscroll, projection.pixels_per_row, canvas_rows, nullptr);
     clear_static_source_selection(*storage);
     publish_compose_scene(expanded);
@@ -3883,7 +3936,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
 
     const auto pixels_per_row = interaction_view.pixels_per_standard_measure /
                                 static_cast<double>(chart.divisions_per_standard_measure);
-    populate_compose_timing_markers(flattened, chart, cache, interaction_view, view,
+    populate_compose_timing_markers(flattened, history.document, chart, cache, interaction_view, view,
                                     downscroll, pixels_per_row, canvas_rows, timing_stage);
     populate_compose_dead_spans(flattened, cache, interaction_view, view, downscroll,
                                 pixels_per_row);

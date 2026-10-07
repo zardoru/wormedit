@@ -4618,3 +4618,123 @@ TEST_CASE("BMSON production projection excludes one thousand packed channels and
     check_mixed_production_projection(fixture, packed_analysis, false);
     check_mixed_production_projection(fixture, packed_analysis, true);
 }
+
+namespace {
+struct workspace_timing_snapshot_t {
+    std::uint64_t id{}, source{}, storage{}, row{};
+    double y{}, left{}, right{};
+    WormUiTimingLaneKind lane{};
+    std::string label, detail;
+    bool fixed{}, selected{};
+    auto operator==(const workspace_timing_snapshot_t&) const -> bool = default;
+};
+auto workspace_timing_snapshot(const compose_test_fixture_t& fixture)
+    -> std::vector<workspace_timing_snapshot_t> {
+    std::vector<workspace_timing_snapshot_t> result;
+    for (const auto& marker : fixture.flattened.compose.timing_marker)
+        result.push_back({marker.object_id, marker.source_order, marker.storage_order,
+            marker.chart_row, marker.marker_y_pixels, marker.marker_left_fraction,
+            marker.marker_right_fraction, marker.lane, marker.short_label, marker.detail,
+            marker.fixed_initial, marker.selected});
+    return result;
+}
+auto workspace_timing_cache_song() -> song_document_t {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    chart.bpms.clear();
+    for (std::uint64_t index = 0; index < 70; ++index)
+        chart.bpms.push_back({.id = object_id_t{10000 + index},
+            .position = {measure_id_t{1}, index * 12},
+            .beats_per_minute = {120 + static_cast<std::int64_t>(index), 1}});
+    song.audio_assets = {{.id = asset_id_t{1}}};
+    for (std::uint64_t id = 1; id <= 600; ++id)
+        song.resources.push_back({.id = resource_id_t{id}, .name = "sound" + std::to_string(id),
+            .asset = asset_id_t{1}, .roles = {resource_role_t::sample}});
+    return song;
+}
+auto workspace_timing_cache_tracks_frame_state() -> bool {
+    const auto song = workspace_timing_cache_song();
+    compose_test_fixture_t cached(song), reference(song);
+    reference.cache.timing_payload_cache_enabled = false;
+    cached.project(); reference.project();
+    const auto original = workspace_timing_snapshot(cached);
+    for (double scroll : {0.0, 150.0, 0.0}) {
+        for (auto* fixture : {&cached, &reference}) {
+            fixture->interaction->viewport_scroll_pixels = scroll;
+            fixture->interaction->selected_objects = {
+                {editor_selection_object_kind_t::bpm_event, object_id_t{10005}}};
+            fixture->project();
+        }
+        if (workspace_timing_snapshot(cached) != workspace_timing_snapshot(reference))
+            return false;
+    }
+    const auto selected = std::ranges::find_if(cached.flattened.compose.timing_marker,
+        [](const auto& marker) { return marker.object_id == 10005; });
+    if (selected == cached.flattened.compose.timing_marker.end() || !selected->selected ||
+        original == workspace_timing_snapshot(cached)) return false;
+    for (auto* fixture : {&cached, &reference}) {
+        fixture->interaction->selected_objects.clear();
+        fixture->project();
+    }
+    return workspace_timing_snapshot(cached) == workspace_timing_snapshot(reference) &&
+        std::ranges::none_of(cached.flattened.compose.timing_marker,
+                            [](const auto& marker) { return marker.selected; }) &&
+        cached.cache.timing_payload_cache.build_count == 1 &&
+        reference.cache.timing_payload_cache.build_count == 0;
+}
+auto workspace_timing_cache_invalidates_revision() -> bool {
+    compose_test_fixture_t cached(workspace_timing_cache_song());
+    cached.project();
+    auto& document = cached.history.document;
+    document.charts.front().bpms[5].beats_per_minute = {999, 1};
+    ++document.revision;
+    cached.binding.workspace->document_revision = document.revision;
+    cached.project();
+    compose_test_fixture_t reference(document);
+    reference.cache.timing_payload_cache_enabled = false;
+    reference.project();
+    return cached.cache.timing_payload_cache.build_count == 2 &&
+        workspace_timing_snapshot(cached) == workspace_timing_snapshot(reference);
+}
+auto workspace_timing_cache_rejects_reused_ids() -> bool {
+    auto original = workspace_timing_cache_song();
+    original.charts.front().measures.push_back({.id = measure_id_t{2}});
+    original.charts.front().bpms.back().position = {measure_id_t{2}, 0};
+    compose_test_fixture_t previous(original);
+    previous.project();
+    auto replacement = original;
+    auto& chart = replacement.charts.front();
+    chart.measures.front().id = measure_id_t{10};
+    chart.measures.back().id = measure_id_t{20};
+    chart.measures.front().definition.length = {2, 1};
+    chart.measures.front().definition.meter = meter_t{8, 4};
+    for (auto& note : chart.measures.front().notes) note.position.measure = measure_id_t{10};
+    chart.lane_layouts.front().position.measure = measure_id_t{10};
+    for (auto& bpm : chart.bpms) bpm.position.measure = measure_id_t{10};
+    chart.bpms.back().position.measure = measure_id_t{20};
+    chart.bpms.back().beats_per_minute = {777, 1};
+    compose_test_fixture_t cached(replacement), reference(replacement);
+    cached.cache = std::move(previous.cache);
+    reference.cache.timing_payload_cache_enabled = false;
+    cached.project(); reference.project();
+    const auto& payloads = cached.cache.timing_payload_cache.markers;
+    const auto changed = std::ranges::find(payloads, std::uint64_t{10069},
+                                          &compose_timing_marker_payload_t::id);
+    return changed != payloads.end() && changed->row == 1920 &&
+        cached.cache.timing_payload_cache.build_count == 2 &&
+        workspace_timing_snapshot(cached) == workspace_timing_snapshot(reference);
+}
+} // namespace
+
+TEST_CASE("Workspace timing cache matches reference with current scrolling and selection",
+          "[sys][compose][workspace-cache]") {
+    expect_compose_test(workspace_timing_cache_tracks_frame_state());
+}
+TEST_CASE("Workspace timing payload cache invalidates document revisions",
+          "[sys][compose][workspace-cache]") {
+    expect_compose_test(workspace_timing_cache_invalidates_revision());
+}
+TEST_CASE("Workspace timing cache rebuilds measure mapping for reused document IDs",
+          "[sys][compose][workspace-cache]") {
+    expect_compose_test(workspace_timing_cache_rejects_reused_ids());
+}

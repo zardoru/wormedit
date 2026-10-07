@@ -130,7 +130,8 @@ auto project_application_frame(application_frame_projection_context_t context)
                               context.recovery_controller.view(), context.recovery_scan_configured,
                               context.stepmania_export_policy, context.frame_arena,
             keysound_request.sort_by_id ? dock_sort_t::bms_id : dock_sort_t::natural_name,
-            keysound_request, sound_usage_request, bookmark_request);
+            keysound_request, sound_usage_request, bookmark_request,
+            &context.compose_scene_cache.keysound_list_cache);
         flattened.rebind_view_pointers();
         flattened.view.transport_metronome_enabled =
             context.application_command_state.transport_metronome_enabled;

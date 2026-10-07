@@ -19,6 +19,13 @@ choices. Root build and all **2,437 tests pass**; actual dragback CP932 selectio
 creates a 10K layout with 10 bindings, preserves all BGM data, and uses one undo.
 [Evidence](../coordination/profile-click-oct7.md).
 
+10K color follow-up (2026-10-07): `a3adcfa` fixes global sorting of the
+two stages' local lane orders during color assignment and profile retargeting.
+Root scene geometry confirms `wbwbg | ybwbw`; application build and all
+**2,439 tests pass**. Existing saved nondefault colors remain authored data;
+reapply/update the BMS 10K layout to refresh them.
+[Evidence](../coordination/10k-color-oct7.md).
+
 Remaining user feedback (2026-10-07): T-438–T-455 are planned in
 [stems and performance](../../docs/chart-editor-plan/tasks/stems-performance.md)
 and [BMSON/BGA editing](../../docs/chart-editor-plan/tasks/bmson-bga-editing.md).

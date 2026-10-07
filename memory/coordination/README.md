@@ -12,6 +12,10 @@ reviewed and integrated as `2749c6d`. Root application build and 2,437/2,437
 tests pass; actual dragback first-profile selection now creates the 10K layout
 and all 10 bindings with one undo and unchanged BGM data.
 
+Follow-up T-448 [10K color ordering](10k-color-oct7.md): reviewed and
+integrated as `a3adcfa`. Root build and all 2,439 tests pass; actual rendered
+lane positions have `wbwbg | ybwbw`, preserving IDs, stage order and bindings.
+
 Requested 2026-10-04: root integrates main; each worktree has a `gpt-6.1-sol`
 coordinator with medium reasoning and `gpt-6-luna` executors with medium
 reasoning. Follow [the agent workflow](../agent-workflow.md).

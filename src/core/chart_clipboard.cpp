@@ -1,5 +1,8 @@
 #include <wormedit/core/chart_clipboard.h>
 
+#include <wormedit/core/sound_slice.h>
+#include <wormedit/core/timing.h>
+
 #include <algorithm>
 #include <numeric>
 #include <set>
@@ -468,6 +471,73 @@ void append_stem_events(chart_document_t& chart, const std::vector<chart_paste_s
 } // namespace
 
 namespace {
+
+// Whether the stem's existing audio is still sounding at `row`; nullopt when the audio length or
+// the timing is unknown, in which case pasted points are left as copied.
+auto stem_audio_playing(const song_document_t& document, const chart_document_t& chart,
+                        const sound_channel_t& channel, const timing_index_t& timing, std::uint64_t row)
+    -> std::optional<bool> {
+    const auto asset = std::ranges::find(document.audio_assets, channel.source_clip.source, &audio_asset_t::id);
+    if (asset == document.audio_assets.end() || asset->stream.sample_rate == 0) return std::nullopt;
+    auto source_end = channel.source_clip.end_frame;
+    if (asset->stream.frame_count && (!source_end || *asset->stream.frame_count < *source_end))
+        source_end = asset->stream.frame_count;
+    if (!source_end) return std::nullopt;
+    const auto derived = derive_sound_channel_slices(chart, channel, asset->stream.sample_rate, source_end);
+    if (!derived) return std::nullopt;
+    const auto after = std::ranges::upper_bound(derived.slices, row, {}, &derived_sound_slice_t::absolute_row);
+    if (after == derived.slices.begin()) return false;
+    const auto& slice = *std::prev(after);
+    if (slice.source_begin_frame >= *source_end) return false;
+    const auto now = timing_at(timing, row).seconds;
+    const auto then = timing_at(timing, slice.absolute_row).seconds;
+    if (!now || !then) return std::nullopt;
+    const auto elapsed = (static_cast<long double>(now->numerator) / static_cast<long double>(now->denominator) -
+                          static_cast<long double>(then->numerator) / static_cast<long double>(then->denominator));
+    const auto position = static_cast<long double>(slice.source_begin_frame) +
+                          elapsed * static_cast<long double>(asset->stream.sample_rate);
+    return position < static_cast<long double>(*source_end);
+}
+
+// Pasted stem points inside the ongoing audio simply continue it. Pasted where the stem is silent
+// (ended, or not started) the first point must restart the sample, so it becomes a reset; a run
+// that straddles an existing point of the channel would half-overlap that audio, and is rejected.
+auto apply_stem_run_rules(const song_document_t& document, const chart_document_t& chart,
+                          const measure_index_t& index, std::vector<chart_paste_stem_event_t>& events)
+    -> std::optional<std::string> {
+    const auto timing = build_timing_index(chart);
+    if (!timing || !timing.index) return std::nullopt;
+    std::vector<object_id_t> done;
+    for (const auto& lead : events) {
+        if (std::ranges::find(done, lead.channel) != done.end()) continue;
+        done.push_back(lead.channel);
+        const auto channel = std::ranges::find(chart.sound_channels, lead.channel, &sound_channel_t::id);
+        if (channel == chart.sound_channels.end()) continue;
+        std::vector<chart_paste_stem_event_t*> run;
+        for (auto& event : events)
+            if (event.channel == lead.channel) run.push_back(&event);
+        const auto row_of = [&](const chart_paste_stem_event_t* event) {
+            return absolute_row(index, event->event.position).value_or(0);
+        };
+        std::ranges::sort(run, {}, row_of);
+        const auto first = row_of(run.front());
+        const auto last = row_of(run.back());
+        const auto playing = stem_audio_playing(document, chart, *channel, *timing.index, first);
+        if (!playing || *playing) continue;
+        const auto overlaps = std::ranges::any_of(channel->events, [&](const auto& existing) {
+            const auto row = absolute_row(index, existing.position);
+            return row && *row > first && *row <= last;
+        });
+        if (overlaps)
+            return "These stem points would overlap the part of the stem that already plays.";
+        run.front()->event.continuation = false;
+    }
+    return std::nullopt;
+}
+
+} // namespace
+
+namespace {
 auto missing_paste_lanes(const chart_clipboard_t& clipboard, const chart_document_t& chart,
                         const measure_index_t& index, std::uint64_t anchor) -> std::size_t {
     std::size_t missing{};
@@ -526,6 +596,8 @@ auto propose_chart_paste(const song_document_t& document, chart_id_t chart_id,
         result.error = "Paste collides with existing chart objects.";
         return result;
     }
+    if (const auto problem = apply_stem_run_rules(document, *chart, *index, result.stem_events))
+        return reject(*problem);
     for (const auto& object : result.objects) append_paste_object(*chart, object);
     append_stem_events(*chart, result.stem_events);
     const auto diagnostics = validate_document(proposed);

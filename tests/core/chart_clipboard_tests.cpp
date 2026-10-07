@@ -330,3 +330,78 @@ TEST_CASE("Chart clipboard rejects stem points that have no channel or collide w
     expect(other_history.undo.empty());
     expect(history.document.revision == revision);
 }
+
+namespace {
+// 120 BPM at 960 rows per measure: a measure lasts two seconds. The 4 s sample sounds for the
+// first two measures; the points are a restart at measure 1 and a continuation half a measure on.
+auto timed_stem_song() -> song_document_t {
+    auto song = stem_song();
+    auto& chart = song.charts.front();
+    for (std::uint64_t id = 4; id <= 8; ++id) chart.measures.push_back({.id = measure_id_t{id}});
+    chart.bpms.push_back({.id = object_id_t{95}, .position = {measure_id_t{1}, 0}, .beats_per_minute = {120, 1}});
+    song.audio_assets.front().stream = {48'000, 2, 48'000 * 4, true};
+    return song;
+}
+
+auto only_point(std::uint64_t id) -> editor_interaction_state_t {
+    editor_interaction_state_t state;
+    state.chart = chart_id_t{1};
+    state.selected_objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{id}}};
+    return state;
+}
+} // namespace
+
+TEST_CASE("stem points pasted inside the ongoing audio stay continuations",
+          "[unit][core][clipboard][stem-run]") {
+    auto history = make_document_history(timed_stem_song());
+    const auto copied = copy_chart_selection(history.document, only_point(71), history.document.revision);
+    expect(static_cast<bool>(copied));
+    // Measure 1, row 720 is 1.5 s in: the 4 s sample is still playing.
+    const auto pasted = paste_chart_clipboard(history, chart_id_t{1}, *copied.clipboard,
+                                              {measure_id_t{1}, 720}, history.document.revision);
+    expect(pasted.applied);
+    const auto& events = history.document.charts.front().sound_channels.front().events;
+    expect(events.size() == 3);
+    expect(events.back().continuation);
+}
+
+TEST_CASE("a continuation pasted after the stem ended becomes a reset",
+          "[unit][core][clipboard][stem-run]") {
+    auto history = make_document_history(timed_stem_song());
+    const auto copied = copy_chart_selection(history.document, only_point(71), history.document.revision);
+    expect(static_cast<bool>(copied));
+    // Measure 4 is six seconds in: the sample ended at four, so the point has to restart it.
+    const auto pasted = paste_chart_clipboard(history, chart_id_t{1}, *copied.clipboard,
+                                              {measure_id_t{4}, 0}, history.document.revision);
+    expect(pasted.applied);
+    const auto& events = history.document.charts.front().sound_channels.front().events;
+    expect(events.size() == 3);
+    expect(!events.back().continuation);
+}
+
+TEST_CASE("stem points pasted over part of an existing run are rejected",
+          "[unit][core][clipboard][stem-run]") {
+    auto song = timed_stem_song();
+    auto& chart = song.charts.front();
+    // A later continuation, silent now, that the pasted run would reach.
+    chart.sound_channels.front().events.push_back(
+        {.id = object_id_t{62}, .position = {measure_id_t{6}, 0}, .continuation = true, .playable = false});
+    chart.measures[5].bgm_events.push_back({.id = object_id_t{72}, .position = {measure_id_t{6}, 0},
+        .source_lane = object_id_t{9}, .sound = resource_id_t{80}, .sound_channel_event = object_id_t{62}});
+    auto history = make_document_history(song);
+    editor_interaction_state_t state;
+    state.chart = chart_id_t{1};
+    state.selected_objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{71}},
+                              {editor_selection_object_kind_t::bgm_event, object_id_t{72}}};
+    const auto copied = copy_chart_selection(history.document, state, history.document.revision);
+    expect(static_cast<bool>(copied));
+    const auto revision = history.document.revision;
+    // The run starts at measure 4 (silent) and its last point lands past the existing one at 6.
+    const auto pasted = paste_chart_clipboard(history, chart_id_t{1}, *copied.clipboard,
+                                              {measure_id_t{4}, 0}, revision);
+    expect(!pasted.applied);
+    expect(history.document.revision == revision);
+    const auto proposal = propose_chart_paste(history.document, chart_id_t{1}, *copied.clipboard,
+                                              {measure_id_t{4}, 0}, revision);
+    expect(proposal.error.find("overlap") != std::string::npos);
+}

@@ -4,12 +4,12 @@
 
 ## Immediate work
 
-Active implementation (2026-10-07): root is integrating the two-worktree
-[quick-fix batch](../coordination/oct7-batch.md): T-454/T-448 in editing,
-T-446/T-452/T-441/T-442 in BMSON/audio. Sol medium coordinators review Luna
-medium implementations before root integration. Corrected baseline is
-2,400/2,400 passing; T-456 aligns stale bookmark rename tests with T-396's
-double-click gesture.
+Active implementation (2026-10-07): the two-worktree
+[quick-fix batch](../coordination/oct7-batch.md) has T-454/T-448 integrated;
+root build and all 2,417 tests pass. T-446/T-452/T-441/T-442 remain in
+BMSON/audio recovery and verification. Sol medium coordinators review Luna
+medium implementations before root integration. T-456 aligns stale bookmark
+rename tests with T-396's double-click gesture.
 
 User feedback batch (2026-10-07): T-438–T-455 planned in [stems and performance](../../docs/chart-editor-plan/tasks/stems-performance.md) and [BMSON/BGA editing](../../docs/chart-editor-plan/tasks/bmson-bga-editing.md). Suggested order: quick bug fixes T-454 (Shift+lane on BGM), T-441 (disappearing stems), T-442 (stem resume at playhead), T-446 (BMSON lane colors), T-448 (sabun profile), T-452 (image extensions); then T-438 profiling (STOP for re-ranking) before T-439/T-440/T-444; T-447 auto layers, T-445 keysound budget, T-450 then T-451 BGA layers, T-443 stem pool after T-439; T-453 verb audit (STOP for approval) before T-455; T-449 after T-426.
 

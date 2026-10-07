@@ -30,5 +30,18 @@ logs `/tmp/wormedit-oct7-root/baseline-corrected-tests.log`.
 
 ## Integration
 
-Implementation and coordinator review are in progress. No feature commits
-from these worktrees have been integrated yet.
+Editing T-454/T-448 reviewed by Sol and root, integrated as `6f1db55`,
+`50d292f`, `40a095d`. Root application build and full **2,417/2,417** suite pass:
+`/tmp/wormedit-oct7-root/editing-integrated-tests.log`. The original sabun
+scratch probe passes native serialization of all 1,146 BGM events/16 columns,
+note placement and undo, then layout undo, with 41 initial profiles including
+distinct SpecialStyle choices. [Coordinator review](editing-oct7.md).
+
+BMSON/audio remains in progress. Whole-file formatting cleanup removed
+uncommitted patches; backups are in `/tmp/bmson-oct7-before-cleanup/`.
+Sol owns focused T-446/T-452 recovery and the shared isolated build; Luna owns
+T-441/T-442 and their separate card/source files. Post-recovery validation is
+required before any audio integration. Root's actual decoder registry probe
+successfully registers all 12 original Kick Your Ass Ogg files with source
+geometry (`/tmp/wormedit-oct7-root/kick-registry.log`), while imported document
+metadata remains unknown as recorded on T-441.

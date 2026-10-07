@@ -44,7 +44,8 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-448 Let a BGM-only BMS take its first lane profile
 
-- **Status:** ready
+- **Status:** done (2026-10-07; root integrated and verified)
+- **Result:** root reviewed and integrated the editing batch; application build and all 2,417 tests pass. Original sabun scratch probe passes exact native BGM/column preservation, note placement/undo and layout undo with 41 initial profiles. Evidence: `/tmp/wormedit-oct7-root/editing-integrated-tests.log`, `/tmp/wormedit-oct7-root/sabun-profile-integrated.log`. Real-window visual check remains unavailable under the existing Xvfb restriction.
 - **Outcome:** a BGM-only chart can choose any of the 41 built-in profiles (including osu!mania 12K and 16K SpecialStyle). On the sabun fixture, "BMS 7K" creates its layout and key bindings at measure 1, even with the cursor later in the chart. The playable lanes appear, note placement/undo works, and a second undo removes the layout. A native save/reopen preserves all 1,146 BGM events and 16 BGM columns (the source has 559 raw `#mmm01` lines).
 - **Read first:** `src/sys/compose_actions.cpp` (`dispatch_compose_lane_profile`, `initial_input_profile`), `src/sys/compose_view.cpp` (`populate_bgm_only_compose_projection`), `src/core/lane_profile_switch.cpp`, `git show e98244d`.
 - **Files owned:** `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/core/lane_profile_switch.cpp`, `include/wormedit/core/lane_profile_switch.h`, `src/ui/frontend.h` (coordinator-approved: picker capacity 4 cannot hold all built-ins), `src/ui/nuklear/compose_inspector.cpp` (coordinator-approved: first profile needs a visible unselected placeholder), `tests/core/lane_profile_switch_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp` (coordinator-approved production dispatcher mutation and gesture-warning coverage), `tests/sys/frame_timing_tests.cpp` (root-approved production BGM-only profile projection and distinct SpecialStyle labels), `tests/ui/` event harness, this card.
@@ -138,7 +139,8 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-454 Shift+lane key on BGM events moves one and deselects it
 
-- **Status:** ready
+- **Status:** done (2026-10-07; root integrated and verified)
+- **Result:** Shift moves and deselects one selected BGM/note in deterministic document order; plain mixed assignment commits atomically with one undo. Collision preserves selection. Core, real event harness and production dispatcher coverage pass in the integrated 2,417-test suite; `/tmp/wormedit-oct7-root/editing-integrated-tests.log`.
 - **Outcome:** with three BGM events selected, Shift+lane key moves the first one in document order into the lane and deselects it, leaving the other two selected, as for play notes. A mixed selection of notes and BGM events follows the same order. Each press is one undo step.
 - **Read first:** `src/sys/compose_input.cpp` (`WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE` / `LANE_KEY_PRESS` branch), `src/sys/compose_note_to_bgm.cpp` (`move_selected_bgm_to_lane`), `src/core/interaction.cpp` (`assign_selected_notes_to_lane`), [T-422](bms-editing.md).
 - **Files owned:** `src/sys/compose_input.cpp`, `src/sys/compose_note_to_bgm.cpp`, `src/sys/compose_note_to_bgm.h`, `include/wormedit/core/note_to_bgm.h` and `src/core/note_to_bgm.cpp` (coordinator-approved targeted atomic mixed-selection lane command; no general verb refactor), `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/core/note_to_bgm_tests.cpp` (coordinator-approved helper semantics coverage), this card.

@@ -66,7 +66,7 @@ static void update_active_timing_stage_drag(const ComposePointerEventContext& in
 static void start_timing_stage_drag(const ComposePointerEventContext& input) {
     const auto& view = *input.view;
     const auto& timing = *input.timing_view;
-    if (!input.pointer_started_in_view || !input.left_down || !view.timing_stage_active ||
+    if (!input.pointer_started_in_view || !input.left_down || !view.timing_stage_active || view.y_lock ||
         !timing.stage_active || timing.stage_existing_object_id == 0 ||
         input.shortcut_event_count != 0 ||
         (input.pointer_modifiers & input.any_pointer_modifier) != 0)
@@ -100,8 +100,9 @@ void update_timing_stage_drag(const ComposePointerEventContext& input) {
 // starts a new area on empty lane; releasing after a drag commits one edit. Timing markers keep
 // priority wherever they sit, and the gesture stays out of any other active pointer capture.
 static auto kiai_gesture_blocked(const ComposePointerEventContext& input) -> bool {
+    // Y-lock: Kiai and speed spans only move vertically.
     return !input.window_focused || !input.view->scene_available || input.shortcut_event_count != 0 ||
-           (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
+           input.view->y_lock || (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
            input.timing_view->stage_active || state.timing_stage_drag_active ||
            state.inline_timing_open || state.timing_marker_candidate_active ||
            state.timing_marker_drag_active || compose_area_pointer_consumed();
@@ -278,7 +279,7 @@ static void begin_speed_drag(const ComposePointerEventContext& input) {
 static void begin_speed_stretch(const ComposePointerEventContext& input) {
     constexpr auto other_modifiers = SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI;
     if (state.kiai_drag_active || !input.window_focused || !input.view->scene_available ||
-        input.shortcut_event_count != 0 || (input.pointer_modifiers & SDL_KMOD_SHIFT) == 0 ||
+        input.view->y_lock || input.shortcut_event_count != 0 || (input.pointer_modifiers & SDL_KMOD_SHIFT) == 0 ||
         (input.pointer_modifiers & other_modifiers) != 0 || input.timing_view->stage_active ||
         state.timing_stage_drag_active || state.inline_timing_open || compose_area_pointer_consumed())
         return;
@@ -297,6 +298,7 @@ static void begin_speed_stretch(const ComposePointerEventContext& input) {
 }
 
 static void begin_recipe_drag(const ComposePointerEventContext& input) {
+    if (input.view->y_lock) return;
     const auto& view = *input.view;
     const auto x = input.pointer_started_x;
     const auto y = input.pointer_started_y;

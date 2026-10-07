@@ -93,14 +93,7 @@ auto viewport_input_controller_t::handle_wheel(const viewport_wheel_input_t& inp
         return batch;
     }
 
-    if (pane == viewport_pane_t::bgm) {
-        // A vertical mouse wheel over the BGM strip is useful as a horizontal
-        // timeline scroll. Trackpad X remains authoritative when supplied.
-        const auto horizontal = delta_x != 0.0 ? delta_x : delta_y;
-        add_scroll(batch, pane, horizontal, 0.0);
-    } else {
-        add_scroll(batch, pane, delta_x, delta_y);
-    }
+    add_pane_scroll(batch, pane, delta_x, delta_y);
     return batch;
 }
 
@@ -125,10 +118,7 @@ auto viewport_input_controller_t::handle_trackpad(double delta_x_pixels,
     const auto delta_y =
         clamp_magnitude(finite_delta(delta_y_pixels) * settings_.smooth_sensitivity * sign,
                         settings_.maximum_scroll_delta_pixels);
-    if (routed_pane_ == viewport_pane_t::bgm)
-        add_scroll(batch, routed_pane_, delta_x != 0.0 ? delta_x : delta_y, 0.0);
-    else
-        add_scroll(batch, routed_pane_, delta_x, delta_y);
+    add_pane_scroll(batch, routed_pane_, delta_x, delta_y);
     return batch;
 }
 
@@ -204,10 +194,7 @@ auto viewport_input_controller_t::advance(double delta_seconds) noexcept
         };
         const auto velocity_x = auto_velocity(autoscroll_pointer_x_, autoscroll_anchor_x_);
         const auto velocity_y = auto_velocity(autoscroll_pointer_y_, autoscroll_anchor_y_);
-        if (routed_pane_ == viewport_pane_t::bgm)
-            add_scroll(batch, routed_pane_, velocity_x * dt, 0.0);
-        else
-            add_scroll(batch, routed_pane_, velocity_x * dt, velocity_y * dt);
+        add_pane_scroll(batch, routed_pane_, velocity_x * dt, velocity_y * dt);
         return batch;
     }
 
@@ -221,10 +208,7 @@ auto viewport_input_controller_t::advance(double delta_seconds) noexcept
     const auto delta_y = momentum_velocity_y_ * displacement_fraction;
     momentum_velocity_x_ *= decay;
     momentum_velocity_y_ *= decay;
-    if (routed_pane_ == viewport_pane_t::bgm)
-        add_scroll(batch, routed_pane_, delta_x != 0.0 ? delta_x : delta_y, 0.0);
-    else
-        add_scroll(batch, routed_pane_, delta_x, delta_y);
+    add_pane_scroll(batch, routed_pane_, delta_x, delta_y);
 
     if (std::abs(momentum_velocity_x_) < momentum_stop_speed &&
         std::abs(momentum_velocity_y_) < momentum_stop_speed)
@@ -289,6 +273,18 @@ void viewport_input_controller_t::cancel_autoscroll() noexcept {
 void viewport_input_controller_t::clear_route_if_idle() noexcept {
     if (routed_gesture_ == routed_gesture_t::none)
         routed_pane_ = viewport_pane_t::chart;
+}
+
+// Over the BGM strip the horizontal component scrolls its columns, and the vertical component
+// scrolls the chart in time exactly as it does over the field.
+void viewport_input_controller_t::add_pane_scroll(viewport_action_batch_t& batch, viewport_pane_t pane,
+                                                  double delta_x, double delta_y) const noexcept {
+    if (pane == viewport_pane_t::bgm) {
+        add_scroll(batch, viewport_pane_t::bgm, delta_x, 0.0);
+        add_scroll(batch, viewport_pane_t::chart, 0.0, delta_y);
+        return;
+    }
+    add_scroll(batch, pane, delta_x, delta_y);
 }
 
 void viewport_input_controller_t::add_scroll(viewport_action_batch_t& batch, viewport_pane_t pane,

@@ -839,6 +839,7 @@ auto begin_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_c
             .linked_bmson = source.has_value(),
             .snap_denominator = edit_snap_denominator(*chart, state),
             .target = source ? source->position : ordinary->position,
+            .origin = source ? source->position : ordinary->position,
             .valid = true};
     return compose_input_family_result_t::continue_batch("BGM event drag started.");
 }
@@ -946,9 +947,14 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
         return compose_input_family_result_t::continue_batch(
             "BGM event drag cannot snap to this chart row.", notification_severity_t::warning);
     }
-    if (target)
+    // Y-lock: the event keeps its row. A BMSON marker lives in its stem's lane, so it can go nowhere.
+    const auto y_locked = state.y_lock && !preview->virtual_canvas_row;
+    if (y_locked) preview->target = preview->origin;
+    else if (target)
         preview->target = *target;
-    if (preview->linked_bmson) {
+    if (y_locked && preview->linked_bmson) {
+        preview->valid = false;
+    } else if (preview->linked_bmson) {
         const auto source = find_bmson_marker_source(*chart, event);
         if (!source) {
             preview.reset();
@@ -963,14 +969,16 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
             return lane.id == preview->source_lane;
         });
     }
+    const auto unavailable = y_locked && preview->linked_bmson
+        ? "Y-lock is on: stem markers only move in time." : "BGM move target is unavailable.";
     if (input.kind == WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_UPDATE)
         return compose_input_family_result_t::continue_batch(
-            preview->valid ? "BGM event drag preview updated." : "BGM move target is unavailable.",
+            preview->valid ? "BGM event drag preview updated." : unavailable,
             preview->valid ? notification_severity_t::hint : notification_severity_t::warning);
     const auto captured = *preview;
     preview.reset();
     return captured.valid ? commit_bmson_bgm_move(input, context, captured)
-                          : compose_input_family_result_t{"BGM move target is unavailable."};
+                          : compose_input_family_result_t{unavailable};
 }
 
 auto edit_bmson_draft_marker(const WormUiComposeInputAction& input,

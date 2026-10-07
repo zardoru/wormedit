@@ -571,3 +571,37 @@ TEST_CASE("dragging a selected BGM marker onto a playfield lane asks to move it 
     CHECK(drop->lane_id == 3);
     CHECK(drop->object_id == 501);
 }
+
+TEST_CASE("Y-lock stops a selected BGA event from being dragged to another row",
+          "[frontend-state][event-harness][bga-lane][y-lock]") {
+    nuklear_event_harness_t harness{1280, 800};
+    REQUIRE(harness.ready());
+    hide_compose_docks();
+    auto& view = harness.view().compose;
+    view.scene_available = true;
+    view.chart_id = 7;
+    view.document_revision = 11;
+    view.viewport_width_pixels = 900;
+    view.viewport_height_pixels = 600;
+    view.playable_field_left_pixels = 90;
+    view.playable_field_right_pixels = 620;
+    view.bga_lane_visible = true;
+    view.bga_lane_bounds = {42, 0, 90, 600};
+    WormUiComposeBgaEventView event{.event_id = 81, .resource_id = 91, .kind = 0, .name = "background",
+                                    .bmp_id = "01", .bounds = {42, 0, 90, 600}};
+    event.selected = true;
+    view.bga_events = &event;
+    view.bga_event_count = 1;
+    view.y_lock = true;
+    (void)harness.frame();
+    const auto center = rect_center(harness, event.bounds);
+    const auto down = std::array{mouse_motion(center.first, center.second),
+                                 mouse_button(true, center.first, center.second)};
+    (void)harness.frame(down);
+    const auto moved_y = center.second + 24.0f;
+    const auto drag = mouse_motion(center.first, moved_y);
+    (void)harness.frame(std::span{&drag, 1});
+    const auto up = std::array{mouse_motion(center.first, moved_y), mouse_button(false, center.first, moved_y)};
+    const auto released = harness.frame(up);
+    CHECK_FALSE(has_input(released, WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE, 81));
+}

@@ -328,6 +328,8 @@ struct application_command_state_t {
         bool linked_bmson{};
         std::uint64_t snap_denominator{};
         wormedit::local_position_t target;
+        // Where the drag started, which Y-lock holds the event to.
+        wormedit::local_position_t origin;
         std::optional<std::uint64_t> virtual_canvas_row;
         bool valid{};
     };

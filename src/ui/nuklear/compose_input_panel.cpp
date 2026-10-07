@@ -835,8 +835,9 @@ static auto begin_compose_timing_marker_drag(const ComposePointerEventContext& i
                                  input.view->chart_id, input.view->document_revision);
         }
     }
+    // Y-lock: these objects only move vertically, so a drag would have nowhere to go.
     if (marker->fixed_initial || marker->object_id == 0 ||
-        input.view->waveform_timing_locked || has_modifier) return true;
+        input.view->waveform_timing_locked || has_modifier || input.view->y_lock) return true;
     state.timing_marker_candidate_active = true;
     state.timing_marker_drag_active = false;
     state.timing_marker_object_id = marker->object_id;
@@ -907,7 +908,7 @@ static auto begin_bookmark_move_capture(const ComposePointerEventContext& input,
     const auto& view = *input.view;
     if (state.action_overflowed || paint_pointer_consumed || !view.scene_available ||
         !view.visible || view.input_occluded || !input.pointer_started_in_view ||
-        !input.left_down || !input.window_focused ||
+        !input.left_down || !input.window_focused || view.y_lock ||
         (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
         input.compose_note_double_click_in_view || state.bookmark_move_candidate_active ||
         state.bookmark_rename.active || state.bookmark_rename.release_pending ||
@@ -1121,7 +1122,7 @@ static auto update_bga_event_move_capture(const ComposePointerEventContext& inpu
 static auto begin_bga_event_move_capture(const ComposePointerEventContext& input,
                                          bool paint_pointer_consumed) -> bool {
     if (state.action_overflowed || !input.view->scene_available || !input.pointer_started_in_view ||
-        paint_pointer_consumed ||
+        paint_pointer_consumed || input.view->y_lock ||
         state.resource_pointer_mode != worm_ui_nuklear_compose_resource_pointer_mode_t::off ||
         (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
         !input.left_down || !input.window_focused || state.bga_event_move_candidate_active ||

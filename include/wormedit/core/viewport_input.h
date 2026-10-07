@@ -130,6 +130,8 @@ class viewport_input_controller_t {
     void stop_momentum() noexcept;
     void cancel_autoscroll() noexcept;
     void clear_route_if_idle() noexcept;
+    void add_pane_scroll(viewport_action_batch_t& batch, viewport_pane_t pane, double delta_x,
+                         double delta_y) const noexcept;
     void add_scroll(viewport_action_batch_t& batch, viewport_pane_t pane, double delta_x,
                     double delta_y) const noexcept;
 

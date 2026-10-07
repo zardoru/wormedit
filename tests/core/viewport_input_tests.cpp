@@ -79,7 +79,7 @@ TEST_CASE("viewport input settings reverse direction and scale both input kinds"
     CHECK(scroll_at(coarse).delta_y_pixels == -30.0);
 }
 
-TEST_CASE("BGM wheel input converts vertical motion to horizontal and retains pane identity",
+TEST_CASE("BGM wheel input scrolls time vertically and the columns horizontally",
           "[unit][core][viewport-input][bgm]") {
     viewport_input_controller_t controller;
     const auto vertical = controller.handle_wheel({
@@ -87,10 +87,11 @@ TEST_CASE("BGM wheel input converts vertical motion to horizontal and retains pa
         .kind = viewport_wheel_kind_t::coarse_steps,
         .delta_y = -1.0,
     });
+    // A plain wheel over the BGM lanes scrolls the chart in time, as it does over the field.
     REQUIRE(vertical.count == 1);
-    CHECK(scroll_at(vertical).pane == viewport_pane_t::bgm);
-    CHECK(scroll_at(vertical).delta_x_pixels == -48.0);
-    CHECK(scroll_at(vertical).delta_y_pixels == 0.0);
+    CHECK(scroll_at(vertical).pane == viewport_pane_t::chart);
+    CHECK(scroll_at(vertical).delta_x_pixels == 0.0);
+    CHECK(scroll_at(vertical).delta_y_pixels == -48.0);
 
     const auto horizontal = controller.handle_wheel({
         .pane = viewport_pane_t::bgm,
@@ -98,9 +99,13 @@ TEST_CASE("BGM wheel input converts vertical motion to horizontal and retains pa
         .delta_x = 2.5,
         .delta_y = 9.0,
     });
-    REQUIRE(horizontal.count == 1);
+    // Sideways motion scrolls the columns while the vertical part still scrolls time.
+    REQUIRE(horizontal.count == 2);
+    CHECK(scroll_at(horizontal).pane == viewport_pane_t::bgm);
     CHECK(scroll_at(horizontal).delta_x_pixels == 2.5);
     CHECK(scroll_at(horizontal).delta_y_pixels == 0.0);
+    CHECK(scroll_at(horizontal, 1).pane == viewport_pane_t::chart);
+    CHECK(scroll_at(horizontal, 1).delta_y_pixels == 9.0);
 
     const auto zoom = controller.handle_wheel({
         .pane = viewport_pane_t::bgm,
@@ -115,7 +120,7 @@ TEST_CASE("BGM wheel input converts vertical motion to horizontal and retains pa
     CHECK(zoom_at(zoom).cursor_y_pixels == 75.0);
 }
 
-TEST_CASE("BGM middle-click autoscroll is horizontal only",
+TEST_CASE("BGM middle-click autoscroll moves both axes",
           "[unit][core][viewport-input][bgm]") {
     viewport_input_controller_t controller({
         .autoscroll_dead_zone_pixels = 0.0,
@@ -124,10 +129,12 @@ TEST_CASE("BGM middle-click autoscroll is horizontal only",
     controller.middle_click(viewport_pane_t::bgm, 100.0, 100.0);
     controller.update_autoscroll_pointer(110.0, 70.0);
     const auto movement = controller.advance(0.1);
-    REQUIRE(movement.count == 1);
+    REQUIRE(movement.count == 2);
     CHECK(scroll_at(movement).pane == viewport_pane_t::bgm);
     CHECK(scroll_at(movement).delta_x_pixels == 2.0);
     CHECK(scroll_at(movement).delta_y_pixels == 0.0);
+    CHECK(scroll_at(movement, 1).pane == viewport_pane_t::chart);
+    CHECK(scroll_at(movement, 1).delta_y_pixels != 0.0);
 }
 
 TEST_CASE("trackpad and momentum keep their starting pane while pointer routing changes",
@@ -135,19 +142,24 @@ TEST_CASE("trackpad and momentum keep their starting pane while pointer routing 
     viewport_input_controller_t controller;
     controller.begin_trackpad(viewport_pane_t::bgm);
     const auto trackpad = controller.handle_trackpad(2.5, 4.0);
-    REQUIRE(trackpad.count == 1);
+    REQUIRE(trackpad.count == 2);
     CHECK(scroll_at(trackpad).pane == viewport_pane_t::bgm);
     CHECK(scroll_at(trackpad).delta_x_pixels == 2.5);
     CHECK(scroll_at(trackpad).delta_y_pixels == 0.0);
+    CHECK(scroll_at(trackpad, 1).pane == viewport_pane_t::chart);
+    CHECK(scroll_at(trackpad, 1).delta_y_pixels == 4.0);
 
     controller.begin_momentum(viewport_pane_t::chart, 100.0, 80.0);
     REQUIRE(controller.momentum_active());
     const auto momentum = controller.advance(0.1);
-    REQUIRE(momentum.count == 1);
+    REQUIRE(momentum.count == 2);
     CHECK(scroll_at(momentum).pane == viewport_pane_t::bgm);
     CHECK(scroll_at(momentum).delta_y_pixels == 0.0);
     CHECK(scroll_at(momentum).delta_x_pixels ==
           Catch::Approx(100.0 * (1.0 - std::exp(-0.7)) / 7.0));
+    CHECK(scroll_at(momentum, 1).pane == viewport_pane_t::chart);
+    CHECK(scroll_at(momentum, 1).delta_y_pixels ==
+          Catch::Approx(80.0 * (1.0 - std::exp(-0.7)) / 7.0));
 
     const auto interrupting = controller.handle_wheel({
         .pane = viewport_pane_t::chart,

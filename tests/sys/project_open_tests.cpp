@@ -638,3 +638,28 @@ TEST_CASE("an opened BMSON chart gets number-row key bindings for its lanes",
     CHECK(chart.input_profile.profile_id != "bmson-unbound");
     CHECK_FALSE(chart.input_profile.bindings.empty());
 }
+
+TEST_CASE("BMSON audio names resolve to the differently extended file beside the chart",
+          "[integration][sys][project-open][bms-audio]") {
+    temporary_project_directory_t temporary;
+    const auto chart = temporary.path / "song.bmson";
+    std::ofstream(chart) << R"({"version":"1.0.0","info":{"title":"t","artist":"a","genre":"g",
+        "mode_hint":"beat-7k","chart_name":"","level":1,"init_bpm":120,"resolution":240,
+        "judge_rank":100,"total":100,"subtitle":"","subartists":[],"back_image":"","banner_image":"",
+        "eyecatch_image":""},"lines":[{"y":0},{"y":960}],"bpm_events":[],"stop_events":[],
+        "sound_channels":[{"name":"clap.wav","notes":[{"x":0,"y":0,"l":0,"c":false}]},
+                          {"name":"gone.wav","notes":[{"x":0,"y":240,"l":0,"c":false}]}]})";
+    REQUIRE(std::filesystem::copy_file(fixture("audio", "keysound-c4.ogg"), temporary.path / "clap.ogg"));
+
+    const auto opened = wormedit::sys::open_project_file(chart);
+    INFO(opened.error);
+    REQUIRE(opened.document.has_value());
+    const auto& assets = opened.document->audio_assets;
+    const auto clap = std::ranges::find(assets, std::filesystem::path{"clap.ogg"}, &wormedit::audio_asset_t::source_path);
+    REQUIRE(clap != assets.end());
+    // Only the file that exists is redirected; an absent one keeps its authored name.
+    CHECK(std::ranges::any_of(assets, [](const auto& asset) { return asset.source_path == "gone.wav"; }));
+    const auto resource = std::ranges::find(opened.document->resources, clap->id, &wormedit::resource_entry_t::asset);
+    REQUIRE(resource != opened.document->resources.end());
+    CHECK_FALSE(resource->missing);
+}

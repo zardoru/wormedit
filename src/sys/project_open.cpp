@@ -239,16 +239,26 @@ auto existing_bms_audio_path(const std::filesystem::path& source,
     return std::nullopt;
 }
 
-void resolve_bms_audio_assets(song_document_t& document,
-                              const std::filesystem::path& asset_base,
-                              std::vector<std::string>& warnings) {
+// Points every audio asset at the file that exists next to the chart: authored names are matched
+// without case, and a missing extension is replaced by .wav, .ogg or .flac when exactly one such
+// file exists (charts routinely name .wav and ship .ogg). `format` names the chart format in the
+// warnings, and resources whose asset was found stop being marked missing.
+void resolve_audio_assets(song_document_t& document, const std::filesystem::path& asset_base,
+                          std::vector<std::string>& warnings, std::string_view format = "BMS") {
     bms_audio_directory_cache_t cache;
     for (auto& asset : document.audio_assets) {
         std::string warning;
         const auto actual = existing_bms_audio_path(asset.source_path, asset_base, cache, warning);
-        if (!warning.empty()) warnings.push_back(std::move(warning));
+        if (!warning.empty()) {
+            if (format != "BMS")
+                if (const auto label = warning.find("BMS"); label != std::string::npos)
+                    warning.replace(label, 3, format);
+            warnings.push_back(std::move(warning));
+        }
         if (!actual || *actual == asset.source_path) continue;
         asset.source_path = *actual;
+        for (auto& resource : document.resources)
+            if (resource.asset == asset.id) resource.missing = false;
     }
 }
 
@@ -323,11 +333,13 @@ void parse_selected_file(std::string_view extension, const std::string& source,
             });
         take_parsed_document(std::move(parsed), "BMS chart", result);
         if (result.document)
-            resolve_bms_audio_assets(*result.document, result.asset_base, result.warnings);
+            resolve_audio_assets(*result.document, result.asset_base, result.warnings);
     } else if (extension == ".bmson") {
         auto options = bmson_parse_options_t{};
         options.asset_base_directory = result.asset_base;
         take_parsed_document(parse_bmson_bytes(bytes, std::move(options)), "BMSON chart", result);
+        if (result.document)
+            resolve_audio_assets(*result.document, result.asset_base, result.warnings, "BMSON");
     } else if (extension == ".sm" || extension == ".ssc") {
         auto options = stepmania_parse_options_t{};
         options.profile = extension == ".ssc" ? stepmania_profile_t::ssc

@@ -940,6 +940,24 @@ static void draw_compose_scene_background(const ComposePaintContext& paint,
     draw_compose_play_lane_titles(paint);
 }
 
+static auto finite_envelope_row(const WormUiComposeWaveformRowView& row) -> bool {
+    return std::isfinite(row.y_pixels) && std::isfinite(row.rms[0]) && std::isfinite(row.rms[1]) &&
+           std::isfinite(row.absolute_peak[0]) && std::isfinite(row.absolute_peak[1]);
+}
+
+static void draw_compose_retained_gaps(const ComposePaintContext& paint,
+        const WormUiComposeWaveformRowView* source, size_t count, float center,
+        float half_width, nk_color color, SDL_FRect coverage) {
+    for (size_t index = 0; index < count; ++index) {
+        const auto& row = source[index];
+        if (!finite_envelope_row(row)) continue;
+        const auto y = compose_projected_y(paint, row.y_pixels);
+        if (y >= coverage.y && y < coverage.y + coverage.h) continue;
+        field_line(paint, center - std::clamp(row.absolute_peak[0], 0.0f, 1.0f) * half_width, y,
+            center + std::clamp(row.absolute_peak[1], 0.0f, 1.0f) * half_width, y, 1.0f, color, 6);
+    }
+}
+
 static auto draw_compose_envelope_texture(const ComposePaintContext& paint,
         const WormUiComposeWaveformRowView* source, size_t count, float center, float half_width,
         size_t slot, nk_color rms, nk_color peak, bool joined, uint64_t lane_key = 0,
@@ -952,6 +970,26 @@ static auto draw_compose_envelope_texture(const ComposePaintContext& paint,
     const auto scroll = std::floor(view.area_scroll_pixels);
     const auto origin = view.downscroll
         ? -scroll - view.viewport_height_pixels : scroll;
+    auto key = view.document_revision ^ (view.project_id * 1099511628211ULL);
+    key ^= view.chart_id * 1469598103934665603ULL;
+    if (!stem_key) {
+        key ^= view.selected_audio_asset_id * 1099511628211ULL;
+        key ^= view.channel_waveform_source_lane_id * static_cast<uint64_t>(slot);
+    }
+    key ^= lane_key * 0x9E3779B97F4A7C15ULL;
+    if (!stem_key) key ^= std::bit_cast<uint64_t>(view.pixels_per_standard_measure);
+    key ^= std::bit_cast<uint64_t>(view.waveform_audio_offset_numerator);
+    key ^= view.waveform_audio_offset_denominator;
+    const SDL_FRect bounds{center - half_width, paint.viewport.y, half_width * 2, paint.viewport.h};
+    auto& renderer = paint_field(paint.context);
+    const wormedit::ui::field::envelope_style_t style{field_color(rms), field_color(peak), joined};
+    SDL_FRect coverage{};
+    if (stem_key && renderer.retain_stem_envelope(*stem_key, 6, bounds,
+            origin, key, style, y_scale, coverage)) {
+        if (coverage.y > paint.viewport.y || coverage.y + coverage.h < paint.viewport.y + paint.viewport.h)
+            draw_compose_retained_gaps(paint, source, count, center, half_width, peak, coverage);
+        return true;
+    }
     static std::vector<wormedit::ui::field::envelope_row_t> rows;
     rows.clear();
     rows.reserve(count);
@@ -960,23 +998,9 @@ static auto draw_compose_envelope_texture(const ComposePaintContext& paint,
         rows.push_back({row.y_pixels + origin, {row.rms[0], row.rms[1]},
                                                {row.absolute_peak[0], row.absolute_peak[1]}});
     }
-    auto key = view.document_revision ^ (view.project_id * 1099511628211ULL);
-    key ^= view.chart_id * 1469598103934665603ULL;
-    if (!stem_key) {
-        key ^= view.selected_audio_asset_id * 1099511628211ULL;
-        key ^= view.channel_waveform_source_lane_id * static_cast<uint64_t>(slot);
-    }
-    key ^= lane_key * 0x9E3779B97F4A7C15ULL;
-    key ^= std::bit_cast<uint64_t>(view.pixels_per_standard_measure);
-    key ^= std::bit_cast<uint64_t>(view.waveform_audio_offset_numerator);
-    key ^= view.waveform_audio_offset_denominator;
     if (stem_key)
-        return paint_field(paint.context).stem_envelope(*stem_key, 6, rows,
-            {center - half_width, paint.viewport.y, half_width * 2, paint.viewport.h}, origin, key,
-            {field_color(rms), field_color(peak), joined}, y_scale);
-    return paint_field(paint.context).envelope(slot, 6, rows,
-        {center - half_width, paint.viewport.y, half_width * 2, paint.viewport.h}, origin, key,
-        {field_color(rms), field_color(peak), joined}, y_scale);
+        return renderer.stem_envelope(*stem_key, 6, rows, bounds, origin, key, style, y_scale);
+    return renderer.envelope(slot, 6, rows, bounds, origin, key, style, y_scale);
 }
 
 static void draw_compose_waveform_samples(const ComposePaintContext& paint,
@@ -1000,11 +1024,6 @@ static void draw_compose_waveform_samples(const ComposePaintContext& paint,
         }
     }
 }
-static auto finite_envelope_row(const WormUiComposeWaveformRowView& row) -> bool {
-    return std::isfinite(row.y_pixels) && std::isfinite(row.rms[0]) && std::isfinite(row.rms[1]) &&
-           std::isfinite(row.absolute_peak[0]) && std::isfinite(row.absolute_peak[1]);
-}
-
 static void draw_compose_waveform(const ComposePaintContext& paint) {
     const auto& view = *paint.view;
     if (view.waveform_row_count == 0) {
@@ -1213,15 +1232,25 @@ static void reserve_compose_channel_envelope(const ComposePaintContext& paint) {
 }
 
 static void pin_compose_stem_envelopes(const ComposePaintContext& paint) {
-    std::vector<uint64_t> keys;
+    std::vector<std::pair<float, uint64_t>> ordered;
     const auto& view = *paint.view;
-    keys.reserve(view.stem_waveform_count);
+    ordered.reserve(view.stem_waveform_count);
     for (size_t index = 0; index < view.stem_waveform_count; ++index) {
         const auto& stem = view.stem_waveforms[index];
-        if (!stem.pending && stem.row_count != 0 && compose_stem_lane_rect(paint, stem.source_lane_id))
-            keys.push_back(stem.stem_key);
+        if (stem.pending || stem.row_count == 0) continue;
+        if (const auto rect = compose_stem_lane_rect(paint, stem.source_lane_id))
+            ordered.emplace_back(rect->x, stem.stem_key);
     }
-    paint_field(paint.context).pin_stem_envelopes(keys);
+    // Schedule left-to-right without changing painter order for overlapping stems.
+    std::stable_sort(ordered.begin(), ordered.end(), [](const auto& left, const auto& right) {
+        return left.first < right.first;
+    });
+    std::vector<uint64_t> keys;
+    keys.reserve(ordered.size());
+    for (const auto& entry : ordered) keys.push_back(entry.second);
+    auto& renderer = paint_field(paint.context);
+    renderer.pin_stem_envelopes(keys);
+    renderer.prepare_stem_zoom(view.pixels_per_standard_measure, keys);
 }
 
 static void draw_compose_waveform_layer(const ComposePaintContext& paint,

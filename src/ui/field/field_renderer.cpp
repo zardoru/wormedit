@@ -116,8 +116,12 @@ struct envelope_cache_t {
     std::vector<std::uint64_t> row_hashes, fingerprints;
     std::unique_ptr<renderer_t> raster;
     std::uint64_t generation{}, last_drawn{};
+    std::uint64_t content_identity{};
+    std::int64_t first_row{};
+    double zoom{1};
+    std::size_t refill_attempts{};
     int width{}, height{};
-    bool active{}, pending{}, ready{}, fallback_submitted{}, unavailable{};
+    bool active{}, pending{}, ready{}, fallback_submitted{}, unavailable{}, deferred{};
     ~envelope_cache_t() { if (texture) SDL_DestroyTexture(texture); }
 };
 namespace {
@@ -137,6 +141,15 @@ auto color_hash(color_t color) -> std::uint64_t {
     return (static_cast<std::uint64_t>(color.r) << 24U) |
            (static_cast<std::uint64_t>(color.g) << 16U) |
            (static_cast<std::uint64_t>(color.b) << 8U) | color.a;
+}
+auto envelope_generation(std::uint64_t generation, SDL_FRect bounds,
+                          envelope_style_t style, float y_scale) -> std::uint64_t {
+    generation = hash_value(generation, std::bit_cast<std::uint32_t>(y_scale));
+    generation = hash_value(generation, std::bit_cast<std::uint32_t>(bounds.w));
+    generation = hash_value(generation, std::bit_cast<std::uint32_t>(bounds.x - std::floor(bounds.x)));
+    generation = hash_value(generation, color_hash(style.rms));
+    generation = hash_value(generation, color_hash(style.peak));
+    return hash_value(generation, style.joined_channels);
 }
 auto envelope_slot(std::int64_t row, int height) -> std::size_t {
     const auto remainder = row % height;
@@ -236,6 +249,7 @@ void prepare_envelope_raster(envelope_cache_t& cache, std::int64_t first) {
 }
 auto refill_envelope(envelope_cache_t& cache, submission_t hooks) -> bool {
     if (!cache.pending) return cache.ready;
+    ++cache.refill_attempts;
     cache.ready = false;
     auto* device = cache.device;
     auto* previous = SDL_GetRenderTarget(device);
@@ -298,6 +312,9 @@ void renderer_t::invalidate_envelopes() noexcept {
     batches_.clear();
     envelopes_.clear();
     pinned_stems_.clear();
+    zoom_refill_keys_.clear();
+    stem_zoom_ = 0;
+    stem_zoom_cursor_ = 0;
     tiles_.reset();
 }
 auto renderer_t::envelope(std::size_t slot, layer_t layer, std::span<const envelope_row_t> rows,
@@ -328,10 +345,83 @@ void renderer_t::pin_stem_envelopes(std::span<const std::uint64_t> keys) {
     pinned_stems_.clear();
     pinned_stems_.insert(keys.begin(), keys.end());
 }
+void renderer_t::prepare_stem_zoom(double zoom, std::span<const std::uint64_t> keys,
+                                  std::size_t budget) {
+    stem_zoom_enabled_ = std::isfinite(zoom) && zoom > 0;
+    stem_zoom_changing_ = stem_zoom_enabled_ && stem_zoom_ > 0 && zoom != stem_zoom_;
+    zoom_refill_keys_.clear();
+    if (!stem_zoom_enabled_) { stem_zoom_ = 0; return; }
+    stem_zoom_ = zoom;
+    if (!stem_zoom_changing_ || keys.empty()) return;
+    const auto count = std::min(budget, keys.size());
+    stem_zoom_cursor_ %= keys.size();
+    for (std::size_t index = 0; index < count; ++index)
+        zoom_refill_keys_.insert(keys[(stem_zoom_cursor_ + index) % keys.size()]);
+    stem_zoom_cursor_ = (stem_zoom_cursor_ + count) % keys.size();
+}
+auto renderer_t::retain_stem_envelope(std::uint64_t key, layer_t layer, SDL_FRect bounds,
+    double origin, std::uint64_t generation, envelope_style_t style, float y_scale,
+    SDL_FRect& coverage) -> bool {
+    if (!stem_zoom_changing_ || zoom_refill_keys_.contains(key) || !std::isfinite(origin) ||
+        std::abs(origin) > 1e12) return false;
+    const auto found = envelopes_.find({false, key});
+    const auto dimensions = envelope_dimensions(bounds, y_scale);
+    if (found == envelopes_.end() || !dimensions) return false;
+    auto& cache = *found->second;
+    if (cache.active || !cache.ready || cache.pending || cache.device != device_ ||
+        cache.width != dimensions->first || cache.height != dimensions->second ||
+        cache.content_identity != envelope_generation(generation, bounds, style, y_scale)) return false;
+    const auto ratio = stem_zoom_ / cache.zoom;
+    const auto scaled = static_cast<float>(static_cast<double>(y_scale) * ratio);
+    const auto mapped_origin = std::floor(origin) / ratio;
+    if (!std::isfinite(scaled) || scaled <= 0 || !std::isfinite(mapped_origin) ||
+        std::abs(mapped_origin) > 1e12) return false;
+    coverage = {bounds.x, static_cast<float>(bounds.y + (cache.first_row - mapped_origin) * scaled),
+                bounds.w, cache.height * scaled};
+    if (!std::isfinite(coverage.y) || !std::isfinite(coverage.h) ||
+        intersection(coverage, viewport_).h <= 0) return false;
+    cache.active = cache.deferred = true;
+    cache.last_drawn = ++envelope_draw_sequence_;
+    cache.bounds = bounds;
+    cache.origin = mapped_origin;
+    cache.y_scale = scaled;
+    cache.fallback_submitted = false;
+    if (coverage.y > bounds.y || coverage.y + coverage.h < bounds.y + bounds.h)
+        ++stem_fallbacks_;
+    composite_envelope(layer, cache);
+    return true;
+}
+namespace {
+void draw_retained_stem_gaps(renderer_t& renderer, layer_t layer,
+    std::span<const envelope_row_t> rows, SDL_FRect bounds, double origin,
+    envelope_style_t style, float y_scale, SDL_FRect coverage) {
+    const auto center = bounds.x + bounds.w * .5f;
+    for (const auto& row : rows) {
+        if (!valid_envelope_row(row)) continue;
+        const auto y = static_cast<float>(bounds.y + (row.world_y - std::floor(origin)) * y_scale);
+        if (y >= coverage.y && y < coverage.y + coverage.h) continue;
+        renderer.hline(layer, center - std::clamp(row.peak[0], 0.0f, 1.0f) * bounds.w * .5f,
+            center + std::clamp(row.peak[1], 0.0f, 1.0f) * bounds.w * .5f, y, 1, style.peak);
+    }
+}
+} // namespace
 auto renderer_t::stem_envelope(std::uint64_t key, layer_t layer, std::span<const envelope_row_t> rows,
                                SDL_FRect bounds, double origin, std::uint64_t generation,
                                envelope_style_t style, float y_scale) -> bool {
-    return envelope_for_key({false, key}, layer, rows, bounds, origin, generation, style, y_scale);
+    if (rows.empty()) return false;
+    SDL_FRect coverage{};
+    if (retain_stem_envelope(key, layer, bounds, origin, generation, style, y_scale, coverage)) {
+        if (coverage.y > bounds.y || coverage.y + coverage.h < bounds.y + bounds.h)
+            draw_retained_stem_gaps(*this, layer, rows, bounds, origin, style, y_scale, coverage);
+        return true;
+    }
+    if (stem_zoom_changing_ && !zoom_refill_keys_.contains(key)) {
+        ++stem_fallbacks_;
+        return false;
+    }
+    const auto drawn = envelope_for_key({false, key}, layer, rows, bounds, origin, generation, style, y_scale);
+    if (!drawn) ++stem_fallbacks_;
+    return drawn;
 }
 auto renderer_t::envelope_bytes() const noexcept -> std::size_t {
     std::size_t bytes{};
@@ -412,23 +502,28 @@ auto renderer_t::envelope_for_key(envelope_key_t key, layer_t layer, std::span<c
     cache.fallback_submitted = false;
     cache.input_rows.assign(rows.begin(), rows.end());
     const auto first = static_cast<std::int64_t>(std::floor(origin)) - 1;
+    cache.first_row = first;
     collect_envelope_rows(cache, rows, first);
-    generation = hash_value(generation, std::bit_cast<std::uint32_t>(y_scale));
-    generation = hash_value(generation, std::bit_cast<std::uint32_t>(bounds.w));
-    generation = hash_value(generation, std::bit_cast<std::uint32_t>(bounds.x - std::floor(bounds.x)));
-    generation = hash_value(generation, color_hash(style.rms));
-    generation = hash_value(generation, color_hash(style.peak));
-    generation = hash_value(generation, style.joined_channels);
+    generation = envelope_generation(generation, bounds, style, y_scale);
+    cache.content_identity = generation;
+    if (!key.first) {
+        collected_stem_rows_ += rows.size();
+        cache.zoom = stem_zoom_enabled_ ? stem_zoom_ : 1;
+        if (stem_zoom_enabled_) generation = hash_value(generation, std::bit_cast<std::uint64_t>(stem_zoom_));
+    }
     cache.plan.update(generation, first, cache.fingerprints);
     prepare_envelope_raster(cache, first);
+    composite_envelope(layer, cache);
+    return true;
+}
+void renderer_t::composite_envelope(layer_t layer, const envelope_cache_t& cache) {
     const auto spans = cache.plan.ranges();
-    auto world = first;
+    auto world = cache.first_row;
     for (const auto span : spans) {
         if (span.count == 0) continue;
         envelope_quad(layer, cache, span, world);
         world += static_cast<std::int64_t>(span.count);
     }
-    return true;
 }
 void renderer_t::envelope_quad(layer_t layer, const envelope_cache_t& cache,
                                ring_range_t span, std::int64_t world) {
@@ -475,12 +570,20 @@ auto renderer_t::envelope_work() const noexcept -> envelope_work_t {
     work.peak_reserved_bytes = envelope_peak_bytes_;
     work.evictions = envelope_evictions_;
     work.budget_fallbacks = envelope_budget_fallbacks_;
+    work.collected_stem_rows = collected_stem_rows_;
+    work.stem_fallbacks = stem_fallbacks_;
     for (const auto& [key, cache] : envelopes_) if (!key.first) ++work.cached_stems;
     for (const auto& [key, cache] : envelopes_) {
         if (!cache || !cache->active) continue;
-        work.regenerated_rows += cache->plan.regenerated_rows();
-        work.retained_rows += cache->plan.capacity() - cache->plan.regenerated_rows();
-        work.raster_vertices += cache->raster ? cache->raster->workload().vertices : 0;
+        const auto regenerated = cache->deferred ? 0 : cache->plan.regenerated_rows();
+        work.regenerated_rows += regenerated;
+        work.retained_rows += cache->plan.capacity() - regenerated;
+        work.raster_vertices += !cache->deferred && cache->raster ? cache->raster->workload().vertices : 0;
+        if (!key.first) {
+            work.refilled_stems += cache->refill_attempts;
+            work.deferred_stems += cache->deferred;
+            work.stem_fallbacks += cache->fallback_submitted;
+        }
         work.composites += cache->plan.ranges()[1].count != 0 ? 2 : 1;
     }
     return work;
@@ -490,9 +593,14 @@ void renderer_t::begin(SDL_FRect viewport, SDL_FPoint scale, solid_texture_t sol
     device_ = device;
     if (!tiles_) tiles_ = std::make_unique<field_tile_cache_t>();
     tiles_->begin(device);
-    for (auto& [key, cache] : envelopes_) cache->active = false;
+    for (auto& [key, cache] : envelopes_) {
+        cache->active = cache->deferred = false;
+        cache->refill_attempts = 0;
+    }
     pinned_stems_.clear();
     envelope_budget_fallbacks_ = 0;
+    collected_stem_rows_ = stem_fallbacks_ = 0;
+    stem_zoom_enabled_ = stem_zoom_changing_ = false;
     solid_ = solid;
     viewport_ = viewport;
     scale_ = {std::max(.001f, scale.x), std::max(.001f, scale.y)};

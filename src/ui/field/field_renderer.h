@@ -75,6 +75,7 @@ struct envelope_style_t {
 struct envelope_work_t {
     std::size_t retained_rows{}, regenerated_rows{}, raster_vertices{}, composites{};
     std::size_t resident_bytes{}, peak_reserved_bytes{}, cached_stems{}, evictions{}, budget_fallbacks{};
+    std::size_t collected_stem_rows{}, refilled_stems{}, deferred_stems{}, stem_fallbacks{};
 };
 struct envelope_cache_t;
 // Frontend-private geometry only: no document state or toolkit objects are retained.
@@ -91,6 +92,16 @@ class renderer_t {
     // Pin the complete next visible set before any stem admission or drawing.
     auto reserve_envelope(std::size_t slot, SDL_FRect bounds, float y_scale = 1) -> bool;
     void pin_stem_envelopes(std::span<const std::uint64_t> keys);
+    // Keys describe viewport order. Changed zooms refresh a rotating, bounded
+    // window; the first stable zoom refreshes every outstanding stem.
+    void prepare_stem_zoom(double zoom, std::span<const std::uint64_t> keys,
+                           std::size_t refill_budget = 8);
+    // Before converting projected rows, try a compatible ready texture. The
+    // caller draws current line fallbacks outside the returned screen coverage.
+    auto retain_stem_envelope(std::uint64_t key, layer_t layer, SDL_FRect bounds,
+                              double origin, std::uint64_t generation,
+                              envelope_style_t style, float y_scale,
+                              SDL_FRect& coverage) -> bool;
     // Each channel may enqueue one envelope per frame; repeated draws fall back safely.
     auto stem_envelope(std::uint64_t key, layer_t layer, std::span<const envelope_row_t> rows,
                        SDL_FRect bounds, double world_origin, std::uint64_t generation,
@@ -152,6 +163,10 @@ class renderer_t {
     using envelope_key_t = std::pair<bool, std::uint64_t>;
     std::map<envelope_key_t, std::unique_ptr<envelope_cache_t>> envelopes_;
     std::unordered_set<std::uint64_t> pinned_stems_;
+    std::unordered_set<std::uint64_t> zoom_refill_keys_;
+    double stem_zoom_{};
+    std::size_t stem_zoom_cursor_{}, collected_stem_rows_{}, stem_fallbacks_{};
+    bool stem_zoom_enabled_{}, stem_zoom_changing_{};
     std::size_t envelope_budget_bytes_{}, envelope_peak_bytes_{};
     std::size_t envelope_evictions_{}, envelope_budget_fallbacks_{};
     std::uint64_t envelope_draw_sequence_{};
@@ -168,6 +183,7 @@ class renderer_t {
                                    submission_t hooks, bool& fallback) const -> bool;
     void envelope_quad(layer_t layer, const envelope_cache_t& cache,
                        ring_range_t span, std::int64_t world);
+    void composite_envelope(layer_t layer, const envelope_cache_t& cache);
     void append_batch(layer_t layer, SDL_Texture* texture, std::size_t count);
     void quad(layer_t layer, std::span<const SDL_FPoint, 4> points, color_t color,
               SDL_Texture* texture = nullptr, SDL_FPoint uv_min = {}, SDL_FPoint uv_max = {});

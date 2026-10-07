@@ -2,11 +2,17 @@
 #include "ui/nuklear/sdl_backend.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <new>
 #include <limits>
+#include <optional>
+#include <ranges>
+#include <vector>
 
 namespace {
 thread_local bool count_field_allocations{};
@@ -797,4 +803,393 @@ TEST_CASE("Reserved preflight preserves the selected waveform overlay on a share
     expect_field(SDL_RenderPresent(fixture.renderer));
     const auto selected = fixture.pixel(64, 30);
     expect_field(selected.g == 255 && selected.r == 0);
+}
+
+namespace {
+struct t469_frame_sample_t {
+    std::uint64_t collect_nanoseconds{}, submit_nanoseconds{};
+    envelope_work_t work;
+};
+
+auto submit_t469_benchmark_frame(field_submission_fixture_t& fixture, renderer_t& pool,
+    std::span<const std::uint64_t> keys, std::span<const envelope_row_t> rows,
+    std::uint64_t generation) -> std::optional<t469_frame_sample_t> {
+    const auto collect_start = std::chrono::steady_clock::now();
+    pool.begin({0, 0, 128, 128}, {1, 1}, {}, fixture.renderer);
+    pool.pin_stem_envelopes(keys);
+    for (const auto key : keys) {
+        if (!pool.stem_envelope(key, 6, rows, {14, 0, 100, 128}, 0, generation,
+            {{57,137,167,96}, {114,222,239,142}, true})) return std::nullopt;
+    }
+    const auto collect_end = std::chrono::steady_clock::now();
+    const auto submit_start = std::chrono::steady_clock::now();
+    if (!pool.submit(fixture.renderer)) return std::nullopt;
+    const auto submit_end = std::chrono::steady_clock::now();
+    if (!SDL_RenderPresent(fixture.renderer)) return std::nullopt;
+    const auto work = pool.envelope_work();
+    return t469_frame_sample_t{
+        static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            collect_end - collect_start).count()),
+        static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            submit_end - submit_start).count()), work};
+}
+
+auto t469_percentile(std::vector<std::uint64_t> samples, std::size_t percentile)
+    -> std::uint64_t {
+    std::ranges::sort(samples);
+    const auto rank = (percentile * samples.size() + 99) / 100;
+    return samples[std::max<std::size_t>(rank, 1) - 1];
+}
+
+auto t469_maximum(std::span<const std::uint64_t> samples) -> std::uint64_t {
+    return *std::ranges::max_element(samples);
+}
+
+auto valid_t469_frame(const t469_frame_sample_t& frame, std::size_t stem_count) -> bool {
+    return frame.work.cached_stems == stem_count && frame.work.composites >= stem_count &&
+        frame.work.budget_fallbacks == 0;
+}
+
+auto report_t469_benchmark(std::span<const t469_frame_sample_t> samples,
+                           std::size_t first_settled_rows,
+                           std::size_t repeated_settled_rows,
+                           std::size_t resident_bytes) -> void {
+    std::vector<std::uint64_t> collect, submit, complete;
+    collect.reserve(samples.size());
+    submit.reserve(samples.size());
+    complete.reserve(samples.size());
+    for (const auto& frame : samples) {
+        collect.push_back(frame.collect_nanoseconds);
+        submit.push_back(frame.submit_nanoseconds);
+        complete.push_back(frame.collect_nanoseconds + frame.submit_nanoseconds);
+    }
+    std::printf("T469 300-stem 128-row workload frames=%zu collect_ns_p50=%llu collect_ns_p99=%llu collect_ns_max=%llu submit_ns_p50=%llu submit_ns_p99=%llu submit_ns_max=%llu total_ns_p50=%llu total_ns_p99=%llu total_ns_max=%llu first_settled_rows=%zu repeated_settled_rows=%zu resident_bytes=%zu\n",
+        samples.size(), static_cast<unsigned long long>(t469_percentile(collect, 50)),
+        static_cast<unsigned long long>(t469_percentile(collect, 99)),
+        static_cast<unsigned long long>(t469_maximum(collect)),
+        static_cast<unsigned long long>(t469_percentile(submit, 50)),
+        static_cast<unsigned long long>(t469_percentile(submit, 99)),
+        static_cast<unsigned long long>(t469_maximum(submit)),
+        static_cast<unsigned long long>(t469_percentile(complete, 50)),
+        static_cast<unsigned long long>(t469_percentile(complete, 99)),
+        static_cast<unsigned long long>(t469_maximum(complete)), first_settled_rows,
+        repeated_settled_rows, resident_bytes);
+}
+
+auto t469_benchmark_succeeds_and_reports_metrics() -> bool {
+    field_submission_fixture_t fixture;
+    renderer_t pool;
+    std::vector<std::uint64_t> keys;
+    keys.reserve(300);
+    for (std::uint64_t key = 1; key <= 300; ++key) keys.push_back(key);
+    const auto rows = envelope_test_rows(-2, 132);
+    const auto warm = submit_t469_benchmark_frame(fixture, pool, keys, rows, 0);
+    if (!warm || !valid_t469_frame(*warm, keys.size()) ||
+        warm->work.regenerated_rows != keys.size() * 130) return false;
+    std::vector<t469_frame_sample_t> samples;
+    samples.reserve(122);
+    for (std::uint64_t frame = 0; frame < 120; ++frame) {
+        const auto current = submit_t469_benchmark_frame(fixture, pool, keys, rows, frame + 1);
+        if (!current || !valid_t469_frame(*current, keys.size())) return false;
+        samples.push_back(*current);
+    }
+    const auto first_settled = submit_t469_benchmark_frame(fixture, pool, keys, rows, 120);
+    if (!first_settled || !valid_t469_frame(*first_settled, keys.size())) return false;
+    samples.push_back(*first_settled);
+    const auto repeated_settled = submit_t469_benchmark_frame(fixture, pool, keys, rows, 120);
+    if (!repeated_settled || !valid_t469_frame(*repeated_settled, keys.size())) return false;
+    samples.push_back(*repeated_settled);
+    const auto first_regenerated = first_settled->work.regenerated_rows;
+    const auto repeated_regenerated = repeated_settled->work.regenerated_rows;
+    const auto final_work = repeated_settled->work;
+    report_t469_benchmark(samples, first_regenerated, repeated_regenerated,
+                          final_work.resident_bytes);
+    return samples.size() == 122 && first_regenerated == 0 &&
+        repeated_regenerated == 0 && final_work.cached_stems == keys.size() &&
+        valid_t469_frame(*repeated_settled, keys.size()) &&
+        final_work.resident_bytes == keys.size() * 100U * 130U * 4U;
+}
+} // namespace
+
+TEST_CASE("T469 cached stem envelope zoom and settle workload reports collect and submit costs",
+          "[.performance][ui][field][T469]") {
+    expect_field(t469_benchmark_succeeds_and_reports_metrics());
+}
+
+namespace {
+struct t469_zoom_frame_t {
+    envelope_work_t work;
+    std::vector<std::uint64_t> refilled_keys;
+    bool submitted{};
+};
+
+auto t469_test_style() -> envelope_style_t {
+    return {{25, 80, 180, 255}, {240, 45, 30, 255}, true};
+}
+
+auto t469_zoom_rows(std::uint64_t key, bool changed) -> std::vector<envelope_row_t> {
+    std::vector<envelope_row_t> rows;
+    rows.reserve(132);
+    for (int world_y = -2; world_y < 130; ++world_y) {
+        const auto phase = static_cast<float>((key * 7U + static_cast<std::uint64_t>(world_y + 3)) % 19U);
+        const auto peak = world_y == 80 ? 1.0f : 0.12f + phase / 30.0f;
+        const auto adjusted = changed && world_y != 80 ? 0.9f - peak / 2.0f : peak;
+        const auto rms = changed ? 0.1f + phase / 25.0f : adjusted / 3.0f;
+        rows.push_back({static_cast<double>(world_y), {rms, rms},
+                        {adjusted, adjusted}});
+    }
+    return rows;
+}
+
+auto t469_draw_zoom_frame(field_submission_fixture_t& fixture, renderer_t& pool,
+                          std::span<const std::uint64_t> keys, double zoom, double origin,
+                          SDL_FRect bounds, std::uint64_t generation, std::size_t budget,
+                          bool changed = false,
+                          envelope_style_t style = t469_test_style(),
+                          double row_origin = 0) -> t469_zoom_frame_t {
+    expect_field(SDL_SetRenderDrawColor(fixture.renderer, 0, 0, 0, 255));
+    expect_field(SDL_RenderClear(fixture.renderer));
+    pool.begin({0, 0, 128, 128}, {1, 1}, {}, fixture.renderer);
+    pool.pin_stem_envelopes(keys);
+    pool.prepare_stem_zoom(zoom, keys, budget);
+    t469_zoom_frame_t result;
+    for (const auto key : keys) {
+        const auto before = pool.envelope_work().collected_stem_rows;
+        auto rows = t469_zoom_rows(key, changed);
+        for (auto& row : rows) row.world_y += row_origin;
+        if (!pool.stem_envelope(key, 6, rows, bounds, origin, generation, style))
+            return result;
+        if (pool.envelope_work().collected_stem_rows > before)
+            result.refilled_keys.push_back(key);
+    }
+    result.submitted = pool.submit(fixture.renderer) && SDL_RenderPresent(fixture.renderer);
+    result.work = pool.envelope_work();
+    return result;
+}
+
+auto t469_capture_surface(const field_submission_fixture_t& fixture) -> std::vector<SDL_Color> {
+    std::vector<SDL_Color> pixels;
+    pixels.reserve(128U * 128U);
+    for (int y = 0; y < 128; ++y)
+        for (int x = 0; x < 128; ++x) pixels.push_back(fixture.pixel(x, y));
+    return pixels;
+}
+
+auto t469_surface_matches(const field_submission_fixture_t& fixture,
+                          std::span<const SDL_Color> expected) -> bool {
+    if (expected.size() != 128U * 128U) return false;
+    for (int y = 0; y < 128; ++y)
+        for (int x = 0; x < 128; ++x) {
+            const auto& a = expected[static_cast<std::size_t>(y) * 128U + x];
+            const auto b = fixture.pixel(x, y);
+            if (a.r != b.r || a.g != b.g || a.b != b.b || a.a != b.a) return false;
+        }
+    return true;
+}
+
+auto t469_zoom_keys() -> std::array<std::uint64_t, 12> {
+    return {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+}
+
+auto t469_refill_budget_and_settle_pixels() -> bool {
+    field_submission_fixture_t fixture;
+    renderer_t pool, reference;
+    const auto keys = t469_zoom_keys();
+    const SDL_FRect bounds{14, 0, 100, 128};
+    const auto initial = t469_draw_zoom_frame(fixture, pool, keys, 1, 0, bounds, 1, 3);
+    const auto zoom_two = t469_draw_zoom_frame(fixture, pool, keys, 2, 0, bounds, 1, 3);
+    const auto zoom_four = t469_draw_zoom_frame(fixture, pool, keys, 4, 0, bounds, 1, 3);
+    const auto first_stable = t469_draw_zoom_frame(fixture, pool, keys, 4, 0, bounds, 1, 3);
+    const auto repeated = t469_draw_zoom_frame(fixture, pool, keys, 4, 0, bounds, 1, 3);
+    const auto expected_first = std::array<std::uint64_t, 3>{1, 2, 3};
+    const auto expected_second = std::array<std::uint64_t, 3>{4, 5, 6};
+    if (!initial.submitted || !zoom_two.submitted || !zoom_four.submitted ||
+        !first_stable.submitted || !repeated.submitted) return false;
+    if (initial.work.regenerated_rows != 12U * 130U ||
+        !std::ranges::equal(zoom_two.refilled_keys, expected_first) ||
+        !std::ranges::equal(zoom_four.refilled_keys, expected_second)) return false;
+    if (zoom_two.work.refilled_stems != 3 || zoom_two.work.deferred_stems != 9 ||
+        zoom_four.work.refilled_stems != 3 || zoom_four.work.deferred_stems != 9 ||
+        zoom_two.work.composites < 12 || zoom_four.work.composites < 12 ||
+        zoom_two.work.budget_fallbacks != 0 || zoom_four.work.budget_fallbacks != 0) return false;
+    if (first_stable.work.regenerated_rows != 9U * 130U ||
+        first_stable.work.refilled_stems != 9 || repeated.work.regenerated_rows != 0) return false;
+    const auto actual_pixels = t469_capture_surface(fixture);
+    const auto expected = t469_draw_zoom_frame(fixture, reference, keys, 4, 0,
+                                                bounds, 1, keys.size());
+    return expected.submitted && t469_surface_matches(fixture, actual_pixels);
+}
+
+auto t469_same_revision_rows_match_reference() -> bool {
+    field_submission_fixture_t fixture;
+    renderer_t pool, reference;
+    const auto keys = t469_zoom_keys();
+    const SDL_FRect bounds{14, 0, 100, 128};
+    const auto initial = t469_draw_zoom_frame(fixture, pool, keys, 1, 0, bounds, 1, 3);
+    const auto zoomed = t469_draw_zoom_frame(fixture, pool, keys, 2, 0, bounds, 1, 3);
+    const auto updated = t469_draw_zoom_frame(fixture, pool, keys, 2, 0, bounds, 1, 3, true);
+    const auto actual_pixels = t469_capture_surface(fixture);
+    const auto expected = t469_draw_zoom_frame(fixture, reference, keys, 2, 0,
+                                                bounds, 1, keys.size(), true);
+    return initial.submitted && zoomed.submitted && updated.submitted && expected.submitted &&
+        updated.work.regenerated_rows == keys.size() * 130U &&
+        t469_surface_matches(fixture, actual_pixels);
+}
+
+auto t469_retained_gap_fallbacks_survive_scroll_and_zoom_toggles() -> bool {
+    field_submission_fixture_t fixture;
+    renderer_t pool;
+    const auto keys = t469_zoom_keys();
+    const SDL_FRect bounds{14, 0, 100, 128};
+    const auto initial = t469_draw_zoom_frame(fixture, pool, keys, 2, 0, bounds, 1, 0);
+    const auto zoom_out = t469_draw_zoom_frame(fixture, pool, keys, 0.5, -8, bounds, 1, 0);
+    if (!initial.submitted || !zoom_out.submitted || zoom_out.work.composites < keys.size() ||
+        zoom_out.work.stem_fallbacks == 0 || zoom_out.work.budget_fallbacks != 0) return false;
+    const auto gap_peak = fixture.pixel(64, 88);
+    const auto downscroll = t469_draw_zoom_frame(fixture, pool, keys, 2, 20, bounds, 1, 2);
+    const auto toggled = t469_draw_zoom_frame(fixture, pool, keys, 0.5, -8.5, bounds, 1, 2);
+    return gap_peak.r > 200 && gap_peak.g < 100 && downscroll.submitted && toggled.submitted &&
+        downscroll.work.composites >= keys.size() && toggled.work.composites >= keys.size();
+}
+
+auto t469_canonical_downscroll_keeps_gap_pixels() -> bool {
+    field_submission_fixture_t fixture;
+    renderer_t pool, reference;
+    const auto keys = t469_zoom_keys();
+    const SDL_FRect bounds{14, 0, 100, 128};
+    // Canvas downscroll origin = -scroll - viewport height.
+    constexpr double origin = -40.0 - 128.0;
+    const auto initial = t469_draw_zoom_frame(fixture, pool, keys, 2, origin, bounds, 1, 0, false, t469_test_style(), origin);
+    const auto changed = t469_draw_zoom_frame(fixture, pool, keys, .5, origin, bounds, 1, 0, false, t469_test_style(), origin);
+    const auto gap = fixture.pixel(64, 80);
+    const auto settled = t469_draw_zoom_frame(fixture, pool, keys, .5, origin, bounds, 1, 0, false, t469_test_style(), origin);
+    const auto pixels = t469_capture_surface(fixture);
+    const auto exact = t469_draw_zoom_frame(fixture, reference, keys, .5, origin,
+        bounds, 1, keys.size(), false, t469_test_style(), origin);
+    return initial.submitted && changed.submitted && settled.submitted && exact.submitted &&
+        changed.work.refilled_stems == 0 && changed.work.deferred_stems == keys.size() &&
+        changed.work.stem_fallbacks == keys.size() && gap.r > 200 && gap.g < 100 &&
+        settled.work.refilled_stems == keys.size() && t469_surface_matches(fixture, pixels);
+}
+
+auto t469_incompatible_stem_identity_refills() -> bool {
+    field_submission_fixture_t fixture;
+    renderer_t pool;
+    const auto keys = t469_zoom_keys();
+    const SDL_FRect bounds{14, 0, 100, 128};
+    const auto initial = t469_draw_zoom_frame(fixture, pool, keys, 1, 0, bounds, 1, keys.size());
+    const auto generation = t469_draw_zoom_frame(fixture, pool, keys, 1, 0, bounds, 2, keys.size());
+    const envelope_style_t alternate_style{{35, 200, 80, 255}, {220, 220, 20, 255}, true};
+    const auto style_change = t469_draw_zoom_frame(fixture, pool, keys, 1, 0, bounds, 2,
+                                                    keys.size(), false, alternate_style);
+    const SDL_FRect wider{14, 0, 101, 128};
+    const auto width_change = t469_draw_zoom_frame(fixture, pool, keys, 1, 0, wider, 2,
+                                                   keys.size());
+    const SDL_FRect subpixel{14.25f, 0, 101, 128};
+    const auto x_change = t469_draw_zoom_frame(fixture, pool, keys, 1, 0, subpixel, 2,
+                                               keys.size());
+    return initial.submitted && generation.submitted && style_change.submitted &&
+        width_change.submitted && x_change.submitted &&
+        generation.work.regenerated_rows == keys.size() * 130U &&
+        style_change.work.regenerated_rows == keys.size() * 130U &&
+        width_change.work.regenerated_rows > 0 && x_change.work.regenerated_rows > 0;
+}
+
+auto t469_invalid_zoom_and_missing_stem_fallbacks() -> bool {
+    field_submission_fixture_t fixture;
+    renderer_t pool;
+    const std::array<std::uint64_t, 1> known{1};
+    const SDL_FRect bounds{14, 0, 100, 128};
+    const auto initial = t469_draw_zoom_frame(fixture, pool, known, 1, 0, bounds, 1, 1);
+    const auto invalid = t469_draw_zoom_frame(fixture, pool, known, 0, 0, bounds, 1, 1);
+    const auto rearmed = t469_draw_zoom_frame(fixture, pool, known, 1, 0, bounds, 1, 1);
+    if (!initial.submitted || !invalid.submitted || !rearmed.submitted ||
+        invalid.work.budget_fallbacks != 0)
+        return false;
+
+    const std::array<std::uint64_t, 2> with_missing{1, 99};
+    expect_field(SDL_SetRenderDrawColor(fixture.renderer, 0, 0, 0, 255));
+    expect_field(SDL_RenderClear(fixture.renderer));
+    pool.begin({0, 0, 128, 128}, {1, 1}, {}, fixture.renderer);
+    pool.pin_stem_envelopes(with_missing);
+    pool.prepare_stem_zoom(2, with_missing, 0);
+    const auto rows = t469_zoom_rows(1, false);
+    if (pool.stem_envelope(1, 6, {}, bounds, 0, 1, t469_test_style())) return false;
+    if (!pool.stem_envelope(1, 6, rows, bounds, 0, 1, t469_test_style())) return false;
+    if (pool.stem_envelope(99, 6, rows, bounds, 0, 1, t469_test_style())) return false;
+    pool.hline(6, 20, 108, 50, 1, {255, 0, 0, 255});
+    if (!pool.submit(fixture.renderer) || !SDL_RenderPresent(fixture.renderer)) return false;
+    const auto work = pool.envelope_work();
+    const auto fallback_pixel = fixture.pixel(64, 50);
+
+    pool.begin({0, 0, 128, 128}, {1, 1}, {}, fixture.renderer);
+    pool.prepare_stem_zoom(std::numeric_limits<double>::quiet_NaN(), with_missing, 0);
+    const auto bytes_before = pool.envelope_work().resident_bytes;
+    const auto rejected = pool.stem_envelope(100, 6, rows, {14, 0, 0, 128}, 0, 1,
+                                             t469_test_style());
+    return !rejected && work.stem_fallbacks > 0 && work.budget_fallbacks == 0 &&
+        fallback_pixel.r > 200 && fallback_pixel.g < 100 &&
+        pool.envelope_work().resident_bytes == bytes_before;
+}
+
+auto t469_incompatible_retained_textures_are_rejected() -> bool {
+    field_submission_fixture_t fixture;
+    renderer_t pool;
+    const std::array<std::uint64_t, 4> keys{1, 2, 3, 4};
+    const SDL_FRect bounds{14, 0, 100, 128};
+    const auto initial = t469_draw_zoom_frame(fixture, pool, keys, 1, 0, bounds, 1, 4);
+    if (!initial.submitted) return false;
+    const auto resident_before = initial.work.resident_bytes;
+    expect_field(SDL_SetRenderDrawColor(fixture.renderer, 0, 0, 0, 255));
+    expect_field(SDL_RenderClear(fixture.renderer));
+    pool.begin({0, 0, 128, 128}, {1, 1}, {}, fixture.renderer);
+    pool.pin_stem_envelopes(keys);
+    pool.prepare_stem_zoom(2, keys, 0);
+    const auto rows = t469_zoom_rows(1, false);
+    const envelope_style_t alternate{{35, 200, 80, 255}, {220, 220, 20, 255}, true};
+    const SDL_FRect wider{14, 0, 101, 128};
+    const SDL_FRect subpixel{14.25f, 0, 100, 128};
+    const auto generation_reused = pool.stem_envelope(1, 6, rows, bounds, 0, 2,
+                                                       t469_test_style());
+    const auto style_reused = pool.stem_envelope(2, 6, rows, bounds, 0, 1, alternate);
+    const auto width_reused = pool.stem_envelope(3, 6, rows, wider, 0, 1,
+                                                  t469_test_style());
+    const auto subpixel_reused = pool.stem_envelope(4, 6, rows, subpixel, 0, 1,
+                                                     t469_test_style());
+    const auto work = pool.envelope_work();
+    return !generation_reused && !style_reused && !width_reused && !subpixel_reused &&
+        work.stem_fallbacks == 4 && work.composites == 0 && work.budget_fallbacks == 0 &&
+        work.resident_bytes == resident_before;
+}
+} // namespace
+
+TEST_CASE("T469 stem zoom applies a rotating refill budget and settles to reference pixels",
+          "[ui][field][stem][T469]") {
+    expect_field(t469_refill_budget_and_settle_pixels());
+}
+
+TEST_CASE("T469 stem zoom refreshes changed same-revision rows against reference pixels",
+          "[ui][field][stem][T469]") {
+    expect_field(t469_same_revision_rows_match_reference());
+}
+
+TEST_CASE("T469 stem zoom retains transformed textures and draws gaps through scroll toggles",
+          "[ui][field][stem][T469]") {
+    expect_field(t469_retained_gap_fallbacks_survive_scroll_and_zoom_toggles());
+    expect_field(t469_canonical_downscroll_keeps_gap_pixels());
+}
+
+TEST_CASE("T469 stem zoom invalidates textures after generation and layout identity changes",
+          "[ui][field][stem][T469]") {
+    expect_field(t469_incompatible_stem_identity_refills());
+}
+
+TEST_CASE("T469 stem zoom rejects invalid geometry and counts missing texture line fallbacks",
+          "[ui][field][stem][T469]") {
+    expect_field(t469_invalid_zoom_and_missing_stem_fallbacks());
+}
+
+TEST_CASE("T469 stem zoom rejects incompatible retained texture identities",
+          "[ui][field][stem][T469]") {
+    expect_field(t469_incompatible_retained_textures_are_rejected());
 }

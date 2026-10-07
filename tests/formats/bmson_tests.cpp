@@ -1,13 +1,17 @@
 #include <wormedit/core/sound_slice.h>
+#include <wormedit/core/bgm_packing.h>
 #include <wormedit/formats/bmson.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <span>
+#include <set>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -52,6 +56,160 @@ auto has_error_code(const wormedit::bmson_parse_result_t& result,
     });
 }
 
+auto packing_preferences_are_deterministic() -> bool {
+    using namespace wormedit;
+    const auto key = bgm_packing_key_t{false, 7};
+    const std::vector<bgm_packing_request_t> requests{{key, 10}, {key, 10}, {key, 11}};
+    const std::vector<bgm_packing_existing_t> existing{
+        {key, 100, 0}, {key, 101, 0}, {key, 102, 1},
+        {key, 103, 2}, {key, 104, 2}, {key, 105, 2}};
+    const auto result = allocate_bgm_columns(requests, existing, 3);
+    if (!result || result.lanes != std::vector<std::size_t>{2, 0, 2}) return false;
+
+    const std::vector<bgm_packing_existing_t> tied{
+        {key, 100, 2}, {key, 101, 0}};
+    const std::vector<bgm_packing_request_t> same_row{{key, 5}, {key, 5}};
+    const auto tie = allocate_bgm_columns(same_row, tied, 3);
+    return tie && tie.lanes == std::vector<std::size_t>{0, 2};
+}
+
+auto packing_groups_spills_and_silent_rows_are_stable() -> bool {
+    using namespace wormedit;
+    const auto plain = bgm_packing_key_t{false, 7};
+    const auto grouped_key = bgm_packing_key_t{true, 7};
+    const std::vector<bgm_packing_request_t> grouped{
+        {plain, 5}, {plain, 5}, {plain, 6}, {plain, 6},
+        {grouped_key, 8}, {plain, 9}};
+    const auto result = allocate_bgm_columns(grouped);
+    if (!result || result.lanes != std::vector<std::size_t>{0, 1, 0, 1, 0, 0}) return false;
+
+    const std::vector<bgm_packing_existing_t> namespaces{
+        {plain, 100, 1}, {grouped_key, 101, 2}};
+    const std::vector<bgm_packing_request_t> same_value{{plain, 4}, {grouped_key, 4}};
+    const auto separated = allocate_bgm_columns(same_value, namespaces, 3);
+    if (!separated || separated.lanes != std::vector<std::size_t>{1, 2}) return false;
+
+    const std::vector<bgm_packing_request_t> silent{{std::nullopt, 5}};
+    const std::vector<bgm_packing_existing_t> occupied{{bgm_packing_key_t{false, 3}, 5, 0},
+                                                        {bgm_packing_key_t{true, 3}, 6, 1}};
+    const auto quiet = allocate_bgm_columns(silent, occupied, 2);
+    return quiet && quiet.lanes == std::vector<std::size_t>{1};
+}
+
+auto packing_rejections_are_atomic() -> bool {
+    using namespace wormedit;
+    const std::vector<bgm_packing_request_t> requests{{bgm_packing_key_t{false, 9}, 4}};
+    const std::vector<bgm_packing_existing_t> outside{{std::nullopt, 2, 1}};
+    const auto out_of_range = allocate_bgm_columns(requests, outside, 1);
+    const std::vector<bgm_packing_existing_t> duplicate{{std::nullopt, 2, 0},
+                                                         {std::nullopt, 2, 0}};
+    const std::vector<bgm_packing_request_t> at_stacked_row{{requests.front().key, 2}};
+    const auto stacked = allocate_bgm_columns(at_stacked_row, duplicate, 1);
+    const std::vector<bgm_packing_request_t> invalid{{bgm_packing_key_t{true, 0}, 4}};
+    const auto zero_key = allocate_bgm_columns(invalid);
+    const auto capped = allocate_bgm_columns(requests, {}, 0, 0);
+    const auto initial = allocate_bgm_columns({}, {}, 2, 1);
+    const auto is_rejected = [](const auto& result) {
+        return !result && !result.error.empty() && result.lanes.empty();
+    };
+    return is_rejected(out_of_range) && stacked &&
+        stacked.lanes == std::vector<std::size_t>{1} && is_rejected(zero_key) &&
+        is_rejected(capped) && is_rejected(initial) && requests.front().row == 4 &&
+        requests.front().key->value == 9 && outside.front().lane == 1 &&
+        duplicate.size() == 2 && invalid.front().key->value == 0 &&
+        duplicate.front().row == 2 && duplicate.back().row == 2 &&
+        capped.lane_count == 0 && initial.lane_count == 2;
+}
+
+auto packing_handles_more_than_one_thousand_requests() -> bool {
+    using namespace wormedit;
+    std::vector<bgm_packing_request_t> requests;
+    requests.reserve(1003);
+    for (std::uint64_t index = 0; index < 1003; ++index)
+        requests.push_back({bgm_packing_key_t{false, index % 13 + 1}, index});
+    const auto result = allocate_bgm_columns(requests);
+    if (!result || result.lanes.size() != requests.size() || result.lane_count != 1) return false;
+    for (std::size_t index = 0; index < requests.size(); ++index)
+        if (result.lanes[index] != 0) return false;
+    return true;
+}
+
+auto fixture_text(std::string_view name) -> std::string {
+    const auto bytes = read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / name);
+    return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+}
+
+auto channel_events_are_unique(const wormedit::chart_document_t& chart,
+                               std::size_t expected_count) -> bool {
+    std::set<std::uint64_t> identities;
+    std::size_t count{};
+    for (const auto& channel : chart.sound_channels)
+        for (const auto& event : channel.events) {
+            ++count;
+            if (!event.id || !identities.insert(event.id.value).second) return false;
+        }
+    return count == expected_count;
+}
+
+auto packed_events_use_chart_lanes(const wormedit::chart_document_t& chart) -> bool {
+    for (const auto& measure : chart.measures)
+        for (const auto& event : measure.bgm_events)
+            if (std::ranges::none_of(chart.bgm_source_lanes, [&](const auto& lane) {
+                    return lane.id == event.source_lane;
+                })) return false;
+    return true;
+}
+
+auto raw_channel_note_count(const nlohmann::json& document) -> std::size_t {
+    std::size_t count{};
+    for (const auto& channel : document.at("sound_channels"))
+        count += channel.at("notes").size();
+    return count;
+}
+
+auto hybrid_fixture_is_classified_and_lossless() -> bool {
+    using namespace wormedit;
+    const auto source = fixture_text("hybrid-three-stems-200-keysounds.bmson");
+    const auto original_json = nlohmann::json::parse(source);
+    const auto parsed = parse_text(source);
+    if (!parsed.song || parsed.song->charts.empty()) return false;
+    const auto& chart = parsed.song->charts.front();
+    const auto stems = std::ranges::count_if(chart.bgm_source_lanes,
+        [](const auto& lane) { return lane.stem_channel.has_value(); });
+    const auto packed_columns = chart.bgm_source_lanes.size() - static_cast<std::size_t>(stems);
+    const auto stem_resources = std::ranges::count_if(parsed.song->resources,
+        [](const auto& resource) { return resource.sound_kind == sound_kind_t::stem; });
+    const auto keysounds = std::ranges::count_if(parsed.song->resources,
+        [](const auto& resource) { return resource.sound_kind == sound_kind_t::keysound; });
+    if (chart.sound_channels.size() != 203 || stems != 3 || packed_columns != 1 ||
+        stem_resources != 3 || keysounds != 200 ||
+        !channel_events_are_unique(chart, raw_channel_note_count(original_json)) ||
+        !packed_events_use_chart_lanes(chart)) return false;
+    const auto written = write_bmson(*parsed.song);
+    return written.json && !written.has_errors() && *written.json == source &&
+        nlohmann::json::parse(*written.json) == original_json;
+}
+
+auto continuation_controls_stem_classification() -> bool {
+    using namespace wormedit;
+    const auto parsed = parse_text(R"({"version":"1.0.0","info":{"init_bpm":120},
+      "sound_channels":[
+        {"name":"playable.wav","notes":[{"x":1,"y":0,"c":false}]},
+        {"name":"stem.wav","notes":[{"x":1,"y":0,"c":false},
+          {"x":1,"y":240,"c":true}]}
+      ]})");
+    if (!parsed.song || parsed.song->charts.empty()) return false;
+    const auto& chart = parsed.song->charts.front();
+    if (chart.sound_channels.size() != 2 || chart.bgm_source_lanes.size() != 1 ||
+        chart.bgm_source_lanes.front().stem_channel != chart.sound_channels[1].id) return false;
+    const auto playable = std::ranges::find(parsed.song->resources, std::string{"playable.wav"},
+        &resource_entry_t::name);
+    const auto stem = std::ranges::find(parsed.song->resources, std::string{"stem.wav"},
+        &resource_entry_t::name);
+    return playable != parsed.song->resources.end() && stem != parsed.song->resources.end() &&
+        playable->sound_kind == sound_kind_t::keysound && stem->sound_kind == sound_kind_t::stem;
+}
+
 } // namespace
 
 namespace {
@@ -60,6 +218,36 @@ void check_bmson_condition(const T& condition) { CHECK(static_cast<bool>(conditi
 template <typename T>
 void require_bmson_condition(const T& condition) { REQUIRE(static_cast<bool>(condition)); }
 } // namespace
+
+TEST_CASE("BGM column packing prefers established groups deterministically",
+          "[unit][format][bmson][bgm-packing]") {
+    check_bmson_condition(packing_preferences_are_deterministic());
+}
+
+TEST_CASE("BGM column packing groups, spills and handles silent rows",
+          "[unit][format][bmson][bgm-packing]") {
+    check_bmson_condition(packing_groups_spills_and_silent_rows_are_stable());
+}
+
+TEST_CASE("BGM column packing rejects invalid input atomically",
+          "[unit][format][bmson][bgm-packing]") {
+    check_bmson_condition(packing_rejections_are_atomic());
+}
+
+TEST_CASE("BGM column packing handles more than one thousand requests",
+          "[unit][format][bmson][bgm-packing]") {
+    check_bmson_condition(packing_handles_more_than_one_thousand_requests());
+}
+
+TEST_CASE("BMSON hybrid fixture classifies stems and round-trips packed keysounds",
+          "[unit][format][bmson][hybrid-lanes]") {
+    check_bmson_condition(hybrid_fixture_is_classified_and_lossless());
+}
+
+TEST_CASE("BMSON continuation markers alone make a channel a stem",
+          "[unit][format][bmson][hybrid-lanes]") {
+    check_bmson_condition(continuation_controls_stem_classification());
+}
 
 TEST_CASE("BMSON 1.0 fixtures retain source bytes and valid document structure",
           "[unit][format][bmson]") {

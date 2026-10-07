@@ -15,6 +15,7 @@
 #include <fstream>
 #include <iterator>
 #include <optional>
+#include <map>
 #include <ranges>
 #include <span>
 #include <string>
@@ -370,10 +371,34 @@ auto make_explicit_stem_song() -> wormedit::song_document_t {
     return song;
 }
 
+auto restore_legacy_channel_lanes(wormedit::chart_document_t& chart) -> void {
+    std::map<std::uint64_t, wormedit::object_id_t> lane_by_event;
+    chart.bgm_source_lanes.clear();
+    for (std::size_t index = 0; index < chart.sound_channels.size(); ++index) {
+        const auto& channel = chart.sound_channels[index];
+        const auto lane = wormedit::object_id_t{1000000 + index};
+        chart.bgm_source_lanes.push_back({.id = lane, .name = channel.name,
+                                        .source_order = index, .stem_channel = channel.id});
+        for (const auto& event : channel.events) lane_by_event.emplace(event.id.value, lane);
+    }
+    for (auto& measure : chart.measures) {
+        for (auto& event : measure.bgm_events) {
+            if (event.sound_channel_event)
+                event.source_lane = lane_by_event.at(event.sound_channel_event->value);
+        }
+    }
+}
+
+auto unclassified_bmson_song() -> wormedit::song_document_t {
+    auto song = rich_bmson_song();
+    for (auto& resource : song.resources) resource.sound_kind = wormedit::sound_kind_t::unspecified;
+    return song;
+}
+
 auto schema4_stem_lanes_migrate_by_source_order() -> bool {
     auto song = rich_bmson_song();
-    if (song.charts.empty() || song.charts.front().sound_channels.size() < 2 ||
-        song.charts.front().bgm_source_lanes.size() < 2) return false;
+    if (song.charts.empty() || song.charts.front().sound_channels.size() < 2) return false;
+    restore_legacy_channel_lanes(song.charts.front());
     const auto written = wormedit::write_native_project(song);
     if (!written.bytes) return false;
     auto root = nlohmann::json::parse(*written.bytes);
@@ -1337,7 +1362,7 @@ TEST_CASE("native projects round-trip Lua expression recipes",
 
 TEST_CASE("native projects persist sound kind and tags only when set",
           "[unit][format][native-project][sounds]") {
-    auto song = rich_bmson_song();
+    auto song = unclassified_bmson_song();
     REQUIRE_FALSE(song.resources.empty());
     const auto plain = wormedit::write_native_project(song);
     REQUIRE(plain.bytes.has_value());

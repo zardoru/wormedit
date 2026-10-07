@@ -1,0 +1,2114 @@
+{
+  "version": "1.0.0",
+  "info": {
+    "title": "Hybrid stems and keysounds",
+    "artist": "Wormedit fixture authors",
+    "genre": "fixture",
+    "chart_name": "hybrid",
+    "level": 1,
+    "init_bpm": 120,
+    "mode_hint": "beat-7k",
+    "resolution": 240
+  },
+  "sound_channels": [
+    {
+      "name": "stem-0.ogg",
+      "notes": [
+        {
+          "x": 0,
+          "y": 0,
+          "c": false
+        },
+        {
+          "x": 0,
+          "y": 240,
+          "c": true
+        }
+      ]
+    },
+    {
+      "name": "stem-1.ogg",
+      "notes": [
+        {
+          "x": 0,
+          "y": 0,
+          "c": false
+        },
+        {
+          "x": 0,
+          "y": 240,
+          "c": true
+        }
+      ]
+    },
+    {
+      "name": "stem-2.ogg",
+      "notes": [
+        {
+          "x": 0,
+          "y": 0,
+          "c": false
+        },
+        {
+          "x": 0,
+          "y": 240,
+          "c": true
+        }
+      ]
+    },
+    {
+      "name": "key-0.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 480,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-1.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 540,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-2.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 600,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-3.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 660,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-4.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 720,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-5.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 780,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-6.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 840,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-7.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 900,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-8.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 960,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-9.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1020,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-10.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1080,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-11.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1140,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-12.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1200,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-13.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1260,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-14.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1320,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-15.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1380,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-16.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1440,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-17.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1500,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-18.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1560,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-19.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1620,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-20.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1680,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-21.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1740,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-22.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1800,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-23.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1860,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-24.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1920,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-25.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 1980,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-26.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2040,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-27.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2100,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-28.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2160,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-29.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2220,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-30.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2280,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-31.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2340,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-32.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2400,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-33.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2460,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-34.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2520,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-35.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2580,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-36.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2640,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-37.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2700,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-38.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2760,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-39.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2820,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-40.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2880,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-41.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 2940,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-42.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3000,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-43.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3060,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-44.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3120,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-45.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3180,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-46.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3240,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-47.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3300,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-48.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3360,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-49.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3420,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-50.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3480,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-51.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3540,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-52.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3600,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-53.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3660,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-54.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3720,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-55.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3780,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-56.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3840,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-57.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3900,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-58.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 3960,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-59.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4020,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-60.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4080,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-61.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4140,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-62.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4200,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-63.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4260,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-64.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4320,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-65.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4380,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-66.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4440,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-67.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4500,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-68.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4560,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-69.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4620,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-70.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4680,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-71.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4740,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-72.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4800,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-73.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4860,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-74.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4920,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-75.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 4980,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-76.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5040,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-77.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5100,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-78.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5160,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-79.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5220,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-80.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5280,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-81.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5340,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-82.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5400,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-83.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5460,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-84.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5520,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-85.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5580,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-86.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5640,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-87.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5700,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-88.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5760,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-89.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5820,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-90.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5880,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-91.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 5940,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-92.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6000,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-93.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6060,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-94.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6120,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-95.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6180,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-96.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6240,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-97.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6300,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-98.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6360,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-99.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6420,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-100.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6480,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-101.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6540,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-102.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6600,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-103.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6660,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-104.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6720,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-105.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6780,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-106.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6840,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-107.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6900,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-108.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 6960,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-109.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7020,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-110.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7080,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-111.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7140,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-112.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7200,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-113.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7260,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-114.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7320,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-115.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7380,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-116.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7440,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-117.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7500,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-118.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7560,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-119.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7620,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-120.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7680,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-121.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7740,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-122.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7800,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-123.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7860,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-124.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7920,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-125.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 7980,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-126.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8040,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-127.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8100,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-128.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8160,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-129.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8220,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-130.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8280,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-131.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8340,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-132.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8400,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-133.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8460,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-134.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8520,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-135.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8580,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-136.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8640,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-137.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8700,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-138.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8760,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-139.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8820,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-140.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8880,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-141.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 8940,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-142.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9000,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-143.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9060,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-144.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9120,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-145.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9180,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-146.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9240,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-147.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9300,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-148.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9360,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-149.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9420,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-150.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9480,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-151.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9540,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-152.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9600,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-153.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9660,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-154.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9720,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-155.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9780,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-156.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9840,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-157.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9900,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-158.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 9960,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-159.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10020,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-160.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10080,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-161.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10140,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-162.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10200,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-163.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10260,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-164.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10320,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-165.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10380,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-166.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10440,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-167.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10500,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-168.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10560,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-169.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10620,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-170.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10680,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-171.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10740,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-172.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10800,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-173.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10860,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-174.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10920,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-175.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 10980,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-176.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11040,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-177.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11100,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-178.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11160,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-179.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11220,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-180.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11280,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-181.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11340,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-182.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11400,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-183.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11460,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-184.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11520,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-185.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11580,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-186.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11640,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-187.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11700,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-188.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11760,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-189.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11820,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-190.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11880,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-191.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 11940,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-192.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 12000,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-193.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 12060,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-194.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 12120,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-195.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 12180,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-196.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 12240,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-197.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 12300,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-198.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 12360,
+          "c": false
+        }
+      ]
+    },
+    {
+      "name": "key-199.wav",
+      "notes": [
+        {
+          "x": 0,
+          "y": 12420,
+          "c": false
+        }
+      ]
+    }
+  ],
+  "bga": {
+    "bga_header": [],
+    "bga_events": [],
+    "layer_events": [],
+    "poor_events": []
+  },
+  "lines": [
+    {
+      "y": 0
+    },
+    {
+      "y": 960
+    },
+    {
+      "y": 1920
+    },
+    {
+      "y": 2880
+    },
+    {
+      "y": 3840
+    },
+    {
+      "y": 4800
+    },
+    {
+      "y": 5760
+    },
+    {
+      "y": 6720
+    },
+    {
+      "y": 7680
+    },
+    {
+      "y": 8640
+    },
+    {
+      "y": 9600
+    },
+    {
+      "y": 10560
+    },
+    {
+      "y": 11520
+    }
+  ],
+  "bpm_events": [
+    {
+      "y": 0,
+      "bpm": 120
+    }
+  ],
+  "stop_events": []
+}

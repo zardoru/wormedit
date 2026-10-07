@@ -1,4 +1,5 @@
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/bgm_packing.h>
 #include <wormedit/formats/bmson.h>
 
 #include <nlohmann/json.hpp>
@@ -1075,6 +1076,7 @@ struct bmson_materialization_t {
     raw_bmson_events_t& raw;
     const std::vector<std::uint64_t>& boundaries;
     const std::set<std::uint32_t>& valid_lane_positions;
+    std::map<object_id_t, bgm_packing_key_t> packed_lane_keys{};
 
     auto map_position(std::uint64_t pulse, std::string path) const -> local_position_t {
         const auto found = std::upper_bound(boundaries.begin(), boundaries.end(), pulse);
@@ -1158,44 +1160,90 @@ struct bmson_materialization_t {
                  "sound event count exceeds the configured limit", "$.sound_channels");
         }
         for (std::size_t channel_index = 0; channel_index < raw.raw_channels.size(); ++channel_index) {
-            const auto& raw_channel = raw.raw_channels[channel_index];
-            const auto source_path = validate_bmson_resource_path(raw_channel.name,
-                "$.sound_channels[" + std::to_string(channel_index) + "].name");
-            const auto [asset, is_new] = catalog.add_audio_asset(source_path);
-            (void)is_new;
-            const auto channel_resource = catalog.add_resource(
-                raw_channel.name, asset, {resource_role_t::sample, resource_role_t::bgm},
-                "sound_channel", std::to_string(channel_index), source_path,
-                "$.sound_channels[" + std::to_string(channel_index) + "].name",
-                raw_channel.name_spelling);
-            sound_channel_t channel;
-            channel.id = object_ids.take<object_id_t>();
-            channel.name = raw_channel.name;
-            channel.source_clip = {.id = clip_id_t{channel.id.value}, .source = asset};
-            std::map<std::uint32_t, bool> restart_at_pulse;
-            std::map<std::uint32_t, bool> has_playable_at_pulse;
-            for (const auto& note : raw_channel.notes) {
-                const auto [found, inserted] = restart_at_pulse.emplace(note.y, !note.continuation);
-                if (!inserted && !note.continuation) found->second = true;
-                if (note.x != 0) has_playable_at_pulse[note.y] = true;
-            }
-            object_id_t bgm_source_lane{};
-            // Every stem gets its BGM column, even when all of its taps are in the field, so its
-            // waveform and slice points have a lane to be drawn in (and a tap moved back to the BGM
-            // area has a lane to land in).
-            {
-                bgm_source_lane = object_ids.take<object_id_t>();
-                chart.bgm_source_lanes.push_back({.id = bgm_source_lane,
-                                                  .name = raw_channel.name,
-                                                  .source_order = channel_index,
-                                                  .stem_channel = channel.id});
-            }
-            sound_note_context_t context{channel, channel_resource, bgm_source_lane,
-                                         restart_at_pulse, has_playable_at_pulse};
-            for (const auto& note : raw_channel.notes) append_sound_note(note, context);
-            chart.sound_channels.push_back(std::move(channel));
+            materialize_sound_channel(channel_index);
         }
+        pack_sound_lanes();
+    }
 
+    auto materialize_sound_channel(std::size_t channel_index) -> void {
+        const auto& raw_channel = raw.raw_channels[channel_index];
+        const auto source_path = validate_bmson_resource_path(raw_channel.name,
+            "$.sound_channels[" + std::to_string(channel_index) + "].name");
+        const auto [asset, is_new] = catalog.add_audio_asset(source_path);
+        (void)is_new;
+        const auto channel_resource = catalog.add_resource(
+            raw_channel.name, asset, {resource_role_t::sample, resource_role_t::bgm},
+            "sound_channel", std::to_string(channel_index), source_path,
+            "$.sound_channels[" + std::to_string(channel_index) + "].name",
+            raw_channel.name_spelling);
+        sound_channel_t channel;
+        channel.id = object_ids.take<object_id_t>();
+        channel.name = raw_channel.name;
+        channel.source_clip = {.id = clip_id_t{channel.id.value}, .source = asset};
+        std::map<std::uint32_t, bool> restart_at_pulse;
+        std::map<std::uint32_t, bool> has_playable_at_pulse;
+        for (const auto& note : raw_channel.notes) {
+            const auto [found, inserted] = restart_at_pulse.emplace(note.y, !note.continuation);
+            if (!inserted && !note.continuation) found->second = true;
+            if (note.x != 0) has_playable_at_pulse[note.y] = true;
+        }
+        const bool is_stem = std::ranges::any_of(raw_channel.notes,
+            [](const auto& note) { return note.continuation; });
+        object_id_t bgm_source_lane{};
+        // Stem lanes remain linked even with only playable taps; packed temporary lanes
+        // are replaced atomically after their BGM events have been allocated.
+        {
+            bgm_source_lane = object_ids.take<object_id_t>();
+            chart.bgm_source_lanes.push_back({.id = bgm_source_lane,
+                                              .name = raw_channel.name,
+                                              .source_order = channel_index,
+                                              .stem_channel = is_stem ? std::optional{channel.id} : std::nullopt});
+        }
+        if (!is_stem) packed_lane_keys.emplace(bgm_source_lane, bgm_packing_key_t{false, channel_resource.value});
+        catalog.song.resources.back().sound_kind = is_stem ? sound_kind_t::stem : sound_kind_t::keysound;
+        sound_note_context_t context{channel, channel_resource, bgm_source_lane,
+                                     restart_at_pulse, has_playable_at_pulse};
+        for (const auto& note : raw_channel.notes) append_sound_note(note, context);
+        chart.sound_channels.push_back(std::move(channel));
+    }
+
+    auto packed_sound_requests(std::vector<bgm_event_t*>& events) -> std::vector<bgm_packing_request_t> {
+        std::vector<bgm_packing_request_t> requests;
+        for (auto& measure : chart.measures) {
+            for (auto& event : measure.bgm_events) {
+                const auto found = packed_lane_keys.find(event.source_lane);
+                if (found == packed_lane_keys.end()) continue;
+                events.push_back(&event);
+                requests.push_back({found->second,
+                    boundaries.at(static_cast<std::size_t>(event.position.measure.value - 1)) + event.position.row});
+            }
+        }
+        return requests;
+    }
+
+    auto pack_sound_lanes() -> void {
+        std::vector<bgm_event_t*> events;
+        const auto requests = packed_sound_requests(events);
+        const auto packed = allocate_bgm_columns(requests, {}, 0, options.max_events);
+        if (!packed) {
+            add_warning(catalog.result, bmson_parse_diagnostic_code_t::invalid_value,
+                        "BGM packing rejected; retaining one lane per channel: " + packed.error,
+                        "$.sound_channels");
+            return;
+        }
+        std::erase_if(chart.bgm_source_lanes, [](const auto& lane) { return !lane.stem_channel; });
+        std::vector<object_id_t> columns;
+        columns.reserve(packed.lane_count);
+        for (std::size_t index = 0; index < packed.lane_count; ++index) {
+            const auto lane_id = object_ids.take<object_id_t>();
+            columns.push_back(lane_id);
+            chart.bgm_source_lanes.push_back({.id = lane_id,
+                .name = "BGM " + std::to_string(index + 1),
+                .source_order = raw.raw_channels.size() + index});
+        }
+        for (std::size_t index = 0; index < events.size(); ++index) {
+            events[index]->source_lane = columns.at(packed.lanes.at(index));
+        }
     }
 
     struct sound_note_context_t {

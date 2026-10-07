@@ -48,10 +48,11 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
 
 ## T-458 Classify BMSON channels on open: continuation points make a stem, the rest pack
 
-- **Status:** blocked-on T-457
+- **Status:** done
 - **Outcome:** opening a `.bmson` gives a stem lane to each channel with any `c = true` note and puts all other channels' BGM events into packed columns using the [T-423 allocation rule](bms-editing.md). Each resource's `sound_kind` is stored as stem or keysound. `kick_your_ass2.bmson` opens with 9 stem lanes; `fx`, `hat` and `pc` go into packed columns. A BMSON converted from `iberai_dragback/_i.bms` opens with at most as many columns as the BMS had.
 - **Read first:** `src/formats/bmson.cpp` (`append_sound_note`, lane construction), [T-423](bms-editing.md) (`bgm_conversion.h` allocator, if landed), `src/sys/sound_list_projection.cpp` (`effective_sound_kind`), `include/wormedit/core/document.h`.
-- **Files owned:** `src/formats/bmson.cpp`, `include/wormedit/core/bgm_packing.h` (root-approved pure header-only group-aware allocator; T-423 is not landed), `tests/formats/bmson_tests.cpp`, a new fixture under `tests/fixtures/bmson/`, this card.
+- **Files owned:** `src/formats/bmson.cpp`, `include/wormedit/core/bgm_packing.h` (root-approved pure header-only group-aware allocator; T-423 is not landed), `tests/formats/bmson_tests.cpp`, `tests/formats/native_project_tests.cpp` (root-approved fixture-only legacy-lane and unspecified-kind setup), `tests/fixtures/bmson/hybrid-three-stems-200-keysounds.bmson`, this card.
+- **Execution ownership (2026-10-07):** Sol owns importer classification, allocator wiring, resource kinds and fixture generation; Luna exclusively owns the pure `bgm_packing.h` allocator and its unit cases in `tests/formats/bmson_tests.cpp`. Sol owns all build writes and review.
 - **Steps:**
   1. Classify each channel during import: stem if any note has `c = true`, otherwise packed.
   2. Stem channels keep today's lane. Packed channels' BGM events go through the allocator. The column count is the allocator's result, and columns are named `BGM 1…n`.
@@ -59,6 +60,7 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
   4. Add a fixture with 3 stem channels and 200 one-shot channels. Assert the lane counts, the kinds, and an export byte-identical to the input apart from key order.
 - **Invariants:** playable notes and every event's channel are unchanged. Only the BGM display lanes differ.
 - **Reject/failure behavior:** if the allocator rejects, the chart falls back to one lane per channel (today's behavior), with a warning.
+- **Evidence (2026-10-07 isolated worker):** normal core/converter builds pass. BMSON/packing group passes 1146 assertions in 80 cases, including the canonical 3-stem + 200-keysound fixture with exact export bytes. The broad core/documentation gate passed 1521/1523 before revealing two stale native fixtures; both corrected fixtures then pass 14 assertions in 2 cases. Legacy migration setup now constructs old per-channel lanes independently of current import, and omission checks explicitly use unspecified kinds. Configured clang-tidy reports no new or increased owned-code complexity violations; existing Catch scores and immutable JSON header warnings are recorded. Read-only saved real-chart converter probes produce Kick 9 stem + 3 packed lanes with byte-identical 45956-byte export, and converted dragback 0 stem + 6 packed columns against 16 original BMS columns.
 - **Verify:** `ctest --test-dir build --output-on-failure -R bmson`.
 - **Out of scope:** long one-shot waveforms (T-459) and keeping packed channels out of the stem pipeline (T-460).
 

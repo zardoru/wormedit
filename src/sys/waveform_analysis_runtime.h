@@ -89,7 +89,7 @@ public:
     [[nodiscard]] auto stem_waveform_analysis(asset_id_t asset) const
         -> std::shared_ptr<const audio::waveform_analysis_result_t>;
     // Stem assets analyzed at once (the stems near the cursor; see stem_waveform_window.h).
-    static constexpr std::size_t maximum_stem_waveforms = 32;
+    static constexpr std::size_t maximum_stem_waveforms = 192;
 
 private:
     void request_selected_waveform(std::optional<asset_id_t> asset,
@@ -120,7 +120,8 @@ private:
     [[nodiscard]] auto wanted_stem_assets(const song_document_t& document,
                                           const workspace_controller_t& workspace,
                                           std::optional<asset_id_t> selected_channel_asset,
-                                          const editor_interaction_state_t* interaction) const
+                                          const editor_interaction_state_t* interaction,
+                                          double viewport_height_pixels) const
         -> std::vector<asset_id_t>;
     void service_channel_waveform(const song_document_t& document,
                                   const workspace_controller_t& workspace,

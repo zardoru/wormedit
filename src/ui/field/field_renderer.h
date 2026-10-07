@@ -138,7 +138,7 @@ class renderer_t {
     bool geometry_overflow_{};
     auto reserve_geometry(std::size_t vertices, std::size_t indices) -> bool;
     // Slot 0 is the song waveform, 1 the selected stem, 2 and up the other stems.
-    std::array<std::unique_ptr<envelope_cache_t>, 34> envelopes_;
+    std::array<std::unique_ptr<envelope_cache_t>, 66> envelopes_;
     std::unique_ptr<field_tile_cache_t> tiles_;
     auto submit_envelope_fallback(SDL_Renderer* renderer, SDL_Texture* texture,
                                    submission_t hooks, bool& fallback) const -> bool;

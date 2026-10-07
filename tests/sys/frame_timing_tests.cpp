@@ -4328,11 +4328,11 @@ TEST_CASE("stem waveforms cover channels with events near the cursor or audio re
                             channel(5, 2, 2), channel(6, 70, 1)};
     const auto at = [&](std::uint64_t measure) {
         std::vector<std::uint64_t> ids;
-        for (const auto* found : sys::visible_stem_channels(song, chart, measure_id_t{measure}))
+        for (const auto* found : sys::visible_stem_channels(song, chart, measure_id_t{measure}, 10))
             ids.push_back(found->id.value);
         return ids;
     };
-    CHECK(at(1) == (std::vector<std::uint64_t>{1, 3, 5}));
+    CHECK(at(1) == (std::vector<std::uint64_t>{1, 5}));
     // The long clip started at measure 2 is still audible 30 measures later, the short ones are not.
     CHECK(at(30) == (std::vector<std::uint64_t>{2, 5}));
     CHECK(at(40) == (std::vector<std::uint64_t>{2, 5}));

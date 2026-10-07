@@ -351,13 +351,15 @@ auto waveform_analysis_t::stem_waveform_analysis(asset_id_t asset) const
 auto waveform_analysis_t::wanted_stem_assets(const song_document_t& document,
                                              const workspace_controller_t& workspace,
                                              std::optional<asset_id_t> selected_channel_asset,
-                                             const editor_interaction_state_t* interaction) const
+                                             const editor_interaction_state_t* interaction,
+                                             double height) const
     -> std::vector<asset_id_t> {
     std::vector<asset_id_t> wanted;
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart || !interaction) return wanted;
     const auto chart = std::ranges::find(document.charts, *workspace.selected_chart, &chart_document_t::id);
     if (chart == document.charts.end() || chart->source_family != format_family_t::bmson) return wanted;
-    for (const auto* channel : visible_stem_channels(document, *chart, interaction->cursor.measure)) {
+    for (const auto* channel : visible_stem_channels(document, *chart, interaction->cursor.measure,
+            stem_window_measures(height, interaction->pixels_per_standard_measure))) {
         const auto asset = channel->source_clip.source;
         if (!asset || asset == workspace.transport.audio_asset || asset == selected_channel_asset ||
             std::ranges::find(wanted, asset) != wanted.end()) continue;
@@ -420,7 +422,9 @@ void waveform_analysis_t::service_stem_waveforms(
     const editor_interaction_state_t* compose_interaction_state) {
     const auto selected = selected_channel_asset(document, workspace, compose_scene_cache,
                                                  compose_interaction_state);
-    const auto wanted = wanted_stem_assets(document, workspace, selected, compose_interaction_state);
+    const auto height = compose_scene_cache.interaction_view ? compose_scene_cache.interaction_view->viewport_height_pixels
+                                                              : 720.0;
+    const auto wanted = wanted_stem_assets(document, workspace, selected, compose_interaction_state, height);
     const auto is_wanted = [&](asset_id_t asset) { return std::ranges::find(wanted, asset) != wanted.end(); };
     std::erase_if(stem_analyses_, [&](const auto& entry) { return !is_wanted(entry.first); });
     std::erase_if(stem_attempted_, [&](asset_id_t asset) { return !is_wanted(asset); });

@@ -357,7 +357,7 @@ auto waveform_analysis_t::wanted_stem_assets(const song_document_t& document,
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart || !interaction) return wanted;
     const auto chart = std::ranges::find(document.charts, *workspace.selected_chart, &chart_document_t::id);
     if (chart == document.charts.end() || chart->source_family != format_family_t::bmson) return wanted;
-    for (const auto* channel : visible_stem_channels(*chart, interaction->cursor.measure)) {
+    for (const auto* channel : visible_stem_channels(document, *chart, interaction->cursor.measure)) {
         const auto asset = channel->source_clip.source;
         if (!asset || asset == workspace.transport.audio_asset || asset == selected_channel_asset ||
             std::ranges::find(wanted, asset) != wanted.end()) continue;

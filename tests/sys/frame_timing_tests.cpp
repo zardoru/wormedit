@@ -4311,23 +4311,33 @@ TEST_CASE("Lane-key dispatcher cancels held sound sources without placement call
 }
 
 #include "sys/stem_waveform_window.h"
-TEST_CASE("stem waveforms only cover channels with events near the cursor",
+TEST_CASE("stem waveforms cover channels with events near the cursor or audio reaching it",
           "[sys][waveform-projection][bmson][stems]") {
-    chart_document_t chart;
-    for (std::uint64_t id = 1; id <= 40; ++id) chart.measures.push_back({.id = measure_id_t{id}});
-    const auto channel = [](std::uint64_t id, std::uint64_t measure) {
-        return sound_channel_t{.id = object_id_t{id},
+    song_document_t song;
+    song.audio_assets = {{.id = asset_id_t{1}, .stream = {48'000, 2, 48'000 * 4, true}},
+                         {.id = asset_id_t{2}, .stream = {48'000, 2, 48'000 * 60, true}}};
+    auto& chart = song.charts.emplace_back();
+    for (std::uint64_t id = 1; id <= 80; ++id) chart.measures.push_back({.id = measure_id_t{id}});
+    chart.bpms = {{.id = object_id_t{900}, .position = {measure_id_t{1}, 0}, .beats_per_minute = {120, 1}}};
+    const auto channel = [](std::uint64_t id, std::uint64_t measure, std::uint64_t asset) {
+        return sound_channel_t{.id = object_id_t{id}, .source_clip = {.source = asset_id_t{asset}},
             .events = {{.id = object_id_t{id + 1000}, .position = {measure_id_t{measure}, 0}}}};
     };
-    chart.sound_channels = {channel(1, 2), channel(2, 20), channel(3, 12), channel(4, 40)};
-    const auto near_start = sys::visible_stem_channels(chart, measure_id_t{1});
-    REQUIRE(near_start.size() == 2);
-    CHECK(near_start[0]->id == object_id_t{1});
-    CHECK(near_start[1]->id == object_id_t{3});
-    const auto middle = sys::visible_stem_channels(chart, measure_id_t{20});
-    REQUIRE(middle.size() == 2);
-    CHECK(middle[0]->id == object_id_t{2});
-    CHECK(middle[1]->id == object_id_t{3});
+    // 120 BPM is two seconds per measure: the 4 s clip reaches about 3 measures, the 60 s clip 31.
+    chart.sound_channels = {channel(1, 2, 1), channel(2, 40, 1), channel(3, 12, 1), channel(4, 80, 1),
+                            channel(5, 2, 2), channel(6, 70, 1)};
+    const auto at = [&](std::uint64_t measure) {
+        std::vector<std::uint64_t> ids;
+        for (const auto* found : sys::visible_stem_channels(song, chart, measure_id_t{measure}))
+            ids.push_back(found->id.value);
+        return ids;
+    };
+    CHECK(at(1) == (std::vector<std::uint64_t>{1, 3, 5}));
+    // The long clip started at measure 2 is still audible 30 measures later, the short ones are not.
+    CHECK(at(30) == (std::vector<std::uint64_t>{2, 5}));
+    CHECK(at(40) == (std::vector<std::uint64_t>{2, 5}));
+    CHECK(at(45) == (std::vector<std::uint64_t>{2}));
+    CHECK(at(60) == (std::vector<std::uint64_t>{6}));
     // A cursor that is not in the chart behaves like the start.
-    CHECK(sys::visible_stem_channels(chart, measure_id_t{9999}).size() == 2);
+    CHECK(at(9999) == at(1));
 }

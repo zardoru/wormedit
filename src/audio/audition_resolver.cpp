@@ -12,12 +12,29 @@
 namespace wormedit::audio {
 namespace {
 
+
 auto error(audition_resolve_code_t code, std::string message,
            std::optional<object_id_t> object = std::nullopt) -> audition_resolve_diagnostic_t {
     return {.severity = diagnostic_severity_t::error,
             .code = code,
             .message = std::move(message),
             .object = object};
+}
+
+// Why a linked slice is missing: the first derivation diagnostic decides the code and the message.
+auto slice_derivation_error(const sound_slice_result_t& derived, object_id_t layer) -> audition_resolve_diagnostic_t {
+    auto code = audition_resolve_code_t::invalid_timing;
+    std::string message = "linked audition slice could not be derived";
+    if (!derived.diagnostics.empty()) {
+        const auto& first = derived.diagnostics.front();
+        message += ": " + first.message;
+        if (first.code == sound_slice_error_code_t::capacity_exceeded)
+            code = audition_resolve_code_t::capacity_exceeded;
+        else if (first.code == sound_slice_error_code_t::invalid_sample_rate ||
+                 first.code == sound_slice_error_code_t::invalid_source_range)
+            code = audition_resolve_code_t::invalid_source_geometry;
+    }
+    return error(code, std::move(message), layer);
 }
 
 auto unavailable_preview_source(const audition_resolve_result_t& resolved,
@@ -329,23 +346,7 @@ class audition_resolver_index_t {
                                 ? nullptr
                                 : &cached.result.slices[slice_position->second];
         if (slice == nullptr) {
-            auto code = audition_resolve_code_t::invalid_timing;
-            if (!cached.result.diagnostics.empty() &&
-                cached.result.diagnostics.front().code ==
-                    sound_slice_error_code_t::capacity_exceeded) {
-                code = audition_resolve_code_t::capacity_exceeded;
-            } else if (!cached.result.diagnostics.empty() &&
-                       (cached.result.diagnostics.front().code ==
-                            sound_slice_error_code_t::invalid_sample_rate ||
-                        cached.result.diagnostics.front().code ==
-                            sound_slice_error_code_t::invalid_source_range)) {
-                code = audition_resolve_code_t::invalid_source_geometry;
-            }
-            // Say why, so a bad stem is diagnosable from the message alone.
-            auto message = std::string{"linked audition slice could not be derived"};
-            if (!cached.result.diagnostics.empty())
-                message += ": " + cached.result.diagnostics.front().message;
-            result.diagnostics.push_back(error(code, std::move(message), layer.id));
+            result.diagnostics.push_back(slice_derivation_error(cached.result, layer.id));
             return false;
         }
         if (!emitted_slices.emplace(owner.id.value, slice->absolute_row).second)

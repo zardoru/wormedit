@@ -154,3 +154,11 @@ TEST_CASE("sound_slice rule 8: duplicate notes at one lane and pulse in one chan
         {"x":1,"y":0,"l":0,"c":false},{"x":1,"y":0,"l":0,"c":true}]})");
     CHECK(wormedit::write_bmson(song).has_errors());
 }
+
+TEST_CASE("sound_slice rule 9: an empty channel has no slices", "[unit][core][bmson][slice-rules]") {
+    const auto song = parse_song(R"({"name":"empty.wav","notes":[]})");
+    const auto result = derive(song, 100'000);
+    CHECK(result);
+    CHECK(result.slices.empty());
+    CHECK(result.diagnostics.empty());
+}

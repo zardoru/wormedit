@@ -255,8 +255,9 @@ inline void build_stem_index(stem_index_t& index, const song_document_t& documen
     for (std::size_t i = 0; i < chart.sound_channels.size(); ++i) {
         const auto& channel = chart.sound_channels[i];
         stem_index_channel_t entry{.id = channel.id.value};
-        const auto by_order = std::ranges::find(chart.bgm_source_lanes, i, &bgm_source_lane_t::source_order);
-        if (by_order != chart.bgm_source_lanes.end()) entry.source_lane = by_order->id.value;
+        const auto linked = std::ranges::find(chart.bgm_source_lanes,
+            std::optional{channel.id}, &bgm_source_lane_t::stem_channel);
+        if (linked != chart.bgm_source_lanes.end()) entry.source_lane = linked->id.value;
         else {
             auto earliest_rank = std::numeric_limits<std::size_t>::max();
             for (const auto& event : channel.events) {

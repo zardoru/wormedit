@@ -30,10 +30,10 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
 
 ## T-457 Model stem lanes and packed columns side by side
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** a BMSON chart can hold stem lanes, each linked explicitly to one sound channel, next to packed columns that hold any channel's events. A stem channel with no events is valid. Core tests cover the native round trip, a migration from schema N−1, and BMSON export of an empty stem channel.
 - **Read first:** `include/wormedit/core/document.h` (`bgm_source_lane_t`, `sound_channel_t`), `src/formats/bmson.cpp` (channel and lane construction), `src/formats/bmson_writer.cpp` (`channel_builder_t`), `src/sys/bmson_waveform_projection.cpp` (`stem_source_lane`), `src/formats/native_project_migrations.cpp`.
-- **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `src/formats/bmson_writer.cpp`, `src/core/sound_slice.cpp`, `src/sys/bmson_waveform_projection.cpp`, `src/sys/stem_waveform_window.h`, `tests/formats/native_project_tests.cpp`, `tests/formats/bmson_writer_tests.cpp`, `tests/core/` slice tests, this card.
+- **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, `src/formats/bmson.cpp` (existing per-channel explicit links only; classification remains T-458), `src/formats/native_project_storage.cpp` (schema-5 recovery envelope parity), `tests/formats/native_project_storage_tests.cpp` (recovery schema regression), `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `src/formats/bmson_writer.cpp`, `src/core/sound_slice.cpp`, `src/sys/bmson_waveform_projection.cpp`, `src/sys/stem_waveform_window.h`, `tests/formats/native_project_tests.cpp`, `tests/formats/bmson_writer_tests.cpp`, `tests/core/sound_slice_rules_tests.cpp` (exact empty-channel derivation regression), `tests/sys/stem_window_tests.cpp` (existing indexed-lane fixture now records its explicit channel link), this card.
 - **Steps:**
   1. Add `std::optional<object_id_t> stem_channel` to `bgm_source_lane_t`. A lane with it set is a stem lane, and a lane without it is a packed column.
   2. Migration: older BMSON-family charts link each lane to the channel whose index equals its `source_order`. That reproduces today's layout exactly.
@@ -42,6 +42,7 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
   5. Write tests: native round trip, migration equality, empty-channel export, and an event in a packed column that keeps its channel on export.
 - **Invariants:** BMSON export of every existing fixture is byte-identical. BMS charts are unchanged.
 - **Reject/failure behavior:** a stem lane that names a missing channel fails validation on load with the chart and lane named, and nothing is repaired silently.
+- **Evidence (2026-10-07 isolated worker):** normal dependency-tracked core/converter builds pass; requested core/BMSON/native plus documentation CTest passes 1517/1517. Model/export/slice focused group passes 57 assertions in 13 cases. Schema 4 → 5 preserves old BMSON lane IDs, names, ordering and event links while adding explicit channel IDs; BMS lanes stay unlinked. Missing/ambiguous links reject with chart/lane names. Empty derivation already worked and needed no algorithm rewrite. Configured clang-tidy adds no violations and preserves baseline scores, including immutable JSON headers and existing Catch functions.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^core\.|bmson|native'`; `clang-tidy -p build` on the changed sources.
 - **Out of scope:** classification (T-458) and UI.
 
@@ -50,7 +51,7 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
 - **Status:** blocked-on T-457
 - **Outcome:** opening a `.bmson` gives a stem lane to each channel with any `c = true` note and puts all other channels' BGM events into packed columns using the [T-423 allocation rule](bms-editing.md). Each resource's `sound_kind` is stored as stem or keysound. `kick_your_ass2.bmson` opens with 9 stem lanes; `fx`, `hat` and `pc` go into packed columns. A BMSON converted from `iberai_dragback/_i.bms` opens with at most as many columns as the BMS had.
 - **Read first:** `src/formats/bmson.cpp` (`append_sound_note`, lane construction), [T-423](bms-editing.md) (`bgm_conversion.h` allocator, if landed), `src/sys/sound_list_projection.cpp` (`effective_sound_kind`), `include/wormedit/core/document.h`.
-- **Files owned:** `src/formats/bmson.cpp`, the T-423 allocator source (reuse; extract a pure helper if it is not landed), `tests/formats/bmson_tests.cpp`, a new fixture under `tests/fixtures/bmson/`, this card.
+- **Files owned:** `src/formats/bmson.cpp`, `include/wormedit/core/bgm_packing.h` (root-approved pure header-only group-aware allocator; T-423 is not landed), `tests/formats/bmson_tests.cpp`, a new fixture under `tests/fixtures/bmson/`, this card.
 - **Steps:**
   1. Classify each channel during import: stem if any note has `c = true`, otherwise packed.
   2. Stem channels keep today's lane. Packed channels' BGM events go through the allocator. The column count is the allocator's result, and columns are named `BGM 1…n`.
@@ -82,7 +83,7 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
 - **Status:** blocked-on T-458
 - **Outcome:** only channels with a stem lane enter `visible_stem_channels`, stem waveform analysis and slice derivation. On the converted dragback chart, the per-frame stem work is the same as for a chart with no stems.
 - **Read first:** `src/sys/stem_waveform_window.h`, `src/sys/waveform_analysis_runtime.cpp` (`wanted_stem_assets`), `src/sys/bmson_waveform_projection.cpp` (`drawn_stems`).
-- **Files owned:** those three, plus `tests/sys/stem_window_tests.cpp`, this card.
+- **Files owned:** those three, plus `tests/sys/stem_window_tests.cpp`, `tests/sys/frame_timing_tests.cpp` (production filtered projection and explicit-link fixtures), `tests/sys/audio_notification_tests.cpp` (actual filtered runtime asset requests and explicit-link fixtures), this card.
 - **Steps:**
   1. Filter channels by whether they have a stem lane, in the per-revision stem index from T-439.
   2. Test a chart with 3 stems and 1000 packed channels: the index holds 3 channels, and no analysis is requested for a packed asset.

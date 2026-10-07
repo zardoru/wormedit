@@ -70,10 +70,41 @@ auto migrate_v3_to_v4(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 3> released_migrations{{
+auto link_legacy_bmson_lanes(nlohmann::json& chart) -> std::string {
+    if (!chart.contains("bgm_source_lanes")) return {};
+    if (!chart.at("bgm_source_lanes").is_array() || !chart.contains("sound_channels") ||
+        !chart.at("sound_channels").is_array()) return "BMSON lanes and channels must be arrays";
+    const auto& channels = chart.at("sound_channels");
+    for (auto& lane : chart.at("bgm_source_lanes")) {
+        if (!lane.is_object() || !lane.contains("source_order") ||
+            !lane.at("source_order").is_number_unsigned()) return "BGM lane source order must be unsigned";
+        if (lane.contains("stem_channel")) continue;
+        const auto order = lane.at("source_order").get<std::uint64_t>();
+        if (order >= channels.size()) continue;
+        const auto& channel = channels.at(static_cast<std::size_t>(order));
+        if (!channel.is_object() || !channel.contains("id")) return "BMSON channel must have an ID";
+        lane["stem_channel"] = channel.at("id");
+    }
+    return {};
+}
+
+auto migrate_v4_to_v5(nlohmann::json& document) -> std::string {
+    if (!document.contains("charts")) return {};
+    if (!document.at("charts").is_array()) return "document charts must be an array";
+    for (auto& chart : document.at("charts")) {
+        if (!chart.is_object()) return "chart must be an object";
+        if (chart.value("source_family", nlohmann::json{}) !=
+            static_cast<std::uint64_t>(format_family_t::bmson)) continue;
+        if (const auto error = link_legacy_bmson_lanes(chart); !error.empty()) return error;
+    }
+    return {};
+}
+
+constexpr std::array<migration_t, 4> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
+    {4, &migrate_v4_to_v5},
 }};
 
 } // namespace

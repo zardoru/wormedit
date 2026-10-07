@@ -889,7 +889,7 @@ TEST_CASE("schema-4 autosave preserves quantization presets through recovery",
     REQUIRE(saved.status == wormedit::native_project_autosave_status_t::published);
     const auto parsed = wormedit::parse_native_project_recovery_snapshot(read_text(recovery_path));
     REQUIRE(parsed.snapshot);
-    CHECK(parsed.snapshot->song.schema_version == 4);
+    CHECK(parsed.snapshot->song.schema_version == 5);
     CHECK(parsed.snapshot->song.quantization_presets == song.quantization_presets);
 }
 
@@ -900,10 +900,10 @@ TEST_CASE("recovery envelope accepts supported schema tags and rejects unknown v
     REQUIRE(wormedit::publish_native_project_recovery_atomic(
                 recovery_path, valid_song(2), {.session_sequence = 1}).published);
     auto envelope = nlohmann::json::parse(read_text(recovery_path));
-    for (const auto schema : std::array<std::uint64_t, 6>{0, 1, 2, 3, 4, 5}) {
+    for (const auto schema : std::array<std::uint64_t, 7>{0, 1, 2, 3, 4, 5, 6}) {
         INFO(schema);
         envelope["schema_version"] = schema;
         const auto parsed = wormedit::parse_native_project_recovery_snapshot(envelope.dump());
-        CHECK(parsed.snapshot.has_value() == (schema >= 1 && schema <= 4));
+        CHECK(parsed.snapshot.has_value() == (schema >= 1 && schema <= 5));
     }
 }

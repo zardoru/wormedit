@@ -715,6 +715,22 @@ auto validate_bms_measure_projections(const chart_document_t& chart, diagnostic_
     }
 }
 
+auto validate_stem_lane_links(const chart_document_t& chart, diagnostic_list_t& diagnostics) -> void {
+    std::unordered_map<std::uint64_t, std::size_t> channels;
+    for (const auto& channel : chart.sound_channels) ++channels[channel.id.value];
+    std::unordered_set<std::uint64_t> linked;
+    for (const auto& lane : chart.bgm_source_lanes) {
+        if (!lane.stem_channel) continue;
+        const auto channel = lane.stem_channel->value;
+        if (chart.source_family != format_family_t::bmson || !channel || channels[channel] != 1 ||
+            !linked.insert(channel).second)
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                "chart " + std::to_string(chart.id.value) + " (" + chart.metadata.name +
+                ") stem lane " + std::to_string(lane.id.value) + " (" + lane.name +
+                ") refers to a missing or ambiguous sound channel", lane.id);
+    }
+}
+
 auto validate_chart_recipes(const chart_document_t& chart, diagnostic_list_t& diagnostics) -> void {
     check_unique_ids(
         diagnostics, chart.semantic_layers, [](const auto& layer) { return layer.id; },
@@ -1160,6 +1176,7 @@ auto validate_chart(const chart_document_t& chart,
     std::unordered_set<std::uint64_t> object_ids;
 
     validate_chart_recipes(chart, diagnostics);
+    validate_stem_lane_links(chart, diagnostics);
 
     std::unordered_set<std::uint64_t> layer_ids;
     for (const auto& layer : chart.semantic_layers) {

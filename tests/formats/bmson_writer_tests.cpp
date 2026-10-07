@@ -81,6 +81,66 @@ auto has_write_error(const wormedit::bmson_write_result_t& result,
     });
 }
 
+auto packed_marker_retains_its_channel(const wormedit::chart_document_t& chart) -> bool {
+    if (chart.sound_channels.size() < 2 || chart.bgm_source_lanes.size() < 2 ||
+        chart.bgm_source_lanes[1].stem_channel) return false;
+    const auto& channel = chart.sound_channels[1];
+    for (const auto& measure : chart.measures) {
+        const auto event = std::ranges::find_if(measure.bgm_events, [&](const auto& bgm) {
+            return bgm.source_lane == chart.bgm_source_lanes[1].id && bgm.position.row == 480;
+        });
+        if (event == measure.bgm_events.end() || !event->sound_channel_event) continue;
+        return std::ranges::find(channel.events, *event->sound_channel_event,
+                                 &wormedit::sound_channel_event_t::id) != channel.events.end();
+    }
+    return false;
+}
+
+void clear_retained_channels(wormedit::chart_document_t& chart) {
+    chart.sound_channels.clear();
+    for (auto& lane : chart.bgm_source_lanes) lane.stem_channel.reset();
+}
+
+auto packed_events_and_empty_stem_export_correctly() -> bool {
+    auto imported = parse_text(R"({
+      "version":"1.0.0",
+      "info":{"title":"hybrid","init_bpm":120,"mode_hint":"generic-nkeys"},
+      "sound_channels":[
+        {"name":"stem.wav","notes":[{"x":1,"y":0,"c":false},{"x":1,"y":240,"c":true}]},
+        {"name":"packed.wav","notes":[{"x":0,"y":480,"c":false}]}
+      ]
+    })");
+    if (!imported.song || imported.song->charts.empty()) return false;
+    auto& chart = imported.song->charts.front();
+    if (chart.sound_channels.size() != 2 || chart.bgm_source_lanes.size() < 2) return false;
+    chart.bgm_source_lanes[0].stem_channel = chart.sound_channels[0].id;
+    chart.bgm_source_lanes[1].stem_channel.reset();
+    if (!packed_marker_retains_its_channel(chart)) return false;
+    const auto packed_channel_name = chart.sound_channels[1].name;
+    auto empty = chart.sound_channels.front();
+    empty.id = wormedit::object_id_t{990001};
+    empty.name = "empty stem";
+    empty.events.clear();
+    chart.sound_channels.push_back(std::move(empty));
+    chart.bgm_source_lanes.push_back({.id = wormedit::object_id_t{990002},
+        .name = "Empty stem", .source_order = 2,
+        .stem_channel = chart.sound_channels.back().id});
+
+    const auto written = wormedit::write_bmson(*imported.song);
+    if (!written.json || written.has_errors()) return false;
+    const auto json = nlohmann::json::parse(*written.json);
+    if (!json.contains("sound_channels") || json["sound_channels"].size() != 3 ||
+        json["sound_channels"][1]["name"] != packed_channel_name ||
+        json["sound_channels"][1]["notes"].size() != 1 ||
+        json["sound_channels"][1]["notes"][0]["x"] != 0 ||
+        json["sound_channels"][1]["notes"][0]["y"] != 480 ||
+        !json["sound_channels"][2]["notes"].empty()) return false;
+    return std::ranges::any_of(written.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.severity == wormedit::diagnostic_severity_t::warning &&
+               diagnostic.message == "stem empty stem has no points";
+    });
+}
+
 } // namespace
 
 TEST_CASE("BMSON writer round-trips mixed sound slices, timing, layout, metadata and BGA",
@@ -306,7 +366,7 @@ TEST_CASE("BMSON writer preserves resource path spelling and can export newly au
     CHECK(reparsed.song->audio_assets.front().source_path.generic_string() == "folder/audio.wav");
 
     auto authored = *imported.song;
-    authored.charts.front().sound_channels.clear();
+    clear_retained_channels(authored.charts.front());
     for (auto& measure : authored.charts.front().measures) {
         for (auto& note : measure.notes) note.sound_channel_event.reset();
         for (auto& event : measure.bgm_events) event.sound_channel_event.reset();
@@ -317,6 +377,11 @@ TEST_CASE("BMSON writer preserves resource path spelling and can export newly au
     REQUIRE(authored_roundtrip.song.has_value());
     CHECK(authored_roundtrip.song->charts.front().sound_channels.size() == 2);
     CHECK(note_signature(*authored_roundtrip.song) == note_signature(authored));
+}
+
+TEST_CASE("BMSON writer retains packed events beside an empty explicit stem",
+          "[unit][format][bmson][writer][stems]") {
+    CHECK(packed_events_and_empty_stem_export_correctly());
 }
 
 TEST_CASE("BMSON writer preserves generic 24K and 48K mode identities",

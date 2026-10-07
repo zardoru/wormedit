@@ -1187,7 +1187,8 @@ struct bmson_materialization_t {
                 bgm_source_lane = object_ids.take<object_id_t>();
                 chart.bgm_source_lanes.push_back({.id = bgm_source_lane,
                                                   .name = raw_channel.name,
-                                                  .source_order = channel_index});
+                                                  .source_order = channel_index,
+                                                  .stem_channel = channel.id});
             }
             sound_note_context_t context{channel, channel_resource, bgm_source_lane,
                                          restart_at_pulse, has_playable_at_pulse};

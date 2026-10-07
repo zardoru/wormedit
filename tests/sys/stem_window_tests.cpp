@@ -138,7 +138,8 @@ auto make_indexed_stem_fixture() -> std::pair<song_document_t, std::vector<audio
             .source_clip = {.source = asset_id_t{1}},
             .events = std::move(events)});
     }
-    chart.bgm_source_lanes = {{.id = object_id_t{9100}, .source_order = 1}};
+    chart.bgm_source_lanes = {{.id = object_id_t{9100}, .source_order = 1,
+                               .stem_channel = object_id_t{1001}}};
     chart.warps = {{.id = object_id_t{9300}, .span = {
         .begin = {measure_id_t{10}, 0}, .end = {measure_id_t{11}, 0}}}};
     chart.measures.front().bgm_events.push_back({.id = object_id_t{9200},

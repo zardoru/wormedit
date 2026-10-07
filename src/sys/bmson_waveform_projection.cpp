@@ -149,8 +149,7 @@ auto populate_channel_ring(const channel_ring_context_t& context, bool downscrol
 // One more than the visible stems: the selected channel is always projected for its field taps.
 constexpr std::size_t maximum_stem_cuts = 4096;
 
-// The BGM lane a stem lives in: the lane whose source order is the channel's position (what moving
-// one of its taps to the BGM area creates), else the lane of its first BGM marker.
+// The BGM lane explicitly linked to this channel, retained by the per-revision index.
 auto indexed_stem_lane(const stem_index_t& index, const chart_document_t& chart,
                        const sound_channel_t& channel) -> std::uint64_t {
     if (chart.sound_channels.empty()) return 0;

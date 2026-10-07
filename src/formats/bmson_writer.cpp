@@ -576,9 +576,21 @@ struct channel_builder_t {
         : song(song_value), chart(chart_value), index(index_value), grid(grid_value),
           lanes(lane_map), diagnostics(output_diagnostics) {}
 
+    void warn_empty_stem(const sound_channel_t& channel) {
+        if (!channel.events.empty()) return;
+        const auto lane = std::ranges::find(chart.bgm_source_lanes,
+            std::optional{channel.id}, &bgm_source_lane_t::stem_channel);
+        if (lane == chart.bgm_source_lanes.end()) return;
+        diagnostics.push_back({.severity = diagnostic_severity_t::warning,
+            .code = bmson_write_diagnostic_code_t::lossy_transform,
+            .message = "stem " + channel.name + " has no points",
+            .json_path = "$.sound_channels"});
+    }
+
     void load_retained_channels() {
         channels.reserve(chart.sound_channels.size());
         for (const auto& source : chart.sound_channels) {
+            warn_empty_stem(source);
             if (source.source_clip.begin_frame != 0 || source.source_clip.end_frame)
                 fail(bmson_write_diagnostic_code_t::unsupported_feature,
                      "BMSON 1.0 cannot encode a cropped source audio clip", "$.sound_channels");

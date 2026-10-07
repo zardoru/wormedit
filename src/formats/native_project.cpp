@@ -345,7 +345,18 @@ void from_json(const json& value, bgm_event_t& event) {
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(measure_chunk_t, id, definition, notes, bgm_events)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_measure_length_projection_t, measure_index, source_order,
                                    imported_length)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bgm_source_lane_t, id, name, source_order)
+void to_json(json& value, const bgm_source_lane_t& lane) {
+    value = json{{"id", lane.id}, {"name", lane.name}, {"source_order", lane.source_order}};
+    if (lane.stem_channel) value["stem_channel"] = *lane.stem_channel;
+}
+void from_json(const json& value, bgm_source_lane_t& lane) {
+    value.at("id").get_to(lane.id);
+    value.at("name").get_to(lane.name);
+    value.at("source_order").get_to(lane.source_order);
+    lane.stem_channel.reset();
+    if (const auto linked = value.find("stem_channel"); linked != value.end())
+        linked->get_to(lane.stem_channel);
+}
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bpm_event_t, id, position, beats_per_minute, provenance)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(pause_event_t, id, position, kind, duration, source_unit,
                                    provenance)
@@ -458,10 +469,10 @@ namespace {
 
 constexpr std::string_view native_project_format = "wormedit-project";
 // The envelope (`format`, `format_version`, `document`) and the document schema evolve separately:
-// the envelope is still version 1, while the document is at schema 4 (older documents migrate on
+// the envelope is still version 1, while the document is at schema 5 (older documents migrate on
 // load; see native_project_migrations.cpp).
 constexpr std::uint32_t native_project_format_version = 1;
-constexpr std::uint32_t native_project_schema_version = 4;
+constexpr std::uint32_t native_project_schema_version = 5;
 
 auto path_to_utf8(const std::filesystem::path& path) -> std::string {
     const auto encoded = path.generic_u8string();

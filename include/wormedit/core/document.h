@@ -344,6 +344,7 @@ struct bgm_source_lane_t {
     object_id_t id;
     std::string name;
     std::size_t source_order{};
+    std::optional<object_id_t> stem_channel{};
 };
 
 struct bpm_event_t {
@@ -845,7 +846,7 @@ struct quantization_preset_t {
 };
 
 struct song_document_t {
-    std::uint32_t schema_version{4};
+    std::uint32_t schema_version{5};
     song_id_t id;
     std::uint64_t revision{};
     song_metadata_t metadata;

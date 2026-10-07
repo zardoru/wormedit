@@ -33,6 +33,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_bgm_bar.cpp
     ../src/sys/sound_list_projection.cpp
     ../src/sys/compose_measure_commands.cpp
+    ../src/sys/compose_note_to_bgm.cpp
     ../src/sys/compose_selection_transform.cpp
     ../src/sys/compose_label_search.cpp
     ../src/sys/compose_dead_spans.cpp
@@ -666,6 +667,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             sys/audio_notification_tests.cpp
             ../src/sys/bmson_waveform_projection.cpp
             ../src/sys/compose_input.cpp
+            ../src/sys/compose_note_to_bgm.cpp
             ../src/sys/compose_minimap_navigation.cpp
             ../src/sys/compose_bookmark_commands.cpp
             ../src/sys/compose_playhead_skip.cpp

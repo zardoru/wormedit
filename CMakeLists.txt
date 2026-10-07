@@ -451,6 +451,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_hover_timing.cpp
         src/sys/compare_view.cpp
         src/sys/compose_input.cpp
+        src/sys/compose_note_to_bgm.cpp
         src/sys/compose_area_actions.cpp
         src/sys/compose_actions.cpp
         src/sys/compose_sound_actions.cpp

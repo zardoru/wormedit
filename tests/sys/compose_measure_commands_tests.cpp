@@ -147,3 +147,29 @@ TEST_CASE("moving a bar line trades length between neighbors in one undo step", 
     CHECK(status != "Bar line moved.");
     CHECK(fixture.history.undo.size() == 1);
 }
+
+#include "sys/compose_note_to_bgm.h"
+
+TEST_CASE("selected notes move to the BGM area and leave the selection", "[sys][note-to-bgm]") {
+    fixture_t fixture({measure_id_t{3}, 0});
+    fixture.state.selected_notes = {object_id_t{40}};
+    fixture.state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{40}}};
+    const auto outcome = wormedit::sys::move_selected_notes_to_bgm(fixture.history, fixture.state, std::nullopt, false, true);
+    REQUIRE(outcome.handled);
+    REQUIRE(outcome.command.applied);
+    CHECK(fixture.measures()[0].notes.empty());
+    REQUIRE(fixture.measures()[0].bgm_events.size() == 1);
+    CHECK(fixture.state.selected_notes.empty());
+    REQUIRE(fixture.state.selected_objects.size() == 1);
+    CHECK(fixture.state.selected_objects.front().kind == editor_selection_object_kind_t::bgm_event);
+    CHECK(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("Delete only redirects BMSON stem taps", "[sys][note-to-bgm]") {
+    fixture_t fixture({measure_id_t{3}, 0});
+    fixture.state.selected_notes = {object_id_t{40}};
+    // An ordinary note on a non-BMSON chart is not a stem tap: the caller deletes it as usual.
+    const auto outcome = wormedit::sys::move_selected_notes_to_bgm(fixture.history, fixture.state, std::nullopt, true, false);
+    CHECK_FALSE(outcome.handled);
+    CHECK(fixture.measures()[0].notes.size() == 1);
+}

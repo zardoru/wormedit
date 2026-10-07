@@ -13,3 +13,23 @@ Do stale-plan checks first. Keep all new C++ functions within cognitive complexi
 The new stems coordinator launched `/root/stems_budget_oct7_61/stems_luna`, then became unavailable for reactivation: collaboration returned `agent thread limit reached`. Root therefore reuses the existing `/root/editing_oct7_61` Sol coordinator for independent reviews and subsequent narrow briefs in both isolated worktrees; both Luna executors remain active. Worktree/source/build isolation is unchanged.
 
 T-447 reviewed and integrated as `4ba5087`: application build and all 45 integrated `bmson_layer|semantic` cases pass. Root read-only production Kick probe now reports 12 channels/12 layers and checks all 515 materialized memberships, native serialization/reparse and identical BMSON export bytes with/without layers (`/tmp/wormedit-oct7-root/layer-import-integrated.log`). Original chart SHA-256 remains unchanged. The layers executor proceeds to T-450; T-439 remains under review for one authoritative frame selection after final cursor/viewport projection, then T-445 follows.
+
+## Scratch storage and worktree cleanup (2026-10-07)
+
+The user wiped `/tmp`; source commits and the active workspace builds survived.
+Future root scratch probes and logs live in
+`/home/zardoru/devel/wormedit-scratch-builds/root-oct7`, and worker build/log
+artifacts also use workspace storage. Earlier `/tmp` evidence paths are historical
+records of outputs read before the wipe; do not assume those files still exist.
+
+At the user's request root removed 18 clean completed worktrees and pruned one
+missing worktree registration. All branch refs remain, including the four older
+branches whose original commits differ from their documented integration commits.
+Only main and the current layers/stems-budget worktrees remain registered.
+
+T-450 is integrated as `4c446cd`. The main application build and all
+**2,446/2,446** CTest cases pass. Regenerated logs: workspace root scratch
+`layer2-integrated-build.log` and `layer2-integrated-ctest.log`.
+The independent root Layer 2 probe also passes distinct 04/06/07/0A kinds, exact
+retained bytes, normalized export, schema-3 recovery and duplicate refusal
+(`layer2-probe.log` in that same workspace directory).

@@ -62,6 +62,11 @@ has released source ownership after implementation. The import worktree is now
 on `coord/osutest-playback`; its Sol coordinator independently reviews root's fix
 for the user's Space playback regression.
 
+The worktree table above records historical assignments. On 2026-10-07 root
+removed 18 clean completed trees and pruned one missing registration at the user’s
+request, retaining every branch. Current trees are main, `wormedit-layers-oct7`
+and `wormedit-stems-budget-oct7`; new scratch artifacts use workspace storage.
+
 ## Ownership and scheduling
 
 - Root alone changes main, the resume checklist, and this index. Coordinators

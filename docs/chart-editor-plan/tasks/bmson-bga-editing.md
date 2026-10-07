@@ -82,7 +82,7 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-450 Model BMS layer 2 as its own BGA kind
 
-- **Status:** implemented in isolated branch; coordinator review/root integration pending
+- **Status:** done (2026-10-07; root integrated and verified)
 - **Outcome:** BMS `0A` events load as `visual_event_kind_t::layer2` and save back to `0A`. Native projects persist the kind with a schema migration. A round trip of a fixture with `04`, `06`, `07` and `0A` keeps each channel.
 - **Read first:** `include/wormedit/core/document.h` (`visual_event_kind_t`), `src/formats/bms.cpp:960-975`, `src/formats/bms_writer.cpp:2350-2410`, `src/formats/native_project_migrations.cpp`.
 - **Files owned:** `src/core/timing.cpp` (coordinator-approved root-identified appended kind draw-order handling), `src/core/bga_preview.cpp` (coordinator-approved root-identified enum bound and explicit non-compositing Layer2 handling so preview/audio accepts the chart), `tests/core/bga_preview_tests.cpp` (coordinator-approved preview schedule acceptance without Layer2-to-Layer reinterpretation), those four, plus `src/formats/native_project_migrations.cpp` (schema 3→4 event provenance recovery), `src/formats/native_project_storage.cpp` (root-approved schema-4 recovery payload acceptance), `src/formats/native_project.cpp`, `src/formats/bmson.cpp` (BMSON `layer_events` stay `layer`; it has no layer 2), `tests/formats/bms_tests.cpp`, `tests/formats/bms_writer_tests.cpp` (root-approved expected-kind correction for its BMS round-trip), `tests/formats/native_project_tests.cpp`, `tests/formats/native_project_storage_tests.cpp` (root-approved schema-4 recovery and future-version package assertions), this card.
@@ -93,7 +93,7 @@ User feedback from 2026-10-07, with the causes found while planning:
   4. Test the round trips.
 - **Invariants:** BMS export of existing fixtures is byte-identical.
 - **Reject/failure behavior:** a native file from a newer schema is rejected as today.
-- **Verify:** isolated `wormedit_core_tests` build passed. `ctest --test-dir /tmp/layers-oct7-headless-build --output-on-failure -R '^core\.|bms|native'` passed 1,496/1,496; `documentation.chart_editor_state` passed 1/1. Configured clang-tidy ran on all changed implementation and test sources; new functions are below complexity 25, with only existing complexity findings in previously large test cases and third-party nlohmann code. Root integration remains pending.
+- **Verify:** isolated `wormedit_core_tests` build passed. `ctest --test-dir /tmp/layers-oct7-headless-build --output-on-failure -R '^core\.|bms|native'` passed 1,496/1,496; `documentation.chart_editor_state` passed 1/1. Configured clang-tidy ran on all changed implementation and test sources; new functions are below complexity 25, with only existing complexity findings in previously large test cases and third-party nlohmann code. Root integrated `4c446cd`; application build and all 2,446/2,446 CTest cases pass. Independent synthetic probe passes distinct 04/06/07/0A kinds, exact retained bytes, normalized export, schema-3 provenance recovery and duplicate Layer 2 refusal. Regenerated evidence is under `/home/zardoru/devel/wormedit-scratch-builds/root-oct7/` (`layer2-integrated-build.log`, `layer2-integrated-ctest.log`, `layer2-probe.log`).
 - **Out of scope:** drawing (T-451).
 
 ## T-451 Show every BGA layer as its own lane and composite them in the preview

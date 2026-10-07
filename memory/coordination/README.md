@@ -1,9 +1,9 @@
 # Worktree coordination pilot
 
-Next proposed batch: [seek, playhead and rendering](oct7-seek-render-batch.md).
+Active batch: [seek, playhead and rendering](oct7-seek-render-batch.md).
 Audio owns T-276 + T-470 together; rendering owns measurement-first T-469.
-Two Sol 6.1 medium coordinators share narrow Luna medium tasks. Scope recorded;
-implementation not yet dispatched.
+Two Sol 6.1 medium coordinators share narrow Luna medium tasks. Implementation
+authorized and dispatched from `9d0e112`; root preserves external main edits.
 
 Completed in code 2026-10-07: [workspace and stem performance batch](oct7-performance-batch.md),
 T-444/T-440 reviewed and integrated with Sol 6.1 medium coordinators and Luna

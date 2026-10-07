@@ -1,7 +1,8 @@
 # Next seek, playhead and rendering batch
 
 User added T-276 to the proposed T-470/T-469 batch on 2026-10-07.
-This records the batch scope; implementation has not been dispatched.
+Implementation authorized and dispatched after the user said “Hit it.”
+Base commit: `9d0e112`.
 Root retains final integration authority over main.
 
 - Audio worktree: **T-276 + T-470**, one Sol 6.1 medium coordinator with
@@ -34,3 +35,23 @@ and removes completed workers/builds while retaining branches/logs. Existing
 main worktree modifications from other work are outside this planning change.
 Existing GUI restrictions persist; headless timing/operation evidence must
 not be described as live profiler percentages.
+
+## Active ownership
+
+- `/home/zardoru/devel/wormedit-seek-playhead-oct7`, branch
+  `batch/seek-playhead-oct7`: audio coordinator `/root/budget_recovery_61`.
+- `/home/zardoru/devel/wormedit-stem-refills-oct7`, branch
+  `batch/stem-refills-oct7`: renderer coordinator `/root/bga_preview_next_61`.
+- Existing Luna `/root/budget_recovery_61/budget_luna` is initially audio-owned;
+  explicit release and handoff are required before renderer tasks.
+
+Workers own only their card paths and recorded supporting extensions. Root
+owns build manifests, main integration and status documents. Main's existing
+modifications in `src/sys/frame_timing.cpp/.h`, `src/sys/main.cpp`,
+`src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp` and
+`tests/sys/frame_timing_tests.cpp` belong to other work and are excluded.
+A binary patch of that starting state is retained under durable scratch
+`wormedit-scratch-builds/seek-render-oct7/root/preexisting-main.patch`.
+Scratch/builds/logs are split into audio/render/root under that directory.
+Root will preserve those external modifications through integration and verify
+actual seek/zoom p50/p99 evidence without claiming unavailable live percentages.

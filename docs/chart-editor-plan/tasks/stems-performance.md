@@ -92,6 +92,8 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **Pending live gate:** no permitted desktop/window capture was available; headless production loading/projection validates code and placement, but does not establish the requested under-10% main-thread sample share during live zoom/skip playback. Repeat T-438's user-session capture to close that gate.
 - **Out of scope:** GPU refills (T-469).
 
+- **Root integrated evidence:** main `69abfa4` with T-444 `b5fb2b7`, normal application build and all **2,544/2,544** tests pass. Independent merged-main real Kick probe retains unchanged reference output and passes 14,560 bidirectional zero-tolerance peak comparisons within one pixel over nine windows. Original chart hashes are unchanged. Evidence: `wormedit-scratch-builds/perf-oct7/root`; both completed workers and about 4.5 GB of generated builds removed, branches/logs retained. Live sample-share gate remains pending.
+
 ## T-441 Keep long single-event stems in the window for their whole length
 
 - **Status:** done (2026-10-07; root integrated and verified)
@@ -165,6 +167,8 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **Worker verification:** normal isolated Release core/frame/converter and application-wiring objects build successfully. Required card filter passes 27/27 tests; focused cache gates pass 5 list cases, 26 assertions in 3 timing cases, and 3 branch cases with deep reference equality. Configured clang-tidy compares unchanged baseline warning sets; every new function/test remains at or below 25. Logs are under `wormedit-scratch-builds/perf-oct7/workspace`.
 - **Release frame evidence:** the same optimized binary reads the original CP932 dragback chart and runs production prep, flatten and Compose projection for 60 frames (10 warm-up), with three scroll snapshots. Observed combined p50 is 1.006070 ms through uncached reference paths and 0.296084 ms with caches; p99 is 1.762030 versus 0.753129 ms. The uncached Release reference was already below 3 ms. All three cached snapshots exactly equal both the same-binary reference and the original Debug snapshots, including 616 keysounds and 96 retained sidebar statement rows. List, asset index, timing payload and branch outline each build once. This measures production projection phases, not GUI sample percentages; the live <1% share capture remains pending under the established Xvfb restriction.
 - **Out of scope:** GPU work, BMSON stems (T-440).
+
+- **Root integrated evidence:** main `b5fb2b7` with T-440 `69abfa4`, normal application build and all **2,544/2,544** tests pass. Independent merged-main production Dragback snapshots at three scroll windows are byte-identical to the original Debug baseline. Evidence: `wormedit-scratch-builds/perf-oct7/root`; both completed workers and about 4.5 GB of generated builds removed, branches/logs retained. Live sample-share gate remains pending.
 
 ## T-445 Let Options raise the keysound memory budget
 

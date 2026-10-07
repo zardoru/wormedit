@@ -77,3 +77,49 @@ its card. Fresh stl_solst1 has no continuation points and is now entirely packed
 a detached dense benchmark may explicitly link its 181 retained channels as
 stems to represent a migrated legacy saved chart, clearly labeled as constructed
 intent. Fresh Kick remains the real visible-stem input. No original is changed.
+
+## Reviewed integration and final evidence
+
+T-444 worker `0301923` is integrated as `b5fb2b7`; T-440 worker `ef51e0f`
+is integrated as `69abfa4`. Root retained both independently appended test
+regions when resolving their shared-file conflict. Planning and supporting
+ownership refinements are committed as `a849bdc` and `2d399ca`.
+
+Normal combined main application build passes, and all **2,544/2,544 CTest
+cases pass** in 51.64 seconds. Root production probes against the merged main
+retain byte-identical Dragback snapshots at all three scroll windows and
+unchanged old/reference Kick projection. The new Kick path passes **14,560**
+bidirectional zero-amplitude-tolerance peak comparisons within one pixel over
+nine zoom/scroll windows. All three original chart hashes remain unchanged.
+Logs/probes/snapshots are retained under `wormedit-scratch-builds/perf-oct7/root`:
+`main-build.log`, `main-ctest.log`, `workspace-main-parity.log`,
+`stem-main-parity.log`, and `source-hash-check.log`.
+
+Optimized same-binary production evidence (worker logs retained):
+
+- Dragback observed combined projection p50 **1.006070 → 0.296084 ms**;
+  p99 **1.762030 → 0.753129 ms**. The uncached Release reference already met
+  the 3 ms target. Cached snapshots match both that reference and the
+  original root Debug baseline; all four caches build once in 60 frames.
+- Fresh Kick's nine stems at zoom 32: complete projection **137.77–192.60 →
+  1.17–1.18 ms**. One-pixel scrolling projects nine ring rows and reuses
+  5,409, building one shared clock row.
+- Constructed legacy dense-stem intent over stl's 181 real retained channels:
+  complete low-zoom projection **331.31–469.22 → 0.58–1.32 ms**. This is
+  explicitly not fresh-import classification, which remains packed.
+- Complete-pyramid benchmark quadruples source length with identical operation
+  counts. Partial/base-only pyramids preserve available-bin aggregation without
+  claiming the same bounded-bin cost. RMS now uses max matching-level bin RMS,
+  with edge refinement; exact edit/slice math and PCM sample-point paths stay
+  on the existing implementation. Peak placement and RMS policy have separate
+  explicit tests.
+
+The requested live main-thread shares (<1% for each workspace projection and
+<10% for stem projection) remain unmeasured under the existing GUI restriction;
+these headless phase measurements do not establish those percentages. Both cards
+are done in code with the live capture gate pending. Next performance work is
+T-470, then T-469 after measuring the integrated renderer, and T-471.
+
+Both clean, explicitly released worker trees and their generated builds/tmp
+directories are removed, reclaiming about **4.5 GB**. Only main remains
+registered; both worker branches and all durable logs/probes are retained.

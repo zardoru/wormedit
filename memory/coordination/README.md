@@ -1,5 +1,13 @@
 # Worktree coordination pilot
 
+Completed in code 2026-10-07: [workspace and stem performance batch](oct7-performance-batch.md),
+T-444/T-440 reviewed and integrated with Sol 6.1 medium coordinators and Luna
+medium contributions. Normal application build and **2,544/2,544** tests pass;
+merged real-chart output/peak placement checks pass. Release Dragback projection
+p50 1.006→0.296 ms; Kick low-zoom stems 138–193→1.18 ms. Live sample-share
+gates remain pending. Both workers and about 4.5 GB of generated builds removed;
+only main remains, branches/logs retained.
+
 Completed 2026-10-07: [hybrid BMSON and slice-span batch](oct7-hybrid-batch.md),
 T-457/T-458/T-460 and T-465 integrated with Sol 6.1 medium coordinators and
 Luna medium contributions. Root normal application build and **2,527/2,527**

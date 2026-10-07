@@ -82,6 +82,28 @@ auto stopped_playhead(const application_frame_projection_context_t& context)
     if (!frame || !end_frame) return std::nullopt;
     return stopped_playhead_t{*frame, std::max(*end_frame, *frame)};
 }
+
+auto prepare_frame_stems(const application_frame_projection_context_t& context,
+                         const flattened_workspace_t& flattened)
+    -> std::vector<const sound_channel_t*> {
+    if (!flattened.view.compose.visible || !flattened.view.compose.scene_available ||
+        !context.workspace.selected_chart || !context.compose_interaction_state ||
+        context.workspace.active_tab != workspace_tab_t::compose)
+        return {};
+    const auto chart = std::ranges::find(context.history.document.charts,
+        *context.workspace.selected_chart, &chart_document_t::id);
+    if (chart == context.history.document.charts.end() || chart->source_family != format_family_t::bmson)
+        return {};
+    const auto timing_matches = context.compose_scene_cache.chart == chart->id &&
+        context.compose_scene_cache.revision == context.history.document.revision &&
+        context.compose_scene_cache.marker_timing_index.has_value();
+    const auto* timing = timing_matches ? &*context.compose_scene_cache.marker_timing_index : nullptr;
+    const auto bindings = context.audition_sources.bindings();
+    return indexed_visible_stem_channels(context.compose_scene_cache.stem_index,
+        context.history.document, *chart, context.compose_interaction_state->cursor.measure,
+        stem_window_measures(flattened.view.compose.viewport_height_pixels,
+                             flattened.view.compose.pixels_per_standard_measure), bindings, timing);
+}
 #endif
 
 } // namespace
@@ -91,6 +113,9 @@ auto project_application_frame(application_frame_projection_context_t context)
     -> flattened_workspace_t {
     frame_phase_scope_t frame_projection(frame_phase_t::workspace);
     flattened_workspace_t flattened;
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    std::vector<const sound_channel_t*> frame_visible_stems;
+#endif
     static const std::string empty_legacy_feedback;
     {
         frame_phase_scope_t flatten(frame_phase_t::workspace_flatten);
@@ -258,6 +283,11 @@ auto project_application_frame(application_frame_projection_context_t context)
     {
         frame_phase_scope_t source_playhead(frame_phase_t::workspace_source_playhead);
     }
+    frame_visible_stems = prepare_frame_stems(context, flattened);
+    context.waveform_runtime.service_compose_stem_waveforms(
+        context.history.document, context.workspace, context.compose_scene_cache,
+        context.compose_interaction_state ? &*context.compose_interaction_state : nullptr,
+        frame_visible_stems);
     {
         frame_phase_scope_t bmson(frame_phase_t::workspace_bmson);
         populate_bmson_waveform_projection({
@@ -276,6 +306,7 @@ auto project_application_frame(application_frame_projection_context_t context)
             .stem_analysis = [&runtime = context.waveform_runtime](asset_id_t asset) {
                 return runtime.stem_waveform_analysis(asset);
             },
+            .visible_stems = std::span<const sound_channel_t* const>(frame_visible_stems),
         });
     }
 #endif

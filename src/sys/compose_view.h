@@ -11,6 +11,7 @@
 #include "sys/compose_sv_graph.h"
 #include "sys/compose_quantize_preview.h"
 #include "sys/compose_scroll_geometry.h"
+#include "sys/stem_waveform_window.h"
 #include "ui/compose_mode.h"
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/editor_scene.h>
@@ -129,6 +130,7 @@ struct compose_scene_cache_t {
         static_projection_extracted{}, static_projection_reused_frames{};
 
     std::optional<wormedit::measure_index_t> cached_measure_index;
+    wormedit::sys::stem_index_t stem_index;
     quantize_preview_cache_t quantize_preview;
     std::vector<WormUiComposeQuantizePresetView> quantize_preset_views;
     std::vector<WormUiComposeMeasureRowView> measure_row_views;

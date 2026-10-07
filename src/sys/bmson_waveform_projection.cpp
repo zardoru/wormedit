@@ -152,18 +152,11 @@ constexpr std::size_t maximum_stem_cuts = 4096;
 
 // The BGM lane a stem lives in: the lane whose source order is the channel's position (what moving
 // one of its taps to the BGM area creates), else the lane of its first BGM marker.
-auto stem_source_lane(const chart_document_t& chart, const sound_channel_t& channel) -> std::uint64_t {
-    const auto order = static_cast<std::size_t>(&channel - chart.sound_channels.data());
-    const auto by_order = std::ranges::find(chart.bgm_source_lanes, order, &bgm_source_lane_t::source_order);
-    if (by_order != chart.bgm_source_lanes.end()) return by_order->id.value;
-    for (const auto& measure : chart.measures)
-        for (const auto& event : measure.bgm_events)
-            if (event.sound_channel_event &&
-                std::ranges::any_of(channel.events, [&](const auto& source) {
-                    return source.id == *event.sound_channel_event;
-                }))
-                return event.source_lane.value;
-    return 0;
+auto indexed_stem_lane(const stem_index_t& index, const chart_document_t& chart,
+                       const sound_channel_t& channel) -> std::uint64_t {
+    if (chart.sound_channels.empty()) return 0;
+    const auto position = static_cast<std::size_t>(&channel - chart.sound_channels.data());
+    return position < index.channels.size() ? index.channels[position].source_lane : 0;
 }
 
 auto stem_ready(const bmson_waveform_projection_context_t& context) -> bool {
@@ -311,14 +304,22 @@ auto drawn_stems(const bmson_waveform_projection_context_t& context, const chart
     const auto* timing = cache_matches && context.cache.marker_timing_index
                              ? &*context.cache.marker_timing_index
                              : nullptr;
-    for (const auto* channel : visible_stem_channels(context.history.document, chart, context.interaction_state->cursor.measure,
+    std::vector<const sound_channel_t*> fallback_visible;
+    std::span<const sound_channel_t* const> visible;
+    if (context.visible_stems) visible = *context.visible_stems;
+    else {
+        fallback_visible = indexed_visible_stem_channels(context.cache.stem_index,
+            context.history.document, chart, context.interaction_state->cursor.measure,
             stem_window_measures(context.flattened.view.compose.viewport_height_pixels,
                                  context.flattened.view.compose.pixels_per_standard_measure),
-             context.audition_sources.bindings(), timing))
-        drawn.push_back({channel, stem_source_lane(chart, *channel), selected && selected->channel == channel->id});
+            context.audition_sources.bindings(), timing);
+        visible = fallback_visible;
+    }
+    for (const auto* channel : visible)
+        drawn.push_back({channel, indexed_stem_lane(context.cache.stem_index, chart, *channel), selected && selected->channel == channel->id});
     if (selected && std::ranges::none_of(drawn, [](const auto& item) { return item.selected; })) {
         const auto found = std::ranges::find(chart.sound_channels, selected->channel, &sound_channel_t::id);
-        if (found != chart.sound_channels.end()) drawn.push_back({&*found, stem_source_lane(chart, *found), true});
+        if (found != chart.sound_channels.end()) drawn.push_back({&*found, indexed_stem_lane(context.cache.stem_index, chart, *found), true});
     }
     if (drawn.size() > maximum_drawn_stems) drawn.resize(maximum_drawn_stems);
     return drawn;
@@ -362,9 +363,10 @@ void populate_stem_waveforms(const bmson_waveform_projection_context_t& context)
     cache.stem_waveforms.reserve(maximum_drawn_stems);
     const auto drawn = drawn_stems(context, *chart, selected);
     // Entries for channels that are no longer drawn go first.
-    std::erase_if(cache.stem_waveforms, [&](const auto& entry) {
-        return std::ranges::none_of(drawn, [&](const auto& item) { return item.channel->id == entry.channel; });
-    });
+    std::unordered_set<std::uint64_t> drawn_ids;
+    drawn_ids.reserve(drawn.size());
+    for (const auto& item : drawn) drawn_ids.insert(item.channel->id.value);
+    std::erase_if(cache.stem_waveforms, [&](const auto& entry) { return !drawn_ids.contains(entry.channel.value); });
     for (const auto& item : drawn) {
         auto& entry = stem_entry(cache, item.channel->id);
         entry.is_selected = item.selected;

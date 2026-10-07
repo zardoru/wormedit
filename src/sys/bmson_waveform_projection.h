@@ -8,6 +8,8 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
+#include <span>
 
 namespace wormedit::sys {
 
@@ -32,6 +34,7 @@ struct bmson_waveform_projection_context_t {
     // Finished analysis of a stem asset, from the analysis runtime; empty disables stem drawing.
     std::function<std::shared_ptr<const wormedit::audio::waveform_analysis_result_t>(wormedit::asset_id_t)>
         stem_analysis{};
+    std::optional<std::span<const wormedit::sound_channel_t* const>> visible_stems{};
 };
 
 void populate_bmson_waveform_projection(const bmson_waveform_projection_context_t& context);

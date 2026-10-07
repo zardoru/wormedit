@@ -6,6 +6,7 @@
 #include "sys/stem_waveform_window.h"
 
 #include <algorithm>
+#include <unordered_set>
 #include <span>
 
 namespace wormedit::sys::runtime {
@@ -135,7 +136,15 @@ void waveform_analysis_t::service(const song_document_t& document,
     service_workspace_waveform(workspace);
     service_channel_waveform(document, workspace, compose_scene_cache,
                              compose_interaction_state);
-    service_stem_waveforms(document, workspace, compose_scene_cache, compose_interaction_state);
+}
+
+void waveform_analysis_t::service_compose_stem_waveforms(
+    const song_document_t& document, const workspace_controller_t& workspace,
+    compose_scene_cache_t& compose_scene_cache,
+    const editor_interaction_state_t* compose_interaction_state,
+    std::span<const sound_channel_t* const> visible_stems) {
+    service_stem_waveforms(document, workspace, compose_scene_cache,
+                           compose_interaction_state, visible_stems);
 }
 
 void waveform_analysis_t::request_selected_waveform(std::optional<asset_id_t> asset,
@@ -352,18 +361,17 @@ auto waveform_analysis_t::wanted_stem_assets(const song_document_t& document,
                                              const workspace_controller_t& workspace,
                                              std::optional<asset_id_t> selected_channel_asset,
                                              const editor_interaction_state_t* interaction,
-                                             double height, const timing_index_t* cached_timing) const
+                                             std::span<const sound_channel_t* const> visible_stems) const
     -> std::vector<asset_id_t> {
     std::vector<asset_id_t> wanted;
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart || !interaction) return wanted;
     const auto chart = std::ranges::find(document.charts, *workspace.selected_chart, &chart_document_t::id);
     if (chart == document.charts.end() || chart->source_family != format_family_t::bmson) return wanted;
-    for (const auto* channel : visible_stem_channels(document, *chart, interaction->cursor.measure,
-            stem_window_measures(height, interaction->pixels_per_standard_measure),
-            sources_.bindings(), cached_timing)) {
+    std::unordered_set<std::uint64_t> seen;
+    for (const auto* channel : visible_stems) {
         const auto asset = channel->source_clip.source;
         if (!asset || asset == workspace.transport.audio_asset || asset == selected_channel_asset ||
-            std::ranges::find(wanted, asset) != wanted.end()) continue;
+            !seen.insert(asset.value).second) continue;
         if (wanted.size() >= maximum_stem_waveforms) break;
         wanted.push_back(asset);
     }
@@ -372,9 +380,15 @@ auto waveform_analysis_t::wanted_stem_assets(const song_document_t& document,
 
 // Collects finished stem analyses and frees the slots of stems that are no longer wanted.
 void waveform_analysis_t::collect_stem_waveforms(const std::vector<asset_id_t>& wanted) {
+    const std::unordered_set<std::uint64_t> wanted_ids = [&] {
+        std::unordered_set<std::uint64_t> ids;
+        ids.reserve(wanted.size());
+        for (const auto asset : wanted) ids.insert(asset.value);
+        return ids;
+    }();
     for (auto& slot : stem_slots_) {
         if (!slot->asset) continue;
-        if (std::ranges::find(wanted, *slot->asset) == wanted.end()) {
+        if (!wanted_ids.contains(slot->asset->value)) {
             slot->job.cancel();
             slot->asset.reset();
             continue;
@@ -420,20 +434,17 @@ void waveform_analysis_t::start_stem_waveforms(const std::vector<asset_id_t>& wa
 void waveform_analysis_t::service_stem_waveforms(
     const song_document_t& document, const workspace_controller_t& workspace,
     compose_scene_cache_t& compose_scene_cache,
-    const editor_interaction_state_t* compose_interaction_state) {
+    const editor_interaction_state_t* compose_interaction_state,
+    std::span<const sound_channel_t* const> visible_stems) {
     const auto selected = selected_channel_asset(document, workspace, compose_scene_cache,
                                                  compose_interaction_state);
-    const auto height = compose_scene_cache.interaction_view ? compose_scene_cache.interaction_view->viewport_height_pixels
-                                                              : 720.0;
-    const auto cache_matches = workspace.selected_chart &&
-        compose_scene_cache.chart == *workspace.selected_chart &&
-        compose_scene_cache.revision == document.revision;
-    const auto* timing = cache_matches && compose_scene_cache.marker_timing_index
-        ? &*compose_scene_cache.marker_timing_index : nullptr;
-    const auto wanted = wanted_stem_assets(document, workspace, selected, compose_interaction_state, height, timing);
-    const auto is_wanted = [&](asset_id_t asset) { return std::ranges::find(wanted, asset) != wanted.end(); };
-    std::erase_if(stem_analyses_, [&](const auto& entry) { return !is_wanted(entry.first); });
-    std::erase_if(stem_attempted_, [&](asset_id_t asset) { return !is_wanted(asset); });
+    const auto wanted = wanted_stem_assets(document, workspace, selected, compose_interaction_state,
+                                           visible_stems);
+    std::unordered_set<std::uint64_t> wanted_ids;
+    wanted_ids.reserve(wanted.size());
+    for (const auto asset : wanted) wanted_ids.insert(asset.value);
+    std::erase_if(stem_analyses_, [&](const auto& entry) { return !wanted_ids.contains(entry.first.value); });
+    std::erase_if(stem_attempted_, [&](asset_id_t asset) { return !wanted_ids.contains(asset.value); });
     collect_stem_waveforms(wanted);
     start_stem_waveforms(wanted);
 }

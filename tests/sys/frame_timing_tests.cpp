@@ -927,6 +927,108 @@ TEST_CASE("BMSON stems other than the selected one get their own lane rows or a 
     CHECK(fixture.flattened.view.compose.stem_waveforms[0].pending);
     CHECK(fixture.flattened.view.compose.stem_waveforms[0].row_count == 0);
 }
+
+namespace {
+void register_prepared_stem_source(channel_projection_fixture_t& fixture,
+                                  std::string_view filename, std::string_view version) {
+    fixture.sources.clear();
+    const auto path = std::filesystem::path(__FILE__).parent_path().parent_path() /
+                      "fixtures" / "audio" / filename;
+    REQUIRE(fixture.sources.register_source({*fixture.asset, path,
+        {"prepared-span", std::string(version)}}));
+}
+
+void configure_prepared_stem_frame(channel_projection_fixture_t& fixture) {
+    fixture.history.document.audio_assets.back().stream = {};
+    register_prepared_stem_source(fixture, "sliced-seek-source.ogg", "long");
+    auto& chart = fixture.history.document.charts.front();
+    chart.sound_channels[0].events.front().position.measure = measure_id_t{1};
+    chart.sound_channels[1].events.front().position.measure = measure_id_t{1};
+    fixture.interaction.cursor = {measure_id_t{4}, 0};
+    fixture.flattened.view.compose.pixels_per_standard_measure = 200;
+    fixture.flattened.view.compose.viewport_height_pixels = 200;
+}
+
+struct prepared_stem_frame_t {
+    std::vector<const sound_channel_t*> channels;
+    std::vector<object_id_t> ids;
+    std::vector<audio::decoded_source_binding_t> bindings;
+    std::uint64_t selection_build_count{};
+};
+
+auto prepare_stem_frame(channel_projection_fixture_t& fixture) -> prepared_stem_frame_t {
+    const auto bindings = fixture.sources.bindings();
+    const auto& chart = fixture.history.document.charts.front();
+    const auto prepared = indexed_visible_stem_channels(fixture.cache.stem_index,
+        fixture.history.document, chart, fixture.interaction.cursor.measure, 0,
+        bindings, &*fixture.cache.marker_timing_index);
+    REQUIRE(prepared.size() == 2);
+    CHECK(fixture.cache.stem_index.cursor == measure_id_t{4});
+    CHECK(fixture.cache.stem_index.window == 0);
+    return {prepared, {prepared[0]->id, prepared[1]->id},
+            fixture.cache.stem_index.bindings, fixture.cache.stem_index.selection_build_count};
+}
+
+auto shorten_prepared_stem_source(channel_projection_fixture_t& fixture,
+                                 const prepared_stem_frame_t& prepared)
+    -> std::vector<audio::decoded_source_binding_t> {
+    register_prepared_stem_source(fixture, "silence.ogg", "short");
+    const auto bindings = fixture.sources.bindings();
+    REQUIRE(bindings != prepared.bindings);
+    REQUIRE(bindings.front().asset == *fixture.asset);
+    REQUIRE(bindings.front().source_frame_count != prepared.bindings.front().source_frame_count);
+    return bindings;
+}
+
+void consume_prepared_stem_frame(channel_projection_fixture_t& fixture,
+                                const prepared_stem_frame_t& prepared) {
+    const auto channels = std::span<const sound_channel_t* const>(prepared.channels);
+    runtime::waveform_analysis_t runtime{fixture.sources};
+    runtime.service_compose_stem_waveforms(fixture.history.document, fixture.workspace,
+        fixture.cache, &fixture.interaction, channels);
+    const bmson_waveform_projection_context_t context{fixture.flattened, fixture.history,
+        fixture.workspace, &fixture.interaction, fixture.cache, fixture.sources,
+        {fixture.asset, fixture.channel_analysis}, {fixture.asset, fixture.channel_analysis}, 1,
+        [](asset_id_t) { return std::shared_ptr<const audio::waveform_analysis_result_t>{}; },
+        channels};
+    populate_bmson_waveform_projection(context);
+}
+
+void check_prepared_stem_channels(const channel_projection_fixture_t& fixture,
+                                  const prepared_stem_frame_t& prepared) {
+    REQUIRE(fixture.cache.stem_waveforms.size() == prepared.ids.size());
+    for (std::size_t i = 0; i < prepared.ids.size(); ++i)
+        CHECK(fixture.cache.stem_waveforms[i].channel == prepared.ids[i]);
+}
+
+void check_prepared_stem_cache(const channel_projection_fixture_t& fixture,
+                               const prepared_stem_frame_t& prepared) {
+    CHECK(fixture.cache.stem_index.bindings == prepared.bindings);
+    CHECK(fixture.cache.stem_index.selected.size() == prepared.ids.size());
+    CHECK(fixture.cache.stem_index.cursor == measure_id_t{4});
+    CHECK(fixture.cache.stem_index.window == 0);
+    CHECK(fixture.cache.stem_index.selection_build_count == prepared.selection_build_count);
+}
+} // namespace
+
+TEST_CASE("prepared BMSON stem list stays authoritative across consumers and binding changes",
+          "[sys][waveform-projection][bmson][stems][frame-timing]") {
+    channel_projection_fixture_t fixture;
+    configure_prepared_stem_frame(fixture);
+    const auto prepared = prepare_stem_frame(fixture);
+    const auto changed_bindings = shorten_prepared_stem_source(fixture, prepared);
+    consume_prepared_stem_frame(fixture, prepared);
+    check_prepared_stem_channels(fixture, prepared);
+    check_prepared_stem_cache(fixture, prepared);
+
+    stem_index_t next_frame_index;
+    const auto& chart = fixture.history.document.charts.front();
+    const auto next_frame = indexed_visible_stem_channels(next_frame_index,
+        fixture.history.document, chart, fixture.interaction.cursor.measure, 0,
+        changed_bindings, &*fixture.cache.marker_timing_index);
+    CHECK(next_frame.empty());
+}
+
 namespace {
 auto reference_frame(const timing_index_t& timing, long double row, bool end,
                      const audio::waveform_t& waveform) -> std::uint64_t {

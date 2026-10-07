@@ -1,6 +1,8 @@
 #include "sys/stem_waveform_window.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
+#include <iostream>
 
 using namespace wormedit;
 
@@ -113,4 +115,222 @@ TEST_CASE("a continuation consumes the remaining audio from its restart",
     // The first stem ends near measure 81; the second restart remains active at measure 85.
     CHECK(sys::visible_stem_channels(song, chart, measure_id_t{85}, 0).size() == 1);
     CHECK(sys::visible_stem_channels(song, chart, measure_id_t{90}, 0).size() == 1);
+}
+
+namespace {
+auto make_indexed_stem_fixture() -> std::pair<song_document_t, std::vector<audio::decoded_source_binding_t>> {
+    song_document_t song;
+    song.id = song_id_t{7};
+    song.revision = 9;
+    song.audio_assets = {{.id = asset_id_t{1}, .stream = {44'100, 2, 300'000, true}}};
+    auto& chart = song.charts.emplace_back();
+    chart.id = chart_id_t{44};
+    chart.divisions_per_standard_measure = 960;
+    chart.bpms = {{.id = object_id_t{900}, .position = {measure_id_t{1}, 0},
+                   .beats_per_minute = {120, 1}}};
+    for (std::uint64_t m = 1; m <= 32; ++m) chart.measures.push_back({.id = measure_id_t{m}});
+    for (std::uint64_t i = 0; i < 181; ++i) {
+        auto events = std::vector<sound_channel_event_t>{{.id = object_id_t{2000 + i},
+            .position = {measure_id_t{1 + (i % 32)}, 0}}};
+        if (i == 180) events.push_back({.id = object_id_t{3000},
+            .position = {measure_id_t{1}, 0}}); // Out of order stays conservatively visible.
+        chart.sound_channels.push_back({.id = object_id_t{1000 + i},
+            .source_clip = {.source = asset_id_t{1}},
+            .events = std::move(events)});
+    }
+    chart.bgm_source_lanes = {{.id = object_id_t{9100}, .source_order = 1}};
+    chart.warps = {{.id = object_id_t{9300}, .span = {
+        .begin = {measure_id_t{10}, 0}, .end = {measure_id_t{11}, 0}}}};
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{9200},
+        .position = {measure_id_t{1}, 0}, .source_lane = object_id_t{9101},
+        .sound_channel_event = object_id_t{2000}});
+    std::vector<audio::decoded_source_binding_t> bindings{{.asset = asset_id_t{1},
+        .source_sample_rate = 44'100, .source_frame_count = 300'000}};
+    return {std::move(song), std::move(bindings)};
+}
+
+void expect_index_matches_reference(sys::stem_index_t& index, const song_document_t& song,
+    const chart_document_t& chart, measure_id_t measure, std::size_t window,
+    const std::vector<audio::decoded_source_binding_t>& bindings) {
+    const auto expected = sys::visible_stem_channels(song, chart, measure, window, bindings);
+    const auto actual = sys::indexed_visible_stem_channels(index, song, chart, measure, window, bindings);
+    REQUIRE(actual.size() == expected.size());
+    for (std::size_t i = 0; i < actual.size(); ++i) CHECK(actual[i]->id == expected[i]->id);
+}
+
+void check_generated_windows(sys::stem_index_t& index, const song_document_t& song,
+    const chart_document_t& chart, const std::vector<audio::decoded_source_binding_t>& bindings) {
+    for (std::uint64_t measure = 1; measure <= 32; ++measure)
+        expect_index_matches_reference(index, song, chart, measure_id_t{measure}, 3, bindings);
+    expect_index_matches_reference(index, song, chart, measure_id_t{10}, 0, bindings);
+}
+
+void check_selection_reuse(sys::stem_index_t& index, const song_document_t& song,
+    const chart_document_t& chart, const std::vector<audio::decoded_source_binding_t>& bindings) {
+    static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{10}, 0, bindings));
+    const auto built_at_warp = index.selection_build_count;
+    static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{10}, 0, bindings));
+    CHECK(index.selection_build_count == built_at_warp);
+    static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{11}, 0, bindings));
+    CHECK(index.selection_build_count == built_at_warp + 1);
+    static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{32}, 3, bindings));
+    const auto cached_selection = index.selected;
+    const auto build_count = index.selection_build_count;
+    const auto same_window = sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{32}, 3, bindings);
+    CHECK(index.selected == cached_selection);
+    CHECK(index.selection_build_count == build_count);
+    CHECK(same_window.size() == cached_selection.size());
+
+}
+
+void check_binding_refresh(sys::stem_index_t& index, const song_document_t& song,
+    const chart_document_t& chart, std::vector<audio::decoded_source_binding_t>& bindings) {
+    bindings.front().source_frame_count = 44'100;
+    expect_index_matches_reference(index, song, chart, measure_id_t{32}, 3, bindings);
+    CHECK(index.bindings == bindings);
+    CHECK(index.channels[0].source_lane == 9101);
+    CHECK(index.channels[1].source_lane == 9100);
+}
+
+void check_revision_and_document_invalidation(sys::stem_index_t& index, song_document_t& song,
+    const chart_document_t& chart, const std::vector<audio::decoded_source_binding_t>& bindings) {
+    const auto short_selection_size = index.selected.size();
+    ++song.revision;
+    const auto revision_result = sys::indexed_visible_stem_channels(index, song, chart,
+        measure_id_t{32}, 3, bindings);
+    CHECK(index.revision == song.revision);
+    CHECK(revision_result.size() == short_selection_size);
+
+    song_document_t replacement;
+    replacement.id = song_id_t{8};
+    replacement.revision = song.revision;
+    auto& replacement_chart = replacement.charts.emplace_back();
+    replacement_chart.id = chart.id;
+    replacement_chart.divisions_per_standard_measure = 960;
+    replacement_chart.measures = {{.id = measure_id_t{1}}};
+    replacement_chart.bpms = {{.id = object_id_t{901}, .position = {measure_id_t{1}, 0},
+                               .beats_per_minute = {120, 1}}};
+    replacement_chart.sound_channels = {{.id = object_id_t{3000}, .events = {
+        {.id = object_id_t{3001}, .position = {measure_id_t{1}, 0}}}}};
+    const auto result = sys::indexed_visible_stem_channels(index, replacement,
+        replacement_chart, measure_id_t{1}, 0, {});
+    REQUIRE(result.size() == 1);
+    CHECK(result.front()->id == object_id_t{3000});
+    CHECK(index.document == replacement.id);
+}
+
+void expand_stem_benchmark_chart(chart_document_t& chart) {
+    for (std::size_t channel = 0; channel < chart.sound_channels.size(); ++channel) {
+        auto& events = chart.sound_channels[channel].events;
+        for (std::uint64_t measure = 1; measure <= 32; ++measure)
+            events.push_back({.id = object_id_t{50'000 + channel * 32 + measure},
+                .position = {measure_id_t{measure}, 0}});
+        std::ranges::sort(events, [](const auto& left, const auto& right) {
+            return std::tie(left.position.measure.value, left.position.row) <
+                   std::tie(right.position.measure.value, right.position.row);
+        });
+    }
+}
+
+void verify_stem_benchmark_windows(sys::stem_index_t& index,
+    const song_document_t& document, const chart_document_t& chart,
+    const std::vector<audio::decoded_source_binding_t>& bindings) {
+    for (std::uint64_t measure = 1; measure <= 32; ++measure) {
+        const auto expected = sys::visible_stem_channels(document, chart,
+            measure_id_t{measure}, 3, bindings);
+        const auto actual = sys::indexed_visible_stem_channels(index, document, chart,
+            measure_id_t{measure}, 3, bindings);
+        REQUIRE(actual.size() == expected.size());
+        for (std::size_t i = 0; i < actual.size(); ++i)
+            CHECK(actual[i]->id == expected[i]->id);
+    }
+}
+
+auto time_stem_benchmark_queries(sys::stem_index_t& index, const song_document_t& document,
+    const chart_document_t& chart, const std::vector<audio::decoded_source_binding_t>& bindings,
+    bool indexed) -> double {
+    auto maximum_ms = 0.0;
+    for (int run = 0; run < 5; ++run) {
+        const auto start = std::chrono::steady_clock::now();
+        for (std::uint64_t measure = 1; measure <= 32; ++measure) {
+            if (indexed) static_cast<void>(sys::indexed_visible_stem_channels(index, document,
+                chart, measure_id_t{measure}, 3, bindings));
+            else static_cast<void>(sys::visible_stem_channels(document, chart,
+                measure_id_t{measure}, 3, bindings));
+        }
+        maximum_ms = std::max(maximum_ms, std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - start).count());
+    }
+    return maximum_ms;
+}
+} // namespace
+
+TEST_CASE("indexed stem visibility matches the compatibility scan and reuses its frame result",
+          "[sys][stem][index]") {
+    auto [song, bindings] = make_indexed_stem_fixture();
+    const auto& chart = song.charts.front();
+    sys::stem_index_t index;
+    check_generated_windows(index, song, chart, bindings);
+    check_selection_reuse(index, song, chart, bindings);
+    check_binding_refresh(index, song, chart, bindings);
+    check_revision_and_document_invalidation(index, song, chart, bindings);
+}
+
+TEST_CASE("indexed stem lane fallback follows chart encounter order",
+          "[sys][stem][index]") {
+    auto [song, bindings] = make_indexed_stem_fixture();
+    auto& chart = song.charts.front();
+    chart.sound_channels[0].events = {
+        {.id = object_id_t{2000}, .position = {measure_id_t{2}, 0}},
+        {.id = object_id_t{3001}, .position = {measure_id_t{1}, 0}}};
+    chart.measures[0].bgm_events = {{.id = object_id_t{9201},
+        .position = {measure_id_t{1}, 0}, .source_lane = object_id_t{9102},
+        .sound_channel_event = object_id_t{3001}}};
+    chart.measures[1].bgm_events = {{.id = object_id_t{9202},
+        .position = {measure_id_t{2}, 0}, .source_lane = object_id_t{9103},
+        .sound_channel_event = object_id_t{2000}}};
+    chart.bgm_source_lanes.clear();
+
+    sys::stem_index_t index;
+    static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart,
+        measure_id_t{1}, 0, bindings));
+    CHECK(index.channels[0].source_lane == 9102);
+}
+
+TEST_CASE("expired continuation events do not make a stem visible again",
+          "[sys][stem][continuation]") {
+    song_document_t song;
+    song.audio_assets = {{.id = asset_id_t{1}, .stream = {44'100, 2, 44'100, true}}};
+    auto& chart = song.charts.emplace_back();
+    chart.divisions_per_standard_measure = 960;
+    for (std::uint64_t i = 1; i <= 24; ++i) chart.measures.push_back({.id = measure_id_t{i}});
+    chart.bpms = {{.id = object_id_t{900}, .position = {measure_id_t{1}, 0},
+                   .beats_per_minute = {120, 1}}};
+    chart.sound_channels = {{.id = object_id_t{1}, .source_clip = {.source = asset_id_t{1}},
+        .events = {{.id = object_id_t{2}, .position = {measure_id_t{1}, 0}},
+                   {.id = object_id_t{3}, .position = {measure_id_t{20}, 0}, .continuation = true}}}};
+    const auto expected = sys::visible_stem_channels(song, chart, measure_id_t{20}, 0);
+    sys::stem_index_t index;
+    const auto actual = sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{20}, 0, {});
+    CHECK(actual.size() == expected.size());
+    CHECK(actual.empty());
+}
+
+TEST_CASE("warm indexed stem selection beats the compatibility scan for 181 stems",
+          "[.performance][sys][stem]") {
+    auto [song, bindings] = make_indexed_stem_fixture();
+    auto& chart = song.charts.front();
+    expand_stem_benchmark_chart(chart);
+    const auto& document = song;
+    const auto& selected_chart = song.charts.front();
+    sys::stem_index_t index;
+    static_cast<void>(sys::indexed_visible_stem_channels(index, document, selected_chart,
+        measure_id_t{1}, 0, bindings));
+    verify_stem_benchmark_windows(index, document, selected_chart, bindings);
+    const auto indexed_ms = time_stem_benchmark_queries(index, document, selected_chart, bindings, true);
+    const auto reference_ms = time_stem_benchmark_queries(index, document, selected_chart, bindings, false);
+    std::cout << "warm 181-stem selection: indexed max-of-5=" << indexed_ms
+              << " ms, reference max-of-5=" << reference_ms << " ms\n";
+    CHECK(indexed_ms < 2'000.0);
+    CHECK(indexed_ms < reference_ms);
 }

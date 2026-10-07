@@ -45,6 +45,10 @@ public:
     void service(const song_document_t& document, const workspace_controller_t& workspace,
                  compose_scene_cache_t& compose_scene_cache,
                  const editor_interaction_state_t* compose_interaction_state);
+    void service_compose_stem_waveforms(const song_document_t& document,
+        const workspace_controller_t& workspace, compose_scene_cache_t& compose_scene_cache,
+        const editor_interaction_state_t* compose_interaction_state,
+        std::span<const sound_channel_t* const> visible_stems);
 
     void service_compose_detail(std::optional<asset_id_t> asset,
                                 std::optional<audio::aligned_waveform_window_t> window,
@@ -113,7 +117,8 @@ private:
     void service_stem_waveforms(const song_document_t& document,
                                 const workspace_controller_t& workspace,
                                 compose_scene_cache_t& compose_scene_cache,
-                                const editor_interaction_state_t* compose_interaction_state);
+                                const editor_interaction_state_t* compose_interaction_state,
+                                std::span<const sound_channel_t* const> visible_stems);
     void collect_stem_waveforms(const std::vector<asset_id_t>& wanted);
     void start_stem_waveforms(const std::vector<asset_id_t>& wanted);
     [[nodiscard]] auto stem_needs_analysis(asset_id_t asset) -> bool;
@@ -121,8 +126,7 @@ private:
                                           const workspace_controller_t& workspace,
                                           std::optional<asset_id_t> selected_channel_asset,
                                           const editor_interaction_state_t* interaction,
-                                          double viewport_height_pixels,
-                                          const timing_index_t* cached_timing) const
+                                          std::span<const sound_channel_t* const> visible_stems) const
         -> std::vector<asset_id_t>;
     void service_channel_waveform(const song_document_t& document,
                                   const workspace_controller_t& workspace,

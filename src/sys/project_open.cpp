@@ -1,5 +1,6 @@
 #include "sys/project_open.h"
 
+#include <wormedit/core/bmson_layer_defaults.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bmson.h>
@@ -374,6 +375,11 @@ void parse_selected_file(std::string_view extension, const std::string& source,
         options.asset_base_directory = result.asset_base;
         take_parsed_document(parse_bmson_bytes(bytes, std::move(options)), "BMSON chart", result);
         if (result.document) {
+            const auto initialized = initialize_bmson_sound_channel_layers(
+                result.document->charts.front());
+            if (!initialized.error.empty())
+                result.warnings.push_back("BMSON semantic layers were not initialized: " +
+                                          initialized.error);
             resolve_audio_assets(*result.document, result.asset_base, result.warnings, "BMSON");
             resolve_visual_assets(*result.document, result.asset_base, result.warnings, "BMSON");
         }

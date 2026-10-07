@@ -17,11 +17,14 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -96,6 +99,99 @@ void check_single_audio_asset(const wormedit::sys::project_open_result_t& opened
     CHECK(opened.document->resources.front().name == authored_name);
 }
 
+auto bmson_layer_source(std::string channel_name = "audio/shared.wav") -> std::string {
+    using json = nlohmann::json;
+    const auto note = [](std::uint32_t x, std::uint32_t y) {
+        return nlohmann::json{{"x", x}, {"y", y}, {"l", 0}, {"c", false}};
+    };
+    const json channels{
+        {{"name", channel_name}, {"notes", json::array({note(1, 0), note(0, 240)})}},
+        {{"name", channel_name}, {"notes", json::array({note(2, 480), note(0, 720)})}},
+    };
+    const json source{
+        {"version", "1.0.0"},
+        {"info", {{"title", "Layer import"}, {"artist", "a"}, {"genre", "g"},
+                   {"mode_hint", "beat-7k"}, {"chart_name", ""}, {"level", 1},
+                   {"init_bpm", 120}, {"resolution", 240}, {"judge_rank", 100},
+                   {"total", 100}, {"subtitle", ""}, {"subartists", json::array()},
+                   {"back_image", ""}, {"banner_image", ""}, {"eyecatch_image", ""}}},
+        {"lines", json::array({{{"y", 0}}, {{"y", 960}}})},
+        {"bpm_events", json::array()}, {"stop_events", json::array()},
+        {"sound_channels", channels},
+    };
+    return source.dump();
+}
+
+auto layer_for_sound_event(const wormedit::chart_document_t& chart,
+                           wormedit::object_id_t event_id)
+    -> std::optional<wormedit::layer_id_t> {
+    for (std::size_t index = 0; index < chart.sound_channels.size(); ++index) {
+        const auto& events = chart.sound_channels[index].events;
+        if (std::ranges::find(events, event_id, &wormedit::sound_channel_event_t::id) !=
+            events.end())
+            return wormedit::layer_id_t{index + 1};
+    }
+    return std::nullopt;
+}
+
+auto channel_membership_matches(const wormedit::chart_document_t& chart) -> bool {
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            if (note.sound_channel_event) {
+                const auto layer = layer_for_sound_event(chart, *note.sound_channel_event);
+                if (!layer || note.semantic_layers != std::vector{*layer}) return false;
+            }
+        }
+        for (const auto& event : measure.bgm_events) {
+            if (event.sound_channel_event) {
+                const auto layer = layer_for_sound_event(chart, *event.sound_channel_event);
+                if (!layer || event.semantic_layers != std::vector{*layer}) return false;
+            }
+        }
+    }
+    return true;
+}
+
+auto same_layers_and_membership(const wormedit::chart_document_t& left,
+                               const wormedit::chart_document_t& right) -> bool {
+    if (left.semantic_layers.size() != right.semantic_layers.size() ||
+        left.measures.size() != right.measures.size()) return false;
+    for (std::size_t index = 0; index < left.semantic_layers.size(); ++index) {
+        const auto& a = left.semantic_layers[index];
+        const auto& b = right.semantic_layers[index];
+        if (a.id != b.id || a.name != b.name || a.color != b.color ||
+            a.visible != b.visible || a.locked != b.locked) return false;
+    }
+    for (std::size_t index = 0; index < left.measures.size(); ++index) {
+        const auto& a = left.measures[index];
+        const auto& b = right.measures[index];
+        if (a.notes.size() != b.notes.size() || a.bgm_events.size() != b.bgm_events.size())
+            return false;
+        for (std::size_t object = 0; object < a.notes.size(); ++object)
+            if (a.notes[object].semantic_layers != b.notes[object].semantic_layers) return false;
+        for (std::size_t object = 0; object < a.bgm_events.size(); ++object)
+            if (a.bgm_events[object].semantic_layers != b.bgm_events[object].semantic_layers)
+                return false;
+    }
+    return true;
+}
+
+void clear_layer_membership(wormedit::song_document_t& document) {
+    for (auto& chart : document.charts) {
+        chart.semantic_layers.clear();
+        for (auto& measure : chart.measures) {
+            for (auto& note : measure.notes) note.semantic_layers.clear();
+            for (auto& event : measure.bgm_events) event.semantic_layers.clear();
+        }
+    }
+}
+
+auto has_default_layer_warning(const wormedit::sys::project_open_result_t& opened) -> bool {
+    return std::ranges::any_of(opened.warnings, [](const auto& warning) {
+        return warning.find("BMSON semantic layers were not initialized:") != std::string::npos;
+    });
+}
+
 auto opened_stepmania_music_is_selected() -> bool {
     const auto opened = wormedit::sys::open_project_file(
         fixture("stepmania", "matched-timing.sm"));
@@ -141,6 +237,65 @@ void check_bmson_condition(const T& condition) { CHECK(static_cast<bool>(conditi
 template <typename T>
 void require_bmson_condition(const T& condition) { REQUIRE(static_cast<bool>(condition)); }
 } // namespace
+
+TEST_CASE("BMSON import creates channel layers and native open preserves authored layer state",
+          "[integration][sys][project-open][bmson-layer]") {
+    temporary_project_file_t source{".bmson"};
+    source.write(bmson_layer_source());
+    const auto imported = wormedit::sys::open_project_file(source.path);
+    INFO(imported.error);
+    require_bmson_condition(imported.document);
+    require_bmson_condition(imported.document->charts.size() == 1);
+    const auto& chart = imported.document->charts.front();
+    require_bmson_condition(chart.sound_channels.size() == 2);
+    check_bmson_condition(chart.sound_channels[0].source_clip.source ==
+                          chart.sound_channels[1].source_clip.source);
+    require_bmson_condition(chart.semantic_layers.size() == 2);
+    check_bmson_condition(chart.semantic_layers[0].name == "shared");
+    check_bmson_condition(chart.semantic_layers[1].name == "shared");
+    check_bmson_condition(chart.semantic_layers[0].id != chart.semantic_layers[1].id);
+    check_bmson_condition(chart.semantic_layers[0].color != chart.semantic_layers[1].color);
+    check_bmson_condition(channel_membership_matches(chart));
+
+    const auto with_layers = wormedit::write_bmson(*imported.document);
+    require_bmson_condition(with_layers.json);
+    auto without_layers = *imported.document;
+    clear_layer_membership(without_layers);
+    const auto without_layer_data = wormedit::write_bmson(without_layers);
+    require_bmson_condition(without_layer_data.json);
+    check_bmson_condition(with_layers.json == without_layer_data.json);
+
+    temporary_project_file_t native{".wormedit"};
+    const auto saved = wormedit::write_native_project(*imported.document);
+    require_bmson_condition(saved.bytes);
+    native.write(*saved.bytes);
+    const auto reopened = wormedit::sys::open_project_file(native.path);
+    INFO(reopened.error);
+    require_bmson_condition(reopened.document);
+    check_bmson_condition(reopened.native_project);
+    check_bmson_condition(same_layers_and_membership(
+        chart, reopened.document->charts.front()));
+
+    temporary_project_file_t native_without_layers{".wormedit"};
+    const auto unlayered_saved = wormedit::write_native_project(without_layers);
+    require_bmson_condition(unlayered_saved.bytes);
+    native_without_layers.write(*unlayered_saved.bytes);
+    const auto unlayered_reopened = wormedit::sys::open_project_file(native_without_layers.path);
+    INFO(unlayered_reopened.error);
+    require_bmson_condition(unlayered_reopened.document);
+    check_bmson_condition(unlayered_reopened.document->charts.front().semantic_layers.empty());
+}
+
+TEST_CASE("BMSON import warns and remains open when semantic layer defaults cannot be named",
+          "[integration][sys][project-open][bmson-layer]") {
+    temporary_project_file_t source{".bmson"};
+    source.write(bmson_layer_source(std::string(4097, 'x') + ".wav"));
+    const auto opened = wormedit::sys::open_project_file(source.path);
+    INFO(opened.error);
+    require_bmson_condition(opened.document);
+    check_bmson_condition(opened.document->charts.front().semantic_layers.empty());
+    check_bmson_condition(has_default_layer_warning(opened));
+}
 
 TEST_CASE("opening chart files keeps their source directory and leaves them unsaved",
           "[unit][sys][project-open]") {

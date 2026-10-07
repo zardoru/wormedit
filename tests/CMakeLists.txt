@@ -152,6 +152,7 @@ add_executable(wormedit_core_tests
     core/virtual_canvas_tests.cpp
     core/video_preview_tests.cpp
     core/visual_layout_tests.cpp
+    core/bmson_layer_defaults_tests.cpp
     core/workspace_tests.cpp
     formats/bms_tests.cpp
     formats/bms_clipboard_tests.cpp

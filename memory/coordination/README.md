@@ -1,5 +1,12 @@
 # Worktree coordination pilot
 
+Completed 2026-10-07: [hybrid BMSON and slice-span batch](oct7-hybrid-batch.md),
+T-457/T-458/T-460 and T-465 integrated with Sol 6.1 medium coordinators and
+Luna medium contributions. Root normal application build and **2,527/2,527**
+tests pass; actual Kick/dragback import, migration and slice planning checks
+pass. Planning edits committed separately as `279c1d2`. Both worker trees and
+about 4 GB of generated builds removed; only main remains, branches/logs retained.
+
 Completed in code 2026-10-07: [rendering batch](oct7-render-batch.md),
 T-443 and T-451 integrated with Sol 6.1 medium coordinators and Luna medium
 contributions. Normal application build and **2,495/2,495** tests pass.

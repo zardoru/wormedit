@@ -4,6 +4,10 @@
 
 ## Immediate work
 
+Active delegated [rendering batch](../coordination/oct7-render-batch.md):
+T-451 BGA lanes/compositing and T-443 budgeted stable stem caches. Root sequences
+the shared canvas/frontend contract; only two fresh workers are registered.
+
 Completed delegated batch (2026-10-07): [stems and layers batch](../coordination/oct7-next-batch.md).
 T-439 caches and shares stem selection, T-445 exposes live keysound budgets,
 T-447 adds semantic layers on BMSON import, and T-450 preserves distinct BMS

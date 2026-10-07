@@ -54,6 +54,13 @@ auto has_error_code(const wormedit::bmson_parse_result_t& result,
 
 } // namespace
 
+namespace {
+template <typename T>
+void check_bmson_condition(const T& condition) { CHECK(static_cast<bool>(condition)); }
+template <typename T>
+void require_bmson_condition(const T& condition) { REQUIRE(static_cast<bool>(condition)); }
+} // namespace
+
 TEST_CASE("BMSON 1.0 fixtures retain source bytes and valid document structure",
           "[unit][format][bmson]") {
     for (const auto name : {"slicing-and-mixed-sounds.bmson", "published-vox-slicing.bmson",
@@ -159,8 +166,7 @@ TEST_CASE("BMSON published slicing derives exact shared source-frame ranges",
     REQUIRE(slices.slices.size() == 6);
     // The restart at pulse 720 rewinds the source; the preceding slice still
     // ends at frame 48,000, measured from the first anchor at pulse 240.
-    const std::array expected_begin{0ULL, 12'000ULL, 0ULL,
-                                    12'000ULL, 48'000ULL, 96'000ULL};
+    const std::array expected_begin{0ULL, 12'000ULL, 0ULL, 12'000ULL, 48'000ULL, 96'000ULL};
     const std::array<std::optional<std::uint64_t>, 6> expected_end{
         12'000ULL, 48'000ULL, 12'000ULL, 48'000ULL, 96'000ULL, 200'000ULL};
     const std::array expected_restart{true, false, true, false, false, false};
@@ -410,36 +416,84 @@ TEST_CASE("BMSON fixed beat modes use canonical x positions and reject out-of-ra
           "[unit][format][bmson]") {
     const auto default_mode = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":120},"sound_channels":[{"name":"a.wav","notes":[{"x":8,"y":0}]}]})");
-    REQUIRE(default_mode.song.has_value());
+    require_bmson_condition(default_mode.song.has_value());
     const auto& default_chart = default_mode.song->charts.front();
-    REQUIRE(default_chart.lane_layouts.size() == 1);
-    CHECK(default_chart.lane_layouts.front().layout.display_name == "beat-7k");
-    REQUIRE(default_chart.lane_layouts.front().layout.lanes.size() == 8);
-    CHECK(default_chart.lane_layouts.front().layout.lanes.back().role == wormedit::lane_role_t::scratch);
-    REQUIRE(default_chart.measures.front().notes.size() == 1);
-    CHECK(default_chart.measures.front().notes.front().lane.value == 100008);
+    require_bmson_condition(default_chart.lane_layouts.size() == 1);
+    check_bmson_condition(default_chart.lane_layouts.front().layout.display_name == "beat-7k");
+    require_bmson_condition(default_chart.lane_layouts.front().layout.lanes.size() == 8);
+    check_bmson_condition(default_chart.lane_layouts.front().layout.lanes.front().role == wormedit::lane_role_t::scratch);
+    check_bmson_condition(default_chart.lane_layouts.front().layout.lanes.front().display_order == 0);
+    require_bmson_condition(default_chart.measures.front().notes.size() == 1);
+    check_bmson_condition(default_chart.measures.front().notes.front().lane.value == 100008);
 
     const auto default_out_of_range = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":120},"sound_channels":[{"name":"a.wav","notes":[{"x":9,"y":0}]}]})");
     CHECK_FALSE(default_out_of_range.song.has_value());
-    CHECK(has_error_code(default_out_of_range, wormedit::bmson_parse_diagnostic_code_t::invalid_value));
+    check_bmson_condition(has_error_code(default_out_of_range, wormedit::bmson_parse_diagnostic_code_t::invalid_value));
 
     const auto beat_5k = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":120,"mode_hint":"beat-5k"},"sound_channels":[{"name":"a.wav","notes":[{"x":8,"y":0}]}]})");
-    REQUIRE(beat_5k.song.has_value());
+    require_bmson_condition(beat_5k.song.has_value());
     const auto& beat_5k_layout = beat_5k.song->charts.front().lane_layouts.front().layout;
-    REQUIRE(beat_5k_layout.lanes.size() == 6);
-    CHECK(beat_5k_layout.lanes.back().id.value == 100008);
-    CHECK(beat_5k_layout.lanes.back().role == wormedit::lane_role_t::scratch);
+    require_bmson_condition(beat_5k_layout.lanes.size() == 6);
+    check_bmson_condition(beat_5k_layout.lanes.front().id.value == 100008);
+    check_bmson_condition(beat_5k_layout.lanes.front().role == wormedit::lane_role_t::scratch);
+    check_bmson_condition(beat_5k_layout.lanes[1].id.value == 100001);
+    check_bmson_condition(beat_5k_layout.lanes[1].display_order == 1);
 
     const auto beat_10k = parse_text(
         R"({"version":"1.0.0","info":{"init_bpm":120,"mode_hint":"beat-10k"},"sound_channels":[{"name":"a.wav","notes":[{"x":16,"y":0}]}]})");
-    REQUIRE(beat_10k.song.has_value());
+    require_bmson_condition(beat_10k.song.has_value());
     const auto& beat_10k_chart = beat_10k.song->charts.front();
-    REQUIRE(beat_10k_chart.lane_layouts.front().layout.lanes.size() == 12);
-    REQUIRE(beat_10k_chart.measures.front().notes.size() == 1);
-    CHECK(beat_10k_chart.measures.front().notes.front().lane.value == 100016);
-    CHECK(beat_10k_chart.lane_layouts.front().layout.lanes.back().role == wormedit::lane_role_t::scratch);
+    require_bmson_condition(beat_10k_chart.lane_layouts.front().layout.lanes.size() == 12);
+    require_bmson_condition(beat_10k_chart.measures.front().notes.size() == 1);
+    check_bmson_condition(beat_10k_chart.measures.front().notes.front().lane.value == 100016);
+    check_bmson_condition(beat_10k_chart.lane_layouts.front().layout.lanes.back().role == wormedit::lane_role_t::scratch);
+    check_bmson_condition(beat_10k_chart.lane_layouts.front().layout.lanes.front().id.value == 100008);
+    check_bmson_condition(beat_10k_chart.lane_layouts.front().layout.lanes[6].id.value == 100009);
+    check_bmson_condition(beat_10k_chart.lane_layouts.front().layout.lanes[6].display_order == 6);
+}
+
+TEST_CASE("BMSON imported beat and popn modes receive their display colors",
+          "[unit][format][bmson][layout]") {
+    using color = wormedit::lane_key_color_t;
+    const auto alternating = [](std::size_t count) {
+        std::vector<color> result{color::scratch};
+        for (std::size_t index = 0; index < count; ++index)
+            result.push_back(index % 2 == 0 ? color::white : color::black);
+        return result;
+    };
+    auto beat_10 = alternating(5);
+    for (std::size_t index = 0; index < 5; ++index)
+        beat_10.push_back(index % 2 == 0 ? color::white : color::black);
+    beat_10.push_back(color::scratch);
+    auto beat_14 = alternating(7);
+    for (std::size_t index = 0; index < 7; ++index)
+        beat_14.push_back(index % 2 == 0 ? color::white : color::black);
+    beat_14.push_back(color::scratch);
+    const std::vector<std::pair<std::string_view, std::vector<color>>> cases{
+        {"beat-5k", alternating(5)},
+        {"beat-7k", alternating(7)},
+        {"beat-10k", beat_10},
+        {"beat-14k", beat_14},
+        {"popn-9k", std::vector<color>{color::pms_white, color::pms_yellow, color::pms_green,
+                                       color::pms_blue, color::pms_red, color::pms_blue,
+                                       color::pms_green, color::pms_yellow, color::pms_white}},
+    };
+    for (const auto& [hint, expected] : cases) {
+        CAPTURE(hint);
+        auto source = std::string{R"({"version":"1.0.0","info":{"init_bpm":120,"mode_hint":")"};
+        source.append(hint);
+        source.append(R"("},"sound_channels":[]})");
+        const auto parsed = parse_text(source);
+        require_bmson_condition(parsed.song);
+        const auto& lanes = parsed.song->charts.front().lane_layouts.front().layout.lanes;
+        require_bmson_condition(lanes.size() == expected.size());
+        for (std::size_t index = 0; index < expected.size(); ++index) {
+            check_bmson_condition(lanes[index].display_order == index);
+            check_bmson_condition(lanes[index].key_color == expected[index]);
+        }
+    }
 }
 
 TEST_CASE("BMSON generic 24K and 48K modes retain their fixed keyboard geometry",
@@ -493,4 +547,15 @@ TEST_CASE("BMSON x null is BGM and resource paths normalize both separators safe
         R"({"version":"1.0.0","info":{"init_bpm":120},"sound_channels":[{"name":"sub\\..\\tone.wav","notes":[]}]})");
     CHECK_FALSE(traversal.song.has_value());
     CHECK(has_error_code(traversal, wormedit::bmson_parse_diagnostic_code_t::invalid_value));
+}
+
+TEST_CASE("unknown BMSON modes retain generic piano colors", "[unit][format][bmson][layout]") {
+    const auto parsed = parse_text(R"({"version":"1.0.0","info":{"init_bpm":120,
+        "mode_hint":"unknown"},"sound_channels":[{"name":"a.wav","notes":[{"x":3,"y":0}]}]})");
+    require_bmson_condition(parsed.song);
+    const auto& layout = parsed.song->charts.front().lane_layouts.front().layout;
+    check_bmson_condition(layout.profile_id == "bmson-generic-nkeys");
+    check_bmson_condition(layout.lanes[0].key_color == wormedit::lane_key_color_t::white);
+    check_bmson_condition(layout.lanes[1].key_color == wormedit::lane_key_color_t::black);
+    check_bmson_condition(layout.lanes[2].key_color == wormedit::lane_key_color_t::white);
 }

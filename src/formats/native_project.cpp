@@ -15,6 +15,7 @@
 #include <ranges>
 #include <set>
 #include <stdexcept>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -191,6 +192,63 @@ void to_json(json& value, const lane_layout_t& layout) {
                  {"bmson_generic_keys_only", layout.bmson_generic_keys_only}};
 }
 
+auto bmson_beat_key_count(std::string_view profile_id) -> std::optional<std::uint32_t> {
+    if (profile_id == "bmson-beat-5k" || profile_id == "bmson-beat-10k") return 5;
+    if (profile_id == "bmson-beat-7k" || profile_id == "bmson-beat-14k") return 7;
+    return std::nullopt;
+}
+
+auto is_bmson_default_color_profile(std::string_view profile_id) -> bool {
+    return profile_id.starts_with("bmson-beat-") || profile_id.starts_with("bmson-popn-");
+}
+
+auto is_legacy_bmson_beat_lane(const lane_definition_t& lane, std::uint32_t key_count,
+                               bool double_play, std::array<bool, 17>& seen) -> bool {
+    if (lane.id.value < 100001 || lane.id.value > 100016) return false;
+    const auto x = static_cast<std::uint32_t>(lane.id.value - 100000);
+    const auto right = double_play && x >= 9;
+    const auto expected_role = x == 8 || (double_play && x == 16)
+                                   ? lane_role_t::scratch
+                                   : lane_role_t::playable;
+    const auto valid_x = x == 8 || (double_play && x == 16) || (x >= 1 && x <= key_count) ||
+                         (double_play && x >= 9 && x <= 8 + key_count);
+    if (!valid_x || seen[x] || lane.role != expected_role ||
+        lane.stage != (right ? stage_group_t::right : stage_group_t::left) ||
+        lane.display_order != x - 1)
+        return false;
+    seen[x] = true;
+    return true;
+}
+
+auto has_legacy_bmson_beat_order(const lane_layout_t& layout, std::uint32_t key_count,
+                                 bool double_play) -> bool {
+    const auto expected_count = static_cast<std::size_t>(key_count) * (double_play ? 2U : 1U) +
+                                (double_play ? 2U : 1U);
+    if (layout.lanes.size() != expected_count) return false;
+    std::array<bool, 17> seen{};
+    for (const auto& lane : layout.lanes)
+        if (!is_legacy_bmson_beat_lane(lane, key_count, double_play, seen)) return false;
+    return true;
+}
+
+// Older imports used x-1 as the display order. Repair only the exact generated
+// lane identity/role/stage pattern, so a custom lane order remains authored.
+void repair_legacy_bmson_beat_order(lane_layout_t& layout) {
+    const auto key_count = bmson_beat_key_count(layout.profile_id);
+    if (!key_count) return;
+    const auto double_play = layout.profile_id == "bmson-beat-10k" ||
+                             layout.profile_id == "bmson-beat-14k";
+    if (!has_legacy_bmson_beat_order(layout, *key_count, double_play)) return;
+    for (auto& lane : layout.lanes) {
+        const auto x = static_cast<std::uint32_t>(lane.id.value - 100000);
+        if (lane.stage == stage_group_t::right) {
+            lane.display_order = x == 16 ? 2 * *key_count + 1 : *key_count + x - 8;
+        } else {
+            lane.display_order = x == 8 ? 0 : x;
+        }
+    }
+}
+
 void from_json(const json& value, lane_layout_t& layout) {
     value.at("profile_id").get_to(layout.profile_id);
     value.at("display_name").get_to(layout.display_name);
@@ -208,7 +266,13 @@ void from_json(const json& value, lane_layout_t& layout) {
         std::ranges::all_of(layout.lanes, [](const lane_definition_t& lane) {
             return lane.key_color == lane_key_color_t::generic;
         });
-    if (missing_color || needs_10k_colors) {
+    const auto needs_bmson_colors =
+        is_bmson_default_color_profile(layout.profile_id) &&
+        std::ranges::all_of(layout.lanes, [](const lane_definition_t& lane) {
+            return lane.key_color == lane_key_color_t::generic;
+        });
+    if (missing_color || needs_bmson_colors) repair_legacy_bmson_beat_order(layout);
+    if (missing_color || needs_10k_colors || needs_bmson_colors) {
         assign_lane_key_colors(layout);
     }
 }

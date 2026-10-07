@@ -1,7 +1,7 @@
 #include "sys/project_open.h"
 
-#include <wormedit/formats/bms.h>
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/formats/bms.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/osu_mania.h>
@@ -18,8 +18,8 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
-#include <utility>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace wormedit::sys {
@@ -97,17 +97,17 @@ auto ascii_lower(std::string value) -> std::string {
     return value;
 }
 
-struct bms_audio_directory_inventory_t {
+struct bms_asset_directory_inventory_t {
     std::map<std::string, std::vector<std::filesystem::path>> directories;
     std::map<std::pair<std::string, std::string>, std::vector<std::filesystem::path>> files;
 };
 
-using bms_audio_directory_cache_t =
-    std::map<std::filesystem::path, bms_audio_directory_inventory_t>;
+using bms_asset_directory_cache_t =
+    std::map<std::filesystem::path, bms_asset_directory_inventory_t>;
 
-auto directory_inventory(bms_audio_directory_cache_t& cache,
+auto directory_inventory(bms_asset_directory_cache_t& cache,
                          const std::filesystem::path& directory)
-    -> const bms_audio_directory_inventory_t& {
+    -> const bms_asset_directory_inventory_t& {
     auto [position, inserted] = cache.try_emplace(directory);
     if (!inserted) return position->second;
     auto& inventory = position->second;
@@ -129,7 +129,7 @@ auto directory_inventory(bms_audio_directory_cache_t& cache,
     return inventory;
 }
 
-auto matching_directories(bms_audio_directory_cache_t& cache,
+auto matching_directories(bms_asset_directory_cache_t& cache,
                           const std::filesystem::path& directory, const std::string& name)
     -> const std::vector<std::filesystem::path>& {
     const auto& entries = directory_inventory(cache, directory).directories;
@@ -147,19 +147,19 @@ auto candidate_list(const std::vector<std::filesystem::path>& candidates) -> std
     return list;
 }
 
-auto resolved_audio_directory(const std::filesystem::path& source,
+auto resolved_asset_directory(const std::filesystem::path& source,
                               const std::filesystem::path& asset_base,
-                              bms_audio_directory_cache_t& cache,
+                              bms_asset_directory_cache_t& cache, std::string_view label,
                               std::string& warning) -> std::optional<std::filesystem::path> {
     if (source.empty() || source.is_absolute()) {
-        warning = "Unsafe BMS audio path: " + utf8_path(source);
+        warning = "Unsafe " + std::string(label) + " path: " + utf8_path(source);
         return std::nullopt;
     }
     auto directory = asset_base;
     for (const auto& part : source.parent_path()) {
         if (part == ".") continue;
         if (part == "..") {
-            warning = "Unsafe BMS audio path: " + utf8_path(source);
+            warning = "Unsafe " + std::string(label) + " path: " + utf8_path(source);
             return std::nullopt;
         }
         const auto folded_name = ascii_lower(utf8_path(part));
@@ -172,7 +172,7 @@ auto resolved_audio_directory(const std::filesystem::path& source,
             continue;
         }
         if (matches.size() > 1) {
-            warning = "Ambiguous BMS audio directory for " + utf8_path(source) + ": " +
+            warning = "Ambiguous " + std::string(label) + " directory for " + utf8_path(source) + ": " +
                       candidate_list(matches);
             return std::nullopt;
         }
@@ -182,7 +182,7 @@ auto resolved_audio_directory(const std::filesystem::path& source,
     return directory;
 }
 
-auto extension_matches(bms_audio_directory_cache_t& cache,
+auto extension_matches(bms_asset_directory_cache_t& cache,
                        const std::filesystem::path& directory, const std::string& stem,
                        const std::string& extension)
     -> const std::vector<std::filesystem::path>& {
@@ -192,20 +192,24 @@ auto extension_matches(bms_audio_directory_cache_t& cache,
     return found == entries.end() ? empty : found->second;
 }
 
-auto existing_bms_audio_path(const std::filesystem::path& source,
+auto existing_bms_asset_path(const std::filesystem::path& source,
                              const std::filesystem::path& asset_base,
-                             bms_audio_directory_cache_t& cache,
+                             bms_asset_directory_cache_t& cache,
+                             std::span<const std::string_view> extensions, std::string_view format,
+                             std::string_view kind,
                              std::string& warning) -> std::optional<std::filesystem::path> {
     auto normalized_text = source.generic_u8string();
     std::replace(normalized_text.begin(), normalized_text.end(), u8'\\', u8'/');
     if (normalized_text.size() >= 2 && normalized_text[1] == u8':' &&
         ((normalized_text.front() >= u8'A' && normalized_text.front() <= u8'Z') ||
          (normalized_text.front() >= u8'a' && normalized_text.front() <= u8'z'))) {
-        warning = "Unsafe BMS audio path: " + utf8_path(source);
+        warning = "Unsafe " + std::string(format) + " " + std::string(kind) +
+                  " path: " + utf8_path(source);
         return std::nullopt;
     }
     const std::filesystem::path normalized{normalized_text};
-    const auto directory = resolved_audio_directory(normalized, asset_base, cache, warning);
+    const auto label = std::string(format) + " " + std::string(kind);
+    const auto directory = resolved_asset_directory(normalized, asset_base, cache, label, warning);
     if (!directory) return std::nullopt;
     const auto stem = ascii_lower(utf8_path(normalized.stem()));
     const auto authored_extension = ascii_lower(utf8_path(normalized.extension()));
@@ -218,54 +222,83 @@ auto existing_bms_audio_path(const std::filesystem::path& source,
     if (same_extension.size() == 1)
         return same_extension.front().lexically_relative(asset_base);
     if (same_extension.size() > 1) {
-        warning = "Ambiguous BMS audio for " + utf8_path(source) + ": " +
+        warning = "Ambiguous " + std::string(format) + " " + std::string(kind) + " for " + utf8_path(source) + ": " +
                   candidate_list(same_extension);
         return std::nullopt;
     }
-
-    constexpr std::array extensions{".wav", ".ogg", ".flac"};
     std::vector<std::filesystem::path> alternatives;
-    for (const auto* extension : extensions) {
+    for (const auto extension : extensions) {
         if (authored_extension == extension) continue;
-        const std::string alternate_extension{extension};
-        const auto& matches = extension_matches(cache, *directory, stem, alternate_extension);
+        const auto& matches = extension_matches(cache, *directory, stem, std::string(extension));
         alternatives.insert(alternatives.end(), matches.begin(), matches.end());
     }
+    std::ranges::sort(alternatives);
     if (alternatives.size() == 1)
         return alternatives.front().lexically_relative(asset_base);
     if (alternatives.size() > 1)
-        warning = "Ambiguous BMS audio for " + utf8_path(source) + ": " +
+        warning = "Ambiguous " + std::string(format) + " " + std::string(kind) + " for " + utf8_path(source) + ": " +
                   candidate_list(alternatives);
     return std::nullopt;
 }
 
-// Points every audio asset at the file that exists next to the chart: authored names are matched
-// without case, and a missing extension is replaced by .wav, .ogg or .flac when exactly one such
-// file exists (charts routinely name .wav and ship .ogg). `format` names the chart format in the
-// warnings, and resources whose asset was found stop being marked missing.
+// Points an audio asset at the matching file beside the chart, preserving the authored path on
+// failure. Audio assets keep their .wav/.ogg/.flac fallback behavior.
 void resolve_audio_assets(song_document_t& document, const std::filesystem::path& asset_base,
                           std::vector<std::string>& warnings, std::string_view format = "BMS") {
-    bms_audio_directory_cache_t cache;
+    constexpr std::array<std::string_view, 3> extensions{".wav", ".ogg", ".flac"};
+    bms_asset_directory_cache_t cache;
     for (auto& asset : document.audio_assets) {
         std::string warning;
-        const auto actual = existing_bms_audio_path(asset.source_path, asset_base, cache, warning);
+        const auto actual = existing_bms_asset_path(asset.source_path, asset_base, cache,
+                                                    extensions, format, "audio", warning);
         if (!warning.empty()) {
-            if (format != "BMS")
-                if (const auto label = warning.find("BMS"); label != std::string::npos)
-                    warning.replace(label, 3, format);
             warnings.push_back(std::move(warning));
         }
-        if (!actual || *actual == asset.source_path) continue;
+        if (!actual || *actual == asset.source_path)
+            continue;
         asset.source_path = *actual;
         for (auto& resource : document.resources)
-            if (resource.asset == asset.id) resource.missing = false;
+            if (resource.asset == asset.id)
+                resource.missing = false;
+    }
+}
+
+void resolve_visual_assets(song_document_t& document, const std::filesystem::path& asset_base,
+                           std::vector<std::string>& warnings, std::string_view format = "BMS") {
+    constexpr std::array<std::string_view, 4> image_extensions{".bmp", ".png", ".jpg", ".jpeg"};
+    constexpr std::array<std::string_view, 5> video_extensions{".mpg", ".mp4", ".avi", ".wmv",
+                                                               ".webm"};
+    bms_asset_directory_cache_t cache;
+    for (auto& asset : document.visual_assets) {
+        std::span<const std::string_view> extensions;
+        std::string_view kind;
+        const auto authored_extension = ascii_lower(utf8_path(asset.source_path.extension()));
+        if (asset.kind == asset_kind_t::video ||
+            std::ranges::find(video_extensions, authored_extension) != video_extensions.end()) {
+            asset.kind = asset_kind_t::video;
+            extensions = video_extensions;
+            kind = "video";
+        } else if (asset.kind == asset_kind_t::image) {
+            extensions = image_extensions;
+            kind = "image";
+        } else {
+            continue;
+        }
+        std::string warning;
+        const auto actual = existing_bms_asset_path(asset.source_path, asset_base, cache,
+                                                    extensions, format, kind, warning);
+        if (!warning.empty())
+            warnings.push_back(std::move(warning));
+        for (auto& resource : document.resources)
+            if (resource.asset == asset.id) resource.missing = !actual;
+        if (actual) asset.source_path = *actual;
     }
 }
 
 void resolve_stepmania_music(song_document_t& document,
                              const std::filesystem::path& asset_base,
                              std::vector<std::string>& warnings) {
-    bms_audio_directory_cache_t cache;
+    bms_asset_directory_cache_t cache;
     for (auto& resource : document.resources) {
         if (std::ranges::find(resource.roles, resource_role_t::music) == resource.roles.end())
             continue;
@@ -273,10 +306,10 @@ void resolve_stepmania_music(song_document_t& document,
                                              &audio_asset_t::id);
         if (asset == document.audio_assets.end()) continue;
         std::string warning;
-        const auto actual = existing_bms_audio_path(asset->source_path, asset_base, cache, warning);
+        constexpr std::array<std::string_view, 3> extensions{".wav", ".ogg", ".flac"};
+        const auto actual = existing_bms_asset_path(asset->source_path, asset_base, cache,
+                                                    extensions, "StepMania", "audio", warning);
         if (!warning.empty()) {
-            auto label = warning.find("BMS");
-            if (label != std::string::npos) warning.replace(label, 3, "StepMania");
             warnings.push_back(std::move(warning));
         }
         if (actual) {
@@ -332,14 +365,18 @@ void parse_selected_file(std::string_view extension, const std::string& source,
                            std::string::npos;
             });
         take_parsed_document(std::move(parsed), "BMS chart", result);
-        if (result.document)
+        if (result.document) {
             resolve_audio_assets(*result.document, result.asset_base, result.warnings);
+            resolve_visual_assets(*result.document, result.asset_base, result.warnings);
+        }
     } else if (extension == ".bmson") {
         auto options = bmson_parse_options_t{};
         options.asset_base_directory = result.asset_base;
         take_parsed_document(parse_bmson_bytes(bytes, std::move(options)), "BMSON chart", result);
-        if (result.document)
+        if (result.document) {
             resolve_audio_assets(*result.document, result.asset_base, result.warnings, "BMSON");
+            resolve_visual_assets(*result.document, result.asset_base, result.warnings, "BMSON");
+        }
     } else if (extension == ".sm" || extension == ".ssc") {
         auto options = stepmania_parse_options_t{};
         options.profile = extension == ".ssc" ? stepmania_profile_t::ssc

@@ -269,6 +269,13 @@ auto populated_sound_group_round_trips() -> bool {
 
 } // namespace
 
+namespace {
+template <typename T>
+void check_bmson_condition(const T& condition) { CHECK(static_cast<bool>(condition)); }
+template <typename T>
+void require_bmson_condition(const T& condition) { REQUIRE(static_cast<bool>(condition)); }
+} // namespace
+
 TEST_CASE("native project deterministically round-trips rich editor state",
           "[unit][format][native-project]") {
     const auto song = rich_bmson_song();
@@ -923,6 +930,89 @@ TEST_CASE("native projects store lane key colors, derive them for older files, a
     CHECK_FALSE(rejected.song.has_value());
 }
 
+TEST_CASE(
+    "native projects repair old generic BMSON colors and scratch order but retain custom colors",
+    "[unit][format][native-project][key-color]") {
+    nlohmann::json legacy;
+    for (const auto mode : {"beat-7k", "beat-14k"}) {
+        auto source = std::string{R"({"version":"1.0.0","info":{"init_bpm":120,"mode_hint":")"};
+        source += mode;
+        source += R"("},"sound_channels":[]})";
+        const auto imported =
+            wormedit::parse_bmson_bytes(std::as_bytes(std::span{source.data(), source.size()}));
+        require_bmson_condition(imported.song);
+        const auto saved = wormedit::write_native_project(*imported.song);
+        require_bmson_condition(saved.bytes);
+        auto old_project = nlohmann::json::parse(*saved.bytes);
+        auto& lanes_json =
+            old_project["document"]["charts"][0]["lane_layouts"][0]["layout"]["lanes"];
+        for (auto& lane : lanes_json) {
+            const auto x = lane["id"].get<std::uint64_t>() - 100000;
+            lane["display_order"] = x - 1;
+            lane["key_color"] = static_cast<int>(wormedit::lane_key_color_t::generic);
+        }
+        std::vector<nlohmann::json> sorted_lanes(lanes_json.begin(), lanes_json.end());
+        std::ranges::sort(sorted_lanes, {}, [](const auto& lane) {
+            return lane["id"].template get<std::uint64_t>();
+        });
+        lanes_json = sorted_lanes;
+        const auto repaired = wormedit::parse_native_project(old_project.dump());
+        require_bmson_condition(repaired.song);
+        const auto& layout = repaired.song->charts.front().lane_layouts.front().layout;
+        constexpr std::uint32_t key_count = 7;
+        require_bmson_condition(layout.lanes.size() == (mode == std::string_view{"beat-14k"} ? 16U : 8U));
+        const auto scratch = std::ranges::find(layout.lanes, wormedit::lane_id_t{100008},
+                                               &wormedit::lane_definition_t::id);
+        require_bmson_condition(scratch != layout.lanes.end());
+        check_bmson_condition(scratch->display_order == 0);
+        check_bmson_condition(scratch->key_color == wormedit::lane_key_color_t::scratch);
+        for (std::uint32_t index = 0; index < key_count; ++index) {
+            const auto lane = std::ranges::find(layout.lanes, wormedit::lane_id_t{100001 + index},
+                                                &wormedit::lane_definition_t::id);
+            require_bmson_condition(lane != layout.lanes.end());
+            check_bmson_condition(lane->display_order == index + 1);
+            check_bmson_condition(lane->key_color == (index % 2 == 0 ? wormedit::lane_key_color_t::white
+                                                     : wormedit::lane_key_color_t::black));
+        }
+        if (mode == std::string_view{"beat-14k"}) {
+            const auto right_key = std::ranges::find(layout.lanes, wormedit::lane_id_t{100009},
+                                                     &wormedit::lane_definition_t::id);
+            const auto right_scratch = std::ranges::find(layout.lanes, wormedit::lane_id_t{100016},
+                                                         &wormedit::lane_definition_t::id);
+            require_bmson_condition(right_key != layout.lanes.end());
+            require_bmson_condition(right_scratch != layout.lanes.end());
+            check_bmson_condition(right_key->display_order == 8);
+            check_bmson_condition(right_scratch->display_order == 15);
+            check_bmson_condition(right_key->key_color == wormedit::lane_key_color_t::white);
+        } else {
+            legacy = std::move(old_project);
+        }
+    }
+
+    auto authored = legacy;
+    for (auto& lane : authored["document"]["charts"][0]["lane_layouts"][0]["layout"]["lanes"]) {
+        if (lane["id"] == 100001) {
+            lane["key_color"] = static_cast<int>(wormedit::lane_key_color_t::pms_red);
+            break;
+        }
+    }
+    const auto retained = wormedit::parse_native_project(authored.dump());
+    require_bmson_condition(retained.song);
+    const auto& retained_layout = retained.song->charts.front().lane_layouts.front().layout;
+    const auto retained_scratch = std::ranges::find(
+        retained_layout.lanes, wormedit::lane_id_t{100008}, &wormedit::lane_definition_t::id);
+    const auto authored_color = std::ranges::find(
+        retained_layout.lanes, wormedit::lane_id_t{100001}, &wormedit::lane_definition_t::id);
+    const auto generic_color = std::ranges::find(retained_layout.lanes, wormedit::lane_id_t{100002},
+                                                 &wormedit::lane_definition_t::id);
+    require_bmson_condition(retained_scratch != retained_layout.lanes.end());
+    require_bmson_condition(authored_color != retained_layout.lanes.end());
+    require_bmson_condition(generic_color != retained_layout.lanes.end());
+    check_bmson_condition(retained_scratch->display_order == 7);
+    check_bmson_condition(authored_color->key_color == wormedit::lane_key_color_t::pms_red);
+    check_bmson_condition(generic_color->key_color == wormedit::lane_key_color_t::generic);
+}
+
 namespace {
 
 // A project as saved before BGM columns: one lane per `#mmm01` line, plus a
@@ -1055,4 +1145,20 @@ TEST_CASE("native projects persist chart sound layer defaults only when set",
     REQUIRE(parsed.song.has_value());
     CHECK(parsed.song->charts.front().sound_layer_defaults == chart.sound_layer_defaults);
     CHECK(*wormedit::write_native_project(*parsed.song).bytes == *written.bytes);
+}
+
+TEST_CASE("native BMSON color repair preserves authored lane order", "[unit][format][native-project][key-color]") {
+    const std::string source = R"({"version":"1.0.0","info":{"init_bpm":120,
+        "mode_hint":"beat-5k"},"sound_channels":[]})";
+    const auto imported = wormedit::parse_bmson_bytes(std::as_bytes(std::span{source.data(), source.size()}));
+    require_bmson_condition(imported.song);
+    const auto saved = wormedit::write_native_project(*imported.song);
+    require_bmson_condition(saved.bytes);
+    auto project = nlohmann::json::parse(*saved.bytes);
+    auto& lanes = project["document"]["charts"][0]["lane_layouts"][0]["layout"]["lanes"];
+    for (auto& lane : lanes) lane["key_color"] = static_cast<int>(wormedit::lane_key_color_t::generic);
+    lanes[0]["display_order"] = 77;
+    const auto reopened = wormedit::parse_native_project(project.dump());
+    require_bmson_condition(reopened.song);
+    check_bmson_condition(reopened.song->charts.front().lane_layouts.front().layout.lanes[0].display_order == 77);
 }

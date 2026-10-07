@@ -1,22 +1,25 @@
 #include "sys/project_open.h"
 #include "sys/project_save_paths.h"
 
+#include <wormedit/core/command.h>
+#include <wormedit/core/workspace.h>
+
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bms_writer.h>
-#include <wormedit/formats/stepmania.h>
+#include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/native_project_storage.h>
-#include <wormedit/core/workspace.h>
-#include <wormedit/core/command.h>
+#include <wormedit/formats/stepmania.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
-#include <chrono>
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -130,6 +133,13 @@ auto stepmania_music_case_fallback_exports_resolved_path() -> bool {
     return written.text && written.text->find("#MUSIC:song.ogg;") != std::string::npos;
 }
 
+} // namespace
+
+namespace {
+template <typename T>
+void check_bmson_condition(const T& condition) { CHECK(static_cast<bool>(condition)); }
+template <typename T>
+void require_bmson_condition(const T& condition) { REQUIRE(static_cast<bool>(condition)); }
 } // namespace
 
 TEST_CASE("opening chart files keeps their source directory and leaves them unsaved",
@@ -307,6 +317,69 @@ TEST_CASE("BMS audio fallback rejects traversal and drive paths",
            opened.warnings[1].find("Unsafe") != std::string::npos));
 }
 
+TEST_CASE("BMS image resolver finds one alternate extension and keeps the authored name",
+          "[integration][sys][project-open][bms-image]") {
+    temporary_project_directory_t temporary;
+    const auto chart = temporary.path / "image.bms";
+    std::ofstream(chart) << "#PLAYER 1\n#TITLE Image fallback\n#BPM 120\n"
+                            "#BMP01 cover.png\n#BMP02 exact.png\n#00104:0102\n";
+    std::ofstream(temporary.path / "cover.bmp") << "image";
+    std::ofstream(temporary.path / "exact.png") << "exact image";
+    std::ofstream(temporary.path / "exact.bmp") << "alternate image";
+
+    const auto opened = wormedit::sys::open_project_file(chart);
+    INFO(opened.error);
+    require_bmson_condition(opened.document);
+    require_bmson_condition(opened.document->visual_assets.size() == 2);
+    check_bmson_condition(opened.document->visual_assets[0].source_path == "cover.bmp");
+    check_bmson_condition(opened.document->visual_assets[1].source_path == "exact.png");
+    check_bmson_condition(opened.warnings.empty());
+    CHECK_FALSE(opened.document->resources[0].missing);
+    check_bmson_condition(opened.document->resources[0].name == "cover.png");
+    const auto exported = wormedit::write_bms(*opened.document);
+    require_bmson_condition(exported.bytes);
+    check_bmson_condition(exported.bytes->find("#BMP01 cover.png") != std::string::npos);
+}
+
+TEST_CASE("BMS image resolver leaves ambiguous alternate extensions unresolved",
+          "[integration][sys][project-open][bms-image]") {
+    temporary_project_directory_t temporary;
+    const auto chart = temporary.path / "ambiguous.bms";
+    std::ofstream(chart) << "#PLAYER 1\n#TITLE Ambiguous image\n#BPM 120\n"
+                            "#BMP01 scene.png\n#00104:01\n";
+    std::ofstream(temporary.path / "scene.bmp") << "bitmap";
+    std::ofstream(temporary.path / "scene.JPG") << "jpeg";
+
+    const auto opened = wormedit::sys::open_project_file(chart);
+    INFO(opened.error);
+    require_bmson_condition(opened.document);
+    require_bmson_condition(opened.document->visual_assets.size() == 1);
+    check_bmson_condition(opened.document->visual_assets.front().source_path == "scene.png");
+    require_bmson_condition(opened.warnings.size() == 1);
+    check_bmson_condition(opened.warnings.front().find("scene.bmp") != std::string::npos);
+    check_bmson_condition(opened.warnings.front().find("scene.JPG") != std::string::npos);
+    check_bmson_condition(opened.warnings.front().find("Ambiguous") != std::string::npos);
+    check_bmson_condition(opened.document->resources.front().missing);
+}
+
+TEST_CASE("BMS image resolver matches directory and extension case safely",
+          "[integration][sys][project-open][bms-image]") {
+    temporary_project_directory_t temporary;
+    const auto chart = temporary.path / "case.bms";
+    std::ofstream(chart) << "#PLAYER 1\n#TITLE Case image\n#BPM 120\n"
+                            "#BMP01 Folder/ICON.PNG\n#00104:01\n";
+    std::filesystem::create_directories(temporary.path / "folder");
+    std::ofstream(temporary.path / "folder/icon.JpEg") << "image";
+
+    const auto opened = wormedit::sys::open_project_file(chart);
+    INFO(opened.error);
+    require_bmson_condition(opened.document);
+    require_bmson_condition(opened.document->visual_assets.size() == 1);
+    check_bmson_condition(opened.document->visual_assets.front().source_path == "folder/icon.JpEg");
+    check_bmson_condition(opened.warnings.empty());
+    CHECK_FALSE(opened.document->resources.front().missing);
+}
+
 TEST_CASE("opening a native project preserves its saved document identity",
           "[unit][sys][project-open]") {
     const auto imported = wormedit::sys::open_project_file(
@@ -321,6 +394,56 @@ TEST_CASE("opening a native project preserves its saved document identity",
     INFO(opened.error);
     REQUIRE(opened.document.has_value());
     check_native_identity(opened, *imported.document, file.path);
+}
+
+TEST_CASE("BMSON beat source x lanes survive export and native project reopen",
+          "[integration][sys][project-open][bmson-layout]") {
+    temporary_project_directory_t temporary;
+    const auto chart_path = temporary.path / "beat.bmson";
+    std::ofstream(chart_path) << R"({"version":"1.0.0","info":{"title":"Lane order",
+        "artist":"a","genre":"g","mode_hint":"beat-7k","chart_name":"",
+        "level":1,"init_bpm":120,"resolution":240,"judge_rank":100,"total":100,
+        "subtitle":"","subartists":[],"back_image":"","banner_image":"",
+        "eyecatch_image":""},"lines":[{"y":0},{"y":960}],"bpm_events":[],
+        "stop_events":[],"sound_channels":[{"name":"sound.wav","notes":[
+        {"x":8,"y":0,"l":0,"c":false},{"x":1,"y":240,"l":0,"c":false}]}]})";
+    const auto imported = wormedit::sys::open_project_file(chart_path);
+    INFO(imported.error);
+    require_bmson_condition(imported.document);
+    const auto& chart = imported.document->charts.front();
+    require_bmson_condition(chart.measures.front().notes.size() == 2);
+    check_bmson_condition(chart.measures.front().notes[0].lane.value == 100008);
+    check_bmson_condition(chart.measures.front().notes[1].lane.value == 100001);
+    const auto& layout = chart.lane_layouts.front().layout;
+    require_bmson_condition(layout.lanes.size() == 8);
+    check_bmson_condition(layout.lanes.front().id.value == 100008);
+    check_bmson_condition(layout.lanes.front().display_order == 0);
+
+    const auto exported = wormedit::write_bmson(*imported.document);
+    INFO((exported.diagnostics.empty() ? "" : exported.diagnostics.front().message));
+    require_bmson_condition(exported.json);
+    const auto reimported = wormedit::parse_bmson_bytes(
+        std::as_bytes(std::span{exported.json->data(), exported.json->size()}));
+    require_bmson_condition(reimported.song);
+    const auto& exported_chart = reimported.song->charts.front();
+    require_bmson_condition(exported_chart.measures.front().notes.size() == 2);
+    check_bmson_condition(exported_chart.measures.front().notes[0].lane.value == 100008);
+    check_bmson_condition(exported_chart.measures.front().notes[1].lane.value == 100001);
+
+    temporary_project_file_t native{".wormedit"};
+    const auto saved = wormedit::write_native_project(*imported.document);
+    require_bmson_condition(saved.bytes);
+    native.write(*saved.bytes);
+    const auto reopened = wormedit::sys::open_project_file(native.path);
+    INFO(reopened.error);
+    require_bmson_condition(reopened.document);
+    const auto& reopened_chart = reopened.document->charts.front();
+    require_bmson_condition(reopened_chart.measures.front().notes.size() == 2);
+    check_bmson_condition(reopened_chart.measures.front().notes[0].lane.value == 100008);
+    check_bmson_condition(reopened_chart.measures.front().notes[1].lane.value == 100001);
+    require_bmson_condition(reopened_chart.lane_layouts.front().layout.lanes.size() == 8);
+    check_bmson_condition(reopened_chart.lane_layouts.front().layout.lanes.front().id.value == 100008);
+    check_bmson_condition(reopened_chart.lane_layouts.front().layout.lanes.front().display_order == 0);
 }
 
 TEST_CASE("an imported chart saves and reopens with its assets rooted at the source",
@@ -438,7 +561,7 @@ void check_normalized_native_document(const wormedit::song_document_t& document,
     CHECK_FALSE(wormedit::is_document_dirty(history));
     CHECK(history.undo.empty());
 }
-}
+} // namespace
 
 TEST_CASE("native load normalizes empty lane keys without making an edit", "[project-open][default-input]") {
     auto imported = wormedit::sys::open_project_file(fixture("stepmania", "matched-timing.sm"));
@@ -484,7 +607,7 @@ void check_preserved_input_profile(const wormedit::input_profile_t& expected,
     for (std::size_t index = 0; index < expected.bindings.size(); ++index)
         check_preserved_lane_binding(expected.bindings[index], actual.bindings[index]);
 }
-}
+} // namespace
 
 TEST_CASE("project opening keeps imported BMS lane profiles", "[project-open][default-input]") {
     const auto path = fixture("bms", "profiles/bms-5k-free-zone.bms");
@@ -544,7 +667,7 @@ void check_contextual_validation_message(const std::string& message) {
     CHECK(message.find("lane ") != std::string::npos);
     CHECK(message.find("object ") != std::string::npos);
 }
-}
+} // namespace
 
 TEST_CASE("project_open validates and safely rehomes parsed notes without changing positions",
           "[project-open][validation]") {
@@ -662,4 +785,52 @@ TEST_CASE("BMSON audio names resolve to the differently extended file beside the
     const auto resource = std::ranges::find(opened.document->resources, clap->id, &wormedit::resource_entry_t::asset);
     REQUIRE(resource != opened.document->resources.end());
     CHECK_FALSE(resource->missing);
+}
+
+TEST_CASE("BMS visual resolver preserves exact declarations over alternatives",
+          "[integration][sys][project-open][bms-image]") {
+    temporary_project_directory_t temporary;
+    const auto chart = temporary.path / "exact.bms";
+    std::ofstream(chart) << "#PLAYER 1\n#TITLE Exact\n#BPM 120\n#BMP01 scene.png\n#00104:01\n";
+    std::ofstream(temporary.path / "scene.png") << "png";
+    std::ofstream(temporary.path / "scene.bmp") << "bmp";
+    const auto opened = wormedit::sys::open_project_file(chart);
+    require_bmson_condition(opened.document);
+    check_bmson_condition(opened.document->visual_assets.front().source_path == "scene.png");
+    check_bmson_condition(opened.warnings.empty());
+}
+
+TEST_CASE("BMS video fallback preserves its declared basename for export",
+          "[integration][sys][project-open][bms-video]") {
+    temporary_project_directory_t temporary;
+    const auto chart = temporary.path / "video.bms";
+    std::ofstream(chart) << "#PLAYER 1\n#TITLE Video\n#BPM 120\n#BMP01 movie.mpg\n#00104:01\n";
+    std::ofstream(temporary.path / "movie.MP4") << "video";
+    const auto opened = wormedit::sys::open_project_file(chart);
+    require_bmson_condition(opened.document);
+    check_bmson_condition(opened.document->visual_assets.front().source_path == "movie.MP4");
+    check_bmson_condition(opened.warnings.empty());
+    const auto exported = wormedit::write_bms(*opened.document);
+    require_bmson_condition(exported.bytes);
+    check_bmson_condition(exported.bytes->find("#BMP01 movie.mpg") != std::string::npos);
+    std::ofstream(temporary.path / "movie.webm") << "other";
+    const auto ambiguous = wormedit::sys::open_project_file(chart);
+    require_bmson_condition(ambiguous.document);
+    check_bmson_condition(ambiguous.document->visual_assets.front().source_path == "movie.mpg");
+    require_bmson_condition(ambiguous.warnings.size() == 1);
+    check_bmson_condition(ambiguous.warnings.front().find("movie.MP4, ") != std::string::npos);
+    check_bmson_condition(ambiguous.warnings.front().find("movie.webm") != std::string::npos);
+}
+
+TEST_CASE("BMS visual fallback rejects traversal and drive declarations",
+          "[integration][sys][project-open][bms-image]") {
+    temporary_project_directory_t temporary;
+    const auto chart = temporary.path / "unsafe.bms";
+    std::ofstream(chart) << "#PLAYER 1\n#TITLE Unsafe\n#BPM 120\n"
+        "#BMP01 ../outside.png\n#BMP02 C:\\outside.mpg\n#00104:0102\n";
+    const auto opened = wormedit::sys::open_project_file(chart);
+    require_bmson_condition(opened.document);
+    require_bmson_condition(opened.warnings.size() == 2);
+    check_bmson_condition(opened.warnings[0].find("Unsafe") != std::string::npos);
+    check_bmson_condition(opened.warnings[1].find("Unsafe") != std::string::npos);
 }

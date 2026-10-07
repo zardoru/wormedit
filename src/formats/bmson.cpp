@@ -1,3 +1,4 @@
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/formats/bmson.h>
 
 #include <nlohmann/json.hpp>
@@ -845,9 +846,9 @@ auto select_bmson_beat_lanes(bmson_mode_lanes_t& mode) -> bool {
         return false;
     }
     const auto keys = hint == "beat-5k" || hint == "beat-10k" ? 5U : 7U;
-    for (std::uint32_t x = 1; x <= keys; ++x) mode.lane_positions.push_back(x);
     mode.lane_positions.push_back(8);
     mode.scratches.insert(8);
+    for (std::uint32_t x = 1; x <= keys; ++x) mode.lane_positions.push_back(x);
     if (hint == "beat-10k" || hint == "beat-14k") {
         for (std::uint32_t x = 9; x <= 8 + keys; ++x) mode.lane_positions.push_back(x);
         mode.lane_positions.push_back(16);
@@ -1043,6 +1044,7 @@ auto create_bmson_lane_layout(const json_value_t& info,
         layout.bmson_generic_keys_only = mode_hint == "generic-nkeys" ||
                                          mode_hint == "generic-24keys" ||
                                          mode_hint == "generic-48keys";
+        std::uint32_t display_order{};
         for (const auto x : lane_positions) {
             layout.lanes.push_back({.id = lane_id_t{100000ULL + x},
                                     .name = scratches.contains(x) ? "Scratch" : "Key " + std::to_string(x),
@@ -1050,8 +1052,9 @@ auto create_bmson_lane_layout(const json_value_t& info,
                                                                    : lane_role_t::playable,
                                     .stage = right_stage.contains(x) ? stage_group_t::right
                                                                       : stage_group_t::left,
-                                    .display_order = x - 1});
+                                    .display_order = display_order++});
         }
+        assign_lane_key_colors(layout);
         chart.input_profile.profile_id = "bmson-unbound";
         chart.input_profile.stage_count = right_stage.empty() ? 1U : 2U;
         chart.lane_layouts.push_back({.id = object_ids.take<object_id_t>(),

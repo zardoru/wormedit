@@ -981,7 +981,7 @@ void color_osu_special_stage(lane_layout_t& layout, stage_group_t stage) {
 
 void color_stage(lane_layout_t& layout, stage_group_t stage, std::string_view profile) {
     const auto lanes = playable_lanes_of_stage(layout, stage);
-    const auto popn = profile.starts_with("pms-");
+    const auto popn = profile.starts_with("pms-") || profile.starts_with("bmson-popn-");
     const auto popn_nine = popn && lanes.size() == pms_button_colors.size();
     for (std::size_t index = 0; index < lanes.size(); ++index) {
         if (profile.starts_with("bmson-generic-")) {
@@ -989,7 +989,8 @@ void color_stage(lane_layout_t& layout, stage_group_t stage, std::string_view pr
         } else if (popn_nine) {
             lanes[index]->key_color = pms_button_colors[index];
         } else if (profile.starts_with("bms-") || profile.starts_with("bme-") ||
-                   profile == "osu-mania-12k" || profile == "osu-mania-16k") {
+                   profile.starts_with("bmson-beat-") || profile == "osu-mania-12k" ||
+                   profile == "osu-mania-16k") {
             lanes[index]->key_color =
                 index % 2 == 0 ? lane_key_color_t::white : lane_key_color_t::black;
         }

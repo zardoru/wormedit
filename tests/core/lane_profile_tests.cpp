@@ -34,6 +34,13 @@ auto standard_5k_profile_valid(const lane_input_profile_t& profile, std::string_
 
 } // namespace
 
+namespace {
+template <typename T>
+void check_bmson_condition(const T& condition) { CHECK(static_cast<bool>(condition)); }
+template <typename T>
+void require_bmson_condition(const T& condition) { REQUIRE(static_cast<bool>(condition)); }
+} // namespace
+
 TEST_CASE("built-in BMS profile registry is complete unique and frontend-neutral",
           "[unit][core][lane-profile][bms][registry]") {
     const auto profiles = built_in_bms_lane_profiles();
@@ -568,6 +575,61 @@ TEST_CASE("pedals free zones PMS buttons and piano banks get their own classes",
 
     const auto dance = make_stepmania_pump_single_profile().layout;
     CHECK(std::ranges::all_of(dance.lanes, [](const auto& lane) { return lane.key_color == color::generic; }));
+}
+
+TEST_CASE("BMSON beat and popn profiles match their BMS lane order and colors",
+          "[unit][core][lane-profile][key-color]") {
+    using color = lane_key_color_t;
+    const auto verify = [](std::string profile_id, const lane_layout_t& expected) {
+        lane_layout_t actual;
+        actual.profile_id = std::move(profile_id);
+        actual.lanes.reserve(expected.lanes.size());
+        for (const auto& lane : expected.lanes) {
+            actual.lanes.push_back({.id = lane.id,
+                                    .role = lane.role,
+                                    .stage = lane.stage,
+                                    .display_order = lane.display_order});
+        }
+        assign_lane_key_colors(actual);
+        auto by_order = [](const lane_layout_t& layout) {
+            auto lanes = layout.lanes;
+            std::ranges::stable_sort(lanes, {}, &lane_definition_t::display_order);
+            return lanes;
+        };
+        const auto expected_order = by_order(expected);
+        const auto actual_order = by_order(actual);
+        require_bmson_condition(actual_order.size() == expected_order.size());
+        for (std::size_t index = 0; index < expected_order.size(); ++index) {
+            check_bmson_condition(actual_order[index].role == expected_order[index].role);
+            check_bmson_condition(actual_order[index].stage == expected_order[index].stage);
+            check_bmson_condition(actual_order[index].key_color == expected_order[index].key_color);
+        }
+    };
+    verify("bmson-beat-5k", make_bms_5k_standard_profile().layout);
+    verify("bmson-beat-7k", make_bms_7k_profile().layout);
+    auto beat_10k_reference = make_bms_14k_profile().layout;
+    lane_layout_t beat_10k;
+    for (const auto stage : {stage_group_t::left, stage_group_t::right}) {
+        std::vector<lane_definition_t> stage_lanes;
+        for (const auto& lane : beat_10k_reference.lanes)
+            if (lane.stage == stage)
+                stage_lanes.push_back(lane);
+        std::ranges::stable_sort(stage_lanes, {}, &lane_definition_t::display_order);
+        if (stage == stage_group_t::left) {
+            stage_lanes.resize(6);
+        } else {
+            const auto scratch = stage_lanes.back();
+            stage_lanes.resize(5);
+            stage_lanes.push_back(scratch);
+        }
+        for (std::size_t index = 0; index < stage_lanes.size(); ++index) {
+            stage_lanes[index].display_order = static_cast<std::uint32_t>(index);
+            beat_10k.lanes.push_back(stage_lanes[index]);
+        }
+    }
+    verify("bmson-beat-10k", beat_10k);
+    verify("bmson-beat-14k", make_bms_14k_profile().layout);
+    verify("bmson-popn-9k", make_pms_9k_profile().layout);
 }
 
 TEST_CASE("layouts without stored colors derive them and unknown profiles stay generic",

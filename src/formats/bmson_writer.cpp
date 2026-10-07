@@ -466,7 +466,7 @@ void validate_chart_lane_layouts(const chart_document_t& chart,
 auto lane_x_position(const lane_definition_t& lane, std::size_t index,
                      const std::vector<std::uint32_t>& positions,
                      std::string_view mode) -> std::uint32_t {
-    if (lane.id.value >= 100001 && lane.id.value <= 100000 + UINT32_MAX)
+    if (lane.id.value >= 100001 && lane.id.value <= 100000ULL + UINT32_MAX)
         return static_cast<std::uint32_t>(lane.id.value - 100000);
     if (mode == "generic-nkeys") {
         if (lane.display_order == UINT32_MAX)

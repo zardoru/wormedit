@@ -351,4 +351,128 @@ TEST_CASE("prioritized assets load before the remaining first-use order",
     CHECK(load_order[1] == wormedit::asset_id_t{1});
     CHECK(load_order[2] == wormedit::asset_id_t{2});
 }
+namespace {
+struct budget_loader_fixture_t {
+    wormedit::song_document_t document;
+    std::filesystem::path directory{std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio"};
+    wormedit::audio::decoded_source_registry_t sources;
+    wormedit::audio::resident_sample_store_t store{{.budget_bytes = 0}};
+    wormedit::task_scheduler_t scheduler{2, 4};
+    wormedit::sys::resident_sample_loader_t loader{store, scheduler};
+    budget_loader_fixture_t(std::string first = "keysound-c4.ogg", std::string second = "keysound-e4.ogg") {
+        document.id = wormedit::song_id_t{780};
+        document.audio_assets.push_back({.id = wormedit::asset_id_t{1}, .source_path = std::move(first)});
+        document.audio_assets.push_back({.id = wormedit::asset_id_t{2}, .source_path = std::move(second)});
+        std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
+        expect_registration(wormedit::sys::register_audition_sources(document, directory, 1, sources, metronome) == 0);
+    }
+    void start() { loader.start(document, directory, 1, sources); }
+    void wait() {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (loader.progress().running && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        expect_registration(!loader.progress().running);
+    }
+};
+void check_budget_snapshot(budget_loader_fixture_t& fixture,
+                           const wormedit::audio::resident_snapshot_ptr_t& held) {
+    expect_registration(fixture.store.snapshot()->size() == 2);
+    expect_registration(held->size() == 2);
+    const auto source = fixture.sources.binding(wormedit::asset_id_t{1})->source;
+    expect_registration(fixture.store.snapshot()->find(source)->data == held->find(source)->data);
+    expect_registration(!held->block({source, 0}).empty());
+}
+}
+TEST_CASE("raising a completed project budget retries skipped keysounds without reopening", "[resident][budget]") {
+    budget_loader_fixture_t fixture;
+    fixture.start();
+    fixture.wait();
+    expect_registration(fixture.store.snapshot()->size() == 0);
+    const auto report = fixture.loader.drain_report();
+    expect_registration(report.has_value());
+    expect_registration(report->message.find("Raise Keysound memory in Options") != std::string::npos);
+    fixture.loader.set_budget_bytes(16U * 1024U * 1024U);
+    fixture.wait();
+    const auto held = fixture.store.snapshot();
+    fixture.loader.set_budget_bytes(0);
+    check_budget_snapshot(fixture, held);
+}
+TEST_CASE("raising the budget during an active resident pass is not lost", "[resident][budget]") {
+    budget_loader_fixture_t fixture{"silence.ogg", "keysound-c4.ogg"};
+    std::atomic<bool> entered{}, released{};
+    fixture.store.set_listener([&](wormedit::audio::resident_snapshot_ptr_t snapshot) {
+        if (snapshot->size() != 1) return;
+        entered = true;
+        while (!released.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    });
+    const auto small = fixture.sources.binding(wormedit::asset_id_t{2});
+    fixture.loader.set_budget_bytes(static_cast<std::size_t>(small->output_frame_count) * 2U * sizeof(float));
+    fixture.start();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!entered.load() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    const auto reached = entered.load();
+    const auto held = fixture.store.snapshot();
+    const auto* retained = held->find(small->source);
+    fixture.loader.set_budget_bytes(16U * 1024U * 1024U);
+    released = true;
+    fixture.wait();
+    expect_registration(reached);
+    expect_registration(held->size() == 1);
+    expect_registration(retained != nullptr);
+    expect_registration(fixture.store.snapshot()->size() == 2);
+    expect_registration(fixture.store.snapshot()->find(small->source)->data == retained->data);
+    fixture.store.set_listener({});
+}
+TEST_CASE("budget retries use only the latest project after a canceled run", "[resident][budget]") {
+    budget_loader_fixture_t fixture;
+    fixture.start();
+    fixture.wait();
+    fixture.loader.cancel();
+    fixture.sources.clear();
+    fixture.document.id = wormedit::song_id_t{781};
+    fixture.document.audio_assets.erase(fixture.document.audio_assets.begin());
+    std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
+    expect_registration(wormedit::sys::register_audition_sources(fixture.document, fixture.directory, 2,
+        fixture.sources, metronome) == 0);
+    fixture.start();
+    fixture.wait();
+    fixture.loader.set_budget_bytes(16U * 1024U * 1024U);
+    fixture.wait();
+    expect_registration(fixture.store.snapshot()->size() == 1);
+    const auto binding = fixture.sources.binding(wormedit::asset_id_t{2});
+    expect_registration(binding.has_value());
+    expect_registration(fixture.store.snapshot()->find(binding->source) != nullptr);
+}
+namespace {
+auto occupy_budget_scheduler(wormedit::task_scheduler_t& scheduler, std::atomic<bool>& release)
+    -> wormedit::task_graph_handle_t {
+    wormedit::task_graph_t graph{4};
+    for (int index = 0; index < 4; ++index) {
+        const auto added = graph.add_task({}, [&release](std::span<const wormedit::task_result_t>, std::stop_token) {
+            while (!release.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            return wormedit::task_result_t::success(wormedit::make_task_value(std::make_shared<const int>(0)));
+        });
+        expect_registration(static_cast<bool>(added));
+    }
+    auto submitted = scheduler.submit(std::move(graph));
+    expect_registration(static_cast<bool>(submitted));
+    return std::move(submitted.graph);
+}
+}
+TEST_CASE("an unchanged budget retries deferred keysounds after scheduler capacity returns", "[resident][budget]") {
+    budget_loader_fixture_t fixture;
+    fixture.start();
+    fixture.wait();
+    std::atomic<bool> release{};
+    const auto occupied = occupy_budget_scheduler(fixture.scheduler, release);
+    fixture.loader.set_budget_bytes(16U * 1024U * 1024U);
+    expect_registration(!fixture.loader.progress().running);
+    expect_registration(fixture.store.snapshot()->size() == 0);
+    release = true;
+    expect_registration(occupied.wait());
+    fixture.loader.set_budget_bytes(16U * 1024U * 1024U);
+    fixture.wait();
+    expect_registration(fixture.store.snapshot()->size() == 2);
+}
 #endif

@@ -195,6 +195,11 @@ auto first_use_asset_order(const song_document_t& document) -> std::vector<asset
 }
 
 struct resident_sample_loader_t::run_state_t {
+    std::mutex control_mutex;
+    std::uint64_t budget_version{};
+    std::uint64_t processed_budget_version{};
+    audio::decoded_source_registry_t* sources{};
+    std::vector<std::pair<asset_id_t, audio::resident_request_t>> skipped;
     std::atomic<std::size_t> total{};
     std::atomic<std::size_t> done{};
     std::atomic<bool> running{true};
@@ -301,6 +306,7 @@ void run_resident_loads(const std::vector<resident_wanted_t>& wanted,
     std::vector<audio::resident_request_t> requests;
     requests.reserve(wanted.size());
     for (const auto& entry : wanted) requests.push_back(entry.request);
+    if (stop.stop_requested()) return;
     const auto missing = store.reconcile(requests);
     state.total = missing.size();
     std::vector<bool> taken(missing.size(), false);
@@ -315,11 +321,50 @@ void run_resident_loads(const std::vector<resident_wanted_t>& wanted,
         const auto status =
             sources.load_resident(wanted[*next].asset, store, requests[*next], stop);
         count_resident_status(status, state.over_budget, state.failed);
+        if (status == audio::resident_load_status_t::over_budget)
+            state.skipped.emplace_back(wanted[*next].asset, requests[*next]);
         ++state.done;
     }
     static_cast<void>(store.compact_if_needed());
 }
 
+} // namespace
+
+namespace {
+void retry_skipped_samples(audio::resident_sample_store_t& store,
+                           resident_sample_loader_t::run_state_t& state, std::stop_token stop) {
+    auto skipped = std::move(state.skipped);
+    state.skipped.clear();
+    state.over_budget = 0;
+    state.reported = false;
+    for (auto& [asset, request] : skipped) {
+        if (stop.stop_requested()) return;
+        const auto status = state.sources->load_resident(asset, store, request, stop);
+        count_resident_status(status, state.over_budget, state.failed);
+        if (status == audio::resident_load_status_t::over_budget)
+            state.skipped.emplace_back(asset, std::move(request));
+    }
+}
+void finish_resident_pass(audio::resident_sample_store_t& store,
+                          resident_sample_loader_t::run_state_t& state,
+                          std::stop_token stop, bool retry) {
+    std::uint64_t observed{};
+    while (!stop.stop_requested()) {
+        {
+            const std::scoped_lock lock(state.control_mutex);
+            observed = state.budget_version;
+        }
+        if (retry || observed != 0) retry_skipped_samples(store, state, stop);
+        const std::scoped_lock lock(state.control_mutex);
+        if (state.budget_version == observed) {
+            state.processed_budget_version = observed;
+            state.running = false;
+            return;
+        }
+        retry = true;
+    }
+    state.running = false;
+}
 } // namespace
 
 resident_sample_loader_t::resident_sample_loader_t(audio::resident_sample_store_t& store,
@@ -333,6 +378,27 @@ resident_sample_loader_t::~resident_sample_loader_t() {
 void resident_sample_loader_t::cancel() {
     stop_.request_stop();
     if (state_) state_->running = false;
+}
+
+void resident_sample_loader_t::set_budget_bytes(std::size_t bytes) {
+    const auto previous = store_.options().budget_bytes;
+    (void)store_.set_budget_bytes(bytes);
+    if (!state_ || stop_.stop_requested()) return;
+    const auto state = state_;
+    {
+        const std::scoped_lock lock(state->control_mutex);
+        if (bytes > previous) ++state->budget_version;
+        if (state->budget_version == state->processed_budget_version || state->running.exchange(true)) return;
+    }
+    const auto stop = stop_.get_token();
+    task_graph_t graph{1};
+    const auto added = graph.add_task({},
+        [&store = store_, state, stop, pass = pass_mutex_](std::span<const task_result_t>, std::stop_token) {
+            const std::scoped_lock lock(*pass);
+            if (!stop.stop_requested()) finish_resident_pass(store, *state, stop, true);
+            return task_result_t::success(make_task_value(std::make_shared<const int>(0)));
+        });
+    if (!added || !scheduler_.submit(std::move(graph))) state->running = false;
 }
 
 void resident_sample_loader_t::prioritize(std::vector<asset_id_t> assets) {
@@ -384,7 +450,7 @@ auto resident_sample_loader_t::drain_report() -> std::optional<notification_post
     std::string line;
     if (over_budget != 0) {
         line += std::to_string(over_budget) +
-                " keysound(s) exceed the resident memory budget and keep streaming from disk.";
+                " keysound(s) exceed the resident memory budget and keep streaming from disk. Raise Keysound memory in Options to load them.";
     }
     if (failed != 0) {
         if (!line.empty()) line += " ";
@@ -401,6 +467,7 @@ void resident_sample_loader_t::start(const song_document_t& document,
     stop_ = std::stop_source{};
     state_ = std::make_shared<run_state_t>();
     state_->priority = priority_hint_;
+    state_->sources = &sources;
     std::vector<resident_candidate_t> candidates;
     for (const auto asset : first_use_asset_order(document)) {
         const auto found = std::ranges::find(document.audio_assets, asset, &audio_asset_t::id);
@@ -414,8 +481,11 @@ void resident_sample_loader_t::start(const song_document_t& document,
     task_graph_t graph{1};
     const auto added = graph.add_task(
         {}, [&store = store_, state, stop, candidates = std::move(candidates),
-             &sources, head_cache = head_cache_, head_frames = head_frames_](
+             &sources, head_cache = head_cache_, head_frames = head_frames_, pass = pass_mutex_](
                 std::span<const task_result_t>, std::stop_token) {
+            const std::scoped_lock pass_lock(*pass);
+            if (stop.stop_requested())
+                return task_result_t::success(make_task_value(std::make_shared<const int>(0)));
             const auto wanted = resident_requests(candidates, sources, store.options(), stop);
             // The song head comes first so playback can start before any keysound loads.
             if (head_cache != nullptr) {
@@ -423,7 +493,7 @@ void resident_sample_loader_t::start(const song_document_t& document,
                                           head_frames, stop);
             }
             run_resident_loads(wanted, sources, store, *state, stop);
-            state->running = false;
+            finish_resident_pass(store, *state, stop, false);
             return task_result_t::success(make_task_value(std::make_shared<const int>(0)));
         });
     if (!added || !scheduler_.submit(std::move(graph))) state->running = false;

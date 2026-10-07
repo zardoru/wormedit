@@ -3,6 +3,7 @@
 #include <chrono>
 #include <algorithm>
 #include <iterator>
+#include <limits>
 
 using namespace wormedit;
 using namespace wormedit::sys;
@@ -284,4 +285,24 @@ TEST_CASE("Editor options save the note click audition toggle", "[options][audit
         action(runtime, WORM_UI_OPTIONS_APPLY, WORM_UI_OPTIONS_EDITOR)));
     expect_options(!program.preferences.editor.audition_on_click);
     expect_options(!load_program_preferences(program.path).contents.preferences.editor.audition_on_click);
+}
+
+TEST_CASE("Options Audio clamps wide keysound actions and applies persisted budgets", "[options][budget]") {
+    temporary_preferences_t file;
+    program_preferences_runtime_t program{.path = file.directory / "preferences.json"};
+    options_runtime_t runtime;
+    open_options(runtime, program.preferences);
+    select(runtime, program, WORM_UI_OPTIONS_AUDIO);
+    auto edit = action(runtime, WORM_UI_OPTIONS_EDIT_FIELD, WORM_UI_OPTIONS_AUDIO);
+    edit.field = WORM_UI_OPTIONS_FIELD_KEYSOUND_MEMORY;
+    edit.integer = std::numeric_limits<std::uint64_t>::max();
+    (void)apply_options_action(runtime, program, edit);
+    expect_options(options_view(runtime).keysound_budget_mib == 8192);
+    expect_options(program.preferences.audio.keysound_budget_mib == 512);
+    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(load_program_preferences(program.path).contents.preferences.audio.keysound_budget_mib == 8192);
+    edit.revision = runtime.revision;
+    edit.integer = 0;
+    (void)apply_options_action(runtime, program, edit);
+    expect_options(options_view(runtime).keysound_budget_mib == 256);
 }

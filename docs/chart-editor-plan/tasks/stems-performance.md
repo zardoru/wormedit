@@ -139,7 +139,7 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-445 Let Options raise the keysound memory budget
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** Options › Audio has a "Keysound memory" field (256 MiB–8 GiB, default 512 MiB) persisted in `preferences.json`. Raising it takes effect for the open project without reopening it. The over-budget notification names the setting.
 - **Read first:** `include/wormedit/audio/resident_samples.h`, `src/audio/resident_samples.cpp`, `include/wormedit/core/preferences.h` (`audio_preferences_t`), `src/ui/nuklear/options_window.cpp`, `src/sys/audio_source_registration.cpp`.
 - **Files owned:** `include/wormedit/core/arena.h`, `src/core/arena.cpp` (root-approved grow-only hard ceiling), `src/sys/main.cpp` (root-approved loaded/live budget application), `src/sys/audio_source_registration.h` (root-approved retry boundary), `tests/core/arena_tests.cpp`, `tests/sys/audio_source_registration_tests.cpp` (root-approved active retry/snapshot retention), `tests/ui/nuklear_event_harness_tests.cpp` (root-approved Options Audio field/action), `tests/ui/nuklear_options_state_tests.cpp` (root-approved production Options apply/clamping regression using its existing runtime fixture), those five, plus `src/core/preferences.cpp`, `src/sys/options_runtime.cpp`, `src/ui/frontend.h` (option field), preference and resident-sample tests, this card.
@@ -150,5 +150,5 @@ User feedback from 2026-10-07, with the causes found while planning:
   4. Add the Options field, and add "raise Keysound memory in Options" to the over-budget notification.
 - **Invariants:** existing preference files load unchanged.
 - **Reject/failure behavior:** values outside the range are clamped, and the field shows the clamped value.
-- **Verify:** `ctest --test-dir build --output-on-failure -R 'preferences|resident'`; an isolated check that a project over budget loads its remaining keysounds after a raise.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'preferences|resident|budget|Options Audio'`; isolated actual-loader checks cover completed and active-pass raises, snapshot retention, latest-project retries and retry submission after scheduler capacity returns, plus the real Audio field/action. The isolated normal dependency build and 48 focused tests passed; configured clang-tidy has no new function over 25. Workspace evidence: `wormedit-scratch-builds/root-oct7/keysound-live-worker-tests-final.log` and `keysound-live-tests-tidy-final.log`.
 - **Out of scope:** stem waveform memory (T-443).

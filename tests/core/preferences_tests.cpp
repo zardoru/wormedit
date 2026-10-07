@@ -265,3 +265,28 @@ TEST_CASE("Editor preference fields round trip and invalid individual values ret
     value.editor.scroll_directions[0] = 3;
     expect_preference(!serialize_program_preferences(value));
 }
+
+namespace {
+void check_keysound_preference(std::string_view literal, std::uint32_t expected) {
+    const auto parsed = wormedit::parse_program_preferences(
+        "{\"audio\":{\"keysound_budget_mib\":" + std::string{literal} + "}}");
+    CHECK(parsed.parsed);
+    CHECK(parsed.preferences.audio.keysound_budget_mib == expected);
+    const auto serialized = wormedit::serialize_program_preferences(parsed.preferences);
+    REQUIRE(serialized);
+    CHECK(wormedit::parse_program_preferences(*serialized).preferences.audio.keysound_budget_mib == expected);
+}
+}
+TEST_CASE("keysound budgets default and clamp wide JSON integers before narrowing", "[preferences][budget]") {
+    check_keysound_preference("-9223372036854775808", 256);
+    check_keysound_preference("0", 256);
+    check_keysound_preference("4294967296", 8192);
+    check_keysound_preference("18446744073709551615", 8192);
+    check_keysound_preference("4096", 4096);
+    check_keysound_preference("8192", 8192);
+}
+TEST_CASE("keysound budget invalid JSON types retain the default", "[preferences][budget]") {
+    for (const auto value : {"null", "true", "\"8192\"", "512.5", "[]", "{}"})
+        check_keysound_preference(value, 512);
+    CHECK(wormedit::parse_program_preferences("{}").preferences.audio.keysound_budget_mib == 512);
+}

@@ -1878,7 +1878,7 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_LAYOUT, WORM_UI_OPTIONS_FIELD_SHORTCUT_PATH,
     WORM_UI_OPTIONS_FIELD_PLAYERS, WORM_UI_OPTIONS_FIELD_PAGE,
     WORM_UI_OPTIONS_FIELD_CONFIRM_CLOSE, WORM_UI_OPTIONS_FIELD_MINIMAP_CLICK,
-    WORM_UI_OPTIONS_FIELD_KEEP_PITCH, WORM_UI_OPTIONS_FIELD_TIMING_OVERLAY,
+    WORM_UI_OPTIONS_FIELD_KEEP_PITCH, WORM_UI_OPTIONS_FIELD_KEYSOUND_MEMORY, WORM_UI_OPTIONS_FIELD_TIMING_OVERLAY,
     WORM_UI_OPTIONS_FIELD_PLAYER_NAME, WORM_UI_OPTIONS_FIELD_PLAYER_PATH,
     WORM_UI_OPTIONS_FIELD_PLAYER_START, WORM_UI_OPTIONS_FIELD_PLAYER_HERE,
     WORM_UI_OPTIONS_FIELD_PLAYER_STOP, WORM_UI_OPTIONS_FIELD_PLAYER_SELECTED,
@@ -1904,6 +1904,7 @@ typedef struct WormUiOptionsView {
     bool audition_on_click;
     bool confirm_unsaved_close, keep_pitch, frame_timing_overlay;
     bool minimap_click_moves_paused_playhead;
+    uint32_t keysound_budget_mib;
     uint64_t rate_numerator, rate_denominator;
     const char* theme;
     const char* dock_layout;

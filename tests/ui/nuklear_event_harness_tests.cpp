@@ -2403,3 +2403,27 @@ TEST_CASE("BMS branch dock pushes the field over and hides on a narrow window",
     const auto narrow = field_left(800, true);
     CHECK(narrow.second == 0);
 }
+
+namespace {
+void check_keysound_edit_action(const WormUiOptionsAction& edited) {
+    CHECK(edited.kind == WORM_UI_OPTIONS_EDIT_FIELD);
+    CHECK(edited.field == WORM_UI_OPTIONS_FIELD_KEYSOUND_MEMORY);
+    CHECK(edited.integer == 513);
+}
+}
+TEST_CASE("Options Audio exposes and edits the keysound memory field", "[options][budget][event-harness]") {
+    nuklear_event_harness_t harness{1280, 900};
+    harness.view().options = {.visible = true, .revision = 91, .category = WORM_UI_OPTIONS_AUDIO,
+        .keysound_budget_mib = 512, .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
+    (void)harness.frame();
+    const auto label = harness.drawn_text_center("Keysound memory (MiB)");
+    REQUIRE(label);
+    const auto value = harness.drawn_text_center("512");
+    REQUIRE(value);
+    const auto clicks = click_at(harness, value->first + 28, value->second);
+    const auto edited = std::ranges::find_if(clicks, [](const auto& frame) {
+        return frame.get().options.kind == WORM_UI_OPTIONS_EDIT_FIELD;
+    });
+    REQUIRE(edited != clicks.end());
+    check_keysound_edit_action(edited->get().options);
+}

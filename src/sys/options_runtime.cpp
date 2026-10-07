@@ -134,6 +134,9 @@ auto edit_audio(program_preferences_t& p, const WormUiOptionsAction& a) -> bool 
     switch (a.field) {
     case WORM_UI_OPTIONS_FIELD_RATE: p.audio.playback_rate = {a.integer, a.denominator}; return true;
     case WORM_UI_OPTIONS_FIELD_KEEP_PITCH: p.audio.keep_pitch = a.boolean; return true;
+    case WORM_UI_OPTIONS_FIELD_KEYSOUND_MEMORY:
+        p.audio.keysound_budget_mib = static_cast<std::uint32_t>(std::clamp<std::uint64_t>(a.integer, 256, 8192));
+        return true;
     default: return false;
     }
 }
@@ -213,6 +216,7 @@ auto edit_options_draft(options_runtime_t& r, std::uint64_t revision,
     const program_preferences_t& candidate) -> bool {
     if (!r.visible || revision != r.revision) return false;
     copy_category(r.draft, candidate, r.category);
+    r.draft.audio.keysound_budget_mib = std::clamp(r.draft.audio.keysound_budget_mib, 256U, 8192U);
     ++r.revision;
     r.status.clear();
     validate_draft(r);
@@ -240,6 +244,7 @@ auto options_view(options_runtime_t& r) -> WormUiOptionsView {
         .confirm_unsaved_close = p.general.confirm_unsaved_close, .keep_pitch = p.audio.keep_pitch,
         .frame_timing_overlay = p.display.frame_timing_overlay,
         .minimap_click_moves_paused_playhead = p.minimap.click_moves_paused_playhead,
+        .keysound_budget_mib = p.audio.keysound_budget_mib,
         .rate_numerator = p.audio.playback_rate.numerator, .rate_denominator = p.audio.playback_rate.denominator,
         .theme = p.display.theme.c_str(), .dock_layout = p.layout.dock_layout.c_str(),
         .shortcut_profile_path = p.general.shortcut_profile_path.c_str(), .players = r.player_views.data(),

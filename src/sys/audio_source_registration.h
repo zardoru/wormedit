@@ -15,6 +15,7 @@
 #include <functional>
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stop_token>
 #include <string>
@@ -69,6 +70,8 @@ class resident_sample_loader_t {
     void start(const song_document_t& document, const std::filesystem::path& asset_base,
                std::uint64_t generation, audio::decoded_source_registry_t& sources);
     void cancel();
+    // Applies a future-load cap and retries only this project's budget-skipped loads.
+    void set_budget_bytes(std::size_t bytes);
     // Long sources (the song) cannot be resident; their first seconds are decoded
     // into this cache before the keysounds so playback can start at once.
     void set_head_cache(audio::decoded_block_cache_t* cache, std::uint64_t head_frames = 441'000) {
@@ -100,6 +103,7 @@ class resident_sample_loader_t {
     task_scheduler_t& scheduler_;
     std::stop_source stop_;
     std::shared_ptr<run_state_t> state_;
+    std::shared_ptr<std::mutex> pass_mutex_{std::make_shared<std::mutex>()};
     std::vector<asset_id_t> priority_hint_;
     audio::decoded_block_cache_t* head_cache_{};
     std::uint64_t head_frames_{};

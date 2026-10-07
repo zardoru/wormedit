@@ -70,8 +70,14 @@ void editor_page(nk_context* context, const WormUiOptionsView* view, WormUiOptio
     edit_toggle(context, *view, *action, "Minimap click moves paused playhead", WORM_UI_OPTIONS_FIELD_MINIMAP_CLICK,
         view->minimap_click_moves_paused_playhead);
 }
+void audio_page(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
+    edit_integer(context, *view, *action, "Keysound memory (MiB)", WORM_UI_OPTIONS_FIELD_KEYSOUND_MEMORY,
+        view->keysound_budget_mib, 256, 8192);
+    nk_layout_row_dynamic(context, 48, 1);
+    nk_label_wrap(context, "Raising the budget loads skipped keysounds for the open project. Lowering it limits future loads and keeps playing sounds in memory.");
+}
 std::array<WormUiOptionsPageRenderer, WORM_UI_OPTIONS_CATEGORY_COUNT> pages{
-    general_page, editor_page, placeholder, placeholder, placeholder, placeholder};
+    general_page, editor_page, audio_page, placeholder, placeholder, placeholder};
 void emit(WormUiOptionsAction& action, const WormUiOptionsView& view, WormUiOptionsActionKind kind) {
     if (action.kind != WORM_UI_OPTIONS_NONE) return;
     action = {.kind = kind, .revision = view.revision, .category = view.category};

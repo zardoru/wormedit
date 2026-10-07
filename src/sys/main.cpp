@@ -3835,6 +3835,9 @@ int main(int argc, char** argv) {
     pending_close_t pending_close;
     auto program_preferences = wormedit::sys::load_program_preferences_runtime();
     initialize_program_preferences(program_preferences, external_player_runtime, application_command_state, notification_sink);
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    resident_loader.set_budget_bytes(static_cast<std::size_t>(program_preferences.preferences.audio.keysound_budget_mib) * 1024ULL * 1024ULL);
+#endif
     (void)autosave_loop.set_interval(std::chrono::minutes{program_preferences.preferences.general.autosave_minutes});
     application_command_state.external_player = [&](wormedit::sys::external_player_action_t action) {
         return launch_external_player(external_player_runtime, action, history, workspace,
@@ -4193,6 +4196,9 @@ int main(int argc, char** argv) {
                     program_preferences.preferences.general.confirm_unsaved_close, [&] {
                 dispatch_options_frame_action(options_runtime, program_preferences, action.options,
                     external_player_runtime, application_command_state, autosave_loop, notification_sink);
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+                resident_loader.set_budget_bytes(static_cast<std::size_t>(program_preferences.preferences.audio.keysound_budget_mib) * 1024ULL * 1024ULL);
+#endif
                 const auto tap_applied = dispatch_tap_panel_action(tap_runtime, action.tap_timing,
                     history, tap_clock(), application_command_state.audio_offset_edits_locked());
                 post_tap_apply_feedback(tap_applied, notification_sink);

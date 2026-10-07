@@ -117,11 +117,26 @@ auto editor_json(const editor_preferences_t& value) -> json_t {
         {"lane_key_legend_visible", value.lane_key_legend_visible}, {"area_band_alpha", value.area_band_alpha},
         {"audition_on_click", value.audition_on_click}};
 }
+void read_keysound_budget(preference_reader_t& reader, const json_t& object) {
+    const auto found = object.find("keysound_budget_mib");
+    if (found == object.end()) return;
+    if (!found->is_number_integer()) {
+        reader.warn("keysound_budget_mib must be an integer; default retained.");
+        return;
+    }
+    const auto candidate = found->is_number_unsigned()
+        ? found->get<std::uint64_t>()
+        : static_cast<std::uint64_t>(std::max<std::int64_t>(found->get<std::int64_t>(), 0));
+    reader.result.preferences.audio.keysound_budget_mib =
+        static_cast<std::uint32_t>(std::clamp<std::uint64_t>(candidate, 256, 8192));
+}
+
 void read_editor_audio(preference_reader_t& reader, const json_t& root) {
     read_editor(reader, root);
     auto& values = reader.result.preferences;
     const auto& audio = reader.section(root, "audio");
-    reader.check_keys(audio, {"playback_rate", "keep_pitch"});
+    reader.check_keys(audio, {"playback_rate", "keep_pitch", "keysound_budget_mib"});
+    read_keysound_budget(reader, audio);
     reader.boolean(audio, "keep_pitch", values.audio.keep_pitch);
     const auto& rate = reader.section(audio, "playback_rate");
     reader.check_keys(rate, {"numerator", "denominator"});
@@ -187,7 +202,8 @@ auto valid_preferences(const program_preferences_t& value) -> bool {
         value.general.recent_files_count >= 1 && value.general.recent_files_count <= 100 &&
         valid_string(value.general.shortcut_profile_path) && !value.general.shortcut_profile_path.empty() &&
         valid_editor(value.editor) &&
-        supported_rate(value.audio.playback_rate) && valid_string(value.display.theme) &&
+        supported_rate(value.audio.playback_rate) && value.audio.keysound_budget_mib >= 256 &&
+        value.audio.keysound_budget_mib <= 8192 && valid_string(value.display.theme) &&
         (value.display.ui_scale_percent == 0 ||
             (value.display.ui_scale_percent >= 100 && value.display.ui_scale_percent <= 200)) &&
         valid_external_player_preferences(value.players) && valid_string(value.layout.dock_layout);
@@ -205,7 +221,8 @@ auto preferences_json(const program_preferences_t& value) -> json_t {
             {"shortcut_profile_path", value.general.shortcut_profile_path}}},
         {"editor", editor_json(value.editor)},
         {"audio", {{"playback_rate", {{"numerator", value.audio.playback_rate.numerator},
-            {"denominator", value.audio.playback_rate.denominator}}}, {"keep_pitch", value.audio.keep_pitch}}},
+            {"denominator", value.audio.playback_rate.denominator}}}, {"keep_pitch", value.audio.keep_pitch},
+            {"keysound_budget_mib", value.audio.keysound_budget_mib}}},
         {"display", {{"theme", value.display.theme}, {"ui_scale_percent", value.display.ui_scale_percent},
             {"frame_timing_overlay", value.display.frame_timing_overlay}}},
         {"players", {{"selected", value.players.selected}, {"definitions", std::move(players)}}},

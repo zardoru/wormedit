@@ -35,3 +35,10 @@ Do stale-plan checks, preserve out-of-scope limits. T-438/T-453 STOP audits and
 T-440/T-444/T-455 are outside this implementation batch. Root will run a normal
 application build, relevant independent checks, and the full suite after serial
 integration, then update resume/card statuses and remove completed worktrees.
+
+Agent thread limits rejected the second new coordinator and a new Luna thread.
+Root reuses `/root/budget_recovery_61` as the T-443 Sol coordinator; T-451 Sol
+reuses `/root/budget_recovery_61/budget_luna` for its executor. No old worktree
+remains active. If repeated Luna model-capacity failures prevent implementation,
+root authorizes the assigned Sol 6.1 medium coordinator to implement the narrow
+brief and records the fallback; root still independently reviews final diffs.

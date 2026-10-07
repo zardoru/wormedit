@@ -75,6 +75,23 @@ auto click(nuklear_event_harness_t& harness, float x, float y)
     return {harness.frame(down), harness.frame(up)};
 }
 
+auto scroll_to_profile_and_select(nuklear_event_harness_t& harness,
+                                  std::string_view profile_name, float x, float y)
+    -> std::optional<std::array<workspace_action_snapshot_t, 2>> {
+    auto row = harness.drawn_text_center(profile_name);
+    for (int step = 0; step < 12 && !row; ++step) {
+        const auto scroll = std::array{mouse_motion(x, y), mouse_wheel(-4, x, y)};
+        (void)harness.frame(scroll);
+        row = harness.drawn_text_center(profile_name);
+    }
+    if (!row) return std::nullopt;
+    const auto settle_scroll = std::array{mouse_motion(x, y), mouse_wheel(-1, x, y)};
+    (void)harness.frame(settle_scroll);
+    row = harness.drawn_text_center(profile_name);
+    if (!row) return std::nullopt;
+    return click(harness, row->first, row->second);
+}
+
 auto has_input(const workspace_action_snapshot_t& action, WormUiComposeInputKind kind,
                std::uint64_t object_id) -> bool {
     const auto& value = action.get();
@@ -276,32 +293,64 @@ void verify_bga_stack_escape_dismissal(nuklear_event_harness_t& harness) {
     check_bga(quiet.get().compose_input_count == 0);
     check_bga(!worm_ui_nuklear_compose_state().bga_stack_release_pending);
 }
-}
 
-TEST_CASE("BGM-only lane profile picker exposes every built-in profile to the frontend",
-          "[frontend-state][event-harness][lane-profile]") {
-    nuklear_event_harness_t harness{1600, 900};
-    REQUIRE(harness.ready());
+using lane_profile_choices_t = decltype(wormedit::lane_profile_choices());
+
+auto prepare_initial_profile_picker(nuklear_event_harness_t& harness)
+    -> lane_profile_choices_t {
     auto& view = harness.view().compose;
-    const auto profiles = wormedit::lane_profile_choices();
-    REQUIRE(profiles.size() <= WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY);
+    view.chart_id = 7;
+    view.document_revision = 11;
+    auto profiles = wormedit::lane_profile_choices();
+    check_bga(profiles.size() <= WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY);
     view.lane_profile_choice_count = static_cast<std::uint8_t>(profiles.size());
     view.lane_profile_current = -1;
     for (std::size_t index = 0; index < profiles.size(); ++index)
         std::snprintf(view.lane_profile_names[index], sizeof(view.lane_profile_names[index]),
                       "%s", profiles[index].layout.display_name.c_str());
     worm_ui_nuklear_compose_state().inspector_visible = true;
+    return profiles;
+}
+
+auto open_initial_profile_picker(nuklear_event_harness_t& harness)
+    -> std::optional<std::pair<float, float>> {
     const auto initial = harness.frame();
-    CHECK(initial.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_bga(initial.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     const auto placeholder = harness.drawn_text_center("Choose a lane profile...");
-    REQUIRE(placeholder);
+    if (!placeholder) return std::nullopt;
     (void)click(harness, placeholder->first, placeholder->second);
-    CHECK(harness.drawn_text().find(profiles.front().layout.display_name) != std::string::npos);
-    const auto first = harness.drawn_text_center(profiles.front().layout.display_name);
-    REQUIRE(first);
-    const auto selected = click(harness, first->first, first->second);
-    CHECK(selected.front().get().compose_action == WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE);
-    CHECK(selected.front().get().compose_lane_profile_index == 0);
+    return placeholder;
+}
+
+void check_profile_action(const std::array<workspace_action_snapshot_t, 2>& selected,
+                          std::uint32_t target_index) {
+    const auto& pressed = selected[0].get();
+    const auto& released = selected[1].get();
+    check_bga(pressed.compose_action == WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE);
+    check_bga(pressed.compose_lane_profile_index == target_index);
+    check_bga(pressed.compose_input_chart_id == 7);
+    check_bga(pressed.compose_input_document_revision == 11);
+    check_bga(released.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+}
+}
+
+TEST_CASE("BGM-only lane profile picker exposes every built-in profile to the frontend",
+          "[frontend-state][event-harness][lane-profile]") {
+    nuklear_event_harness_t harness{1600, 900};
+    REQUIRE(harness.ready());
+    const auto profiles = prepare_initial_profile_picker(harness);
+    const auto placeholder = open_initial_profile_picker(harness);
+    REQUIRE(placeholder);
+    const auto target = std::ranges::find(profiles, "bms-10k-scratchless", [](const auto& profile) {
+        return std::string_view{profile.layout.profile_id};
+    });
+    REQUIRE(target != profiles.end());
+    const auto target_index = static_cast<std::uint32_t>(target - profiles.begin());
+    const auto selected = scroll_to_profile_and_select(
+        harness, target->layout.display_name, placeholder->first,
+        placeholder->second + 36.0f);
+    REQUIRE(selected);
+    check_profile_action(*selected, target_index);
 }
 
 

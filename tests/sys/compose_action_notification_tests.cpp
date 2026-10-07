@@ -37,6 +37,13 @@ void check_action_false(bool value, std::source_location source = std::source_lo
 void require_action_false(bool value, std::source_location source = std::source_location::current()) {
     require_action(!value, source);
 }
+auto same_bgm_event(const bgm_event_t& left, const bgm_event_t& right) -> bool {
+    return left.id == right.id && left.position == right.position &&
+        left.source_lane == right.source_lane && left.sound == right.sound &&
+        left.sound_channel_event == right.sound_channel_event &&
+        left.structural_slot == right.structural_slot && left.branch == right.branch &&
+        left.semantic_layers == right.semantic_layers;
+}
 auto action_notification_song() -> song_document_t {
     song_document_t song;
     song.id = song_id_t{1};
@@ -86,6 +93,14 @@ struct action_notification_fixture_t {
     auto dispatch(const WormUiWorkspaceAction& value) -> std::string {
         return dispatch_compose_view_action(value, history, workspace, state, 800, application,
             asset_base, scheduler, resource_copy, export_runtime, false, sink);
+    }
+    auto dispatch_workspace(const WormUiWorkspaceAction& value,
+                            std::optional<editor_interaction_state_t>& interaction) -> bool {
+        metadata_drop_state_t drop;
+        runtime::metadata_asset_t metadata{sink};
+        return dispatch_compose_workspace_action(value, history, workspace, interaction, 800,
+            application, asset_base, scheduler, resource_copy, export_runtime, false, drop,
+            metadata, sink);
     }
     auto entries() -> std::vector<notification_entry_t> {
         center.drain_inbox(notification_time_t{});
@@ -288,6 +303,81 @@ TEST_CASE("Compose lane profile picker retains the active gesture warning withou
         "Finish or cancel the active Compose gesture before changing the lane profile.");
     CHECK(fixture.history.undo.empty());
     CHECK(fixture.history.document.charts.front().lane_layouts.empty());
+}
+
+TEST_CASE("BGM-only workspace boundary applies the emitted first-profile action",
+          "[compose-action-notifications][lane-profile]") {
+    action_notification_fixture_t fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.lane_layouts.clear();
+    chart.input_profile.bindings.clear();
+    chart.bgm_source_lanes = {{.id = object_id_t{20}, .name = "BGM", .source_order = 0}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{21},
+        .position = {measure_id_t{1}, 120}, .source_lane = object_id_t{20}}};
+    const auto original_bgm = chart.measures.front().bgm_events.front();
+    const auto choices = lane_profile_choices();
+    const auto target = std::ranges::find(choices, "bms-10k-scratchless", [](const auto& choice) {
+        return std::string_view{choice.layout.profile_id};
+    });
+    REQUIRE(target != choices.end());
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE);
+    action.compose_lane_profile_index = static_cast<std::uint32_t>(target - choices.begin());
+    std::optional<editor_interaction_state_t> interaction;
+    require_action(fixture.dispatch_workspace(action, interaction));
+    const auto& applied_chart = fixture.history.document.charts.front();
+    require_action(applied_chart.lane_layouts.size() == 1);
+    check_action(applied_chart.lane_layouts.front().layout.profile_id == "bms-10k-scratchless");
+    check_action((applied_chart.lane_layouts.front().position == local_position_t{measure_id_t{1}, 0}));
+    check_action_false(applied_chart.input_profile.bindings.empty());
+    require_action(applied_chart.measures.front().bgm_events.size() == 1);
+    check_action(same_bgm_event(applied_chart.measures.front().bgm_events.front(), original_bgm));
+    require_action(fixture.history.undo.size() == 1);
+    require_action(undo_document_command(fixture.history));
+    const auto& undone_chart = fixture.history.document.charts.front();
+    check_action(undone_chart.lane_layouts.empty());
+    check_action(same_bgm_event(undone_chart.measures.front().bgm_events.front(), original_bgm));
+}
+
+TEST_CASE("BGM-only workspace boundary inserts an initial layout profile",
+          "[compose-action-notifications][lane-profile]") {
+    action_notification_fixture_t fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.lane_layouts.clear();
+    chart.input_profile.bindings.clear();
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE);
+    action.compose_measure_number = 1;
+    std::snprintf(action.compose_lane_layout_profile_id,
+                  sizeof(action.compose_lane_layout_profile_id), "%s", "bms-10k-scratchless");
+    std::optional<editor_interaction_state_t> interaction;
+    require_action(fixture.dispatch_workspace(action, interaction));
+    const auto& applied_chart = fixture.history.document.charts.front();
+    require_action(applied_chart.lane_layouts.size() == 1);
+    check_action(applied_chart.lane_layouts.front().layout.profile_id == "bms-10k-scratchless");
+    check_action_false(applied_chart.input_profile.bindings.empty());
+    check_action(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("No-state first-profile workspace action rejects stale and existing layouts",
+          "[compose-action-notifications][lane-profile]") {
+    action_notification_fixture_t fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.lane_layouts.clear();
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE);
+    std::optional<editor_interaction_state_t> interaction;
+    SECTION("wrong chart") { ++action.compose_input_chart_id; }
+    SECTION("stale revision") { --action.compose_input_document_revision; }
+    SECTION("chart already has a layout") {
+        chart.lane_layouts = action_notification_song().charts.front().lane_layouts;
+    }
+    const auto revision = fixture.history.document.revision;
+    require_action(fixture.dispatch_workspace(action, interaction));
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
+    check_action(chart.lane_layouts.empty() == (action.compose_input_chart_id != fixture.state.chart.value ||
+        action.compose_input_document_revision != revision));
 }
 
 TEST_CASE("Compose area recipe mutation records one success and one undo", "[compose-action-notifications]") {

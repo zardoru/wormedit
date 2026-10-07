@@ -3007,6 +3007,28 @@ auto resource_path_tab_action(const WormUiWorkspaceAction& action,
          action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT);
 }
 
+auto is_initial_layout_workspace_action(const WormUiWorkspaceAction& action) -> bool {
+    return action.compose_action == WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE ||
+        action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE;
+}
+
+auto temporary_compose_interaction_is_current(
+    const WormUiWorkspaceAction& action, const wormedit::document_history_t& history,
+    const wormedit::workspace_controller_t& workspace, bool initial_layout_action) -> bool {
+    const auto* selected = selected_chart(history, workspace);
+    return workspace.active_tab == wormedit::workspace_tab_t::compose &&
+        workspace.selected_chart && selected &&
+        action.compose_input_chart_id == workspace.selected_chart->value &&
+        action.compose_input_document_revision == history.document.revision &&
+        (!initial_layout_action || selected->lane_layouts.empty());
+}
+
+auto temporary_compose_interaction_expired_message(bool initial_layout_action) -> const char* {
+    return initial_layout_action
+        ? "Lane layout change ignored because the selected difficulty or document changed."
+        : "BGM column count edit expired because the selected chart or document changed.";
+}
+
 auto dispatch_compose_view_action(
     const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace, wormedit::editor_interaction_state_t& state,
@@ -3104,12 +3126,13 @@ auto dispatch_compose_workspace_action(
         return false;
     }
 
-    if (!interaction_state &&
-        action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT) {
-        if (workspace.active_tab != wormedit::workspace_tab_t::compose ||
-            !workspace.selected_chart ||
-            action.compose_input_chart_id != workspace.selected_chart->value) {
-            report("BGM column count edit expired because the selected chart changed.",
+    const bool initial_layout_action = is_initial_layout_workspace_action(action);
+    const bool temporary_bgm_interaction_action =
+        action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT || initial_layout_action;
+    if (!interaction_state && temporary_bgm_interaction_action) {
+        if (!temporary_compose_interaction_is_current(
+                action, history, workspace, initial_layout_action)) {
+            report(temporary_compose_interaction_expired_message(initial_layout_action),
                    notification_severity_t::warning, notification_source_t::edit);
             return true;
         }

@@ -4,6 +4,8 @@
 
 ## Immediate work
 
+BMSON hybrid lanes (planned 2026-10-07, user decisions recorded on the card group): [hybrid lanes](../../docs/chart-editor-plan/tasks/bmson-hybrid-lanes.md) T-457 model, then T-458 classify on open, T-459/T-460, T-462 per-section Add, T-464 resizable stem lanes with file-name labels; T-461 waits on the T-453 verb audit and T-463 (Draw-tool stem points: in span = continue, Shift or out of span = restart) waits on T-412. [Conversion](../../docs/chart-editor-plan/tasks/bmson-conversion.md): T-465 slice-span stage, then T-466 BMSON→osu!mania and T-467 BMSON→BMS; T-468 StepMania keysound reference is independent.
+
 Completed in code [rendering batch](../coordination/oct7-render-batch.md):
 T-451 BGA lanes/compositing and T-443 budgeted stable stem caches. Root normal
 application build and all **2,495 tests pass**. Production software canvas

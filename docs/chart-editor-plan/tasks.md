@@ -55,10 +55,12 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [User manual and tutorial video](tasks/manual-tutorial.md)
 - [BMSON stems, projection cost and audio budgets](tasks/stems-performance.md)
 - [BMSON layers and profiles, all BGA layers, one verb set for BGM and play lanes](tasks/bmson-bga-editing.md)
+- [BMSON hybrid lanes: stem lanes beside packed keysound columns](tasks/bmson-hybrid-lanes.md)
+- [BMSON conversion through slice spans: osu!mania, BMS, StepMania keysounds](tasks/bmson-conversion.md)
 - [Bookmark rename harness gesture alignment](tasks/bookmark-rename-harness.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-456.
+every number above T-468.
 
 ## Rules for whoever executes a card
 

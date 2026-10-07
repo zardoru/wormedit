@@ -49,4 +49,26 @@ auto move_selected_notes_to_bgm(document_history_t& history, editor_interaction_
     return outcome;
 }
 
+auto move_selected_bgm_to_lane(document_history_t& history, editor_interaction_state_t& state, lane_id_t lane,
+                               std::optional<object_id_t> also) -> note_to_bgm_outcome_t {
+    std::vector<object_id_t> moving;
+    for (const auto& object : state.selected_objects)
+        if (object.kind == editor_selection_object_kind_t::bgm_event) moving.push_back(object.id);
+    if (also && std::ranges::find(moving, *also) == moving.end()) moving.push_back(*also);
+    if (moving.empty() || !lane) return {};
+    note_to_bgm_outcome_t outcome{.handled = true};
+    outcome.command = move_bgm_events_to_lane(history, history.document.revision, state.chart, moving, lane);
+    if (!outcome.command.applied) return outcome;
+    const auto is_moved = [&](object_id_t id) { return std::ranges::find(moving, id) != moving.end(); };
+    std::erase_if(state.selected_objects, [&](const auto& object) {
+        return object.kind == editor_selection_object_kind_t::bgm_event && is_moved(object.id);
+    });
+    for (const auto id : moving) {
+        state.selected_notes.push_back(id);
+        state.selected_objects.push_back({editor_selection_object_kind_t::note, id});
+    }
+    outcome.selection_exhausted = false;
+    return outcome;
+}
+
 } // namespace wormedit::sys

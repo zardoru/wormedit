@@ -158,3 +158,59 @@ TEST_CASE("dragging a stem tap moves its slice point and leaves the audio where 
                                             event_id, &sound_channel_event_t::id);
     CHECK(restored->position.row == 840);
 }
+
+TEST_CASE("BGM events move into a playfield lane keeping their row",
+          "[unit][core][note-to-bgm][bgm-to-lane]") {
+    auto song = plain_song();
+    auto& chart = song.charts.front();
+    chart.measures[1].bgm_events = {{.id = object_id_t{50}, .position = {measure_id_t{2}, 480}, .source_lane = object_id_t{9}}};
+    auto history = make_document_history(song);
+    const std::array event{object_id_t{50}};
+    const auto moved = move_bgm_events_to_lane(history, history.document.revision, chart_id_t{1}, event, lane_id_t{2});
+    REQUIRE(moved.applied);
+    const auto& after = history.document.charts.front().measures[1];
+    CHECK(after.bgm_events.empty());
+    REQUIRE(after.notes.size() == 2);
+    const auto note = std::ranges::find(after.notes, object_id_t{50}, &note_t::id);
+    REQUIRE(note != after.notes.end());
+    CHECK(note->lane == lane_id_t{2});
+    CHECK(note->position == (local_position_t{measure_id_t{2}, 480}));
+    CHECK(history.undo.size() == 1);
+
+    // A lane that already holds a note at the row rejects without changing anything.
+    auto other = plain_song();
+    other.charts.front().measures[0].bgm_events = {{.id = object_id_t{51}, .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{9}}};
+    auto blocked = make_document_history(other);
+    const auto revision = blocked.document.revision;
+    const std::array clash{object_id_t{51}};
+    CHECK_FALSE(move_bgm_events_to_lane(blocked, revision, chart_id_t{1}, clash, lane_id_t{1}).applied);
+    CHECK(blocked.document.revision == revision);
+    CHECK_FALSE(move_bgm_events_to_lane(blocked, revision, chart_id_t{1}, clash, lane_id_t{99}).applied);
+}
+
+TEST_CASE("a BMSON stem marker moves to a playfield lane and back without losing its slice point",
+          "[unit][core][note-to-bgm][bgm-to-lane][bmson]") {
+    std::ifstream input(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / "published-vox-slicing.bmson",
+                        std::ios::binary);
+    const std::string bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
+    REQUIRE(parsed.song.has_value());
+    auto song = *parsed.song;
+    song.audio_assets.front().stream = {48'000, 2, 200'000, true};
+    auto history = make_document_history(std::move(song));
+    const auto& chart = history.document.charts.front();
+    const auto measure = std::ranges::find_if(chart.measures, [](const auto& m) { return !m.bgm_events.empty(); });
+    REQUIRE(measure != chart.measures.end());
+    const auto marker = measure->bgm_events.front();
+    const auto lane = chart.lane_layouts.front().layout.lanes.front().id;
+    const std::array events{marker.id};
+    REQUIRE(move_bgm_events_to_lane(history, history.document.revision, chart.id, events, lane).applied);
+    const auto& playable = history.document.charts.front();
+    const auto note = std::ranges::find_if(playable.measures, [&](const auto& m) {
+        return std::ranges::any_of(m.notes, [&](const auto& n) { return n.id == marker.id; });
+    });
+    REQUIRE(note != playable.measures.end());
+    const auto tap = std::ranges::find(note->notes, marker.id, &note_t::id);
+    CHECK(tap->sound_channel_event == marker.sound_channel_event);
+    CHECK(tap->lane == lane);
+}

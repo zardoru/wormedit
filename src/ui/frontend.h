@@ -2298,6 +2298,9 @@ typedef enum WormUiComposeInputKind {
     /* The selected playable notes were dropped on the BGM area; lane_id is the BGM source lane
        under the pointer (0 for none). BMSON stem taps return to their stem's lane. */
     WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM,
+    /* A BGM event was dropped on the playable field: lane_id is the playfield lane under the
+       pointer and object_id the dragged event. It keeps its row and becomes a tap. */
+    WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE,
     WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE,
     WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART,
     WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_CONTINUE,

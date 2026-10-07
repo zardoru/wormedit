@@ -137,4 +137,78 @@ auto move_notes_to_bgm(document_history_t& history, std::uint64_t expected_revis
                                    notes.size() == 1 ? "Move note to BGM" : "Move notes to BGM");
 }
 
+namespace {
+
+struct located_bgm_t {
+    measure_chunk_t* measure{};
+    std::vector<bgm_event_t>::iterator event;
+};
+
+auto find_bgm(chart_document_t& chart, object_id_t id) -> std::optional<located_bgm_t> {
+    for (auto& measure : chart.measures) {
+        const auto found = std::ranges::find(measure.bgm_events, id, &bgm_event_t::id);
+        if (found != measure.bgm_events.end()) return located_bgm_t{&measure, found};
+    }
+    return std::nullopt;
+}
+
+// An ordinary BGM event becomes a tap at its own row; false when the lane already has a note there.
+auto convert_bgm_event(chart_document_t& chart, object_id_t id, lane_id_t lane) -> bool {
+    const auto located = find_bgm(chart, id);
+    if (!located) return false;
+    const auto position = located->event->position;
+    const auto occupied = std::ranges::any_of(chart.measures, [&](const auto& measure) {
+        return std::ranges::any_of(measure.notes, [&](const auto& note) {
+            return note.lane == lane && note.position == position;
+        });
+    });
+    if (occupied) return false;
+    note_t note{.id = located->event->id, .position = position, .lane = lane, .kind = note_kind_t::tap,
+                .end = std::nullopt, .sound = located->event->sound};
+    note.semantic_layers = located->event->semantic_layers;
+    note.branch = located->event->branch;
+    located->measure->bgm_events.erase(located->event);
+    const auto destination = std::ranges::find(chart.measures, position.measure, &measure_chunk_t::id);
+    if (destination == chart.measures.end()) return false;
+    destination->notes.push_back(std::move(note));
+    return true;
+}
+
+} // namespace
+
+auto move_bgm_events_to_lane(document_history_t& history, std::uint64_t expected_revision, chart_id_t chart_id,
+                             std::span<const object_id_t> events, lane_id_t lane) -> document_command_result_t {
+    const auto revision = history.document.revision;
+    if (expected_revision != revision)
+        return rejected(revision, diagnostic_code_t::invalid_id, "BGM move has a stale document revision");
+    if (events.empty() || events.size() > 4096 || !lane)
+        return rejected(revision, diagnostic_code_t::invalid_id, "BGM move needs 1 to 4096 events and a lane");
+    if (std::ranges::find(history.document.charts, chart_id, &chart_document_t::id) == history.document.charts.end())
+        return rejected(revision, diagnostic_code_t::invalid_id, "BGM move refers to an unknown chart");
+    auto scratch = make_document_history(history.document);
+    for (const auto id : events) {
+        auto& chart = *std::ranges::find(scratch.document.charts, chart_id, &chart_document_t::id);
+        const auto located = find_bgm(chart, id);
+        if (!located)
+            return rejected(revision, diagnostic_code_t::invalid_id, "BGM move names an unknown event");
+        if (located->event->sound_channel_event && chart.source_family == format_family_t::bmson) {
+            const auto step = assign_bmson_sound_event(scratch, scratch.document.revision, chart_id, id, lane);
+            if (!step.applied)
+                return step.diagnostics.empty()
+                    ? rejected(revision, diagnostic_code_t::invalid_id, "the event could not move to that lane")
+                    : step;
+            continue;
+        }
+        auto proposed = scratch.document;
+        auto& proposed_chart = *std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
+        if (!convert_bgm_event(proposed_chart, id, lane))
+            return rejected(revision, diagnostic_code_t::collision, "that lane already has a note at the row");
+        const auto step = commit_document_command(scratch, std::move(proposed), "Move BGM event to lane");
+        if (!step.applied) return step.diagnostics.empty() ? rejected(revision, diagnostic_code_t::invalid_id,
+            "the event could not move to that lane") : step;
+    }
+    return commit_document_command(history, std::move(scratch.document),
+                                   events.size() == 1 ? "Move BGM event to lane" : "Move BGM events to lane");
+}
+
 } // namespace wormedit

@@ -545,3 +545,29 @@ TEST_CASE("dragging a selected note onto the BGM area moves it to a BGM lane ins
     CHECK(drop->lane_id == 45);
     CHECK_FALSE(any_input_of({released, released}, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE));
 }
+
+TEST_CASE("dragging a selected BGM marker onto a playfield lane asks to move it into that lane",
+          "[frontend-state][event-harness][bgm-to-lane]") {
+    stem_lane_fixture_t f;
+    auto& view = f.harness.view().compose;
+    WormUiComposeLaneView lane{.bounds = {100, 0, 150, 600}, .lane_id = 3};
+    view.lanes = &lane;
+    view.lane_count = 1;
+    f.marker.selected = true;
+    view.selected_bgm_event_id = 501;
+    (void)f.harness.frame();
+    const auto from = f.at(622, 28);
+    const auto to = f.at(125, 300);
+    const std::array down{mouse_motion(from.first, from.second), mouse_button(true, from.first, from.second)};
+    (void)f.harness.frame(down);
+    const std::array drag{mouse_motion(to.first, to.second)};
+    (void)f.harness.frame(drag);
+    const std::array up{mouse_motion(to.first, to.second), mouse_button(false, to.first, to.second)};
+    const auto released = f.harness.frame(up);
+    const auto& inputs = released.get();
+    const auto drop = std::ranges::find_if(std::span(inputs.compose_inputs, inputs.compose_input_count),
+        [](const auto& input) { return input.kind == WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE; });
+    REQUIRE(drop != std::span(inputs.compose_inputs, inputs.compose_input_count).end());
+    CHECK(drop->lane_id == 3);
+    CHECK(drop->object_id == 501);
+}

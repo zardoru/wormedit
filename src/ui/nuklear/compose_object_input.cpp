@@ -241,8 +241,35 @@ static void append_bmson_move_input(const ComposePointerEventContext& input,
                          state.bmson_marker_move_event_id);
 }
 
+// The playfield lane whose column holds the pointer, or 0 outside the playable field.
+static auto field_lane_under_pointer(const ComposePointerEventContext& input) -> uint64_t {
+    const auto& view = *input.view;
+    if (!input.pointer_inside || input.pointer_x < input.note_field_left || input.pointer_x >= input.note_field_right)
+        return 0;
+    for (size_t index = 0; index < view.lane_count; ++index) {
+        const auto& lane = view.lanes[index];
+        if (input.pointer_x >= lane.bounds.left && input.pointer_x < lane.bounds.right) return lane.lane_id;
+    }
+    return 0;
+}
+
 static void update_active_bmson_marker_move(const ComposePointerEventContext& input) {
     const auto lane_id = bmson_move_lane_at(input, input.pointer_x, input.pointer_y);
+    if (lane_id == 0 && field_lane_under_pointer(input) != 0 && input.window_focused &&
+        input.view->scene_available && input.shortcut_event_count == 0 &&
+        (input.pointer_modifiers & input.any_pointer_modifier) == 0 && (input.left_down || input.left_released)) {
+        // Over the playfield the marker waits; dropping it there turns it into a tap in that lane.
+        if (input.left_released) {
+            append_bmson_move_input(input, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_CANCEL,
+                                    input.pointer_x, input.pointer_y, 0);
+            append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE, input.pointer_x,
+                                 input.pointer_y, field_lane_under_pointer(input), false,
+                                 WORM_UI_COMPOSE_SELECTION_REPLACE, WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                 state.bmson_marker_move_event_id);
+            reset_bmson_marker_move_capture();
+        }
+        return;
+    }
     if (!input.window_focused || !input.view->scene_available ||
         input.shortcut_event_count != 0 ||
         (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
@@ -271,6 +298,13 @@ static void update_bmson_marker_move_candidate(const ComposePointerEventContext&
     const auto dy = input.context->input.mouse.pos.y - state.bmson_marker_move_anchor_screen_y;
     const auto moved_far_enough = std::hypot(dx, dy) >= 4.0f;
     const auto lane_id = bmson_move_lane_at(input, input.pointer_x, input.pointer_y);
+    if (input.left_released && moved_far_enough && lane_id == 0 && field_lane_under_pointer(input) != 0) {
+        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE, input.pointer_x, input.pointer_y,
+                             field_lane_under_pointer(input), false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.bmson_marker_move_event_id);
+        reset_bmson_marker_move_capture();
+        return;
+    }
     if (input.left_released) {
         if (moved_far_enough && input.pointer_inside && lane_id != 0) {
             append_bmson_move_input(input, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_BEGIN,

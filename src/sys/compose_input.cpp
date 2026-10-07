@@ -3399,6 +3399,7 @@ auto compose_input_edits_notes(WormUiComposeInputKind kind) -> bool {
     case WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE:
     case WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART:
     case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM:
+    case WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE:
         return true;
     default:
         return false;
@@ -3493,6 +3494,20 @@ auto dispatch_note_to_bgm_input(const WormUiComposeInputAction& input, compose_i
     if (input.kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION &&
         move_selected_notes_to_bgm_input(context, result, accepted, std::nullopt, true, false))
         return compose_input_family_result_t::continue_with_result();
+    if (input.kind == WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE || input.kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS) {
+        // A lane key with BGM events selected, or a drop on the field, moves them into that lane.
+        const auto dragged = input.object_id != 0 ? std::optional<wormedit::object_id_t>{wormedit::object_id_t{input.object_id}}
+                                                  : std::nullopt;
+        if (!context.input_is_current() || input.lane_id == 0) return std::nullopt;
+        const auto outcome = wormedit::sys::move_selected_bgm_to_lane(
+            context.history, context.state, wormedit::lane_id_t{input.lane_id}, dragged);
+        if (!outcome.handled) return std::nullopt;
+        result.accepted = outcome.command.applied;
+        result.document_changed = outcome.command.applied;
+        result.diagnostics = outcome.command.diagnostics;
+        accepted = outcome.command.applied ? "BGM events moved to the lane." : "The BGM events could not move to that lane.";
+        return compose_input_family_result_t::continue_with_result();
+    }
     if (input.kind != WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM) return std::nullopt;
     const auto lane = input.lane_id != 0 ? std::optional<object_id_t>{object_id_t{input.lane_id}} : std::nullopt;
     if (!move_selected_notes_to_bgm_input(context, result, accepted, lane, false, true))

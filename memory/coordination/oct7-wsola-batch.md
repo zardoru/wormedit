@@ -50,3 +50,20 @@ and byte-identical output across 512/127-frame blocks. Optimized CPU time per
 output second is about 2.65%; Debug is about 26.9%, with identical output hashes
 in all 18 cases. This isolated constructed-input evidence is supplementary;
 actual chart/SDL/perf measurements remain the algorithm decision baseline.
+
+## High-refresh pacing extension
+
+The user then set a 144 Hz goal and raised the working local target to **200 Hz,
+5 ms**. Root's read-only renderer-coordinator audit found that audio uses SDL's
+callback and a separate decode/refill worker; its utilization is separate from
+the UI frame budget. Visible-note queries already have interval/window caches.
+A fixed post-present `SDL_Delay(1)` is concrete avoidable pacing debt.
+
+Root authorized the separate [T-472 pacing card](../../docs/chart-editor-plan/tasks/frame-pacing.md)
+in `/home/zardoru/devel/wormedit-frame-pacing-oct7`, branch `batch/frame-pacing-oct7`,
+coordinator `/root/bga_preview_next_61`. It owns only the card's pacing paths;
+T-471 owns stretcher paths. Root owns manifests/status and serial integration.
+The shared Luna stays audio-owned until explicit release. Both builds must be
+quiet for actual audio timing windows. A second worker does not change monitor
+settings or access the desktop. Dense inspector/hover lookups and measure-index
+rebuilds remain audit findings, not unmeasured justifications for a scene rewrite.

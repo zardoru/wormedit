@@ -197,6 +197,8 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         src/audio/onset.cpp
         src/audio/offline_mix.cpp
     )
+    target_link_libraries(wormedit-convert PRIVATE wormedit::audio_decoder)
+    target_compile_definitions(wormedit-convert PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1)
 endif()
 
 if(WORMEDIT_ENABLE_IMAGE_DECODER OR WORMEDIT_ENABLE_VIDEO_DECODER)

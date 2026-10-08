@@ -1,4 +1,5 @@
 #include <wormedit/formats/slice_spans.h>
+#include <wormedit/formats/conversion.h>
 #include <wormedit/audio/slice_render.h>
 
 #include <algorithm>
@@ -128,11 +129,16 @@ auto render_staged(const song_document_t& song, const slice_span_plan_t& plan, c
                    std::vector<std::filesystem::path>& staged, slice_span_render_result_t& result) -> bool {
     for (std::size_t index = 0; index < plan.spans.size(); ++index) {
         const auto& span = plan.spans[index];
+        const auto geometry = std::ranges::find(plan.sources, span.asset, &slice_span_source_t::asset);
+        if (options.preserve_float_samples && geometry != plan.sources.end() &&
+            geometry->native_sample_rate != slice_span_sample_rate) decoders.clear();
         if (!open_source(song, plan, span.asset, options, decoders, result)) return false;
         const std::array<audio_slice_range_t, 1> range{{{span.begin_frame, span.end_frame}}};
         auto rendered = audio::render_audio_slices(*decoders.at(span.asset.value), range,
             {.directory = publication.staging, .base_name = "span" + std::to_string(index), .stop = options.stop, .progress = {},
-             .maximum_slice_frames = options.maximum_span_frames});
+             .maximum_slice_frames = options.maximum_span_frames,
+             .encoding = options.preserve_float_samples ? audio::slice_wav_encoding_t::float32
+                                                        : audio::slice_wav_encoding_t::pcm16});
         if (!rendered) return reject(result, "Cannot render asset " + std::to_string(span.asset.value) + ": " + rendered.error, span.asset);
         staged.push_back(std::move(rendered.files.front()));
     }
@@ -177,6 +183,89 @@ auto render_slice_span_plan(const song_document_t& song, const slice_span_plan_t
     if (!render_staged(song, plan, options, decoders, publication, staged, result)) return result;
     publish(plan, options, staged, publication, result);
     return result;
+}
+
+namespace {
+auto conversion_chart_selected(chart_id_t id, const conversion_request_t& request) -> bool {
+    if (request.chart) return id == *request.chart;
+    return request.charts.empty() || std::ranges::find(request.charts, id) != request.charts.end();
+}
+
+void collect_slice_resource_assets(const song_document_t& song, const chart_document_t& chart,
+                                  std::set<asset_id_t>& assets) {
+    auto append = [&](const auto& event) {
+        if (!event.sound || event.sound_channel_event) return;
+        const auto resource = std::ranges::find(song.resources, *event.sound, &resource_entry_t::id);
+        if (resource != song.resources.end()) assets.insert(resource->asset);
+    };
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) append(note);
+        for (const auto& event : measure.bgm_events) append(event);
+    }
+}
+
+auto conversion_slice_assets(const song_document_t& song, const conversion_request_t& request)
+    -> std::set<asset_id_t> {
+    std::set<asset_id_t> assets;
+    for (const auto& chart : song.charts) {
+        if (chart.source_family != format_family_t::bmson || !conversion_chart_selected(chart.id, request)) continue;
+        for (const auto& channel : chart.sound_channels)
+            if (!channel.events.empty()) assets.insert(channel.source_clip.source);
+        collect_slice_resource_assets(song, chart, assets);
+    }
+    return assets;
+}
+auto copy_conversion_asset(const song_document_t& song, const conversion_asset_copy_t& copy,
+    const slice_span_render_options_t& options) -> std::optional<std::string> {
+    std::filesystem::path source;
+    const auto audio = std::ranges::find(song.audio_assets, copy.asset, &audio_asset_t::id);
+    const auto visual = std::ranges::find(song.visual_assets, copy.asset, &visual_asset_t::id);
+    if (audio != song.audio_assets.end()) source = audio->source_path;
+    else if (visual != song.visual_assets.end()) source = visual->source_path;
+    else return "Missing retained export asset " + std::to_string(copy.asset.value);
+    if (!plain_filename(copy.relative_path.generic_string())) return "Unsafe retained asset filename";
+    if (options.stop.stop_requested()) return "Asset copying cancelled";
+    if (!source.is_absolute()) source = options.source_directory / source;
+    std::error_code error;
+    const auto bytes = std::filesystem::file_size(source, error);
+    if (error || bytes > 10ULL * 1024ULL * 1024ULL * 1024ULL) return "Retained asset unavailable or exceeds copy limit: " + source.string();
+    if (!std::filesystem::copy_file(source, options.output_directory / copy.relative_path,
+            std::filesystem::copy_options::none, error) || error)
+        return "Cannot stage retained asset: " + source.string();
+    return std::nullopt;
+}
+} // namespace
+
+auto prepare_conversion_slice_sources(const song_document_t& song, conversion_request_t& request,
+    const std::filesystem::path& source_directory, std::stop_token stop) -> std::optional<std::string> {
+    std::vector<slice_span_source_t> sources;
+    for (const auto id : conversion_slice_assets(song, request)) {
+        if (stop.stop_requested()) return "Slice geometry preparation cancelled";
+        const auto asset = std::ranges::find(song.audio_assets, id, &audio_asset_t::id);
+        if (asset == song.audio_assets.end()) return "Missing audio asset " + std::to_string(id.value);
+        audio::decoder_t decoder;
+        std::string error;
+        const auto path = asset->source_path.is_absolute() ? asset->source_path : source_directory / asset->source_path;
+        if (!decoder.open(path, &error)) return "Cannot decode " + path.string() + ": " + error;
+        const auto info = decoder.info();
+        if (!info) return "Missing decoded geometry for " + path.string();
+        sources.push_back({id, info->source_sample_rate, info->source_frame_count, info->output_frame_count});
+    }
+    request.slice_sources = std::move(sources);
+    return std::nullopt;
+}
+
+auto render_conversion_slice_plans(const song_document_t& song, const conversion_result_t& converted,
+    const slice_span_render_options_t& options) -> std::optional<std::string> {
+    for (const auto& copy : converted.asset_copies)
+        if (auto failure = copy_conversion_asset(song, copy, options)) return failure;
+    auto rendering = options;
+    rendering.preserve_float_samples = true;
+    for (const auto& plan : converted.slice_plans) {
+        const auto rendered = render_slice_span_plan(song, plan, rendering);
+        if (!rendered) return rendered.error;
+    }
+    return std::nullopt;
 }
 
 } // namespace wormedit

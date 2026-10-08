@@ -14,6 +14,7 @@ auto reject(conversion_publication_plan_t plan, std::string message)
     -> conversion_publication_plan_t {
     plan.files.clear();
     plan.assets.clear();
+    plan.generated_files.clear();
     plan.errors.push_back(std::move(message));
     return plan;
 }
@@ -105,6 +106,40 @@ auto append_conversion_files(const std::filesystem::path& project_directory,
         }
         plan.files.push_back({index, relative});
     }
+    return std::nullopt;
+}
+
+auto append_generated_file(const std::filesystem::path& name,
+    const std::filesystem::path& project_directory, const std::filesystem::path& directory,
+    bool overwrite, conversion_publication_plan_t& plan,
+    std::set<std::filesystem::path>& destinations) -> std::optional<std::string> {
+    const auto relative = directory / name;
+    std::string error;
+    if (!valid_relative(name) || name.has_parent_path() ||
+        !destinations.insert(relative).second ||
+        !safe_existing_components(project_directory, relative, false, error))
+        return error.empty() ? "Generated asset filenames collide or are invalid." : error;
+    std::error_code fs_error;
+    if (std::filesystem::exists(project_directory / relative, fs_error) && !overwrite)
+        return "Generated asset exists and overwrite is disabled.";
+    if (fs_error) return "Could not inspect generated asset destination.";
+    plan.generated_files.push_back(relative);
+    return std::nullopt;
+}
+
+auto append_generated_files(const std::filesystem::path& project_directory,
+    const output_group_t& group, const conversion_request_t& request,
+    const conversion_result_t& converted, conversion_publication_plan_t& plan,
+    std::set<std::filesystem::path>& destinations) -> std::optional<std::string> {
+    const auto directory = group.relative_output_path.has_extension()
+        ? group.relative_output_path.parent_path() : group.relative_output_path;
+    for (const auto& slice_plan : converted.slice_plans)
+        for (const auto& span : slice_plan.spans)
+            if (auto failure = append_generated_file(span.filename, project_directory, directory,
+                    request.overwrite, plan, destinations)) return failure;
+    for (const auto& copy : converted.asset_copies)
+        if (auto failure = append_generated_file(copy.relative_path, project_directory, directory,
+                request.overwrite, plan, destinations)) return failure;
     return std::nullopt;
 }
 
@@ -245,6 +280,10 @@ auto plan_conversion_publication(const std::filesystem::path& project_directory,
     std::set<fs::path> destinations;
     if (auto error = append_conversion_files(project_directory, group, request, converted, plan,
                                              destinations);
+        error.has_value()) {
+        return reject(std::move(plan), std::move(*error));
+    }
+    if (auto error = append_generated_files(project_directory, group, request, converted, plan, destinations);
         error.has_value()) {
         return reject(std::move(plan), std::move(*error));
     }

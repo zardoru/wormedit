@@ -410,6 +410,11 @@ auto collect_owned_chart_names(const conversion_publication_plan_t& plan,
             return "A generated chart filename cannot be tracked safely.";
         }
     }
+    for (const auto& file : plan.generated_files) {
+        const auto name = file.lexically_relative(relative_directory).generic_string();
+        if (!safe_name(name) || !current_files.insert(name).second)
+            return "A generated audio filename cannot be tracked safely.";
+    }
     for (const auto& [other_group, filenames] : ownership) {
         if (other_group == group_key) {
             continue;
@@ -504,6 +509,29 @@ auto write_generated_charts(staged_chart_write_t context) -> std::optional<std::
         if (!identity || identity->bytes != bytes.size()) {
             return "Could not identify a staged chart file.";
         }
+        context.ownership[context.group_key].emplace(relative.generic_string(), *identity);
+    }
+    return std::nullopt;
+}
+
+auto write_generated_audio(staged_chart_write_t context) -> std::optional<std::string> {
+    if (context.plan.generated_files.empty()) return std::nullopt;
+    if (!context.options.stage_generated_files) return "Generated audio staging callback is required.";
+    std::error_code error;
+    for (const auto& file : context.plan.generated_files) {
+        const auto relative = file.lexically_relative(context.relative_directory);
+        fs::remove(context.staging / relative, error);
+        if (error) return "Cannot prepare a generated audio staging destination.";
+    }
+    if (auto failure = context.options.stage_generated_files(context.staging)) return failure;
+    for (const auto& file : context.plan.generated_files) {
+        const auto relative = file.lexically_relative(context.relative_directory);
+        const auto path = context.staging / relative;
+        const auto status = fs::symlink_status(path, error);
+        if (error || !fs::is_regular_file(status) || !sync_file(path))
+            return "Generated audio was absent, unsafe, or could not be flushed.";
+        const auto identity = file_identity(path);
+        if (!identity) return "Cannot identify generated audio.";
         context.ownership[context.group_key].emplace(relative.generic_string(), *identity);
     }
     return std::nullopt;
@@ -626,6 +654,10 @@ auto publish_conversion_group_atomic(const fs::path& project_directory, const ou
         result.errors = plan.errors;
         return result;
     }
+    if (!plan.generated_files.empty() && !options.stage_generated_files) {
+        result.errors.emplace_back("Generated audio staging callback is required.");
+        return result;
+    }
     const auto relative_directory = group.relative_output_path.has_extension()
                                         ? group.relative_output_path.parent_path()
                                         : group.relative_output_path;
@@ -673,6 +705,11 @@ auto publish_conversion_group_atomic(const fs::path& project_directory, const ou
     if (auto write_failure = write_generated_charts(
             {plan, converted, options, relative_directory, staging.path, ownership, group_key})) {
         result.errors.push_back(std::move(*write_failure));
+        return result;
+    }
+    if (auto failure = write_generated_audio(
+            {plan, converted, options, relative_directory, staging.path, ownership, group_key})) {
+        result.errors.push_back(std::move(*failure));
         return result;
     }
     install_staged_conversion({plan, options, staging, relative_directory, destination, parent,

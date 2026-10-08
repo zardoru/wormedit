@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/formats/slice_spans.h>
 
 #include <cstddef>
 #include <filesystem>
@@ -60,6 +61,9 @@ struct conversion_request_t {
         std::filesystem::path relative_path;
     };
     std::vector<staged_asset_t> staged_assets;
+    // Explicit decoder geometry: pure conversion never opens source files.
+    std::vector<slice_span_source_t> slice_sources;
+    slice_span_options_t slice_options;
 };
 
 enum class conversion_stage_t {
@@ -106,13 +110,24 @@ struct conversion_limits_t {
     std::size_t maximum_filename_bytes{240};
 };
 
+struct conversion_asset_copy_t {
+    asset_id_t asset;
+    std::filesystem::path relative_path;
+};
+
 struct conversion_result_t {
     std::vector<conversion_output_t> outputs;
+    // Render these detached plans only inside atomic publication staging.
+    std::vector<slice_span_plan_t> slice_plans;
+    std::vector<conversion_asset_copy_t> asset_copies;
     std::vector<conversion_diagnostic_t> diagnostics;
 
     [[nodiscard]] auto has_errors() const -> bool;
     [[nodiscard]] explicit operator bool() const noexcept;
 };
+
+[[nodiscard]] auto conversion_needs_slice_spans(const song_document_t& song,
+    const conversion_request_t& request) -> bool;
 
 // Builds a detached, bounded output plan. It never mutates the source document
 // or publishes files. Every serialized artifact is parsed again before the

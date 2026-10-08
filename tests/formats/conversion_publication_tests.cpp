@@ -447,3 +447,124 @@ TEST_CASE(
     CHECK(read(temporary.path / "exports/old.bmson") == "hand edited");
     CHECK(read(temporary.path / "exports/new.bmson") == "{}");
 }
+
+namespace {
+void check_publication(bool value) { CHECK(value); }
+void require_publication(bool value) { REQUIRE(value); }
+auto sliced_publication() -> wormedit::conversion_result_t {
+    auto result = converted();
+    wormedit::slice_span_plan_t plan;
+    plan.spans.push_back({wormedit::asset_id_t{5}, 0, 100, "slice.wav"});
+    result.slice_plans.push_back(std::move(plan));
+    return result;
+}
+auto generated_audio_options(bool fail = false) -> wormedit::conversion_publication_options_t {
+    wormedit::conversion_publication_options_t options;
+    options.stage_generated_files = [fail](const auto& staging) -> std::optional<std::string> {
+        std::ofstream(staging / "slice.wav", std::ios::binary) << "generated pcm";
+        if (fail) return "Injected render failure";
+        return std::nullopt;
+    };
+    return options;
+}
+} // namespace
+
+TEST_CASE("generated conversion audio is staged atomically with chart ownership",
+          "[unit][format][publication][sliced-conversion]") {
+    temporary_directory_t temporary;
+    std::filesystem::create_directories(temporary.path / "exports");
+    std::ofstream(temporary.path / "exports/manual.txt") << "keep";
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
+                                       .relative_output_path = "exports"};
+    const wormedit::conversion_request_t request{.target = wormedit::format_family_t::bmson};
+    const auto failed = wormedit::publish_conversion_group_atomic(temporary.path, group, request,
+        sliced_publication(), generated_audio_options(true));
+    CHECK_FALSE(failed.published);
+    CHECK_FALSE(std::filesystem::exists(temporary.path / "exports/song.bmson"));
+    CHECK_FALSE(std::filesystem::exists(temporary.path / "exports/slice.wav"));
+    check_publication(read(temporary.path / "exports/manual.txt") == "keep");
+    require_publication(wormedit::publish_conversion_group_atomic(temporary.path, group, request,
+        sliced_publication(), generated_audio_options()).published);
+    check_publication(read(temporary.path / "exports/slice.wav") == "generated pcm");
+    check_publication(read(temporary.path / "exports/.wormedit-output-set").find("slice.wav") != std::string::npos);
+}
+
+TEST_CASE("generated audio replacement protects edits and preserves unowned files",
+          "[unit][format][publication][sliced-conversion]") {
+    temporary_directory_t temporary;
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
+                                       .relative_output_path = "exports"};
+    wormedit::conversion_request_t request{.target = wormedit::format_family_t::bmson};
+    require_publication(wormedit::publish_conversion_group_atomic(temporary.path, group, request,
+        sliced_publication(), generated_audio_options()).published);
+    std::ofstream(temporary.path / "exports/manual.txt") << "keep";
+    request.overwrite = true;
+    require_publication(wormedit::publish_conversion_group_atomic(temporary.path, group, request,
+        sliced_publication(), generated_audio_options()).published);
+    check_publication(read(temporary.path / "exports/manual.txt") == "keep");
+    std::ofstream(temporary.path / "exports/slice.wav") << "edited";
+    const auto rejected = wormedit::publish_conversion_group_atomic(temporary.path, group, request,
+        sliced_publication(), generated_audio_options());
+    CHECK_FALSE(rejected.published);
+    check_publication(read(temporary.path / "exports/slice.wav") == "edited");
+    check_publication(read(temporary.path / "exports/song.bmson") == "{}");
+}
+
+TEST_CASE("generated audio rejects missing staging and another group's ownership",
+          "[unit][format][publication][sliced-conversion]") {
+    temporary_directory_t temporary;
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
+                                       .relative_output_path = "exports"};
+    wormedit::conversion_request_t request{.target = wormedit::format_family_t::bmson};
+    CHECK_FALSE(wormedit::publish_conversion_group_atomic(temporary.path, group, request,
+        sliced_publication()).published);
+    CHECK_FALSE(std::filesystem::exists(temporary.path / "exports"));
+    require_publication(wormedit::publish_conversion_group_atomic(temporary.path, group, request,
+        sliced_publication(), generated_audio_options()).published);
+    request.overwrite = true;
+    const wormedit::output_group_t other{.family = wormedit::format_family_t::bmson,
+                                       .relative_output_path = "exports/other.bmson"};
+    CHECK_FALSE(wormedit::publish_conversion_group_atomic(temporary.path, other, request,
+        sliced_publication(), generated_audio_options()).published);
+    check_publication(read(temporary.path / "exports/slice.wav") == "generated pcm");
+}
+
+TEST_CASE("retained assets cannot collide with generated span filenames",
+          "[unit][format][publication][sliced-conversion]") {
+    temporary_directory_t temporary;
+    auto result = sliced_publication();
+    result.asset_copies.push_back({wormedit::asset_id_t{8}, "slice.wav"});
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
+                                       .relative_output_path = "exports"};
+    const wormedit::conversion_request_t request{.target = wormedit::format_family_t::bmson};
+    bool invoked{};
+    auto options = generated_audio_options();
+    options.stage_generated_files = [&](const auto&) -> std::optional<std::string> {
+        invoked = true;
+        return std::nullopt;
+    };
+    const auto rejected = wormedit::publish_conversion_group_atomic(temporary.path, group, request,
+        result, options);
+    CHECK_FALSE(rejected.published);
+    CHECK_FALSE(invoked);
+    CHECK_FALSE(std::filesystem::exists(temporary.path / "exports"));
+}
+
+TEST_CASE("generated audio staging rejects symlinks without touching the source",
+          "[unit][format][publication][sliced-conversion]") {
+    temporary_directory_t temporary;
+    std::ofstream(temporary.path / "source.wav") << "source";
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
+                                       .relative_output_path = "exports"};
+    const wormedit::conversion_request_t request{.target = wormedit::format_family_t::bmson};
+    wormedit::conversion_publication_options_t options;
+    options.stage_generated_files = [&](const auto& staging) -> std::optional<std::string> {
+        std::filesystem::create_symlink(temporary.path / "source.wav", staging / "slice.wav");
+        return std::nullopt;
+    };
+    const auto rejected = wormedit::publish_conversion_group_atomic(temporary.path, group, request,
+        sliced_publication(), options);
+    CHECK_FALSE(rejected.published);
+    CHECK_FALSE(std::filesystem::exists(temporary.path / "exports"));
+    check_publication(read(temporary.path / "source.wav") == "source");
+}

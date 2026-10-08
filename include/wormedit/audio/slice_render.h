@@ -18,6 +18,13 @@ namespace wormedit::audio {
 [[nodiscard]] auto encode_wav_pcm16(std::span<const float> interleaved_stereo,
                                     std::uint32_t sample_rate) -> std::string;
 
+// IEEE float32 RIFF/WAVE with a fact chunk; preserves finite samples beyond
+// [-1,1]. Invalid stereo/rate/size/nonfinite input returns empty bytes.
+[[nodiscard]] auto encode_wav_float32(std::span<const float> interleaved_stereo,
+    std::uint32_t sample_rate) -> std::string;
+
+enum class slice_wav_encoding_t { pcm16, float32 };
+
 struct slice_render_options_t {
     // Created when missing. Files are named <base_name>_001.wav, _002.wav, ...
     std::filesystem::path directory;
@@ -28,6 +35,7 @@ struct slice_render_options_t {
     // A single slice longer than this is rejected up front (default 10 minutes).
     std::uint64_t maximum_slice_frames{10ULL * 60ULL * output_sample_rate};
     std::size_t maximum_slices{10'000};
+    slice_wav_encoding_t encoding{slice_wav_encoding_t::pcm16};
 };
 
 enum class slice_render_status_t {

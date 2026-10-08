@@ -72,6 +72,7 @@ struct slice_span_render_options_t {
     std::filesystem::path output_directory;
     std::stop_token stop;
     std::uint64_t maximum_span_frames{10ULL * 60ULL * slice_span_sample_rate};
+    bool preserve_float_samples{false};
 };
 struct slice_span_render_result_t {
     bool completed{};
@@ -85,5 +86,16 @@ struct slice_span_render_result_t {
 // Any failure removes our staged and published files and leaves the input unchanged.
 [[nodiscard]] auto render_slice_span_plan(const song_document_t& song, const slice_span_plan_t& plan,
     const slice_span_render_options_t& options) -> slice_span_render_result_t;
+
+struct conversion_request_t;
+struct conversion_result_t;
+// Decoder-target helpers; unavailable in decoder-OFF builds. No destination writes
+// occur during geometry preparation. Rendering must receive a private staging directory.
+[[nodiscard]] auto prepare_conversion_slice_sources(const song_document_t& song,
+    conversion_request_t& request, const std::filesystem::path& source_directory,
+    std::stop_token stop = {}) -> std::optional<std::string>;
+[[nodiscard]] auto render_conversion_slice_plans(const song_document_t& song,
+    const conversion_result_t& converted, const slice_span_render_options_t& options)
+    -> std::optional<std::string>;
 
 } // namespace wormedit

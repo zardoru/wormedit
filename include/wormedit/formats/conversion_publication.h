@@ -23,6 +23,7 @@ struct conversion_publication_asset_t {
 struct conversion_publication_plan_t {
     std::vector<conversion_publication_file_t> files;
     std::vector<conversion_publication_asset_t> assets;
+    std::vector<std::filesystem::path> generated_files;
     std::vector<std::string> errors;
 
     [[nodiscard]] explicit operator bool() const noexcept {
@@ -69,6 +70,8 @@ struct conversion_publication_options_t {
     std::uintmax_t maximum_existing_bytes{64ULL * 1024ULL * 1024ULL * 1024ULL};
     std::size_t maximum_existing_entries{8192};
     std::function<bool(conversion_publication_stage_t)> allow_stage;
+    // Called only inside private atomic staging, after all destination preflight.
+    std::function<std::optional<std::string>(const std::filesystem::path&)> stage_generated_files;
 };
 
 struct conversion_publication_result_t {

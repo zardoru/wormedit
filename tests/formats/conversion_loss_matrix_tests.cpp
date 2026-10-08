@@ -1,6 +1,7 @@
 #include "sys/project_open.h"
 
 #include <wormedit/formats/bms.h>
+#include <wormedit/formats/bmson.h>
 #include <wormedit/formats/conversion.h>
 #include <wormedit/formats/stepmania.h>
 
@@ -212,4 +213,41 @@ TEST_CASE("loss matrix classifies every diagnostic for every fixture and writer"
     CHECK(tally.pairs == fixtures.size() * targets.size());
     CHECK(tally.converted > 0);
     CHECK(tally.lossy > 0);
+}
+
+namespace {
+void check_slice_matrix(bool value) { CHECK(value); }
+auto fractional_autoplay_song() -> wormedit::song_document_t {
+    const std::string text = R"({"version":"1.0.0","info":{"title":"fractional autoplay","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"sound_channels":[{"name":"tone.wav","notes":[{"x":0,"y":1,"c":false}]}]})";
+    const auto parsed = wormedit::parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
+    REQUIRE(parsed.song.has_value());
+    return *parsed.song;
+}
+auto sample_timestamp_loss(const wormedit::conversion_result_t& result) -> bool {
+    return std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.loss && diagnostic.path == "Events.Sample" &&
+            diagnostic.message.find("maximum offset") != std::string::npos;
+    });
+}
+} // namespace
+
+TEST_CASE("sliced audio loss matrix reports stable autoplay timestamp quantization",
+          "[unit][format][conversion][loss][sliced-conversion]") {
+    const auto song = fractional_autoplay_song();
+    wormedit::conversion_request_t request{.target = format_family_t::osu_mania,
+        .target_profile = "stable-v14", .loss_policy = loss_policy_t::warn};
+    request.slice_sources = {{song.audio_assets.front().id, 44100, 44100, 44100}};
+    const auto stable = wormedit::convert_document(song, request);
+    REQUIRE(stable);
+    check_slice_matrix(sample_timestamp_loss(stable));
+    request.target_profile = "lazer-v128";
+    const auto lazer = wormedit::convert_document(song, request);
+    REQUIRE(lazer);
+    CHECK_FALSE(sample_timestamp_loss(lazer));
+    request.target_profile = "stable-v14";
+    request.loss_policy = loss_policy_t::reject;
+    const auto rejected = wormedit::convert_document(song, request);
+    CHECK_FALSE(rejected);
+    check_slice_matrix(rejected.outputs.empty());
+    check_slice_matrix(rejected.slice_plans.empty());
 }

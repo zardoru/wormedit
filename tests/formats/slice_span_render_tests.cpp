@@ -1,8 +1,14 @@
 #include <wormedit/formats/slice_spans.h>
+#include <wormedit/formats/conversion.h>
+#include <wormedit/formats/bmson.h>
+#include <wormedit/formats/osu_mania.h>
+#include <wormedit/audio/audition_resolver.h>
+#include <wormedit/audio/offline_mix.h>
 #include <wormedit/audio/slice_render.h>
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <cmath>
 #include <atomic>
 #include <fstream>
 #include <iterator>
@@ -189,4 +195,107 @@ TEST_CASE("slice_spans soundless gameplay needs no source geometry or files", "[
     require_span(static_cast<bool>(rendered));
     check_span(rendered.files.empty());
     check_span(!std::filesystem::exists(fixture.directory / "out"));
+}
+
+namespace {
+auto sliced_pcm_song(bool off_period = false) -> song_document_t {
+    std::string text = R"({"version":"1.0.0","info":{"title":"PCM slices","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[{"name":"stem.wav","notes":[{"x":1,"y":0,"c":false},{"x":1,"y":240,"c":true},{"x":0,"y":480,"c":false}]}]})";
+    if (off_period) text.replace(text.find("\"y\":240"), 7, "\"y\":241");
+    const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
+    require_span(parsed.song.has_value());
+    require_span(!parsed.has_errors());
+    return *parsed.song;
+}
+
+auto sliced_preview_pcm(const song_document_t& song, const std::filesystem::path& directory)
+    -> std::vector<float> {
+    audio::decoded_source_registry_t sources;
+    for (const auto& asset : song.audio_assets) {
+        const auto path = directory / asset.source_path;
+        const auto registered = sources.register_source({asset.id, path,
+            {path.string(), "conversion-pcm-v1"}});
+        require_span(static_cast<bool>(registered));
+    }
+    const auto& chart = song.charts.front();
+    const auto timing = build_timing_index(chart);
+    require_span(static_cast<bool>(timing));
+    const auto schedule = build_preview_schedule(chart, *timing.index,
+        {.include_metronome = false});
+    require_span(static_cast<bool>(schedule));
+    const auto bindings = audio::resolve_preview_bindings(song, chart.id, *schedule.schedule,
+        sources.bindings());
+    require_span(static_cast<bool>(bindings));
+    const auto mixed = audio::render_offline_interval(sources, *schedule.schedule, bindings.bindings,
+        0, 2 * slice_span_sample_rate);
+    require_span(static_cast<bool>(mixed));
+    return mixed.interleaved_stereo;
+}
+
+void check_pcm_tolerance(const std::vector<float>& before, const std::vector<float>& after) {
+    require_span(before.size() == after.size());
+    float maximum{};
+    for (std::size_t index = 0; index < before.size(); ++index)
+        maximum = std::max(maximum, std::abs(before[index] - after[index]));
+    INFO("maximum preview PCM difference " << maximum);
+    check_span(maximum <= 2.0F / 32768.0F);
+}
+} // namespace
+
+TEST_CASE("sliced BMSON conversion reimport matches production preview PCM",
+          "[slice_spans][audio][conversion][sliced-conversion]") {
+    render_fixture_t fixture;
+    const auto song = sliced_pcm_song();
+    conversion_request_t request{.target = format_family_t::osu_mania,
+        .target_profile = "lazer-v128", .loss_policy = loss_policy_t::warn};
+    require_span(!prepare_conversion_slice_sources(song, request, fixture.directory));
+    const auto converted = convert_document(song, request);
+    require_span(static_cast<bool>(converted));
+    require_span(converted.outputs.size() == 1);
+    std::filesystem::create_directories(fixture.directory / "out");
+    require_span(!render_conversion_slice_plans(song, converted,
+        {fixture.directory, fixture.directory / "out", {}}));
+    const auto& bytes = converted.outputs.front().bytes;
+    const auto parsed = parse_osu_mania_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
+    require_span(parsed.song.has_value());
+    check_pcm_tolerance(sliced_preview_pcm(song, fixture.directory),
+        sliced_preview_pcm(*parsed.song, fixture.directory / "out"));
+    check_span(song.charts.front().sound_channels.size() == 1);
+}
+
+namespace {
+void check_native_conversion_pcm(bool off_period) {
+    render_fixture_t fixture;
+    std::vector<float> samples(48'000 * 2);
+    for (std::size_t frame = 0; frame < 48'000; ++frame) {
+        const auto value = 1.2F * std::sin(static_cast<float>(frame) * 0.01F);
+        samples[frame * 2] = value;
+        samples[frame * 2 + 1] = -value;
+    }
+    const auto encoded = audio::encode_wav_float32(samples, 48'000);
+    std::ofstream stream(fixture.directory / "stem.wav", std::ios::binary | std::ios::trunc);
+    stream.write(encoded.data(), static_cast<std::streamsize>(encoded.size()));
+    stream.close();
+    const auto song = sliced_pcm_song(off_period);
+    conversion_request_t request{.target = format_family_t::osu_mania,
+        .target_profile = "lazer-v128", .loss_policy = loss_policy_t::warn};
+    require_span(!prepare_conversion_slice_sources(song, request, fixture.directory));
+    require_span(request.slice_sources.front().native_sample_rate == 48'000);
+    const auto converted = convert_document(song, request);
+    require_span(static_cast<bool>(converted));
+    if (off_period) require_span(converted.slice_plans.front().spans.at(1).begin_frame % 147 != 0);
+    std::filesystem::create_directories(fixture.directory / "out");
+    require_span(!render_conversion_slice_plans(song, converted,
+        {fixture.directory, fixture.directory / "out", {}}));
+    const auto& bytes = converted.outputs.front().bytes;
+    const auto parsed = parse_osu_mania_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
+    require_span(parsed.song.has_value());
+    check_pcm_tolerance(sliced_preview_pcm(song, fixture.directory),
+        sliced_preview_pcm(*parsed.song, fixture.directory / "out"));
+}
+} // namespace
+
+TEST_CASE("sliced conversion preserves native-rate float source overshoots in preview",
+          "[slice_spans][audio][conversion][sliced-conversion]") {
+    check_native_conversion_pcm(false);
+    check_native_conversion_pcm(true);
 }

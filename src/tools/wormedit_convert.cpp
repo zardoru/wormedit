@@ -4,6 +4,7 @@
 #include "sys/project_open.h"
 
 #include <wormedit/formats/conversion.h>
+#include <wormedit/formats/conversion_publication.h>
 
 #include <nlohmann/json.hpp>
 
@@ -236,6 +237,44 @@ auto write_outputs(const conversion_result_t& converted, const std::filesystem::
     return std::nullopt;
 }
 
+auto prepare_cli_slices(const song_document_t& song, cli_request_t& request) -> std::optional<std::string> {
+    if (!conversion_needs_slice_spans(song, request.conversion)) return std::nullopt;
+#ifdef WORMEDIT_HAS_AUDIO_DECODER
+    return prepare_conversion_slice_sources(song, request.conversion, request.input.parent_path());
+#else
+    // The pure planner accepts soundless BMSON; audible sources reject missing geometry.
+    return std::nullopt;
+#endif
+}
+
+auto publish_cli_slices(const song_document_t& song, const cli_request_t& request,
+    const conversion_result_t& converted, json& artifacts) -> std::optional<std::string> {
+#ifdef WORMEDIT_HAS_AUDIO_DECODER
+    const auto directory = std::filesystem::absolute(request.output_directory).lexically_normal();
+    output_group_t group;
+    group.family = request.conversion.target;
+    group.relative_output_path = directory.filename();
+    conversion_publication_options_t options;
+    options.stage_generated_files = [&](const auto& staging) {
+        return render_conversion_slice_plans(song, converted,
+            {request.input.parent_path(), staging, {}});
+    };
+    const auto published = publish_conversion_group_atomic(directory.parent_path(), group,
+        request.conversion, converted, std::move(options));
+    if (!published.published) return published.errors.empty() ? "Atomic publication failed" : published.errors.front();
+    for (const auto& output : converted.outputs)
+        artifacts.push_back({{"path", (directory / output.suggested_filename).string()},
+            {"filename", output.suggested_filename}, {"bytes", output.bytes.size()},
+            {"reimport_validated", output.reimport_validated}});
+    return std::nullopt;
+#else
+    (void)song;
+    if (!converted.slice_plans.empty() || !converted.asset_copies.empty())
+        return "BMSON sliced-audio conversion requires the audio decoder build";
+    return write_outputs(converted, request.output_directory, artifacts);
+#endif
+}
+
 auto run_request(const json& body) -> std::pair<int, json> {
     auto request = parse_request(body);
     const auto opened = sys::open_project_file(request.input);
@@ -248,6 +287,7 @@ auto run_request(const json& body) -> std::pair<int, json> {
     if (!std::filesystem::is_directory(request.output_directory, error)) {
         return {2, fail_json("output_directory must be an existing directory")};
     }
+    if (auto failure = prepare_cli_slices(*opened.document, request)) return {1, fail_json(*failure)};
     const auto converted = convert_document(*opened.document, request.conversion);
     json result{{"ok", false}, {"artifacts", json::array()}, {"diagnostics", json::array()},
                 {"import_warnings", opened.warnings}};
@@ -260,8 +300,10 @@ auto run_request(const json& body) -> std::pair<int, json> {
         result["error"] = *conflict;
         return {1, result};
     }
-    if (const auto failure = write_outputs(converted, request.output_directory,
-                                           result["artifacts"])) {
+    const auto failure = conversion_needs_slice_spans(*opened.document, request.conversion)
+        ? publish_cli_slices(*opened.document, request, converted, result["artifacts"])
+        : write_outputs(converted, request.output_directory, result["artifacts"]);
+    if (failure) {
         result["error"] = *failure;
         return {1, result};
     }

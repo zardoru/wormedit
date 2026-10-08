@@ -7,11 +7,15 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <span>
+#include <source_location>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // Windows only treats a path with a drive letter as absolute.
@@ -45,6 +49,201 @@ auto stepmania_song() -> wormedit::song_document_t {
 }
 
 } // namespace
+
+namespace {
+
+auto sliced_bmson_song() -> std::optional<wormedit::song_document_t> {
+    constexpr std::string_view json = R"({
+      "version":"1.0.0",
+      "info":{"title":"Slice conversion","artist":"Fixture","genre":"test",
+        "chart_name":"Slice chart","level":4,"init_bpm":120,"resolution":240,
+        "mode_hint":"beat-7k"},
+      "lines":[{"y":0},{"y":960},{"y":1920}],
+      "sound_channels":[
+        {"name":"stem.wav","notes":[
+          {"x":1,"y":0,"c":false},{"x":1,"y":240,"c":true},
+          {"x":1,"y":480,"c":false},{"x":1,"y":720,"c":true},
+          {"x":1,"y":960,"c":true}]},
+        {"name":"packed-one.wav","notes":[{"x":0,"y":120,"c":false}]},
+        {"name":"packed-two.wav","notes":[{"x":0,"y":240,"c":false}]}
+      ]
+    })";
+    auto parsed = wormedit::parse_bmson_bytes(std::as_bytes(std::span{json.data(), json.size()}));
+    if (!parsed.song || parsed.has_errors()) return std::nullopt;
+    return std::move(parsed.song);
+}
+
+auto sliced_conversion_request(const wormedit::song_document_t& song,
+                               wormedit::chart_id_t chart) -> wormedit::conversion_request_t {
+    wormedit::conversion_request_t request{
+        .target = wormedit::format_family_t::osu_mania,
+        .target_profile = "stable-v14",
+        .chart = chart,
+        .loss_policy = wormedit::loss_policy_t::warn,
+    };
+    for (const auto& asset : song.audio_assets)
+        request.slice_sources.push_back({.asset = asset.id,
+                                         .native_sample_rate = 44'100,
+                                         .native_frame_count = 44'100,
+                                         .output_frame_count = 44'100});
+    return request;
+}
+
+auto has_transform_error(const wormedit::conversion_result_t& result,
+                         std::string_view text) -> bool {
+    return std::ranges::any_of(result.diagnostics, [&](const auto& diagnostic) {
+        return diagnostic.stage == wormedit::conversion_stage_t::transform &&
+               diagnostic.code == wormedit::conversion_diagnostic_code_t::transform_failed &&
+               diagnostic.message.find(text) != std::string::npos;
+    });
+}
+
+auto spans_are_written(const wormedit::conversion_result_t& result) -> bool {
+    if (result.outputs.size() != 1 || result.slice_plans.size() != 1) return false;
+    for (const auto& span : result.slice_plans.front().spans)
+        if (result.outputs.front().bytes.find(span.filename) == std::string::npos) return false;
+    return true;
+}
+
+auto sample_filenames_are_in_target_sections(const wormedit::song_document_t& song,
+                                             const wormedit::conversion_result_t& result)
+    -> bool {
+    if (result.outputs.size() != 1 || result.slice_plans.size() != 1) return false;
+    const auto& bytes = result.outputs.front().bytes;
+    const auto hit_begin = bytes.find("[HitObjects]");
+    if (hit_begin == std::string::npos) return false;
+    const auto event_begin = bytes.find("[Events]");
+    if (event_begin == std::string::npos) return false;
+    const auto stem_asset = song.charts.front().sound_channels.front().source_clip.source;
+    bool stem_sample{};
+    bool packed_sample{};
+    for (const auto& span : result.slice_plans.front().spans) {
+        if (span.asset == stem_asset)
+            stem_sample = stem_sample || bytes.find(span.filename, hit_begin) != std::string::npos;
+        else {
+            const auto filename_position = bytes.find(span.filename, event_begin);
+            packed_sample = packed_sample ||
+                            (filename_position != std::string::npos && filename_position < hit_begin);
+        }
+    }
+    const auto sample_event = bytes.find("Sample,", event_begin);
+    return stem_sample && packed_sample && sample_event != std::string::npos &&
+           sample_event < hit_begin;
+}
+
+auto same_span_plans(const wormedit::conversion_result_t& lhs,
+                     const wormedit::conversion_result_t& rhs) -> bool {
+    if (lhs.slice_plans.size() != rhs.slice_plans.size()) return false;
+    for (std::size_t index = 0; index < lhs.slice_plans.size(); ++index)
+        if (lhs.slice_plans[index].spans != rhs.slice_plans[index].spans) return false;
+    return true;
+}
+
+auto has_silent_mapping(const wormedit::song_document_t& song,
+                        const wormedit::conversion_request_t& request) -> bool {
+    const auto plan = wormedit::plan_conversion_slice_spans(
+        song, request.chart.value(), request.slice_sources, request.slice_options);
+    return std::ranges::any_of(plan.mappings, [](const auto& mapping) {
+        return !mapping.span_index.has_value();
+    });
+}
+
+auto has_sounded_and_silent_notes(const wormedit::song_document_t& song) -> bool {
+    bool sounded{};
+    bool silent{};
+    for (const auto& chart : song.charts)
+        for (const auto& measure : chart.measures)
+            for (const auto& note : measure.notes) {
+                sounded = sounded || note.sound.has_value();
+                silent = silent || !note.sound.has_value();
+            }
+    return sounded && silent;
+}
+
+auto check_conversion(bool condition, std::source_location location = std::source_location::current()) -> void {
+    INFO("check at " << location.line());
+    CHECK(condition);
+}
+auto require_conversion(bool condition) -> void { REQUIRE(condition); }
+
+} // namespace
+
+TEST_CASE("BMSON conversion exports deduplicated slice samples and preserves silent gameplay",
+          "[unit][format][conversion][osu]") {
+    auto song = sliced_bmson_song();
+    REQUIRE(song.has_value());
+    const auto original_bmson = wormedit::write_bmson(*song);
+    REQUIRE(original_bmson.json.has_value());
+    const auto request = sliced_conversion_request(*song, song->charts.front().id);
+    const auto converted = wormedit::convert_document(*song, request);
+    REQUIRE(converted);
+    REQUIRE(spans_are_written(converted));
+    check_conversion(converted.slice_plans.front().spans.size() == 4);
+    check_conversion(has_silent_mapping(*song, request));
+    check_conversion(sample_filenames_are_in_target_sections(*song, converted));
+    const auto parsed = wormedit::parse_osu_mania_bytes(std::as_bytes(std::span{
+        converted.outputs.front().bytes.data(), converted.outputs.front().bytes.size()}));
+    REQUIRE(parsed.song.has_value());
+    check_conversion(has_sounded_and_silent_notes(*parsed.song));
+    const auto after_bmson = wormedit::write_bmson(*song);
+    check_conversion(after_bmson.json == original_bmson.json);
+}
+
+TEST_CASE("BMSON slice conversion is deterministic and shares spans across charts",
+          "[unit][format][conversion][osu]") {
+    auto song = sliced_bmson_song();
+    REQUIRE(song.has_value());
+    auto second = song->charts.front();
+    second.id = wormedit::chart_id_t{second.id.value + 1000};
+    second.metadata.name = "Second chart";
+    song->charts.push_back(second);
+    auto request = sliced_conversion_request(*song, song->charts.front().id);
+    request.chart.reset();
+    request.charts = {song->charts.front().id, second.id};
+    const auto first = wormedit::convert_document(*song, request);
+    const auto again = wormedit::convert_document(*song, request);
+    REQUIRE(first);
+    REQUIRE(again);
+    check_conversion(first.outputs.size() == 2);
+    check_conversion(first.slice_plans.size() == 1);
+    check_conversion(first.outputs.front().bytes == again.outputs.front().bytes);
+    check_conversion(first.outputs.back().bytes == again.outputs.back().bytes);
+    check_conversion(same_span_plans(first, again));
+    check_conversion(first.slice_plans.front().spans.size() == 4);
+}
+
+TEST_CASE("BMSON slice conversion rejects missing geometry without partial output",
+          "[unit][format][conversion][osu]") {
+    auto song = sliced_bmson_song();
+    REQUIRE(song.has_value());
+    auto request = sliced_conversion_request(*song, song->charts.front().id);
+    const auto missing_asset = song->charts.front().sound_channels.front().source_clip.source;
+    std::erase_if(request.slice_sources, [&](const auto& source) {
+        return source.asset == missing_asset;
+    });
+    const auto converted = wormedit::convert_document(*song, request);
+    check_conversion(!converted);
+    check_conversion(has_transform_error(converted, "geometry"));
+    check_conversion(converted.outputs.empty());
+    check_conversion(converted.slice_plans.empty());
+    check_conversion(converted.asset_copies.empty());
+}
+
+TEST_CASE("BMSON slice conversion rejects exhausted generated IDs atomically",
+          "[unit][format][conversion][osu]") {
+    auto song = sliced_bmson_song();
+    REQUIRE(song.has_value());
+    song->audio_assets.push_back({.id = wormedit::asset_id_t{
+                                      std::numeric_limits<std::uint64_t>::max() - 1},
+                                  .source_path = "unused.wav"});
+    auto request = sliced_conversion_request(*song, song->charts.front().id);
+    const auto converted = wormedit::convert_document(*song, request);
+    check_conversion(!converted);
+    check_conversion(has_transform_error(converted, "capacity"));
+    check_conversion(converted.outputs.empty());
+    check_conversion(converted.slice_plans.empty());
+    check_conversion(converted.asset_copies.empty());
+}
 
 TEST_CASE("conversion prepares grouped StepMania output and validates reimport",
           "[unit][format][conversion]") {
@@ -304,4 +503,18 @@ TEST_CASE("StepMania conversion writes a staged music path for SM and SSC",
               std::string::npos);
         CHECK(song.audio_assets.back().source_path == source);
     }
+}
+
+TEST_CASE("soundless BMSON conversion needs no decoder geometry",
+          "[unit][format][conversion][osu]") {
+    constexpr std::string_view text = R"({"version":"1.0.0","info":{"title":"silent","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[]})";
+    const auto parsed = wormedit::parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
+    REQUIRE(parsed.song.has_value());
+    const auto converted = wormedit::convert_document(*parsed.song,
+        {.target = wormedit::format_family_t::osu_mania, .target_profile = "lazer-v128",
+         .loss_policy = wormedit::loss_policy_t::warn});
+    REQUIRE(converted);
+    check_conversion(converted.slice_plans.empty());
+    check_conversion(converted.asset_copies.empty());
+    check_conversion(converted.outputs.size() == 1);
 }

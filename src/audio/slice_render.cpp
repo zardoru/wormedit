@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
+#include <limits>
+#include <numeric>
 #include <cmath>
 #include <cstring>
 #include <system_error>
@@ -31,7 +34,10 @@ auto slice_file_name(const std::string& base, std::size_t index, std::size_t tot
 auto validate(const decoder_t& decoder, std::span<const audio_slice_range_t> ranges,
               const slice_render_options_t& options, std::string& error) -> bool {
     const auto info = decoder.info();
-    if (!info) {
+    if (options.encoding != slice_wav_encoding_t::pcm16 &&
+        options.encoding != slice_wav_encoding_t::float32) {
+        error = "unknown WAV encoding";
+    } else if (!info) {
         error = "decoder is not open";
     } else if (ranges.empty() || ranges.size() > options.maximum_slices) {
         error = "slice count is zero or over the limit";
@@ -52,6 +58,23 @@ auto validate(const decoder_t& decoder, std::span<const audio_slice_range_t> ran
         return true;
     }
     return false;
+}
+
+auto prime_float_range(decoder_t& decoder, std::uint64_t begin) -> bool {
+    const auto info = decoder.info();
+    if (!info || info->source_sample_rate == output_sample_rate || begin == 0) return true;
+    constexpr std::uint64_t warmup = 4096;
+    const auto period = output_sample_rate / std::gcd(info->source_sample_rate, output_sample_rate);
+    const auto start = begin > warmup ? (begin - warmup) / period * period : 0;
+    std::array<float, maximum_read_frames * output_channel_count> discard{};
+    auto cursor = start;
+    while (cursor < begin) {
+        const auto count = static_cast<std::size_t>(std::min<std::uint64_t>(maximum_read_frames, begin - cursor));
+        const auto read = decoder.read_at(cursor, discard, count);
+        if (read.status != read_status_t::success || read.frames_read != count) return false;
+        cursor += count;
+    }
+    return true;
 }
 
 auto read_range(decoder_t& decoder, const audio_slice_range_t& range, std::vector<float>& samples)
@@ -114,6 +137,36 @@ auto encode_wav_pcm16(std::span<const float> interleaved_stereo, std::uint32_t s
     return out;
 }
 
+auto encode_wav_float32(std::span<const float> interleaved_stereo, std::uint32_t sample_rate)
+    -> std::string {
+    static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
+    constexpr auto maximum_samples = (std::numeric_limits<std::uint32_t>::max() - 48U) / 4U;
+    if (interleaved_stereo.empty() || interleaved_stereo.size() % 2 != 0 ||
+        interleaved_stereo.size() > maximum_samples || sample_rate == 0 ||
+        sample_rate > std::numeric_limits<std::uint32_t>::max() / 8U ||
+        std::ranges::any_of(interleaved_stereo, [](float sample) { return !std::isfinite(sample); })) return {};
+    const auto data_bytes = static_cast<std::uint32_t>(interleaved_stereo.size() * 4U);
+    std::string out;
+    out.reserve(std::size_t{56} + data_bytes);
+    out += "RIFF";
+    append_u32(out, 48U + data_bytes);
+    out += "WAVEfmt ";
+    append_u32(out, 16);
+    append_u16(out, 3);
+    append_u16(out, 2);
+    append_u32(out, sample_rate);
+    append_u32(out, sample_rate * 8U);
+    append_u16(out, 8);
+    append_u16(out, 32);
+    out += "fact";
+    append_u32(out, 4);
+    append_u32(out, static_cast<std::uint32_t>(interleaved_stereo.size() / 2));
+    out += "data";
+    append_u32(out, data_bytes);
+    for (const auto sample : interleaved_stereo) append_u32(out, std::bit_cast<std::uint32_t>(sample));
+    return out;
+}
+
 auto render_audio_slices(decoder_t& decoder, std::span<const audio_slice_range_t> ranges,
                          const slice_render_options_t& options) -> slice_render_result_t {
     slice_render_result_t result;
@@ -130,10 +183,15 @@ auto render_audio_slices(decoder_t& decoder, std::span<const audio_slice_range_t
     for (std::size_t index = 0; index < ranges.size(); ++index) {
         if (options.stop.stop_requested())
             return fail(result, slice_render_status_t::cancelled, "cancelled", published);
-        if (!read_range(decoder, ranges[index], samples))
+        if ((options.encoding == slice_wav_encoding_t::float32 &&
+             !prime_float_range(decoder, ranges[index].begin_frame)) ||
+            !read_range(decoder, ranges[index], samples))
             return fail(result, slice_render_status_t::decode_error,
                         "decoding failed inside slice " + std::to_string(index + 1), published);
-        const auto bytes = encode_wav_pcm16(samples, output_sample_rate);
+        const auto bytes = options.encoding == slice_wav_encoding_t::float32
+            ? encode_wav_float32(samples, output_sample_rate) : encode_wav_pcm16(samples, output_sample_rate);
+        if (bytes.empty()) return fail(result, slice_render_status_t::write_error,
+            "samples cannot be encoded in the requested WAV format", published);
         const auto path = options.directory / slice_file_name(options.base_name, index, ranges.size());
         const auto saved = save_file_atomic(path, bytes, bytes.size());
         if (!saved)

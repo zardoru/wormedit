@@ -32,7 +32,8 @@ Order: T-478, then T-479, then T-480. T-481 waits on T-480.
 
 ## T-478 Import `#KEYSOUNDS` and per-note `[n]` indices from SM and SSC
 
-- **Status:** ready
+- **Status:** done
+- **Result (2026-10-08):** `.sm` and `.ssc` import `#KEYSOUNDS` (SSC `\#` escape, placeholders warn) and per-cell `[n]` through a cell tokenizer; referenced files register as sample resources in list order, notes and hold heads carry `sound`, `[n]` stays in provenance spelling; out-of-range index warns with measure and row, malformed suffix is `invalid_notes`, `K` still rejected. Fixtures `keysounds.sm`/`.ssc`; 5 new tests, all 35 stepmania/format/documentation tests and the full suite (2814) pass.
 - **Outcome:** an `.sm` or `.ssc` file with `#KEYSOUNDS` and `[n]` suffixes imports instead of being rejected. Each listed file becomes a sample resource, and each note with a valid index carries that resource as its sound. An out-of-range or malformed index keeps the note without a sound and adds one warning that names the measure and row.
 - **Read first:** [the keysound reference](../../references/stepmania-keysounds.md), `src/formats/stepmania.cpp` (`normalize_note_row`, `parse_measure_rows`, `parse_one_chart`, `make_stepmania_song`), `src/formats/osu_mania.cpp` (`resolve_hit_samples`, the resource pattern), `include/wormedit/formats/stepmania.h`.
 - **Files owned:** `src/formats/stepmania.cpp`, `include/wormedit/formats/stepmania.h`, `tests/formats/stepmania_tests.cpp`, new fixtures `tests/fixtures/stepmania/keysounds.sm` and `tests/fixtures/stepmania/keysounds.ssc`, this card.

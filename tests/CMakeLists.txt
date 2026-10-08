@@ -770,3 +770,12 @@ add_executable(wormedit_frame_pacing_tests
 target_include_directories(wormedit_frame_pacing_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
 add_test(NAME frame-pacing COMMAND wormedit_frame_pacing_tests)
 set_tests_properties(frame-pacing PROPERTIES LABELS "unit;sys")
+
+if(APPLE AND WORMEDIT_BUILD_APP)
+    add_executable(wormedit_macos_menu_tests sys/macos_menu_tests.mm ../src/sys/macos_menu.mm)
+    set_target_properties(wormedit_macos_menu_tests PROPERTIES OBJCXX_STANDARD 20 OBJCXX_STANDARD_REQUIRED ON)
+    target_compile_options(wormedit_macos_menu_tests PRIVATE -fobjc-arc)
+    target_include_directories(wormedit_macos_menu_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    target_link_libraries(wormedit_macos_menu_tests PRIVATE wormedit::core SDL3::SDL3 Catch2::Catch2WithMain "-framework AppKit")
+    catch_discover_tests(wormedit_macos_menu_tests TEST_PREFIX "macos-menu.")
+endif()

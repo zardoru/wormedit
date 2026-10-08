@@ -2485,6 +2485,7 @@ typedef struct WormUiTimingTarget {
 } WormUiTimingTarget;
 
 typedef struct WormUiWorkspaceAction {
+    char menu_command_id[96];
     WormUiClipboardAction clipboard;
     WormUiNotificationAction notifications;
     WormUiOptionsAction options;
@@ -2715,6 +2716,8 @@ typedef struct WormUiWorkspaceAction {
 bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer);
 // Initialize the same event/action frontend without a window or renderer for integration tests.
 bool worm_ui_frontend_init_headless(int width, int height);
+// Actual in-window chrome height; headless initialization keeps the fallback layout.
+int worm_ui_frontend_title_bar_height(void);
 // Called by frontend producers on the UI thread; the callback copies text before
 // returning and must not throw. Shutdown clears the non-owning callback.
 void worm_ui_frontend_set_notification_sink(void* context, WormUiNotificationPostCallback callback);

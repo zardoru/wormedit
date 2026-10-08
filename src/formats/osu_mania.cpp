@@ -1170,12 +1170,32 @@ auto position_at_time(long double time, const std::vector<measure_geometry_t>& g
 template <typename fail_t>
 auto source_microseconds(long double milliseconds, fail_t&& fail, std::size_t order = 0)
     -> std::int64_t {
-    const auto rounded = std::round(milliseconds * 1000.0L);
-    constexpr auto exclusive_limit = 0x1p63L;
-    if (!std::isfinite(rounded) || rounded < -exclusive_limit || rounded >= exclusive_limit)
+    // Preserve ordinary fractional rounding while the scaled integer still fits
+    // binary64's significand. Apple Silicon and MSVC give long double no extra
+    // precision: scaling a larger timestamp can round an overflow back in range.
+    if (std::isfinite(milliseconds) && std::fabs(milliseconds) < 0x1p43L)
+        return static_cast<std::int64_t>(std::round(milliseconds * 1000.0L));
+
+    const auto reject = [&] {
         fail(osu_mania_parse_diagnostic_code_t::invalid_timing_point,
              "timing point exceeds the supported microsecond source grid", order);
-    return static_cast<std::int64_t>(rounded);
+    };
+    constexpr auto exclusive_limit = 0x1p63L;
+    if (!std::isfinite(milliseconds) || milliseconds < -exclusive_limit ||
+        milliseconds >= exclusive_limit)
+        reject();
+    constexpr auto scale = std::int64_t{1000};
+    constexpr auto minimum = std::numeric_limits<std::int64_t>::min();
+    constexpr auto maximum = std::numeric_limits<std::int64_t>::max();
+    const auto whole_ms = static_cast<std::int64_t>(milliseconds);
+    if (whole_ms < minimum / scale || whole_ms > maximum / scale) reject();
+    const auto whole_us = whole_ms * scale;
+    const auto fractional_us = static_cast<std::int64_t>(
+        std::round((milliseconds - static_cast<long double>(whole_ms)) * scale));
+    if ((fractional_us < 0 && whole_us < minimum - fractional_us) ||
+        (fractional_us > 0 && whole_us > maximum - fractional_us))
+        reject();
+    return whole_us + fractional_us;
 }
 
 template <typename fail_t>

@@ -1,3 +1,7 @@
+#include "ui/workspace_menu.h"
+#if defined(WORMEDIT_HAS_MACOS_MENU)
+#include "sys/macos_menu.h"
+#endif
 #include "ui/nuklear/ui_gallery.h"
 #include "ui/nuklear/sound_import_dialog.h"
 #include "ui/nuklear/external_player_panel.h"
@@ -615,6 +619,9 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
     g_headless = headless;
     g_headless_width = headless ? width : 0;
     g_headless_height = headless ? height : 0;
+#if defined(WORMEDIT_HAS_MACOS_MENU)
+    if (!headless) (void)wormedit::sys::initialize_macos_menu();
+#endif
     initialize_notification_context();
     g_window_focused = true;
     g_notification_state = {};
@@ -650,6 +657,9 @@ bool worm_ui_frontend_init_headless(int width, int height) {
 }
 
 void worm_ui_frontend_shutdown(void) {
+#if defined(WORMEDIT_HAS_MACOS_MENU)
+    wormedit::sys::shutdown_macos_menu();
+#endif
     worm_ui_frontend_set_notification_sink(nullptr, nullptr);
     worm_ui_nuklear_reset_sound_import();
     g_save_project_requested = false;
@@ -1395,56 +1405,106 @@ WormUiWorkspaceAction worm_ui_frontend_workspace_error(
     return action;
 }
 
-static void render_loaded_project_menu_files(const WormUiWorkspaceView* view,
-                                             WormUiWorkspaceAction* action, bool dialog_busy) {
-    if (dialog_busy) nk_widget_disable_begin(g_context);
-    if (nk_menu_item_label(g_context, "Save project", NK_TEXT_LEFT) &&
-        !dialog_busy && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
-        if (view->project_has_native_path)
-            action->kind = WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT;
-        else
-            start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
+using MenuAction = wormedit::ui::workspace_menu_action_t;
+static wormedit::ui::workspace_menu_t g_workspace_menu;
+
+static void append_file_menu(const WormUiWorkspaceView& view, bool blocked) {
+    const bool available = !blocked && !project_dialog_active();
+    g_workspace_menu.push_back({"File", "New project", MenuAction::new_project, "document.new_project", available});
+    g_workspace_menu.push_back({"File", "Open chart or project...", MenuAction::open, nullptr, available});
+    if (view.project_loaded) {
+        g_workspace_menu.push_back({"File", "Save project", MenuAction::save, "document.save_project", available});
+        g_workspace_menu.push_back({"File", "Save project as...", MenuAction::save_as, nullptr, available});
+        g_workspace_menu.push_back({"File", "Close project", MenuAction::close, nullptr, available});
     }
-    if (nk_menu_item_label(g_context, "Save project as...", NK_TEXT_LEFT) && !dialog_busy &&
-        action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
-        start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
-    if (nk_menu_item_label(g_context, "Close project", NK_TEXT_LEFT) && !dialog_busy &&
-        action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
-        action->kind = WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT;
-    if (dialog_busy) nk_widget_disable_end(g_context);
+    g_workspace_menu.push_back({"File", "Options...", MenuAction::options, "workspace.options", !blocked});
+    g_workspace_menu.push_back({"File", "Quit", MenuAction::quit, nullptr, !blocked});
 }
 
-static void render_project_menu_files(const WormUiWorkspaceView* view,
-                                      WormUiWorkspaceAction* action) {
-    nk_layout_row_dynamic(g_context, 25, 1);
-    const auto dialog_busy = project_dialog_active();
-    if (dialog_busy) nk_widget_disable_begin(g_context);
-    if (nk_menu_item_label(g_context, "New project", NK_TEXT_LEFT) &&
-        !dialog_busy && action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
-        request_manual_new_project();
-    if (dialog_busy) nk_widget_disable_end(g_context);
-    if (dialog_busy) nk_widget_disable_begin(g_context);
-    if (nk_menu_item_label(g_context, "Open chart or project...", NK_TEXT_LEFT) && !dialog_busy &&
-        action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
-        start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_OPEN_FILE);
-    if (dialog_busy) nk_widget_disable_end(g_context);
-    if (view->project_loaded) render_loaded_project_menu_files(view, action, dialog_busy);
-    if (nk_menu_item_label(g_context, "Options...", NK_TEXT_LEFT))
-        action->options.kind = WORM_UI_OPTIONS_OPEN;
+static void refresh_workspace_menu_model(const WormUiWorkspaceView& view) {
+    g_workspace_menu.clear();
+    g_workspace_menu.reserve(24);
+    const bool blocked = project_modal_active(view) || view.options.visible;
+    const bool text_owner = nuklear_text_entry_active() || g_ime_composition_active;
+    const bool edit = !blocked && !text_owner;
+    append_file_menu(view, blocked);
+    g_workspace_menu.push_back({"Edit", "Copy", MenuAction::copy, "edit.copy", edit && view.compose.clipboard_copy_available});
+    g_workspace_menu.push_back({"Edit", "Cut", MenuAction::cut, "edit.cut", edit && view.compose.clipboard_copy_available});
+    g_workspace_menu.push_back({"Edit", "Paste", MenuAction::paste, "edit.paste", edit && view.compose.clipboard_paste_available});
+    if (view.compose.visible)
+        g_workspace_menu.push_back({"View", "Reset editor view", MenuAction::reset_view, nullptr, !blocked});
+    g_workspace_menu.push_back({"View", g_frame_timing_visible ? "Hide frame timing" : "Frame timing", MenuAction::frame_timing, nullptr, !blocked, g_frame_timing_visible});
+    g_workspace_menu.push_back({"View", view.tap_timing.visible ? "Hide tap timing" : "Tap timing", MenuAction::tap_timing, "timing.tap_assistant", !blocked, view.tap_timing.visible});
+    g_workspace_menu.push_back({"View", "Timing Settings...", MenuAction::timing_settings, nullptr, !blocked});
+    g_workspace_menu.push_back({"View", "Notifications", MenuAction::notifications, "view.notifications", !blocked && view.notifications.history_available});
+    if (view.project_loaded)
+        g_workspace_menu.push_back({"Preview", view.player_preview.visible ? "Hide preview" : "Show preview", MenuAction::preview, nullptr, !blocked, view.player_preview.visible});
+    if (view.project_loaded) g_workspace_menu.push_back({"Preview", nullptr, MenuAction::none});
+    g_workspace_menu.push_back({"Preview", "External player preferences...", MenuAction::external_preferences, nullptr, !blocked});
+    if (view.project_loaded) {
+        g_workspace_menu.push_back({"Preview", "External play from start", MenuAction::external_start, "transport.external_play_start", !blocked});
+        g_workspace_menu.push_back({"Preview", "External play from here", MenuAction::external_here, "transport.external_play_here", !blocked});
+        g_workspace_menu.push_back({"Preview", "External stop", MenuAction::external_stop, "transport.external_stop", !blocked});
+    }
 }
 
-static void render_external_player_menu(const WormUiWorkspaceView& view,
+static void apply_workspace_menu_action(MenuAction chosen, const WormUiWorkspaceView& view,
                                          WormUiWorkspaceAction& action) {
-    nk_layout_row_dynamic(g_context, 25, 1);
-    if (nk_menu_item_label(g_context, "External player preferences...", NK_TEXT_LEFT))
-        action.external_player.kind = WORM_UI_EXTERNAL_PLAYER_OPEN;
-    if (!view.project_loaded) return;
-    if (nk_menu_item_label(g_context, "External play from start", NK_TEXT_LEFT))
-        action.external_player.kind = WORM_UI_EXTERNAL_PLAYER_PLAY_START;
-    if (nk_menu_item_label(g_context, "External play from here", NK_TEXT_LEFT))
-        action.external_player.kind = WORM_UI_EXTERNAL_PLAYER_PLAY_HERE;
-    if (nk_menu_item_label(g_context, "External stop", NK_TEXT_LEFT))
-        action.external_player.kind = WORM_UI_EXTERNAL_PLAYER_STOP;
+    switch (chosen) {
+    case MenuAction::new_project: request_manual_new_project(); break;
+    case MenuAction::open: start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_OPEN_FILE); break;
+    case MenuAction::save:
+        if (view.project_has_native_path) action.kind = WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT;
+        else start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
+        break;
+    case MenuAction::save_as: start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT); break;
+    case MenuAction::close: action.kind = WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT; break;
+    case MenuAction::options: action.options.kind = WORM_UI_OPTIONS_OPEN; break;
+    case MenuAction::quit: action.kind = WORM_UI_WORKSPACE_ACTION_QUIT; break;
+    case MenuAction::copy: action.clipboard = WORM_UI_CLIPBOARD_COPY; break;
+    case MenuAction::cut: action.clipboard = WORM_UI_CLIPBOARD_CUT; break;
+    case MenuAction::paste: action.clipboard = WORM_UI_CLIPBOARD_PASTE; break;
+    case MenuAction::reset_view: action.compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW; break;
+    case MenuAction::frame_timing: g_frame_timing_visible = !g_frame_timing_visible; break;
+    case MenuAction::tap_timing: action.tap_timing.toggle = true; break;
+    case MenuAction::timing_settings: action.timing_settings.toggle = true; break;
+    case MenuAction::notifications: action.notifications = {WORM_UI_NOTIFICATION_ACTION_OPEN_HISTORY, 0}; break;
+    case MenuAction::preview: action.kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW; break;
+    case MenuAction::external_preferences: action.external_player.kind = WORM_UI_EXTERNAL_PLAYER_OPEN; break;
+    case MenuAction::external_start: action.external_player.kind = WORM_UI_EXTERNAL_PLAYER_PLAY_START; break;
+    case MenuAction::external_here: action.external_player.kind = WORM_UI_EXTERNAL_PLAYER_PLAY_HERE; break;
+    case MenuAction::external_stop: action.external_player.kind = WORM_UI_EXTERNAL_PLAYER_STOP; break;
+    case MenuAction::none: break;
+    }
+}
+
+static bool native_menu_active() {
+#if defined(WORMEDIT_HAS_MACOS_MENU)
+    return !g_headless && wormedit::sys::macos_menu_active();
+#else
+    return false;
+#endif
+}
+
+int worm_ui_frontend_title_bar_height(void) { return native_menu_active() ? 0 : 36; }
+
+static void service_native_menu(const WormUiWorkspaceView& view, WormUiWorkspaceAction& action) {
+    refresh_workspace_menu_model(view);
+#if defined(WORMEDIT_HAS_MACOS_MENU)
+    if (!native_menu_active()) return;
+    if (nuklear_text_entry_active() || g_ime_composition_active)
+        for (auto& item : g_workspace_menu) if (item.command_id) item.enabled = false;
+    char title[512]{};
+    std::snprintf(title, sizeof(title), "%s%s", view.project_title, view.dirty ? " *" : "");
+    if (std::strcmp(SDL_GetWindowTitle(g_window), title) != 0) SDL_SetWindowTitle(g_window, title);
+    wormedit::sys::refresh_macos_menu(g_workspace_menu);
+    const auto chosen = wormedit::sys::take_macos_menu_action();
+    const auto found = std::ranges::find(g_workspace_menu, chosen, &wormedit::ui::workspace_menu_item_t::action);
+    if (found == g_workspace_menu.end() || !found->enabled || action.kind != WORM_UI_WORKSPACE_ACTION_NONE) return;
+    if (found->command_id) std::snprintf(action.menu_command_id, sizeof(action.menu_command_id), "%s", found->command_id);
+    else apply_workspace_menu_action(chosen, view, action);
+
+#endif
 }
 
 // Menus draw their own rounded panel (chrome::menu_panel), so the stock fill that
@@ -1492,77 +1552,24 @@ static bool begin_menu(const char* title, float rows, float width = 210.0f, floa
                                 2.0f * wormedit::ui::chrome::menu_padding + extra);
 }
 
-static void menu_separator() { wormedit::ui::chrome::menu_separator(g_context); }
-
 static void end_menu() {
     nk_menu_end(g_context);
     wormedit::ui::chrome::menu_surface_end(g_context, g_menu_saved_background);
 }
 
-static void render_project_menu(const WormUiWorkspaceView* view,
-                                WormUiWorkspaceAction* action) {
-    if (!begin_menu("File", view->project_loaded ? 7.0f : 4.0f, 250.0f)) return;
-    render_project_menu_files(view, action);
-    nk_layout_row_dynamic(g_context, 25, 1);
-    if (nk_menu_item_label(g_context, "Quit", NK_TEXT_LEFT))
-        action->kind = WORM_UI_WORKSPACE_ACTION_QUIT;
-    end_menu();
-}
-
-static void render_clipboard_menu(const WormUiWorkspaceView* view,
-                                  WormUiWorkspaceAction* action) {
-    if (!begin_menu("Edit", 3.0f)) return;
-    const bool text_owner = nuklear_text_entry_active() || g_ime_composition_active;
-    const auto item = [&](const char* label, bool enabled, WormUiClipboardAction kind) {
+static void render_workspace_menu(const char* title, float rows, float width,
+                                  const WormUiWorkspaceView& view, WormUiWorkspaceAction& action) {
+    if (!begin_menu(title, rows, width, std::strcmp(title, "Preview") == 0 && view.project_loaded ? 10.0f : 0.0f)) return;
+    for (const auto& item : g_workspace_menu) {
+        if (std::strcmp(item.menu, title) != 0) continue;
+        if (item.action == MenuAction::none) { wormedit::ui::chrome::menu_separator(g_context); continue; }
         nk_layout_row_dynamic(g_context, 25, 1);
-        if (!enabled) nk_widget_disable_begin(g_context);
-        const bool chosen = nk_menu_item_label(g_context, label, NK_TEXT_LEFT) != 0;
-        if (!enabled) nk_widget_disable_end(g_context);
-        if (chosen && enabled) action->clipboard = kind;
-    };
-    item("Copy", !text_owner && view->compose.clipboard_copy_available, WORM_UI_CLIPBOARD_COPY);
-    item("Cut", !text_owner && view->compose.clipboard_copy_available, WORM_UI_CLIPBOARD_CUT);
-    item("Paste", !text_owner && view->compose.clipboard_paste_available, WORM_UI_CLIPBOARD_PASTE);
-    end_menu();
-}
-
-static void render_preview_menu(const WormUiWorkspaceView* view,
-                                WormUiWorkspaceAction* action) {
-    const bool loaded = view->project_loaded;
-    if (!begin_menu("Preview", loaded ? 5.0f : 1.0f, 250.0f, loaded ? 10.0f : 0.0f)) return;
-    if (loaded) {
-        nk_layout_row_dynamic(g_context, 25, 1);
-        if (nk_menu_item_label(g_context, view->player_preview.visible ? "Hide preview" : "Show preview",
-                               NK_TEXT_LEFT) &&
-            action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
-            action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
-        menu_separator();
+        if (!item.enabled) nk_widget_disable_begin(g_context);
+        const bool chosen = nk_menu_item_label(g_context, item.title, NK_TEXT_LEFT) != 0;
+        if (!item.enabled) nk_widget_disable_end(g_context);
+        if (chosen && item.enabled && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
+            apply_workspace_menu_action(item.action, view, action);
     }
-    render_external_player_menu(*view, *action);
-    end_menu();
-}
-
-static void render_view_menu(const WormUiWorkspaceView* view,
-                             WormUiWorkspaceAction* action) {
-    if (!begin_menu("View", view->compose.visible ? 5.0f : 4.0f)) return;
-    if (view->compose.visible) {
-        nk_layout_row_dynamic(g_context, 25, 1);
-        if (nk_menu_item_label(g_context, "Reset editor view", NK_TEXT_LEFT) &&
-            action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-            action->compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW;
-    }
-    nk_layout_row_dynamic(g_context, 25, 1);
-    if (nk_menu_item_label(g_context, g_frame_timing_visible ? "Hide frame timing" : "Frame timing", NK_TEXT_LEFT))
-        g_frame_timing_visible = !g_frame_timing_visible;
-    nk_layout_row_dynamic(g_context, 25, 1);
-    if (nk_menu_item_label(g_context, view->tap_timing.visible ? "Hide tap timing" : "Tap timing", NK_TEXT_LEFT))
-        action->tap_timing.toggle = true;
-    nk_layout_row_dynamic(g_context, 25, 1);
-    if (nk_menu_item_label(g_context, "Timing Settings...", NK_TEXT_LEFT))
-        action->timing_settings.toggle = true;
-    nk_layout_row_dynamic(g_context, 25, 1);
-    if (nk_menu_item_label(g_context, "Notifications", NK_TEXT_LEFT) && view->notifications.history_available)
-        action->notifications = {WORM_UI_NOTIFICATION_ACTION_OPEN_HISTORY, 0};
     end_menu();
 }
 
@@ -1610,6 +1617,7 @@ static void render_title_bar(const WormUiWorkspaceView* view,
     close_unavailable_inline_offset(*view);
     const bool custom_controls = g_window &&
         (SDL_GetWindowFlags(g_window) & SDL_WINDOW_BORDERLESS) != 0;
+    if (native_menu_active()) return;
     nk_menubar_begin(g_context);
     nk_layout_row_template_begin(g_context, 32);
     nk_layout_row_template_push_static(g_context, 76);
@@ -1619,10 +1627,10 @@ static void render_title_bar(const WormUiWorkspaceView* view,
     nk_layout_row_template_push_dynamic(g_context);
     if (custom_controls) wormedit::ui::chrome::IconButton::layout_columns(g_context, 3);
     nk_layout_row_template_end(g_context);
-    render_project_menu(view, action);
-    render_clipboard_menu(view, action);
-    render_view_menu(view, action);
-    render_preview_menu(view, action);
+    render_workspace_menu("File", view->project_loaded ? 7.0f : 4.0f, 250.0f, *view, *action);
+    render_workspace_menu("Edit", 3.0f, 210.0f, *view, *action);
+    render_workspace_menu("View", view->compose.visible ? 5.0f : 4.0f, 210.0f, *view, *action);
+    render_workspace_menu("Preview", view->project_loaded ? 5.0f : 1.0f, 250.0f, *view, *action);
     render_title_label(*view);
     if (custom_controls) {
         if (wormedit::ui::chrome::IconButton{Glyph::minus, "Minimize window"}.render(g_context))
@@ -2465,7 +2473,7 @@ static void render_empty_project_window(const WorkspaceRenderContext& frame) {
         render_title_bar(&frame.view, &frame.action);
         const float recovery_height = render_recovery_panel(frame.view, frame.action);
         const float available_height = std::max(100.0f,
-                                                static_cast<float>(frame.height) - 64.0f -
+                                                static_cast<float>(frame.height) - 28.0f - worm_ui_frontend_title_bar_height() -
                                                     recovery_height);
         render_empty_project_content(frame.view, frame.action, available_height);
 
@@ -2592,7 +2600,7 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
         render_transport_seek_control(view, action);
         const float recovery_height = render_recovery_above_content(view, action);
         float content_height = frame.height > 300
-                                  ? static_cast<float>(frame.height) - 140.0f -
+                                  ? static_cast<float>(frame.height) - 104.0f - worm_ui_frontend_title_bar_height() -
                                         (view.compose.visible && view.compose.bgm_bar_reserved
                                              ? WORM_UI_BGM_BAR_CHROME_HEIGHT : 0.0f) -
                                         recovery_height
@@ -2715,6 +2723,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         expose_shortcut_input(&action);
         return action;
     }
+    service_native_menu(*view, action);
     retire_unavailable_layer_actions(*view);
     g_tap_timing_visible = view->tap_timing.visible && !project_modal_active(*view);
     sync_pending_audio_project(*view);

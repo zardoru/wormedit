@@ -1,3 +1,6 @@
+#if defined(WORMEDIT_HAS_MACOS_MENU)
+#include "sys/macos_menu.h"
+#endif
 #include "sys/frame_timing.h"
 #include "sys/thread_priority.h"
 #include "wormedit/audio.h"
@@ -1603,6 +1606,43 @@ void post_shortcut_rejection(wormedit::notification_sink_t& notifications,
     else
         notifications.post(notification_severity_for(result.diagnostics.front().severity),
                            wormedit::notification_source_t::input, result.diagnostics.front().message);
+}
+
+void consume_native_menu_shortcut(WormUiWorkspaceAction& action,
+                                  const wormedit::command_registry_t& registry) {
+    const auto* command = wormedit::find_command(registry, {action.menu_command_id});
+    if (!command || command->current_shortcuts.empty()) return;
+    const auto& chord = command->current_shortcuts.front();
+    auto modifiers = chord.modifiers;
+    const auto primary = static_cast<wormedit::shortcut_modifiers_t>(wormedit::shortcut_modifier_t::primary);
+    if (modifiers & primary) {
+        modifiers &= ~primary;
+        modifiers |= WORM_UI_SHORTCUT_MODIFIER_META;
+    }
+    std::size_t retained = 0;
+    for (std::size_t i = 0; i < action.shortcut_event_count; ++i) {
+        const auto& event = action.shortcut_events[i];
+        if (event.hid_usage == static_cast<std::uint16_t>(chord.key) && event.modifiers == modifiers) continue;
+        action.shortcut_events[retained++] = event;
+    }
+    action.shortcut_event_count = retained;
+}
+
+void dispatch_native_menu_command(WormUiWorkspaceAction& action,
+                                  wormedit::command_registry_t& registry,
+                                  wormedit::document_history_t& history,
+                                  wormedit::workspace_controller_t& workspace,
+                                  const std::optional<wormedit::editor_interaction_state_t>& compose,
+                                  application_command_state_t& application,
+                                  wormedit::notification_sink_t& notifications) {
+    if (!action.menu_command_id[0]) return;
+    // SDL forwards key events before AppKit invokes key equivalents. Retire that
+    // same chord so a menu shortcut cannot run the registry command twice.
+    consume_native_menu_shortcut(action, registry);
+    refresh_application_command_states(registry, history, workspace, compose, application);
+    const auto result = wormedit::invoke_command(registry, {action.menu_command_id},
+                                                application_command_focus(action, workspace));
+    if (!result.diagnostics.empty()) post_shortcut_rejection(notifications, registry, result);
 }
 
 auto dispatch_application_shortcuts(
@@ -4163,6 +4203,7 @@ int main(int argc, char** argv) {
             int compare_width = 0;
             int compare_height = 0;
             worm_window_get_size(&window, &compare_width, &compare_height);
+            compare_height += 36 - worm_ui_frontend_title_bar_height();
             wormedit::sys::populate_compare_view(
                 flattened, compare_first_pane, compare_second_pane, history, workspace,
                 compare_scene_cache, application_command_state, compare_width, compare_height);
@@ -4191,7 +4232,13 @@ int main(int argc, char** argv) {
             flattened.rebind_view_pointers();
             project_bga_dock(bga_dock_runtime, history, workspace, asset_base, flattened.view.compose);
             const auto frame_nuklear_previous = wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::nuklear);
+#if defined(WORMEDIT_HAS_MACOS_MENU)
+            refresh_application_command_states(command_registry, history, workspace, compose_interaction_state, application_command_state);
+            wormedit::sys::refresh_macos_menu_shortcuts(command_registry);
+#endif
             auto action = worm_ui_frontend_compose(&flattened.view);
+            dispatch_native_menu_command(action, command_registry, history, workspace,
+                compose_interaction_state, application_command_state, notification_sink);
             retain_compose_hover_timing(compose_scene_cache, flattened.view, action);
             retain_compose_bgm_window_capture(application_command_state, flattened.view, action);
             pending_notification = action.notifications;

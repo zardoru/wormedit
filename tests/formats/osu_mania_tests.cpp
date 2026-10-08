@@ -563,6 +563,7 @@ TEST_CASE("osu!mania keeps near-stop timing distinct inside a suppressed-barline
 TEST_CASE("osu!mania rejects source-grid bounds and effective timing product overflow",
           "[unit][format][osu-mania][timing][negative][bounds]") {
     for (const auto time : {"9223372036854776", "-9223372036854776"}) {
+        INFO(time);
         const auto parsed = parse_inline(timing_fixture(std::string(time) + ",500,4,0,0,100,1,0\n", ""));
         CHECK_FALSE(parsed.song);
         CHECK(has_code(parsed, wormedit::osu_mania_parse_diagnostic_code_t::invalid_timing_point));
@@ -572,6 +573,40 @@ TEST_CASE("osu!mania rejects source-grid bounds and effective timing product ove
         "9223372036854774,10000000000000000,4,0,0,100,1,0\n", ""));
     CHECK_FALSE(large_span.song);
     CHECK(has_code(large_span, wormedit::osu_mania_parse_diagnostic_code_t::invalid_timing_point));
+}
+
+TEST_CASE("osu!mania preserves exact source origins near both microsecond grid bounds",
+          "[unit][format][osu-mania][timing][bounds]") {
+    const std::array cases{
+        std::pair{std::int64_t{-9'223'372'036'854'774},
+                  wormedit::signed_rational_t{-4'611'686'018'427'387, 500}},
+        std::pair{std::int64_t{9'223'372'036'854'772},
+                  wormedit::signed_rational_t{2'305'843'009'213'693, 250}}};
+    for (const auto& [milliseconds, expected] : cases) {
+        INFO(milliseconds);
+        const auto parsed = parse_inline(timing_fixture(
+            std::to_string(milliseconds) + ",0.5,4,0,0,100,1,0\n", ""));
+        REQUIRE(parsed.song);
+        const auto& chart = parsed.song->charts.front();
+        CHECK(chart.beat_zero_audio_offset_seconds == expected);
+        CHECK(wormedit::validate_document(*parsed.song).empty());
+    }
+}
+
+TEST_CASE("osu!mania source origins keep fractional microsecond half ties away from zero",
+          "[unit][format][osu-mania][timing][bounds]") {
+    const std::array cases{
+        std::pair{"-1.2345", wormedit::signed_rational_t{-247, 200'000}},
+        std::pair{"1.2345", wormedit::signed_rational_t{247, 200'000}},
+        std::pair{"-0.0005", wormedit::signed_rational_t{-1, 1'000'000}},
+        std::pair{"0.0005", wormedit::signed_rational_t{1, 1'000'000}}};
+    for (const auto& [milliseconds, expected] : cases) {
+        INFO(milliseconds);
+        const auto parsed = parse_inline(timing_fixture(
+            std::string(milliseconds) + ",500,4,0,0,100,1,0\n", ""));
+        REQUIRE(parsed.song);
+        CHECK(parsed.song->charts.front().beat_zero_audio_offset_seconds == expected);
+    }
 }
 
 TEST_CASE("osu!mania fixtures preserve source bytes, tags, bookmarks, kiai and samples",

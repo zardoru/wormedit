@@ -26,6 +26,10 @@ include(cmake/dependencies/nlohmann_json.cmake)
 
 option(WORMEDIT_BUILD_APP "Build the SDL3 GPU application" ON)
 option(WORMEDIT_BUILD_EVENT_HARNESS "Build windowless frontend event tests (requires BUILD_TESTING)" OFF)
+if(APPLE AND WORMEDIT_BUILD_APP)
+    enable_language(OBJCXX)
+endif()
+
 option(WORMEDIT_ENABLE_LUA "Build the pinned Lua runtime adapter" OFF)
 option(WORMEDIT_ENABLE_AUDIO_DECODER "Build the headless MP3/Ogg decoder target" ON)
 option(WORMEDIT_ENABLE_IMAGE_DECODER "Build the headless bounded static-image decoder target" ON)
@@ -501,6 +505,13 @@ if(WORMEDIT_BUILD_APP)
         src/sys/window.cpp
         ${WORMEDIT_UI_FRONTEND_SOURCES}
     )
+    if(APPLE)
+        target_sources(wormedit PRIVATE src/sys/macos_menu.mm)
+        set_source_files_properties(src/sys/macos_menu.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+        set_target_properties(wormedit PROPERTIES OBJCXX_STANDARD 20 OBJCXX_STANDARD_REQUIRED ON)
+        target_compile_definitions(wormedit PRIVATE WORMEDIT_HAS_MACOS_MENU=1)
+        target_link_libraries(wormedit PRIVATE "-framework AppKit")
+    endif()
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/assets/fonts")
     configure_file("${CMAKE_SOURCE_DIR}/assets/fonts/AdwaitaMono-Regular.ttf"
                    "${CMAKE_BINARY_DIR}/assets/fonts/AdwaitaMono-Regular.ttf" COPYONLY)

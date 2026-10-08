@@ -247,3 +247,11 @@ passes; independent main BMS Kick export into a dotted directory retains all
 514 voice tuples with zero onset shift and full 7,008,868-frame PCM maximum
 error 2.38419e-7 / RMS 2.05836e-9, zero samples above 2/32768. Main full batch
 suite and final Draw-dependent application rebuild remain pending.
+
+Additional T-463 supporting scope approved before edits:
+`src/sys/sound_list_projection.cpp` and `tests/sys/sound_list_projection_tests.cpp`
+include valid BMSON BGM stem resources in automatic Sounds lists so the actual
+dock can emit typed stem placement payloads. Keep slot eligibility and generic
+keysound placement unchanged; require an existing asset and preserve non-BMSON
+filtering. Cover BMSON inclusion, non-BMSON exclusion and slot exclusion, then
+rerun actual shared-asset projection and event regressions before release.

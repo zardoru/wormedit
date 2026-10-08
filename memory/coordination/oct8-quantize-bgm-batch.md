@@ -192,3 +192,13 @@ still renders without a per-frame chart scan. Keep head and body bounds distinct
 for labels/hits; tile hashes/window validity include ends and clipped bars.
 Frontend size budgets remain enforced. `compose_view.h` is not additionally
 approved for this phase absent a demonstrated cache need.
+
+## T-423 ordering clarification
+
+Automatic allocation orders keyed groups by first selected appearance in document
+measure/note traversal. Each silent note is a singleton cohort at its own
+document ordinal, rather than a shared silent group or an unconditional last
+pass. Keyed groups sort their members by absolute row then document ordinal.
+Caller-ID permutations cannot change automatic allocation. Explicit manual
+placement preserves the legacy caller-ID processing order as well as the
+requested-lane/right/left/new fallback; it ignores group preferences.

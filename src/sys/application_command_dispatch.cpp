@@ -7,6 +7,7 @@
 #include "sys/compose_input.h"
 #include "sys/compose_scroll_geometry.h"
 #include "sys/compose_timing_delete.h"
+#include "sys/compose_view.h"
 #include "sys/external_player.h"
 #include "sys/transport_player_actions.h"
 #include "ui/frontend.h"
@@ -389,6 +390,36 @@ auto selection_commands(command_context_t& context) -> std::optional<command_res
         notification_severity_t::success, notification_source_t::edit);
 }
 
+// Audio-time markers need the chart's timing index. A failed build is reported
+// once and navigation falls back to beat-anchored markers only.
+auto marker_timing_index(const wormedit::chart_document_t& chart,
+                         notification_sink_t& sink) -> std::optional<wormedit::timing_index_t> {
+    if (!wormedit::sys::has_audio_marker_navigation(chart)) return std::nullopt;
+    auto built = wormedit::build_timing_index(chart);
+    if (built) return std::move(built.index);
+    post_command_message(sink, notification_severity_t::warning, notification_source_t::input,
+        "Audio-time bookmarks are skipped because the chart timing could not be built.");
+    return std::nullopt;
+}
+
+auto navigate_active_markers(command_context_t& context,
+                             const wormedit::editor_interaction_state_t& state,
+                             wormedit::marker_navigation_direction_t direction)
+    -> wormedit::marker_navigation_result_t {
+    using namespace wormedit;
+    const auto* chart = selected_chart(context.history, context.workspace);
+    const auto timing = chart ? marker_timing_index(*chart, context.sink) : std::nullopt;
+    return navigate_markers(context.history.document, context.history.document.revision,
+        state.chart, state.cursor, direction, {}, {}, timing ? &*timing : nullptr);
+}
+
+void post_marker_warnings(notification_sink_t& sink,
+                          const wormedit::diagnostic_list_t& diagnostics) {
+    for (const auto& diagnostic : diagnostics)
+        post_command_message(sink, notification_severity(diagnostic.severity),
+                             notification_source_t::input, diagnostic.message);
+}
+
 auto navigation_commands(command_context_t& context) -> std::optional<command_result_t> {
     using namespace wormedit;
     const auto kind = context.command.kind;
@@ -419,8 +450,7 @@ auto navigation_commands(command_context_t& context) -> std::optional<command_re
             notification_source_t::input);
     const auto direction = kind == command_kind_t::navigation_previous_marker
         ? marker_navigation_direction_t::previous : marker_navigation_direction_t::next;
-    const auto marker = navigate_markers(context.history.document,
-        context.history.document.revision, state->chart, state->cursor, direction);
+    const auto marker = navigate_active_markers(context, *state, direction);
     if (marker.status == marker_navigation_status_t::no_result) {
         post_command_message(context.sink, notification_severity_t::info, notification_source_t::input,
             direction == marker_navigation_direction_t::previous
@@ -428,7 +458,8 @@ auto navigation_commands(command_context_t& context) -> std::optional<command_re
             : "No next beat-anchored bookmark or section boundary.");
         return command_result_t{.accepted = true};
     }
-    if (!marker || !marker.item->beat_position)
+    if (marker.status != marker_navigation_status_t::found || !marker.item ||
+        !marker.item->beat_position)
         return reject_application_command(context.sink,
             marker.diagnostics.empty() ? "Bookmark navigation could not resolve an exact beat row."
                                        : marker.diagnostics.front().message,
@@ -436,6 +467,7 @@ auto navigation_commands(command_context_t& context) -> std::optional<command_re
                 : notification_severity(marker.diagnostics.front().severity),
             notification_source_t::input,
             diagnostic_code_t::invalid_id);
+    post_marker_warnings(context.sink, marker.diagnostics);
     return accept_editor_command(dispatch_editor_action(context.history, *state,
         jump_edit_cursor_action_t{*marker.item->beat_position, marker.document_revision}),
         context.sink, direction == marker_navigation_direction_t::previous

@@ -11,6 +11,11 @@
 #include <variant>
 
 namespace wormedit {
+
+auto has_marker_navigation_targets(const chart_document_t& chart) -> bool {
+    return !chart.bookmarks.empty() || !chart.sections.empty();
+}
+
 namespace {
 
 auto error(diagnostic_code_t code, std::string message,

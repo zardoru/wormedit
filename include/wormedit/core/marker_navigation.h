@@ -79,6 +79,10 @@ navigate_markers(const song_document_t& song, std::uint64_t expected_revision, c
                  marker_navigation_filter_t filter = {}, marker_navigation_limits_t limits = {},
                  const timing_index_t* timing = nullptr) -> marker_navigation_result_t;
 
+// True when the chart has any bookmark or section that navigate_markers can return
+// (beat-anchored, or audio-time when a timing index is supplied).
+[[nodiscard]] auto has_marker_navigation_targets(const chart_document_t& chart) -> bool;
+
 // Audio-time cursors compare only audio-anchored bookmarks and section
 // boundaries, using signed integer milliseconds without a timing approximation.
 [[nodiscard]] auto

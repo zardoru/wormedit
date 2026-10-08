@@ -194,8 +194,6 @@ using wormedit::sys::compose_project_y;
 using wormedit::sys::compose_source_y;
 using wormedit::sys::compose_surface_height;
 using wormedit::sys::editor_interaction_has_pending_gesture;
-using wormedit::sys::has_audio_marker_navigation;
-using wormedit::sys::has_beat_marker_navigation;
 using wormedit::sys::maximum_layout_lane_count;
 using wormedit::sys::populate_compose_view;
 using wormedit::sys::requested_snap_denominator;
@@ -1517,10 +1515,10 @@ void refresh_application_command_states(
                                              application_state.semantic_layer_paint_mode_active));
     set("selection.select_all", compose_ready);
     set("selection.invert", compose_ready);
-    const bool beat_marker_navigation_available =
-        compose_ready && has_beat_marker_navigation(*chart);
-    set("navigation.previous_marker", beat_marker_navigation_available);
-    set("navigation.next_marker", beat_marker_navigation_available);
+    const bool marker_navigation_available =
+        compose_ready && wormedit::has_marker_navigation_targets(*chart);
+    set("navigation.previous_marker", marker_navigation_available);
+    set("navigation.next_marker", marker_navigation_available);
     set("navigation.previous_bookmark", compose_ready);
     set("navigation.next_bookmark", compose_ready);
     set("markers.add_bookmark", compose_ready);

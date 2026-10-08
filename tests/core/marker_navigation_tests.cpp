@@ -364,6 +364,16 @@ TEST_CASE("beat navigation without a timing index ignores audio-time markers",
     CHECK(previous.item->object == object_id_t{3});
 }
 
+TEST_CASE("marker navigation targets include any bookmark or section",
+          "[core][marker_navigation]") {
+    chart_document_t chart{.id = chart_id_t{2}};
+    CHECK_FALSE(has_marker_navigation_targets(chart));
+    chart.bookmarks.push_back({.id = object_id_t{7}, .label = "audio",
+                               .anchor = marker_anchor_t::audio_time,
+                               .audio_milliseconds = 1000});
+    CHECK(has_marker_navigation_targets(chart));
+}
+
 TEST_CASE("an unusable timing index falls back to beat markers with one warning",
           "[unit][core][marker-navigation][negative]") {
     const auto song = projected_song();

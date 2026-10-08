@@ -16,6 +16,7 @@ namespace chrome = wormedit::ui::chrome;
 
 constexpr float row_height = chrome::context_menu_row_height;
 constexpr float primary_width = 120;
+constexpr float root_width = 320;
 struct NoteMenu {
     chrome::ContextMenu popup{.title = "Note actions"};
     bool submenu{}, consumed{}, request_close{};
@@ -167,7 +168,7 @@ void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceA
     if (chrome::popup_panel(context) || !menu.popup.open) return;
     const auto size = menu.submenu
         ? nk_vec2(392, 422)
-        : nk_vec2(primary_width + 2 * chrome::menu_padding, chrome::context_menu_height(2));
+        : nk_vec2(root_width + 2 * chrome::menu_padding, chrome::context_menu_height(3));
     if (!chrome::context_menu_begin(menu.popup, context, stamp(view), size)) {
         if (!menu.popup.open) finish_close(view, action);
         return;
@@ -187,6 +188,8 @@ void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceA
             chrome::context_menu_close(menu.popup);
         }
         if (!can_replace) nk_widget_disable_end(context);
+        nk_layout_row_dynamic(context, row_height, 1);
+        nk_label(context, "Shift + lane key moves one, then deselects", NK_TEXT_LEFT);
 
     }
     chrome::context_menu_end(menu.popup, context);

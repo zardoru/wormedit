@@ -7,8 +7,13 @@
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/sound_import_runtime.h"
+#include "sys/compose_input.h"
+#include "sys/compose_view.h"
 
 #include <wormedit/core/command_registry.h>
+#include <wormedit/core/command.h>
+#include <wormedit/core/lane_profiles.h>
+#include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,6 +21,7 @@
 #include <array>
 #include <cstdio>
 #include <source_location>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -1072,6 +1078,57 @@ struct note_menu_fixture_t {
     }
 };
 } // namespace
+
+auto t422_note_hint_bounds(const nuklear_event_harness_t& harness)
+    -> std::optional<WormUiTestingDrawnText> {
+    constexpr std::string_view hint{"Shift + lane key moves one, then deselects"};
+    const auto bounds = harness.drawn_text_bounds();
+    const auto found = std::ranges::find_if(bounds, [hint](const auto& item) {
+        return std::string_view(item.text) == hint;
+    });
+    if (found == bounds.end())
+        return std::nullopt;
+    return *found;
+}
+
+void t422_check_note_hint_fits_view(const nuklear_event_harness_t& harness,
+                                    const WormUiTestingRect& viewport) {
+    const auto bounds = t422_note_hint_bounds(harness);
+    REQUIRE(bounds.has_value());
+    CHECK(bounds->x >= viewport.x);
+    CHECK(bounds->x + bounds->width <= viewport.x + viewport.width);
+    CHECK(bounds->y >= viewport.y);
+    CHECK(bounds->y + bounds->height <= viewport.y + viewport.height);
+}
+
+void t422_click_hint_without_action(note_menu_fixture_t& fixture,
+                                    std::pair<float, float> center) {
+    const auto clicked = click_at(fixture.harness, center.first, center.second);
+    CHECK(clicked.front().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(compose_note_menu_open());
+    const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    (void)fixture.harness.frame(std::span{&escape, 1});
+    CHECK_FALSE(compose_note_menu_open());
+}
+
+TEST_CASE("Note actions expose a nonclickable Shift lane-key move hint",
+          "[frontend-state][event-harness][lane-key-move-and-deselect]") {
+    note_menu_fixture_t fixture;
+    fixture.note.bounds = {0, 0, 1280, 900};
+    (void)fixture.harness.frame();
+    const auto viewport = compose_canvas_viewport_for_testing();
+    REQUIRE(viewport.has_value());
+    const auto opened = right_click_at(fixture.harness,
+        viewport->x + viewport->width - 3, viewport->y + viewport->height - 3);
+    CHECK(opened.front().get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+    CHECK(compose_note_menu_open());
+    constexpr std::string_view hint{"Shift + lane key moves one, then deselects"};
+    CHECK(fixture.harness.drawn_text().find(hint) != std::string::npos);
+    t422_check_note_hint_fits_view(fixture.harness, *viewport);
+    const auto center = fixture.harness.drawn_text_center(hint);
+    REQUIRE(center.has_value());
+    t422_click_hint_without_action(fixture, *center);
+}
 
 TEST_CASE("Note right click opens Layer submenu and assigns its captured selection",
           "[unit][frontend-state][frontend][event-harness]") {
@@ -2353,6 +2410,572 @@ TEST_CASE("Lane keys carry the clicked Sounds dock source and leave selected not
     require_lane_key_sound(silent.get().compose_input_count == 1);
     expect_lane_key(silent.get().compose_inputs[0].resource_id == 0);
     (void)harness.frame(std::span{&release, 1});
+}
+
+namespace {
+using namespace wormedit;
+using namespace wormedit::sys;
+
+void expect_t422(bool condition, std::source_location source = std::source_location::current()) {
+    INFO("T422 expectation at " << source.line());
+    REQUIRE(condition);
+}
+
+auto t422_song(bool occupied_target = false, bool target_missing_in_second_measure = false)
+    -> song_document_t {
+    const auto profile = make_osu_mania_profile(4);
+    if (!profile)
+        throw std::runtime_error("osu-mania-4k profile unavailable");
+    song_document_t song;
+    song.id = song_id_t{1};
+    song.revision = 1;
+    song.audio_assets = {{.id = asset_id_t{1}, .source_path = "t422-sample.wav"}};
+    song.resources = {{.id = resource_id_t{1},
+                       .name = "T422 sample",
+                       .asset = asset_id_t{1},
+                       .roles = {resource_role_t::sample}}};
+    chart_document_t chart;
+    chart.id = chart_id_t{1};
+    chart.divisions_per_standard_measure = 960;
+    chart.measures = {{.id = measure_id_t{1}, .definition = {{1, 1}, meter_t{4, 4}}},
+                      {.id = measure_id_t{2}, .definition = {{1, 1}, meter_t{4, 4}}}};
+    chart.lane_layouts = {
+        {.id = object_id_t{1}, .position = {measure_id_t{1}, 0}, .layout = profile->layout}};
+    if (target_missing_in_second_measure) {
+        auto second_layout = profile->layout;
+        second_layout.profile_id += "-without-lane-2";
+        std::erase_if(second_layout.lanes,
+                      [](const auto& lane) { return lane.id == lane_id_t{2}; });
+        chart.lane_layouts.push_back({.id = object_id_t{4},
+                                      .position = {measure_id_t{2}, 0},
+                                      .layout = std::move(second_layout)});
+    }
+    chart.input_profile = profile->input;
+    chart.semantic_layers = {{.id = layer_id_t{7}, .name = "T422 layer"}};
+    chart.bpms = {
+        {.id = object_id_t{2}, .position = {measure_id_t{1}, 0}, .beats_per_minute = {120, 1}}};
+    chart.measures[0].notes = {{.id = object_id_t{102},
+                                .position = {measure_id_t{1}, 360},
+                                .lane = lane_id_t{1},
+                                .kind = note_kind_t::hold,
+                                .end = local_position_t{measure_id_t{1}, 600},
+                                .sound = resource_id_t{1},
+                                .semantic_layers = {layer_id_t{7}}},
+                               {.id = object_id_t{101},
+                                .position = {measure_id_t{1}, 120},
+                                .lane = lane_id_t{1},
+                                .sound = resource_id_t{1},
+                                .semantic_layers = {layer_id_t{7}}}};
+    chart.measures[1].notes = {{.id = object_id_t{103},
+                                .position = {measure_id_t{2}, 120},
+                                .lane = lane_id_t{1},
+                                .sound = resource_id_t{1},
+                                .semantic_layers = {layer_id_t{7}}}};
+    if (occupied_target)
+        chart.measures[0].notes.push_back(
+            {.id = object_id_t{104}, .position = {measure_id_t{1}, 600}, .lane = lane_id_t{2}});
+    song.charts.push_back(std::move(chart));
+    return song;
+}
+
+auto t422_note(document_history_t& history, std::uint64_t id) -> note_t* {
+    for (auto& measure : history.document.charts.front().measures)
+        for (auto& note : measure.notes)
+            if (note.id == object_id_t{id})
+                return &note;
+    return nullptr;
+}
+
+struct t422_fixture_t {
+    document_history_t history;
+    using workspace_binding_t =
+        decltype(make_workspace_controller(std::declval<document_history_t&>()));
+    workspace_binding_t binding;
+    compose_scene_cache_t cache;
+    application_command_state_t application;
+    std::optional<editor_interaction_state_t> interaction;
+    flattened_workspace_t flattened;
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    notification_center_t notifications;
+    notification_sink_t sink{notifications};
+    nuklear_event_harness_t harness{1800, 1400};
+
+    explicit t422_fixture_t(song_document_t song)
+        : history(make_document_history(std::move(song))),
+          binding(make_workspace_controller(history)) {
+        expect_t422(harness.ready());
+        expect_t422(binding.workspace.has_value());
+        binding.workspace->active_tab = workspace_tab_t::compose;
+        binding.workspace->selected_chart = chart_id_t{1};
+        project();
+        if (interaction) {
+            interaction->selected_notes = {object_id_t{103}, object_id_t{101}, object_id_t{102}};
+            interaction->selected_objects = {
+                {editor_selection_object_kind_t::note, object_id_t{103}},
+                {editor_selection_object_kind_t::note, object_id_t{101}},
+                {editor_selection_object_kind_t::note, object_id_t{102}}};
+        }
+        project();
+        (void)harness.frame();
+    }
+
+    void project() {
+        flattened = {};
+        flattened.view.compose.visible = true;
+        populate_compose_view(flattened, history, *binding.workspace, cache, 1800, 1400,
+                              interaction, application, nullptr);
+        CAPTURE(flattened.projection_feedback.size(), cache.projection_error,
+                history.document.revision, interaction.has_value());
+        for (const auto& feedback : flattened.projection_feedback)
+            UNSCOPED_INFO(feedback.message);
+        expect_t422(interaction.has_value());
+        expect_t422(flattened.view.compose.scene_available);
+        harness.view().active_tab = WORM_UI_WORKSPACE_TAB_COMPOSE;
+        harness.view().project_loaded = true;
+        harness.view().project_id = history.document.id.value;
+        harness.view().selected_chart_id = chart_id_t{1}.value;
+        harness.view().document_revision = history.document.revision;
+        harness.view().compose = flattened.view.compose;
+        harness.view().compose.visible = true;
+    }
+
+    auto dispatch(const workspace_action_snapshot_t& snapshot) -> std::string {
+        auto action = snapshot.get();
+        return dispatch_action(action);
+    }
+
+    auto dispatch_action(WormUiWorkspaceAction& action) -> std::string {
+        return dispatch_compose_input_action(action, history, *binding.workspace, *interaction,
+                                             viewport, navigation, application, cache, 0.0, &sink);
+    }
+};
+
+auto t422_lane_press(t422_fixture_t& fixture, SDL_Keymod modifiers) -> std::string {
+    const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
+    const auto down = fixture.harness.frame(std::span{&press, 1}, modifiers);
+    CAPTURE(down.get().compose_input_count, fixture.harness.view().compose.visible,
+            fixture.harness.view().compose.scene_available,
+            fixture.harness.view().compose.input_occluded,
+            fixture.harness.view().compose.lane_key_binding_count,
+            fixture.harness.view().compose.selected_note_count,
+            fixture.harness.view().active_tab, down.get().shortcut_window_focused,
+            down.get().shortcut_text_entry_active, down.get().shortcut_ime_composition_active);
+    expect_t422(down.get().compose_input_count == 1);
+    expect_t422(down.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
+    expect_t422(down.get().compose_inputs[0].lane_id == 2);
+    expect_t422(down.get().compose_inputs[0].successive == ((modifiers & SDL_KMOD_SHIFT) != 0));
+    auto status = fixture.dispatch(down);
+    fixture.project();
+    const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_2, SDL_SCANCODE_2);
+    const auto up = fixture.harness.frame(std::span{&release, 1}, modifiers);
+    (void)fixture.dispatch(up);
+    fixture.project();
+    return status;
+}
+
+auto t422_shift_press(t422_fixture_t& fixture) -> std::string {
+    return t422_lane_press(fixture, SDL_KMOD_SHIFT);
+}
+
+void t422_check_note_identity(const note_t& actual, const note_t& original) {
+    CHECK(actual.id == original.id);
+    CHECK(actual.position == original.position);
+    CHECK(actual.end == original.end);
+}
+
+void t422_check_note_payload(const note_t& actual, const note_t& original,
+                             lane_id_t expected_lane) {
+    CHECK(actual.kind == original.kind);
+    CHECK(actual.sound == original.sound);
+    CHECK(actual.semantic_layers == original.semantic_layers);
+    CHECK(actual.lane == expected_lane);
+}
+
+void t422_check_note_contents(const note_t& actual, const note_t& original,
+                              lane_id_t expected_lane) {
+    t422_check_note_identity(actual, original);
+    t422_check_note_payload(actual, original, expected_lane);
+}
+
+void t422_check_selection(const t422_fixture_t& fixture,
+                          const std::vector<object_id_t>& expected_notes,
+                          const std::vector<editor_selection_object_t>& expected_objects) {
+    CHECK(fixture.interaction->selected_notes == expected_notes);
+    CHECK(fixture.interaction->selected_objects == expected_objects);
+}
+
+auto t422_native_bytes(const song_document_t& song) -> std::string {
+    const auto encoded = write_native_project(song);
+    if (!encoded.bytes)
+        throw std::runtime_error("T422 native snapshot serialization failed");
+    return *encoded.bytes;
+}
+
+void t422_check_unmodified(const t422_fixture_t& fixture, std::string_view bytes,
+                           std::uint64_t revision, std::size_t undo_depth,
+                           const std::vector<object_id_t>& selected_notes,
+                           const std::vector<editor_selection_object_t>& selected_objects) {
+    CHECK(t422_native_bytes(fixture.history.document) == bytes);
+    CHECK(fixture.history.document.revision == revision);
+    CHECK(fixture.history.undo.size() == undo_depth);
+    t422_check_selection(fixture, selected_notes, selected_objects);
+    CHECK_FALSE(fixture.interaction->pending_hold.has_value());
+    CHECK(fixture.interaction->additional_keyboard_holds.empty());
+}
+
+void t422_check_native_binding(const t422_fixture_t& fixture) {
+    const auto profile = make_osu_mania_profile(4);
+    expect_t422(profile.has_value());
+    const auto expected =
+        std::ranges::find(profile->input.bindings, lane_id_t{2}, &lane_binding_t::lane);
+    expect_t422(expected != profile->input.bindings.end());
+    expect_t422(expected->key == physical_key_t::digit_2);
+    const auto& chart = fixture.history.document.charts.front();
+    expect_t422(chart.lane_layouts.front().layout.profile_id == "osu-mania-4k");
+    expect_t422(chart.input_profile.profile_id == profile->input.profile_id);
+    const auto& view = fixture.flattened.view.compose;
+    const auto projected =
+        std::ranges::find_if(std::span{view.lane_key_bindings, view.lane_key_binding_count},
+                             [](const auto& binding) { return binding.lane_id == 2; });
+    expect_t422(projected != std::span{view.lane_key_bindings, view.lane_key_binding_count}.end());
+    expect_t422(projected->scancode == SDL_SCANCODE_2);
+}
+
+auto t422_note_screen_center(t422_fixture_t& fixture, std::uint64_t note_id)
+    -> std::optional<std::pair<float, float>> {
+    (void)fixture.harness.frame();
+    const auto viewport = compose_canvas_viewport_for_testing();
+    if (!viewport)
+        return std::nullopt;
+    const auto& view = fixture.harness.view().compose;
+    for (std::size_t index = 0; index < view.note_endpoint_count; ++index) {
+        const auto& note = view.note_endpoints[index];
+        if (note.note_id != note_id || note.tail)
+            continue;
+        const auto x = (note.bounds.left + note.bounds.right) * 0.5;
+        const auto y = (note.bounds.top + note.bounds.bottom) * 0.5;
+        return std::pair{
+            viewport->x + static_cast<float>(x * viewport->width / view.viewport_width_pixels),
+            viewport->y + static_cast<float>(y * viewport->height / view.viewport_height_pixels)};
+    }
+    return std::nullopt;
+}
+
+void t422_check_all_notes_in_lane(t422_fixture_t& fixture,
+                                  const std::array<note_t, 3>& original,
+                                  lane_id_t expected_lane) {
+    for (const auto& source : original) {
+        const auto* note = t422_note(fixture.history, source.id.value);
+        REQUIRE(note);
+        t422_check_note_contents(*note, source, expected_lane);
+    }
+}
+
+void t422_set_expected_lane(song_document_t& expected, object_id_t id, lane_id_t lane) {
+    for (auto& measure : expected.charts.front().measures)
+        for (auto& note : measure.notes)
+            if (note.id == id)
+                note.lane = lane;
+}
+
+void t422_update_expected_prefix(song_document_t& expected,
+                                 const std::array<object_id_t, 3>& ids, std::size_t step) {
+    for (std::size_t index = 0; index <= step; ++index)
+        t422_set_expected_lane(expected, ids[index], lane_id_t{2});
+}
+
+auto t422_expected_remaining_notes(std::size_t step) -> std::vector<object_id_t> {
+    if (step == 0)
+        return {object_id_t{103}, object_id_t{102}};
+    if (step == 1)
+        return {object_id_t{103}};
+    return {};
+}
+
+auto t422_expected_remaining_objects(std::size_t step)
+    -> std::vector<editor_selection_object_t> {
+    if (step == 0)
+        return {{editor_selection_object_kind_t::note, object_id_t{103}},
+                {editor_selection_object_kind_t::note, object_id_t{102}}};
+    if (step == 1)
+        return {{editor_selection_object_kind_t::note, object_id_t{103}}};
+    return {};
+}
+
+void t422_check_step_note_lanes(t422_fixture_t& fixture,
+                                const std::array<note_t, 3>& originals,
+                                std::size_t step) {
+    const auto ids = std::array{object_id_t{101}, object_id_t{102}, object_id_t{103}};
+    for (std::size_t index = 0; index < ids.size(); ++index) {
+        const auto lane = index <= step ? lane_id_t{2} : lane_id_t{1};
+        const auto* note = t422_note(fixture.history, ids[index].value);
+        REQUIRE(note);
+        t422_check_note_contents(*note, originals[index], lane);
+    }
+}
+
+void t422_check_shift_step(t422_fixture_t& fixture, song_document_t& expected_document,
+                           const std::array<note_t, 3>& originals, std::size_t step,
+                           std::string_view original_bytes) {
+    const auto ids = std::array{object_id_t{101}, object_id_t{102}, object_id_t{103}};
+    const auto revision = fixture.history.document.revision;
+    CHECK(t422_shift_press(fixture) == "Next selected note assigned to lane.");
+    CHECK(fixture.history.document.revision == revision + 1);
+    CHECK(fixture.history.undo.size() == step + 1);
+    t422_check_selection(fixture, t422_expected_remaining_notes(step),
+                         t422_expected_remaining_objects(step));
+    t422_check_step_note_lanes(fixture, originals, step);
+    t422_update_expected_prefix(expected_document, ids, step);
+    expected_document.revision = fixture.history.document.revision;
+    CHECK(t422_native_bytes(fixture.history.document) == t422_native_bytes(expected_document));
+    CHECK(t422_native_bytes(fixture.history.document) != original_bytes);
+    CHECK_FALSE(fixture.interaction->pending_hold.has_value());
+}
+
+void t422_check_undo_result(t422_fixture_t& fixture,
+                            const std::array<note_t, 3>& originals) {
+    CHECK(fixture.history.undo.size() == 2);
+    t422_check_note_contents(*t422_note(fixture.history, 101), originals[0], lane_id_t{2});
+    t422_check_note_contents(*t422_note(fixture.history, 102), originals[1], lane_id_t{2});
+    t422_check_note_contents(*t422_note(fixture.history, 103), originals[2], lane_id_t{1});
+    CHECK(fixture.interaction->selected_notes.empty());
+    CHECK(fixture.interaction->selected_objects.empty());
+    CHECK_FALSE(fixture.interaction->pending_hold.has_value());
+}
+
+void t422_apply_shift_sequence(t422_fixture_t& fixture, song_document_t& expected_document,
+                               const std::array<note_t, 3>& originals,
+                               std::string_view original_bytes) {
+    for (std::size_t step = 0; step < originals.size(); ++step)
+        t422_check_shift_step(fixture, expected_document, originals, step, original_bytes);
+    CHECK(fixture.history.undo.size() == 3);
+}
+
+void t422_undo_last_shift(t422_fixture_t& fixture, song_document_t& expected_document,
+                          const std::array<note_t, 3>& originals) {
+    WormUiWorkspaceAction undo{};
+    undo.compose_input_project_id = fixture.history.document.id.value;
+    undo.compose_input_chart_id = fixture.history.document.charts.front().id.value;
+    undo.compose_input_document_revision = fixture.history.document.revision;
+    undo.compose_input_viewport_width_pixels = fixture.harness.view().compose.viewport_width_pixels;
+    undo.compose_input_count = 1;
+    undo.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_UNDO;
+    const auto revision = fixture.history.document.revision;
+    CHECK(fixture.dispatch_action(undo) == "Undo applied.");
+    fixture.project();
+    CHECK(fixture.history.document.revision == revision - 1);
+    t422_set_expected_lane(expected_document, object_id_t{103}, lane_id_t{1});
+    expected_document.revision = fixture.history.document.revision;
+    CHECK(t422_native_bytes(fixture.history.document) == t422_native_bytes(expected_document));
+    t422_check_undo_result(fixture, originals);
+}
+
+void t422_open_note_actions(t422_fixture_t& fixture) {
+    const auto center = t422_note_screen_center(fixture, 101);
+    REQUIRE(center.has_value());
+    const auto opened = right_click_at(fixture.harness, center->first, center->second);
+    REQUIRE(opened.size() == 2);
+    REQUIRE(opened.front().get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+    REQUIRE(compose_note_menu_open());
+}
+} // namespace
+
+TEST_CASE(
+    "Shift plus the profile lane key moves one note per real dispatch and undo restores the last",
+    "[frontend-state][event-harness][lane-key-move-and-deselect]") {
+    t422_fixture_t fixture{t422_song()};
+    t422_check_native_binding(fixture);
+    const std::array<note_t, 3> originals{*t422_note(fixture.history, 101),
+                                          *t422_note(fixture.history, 102),
+                                          *t422_note(fixture.history, 103)};
+    auto expected_document = fixture.history.document;
+    const auto original_bytes = t422_native_bytes(expected_document);
+    t422_apply_shift_sequence(fixture, expected_document, originals, original_bytes);
+    CHECK(fixture.interaction->selected_notes.empty());
+    CHECK(fixture.interaction->selected_objects.empty());
+    t422_undo_last_shift(fixture, expected_document, originals);
+}
+
+TEST_CASE("A plain profile lane key moves all selected notes and preserves their selection",
+          "[frontend-state][event-harness][lane-key-move-and-deselect]") {
+    t422_fixture_t fixture{t422_song()};
+    const std::array<note_t, 3> originals{*t422_note(fixture.history, 101),
+                                          *t422_note(fixture.history, 102),
+                                          *t422_note(fixture.history, 103)};
+    const std::vector<object_id_t> selection{object_id_t{103}, object_id_t{101}, object_id_t{102}};
+    const std::vector<editor_selection_object_t> selected_objects{
+        {editor_selection_object_kind_t::note, object_id_t{103}},
+        {editor_selection_object_kind_t::note, object_id_t{101}},
+        {editor_selection_object_kind_t::note, object_id_t{102}}};
+    const auto revision = fixture.history.document.revision;
+    CHECK(t422_lane_press(fixture, SDL_KMOD_NONE) == "Selected notes assigned to lane.");
+    CHECK(fixture.history.document.revision == revision + 1);
+    CHECK(fixture.history.undo.size() == 1);
+    t422_check_selection(fixture, selection, selected_objects);
+    t422_check_all_notes_in_lane(fixture, originals, lane_id_t{2});
+    CHECK_FALSE(fixture.interaction->pending_hold.has_value());
+    CHECK(fixture.interaction->additional_keyboard_holds.empty());
+}
+
+auto t422_copy_notes(const document_history_t& history) -> std::vector<note_t> {
+    std::vector<note_t> result;
+    for (const auto& measure : history.document.charts.front().measures)
+        result.insert(result.end(), measure.notes.begin(), measure.notes.end());
+    return result;
+}
+
+void t422_check_notes_unchanged(const t422_fixture_t& fixture,
+                                const std::vector<note_t>& original) {
+    const auto current = t422_copy_notes(fixture.history);
+    REQUIRE(current.size() == original.size());
+    for (std::size_t index = 0; index < original.size(); ++index)
+        t422_check_note_contents(current[index], original[index], original[index].lane);
+}
+
+void t422_reject_without_mutation(t422_fixture_t& fixture, std::string_view reason,
+                                  const std::vector<object_id_t>& selection,
+                                  const std::vector<editor_selection_object_t>& objects) {
+    const auto revision = fixture.history.document.revision;
+    const auto undo_depth = fixture.history.undo.size();
+    const auto original = t422_copy_notes(fixture.history);
+    const auto original_bytes = t422_native_bytes(fixture.history.document);
+    const auto status = t422_shift_press(fixture);
+    CHECK(status.find(reason) != std::string::npos);
+    CHECK(fixture.history.document.revision == revision);
+    CHECK(fixture.history.undo.size() == undo_depth);
+    t422_check_notes_unchanged(fixture, original);
+    CHECK(t422_native_bytes(fixture.history.document) == original_bytes);
+    t422_check_selection(fixture, selection, objects);
+    CHECK_FALSE(fixture.interaction->pending_hold.has_value());
+    CHECK(fixture.interaction->additional_keyboard_holds.empty());
+}
+
+TEST_CASE("A lane overlap rejects Shift assignment without changing document or selection",
+          "[frontend-state][event-harness][lane-key-move-and-deselect]") {
+    t422_fixture_t fixture{t422_song(true)};
+    CHECK(t422_shift_press(fixture) == "Next selected note assigned to lane.");
+    const std::vector<object_id_t> selection{object_id_t{103}, object_id_t{102}};
+    const std::vector<editor_selection_object_t> objects{
+        {editor_selection_object_kind_t::note, object_id_t{103}},
+        {editor_selection_object_kind_t::note, object_id_t{102}}};
+    t422_reject_without_mutation(fixture, "lane assignment overlaps another target-lane note",
+                                 selection, objects);
+}
+
+TEST_CASE("A lane missing from the effective layout rejects the final successive assignment",
+          "[frontend-state][event-harness][lane-key-move-and-deselect]") {
+    t422_fixture_t fixture{t422_song(false, true)};
+    CHECK(t422_shift_press(fixture) == "Next selected note assigned to lane.");
+    CHECK(t422_shift_press(fixture) == "Next selected note assigned to lane.");
+    const std::vector<object_id_t> selection{object_id_t{103}};
+    const std::vector<editor_selection_object_t> objects{
+        {editor_selection_object_kind_t::note, object_id_t{103}}};
+    t422_reject_without_mutation(fixture,
+                                 "target lane is unavailable at a selected note endpoint",
+                                 selection, objects);
+}
+
+auto t422_initial_notes() -> std::vector<object_id_t> {
+    return {object_id_t{103}, object_id_t{101}, object_id_t{102}};
+}
+
+auto t422_initial_objects() -> std::vector<editor_selection_object_t> {
+    return {{editor_selection_object_kind_t::note, object_id_t{103}},
+            {editor_selection_object_kind_t::note, object_id_t{101}},
+            {editor_selection_object_kind_t::note, object_id_t{102}}};
+}
+
+void t422_check_suppressed_event(t422_fixture_t& fixture,
+                                 const workspace_action_snapshot_t& snapshot,
+                                 std::string_view original_bytes) {
+    CHECK(snapshot.get().compose_input_count == 0);
+    (void)fixture.dispatch(snapshot);
+    fixture.project();
+    t422_check_unmodified(fixture, original_bytes, 1, 0, t422_initial_notes(),
+                          t422_initial_objects());
+}
+
+void t422_suppress_repeat_and_unbound_keys() {
+    t422_fixture_t fixture{t422_song()};
+    const auto bytes = t422_native_bytes(fixture.history.document);
+    const auto repeat = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2, true);
+    t422_check_suppressed_event(
+        fixture, fixture.harness.frame(std::span{&repeat, 1}, SDL_KMOD_SHIFT), bytes);
+    const auto unbound = key_event(SDL_EVENT_KEY_DOWN, SDLK_5, SDL_SCANCODE_5);
+    t422_check_suppressed_event(
+        fixture, fixture.harness.frame(std::span{&unbound, 1}, SDL_KMOD_SHIFT), bytes);
+}
+
+void t422_suppress_go_to_measure() {
+    t422_fixture_t fixture{t422_song()};
+    const auto bytes = t422_native_bytes(fixture.history.document);
+    const auto go = key_event(SDL_EVENT_KEY_DOWN, SDLK_G, SDL_SCANCODE_G);
+    const auto opened = fixture.harness.frame(std::span{&go, 1}, SDL_KMOD_CTRL);
+    (void)fixture.dispatch(opened);
+    CHECK(worm_ui_nuklear_compose_state().go_to_measure_open);
+    const auto shifted = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
+    t422_check_suppressed_event(
+        fixture, fixture.harness.frame(std::span{&shifted, 1}, SDL_KMOD_SHIFT), bytes);
+}
+
+void t422_suppress_ime() {
+    t422_fixture_t fixture{t422_song()};
+    const auto bytes = t422_native_bytes(fixture.history.document);
+    constexpr char preedit_text[]{"typing"};
+    SDL_Event editing{};
+    editing.type = SDL_EVENT_TEXT_EDITING;
+    editing.edit.type = SDL_EVENT_TEXT_EDITING;
+    editing.edit.text = preedit_text;
+    const auto shifted = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
+    const std::array events{editing, shifted};
+    t422_check_suppressed_event(fixture, fixture.harness.frame(events, SDL_KMOD_SHIFT), bytes);
+}
+
+void t422_suppress_focus_loss() {
+    t422_fixture_t fixture{t422_song()};
+    const auto bytes = t422_native_bytes(fixture.history.document);
+    SDL_Event lost{};
+    lost.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+    lost.window.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+    (void)fixture.dispatch(fixture.harness.frame(std::span{&lost, 1}));
+    const auto shifted = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
+    t422_check_suppressed_event(
+        fixture, fixture.harness.frame(std::span{&shifted, 1}, SDL_KMOD_SHIFT), bytes);
+}
+
+void t422_suppress_note_actions() {
+    t422_fixture_t fixture{t422_song()};
+    const auto bytes = t422_native_bytes(fixture.history.document);
+    t422_open_note_actions(fixture);
+    const auto shifted = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
+    t422_check_suppressed_event(
+        fixture, fixture.harness.frame(std::span{&shifted, 1}, SDL_KMOD_SHIFT), bytes);
+}
+
+void t422_suppress_actual_text_editor() {
+    t422_fixture_t fixture{t422_song()};
+    const auto bytes = t422_native_bytes(fixture.history.document);
+    worm_ui_nuklear_compose_state().inspector_visible = true;
+    (void)fixture.harness.frame();
+    const auto header = fixture.harness.drawn_text_center("Find note label");
+    REQUIRE(header.has_value());
+    (void)click_at(fixture.harness, header->first, header->second + 27);
+    CHECK(fixture.harness.frame().get().shortcut_text_entry_active);
+    CHECK_FALSE(worm_ui_nuklear_compose_state().go_to_measure_open);
+    const auto shifted = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
+    t422_check_suppressed_event(
+        fixture, fixture.harness.frame(std::span{&shifted, 1}, SDL_KMOD_SHIFT), bytes);
+}
+
+TEST_CASE("Repeat, text input, IME, focus loss and Note actions suppress Shift lane mutation",
+          "[frontend-state][event-harness][lane-key-move-and-deselect]") {
+    t422_suppress_repeat_and_unbound_keys();
+    t422_suppress_go_to_measure();
+    t422_suppress_ime();
+    t422_suppress_focus_loss();
+    t422_suppress_note_actions();
+    t422_suppress_actual_text_editor();
 }
 
 TEST_CASE("BMS branch panel shows control nodes as a tree and unparsed statements per node",

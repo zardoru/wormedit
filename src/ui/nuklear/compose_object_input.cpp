@@ -507,11 +507,6 @@ static auto bgm_draw_lane_at(const WormUiComposeView& view, double x, double y)
     return nullptr;
 }
 
-// The BGM source lane the current left Draw stroke was pressed on (0 for key-lane and BGA
-// strokes). The pointer's press origin is not retained through the release frame, so the
-// begin event records it and later events of the stroke reuse it.
-static uint64_t draw_stroke_bgm_lane{};
-
 static auto bgm_draw_source_ready() -> bool {
     return state.draw_source_kind == 1 && state.draw_source_id != 0;
 }
@@ -528,18 +523,19 @@ static void emit_draw_stroke(const ComposePointerEventContext& input,
         const auto* pressed = erase
             ? bgm_draw_lane_at(*input.view, state.draw_right_anchor_x, state.draw_right_anchor_y)
             : bgm_draw_lane_at(*input.view, input.pointer_started_x, input.pointer_started_y);
-        draw_stroke_bgm_lane = pressed ? pressed->source_lane_id : 0;
+        state.draw_stroke_bgm_lane = pressed ? pressed->source_lane_id : 0;
     }
     if (state.draw_stroke_bga) {
         output.resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGA;
         output.bga_lane_kind = compose_bga_lane_kind_at(*input.view, x, y).value_or(255);
         output.bga_lane_kind_valid = true;
-    } else if (draw_stroke_bgm_lane != 0) {
+    } else if (state.draw_stroke_bgm_lane != 0) {
         output.resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
-        output.lane_id = draw_stroke_bgm_lane;
+        output.lane_id = state.draw_stroke_bgm_lane;
     } else if (!erase && state.draw_source_kind != 1) {
         output.resource_id = 0;
     }
+    if (kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) state.draw_stroke_bgm_lane = 0;
 }
 
 void append_note_paint_begin(const ComposePointerEventContext& input) {

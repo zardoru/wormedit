@@ -225,6 +225,8 @@ struct worm_ui_nuklear_compose_state_t {
     bool pointer_hold_without_alt{};
     bool note_paint_pointer_active{};
     bool draw_stroke_bga{};
+    // BGM source lane the current Draw stroke was pressed on; 0 for key-lane and BGA strokes.
+    uint64_t draw_stroke_bgm_lane{};
     bool draw_erase_pointer_active{};
     bool draw_left_cancelled_until_release{};
     bool draw_right_candidate{};

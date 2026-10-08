@@ -1293,3 +1293,46 @@ TEST_CASE("Compose quantize preset rename to the existing name is a history no-o
     check_action(fixture.history.document.revision == revision);
     check_action(fixture.history.undo.empty());
 }
+
+namespace {
+auto draw_bgm_input(bga_input_fixture_t& fixture, WormUiComposeInputKind kind, uint64_t row,
+                    bool erase = false) -> WormUiWorkspaceAction {
+    auto value = draw_bga_input(fixture, kind, row, erase);
+    value.compose_inputs[0].resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
+    value.compose_inputs[0].lane_id = 50;
+    value.compose_inputs[0].resource_id = erase ? 0 : 33;
+    return value;
+}
+}
+TEST_CASE("Draw BGM production stroke commits once and erase removes the lane once",
+          "[bgm][draw][compose-input]") {
+    bga_input_fixture_t fixture;
+    fixture.history.document.audio_assets = {{.id = asset_id_t{71}}};
+    fixture.history.document.resources.push_back({.id = resource_id_t{33}, .asset = asset_id_t{71},
+        .roles = {resource_role_t::sample}});
+    fixture.history.document.charts.front().bgm_source_lanes = {{.id = object_id_t{50}, .name = "BGM"}};
+    fixture.application.note_paint_mode_active = true;
+    auto begin = draw_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240);
+    (void)fixture.dispatch_input(begin);
+    check_action(fixture.history.undo.empty());
+    auto release = draw_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 720);
+    INFO(fixture.dispatch_input(release));
+    require_action(fixture.history.undo.size() == 1);
+    const auto count = [&] {
+        std::size_t total{};
+        for (const auto& measure : fixture.history.document.charts.front().measures)
+            total += measure.bgm_events.size();
+        return total;
+    };
+    check_action(count() == 3);
+    check_action(!fixture.application.bga_draw_stroke);
+    auto erase_begin = draw_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240, true);
+    (void)fixture.dispatch_input(erase_begin);
+    auto erase_release = draw_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 480, true);
+    INFO(fixture.dispatch_input(erase_release));
+    check_action(fixture.history.undo.size() == 2);
+    check_action(count() == 1);
+    require_action(undo_document_command(fixture.history));
+    require_action(undo_document_command(fixture.history));
+    check_action(count() == 0);
+}

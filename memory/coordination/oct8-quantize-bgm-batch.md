@@ -132,3 +132,36 @@ production sources in root-owned `tests/CMakeLists.txt`:
 - `src/sys/sound_list_projection.cpp`
 - `src/sys/sound_usage_projection.cpp`
 - `src/sys/workspace_projection.cpp`
+
+## T-423 later-phase support scope, not an executor grant
+
+The allocator remains the initial three-file phase. These supporting paths are
+approved for subsequent exclusive slices after source/build ownership release:
+
+- `include/wormedit/core/document.h`
+- `src/core/document.cpp`
+- `src/formats/native_project.cpp`
+- `src/formats/native_project_migrations.cpp`
+- `tests/formats/native_project_tests.cpp`
+- `src/formats/native_project_storage.cpp`
+- `tests/formats/native_project_storage_tests.cpp`
+- `src/core/resource_assignment.cpp`
+- `tests/core/resource_assignment_tests.cpp`
+- `src/formats/bms_writer.cpp`
+- `tests/formats/bms_writer_tests.cpp`
+- `tests/formats/conversion_loss_matrix_tests.cpp`
+- `tests/sys/compose_action_notification_tests.cpp`
+- `src/formats/bmson_writer.cpp`
+- `tests/formats/bmson_writer_tests.cpp`
+- `src/formats/osu_mania.cpp`
+- `tests/formats/osu_mania_tests.cpp`
+
+Schema 6 acceptance includes autosave recovery, not just serialization. Native
+end-bearing silent BGM events survive legacy normalization. Exact checked tail
+translation accompanies a moved head. BMSON uses its existing representable
+length; osu! Sample and BMS write the head with explicit typed tail-loss reports.
+Existing editor warn publication and generic strict rejection remain unchanged.
+Conditional BMS conversion claims and clears retained playable endpoints and
+emits channel 01 in that same branch, without deleting native provenance,
+flattening the branch tree or replaying old notes. Frontend tail geometry support
+will be audited and recorded separately after the feedback handoff.

@@ -69,6 +69,11 @@ T-422 covers actual key event through document changes for three successive
 notes and undo, and makes the existing gesture discoverable. Plain lane keys
 keep their current whole-selection behavior; rejection preserves selection and
 document. Audit partial existing coverage before adding tests or changing code.
+Its note menu has no lane submenu; the contextual hint belongs in Note actions,
+without confusing semantic Layer with lane assignment. The keyboard reference
+belongs in the existing `docs/chart-editor-plan/editing/interactions.md`.
+The missing native-event/application/undo chain must exercise the real dispatcher;
+any minimal target/helper extension is requested explicitly from root.
 
 T-423 allocation is deterministic by group/resource key, preferred existing
 lanes, row/document order and same-row spill. Conversion preserves position,

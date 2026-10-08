@@ -3858,7 +3858,8 @@ auto begin_bga_draw(const WormUiComposeInputAction& input, compose_input_context
     auto& pending = context.application_state.bga_draw_stroke;
     pending.reset();
     if (input.paint_intent != 1 && input.paint_intent != 2) return false;
-    if (input.paint_intent != 2) {
+    const auto bgm = input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
+    if (input.paint_intent != 2 && !bgm) {
         const auto& resources = context.history.document.resources;
         const auto resource = std::ranges::find(resources, wormedit::resource_id_t{input.resource_id},
             &wormedit::resource_entry_t::id);
@@ -3875,18 +3876,42 @@ auto begin_bga_draw(const WormUiComposeInputAction& input, compose_input_context
     return true;
 }
 
-auto finish_bga_draw(compose_input_context_t& context, wormedit::editor_interaction_result_t& result)
-    -> void {
+auto apply_bgm_draw_stroke(compose_input_context_t& context,
+    const application_command_state_t::bga_draw_stroke_t& stroke, uint64_t lane)
+    -> wormedit::document_command_result_t {
+    std::vector<wormedit::local_position_t> positions;
+    positions.reserve(stroke.targets.size());
+    for (const auto& target : stroke.targets) positions.push_back(target.position);
+    return wormedit::apply_bgm_stroke(context.history, stroke.revision, stroke.chart,
+        wormedit::object_id_t{lane}, stroke.resource, positions, stroke.erase);
+}
+
+auto finish_bga_draw(const WormUiComposeInputAction& input, compose_input_context_t& context,
+    wormedit::editor_interaction_result_t& result) -> void {
     auto& pending = context.application_state.bga_draw_stroke;
     auto stroke = std::move(*pending);
     pending.reset();
-    const auto applied = wormedit::apply_bga_stroke(context.history, stroke.revision, stroke.chart,
-        stroke.resource, stroke.targets, stroke.erase);
+    const auto bgm = input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
+    const auto applied = bgm ? apply_bgm_draw_stroke(context, stroke, input.lane_id)
+        : wormedit::apply_bga_stroke(context.history, stroke.revision, stroke.chart,
+            stroke.resource, stroke.targets, stroke.erase);
     result.accepted = applied.applied || applied.diagnostics.empty();
     result.document_changed = applied.applied;
     result.diagnostics = applied.diagnostics;
-    if (applied.applied && stroke.resource && !stroke.erase)
+    if (applied.applied && stroke.resource && !stroke.erase && !bgm)
         advance_dock_after_placement(context.history.document, *stroke.resource, wormedit::resource_role_t::bga);
+}
+
+auto bga_draw_lane_valid(const WormUiComposeInputAction& input) -> bool {
+    if (input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM) return input.lane_id != 0;
+    return input.bga_lane_kind_valid &&
+        wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(input.bga_lane_kind));
+}
+
+auto bga_draw_stop(std::string_view text)
+    -> compose_input_family_result_t {
+    return compose_input_family_result_t::stop_with_feedback(std::string{text},
+        wormedit::notification_severity_t::warning, wormedit::notification_source_t::edit);
 }
 
 auto dispatch_bga_draw_input(const WormUiComposeInputAction& input,
@@ -3900,35 +3925,36 @@ auto dispatch_bga_draw_input(const WormUiComposeInputAction& input,
     const auto stroke_input = input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN ||
         input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE ||
         input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE;
-    if (!stroke_input || input.resource_role != WORM_UI_COMPOSE_RESOURCE_ROLE_BGA) return std::nullopt;
+    const auto bgm = input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
+    if (!stroke_input || (input.resource_role != WORM_UI_COMPOSE_RESOURCE_ROLE_BGA && !bgm))
+        return std::nullopt;
     const auto* chart = context.chart();
     const auto beginning = input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN;
     if (!chart || !context.application_state.note_paint_mode_active ||
         !wormedit::ui::compose_notes_editable(compose_mode_of(context.application_state)) ||
         (beginning && !begin_bga_draw(input, context, *chart))) {
         pending.reset();
-        return compose_input_family_result_t::stop_with_feedback("BGA Draw source, chart or tool is unavailable.",
-            wormedit::notification_severity_t::warning, wormedit::notification_source_t::edit);
+        return bga_draw_stop(bgm ? "BGM Draw source, chart or tool is unavailable."
+                                          : "BGA Draw source, chart or tool is unavailable.");
     }
     if (!pending || pending->chart != context.state.chart || pending->revision != context.history.document.revision) {
         pending.reset();
-        return compose_input_family_result_t::stop_with_feedback("Begin a new BGA Draw stroke.",
-            wormedit::notification_severity_t::warning, wormedit::notification_source_t::edit);
+        return bga_draw_stop(bgm ? "Begin a new BGM Draw stroke."
+                                          : "Begin a new BGA Draw stroke.");
     }
     const auto row = bga_draw_row(input, context, *chart, pending->geometry);
     if (beginning && row) pending->last_row = *row;
-    if (!row || !input.bga_lane_kind_valid ||
-        !wormedit::editor_bga_lane_index(static_cast<wormedit::visual_event_kind_t>(input.bga_lane_kind)) ||
+    if (!row || !bga_draw_lane_valid(input) ||
         !append_bga_draw_targets(*pending, *chart, pending->geometry, context.state, *row, input.bga_lane_kind)) {
         pending.reset();
-        return compose_input_family_result_t::stop_with_feedback("BGA Draw requires a valid lane and at most 50,000 targets.",
-            wormedit::notification_severity_t::warning, wormedit::notification_source_t::edit);
+        return bga_draw_stop(bgm ? "BGM Draw requires a valid lane and at most 50,000 targets."
+                                          : "BGA Draw requires a valid lane and at most 50,000 targets.");
     }
     result.accepted = true;
-    accepted = "BGA Draw stroke preview updated.";
+    accepted = bgm ? "BGM Draw stroke preview updated." : "BGA Draw stroke preview updated.";
     if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) {
-        finish_bga_draw(context, result);
-        accepted = "BGA Draw stroke committed.";
+        finish_bga_draw(input, context, result);
+        accepted = bgm ? "BGM Draw stroke committed." : "BGA Draw stroke committed.";
     }
     return compose_input_family_result_t::continue_with_result();
 }

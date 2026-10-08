@@ -314,3 +314,26 @@ contents. The draft test's monotonic revision increment expectation was wrong;
 root approves correcting it without changing command policy. Native events
 must also follow an initial composed frame, and manually constructed Undo input
 uses the complete existing dispatcher envelope, including viewport width.
+
+## Native hold executor handoff
+
+T-422 implementation is frozen and reviewed in its three approved paths. Its
+ordinary app/core/event/frame build, six focused cases/461 assertions, full
+event executable 279/279, event CTest label 249/249, docs and configured tidy
+comparison pass. Root independently repeats the final six focused cases.
+Three-move and Undo software captures pass; the hint capture remains scratch
+diagnosis, so T-422 is not yet accepted or committed. All implementation source
+writers and build/tidy readers are released. Feedback Sol owns only scratch
+capture work against its stable feedback objects and headers.
+
+Root now grants the shared Luna executor T-423 slice 02a in the independent BGM
+worktree at clean `d2abf79`, using
+`bgm/briefs/T423-02a-first-executor-task.md` and the twelve exact paths listed
+there. Root's latest main commits are planning-only; the approved native
+baseline remains byte-identical. BGM Sol coordinates the schema/native/reverse
+hold checks and revalidates the actual baseline/configuration before relying on
+historical findings. No other BGM writer or source reader overlaps mutation.
+Feedback scratch readers use the separate frozen feedback headers; main
+document headers are untouched until reviewed integration. No linked codec,
+export or scene implementation is included in this grant. Required subsequent
+order remains 02a, 02d, 02c, 02b, then 03.

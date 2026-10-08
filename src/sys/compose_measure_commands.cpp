@@ -55,6 +55,22 @@ auto remove_measure(document_history_t& history, editor_interaction_state_t& sta
     return "Measure removed.";
 }
 
+auto remove_measure_with_contents(document_history_t& history, editor_interaction_state_t& state,
+                                  const chart_document_t& chart, std::size_t cursor_index,
+                                  notification_severity_t* severity) -> std::string {
+    if (chart.measures.size() < 2) return "A chart needs at least one measure.";
+    // The following measure receives the timing events; the last measure hands them back.
+    const auto neighbor = cursor_index + 1 < chart.measures.size() ? cursor_index + 1 : cursor_index - 1;
+    const auto target = local_position_t{chart.measures[neighbor].id, 0};
+    const auto result = apply_measure_edit(
+        history, history.document.revision,
+        remove_measure_with_contents_action_t{.chart = chart.id, .measure = chart.measures[cursor_index].id});
+    if (!result) return rejection(result, "The measure could not be removed.", severity);
+    place_cursor_at(state, target);
+    set_feedback_severity(severity, notification_severity_t::success);
+    return "Measure removed with its contents.";
+}
+
 // Digits only, non-zero, 32 bits: the signature fields are typed text.
 auto parse_meter_part(std::string_view text) -> std::optional<std::uint32_t> {
     if (text.empty() || text.size() > 10) return std::nullopt;
@@ -157,6 +173,8 @@ auto apply_cursor_measure_command(document_history_t& history, editor_interactio
     case cursor_measure_command_t::insert_before: return insert_measure(history, chart, index, false, severity);
     case cursor_measure_command_t::insert_after: return insert_measure(history, chart, index, true, severity);
     case cursor_measure_command_t::remove_empty: return remove_measure(history, state, chart, index, severity);
+    case cursor_measure_command_t::remove_with_contents:
+        return remove_measure_with_contents(history, state, chart, index, severity);
     }
     return "Unknown measure command.";
 }

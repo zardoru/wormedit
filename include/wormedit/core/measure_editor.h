@@ -84,9 +84,10 @@ using measure_edit_action_t =
 struct measure_removal_proposal_t {
     std::size_t deleted_notes{};
     std::size_t deleted_bgm_events{};
+    std::size_t deleted_bga_events{};
     // Holds from earlier measures whose end lay inside the removed measure.
     std::size_t shortened_holds{};
-    // Timing, BGA, warp, marker, section, sound-channel and layout positions
+    // Timing, warp, marker, section, sound-channel and layout positions
     // that move to the start of the following measure.
     std::size_t moved_positions{};
     diagnostic_list_t diagnostics;

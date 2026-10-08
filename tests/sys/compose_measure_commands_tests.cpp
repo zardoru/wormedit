@@ -81,6 +81,34 @@ TEST_CASE("removing a nonempty measure reports the core rejection", "[sys][measu
     CHECK(fixture.state.cursor.measure == measure_id_t{3});
 }
 
+TEST_CASE("proposing a nonempty measure removal does not mutate the document", "[sys][measure-commands]") {
+    fixture_t fixture({measure_id_t{3}, 0});
+    const auto proposal = propose_measure_removal(fixture.history.document.charts[0], measure_id_t{3});
+    REQUIRE(proposal);
+    CHECK(proposal.deleted_notes == 1);
+    CHECK(proposal.deleted_bgm_events == 0);
+    CHECK(proposal.deleted_bga_events == 0);
+    CHECK(proposal.moved_positions == 1);
+    CHECK(fixture.measures().size() == 2);
+    CHECK(fixture.measures()[0].notes.size() == 1);
+}
+
+TEST_CASE("confirmed removal of a nonempty measure is one undoable command", "[sys][measure-commands]") {
+    fixture_t fixture({measure_id_t{3}, 0});
+    CHECK(apply_cursor_measure_command(fixture.history, fixture.state,
+                                       cursor_measure_command_t::remove_with_contents) ==
+          "Measure removed with its contents.");
+    REQUIRE(fixture.measures().size() == 1);
+    CHECK(fixture.measures()[0].id == measure_id_t{4});
+    CHECK(fixture.measures()[0].notes.empty());
+    CHECK(fixture.state.cursor.measure == measure_id_t{4});
+
+    REQUIRE(undo_document_command(fixture.history));
+    REQUIRE(fixture.measures().size() == 2);
+    CHECK(fixture.measures()[0].notes.size() == 1);
+    CHECK(fixture.measures()[0].notes.front().id == object_id_t{40});
+}
+
 TEST_CASE("setting the meter of the cursor measure is one undoable command", "[sys][measure-commands]") {
     fixture_t fixture({measure_id_t{4}, 0});
     CHECK(apply_cursor_measure_meter(fixture.history, fixture.state, "3", "4") == "Meter updated.");

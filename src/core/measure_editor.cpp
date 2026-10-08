@@ -185,6 +185,17 @@ void retarget_layouts(chart_document_t& chart, measure_id_t removed,
     }
 }
 
+// BGA events are contained content like BGM events: they are deleted with the measure.
+void delete_contained_bga(chart_document_t& chart, measure_id_t removed,
+                          measure_removal_proposal_t& proposal) {
+    const auto contained = [&](const bga_event_t& event) {
+        return event.position.measure == removed;
+    };
+    proposal.deleted_bga_events =
+        static_cast<std::size_t>(std::ranges::count_if(chart.bga_events, contained));
+    std::erase_if(chart.bga_events, contained);
+}
+
 void retarget_free_positions(chart_document_t& chart, measure_id_t removed,
                              std::optional<measure_id_t> next,
                              measure_removal_proposal_t& proposal) {
@@ -230,6 +241,7 @@ auto remove_measure_contents(chart_document_t& chart, measure_id_t id)
     proposal.deleted_notes = found->notes.size();
     proposal.deleted_bgm_events = found->bgm_events.size();
     retarget_layouts(chart, id, next, proposal);
+    delete_contained_bga(chart, id, proposal);
     retarget_free_positions(chart, id, next, proposal);
     if (!proposal.diagnostics.empty()) return proposal;
     chart.measures.erase(chart.measures.begin() + static_cast<std::ptrdiff_t>(index));

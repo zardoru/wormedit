@@ -249,6 +249,74 @@ static void render_compose_meter_control(const ComposeInspectorContext& inspecto
                   state.meter_denominator.data());
 }
 
+// The confirmation belongs to one measure at one document revision; a move or edit closes it.
+struct measure_removal_confirmation_t {
+    bool open{};
+    std::uint64_t measure{};
+    std::uint64_t revision{};
+};
+measure_removal_confirmation_t measure_removal_confirmation;
+
+void render_measure_removal_summary(const ComposeInspectorContext& inspector) {
+    const auto* view = inspector.view;
+    auto* context = inspector.context;
+    nk_layout_row_dynamic(context, 20, 1);
+    nk_labelf(context, NK_TEXT_LEFT, "Deletes %zu notes, %zu BGM and %zu BGA events.",
+              view->measure_removal_deleted_notes, view->measure_removal_deleted_bgm_events,
+              view->measure_removal_deleted_bga_events);
+    nk_labelf(context, NK_TEXT_LEFT, "Shortens %zu holds and moves %zu timing events to the next measure.",
+              view->measure_removal_shortened_holds, view->measure_removal_moved_positions);
+    if (view->measure_removal_blocked) nk_label_wrap(context, view->measure_removal_message);
+}
+
+void render_measure_removal_confirmation(const ComposeInspectorContext& inspector) {
+    const auto* view = inspector.view;
+    auto* context = inspector.context;
+    auto* action = inspector.action;
+    auto& confirmation = measure_removal_confirmation;
+    if (!confirmation.open) return;
+    const auto stale = !view->measure_removal_available ||
+                       view->measure_removal_measure_id != confirmation.measure ||
+                       view->document_revision != confirmation.revision;
+    if (stale) {
+        confirmation.open = false;
+        return;
+    }
+    nk_layout_row_dynamic(context, 20, 1);
+    nk_label(context, "Remove this measure and its contents?", NK_TEXT_LEFT);
+    render_measure_removal_summary(inspector);
+    nk_layout_row_dynamic(context, 24, 2);
+    const auto blocked = view->measure_removal_blocked;
+    if (blocked) nk_widget_disable_begin(context);
+    const auto confirmed = nk_button_label(context, "Confirm removal");
+    if (blocked) nk_widget_disable_end(context);
+    if (nk_button_label(context, "Cancel")) confirmation.open = false;
+    if (!confirmed || blocked || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    confirmation.open = false;
+    action->compose_action = WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS;
+    action->compose_input_chart_id = view->chart_id;
+    action->compose_input_document_revision = view->document_revision;
+}
+
+// Empty measures are removed at once; a nonempty one first opens the confirmation.
+void render_measure_removal_control(const ComposeInspectorContext& inspector) {
+    const auto* view = inspector.view;
+    auto* context = inspector.context;
+    auto* action = inspector.action;
+    nk_layout_row_dynamic(context, 24, 1);
+    if (!nk_button_label(context, "Remove measure") || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+        return;
+    if (view->measure_removal_has_contents) {
+        measure_removal_confirmation = {.open = true,
+                                        .measure = view->measure_removal_measure_id,
+                                        .revision = view->document_revision};
+        return;
+    }
+    action->compose_action = WORM_UI_COMPOSE_ACTION_REMOVE_EMPTY_MEASURE;
+    action->compose_input_chart_id = view->chart_id;
+    action->compose_input_document_revision = view->document_revision;
+}
+
 void render_compose_measure_section(const ComposeInspectorContext& inspector) {
     const auto* view = inspector.view;
     auto* context = inspector.context;
@@ -266,7 +334,8 @@ void render_compose_measure_section(const ComposeInspectorContext& inspector) {
     };
     entry("Insert measure before", WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_BEFORE);
     entry("Insert measure after", WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_AFTER);
-    entry("Remove empty measure", WORM_UI_COMPOSE_ACTION_REMOVE_EMPTY_MEASURE);
+    render_measure_removal_control(inspector);
+    render_measure_removal_confirmation(inspector);
     render_compose_meter_control(inspector);
     if (!view->scene_available) nk_widget_disable_end(context);
     nk_tree_pop(context);

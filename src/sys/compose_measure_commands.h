@@ -12,12 +12,14 @@
 
 namespace wormedit::sys {
 
-enum class cursor_measure_command_t { insert_before, insert_after, remove_empty };
+enum class cursor_measure_command_t { insert_before, insert_after, remove_empty, remove_with_contents };
 
 // Inserts a measure (a copy of the cursor measure's definition) before or after the measure that
-// contains the edit cursor, or removes that measure when it is empty. One undoable command each;
-// after a removal the cursor moves to the start of the neighboring measure. Returns the status
-// line, with the core message on rejection.
+// contains the edit cursor, or removes that measure when it is empty (`remove_empty`). A nonempty
+// measure is removed with `remove_with_contents` after the UI confirmation; that moves the cursor
+// to the start of the following measure, or of the previous one when the last measure goes. One
+// undoable command each; after a removal the cursor moves to the start of the neighboring measure.
+// Returns the status line, with the core message on rejection.
 [[nodiscard]] auto apply_cursor_measure_command(document_history_t& history,
                                                 editor_interaction_state_t& state,
                                                 cursor_measure_command_t command,

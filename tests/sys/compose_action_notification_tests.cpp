@@ -6,6 +6,9 @@
 #include <cstdio>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+#include <wormedit/formats/bmson.h>
+#include <wormedit/audio/slice_render.h>
 #include <wormedit/core/notifications.h>
 #include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/command.h>
@@ -1028,3 +1031,181 @@ TEST_CASE("BMSON packed Draw creates its source channel and semantic event with 
     require_action(undo_document_command(fixture.history));
     check_action(fixture.history.document.charts.front().sound_channels.size() == 1);
 }
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+
+namespace {
+auto wait_for_slice_export(action_notification_fixture_t& fixture) -> std::optional<std::string> {
+    for (int attempt = 0; attempt < 1000; ++attempt) {
+        if (auto result = fixture.export_runtime.poll(fixture.history)) return result;
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+    return std::nullopt;
+}
+}
+
+TEST_CASE("BMSON output export rejects missing stem before writing music or destination",
+          "[unit][sys][conversion][publication]") {
+    action_notification_fixture_t fixture;
+    const auto directory = std::filesystem::temp_directory_path() /
+        ("wormedit-app-slice-export-" + std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
+    struct cleanup_t {
+        std::filesystem::path path;
+        ~cleanup_t() { std::error_code error; std::filesystem::remove_all(path, error); }
+    } cleanup{directory};
+    std::filesystem::create_directories(directory);
+    std::ofstream(directory / "music.wav", std::ios::binary) << "retained source bytes";
+    fixture.asset_base = directory;
+    auto& document = fixture.history.document;
+    document.audio_assets = {{.id = asset_id_t{20}, .source_path = "missing-stem.wav"},
+                             {.id = asset_id_t{21}, .source_path = "music.wav"}};
+    document.resources = {{.id = resource_id_t{22}, .asset = asset_id_t{21},
+                           .roles = {resource_role_t::music}}};
+    auto& chart = document.charts.front();
+    chart.source_family = format_family_t::bmson;
+    chart.sound_channels = {{.id = object_id_t{23}, .source_clip = {.source = asset_id_t{20}},
+        .events = {{.id = object_id_t{24}, .position = {measure_id_t{1}, 0}}}}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{25},
+        .position = {measure_id_t{1}, 0}, .sound_channel_event = object_id_t{24}}};
+    document.output_groups = {{.family = format_family_t::osu_mania,
+        .charts = {chart_id_t{1}}, .relative_output_path = "exports"}};
+    const auto revision = document.revision;
+    const auto status = fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP));
+    require_action(status == "Output group conversion started in the background.");
+    const auto completed = wait_for_slice_export(fixture);
+    require_action(completed.has_value());
+    check_action(completed->find("Cannot decode") != std::string::npos);
+    check_action_false(std::filesystem::exists(directory / "exports"));
+    check_action(std::filesystem::file_size(directory / "music.wav") == 21);
+    check_action(document.revision == revision);
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("BMSON editor export publishes sliced audio and reports conversion losses",
+          "[unit][sys][conversion][publication]") {
+    const auto target = GENERATE(format_family_t::osu_mania, format_family_t::bms);
+    const auto named_output = GENERATE(false, true);
+    action_notification_fixture_t fixture;
+    const auto directory = std::filesystem::temp_directory_path() /
+        ("wormedit-app-slice-success-" + std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
+    struct cleanup_t {
+        std::filesystem::path path;
+        ~cleanup_t() { std::error_code error; std::filesystem::remove_all(path, error); }
+    } cleanup{directory};
+    std::filesystem::create_directories(directory);
+    const std::string text = R"({"version":"1.0.0","info":{"title":"Editor slices","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[{"name":"stem.wav","notes":[{"x":1,"y":0,"c":false},{"x":1,"y":240,"c":true},{"x":0,"y":480,"c":false}]}]})";
+    const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
+    require_action(parsed.song.has_value());
+    require_action_false(parsed.has_errors());
+    fixture.history = make_document_history(*parsed.song);
+    auto& exported_chart = fixture.history.document.charts.front();
+    exported_chart.semantic_layers = {{.id = layer_id_t{900}, .name = "Export layer"}};
+    for (auto& measure : exported_chart.measures)
+        for (auto& note : measure.notes) note.semantic_layers = {layer_id_t{900}};
+    fixture.history.document.output_groups = {{.family = target,
+        .charts = {fixture.history.document.charts.front().id},
+        .relative_output_path = named_output
+            ? (target == format_family_t::osu_mania ? "exports/chart.osu" : "exports/chart.bme")
+            : "exports"}};
+    const auto workspace = make_workspace_controller(fixture.history);
+    require_action(static_cast<bool>(workspace));
+    fixture.workspace = *workspace.workspace;
+    fixture.workspace.active_tab = workspace_tab_t::compose;
+    fixture.workspace.selected_chart = fixture.history.document.charts.front().id;
+    fixture.state.chart = fixture.history.document.charts.front().id;
+    fixture.state.cursor = {fixture.history.document.charts.front().measures.front().id, 0};
+    fixture.state.active_lane = fixture.history.document.charts.front().lane_layouts.front().layout.lanes.front().id;
+    fixture.asset_base = directory;
+    const std::vector<float> pcm(88'200, 0.125F);
+    const auto wav = audio::encode_wav_pcm16(pcm, 44'100);
+    std::ofstream(directory / "stem.wav", std::ios::binary).write(wav.data(), wav.size());
+    const auto revision = fixture.history.document.revision;
+    require_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP)) ==
+        "Output group conversion started in the background.");
+    const auto completed = wait_for_slice_export(fixture);
+    require_action(completed.has_value());
+    check_action(completed->starts_with("Output group published"));
+    check_action(completed->find("conversion loss") != std::string::npos);
+    check_action(completed->size() <= notification_message_max_bytes);
+    const auto notifications = fixture.entries();
+    check_action(std::ranges::any_of(notifications, [&](const auto& entry) {
+        return entry.severity == notification_severity_t::warning && entry.message == *completed &&
+               entry.detail.find("layer") != std::string::npos &&
+               entry.detail.find("Chart ") != std::string::npos;
+    }));
+    std::size_t charts{}, sounds{};
+    for (const auto& file : std::filesystem::directory_iterator(directory / "exports")) {
+        charts += file.path().extension() == (target == format_family_t::osu_mania ? ".osu" : ".bme");
+        sounds += file.path().extension() == ".wav";
+    }
+    check_action(charts == 1);
+    check_action(sounds == 3);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+    check_action(std::filesystem::file_size(directory / "stem.wav") == wav.size());
+}
+
+TEST_CASE("BMSON editor BMS export materializes silent gameplay in private staging",
+          "[unit][sys][conversion][publication]") {
+    const auto incompatible_name = GENERATE(false, true);
+    action_notification_fixture_t fixture;
+    const auto directory = std::filesystem::temp_directory_path() /
+        ("wormedit-app-silent-bms-" + std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
+    struct cleanup_t {
+        std::filesystem::path path;
+        ~cleanup_t() { std::error_code error; std::filesystem::remove_all(path, error); }
+    } cleanup{directory};
+    std::filesystem::create_directories(directory);
+    const std::string text = R"({"version":"1.0.0","info":{"title":"Silent gameplay","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[]})";
+    const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
+    require_action(parsed.song.has_value());
+    require_action_false(parsed.has_errors());
+    fixture.history = make_document_history(*parsed.song);
+    auto& chart = fixture.history.document.charts.front();
+    const auto& lanes = chart.lane_layouts.front().layout.lanes;
+    const auto lane = std::ranges::find(lanes, lane_role_t::playable, &lane_definition_t::role);
+    require_action(lane != lanes.end());
+    chart.measures.front().notes = {{.id = object_id_t{1000},
+        .position = {chart.measures.front().id, 0}, .lane = lane->id}};
+    fixture.history.document.output_groups = {{.family = format_family_t::bms,
+        .charts = {chart.id},
+        .relative_output_path = incompatible_name ? "exports/chart.pms" : "exports"}};
+    const auto workspace = make_workspace_controller(fixture.history);
+    require_action(static_cast<bool>(workspace));
+    fixture.workspace = *workspace.workspace;
+    fixture.workspace.active_tab = workspace_tab_t::compose;
+    fixture.workspace.selected_chart = chart.id;
+    fixture.state.chart = chart.id;
+    fixture.state.cursor = {chart.measures.front().id, 0};
+    fixture.state.active_lane = lane->id;
+    fixture.asset_base = directory;
+    const auto revision = fixture.history.document.revision;
+    require_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP)) ==
+        "Output group conversion started in the background.");
+    const auto completed = wait_for_slice_export(fixture);
+    require_action(completed.has_value());
+    if (incompatible_name) {
+        check_action(completed->find("filename is incompatible") != std::string::npos);
+        check_action_false(std::filesystem::exists(directory / "exports"));
+        check_action(fixture.history.document.revision == revision);
+        check_action(fixture.history.undo.empty());
+        return;
+    }
+    check_action(completed->starts_with("Output group published"));
+    check_action(std::filesystem::exists(directory / "exports" / "conversion-silence.wav"));
+    std::size_t charts{}, sounds{};
+    for (const auto& file : std::filesystem::directory_iterator(directory / "exports")) {
+        charts += file.path().extension() == ".bme";
+        sounds += file.path().extension() == ".wav";
+    }
+    check_action(charts == 1);
+    check_action(sounds == 1);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+    check_action(!chart.measures.front().notes.front().sound);
+}
+
+#endif

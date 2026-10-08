@@ -2,6 +2,17 @@
 
 [Back to the implemented-capability index](../implemented.md).
 
+T-412/T-463 (2026-10-08): unified Draw places the current sound/silent/BGA source,
+with explicit right-drag erase and one undo per stroke; Select retains move and
+context gestures. BMSON stem clicks choose continue inside a sounding span and
+restart outside it or with Shift; empty stems accept a first point. Sounds stem
+rows drag to their own lane, while packed Draw creates/reuses an exact keysound
+channel and rejects stem sources. Shared-asset ownership uses semantic links,
+frame labels are arena-owned, and retained native geometry is revision checked.
+Main build and 2,710/2,710 tests pass, including 221 event-harness cases. Actual
+Kick software capture preserves the 300 px stem and ready packed waveforms;
+native desktop/cadence remains unmeasured. [Evidence](../../coordination/oct8-draw-conversion-batch.md).
+
 T-464 stem lanes now resize by dragging their header's right edge from 36 to
 480 px; double-click restores 36 px. Session widths are keyed by project,
 chart and lane, leaving document revision, undo and export data unchanged.

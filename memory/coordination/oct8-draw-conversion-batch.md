@@ -255,3 +255,26 @@ dock can emit typed stem placement payloads. Keep slot eligibility and generic
 keysound placement unchanged; require an existing asset and preserve non-BMSON
 filtering. Cover BMSON inclusion, non-BMSON exclusion and slot exclusion, then
 rerun actual shared-asset projection and event regressions before release.
+
+
+## Final integration and cleanup (2026-10-08)
+
+Root reviewed and integrated T-463 `1dad8ee` as `999d3ac` after final worker
+release. Root editor warning/sliced publication implementation is `3d9f2c7`.
+The three permanent app regression cases cover seven generated scenarios and
+pass 86 assertions in the normal frame target (`root/main-app-export-final.log`).
+Configured header-inclusive tidy reports only the unchanged build_speed_graph
+29 baseline; no new violations. Normal main application/all-target build passes
+(`root/main-build-final.log`), and the complete suite passes **2,710/2,710**
+(`root/main-tests-final.log`, 53.48 seconds).
+
+The main-object SDL dummy/software capture (`root/kick-draw.png` and log) shows
+Draw active, three ready packed waveforms and a 300 px voice stem; document
+revision stays unchanged. No physical-display/GPU/cadence claim. All 15 original
+chart/audio hashes match `root/source-sha256-before.json` after final capture.
+
+Both released clean worktrees were removed without force; branches remain.
+Removed 8,568,435,423 bytes of generated worker builds and four Kick WAV sets
+after retaining chart bytes, artifact hashes/manifests, build configurations,
+replay runtimes, logs and probes. Exact paths/sizes: `root/cleanup-report.json`.
+Only main remains. T-413/T-414/T-389, T-461/T-453 and T-282 were not implemented.

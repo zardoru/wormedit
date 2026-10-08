@@ -5193,3 +5193,68 @@ TEST_CASE("BMSON packed sample tail draws beyond authored timing without changin
     expect_gpu_work(fixture.piece().rows[0].absolute_peak[0] < previous_peak);
 }
 #endif
+
+namespace {
+auto resizable_stem_song() -> song_document_t {
+    auto song = compose_test_song();
+    song.audio_assets = {{.id = asset_id_t{900}, .source_path = "音楽-long-stem.ogg"}};
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bmson;
+    chart.sound_channels = {{.id = object_id_t{901},
+        .source_clip = {.id = clip_id_t{902}, .source = asset_id_t{900}}},
+        {.id = object_id_t{906}, .source_clip = {.id = clip_id_t{907}, .source = asset_id_t{900}}}};
+    chart.bgm_source_lanes = {{.id = object_id_t{903}, .stem_channel = object_id_t{901}},
+        {.id = object_id_t{904}}, {.id = object_id_t{905}, .stem_channel = object_id_t{906}}};
+    return song;
+}
+void scroll_resized_bgm(compose_test_fixture_t& fixture, double delta) {
+    auto action = cursor_placement_action(fixture);
+    action.shortcut_window_focused = true;
+    action.compose_viewport_input_count = 1;
+    action.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
+        .delta_x = delta,
+        .cursor_x_pixels = fixture.flattened.view.compose.playable_field_right_pixels + 20,
+        .cursor_y_pixels = 300};
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
+}
+}
+TEST_CASE("Compose stem width changes reproject same revision and preserve packed width",
+          "[sys][compose][stem-lane-width]") {
+    compose_test_fixture_t fixture(resizable_stem_song());
+    double width = 36;
+    std::size_t calls{};
+    fixture.application.compose_bgm_lane_width = [&](auto, auto, auto) {
+        ++calls;
+        return width;
+    };
+    fixture.project();
+    const auto revision = fixture.history.document.revision;
+    const auto generation = fixture.flattened.view.compose.static_scene_source_generation;
+    expect_compose_test(calls == 2);
+    width = 300;
+    fixture.project();
+    expect_compose_test(calls == 4);
+    expect_compose_test(fixture.cache.bgm_lane_widths_pixels == std::vector<double>{300, 36, 300});
+    expect_compose_test(fixture.flattened.view.compose.static_scene_source_generation != generation);
+    expect_compose_test(fixture.flattened.view.compose.bgm_lanes[0].width_pixels == 300);
+    expect_compose_test(std::string(fixture.flattened.view.compose.bgm_lanes[0].filename) == "音楽-long-stem.ogg");
+    expect_compose_test(fixture.history.document.revision == revision && fixture.history.undo.empty());
+}
+TEST_CASE("Compose BGM dispatcher reaches last widened lane and clamps resized content",
+          "[sys][compose][stem-lane-width]") {
+    compose_test_fixture_t fixture(resizable_stem_song());
+    fixture.application.compose_bgm_lane_width = [](auto, auto, auto) { return 480; };
+    fixture.project();
+    scroll_resized_bgm(fixture, 10000);
+    fixture.project();
+    const auto& view = fixture.flattened.view.compose;
+    const auto maximum = 996.0 - fixture.cache.preview_scene_request.bgm_pane_width_pixels;
+    expect_compose_test(std::abs(fixture.application.bgm_horizontal_scroll_pixels[1] - maximum) < 1e-6);
+    expect_compose_test(view.bgm_lanes[view.bgm_lane_count - 1].source_lane_id == 905);
+    scroll_resized_bgm(fixture, -10000);
+    expect_compose_test(fixture.application.bgm_horizontal_scroll_pixels[1] == 0);
+    expect_compose_test(fixture.history.document.revision == 1 && fixture.history.undo.empty());
+}

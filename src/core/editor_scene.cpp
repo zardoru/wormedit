@@ -1750,6 +1750,7 @@ auto append_visible_bgm_lanes(scene_geometry_context_t& context, Operate&& opera
     const auto pane_left = request.bgm_pane_left_pixels;
     const auto pane_right = pane_left + request.bgm_pane_width_pixels;
     visible_lanes.reserve(chart.bgm_source_lanes.size());
+    double content_offset{};
     for (std::size_t lane_index = 0; lane_index < chart.bgm_source_lanes.size(); ++lane_index) {
         if (!operate()) {
             context.diagnostics.push_back(
@@ -1758,10 +1759,12 @@ auto append_visible_bgm_lanes(scene_geometry_context_t& context, Operate&& opera
             return false;
         }
         const auto& lane = chart.bgm_source_lanes[lane_index];
-        const auto unclipped_left =
-            pane_left + static_cast<double>(lane_index) * request.bgm_lane_width_pixels -
-            request.bgm_horizontal_scroll_pixels;
-        const auto unclipped_right = unclipped_left + request.bgm_lane_width_pixels;
+        const auto offset = request.bgm_lane_widths_pixels.empty()
+            ? static_cast<double>(lane_index) * request.bgm_lane_width_pixels : content_offset;
+        const auto unclipped_left = pane_left + offset - request.bgm_horizontal_scroll_pixels;
+        const auto lane_width = editor_bgm_lane_width_pixels(chart, request, lane_index);
+        const auto unclipped_right = unclipped_left + lane_width;
+        content_offset += lane_width;
         if (unclipped_right <= pane_left || unclipped_left >= pane_right) {
             continue;
         }
@@ -1776,7 +1779,9 @@ auto append_visible_bgm_lanes(scene_geometry_context_t& context, Operate&& opera
                                          context.view.viewport_height_pixels};
         visible_lanes.emplace(lane.id.value, bounds);
         context.scene.bgm_lanes.push_back(
-            {.source_lane = lane.id, .source_order = lane.source_order, .bounds = bounds});
+            {.source_lane = lane.id, .source_order = lane.source_order, .bounds = bounds,
+             .unclipped_left_pixels = unclipped_left,
+             .unclipped_right_pixels = unclipped_right});
     }
     return true;
 }
@@ -1842,8 +1847,10 @@ auto compose_bgm_pane(scene_geometry_context_t& context, Operate&& operate, Cons
     if (request.bgm_pane_width_pixels <= 0.0) {
         return true;
     }
-    const auto content_width = static_cast<long double>(context.chart.bgm_source_lanes.size()) *
-                               static_cast<long double>(request.bgm_lane_width_pixels);
+    const auto content_width = request.bgm_lane_widths_pixels.empty()
+        ? static_cast<long double>(context.chart.bgm_source_lanes.size()) *
+              static_cast<long double>(request.bgm_lane_width_pixels)
+        : static_cast<long double>(editor_bgm_content_width_pixels(context.chart, request));
     const auto maximum_scroll =
         std::max(0.0L, content_width - static_cast<long double>(request.bgm_pane_width_pixels));
     if (static_cast<long double>(request.bgm_horizontal_scroll_pixels) > maximum_scroll) {
@@ -2106,6 +2113,29 @@ auto visible_band_at_row(const std::vector<visible_band_t>& bands, std::uint64_t
 
 } // namespace
 
+auto editor_bgm_lane_width_pixels(const chart_document_t& chart,
+                                  const editor_field_scene_request_t& request,
+                                  std::size_t lane_index) -> double {
+    if (request.bgm_lane_widths_pixels.empty()) return request.bgm_lane_width_pixels;
+    if (lane_index >= chart.bgm_source_lanes.size() ||
+        lane_index >= request.bgm_lane_widths_pixels.size() ||
+        !chart.bgm_source_lanes[lane_index].stem_channel) return 36.0;
+    const auto width = request.bgm_lane_widths_pixels[lane_index];
+    return std::isnan(width) ? 36.0 : std::clamp(width, 36.0, 480.0);
+}
+
+auto editor_bgm_content_width_pixels(const chart_document_t& chart,
+                                     const editor_field_scene_request_t& request) -> double {
+    if (request.bgm_lane_widths_pixels.empty())
+        return static_cast<double>(static_cast<long double>(chart.bgm_source_lanes.size()) *
+                                   static_cast<long double>(request.bgm_lane_width_pixels));
+    long double width{};
+    for (std::size_t lane = 0; lane < chart.bgm_source_lanes.size(); ++lane)
+        width += editor_bgm_lane_width_pixels(chart, request, lane);
+    return static_cast<double>(std::min(width,
+        static_cast<long double>(std::numeric_limits<double>::max())));
+}
+
 auto make_editor_field_scene(const chart_document_t& chart, const editor_field_scene_index_t& index,
                              const editor_interaction_view_model_t& view,
                              const editor_field_scene_request_t& request)
@@ -2248,6 +2278,17 @@ auto window_has_edit_preview(const editor_interaction_view_model_t& view) -> boo
         view.pending_note_duration_gesture || view.pending_note_move_gesture ||
         view.pending_note_paint_gesture;
 }
+auto window_bgm_widths_match(const editor_field_scene_window_t& window,
+                             const editor_field_scene_request_t& request) -> bool {
+    const auto widths = request.bgm_lane_widths_pixels;
+    if (window.bgm_lane_widths_snapshot.size() != widths.size()) return false;
+    for (std::size_t index = 0; index < widths.size(); ++index) {
+        const auto previous = window.bgm_lane_widths_snapshot[index];
+        if (previous != widths[index] && !(std::isnan(previous) && std::isnan(widths[index])))
+            return false;
+    }
+    return true;
+}
 auto scene_window_height(const editor_interaction_view_model_t& view,
                          const editor_field_scene_request_t& request) -> double {
     return view.viewport_height_pixels * 3.0 +
@@ -2268,6 +2309,7 @@ auto window_key_matches(const editor_field_scene_window_t& window,
         previous.active_snap_denominator == view.active_snap_denominator &&
         previous.selected_notes == view.selected_notes &&
         previous.selected_objects == view.selected_objects &&
+        window_bgm_widths_match(window, request) &&
         window_request_scalars(window.request) == window_request_scalars(request) &&
         window.request.required_semantic_layers == request.required_semantic_layers &&
         window.request.excluded_semantic_layers == request.excluded_semantic_layers;
@@ -2473,6 +2515,9 @@ auto rebuild_scene_window(const chart_document_t& chart, const editor_field_scen
     window.scene = std::move(composed.scene);
     window.view = std::move(expanded);
     window.request = request;
+    window.bgm_lane_widths_snapshot.assign(request.bgm_lane_widths_pixels.begin(),
+                                           request.bgm_lane_widths_pixels.end());
+    window.request.bgm_lane_widths_pixels = {};
     window.canvas_rows = *canvas;
     ++window.rebuild_count;
     return true;

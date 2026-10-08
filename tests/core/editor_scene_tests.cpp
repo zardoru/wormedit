@@ -1914,3 +1914,50 @@ TEST_CASE("DP field keeps all P1 lanes before P2 with stage-local display orders
         if (descriptor.profile.layout.split_stage) check_dp_field_layout(descriptor.profile.layout);
     }
 }
+
+namespace {
+auto bgm_width_window_snapshots_owned_values() -> bool {
+    auto chart = scene_chart();
+    chart.bgm_source_lanes.front().stem_channel = wormedit::object_id_t{100};
+    const auto index = std::get<wormedit::editor_field_scene_index_t>(
+        wormedit::build_editor_field_scene_index(chart, 7));
+    auto current = view();
+    std::vector<double> widths{120.0};
+    wormedit::editor_field_scene_request_t request{.field_left_pixels = 10,
+        .field_width_pixels = 200, .bgm_pane_left_pixels = 220,
+        .bgm_pane_width_pixels = 300};
+    request.bgm_lane_widths_pixels = widths;
+    wormedit::editor_field_scene_window_t window;
+    auto initial = wormedit::make_editor_field_scene_reusing_window(
+        chart, index, current, request, window);
+    if (!initial || window.bgm_lane_widths_snapshot != std::vector<double>{120.0} ||
+        !window.request.bgm_lane_widths_pixels.empty()) return false;
+    const auto first_rebuild = window.rebuild_count;
+    widths[0] = 150.0;
+    if (window.bgm_lane_widths_snapshot.front() != 120.0) return false;
+    request.bgm_lane_widths_pixels = widths;
+    auto changed = wormedit::make_editor_field_scene_reusing_window(
+        chart, index, current, request, window);
+    if (!changed || window.rebuild_count != first_rebuild + 1 ||
+        window.bgm_lane_widths_snapshot != std::vector<double>{150.0}) return false;
+    const auto second_rebuild = window.rebuild_count;
+    auto reused = wormedit::make_editor_field_scene_reusing_window(
+        chart, index, current, request, window);
+    if (!reused || window.rebuild_count != second_rebuild || window.reuse_count == 0) return false;
+
+    widths.reserve(64);
+    widths[0] = 180.0;
+    request.bgm_lane_widths_pixels = widths;
+    if (window.bgm_lane_widths_snapshot.front() != 150.0) return false;
+    const auto reallocated = wormedit::make_editor_field_scene_reusing_window(
+        chart, index, current, request, window);
+    return reallocated && window.rebuild_count == second_rebuild + 1 &&
+        window.bgm_lane_widths_snapshot == std::vector<double>{180.0} &&
+        window.request.bgm_lane_widths_pixels.empty();
+}
+} // namespace
+
+TEST_CASE("BGM scene window snapshots lane widths and invalidates on in-place changes",
+          "[unit][core][editor-scene][scene-window][bgm-width]") {
+    CHECK(bgm_width_window_snapshots_owned_values());
+}

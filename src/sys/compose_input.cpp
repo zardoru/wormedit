@@ -3809,15 +3809,21 @@ auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::stri
     return status;
 }
 
+auto compose_bgm_scroll_content_width(const compose_input_context_t& context) -> double {
+    const auto& widths = context.scene_cache.bgm_lane_widths_pixels;
+    if (context.scene_cache.chart != context.state.chart || widths.empty())
+        return static_cast<double>(context.bgm_lane_count) * compose_bgm_lane_width_pixels;
+    double width{};
+    for (const auto value : widths) width += value;
+    return width;
+}
 void apply_compose_viewport_scroll(const wormedit::viewport_scroll_action_t& scroll,
                                    compose_input_context_t& context, std::string& status) {
     using namespace wormedit;
     if (scroll.pane == viewport_pane_t::bgm) {
         if (scroll.delta_x_pixels == 0.0)
             return;
-        const auto maximum = std::max(0.0, static_cast<double>(context.bgm_lane_count) *
-                                                   compose_bgm_lane_width_pixels -
-                                               context.bgm_pane_width);
+        const auto maximum = std::max(0.0, compose_bgm_scroll_content_width(context) - context.bgm_pane_width);
         auto& retained =
             context.application_state.bgm_horizontal_scroll_pixels[context.state.chart.value];
         retained = std::clamp(retained + scroll.delta_x_pixels, 0.0, maximum);

@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <variant>
@@ -158,6 +159,7 @@ struct editor_field_bgm_lane_geometry_t {
     object_id_t source_lane;
     std::size_t source_order{};
     editor_field_rect_t bounds;
+    double unclipped_left_pixels{}, unclipped_right_pixels{};
 };
 
 struct editor_field_bgm_event_geometry_t {
@@ -221,6 +223,7 @@ struct editor_field_scene_request_t {
     double bgm_pane_left_pixels{};
     double bgm_pane_width_pixels{};
     double bgm_lane_width_pixels{36.0};
+    std::span<const double> bgm_lane_widths_pixels;
     double bgm_horizontal_scroll_pixels{};
     // Optional dedicated single BGA event lane adjacent to the field/BGM pane.
     double bga_pane_left_pixels{};
@@ -279,7 +282,15 @@ struct editor_field_scene_window_t {
     std::uint64_t canvas_rows{};
     std::size_t rebuild_count{};
     std::size_t reuse_count{};
+    std::vector<double> bgm_lane_widths_snapshot;
 };
+
+[[nodiscard]] auto editor_bgm_lane_width_pixels(const chart_document_t& chart,
+                                                const editor_field_scene_request_t& request,
+                                                std::size_t lane_index) -> double;
+[[nodiscard]] auto editor_bgm_content_width_pixels(const chart_document_t& chart,
+                                                    const editor_field_scene_request_t& request)
+    -> double;
 
 // Read-only eligibility shares the exact retained-window policy with composition.
 [[nodiscard]] auto can_reuse_editor_field_scene_window(const chart_document_t& chart,

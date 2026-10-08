@@ -2,6 +2,10 @@
 
 #include "ui/nuklear/compose_panel_internal.h"
 
+auto process_stem_lane_resize(const ComposePointerEventContext& input,
+    const worm_ui_nuklear_pointer_click_t* double_clicks, std::size_t double_click_count,
+    bool other_pointer_captured) -> bool;
+
 auto begin_compose_resource_pointer(const ComposePointerEventContext& input,
                                     bool paint_pointer_consumed) -> bool;
 auto process_bmson_razor_pointer(const ComposePointerEventContext& input,

@@ -1056,6 +1056,32 @@ static void draw_compose_waveform(const ComposePaintContext& paint) {
     }
 }
 
+static auto compose_waveform_lane_rect(const ComposePaintContext& paint,
+                                      const WormUiComposeBgmLaneView& lane) -> struct nk_rect {
+    auto rect = compose_screen_rect(&lane.bounds, paint.view, paint.viewport);
+    if (lane.stem && lane.width_pixels > 36.0) {
+        const auto scale = paint.viewport.w / static_cast<float>(paint.view->viewport_width_pixels);
+        rect.x = paint.viewport.x + static_cast<float>(lane.resize_edge_pixels - lane.width_pixels) * scale;
+        rect.w = static_cast<float>(lane.width_pixels) * scale;
+    }
+    return rect;
+}
+
+class compose_waveform_lane_clip_t {
+  public:
+    compose_waveform_lane_clip_t(const ComposePaintContext& paint, const WormUiComposeBgmLaneView& lane)
+        : field_(paint_field(paint.context)) {
+        if (lane.stem && lane.width_pixels > 36.0) {
+            const auto rect = compose_screen_rect(&lane.bounds, paint.view, paint.viewport);
+            previous_ = field_.push_clip({rect.x, rect.y, rect.w, rect.h});
+        }
+    }
+    ~compose_waveform_lane_clip_t() { if (previous_) field_.pop_clip(*previous_); }
+  private:
+    wormedit::ui::field::renderer_t& field_;
+    std::optional<SDL_FRect> previous_;
+};
+
 static void draw_compose_channel_waveform(const ComposePaintContext& paint) {
     const auto& view = *paint.view;
     if (view.channel_waveform_row_count == 0) {
@@ -1068,7 +1094,8 @@ static void draw_compose_channel_waveform(const ComposePaintContext& paint) {
     if (selected_lane == view.bgm_lanes + view.bgm_lane_count) {
         return;
     }
-    const auto rect = compose_screen_rect(&selected_lane->bounds, &view, paint.viewport);
+    const auto rect = compose_waveform_lane_rect(paint, *selected_lane);
+    const compose_waveform_lane_clip_t clip(paint, *selected_lane);
     if (rect.w <= 1.0f || rect.h <= 0.0f) {
         return;
     }
@@ -1123,8 +1150,13 @@ static void draw_compose_stem_piece(const ComposePaintContext& paint, const Worm
             nk_rgba(146, 230, 251, stem.pending ? 22 : 0), 6);
         return;
     }
-    const auto center = rect->x + rect->w * 0.5f;
-    const auto half_width = rect->w * 0.43f;
+    const auto lanes = std::span(paint.view->bgm_lanes, paint.view->bgm_lane_count);
+    const auto lane = std::find_if(lanes.begin(), lanes.end(),
+        [&](const auto& value) { return value.source_lane_id == stem.source_lane_id; });
+    const auto waveform_rect = compose_waveform_lane_rect(paint, *lane);
+    const compose_waveform_lane_clip_t clip(paint, *lane);
+    const auto center = waveform_rect.x + waveform_rect.w * 0.5f;
+    const auto half_width = waveform_rect.w * 0.43f;
     if (draw_compose_envelope_texture(paint, stem.rows, stem.row_count, center, half_width,
             0, nk_rgba(87, 157, 196, 96), nk_rgba(146, 230, 251, 190), true,
             stem.source_lane_id, wormedit::ui::field::waveform_piece_key_t{
@@ -2231,11 +2263,36 @@ static void draw_compose_bmson_move_preview(const ComposePaintContext& paint) {
                    marker.valid ? nk_rgb(255, 224, 156) : nk_rgb(255, 132, 144), 3);
 }
 
-static void draw_compose_bgm_lane_labels(const ComposePaintContext& paint) {
+static void draw_compose_stem_filename(const ComposePaintContext& paint,
+    const char* filename, struct nk_rect rect) {
+    const auto* font = paint.context->style.font;
+    auto label = std::string{filename};
+    const auto title = nk_rect(rect.x + 2, paint.viewport.y + 2,
+                               std::max(1.0f, rect.w - 4), 14);
+    if (font->width(font->userdata, font->height, label.c_str(), static_cast<int>(label.size())) > title.w) {
+        const auto keep = fit_label_prefix(font, label.c_str(), static_cast<int>(label.size()), title.w);
+        label = keep < 0 ? "\xE2\x80\xA6" : label.substr(0, static_cast<std::size_t>(keep)) + "\xE2\x80\xA6";
+    }
+    field_text(paint, title, label.c_str(), static_cast<int>(label.size()), font,
+               nk_rgba(31, 25, 38, 215), nk_rgb(211, 175, 226), 3);
+}
+static auto hovered_compose_stem_header(const ComposePaintContext& paint,
+    const WormUiComposeBgmLaneView& lane, struct nk_rect rect) -> const char* {
+    if (!lane.stem || !lane.filename || paint.view->input_occluded || rect.w <= 0) return nullptr;
+    const auto header = nk_rect(rect.x, paint.viewport.y, rect.w, 18);
+    return nk_input_is_mouse_hovering_rect(&paint.context->input, header) ? lane.filename : nullptr;
+}
+static auto draw_compose_bgm_lane_labels(const ComposePaintContext& paint) -> const char* {
+    const char* hovered_filename{};
     for (size_t index = 0; index < paint.view->bgm_lane_count; ++index) {
         const auto& lane = paint.view->bgm_lanes[index];
         const auto rect = compose_screen_rect(&lane.bounds, paint.view, paint.viewport);
+        if (const auto* name = hovered_compose_stem_header(paint, lane, rect)) hovered_filename = name;
         if (rect.w < 18.0f || rect.h <= 0.0f) {
+            continue;
+        }
+        if (lane.stem && lane.width_pixels >= 96 && lane.filename && lane.filename[0]) {
+            draw_compose_stem_filename(paint, lane.filename, rect);
             continue;
         }
         char label[20]{};
@@ -2248,6 +2305,7 @@ static void draw_compose_bgm_lane_labels(const ComposePaintContext& paint) {
                          nk_rgb(211, 175, 226), 3);
         }
     }
+    return hovered_filename;
 }
 
 static void draw_compose_bga_stack(const ComposePaintContext& paint,
@@ -2391,7 +2449,10 @@ static ComposeHoveredBgm draw_compose_audio_markers(const ComposePaintContext& p
     }
     draw_compose_bmson_marker_drafts(paint);
     draw_compose_bmson_move_preview(paint);
-    draw_compose_bgm_lane_labels(paint);
+    if (const auto* filename = draw_compose_bgm_lane_labels(paint)) {
+        hovered = {};
+        wormedit::ui::nuklear::tooltip::text(paint.context, filename);
+    }
     draw_compose_bga(paint);
     return hovered;
 }

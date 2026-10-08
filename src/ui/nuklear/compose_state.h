@@ -11,8 +11,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -422,6 +424,14 @@ struct worm_ui_nuklear_compose_state_t {
     WormUiComposeSemanticLayerView layers_menu_layer{};
     std::string layers_menu_layer_name;
     std::size_t layers_menu_row_index{};
+    using stem_lane_key_t = std::tuple<std::uint64_t, std::uint64_t, std::uint64_t>;
+    std::map<stem_lane_key_t, double> stem_lane_widths;
+    struct stem_lane_resize_t {
+        stem_lane_key_t key;
+        double anchor_x{}, anchor_width{36};
+    };
+    std::optional<stem_lane_resize_t> stem_lane_resize;
+    bool stem_lane_resize_cursor_requested{};
     bool inspector_visible{true};
     // Keysound listbox (compose_sounds_panel.cpp).
     bool sounds_panel_visible{true};
@@ -602,6 +612,14 @@ void worm_ui_nuklear_dispatch_compose_keys(worm_ui_nuklear_compose_state_t& stat
 }
 
 [[nodiscard]] auto worm_ui_nuklear_compose_state() noexcept -> worm_ui_nuklear_compose_state_t&;
+auto worm_ui_nuklear_stem_lane_width(const worm_ui_nuklear_compose_state_t& state,
+    std::uint64_t project, std::uint64_t chart, std::uint64_t lane) -> double;
+void worm_ui_nuklear_set_stem_lane_width(worm_ui_nuklear_compose_state_t& state,
+    std::uint64_t project, std::uint64_t chart, std::uint64_t lane, double width);
+void worm_ui_nuklear_cancel_stem_lane_resize(worm_ui_nuklear_compose_state_t& state,
+    bool restore = true);
+void worm_ui_nuklear_cancel_stale_stem_lane_resize(worm_ui_nuklear_compose_state_t& state,
+    const WormUiComposeView& view, bool window_focused);
 // True when a window position lies over the keysound listbox drawn this frame.
 [[nodiscard]] auto worm_ui_nuklear_sound_list_contains(float x, float y) -> bool;
 void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,

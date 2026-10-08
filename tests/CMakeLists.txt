@@ -523,6 +523,7 @@ endif()
 
 if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
     add_executable(wormedit_frontend_event_harness_tests
+        ui/compose_stem_lane_render_tests.cpp
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
         ui/nuklear_tooltip_tests.cpp

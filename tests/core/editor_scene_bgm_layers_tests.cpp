@@ -4,6 +4,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <cmath>
+#include <limits>
 #include <variant>
 
 namespace {
@@ -99,6 +101,76 @@ auto end_bgm_paint(document_history_t& history, editor_interaction_state_t& stat
         end_semantic_layer_paint_gesture_action_t{.note = object_id_t{}, .pointer_captured = true});
 }
 
+auto bgm_width_chart() -> chart_document_t {
+    auto chart = layered_bgm_chart();
+    chart.bgm_source_lanes = {
+        {.id = object_id_t{30}, .name = "Stem 1", .stem_channel = object_id_t{100}},
+        {.id = object_id_t{31}, .name = "Packed"},
+        {.id = object_id_t{32}, .name = "Stem 2", .stem_channel = object_id_t{101}}};
+    chart.measures.front().bgm_events = {
+        {.id = object_id_t{40}, .position = {measure_id_t{1}, 120},
+         .source_lane = object_id_t{30}},
+        {.id = object_id_t{41}, .position = {measure_id_t{1}, 240},
+         .source_lane = object_id_t{31}},
+        {.id = object_id_t{42}, .position = {measure_id_t{1}, 360},
+         .source_lane = object_id_t{32}}};
+    return chart;
+}
+
+auto bgm_width_scene(const chart_document_t& chart, const editor_field_scene_request_t& request)
+    -> editor_field_scene_result_t {
+    const auto index = scene_index(chart);
+    return make_editor_field_scene(chart, index, scene_view(), request);
+}
+
+auto bgm_width_rules_are_consistent() -> bool {
+    const auto chart = bgm_width_chart();
+    editor_field_scene_request_t defaults{.field_left_pixels = 0, .field_width_pixels = 100,
+        .bgm_pane_left_pixels = 100, .bgm_pane_width_pixels = 108};
+    const auto implicit = bgm_width_scene(chart, defaults);
+    defaults.bgm_lane_width_pixels = 40;
+    defaults.bgm_pane_width_pixels = 120;
+    const auto legacy = bgm_width_scene(chart, defaults);
+    const std::array widths{300.0, 480.0, 96.0};
+    defaults.bgm_lane_widths_pixels = widths;
+    defaults.bgm_pane_width_pixels = 432;
+    const auto custom = bgm_width_scene(chart, defaults);
+    if (!implicit || !legacy || !custom || implicit.scene->bgm_lanes.size() != 3 ||
+        legacy.scene->bgm_lanes.size() != 3 || custom.scene->bgm_lanes.size() != 3) return false;
+    if (implicit.scene->bgm_lanes[2].bounds.right != 208 ||
+        legacy.scene->bgm_lanes[2].bounds.right != 220 ||
+        custom.scene->bgm_lanes[0].bounds.right != 400 ||
+        custom.scene->bgm_lanes[1].bounds.right != 436 ||
+        custom.scene->bgm_lanes[2].bounds.right != 532 ||
+        editor_bgm_content_width_pixels(chart, defaults) != 432) return false;
+    const std::array boundary_widths{20.0};
+    defaults.bgm_lane_widths_pixels = boundary_widths;
+    if (editor_bgm_lane_width_pixels(chart, defaults, 0) != 36 ||
+        editor_bgm_lane_width_pixels(chart, defaults, 1) != 36 ||
+        editor_bgm_lane_width_pixels(chart, defaults, 2) != 36) return false;
+    const std::array nan_widths{std::numeric_limits<double>::quiet_NaN(), 1000.0, 96.0};
+    defaults.bgm_lane_widths_pixels = nan_widths;
+    return editor_bgm_lane_width_pixels(chart, defaults, 0) == 36 &&
+        editor_bgm_lane_width_pixels(chart, defaults, 1) == 36 &&
+        editor_bgm_lane_width_pixels(chart, defaults, 2) == 96;
+}
+
+auto bgm_widened_lane_keeps_unclipped_hit_bounds() -> bool {
+    const auto chart = bgm_width_chart();
+    const std::array widths{300.0, 480.0, 96.0};
+    editor_field_scene_request_t request{.field_left_pixels = 0, .field_width_pixels = 100,
+        .bgm_pane_left_pixels = 100, .bgm_pane_width_pixels = 100,
+        .bgm_horizontal_scroll_pixels = 50};
+    request.bgm_lane_widths_pixels = widths;
+    const auto scene = bgm_width_scene(chart, request);
+    if (!scene || scene.scene->bgm_lanes.empty() || scene.scene->bgm_events.empty()) return false;
+    const auto& lane = scene.scene->bgm_lanes.front();
+    const auto& event = scene.scene->bgm_events.front();
+    return lane.bounds.left == 100 && lane.bounds.right == 200 &&
+        lane.unclipped_left_pixels == 50 && lane.unclipped_right_pixels == 350 &&
+        event.bounds.left == lane.bounds.left && event.bounds.right == lane.bounds.right;
+}
+
 } // namespace
 
 TEST_CASE("BGM scene geometry carries a visible semantic color",
@@ -183,6 +255,16 @@ TEST_CASE("BGM paint rejects a locked layer and cancels on pointer capture loss"
     REQUIRE(cancelled);
     CHECK_FALSE(state.pending_semantic_layer_paint_gesture);
     CHECK(history.undo.empty());
+}
+
+TEST_CASE("BGM stem widths resolve clamps, packed defaults, and legacy scalar widths",
+          "[unit][core][editor-scene][bgm-width]") {
+    CHECK(bgm_width_rules_are_consistent());
+}
+
+TEST_CASE("BGM lane events clip while widened stem resize edges remain addressable",
+          "[unit][core][editor-scene][bgm-width]") {
+    CHECK(bgm_widened_lane_keeps_unclipped_hit_bounds());
 }
 
 TEST_CASE("BGM paint rejects a stale gesture after a document edit",

@@ -1074,6 +1074,20 @@ void project_compose_bgm_events(flattened_workspace_t& flattened,
     view.truncated = view.truncated || event_count != events.size();
 }
 
+auto compose_stem_filename(const compose_scene_projection_context_t& projection,
+                           const wormedit::bgm_source_lane_t& lane) -> const char* {
+    if (!lane.stem_channel) return nullptr;
+    const auto channel = std::ranges::find(projection.chart.sound_channels, *lane.stem_channel,
+                                          &wormedit::sound_channel_t::id);
+    if (channel == projection.chart.sound_channels.end()) return nullptr;
+    const auto& assets = projection.history.document.audio_assets;
+    const auto asset = std::ranges::find(assets, channel->source_clip.source,
+                                        &wormedit::audio_asset_t::id);
+    if (asset == assets.end() || !projection.flattened.arena()) return nullptr;
+    const auto name = asset->source_path.filename().generic_u8string();
+    return arena_string(*projection.flattened.arena(),
+        {reinterpret_cast<const char*>(name.data()), name.size()});
+}
 void project_compose_bgm(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.flattened;
     const auto& scene = projection.scene;
@@ -1090,9 +1104,16 @@ void project_compose_bgm(const compose_scene_projection_context_t& projection) {
     }
     for (std::size_t index = 0; index < bgm_lane_count; ++index) {
         const auto& lane = bgm_lanes[index];
+        const auto source = std::ranges::find(projection.chart.bgm_source_lanes, lane.source_lane,
+                                             &wormedit::bgm_source_lane_t::id);
         append_compose_geometry_row(flattened.compose.bgm.lane, {.bounds = convert_rect(lane.bounds),
                                                       .source_lane_id = lane.source_lane.value,
-                                                      .source_order = lane.source_order}, view.truncated);
+                                                      .source_order = lane.source_order,
+                                                      .stem = source != projection.chart.bgm_source_lanes.end() && source->stem_channel.has_value(),
+                                                      .width_pixels = lane.unclipped_right_pixels - lane.unclipped_left_pixels,
+                                                      .resize_edge_pixels = lane.unclipped_right_pixels,
+                                                      .filename = source == projection.chart.bgm_source_lanes.end() ? nullptr :
+                                                          compose_stem_filename(projection, *source)}, view.truncated);
     }
     project_compose_bgm_events(flattened, scene.bgm_events, view, convert_rect);
     view.truncated = view.truncated || bgm_lane_count != bgm_lanes.size();
@@ -3890,6 +3911,16 @@ auto project_reused_scalar_scene(const compose_final_projection_context_t& input
     return true;
 }
 
+void prepare_compose_bgm_widths(const wormedit::chart_document_t& chart,
+    std::uint64_t project, compose_scene_cache_t& cache, const application_command_state_t& application) {
+    cache.bgm_lane_widths_pixels.clear();
+    cache.bgm_lane_widths_pixels.reserve(chart.bgm_source_lanes.size());
+    for (const auto& lane : chart.bgm_source_lanes) {
+        const auto width = lane.stem_channel && application.compose_bgm_lane_width
+            ? application.compose_bgm_lane_width(project, chart.id.value, lane.id.value) : 36.0;
+        cache.bgm_lane_widths_pixels.push_back(std::isnan(width) ? 36.0 : std::clamp(width, 36.0, 480.0));
+    }
+}
 bool compose_project_scene(const compose_final_projection_context_t& input,
                            std::uint64_t canvas_rows) {
     auto& flattened = input.flattened;
@@ -3977,9 +4008,10 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
                                   application_state.recipe_preview ? &*application_state.recipe_preview
                                                                    : nullptr);
     populate_compose_recipe_form(flattened, chart, application_state, view);
-    const auto maximum_bgm_scroll = std::max(
-        0.0, static_cast<double>(chart.bgm_source_lanes.size()) * compose_bgm_lane_width_pixels -
-                 bgm_pane_width);
+    prepare_compose_bgm_widths(chart, history.document.id.value, cache, application_state);
+    const auto bgm_content = wormedit::editor_bgm_content_width_pixels(chart,
+        {.bgm_lane_widths_pixels = cache.bgm_lane_widths_pixels});
+    const auto maximum_bgm_scroll = std::max(0.0, bgm_content - bgm_pane_width);
     auto& bgm_horizontal_scroll = application_state.bgm_horizontal_scroll_pixels[chart.id.value];
     bgm_horizontal_scroll = std::clamp(bgm_horizontal_scroll, 0.0, maximum_bgm_scroll);
     view.bgm_horizontal_scroll_pixels = bgm_horizontal_scroll;
@@ -3996,6 +4028,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
         .bgm_pane_left_pixels = horizontal_layout.bgm_pane_left_pixels,
         .bgm_pane_width_pixels = bgm_pane_width,
         .bgm_lane_width_pixels = compose_bgm_lane_width_pixels,
+        .bgm_lane_widths_pixels = cache.bgm_lane_widths_pixels,
         .bgm_horizontal_scroll_pixels = bgm_horizontal_scroll,
         .bga_pane_left_pixels = horizontal_layout.bga_pane_left_pixels,
         .bga_pane_width_pixels = bga_pane_width,

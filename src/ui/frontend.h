@@ -671,6 +671,10 @@ typedef struct WormUiComposeBgmLaneView {
     WormUiComposeRect bounds;
     uint64_t source_lane_id;
     size_t source_order;
+    bool stem;
+    double width_pixels;
+    double resize_edge_pixels;
+    const char* filename;
 } WormUiComposeBgmLaneView;
 
 typedef struct WormUiComposeBgmEventView {
@@ -2852,6 +2856,8 @@ bool worm_ui_frontend_open_bookmark_chooser(uint64_t project_id, uint64_t chart_
 /* Width in logical pixels the BMS branch dock took from the left of the Compose field last frame;
    the Compose projection narrows its viewport by it. Zero while the dock is hidden. */
 int worm_ui_frontend_compose_left_dock_pixels(void);
+double worm_ui_frontend_compose_bgm_lane_width(uint64_t project_id, uint64_t chart_id,
+                                             uint64_t lane_id);
 /* Queues one dropped file for exact slot assignment; false when automatic mode is active.
    In slots mode invalid/stale requests are consumed without falling back to allocation. */
 bool worm_ui_frontend_stage_sound_slot_batch(uint64_t project, uint64_t chart, uint64_t revision,

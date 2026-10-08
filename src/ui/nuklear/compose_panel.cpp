@@ -62,6 +62,7 @@ void worm_ui_nuklear_queue_compose_middle_click(float x, float y) {
 }
 
 void worm_ui_nuklear_compose_handle_focus_lost() {
+    worm_ui_nuklear_cancel_stem_lane_resize(state);
     compose_handle_focus_lost_input();
 }
 
@@ -71,6 +72,11 @@ void worm_ui_nuklear_compose_discard_frame_input() {
 
 void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool compose_tab_active,
                                            bool window_focused, WormUiWorkspaceAction* action) {
+    if (!compose_tab_active || !view || !view->visible) {
+        worm_ui_nuklear_cancel_stem_lane_resize(state);
+    } else {
+        worm_ui_nuklear_cancel_stale_stem_lane_resize(state, *view, window_focused);
+    }
     prepare_compose_panel_input(view, compose_tab_active, window_focused, action);
 }
 
@@ -1093,6 +1099,7 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
 }
 
 static void discard_occluded_compose_input(const ComposePanelRenderContext& panel) {
+    worm_ui_nuklear_cancel_stem_lane_resize(state);
     // Release previously held editor keys; Options owns new presses and wheel input.
     std::size_t releases{};
     for (std::size_t index = 0; index < state.key_event_count; ++index) {
@@ -1148,6 +1155,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     auto* canvas = nk_window_get_canvas(context);
     if (!canvas)
         return;
+    worm_ui_nuklear_cancel_stale_stem_lane_resize(state, *view, window_focused);
 
     const auto editor_input_right = inspector_drawn
         ? viewport.x + viewport.w - inspector_width - 8.0f
@@ -1249,7 +1257,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         update_timing_stage_drag(pointer_event);
     update_kiai_span_drag(pointer_event);
     update_recipe_drag(pointer_event);
-    const auto compose_pointer_captured =
+    auto compose_pointer_captured =
         state.inline_timing_open || state.bookmark_rename.active || state.bookmark_rename.release_pending || state.note_paint_pointer_active ||
         state.bmson_razor_pointer_active ||
         state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
@@ -1258,6 +1266,9 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         state.timing_marker_candidate_active || state.timing_marker_drag_active ||
         state.waveform_beat_zero_drag_active || state.waveform_overview_drag_active ||
         beat_fit_pointer_consumed;
+    const auto resize_consumed = process_stem_lane_resize(pointer_event, double_clicks,
+                                                          double_click_count, compose_pointer_captured);
+    compose_pointer_captured |= resize_consumed;
     action->compose_has_pointer_hover = !state.action_overflowed && window_focused &&
                                         view->scene_available && pointer_in_note_field &&
                                         !compose_pointer_captured;
@@ -1273,7 +1284,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     pointer_event.compose_note_double_click_in_view = compose_note_double_click_in_view;
     bool paint_pointer_consumed =
         state.inline_timing_open || state.bookmark_rename.active || state.bookmark_rename.release_pending || state.note_paint_pointer_active ||
-        beat_fit_pointer_consumed ||
+        beat_fit_pointer_consumed || resize_consumed ||
         state.bmson_razor_pointer_active || state.bmson_marker_move_candidate_active ||
         state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
         compose_action_has_cancel(action);

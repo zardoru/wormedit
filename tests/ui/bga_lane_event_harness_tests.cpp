@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <wormedit/core/lane_profile_switch.h>
 
+#include <cmath>
 #include <cstdio>
 
 #include <algorithm>
@@ -785,4 +786,257 @@ TEST_CASE("BGA Add lane dropdown reveals an empty Layer 2", "[event-harness][bga
                 input.bga_lane_kind_valid && input.bga_lane_kind == 5;
     }
     check_bga(revealed);
+}
+
+namespace {
+struct resizable_stem_lane_fixture_t {
+    nuklear_event_harness_t harness{1600, 900};
+    WormUiComposeBgmLaneView lane{.bounds = {604, 0, 640, 600}, .source_lane_id = 44,
+        .stem = true, .width_pixels = 36, .resize_edge_pixels = 640,
+        .filename = "素材/かなり長い stem filename.wav"};
+    WormUiComposeBgmEventView marker{.bounds = {604, 20, 640, 36}, .event_id = 501,
+        .source_lane_id = 44, .bmson_slice = true};
+    resizable_stem_lane_fixture_t() {
+        REQUIRE(harness.ready());
+        hide_compose_docks();
+        harness.view().project_id = 123;
+        auto& view = harness.view().compose;
+        view.visible = true;
+        view.scene_available = true;
+        view.project_id = 123;
+        view.chart_id = 7;
+        view.document_revision = 11;
+        view.viewport_width_pixels = 1200;
+        view.viewport_height_pixels = 600;
+        view.playable_field_left_pixels = 90;
+        view.playable_field_right_pixels = 600;
+        view.bmson_tools_available = true;
+        view.bgm_lanes = &lane;
+        view.bgm_lane_count = 1;
+        view.bgm_events = &marker;
+        view.bgm_event_count = 1;
+        (void)harness.frame();
+    }
+    auto at(double x, double y) { return canvas_point(harness, x, y); }
+    auto width() const { return worm_ui_frontend_compose_bgm_lane_width(123, 7, 44); }
+    auto edge() { return at(lane.resize_edge_pixels, 6); }
+    auto expected_drag_width(double delta) {
+        const auto from = edge();
+        const auto to = at(lane.resize_edge_pixels + delta, 6);
+        WormUiTestingRect viewport{};
+        REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&viewport));
+        return std::clamp(width() + (to.first - std::trunc(from.first)) *
+            harness.view().compose.viewport_width_pixels / viewport.width, 36.0, 480.0);
+    }
+    void refresh_geometry() {
+        lane.width_pixels = width();
+        lane.bounds.right = lane.bounds.left + lane.width_pixels;
+        lane.resize_edge_pixels = lane.bounds.right;
+        marker.bounds.right = lane.bounds.right;
+    }
+};
+
+auto press_stem_edge(resizable_stem_lane_fixture_t& f) -> workspace_action_snapshot_t {
+    const auto p = f.edge();
+    const auto events = std::array{mouse_motion(p.first, p.second), mouse_button(true, p.first, p.second)};
+    return f.harness.frame(events);
+}
+
+auto drag_stem_edge(resizable_stem_lane_fixture_t& f, float delta) -> workspace_action_snapshot_t {
+    const auto p = f.at(f.lane.resize_edge_pixels + delta, 6);
+    (void)press_stem_edge(f);
+    const auto moved = mouse_motion(p.first, p.second);
+    return f.harness.frame(std::span{&moved, 1});
+}
+
+void release_stem_edge(resizable_stem_lane_fixture_t& f, float delta) {
+    const auto p = f.at(f.lane.resize_edge_pixels + delta, 6);
+    const auto events = std::array{mouse_motion(p.first, p.second),
+                                   mouse_button(false, p.first, p.second)};
+    (void)f.harness.frame(events);
+    f.refresh_geometry();
+}
+
+auto double_click_stem_edge(resizable_stem_lane_fixture_t& f) -> workspace_action_snapshot_t {
+    const auto p = f.edge();
+    auto down = mouse_button(true, p.first, p.second);
+    auto up = mouse_button(false, p.first, p.second);
+    down.button.clicks = 2;
+    up.button.clicks = 2;
+    const auto events = std::array{mouse_motion(p.first, p.second), down, up};
+    return f.harness.frame(events);
+}
+
+auto no_stem_point_actions(const workspace_action_snapshot_t& action) -> bool {
+    const auto& value = action.get();
+    return std::ranges::none_of(std::span(value.compose_inputs, value.compose_input_count),
+        [](const auto& input) {
+            return input.kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE ||
+                   input.kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART;
+        });
+}
+
+void start_resizing(resizable_stem_lane_fixture_t& f) {
+    const auto expected = f.expected_drag_width(40);
+    (void)drag_stem_edge(f, 40);
+    check_bga(std::abs(f.width() - expected) < 1e-6);
+    check_bga(worm_ui_nuklear_compose_state().stem_lane_resize.has_value());
+    check_bga(worm_ui_nuklear_compose_state().stem_lane_resize_cursor_requested);
+}
+
+auto window_focus_lost_event() -> SDL_Event {
+    SDL_Event event{};
+    event.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+    event.window.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+    return event;
+}
+
+void release_inactive_stem_pointer(resizable_stem_lane_fixture_t& f) {
+    const auto up = mouse_button(false, 0, 0);
+    (void)f.harness.frame(std::span{&up, 1});
+}
+} // namespace
+
+TEST_CASE("stem lane header edge resizes through production input and enables far-side points",
+          "[event-harness][bmson-stem][resize]") {
+    resizable_stem_lane_fixture_t f;
+    const auto expected = f.expected_drag_width(264);
+    const auto moved = drag_stem_edge(f, 264);
+    check_bga(std::abs(f.width() - expected) < 1e-6);
+    check_bga(no_stem_point_actions(moved));
+    release_stem_edge(f, 264);
+    (void)f.harness.frame();
+    const auto p = f.at(850, 300);
+    const auto added = click(f.harness, p.first, p.second);
+    check_bga(has_input(added, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, 501));
+}
+
+TEST_CASE("stem lane resize clamps and double click restores its default width",
+          "[event-harness][bmson-stem][resize]") {
+    resizable_stem_lane_fixture_t f;
+    (void)drag_stem_edge(f, 1000);
+    check_bga(f.width() == 480.0);
+    release_stem_edge(f, 1000);
+    (void)drag_stem_edge(f, -1000);
+    check_bga(f.width() == 36.0);
+    release_stem_edge(f, -1000);
+    const auto expected = f.expected_drag_width(180);
+    (void)drag_stem_edge(f, 180);
+    release_stem_edge(f, 180);
+    check_bga(std::abs(f.width() - expected) < 1e-6);
+    (void)double_click_stem_edge(f);
+    check_bga(f.width() == 36.0);
+}
+
+TEST_CASE("stem lane resize ignores packed and clipped lane edges",
+          "[event-harness][bmson-stem][resize]") {
+    resizable_stem_lane_fixture_t f;
+    f.lane.stem = false;
+    (void)f.harness.frame();
+    (void)drag_stem_edge(f, 100);
+    check_bga(f.width() == 36.0);
+    release_stem_edge(f, 100);
+    f.lane.stem = true;
+    f.lane.bounds.left = 620;
+    f.lane.bounds.right = 640;
+    f.lane.resize_edge_pixels = 700;
+    (void)f.harness.frame();
+    check_bga(no_stem_point_actions(double_click_stem_edge(f)));
+    check_bga(f.width() == 36.0);
+}
+
+TEST_CASE("stem lane resize cancels on focus loss, hidden Compose, tab switch, and occlusion",
+          "[event-harness][bmson-stem][resize]") {
+    resizable_stem_lane_fixture_t f;
+    const auto expected = f.expected_drag_width(120);
+    (void)drag_stem_edge(f, 120);
+    release_stem_edge(f, 120);
+    check_bga(std::abs(f.width() - expected) < 1e-6);
+    const auto anchor = f.width();
+    start_resizing(f);
+    f.harness.view().compose.visible = false;
+    (void)f.harness.frame();
+    check_bga(f.width() == anchor);
+    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize);
+    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize_cursor_requested);
+    release_inactive_stem_pointer(f);
+
+    f.harness.view().compose.visible = true;
+    (void)f.harness.frame();
+    start_resizing(f);
+    f.harness.view().active_tab = WORM_UI_WORKSPACE_TAB_STORYBOARD;
+    (void)f.harness.frame();
+    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize);
+    check_bga(f.width() == anchor);
+    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize_cursor_requested);
+    release_inactive_stem_pointer(f);
+
+    f.harness.view().active_tab = WORM_UI_WORKSPACE_TAB_COMPOSE;
+    (void)f.harness.frame();
+    start_resizing(f);
+    f.harness.view().compose.input_occluded = true;
+    (void)f.harness.frame();
+    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize);
+    check_bga(f.width() == anchor);
+    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize_cursor_requested);
+    release_inactive_stem_pointer(f);
+
+    f.harness.view().compose.input_occluded = false;
+    (void)f.harness.frame();
+    start_resizing(f);
+    f.harness.view().compose.visible = false;
+    const auto focus_lost = window_focus_lost_event();
+    (void)f.harness.frame(std::span{&focus_lost, 1});
+    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize);
+    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize_cursor_requested);
+    check_bga(f.width() == anchor);
+}
+
+TEST_CASE("stem filename retains one full UTF8 tooltip at narrow and wide widths",
+          "[event-harness][bmson-stem][resize]") {
+    resizable_stem_lane_fixture_t f;
+    const std::string filename{"素材/かなり長い stem filename.wav"};
+    const auto narrow = f.at(622, 6);
+    const auto narrow_move = mouse_motion(narrow.first, narrow.second);
+    (void)f.harness.frame(std::span{&narrow_move, 1});
+    const auto found = f.harness.drawn_text().find(filename);
+    check_bga(found != std::string::npos);
+    check_bga(f.harness.drawn_text().find(filename, found + filename.size()) == std::string::npos);
+    worm_ui_nuklear_set_stem_lane_width(worm_ui_nuklear_compose_state(), 123, 7, 44, 96);
+    f.refresh_geometry();
+    (void)f.harness.frame();
+    const auto hover = f.at(648, 6);
+    const auto move = mouse_motion(hover.first, hover.second);
+    (void)f.harness.frame(std::span{&move, 1});
+    const auto wide_found = f.harness.drawn_text().find(filename);
+    check_bga(wide_found != std::string::npos);
+    check_bga(f.harness.drawn_text().find(filename, wide_found + filename.size()) == std::string::npos);
+}
+
+TEST_CASE("batched stem edge press and motion uses the original header press",
+          "[event-harness][bmson-stem][resize]") {
+    resizable_stem_lane_fixture_t f;
+    const auto expected = f.expected_drag_width(264);
+    const auto from = f.edge();
+    const auto to = f.at(f.lane.resize_edge_pixels + 264, 6);
+    const auto events = std::array{mouse_motion(from.first, from.second),
+        mouse_button(true, from.first, from.second), mouse_motion(to.first, to.second)};
+    const auto action = f.harness.frame(events);
+    check_bga(worm_ui_nuklear_compose_state().stem_lane_resize.has_value());
+    check_bga(std::abs(f.width() - expected) < 1e-6);
+    check_bga(no_stem_point_actions(action));
+    release_stem_edge(f, 264);
+}
+TEST_CASE("batched stem body press followed by edge motion does not begin resizing",
+          "[event-harness][bmson-stem][resize]") {
+    resizable_stem_lane_fixture_t f;
+    const auto from = f.at(622, 100);
+    const auto to = f.edge();
+    const auto events = std::array{mouse_motion(from.first, from.second),
+        mouse_button(true, from.first, from.second), mouse_motion(to.first, to.second)};
+    (void)f.harness.frame(events);
+    check_bga(!worm_ui_nuklear_compose_state().stem_lane_resize);
+    check_bga(f.width() == 36);
+    const auto up = mouse_button(false, to.first, to.second);
+    (void)f.harness.frame(std::span{&up, 1});
 }

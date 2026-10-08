@@ -1278,3 +1278,117 @@ TEST_CASE("Sounds dock advance selects its visible successor and rejected placem
     CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
     state = {};
 }
+
+namespace {
+auto stem_lane_width_keys_are_independent() -> bool {
+    worm_ui_nuklear_compose_state_t state{};
+    if (worm_ui_nuklear_stem_lane_width(state, 1, 2, 3) != 36.0 ||
+        worm_ui_nuklear_stem_lane_width(state, 1, 4, 3) != 36.0 ||
+        worm_ui_nuklear_stem_lane_width(state, 5, 2, 3) != 36.0) return false;
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 3, 120);
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 4, 240);
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 4, 3, 180);
+    worm_ui_nuklear_set_stem_lane_width(state, 5, 2, 3, 300);
+    return worm_ui_nuklear_stem_lane_width(state, 1, 2, 3) == 120 &&
+        worm_ui_nuklear_stem_lane_width(state, 1, 2, 4) == 240 &&
+        worm_ui_nuklear_stem_lane_width(state, 1, 4, 3) == 180 &&
+        worm_ui_nuklear_stem_lane_width(state, 5, 2, 3) == 300;
+}
+
+auto stem_lane_width_values_are_clamped() -> bool {
+    worm_ui_nuklear_compose_state_t state{};
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 3, 12);
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 4, 900);
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 5,
+        std::numeric_limits<double>::infinity());
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 6,
+        -std::numeric_limits<double>::infinity());
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 7,
+        std::numeric_limits<double>::quiet_NaN());
+    const auto entries = state.stem_lane_widths.size();
+    worm_ui_nuklear_set_stem_lane_width(state, 0, 2, 3, 100);
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 0, 3, 100);
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 0, 100);
+    return entries == 5 && state.stem_lane_widths.size() == entries &&
+        worm_ui_nuklear_stem_lane_width(state, 1, 2, 3) == 36 &&
+        worm_ui_nuklear_stem_lane_width(state, 1, 2, 4) == 480 &&
+        worm_ui_nuklear_stem_lane_width(state, 1, 2, 5) == 480 &&
+        worm_ui_nuklear_stem_lane_width(state, 1, 2, 6) == 36 &&
+        worm_ui_nuklear_stem_lane_width(state, 1, 2, 7) == 36;
+}
+
+auto stem_lane_resize_cancel_restores_only_captured_key() -> bool {
+    worm_ui_nuklear_compose_state_t state{};
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 3, 120);
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 4, 3, 300);
+    state.stem_lane_resize = worm_ui_nuklear_compose_state_t::stem_lane_resize_t{
+        .key = {1, 2, 3}, .anchor_x = 400, .anchor_width = 120};
+    state.stem_lane_resize_cursor_requested = true;
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 3, 260);
+    worm_ui_nuklear_cancel_stem_lane_resize(state);
+    if (state.stem_lane_resize || state.stem_lane_resize_cursor_requested ||
+        worm_ui_nuklear_stem_lane_width(state, 1, 2, 3) != 120 ||
+        worm_ui_nuklear_stem_lane_width(state, 1, 4, 3) != 300) return false;
+    state.stem_lane_resize = worm_ui_nuklear_compose_state_t::stem_lane_resize_t{
+        .key = {1, 2, 3}, .anchor_x = 400, .anchor_width = 120};
+    state.stem_lane_resize_cursor_requested = true;
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 3, 280);
+    worm_ui_nuklear_cancel_stem_lane_resize(state, false);
+    return !state.stem_lane_resize && !state.stem_lane_resize_cursor_requested &&
+        worm_ui_nuklear_stem_lane_width(state, 1, 2, 3) == 280 &&
+        worm_ui_nuklear_stem_lane_width(state, 1, 4, 3) == 300;
+}
+
+auto resize_capture_stays_or_cancels_for_view(const WormUiComposeView& view,
+                                               bool focused) -> bool {
+    worm_ui_nuklear_compose_state_t state{};
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 3, 120);
+    state.stem_lane_resize = worm_ui_nuklear_compose_state_t::stem_lane_resize_t{
+        .key = {1, 2, 3}, .anchor_x = 400, .anchor_width = 120};
+    state.stem_lane_resize_cursor_requested = true;
+    worm_ui_nuklear_set_stem_lane_width(state, 1, 2, 3, 220);
+    worm_ui_nuklear_cancel_stale_stem_lane_resize(state, view, focused);
+    const bool same_key = view.project_id == 1 && view.chart_id == 2 && focused &&
+                          !view.input_occluded;
+    return state.stem_lane_resize.has_value() == same_key &&
+        state.stem_lane_resize_cursor_requested == same_key &&
+        worm_ui_nuklear_stem_lane_width(state, 1, 2, 3) == (same_key ? 220 : 120);
+}
+
+auto stem_lane_resize_stales_on_view_changes() -> bool {
+    WormUiComposeView view{};
+    view.project_id = 1;
+    view.chart_id = 2;
+    if (!resize_capture_stays_or_cancels_for_view(view, true)) return false;
+    view.chart_id = 4;
+    if (!resize_capture_stays_or_cancels_for_view(view, true)) return false;
+    view.chart_id = 2;
+    view.project_id = 5;
+    if (!resize_capture_stays_or_cancels_for_view(view, true)) return false;
+    view.project_id = 1;
+    view.input_occluded = true;
+    if (!resize_capture_stays_or_cancels_for_view(view, true)) return false;
+    view.input_occluded = false;
+    return resize_capture_stays_or_cancels_for_view(view, false);
+}
+} // namespace
+
+TEST_CASE("Stem lane widths stay independent across projects charts and lanes",
+          "[frontend-state][stem-lane-width]") {
+    expect_inline(stem_lane_width_keys_are_independent());
+}
+
+TEST_CASE("Stem lane widths clamp boundaries and ignore invalid keys",
+          "[frontend-state][stem-lane-width]") {
+    expect_inline(stem_lane_width_values_are_clamped());
+}
+
+TEST_CASE("Stem lane resize cancellation restores its anchor or commits its current width",
+          "[frontend-state][stem-lane-width]") {
+    expect_inline(stem_lane_resize_cancel_restores_only_captured_key());
+}
+
+TEST_CASE("Stem lane resize capture cancels on stale chart occlusion or focus loss",
+          "[frontend-state][stem-lane-width]") {
+    expect_inline(stem_lane_resize_stales_on_view_changes());
+}

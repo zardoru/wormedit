@@ -41,6 +41,71 @@
 #include "ui/nuklear/compose_input_internal.h"
 #include "ui/nuklear/compose_object_input.h"
 
+static auto stem_lane_resize_edge(const ComposePointerEventContext& input, double x, double y)
+    -> const WormUiComposeBgmLaneView* {
+    const auto& view = *input.view;
+    const auto tolerance = 4.0 * view.viewport_width_pixels / input.viewport.w;
+    const auto header_height = 18.0 * view.viewport_height_pixels / input.viewport.h;
+    if (y < 0 || y >= header_height) return nullptr;
+    for (const auto& lane : std::span(view.bgm_lanes, view.bgm_lane_count)) {
+        if (!lane.stem || lane.resize_edge_pixels > lane.bounds.right + 1e-6 ||
+            lane.resize_edge_pixels < lane.bounds.left || x < lane.bounds.left ||
+            x > lane.bounds.right + tolerance) continue;
+        if (std::abs(x - lane.resize_edge_pixels) <= tolerance) return &lane;
+    }
+    return nullptr;
+}
+static auto update_stem_lane_resize(const ComposePointerEventContext& input) -> bool {
+    if (!state.stem_lane_resize) return false;
+    const auto resize = *state.stem_lane_resize;
+    const auto [project, chart, lane] = resize.key;
+    const auto& view = *input.view;
+    if (!input.window_focused || view.input_occluded || view.project_id != project ||
+        view.chart_id != chart || compose_action_has_cancel(input.action) ||
+        (!input.left_down && !input.left_released)) {
+        worm_ui_nuklear_cancel_stem_lane_resize(state);
+        return true;
+    }
+    state.stem_lane_resize_cursor_requested = true;
+    worm_ui_nuklear_set_stem_lane_width(state, project, chart, lane,
+        resize.anchor_width + input.pointer_x - resize.anchor_x);
+    if (input.left_released) worm_ui_nuklear_cancel_stem_lane_resize(state, false);
+    return true;
+}
+static auto reset_stem_lane_from_double_click(const ComposePointerEventContext& input,
+    const worm_ui_nuklear_pointer_click_t* clicks, std::size_t count) -> bool {
+    for (const auto& click : std::span(clicks, count)) {
+        if (click.x < input.viewport.x || click.x >= input.viewport.x + input.viewport.w ||
+            click.y < input.viewport.y || click.y >= input.viewport.y + input.viewport.h) continue;
+        const auto x = (click.x - input.viewport.x) * input.view->viewport_width_pixels / input.viewport.w;
+        const auto y = (click.y - input.viewport.y) * input.view->viewport_height_pixels / input.viewport.h;
+        if (const auto* lane = stem_lane_resize_edge(input, x, y)) {
+            worm_ui_nuklear_cancel_stem_lane_resize(state, false);
+            worm_ui_nuklear_set_stem_lane_width(state, input.view->project_id,
+                input.view->chart_id, lane->source_lane_id, 36);
+            state.stem_lane_resize_cursor_requested = true;
+            return true;
+        }
+    }
+    return false;
+}
+auto process_stem_lane_resize(const ComposePointerEventContext& input,
+    const worm_ui_nuklear_pointer_click_t* double_clicks, std::size_t double_click_count,
+    bool other_pointer_captured) -> bool {
+    if (update_stem_lane_resize(input)) return true;
+    const auto& view = *input.view;
+    if (other_pointer_captured || !input.window_focused || view.input_occluded ||
+        !view.scene_available || !view.bmson_tools_available) return false;
+    if (reset_stem_lane_from_double_click(input, double_clicks, double_click_count)) return true;
+    const auto* hovered = stem_lane_resize_edge(input, input.pointer_x, input.pointer_y);
+    if (hovered && input.pointer_inside) state.stem_lane_resize_cursor_requested = true;
+    if (!input.pointer_started_in_view || !input.left_down) return false;
+    const auto* lane = stem_lane_resize_edge(input, input.pointer_started_x, input.pointer_started_y);
+    if (!lane) return false;
+    state.stem_lane_resize = worm_ui_nuklear_compose_state_t::stem_lane_resize_t{
+        {view.project_id, view.chart_id, lane->source_lane_id}, input.pointer_started_x, lane->width_pixels};
+    return update_stem_lane_resize(input);
+}
 static auto resource_pointer_can_start(const ComposePointerEventContext& input,
                                        bool paint_pointer_consumed) -> bool {
     const auto& view = *input.view;

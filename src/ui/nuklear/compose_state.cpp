@@ -398,6 +398,35 @@ auto worm_ui_nuklear_sound_list_contains(float x, float y) -> bool {
            y < state.sound_list_y + state.sound_list_height;
 }
 
+auto worm_ui_nuklear_stem_lane_width(const worm_ui_nuklear_compose_state_t& state,
+    std::uint64_t project, std::uint64_t chart, std::uint64_t lane) -> double {
+    const auto found = state.stem_lane_widths.find({project, chart, lane});
+    return found == state.stem_lane_widths.end() ? 36.0 : found->second;
+}
+void worm_ui_nuklear_set_stem_lane_width(worm_ui_nuklear_compose_state_t& state,
+    std::uint64_t project, std::uint64_t chart, std::uint64_t lane, double width) {
+    if (!project || !chart || !lane) return;
+    state.stem_lane_widths[{project, chart, lane}] =
+        std::isnan(width) ? 36.0 : std::clamp(width, 36.0, 480.0);
+}
+void worm_ui_nuklear_cancel_stem_lane_resize(worm_ui_nuklear_compose_state_t& state,
+                                           bool restore) {
+    if (state.stem_lane_resize && restore) {
+        const auto& resize = *state.stem_lane_resize;
+        const auto [project, chart, lane] = resize.key;
+        worm_ui_nuklear_set_stem_lane_width(state, project, chart, lane, resize.anchor_width);
+    }
+    state.stem_lane_resize.reset();
+    state.stem_lane_resize_cursor_requested = false;
+}
+void worm_ui_nuklear_cancel_stale_stem_lane_resize(worm_ui_nuklear_compose_state_t& state,
+    const WormUiComposeView& view, bool window_focused) {
+    if (!window_focused || view.input_occluded ||
+        (state.stem_lane_resize &&
+         (std::get<0>(state.stem_lane_resize->key) != view.project_id ||
+          std::get<1>(state.stem_lane_resize->key) != view.chart_id)))
+        worm_ui_nuklear_cancel_stem_lane_resize(state);
+}
 void worm_ui_nuklear_reset_compose_state() {
     auto& dialog = compose_file_dialog_state();
     {

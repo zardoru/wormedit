@@ -173,6 +173,7 @@ struct compose_scene_cache_t {
     std::vector<WormUiComposeQuantizeReportRowView> quantize_preview_row_views;
     std::vector<WormUiComposeQuantizeReportRowView> quantize_applied_row_views;
     std::unordered_map<std::uint64_t, std::uint64_t> bgm_rows_by_id;
+    std::vector<double> bgm_lane_widths_pixels;
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
     std::shared_ptr<const wormedit::editor_area_geometry_snapshot_t> area_object_geometry;
     std::optional<wormedit::timing_index_t> marker_timing_index;
@@ -453,6 +454,7 @@ struct application_command_state_t {
     std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_bookmark_chooser;
     // Pixels the frontend's left dock takes from the Compose field; absent means none.
     std::function<int()> compose_left_dock_pixels;
+    std::function<double(std::uint64_t, std::uint64_t, std::uint64_t)> compose_bgm_lane_width;
     std::function<std::string()> transport_play_pause;
     std::function<std::string()> transport_play_from_start;
     std::function<std::string(std::uint64_t)> transport_seek;

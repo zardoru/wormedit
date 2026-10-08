@@ -89,6 +89,34 @@ static SDL_Window* g_window;
 static SDL_Renderer* g_renderer;
 static struct nk_context* g_context;
 static bool g_headless;
+static SDL_Cursor* g_stem_resize_cursor;
+static bool g_stem_resize_cursor_attempted;
+static bool g_stem_resize_cursor_applied;
+
+static void apply_stem_resize_cursor(bool requested) {
+    if (g_headless || !g_window || !(SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO)) return;
+    if (requested && !g_stem_resize_cursor_attempted) {
+        g_stem_resize_cursor_attempted = true;
+        g_stem_resize_cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_EW_RESIZE);
+    }
+    const auto apply = requested && g_stem_resize_cursor;
+    if (apply == g_stem_resize_cursor_applied) return;
+    auto* cursor = apply ? g_stem_resize_cursor : SDL_GetDefaultCursor();
+    if (cursor && SDL_SetCursor(cursor)) g_stem_resize_cursor_applied = apply;
+}
+static void shutdown_stem_resize_cursor() {
+    apply_stem_resize_cursor(false);
+    if (g_stem_resize_cursor && (SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO))
+        SDL_DestroyCursor(g_stem_resize_cursor);
+    g_stem_resize_cursor = nullptr;
+    g_stem_resize_cursor_applied = g_stem_resize_cursor_attempted = false;
+}
+
+static void clear_inactive_stem_resize_cursor(const WormUiWorkspaceView& view, bool focused) {
+    if (!g_compose_area_shortcuts_active || !focused || view.compose.input_occluded) {
+        apply_stem_resize_cursor(false);
+    }
+}
 static int g_headless_width;
 static int g_headless_height;
 static char g_recovery_save_as_destination[WORM_UI_RECOVERY_DESTINATION_CAPACITY];
@@ -657,6 +685,7 @@ bool worm_ui_frontend_init_headless(int width, int height) {
 }
 
 void worm_ui_frontend_shutdown(void) {
+    shutdown_stem_resize_cursor();
 #if defined(WORMEDIT_HAS_MACOS_MENU)
     wormedit::sys::shutdown_macos_menu();
 #endif
@@ -705,6 +734,7 @@ void worm_ui_frontend_shutdown(void) {
 }
 
 void worm_ui_frontend_begin_input(void) {
+    worm_ui_nuklear_compose_state().stem_lane_resize_cursor_requested = false;
     if (g_context) {
         nk_sdl_begin_frame(g_context);
         nk_input_begin(g_context);
@@ -762,6 +792,9 @@ void worm_ui_frontend_bookmark_chooser_request(WormUiBookmarkChooserRequest* req
     *request = {chooser.first_row, chooser.row_limit, chooser.open};
 }
 
+double worm_ui_frontend_compose_bgm_lane_width(uint64_t project, uint64_t chart, uint64_t lane) {
+    return worm_ui_nuklear_stem_lane_width(worm_ui_nuklear_compose_state(), project, chart, lane);
+}
 void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request) {
     if (!request) return;
     const auto& state = worm_ui_nuklear_compose_state();
@@ -1274,6 +1307,7 @@ static bool handle_workspace_frontend_event(const SDL_Event* event) {
         g_shortcut_event_count = 0;
         g_double_click_count = 0;
         worm_ui_nuklear_compose_handle_focus_lost();
+        apply_stem_resize_cursor(false);
         g_ime_composition_active = false;
     } else if (event->type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
         g_window_focused = true;
@@ -2779,6 +2813,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     worm_ui_nuklear_prepare_compose_panel(&view->compose,
                                           compose_tab_active && !project_modal_active(*view), g_window_focused,
                                           &action);
+    clear_inactive_stem_resize_cursor(*view, g_window_focused);
 
     worm_ui_nuklear_audio_state().sound_list_valid = false;
     worm_ui_nuklear_compose_state().sound_list_valid = false;
@@ -2878,6 +2913,7 @@ bool worm_ui_frontend_hide_notification_history_for_testing(void) {
 }
 
 void worm_ui_frontend_render(int window_width, int window_height) {
+    apply_stem_resize_cursor(worm_ui_nuklear_compose_state().stem_lane_resize_cursor_requested);
     if (window_width <= 0 || window_height <= 0) {
         (void)frontend_window_size(&window_width, &window_height);
     }

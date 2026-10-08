@@ -938,7 +938,9 @@ void project_compose_scene_objects(const compose_scene_projection_context_t& pro
              .semantic_blue =
                  static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->blue : 0),
              .semantic_alpha =
-                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->alpha : 0)}, view.truncated);
+                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->alpha : 0),
+             .move_conflict = static_cast<std::uint8_t>(hold.move_conflict),
+             .move_conflict_occupant = hold.move_conflict_occupant}, view.truncated);
     }
     const auto& endpoints = scene.note_endpoints;
     const auto endpoint_count =
@@ -977,7 +979,9 @@ void project_compose_scene_objects(const compose_scene_projection_context_t& pro
                  endpoint.semantic_color ? endpoint.semantic_color->alpha : 0),
              .paint_preview = endpoint.paint_preview,
              .paint_erase_preview = endpoint.paint_erase_preview,
-             .paint_invalid_preview = endpoint.paint_invalid_preview}, view.truncated);
+             .paint_invalid_preview = endpoint.paint_invalid_preview,
+             .move_conflict = static_cast<std::uint8_t>(endpoint.move_conflict),
+             .move_conflict_occupant = endpoint.move_conflict_occupant}, view.truncated);
     }
     view.truncated = view.truncated || difference_count != differences.size() ||
                      hold_count != holds.size() || endpoint_count != endpoints.size();
@@ -1420,6 +1424,7 @@ bool initialize_compose_view_state(
     view.timing_lane_visibility_mask = effective_compose_timing_lane_mask(application_state);
     view.timing_focus = application_state.compose_timing_focus;
     view.selected_note_count = 0;
+    view.move_conflict_count = 0;
     view.selected_bgm_event_count = 0;
     view.selected_assigned_resource_id = 0;
     view.selected_bgm_event_id = 0;
@@ -2717,6 +2722,8 @@ void populate_compose_selection_preview(
             interaction_view.retained_canvas_selection_range.reset();
         }
     }
+    view.move_conflict_count = retained_state->pending_note_move_gesture
+                                   ? retained_state->pending_note_move_gesture->conflicting_notes : 0;
     view.selected_note_count = retained_state->selected_notes.size();
     view.selected_object_count = retained_state->selected_objects.size();
 }

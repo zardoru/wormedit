@@ -1838,7 +1838,24 @@ static void draw_compose_timing_layer(const ComposePaintContext& paint,
     draw_compose_audio_bookmarks(paint, previous_bookmark_label);
 }
 
-static struct nk_color compose_selection_outline_color() { return nk_rgb(74, 222, 128); }
+static struct nk_color compose_selection_outline_color() {
+    return nk_rgb(74, 222, 128);
+}
+
+static auto compose_move_conflict_color(bool ghost = false) -> nk_color {
+    auto color = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict);
+    color.a = ghost ? 153 : 255;
+    return color;
+}
+
+static void draw_compose_hold_ghost(const ComposePaintContext& paint,
+                                    const WormUiComposeHoldView& hold, const struct nk_rect& rect) {
+    const auto fill =
+        hold.move_conflict ? compose_move_conflict_color(true) : nk_rgba(240, 171, 71, 74);
+    const auto border = hold.move_conflict ? fill : nk_rgb(255, 224, 156);
+    field_rect(paint, rect, 0.0f, fill, 2);
+    field_stroke_rect(paint, rect, 0.0f, 1.4f, border, 2);
+}
 
 static void draw_compose_hold_bodies(const ComposePaintContext& paint) {
     for (size_t index = 0; index < paint.view->hold_body_count; ++index) {
@@ -1848,8 +1865,7 @@ static void draw_compose_hold_bodies(const ComposePaintContext& paint) {
             continue;
         }
         if (hold.proposal_ghost) {
-            field_rect(paint, rect, 0.0f, nk_rgba(240, 171, 71, 74), 2);
-            field_stroke_rect(paint, rect, 0.0f, 1.4f, nk_rgb(255, 224, 156), 2);
+            draw_compose_hold_ghost(paint, hold, rect);
             continue;
         }
         const auto color = hold.proposal_origin
@@ -1863,6 +1879,8 @@ static void draw_compose_hold_bodies(const ComposePaintContext& paint) {
         if (paint.view->hover_note_visible && hold.note_id == paint.view->hover_note_id) {
             field_stroke_rect(paint, rect, 0.0f, 2.0f, nk_rgb(255, 235, 148), 2);
         }
+        if (hold.move_conflict_occupant)
+            field_stroke_rect(paint, rect, 0.0f, 2.0f, compose_move_conflict_color(), 2);
     }
 }
 
@@ -1880,6 +1898,17 @@ static bool compose_note_shows_selection_outline(const WormUiComposeView& view,
     const bool preview = note.proposal_ghost || note.paint_invalid_preview ||
                          note.paint_erase_preview || note.paint_preview;
     return note.selected && !hovered && !preview;
+}
+
+static auto compose_move_note_style(const WormUiComposeNoteView& note, ComposeNoteStyle style)
+    -> ComposeNoteStyle {
+    if (note.proposal_ghost && note.move_conflict)
+        return {compose_move_conflict_color(true), compose_move_conflict_color(true), 2.0f};
+    if (note.move_conflict_occupant) {
+        style.border = compose_move_conflict_color();
+        style.border_width = 2.0f;
+    }
+    return style;
 }
 
 static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
@@ -1921,7 +1950,7 @@ static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
         border = compose_selection_outline_color();
         border_width = 2.0f;
     }
-    return {fill, border, border_width};
+    return compose_move_note_style(note, {fill, border, border_width});
 }
 
 static void draw_compose_arrow_outline(const ComposePaintContext& paint,
@@ -1934,13 +1963,16 @@ static void draw_compose_arrow_outline(const ComposePaintContext& paint,
             {note.semantic_red, note.semantic_green, note.semantic_blue, note.semantic_alpha}, 1);
     }
     const auto style = compose_note_style(*paint.view, note);
-    if (note.selected || note.proposal_ghost || note.paint_preview ||
-        note.paint_erase_preview || note.paint_invalid_preview ||
-        (paint.view->hover_note_visible && note.note_id == paint.view->hover_note_id)) {
-        auto border = note.selected ? nk_rgb(220, 247, 255) : style.border;
-        if (note.proposal_ghost) border.a = 170;
-        paint_field(paint.context).stroke_polygon(
-            2, points, 2.0f, field_color(border), 1);
+    if (note.selected || note.proposal_ghost || note.paint_preview || note.paint_erase_preview ||
+        note.paint_invalid_preview ||
+        (paint.view->hover_note_visible && note.note_id == paint.view->hover_note_id) ||
+        note.move_conflict_occupant) {
+        auto border = note.selected && !note.move_conflict && !note.move_conflict_occupant
+                          ? nk_rgb(220, 247, 255)
+                          : style.border;
+        if (note.proposal_ghost && !note.move_conflict)
+            border.a = 170;
+        paint_field(paint.context).stroke_polygon(2, points, 2.0f, field_color(border), 1);
     }
 }
 
@@ -1955,12 +1987,19 @@ static bool draw_compose_note_glyph(const ComposePaintContext& paint,
         points[index] = {std::trunc(authored[index].x), std::trunc(authored[index].y)};
     // Preserve the existing snap-colored arrow artwork for transient previews.
     const auto transient = compose_note_is_transient(*paint.view, note);
-    const auto color = compose_note_base_fill(transient ?
-        worm_ui_nuklear_compose_color_view_t::snap : worm_ui_nuklear_compose_state().color_view, note);
+    const auto color =
+        note.proposal_ghost && note.move_conflict
+            ? compose_move_conflict_color(true)
+            : compose_note_base_fill(transient ? worm_ui_nuklear_compose_color_view_t::snap
+                                               : worm_ui_nuklear_compose_state().color_view,
+                                     note);
     auto& field = paint_field(paint.context);
     // Proposal ghosts stay translucent so they do not read as materialized notes.
-    const auto alpha = static_cast<std::uint8_t>(note.proposal_ghost ? 120 : 255);
-    field.polygon(2, points, field_color(nk_rgba(color.r, color.g, color.b, note.proposal_ghost ? alpha : color.a)), 1);
+    const auto alpha =
+        static_cast<std::uint8_t>(note.proposal_ghost ? (note.move_conflict ? 153 : 120) : 255);
+    field.polygon(
+        2, points,
+        field_color(nk_rgba(color.r, color.g, color.b, note.proposal_ghost ? alpha : color.a)), 1);
     field.stroke_polygon(2, points, 1, field_color(nk_rgba(17, 24, 34, alpha)), 1);
     draw_compose_arrow_outline(paint, note, points);
     return true;
@@ -2041,7 +2080,7 @@ static void draw_compose_note(const ComposePaintContext& paint,
     if (draw_compose_note_glyph(paint, note, tile)) return;
     field_rect(paint, tile, 0.0f, style.fill, 2);
     auto border = style.border;
-    if (note.proposal_ghost) border.a = 170;
+    if (note.proposal_ghost && !note.move_conflict) border.a = 170;
     field_stroke_rect(paint, tile, 0.0f, style.border_width, border, 2);
     if (note.proposal_ghost) return;
     field_line(paint, tile.x + 1.0f, tile.y + 1.0f,
@@ -2731,15 +2770,30 @@ static void draw_compose_editor_overlays(const ComposePaintContext& paint,
     draw_compose_timing_tooltip(paint);
 }
 
-auto compose_editor_status_hint(const WormUiComposeView* view,
-                                       const WormUiTimingView* timing_view) -> const char* {
+static auto compose_move_status_hint(const WormUiComposeView* view) -> const char* {
+    static std::string message;
+    static std::size_t previous_count = 0;
+    if (!view || view->move_conflict_count == 0)
+        return nullptr;
+    if (previous_count != view->move_conflict_count) {
+        message = std::to_string(view->move_conflict_count) + " notes would overlap";
+        previous_count = view->move_conflict_count;
+    }
+    return message.c_str();
+}
+
+auto compose_editor_status_hint(const WormUiComposeView* view, const WormUiTimingView* timing_view)
+    -> const char* {
+    if (const auto* conflict = compose_move_status_hint(view))
+        return conflict;
     if (view && view->paste_active)
         return view->paste_valid ? "Paste preview · click or Enter commits · Esc cancels"
                                 : (view->paste_diagnostic ? view->paste_diagnostic : "Paste collision");
     if (state.timing_stage_drag_active)
         return "Move timing event · release to keep staged position · Apply to commit";
     if (state.beat_fit_drag_active)
-        return "Fit beat to waveform · Ctrl snaps BPM · Ctrl+Alt snaps onsets · release to commit · Esc cancels";
+        return "Fit beat to waveform · Ctrl snaps BPM · Ctrl+Alt snaps onsets · release to commit "
+               "· Esc cancels";
     if (state.offset_fit_drag_active)
         return "Shift offset to waveform · release to commit · Esc cancels";
     if (state.waveform_beat_zero_drag_active)

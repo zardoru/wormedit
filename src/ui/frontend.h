@@ -635,6 +635,8 @@ typedef struct WormUiComposeHoldView {
     uint8_t semantic_green;
     uint8_t semantic_blue;
     uint8_t semantic_alpha;
+    uint8_t move_conflict; // 0 = valid; core note_move_conflict_t otherwise.
+    bool move_conflict_occupant;
 } WormUiComposeHoldView;
 
 typedef struct WormUiComposeNoteView {
@@ -660,6 +662,8 @@ typedef struct WormUiComposeNoteView {
     bool paint_preview;
     bool paint_erase_preview;
     bool paint_invalid_preview;
+    uint8_t move_conflict; // 0 = valid; core note_move_conflict_t otherwise.
+    bool move_conflict_occupant;
 } WormUiComposeNoteView;
 
 typedef struct WormUiComposeCursorView {
@@ -1565,6 +1569,7 @@ typedef struct WormUiComposeView {
     size_t selected_bgm_event_count;
     size_t semantic_layer_unassigned_bgm_count;
     WormUiBookmarkChooserView bookmark_chooser;
+    size_t move_conflict_count; // Unique moved-note count, before geometry truncation.
 } WormUiComposeView;
 
 typedef struct WormUiTimingSpeedView {

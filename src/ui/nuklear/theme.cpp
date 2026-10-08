@@ -14,7 +14,7 @@ namespace {
 constexpr std::array<std::string_view, static_cast<size_t>(UiColor::count)> ui_names{
     "background", "surface", "surface_hover", "surface_active", "border",
     "border_hover", "text", "text_bright", "text_muted", "selected",
-    "selected_text", "accent", "status"};
+    "selected_text", "accent", "status", "conflict"};
 constexpr std::array<std::string_view, static_cast<size_t>(ComposeColor::count)> compose_names{
     "viewport", "rail", "grid", "label", "overview", "semantic_layer_none"};
 
@@ -23,7 +23,7 @@ std::array<nk_color, ui_names.size()> ui_colors{
     nk_rgb(58, 60, 75), nk_rgb(58, 60, 75), nk_rgb(134, 180, 255),
     nk_rgb(206, 210, 223), nk_rgb(245, 246, 250), nk_rgb(173, 179, 197),
     nk_rgb(20, 92, 227), nk_rgb(255, 255, 255), nk_rgb(201, 211, 94),
-    nk_rgb(30, 31, 40)};
+    nk_rgb(30, 31, 40), nk_rgb(248, 116, 89)};
 std::array<nk_color, compose_names.size()> compose_colors{
     nk_rgb(22, 25, 33), nk_rgb(18, 21, 29), nk_rgb(58, 67, 83),
     nk_rgb(190, 196, 207), nk_rgb(22, 31, 42), nk_rgb(148, 153, 163)};

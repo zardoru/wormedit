@@ -1,6 +1,7 @@
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/virtual_canvas.h>
 #include <wormedit/formats/bmson.h>
+#include <wormedit/formats/native_project.h>
 #include "sys/compose_scroll_geometry.h"
 #include "sys/compose_playhead_cursor.h"
 #include "sys/inline_preview_cursor.h"
@@ -3740,8 +3741,8 @@ TEST_CASE("note move gestures reject collisions and stale revisions without part
         dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
     const auto collision = dispatch_editor_action(
         history, state, update_note_move_gesture_action_t{{measure_id_t{1}, 720}});
-    CHECK_FALSE(collision);
-    CHECK(has_code(collision.diagnostics, diagnostic_code_t::collision));
+    REQUIRE(collision);
+    CHECK(collision.diagnostics.empty());
     CHECK(state.pending_note_move_gesture.has_value());
     CHECK(find_note(history, object_id_t{101})->position == local_position_t{measure_id_t{1}, 240});
 
@@ -3752,7 +3753,7 @@ TEST_CASE("note move gestures reject collisions and stale revisions without part
         history, state, update_note_move_gesture_action_t{{measure_id_t{1}, 480}});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
-    CHECK(state.pending_note_move_gesture.has_value());
+    CHECK_FALSE(state.pending_note_move_gesture.has_value());
     REQUIRE(dispatch_editor_action(
         history, state,
         cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost}));
@@ -3819,8 +3820,8 @@ TEST_CASE("selected note lane moves reject unavailable columns and destination c
         dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
     const auto collision = dispatch_editor_action(
         history, state, update_note_move_gesture_action_t{{measure_id_t{2}, 0}, lane_id_t{2}});
-    CHECK_FALSE(collision);
-    CHECK(has_code(collision.diagnostics, diagnostic_code_t::collision));
+    REQUIRE(collision);
+    CHECK(collision.diagnostics.empty());
     CHECK(find_note(history, object_id_t{101})->lane == lane_id_t{1});
 
     const auto unavailable = dispatch_editor_action(
@@ -3856,8 +3857,8 @@ TEST_CASE("selected note lane moves validate every target lane across layout bou
 
     const auto unavailable = dispatch_editor_action(
         history, state, update_note_move_gesture_action_t{{measure_id_t{1}, 480}, lane_id_t{2}});
-    CHECK_FALSE(unavailable);
-    CHECK(has_code(unavailable.diagnostics, diagnostic_code_t::unknown_lane));
+    REQUIRE(unavailable);
+    CHECK(unavailable.diagnostics.empty());
     CHECK(find_note(history, object_id_t{101})->lane == lane_id_t{1});
     CHECK(find_note(history, object_id_t{102})->lane == lane_id_t{2});
     CHECK(state.pending_note_move_gesture.has_value());
@@ -5581,4 +5582,418 @@ TEST_CASE("missing and stale retained interaction geometry falls back to exact i
     const auto exact_error = inspect_editor_interaction(history, state);
     t475_require(std::holds_alternative<diagnostic_list_t>(exact_error));
     t475_check(t475_results_match(inspect_editor_interaction(history, state, valid), exact_error));
+}
+
+namespace {
+template <typename T>
+void feedback_check(const T& value,
+                    std::source_location location = std::source_location::current()) {
+    INFO("move feedback assertion at " << location.line());
+    CHECK(static_cast<bool>(value));
+}
+template <typename T>
+void feedback_require(const T& value,
+                      std::source_location location = std::source_location::current()) {
+    INFO("move feedback requirement at " << location.line());
+    REQUIRE(static_cast<bool>(value));
+}
+auto feedback_document_bytes(const song_document_t& document) -> std::string {
+    const auto encoded = write_native_project(document);
+    feedback_require(encoded.bytes);
+    return *encoded.bytes;
+}
+struct move_feedback_fixture_t {
+    document_history_t history;
+    editor_interaction_state_t state;
+    song_document_t original;
+
+    move_feedback_fixture_t(song_document_t song, std::vector<object_id_t> selected,
+                            object_id_t reference)
+        : history(make_document_history(std::move(song))), state(make_state(history)),
+          original(history.document) {
+        feedback_require(validate_document(history.document).empty());
+        feedback_require(
+            dispatch_editor_action(history, state, select_editor_notes_action_t{selected}));
+        feedback_require(
+            dispatch_editor_action(history, state, begin_note_move_gesture_action_t{reference}));
+    }
+};
+
+auto move_feedback_song() -> song_document_t {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 0},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, 240}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{2}},
+        {.id = object_id_t{203},
+         .position = {measure_id_t{1}, 600},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, 660}},
+        {.id = object_id_t{204}, .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1}},
+        {.id = object_id_t{205}, .position = {measure_id_t{1}, 720}, .lane = lane_id_t{2}},
+    };
+    return song;
+}
+
+auto feedback_proposal(const editor_interaction_state_t& state, object_id_t id)
+    -> const note_move_preview_t& {
+    feedback_require(state.pending_note_move_gesture);
+    const auto& proposals = state.pending_note_move_gesture->preview;
+    const auto found = std::ranges::find(proposals, id, &note_move_preview_t::note);
+    feedback_require(found != proposals.end());
+    return *found;
+}
+
+void check_feedback_no_document_change(const move_feedback_fixture_t& fixture) {
+    feedback_check(feedback_document_bytes(fixture.history.document) ==
+                   feedback_document_bytes(fixture.original));
+    feedback_check(fixture.history.undo.empty());
+    feedback_check(fixture.history.redo.empty());
+}
+
+void check_feedback_rejected_release(move_feedback_fixture_t& fixture, local_position_t target,
+                                     std::size_t conflicts, lane_id_t lane = {}) {
+    const auto result = dispatch_editor_action(fixture.history, fixture.state,
+                                               release_note_move_gesture_action_t{target, lane});
+    feedback_check(!result);
+    feedback_check(!result.document_changed);
+    feedback_check(!fixture.state.pending_note_move_gesture);
+    feedback_require(result.diagnostics.size() == 1);
+    feedback_check(result.diagnostics.front().severity == diagnostic_severity_t::warning);
+    feedback_check(result.diagnostics.front().message ==
+                   std::to_string(conflicts) + " notes would overlap");
+    check_feedback_no_document_change(fixture);
+}
+} // namespace
+
+TEST_CASE("move collision previews retain all hold occupants and never warn on motion",
+          "[unit][core][interaction][move][collision][t420]") {
+    move_feedback_fixture_t fixture{
+        move_feedback_song(), {object_id_t{101}, object_id_t{102}}, object_id_t{101}};
+    for (int motion = 0; motion < 3; ++motion) {
+        const auto update =
+            dispatch_editor_action(fixture.history, fixture.state,
+                                   update_note_move_gesture_action_t{{measure_id_t{1}, 480}});
+        feedback_require(update);
+        feedback_check(update.diagnostics.empty());
+        feedback_check(!update.document_changed);
+    }
+    const auto& pending = *fixture.state.pending_note_move_gesture;
+    feedback_check(pending.conflicting_notes == 2);
+    feedback_check(pending.occupants ==
+                   std::vector<object_id_t>{object_id_t{203}, object_id_t{204}, object_id_t{205}});
+    const auto& hold = feedback_proposal(fixture.state, object_id_t{101});
+    feedback_check(hold.position == local_position_t{measure_id_t{1}, 480});
+    feedback_check(hold.end == local_position_t{measure_id_t{1}, 720});
+    feedback_check(hold.conflict == note_move_conflict_t::occupied);
+    feedback_check(hold.occupant == object_id_t{203});
+    feedback_check(feedback_proposal(fixture.state, object_id_t{102}).conflict ==
+                   note_move_conflict_t::occupied);
+    check_feedback_no_document_change(fixture);
+    check_feedback_rejected_release(fixture, {measure_id_t{1}, 480}, 2);
+}
+
+TEST_CASE("move conflict recovery commits final geometry with hold spacing and one undo",
+          "[unit][core][interaction][move][collision][t420]") {
+    move_feedback_fixture_t fixture{
+        move_feedback_song(), {object_id_t{101}, object_id_t{102}}, object_id_t{101}};
+    feedback_require(dispatch_editor_action(
+        fixture.history, fixture.state, update_note_move_gesture_action_t{{measure_id_t{1}, 480}}));
+    feedback_require(dispatch_editor_action(
+        fixture.history, fixture.state, update_note_move_gesture_action_t{{measure_id_t{1}, 240}}));
+    feedback_check(fixture.state.pending_note_move_gesture->conflicting_notes == 0);
+    feedback_check(fixture.state.pending_note_move_gesture->occupants.empty());
+    feedback_check(feedback_proposal(fixture.state, object_id_t{101}).conflict ==
+                   note_move_conflict_t::none);
+    const auto release = dispatch_editor_action(
+        fixture.history, fixture.state, release_note_move_gesture_action_t{{measure_id_t{1}, 240}});
+    feedback_require(release);
+    feedback_check(release.document_changed);
+    feedback_check(fixture.history.document.revision == fixture.original.revision + 1);
+    feedback_check(fixture.history.undo.size() == 1);
+    feedback_check(find_note(fixture.history, object_id_t{101})->position ==
+                   local_position_t{measure_id_t{1}, 240});
+    feedback_check(find_note(fixture.history, object_id_t{101})->end ==
+                   local_position_t{measure_id_t{1}, 480});
+    feedback_require(undo_document_command(fixture.history));
+    auto undone = fixture.history.document;
+    undone.revision = fixture.original.revision;
+    feedback_check(feedback_document_bytes(undone) == feedback_document_bytes(fixture.original));
+}
+
+TEST_CASE("move sweep marks both selected participants and later endpoint conflicts",
+          "[unit][core][interaction][move][collision][t420]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout.lanes.push_back(
+        {.id = lane_id_t{3}, .name = "Target", .display_order = 1});
+    chart.lane_layouts.front().layout.lanes.push_back({.id = lane_id_t{4}, .name = "Other source"});
+    chart.measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 0},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, 480}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{2}},
+        {.id = object_id_t{103}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{4}},
+    };
+    move_feedback_fixture_t fixture{
+        std::move(song), {object_id_t{101}, object_id_t{102}, object_id_t{103}}, object_id_t{101}};
+    feedback_require(dispatch_editor_action(
+        fixture.history, fixture.state,
+        update_note_move_gesture_action_t{{measure_id_t{1}, 480}, lane_id_t{3}}));
+    feedback_check(fixture.state.pending_note_move_gesture->conflicting_notes == 3);
+    feedback_check(fixture.state.pending_note_move_gesture->occupants ==
+                   std::vector<object_id_t>{object_id_t{101}, object_id_t{102}, object_id_t{103}});
+    for (const auto& proposal : fixture.state.pending_note_move_gesture->preview) {
+        feedback_check(proposal.conflict == note_move_conflict_t::occupied);
+        feedback_check(proposal.occupant.has_value());
+        feedback_check(proposal.lane == lane_id_t{3});
+    }
+    check_feedback_rejected_release(fixture, {measure_id_t{1}, 480}, 3, lane_id_t{3});
+}
+
+TEST_CASE("move boundary members retain raw display spacing and clipped hold collisions",
+          "[unit][core][interaction][move][collision][boundary][t420]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 0},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, 240}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{2}},
+        {.id = object_id_t{103}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{2}},
+    };
+    chart.measures.back().notes = {
+        {.id = object_id_t{201}, .position = {measure_id_t{2}, 800}, .lane = lane_id_t{1}}};
+    move_feedback_fixture_t fixture{
+        std::move(song), {object_id_t{101}, object_id_t{102}, object_id_t{103}}, object_id_t{101}};
+    const auto update = dispatch_editor_action(
+        fixture.history, fixture.state, update_note_move_gesture_action_t{{measure_id_t{2}, 720}});
+    feedback_require(update);
+    feedback_check(update.diagnostics.empty());
+    const auto& hold = feedback_proposal(fixture.state, object_id_t{101});
+    feedback_check(hold.conflict == note_move_conflict_t::out_of_chart);
+    feedback_check(hold.display_begin_row == 1680.0L);
+    feedback_check(hold.display_end_row == 1920.0L);
+    feedback_check(hold.occupant == object_id_t{201});
+    feedback_check(feedback_proposal(fixture.state, object_id_t{102}).display_begin_row == 1920.0L);
+    feedback_check(feedback_proposal(fixture.state, object_id_t{103}).position ==
+                   local_position_t{measure_id_t{2}, 720});
+    feedback_check(feedback_proposal(fixture.state, object_id_t{103}).conflict ==
+                   note_move_conflict_t::none);
+    feedback_check(fixture.state.pending_note_move_gesture->occupants ==
+                   std::vector<object_id_t>{object_id_t{201}});
+    check_feedback_rejected_release(fixture, {measure_id_t{2}, 720}, 2);
+}
+
+TEST_CASE("move geometry keeps exact integer rows above floating point precision",
+          "[unit][core][interaction][move][arithmetic][t420]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.divisions_per_standard_measure = (std::uint64_t{1} << 54) * 3;
+    constexpr auto row = (std::uint64_t{1} << 53) + 1;
+    chart.measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, row},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, row + 4}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, row + 8}, .lane = lane_id_t{2}},
+    };
+    move_feedback_fixture_t fixture{
+        std::move(song), {object_id_t{101}, object_id_t{102}}, object_id_t{101}};
+    fixture.state.snap_enabled = false;
+    feedback_require(
+        dispatch_editor_action(fixture.history, fixture.state,
+                               update_note_move_gesture_action_t{{measure_id_t{1}, row + 100}}));
+    const auto& hold = feedback_proposal(fixture.state, object_id_t{101});
+    feedback_check(hold.position.row == row + 100);
+    feedback_check(hold.end->row == row + 104);
+    feedback_check(!hold.display_begin_row);
+    feedback_check(feedback_proposal(fixture.state, object_id_t{102}).position.row == row + 108);
+    feedback_require(
+        dispatch_editor_action(fixture.history, fixture.state,
+                               release_note_move_gesture_action_t{{measure_id_t{1}, row + 100}}));
+    feedback_check(find_note(fixture.history, object_id_t{101})->position.row == row + 100);
+    feedback_check(find_note(fixture.history, object_id_t{101})->end->row == row + 104);
+    feedback_check(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("move members before chart retain display holds and inside interval conflicts",
+          "[unit][core][interaction][move][boundary][t420]") {
+    std::uint64_t tail = 120;
+    SECTION("fully outside hold with collapsed integer carrier") {}
+    SECTION("partially outside hold overlapping an occupant") {
+        tail = 480;
+    }
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout.lanes.front().display_order = 1;
+    chart.lane_layouts.front().layout.lanes.push_back(
+        {.id = lane_id_t{4}, .name = "Target", .display_order = 2});
+    chart.measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102},
+         .position = {measure_id_t{1}, 0},
+         .lane = lane_id_t{2},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, tail}},
+        {.id = object_id_t{203}, .position = {measure_id_t{1}, 120}, .lane = lane_id_t{1}},
+    };
+    move_feedback_fixture_t fixture{
+        std::move(song), {object_id_t{101}, object_id_t{102}}, object_id_t{101}};
+    feedback_require(dispatch_editor_action(
+        fixture.history, fixture.state,
+        update_note_move_gesture_action_t{{measure_id_t{1}, 0}, lane_id_t{4}}));
+    const auto& hold = feedback_proposal(fixture.state, object_id_t{102});
+    feedback_check(hold.conflict == note_move_conflict_t::out_of_chart);
+    feedback_check(hold.display_begin_row == -240.0L);
+    feedback_check(hold.display_end_row == static_cast<long double>(tail) - 240);
+    feedback_check(hold.position == local_position_t{measure_id_t{1}, 0});
+    const auto expected = tail == 480 ? std::optional{object_id_t{203}} : std::nullopt;
+    feedback_check(hold.occupant == expected);
+    feedback_check(feedback_proposal(fixture.state, object_id_t{101}).conflict ==
+                   note_move_conflict_t::none);
+    check_feedback_rejected_release(fixture, {measure_id_t{1}, 0}, 1, lane_id_t{4});
+}
+
+TEST_CASE("move illegal lanes retain all geometry and recover before release",
+          "[unit][core][interaction][move][lane][t420]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout.lanes[1].display_order = 1;
+    chart.lane_layouts.front().layout.lanes.push_back(
+        {.id = lane_id_t{3}, .name = "Key3", .display_order = 2});
+    auto reduced = chart.lane_layouts.front().layout;
+    reduced.lanes.pop_back();
+    chart.lane_layouts.push_back(
+        {.id = object_id_t{300}, .position = {measure_id_t{1}, 600}, .layout = reduced});
+    chart.measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
+    };
+    move_feedback_fixture_t fixture{
+        std::move(song), {object_id_t{101}, object_id_t{102}}, object_id_t{101}};
+    feedback_require(dispatch_editor_action(
+        fixture.history, fixture.state,
+        update_note_move_gesture_action_t{{measure_id_t{1}, 480}, lane_id_t{2}}));
+    feedback_check(feedback_proposal(fixture.state, object_id_t{101}).position ==
+                   local_position_t{measure_id_t{1}, 480});
+    const auto& invalid = feedback_proposal(fixture.state, object_id_t{102});
+    feedback_check(invalid.position == local_position_t{measure_id_t{1}, 720});
+    feedback_check(invalid.conflict == note_move_conflict_t::out_of_lane);
+    feedback_check(invalid.display_column == 2);
+    feedback_check(fixture.state.pending_note_move_gesture->conflicting_notes == 1);
+    feedback_require(dispatch_editor_action(
+        fixture.history, fixture.state,
+        update_note_move_gesture_action_t{{measure_id_t{1}, 0}, lane_id_t{2}}));
+    feedback_check(fixture.state.pending_note_move_gesture->conflicting_notes == 0);
+    feedback_require(dispatch_editor_action(
+        fixture.history, fixture.state,
+        release_note_move_gesture_action_t{{measure_id_t{1}, 0}, lane_id_t{2}}));
+    feedback_check(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("move holds detect an unavailable lane anywhere across their target span",
+          "[unit][core][interaction][move][lane][t420]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    auto gap = chart.lane_layouts.front().layout;
+    gap.lanes.erase(gap.lanes.begin());
+    chart.lane_layouts.push_back(
+        {.id = object_id_t{300}, .position = {measure_id_t{1}, 600}, .layout = gap});
+    chart.lane_layouts.push_back({.id = object_id_t{301},
+                                  .position = {measure_id_t{1}, 660},
+                                  .layout = chart.lane_layouts.front().layout});
+    chart.measures.front().notes = {{.id = object_id_t{101},
+                                     .position = {measure_id_t{1}, 0},
+                                     .lane = lane_id_t{1},
+                                     .kind = note_kind_t::hold,
+                                     .end = local_position_t{measure_id_t{1}, 240}}};
+    move_feedback_fixture_t fixture{std::move(song), {object_id_t{101}}, object_id_t{101}};
+    feedback_require(dispatch_editor_action(
+        fixture.history, fixture.state, update_note_move_gesture_action_t{{measure_id_t{1}, 480}}));
+    const auto& hold = feedback_proposal(fixture.state, object_id_t{101});
+    feedback_check(hold.position == local_position_t{measure_id_t{1}, 480});
+    feedback_check(hold.end == local_position_t{measure_id_t{1}, 720});
+    feedback_check(hold.conflict == note_move_conflict_t::out_of_lane);
+    check_feedback_rejected_release(fixture, {measure_id_t{1}, 480}, 1);
+}
+
+TEST_CASE("move warp conflicts remain accepted previews and clear on recovery",
+          "[unit][core][interaction][move][dead-span][t420]") {
+    auto song = make_song();
+    song.charts.front().warps.push_back(
+        {.id = object_id_t{900}, .span = {{measure_id_t{2}, 240}, {measure_id_t{2}, 720}}});
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}}};
+    move_feedback_fixture_t fixture{std::move(song), {object_id_t{101}}, object_id_t{101}};
+    const auto update = dispatch_editor_action(
+        fixture.history, fixture.state, update_note_move_gesture_action_t{{measure_id_t{2}, 480}});
+    feedback_require(update);
+    feedback_check(update.diagnostics.empty());
+    feedback_check(feedback_proposal(fixture.state, object_id_t{101}).position ==
+                   local_position_t{measure_id_t{2}, 480});
+    feedback_check(feedback_proposal(fixture.state, object_id_t{101}).conflict ==
+                   note_move_conflict_t::other);
+    feedback_require(dispatch_editor_action(
+        fixture.history, fixture.state, update_note_move_gesture_action_t{{measure_id_t{2}, 720}}));
+    feedback_check(feedback_proposal(fixture.state, object_id_t{101}).conflict ==
+                   note_move_conflict_t::none);
+    feedback_require(
+        dispatch_editor_action(fixture.history, fixture.state,
+                               release_note_move_gesture_action_t{{measure_id_t{2}, 720}}));
+    feedback_check(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("move release validates its actual final cell and outside chart cancels",
+          "[unit][core][interaction][move][release][t420]") {
+    move_feedback_fixture_t fixture{
+        move_feedback_song(), {object_id_t{101}, object_id_t{102}}, object_id_t{101}};
+    feedback_require(dispatch_editor_action(
+        fixture.history, fixture.state, update_note_move_gesture_action_t{{measure_id_t{1}, 240}}));
+    SECTION("final release moved into conflict") {
+        check_feedback_rejected_release(fixture, {measure_id_t{1}, 480}, 2);
+    }
+    SECTION("final release outside chart") {
+        const auto release =
+            dispatch_editor_action(fixture.history, fixture.state,
+                                   release_note_move_gesture_action_t{{measure_id_t{99}, 0}});
+        feedback_check(!release);
+        feedback_check(!fixture.state.pending_note_move_gesture);
+        check_feedback_no_document_change(fixture);
+    }
+}
+
+TEST_CASE("move range filter retains a hold crossing multiple disjoint proposed ranges",
+          "[unit][core][interaction][move][collision][t420]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
+        {.id = object_id_t{201},
+         .position = {measure_id_t{1}, 600},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{2}, 0}}};
+    move_feedback_fixture_t fixture{
+        std::move(song), {object_id_t{101}, object_id_t{102}}, object_id_t{101}};
+    fixture.state.snap_enabled = false;
+    feedback_require(dispatch_editor_action(
+        fixture.history, fixture.state, update_note_move_gesture_action_t{{measure_id_t{1}, 600}}));
+    const auto& pending = *fixture.state.pending_note_move_gesture;
+    feedback_check(pending.conflicting_notes == 2);
+    feedback_check(pending.occupants == std::vector<object_id_t>{object_id_t{201}});
+    for (const auto& proposal : pending.preview) {
+        feedback_check(proposal.conflict == note_move_conflict_t::occupied);
+        feedback_check(proposal.occupant == object_id_t{201});
+    }
+    check_feedback_rejected_release(fixture, {measure_id_t{1}, 600}, 2);
 }

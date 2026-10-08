@@ -10,7 +10,7 @@ namespace wormedit::ui::theme {
 enum class UiColor {
     background, surface, surface_hover, surface_active, border, border_hover,
     text, text_bright, text_muted, selected, selected_text, accent, status,
-    count
+    conflict, count
 };
 
 enum class ComposeColor { viewport, rail, grid, label, overview, semantic_layer_none, count };

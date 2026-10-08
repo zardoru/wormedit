@@ -5477,3 +5477,182 @@ TEST_CASE("Tool chip BGA uses resource identity and Layer reveals the off-page t
     t475_check(view.semantic_layer_target_row == 99);
     t475_check(std::string_view(view.semantic_layer_target.name) == "Drums 99");
 }
+
+namespace {
+auto move_feedback_dispatch_song() -> song_document_t {
+    auto song = compose_test_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 240},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, 360}},
+        {.id = object_id_t{201},
+         .position = {measure_id_t{1}, 600},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, 660}},
+        {.id = object_id_t{202}, .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1}}};
+    return song;
+}
+struct move_feedback_dispatch_fixture_t {
+    compose_test_fixture_t compose;
+    notification_center_t center;
+    notification_sink_t sink{center};
+    double x{}, pixels_per_row{};
+    explicit move_feedback_dispatch_fixture_t(song_document_t song = move_feedback_dispatch_song())
+        : compose(std::move(song)) {
+        compose.application.edit_snap_enabled = false;
+        compose.project();
+        expect_compose_test(static_cast<bool>(
+            dispatch_editor_action(compose.history, *compose.interaction,
+                                   select_editor_notes_action_t{{object_id_t{101}}})));
+        compose.project();
+        const auto& view = compose.flattened.view.compose;
+        const auto endpoints = std::span(view.note_endpoints, view.note_endpoint_count);
+        const auto source = std::ranges::find_if(
+            endpoints, [](const auto& note) { return note.note_id == 101 && !note.tail; });
+        expect_compose_test(source != endpoints.end());
+        x = (source->bounds.left + source->bounds.right) * .5;
+        pixels_per_row = view.pixels_per_standard_measure / 960;
+        (void)dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN, 240);
+        expect_compose_test(compose.interaction->pending_note_move_gesture.has_value());
+    }
+    auto dispatch(WormUiComposeInputKind kind, double row) -> std::string {
+        WormUiWorkspaceAction action{};
+        action.compose_input_project_id = compose.history.document.id.value;
+        action.compose_input_chart_id = 1;
+        action.compose_input_document_revision = compose.history.document.revision;
+        action.compose_input_count = 1;
+        const auto& view = compose.flattened.view.compose;
+        const auto downscroll = compose.cache.preview_scene_request.scroll_direction ==
+            editor_field_scroll_direction_t::down;
+        action.compose_inputs[0] = {
+            .kind = kind,
+            .x_pixels = x,
+            .y_pixels = compose_project_y(row + .000001, pixels_per_row,
+                compose.interaction->viewport_scroll_pixels, view.viewport_height_pixels,
+                downscroll)};
+        action.compose_input_viewport_width_pixels =
+            compose.flattened.view.compose.viewport_width_pixels;
+        viewport_input_controller_t viewport;
+        editor_navigation_input_controller_t navigation;
+        return dispatch_compose_input_action(action, compose.history, *compose.binding.workspace,
+                                             *compose.interaction, viewport, navigation,
+                                             compose.application, compose.cache, 0, &sink);
+    }
+};
+void check_projected_move_conflicts(move_feedback_dispatch_fixture_t& fixture) {
+    fixture.compose.project();
+    const auto& view = fixture.compose.flattened.view.compose;
+    expect_compose_test(view.move_conflict_count == 1);
+    const auto endpoints = std::span(view.note_endpoints, view.note_endpoint_count);
+    expect_compose_test(std::ranges::count_if(endpoints, [](const auto& note) {
+                            return note.proposal_ghost && note.move_conflict != 0;
+                        }) == 2);
+    expect_compose_test(std::ranges::count_if(endpoints, [](const auto& note) {
+                            return note.move_conflict_occupant;
+                        }) == 3);
+    expect_compose_test(std::ranges::any_of(
+        std::span(view.hold_bodies, view.hold_body_count),
+        [](const auto& hold) { return hold.proposal_ghost && hold.move_conflict != 0; }));
+    expect_compose_test(std::ranges::any_of(
+        std::span(view.hold_bodies, view.hold_body_count),
+        [](const auto& hold) { return hold.note_id == 201 && hold.move_conflict_occupant; }));
+}
+void check_move_release_warning(move_feedback_dispatch_fixture_t& fixture) {
+    fixture.center.drain_inbox(notification_time_t{0});
+    const auto messages = fixture.center.snapshot(notification_capacity);
+    expect_compose_test(messages.size() == 1);
+    expect_compose_test(messages.front().severity == notification_severity_t::warning);
+    expect_compose_test(messages.front().message == "1 notes would overlap");
+    expect_compose_test(!fixture.compose.interaction->pending_note_move_gesture);
+    expect_compose_test(fixture.compose.history.document.revision == 1);
+    expect_compose_test(fixture.compose.history.undo.empty());
+    expect_compose_test(fixture.compose.history.redo.empty());
+}
+} // namespace
+
+TEST_CASE("Compose move motion projects all conflicts without notifications and release warns once",
+          "[sys][compose][move][t420]") {
+    move_feedback_dispatch_fixture_t fixture;
+    for (int motion = 0; motion < 3; ++motion)
+        (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 600);
+    fixture.center.drain_inbox(notification_time_t{0});
+    expect_compose_test(fixture.center.snapshot(notification_capacity).empty());
+    INFO("Actual move target " << fixture.compose.interaction->pending_note_move_gesture->preview_position.measure.value
+         << ":" << fixture.compose.interaction->pending_note_move_gesture->preview_position.row
+         << " snap=" << fixture.compose.interaction->snap_enabled
+         << " scroll=" << fixture.compose.interaction->viewport_scroll_pixels);
+    expect_compose_test(fixture.compose.interaction->pending_note_move_gesture->preview_position ==
+                        local_position_t{measure_id_t{1}, 600});
+    check_projected_move_conflicts(fixture);
+    const auto status = fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 600);
+    expect_compose_test(status == "1 notes would overlap");
+    check_move_release_warning(fixture);
+}
+
+TEST_CASE("Compose move conflict recovery commits one undo and clears projected flags",
+          "[sys][compose][move][t420]") {
+    move_feedback_dispatch_fixture_t fixture;
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 600);
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 120);
+    fixture.compose.project();
+    expect_compose_test(fixture.compose.flattened.view.compose.move_conflict_count == 0);
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 120);
+    expect_compose_test(fixture.compose.history.undo.size() == 1);
+    expect_compose_test(fixture.compose.history.document.revision == 2);
+    const auto& notes = fixture.compose.history.document.charts.front().measures.front().notes;
+    const auto moved = std::ranges::find(notes, object_id_t{101}, [](const auto& note) { return note.id; });
+    expect_compose_test(moved != notes.end());
+    INFO("Actual recovered note " << moved->position.measure.value << ":" << moved->position.row);
+    expect_compose_test(moved->position == local_position_t{measure_id_t{1}, 120});
+    expect_compose_test(moved->end == local_position_t{measure_id_t{1}, 240});
+    fixture.compose.project();
+    const auto& view = fixture.compose.flattened.view.compose;
+    expect_compose_test(view.move_conflict_count == 0);
+    expect_compose_test(std::ranges::none_of(
+        std::span(view.note_endpoints, view.note_endpoint_count),
+        [](const auto& note) { return note.move_conflict || note.move_conflict_occupant; }));
+}
+
+TEST_CASE("Compose move release outside actual chart geometry cancels without editing",
+          "[sys][compose][move][t420]") {
+    move_feedback_dispatch_fixture_t fixture;
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 120);
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 100000);
+    expect_compose_test(!fixture.compose.interaction->pending_note_move_gesture);
+    expect_compose_test(fixture.compose.history.document.revision == 1);
+    expect_compose_test(fixture.compose.history.undo.empty());
+}
+
+TEST_CASE("Compose vertical move through an empty target layout keeps red proposals until release",
+          "[sys][compose][move][t420]") {
+    auto song = move_feedback_dispatch_song();
+    auto& chart = song.charts.front();
+    chart.measures.push_back({.id = measure_id_t{2}});
+    chart.lane_layouts.push_back({.id = object_id_t{300},
+                                  .position = {measure_id_t{2}, 0},
+                                  .layout = {.profile_id = "empty-target"}});
+    move_feedback_dispatch_fixture_t fixture{std::move(song)};
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 1000);
+    expect_compose_test(fixture.compose.interaction->pending_note_move_gesture.has_value());
+    const auto& pending = *fixture.compose.interaction->pending_note_move_gesture;
+    INFO("Actual empty-layout target " << pending.preview_position.measure.value << ":" << pending.preview_position.row);
+    expect_compose_test(pending.preview_position == local_position_t{measure_id_t{2}, 40});
+    expect_compose_test(pending.preview.front().conflict == note_move_conflict_t::out_of_lane);
+    fixture.compose.project();
+    expect_compose_test(fixture.compose.flattened.view.compose.move_conflict_count == 1);
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 1000);
+    check_move_release_warning(fixture);
+}
+
+TEST_CASE("Compose no-hit move outside the horizontal field cancels without editing",
+          "[sys][compose][move][t420]") {
+    move_feedback_dispatch_fixture_t fixture;
+    fixture.x = -10000;
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 600);
+    expect_compose_test(!fixture.compose.interaction->pending_note_move_gesture);
+    expect_compose_test(fixture.compose.history.document.revision == 1);
+    expect_compose_test(fixture.compose.history.undo.empty());
+}

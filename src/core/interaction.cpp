@@ -1297,6 +1297,12 @@ struct moved_note_t {
     std::uint64_t end{};
     local_position_t position;
     std::optional<local_position_t> end_position;
+    note_move_conflict_t conflict{note_move_conflict_t::none};
+    std::optional<object_id_t> occupant;
+    std::optional<std::int64_t> display_column;
+    std::size_t display_columns{};
+    std::optional<long double> display_begin_row;
+    std::optional<long double> display_end_row;
 };
 
 struct note_move_plan_t {
@@ -1305,6 +1311,7 @@ struct note_move_plan_t {
     local_position_t reference_position;
     std::vector<object_id_t> notes;
     std::vector<moved_note_t> moved;
+    std::vector<object_id_t> occupants;
 };
 
 struct note_move_parameters_t {
@@ -1316,6 +1323,16 @@ struct note_move_parameters_t {
     lane_id_t target_lane;
     std::int64_t lane_delta{};
 };
+
+auto known_move_lane(const chart_document_t& chart, lane_id_t id) -> const lane_definition_t* {
+    for (const auto& layout : chart.lane_layouts) {
+        for (const auto& lane : layout.layout.lanes) {
+            if (lane.id == id && editable_lane(lane))
+                return &lane;
+        }
+    }
+    return nullptr;
+}
 
 auto resolve_note_move_parameters(const chart_document_t& chart, const measure_index_t& index,
                                   std::vector<object_id_t>& targets, object_id_t reference_id,
@@ -1352,6 +1369,8 @@ auto resolve_note_move_parameters(const chart_document_t& chart, const measure_i
     const auto* source_lane = find_active_lane(chart, index, reference->position, reference->lane);
     const auto desired_lane = preserve ? reference->lane : requested_lane;
     const auto* destination = find_active_lane(chart, index, *snapped, desired_lane);
+    if (!destination)
+        destination = known_move_lane(chart, desired_lane);
     if (!source_lane || !destination)
         return diagnostic_list_t{error(diagnostic_code_t::unknown_lane,
             "note move reference lane is unavailable at its target row", reference_id)};
@@ -1362,6 +1381,13 @@ auto resolve_note_move_parameters(const chart_document_t& chart, const measure_i
                                       static_cast<std::int64_t>(source_lane->display_order)};
 }
 
+struct move_destination_t {
+    lane_id_t lane;
+    std::int64_t column{};
+    bool available{};
+    std::size_t columns{};
+};
+
 struct note_move_context_t {
     const chart_document_t& chart;
     const measure_index_t& index;
@@ -1369,7 +1395,17 @@ struct note_move_context_t {
     const std::unordered_map<std::uint64_t, const note_t*>& targets;
     std::vector<duration_collision_interval_t>& collisions;
 
-    auto lane_available_across(std::uint64_t begin, std::uint64_t end, lane_id_t lane) const -> bool {
+    auto display_columns(local_position_t position, local_position_t source) const -> std::size_t {
+        const auto count = [](const lane_layout_t* layout) -> std::size_t {
+            return layout ? std::ranges::count_if(layout->lanes, editable_lane) : 0;
+        };
+        const auto current = count(effective_layout(chart, index, position));
+        return current ? current
+                       : std::max<std::size_t>(1, count(effective_layout(chart, index, source)));
+    }
+
+    auto lane_available_across(std::uint64_t begin, std::uint64_t end, lane_id_t lane) const
+        -> bool {
         const auto first = position_at(index, begin);
         const auto last = position_at(index, end);
         if (!first || !last || !find_active_lane(chart, index, *first, lane) ||
@@ -1383,32 +1419,55 @@ struct note_move_context_t {
     }
 
     auto destination_lane(const note_t& note, local_position_t position)
-        -> std::variant<lane_id_t, diagnostic_t> {
-        if (parameters.preserve_lanes) return note.lane;
+        -> std::variant<move_destination_t, diagnostic_t> {
         const auto* source = find_active_lane(chart, index, note.position, note.lane);
         if (!source)
             return error(diagnostic_code_t::unknown_lane,
                          "selected note move source lane is unavailable", note.id);
-        const auto column = static_cast<std::int64_t>(source->display_order) +
-                            parameters.lane_delta;
-        if (column < 0 || column > static_cast<std::int64_t>(
-                                      std::numeric_limits<std::uint32_t>::max()))
-            return error(diagnostic_code_t::unknown_lane,
-                         "selected note move would leave the editable lane columns", note.id);
+        const auto columns = display_columns(position, note.position);
+        if (parameters.preserve_lanes) {
+            const auto* active = find_active_lane(chart, index, position, note.lane);
+            return move_destination_t{note.lane,
+                                      active ? active->display_order : source->display_order,
+                                      active != nullptr, columns};
+        }
+        const auto column =
+            static_cast<std::int64_t>(source->display_order) + parameters.lane_delta;
         const auto* layout = effective_layout(chart, index, position);
         if (!layout)
-            return error(diagnostic_code_t::unknown_lane,
-                         "selected note target layout is unavailable", note.id);
+            return move_destination_t{{}, column, false, columns};
         const auto found = std::ranges::find_if(layout->lanes, [&](const auto& candidate) {
             return editable_lane(candidate) &&
-                   candidate.display_order == static_cast<std::uint32_t>(column);
+                   static_cast<std::int64_t>(candidate.display_order) == column;
         });
         if (found == layout->lanes.end())
-            return error(diagnostic_code_t::unknown_lane,
-                         "selected note target lane is unavailable", note.id);
-        return found->id;
+            return move_destination_t{{}, column, false, columns};
+        return move_destination_t{found->id, column, true, columns};
     }
 };
+
+struct shifted_move_row_t {
+    std::uint64_t row{};
+    bool before_chart{};
+    bool after_chart{};
+};
+
+auto shifted_move_row(std::uint64_t row, std::uint64_t last,
+                      const note_move_parameters_t& parameters) -> shifted_move_row_t {
+    if (parameters.forward) {
+        if (parameters.delta > last - row)
+            return {last, false, true};
+        return {row + parameters.delta, false, false};
+    }
+    if (parameters.delta > row)
+        return {0, true, false};
+    return {row - parameters.delta, false, false};
+}
+
+auto display_move_row(std::uint64_t row, const note_move_parameters_t& parameters) -> long double {
+    const auto delta = static_cast<long double>(parameters.delta);
+    return static_cast<long double>(row) + (parameters.forward ? delta : -delta);
+}
 
 auto move_one_note(note_move_context_t& context, object_id_t id, note_move_plan_t& plan)
     -> std::optional<diagnostic_t> {
@@ -1419,15 +1478,15 @@ auto move_one_note(note_move_context_t& context, object_id_t id, note_move_plan_
                      "selected note move contains a non-tap/hold note", id);
     const auto begin = absolute_row(context.index, note->position);
     const auto end = note->end ? absolute_row(context.index, *note->end) : begin;
-    if (!begin || !end || (!context.parameters.forward && context.parameters.delta > *begin) ||
-        (context.parameters.forward &&
-         context.parameters.delta > context.index.total_rows - 1 - *end))
+    if (!begin || !end || *end < *begin)
         return error(diagnostic_code_t::row_out_of_range,
-                     "selected note move would leave chart geometry", id);
-    const auto moved_begin = context.parameters.forward ? *begin + context.parameters.delta
-                                                        : *begin - context.parameters.delta;
-    const auto moved_end = context.parameters.forward ? *end + context.parameters.delta
-                                                      : *end - context.parameters.delta;
+                     "selected note move source lies outside chart geometry", id);
+    const auto last = context.index.total_rows - 1;
+    const auto shifted_begin = shifted_move_row(*begin, last, context.parameters);
+    const auto shifted_end = shifted_move_row(*end, last, context.parameters);
+    const auto outside = shifted_begin.before_chart || shifted_end.after_chart;
+    const auto moved_begin = shifted_begin.row;
+    const auto moved_end = shifted_end.row;
     const auto position = position_at(context.index, moved_begin);
     const auto end_position = note->end ? position_at(context.index, moved_end)
                                         : std::optional<local_position_t>{};
@@ -1435,69 +1494,186 @@ auto move_one_note(note_move_context_t& context, object_id_t id, note_move_plan_
         return error(diagnostic_code_t::row_out_of_range,
                      "selected note move could not resolve its target row", id);
     auto destination = context.destination_lane(*note, *position);
-    if (const auto* failure = std::get_if<diagnostic_t>(&destination)) return *failure;
-    const auto lane = std::get<lane_id_t>(destination);
-    if (!context.lane_available_across(moved_begin, moved_end, lane))
-        return error(diagnostic_code_t::unknown_lane,
-                     "selected note target lane is unavailable at its moved position", id);
-    plan.moved.push_back({id, lane, moved_begin, moved_end, *position, end_position});
-    context.collisions.push_back({lane, moved_begin, moved_end, id, true});
+    if (const auto* failure = std::get_if<diagnostic_t>(&destination))
+        return *failure;
+    const auto target = std::get<move_destination_t>(destination);
+    const auto available =
+        target.available && context.lane_available_across(moved_begin, moved_end, target.lane);
+    auto conflict = available ? note_move_conflict_t::none : note_move_conflict_t::out_of_lane;
+    if (available && head_blocked_by_warp(context.chart, context.index, moved_begin, note->kind))
+        conflict = note_move_conflict_t::other;
+    if (outside)
+        conflict = note_move_conflict_t::out_of_chart;
+    plan.moved.push_back(
+        {id,
+         target.lane,
+         moved_begin,
+         moved_end,
+         *position,
+         end_position,
+         conflict,
+         {},
+         target.column,
+         target.columns,
+         outside ? std::optional{display_move_row(*begin, context.parameters)} : std::nullopt,
+         outside && note->end ? std::optional{display_move_row(*end, context.parameters)}
+                              : std::nullopt});
+    // Partially visible invalid holds still occupy their safely clipped interval.
+    if (target.available && !shifted_begin.after_chart && !shifted_end.before_chart)
+        context.collisions.push_back({target.lane, moved_begin, moved_end, id, true});
     return std::nullopt;
 }
 
-struct note_move_collision_sweep_t {
-    using queue_t = std::priority_queue<active_duration_collision_t,
-        std::vector<active_duration_collision_t>, earliest_duration_collision_t>;
-    queue_t moved;
-    queue_t existing;
-    lane_id_t lane{};
-    bool has_lane{};
+struct active_move_intervals_t {
+    using queue_t =
+        std::priority_queue<active_duration_collision_t, std::vector<active_duration_collision_t>,
+                            earliest_duration_collision_t>;
+    queue_t endings;
+    std::set<std::uint64_t> active;
+    std::set<std::uint64_t> unmarked;
+    std::set<std::uint64_t> unoutlined;
 
-    auto process(const duration_collision_interval_t& interval) -> std::optional<diagnostic_t> {
-        if (!has_lane || interval.lane != lane) {
-            moved = queue_t{};
-            existing = queue_t{};
-            lane = interval.lane;
-            has_lane = true;
+    void expire(std::uint64_t begin) {
+        // Holds occupy both endpoints; an equal end remains active.
+        while (!endings.empty() && endings.top().end < begin) {
+            const auto id = endings.top().note.value;
+            active.erase(id);
+            unmarked.erase(id);
+            unoutlined.erase(id);
+            endings.pop();
         }
-        while (!moved.empty() && moved.top().end < interval.begin) moved.pop();
-        while (!existing.empty() && existing.top().end < interval.begin) existing.pop();
-        if (interval.resizing) return process_moved(interval);
-        return process_existing(interval);
     }
-    auto process_moved(const duration_collision_interval_t& interval)
-        -> std::optional<diagnostic_t> {
-        if (!moved.empty())
-            return error(diagnostic_code_t::collision,
-                         "moved selected notes overlap on one lane", interval.note);
-        if (!existing.empty())
-            return error(diagnostic_code_t::collision,
-                         "moved note overlaps an unselected same-lane note", existing.top().note);
-        moved.push({interval.end, interval.note});
-        return std::nullopt;
-    }
-    auto process_existing(const duration_collision_interval_t& interval)
-        -> std::optional<diagnostic_t> {
-        if (!moved.empty())
-            return error(diagnostic_code_t::collision,
-                         "moved note overlaps an unselected same-lane note", interval.note);
-        existing.push({interval.end, interval.note});
-        return std::nullopt;
+    void insert(const duration_collision_interval_t& interval, bool track_outline = false) {
+        endings.push({interval.end, interval.note});
+        active.insert(interval.note.value);
+        unmarked.insert(interval.note.value);
+        if (track_outline)
+            unoutlined.insert(interval.note.value);
     }
 };
 
-auto validate_move_collisions(std::vector<duration_collision_interval_t>& collisions)
-    -> std::optional<diagnostic_t> {
-    std::ranges::sort(collisions, [](const auto& left, const auto& right) {
-        if (left.lane != right.lane) return left.lane.value < right.lane.value;
-        if (left.begin != right.begin) return left.begin < right.begin;
-        if (left.end != right.end) return left.end < right.end;
-        return left.resizing < right.resizing;
-    });
-    note_move_collision_sweep_t sweep;
+struct note_move_collision_sweep_t {
+    note_move_plan_t& plan;
+    std::unordered_map<std::uint64_t, std::size_t> moved_indices;
+    std::set<std::uint64_t> occupants;
+    active_move_intervals_t moved;
+    active_move_intervals_t existing;
+    lane_id_t lane{};
+    bool has_lane{};
+
+    explicit note_move_collision_sweep_t(note_move_plan_t& proposed) : plan(proposed) {
+        for (std::size_t index = 0; index < plan.moved.size(); ++index)
+            moved_indices.emplace(plan.moved[index].id.value, index);
+    }
+    void mark_moved(std::uint64_t id, std::uint64_t occupant) {
+        auto& note = plan.moved[moved_indices.at(id)];
+        if (note.conflict == note_move_conflict_t::none)
+            note.conflict = note_move_conflict_t::occupied;
+        if (!note.occupant)
+            note.occupant = object_id_t{occupant};
+        occupants.insert(occupant);
+        moved.unmarked.erase(id);
+    }
+    void mark_active_moved(std::uint64_t occupant) {
+        // Each interval leaves this set on its first conflict, avoiding pair enumeration.
+        while (!moved.unmarked.empty())
+            mark_moved(*moved.unmarked.begin(), occupant);
+    }
+    void mark_active_existing() {
+        occupants.insert(existing.unmarked.begin(), existing.unmarked.end());
+        existing.unmarked.clear();
+    }
+    void process_moved(const duration_collision_interval_t& interval) {
+        if (!existing.active.empty()) {
+            mark_moved(interval.note.value, *existing.active.begin());
+            mark_active_existing();
+        }
+        if (!moved.active.empty()) {
+            occupants.insert(moved.unoutlined.begin(), moved.unoutlined.end());
+            moved.unoutlined.clear();
+            occupants.insert(interval.note.value);
+            mark_moved(interval.note.value, *moved.active.begin());
+            mark_active_moved(interval.note.value);
+        }
+        moved.insert(interval, true);
+        if (plan.moved[moved_indices.at(interval.note.value)].occupant)
+            moved.unmarked.erase(interval.note.value);
+        if (occupants.contains(interval.note.value))
+            moved.unoutlined.erase(interval.note.value);
+    }
+    void process_existing(const duration_collision_interval_t& interval) {
+        existing.insert(interval);
+        if (!moved.active.empty()) {
+            occupants.insert(interval.note.value);
+            existing.unmarked.erase(interval.note.value);
+            mark_active_moved(interval.note.value);
+        }
+    }
+    void process(const duration_collision_interval_t& interval) {
+        if (!has_lane || interval.lane != lane) {
+            moved = {};
+            existing = {};
+            lane = interval.lane;
+            has_lane = true;
+        }
+        moved.expire(interval.begin);
+        existing.expire(interval.begin);
+        if (interval.resizing)
+            process_moved(interval);
+        else
+            process_existing(interval);
+    }
+};
+
+auto merged_move_ranges(const std::vector<duration_collision_interval_t>& collisions,
+                        std::size_t moved_count) -> std::vector<duration_collision_interval_t> {
+    std::vector<duration_collision_interval_t> ranges;
+    ranges.reserve(moved_count);
     for (const auto& interval : collisions)
-        if (auto failure = sweep.process(interval)) return failure;
-    return std::nullopt;
+        if (interval.resizing)
+            ranges.push_back(interval);
+    std::ranges::sort(ranges, [](const auto& left, const auto& right) {
+        return std::tie(left.lane.value, left.begin, left.end) <
+               std::tie(right.lane.value, right.begin, right.end);
+    });
+    std::size_t merged = 0;
+    for (const auto& range : ranges) {
+        if (merged != 0 && ranges[merged - 1].lane == range.lane &&
+            range.begin <= ranges[merged - 1].end) {
+            ranges[merged - 1].end = std::max(ranges[merged - 1].end, range.end);
+        } else {
+            ranges[merged++] = range;
+        }
+    }
+    ranges.resize(merged);
+    return ranges;
+}
+
+auto overlaps_move_range(const duration_collision_interval_t& interval,
+                         const std::vector<duration_collision_interval_t>& ranges) -> bool {
+    const auto key = std::pair{interval.lane.value, interval.begin};
+    const auto found = std::ranges::lower_bound(
+        ranges, key, {}, [](const auto& range) { return std::pair{range.lane.value, range.end}; });
+    return found != ranges.end() && found->lane == interval.lane && found->begin <= interval.end;
+}
+
+void mark_move_collisions(std::vector<duration_collision_interval_t>& collisions,
+                          note_move_plan_t& plan) {
+    const auto ranges = merged_move_ranges(collisions, plan.moved.size());
+    // Only intervals intersecting a proposed closed range can be occupants. Keeping all moved
+    // intervals preserves selected-selected conflicts, including clipped invalid hold portions.
+    std::erase_if(collisions, [&](const auto& interval) {
+        return !interval.resizing && !overlaps_move_range(interval, ranges);
+    });
+    std::ranges::sort(collisions, [](const auto& left, const auto& right) {
+        return std::tie(left.lane.value, left.begin, left.end, left.resizing, left.note.value) <
+               std::tie(right.lane.value, right.begin, right.end, right.resizing, right.note.value);
+    });
+    note_move_collision_sweep_t sweep{plan};
+    for (const auto& interval : collisions)
+        sweep.process(interval);
+    for (const auto id : sweep.occupants)
+        plan.occupants.push_back(object_id_t{id});
 }
 
 auto plan_note_move(const chart_document_t& chart, const measure_index_t& index,
@@ -1535,15 +1711,9 @@ auto plan_note_move(const chart_document_t& chart, const measure_index_t& index,
         .targets = collected.target_notes, .collisions = collected.collisions};
     plan.moved.reserve(plan.notes.size());
     for (const auto id : plan.notes)
-        if (auto failure = move_one_note(context, id, plan)) return diagnostic_list_t{*failure};
-    if (auto failure = validate_move_collisions(collected.collisions))
-        return diagnostic_list_t{*failure};
-    for (const auto& moved : plan.moved) {
-        const auto* source = find_note(chart, moved.id);
-        const auto row = absolute_row(index, moved.position);
-        if (source && row && head_blocked_by_warp(chart, index, *row, source->kind))
-            return diagnostic_list_t{error(diagnostic_code_t::invalid_hold, "playable note heads cannot sit inside a warp")};
-    }
+        if (auto failure = move_one_note(context, id, plan))
+            return diagnostic_list_t{*failure};
+    mark_move_collisions(collected.collisions, plan);
     return plan;
 }
 
@@ -1551,9 +1721,16 @@ auto move_previews(const note_move_plan_t& plan) -> std::vector<note_move_previe
     std::vector<note_move_preview_t> result;
     result.reserve(plan.moved.size());
     for (const auto& note : plan.moved) {
-        result.push_back({note.id, note.lane, note.position, note.end_position});
+        result.push_back({note.id, note.lane, note.position, note.end_position, note.conflict,
+                          note.occupant, note.display_column, note.display_columns,
+                          note.display_begin_row, note.display_end_row});
     }
     return result;
+}
+
+auto move_conflict_count(const note_move_plan_t& plan) -> std::size_t {
+    return std::ranges::count_if(
+        plan.moved, [](const auto& note) { return note.conflict != note_move_conflict_t::none; });
 }
 
 auto diagnostic_result(const document_history_t& history, const editor_interaction_state_t& state,
@@ -2375,6 +2552,8 @@ auto begin_note_move_gesture(note_gesture_context_t& context, object_id_t refere
         .notes = plan.notes,
         .preview_position = plan.reference_position,
         .preview = move_previews(plan),
+        .occupants = plan.occupants,
+        .conflicting_notes = move_conflict_count(plan),
     };
     const auto view = make_view(context.history, state);
     return {
@@ -2397,17 +2576,21 @@ auto update_note_move_gesture(note_gesture_context_t& context,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "note move update requires an active gesture")});
     const auto pending = *state.pending_note_move_gesture;
-    if (pending.document_revision != context.history.document.revision)
+    if (pending.document_revision != context.history.document.revision) {
+        state.pending_note_move_gesture.reset();
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "note move gesture is stale after a document edit")});
-    auto planned = context.make_move_plan(pending.notes, pending.reference_note,
-                                          requested_position, requested_lane, false);
+    }
+    auto planned = context.make_move_plan(pending.notes, pending.reference_note, requested_position,
+                                          requested_lane, false);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, state, *diagnostics);
     const auto& plan = std::get<note_move_plan_t>(planned);
     state.pending_note_move_gesture->preview_position = plan.reference_position;
     state.pending_note_move_gesture->preview = move_previews(plan);
+    state.pending_note_move_gesture->occupants = plan.occupants;
+    state.pending_note_move_gesture->conflicting_notes = move_conflict_count(plan);
     const auto view = make_view(context.history, state);
     return {
         .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
@@ -2438,7 +2621,15 @@ auto release_note_move_gesture(note_gesture_context_t& context,
                                           pending.preview_position, requested_lane, true);
     if (auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return reject(std::move(*diagnostics));
-    return context.apply_move_plan(std::get<note_move_plan_t>(planned));
+    const auto& plan = std::get<note_move_plan_t>(planned);
+    const auto conflicts = move_conflict_count(plan);
+    if (conflicts != 0) {
+        auto warning =
+            error(diagnostic_code_t::collision, std::to_string(conflicts) + " notes would overlap");
+        warning.severity = diagnostic_severity_t::warning;
+        return reject({std::move(warning)});
+    }
+    return context.apply_move_plan(plan);
 }
 
 auto dispatch_note_gesture(note_gesture_context_t& context, const editor_ui_action_t& action)

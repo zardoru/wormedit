@@ -3157,3 +3157,115 @@ TEST_CASE("Quantize popup owns right clicks over underlying preset chips through
     CHECK_FALSE(compose_quantize_owns_input());
     open_quantize_preset_menu(harness);
 }
+
+namespace {
+auto move_event_input(const workspace_action_snapshot_t& frame, WormUiComposeInputKind kind)
+    -> const WormUiComposeInputAction& {
+    const auto& action = frame.get();
+    for (std::size_t index = 0; index < action.compose_input_count; ++index)
+        if (action.compose_inputs[index].kind == kind)
+            return action.compose_inputs[index];
+    FAIL("Expected move input kind " << static_cast<int>(kind));
+    return action.compose_inputs[0];
+}
+struct move_event_fixture_t {
+    nuklear_event_harness_t harness{1280, 900};
+    std::array<WormUiComposeNoteView, 3> notes{};
+    std::array<WormUiComposeHoldView, 1> holds{};
+    move_event_fixture_t() {
+        expect_lane_key(harness.ready());
+        const std::array motion{motion_event(300, 400)};
+        const auto hover = harness.frame(motion);
+        expect_lane_key(hover.get().compose_has_pointer_hover);
+        const auto x = hover.get().compose_pointer_hover_x_pixels;
+        const auto y = hover.get().compose_pointer_hover_y_pixels;
+        notes[0] = {.bounds = {x - 15, y - 5, x + 15, y + 5},
+                    .note_id = 101,
+                    .lane_id = 1,
+                    .kind = 1,
+                    .selected = true};
+        auto& view = harness.view().compose;
+        view.note_endpoints = notes.data();
+        view.note_endpoint_count = 1;
+        view.selected_note_count = 1;
+        (void)harness.frame();
+    }
+    auto start() -> workspace_action_snapshot_t {
+        const std::array down{motion_event(300, 400), button_event(true, 300, 400)};
+        (void)harness.frame(down);
+        return move(420);
+    }
+    auto move(float y) -> workspace_action_snapshot_t {
+        const std::array motion{motion_event(300, y)};
+        return harness.frame(motion);
+    }
+    auto release(float y) -> workspace_action_snapshot_t {
+        const std::array up{motion_event(300, y), button_event(false, 300, y)};
+        return harness.frame(up);
+    }
+    void project(const workspace_action_snapshot_t& frame, bool conflict) {
+        const auto& input = move_event_input(frame, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE);
+        notes[0].proposal_origin = true;
+        notes[1] = notes[0];
+        notes[1].proposal_origin = false;
+        notes[1].proposal_ghost = true;
+        notes[1].bounds = {input.x_pixels - 15, input.y_pixels - 5, input.x_pixels + 15,
+                           input.y_pixels + 5};
+        notes[1].move_conflict = conflict ? 1 : 0;
+        notes[2] = {.bounds = notes[1].bounds,
+                    .note_id = 201,
+                    .lane_id = 1,
+                    .move_conflict_occupant = conflict};
+        holds[0] = {
+            .bounds = {input.x_pixels - 5, input.y_pixels - 45, input.x_pixels + 5, input.y_pixels},
+            .note_id = 101,
+            .lane_id = 1,
+            .proposal_ghost = true,
+            .move_conflict = static_cast<uint8_t>(conflict ? 1 : 0)};
+        auto& view = harness.view().compose;
+        view.note_endpoint_count = notes.size();
+        view.hold_bodies = holds.data();
+        view.hold_body_count = holds.size();
+        view.move_conflict_count = conflict ? 1 : 0;
+        (void)harness.frame();
+    }
+};
+} // namespace
+
+TEST_CASE("Native note drag continues through red hold ghosts and recovers before release",
+          "[frontend-state][event-harness][move][t420]") {
+    move_event_fixture_t fixture;
+    const auto begun = fixture.start();
+    (void)move_event_input(begun, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN);
+    const auto first_y = move_event_input(begun, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE).y_pixels;
+    fixture.project(begun, true);
+    expect_lane_key(fixture.harness.drawn_text().find("1 notes would overlap") !=
+                    std::string::npos);
+    const auto through = fixture.move(440);
+    expect_lane_key(move_event_input(through, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE).y_pixels !=
+                    first_y);
+    fixture.project(through, true);
+    expect_lane_key(worm_ui_nuklear_compose_state().note_move_active);
+    const auto recovered = fixture.move(460);
+    fixture.project(recovered, false);
+    expect_lane_key(fixture.harness.drawn_text().find("notes would overlap") == std::string::npos);
+    const auto released = fixture.release(460);
+    const auto& final = move_event_input(released, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE);
+    expect_lane_key(final.y_pixels ==
+                    move_event_input(recovered, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE).y_pixels);
+    expect_lane_key(!worm_ui_nuklear_compose_state().note_move_active);
+}
+
+TEST_CASE("Native note drag releases while red without substituting a prior valid target",
+          "[frontend-state][event-harness][move][t420]") {
+    move_event_fixture_t fixture;
+    const auto begun = fixture.start();
+    fixture.project(begun, true);
+    const auto moved = fixture.move(440);
+    fixture.project(moved, true);
+    const auto released = fixture.release(440);
+    const auto& final = move_event_input(released, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE);
+    expect_lane_key(final.y_pixels ==
+                    move_event_input(moved, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE).y_pixels);
+    expect_lane_key(!worm_ui_nuklear_compose_state().note_move_active);
+}

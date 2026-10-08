@@ -514,11 +514,20 @@ struct pending_note_duration_gesture_t {
     auto operator==(const pending_note_duration_gesture_t&) const -> bool = default;
 };
 
+enum class note_move_conflict_t { none, occupied, out_of_lane, out_of_chart, other };
+
 struct note_move_preview_t {
     object_id_t note;
     lane_id_t lane;
     local_position_t position;
     std::optional<local_position_t> end;
+    note_move_conflict_t conflict{note_move_conflict_t::none};
+    std::optional<object_id_t> occupant;
+    std::optional<std::int64_t> display_column;
+    std::size_t display_columns{};
+    // Display-only rows preserve a rejected member's translation past chart boundaries.
+    std::optional<long double> display_begin_row;
+    std::optional<long double> display_end_row;
 
     auto operator==(const note_move_preview_t&) const -> bool = default;
 };
@@ -529,6 +538,8 @@ struct pending_note_move_gesture_t {
     std::vector<object_id_t> notes;
     local_position_t preview_position;
     std::vector<note_move_preview_t> preview;
+    std::vector<object_id_t> occupants;
+    std::size_t conflicting_notes{};
 
     auto operator==(const pending_note_move_gesture_t&) const -> bool = default;
 };

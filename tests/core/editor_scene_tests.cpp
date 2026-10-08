@@ -1961,3 +1961,245 @@ TEST_CASE("BGM scene window snapshots lane widths and invalidates on in-place ch
           "[unit][core][editor-scene][scene-window][bgm-width]") {
     CHECK(bgm_width_window_snapshots_owned_values());
 }
+
+namespace {
+void check_move_feedback_bodies(const wormedit::editor_field_scene_t& scene) {
+    for (const auto& body : scene.hold_bodies) {
+        if (body.proposal_ghost)
+            CHECK(body.move_conflict == wormedit::note_move_conflict_t::occupied);
+        if (body.note == wormedit::object_id_t{11})
+            CHECK(body.move_conflict_occupant);
+    }
+}
+auto move_feedback_scene(const wormedit::chart_document_t& chart,
+                         std::vector<wormedit::note_move_preview_t> proposals,
+                         std::vector<wormedit::object_id_t> occupants = {}, double scroll = 0,
+                         double gutter = 0) -> wormedit::editor_field_scene_result_t {
+    auto projected = view();
+    projected.viewport_height_pixels = 480;
+    projected.viewport_scroll_pixels = scroll;
+    projected.selected_notes.clear();
+    projected.selected_objects.clear();
+    for (const auto& proposal : proposals) {
+        projected.selected_notes.push_back(proposal.note);
+        projected.selected_objects.push_back(
+            {wormedit::editor_selection_object_kind_t::note, proposal.note});
+    }
+    projected.pending_note_move_gesture = wormedit::pending_note_move_gesture_t{
+        .reference_note = proposals.front().note,
+        .document_revision = 7,
+        .notes = projected.selected_notes,
+        .preview_position = proposals.front().position,
+        .preview = std::move(proposals),
+        .occupants = std::move(occupants),
+    };
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    return wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), projected,
+        {.field_left_pixels = 10.0, .field_width_pixels = 200.0,
+         .split_stage_gutter_pixels = gutter});
+}
+} // namespace
+
+TEST_CASE("move scene carries conflicting hold ghosts and every occupant outline",
+          "[unit][core][editor-scene][move][t420]") {
+    auto chart = scene_chart();
+    auto& source = chart.measures.front().notes.front();
+    source.kind = wormedit::note_kind_t::hold;
+    source.end = wormedit::local_position_t{wormedit::measure_id_t{1}, 480};
+    const auto scene =
+        move_feedback_scene(chart,
+                            {{.note = wormedit::object_id_t{10},
+                              .lane = wormedit::lane_id_t{2},
+                              .position = {wormedit::measure_id_t{1}, 720},
+                              .end = wormedit::local_position_t{wormedit::measure_id_t{2}, 480},
+                              .conflict = wormedit::note_move_conflict_t::occupied,
+                              .occupant = wormedit::object_id_t{11}}},
+                            {wormedit::object_id_t{11}});
+    REQUIRE(scene);
+    CHECK(std::ranges::count_if(scene.scene->note_endpoints, [](const auto& endpoint) {
+              return endpoint.proposal_ghost &&
+                     endpoint.move_conflict == wormedit::note_move_conflict_t::occupied;
+          }) == 2);
+    CHECK(std::ranges::count_if(scene.scene->note_endpoints, [](const auto& endpoint) {
+              return endpoint.note == wormedit::object_id_t{11} && endpoint.move_conflict_occupant;
+          }) == 2);
+    check_move_feedback_bodies(*scene.scene);
+}
+
+TEST_CASE("move scene retains an unavailable target lane at its proposed display column",
+          "[unit][core][editor-scene][move][t420]") {
+    auto chart = scene_chart();
+    chart.measures.front().notes.erase(chart.measures.front().notes.begin() + 1);
+    chart.lane_layouts.back().layout.lanes.clear();
+    const auto scene =
+        move_feedback_scene(chart, {{.note = wormedit::object_id_t{10},
+                                     .lane = wormedit::lane_id_t{},
+                                     .position = {wormedit::measure_id_t{2}, 0},
+                                     .conflict = wormedit::note_move_conflict_t::out_of_lane,
+                                     .display_column = 1,
+                                     .display_columns = 2}});
+    REQUIRE(scene);
+    const auto ghost = std::ranges::find_if(
+        scene.scene->note_endpoints, [](const auto& endpoint) { return endpoint.proposal_ghost; });
+    REQUIRE(ghost != scene.scene->note_endpoints.end());
+    CHECK(ghost->move_conflict == wormedit::note_move_conflict_t::out_of_lane);
+    CHECK(ghost->bounds.left == Catch::Approx(110));
+    CHECK(ghost->bounds.right == Catch::Approx(210));
+}
+
+TEST_CASE("move scene displays out of chart holds without rejecting collapsed carriers",
+          "[unit][core][editor-scene][move][boundary][t420]") {
+    std::uint64_t source_tail = 120;
+    SECTION("fully outside with both carriers at zero") {}
+    SECTION("partly outside") {
+        source_tail = 480;
+    }
+    auto chart = scene_chart();
+    auto& source = chart.measures.front().notes.back();
+    source.position = {wormedit::measure_id_t{1}, 0};
+    source.end = wormedit::local_position_t{wormedit::measure_id_t{1}, source_tail};
+    const auto carrier_end = source_tail > 240 ? source_tail - 240 : 0;
+    const auto scene = move_feedback_scene(
+        chart,
+        {{.note = wormedit::object_id_t{10},
+          .lane = wormedit::lane_id_t{1},
+          .position = {wormedit::measure_id_t{1}, 0}},
+         {.note = wormedit::object_id_t{11},
+          .lane = wormedit::lane_id_t{2},
+          .position = {wormedit::measure_id_t{1}, 0},
+          .end = wormedit::local_position_t{wormedit::measure_id_t{1}, carrier_end},
+          .conflict = wormedit::note_move_conflict_t::out_of_chart,
+          .display_column = 1,
+          .display_columns = 2,
+          .display_begin_row = -240.0L,
+          .display_end_row = static_cast<long double>(source_tail) - 240}},
+        {}, -48);
+    REQUIRE(scene);
+    const auto body = std::ranges::find_if(
+        scene.scene->hold_bodies, [](const auto& candidate) { return candidate.proposal_ghost; });
+    REQUIRE(body != scene.scene->hold_bodies.end());
+    CHECK(body->move_conflict == wormedit::note_move_conflict_t::out_of_chart);
+    CHECK(body->bounds.bottom - body->bounds.top == Catch::Approx(source_tail * 0.2));
+    CHECK(std::ranges::count_if(scene.scene->note_endpoints, [](const auto& endpoint) {
+              return endpoint.note == wormedit::object_id_t{11} && endpoint.proposal_ghost;
+          }) == 2);
+}
+
+TEST_CASE("move scene rejects malformed conflict metadata and nonfinite display rows",
+          "[unit][core][editor-scene][move][negative][t420]") {
+    const auto chart = scene_chart();
+    wormedit::note_move_preview_t proposal{.note = wormedit::object_id_t{10},
+                                           .lane = wormedit::lane_id_t{1},
+                                           .position = {wormedit::measure_id_t{1}, 480}};
+    SECTION("unknown conflict category") {
+        proposal.conflict = static_cast<wormedit::note_move_conflict_t>(255);
+    }
+    SECTION("unknown occupant") {
+        proposal.conflict = wormedit::note_move_conflict_t::occupied;
+        proposal.occupant = wormedit::object_id_t{999};
+    }
+    SECTION("nonfinite raw display row") {
+        proposal.conflict = wormedit::note_move_conflict_t::out_of_chart;
+        proposal.display_column = 0;
+        proposal.display_columns = 2;
+        proposal.display_begin_row = std::numeric_limits<long double>::infinity();
+    }
+    CHECK_FALSE(move_feedback_scene(chart, {proposal}));
+}
+
+TEST_CASE("move missing columns use split-stage physical slots with sparse display orders",
+          "[unit][core][editor-scene][move][t420]") {
+    auto chart = scene_chart();
+    chart.measures.front().notes.erase(chart.measures.front().notes.begin() + 1);
+    auto& layout = chart.lane_layouts.front().layout;
+    layout.split_stage = true;
+    layout.split_after_column = 2;
+    layout.lanes = {{.id = wormedit::lane_id_t{1},
+                     .name = "L1",
+                     .stage = wormedit::stage_group_t::left,
+                     .display_order = 10},
+                    {.id = wormedit::lane_id_t{2},
+                     .name = "L2",
+                     .stage = wormedit::stage_group_t::left,
+                     .display_order = 20},
+                    {.id = wormedit::lane_id_t{3},
+                     .name = "R1",
+                     .stage = wormedit::stage_group_t::right,
+                     .display_order = 30},
+                    {.id = wormedit::lane_id_t{4},
+                     .name = "R2",
+                     .stage = wormedit::stage_group_t::right,
+                     .display_order = 40}};
+    const auto scene =
+        move_feedback_scene(chart,
+                            {{.note = wormedit::object_id_t{10},
+                              .lane = {},
+                              .position = {wormedit::measure_id_t{1}, 480},
+                              .conflict = wormedit::note_move_conflict_t::out_of_lane,
+                              .display_column = 25,
+                              .display_columns = 4}},
+                            {}, 0, 20);
+    REQUIRE(scene);
+    const auto ghost = std::ranges::find_if(
+        scene.scene->note_endpoints, [](const auto& endpoint) { return endpoint.proposal_ghost; });
+    REQUIRE(ghost != scene.scene->note_endpoints.end());
+    CHECK(ghost->bounds.left == Catch::Approx(120));
+    CHECK(ghost->bounds.right == Catch::Approx(165));
+}
+
+TEST_CASE("move translated missing column follows the destination stage beyond the field",
+          "[unit][core][editor-scene][move][t420]") {
+    auto chart = scene_chart();
+    chart.measures.front().notes.erase(chart.measures.front().notes.begin() + 1);
+    auto& layout = chart.lane_layouts.front().layout;
+    layout.split_stage = true;
+    layout.split_after_column = 5;
+    layout.lanes.clear();
+    for (std::uint32_t column = 0; column < 10; ++column)
+        layout.lanes.push_back(
+            {.id = wormedit::lane_id_t{column + 1},
+             .name = "Key",
+             .stage = column < 5 ? wormedit::stage_group_t::left : wormedit::stage_group_t::right,
+             .display_order = column});
+    const auto scene =
+        move_feedback_scene(chart,
+                            {{.note = wormedit::object_id_t{10},
+                              .lane = {},
+                              .position = {wormedit::measure_id_t{1}, 480},
+                              .conflict = wormedit::note_move_conflict_t::out_of_lane,
+                              .display_column = 10,
+                              .display_columns = 10}},
+                            {}, 0, 20);
+    REQUIRE(scene);
+    const auto ghost = std::ranges::find_if(
+        scene.scene->note_endpoints, [](const auto& endpoint) { return endpoint.proposal_ghost; });
+    REQUIRE(ghost != scene.scene->note_endpoints.end());
+    CHECK(ghost->bounds.left == Catch::Approx(210));
+    CHECK(ghost->bounds.right == Catch::Approx(228));
+}
+
+TEST_CASE("move empty target band retains sparse source lane physical geometry",
+          "[unit][core][editor-scene][move][t420]") {
+    auto chart = scene_chart();
+    auto& source = chart.measures.front().notes.back();
+    source.kind = wormedit::note_kind_t::tap;
+    source.end.reset();
+    chart.lane_layouts.front().layout.lanes[0].display_order = 10;
+    chart.lane_layouts.front().layout.lanes[1].display_order = 20;
+    chart.lane_layouts.back().layout.lanes.clear();
+    const auto scene =
+        move_feedback_scene(chart, {{.note = wormedit::object_id_t{11},
+                                     .lane = wormedit::lane_id_t{2},
+                                     .position = {wormedit::measure_id_t{2}, 0},
+                                     .conflict = wormedit::note_move_conflict_t::out_of_lane,
+                                     .display_column = 20,
+                                     .display_columns = 2}});
+    REQUIRE(scene);
+    const auto ghost = std::ranges::find_if(
+        scene.scene->note_endpoints, [](const auto& endpoint) { return endpoint.proposal_ghost; });
+    REQUIRE(ghost != scene.scene->note_endpoints.end());
+    CHECK(ghost->bounds.left == Catch::Approx(110));
+    CHECK(ghost->bounds.right == Catch::Approx(210));
+}

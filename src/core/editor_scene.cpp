@@ -89,6 +89,7 @@ struct visible_band_t {
     long double clipped_begin_row{};
     long double clipped_end_row{};
     std::size_t scene_band{};
+    const lane_layout_t* layout{};
     std::vector<lane_bounds_t> lanes;
 };
 
@@ -600,6 +601,11 @@ struct proposal_geometry_t {
     std::optional<std::uint64_t> end_row;
     bool selected{};
     std::optional<color_rgba_t> semantic_color;
+    note_move_conflict_t conflict{note_move_conflict_t::none};
+    std::optional<std::int64_t> display_column;
+    std::size_t display_columns{};
+    std::optional<long double> display_begin_row;
+    std::optional<long double> display_end_row;
 };
 
 struct proposal_render_context_t {
@@ -921,11 +927,50 @@ auto collect_virtual_holds(scene_geometry_context_t& context, hold_proposals_t& 
     return true;
 }
 
+auto valid_move_display_rows(const note_move_preview_t& preview, note_kind_t kind,
+                             std::uint64_t chart_rows) -> bool {
+    if (!preview.display_begin_row && !preview.display_end_row)
+        return preview.conflict != note_move_conflict_t::out_of_chart;
+    if (preview.conflict != note_move_conflict_t::out_of_chart || !preview.display_begin_row ||
+        !std::isfinite(*preview.display_begin_row))
+        return false;
+    const auto begin = *preview.display_begin_row;
+    if (kind == note_kind_t::tap)
+        return !preview.display_end_row && (begin < 0 || begin >= chart_rows);
+    return preview.display_end_row && std::isfinite(*preview.display_end_row) &&
+           *preview.display_end_row > begin &&
+           (begin < 0 || *preview.display_end_row >= chart_rows);
+}
+
+auto valid_move_conflict(const editor_field_scene_index_t& index,
+                         const note_move_preview_t& preview) -> bool {
+    switch (preview.conflict) {
+    case note_move_conflict_t::none:
+        return !preview.occupant;
+    case note_move_conflict_t::occupied:
+        if (!preview.occupant)
+            return false;
+        break;
+    case note_move_conflict_t::out_of_lane:
+    case note_move_conflict_t::out_of_chart:
+        if (!preview.display_column || preview.display_columns == 0)
+            return false;
+        break;
+    case note_move_conflict_t::other:
+        break;
+    default:
+        return false;
+    }
+    return !preview.occupant || (preview.occupant != preview.note &&
+                                 index.note_indices_by_id.contains(preview.occupant->value));
+}
+
 template <typename Operate>
 auto append_move_proposal(scene_geometry_context_t& context, const note_move_preview_t& preview,
                           std::unordered_set<std::uint64_t>& expected, move_proposals_t& moves,
                           Operate&& operate) -> bool {
-    if (!operate() || preview.note.value == 0 || !expected.erase(preview.note.value)) {
+    if (!operate() || preview.note.value == 0 || !expected.erase(preview.note.value) ||
+        !valid_move_conflict(context.index, preview)) {
         context.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id,
                   "field-scene note move preview does not match its selected notes"));
@@ -933,14 +978,23 @@ auto append_move_proposal(scene_geometry_context_t& context, const note_move_pre
     }
     const auto found = context.index.note_indices_by_id.find(preview.note.value);
     const auto begin_row = absolute_row(context.index.measures, preview.position);
+    const auto invalid_lane_preview = (preview.conflict == note_move_conflict_t::out_of_lane ||
+                                       preview.conflict == note_move_conflict_t::out_of_chart) &&
+                                      preview.display_column && preview.display_columns != 0;
     if (found == context.index.note_indices_by_id.end() || !begin_row ||
-        !has_lane(layout_at_row(context.index, *begin_row), preview.lane)) {
+        (!invalid_lane_preview &&
+         !has_lane(layout_at_row(context.index, *begin_row), preview.lane))) {
         context.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id,
                   "field-scene note move preview refers to an invalid note proposal"));
         return false;
     }
     const auto& source = context.index.notes[found->second];
+    if (!valid_move_display_rows(preview, source.kind, context.index.measures.total_rows)) {
+        context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
+                                            "field-scene note move display rows are malformed"));
+        return false;
+    }
     std::optional<std::uint64_t> end_row;
     if (source.kind == note_kind_t::tap) {
         if (preview.end) {
@@ -957,8 +1011,9 @@ auto append_move_proposal(scene_geometry_context_t& context, const note_move_pre
             return false;
         }
         end_row = absolute_row(context.index.measures, *preview.end);
-        if (!end_row || *end_row <= *begin_row ||
-            !has_lane(layout_at_row(context.index, *end_row), preview.lane)) {
+        if (!end_row || (!preview.display_begin_row && *end_row <= *begin_row) ||
+            (!invalid_lane_preview &&
+             !has_lane(layout_at_row(context.index, *end_row), preview.lane))) {
             context.diagnostics.push_back(
                 error(diagnostic_code_t::invalid_hold,
                       "field-scene moved hold preview has an invalid tail"));
@@ -974,6 +1029,25 @@ auto append_move_proposal(scene_geometry_context_t& context, const note_move_pre
     moves.proposals.push_back(
         {.source = &source, .preview = &preview, .begin_row = *begin_row, .end_row = end_row});
     return true;
+}
+
+void mark_scene_move_occupants(editor_field_scene_t& scene,
+                               const editor_interaction_view_model_t& view) {
+    if (!view.pending_note_move_gesture)
+        return;
+    const auto& pending = *view.pending_note_move_gesture;
+    std::unordered_set<std::uint64_t> occupants;
+    for (const auto id : pending.occupants)
+        occupants.insert(id.value);
+    for (const auto& proposal : pending.preview) {
+        if (proposal.occupant)
+            occupants.insert(proposal.occupant->value);
+    }
+    for (auto& endpoint : scene.note_endpoints)
+        endpoint.move_conflict_occupant =
+            !endpoint.proposal_ghost && occupants.contains(endpoint.note.value);
+    for (auto& body : scene.hold_bodies)
+        body.move_conflict_occupant = !body.proposal_ghost && occupants.contains(body.note.value);
 }
 
 template <typename Operate>
@@ -1016,27 +1090,127 @@ auto collect_move_proposals(scene_geometry_context_t& context, move_proposals_t&
     return true;
 }
 
+auto proposal_source_layout(const proposal_render_context_t& render,
+                            const proposal_geometry_t& proposal)
+    -> const editor_field_scene_layout_source_t* {
+    const auto& index = render.geometry.index;
+    const auto found = index.note_indices_by_id.find(proposal.note.value);
+    return found == index.note_indices_by_id.end()
+               ? nullptr
+               : layout_at_row(index, index.notes[found->second].begin_row);
+}
+
+auto proposal_source_stage(const proposal_render_context_t& render,
+                           const proposal_geometry_t& proposal) -> stage_group_t {
+    const auto* source = proposal_source_layout(render, proposal);
+    if (!source)
+        return stage_group_t::none;
+    const auto& index = render.geometry.index;
+    const auto lane = index.notes[index.note_indices_by_id.at(proposal.note.value)].lane;
+    const auto found = std::ranges::find(source->layout.lanes, lane, &lane_definition_t::id);
+    return found == source->layout.lanes.end() ? stage_group_t::none : found->stage;
+}
+
+auto proposal_target_stage(const lane_layout_t& layout, const proposal_geometry_t& proposal,
+                           stage_group_t source_stage) -> stage_group_t {
+    if (proposal.lane.value != 0 || !layout.split_stage)
+        return source_stage;
+    const lane_definition_t* after = nullptr;
+    const lane_definition_t* before = nullptr;
+    for (const auto& lane : layout.lanes) {
+        if (!editable_lane(lane))
+            continue;
+        if (static_cast<std::int64_t>(lane.display_order) >= *proposal.display_column) {
+            if (!after || lane.display_order < after->display_order)
+                after = &lane;
+        } else if (!before || lane.display_order > before->display_order) {
+            before = &lane;
+        }
+    }
+    return after ? after->stage : before ? before->stage : source_stage;
+}
+
+auto proposal_physical_column(const lane_layout_t& layout, std::int64_t column, stage_group_t stage)
+    -> double {
+    double rank = 0;
+    std::int64_t last = -1;
+    for (const auto& lane : layout.lanes) {
+        if (!editable_lane(lane))
+            continue;
+        if (layout.split_stage && lane.stage != stage) {
+            rank += lane.stage < stage ? 1 : 0;
+        } else {
+            last = std::max(last, static_cast<std::int64_t>(lane.display_order));
+            rank += static_cast<std::int64_t>(lane.display_order) < column ? 1 : 0;
+        }
+    }
+    // A negative requested column remains outside the field rather than collapsing to slot zero.
+    return column < 0 ? static_cast<double>(column)
+                      : rank + std::max<std::int64_t>(0, column - last - 1);
+}
+
+auto proposal_lane_bounds(const proposal_render_context_t& render, const visible_band_t& band,
+                          const proposal_geometry_t& proposal) -> std::optional<lane_bounds_t> {
+    if (const auto* bounds = lane_bounds(band, proposal.lane))
+        return *bounds;
+    if ((proposal.conflict != note_move_conflict_t::out_of_lane &&
+         proposal.conflict != note_move_conflict_t::out_of_chart) ||
+        !proposal.display_column)
+        return std::nullopt;
+    const auto* source = proposal_source_layout(render, proposal);
+    const auto* layout = !band.lanes.empty() ? band.layout : source ? &source->layout : band.layout;
+    const auto columns = !band.lanes.empty() ? band.lanes.size()
+                                             : std::max<std::size_t>(1, proposal.display_columns);
+    const auto split = layout && layout->split_stage && layout->split_after_column
+                           ? std::min<std::size_t>(*layout->split_after_column, columns)
+                           : columns;
+    const auto& request = render.geometry.request;
+    const auto gutter = split > 0 && split < columns ? request.split_stage_gutter_pixels : 0.0;
+    const auto width = (request.field_width_pixels - gutter) / static_cast<double>(columns);
+    const auto column =
+        layout
+            ? proposal_physical_column(
+                  *layout, *proposal.display_column,
+                  proposal_target_stage(*layout, proposal, proposal_source_stage(render, proposal)))
+            : static_cast<double>(*proposal.display_column);
+    const auto left = request.field_left_pixels + width * column + (column >= split ? gutter : 0.0);
+    return lane_bounds_t{proposal.lane, lane_glyph_t::bar, left, left + width};
+}
+
+auto proposal_band_rows(const proposal_render_context_t& render, const visible_band_t& band,
+                        const proposal_geometry_t& proposal, long double begin, long double end)
+    -> std::pair<long double, long double> {
+    auto low = band.clipped_begin_row;
+    auto high = band.clipped_end_row;
+    if (proposal.conflict == note_move_conflict_t::out_of_chart) {
+        if (band.begin_row == 0)
+            low = std::min(low, begin);
+        if (band.end_row == render.geometry.canvas_rows)
+            high = std::max(high, end);
+    }
+    return {std::max(begin, low), std::min(end, high)};
+}
+
 template <typename Operate, typename Consume, typename YForRow>
 auto append_proposal_hold_bodies(proposal_render_context_t& render,
                                  const proposal_geometry_t& proposal, Operate&& operate,
                                  Consume&& consume, YForRow&& y_for_row) -> bool {
-    if (proposal.kind != note_kind_t::hold || !proposal.end_row ||
-        *proposal.end_row <= proposal.begin_row) {
+    const auto begin_row = proposal.display_begin_row.value_or(proposal.begin_row);
+    const auto end_row =
+        proposal.display_end_row.value_or(proposal.end_row.value_or(proposal.begin_row));
+    if (proposal.kind != note_kind_t::hold || !proposal.end_row || end_row <= begin_row) {
         return true;
     }
     for (const auto& band : render.visible_bands) {
         if (!operate()) {
             return false;
         }
-        const auto begin =
-            std::max(static_cast<long double>(proposal.begin_row), band.clipped_begin_row);
-        const auto end =
-            std::min(static_cast<long double>(*proposal.end_row), band.clipped_end_row);
+        const auto [begin, end] = proposal_band_rows(render, band, proposal, begin_row, end_row);
         if (begin >= end) {
             continue;
         }
-        const auto* bounds = lane_bounds(band, proposal.lane);
-        if (bounds == nullptr) {
+        const auto bounds = proposal_lane_bounds(render, band, proposal);
+        if (!bounds) {
             continue;
         }
         if (!consume()) {
@@ -1052,22 +1226,25 @@ auto append_proposal_hold_bodies(proposal_render_context_t& render,
              .selected = proposal.selected,
              .proposal_ghost = true,
              .semantic_color = proposal.semantic_color,
-             .bounds = {center - body_width / 2.0, top, center + body_width / 2.0, bottom}});
+             .bounds = {center - body_width / 2.0, top, center + body_width / 2.0, bottom},
+             .move_conflict = proposal.conflict});
     }
     return true;
 }
 
 template <typename Consume, typename YForRow, typename BandForRow>
 auto append_proposal_endpoint(proposal_render_context_t& render,
-                              const proposal_geometry_t& proposal, std::uint64_t row, bool tail,
+                              const proposal_geometry_t& proposal, long double row, bool tail,
                               Consume&& consume, YForRow&& y_for_row, BandForRow&& band_for_row)
     -> bool {
-    const auto* band = band_for_row(row);
+    const auto layout_row =
+        tail ? proposal.end_row.value_or(proposal.begin_row) : proposal.begin_row;
+    const auto* band = band_for_row(layout_row);
     if (band == nullptr) {
         return true;
     }
-    const auto* bounds = lane_bounds(*band, proposal.lane);
-    if (bounds == nullptr) {
+    const auto bounds = proposal_lane_bounds(render, *band, proposal);
+    if (!bounds) {
         return true;
     }
     const auto y = y_for_row(row);
@@ -1090,7 +1267,8 @@ auto append_proposal_endpoint(proposal_render_context_t& render,
                                                     .selected = proposal.selected,
                                                     .proposal_ghost = true,
                                                     .semantic_color = proposal.semantic_color,
-                                                    .bounds = rect});
+                                                    .bounds = rect,
+                                                    .move_conflict = proposal.conflict});
     return true;
 }
 
@@ -1100,13 +1278,15 @@ auto append_proposal_geometry(proposal_render_context_t& render,
                               Consume&& consume, YForRow&& y_for_row, BandForRow&& band_for_row)
     -> bool {
     if (!append_proposal_hold_bodies(render, proposal, operate, consume, y_for_row) ||
-        !append_proposal_endpoint(render, proposal, proposal.begin_row, false, consume, y_for_row,
-                                  band_for_row)) {
+        !append_proposal_endpoint(render, proposal,
+                                  proposal.display_begin_row.value_or(proposal.begin_row), false,
+                                  consume, y_for_row, band_for_row)) {
         return false;
     }
     return proposal.kind != note_kind_t::hold || !proposal.end_row ||
-           append_proposal_endpoint(render, proposal, *proposal.end_row, true, consume, y_for_row,
-                                    band_for_row);
+           append_proposal_endpoint(render, proposal,
+                                    proposal.display_end_row.value_or(*proposal.end_row), true,
+                                    consume, y_for_row, band_for_row);
 }
 
 struct scene_proposal_composition_t {
@@ -1148,7 +1328,12 @@ auto compose_note_proposals(scene_proposal_composition_t& composition, Operate&&
             proposal.begin_row,
             proposal.end_row,
             composition.selected.contains(proposal.source->note.value),
-            proposal.source->semantic_color};
+            proposal.source->semantic_color,
+            proposal.preview->conflict,
+            proposal.preview->display_column,
+            proposal.preview->display_columns,
+            proposal.preview->display_begin_row,
+            proposal.preview->display_end_row};
         if (!append_proposal_geometry(composition.render, geometry, operate, consume, y_for_row,
                                       band_for_row)) {
             diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
@@ -1522,12 +1707,14 @@ auto append_visible_layout_band(scene_geometry_context_t& context,
             lanes.push_back(&lane);
         }
     }
-    std::ranges::sort(lanes, [split_stage = source.layout.split_stage](const auto* left, const auto* right) {
-        if (split_stage && left->stage != right->stage) return left->stage < right->stage;
-        return std::tie(left->display_order, left->id.value) <
-               std::tie(right->display_order, right->id.value);
-    });
-    if (lanes.empty()) {
+    std::ranges::sort(
+        lanes, [split_stage = source.layout.split_stage](const auto* left, const auto* right) {
+            if (split_stage && left->stage != right->stage)
+                return left->stage < right->stage;
+            return std::tie(left->display_order, left->id.value) <
+                   std::tie(right->display_order, right->id.value);
+        });
+    if (lanes.empty() && !context.view.pending_note_move_gesture) {
         return true;
     }
     const auto split = source.layout.split_stage && source.layout.split_after_column
@@ -1539,8 +1726,8 @@ auto append_visible_layout_band(scene_geometry_context_t& context,
                                             "split-stage gutter consumes the note field"));
         return false;
     }
-    const auto lane_width =
-        (request.field_width_pixels - gutter) / static_cast<double>(lanes.size());
+    const auto lane_width = (request.field_width_pixels - gutter) /
+                            static_cast<double>(std::max<std::size_t>(1, lanes.size()));
     const auto clipped_begin =
         std::max(context.query_low, static_cast<long double>(source.begin_row));
     const auto clipped_end = std::min(context.query_high, static_cast<long double>(source_end));
@@ -1563,7 +1750,8 @@ auto append_visible_layout_band(scene_geometry_context_t& context,
                         .end_row = source_end,
                         .clipped_begin_row = clipped_begin,
                         .clipped_end_row = clipped_end,
-                        .scene_band = scene_band};
+                        .scene_band = scene_band,
+                        .layout = &source.layout};
     band.lanes.reserve(lanes.size());
     for (std::size_t lane_index = 0; lane_index < lanes.size(); ++lane_index) {
         const auto left = request.field_left_pixels + lane_width * lane_index +
@@ -2252,6 +2440,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         return result;
     }
 
+    mark_scene_move_occupants(scene, view);
     result.scene = std::move(scene);
     return result;
 }

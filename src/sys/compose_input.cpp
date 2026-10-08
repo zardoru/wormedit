@@ -1381,6 +1381,24 @@ struct compose_input_context_t {
         if (target && !target->note && in_dead_span(chart, view, y_pixels)) return std::nullopt;
         return target;
     }
+    auto note_move_hit_target_at(WormUiComposeInputKind kind,
+                                 const wormedit::chart_document_t& chart,
+                                 const wormedit::editor_interaction_view_model_t& view,
+                                 double x_pixels, double y_pixels)
+        -> std::optional<wormedit::editor_hit_target_t> {
+        const auto target = hit_target_at(chart, view, x_pixels, y_pixels);
+        if (target || (kind != WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE &&
+                       kind != WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE))
+            return target;
+        if (!state.pending_note_move_gesture || !std::isfinite(x_pixels) ||
+            x_pixels < field_left_pixels || x_pixels >= field_left_pixels + field_width_pixels)
+            return std::nullopt;
+        const auto position = position_at_compose_y(chart, view, y_pixels);
+        // A valid row with no target lane keeps the original lanes, allowing red vertical
+        // proposals through empty layouts. A pointer outside the field/chart still cancels.
+        return position ? std::optional{wormedit::editor_hit_target_t{.position = *position}}
+                        : std::nullopt;
+    }
     auto hit_target_unrestricted(const wormedit::chart_document_t& chart,
                                  const wormedit::editor_interaction_view_model_t& view,
                                  double x_pixels, double y_pixels)
@@ -1792,8 +1810,10 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
         accepted = "Selected-note move started.";
         return compose_input_family_result_t::continue_with_result();
     }
-    const auto y =
-        std::clamp(input.y_pixels, 0.0, std::max(0.0, view->viewport_height_pixels - 0.001));
+    const auto y = input.kind == WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE
+                       ? input.y_pixels
+                       : std::clamp(input.y_pixels, 0.0,
+                                    std::max(0.0, view->viewport_height_pixels - 0.001));
     const auto position = position_at_compose_y(*chart, *view, y);
     const auto target = hit_target_at(*chart, *view, input.x_pixels, input.y_pixels);
     if (!position || !target) {
@@ -3675,8 +3695,8 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
                                      context.gesture_active, position, virtual_row);
     if (bmson.handled)
         return bmson;
-    const auto hit_target = [&context](const auto& chart, const auto& view, double x, double y) {
-        return context.hit_target_at(chart, view, x, y);
+    const auto hit_target = [&context, &input](const auto& chart, const auto& view, double x, double y) {
+        return context.note_move_hit_target_at(input.kind, chart, view, x, y);
     };
     const auto bgm_event_at = [&context](double x, double y)
         -> std::optional<wormedit::object_id_t> {
@@ -3956,6 +3976,9 @@ auto process_compose_input_result(const WormUiComposeInputAction& input,
         return {.handled = true, .status = dispatched.status};
     }
     auto status = compose_result_status(result, accepted);
+    if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE && result.accepted &&
+        result.diagnostics.empty() && !result.document_changed)
+        return {.handled = true, .status = std::move(status)};
     post_input_feedback(context.notifications, input_result_severity(input, result),
                         result.document_changed ? notification_source_t::edit
             : input_result_severity(input, result) == notification_severity_t::hint

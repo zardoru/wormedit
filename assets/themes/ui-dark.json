@@ -35,6 +35,7 @@
     "selected": "$blue.600",
     "selected_text": "#ffffff",
     "accent": "$lime.300",
-    "status": "$neutral.900"
+    "status": "$neutral.900",
+    "conflict": "$coral.400"
   }
 }

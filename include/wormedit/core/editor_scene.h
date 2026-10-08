@@ -138,6 +138,8 @@ struct editor_field_note_endpoint_geometry_t {
     bool paint_preview{};
     bool paint_erase_preview{};
     bool paint_invalid_preview{};
+    note_move_conflict_t move_conflict{note_move_conflict_t::none};
+    bool move_conflict_occupant{};
 };
 
 struct editor_field_hold_body_geometry_t {
@@ -148,6 +150,8 @@ struct editor_field_hold_body_geometry_t {
     bool proposal_ghost{};
     std::optional<color_rgba_t> semantic_color;
     editor_field_rect_t bounds;
+    note_move_conflict_t move_conflict{note_move_conflict_t::none};
+    bool move_conflict_occupant{};
 };
 
 struct editor_field_cursor_geometry_t {

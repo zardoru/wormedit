@@ -105,7 +105,8 @@ leave the active sweep to avoid repeated scans on later rows.
 
 Root's `src/sys/main.cpp` readiness hunk enables `edit.tool_draw` and
 `edit.tool_layer` beside `edit.tool_select` using existing Compose readiness.
-No broader main helper change. Conversion's app patch must branch before old
+The existing note/tool helper receives the Layer-active flag so Select, Draw
+and Layer checkmarks stay mutually consistent. Conversion's app patch must branch before old
 music staging/discovery so failure cannot publish music ahead of chart/WAVs.
 
 Luna handoff: Draw's explicit note-intent and atomic BGA slices were released

@@ -116,3 +116,15 @@ baseline complexity comparisons (test baseline83/current81 findings, no new
 or increased scores). All T-413 paths/build jobs released. Feedback now owns
 Compose actions and action-notification tests for T-419 rename after refreshing
 onto integrated main. Layer T-414 remains read-only until T-419 release.
+
+T-414 future-phase supporting scope approved (edits still await T-419 release):
+`src/sys/compose_view.h` extends the existing identity/revision resource cache;
+`src/ui/nuklear/compose_canvas.h` declares chip drawing/hit helpers;
+`src/ui/nuklear/compose_state.h` owns chip release/reveal state;
+`src/ui/nuklear/compose_sounds_panel.cpp`, `compose_bga_panel.cpp` and
+`compose_layers_panel.cpp` reveal/scroll the exact source across paging/filtering;
+`src/ui/nuklear/compose_object_input.cpp` may narrowly suppress missing-source
+Draw initiation. Existing `tests/sys/frame_timing_tests.cpp` proves actual
+source projection/cache/UTF-8/missing behavior; `tests/ui/compose_bgm_layer_tests.cpp`
+owns chip routing/lifecycle regressions. No manifest additions. Arena-owned labels
+and cached source lookup avoid full catalog scans each warm frame.

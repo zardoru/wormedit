@@ -1320,11 +1320,11 @@ TEST_CASE("Unavailable overview tooltip stays on its row and preserves panel too
     compose.bgm_bar_reserved = true;
     compose.bgm_bar_available = false;
     (void)harness.frame();
-    // The dock toggles sit at the right edge of the toolbar (T-401).
-    hover_at(harness, 1150, 174);
+    // The dock toggles sit at the right edge of the toolbar (T-401); the T-268 toggle shifts them left.
+    hover_at(harness, 1123, 174);
     check_tooltip_text(harness, "Hide sounds list");
     check_no_tooltip_text(harness, "Audio is unavailable for this chart overview.");
-    hover_at(harness, 1204, 174);
+    hover_at(harness, 1177, 174);
     check_tooltip_text(harness, "Show layers");
     check_no_tooltip_text(harness, "Audio is unavailable for this chart overview.");
     hover_at(harness, 351, 120);
@@ -1338,9 +1338,10 @@ TEST_CASE("Disabled song bar icon keeps its tooltip and emits no toggle action",
     REQUIRE(harness.ready());
     harness.view().compose.bgm_bar_available = false;
     (void)harness.frame();
-    hover_at(harness, 1258, 122);
+    // The T-268 toolbar toggle shifts the song-bar icon left.
+    hover_at(harness, 1231, 122);
     check_tooltip_text(harness, "Song audio is unavailable");
-    const auto clicked = click_at(harness, 1258, 122);
+    const auto clicked = click_at(harness, 1231, 122);
     check_no_toolbar_document_actions(clicked);
     for (const auto& frame : clicked) {
         const auto& action = frame.get();

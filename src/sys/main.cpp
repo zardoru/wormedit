@@ -1578,6 +1578,7 @@ void refresh_application_command_states(
     refresh_semantic_membership_commands(registry, compose_ready, target_valid,
                                           application_state, compose_state);
     set("audio.paint_hitsound", false);
+    set("audio.toggle_click_audition", true, application_state.editor_preferences.audition_on_click);
 }
 
 auto application_command_focus(const WormUiWorkspaceAction& action,
@@ -3557,6 +3558,20 @@ auto read_tap_clock(tap_clock_context_t& context) -> wormedit::sys::tap_timing_c
         return clock;
 }
 
+auto dispatch_click_audition_toggle(const wormedit::command_invocation_context_t& invocation,
+    wormedit::sys::program_preferences_runtime_t& program, application_command_state_t& state,
+    wormedit::notification_sink_t& notifications)
+    -> std::optional<wormedit::command_invocation_result_t> {
+    if (invocation.command.value != "audio.toggle_click_audition") return std::nullopt;
+    const auto error = wormedit::sys::toggle_audition_on_click(program, state.editor_preferences.audition_on_click);
+    if (!error.empty())
+        return wormedit::sys::reject_application_command(notifications, error,
+            wormedit::notification_severity_t::error, wormedit::notification_source_t::system);
+    notifications.post(wormedit::notification_severity_t::success, wormedit::notification_source_t::input,
+        state.editor_preferences.audition_on_click ? "Play sound on click enabled." : "Play sound on click disabled.");
+    return wormedit::command_invocation_result_t{.accepted = true};
+}
+
 template<class InvokeEditor>
 auto dispatch_options_or_editor_command(const wormedit::command_invocation_context_t& invocation,
     wormedit::sys::options_runtime_t& options, const wormedit::program_preferences_t& preferences,
@@ -3603,6 +3618,7 @@ auto create_chart_from_registered_command(wormedit::document_history_t& history,
 
 auto dispatch_registered_application_command(
     const wormedit::command_invocation_context_t& invocation,
+    wormedit::sys::program_preferences_runtime_t& program,
     wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace,
     std::optional<wormedit::editor_interaction_state_t>& compose_interaction_state,
@@ -3613,6 +3629,8 @@ auto dispatch_registered_application_command(
     const std::optional<std::uint64_t>& tap_event_ns) {
     using severity_t = wormedit::notification_severity_t;
     using source_t = wormedit::notification_source_t;
+    if (auto toggled = dispatch_click_audition_toggle(invocation, program, application_command_state,
+            notifications)) return *toggled;
     const auto command = parse_application_command(invocation.command.value);
     if (!command) {
         return wormedit::sys::reject_application_command(
@@ -3935,7 +3953,7 @@ int main(int argc, char** argv) {
             return dispatch_options_or_editor_command(invocation, options_runtime,
                 program_preferences.preferences, notification_history, notifications, [&] {
                     return dispatch_registered_application_command(
-                        invocation, history, workspace, compose_interaction_state, timing_edit.stage,
+                        invocation, program_preferences, history, workspace, compose_interaction_state, timing_edit.stage,
                         application_command_state, notification_sink, tap_runtime, tap_clock, tap_event_ns);
                 });
         });

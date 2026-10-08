@@ -1197,6 +1197,8 @@ typedef struct WormUiComposeView {
     uint32_t armed_note_kind;
     uint32_t allowed_note_kind_mask;
     bool note_kind_palette_visible, lane_key_legend_visible;
+    // Editor preference: whether clicks, placements, and selections play their sound.
+    bool audition_on_click;
     uint32_t area_band_alpha;
     bool visible;
     bool scene_available;

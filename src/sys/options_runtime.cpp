@@ -203,6 +203,14 @@ auto edit_field(options_runtime_t& r, const WormUiOptionsAction& action) -> bool
     return edited && edit_options_draft(r, action.revision, candidate);
 }
 } // namespace
+
+auto toggle_audition_on_click(program_preferences_runtime_t& program, bool& enabled) -> std::string {
+    auto candidate = program.preferences;
+    candidate.editor.audition_on_click = !enabled;
+    auto error = apply_program_preferences(program, std::move(candidate));
+    enabled = program.preferences.editor.audition_on_click;
+    return error;
+}
 void open_options(options_runtime_t& r, const program_preferences_t& preferences) {
     if (r.visible) return;
     r.visible = true;

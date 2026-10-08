@@ -78,12 +78,14 @@ auto make_state(document_history_t& history) -> editor_interaction_state_t {
 }
 
 auto begin_bgm_paint(document_history_t& history, editor_interaction_state_t& state,
-                     layer_id_t layer, object_id_t event) -> editor_interaction_result_t {
+                     layer_id_t layer, object_id_t event,
+                     semantic_layer_paint_mode_t mode = semantic_layer_paint_mode_t::add)
+    -> editor_interaction_result_t {
     return dispatch_editor_action(
         history, state,
         begin_semantic_layer_paint_gesture_action_t{
             .layer = layer, .note = object_id_t{}, .pointer_captured = true,
-            .bgm_event = event});
+            .bgm_event = event, .mode = mode});
 }
 
 auto update_bgm_paint(document_history_t& history, editor_interaction_state_t& state,
@@ -216,28 +218,46 @@ TEST_CASE("BGM scene requires and excludes semantic membership consistently",
     CHECK(result.scene->bgm_events.front().event == object_id_t{20});
 }
 
-TEST_CASE("BGM-only paint toggles membership on a stroke and undoes as one command",
+namespace {
+// Keep Catch assertion macro control flow out of the gesture scenario itself.
+template <typename T> void require_layer_brush(const T& value) { REQUIRE(static_cast<bool>(value)); }
+template <typename T> void check_layer_brush(const T& value) { CHECK(static_cast<bool>(value)); }
+template <typename T> void check_no_layer_brush(const T& value) { CHECK_FALSE(static_cast<bool>(value)); }
+} // namespace
+
+TEST_CASE("BGM-only paint adds mixed membership on a stroke and undoes as one command",
           "[unit][core][interaction][semantic-layer][paint][bgm]") {
     auto history = make_document_history(interaction_song());
     auto state = make_state(history);
-    REQUIRE(begin_bgm_paint(history, state, layer_id_t{7}, object_id_t{20}));
-    REQUIRE(update_bgm_paint(history, state, object_id_t{21}));
-    REQUIRE(end_bgm_paint(history, state));
-    CHECK(history.undo.size() == 1);
-    CHECK(history.document.charts.front().measures.front().bgm_events[0].semantic_layers.empty());
-    CHECK(history.document.charts.front().measures.front().bgm_events[1].semantic_layers ==
+    require_layer_brush(begin_bgm_paint(history, state, layer_id_t{7}, object_id_t{20}));
+    require_layer_brush(update_bgm_paint(history, state, object_id_t{21}));
+    require_layer_brush(dispatch_editor_action(history, state,
+        update_semantic_layer_paint_gesture_action_t{object_id_t{10}, true}));
+    require_layer_brush(end_bgm_paint(history, state));
+    check_layer_brush(history.undo.size() == 1);
+    check_layer_brush(history.document.charts.front().measures.front().bgm_events[0].semantic_layers ==
           std::vector{layer_id_t{7}});
+    check_layer_brush(history.document.charts.front().measures.front().bgm_events[1].semantic_layers ==
+          std::vector{layer_id_t{7}});
+    check_layer_brush(history.document.charts.front().measures.front().notes[0].semantic_layers ==
+          std::vector{layer_id_t{7}});
+    require_layer_brush(undo_document_command(history));
+    check_layer_brush(history.document.charts.front().measures.front().notes[0].semantic_layers.empty());
+    check_layer_brush(history.document.charts.front().measures.front().bgm_events[1].semantic_layers.empty());
 }
 
 TEST_CASE("BGM-only paint can restore the removed membership through one undoable reversal",
           "[unit][core][interaction][semantic-layer][paint][bgm]") {
     auto history = make_document_history(interaction_song());
     auto state = make_state(history);
-    REQUIRE(begin_bgm_paint(history, state, layer_id_t{7}, object_id_t{20}));
-    REQUIRE(end_bgm_paint(history, state));
-    REQUIRE(history.document.charts.front().measures.front().bgm_events[0].semantic_layers.empty());
-    REQUIRE(undo_document_command(history));
-    CHECK(history.document.charts.front().measures.front().bgm_events[0].semantic_layers ==
+    require_layer_brush(begin_bgm_paint(history, state, layer_id_t{7}, object_id_t{20},
+                            semantic_layer_paint_mode_t::remove));
+    require_layer_brush(update_bgm_paint(history, state, object_id_t{21}));
+    require_layer_brush(end_bgm_paint(history, state));
+    require_layer_brush(history.document.charts.front().measures.front().bgm_events[0].semantic_layers.empty());
+    check_layer_brush(history.document.charts.front().measures.front().bgm_events[1].semantic_layers.empty());
+    require_layer_brush(undo_document_command(history));
+    check_layer_brush(history.document.charts.front().measures.front().bgm_events[0].semantic_layers ==
           std::vector{layer_id_t{7}});
 }
 

@@ -446,6 +446,14 @@ auto process_bmson_marker_move_pointer(const ComposePointerEventContext& input,
     return true;
 }
 
+void append_layer_brush_begin(const ComposePointerEventContext& input) {
+    append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN,
+                         input.paint_anchor_x, input.paint_anchor_y);
+    if (!state.action_overflowed)
+        input.action->compose_inputs[input.action->compose_input_count - 1].paint_intent =
+            (input.pointer_modifiers & SDL_KMOD_ALT) != 0 ? 2 : 1;
+}
+
 auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& input,
                                                  bool& paint_pointer_consumed) -> bool {
     if (compose_area_pointer_consumed()) return true;
@@ -454,7 +462,7 @@ auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& inpu
     if (!state.action_overflowed && state.semantic_layer_paint_pointer_active) {
         if (!input.window_focused || !view.scene_available ||
             !view.semantic_layer_paint_mode_active || input.shortcut_event_count != 0 ||
-            (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
+            (input.pointer_modifiers & input.any_pointer_modifier & ~SDL_KMOD_ALT) != 0 ||
             (!input.left_down && !input.left_released)) {
             append_compose_cancel_once(action);
             state.semantic_layer_paint_pointer_active = false;
@@ -471,14 +479,13 @@ auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& inpu
     if (!state.action_overflowed && view.scene_available &&
         view.semantic_layer_paint_mode_active && input.pointer_started_in_view &&
         input.window_focused && input.shortcut_event_count == 0 &&
-        (input.pointer_modifiers & input.any_pointer_modifier) == 0 &&
+        (input.pointer_modifiers & input.any_pointer_modifier & ~SDL_KMOD_ALT) == 0 &&
         !state.pointer_hold_active && !state.lane_hold_active && !state.area_selection_active &&
         !state.area_selection_candidate_active) {
         paint_pointer_consumed = true;
         if (compose_point_hits_note(&view, input.paint_anchor_x, input.paint_anchor_y) ||
             compose_bgm_event_at(&view, input.paint_anchor_x, input.paint_anchor_y) != 0) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN,
-                                 input.paint_anchor_x, input.paint_anchor_y);
+            append_layer_brush_begin(input);
             state.semantic_layer_paint_pointer_active = !state.action_overflowed && input.left_down;
             if (!state.action_overflowed && !input.left_down)
                 append_compose_input(action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE,

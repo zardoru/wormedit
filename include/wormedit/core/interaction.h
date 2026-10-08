@@ -333,8 +333,10 @@ struct end_note_paint_gesture_action_t {
 };
 
 // Semantic-layer painting visits existing notes under a captured pointer and
-// toggles one explicitly armed layer across the whole visited set as a single
+// adds or removes one explicitly armed layer across the whole visited set as a single
 // undoable edit. It never creates, deletes, or moves gameplay notes.
+enum class semantic_layer_paint_mode_t { add, remove };
+
 struct begin_semantic_layer_paint_gesture_action_t {
     layer_id_t layer;
     object_id_t note;
@@ -342,6 +344,7 @@ struct begin_semantic_layer_paint_gesture_action_t {
     bool replace_memberships{};
     bool clear_memberships{};
     std::optional<object_id_t> bgm_event;
+    semantic_layer_paint_mode_t mode{semantic_layer_paint_mode_t::add};
 };
 
 struct update_semantic_layer_paint_gesture_action_t {
@@ -553,6 +556,7 @@ struct pending_semantic_layer_paint_gesture_t {
     std::unordered_set<std::uint64_t> visited;
     bool replace_memberships{};
     bool clear_memberships{};
+    semantic_layer_paint_mode_t mode{semantic_layer_paint_mode_t::add};
 };
 
 struct editor_hit_test_index_t;

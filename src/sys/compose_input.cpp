@@ -1650,12 +1650,12 @@ void arm_compose_note_layers(wormedit::editor_interaction_state_t& state,
 
 auto semantic_layer_paint_armed(const application_command_state_t& app) -> bool {
     return app.semantic_layer_paint_mode_active &&
-           (app.semantic_layer_target.has_value() || app.semantic_layer_target_none);
+           app.semantic_layer_target.has_value() && !app.semantic_layer_target_none;
 }
 
 auto semantic_layer_paint_target_editable(const application_command_state_t& app,
                                           const wormedit::semantic_layer_t* layer) -> bool {
-    return app.semantic_layer_target_none || (layer && !layer->locked);
+    return !app.semantic_layer_target_none && layer && layer->visible && !layer->locked;
 }
 
 struct semantic_layer_paint_target_t {
@@ -1672,7 +1672,9 @@ auto apply_semantic_layer_paint_target(const WormUiComposeInputAction& input,
     if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN) {
         result = begin_compose_layer_paint(history, state,
             application_state.semantic_layer_target_none,
-            layer ? layer->id : layer_id_t{}, target_id, true, target.bgm_event);
+            layer ? layer->id : layer_id_t{}, target_id, true, target.bgm_event,
+            input.paint_intent == 2 ? semantic_layer_paint_mode_t::remove
+                                    : semantic_layer_paint_mode_t::add);
         accepted = target.bgm_event ? "BGM semantic-layer paint stroke started."
                                     : "Semantic-layer paint stroke started.";
     } else if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE) {

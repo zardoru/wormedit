@@ -1901,6 +1901,11 @@ TEST_CASE("Draw and Layer shortcuts select tools without changing the armed note
     require_transient_transport(fixture.invoke(application_command_kind_t::edit_tool_draw).accepted);
     check_transient_transport(fixture.application_state.note_paint_mode_active);
     check_transient_transport(!fixture.application_state.semantic_layer_paint_mode_active);
+    check_transient_transport(!fixture.invoke(application_command_kind_t::edit_tool_layer).accepted);
+    check_transient_transport(fixture.application_state.note_paint_mode_active);
+    fixture.fixture.history.document.charts.front().semantic_layers = {
+        {.id = wormedit::layer_id_t{7}, .name = "Brush"}};
+    fixture.application_state.semantic_layer_target = wormedit::layer_id_t{7};
     require_transient_transport(fixture.invoke(application_command_kind_t::edit_tool_layer).accepted);
     check_transient_transport(!fixture.application_state.note_paint_mode_active);
     check_transient_transport(fixture.application_state.semantic_layer_paint_mode_active);

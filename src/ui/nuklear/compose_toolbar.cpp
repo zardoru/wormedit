@@ -110,6 +110,21 @@ static void render_navigation_group(const ComposeToolbarContext& toolbar) {
         action->compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW;
 }
 
+static void render_layer_tool(const ComposeToolbarContext& toolbar, bool paint_disabled) {
+    auto* context = toolbar.context;
+    const auto* view = toolbar.view;
+    auto* action = toolbar.action;
+    const bool disabled = view->semantic_layer_target.layer_id == 0 ||
+        !view->semantic_layer_target.visible || view->semantic_layer_target.locked;
+    if (disabled && !paint_disabled) nk_widget_disable_begin(context);
+    if (wormedit::ui::chrome::IconButton{Glyph::layers,
+            disabled ? "Pick a layer in the Layers dock" : "Layer (Alt+3): add; Alt+drag removes",
+            view->semantic_layer_paint_mode_active}.render(context) &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_LAYER_TOOL;
+    if (disabled && !paint_disabled) nk_widget_disable_end(context);
+}
+
 static void render_tool_group(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
     const auto* view = toolbar.view;
@@ -124,10 +139,7 @@ static void render_tool_group(const ComposeToolbarContext& toolbar) {
             view->note_paint_mode_active}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_DRAW_TOOL;
-    if (wormedit::ui::chrome::IconButton{Glyph::layers, "Layer (Alt+3)",
-            view->semantic_layer_paint_mode_active}.render(context) &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_LAYER_TOOL;
+    render_layer_tool(toolbar, paint_disabled);
     if (paint_disabled) nk_widget_disable_end(context);
     if (!view->scene_available) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::grid,

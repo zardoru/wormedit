@@ -2289,7 +2289,14 @@ TEST_CASE("note painting rejects active area and Space range selection gestures"
     }
 }
 
-TEST_CASE("semantic-layer paint visits notes once and commits one undoable toggle",
+namespace {
+// Keep Catch assertion macro control flow out of the gesture scenario itself.
+template <typename T> void require_layer_brush(const T& value) { REQUIRE(static_cast<bool>(value)); }
+template <typename T> void check_layer_brush(const T& value) { CHECK(static_cast<bool>(value)); }
+template <typename T> void check_no_layer_brush(const T& value) { CHECK_FALSE(static_cast<bool>(value)); }
+} // namespace
+
+TEST_CASE("semantic-layer paint visits mixed notes once and commits one undoable add",
           "[unit][core][interaction][semantic-layer][paint]") {
     auto song = make_song();
     auto& chart = song.charts.front();
@@ -2298,39 +2305,77 @@ TEST_CASE("semantic-layer paint visits notes once and commits one undoable toggl
         {.id = object_id_t{101},
          .position = {measure_id_t{1}, 0},
          .lane = lane_id_t{1},
-         .kind = note_kind_t::tap},
+         .kind = note_kind_t::tap,
+         .semantic_layers = {layer_id_t{7}}},
         {.id = object_id_t{102},
          .position = {measure_id_t{1}, 240},
          .lane = lane_id_t{1},
          .kind = note_kind_t::tap},
     };
-    REQUIRE(validate_document(song).empty());
+    require_layer_brush(validate_document(song).empty());
     auto history = make_document_history(std::move(song));
     auto state = make_state(history);
 
-    REQUIRE(dispatch_editor_action(
+    require_layer_brush(dispatch_editor_action(
         history, state,
         begin_semantic_layer_paint_gesture_action_t{layer_id_t{7}, object_id_t{101}, true}));
-    REQUIRE(state.pending_semantic_layer_paint_gesture.has_value());
-    REQUIRE(dispatch_editor_action(
+    require_layer_brush(state.pending_semantic_layer_paint_gesture.has_value());
+    require_layer_brush(dispatch_editor_action(
         history, state, update_semantic_layer_paint_gesture_action_t{object_id_t{102}, true}));
-    REQUIRE(dispatch_editor_action(
+    require_layer_brush(dispatch_editor_action(
         history, state, update_semantic_layer_paint_gesture_action_t{object_id_t{102}, true}));
-    CHECK(state.pending_semantic_layer_paint_gesture->notes->size() == 2);
-    CHECK(history.document.revision == 1);
+    check_layer_brush(state.pending_semantic_layer_paint_gesture->notes->size() == 2);
+    check_layer_brush(history.document.revision == 1);
 
     const auto committed = dispatch_editor_action(
         history, state, end_semantic_layer_paint_gesture_action_t{object_id_t{}, true});
-    REQUIRE(committed);
-    CHECK(committed.document_changed);
-    CHECK_FALSE(state.pending_semantic_layer_paint_gesture.has_value());
-    CHECK(history.undo.size() == 1);
-    CHECK(find_note(history, object_id_t{101})->semantic_layers == std::vector{layer_id_t{7}});
-    CHECK(find_note(history, object_id_t{102})->semantic_layers == std::vector{layer_id_t{7}});
+    require_layer_brush(committed);
+    check_layer_brush(committed.document_changed);
+    check_no_layer_brush(state.pending_semantic_layer_paint_gesture.has_value());
+    check_layer_brush(history.undo.size() == 1);
+    check_layer_brush(find_note(history, object_id_t{101})->semantic_layers == std::vector{layer_id_t{7}});
+    check_layer_brush(find_note(history, object_id_t{102})->semantic_layers == std::vector{layer_id_t{7}});
 
-    REQUIRE(undo_document_command(history));
-    CHECK(find_note(history, object_id_t{101})->semantic_layers.empty());
-    CHECK(find_note(history, object_id_t{102})->semantic_layers.empty());
+    require_layer_brush(dispatch_editor_action(history, state,
+        begin_semantic_layer_paint_gesture_action_t{layer_id_t{7}, object_id_t{101}, true}));
+    const auto unchanged = dispatch_editor_action(history, state,
+        end_semantic_layer_paint_gesture_action_t{object_id_t{102}, true});
+    require_layer_brush(unchanged);
+    check_no_layer_brush(unchanged.document_changed);
+    check_layer_brush(history.undo.size() == 1);
+
+    require_layer_brush(undo_document_command(history));
+    check_layer_brush(find_note(history, object_id_t{101})->semantic_layers == std::vector{layer_id_t{7}});
+    check_layer_brush(find_note(history, object_id_t{102})->semantic_layers.empty());
+}
+
+TEST_CASE("semantic-layer remove preserves nonmembers and repeated strokes create no undo",
+          "[unit][core][interaction][semantic-layer][paint]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.semantic_layers = {{.id = layer_id_t{7}, .name = "Phrase"}};
+    chart.measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1},
+         .kind = note_kind_t::tap, .semantic_layers = {layer_id_t{7}}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1},
+         .kind = note_kind_t::tap}};
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    for (int stroke = 0; stroke != 2; ++stroke) {
+        require_layer_brush(dispatch_editor_action(history, state,
+            begin_semantic_layer_paint_gesture_action_t{
+                .layer = layer_id_t{7}, .note = object_id_t{101},
+                .mode = semantic_layer_paint_mode_t::remove}));
+        require_layer_brush(dispatch_editor_action(history, state,
+            update_semantic_layer_paint_gesture_action_t{object_id_t{102}, true}));
+        require_layer_brush(dispatch_editor_action(history, state,
+            end_semantic_layer_paint_gesture_action_t{}));
+        check_layer_brush(history.undo.size() == 1);
+        check_layer_brush(find_note(history, object_id_t{101})->semantic_layers.empty());
+        check_layer_brush(find_note(history, object_id_t{102})->semantic_layers.empty());
+    }
+    require_layer_brush(undo_document_command(history));
+    check_layer_brush(find_note(history, object_id_t{101})->semantic_layers == std::vector{layer_id_t{7}});
 }
 
 TEST_CASE("semantic-layer paint requires an editable visible layer and cancels on capture loss",
@@ -2346,30 +2391,33 @@ TEST_CASE("semantic-layer paint requires an editable visible layer and cancels o
                                      .position = {measure_id_t{1}, 0},
                                      .lane = lane_id_t{1},
                                      .kind = note_kind_t::tap}};
-    REQUIRE(validate_document(song).empty());
+    require_layer_brush(validate_document(song).empty());
     auto history = make_document_history(std::move(song));
     auto state = make_state(history);
 
     const auto hidden = dispatch_editor_action(
         history, state,
         begin_semantic_layer_paint_gesture_action_t{layer_id_t{7}, object_id_t{101}, true});
-    CHECK_FALSE(hidden);
-    CHECK(has_code(hidden.diagnostics, diagnostic_code_t::invalid_id));
+    check_no_layer_brush(hidden);
+    check_layer_brush(has_code(hidden.diagnostics, diagnostic_code_t::invalid_id));
     const auto locked = dispatch_editor_action(
         history, state,
         begin_semantic_layer_paint_gesture_action_t{layer_id_t{8}, object_id_t{101}, true});
-    CHECK_FALSE(locked);
-    CHECK(has_code(locked.diagnostics, diagnostic_code_t::invalid_id));
+    check_no_layer_brush(locked);
+    check_layer_brush(has_code(locked.diagnostics, diagnostic_code_t::invalid_id));
+    check_layer_brush(history.document.revision == 1);
+    check_layer_brush(history.undo.empty());
+    check_no_layer_brush(state.pending_semantic_layer_paint_gesture);
 
-    REQUIRE(dispatch_editor_action(
+    require_layer_brush(dispatch_editor_action(
         history, state,
         begin_semantic_layer_paint_gesture_action_t{layer_id_t{9}, object_id_t{101}, true}));
     const auto capture_lost = dispatch_editor_action(
         history, state, update_semantic_layer_paint_gesture_action_t{object_id_t{101}, false});
-    REQUIRE(capture_lost);
-    CHECK_FALSE(state.pending_semantic_layer_paint_gesture.has_value());
-    CHECK(history.undo.empty());
-    CHECK(find_note(history, object_id_t{101})->semantic_layers.empty());
+    require_layer_brush(capture_lost);
+    check_no_layer_brush(state.pending_semantic_layer_paint_gesture.has_value());
+    check_layer_brush(history.undo.empty());
+    check_layer_brush(find_note(history, object_id_t{101})->semantic_layers.empty());
 }
 
 TEST_CASE("single-cell paint toggles taps and rejects hold collisions atomically",

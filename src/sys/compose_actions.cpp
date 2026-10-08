@@ -502,6 +502,10 @@ std::string select_compose_tool(compose_action_context_t& context) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_SELECT_TOOL &&
         !wormedit::ui::compose_notes_editable(compose_mode_of(application_state)))
         return compose_action_warning(context, "Draw and Layer are unavailable in Timing focus.");
+    if (action.compose_action == WORM_UI_COMPOSE_ACTION_LAYER_TOOL &&
+        !compose_layer_brush_target_editable(context.history.document, context.state.chart,
+                                            application_state.semantic_layer_target))
+        return compose_action_warning(context, "Pick an unlocked visible layer in the Layers dock.");
     (void)dispatch_editor_action(context.history, context.state, cancel_editor_gesture_action_t{});
     application_state.bga_draw_stroke.reset();
     application_state.note_paint_mode_active = action.compose_action == WORM_UI_COMPOSE_ACTION_DRAW_TOOL;

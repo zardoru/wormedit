@@ -677,6 +677,11 @@ auto select_tool_command(command_context_t& context) -> std::optional<command_re
         return reject_application_command(context.sink,
             "Draw and Layer require editable chart geometry.",
             notification_severity_t::warning, notification_source_t::edit);
+    if (kind == command_kind_t::edit_tool_layer &&
+        !compose_layer_brush_target_editable(context.history.document, state->chart,
+                                            context.application_state.semantic_layer_target))
+        return reject_application_command(context.sink, "Pick an unlocked visible layer in the Layers dock.",
+            notification_severity_t::warning, notification_source_t::edit);
     if (editor_interaction_has_pending_gesture(*state)) {
         const auto canceled = wormedit::dispatch_editor_action(
             context.history, *state, wormedit::cancel_editor_gesture_action_t{});

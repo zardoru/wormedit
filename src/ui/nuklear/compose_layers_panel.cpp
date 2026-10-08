@@ -329,14 +329,16 @@ void render_row_name(const LayersPanel& panel, const WormUiComposeSemanticLayerV
                    nk_rgba(layer.red, layer.green, layer.blue, layer.alpha));
     draw_layer_row_text(panel, layer, bounds);
     if (hovered) wormedit::ui::nuklear::tooltip::text(context, layer.locked ? "Layer is locked; click to choose its target"
-                         : panel.view->selected_note_count || panel.view->selected_bgm_event_count
+                              : !panel.view->semantic_layer_paint_mode_active &&
+                                    (panel.view->selected_note_count || panel.view->selected_bgm_event_count)
                                ? "Assign selected notes and BGM events to this layer"
                                : layer.name);
     if (clicked && panel.view->scene_available && layer.layer_id == 0) {
         (void)raise(panel, WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER);
     } else if (clicked && panel.view->scene_available)
         (void)raise(panel, (panel.view->selected_note_count ||
-                            panel.view->selected_bgm_event_count) && !layer.locked
+                            panel.view->selected_bgm_event_count) && !layer.locked &&
+                            !panel.view->semantic_layer_paint_mode_active
                               ? WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER
                               : WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER, layer.layer_id);
 }

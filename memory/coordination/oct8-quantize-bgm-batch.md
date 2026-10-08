@@ -209,3 +209,23 @@ existing stem reassignment command. Unlinked BMSON notes remain ordinary. The
 command restores linked markers before planning ordinary occupancy and keeps
 mixed operations atomic, so it preserves stem ownership instead of publishing a
 misleading pure assignment. No new source-family restriction is introduced.
+
+## Implementation checkpoints
+
+Quantize metadata worker `2b0f1c6` is independently reviewed and integrated as
+main `1f91016`. Preview 33 cases/189 assertions and filtered CTest 35/35 pass;
+configured header-inclusive complexity emits no new findings. The real native
+harness target closure links normally on main and its event label passes
+242/242. The card remains ready until renderer/visibility gates pass.
+
+Matched ABI-safe annotation probes pass eight dense fixtures and 240 warm hits
+per fixture with zero core calls. Sequential cold differences are noisy and do
+not support a speedup or frame-cadence claim. Logs/manifests are in feedback
+scratch; earlier colocated-hold wall measurements are superseded.
+
+BGM allocator source is frozen at exactly its three initial files. Current tidy
+passes with zero core findings and the four existing test title/score identities
+unchanged. Sol BGM owns its ordinary build/test readers while Luna writes the
+ten renderer files in the independent feedback tree. This overlap permits no
+BGM source mutation during readers; any repair returns the writer only after
+readers exit. No schema or shared tail frontend edits have been granted yet.

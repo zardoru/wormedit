@@ -158,3 +158,35 @@ measurements. Apply the stale-plan check (rule 9) first.
 - **Verify:** standard build/test; manual: start preload of a large BMS while playing; no dropouts.
 - **Out of scope:** realtime scheduling classes.
 - **Expected gain:** removes contention spikes during loading and analysis.
+
+## T-473 Start auditions without decoding on the frame thread
+
+- **Status:** ready
+- **Outcome:** an audition (play sound on click, a Draw stroke, a lane key) returns from `audition_session_t::start` without decoding audio on the calling thread and without holding the session mutex while priming. A resident keysound starts in the next audio callback. A streamed sound (a stem, or a sound over the keysound budget) starts once the refill worker has its first block. The spike log shows no Actions or Event handling entry caused by auditions.
+- **Read first:** `src/audio/audition_session.cpp` (`start`, which runs `pump_audition_lookahead` under `mutex_`), `src/sys/sdl_audition_output.cpp` (stream clears at lines 85, 138 and 143), `src/audio/audition_pump.cpp`, `src/audio/preview_session.cpp` (`prime_pending_`, the deferred priming T-470 used for seeks).
+- **Files owned:** `src/audio/audition_session.cpp`, `include/wormedit/audio/audition_session.h`, `src/audio/audition_pump.cpp`, `src/sys/sdl_audition_output.cpp`, `src/sys/sdl_audition_output.h`, `tests/core/audio_audition_session_tests.cpp`, this card.
+- **Steps:**
+  1. Record on this card which part of `start` needs the lock and which only decodes.
+  2. Prime from the resident snapshot under the lock. That's a copy of already decoded PCM, so it's cheap.
+  3. Defer everything else to the refill worker with a `prime_pending_` flag, as the preview session does, and render silence until the first block arrives.
+  4. Test that starting a resident sound renders it in the first block, that a streamed sound primes on the worker and never decodes on the calling thread, and that 10 rapid auditions keep only the newest one.
+- **Invariants:** the audition audio is identical once it plays. Audition volume, fades and stop behave as before.
+- **Reject/failure behavior:** a decode failure after start ends the audition with the existing notification, and leaves the transport untouched.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'audition'`; a spike log (`WORMEDIT_FRAME_SPIKE_LOG`, 12 ms) while drawing 20 notes with play sound on click on a BMSON stem shows no audition spike.
+- **Out of scope:** chart preview transport (T-474).
+
+## T-474 Apply transport changes on the audio thread instead of waiting for its lock
+
+- **Status:** ready
+- **Outcome:** Play, Stop, seek and playback-rate changes return without calling `SDL_ClearAudioStream`, `SDL_SetAudioStreamFrequencyRatio` or any other stream-locking SDL function on the frame thread. The audio callback applies them at its next block. The spike log shows no blocked (wall ≫ CPU) Actions entries for transport changes.
+- **Read first:** `src/sys/sdl_preview_output.cpp` (stream clears at lines 200, 249, 255, 429, 436 and 563, `apply_output_mode`, `stream_callback`), `src/sys/sdl_preview_output.h`, `src/audio/preview_session.cpp` (`stop`, `seek` and `start` under `mutex_`).
+- **Files owned:** `src/sys/sdl_preview_output.cpp`, `src/sys/sdl_preview_output.h`, `tests/sys/sdl_preview_output_tests.cpp`, this card.
+- **Steps:**
+  1. **STOP** first. Measure with the spike log in a Release build: 30 seeks and 10 Play/Stop cycles on Kick Your Ass at 1× and 0.5× with Keep pitch. If no Actions entry over 2 ms is blocked, set this card to done with the numbers and stop.
+  2. Otherwise, post each transport change as a command with a generation number, through a lock-free single-slot mailbox. The callback applies the newest one at entry (clear, ratio, start frame), and the frame thread never touches the stream.
+  3. Keep the session-mutex section on the control thread as short as the bridge allows. Record any remaining wait on this card.
+  4. Test that rapid seeks apply only the newest command, that Stop silences the next block, and that a rate change applies at a block boundary without a click.
+- **Invariants:** seek accuracy, mid-slice resume (T-442), loop regions and the T-276 lock-free playhead are unchanged.
+- **Reject/failure behavior:** a device failure is still reported through `callback_failure_` and stops playback, as today.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'sdl_preview|audio_preview'`; the step 1 measurement repeated after the change.
+- **Out of scope:** audition output (T-473).

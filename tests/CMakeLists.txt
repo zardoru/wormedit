@@ -559,6 +559,26 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/bga_advance_workflow_tests.cpp
         ui/bga_lane_event_harness_tests.cpp
         ui/inspector_resource_workflow_tests.cpp
+        ../src/sys/bookmark_chooser_projection.cpp
+        ../src/sys/compose_area_actions.cpp
+        ../src/sys/compose_bgm_bar.cpp
+        ../src/sys/compose_bookmark_commands.cpp
+        ../src/sys/compose_dead_spans.cpp
+        ../src/sys/compose_input.cpp
+        ../src/sys/compose_kiai_spans.cpp
+        ../src/sys/compose_minimap_navigation.cpp
+        ../src/sys/compose_note_to_bgm.cpp
+        ../src/sys/compose_playhead_skip.cpp
+        ../src/sys/compose_quantize_preview.cpp
+        ../src/sys/compose_recipe_areas.cpp
+        ../src/sys/compose_resource_presenter.cpp
+        ../src/sys/compose_speed_spans.cpp
+        ../src/sys/compose_sv_graph.cpp
+        ../src/sys/compose_view.cpp
+        ../src/sys/recipe_form.cpp
+        ../src/sys/sound_list_projection.cpp
+        ../src/sys/sound_usage_projection.cpp
+        ../src/sys/workspace_projection.cpp
         ${WORMEDIT_UI_FRONTEND_SOURCES}
         "${CMAKE_SOURCE_DIR}/src/common/static_interval_index.cpp"
         "${CMAKE_SOURCE_DIR}/src/sys/frame_timing.cpp")

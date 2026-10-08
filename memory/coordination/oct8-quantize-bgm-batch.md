@@ -104,3 +104,31 @@ No user desktop windows or app restarts. Event harness and hidden SDL software
 captures are allowed; isolated Xvfb checks require a working isolated runtime.
 Report native/display/older-hardware coverage precisely. Root finishes with
 normal main build, full suite, main-object captures, committed records and cleanup.
+
+## T-422 real dispatcher target support
+
+Root approved the ordinary production object symbol closure for the existing
+event harness, rather than a separate executable or dispatcher substitute.
+The existing conditional audio/image/video links remain sufficient. Exact added
+production sources in root-owned `tests/CMakeLists.txt`:
+
+- `src/sys/bookmark_chooser_projection.cpp`
+- `src/sys/compose_area_actions.cpp`
+- `src/sys/compose_bgm_bar.cpp`
+- `src/sys/compose_bookmark_commands.cpp`
+- `src/sys/compose_dead_spans.cpp`
+- `src/sys/compose_input.cpp`
+- `src/sys/compose_kiai_spans.cpp`
+- `src/sys/compose_minimap_navigation.cpp`
+- `src/sys/compose_note_to_bgm.cpp`
+- `src/sys/compose_playhead_skip.cpp`
+- `src/sys/compose_quantize_preview.cpp`
+- `src/sys/compose_recipe_areas.cpp`
+- `src/sys/compose_resource_presenter.cpp`
+- `src/sys/compose_speed_spans.cpp`
+- `src/sys/compose_sv_graph.cpp`
+- `src/sys/compose_view.cpp`
+- `src/sys/recipe_form.cpp`
+- `src/sys/sound_list_projection.cpp`
+- `src/sys/sound_usage_projection.cpp`
+- `src/sys/workspace_projection.cpp`

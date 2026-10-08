@@ -393,3 +393,27 @@ Keep existing label/branch exclusions and source-link/slice restrictions.
 Layered linked tap and hold roundtrips, note-to-different-lane preservation and
 exact native Undo/Redo belong in the already-approved 02d tests. No new schema,
 API or source file is required; 02d execution still waits for its grant.
+
+## Native hold acceptance and linked hold grant
+
+Worker native hold checkpoint `5814624` is accepted and integrated as main
+`eadff84`. Coordinator's final ordinary app/core build, four focused suites
+(27/244, 7/80, 54/722, 94/867), full core 1,651/1,651, docs and diff pass.
+Root independently repeats 34 conversion/move cases/324 assertions after
+definitive object-reader release. All 75 configured header-inclusive baseline
+finding identities/scores are unchanged; no new/increased finding remains.
+Frozen hashes match after gates. Earlier failed/overlapping builds and stale
+diagnostic runs are explicitly superseded by this final evidence. T-423 is
+partial; no export or frontend tail acceptance is implied.
+
+Root now grants later 02d to the serialized Luna executor, coordinated by BGM
+Sol, only after the clean BGM worker merges accepted main and Sol captures its
+matched immutable baseline/readers release. Own exactly `src/formats/bmson.cpp`,
+`tests/formats/bmson_tests.cpp`, `src/core/bmson_sound_channel_editor.cpp`,
+`tests/core/bmson_sound_channel_editor_tests.cpp`, and the narrowly loaned
+`tests/core/note_to_bgm_tests.cpp` for linked batch atomicity. Use the finalized
+scratch 02d brief, fullspan/layer/null-pointer clarifications above and existing
+stem/slice restrictions. Root owns cards/manifests; no other source path or new
+API is granted. Sol owns serialized build/test/tidy orchestration after each
+source freeze; a completed executor must be resumed with `followup_task` for
+corrections. Remaining order is 02d, 02c, 02b, then 03.

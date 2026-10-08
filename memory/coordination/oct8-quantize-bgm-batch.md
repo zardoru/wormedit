@@ -351,3 +351,13 @@ Five existing test title/score pairs and the unchanged existing header score
 29 remain; no new/increased findings. Assertion reduction removes duplicate
 checks while preserving all six behavior cases and exact document/selection
 proof. T-422 is complete; BGM native slice 02a is now the active implementation.
+
+Native slice verification encountered overlapping worker build attempts in the
+same scratch directory. Retry session 71510 returned explicit interruption
+exit 130; duplicate outer cell 622 was terminated without a nested build exit.
+Neither incomplete log is passing evidence. Root grants one serialized normal
+incremental rebuild on frozen sources, using the existing configuration and a
+single owned session polled to its actual exit before tests/tidy. Cross-agent
+`ps` runs see only their sandbox PID namespace and cannot establish another
+agent's reader release. Rely on the owning session's completion/termination
+evidence, and never restart merely because redirected output is quiet.

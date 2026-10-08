@@ -157,6 +157,106 @@ static void render_resolution_row(const MetadataPanel& panel, bool editable) {
     if (redivide) set_metadata_redivision_action(panel.action, &metadata);
 }
 
+// Reloads the channel-map text from the view when the document or the layout segment changed.
+static void sync_channel_map_buffers(const WormUiMetadataView& metadata) {
+    const auto count = metadata.channel_map_lane_count;
+    if (state.channel_map_buffers_valid &&
+        state.channel_map_buffer_revision == metadata.document_revision &&
+        state.channel_map_buffer_segment == metadata.channel_map_layout_segment_id &&
+        state.channel_map_texts.size() == count)
+        return;
+    state.channel_map_texts.assign(count, {});
+    state.channel_map_lane_ids.assign(count, 0);
+    for (std::size_t lane = 0; lane < count; ++lane) {
+        const auto& source = metadata.channel_map_lanes[lane];
+        state.channel_map_lane_ids[lane] = source.lane_id;
+        for (std::size_t channel = 0; channel < 4; ++channel)
+            (void)copy_metadata_text(state.channel_map_texts[lane][channel].data(),
+                                     state.channel_map_texts[lane][channel].size(),
+                                     source.channels[channel], std::strlen(source.channels[channel]));
+    }
+    state.channel_map_buffer_revision = metadata.document_revision;
+    state.channel_map_buffer_segment = metadata.channel_map_layout_segment_id;
+    state.channel_map_buffers_valid = true;
+}
+
+static void render_channel_map_lane_row(nk_context* context, const WormUiMetadataChannelMapLaneView& lane,
+                                        std::size_t lane_index, bool editable) {
+    static constexpr const char* channel_names[4] = {"Visible", "Invisible", "Long", "Mine"};
+    nk_layout_row_begin(context, NK_DYNAMIC, 26, 5);
+    nk_layout_row_push(context, 0.2f);
+    nk_label(context, lane.name, NK_TEXT_LEFT);
+    for (std::size_t channel = 0; channel < 4; ++channel) {
+        nk_layout_row_push(context, 0.2f);
+        if (!editable) nk_widget_disable_begin(context);
+        (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(
+            context, NK_EDIT_FIELD, state.channel_map_texts[lane_index][channel].data(),
+            state.channel_map_texts[lane_index][channel].size(), nk_filter_default);
+        if (!editable) nk_widget_disable_end(context);
+        if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0)
+            wormedit::ui::nuklear::tooltip::text(context, channel_names[channel]);
+    }
+    nk_layout_row_end(context);
+}
+
+static void set_channel_map_preview_action(WormUiWorkspaceAction* action,
+                                           const WormUiMetadataView& metadata) {
+    if (action->metadata_edit != WORM_UI_METADATA_EDIT_NONE) return;
+    state.channel_map_text_pointers.clear();
+    for (const auto& lane : state.channel_map_texts)
+        for (const auto& text : lane) state.channel_map_text_pointers.push_back(text.data());
+    action->metadata_edit = WORM_UI_METADATA_EDIT_PREVIEW_CHANNEL_MAP;
+    action->metadata_document_revision = metadata.document_revision;
+    action->metadata_chart_id = metadata.chart_id;
+    action->metadata_channel_map_layout_segment_id = metadata.channel_map_layout_segment_id;
+    action->metadata_channel_map_lane_count = state.channel_map_lane_ids.size();
+    action->metadata_channel_map_lane_ids = state.channel_map_lane_ids.data();
+    action->metadata_channel_map_texts = state.channel_map_text_pointers.data();
+}
+
+// Lane table with Preview and Apply. Apply carries no payload: it applies the sealed preview.
+static void render_channel_map_section(const MetadataPanel& panel) {
+    auto* context = panel.context;
+    const auto& metadata = *panel.metadata;
+    if (metadata.channel_map_lane_count == 0 && !metadata.channel_map_lanes_truncated) return;
+    sync_channel_map_buffers(metadata);
+    const auto editable = metadata.chart_fields_editable && state.channel_map_buffers_valid;
+    nk_layout_row_dynamic(context, 19, 1);
+    muted_label(context, "Channel maps (layout segment lanes)");
+    for (std::size_t lane = 0; lane < metadata.channel_map_lane_count; ++lane)
+        render_channel_map_lane_row(context, metadata.channel_map_lanes[lane], lane, editable);
+    if (metadata.channel_map_lanes_truncated) {
+        nk_layout_row_dynamic(context, 19, 1);
+        muted_label(context, "Too many lanes to edit here; Apply is disabled.");
+    }
+    nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
+    nk_layout_row_push(context, 0.5f);
+    if (!editable) nk_widget_disable_begin(context);
+    const auto preview = nk_button_label(context, "Preview") != 0 && editable;
+    if (!editable) nk_widget_disable_end(context);
+    nk_layout_row_push(context, 0.5f);
+    const auto apply_enabled = editable && metadata.channel_map_apply_enabled;
+    if (!apply_enabled) nk_widget_disable_begin(context);
+    const auto apply = nk_button_label(context, "Apply") != 0 && apply_enabled;
+    if (!apply_enabled) nk_widget_disable_end(context);
+    nk_layout_row_end(context);
+    if (metadata.channel_map_preview_present) {
+        nk_layout_row_dynamic(context, 19, 1);
+        const auto* message = metadata.channel_map_preview_message ? metadata.channel_map_preview_message : "";
+        if (metadata.channel_map_apply_enabled)
+            nk_label(context, message, NK_TEXT_LEFT);
+        else
+            nk_label_colored(context, message, NK_TEXT_LEFT,
+                             wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::status));
+    }
+    if (preview) set_channel_map_preview_action(panel.action, metadata);
+    if (apply && panel.action->metadata_edit == WORM_UI_METADATA_EDIT_NONE) {
+        panel.action->metadata_edit = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
+        panel.action->metadata_document_revision = metadata.document_revision;
+        panel.action->metadata_chart_id = metadata.chart_id;
+    }
+}
+
 void render_difficulty_section(const MetadataPanel& panel) {
     auto* context = panel.context;
     const auto& metadata = *panel.metadata;
@@ -213,5 +313,6 @@ void render_difficulty_section(const MetadataPanel& panel) {
     }
     if (revert) reset_difficulty_draft(metadata);
     if (apply) set_metadata_chart_action(panel.action, &metadata, 0);
+    render_channel_map_section(panel);
     nk_tree_pop(context);
 }

@@ -19,11 +19,18 @@ void metadata_drop_state_t::clear_music() {
 
 void metadata_drop_state_t::clear_output() { output_path.clear(); }
 
+void metadata_drop_state_t::clear_channel_map_preview() {
+    channel_map_preview.reset();
+}
+
 void metadata_drop_state_t::discard_if_stale(std::uint64_t current_revision,
                                              std::uint64_t current_chart_id) {
     if ((!music_path.empty() || !output_path.empty()) &&
         (music_revision != current_revision || chart_id != current_chart_id))
         clear_paths();
+    if (channel_map_preview && (channel_map_preview->revision != current_revision ||
+                                channel_map_preview->chart.value != current_chart_id))
+        clear_channel_map_preview();
 }
 
 void metadata_drop_state_t::publish(WormUiMetadataView& view) const {

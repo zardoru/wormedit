@@ -300,3 +300,10 @@ wording was inaccurate. Preserve the existing configuration and finish its
 complete ordinary target set and test suite, reporting this feature coverage
 without an all-features claim. Main sources remain frozen during this reader;
 worker builds use at most two jobs until root releases its four-job build.
+
+The ordinary configured-main build completes successfully at `aa5408e`; its
+durable log is `root/T437-main-ordinary-build.log` in the batch evidence tree.
+Main is clean and this reader is released, so the exclusive feedback worker may
+use four build jobs. This is the renderer integration checkpoint, not the final
+completed-batch test or capture gate. T-422 remains the sole implementation
+slice; native BGM/schema mutation still waits for its source/build handoff.

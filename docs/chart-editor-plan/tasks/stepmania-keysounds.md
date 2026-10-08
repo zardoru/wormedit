@@ -86,7 +86,7 @@ Order: T-478, then T-479, then T-480. T-481 waits on T-480.
 
 ## T-481 Convert BMSON stems to StepMania keysounds through slice spans
 
-- **Status:** blocked-on T-480
+- **Status:** ready (T-480 done 2026-10-08)
 - **Outcome:** a BMSON chart with stems exports to SM or SSC by slicing stems into spans, exactly as the osu!mania path does (T-466). Each distinct span becomes one rendered file in `#KEYSOUNDS`. There is no capacity refusal, because StepMania has no keysound limit.
 - **Read first:** [T-466](bmson-conversion.md) and its result, `include/wormedit/formats/slice_spans.h`, `src/formats/conversion.cpp`, `src/formats/conversion_publication.cpp`.
 - **Files owned:** `src/formats/conversion.cpp`, `include/wormedit/formats/conversion.h`, `src/formats/conversion_publication.cpp`, `tests/formats/conversion_tests.cpp`, `tests/formats/conversion_publication_tests.cpp`, this card.

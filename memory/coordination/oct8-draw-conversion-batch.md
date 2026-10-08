@@ -121,3 +121,9 @@ menus otherwise open on right press before Draw captures erase. Share the
 no-movement release predicate through owned Compose state helpers, use one
 screen-coordinate drag threshold, and preserve Select press behavior and menu
 contents.
+
+Sequential Luna return: conversion's appended pure tests were released and
+reviewed; Draw now loans Luna exclusively `tests/ui/nuklear_event_harness_tests.cpp`
+for source selection/clear, right-click versus erase drag at scaled viewports,
+and cancellation regressions. Sol keeps production and all build writes;
+release the test file before its review/build. Conversion retains its tests.

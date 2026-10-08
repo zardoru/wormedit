@@ -24,6 +24,7 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY 16384
 #define WORM_UI_METADATA_FORMAT_FIELD_CAPACITY 128
 #define WORM_UI_METADATA_FORMAT_TARGET_CAPACITY 14
+#define WORM_UI_METADATA_CHANNEL_MAP_LANE_CAPACITY 256
 #define WORM_UI_COMPOSE_BAND_CAPACITY 4096
 #define WORM_UI_COMPOSE_LANE_CAPACITY 32768
 #define WORM_UI_COMPOSE_GRID_CAPACITY 16384
@@ -268,6 +269,14 @@ typedef struct WormUiMetadataFormatTargetView {
     size_t field_count;
 } WormUiMetadataFormatTargetView;
 
+// One lane of the active layout segment on a BMS-family chart. channels is ordered visible,
+// invisible, long_note, mine; an unset channel is the empty string.
+typedef struct WormUiMetadataChannelMapLaneView {
+    uint64_t lane_id;
+    const char* name;
+    const char* channels[4];
+} WormUiMetadataChannelMapLaneView;
+
 typedef struct WormUiAudioWaveformColumnView {
     float minimum[2];
     float maximum[2];
@@ -355,6 +364,18 @@ typedef struct WormUiMetadataView {
     size_t copy_preview_group_index;
     uint64_t copy_preview_asset_id;
     const char* copy_preview_source;
+    uint64_t channel_map_layout_segment_id;
+    bool channel_map_lanes_truncated;
+    const WormUiMetadataChannelMapLaneView* channel_map_lanes;
+    size_t channel_map_lane_count;
+    // Preview state of the sealed proposal from the last Preview action; Apply needs it valid,
+    // present and conflict-free.
+    bool channel_map_preview_present;
+    bool channel_map_preview_valid;
+    size_t channel_map_preview_affected_note_count;
+    size_t channel_map_preview_conflict_count;
+    const char* channel_map_preview_message;
+    bool channel_map_apply_enabled;
 } WormUiMetadataView;
 
 typedef struct WormUiSoundRowView {
@@ -2562,6 +2583,8 @@ typedef enum WormUiMetadataEditKind {
     WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD,
     WORM_UI_METADATA_EDIT_OUTPUT_PATH,
     WORM_UI_METADATA_EDIT_REDIVIDE_CHART,
+    WORM_UI_METADATA_EDIT_PREVIEW_CHANNEL_MAP,
+    WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP,
 } WormUiMetadataEditKind;
 
 typedef enum WormUiClipboardAction {
@@ -2685,6 +2708,11 @@ typedef struct WormUiWorkspaceAction {
     const char* metadata_output_path;
     // REDIVIDE_CHART: target divisions per standard measure (exact, 0 when unset).
     uint64_t metadata_redivision_resolution;
+    // Channel-map preview: lane ids and 4 texts per lane (visible, invisible, long_note, mine).
+    uint64_t metadata_channel_map_layout_segment_id;
+    size_t metadata_channel_map_lane_count;
+    const uint64_t* metadata_channel_map_lane_ids;
+    const char* const* metadata_channel_map_texts;
     WormUiComposeActionKind compose_action;
     uint64_t compose_area_begin_row;
     uint64_t compose_area_end_row;

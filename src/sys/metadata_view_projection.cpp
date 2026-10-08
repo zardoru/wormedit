@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <ranges>
+#include <string>
 
 namespace wormedit::sys {
 namespace {
@@ -73,6 +74,75 @@ void populate_metadata_copy_preview(flattened_workspace_t& flattened,
     metadata.copy_preview_group_index = key->output_group_index;
     metadata.copy_preview_asset_id = key->asset.value;
     metadata.copy_preview_source = metadata_frame_text(flattened, key->source_path.generic_string());
+}
+
+void populate_metadata_channel_map_lanes(flattened_workspace_t& flattened,
+                                        const wormedit::document_history_t& history) {
+    auto& metadata = flattened.view.metadata;
+    const auto chart = std::ranges::find_if(history.document.charts, [&](const auto& item) {
+        return item.id.value == metadata.chart_id;
+    });
+    if (chart == history.document.charts.end() || !metadata.has_chart ||
+        chart->source_family != wormedit::format_family_t::bms || chart->lane_layouts.empty())
+        return;
+    // The first layout segment is the one the table edits; its id travels back with the action.
+    const auto& segment = chart->lane_layouts.front();
+    const auto lane_count = segment.layout.lanes.size();
+    const auto count = std::min(lane_count, std::size_t{WORM_UI_METADATA_CHANNEL_MAP_LANE_CAPACITY});
+    metadata.channel_map_layout_segment_id = segment.id.value;
+    metadata.channel_map_lanes_truncated = count != lane_count;
+    auto* arena = flattened.arena();
+    flattened.metadata.channel_map_lane = arena
+        ? arena_array<WormUiMetadataChannelMapLaneView>(*arena, count)
+        : frame_span<WormUiMetadataChannelMapLaneView>{};
+    metadata.channel_map_lanes = flattened.metadata.channel_map_lane.data();
+    if (flattened.metadata.channel_map_lane.capacity() != count) {
+        metadata.channel_map_lanes_truncated = true;
+        return;
+    }
+    for (const auto& lane : segment.layout.lanes) {
+        if (flattened.metadata.channel_map_lane.size() >= count) break;
+        const auto& channels = lane.bms_channels;
+        const auto* name = metadata_frame_text(flattened, lane.name);
+        const auto* visible = metadata_frame_text(flattened, channels.visible.value_or(""));
+        const auto* invisible = metadata_frame_text(flattened, channels.invisible.value_or(""));
+        const auto* long_note = metadata_frame_text(flattened, channels.long_note.value_or(""));
+        const auto* mine = metadata_frame_text(flattened, channels.mine.value_or(""));
+        if (!name || !visible || !invisible || !long_note || !mine) {
+            metadata.channel_map_lanes_truncated = true;
+            break;
+        }
+        (void)flattened.metadata.channel_map_lane.push_back({
+            .lane_id = lane.id.value, .name = name,
+            .channels = {visible, invisible, long_note, mine}});
+    }
+    metadata.channel_map_lane_count = flattened.metadata.channel_map_lane.size();
+}
+
+auto channel_map_preview_summary(const wormedit::channel_map_proposal_t& preview) -> std::string {
+    if (preview.issue != wormedit::channel_map_issue_t::none) return preview.message;
+    if (!preview.conflicts.empty()) {
+        const auto& first = preview.conflicts.front();
+        return "Channel " + first.channel + " would be shared by " + first.first_lane_name +
+               " and " + first.second_lane_name + ".";
+    }
+    return "Preview: " + std::to_string(preview.affected_note_count) + " notes change channel.";
+}
+
+void populate_metadata_channel_map_preview(flattened_workspace_t& flattened,
+                                           const metadata_drop_state_t& metadata_drop) {
+    auto& metadata = flattened.view.metadata;
+    const auto& preview = metadata_drop.channel_map_preview;
+    if (!preview) return;
+    const auto valid = static_cast<bool>(*preview);
+    metadata.channel_map_preview_present = true;
+    metadata.channel_map_preview_valid = valid;
+    metadata.channel_map_preview_affected_note_count = preview->affected_note_count;
+    metadata.channel_map_preview_conflict_count = preview->conflict_count;
+    const auto* message = metadata_frame_text(flattened, channel_map_preview_summary(*preview));
+    metadata.channel_map_preview_message = message ? message : "";
+    metadata.channel_map_apply_enabled = valid && preview->conflict_count == 0 &&
+                                         !metadata.channel_map_lanes_truncated;
 }
 
 void populate_metadata_output_groups(flattened_workspace_t& flattened,
@@ -145,6 +215,8 @@ void populate_metadata_view_projection(
     populate_metadata_chart_resolution(flattened, history);
     populate_metadata_copy_preview(flattened, history, metadata_asset_runtime);
     populate_metadata_output_groups(flattened, history, workspace);
+    populate_metadata_channel_map_lanes(flattened, history);
+    populate_metadata_channel_map_preview(flattened, metadata_drop);
 
     metadata.search_tags = metadata.search_tags_editable
                                ? flattened.metadata.search_tag.data()

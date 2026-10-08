@@ -105,6 +105,7 @@ struct flattened_workspace_t {
         frame_span<std::size_t> search_tag_length;
         frame_span<WormUiMetadataFormatFieldView> format_field;
         frame_span<WormUiMetadataFormatTargetView> format_target;
+        frame_span<WormUiMetadataChannelMapLaneView> channel_map_lane;
         // Arena-owned text is published directly; persistent sources retain ownership.
         bool text_truncated{};
         struct {

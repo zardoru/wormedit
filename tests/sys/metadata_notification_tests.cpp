@@ -1,7 +1,10 @@
 #include "sys/metadata_actions.h"
 #include "ui/frontend.h"
 #include <wormedit/core/chart_editor.h>
+#include <wormedit/core/lane_profiles.h>
 #include <catch2/catch_test_macros.hpp>
+
+#include <array>
 
 using namespace wormedit;
 using namespace wormedit::sys;
@@ -84,6 +87,73 @@ auto redivision_action(const metadata_notification_fixture_t& fixture, std::uint
     action.metadata_chart_id = 1;
     action.metadata_redivision_resolution = resolution;
     return action;
+}
+
+auto bms_channel_song() -> song_document_t {
+    const auto profile = make_bme_7k_profile();
+    return {
+        .id = song_id_t{1},
+        .revision = 7,
+        .charts = {{
+            .id = chart_id_t{2},
+            .source_family = format_family_t::bms,
+            .measures = {{.id = measure_id_t{3}}},
+            .lane_layouts = {{.id = object_id_t{10},
+                              .position = {measure_id_t{3}, 0},
+                              .layout = profile.layout}},
+            .input_profile = profile.input,
+        }},
+    };
+}
+
+// Channel-map payload for lanes 0 and 1 of the first layout segment. Lane 0 and lane 1 get the
+// given visible channels; the other channels keep their current text.
+struct channel_map_request_t {
+    std::array<std::uint64_t, 2> lane_ids{};
+    std::array<std::string, 8> texts{};
+    std::array<const char*, 8> text_pointers{};
+    WormUiWorkspaceAction action{};
+
+    void point() {
+        for (std::size_t index = 0; index < texts.size(); ++index)
+            text_pointers[index] = texts[index].c_str();
+        action.metadata_channel_map_lane_ids = lane_ids.data();
+        action.metadata_channel_map_texts = text_pointers.data();
+    }
+};
+
+void prepare_channel_map_request(channel_map_request_t& request,
+                                 const metadata_notification_fixture_t& fixture,
+                                 WormUiMetadataEditKind kind,
+                                 const std::string& first_visible, const std::string& second_visible) {
+    const auto& lanes = fixture.history.document.charts.front().lane_layouts.front().layout.lanes;
+    const std::array visible{first_visible, second_visible};
+    for (std::size_t lane = 0; lane < 2; ++lane) {
+        const auto& channels = lanes[lane].bms_channels;
+        request.lane_ids[lane] = lanes[lane].id.value;
+        request.texts[lane * 4 + 0] = visible[lane];
+        request.texts[lane * 4 + 1] = channels.invisible.value_or("");
+        request.texts[lane * 4 + 2] = channels.long_note.value_or("");
+        request.texts[lane * 4 + 3] = channels.mine.value_or("");
+    }
+    request.action.metadata_edit = kind;
+    request.action.metadata_document_revision = fixture.history.document.revision;
+    request.action.metadata_chart_id = 2;
+    request.action.metadata_channel_map_layout_segment_id = 10;
+    request.action.metadata_channel_map_lane_count = 2;
+    request.point();
+}
+
+void use_bms_song(metadata_notification_fixture_t& fixture) {
+    fixture.history = make_document_history(bms_channel_song());
+    const auto binding = make_workspace_controller(fixture.history);
+    REQUIRE(static_cast<bool>(binding));
+    fixture.workspace = *binding.workspace;
+}
+
+auto visible_channel(const metadata_notification_fixture_t& fixture, std::size_t lane) -> std::string {
+    return fixture.history.document.charts.front().lane_layouts.front().layout.lanes[lane]
+        .bms_channels.visible.value_or("");
 }
 
 void check_metadata_notification(bool value) { CHECK(value); }
@@ -170,4 +240,85 @@ TEST_CASE("metadata redivision action redivides exactly or rejects inexact chart
     entries = fixture.entries();
     require_metadata_notification(entries.size() == 2);
     expect_edit_entry(entries[0], notification_severity_t::error, *rejected);
+}
+
+TEST_CASE("channel-map preview with a conflict keeps apply rejected and the document untouched",
+          "[unit][sys][metadata-notification][channel-map]") {
+    metadata_notification_fixture_t fixture;
+    use_bms_song(fixture);
+    const auto revision = fixture.history.document.revision;
+    const auto first = visible_channel(fixture, 0);
+    channel_map_request_t preview;
+    prepare_channel_map_request(preview, fixture, WORM_UI_METADATA_EDIT_PREVIEW_CHANNEL_MAP, first, first);
+    const auto previewed = fixture.dispatch(preview.action);
+    require_metadata_notification(previewed.has_value());
+    require_metadata_notification(fixture.drop.channel_map_preview.has_value());
+    check_metadata_notification(!static_cast<bool>(*fixture.drop.channel_map_preview) ||
+                                fixture.drop.channel_map_preview->conflict_count > 0);
+
+    WormUiWorkspaceAction apply{};
+    apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
+    apply.metadata_document_revision = revision;
+    apply.metadata_chart_id = 2;
+    const auto rejected = fixture.dispatch(apply);
+    require_metadata_notification(rejected.has_value());
+    check_metadata_notification(fixture.history.document.revision == revision);
+    check_metadata_notification(fixture.history.undo.empty());
+    check_metadata_notification(visible_channel(fixture, 0) == first);
+}
+
+TEST_CASE("channel-map preview then apply swaps two lanes as one undoable command",
+          "[unit][sys][metadata-notification][channel-map]") {
+    metadata_notification_fixture_t fixture;
+    use_bms_song(fixture);
+    const auto first = visible_channel(fixture, 0);
+    const auto second = visible_channel(fixture, 1);
+    require_metadata_notification(first != second);
+    channel_map_request_t preview;
+    prepare_channel_map_request(preview, fixture, WORM_UI_METADATA_EDIT_PREVIEW_CHANNEL_MAP, second, first);
+    const auto previewed = fixture.dispatch(preview.action);
+    require_metadata_notification(previewed.has_value());
+    require_metadata_notification(fixture.drop.channel_map_preview.has_value());
+    require_metadata_notification(static_cast<bool>(*fixture.drop.channel_map_preview));
+    check_metadata_notification(fixture.drop.channel_map_preview->conflict_count == 0);
+
+    WormUiWorkspaceAction apply{};
+    apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
+    apply.metadata_document_revision = fixture.history.document.revision;
+    apply.metadata_chart_id = 2;
+    const auto applied = fixture.dispatch(apply);
+    require_metadata_notification(applied == "Channel maps updated.");
+    check_metadata_notification(visible_channel(fixture, 0) == second);
+    check_metadata_notification(visible_channel(fixture, 1) == first);
+    check_metadata_notification(fixture.history.undo.size() == 1);
+    check_metadata_notification(!fixture.drop.channel_map_preview.has_value());
+    auto entries = fixture.entries();
+    require_metadata_notification(entries.size() == 2);
+    expect_edit_entry(entries[0], notification_severity_t::success, *applied);
+}
+
+TEST_CASE("stale channel-map preview rejects apply without touching the document",
+          "[unit][sys][metadata-notification][channel-map]") {
+    metadata_notification_fixture_t fixture;
+    use_bms_song(fixture);
+    const auto first = visible_channel(fixture, 0);
+    const auto second = visible_channel(fixture, 1);
+    channel_map_request_t preview;
+    prepare_channel_map_request(preview, fixture, WORM_UI_METADATA_EDIT_PREVIEW_CHANNEL_MAP, second, first);
+    require_metadata_notification(fixture.dispatch(preview.action).has_value());
+
+    auto title = song_edit(fixture);
+    require_metadata_notification(fixture.dispatch(title) == "Metadata updated.");
+    const auto revision = fixture.history.document.revision;
+
+    WormUiWorkspaceAction apply{};
+    apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
+    apply.metadata_document_revision = revision;
+    apply.metadata_chart_id = 2;
+    const auto rejected = fixture.dispatch(apply);
+    require_metadata_notification(rejected.has_value());
+    check_metadata_notification(rejected->find("changed") != std::string::npos);
+    check_metadata_notification(fixture.history.document.revision == revision);
+    check_metadata_notification(visible_channel(fixture, 0) == first);
+    check_metadata_notification(fixture.history.undo.size() == 1);
 }

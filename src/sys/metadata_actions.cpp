@@ -4,6 +4,7 @@
 #include "ui/frontend.h"
 
 #include <wormedit/core/audio_offset_editor.h>
+#include <wormedit/core/channel_map_editor.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/resource_file_copy.h>
@@ -176,9 +177,71 @@ auto dispatch_redivision_edit(const WormUiWorkspaceAction& action, document_hist
     return feedback;
 }
 
+auto optional_channel_text(const char* text) -> std::optional<std::string> {
+    if (!text || text[0] == '\0') return std::nullopt;
+    return std::string{text};
+}
+
+// Lane ids and four texts per lane; an empty text means the channel is unset.
+auto channel_map_replacements(const WormUiWorkspaceAction& action)
+    -> std::optional<std::vector<channel_map_replacement_t>> {
+    const auto count = action.metadata_channel_map_lane_count;
+    if (count > WORM_UI_METADATA_CHANNEL_MAP_LANE_CAPACITY ||
+        (count != 0 && (!action.metadata_channel_map_lane_ids || !action.metadata_channel_map_texts)))
+        return std::nullopt;
+    std::vector<channel_map_replacement_t> replacements;
+    replacements.reserve(count);
+    for (std::size_t lane = 0; lane < count; ++lane) {
+        const auto* texts = action.metadata_channel_map_texts + lane * 4;
+        if (!texts[0] || !texts[1] || !texts[2] || !texts[3]) return std::nullopt;
+        replacements.push_back({lane_id_t{action.metadata_channel_map_lane_ids[lane]},
+                                {optional_channel_text(texts[0]), optional_channel_text(texts[1]),
+                                 optional_channel_text(texts[2]), optional_channel_text(texts[3])}});
+    }
+    return replacements;
+}
+
+auto dispatch_channel_map_preview(const WormUiWorkspaceAction& action, const document_history_t& history,
+                                  metadata_drop_state_t& metadata_drop) -> metadata_edit_feedback_t {
+    const auto replacements = channel_map_replacements(action);
+    if (action.metadata_chart_id == 0 || !replacements)
+        return {notification_severity_t::warning, "Channel-map preview payload is incomplete."};
+    auto preview = propose_bms_channel_map_edit(
+        history.document, action.metadata_document_revision, chart_id_t{action.metadata_chart_id},
+        object_id_t{action.metadata_channel_map_layout_segment_id}, *replacements);
+    auto feedback = metadata_edit_feedback_t{notification_severity_t::info, preview.message};
+    if (!preview) {
+        feedback.severity = notification_severity_t::error;
+    } else if (preview.conflict_count != 0) {
+        feedback = {notification_severity_t::warning, "Channel-map preview has " +
+                    std::to_string(preview.conflict_count) + " conflicts; Apply is disabled."};
+    } else {
+        feedback.message = "Channel-map preview: " + std::to_string(preview.affected_note_count) +
+                           " notes change channel.";
+    }
+    metadata_drop.channel_map_preview = std::move(preview);
+    return feedback;
+}
+
+auto dispatch_channel_map_apply(document_history_t& history, workspace_controller_t& workspace,
+                                metadata_drop_state_t& metadata_drop) -> metadata_edit_feedback_t {
+    if (!metadata_drop.channel_map_preview)
+        return {notification_severity_t::warning, "Preview the channel map before applying it."};
+    const auto& preview = *metadata_drop.channel_map_preview;
+    if (!preview || preview.conflict_count != 0)
+        return {notification_severity_t::warning, "The channel-map preview is not applicable."};
+    auto result = apply_bms_channel_map_edit(history, preview);
+    metadata_drop.clear_channel_map_preview();
+    if (!result) return {notification_severity_t::error, result.message};
+    auto feedback = publish_metadata_edit(std::move(result.command), workspace, history);
+    if (feedback.severity == notification_severity_t::success)
+        feedback.message = "Channel maps updated.";
+    return feedback;
+}
+
 auto dispatch_metadata_edit(const WormUiWorkspaceAction& action, document_history_t& history,
-                            workspace_controller_t& workspace,
-                            bool timing_locked) -> metadata_edit_feedback_t {
+                            workspace_controller_t& workspace, bool timing_locked,
+                            metadata_drop_state_t& metadata_drop) -> metadata_edit_feedback_t {
     switch (action.metadata_edit) {
     case WORM_UI_METADATA_EDIT_SONG:
         return dispatch_song_edit(action, history, workspace);
@@ -197,6 +260,10 @@ auto dispatch_metadata_edit(const WormUiWorkspaceAction& action, document_histor
             workspace, history);
     case WORM_UI_METADATA_EDIT_REDIVIDE_CHART:
         return dispatch_redivision_edit(action, history, workspace);
+    case WORM_UI_METADATA_EDIT_PREVIEW_CHANNEL_MAP:
+        return dispatch_channel_map_preview(action, history, metadata_drop);
+    case WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP:
+        return dispatch_channel_map_apply(history, workspace, metadata_drop);
     case WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD:
     case WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD:
     case WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD:
@@ -217,7 +284,7 @@ auto dispatch_metadata_action(
     bool resource_copy_busy, bool export_busy,
     std::optional<notification_sink_t> notifications) -> std::optional<std::string> {
     if (action.metadata_edit != WORM_UI_METADATA_EDIT_NONE) {
-        auto feedback = dispatch_metadata_edit(action, history, workspace, timing_locked);
+        auto feedback = dispatch_metadata_edit(action, history, workspace, timing_locked, metadata_drop);
         if (notifications) notifications->post(feedback.severity, notification_source_t::edit, feedback.message);
         if (action.metadata_edit == WORM_UI_METADATA_EDIT_OUTPUT_PATH)
             metadata_drop.clear_output();

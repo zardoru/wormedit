@@ -32,6 +32,15 @@ struct worm_ui_nuklear_metadata_state_t {
     // Scratch text for action payloads, which still carry numerator/denominator strings.
     std::array<char, 32> action_numerator_text{};
     std::array<char, 32> action_denominator_text{};
+    // Channel-map table text, four per lane (visible, invisible, long_note, mine). Reloaded from
+    // the view when the document revision or layout segment changes.
+    static constexpr std::size_t channel_map_text_bytes = 64;
+    std::vector<std::array<std::array<char, channel_map_text_bytes + 1>, 4>> channel_map_texts;
+    std::vector<const char*> channel_map_text_pointers;
+    std::vector<std::uint64_t> channel_map_lane_ids;
+    std::uint64_t channel_map_buffer_revision{std::numeric_limits<std::uint64_t>::max()};
+    std::uint64_t channel_map_buffer_segment{};
+    bool channel_map_buffers_valid{};
     std::vector<std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1>> search_tags;
     std::vector<const char*> search_tag_pointers;
     std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1> new_search_tag{};

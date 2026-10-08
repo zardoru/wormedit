@@ -47,3 +47,13 @@ production supplies a per-lane span defaulting to36px with packed lanes fixed.
 Scene cache snapshots own copied widths so in-place width changes invalidate
 geometry at the same document revision. Default real-Kick baseline capture is
 retained at `oct8-stem-lanes/root/kick-default-baseline.png`.
+
+Frontend supporting scope also includes EW-resize cursor lifecycle and applying
+the requested state only on cursor transitions. Headless/no-video paths skip
+SDL cursor operations; cancellation/chart changes restore the default. Missing
+system-cursor support safely skips without persistent notifications.
+
+Supporting scope also includes `src/ui/nuklear/compose_object_input.h` for the
+header-resize entry point consumed by the panel; approved before that edit.
+Luna released the four core scene/source-test paths; Sol now owns their review
+and corrections alongside the remaining implementation and build work.

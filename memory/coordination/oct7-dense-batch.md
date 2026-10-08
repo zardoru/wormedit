@@ -37,3 +37,15 @@ Five 50k-note scenarios execute with visible scene geometry and GPU-work counter
 paint hover asserts a visible ghost over an empty cell. Debug runs are setup-only,
 not performance evidence. Event/action/jobs, active audio callbacks, physical
 presentation and pacing waits are omitted and will be identified explicitly.
+
+Both optimized baseline captures pass in exclusive quiet windows. Worker probe
+uses 50k/100k notes plus equal BGM totals and matched ~236 visible endpoints;
+root uses 50k/100k notes without resources/BGM and matched ~143 visible endpoints.
+These are distinct fixtures, not interchangeable measurements. Root's 14-case
+UI software pipeline takes 157.82 seconds; raster dominates and all frames miss
+5 ms on this backend. This does not certify or reject the real GPU/display path.
+The measured warm chart-size-dependent inspector/occupancy/geometry costs justify
+three narrow fixes; root approved bounded source-location memo slots, complete
+scene-index head occupancy (exact fallback), and call-lifetime validated geometry
+borrowing. Quantize activation/revision costs are retained separately, without
+a renderer or quantize-cache scope expansion.

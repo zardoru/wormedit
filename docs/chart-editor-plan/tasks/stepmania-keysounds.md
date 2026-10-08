@@ -68,7 +68,7 @@ Order: T-478, then T-479, then T-480. T-481 waits on T-480.
 
 ## T-480 Write `#KEYSOUNDS`, `[n]` and `K` on SM and SSC export
 
-- **Status:** blocked-on T-479
+- **Status:** ready (T-479 done 2026-10-08)
 - **Outcome:** exporting a chart with note sounds and BGM events to SM or SSC writes one `#KEYSOUNDS` list, a `[n]` suffix on each sounded note, and BGM events as `K` cells. An imported keysound chart that was not edited round-trips byte-for-byte. Anything that cannot be written is reported as a warning-level loss, not an error.
 - **Read first:** the reference's grammar and writer sections, `src/formats/stepmania.cpp` (`note_map_text`, the note-sound and BGM loss reports), `include/wormedit/formats/conversion.h` (loss reporting).
 - **Files owned:** `src/formats/stepmania.cpp`, `include/wormedit/formats/stepmania.h`, `tests/formats/stepmania_tests.cpp`, `tests/formats/conversion_loss_matrix_tests.cpp`, this card.

@@ -89,3 +89,8 @@ SDL dummy/software captures are acceptable evidence; report native display and
 cadence as unmeasured. Root performs final normal main full suite and captures,
 commits planning updates, then removes released clean worktrees/generated builds
 while retaining branches, configurations, runtime and evidence.
+
+Root main registry now gates `edit.tool_layer` on the same visible/unlocked
+target rule as toolbar and dispatcher activation. Normal app-only build passes;
+configured header-inclusive main tidy preserves baseline 27/27/29 findings
+without increases. Evidence: `root/registry-build.log` and main tidy logs.

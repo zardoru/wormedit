@@ -1403,6 +1403,14 @@ bool dispatch_project_chart_action(wormedit::sys::project_chart_runtime_t& runti
     return true;
 }
 
+auto layer_tool_target_editable(const wormedit::chart_document_t* chart,
+    std::optional<wormedit::layer_id_t> target) -> bool {
+    if (!chart || !target) return false;
+    const auto layer = std::ranges::find(chart->semantic_layers, *target,
+                                        &wormedit::semantic_layer_t::id);
+    return layer != chart->semantic_layers.end() && layer->visible && !layer->locked;
+}
+
 void refresh_note_kind_commands(wormedit::command_registry_t& registry,
     const wormedit::chart_document_t* chart,
     const std::optional<wormedit::editor_interaction_state_t>& compose_state,
@@ -1411,12 +1419,14 @@ void refresh_note_kind_commands(wormedit::command_registry_t& registry,
     const auto paint_active = application.note_paint_mode_active;
     const auto layer_active = application.semantic_layer_paint_mode_active;
     const auto tools_ready = compose_ready && !application.compose_timing_focus;
+    const auto layer_ready = tools_ready &&
+        layer_tool_target_editable(chart, application.semantic_layer_target);
     (void)update_command_state(registry, command_id_t{"edit.tool_select"}, compose_ready,
                                 compose_ready && !paint_active && !layer_active);
     (void)update_command_state(registry, command_id_t{"edit.tool_draw"}, tools_ready,
                               tools_ready && paint_active);
-    (void)update_command_state(registry, command_id_t{"edit.tool_layer"}, tools_ready,
-                              tools_ready && layer_active);
+    (void)update_command_state(registry, command_id_t{"edit.tool_layer"}, layer_ready,
+                              layer_ready && layer_active);
     constexpr std::pair<std::string_view, note_kind_t> note_kinds[]{
         {"tap", note_kind_t::tap}, {"hold", note_kind_t::hold}, {"mine", note_kind_t::mine},
         {"invisible", note_kind_t::invisible}, {"lift", note_kind_t::lift},

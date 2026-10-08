@@ -52,6 +52,15 @@ Settings changes, halfway choices, hold-tail modes and collisions project on the
 next frame, with correct visibility/clipping and lifecycle invalidation. Preserve
 warm preview memoization and avoid full chart scans each frame.
 
+T-437's original step/failure hid all blocked previews despite requesting red
+collisions. Root resolves this within its intended outcome: collision-only
+command rejection retains valid red target geometry while Apply stays disabled;
+invalid settings, unsupported geometry and Block-halfway rejection draw none.
+No quantize command policy changes. Approved supporting paths:
+`src/sys/compose_view.h`, `tests/sys/frame_timing_tests.cpp`,
+`src/ui/nuklear/compose_panel.cpp` and narrow inspector source/header visibility
+accessors. Feedback records exact ownership/purposes on its card before edits.
+
 T-422 covers actual key event through document changes for three successive
 notes and undo, and makes the existing gesture discoverable. Plain lane keys
 keep their current whole-selection behavior; rejection preserves selection and

@@ -50,10 +50,11 @@ valid position.
 - **Steps:**
   1. Add a `halfway` flag to each report row, and project the visible rows (the before and after rows, tails, and the collision flag) into the Compose view.
   2. Draw a dashed ghost at each new position, joined to the note's current position, with the amber or red variants. Clip the drawing to the visible rows.
-  3. Show the ghosts only while the inspector's quantize section is on screen and the preview is not blocked.
+  3. Show ghosts only while the inspector's quantize section is on screen and target geometry is valid. Collision-only command rejection still shows red target ghosts while Apply stays disabled; other blocked previews draw none.
   4. Add a test: a halfway note flips its ghost between the rows above and below when the setting changes from Round earlier to Round later.
 - **Invariants:** the preview never changes the document. Ghost drawing is bounded by the report capacity (256 rows). Notes beyond that capacity are counted but not drawn.
-- **Reject/failure behavior:** a blocked preview draws no ghosts and shows the reason in the section.
+- **Reject/failure behavior:** invalid settings, unsupported geometry or Block-halfway rejection draw no ghosts and show the reason. A collision-only rejection retains valid red preview geometry but does not enable Apply or change command policy.
+- **Coordinator clarification (2026-10-08):** the original outcome requested red collisions while step 3 hid every rejected command. Root distinguishes valid preview geometry from commit eligibility so the default collision-reject policy remains useful to preview. Supporting scope approved: `src/sys/compose_view.h` for bounded retained geometry, `tests/sys/frame_timing_tests.cpp` for actual dispatcher/projection regressions, `src/ui/nuklear/compose_panel.cpp` and narrow `compose_inspector.cpp`/`.h` accessors for section visibility/clipping. Feedback records these exact files in ownership before implementation; unrelated inspector and canvas input behavior stay unchanged.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R 'quantize'`; `ctest --test-dir build -L event-harness`; smoke capture.
 - **Out of scope:** previewing quantization of areas without a selection.
 

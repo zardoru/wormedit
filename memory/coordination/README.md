@@ -1,8 +1,12 @@
 # Worktree coordination pilot
 
-Active 2026-10-08: [resizable stem lanes and filename labels](oct8-stem-lanes-batch.md),
+Completed in code 2026-10-08: [resizable stem lanes and filename labels](oct8-stem-lanes-batch.md),
 T-464 in one Sol 6.1 medium worktree with sequential Luna medium briefs.
-Root owns main, final checks and cleanup.
+Root integrated and verified main: application build and **2,635/2,635 tests
+pass**. Active real-Kick 300 px stem capture and default chart pixel comparison
+pass under SDL dummy/software; 33 status-caption pixels differ. Only main
+remains after 3.60 GB build cleanup, with evidence/probes/runtime retained.
+Native display/cursor appearance remains unverified.
 
 Completed in code 2026-10-08: [packed waveforms and sound-section imports](oct8-bmson-dock-batch.md),
 T-459/T-462 with two Sol 6.1 medium coordinators and sequential Luna medium briefs.
@@ -10,7 +14,7 @@ Main build and **2,617/2,617 tests pass**. Real Kick software capture confirms
 three ready packed waveforms plus nine stems; section imports preserve fixed
 kind and create empty stems. Only main remains after 6.51 GB build cleanup;
 branches/logs/probes retained. Native picker/window/GPU checks remain unverified.
-Next independent hybrid card: T-464 resizable lanes and filename labels.
+T-464 follow-up is now integrated above; T-461/T-463 retain their recorded gates.
 
 Completed in code 2026-10-08: [selection and audition latency batch](oct8-performance-batch.md),
 T-477/T-473, with Sol 6.1 medium coordinators and sequential Luna medium tests.

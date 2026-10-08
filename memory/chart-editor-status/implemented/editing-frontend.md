@@ -2,6 +2,20 @@
 
 [Back to the implemented-capability index](../implemented.md).
 
+T-464 stem lanes now resize by dragging their header's right edge from 36 to
+480 px; double-click restores 36 px. Session widths are keyed by project,
+chart and lane, leaving document revision, undo and export data unchanged.
+Wide stems show their filename at 96 px with UTF-8-safe ellipsis and a full-name
+tooltip at every width. Waveforms and cut lines follow the width, widened
+envelopes clip to their visible lane, and packed columns stay fixed at 36 px.
+Same-revision geometry/cache invalidation, horizontal scrolling, batched input,
+far-side point placement and immediate cancellation are covered. Main build and
+all 2,635 tests pass. Independent real Kick dummy/software capture confirms an
+active 300 px stem; default chart pixels match the retained Debug baseline,
+with 33 differing status-caption pixels. Only main remains after 3.60 GB build
+cleanup; native display/cursor appearance remains unverified.
+[Evidence](../../coordination/oct8-stem-lanes-batch.md).
+
 BMSON packed BGM events with samples longer than their authored measure at the
 event tempo now draw waveforms in their own columns. Typed event keys isolate
 them from stem/channel textures; native source clips, the next later column

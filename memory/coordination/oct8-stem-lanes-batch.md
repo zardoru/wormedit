@@ -66,3 +66,28 @@ withdrawn. Replacement approved before edits:
 separate dummy/software rendering fixture verifies widened waveform scale and
 visible-lane clipping, with explicit SDL cleanup; ordinary event fixtures keep
 their no-video behavior. Legacy 36 px clipping stays pixel-compatible.
+
+Completed 2026-10-08: reviewed worker `8930847`, main integration `398c53c`
+and application callback `4652fc6`. Normal main build and all 2,635 tests pass.
+Worker required scene/compose 43/43, event harness 206/206 and focused
+resize/render 9 cases / 608 assertions pass. Configured header-inclusive
+complexity checks preserve existing scores; root's main integration check also
+matches baseline. A stale initial baseline exit summary was clarified: the
+harness baseline rerun after restoring its unchanged include exited 0, and
+the final comparison uses that corrected log.
+
+Root independently linked the probe against normal main production objects.
+Real read-only Kick measure 30 has three ready packed pieces, zero pending
+pieces and zero registration failures. The active voice stem at 300 px shows
+its filename, scaled waveform and full-width cut lines beside packed 36 px
+columns, with unchanged revision. Default chart/header/waveform pixels match
+the retained Debug baseline exactly; 33 pixels differ only in the far-right
+status caption. No full-frame equality or native display/cursor claim.
+All 15 original chart/audio hashes remain unchanged.
+
+Clean worker removed without force; generated build removed (3.60 GB), leaving
+only main registered. Branch, raw logs, build configurations, probe sources,
+link scripts, binaries/captures and standalone SDL runtime are retained in
+`wormedit-scratch-builds/oct8-stem-lanes/{worker,root}`. Root probe reproduction
+and post-cleanup worker loader instructions are in `root/probe-readme.txt`.
+T-461/T-463 remain behind their recorded decisions/dependencies.

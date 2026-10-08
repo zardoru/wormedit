@@ -273,3 +273,22 @@ schema/holds (02a), linked BMSON import/assignment (02d), remaining codec tails
 The parser change precedes the codec roundtrip gate so BMSON reimport preserves
 semantic ends. Exact approved files and shared-source handoffs still apply;
 this readiness record is not a schema/frontend executor grant.
+
+## Renderer acceptance and lane-key grant
+
+Worker renderer `2bd1270` is reviewed and integrated as main `c3b959d`; a card
+checkpoint conflict was resolved by retaining the completed renderer evidence
+and root's selected-retention scope. Root independently repeats 7 projection
+cases/90 assertions and 35 preview cases/204 assertions and reviews corrected
+full-width arrow captures. Ordinary worker targets, full frame 329/329, event
+243/243, quantize filter 46/46, docs and unchanged 15-finding tidy baseline pass.
+All renderer source readers are released. Final all-features main gates remain
+pending for the completed batch.
+
+The feedback worker merges main cleanly before the next slice. Root now grants
+T-422 to the sequential Luna executor, coordinated by recovered Feedback Sol:
+exactly `tests/ui/nuklear_event_harness_tests.cpp`, the hint-only
+`src/ui/nuklear/compose_note_menu.cpp`, and
+`docs/chart-editor-plan/editing/interactions.md`. Use the finalized concrete
+scratch brief and existing production dispatcher closure. No additional
+implementation files, schema edits or BGM frontend work are granted yet.

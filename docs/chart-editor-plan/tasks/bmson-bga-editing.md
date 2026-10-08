@@ -207,7 +207,8 @@ Uncertain: "select same sound" (no sound-identity path found); Y-lock planner bo
 
 ## T-483 Paste BGM holds with their tail moved
 
-- **Status:** ready
+- **Status:** done
+- **Result (2026-10-08):** BGM holds record their tail length as the clipboard duration (same as notes) and rebuild `end` on paste from the new head row, rejecting the whole paste when the tail is unrepresentable. Plain BGM stays duration 0 with no end. Clipboard tests: 16 cases, 113 assertions pass; `clipboard|^core\.|^documentation\.` 1664/1664 pass.
 - **Outcome:** copying and pasting a BGM event that has a native hold tail (`bgm_event_t::end`, added by T-423) pastes it with the tail moved by the same offset as the head, so its length is unchanged.
 - **Found by:** the T-453 audit (2026-10-08). `append_bgm` in `src/core/chart_clipboard.cpp` records a zero duration and keeps the payload's absolute `end`. `place_object` moves `position` but not `end`, so the pasted tail points at the original location.
 - **Read first:** `src/core/chart_clipboard.cpp` (`append_bgm`, `place_object`, the note duration path in `place_note`), `include/wormedit/core/document.h` (`bgm_event_t`).

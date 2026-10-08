@@ -405,3 +405,81 @@ TEST_CASE("stem points pasted over part of an existing run are rejected",
                                               {measure_id_t{4}, 0}, revision);
     expect(proposal.error.find("overlap") != std::string::npos);
 }
+
+namespace {
+// Gives the clipboard fixture's BGM event a native hold tail ending at `end` in measure two.
+auto bgm_hold_song(std::optional<local_position_t> end) -> song_document_t {
+    auto song = clipboard_song();
+    song.charts.front().measures.front().notes.front().sound.reset();
+    auto& event = song.charts.front().measures[1].bgm_events.front();
+    event.id = object_id_t{3};
+    event.end = end;
+    return song;
+}
+
+auto bgm_only_selection() -> editor_interaction_state_t {
+    editor_interaction_state_t state;
+    state.chart = chart_id_t{1};
+    state.selected_objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{3}}};
+    return state;
+}
+} // namespace
+
+TEST_CASE("Chart clipboard pastes a BGM hold with its tail moved by the same offset") {
+    const auto song = bgm_hold_song(local_position_t{measure_id_t{2}, 720});
+    const auto copied = copy_chart_selection(song, bgm_only_selection(), 7);
+    expect(static_cast<bool>(copied));
+    expect(copied.clipboard->objects.front().duration == rational_t{1, 2});
+    const auto proposal = propose_chart_paste(song, chart_id_t{1}, *copied.clipboard,
+        {measure_id_t{3}, 0}, 7);
+    expect(proposal.valid);
+    const auto& pasted = std::get<bgm_event_t>(proposal.objects.front());
+    expect(pasted.position == local_position_t{measure_id_t{3}, 0});
+    expect(pasted.end == local_position_t{measure_id_t{3}, 480});
+}
+
+TEST_CASE("Chart clipboard moves a BGM hold tail into a shortened target measure") {
+    auto song = bgm_hold_song(local_position_t{measure_id_t{2}, 360});
+    song.charts.front().measures[2].definition.length = {1, 2};
+    song.charts.front().measures[2].definition.meter.reset();
+    const auto copied = copy_chart_selection(song, bgm_only_selection(), 7);
+    expect(static_cast<bool>(copied));
+    expect(copied.clipboard->objects.front().duration == rational_t{1, 8});
+    const auto proposal = propose_chart_paste(song, chart_id_t{1}, *copied.clipboard,
+        {measure_id_t{3}, 0}, 7);
+    expect(proposal.valid);
+    const auto& pasted = std::get<bgm_event_t>(proposal.objects.front());
+    expect(pasted.end == local_position_t{measure_id_t{3}, 120});
+}
+
+TEST_CASE("Chart clipboard rejects a BGM hold whose tail overflows the chart atomically") {
+    auto song = bgm_hold_song(local_position_t{measure_id_t{2}, 720});
+    song.charts.front().measures[2].definition.length = {1, 2};
+    song.charts.front().measures[2].definition.meter.reset();
+    const auto copied = copy_chart_selection(song, bgm_only_selection(), 7);
+    expect(static_cast<bool>(copied));
+    auto history = make_document_history(std::move(song));
+    const auto result = paste_chart_clipboard(history, chart_id_t{1}, *copied.clipboard,
+        {measure_id_t{3}, 0}, history.document.revision);
+    expect(!static_cast<bool>(result));
+    expect(history.document.revision == 7);
+    expect(history.undo.empty());
+    expect(history.document.charts.front().measures[2].bgm_events.empty());
+}
+
+TEST_CASE("Chart clipboard pastes plain BGM events without a tail and undoes exactly") {
+    const auto song = bgm_hold_song(std::nullopt);
+    const auto copied = copy_chart_selection(song, bgm_only_selection(), 7);
+    expect(static_cast<bool>(copied));
+    expect(copied.clipboard->objects.front().duration == rational_t{0, 1});
+    auto history = make_document_history(song);
+    const auto result = paste_chart_clipboard(history, chart_id_t{1}, *copied.clipboard,
+        {measure_id_t{3}, 240}, 7);
+    expect(static_cast<bool>(result));
+    const auto& pasted = history.document.charts.front().measures[2].bgm_events.back();
+    expect(pasted.position == local_position_t{measure_id_t{3}, 240});
+    expect(!pasted.end);
+    expect(undo_document_command(history));
+    expect(history.document.charts.front().measures[2].bgm_events.empty());
+    expect(!history.document.charts.front().measures[1].bgm_events.front().end);
+}

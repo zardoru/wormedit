@@ -80,8 +80,10 @@ auto append_bgm(chart_clipboard_t& clipboard, const chart_document_t& chart,
     const auto row = absolute_row(index, event.position);
     const auto lane = std::ranges::find(chart.bgm_source_lanes, event.source_lane,
                                        &bgm_source_lane_t::id);
-    if (!row || lane == chart.bgm_source_lanes.end()) return false;
-    clipboard.objects.push_back({fraction(*row, chart.divisions_per_standard_measure), {0, 1},
+    const auto end = event.end ? absolute_row(index, *event.end) : row;
+    if (!row || !end || *end < *row || lane == chart.bgm_source_lanes.end()) return false;
+    clipboard.objects.push_back({fraction(*row, chart.divisions_per_standard_measure),
+        fraction(*end - *row, chart.divisions_per_standard_measure),
         static_cast<std::size_t>(lane - chart.bgm_source_lanes.begin()), event,
         stem_of(chart, event.sound_channel_event)});
     return true;
@@ -271,6 +273,23 @@ auto place_note(note_t note, const chart_clipboard_object_t& object,
     return note;
 }
 
+auto place_bgm(bgm_event_t event, const chart_clipboard_object_t& object,
+               const chart_document_t& chart, const measure_index_t& index,
+               local_position_t position, std::uint64_t row) -> std::optional<bgm_event_t> {
+    const auto duration = exact_rows(object.duration, chart.divisions_per_standard_measure);
+    if (object.lane_index >= chart.bgm_source_lanes.size() || !duration) return std::nullopt;
+    event.position = position;
+    event.source_lane = chart.bgm_source_lanes[object.lane_index].id;
+    if (event.end) {
+        if (*duration > std::numeric_limits<std::uint64_t>::max() - row) return std::nullopt;
+        event.end = paste_position(index, row + *duration);
+        if (!event.end || !*duration) return std::nullopt;
+    } else if (*duration) {
+        return std::nullopt;
+    }
+    return event;
+}
+
 auto place_timing_object(const chart_clipboard_object_t& object, const chart_document_t& chart,
                          const measure_index_t& index, local_position_t position,
                          std::uint64_t row) -> std::optional<chart_clipboard_payload_t> {
@@ -306,14 +325,12 @@ auto place_object(const chart_clipboard_object_t& object, const chart_document_t
         if (!placed) return std::nullopt;
         return *placed;
     }
-    if (!std::holds_alternative<bgm_event_t>(object.payload))
-        return place_timing_object(object, chart, index, *position, row);
-    if (object.lane_index >= chart.bgm_source_lanes.size()) return std::nullopt;
-    if (!object.duration.denominator || object.duration.numerator) return std::nullopt;
-    auto event = std::get<bgm_event_t>(object.payload);
-    event.position = *position;
-    event.source_lane = chart.bgm_source_lanes[object.lane_index].id;
-    return event;
+    if (const auto* event = std::get_if<bgm_event_t>(&object.payload)) {
+        const auto placed = place_bgm(*event, object, chart, index, *position, row);
+        if (!placed) return std::nullopt;
+        return *placed;
+    }
+    return place_timing_object(object, chart, index, *position, row);
 }
 
 struct paste_interval_t {

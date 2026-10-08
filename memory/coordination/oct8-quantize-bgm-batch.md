@@ -237,3 +237,9 @@ tests back to this slice. Counts remain full; selected qualifying rows receive
 retention priority, spare capacity holds occupant evidence, and final table
 sorting stays deterministic. No doubled buffers, header change, per-frame scan
 or core call is allowed. This extends the ten-file renderer grant to twelve.
+
+Allocator worker `bb6f713` is independently reviewed and integrated as main
+`62bcb0c`: ordinary app/core build, focused 23 cases/191 assertions, full core
+1,632/1,632, docs and unchanged configured tidy baseline pass. Root repeats the
+focused tests independently. This remains phase 1; native hold/schema/export
+and indexed tail rendering are pending. No final main gate has been claimed.

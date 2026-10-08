@@ -133,3 +133,9 @@ for a narrow position-at-Y overload accepting the retained measure index, with
 its declaration in owned `interaction.h`. BGA strokes retain validated geometry
 once instead of rebuilding an index for every pointer update; exact placement
 and standard absolute snap semantics remain unchanged.
+
+User decision during execution: editor exports report conversion losses and
+continue instead of rejecting solely for a loss. Root changes the application
+request to `loss_policy_t::warn` and presents conversion loss warnings on success
+after Draw releases `compose_actions.cpp`. Decode, invalid target, capacity and
+publication failures still reject atomically; CLI explicit loss policies remain.

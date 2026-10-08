@@ -230,7 +230,7 @@ Decision (user, 2026-09-30): permit at most one pixel of static-layer raster var
 
 ## T-251 Render at native resolution instead of a stretched logical target
 
-- **Status:** blocked-on T-246
+- **Status:** ready
 - **Outcome:** the UI renders directly into the backbuffer at its pixel size with `SDL_SetRenderScale(pixel / logical)` and logical presentation disabled, removing the per-frame intermediate target and scaling pass and making text and lines sharp on fractional scales; input keeps using window points.
 - **Read first:** `src/ui/nuklear/frontend.cpp` (the `SDL_SetRenderLogicalPresentation` block and its comment), `memory/chart-editor-status/implemented/editing-frontend.md` (the resize/high-DPI paragraph), the architecture test that guards the resize mapping.
 - **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/sys/window.cpp`, the architecture test source that checks this mapping.

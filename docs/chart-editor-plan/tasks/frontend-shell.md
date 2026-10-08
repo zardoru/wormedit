@@ -209,7 +209,7 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 
 ## T-49 Show BGA image thumbnails in the resource catalog
 
-- **Status:** ready
+- **Status:** done (superseded by [T-347](compose-followups.md): the BGA dock in `src/ui/nuklear/compose_bga_panel.cpp` shows decoded thumbnails; user decision 2026-10-07)
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** resource rows still render text/controls only; the presenter projects image IDs and missing state but no decoded thumbnail. Async image jobs and the preview texture LRU exist, but visible-row request/polling and a generic thumbnail texture interface are absent. Those runtime/texture owners and actual frontend/texture tests are outside this card’s owned files. No thumbnail implementation was started.
 - **Outcome:** each image row in the Compose BGA catalog shows a small thumbnail once decoded; undecoded rows show a placeholder.

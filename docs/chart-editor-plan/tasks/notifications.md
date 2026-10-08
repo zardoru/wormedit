@@ -162,7 +162,7 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 ## T-224 Attach targets to validation and import diagnostics
 
-- **Status:** blocked-on T-220
+- **Status:** ready
 - **Outcome:** diagnostics that carry a chart position or object (import warnings, document validation, conversion losses) post with a target so Go to jumps to them; a burst of more than 20 from one operation collapses into one summary entry whose detail lists them all.
 - **Read first:** `include/wormedit/core/document.h` (diagnostic types), `include/wormedit/formats/conversion.h`, `src/sys/project_open.cpp`.
 - **Files owned:** `src/core/notifications.cpp`, `include/wormedit/core/notifications.h`, `src/sys/project_open.cpp`, `src/sys/compose_actions.cpp` (export results only), `tests/core/notifications_tests.cpp`.

@@ -67,7 +67,7 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
 
 ## T-459 Draw long one-shot waveforms in their packed column
 
-- **Status:** blocked-on T-458
+- **Status:** ready
 - **Outcome:** a packed BGM event whose sample lasts longer than one measure at the current tempo draws its waveform down its own column, from the event to the end of the sample or the next event in that column. In Kick Your Ass, `fx`, `hat` and `pc` show their waveforms over the whole song.
 - **Read first:** `src/sys/bmson_waveform_projection.cpp`, `src/sys/stem_waveform_window.h`, `src/ui/nuklear/compose_canvas.cpp` (`draw_compose_stem_piece`), `src/sys/waveform_analysis_runtime.cpp`.
 - **Files owned:** `src/sys/bmson_waveform_projection.cpp`, `src/sys/stem_waveform_window.h`, `src/sys/waveform_analysis_runtime.cpp`, `src/ui/frontend.h` (piece key per event), `src/ui/nuklear/compose_canvas.cpp`, projection tests, this card.
@@ -115,7 +115,7 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
 
 ## T-462 Add stems and keysounds from their own Sounds dock sections
 
-- **Status:** blocked-on T-457
+- **Status:** ready
 - **Outcome:** on a BMSON chart, the Sounds dock's Stems section has "Add stem…" and its Keysounds section has "Add keysound…". Adding a stem creates the resource, its empty channel and its stem lane, and places no event. Adding a keysound creates only the resource. The review dialog's kind is fixed to the section the user added from. On BMS charts, the stem kind is only a label.
 - **Read first:** `src/core/sound_import.cpp` (`append_stem`, `import_entry`), `src/sys/compose_sound_actions.cpp` (the two `apply_bulk_sound_import` calls), `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/sound_import_dialog.cpp`, `src/ui/nuklear/sound_import_state.cpp`.
 - **Files owned:** those five, plus `include/wormedit/core/sound_import.h`, `src/ui/frontend.h`, `tests/core/sound_import_tests.cpp`, `tests/ui/` import state tests and the event harness, this card.
@@ -154,7 +154,7 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
 
 ## T-464 Resize stem lanes horizontally and label wide ones by file name
 
-- **Status:** blocked-on T-457
+- **Status:** ready
 - **Outcome:** dragging the right edge of a stem lane header resizes that lane from 36 px (the current width) up to 480 px, and double-clicking the edge restores 36 px. The waveform and cut lines scale with the lane. A lane 96 px or wider shows its stem's file name, truncated with an ellipsis, instead of `BGM n`, and the header tooltip always shows the full name. Packed columns keep a fixed width.
 - **Read first:** `src/sys/compose_view.h` (`compose_bgm_lane_width_pixels`), `src/core/editor_scene.cpp` (BGM lane bounds), `src/ui/nuklear/compose_canvas.cpp` (`draw_compose_bgm_lane_labels`, `draw_compose_stem_piece`), `src/sys/compose_view.cpp` (BGM pane width).
 - **Files owned:** those four, plus `include/wormedit/core/editor_scene.h`, `src/ui/frontend.h` (per-lane width and label), `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/compose_object_input.cpp` (edge drag), scene tests, frontend-state tests and the event harness, this card.

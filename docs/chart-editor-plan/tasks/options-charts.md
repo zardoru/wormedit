@@ -149,7 +149,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-261 Manage output groups in the Project tab
 
-- **Status:** blocked-on T-260
+- **Status:** ready
 - **Outcome:** a second table lists output groups (name, family, output path, charts); the user can create, rename, delete a group, change its family and relative path, and assign charts with checkboxes; each group shows validation from the conversion service (for example "SM/SSC: several charts allowed", "BMS: one chart per file") and a Preview export button (T-110).
 - **Read first:** `include/wormedit/core/document.h` (`output_group_t`), `include/wormedit/formats/conversion.h`, `include/wormedit/formats/conversion_publication.h`, `src/sys/compose_actions.cpp` (export action).
 - **Files owned:** `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`, `tests/core/chart_editor_tests.cpp`, `src/ui/nuklear/setup_panel.cpp`, `src/sys/project_view.cpp`, `src/ui/frontend.h`.
@@ -161,7 +161,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-262 Import a chart from another file into the current project
 
-- **Status:** blocked-on T-259
+- **Status:** ready
 - **Outcome:** Project tab → "Import chart…" reads a chart file (BMS family, SM/SSC, osu!mania, BMSON, `.qua` when T-174 lands), lets the user pick which of its difficulties to add, previews resource matching (reuse identical files, add new ones, report missing), and adds the charts as one undoable command; timing differences from the song are shown before import.
 - **Read first:** `src/sys/project_open.cpp`, `include/wormedit/core/resource_assignment.h` (`apply_resource_asset_import`), `include/wormedit/core/document.h`.
 - **Files owned:** new `include/wormedit/core/chart_import.h`, new `src/core/chart_import.cpp`, new `tests/core/chart_import_tests.cpp`, `src/sys/project_open.cpp/.h`, `src/ui/nuklear/setup_panel.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -173,7 +173,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-263 Add a project settings store and page
 
-- **Status:** blocked-on T-122, T-260
+- **Status:** ready
 - **Outcome:** the native project document carries a typed `project_settings_t` (export policies including the current StepMania policy, project asset directories, preferred external player id, and explicit overrides of program defaults such as default snap for new charts in this project); the Project tab shows them in a "Project settings" section with "Use program default" toggles; editing them is undoable and marks the project dirty.
 - **Read first:** the scope rule above, `include/wormedit/core/document.h` (song aggregate), `src/sys/main.cpp` (where `stepmania_export_policy` lives today), `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `include/wormedit/core/preferences.h`.
 - **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, new `include/wormedit/core/project_settings.h`, new `src/core/project_settings.cpp`, new `tests/core/project_settings_tests.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`, `src/ui/nuklear/setup_panel.cpp`, `src/sys/project_view.cpp`, `src/sys/main.cpp` (move the StepMania policy state into the document), `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`.

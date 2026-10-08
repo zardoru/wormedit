@@ -25,7 +25,7 @@ The causes, found while planning:
 
 ## T-407 Add a shared `chrome::Dialog` component
 
-- **Status:** blocked-on T-436
+- **Status:** ready
 - **Mockup:** [unsaved-changes.svg](../mockups/unsaved-changes.svg) (reference: match its structure and hierarchy)
 - **Outcome:** `chrome::Dialog` draws a dialog that follows the rules above. Unit tests show equal left and right insets, a height that fits its content within 1 px after the second frame, Escape mapped to cancel and Enter mapped to the primary action, and no dragging.
 - **Read first:** `src/ui/nuklear/chrome.h` (`menu_panel`, `menu_surface_begin`), `src/ui/nuklear/context_menu.h` (a lifecycle component with the same shape), `src/ui/nuklear/frontend.cpp` (`begin_project_modal`).

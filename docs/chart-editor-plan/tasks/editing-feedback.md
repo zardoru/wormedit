@@ -14,7 +14,7 @@ valid position.
 
 ## T-419 Replace the quantize settings form with one-click controls
 
-- **Status:** blocked-on T-436
+- **Status:** ready
 - **Mockup:** [quantize.svg](../mockups/quantize.svg) (reference: match its structure and hierarchy)
 - **Outcome:** the quantize section matches the layout below. Every setting changes with one click, a custom grid is the only typed value and sits behind "⋯", and presets are chips. An event-harness case sets 1/16, Authored and Later with three clicks and applies.
 - **Layout:** see the mockup. Changes from the user's review on 2026-10-05:

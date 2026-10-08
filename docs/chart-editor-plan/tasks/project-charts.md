@@ -33,7 +33,7 @@ Charts  1                                                     [ + ]   ← headin
 
 ## T-415 Rebuild the chart table header and rows with proper selection
 
-- **Status:** blocked-on T-436
+- **Status:** ready
 - **Mockup:** [chart-table.svg](../mockups/chart-table.svg) (reference: match its structure and hierarchy)
 - **Outcome:** the table matches the proposal's heading, header and rows. The "+" opens New Chart, the header checkbox selects all, none or shows a partial state, "Clear selection" is gone, columns are ellipsized with the full text in a tooltip, and row selection follows the click rules.
 - **Read first:** `src/ui/nuklear/setup_panel.cpp`, `src/ui/nuklear/setup_state.cpp` (selection helpers), `src/ui/nuklear/chrome.h`, `src/ui/nuklear/lucide_icons.h`.

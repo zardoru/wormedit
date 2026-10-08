@@ -70,7 +70,7 @@ was recently reorganized into collapsible sections; apply the stale-plan check
 
 ## T-124 Model metadata inheritance and overrides
 
-- **Status:** blocked-on T-122
+- **Status:** ready
 - **Outcome:** per-difficulty title/subtitle/artist/genre/music/preview fields can be "inherit from song" or an explicit override; export resolves them; native projects store the flag (schema v2 through T-122's migration).
 - **Read first:** `docs/chart-editor-plan/formats-persistence.md` (metadata scope paragraphs), `include/wormedit/core/document.h`, `include/wormedit/core/metadata_editor.h`.
 - **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, `include/wormedit/core/metadata_editor.h`, `src/core/metadata_editor.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/core/metadata_editor_tests.cpp`, `tests/formats/native_project_tests.cpp`.

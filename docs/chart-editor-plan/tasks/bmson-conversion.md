@@ -40,7 +40,7 @@ Continuation stems need slicing for BMS as well, because BMS cannot express cont
 
 ## T-466 Convert BMSON to osu!mania through slice spans
 
-- **Status:** blocked-on T-465
+- **Status:** ready
 - **Outcome:** converting `kick_your_ass2.bmson` to osu!mania writes the `.osu` and one WAV per distinct span. Playable notes carry their span as a hit sample, and BGM events become storyboard `Sample` events. Playing the converted chart through wormedit's own preview matches the BMSON preview PCM within the resampling tolerance.
 - **Read first:** `src/formats/osu_mania.cpp` (writer, `hit_sample`), `src/formats/conversion.cpp`, `include/wormedit/formats/slice_spans.h`, [T-289](export.md) (osu! sample and volume handling).
 - **Files owned:** `src/formats/osu_mania.cpp`, `src/formats/conversion.cpp`, `tests/formats/conversion_tests.cpp`, `tests/formats/conversion_loss_matrix_tests.cpp`, this card.
@@ -55,7 +55,7 @@ Continuation stems need slicing for BMS as well, because BMS cannot express cont
 
 ## T-467 Convert BMSON to BMS when the sounds fit the ID capacity
 
-- **Status:** blocked-on T-465
+- **Status:** ready
 - **Outcome:** a BMSON chart converts to BMS when the distinct spans fit the free `#WAV` capacity. Each span gets one ID, packed columns map to BGM columns, and stem lanes map to BGM columns in lane order. Over capacity, the conversion is refused before anything is written, with the message "needs N sounds, BMS holds M".
 - **Read first:** `src/formats/bms_writer.cpp`, `include/wormedit/core/resource_assignment.h` (`bms_identifier_capacity`), `include/wormedit/formats/slice_spans.h`, `src/formats/conversion.cpp`.
 - **Files owned:** `src/formats/bms_writer.cpp`, `src/formats/conversion.cpp`, `tests/formats/conversion_tests.cpp`, `tests/formats/conversion_loss_matrix_tests.cpp`, this card.

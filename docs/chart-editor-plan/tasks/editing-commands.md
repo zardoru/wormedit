@@ -26,7 +26,7 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-51 Build the modeless Timing Settings panel
 
-- **Status:** ready
+- **Status:** done (already implemented: `src/ui/nuklear/timing_settings_panel.cpp`, modeless, opened from Compose and the workspace, with metronome enable/volume and timing-lane visibility; restyling waits on the Nuklear component migration, user decision 2026-10-07)
 - **Implementation scope (coordinator, 2026-10-04):** Exact backing owners: `include/wormedit/audio/preview_session.h`, `src/audio/preview_session.cpp`, `include/wormedit/audio/preview_bridge.h`, `src/audio/preview_bridge.cpp`, `tests/core/audio_preview_session_tests.cpp`, `tests/core/audio_preview_bridge_tests.cpp`. Immediate gain for scheduled clicks also requires `include/wormedit/audio/transport.h`, `src/audio/transport.cpp`, `tests/core/audio_transport_tests.cpp` (no active gain API exists). Supporting routing/test owners: `src/sys/compose_view.h`, `src/sys/application_command_dispatch.cpp`, `tests/sys/application_commands_tests.cpp`, new `tests/ui/timing_settings_tests.cpp`. Sol creates panel/moves toggles before assigning Luna backing exclusively; controls bind afterward under the approved first-meter pulse/negative-clipping contract.
 - **Decision (user, 2026-10-03):** Implement metronome volume and count-in backing state before binding the panel controls; do not omit these controls. Ownership extends to the existing preview-session/mixer/transport implementation and related audio/frontend tests and source-list linkage needed for these settings.
 - **Backing audit (2026-10-03):** metronome enable already calls `preview_session.set_metronome_enabled`, and the eight timing-lane toggles already exist. Neither preview state nor the application settings carry metronome volume or count-in state; `timing.open_settings` remains disabled. This backing-state gap is now approved for implementation by the decision above. No settings implementation was started at the audit checkpoint.
@@ -129,7 +129,7 @@ Implementation review (2026-10-04): Panel created and eight inspector lane toggl
 
 ## T-57 Show the lane-key binding legend
 
-- **Status:** ready
+- **Status:** done (already implemented: `src/ui/nuklear/compose_canvas.cpp:898` draws the legend inside each lane; Options toggle `lane_key_legend_visible`; 2026-10-07 audit)
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** active-profile `{scancode, lane_id}` bindings and the persisted editor legend preference already reach the Compose view. Existing lane-header legends draw lane numbers rather than physical keys; no toolbar toggle exists. Publishing a toolbar toggle through the existing preference/action owner needs an unowned application file. A separate frontend flag would diverge from the preference. No legend implementation was started.
 - **Outcome:** a toggleable legend above the Compose lanes shows the physical key bound to each lane for the active input profile.

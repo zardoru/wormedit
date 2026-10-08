@@ -140,7 +140,7 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-453 Audit the verbs on BGM objects and play notes
 
-- **Status:** ready
+- **Status:** blocked-on-user (audit table complete; semantics need user approval before T-455)
 - **Outcome:** a table on this card lists every editing verb, with its BGM path, its play-lane path, the behavior difference, and a proposed single semantic. The verbs: select, move by drag, Y-lock, lane key, Shift+lane key, move to BGM, delete, copy, paste, quantize, layer assign, select same sound, and audition.
 - **Read first:** `src/sys/compose_input.cpp`, `src/sys/compose_note_to_bgm.cpp`, `src/core/note_to_bgm.cpp`, `src/core/interaction.cpp`, `src/ui/nuklear/compose_object_input.cpp`.
 - **Files owned:** this card only.
@@ -153,6 +153,25 @@ User feedback from 2026-10-07, with the causes found while planning:
 - **Reject/failure behavior:** none.
 - **Verify:** the table is complete for all listed verbs.
 - **Out of scope:** implementation.
+- **Audit (2026-10-08):** paths are from opened files (`sys/` = `src/sys/`, `core/` = `src/core/`, `ui/` = `src/ui/nuklear/`). "none" means the grep found no such path.
+
+| Verb | BGM path | Play-lane path | Difference | Intended? | Proposed semantic |
+|---|---|---|---|---|---|
+| Select (click) | sys/compose_input.cpp:2380 select_compose_bgm_event, then core/interaction.cpp:4387 select_editor_objects | sys/compose_input.cpp:2893 select_compose_pointer_target, same core action | Note click can place a note in place mode (2919); BGM never places | Intended (pointer tool) | One select_editor_objects for any object kind; placement stays a separate tool |
+| Move by drag | sys/compose_input.cpp:804 begin_bmson_bgm_move, 913 update; ui/compose_object_input.cpp:386-421 (needs exactly one selected BGM); include/wormedit/core/resource_assignment.h:267 apply_bgm_event_move | sys/compose_input.cpp:1801 note move begin; core/interaction.cpp:2526 begin_note_move_gesture, 2570, 2606 | BGM: one object, separate gesture kinds; notes: multi-select, one gesture | Stem markers intended; single-BGM limit unclear, likely accidental | One move gesture over all selected objects; stem rules inside the command |
+| Y-lock | sys/compose_input.cpp:950-952 preview target = origin (skipped for virtual canvas rows) | core/interaction.cpp:5075-5076 plan_note_move(keep_rows = state.y_lock), param at 1683, used at 1353 | Different mechanisms: BGM clamps preview, notes pass keep_rows to planner | Partly: linked stem markers stay in lane (intended) | One keep_rows flag applied to the whole mixed plan |
+| Lane key | sys/compose_input.cpp:3631 BGM branch; handled only if BGM ids exist (sys/compose_note_to_bgm.cpp:110-112) | sys/compose_input.cpp:708-722 dispatch_compose_lane_key_press, then core/interaction.cpp:2332 assign_selected_notes_to_lane | Routing picks path by BGM presence; mixed selection goes to BGM path (core/note_to_bgm.cpp:554) | Accidental (routing) | Every lane key calls move_selected_objects_to_lane |
+| Shift+lane key | sys/compose_note_to_bgm.cpp:113-126, first object via 53-74 over notes and BGM; deselect 135-140 | sys/compose_input.cpp:714-715 successive flag; core/interaction.cpp:2339-2390; deselect 2387-2390 | Same "first in document order, deselect" rule, two implementations | Intended (T-454 rule); split implementation accidental | Core: first object of mixed selection in document order, move one, deselect |
+| Move to BGM | none (grep NOTE_MOVE_TO_BGM hits only compose_input.cpp:3535, 3649 and compose_object_input.cpp:778) | sys/compose_input.cpp:3649-3652 to sys/compose_note_to_bgm.cpp:78, core/note_to_bgm.cpp:401 move_notes_to_bgm | No BGM side; BGM events in a mixed selection are ignored | Intended (note-only verb) | Keep note-only; mixed selection moves notes and leaves BGM alone |
+| Delete | sys/compose_input.cpp:684-687 to core/interaction.cpp:2127 delete_editor_selection; BGM rules 2073-2105 (linked BMSON marker must be alone) | sys/compose_input.cpp:3628-3629 stem taps move to BGM instead; else same core delete (2061) | Stem Delete becomes move-to-BGM; linked marker blocks a mixed delete | Intended (BMSON stem rules); branch-owned BMS error unverified | One delete command; stem and linked rules as named guards inside it |
+| Copy | src/sys/application_command_dispatch.cpp:282 to core/chart_clipboard.cpp:166 copy_chart_selection | same path | None (collect at 157-159 handles both kinds) | n/a | Keep single |
+| Paste | sys/compose_input.cpp:3736-3739 to sys/compose_view.cpp:165-178 to core/chart_clipboard.cpp:295 place_object | same path | BGM paste keeps stored end (chart_clipboard.cpp:310-315, no rebase); hold copy unverified | Accidental (unverified) | Single paste; rebase or reject BGM holds explicitly |
+| Quantize | none: sys/compose_area_actions.cpp:82-83 rejects BGM-only selection | sys/compose_area_actions.cpp:99-102 objects = selected_notes to core/command.cpp:115 | BGM never quantized, even in a mixed selection | Accidental (unverified) | One quantize over notes and BGM, or document notes-only |
+| Layer assign | sys/compose_semantic_layer_commands.h:38 selected_compose_bgm_events, edit with notes and BGM | sys/compose_actions.cpp:2087 apply_compose_layer_assignment (same call) | None: one command covers both | Intended | Keep one semantic-layer edit over notes and BGM |
+| Select same sound | none (grep "same sound", "select_same" found nothing). Closest: sys/compose_actions.cpp:1186 select_resource_uses | same function: sys/compose_resource_presenter.cpp:102-113 (notes and BGM) | Keyed by resource, not sound identity; uncertain | Uncertain | Select all objects using one resource, both kinds, one replace-select |
+| Audition | sys/compose_input.cpp:2395 (audition_on_click) to core/interaction.cpp:4381-4440 | sys/compose_input.cpp:2927 to same core; consumed at 3986 | None (BMSON draft audition at 1198 is separate) | n/a | Keep core rule: one note or BGM event |
+
+Uncertain: "select same sound" (no sound-identity path found); Y-lock planner body (only the parameter read); BGM hold paste (no rebase found, not run); branch-owned BMS delete error (not traced to a fix).
 
 ## T-454 Shift+lane key on BGM events moves one and deselects it
 

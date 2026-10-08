@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <numeric>
 #include <ranges>
+#include <unordered_set>
 #include <unordered_map>
 
 namespace wormedit {
@@ -437,7 +439,11 @@ auto chart_object_stats(const chart_document_t& chart) -> chart_object_stats_t {
     scan(chart.pauses); scan(chart.warps); scan(chart.scrolls); scan(chart.speeds);
     scan(chart.kiai); scan(chart.timing_anchors); scan(chart.bookmarks); scan(chart.sections);
     scan(chart.bga_events); scan(chart.sound_channels);
-    for (const auto& channel : chart.sound_channels) scan(channel.events);
+    for (const auto& channel : chart.sound_channels) {
+        stats.largest = std::max(stats.largest, channel.source_clip.id.value);
+        ++stats.count;
+        scan(channel.events);
+    }
     for (const auto& measure : chart.measures) {
         scan(measure.notes); scan(measure.bgm_events);
     }
@@ -823,6 +829,508 @@ auto assign_bmson_sound_event(document_history_t& history, std::uint64_t expecte
     return commit_document_command(history, std::move(proposed),
                                    playable_lane ? "Assign BMSON sound to playable lane"
                                                  : "Assign BMSON sound to BGM");
+}
+
+namespace {
+
+auto find_chart_at_revision(document_history_t& history, std::uint64_t expected_revision,
+                            chart_id_t chart_id)
+    -> std::variant<std::pair<std::size_t, chart_document_t*>, document_command_result_t> {
+    if (history.document.revision != expected_revision)
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BMSON source insertion has a stale document revision");
+    const auto chart = std::ranges::find(history.document.charts, chart_id,
+                                         &chart_document_t::id);
+    if (chart == history.document.charts.end() || !chart_id ||
+        chart->source_family != format_family_t::bmson)
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BMSON source insertion requires a known BMSON chart");
+    return std::pair{static_cast<std::size_t>(chart - history.document.charts.begin()), &*chart};
+}
+
+auto rational_magnitude(std::int64_t value) noexcept -> std::uint64_t {
+    return value >= 0 ? static_cast<std::uint64_t>(value)
+                      : static_cast<std::uint64_t>(-(value + 1)) + 1;
+}
+
+auto rational_product(std::uint64_t left, std::uint64_t right)
+    -> std::optional<std::uint64_t> {
+    if (left != 0 && right > std::numeric_limits<std::uint64_t>::max() / left)
+        return std::nullopt;
+    return left * right;
+}
+
+auto signed_rational_product(std::int64_t value, std::uint64_t factor)
+    -> std::optional<std::int64_t> {
+    constexpr auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+    constexpr auto minimum = maximum + 1;
+    const auto absolute = rational_magnitude(value);
+    const auto limit = value < 0 ? minimum : maximum;
+    if (absolute != 0 && factor > limit / absolute) return std::nullopt;
+    const auto product = absolute * factor;
+    if (value < 0 && product == minimum) return std::numeric_limits<std::int64_t>::min();
+    return value < 0 ? -static_cast<std::int64_t>(product)
+                     : static_cast<std::int64_t>(product);
+}
+
+auto subtract_time(signed_rational_t left, signed_rational_t right)
+    -> std::optional<signed_rational_t> {
+    if (left.denominator == 0 || right.denominator == 0) return std::nullopt;
+    const auto divisor = std::gcd(left.denominator, right.denominator);
+    const auto left_scale = right.denominator / divisor;
+    const auto right_scale = left.denominator / divisor;
+    const auto scaled_left = signed_rational_product(left.numerator, left_scale);
+    const auto scaled_right = signed_rational_product(right.numerator, right_scale);
+    const auto denominator = rational_product(left.denominator, left_scale);
+    if (!scaled_left || !scaled_right || !denominator ||
+        (*scaled_right > 0 && *scaled_left < std::numeric_limits<std::int64_t>::min() + *scaled_right) ||
+        (*scaled_right < 0 && *scaled_left > std::numeric_limits<std::int64_t>::max() + *scaled_right))
+        return std::nullopt;
+    return signed_rational_t{*scaled_left - *scaled_right, *denominator};
+}
+
+auto geometry_fits_clip(const sound_channel_t& channel,
+                        const bmson_source_geometry_t& geometry) -> bool {
+    return geometry.sample_rate != 0 && geometry.frame_count != 0 &&
+           channel.source_clip.begin_frame < geometry.frame_count &&
+           (!channel.source_clip.end_frame ||
+            (*channel.source_clip.end_frame > channel.source_clip.begin_frame &&
+             *channel.source_clip.end_frame <= geometry.frame_count));
+}
+
+auto target_inside_active_slice(const sound_slice_result_t& slices, const timing_index_t& timing,
+                                std::uint64_t target_row, std::uint32_t sample_rate,
+                                std::optional<std::uint64_t> source_end) -> std::optional<bool> {
+    const auto active = std::ranges::find_if(slices.slices.rbegin(), slices.slices.rend(),
+        [target_row](const auto& slice) { return slice.absolute_row <= target_row; });
+    if (active == slices.slices.rend()) return false;
+    if (!source_end) return std::nullopt;
+    if (active->source_begin_frame >= *source_end) return false;
+    const auto start = timing_at(timing, active->absolute_row);
+    const auto target = timing_at(timing, target_row);
+    if (!start || !target) return std::nullopt;
+    const auto elapsed = subtract_time(*target.seconds, *start.seconds);
+    if (!elapsed || elapsed->numerator < 0) return std::nullopt;
+    const auto offset = sample_frame_at(*elapsed, sample_rate);
+    if (!offset) return std::nullopt;
+    if (offset.frame.value() > std::numeric_limits<std::uint64_t>::max() -
+                                   active->source_begin_frame) return std::nullopt;
+    const auto source_frame = active->source_begin_frame + offset.frame.value();
+    const auto slice_end = active->source_end_frame.value_or(*source_end);
+    return source_frame < std::min(slice_end, *source_end);
+}
+
+auto classify_stem_restart(const chart_document_t& chart, const sound_channel_t& channel,
+                           const measure_index_t& measures, std::uint64_t row,
+                           bool prefer_restart, std::uint32_t sample_rate,
+                           std::optional<std::uint64_t> source_end,
+                           std::uint64_t revision,
+                           const sound_slice_result_t* validated_slices = nullptr)
+    -> std::variant<bool, document_command_result_t> {
+    if (prefer_restart || std::ranges::none_of(channel.events, [&](const auto& event) {
+            const auto event_row = absolute_row(measures, event.position);
+            return event_row && *event_row <= row;
+        })) return true;
+    if (sample_rate == 0)
+        return rejected(revision, diagnostic_code_t::invalid_resolution,
+                        "BMSON stem source sample rate is unavailable");
+    std::optional<sound_slice_result_t> generated_slices;
+    if (!validated_slices) {
+        generated_slices = derive_sound_channel_slices(chart, channel, sample_rate, source_end);
+        if (!*generated_slices)
+            return rejected(revision, diagnostic_code_t::invalid_resolution,
+                            generated_slices->diagnostics.front().message);
+        validated_slices = &*generated_slices;
+    }
+    const auto timing = build_timing_index(chart);
+    if (!timing) return rejected(revision, diagnostic_code_t::invalid_resolution,
+                                 "BMSON stem point timing cannot be resolved");
+    const auto inside = target_inside_active_slice(*validated_slices, *timing.index, row,
+                                                    sample_rate, source_end);
+    if (!inside) return rejected(revision, diagnostic_code_t::invalid_resolution,
+                                 "BMSON stem source length is unknown at the target row");
+    return !*inside;
+}
+
+struct stem_source_t {
+    const audio_asset_t* asset;
+    const resource_entry_t* resource;
+};
+
+struct stem_target_t {
+    std::size_t chart_offset;
+    chart_document_t* chart;
+    sound_channel_t* channel;
+    bgm_source_lane_t* lane;
+    measure_index_t measures;
+    std::uint64_t row;
+};
+
+auto resolve_stem_target(document_history_t& history, std::size_t chart_offset,
+                         chart_document_t& chart, object_id_t channel_id,
+                         local_position_t target)
+    -> std::variant<stem_target_t, document_command_result_t> {
+    auto channel = std::ranges::find(chart.sound_channels, channel_id, &sound_channel_t::id);
+    auto lane = std::ranges::find_if(chart.bgm_source_lanes,
+        [channel_id](const auto& item) { return item.stem_channel == channel_id; });
+    if (channel == chart.sound_channels.end() || lane == chart.bgm_source_lanes.end() ||
+        std::ranges::count_if(chart.bgm_source_lanes, [channel_id](const auto& item) {
+            return item.stem_channel == channel_id;
+        }) != 1)
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BMSON stem channel has no explicit linked source lane");
+    const auto built = build_measure_index(chart);
+    if (!std::holds_alternative<measure_index_t>(built))
+        return rejected(history.document.revision, diagnostic_code_t::invalid_measure,
+                        "BMSON stem point requires valid chart geometry");
+    auto measures = std::get<measure_index_t>(built);
+    const auto row = absolute_row(measures, target);
+    if (!row) return rejected(history.document.revision, diagnostic_code_t::row_out_of_range,
+                              "BMSON stem point is outside chart geometry");
+    if (std::ranges::any_of(channel->events, [target](const auto& event) {
+            return event.position == target;
+        })) return rejected(history.document.revision, diagnostic_code_t::collision,
+                            "A point already occupies this stem channel row");
+    return stem_target_t{chart_offset, &chart, &*channel, &*lane, std::move(measures), *row};
+}
+
+auto resolve_stem_source(const song_document_t& document, chart_id_t chart,
+                         object_id_t channel, asset_id_t asset_id,
+                         std::uint64_t revision)
+    -> std::variant<stem_source_t, document_command_result_t> {
+    const auto asset = std::ranges::find(document.audio_assets, asset_id, &audio_asset_t::id);
+    const auto bindings = bmson_channel_resource_bindings(document, chart);
+    const auto binding = std::ranges::find_if(bindings, [channel](const auto& candidate) {
+        return candidate.channel == channel;
+    });
+    const auto count = std::ranges::count_if(bindings, [channel](const auto& candidate) {
+        return candidate.channel == channel;
+    });
+    if (asset == document.audio_assets.end() || binding == bindings.end() ||
+        binding->ambiguous || !binding->channel || count != 1)
+        return rejected(revision, diagnostic_code_t::dangling_asset,
+                        "BMSON stem channel has no unambiguous BGM resource binding");
+    const auto resource = std::ranges::find(document.resources, binding->resource,
+                                             &resource_entry_t::id);
+    if (resource == document.resources.end() || resource->asset != asset_id)
+        return rejected(revision, diagnostic_code_t::dangling_resource,
+                        "BMSON stem channel resource binding does not match its audio asset");
+    return stem_source_t{&*asset, &*resource};
+}
+
+auto resolve_stem_geometry(const chart_document_t& chart, const sound_channel_t& channel,
+                           const audio_asset_t& asset,
+                           std::optional<bmson_source_geometry_t> geometry,
+                           std::uint64_t revision)
+    -> std::variant<std::optional<sound_slice_result_t>, document_command_result_t> {
+    if (geometry && (geometry->asset != asset.id || !geometry_fits_clip(channel, *geometry)))
+        return rejected(revision, diagnostic_code_t::invalid_id,
+                        "Decoded BMSON stem geometry does not match its source asset");
+    if (!geometry && asset.stream.frame_count &&
+        (channel.source_clip.begin_frame >= *asset.stream.frame_count ||
+         (channel.source_clip.end_frame &&
+          *channel.source_clip.end_frame > *asset.stream.frame_count)))
+        return rejected(revision, diagnostic_code_t::invalid_resolution,
+                        "BMSON stem clip extends beyond its known audio source");
+    if (!geometry) return std::optional<sound_slice_result_t>{};
+    auto slices = derive_sound_channel_slices(chart, channel, geometry->sample_rate,
+                                               geometry->frame_count);
+    if (!slices)
+        return rejected(revision, diagnostic_code_t::invalid_resolution,
+                        slices.diagnostics.front().message);
+    return std::optional{std::move(slices)};
+}
+
+struct empty_stem_fallbacks_t {
+    std::unordered_map<std::uint64_t,
+        std::unordered_map<std::string, std::vector<std::uint64_t>>> channels;
+    std::unordered_map<std::uint64_t,
+        std::unordered_map<std::string, std::size_t>> resource_counts;
+};
+
+template <typename Value>
+auto lookup_nested(const std::unordered_map<std::uint64_t,
+                    std::unordered_map<std::string, Value>>& values,
+                   std::uint64_t asset, const std::string& name) -> const Value* {
+    const auto outer = values.find(asset);
+    if (outer == values.end()) return nullptr;
+    const auto inner = outer->second.find(name);
+    return inner == outer->second.end() ? nullptr : &inner->second;
+}
+
+auto has_resource_role(const resource_entry_t& resource, resource_role_t role) -> bool {
+    return std::ranges::find(resource.roles, role) != resource.roles.end();
+}
+
+auto eligible_empty_stem_resource(const resource_entry_t& resource) -> bool {
+    return !resource.missing && has_resource_role(resource, resource_role_t::bgm) &&
+           (resource.sound_kind == sound_kind_t::stem ||
+            resource.sound_kind == sound_kind_t::unspecified);
+}
+
+auto make_empty_stem_fallbacks(const song_document_t& document,
+                               const chart_document_t& chart) -> empty_stem_fallbacks_t {
+    empty_stem_fallbacks_t result;
+    std::unordered_map<std::uint64_t, const sound_channel_t*> channels;
+    for (const auto& channel : chart.sound_channels)
+        channels.emplace(channel.id.value, &channel);
+    for (const auto& lane : chart.bgm_source_lanes) {
+        if (!lane.stem_channel) continue;
+        const auto channel = channels.find(lane.stem_channel->value);
+        if (channel == channels.end() || !channel->second->events.empty()) continue;
+        result.channels[channel->second->source_clip.source.value]
+            [channel->second->name].push_back(channel->first);
+    }
+    for (const auto& resource : document.resources) {
+        if (!eligible_empty_stem_resource(resource)) continue;
+        ++result.resource_counts[resource.asset.value][resource.name];
+    }
+    return result;
+}
+
+auto allocate_two_ids(chart_document_t& chart, std::uint64_t& largest,
+                      std::uint64_t count) -> bool {
+    const auto stats = chart_object_stats(chart);
+    if (stats.count > 1'000'000 - count ||
+        stats.largest > std::numeric_limits<std::uint64_t>::max() - count) return false;
+    largest = stats.largest;
+    return true;
+}
+
+auto add_bgm_projection(chart_document_t& chart, local_position_t target,
+                        object_id_t source_event, resource_id_t resource,
+                        object_id_t lane, object_id_t semantic_id,
+                        std::uint64_t revision) -> std::optional<document_command_result_t> {
+    const auto measure = std::ranges::find(chart.measures, target.measure, &measure_chunk_t::id);
+    if (measure == chart.measures.end())
+        return rejected(revision, diagnostic_code_t::invalid_measure,
+                        "BMSON source insertion measure is unavailable");
+    measure->bgm_events.push_back({.id = semantic_id, .position = target,
+        .source_lane = lane, .sound = resource, .sound_channel_event = source_event,
+        .structural_slot = 0, .branch = std::nullopt, .provenance = {}});
+    return std::nullopt;
+}
+
+using raw_channel_index_t =
+    std::unordered_map<std::uint64_t, std::unordered_set<std::uint64_t>>;
+
+auto index_source_events(const chart_document_t& chart) -> raw_channel_index_t {
+    raw_channel_index_t result;
+    for (const auto& channel : chart.sound_channels)
+        for (const auto& event : channel.events)
+            result[event.id.value].insert(channel.id.value);
+    return result;
+}
+
+auto index_semantic_channels(const chart_document_t& chart,
+                             const raw_channel_index_t& event_channels) -> raw_channel_index_t {
+    raw_channel_index_t result;
+    const auto record = [&](std::optional<resource_id_t> resource,
+                            std::optional<object_id_t> event) {
+        if (!resource || !event) return;
+        const auto channels = event_channels.find(event->value);
+        if (channels != event_channels.end())
+            result[resource->value].insert(channels->second.begin(), channels->second.end());
+    };
+    for (const auto& measure : chart.measures) {
+        for (const auto& event : measure.bgm_events)
+            record(event.sound, event.sound_channel_event);
+        for (const auto& event : measure.notes)
+            record(event.sound, event.sound_channel_event);
+    }
+    return result;
+}
+
+auto resolve_resource_binding(const resource_entry_t& resource,
+                              const raw_channel_index_t& semantic_channels,
+                              const empty_stem_fallbacks_t& empty_stems)
+    -> std::optional<bmson_channel_resource_binding_t> {
+    const bool bgm = has_resource_role(resource, resource_role_t::bgm);
+    const bool sample = has_resource_role(resource, resource_role_t::sample);
+    if (resource.missing || (!bgm && !sample)) return std::nullopt;
+    const auto linked = semantic_channels.find(resource.id.value);
+    if (linked != semantic_channels.end()) {
+        const bool ambiguous = linked->second.size() != 1;
+        const auto channel = ambiguous ? std::nullopt
+            : std::optional{object_id_t{*linked->second.begin()}};
+        return bmson_channel_resource_binding_t{resource.id, channel, ambiguous};
+    }
+    if (!bgm || (resource.sound_kind != sound_kind_t::stem &&
+                 resource.sound_kind != sound_kind_t::unspecified))
+        return bmson_channel_resource_binding_t{resource.id, std::nullopt, false};
+    const auto channels = lookup_nested(empty_stems.channels, resource.asset.value, resource.name);
+    const auto resources = lookup_nested(empty_stems.resource_counts,
+                                         resource.asset.value, resource.name);
+    const auto channel_count = channels ? channels->size() : 0U;
+    const auto resource_count = resources ? *resources : 0U;
+    const bool ambiguous = channel_count > 1 || resource_count > 1;
+    const auto channel = channel_count == 1 && resource_count == 1
+        ? std::optional{object_id_t{channels->front()}} : std::nullopt;
+    return bmson_channel_resource_binding_t{resource.id, channel, ambiguous};
+}
+
+} // namespace
+
+auto bmson_channel_resource_bindings(const song_document_t& document, chart_id_t chart_id)
+    -> std::vector<bmson_channel_resource_binding_t> {
+    const auto chart = std::ranges::find(document.charts, chart_id, &chart_document_t::id);
+    if (chart == document.charts.end() || chart->sound_channels.empty()) return {};
+
+    const auto empty_stems = make_empty_stem_fallbacks(document, *chart);
+    const auto event_channels = index_source_events(*chart);
+    const auto semantic_channels = index_semantic_channels(*chart, event_channels);
+    std::vector<bmson_channel_resource_binding_t> result;
+    for (const auto& resource : document.resources) {
+        if (auto binding = resolve_resource_binding(resource, semantic_channels, empty_stems))
+            result.push_back(*binding);
+    }
+    return result;
+}
+
+auto insert_bmson_stem_point(document_history_t& history, std::uint64_t expected_revision,
+                             chart_id_t chart_id, object_id_t channel_id,
+                             local_position_t target, bool prefer_restart,
+                             std::optional<bmson_source_geometry_t> geometry)
+    -> document_command_result_t {
+    const auto resolved = find_chart_at_revision(history, expected_revision, chart_id);
+    if (const auto* failure = std::get_if<document_command_result_t>(&resolved)) return *failure;
+    const auto [chart_offset, chart] =
+        std::get<std::pair<std::size_t, chart_document_t*>>(resolved);
+    const auto target_context = resolve_stem_target(history, chart_offset, *chart,
+                                                     channel_id, target);
+    if (const auto* failure = std::get_if<document_command_result_t>(&target_context))
+        return *failure;
+    const auto context = std::get<stem_target_t>(target_context);
+    auto* channel = context.channel;
+    auto* lane = context.lane;
+    auto* original_chart = context.chart;
+    const auto source = resolve_stem_source(history.document, chart_id, channel_id,
+        channel->source_clip.source, history.document.revision);
+    if (const auto* failure = std::get_if<document_command_result_t>(&source)) return *failure;
+    const auto stem_source = std::get<stem_source_t>(source);
+    const auto validated = resolve_stem_geometry(*original_chart, *channel,
+        *stem_source.asset, geometry, history.document.revision);
+    if (const auto* failure = std::get_if<document_command_result_t>(&validated)) return *failure;
+    const auto decoded_slices = std::get<std::optional<sound_slice_result_t>>(validated);
+    const auto rate = geometry ? geometry->sample_rate : stem_source.asset->stream.sample_rate;
+    const auto source_end = geometry ? std::optional{geometry->frame_count}
+                                     : stem_source.asset->stream.frame_count;
+    const auto known_end = source_end ? source_end : channel->source_clip.end_frame;
+    const auto classified = classify_stem_restart(*original_chart, *channel,
+        context.measures, context.row, prefer_restart, rate, known_end,
+        history.document.revision, decoded_slices ? &*decoded_slices : nullptr);
+    if (const auto* failure = std::get_if<document_command_result_t>(&classified)) return *failure;
+    const bool restart = std::get<bool>(classified);
+    auto proposed = history.document;
+    auto& changed = proposed.charts[context.chart_offset];
+    auto& changed_channel = *std::ranges::find(changed.sound_channels, channel_id,
+                                                 &sound_channel_t::id);
+    std::uint64_t largest{};
+    if (!allocate_two_ids(changed, largest, 2))
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BMSON chart object ID space is exhausted");
+    const object_id_t source_event{++largest};
+    const object_id_t semantic{++largest};
+    changed_channel.events.push_back({.id = source_event, .position = target,
+        .end = std::nullopt, .lane = {}, .continuation = !restart, .playable = false,
+        .provenance = {}});
+    if (auto failure = add_bgm_projection(changed, target, source_event,
+                                              stem_source.resource->id,
+                                              lane->id, semantic, history.document.revision))
+        return *failure;
+    if (geometry) {
+        const auto slices = derive_sound_channel_slices(changed, changed_channel,
+            geometry->sample_rate, geometry->frame_count);
+        if (!slices)
+            return rejected(history.document.revision, diagnostic_code_t::invalid_resolution,
+                            slices.diagnostics.front().message);
+    } else if (auto failure = validate_channel_slices(proposed, changed,
+                                                       changed_channel, history.document.revision)) {
+        return *failure;
+    }
+    return commit_document_command(history, std::move(proposed), "Insert BMSON stem point");
+}
+
+auto insert_bmson_packed_one_shot(document_history_t& history,
+                                  std::uint64_t expected_revision, chart_id_t chart_id,
+                                  object_id_t source_lane_id, resource_id_t resource_id,
+                                  local_position_t target) -> document_command_result_t {
+    const auto resolved = find_chart_at_revision(history, expected_revision, chart_id);
+    if (const auto* failure = std::get_if<document_command_result_t>(&resolved)) return *failure;
+    const auto [chart_offset, original_chart] =
+        std::get<std::pair<std::size_t, chart_document_t*>>(resolved);
+    const auto lane = std::ranges::find(original_chart->bgm_source_lanes, source_lane_id,
+                                         &bgm_source_lane_t::id);
+    const auto resource = std::ranges::find(history.document.resources, resource_id,
+                                             &resource_entry_t::id);
+    const auto bindings = bmson_channel_resource_bindings(history.document, chart_id);
+    const auto resource_binding = std::ranges::find(bindings, resource_id,
+        &bmson_channel_resource_binding_t::resource);
+    if (lane == original_chart->bgm_source_lanes.end() || lane->stem_channel ||
+        resource == history.document.resources.end() || resource->missing ||
+        resource->sound_kind == sound_kind_t::stem ||
+        (std::ranges::find(resource->roles, resource_role_t::sample) == resource->roles.end() &&
+         std::ranges::find(resource->roles, resource_role_t::bgm) == resource->roles.end()))
+        return rejected(history.document.revision, diagnostic_code_t::dangling_resource,
+                        "Packed BMSON points require an unlinked lane and sample/BGM resource");
+    const auto asset = std::ranges::find(history.document.audio_assets, resource->asset,
+                                          &audio_asset_t::id);
+    if (asset == history.document.audio_assets.end())
+        return rejected(history.document.revision, diagnostic_code_t::dangling_asset,
+                        "Packed BMSON sound resource has no audio asset");
+    const auto built = build_measure_index(*original_chart);
+    if (!std::holds_alternative<measure_index_t>(built) ||
+        !absolute_row(std::get<measure_index_t>(built), target))
+        return rejected(history.document.revision, diagnostic_code_t::row_out_of_range,
+                        "Packed BMSON point is outside chart geometry");
+    if (resource_binding != bindings.end() && resource_binding->ambiguous)
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "Packed BMSON resource has ambiguous sound-channel bindings");
+    const auto channel = resource_binding != bindings.end() && resource_binding->channel
+        ? std::ranges::find(original_chart->sound_channels, *resource_binding->channel,
+                            &sound_channel_t::id)
+        : original_chart->sound_channels.end();
+    if (channel != original_chart->sound_channels.end()) {
+        const auto stem_lane = std::ranges::find_if(original_chart->bgm_source_lanes,
+            [&](const auto& source_lane) { return source_lane.stem_channel == channel->id; });
+        if (stem_lane != original_chart->bgm_source_lanes.end())
+            return rejected(history.document.revision, diagnostic_code_t::collision,
+                            "Resource belongs to stem lane '" + stem_lane->name + "'");
+    }
+    if (channel != original_chart->sound_channels.end() &&
+        std::ranges::any_of(channel->events, [target](const auto& event) {
+            return event.position == target;
+        })) return rejected(history.document.revision, diagnostic_code_t::collision,
+                            "Packed BMSON source channel already has a point at this row");
+    auto proposed = history.document;
+    auto& changed = proposed.charts[chart_offset];
+    std::uint64_t largest{};
+    const auto ids_needed = channel == original_chart->sound_channels.end() ? 4U : 2U;
+    if (!allocate_two_ids(changed, largest, ids_needed))
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BMSON chart object ID space is exhausted");
+    sound_channel_t* destination{};
+    if (channel == original_chart->sound_channels.end()) {
+        const clip_id_t clip_id{++largest};
+        changed.sound_channels.push_back({.id = object_id_t{++largest}, .name = resource->name,
+            .source_clip = {.id = clip_id, .source = asset->id, .begin_frame = 0,
+                            .end_frame = asset->stream.frame_count}, .events = {}});
+        destination = &changed.sound_channels.back();
+    } else {
+        const auto offset = static_cast<std::size_t>(channel - original_chart->sound_channels.begin());
+        destination = &changed.sound_channels[offset];
+    }
+    const object_id_t source_event{++largest};
+    const object_id_t semantic{++largest};
+    destination->events.push_back({.id = source_event, .position = target,
+        .end = std::nullopt, .lane = {}, .continuation = false, .playable = false,
+        .provenance = {}});
+    if (auto failure = add_bgm_projection(changed, target, source_event, resource_id,
+                                          source_lane_id, semantic,
+                                          history.document.revision)) return *failure;
+    if (auto failure = validate_channel_slices(proposed, changed, *destination,
+                                                history.document.revision)) return *failure;
+    return commit_document_command(history, std::move(proposed), "Insert packed BMSON one-shot");
 }
 
 } // namespace wormedit

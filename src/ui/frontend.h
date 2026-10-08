@@ -1043,6 +1043,8 @@ typedef struct WormUiComposeKeysoundRowView {
     /* Bit i means adding keysound_layers[i] conflicts with existing note layers. */
     uint64_t note_layer_conflict_mask;
     uint64_t sound_group_id;
+    uint64_t stem_source_lane_id;
+    const char* stem_lane_name;
 } WormUiComposeKeysoundRowView;
 
 typedef enum WormUiComposeKeysoundDisplayRowKind {
@@ -1196,6 +1198,9 @@ typedef struct WormUiComposeView {
     bool truncated;
     uint8_t draw_source_kind; /* 0 none, 1 sound, 2 BGA */
     uint64_t draw_source_id;
+    bool draw_source_is_stem;
+    uint64_t draw_source_stem_lane_id;
+    const char* draw_source_stem_lane_name;
     bool note_paint_mode_active;
     bool semantic_layer_paint_mode_active;
     bool semantic_layer_gesture_active;
@@ -2406,6 +2411,8 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION,
     WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL,
     WORM_UI_COMPOSE_INPUT_DRAW_SOURCE,
+    WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW,
+    WORM_UI_COMPOSE_INPUT_BMSON_EMPTY_SELECT,
 } WormUiComposeInputKind;
 
 typedef enum WormUiComposeNavigationAction {

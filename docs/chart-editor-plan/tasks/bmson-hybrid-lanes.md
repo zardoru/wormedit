@@ -139,7 +139,7 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
 
 ## T-463 Place stem points and packed one-shots with the Draw tool
 
-- **Status:** blocked-on T-412, T-457
+- **Status:** done (2026-10-08; native desktop interaction remains unmeasured)
 - **Outcome:** with Draw active:
   - **On a stem lane:** a click outside the stem's audio span adds a restart point, with or without Shift. A click inside a span adds a continue point, and Shift+click inside a span adds a restart point. An empty stem lane accepts its first point.
   - **Dragging a stem row from the Sounds dock onto its own lane** adds a restart point at the drop row.
@@ -147,7 +147,8 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
 
   In Select mode, a click on empty space in a stem lane only deselects.
 - **Read first:** `src/ui/nuklear/compose_object_input.cpp` (`add_bmson_stem_point`, `stem_lane_reference_marker`), `src/sys/compose_input.cpp` (`BMSON_STEM_POINT_*` dispatch), `include/wormedit/core/bmson_sound_channel_editor.h` (`insert_bmson_bgm_marker`), `include/wormedit/core/sound_slice.h`, the T-412 card.
-- **Files owned:** those four source files, plus `src/core/bmson_sound_channel_editor.cpp`, `src/ui/frontend.h`, `src/sys/compose_view.cpp` (draw-source projection), core tests and the event harness, this card.
+- **Files owned:** `src/ui/nuklear/compose_object_input.cpp`, `src/sys/compose_input.cpp`, `include/wormedit/core/bmson_sound_channel_editor.h`, `src/core/bmson_sound_channel_editor.cpp`, `src/ui/frontend.h`, `src/sys/compose_view.cpp`, `src/sys/compose_view.h`, `src/sys/sound_list_projection.cpp` (BMSON automatic Sounds list only), `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/compose_input_internal.h`, `src/ui/nuklear/compose_panel.cpp` (new point/dock capture cancellation only), `tests/core/bmson_sound_channel_editor_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/sound_list_projection_tests.cpp`, `tests/sys/frame_timing_tests.cpp` (production source ownership/cache projection), `tests/ui/bga_lane_event_harness_tests.cpp`, this section only. `include/wormedit/core/sound_slice.h` is read-only unless a concrete extension is approved.
+- **Stale audit / execution:** After reviewed T412 checkpoint `e79d9f3`, empty stem clicks still run in Select and require a visible reference marker; packed Draw has no source-channel creation path. Sol owns UI/sys/projection and all builds. Luna exclusively owns the BMSON editor header/source and its core test file for channel-ID insertion, explicit native geometry and atomic packed insertion, then releases before review. Decoded geometry is read from a matching retained source binding; no document metadata is filled by UI projection. Subsequent exclusive Luna slices added actual dock/payload/undo harness regressions and exact resource/channel binding tests, then released all paths. Semantic event links distinguish two stems and a packed keysound sharing one asset; empty-channel fallback is conservative and indexed. Sol added arena-owned names, revision/source-identity cache checks and BMSON-only automatic Sounds-list stem rows; non-BMSON and slots eligibility stay unchanged.
 - **Steps:**
   1. Core: `insert_bmson_stem_point(channel, position, prefer_restart)`. The command decides the point kind from the derived slices: it is a restart if the row is outside every sounding span or `prefer_restart` is set, and a continue point otherwise. It takes the channel ID, so it works on an empty channel without a reference marker.
   2. Move the stem-lane click from Select to Draw. Shift becomes `prefer_restart`.
@@ -158,6 +159,7 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
 - **Invariants:** existing points, razor gestures and slice-point drags are unchanged.
 - **Reject/failure behavior:** a point on an existing point's row is rejected with the reason, and the document is unchanged.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'bmson|stem'`; `ctest --test-dir build -L event-harness`.
+- **Evidence:** Normal offline optimized application/core/frame/event targets pass (`build-t463-acceptance.log`). Final required `bmson|stem` CTest: 70/70; full event harness: 221/221; BMSON core: 94 cases / 1,211 assertions; actual production ownership/cache/frame-name projection: 3 cases / 55 assertions. Native half-open EOF, missing decoded geometry, source clip, shared-asset ownership, packed rejection, empty stem and one-command undo are covered. Header-inclusive configured tidy across 12 affected translation units matches baseline scores, including original Catch cases whose generated function numbers shift; all new functions/cases are below the threshold. Durable logs and `tidy-t463-comparison.json` are under `/home/zardoru/devel/wormedit-scratch-builds/oct8-draw-conversion/draw`. Ordinary gesture tests use the windowless harness; its grouped suite also contains an isolated SDL dummy/software render case. No native window/cadence claim.
 - **Out of scope:** razor mode.
 
 ## T-464 Resize stem lanes horizontally and label wide ones by file name

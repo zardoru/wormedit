@@ -6,9 +6,11 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -24,6 +26,287 @@ auto fixture() -> wormedit::song_document_t {
         std::as_bytes(std::span{bytes.data(), bytes.size()}));
     REQUIRE(parsed.song.has_value());
     return *parsed.song;
+}
+
+auto first_measure_position(const wormedit::song_document_t& song, std::uint64_t row)
+    -> wormedit::local_position_t {
+    return {song.charts.front().measures.front().id, row};
+}
+
+void clear_channel_for_empty_stem_test(wormedit::chart_document_t& chart) {
+    const auto& events = chart.sound_channels.front().events;
+    const auto linked = [&](std::optional<wormedit::object_id_t> source) {
+        return source && std::ranges::any_of(events, [&](const auto& event) {
+            return event.id == *source;
+        });
+    };
+    for (auto& measure : chart.measures) {
+        std::erase_if(measure.bgm_events, [&](const auto& event) {
+            return linked(event.sound_channel_event);
+        });
+        std::erase_if(measure.notes, [&](const auto& event) {
+            return linked(event.sound_channel_event);
+        });
+    }
+    chart.sound_channels.front().events.clear();
+}
+
+void require_t463_applied(const wormedit::document_command_result_t& result) {
+    INFO((result.diagnostics.empty() ? "No diagnostic" : result.diagnostics.front().message));
+    REQUIRE(result.applied);
+}
+
+auto stem_point_matches(wormedit::song_document_t song, std::uint64_t row, bool prefer_restart,
+                        std::optional<wormedit::bmson_source_geometry_t> geometry,
+                        bool expected_restart, bool empty_channel = false) -> bool {
+    for (auto& resource : song.resources) resource.missing = false;
+    auto& chart = song.charts.front();
+    const auto channel_id = chart.sound_channels.front().id;
+    if (empty_channel) clear_channel_for_empty_stem_test(chart);
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto before_revision = history.document.revision;
+    const auto before_undo = history.undo.size();
+    const auto result = wormedit::insert_bmson_stem_point(
+        history, before_revision, history.document.charts.front().id, channel_id,
+        first_measure_position(history.document, row), prefer_restart, geometry);
+    require_t463_applied(result);
+    if (!result || history.undo.size() != before_undo + 1) return false;
+    const auto& changed = history.document.charts.front();
+    const auto& event = changed.sound_channels.front().events.back();
+    if (event.continuation != !expected_restart || event.playable) return false;
+    const auto linked = std::ranges::any_of(changed.measures, [&](const auto& measure) {
+        return std::ranges::any_of(measure.bgm_events, [&](const auto& bgm) {
+            return bgm.sound_channel_event == event.id && bgm.source_lane ==
+                   changed.bgm_source_lanes.front().id;
+        });
+    });
+    return linked && wormedit::validate_document(history.document).empty() &&
+           wormedit::undo_document_command(history);
+}
+
+auto packed_song() -> wormedit::song_document_t {
+    auto song = fixture();
+    for (auto& resource : song.resources) resource.missing = false;
+    auto& chart = song.charts.front();
+    const auto lane_id = wormedit::object_id_t{900'001};
+    chart.bgm_source_lanes.push_back({.id = lane_id, .name = "Packed lane"});
+    auto asset = song.audio_assets.front();
+    asset.id = wormedit::asset_id_t{900'002};
+    asset.stream = {48'000, 2, 144'000, true};
+    song.audio_assets.push_back(asset);
+    auto resource = song.resources.front();
+    resource.id = wormedit::resource_id_t{900'003};
+    resource.name = "packed.wav";
+    resource.asset = asset.id;
+    resource.roles = {wormedit::resource_role_t::sample};
+    resource.target_identities.clear();
+    resource.sound_kind = wormedit::sound_kind_t::keysound;
+    resource.missing = false;
+    song.resources.push_back(std::move(resource));
+    return song;
+}
+
+auto packed_insert_matches(wormedit::song_document_t song, std::uint64_t row,
+                           std::size_t expected_channels) -> bool {
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto chart_id = history.document.charts.front().id;
+    const auto lane = history.document.charts.front().bgm_source_lanes.back().id;
+    const auto resource = history.document.resources.back().id;
+    const auto position = first_measure_position(history.document, row);
+    const auto result = wormedit::insert_bmson_packed_one_shot(
+        history, history.document.revision, chart_id, lane, resource, position);
+    require_t463_applied(result);
+    if (!result || history.document.charts.front().sound_channels.size() != expected_channels)
+        return false;
+    const auto& changed = history.document.charts.front();
+    const auto& source = changed.sound_channels.back().events.back();
+    const auto linked = std::ranges::any_of(changed.measures, [&](const auto& measure) {
+        return std::ranges::any_of(measure.bgm_events, [&](const auto& bgm) {
+            return bgm.sound_channel_event == source.id && bgm.source_lane == lane &&
+                   bgm.sound == resource;
+        });
+    });
+    return !source.playable && !source.continuation && linked &&
+           wormedit::validate_document(history.document).empty();
+}
+
+auto packed_reuse_preserves_clip(wormedit::song_document_t song) -> bool {
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto chart_id = history.document.charts.front().id;
+    const auto lane = history.document.charts.front().bgm_source_lanes.back().id;
+    const auto resource = history.document.resources.back().id;
+    const auto count = history.document.charts.front().sound_channels.size();
+    const auto first = wormedit::insert_bmson_packed_one_shot(
+        history, history.document.revision, chart_id, lane, resource,
+        first_measure_position(history.document, 90));
+    require_t463_applied(first);
+    if (!first) return false;
+    const auto channel_id = history.document.charts.front().sound_channels.back().id;
+    const auto clip = history.document.charts.front().sound_channels.back().source_clip;
+    const auto second = wormedit::insert_bmson_packed_one_shot(
+        history, history.document.revision, chart_id, lane, resource,
+        first_measure_position(history.document, 120));
+    if (!second) return false;
+    const auto& channel = history.document.charts.front().sound_channels.back();
+    if (history.document.charts.front().sound_channels.size() != count + 1 ||
+        channel.id != channel_id || channel.source_clip.id != clip.id ||
+        channel.source_clip.source != clip.source ||
+        channel.source_clip.begin_frame != clip.begin_frame ||
+        channel.source_clip.end_frame != clip.end_frame ||
+        channel.events.size() != 2 || !wormedit::validate_document(history.document).empty())
+        return false;
+    return wormedit::undo_document_command(history) &&
+           history.document.charts.front().sound_channels.back().events.size() == 1;
+}
+
+auto packed_rejections_are_atomic() -> bool {
+    auto history = wormedit::make_document_history(packed_song());
+    const auto chart = history.document.charts.front().id;
+    const auto lane = history.document.charts.front().bgm_source_lanes.back().id;
+    history.document.resources.front().sound_kind = wormedit::sound_kind_t::stem;
+    const auto stem_resource = history.document.resources.front().id;
+    const auto revision = history.document.revision;
+    const auto stem_rejected = wormedit::insert_bmson_packed_one_shot(
+        history, revision, chart, lane, stem_resource,
+        first_measure_position(history.document, 100));
+    if (stem_rejected || history.document.revision != revision ||
+        stem_rejected.diagnostics.empty() ||
+        stem_rejected.diagnostics.front().message.find("resource") == std::string::npos)
+        return false;
+    const auto resource = history.document.resources.back().id;
+    const auto position = first_measure_position(history.document, 90);
+    if (!wormedit::insert_bmson_packed_one_shot(history, revision, chart, lane, resource, position))
+        return false;
+    const auto changed_revision = history.document.revision;
+    const auto collision = wormedit::insert_bmson_packed_one_shot(
+        history, changed_revision, chart, lane, resource, position);
+    return !collision && !collision.diagnostics.empty() &&
+           collision.diagnostics.front().code == wormedit::diagnostic_code_t::collision &&
+           history.document.revision == changed_revision && wormedit::undo_document_command(history);
+}
+
+auto duplicate_asset_binding_song() -> wormedit::song_document_t {
+    auto song = fixture();
+    auto& chart = song.charts.front();
+    for (auto& measure : chart.measures) {
+        measure.notes.clear();
+        measure.bgm_events.clear();
+    }
+    chart.sound_channels.clear();
+    chart.bgm_source_lanes.clear();
+    song.resources.clear();
+    auto& asset = song.audio_assets.front();
+    asset.stream = {48'000, 2, 144'000, true};
+    const std::array lane_ids{wormedit::object_id_t{930'001}, wormedit::object_id_t{930'002},
+                              wormedit::object_id_t{930'003}};
+    const std::array channel_ids{wormedit::object_id_t{950'001}, wormedit::object_id_t{950'002},
+                                 wormedit::object_id_t{950'003}};
+    const std::array resource_ids{wormedit::resource_id_t{940'001},
+                                  wormedit::resource_id_t{940'002},
+                                  wormedit::resource_id_t{940'003}};
+    const std::array names{"Stem A", "Stem B", "Packed"};
+    for (std::size_t index = 0; index < lane_ids.size(); ++index) {
+        const bool stem = index < 2;
+        chart.bgm_source_lanes.push_back({.id = lane_ids[index], .name = names[index],
+            .stem_channel = stem ? std::optional{channel_ids[index]} : std::nullopt});
+        chart.sound_channels.push_back({.id = channel_ids[index], .name = names[index],
+            .source_clip = {.id = wormedit::clip_id_t{960'001 + index}, .source = asset.id,
+                            .begin_frame = 0, .end_frame = asset.stream.frame_count},
+            .events = {{.id = wormedit::object_id_t{910'001 + index},
+                        .position = {chart.measures.front().id, 100}, .playable = false}}});
+        song.resources.push_back({.id = resource_ids[index], .name = names[index],
+            .asset = asset.id, .roles = {wormedit::resource_role_t::bgm},
+            .missing = false, .sound_kind = stem ? wormedit::sound_kind_t::stem
+                                                : wormedit::sound_kind_t::keysound});
+        chart.measures.front().bgm_events.push_back({
+            .id = wormedit::object_id_t{920'001 + index},
+            .position = {chart.measures.front().id, 100}, .source_lane = lane_ids[index],
+            .sound = resource_ids[index],
+            .sound_channel_event = wormedit::object_id_t{910'001 + index}});
+    }
+    return song;
+}
+
+auto has_bgm_binding(const wormedit::chart_document_t& chart, wormedit::object_id_t source,
+                     wormedit::resource_id_t resource, std::optional<std::uint64_t> row = {})
+    -> bool {
+    for (const auto& measure : chart.measures) {
+        for (const auto& bgm : measure.bgm_events) {
+            if (bgm.sound_channel_event == source && bgm.sound == resource &&
+                (!row || bgm.position.row == *row)) return true;
+        }
+    }
+    return false;
+}
+
+auto duplicate_asset_insertions_match_exact_resources() -> bool {
+    auto history = wormedit::make_document_history(duplicate_asset_binding_song());
+    const auto chart_id = history.document.charts.front().id;
+    const std::array channel_ids{wormedit::object_id_t{950'001},
+                                 wormedit::object_id_t{950'002},
+                                 wormedit::object_id_t{950'003}};
+    const std::array resource_ids{wormedit::resource_id_t{940'001},
+                                  wormedit::resource_id_t{940'002},
+                                  wormedit::resource_id_t{940'003}};
+    const auto bindings = wormedit::bmson_channel_resource_bindings(history.document, chart_id);
+    if (bindings.size() != 3) return false;
+    for (std::size_t index = 0; index < 3; ++index) {
+        if (bindings[index].ambiguous || bindings[index].channel != channel_ids[index])
+            return false;
+    }
+    const auto geometry = wormedit::bmson_source_geometry_t{
+        .asset = history.document.audio_assets.front().id,
+        .sample_rate = 48'000, .frame_count = 144'000};
+    for (std::size_t index = 0; index < 2; ++index) {
+        const auto result = wormedit::insert_bmson_stem_point(history,
+            history.document.revision, chart_id, channel_ids[index],
+            first_measure_position(history.document, 500), true, geometry);
+        if (!result) return false;
+        const auto& events = history.document.charts.front().sound_channels[index].events;
+        const auto source = events.back().id;
+        const auto expected_resource = resource_ids[index];
+        if (!has_bgm_binding(history.document.charts.front(), source, expected_resource))
+            return false;
+    }
+    const auto packed = wormedit::insert_bmson_packed_one_shot(history,
+        history.document.revision, chart_id, wormedit::object_id_t{930'003},
+        resource_ids[2], first_measure_position(history.document, 600));
+    if (!packed || history.document.charts.front().sound_channels.size() != 3) return false;
+    const auto& packed_channel = history.document.charts.front().sound_channels[2];
+    const auto packed_source = packed_channel.events.back().id;
+    const auto linked = has_bgm_binding(history.document.charts.front(), packed_source,
+                                        resource_ids[2], 600);
+    return packed_channel.id == channel_ids[2] && packed_channel.events.size() == 2 && linked &&
+           wormedit::validate_document(history.document).empty();
+}
+
+auto ambiguous_empty_stem_binding_rejects() -> bool {
+    auto song = duplicate_asset_binding_song();
+    auto& chart = song.charts.front();
+    for (auto& channel : chart.sound_channels) channel.events.clear();
+    for (auto& measure : chart.measures) measure.bgm_events.clear();
+    chart.sound_channels.resize(2);
+    chart.sound_channels[1].name = chart.sound_channels[0].name;
+    chart.bgm_source_lanes.resize(2);
+    chart.bgm_source_lanes[0].name = chart.sound_channels[0].name;
+    chart.bgm_source_lanes[1].name = chart.sound_channels[0].name;
+    chart.bgm_source_lanes[0].stem_channel = chart.sound_channels[0].id;
+    chart.bgm_source_lanes[1].stem_channel = chart.sound_channels[1].id;
+    song.resources.resize(1);
+    song.resources.front().name = chart.sound_channels[0].name;
+    const auto bindings = wormedit::bmson_channel_resource_bindings(song, chart.id);
+    const auto chart_id = chart.id;
+    const auto channel_id = chart.sound_channels[0].id;
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto revision = history.document.revision;
+    const auto result = wormedit::insert_bmson_stem_point(history, revision, chart_id,
+        channel_id, first_measure_position(history.document, 500), true);
+    return bindings.size() == 1 && bindings.front().ambiguous && !bindings.front().channel &&
+           !result && history.document.revision == revision && history.undo.empty();
+}
+
+void expect_bmson_core(bool condition) {
+    REQUIRE(condition);
 }
 
 } // namespace
@@ -520,4 +803,86 @@ TEST_CASE("BMSON razor path fills exact grid cells across measures in pointer or
     CHECK_FALSE(wormedit::interpolate_bmson_razor_path(chart, begin, end, 8, 3));
     CHECK_FALSE(wormedit::interpolate_bmson_razor_path(
         chart, {chart.measures[0].id, 721}, end, 8));
+}
+
+TEST_CASE("BMSON stem points classify span, Shift, EOF, before-first and empty-channel rows",
+          "[unit][core][bmson][stem]") {
+    auto song = fixture();
+    song.audio_assets.front().stream = {48'000, 2, 200'000, true};
+    const auto geometry = wormedit::bmson_source_geometry_t{
+        .asset = song.charts.front().sound_channels.front().source_clip.source,
+        .sample_rate = 48'000, .frame_count = 200'000};
+    expect_bmson_core(stem_point_matches(song, 300, false, geometry, false));
+    expect_bmson_core(stem_point_matches(song, 300, true, geometry, true));
+    auto short_geometry = geometry;
+    short_geometry.frame_count = 15'000;
+    expect_bmson_core(stem_point_matches(song, 400, false, short_geometry, true));
+    expect_bmson_core(stem_point_matches(song, 100, false, geometry, true));
+    expect_bmson_core(stem_point_matches(song, 300, false, geometry, true, true));
+}
+
+TEST_CASE("BMSON stem point uses supplied native geometry and rejects unknown ambiguous length",
+          "[unit][core][bmson][stem]") {
+    auto known = fixture();
+    known.audio_assets.front().stream = {};
+    const auto geometry = wormedit::bmson_source_geometry_t{
+        .asset = known.charts.front().sound_channels.front().source_clip.source,
+        .sample_rate = 48'000, .frame_count = 200'000};
+    known.charts.front().sound_channels.front().source_clip.begin_frame = 10'000;
+    known.charts.front().sound_channels.front().source_clip.end_frame = 50'000;
+    expect_bmson_core(stem_point_matches(known, 300, false, geometry, false));
+
+    auto unknown = fixture();
+    unknown.audio_assets.front().stream = {48'000, 2, std::nullopt, true};
+    unknown.charts.front().sound_channels.front().source_clip.end_frame.reset();
+    auto history = wormedit::make_document_history(std::move(unknown));
+    const auto revision = history.document.revision;
+    const auto chart = history.document.charts.front().id;
+    const auto channel = history.document.charts.front().sound_channels.front().id;
+    const auto target = first_measure_position(history.document, 300);
+    const auto result = wormedit::insert_bmson_stem_point(
+        history, revision, chart, channel, target, false);
+    expect_bmson_core(!result && history.document.revision == revision && history.undo.empty());
+}
+
+TEST_CASE("BMSON stem insertion rejects stale chart and occupied rows atomically",
+          "[unit][core][bmson][stem]") {
+    auto song = fixture();
+    song.audio_assets.front().stream = {48'000, 2, 200'000, true};
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto revision = history.document.revision;
+    const auto chart = history.document.charts.front().id;
+    const auto channel = history.document.charts.front().sound_channels.front().id;
+    const auto occupied = history.document.charts.front().sound_channels.front().events.front().position;
+    const auto stale = wormedit::insert_bmson_stem_point(
+        history, revision + 1, chart, channel, first_measure_position(history.document, 300), false);
+    const auto unknown_chart = wormedit::insert_bmson_stem_point(
+        history, revision, wormedit::chart_id_t{999'999}, channel,
+        first_measure_position(history.document, 300), false);
+    const auto collision = wormedit::insert_bmson_stem_point(
+        history, revision, chart, channel, occupied, false);
+    expect_bmson_core(!stale && !unknown_chart && !collision &&
+        collision.diagnostics.front().code == wormedit::diagnostic_code_t::collision &&
+        history.document.revision == revision && history.undo.empty());
+}
+
+TEST_CASE("Packed BMSON one-shot creates, reuses, and atomically links an unstemmed channel",
+          "[unit][core][bmson][packed]") {
+    expect_bmson_core(packed_insert_matches(packed_song(), 90, 2));
+    expect_bmson_core(packed_reuse_preserves_clip(packed_song()));
+}
+
+TEST_CASE("Packed BMSON insertion rejects stem resources and collisions without mutation",
+          "[unit][core][bmson][packed]") {
+    expect_bmson_core(packed_rejections_are_atomic());
+}
+
+TEST_CASE("BMSON semantic binding keeps duplicate asset stems and packed keysounds distinct",
+          "[unit][core][bmson][stem][packed]") {
+    expect_bmson_core(duplicate_asset_insertions_match_exact_resources());
+}
+
+TEST_CASE("BMSON empty stem binding rejects duplicate same-name candidates",
+          "[unit][core][bmson][stem]") {
+    expect_bmson_core(ambiguous_empty_stem_binding_rejects());
 }

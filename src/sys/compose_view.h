@@ -129,6 +129,13 @@ struct compose_scene_cache_t {
     const void* scene_document_identity{};
     const void* scene_chart_identity{};
     wormedit::song_id_t scene_song;
+    struct draw_stem_source_cache_t {
+        const void* document{};
+        const void* chart{};
+        std::uint64_t revision{}, build_count{};
+        std::unordered_map<std::uint64_t, std::size_t> resource_lanes;
+        std::unordered_map<std::uint64_t, std::size_t> explicit_stem_resources;
+    } draw_stem_sources;
     std::optional<tap_timing_apply_proposal_t> tap_apply_proposal;
     std::optional<tap_timing_apply_proposal_t> tap_preview_binding;
     std::optional<timing_index_t> tap_preview_timing;

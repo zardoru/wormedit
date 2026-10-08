@@ -5258,3 +5258,94 @@ TEST_CASE("Compose BGM dispatcher reaches last widened lane and clamps resized c
     expect_compose_test(fixture.application.bgm_horizontal_scroll_pixels[1] == 0);
     expect_compose_test(fixture.history.document.revision == 1 && fixture.history.undo.empty());
 }
+
+namespace {
+auto t463_shared_asset_song() -> song_document_t {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bmson;
+    chart.measures.front().notes.clear();
+    song.audio_assets = {{.id = asset_id_t{200}, .stream = {44'100, 2, 441'000, true}}};
+    for (uint64_t index = 0; index < 3; ++index) {
+        song.resources.push_back({.id = resource_id_t{100 + index},
+            .name = "Shared source " + std::to_string(index), .asset = asset_id_t{200},
+            .roles = {resource_role_t::sample, resource_role_t::bgm},
+            .sound_kind = index < 2 ? sound_kind_t::stem : sound_kind_t::keysound});
+        chart.sound_channels.push_back({.id = object_id_t{300 + index},
+            .name = song.resources.back().name,
+            .source_clip = {clip_id_t{300 + index}, asset_id_t{200}, 0, std::nullopt},
+            .events = {{.id = object_id_t{400 + index}, .position = {measure_id_t{1}, index * 120},
+                        .playable = false}}});
+        chart.bgm_source_lanes.push_back({.id = object_id_t{600 + index},
+            .name = song.resources.back().name, .source_order = static_cast<size_t>(index),
+            .stem_channel = index < 2 ? std::optional{object_id_t{300 + index}} : std::nullopt});
+        chart.measures.front().bgm_events.push_back({.id = object_id_t{500 + index},
+            .position = {measure_id_t{1}, index * 120}, .source_lane = object_id_t{600 + index},
+            .sound = resource_id_t{100 + index}, .sound_channel_event = object_id_t{400 + index}});
+    }
+    return song;
+}
+void t463_check_projected_rows(const compose_test_fixture_t& fixture) {
+    const auto& view = fixture.flattened.view.compose;
+    for (uint64_t index = 0; index < 3; ++index) {
+        const auto rows = std::span(view.keysounds, view.keysound_count);
+        const auto row = std::ranges::find(rows, 100 + index, &WormUiComposeKeysoundRowView::resource_id);
+        t475_require(row != rows.end());
+        t475_check(row->stem_source_lane_id == (index < 2 ? 600 + index : 0));
+    }
+}
+}
+TEST_CASE("BMSON Draw projection keeps duplicate asset stem and packed resource ownership distinct",
+          "[sys][compose][bmson][stem][draw-source]") {
+    compose_test_fixture_t fixture(t463_shared_asset_song());
+    fixture.application.draw_source_kind = 1;
+    fixture.application.draw_source_id = 101;
+    t475_project(fixture);
+    t463_check_projected_rows(fixture);
+    t475_check(fixture.flattened.view.compose.draw_source_stem_lane_id == 601);
+    const auto builds = fixture.cache.draw_stem_sources.build_count;
+    fixture.application.draw_source_id = 102;
+    t475_project(fixture);
+    t463_check_projected_rows(fixture);
+    t475_check(fixture.flattened.view.compose.draw_source_stem_lane_id == 0);
+    t475_check(fixture.cache.draw_stem_sources.build_count == builds);
+}
+TEST_CASE("BMSON Draw resource ownership cache invalidates revision and replacement identity",
+          "[sys][compose][bmson][stem][draw-source]") {
+    compose_test_fixture_t fixture(t463_shared_asset_song());
+    t475_project(fixture);
+    const auto builds = fixture.cache.draw_stem_sources.build_count;
+    auto proposed = fixture.history.document;
+    proposed.charts.front().bgm_source_lanes[1].stem_channel.reset();
+    t475_require(commit_document_command(fixture.history, std::move(proposed), "Unlink stem"));
+    t475_project(fixture);
+    t475_check(fixture.cache.draw_stem_sources.build_count == builds + 1);
+    t475_check(!fixture.cache.draw_stem_sources.resource_lanes.contains(101));
+    compose_test_fixture_t replacement(t463_shared_asset_song());
+    replacement.history.document.revision = fixture.history.document.revision;
+    replacement.cache = std::move(fixture.cache);
+    t475_project(replacement);
+    t463_check_projected_rows(replacement);
+    t475_check(replacement.cache.draw_stem_sources.build_count == builds + 2);
+}
+
+TEST_CASE("BMSON Draw source names remain frame owned after document edits and frame moves",
+          "[sys][compose][bmson][stem][draw-source][frame-arena]") {
+    compose_test_fixture_t fixture(t463_shared_asset_song());
+    fixture.application.draw_source_kind = 1;
+    fixture.application.draw_source_id = 101;
+    t475_project(fixture);
+    const std::string original = fixture.flattened.view.compose.draw_source_stem_lane_name;
+    auto retained = std::move(fixture.flattened);
+    auto proposed = fixture.history.document;
+    proposed.charts.front().bgm_source_lanes[1].name = std::string(256, 'v');
+    t475_require(commit_document_command(fixture.history, std::move(proposed), "Rename stem"));
+    t475_check(std::string(retained.view.compose.draw_source_stem_lane_name) == original);
+    const auto rows = std::span(retained.view.compose.keysounds,
+                               retained.view.compose.keysound_count);
+    const auto row = std::ranges::find(rows, uint64_t{101}, &WormUiComposeKeysoundRowView::resource_id);
+    t475_require(row != rows.end());
+    t475_check(std::string(row->stem_lane_name) == original);
+    t475_project(fixture);
+    t475_check(std::string(fixture.flattened.view.compose.draw_source_stem_lane_name) == std::string(256, 'v'));
+}

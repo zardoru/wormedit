@@ -585,3 +585,37 @@ TEST_CASE("BMS slot window clamps limits and filters names without changing assi
     check_sound_projection(list.first_row == 1295);
     check_sound_projection(song.resources[1].target_identities.front().identifier == identity);
 }
+
+TEST_CASE("BMSON automatic Sounds lists stem rows without making stems slot placeable",
+          "[sys][compose][bmson][stem][sound-list]") {
+    auto song = catalog();
+    chart_document_t chart;
+    chart.source_family = format_family_t::bmson;
+    const auto legacy = project_keysound_list(song, &chart, 100);
+    require_sound_projection(legacy.rows.size() == 3);
+    keysound_list_request_t request;
+    request.row_limit = 100;
+    const auto automatic = project_keysound_list(song, &chart, request);
+    check_sound_projection(automatic.total == 3);
+    check_sound_projection(std::ranges::any_of(automatic.rows, [](const auto& row) {
+        return row.resource == resource_id_t{1};
+    }));
+    song.resources.front().target_identities = {{format_family_t::bms, "WAV", "01"}};
+    const auto slots = project_sound_slots(song, {.selected_slot = 1});
+    require_sound_projection(!slots.rows.empty());
+    check_sound_projection(!slots.rows.front().placeable);
+}
+
+TEST_CASE("Non BMSON Sounds list and missing asset stem eligibility remain unchanged",
+          "[sys][compose][bmson][stem][sound-list]") {
+    auto song = catalog();
+    chart_document_t chart;
+    chart.source_family = format_family_t::bms;
+    check_sound_projection(project_keysound_list(song, &chart, 100).rows.size() == 1);
+    chart.source_family = format_family_t::bmson;
+    song.audio_assets.erase(song.audio_assets.begin());
+    const auto list = project_keysound_list(song, &chart, 100);
+    check_sound_projection(std::ranges::none_of(list.rows, [](const auto& row) {
+        return row.resource == resource_id_t{1};
+    }));
+}

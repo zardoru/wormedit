@@ -2,6 +2,7 @@
 
 #include <wormedit/core/command.h>
 
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <vector>
@@ -33,6 +34,39 @@ namespace wormedit {
                                            std::uint64_t expected_revision,
                                            chart_id_t chart, object_id_t reference_bgm_event,
                                            local_position_t target, bool restart)
+    -> document_command_result_t;
+
+struct bmson_source_geometry_t {
+    asset_id_t asset;
+    std::uint32_t sample_rate{};
+    std::uint64_t frame_count{};
+};
+
+struct bmson_channel_resource_binding_t {
+    resource_id_t resource;
+    std::optional<object_id_t> channel;
+    bool ambiguous{};
+};
+
+// Resolves semantic BMSON sound markers to retained channels. Ambiguous
+// resource reuse is reported explicitly instead of choosing an arbitrary channel.
+[[nodiscard]] auto bmson_channel_resource_bindings(const song_document_t& document,
+                                                   chart_id_t chart)
+    -> std::vector<bmson_channel_resource_binding_t>;
+
+// Inserts a point in an explicit stem channel and links its semantic BGM
+// projection. Native geometry, when supplied, must identify that channel's
+// source asset; document metadata is never rewritten from decoded geometry.
+[[nodiscard]] auto insert_bmson_stem_point(
+    document_history_t& history, std::uint64_t expected_revision, chart_id_t chart,
+    object_id_t channel, local_position_t target, bool prefer_restart,
+    std::optional<bmson_source_geometry_t> geometry = {}) -> document_command_result_t;
+
+// Inserts an unlinked packed one-shot in the selected source lane, reusing a
+// non-stem channel for the asset or creating a full-source channel on demand.
+[[nodiscard]] auto insert_bmson_packed_one_shot(
+    document_history_t& history, std::uint64_t expected_revision, chart_id_t chart,
+    object_id_t source_lane, resource_id_t resource, local_position_t target)
     -> document_command_result_t;
 
 struct bmson_sound_marker_insertion_t {

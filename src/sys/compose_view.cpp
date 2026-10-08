@@ -4456,6 +4456,70 @@ void project_branch_statement_feedback(WormUiComposeView& view,
 
 } // namespace
 
+void prepare_draw_stem_sources(compose_scene_cache_t& cache,
+    const wormedit::song_document_t& document, const wormedit::chart_document_t& chart) {
+    auto& sources = cache.draw_stem_sources;
+    if (sources.document == &document && sources.chart == &chart && sources.revision == document.revision) return;
+    sources = {&document, &chart, document.revision, sources.build_count + 1, {}, {}};
+    for (std::size_t index = 0; index < document.resources.size(); ++index)
+        if (document.resources[index].sound_kind == wormedit::sound_kind_t::stem)
+            sources.explicit_stem_resources.emplace(document.resources[index].id.value, index);
+    std::unordered_map<std::uint64_t, std::size_t> channel_lanes;
+    for (std::size_t index = 0; index < chart.bgm_source_lanes.size(); ++index) {
+        const auto& lane = chart.bgm_source_lanes[index];
+        if (lane.stem_channel) channel_lanes.emplace(lane.stem_channel->value, index);
+    }
+    for (const auto& binding : wormedit::bmson_channel_resource_bindings(document, chart.id)) {
+        if (!binding.channel || binding.ambiguous) continue;
+        const auto lane = channel_lanes.find(binding.channel->value);
+        if (lane != channel_lanes.end()) sources.resource_lanes.emplace(binding.resource.value, lane->second);
+    }
+}
+
+auto draw_stem_source_name(flattened_workspace_t& flattened, std::string_view name) -> const char* {
+    const auto* owned = flattened.arena() ? arena_string(*flattened.arena(), name) : nullptr;
+    if (!owned) flattened.view.compose.truncated = true;
+    return owned ? owned : "";
+}
+
+void populate_draw_stem_sources(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+    const wormedit::song_document_t& document, const wormedit::chart_document_t& chart) {
+    prepare_draw_stem_sources(cache, document, chart);
+    auto& view = flattened.view.compose;
+    view.draw_source_is_stem = false;
+    view.draw_source_stem_lane_id = 0;
+    view.draw_source_stem_lane_name = "";
+    for (auto& row : flattened.compose.keysound.row) {
+        row.stem_source_lane_id = 0;
+        row.stem_lane_name = "";
+        const auto found = cache.draw_stem_sources.resource_lanes.find(row.resource_id);
+        if (found == cache.draw_stem_sources.resource_lanes.end()) continue;
+        const auto& lane = chart.bgm_source_lanes[found->second];
+        row.stem_source_lane_id = lane.id.value;
+        row.stem_lane_name = draw_stem_source_name(flattened, lane.name);
+        if (view.draw_source_kind == 1 && view.draw_source_id == row.resource_id) {
+            view.draw_source_is_stem = true;
+            view.draw_source_stem_lane_id = row.stem_source_lane_id;
+            view.draw_source_stem_lane_name = row.stem_lane_name;
+        }
+    }
+    if (view.draw_source_kind != 1 || view.draw_source_is_stem) return;
+    const auto found = cache.draw_stem_sources.resource_lanes.find(view.draw_source_id);
+    if (found != cache.draw_stem_sources.resource_lanes.end()) {
+        const auto& lane = chart.bgm_source_lanes[found->second];
+        view.draw_source_is_stem = true;
+        view.draw_source_stem_lane_id = lane.id.value;
+        view.draw_source_stem_lane_name = draw_stem_source_name(flattened, lane.name);
+        return;
+    }
+    const auto explicit_source = cache.draw_stem_sources.explicit_stem_resources.find(view.draw_source_id);
+    if (explicit_source != cache.draw_stem_sources.explicit_stem_resources.end()) {
+        view.draw_source_is_stem = true;
+        view.draw_source_stem_lane_name = draw_stem_source_name(flattened,
+            document.resources[explicit_source->second].name);
+    }
+}
+
 void populate_compose_view(flattened_workspace_t& flattened,
                            wormedit::document_history_t& history,
                            const wormedit::workspace_controller_t& workspace,
@@ -4489,6 +4553,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
         return;
     }
     const auto& chart = *chart_it;
+    populate_draw_stem_sources(flattened, cache, history.document, chart);
     populate_branch_statement_metadata(flattened, chart);
     project_branch_statement_feedback(view, application_state, chart.id, history.document.revision);
     view.bgm_column_count = static_cast<std::uint32_t>(chart.bgm_source_lanes.size());

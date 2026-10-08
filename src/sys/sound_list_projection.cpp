@@ -171,6 +171,17 @@ auto is_placeable_keysound(const song_document_t& document, const resource_entry
            effective_sound_kind(resource) != sound_kind_t::stem;
 }
 
+auto is_listed_sound(const song_document_t& document, const chart_document_t* chart,
+                     const resource_entry_t& resource,
+                     const std::unordered_set<std::uint64_t>* audio_asset_ids) -> bool {
+    if (is_placeable_keysound(document, resource, audio_asset_ids)) return true;
+    if (!chart || chart->source_family != format_family_t::bmson ||
+        effective_sound_kind(resource) != sound_kind_t::stem) return false;
+    return std::ranges::find(resource.roles, resource_role_t::bgm) != resource.roles.end() &&
+           (audio_asset_ids ? audio_asset_ids->contains(resource.asset.value)
+                            : find_audio_asset(document, resource.asset) != nullptr);
+}
+
 auto keysound_layer_mask(const chart_document_t& chart, const keysound_list_t& list,
                          resource_id_t resource) -> std::uint64_t {
     const auto entry = std::ranges::find(chart.sound_layer_defaults, resource,
@@ -293,7 +304,7 @@ auto project_keysound_list_legacy_impl(const song_document_t& document,
     }
     std::vector<const resource_entry_t*> matching;
     for (const auto& resource : document.resources)
-        if (is_placeable_keysound(document, resource, audio_asset_ids)) matching.push_back(&resource);
+        if (is_listed_sound(document, chart, resource, audio_asset_ids)) matching.push_back(&resource);
     const auto effective_sort = ids_available ? sort : dock_sort_t::natural_name;
     std::ranges::sort(matching, [effective_sort](const auto* left, const auto* right) {
         return keysound_resource_less(*left, *right, effective_sort);
@@ -394,7 +405,7 @@ auto collect_keysound_resources(const song_document_t& document,
     -> std::unordered_map<std::uint64_t, const resource_entry_t*> {
     std::unordered_map<std::uint64_t, const resource_entry_t*> resources;
     for (const auto& resource : document.resources) {
-        if (!is_placeable_keysound(document, resource, audio_asset_ids)) continue;
+        if (!is_listed_sound(document, chart, resource, audio_asset_ids)) continue;
         list.all_resources.push_back(resource.id);
         resources.emplace(resource.id.value, &resource);
         if (!keysound_matches_request(resource, chart, request, search)) continue;

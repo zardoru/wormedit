@@ -1079,16 +1079,70 @@ auto toggle_bmson_restart(const WormUiComposeInputAction& input, bmson_compose_c
         notification_source_t::edit);
 }
 
-// A click on empty space in a stem lane: one new point in the channel of the reference marker, at
-// the snapped row, as one undo step.
+auto retained_bmson_source_geometry(const bmson_compose_context_t& context,
+    const wormedit::chart_document_t& chart, wormedit::asset_id_t asset)
+    -> std::optional<wormedit::bmson_source_geometry_t> {
+    const auto& cache = context.scene_cache;
+    const auto& index = cache.stem_index;
+    if (cache.scene_document_identity != &context.history.document ||
+        cache.scene_chart_identity != &chart || !index.built ||
+        index.document != context.history.document.id || index.chart != chart.id ||
+        index.revision != context.history.document.revision) return std::nullopt;
+    const auto binding = std::ranges::find(index.bindings, asset,
+        &wormedit::audio::decoded_source_binding_t::asset);
+    if (binding == index.bindings.end() || !binding->source_sample_rate ||
+        !binding->source_frame_count) return std::nullopt;
+    return wormedit::bmson_source_geometry_t{asset, binding->source_sample_rate,
+                                            *binding->source_frame_count};
+}
+
+auto bmson_stem_drop_matches(const wormedit::song_document_t& document,
+    const wormedit::chart_document_t& chart, std::uint64_t resource, wormedit::object_id_t channel) -> bool {
+    const auto bindings = wormedit::bmson_channel_resource_bindings(document, chart.id);
+    const auto found = std::ranges::find(bindings, wormedit::resource_id_t{resource},
+        &wormedit::bmson_channel_resource_binding_t::resource);
+    return found != bindings.end() && !found->ambiguous && found->channel == channel;
+}
+
+auto apply_bmson_draw_point(const WormUiComposeInputAction& input,
+    bmson_compose_context_t& context, const wormedit::chart_document_t& chart,
+    wormedit::local_position_t position) -> wormedit::document_command_result_t {
+    using namespace wormedit;
+    const auto revision = context.action.compose_input_document_revision;
+    if (input.kind == WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW)
+        return insert_bmson_packed_one_shot(context.history, revision, chart.id,
+            object_id_t{input.lane_id}, resource_id_t{input.resource_id}, position);
+    const auto lane = std::ranges::find(chart.bgm_source_lanes,
+        object_id_t{input.lane_id}, &bgm_source_lane_t::id);
+    if (lane == chart.bgm_source_lanes.end() || !lane->stem_channel)
+        return {.revision = context.history.document.revision, .diagnostics = {{
+            .severity = diagnostic_severity_t::error, .code = diagnostic_code_t::invalid_id,
+            .message = "The stem lane is no longer available."}}};
+    const auto channel = std::ranges::find(chart.sound_channels, *lane->stem_channel,
+        &sound_channel_t::id);
+    if (channel == chart.sound_channels.end())
+        return {.revision = context.history.document.revision, .diagnostics = {{
+            .severity = diagnostic_severity_t::error, .code = diagnostic_code_t::invalid_id,
+            .message = "The stem channel is no longer available."}}};
+    if (input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM &&
+        !bmson_stem_drop_matches(context.history.document, chart, input.resource_id, channel->id))
+        return {.revision = context.history.document.revision, .diagnostics = {{
+            .severity = diagnostic_severity_t::error, .code = diagnostic_code_t::dangling_resource,
+            .message = "Drop this stem source onto its own lane."}}};
+    return wormedit::insert_bmson_stem_point(context.history, revision, chart.id, channel->id,
+        position, input.kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART,
+        retained_bmson_source_geometry(context, chart, channel->source_clip.source));
+}
+
 template <typename PositionAtComposeY>
 auto insert_bmson_stem_point(const WormUiComposeInputAction& input, bmson_compose_context_t& context,
                              PositionAtComposeY&& position_at_compose_y)
     -> compose_input_family_result_t {
     using namespace wormedit;
     auto& [action, history, workspace, state, application_state, scene_cache, gesture_active] = context;
-    if (gesture_active)
-        return "Finish or cancel the active Compose gesture before adding a BMSON point.";
+    if (gesture_active || !application_state.note_paint_mode_active ||
+        !wormedit::ui::compose_notes_editable(compose_mode_of(application_state)))
+        return "Draw requires an editable chart without an active gesture.";
     const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     const auto view = compose_view_for_state(history, state);
     if (chart == history.document.charts.end() || !view || !std::isfinite(input.y_pixels))
@@ -1097,9 +1151,7 @@ auto insert_bmson_stem_point(const WormUiComposeInputAction& input, bmson_compos
     const auto position = raw ? resolve_resource_placement_position(
         *chart, *raw, edit_snap_denominator(*chart, state)) : std::nullopt;
     if (!position) return "The point could not snap to a valid chart row.";
-    const auto restart = input.kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART;
-    const auto applied = insert_bmson_bgm_marker(history, action.compose_input_document_revision, state.chart,
-                                                 object_id_t{input.object_id}, *position, restart);
+    const auto applied = apply_bmson_draw_point(input, context, *chart, *position);
     if (!applied.diagnostics.empty())
         return compose_input_family_result_t::stop_with_feedback(
             applied.diagnostics.front().message, input_notification_severity(applied.diagnostics.front().severity),
@@ -1111,8 +1163,7 @@ auto insert_bmson_stem_point(const WormUiComposeInputAction& input, bmson_compos
             "BMSON point added, but workspace rebinding failed.", notification_severity_t::error,
             notification_source_t::document);
     return compose_input_family_result_t::stop_with_feedback(
-        restart ? "BMSON restart point added." : "BMSON continue point added.",
-        notification_severity_t::success, notification_source_t::edit);
+        "BMSON point added.", notification_severity_t::success, notification_source_t::edit);
 }
 
 template <typename PositionAtComposeY, typename VirtualBmsRowAt>
@@ -1162,6 +1213,11 @@ auto dispatch_bmson_compose_input(
         return edit_bmson_draft_marker(input, context);
     case WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE:
         return toggle_bmson_restart(input, context);
+    case WORM_UI_COMPOSE_INPUT_BMSON_EMPTY_SELECT:
+        if (application_state.note_paint_mode_active) return {};
+        (void)wormedit::dispatch_editor_action(history, state, wormedit::select_editor_objects_action_t{});
+        return compose_input_family_result_t::continue_batch("Selection cleared.");
+    case WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW:
     case WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE:
     case WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART:
         return insert_bmson_stem_point(input, context, position_at_compose_y);
@@ -3451,6 +3507,7 @@ auto compose_input_edits_notes(WormUiComposeInputKind kind) -> bool {
     case WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE:
     case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE:
     case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE:
+    case WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW:
     case WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE:
     case WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART:
     case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM:

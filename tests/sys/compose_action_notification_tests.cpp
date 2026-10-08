@@ -940,3 +940,91 @@ TEST_CASE("Explicit erase reaches the production note dispatcher and undo restor
     require_action(undo_document_command(fixture.history));
     check_action(fixture.history.document.charts.front().measures.front().notes.front().id == object_id_t{91});
 }
+
+namespace {
+void prepare_t463_stem(bga_input_fixture_t& fixture) {
+    auto& chart = fixture.history.document.charts.front();
+    chart.source_family = format_family_t::bmson;
+    fixture.history.document.audio_assets = {{.id = asset_id_t{81}}};
+    fixture.history.document.resources.push_back({.id = resource_id_t{82}, .name = "voice.wav",
+        .asset = asset_id_t{81}, .roles = {resource_role_t::sample, resource_role_t::bgm}});
+    chart.bgm_source_lanes = {{.id = object_id_t{84}, .name = "Voice", .stem_channel = object_id_t{83}},
+        {.id = object_id_t{85}, .name = "Packed"}};
+    chart.sound_channels = {{.id = object_id_t{83}, .name = "voice.wav",
+        .source_clip = {clip_id_t{88}, asset_id_t{81}, 0, std::nullopt},
+        .events = {{.id = object_id_t{86}, .position = {measure_id_t{1}, 0}, .playable = false}}}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{87}, .position = {measure_id_t{1}, 0},
+        .source_lane = object_id_t{84}, .sound = resource_id_t{82}, .sound_channel_event = object_id_t{86}}};
+    fixture.application.note_paint_mode_active = true;
+    fixture.cache.scene_document_identity = &fixture.history.document;
+    fixture.cache.scene_chart_identity = &chart;
+    fixture.cache.stem_index.built = true;
+    fixture.cache.stem_index.document = fixture.history.document.id;
+    fixture.cache.stem_index.chart = chart.id;
+    fixture.cache.stem_index.revision = fixture.history.document.revision;
+    fixture.cache.stem_index.bindings = {{.asset = asset_id_t{81}, .source_sample_rate = 44'100,
+        .source_frame_count = 44'100, .output_sample_rate = 44'100, .output_frame_count = 44'100}};
+}
+void check_t463_point(uint64_t row, bool shift, bool expected_restart, bool empty = false) {
+    bga_input_fixture_t fixture;
+    prepare_t463_stem(fixture);
+    if (empty) {
+        fixture.history.document.charts.front().sound_channels.front().events.clear();
+        fixture.history.document.charts.front().measures.front().bgm_events.clear();
+    }
+    auto input = draw_bga_input(fixture, shift ? WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART :
+        WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, row);
+    input.compose_inputs[0].lane_id = 84;
+    const auto before = fixture.history.document.charts.front().sound_channels.front().events.size();
+    INFO(fixture.dispatch_input(input));
+    require_action(fixture.history.undo.size() == 1);
+    const auto& events = fixture.history.document.charts.front().sound_channels.front().events;
+    require_action(events.size() == before + 1);
+    check_action(events.back().continuation == !expected_restart);
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.charts.front().sound_channels.front().events.size() == before);
+}
+}
+TEST_CASE("BMSON Draw uses retained native geometry for continue Shift EOF and empty stem undo",
+          "[bmson][stem][draw][compose-input]") {
+    check_t463_point(240, false, false);
+    check_t463_point(240, true, true);
+    check_t463_point(720, false, true);
+    check_t463_point(240, false, true, true);
+}
+TEST_CASE("BMSON Draw rejects stale geometry and stem sources on packed columns atomically",
+          "[bmson][stem][draw][compose-input]") {
+    bga_input_fixture_t fixture;
+    prepare_t463_stem(fixture);
+    auto input = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, 240);
+    input.compose_inputs[0].lane_id = 84;
+    fixture.cache.stem_index.revision = 0;
+    const auto revision = fixture.history.document.revision;
+    (void)fixture.dispatch_input(input);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+    input.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW;
+    input.compose_inputs[0].lane_id = 85;
+    input.compose_inputs[0].resource_id = 82;
+    (void)fixture.dispatch_input(input);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+    check_action(fixture.history.document.charts.front().sound_channels.size() == 1);
+}
+TEST_CASE("BMSON packed Draw creates its source channel and semantic event with one undo",
+          "[bmson][stem][draw][compose-input]") {
+    bga_input_fixture_t fixture;
+    prepare_t463_stem(fixture);
+    fixture.history.document.audio_assets.push_back({.id = asset_id_t{90}});
+    fixture.history.document.resources.push_back({.id = resource_id_t{91}, .name = "kick.wav",
+        .asset = asset_id_t{90}, .roles = {resource_role_t::sample}});
+    auto input = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW, 240);
+    input.compose_inputs[0].lane_id = 85;
+    input.compose_inputs[0].resource_id = 91;
+    INFO(fixture.dispatch_input(input));
+    require_action(fixture.history.undo.size() == 1);
+    check_action(fixture.history.document.charts.front().sound_channels.size() == 2);
+    check_action(fixture.history.document.charts.front().measures.front().bgm_events.size() == 2);
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.charts.front().sound_channels.size() == 1);
+}

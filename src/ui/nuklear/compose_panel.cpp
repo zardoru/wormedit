@@ -64,6 +64,8 @@ void worm_ui_nuklear_queue_compose_middle_click(float x, float y) {
 
 void worm_ui_nuklear_compose_handle_focus_lost() {
     worm_ui_nuklear_cancel_stem_lane_resize(state);
+    state.draw_left_cancelled_until_release |= state.bmson_point_capture.has_value();
+    state.bmson_point_capture.reset();
     compose_handle_focus_lost_input();
 }
 
@@ -75,6 +77,8 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
                                            bool window_focused, WormUiWorkspaceAction* action) {
     if (!compose_tab_active || !view || !view->visible) {
         worm_ui_nuklear_cancel_stem_lane_resize(state);
+        state.draw_left_cancelled_until_release |= state.bmson_point_capture.has_value();
+        state.bmson_point_capture.reset();
     } else {
         worm_ui_nuklear_cancel_stale_stem_lane_resize(state, *view, window_focused);
     }
@@ -1101,6 +1105,8 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
 
 static void discard_occluded_compose_input(const ComposePanelRenderContext& panel) {
     worm_ui_nuklear_cancel_stem_lane_resize(state);
+    state.draw_left_cancelled_until_release |= state.bmson_point_capture.has_value();
+    state.bmson_point_capture.reset();
     if (state.note_paint_pointer_active || state.draw_erase_pointer_active)
         append_compose_cancel_once(panel.action);
     state.draw_left_cancelled_until_release |= state.note_paint_pointer_active;

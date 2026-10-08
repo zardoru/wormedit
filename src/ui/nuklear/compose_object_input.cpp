@@ -1,5 +1,6 @@
 #include "ui/nuklear/compose_panel.h"
 #include "ui/nuklear/theme.h"
+#include "ui/nuklear/tooltip.h"
 #include "sys/compose_scroll_geometry.h"
 #include "ui/nuklear/bms_branch_panel.h"
 #include "ui/nuklear/compose_markers.h"
@@ -595,6 +596,85 @@ static bool draw_left_can_start(const ComposePointerEventContext& input) {
         !state.area_selection_candidate_active;
 }
 
+static auto bmson_lane_at(const WormUiComposeView& view, double x, double y)
+    -> const WormUiComposeBgmLaneView* {
+    for (const auto& lane : std::span(view.bgm_lanes, view.bgm_lane_count))
+        if (x >= lane.bounds.left && x < lane.bounds.right &&
+            y >= lane.bounds.top && y < lane.bounds.bottom) return &lane;
+    return nullptr;
+}
+
+static void finish_bmson_point_capture(const ComposePointerEventContext& input) {
+    const auto capture = *state.bmson_point_capture;
+    state.bmson_point_capture.reset();
+    const auto* lane = bmson_lane_at(*input.view, input.pointer_x, input.pointer_y);
+    if (capture.dock && (!lane || !lane->stem || lane->source_lane_id != capture.lane)) return;
+    const auto kind = capture.packed ? WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW :
+        capture.restart ? WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART :
+                          WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE;
+    append_compose_input(input.action, kind, capture.dock ? input.pointer_x : capture.x,
+        capture.dock ? input.pointer_y : capture.y, capture.lane);
+    if (input.action->compose_input_count) {
+        auto& output = input.action->compose_inputs[input.action->compose_input_count - 1];
+        output.resource_id = capture.resource;
+        output.resource_role = capture.dock ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGM : 0;
+    }
+}
+
+static bool bmson_point_capture_current(const ComposePointerEventContext& input) {
+    const auto& view = *input.view;
+    const auto& capture = *state.bmson_point_capture;
+    return input.window_focused && view.scene_available && !view.input_occluded && !view.timing_focus &&
+        view.note_paint_mode_active && capture.project == view.project_id &&
+        capture.chart == view.chart_id && capture.revision == view.document_revision;
+}
+
+static bool bmson_draw_can_start(const ComposePointerEventContext& input) {
+    const auto& view = *input.view;
+    return view.bmson_tools_available && view.note_paint_mode_active && !view.timing_focus &&
+        input.window_focused && state.draw_source_kind != 2 && input.pointer_inside &&
+        input.pointer_started_in_view && !input.shortcut_event_count && !input.compose_pointer_captured &&
+        state.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off &&
+        !compose_bgm_event_at(input.view, input.pointer_started_x, input.pointer_started_y) &&
+        !(input.pointer_modifiers & input.any_pointer_modifier & ~SDL_KMOD_SHIFT);
+}
+
+static bool packed_draw_source_available(const WormUiComposeView& view) {
+    return state.draw_source_kind == 1 && state.draw_source_id && !view.draw_source_stem_lane_id && !view.draw_source_is_stem;
+}
+
+static void show_packed_draw_source_tip(const ComposePointerEventContext& input) {
+    const auto& view = *input.view;
+    const auto* lane = bmson_lane_at(view, input.pointer_x, input.pointer_y);
+    if (!view.note_paint_mode_active || view.timing_focus || !view.bmson_tools_available ||
+        !input.pointer_inside || !lane || lane->stem || packed_draw_source_available(view)) return;
+    const auto name = view.draw_source_stem_lane_name ? view.draw_source_stem_lane_name : "";
+    wormedit::ui::nuklear::tooltip::text(input.context, (view.draw_source_stem_lane_id || view.draw_source_is_stem) ?
+        std::string("This source belongs to stem lane ") + name + "." :
+        std::string("Pick a keysound source to draw in this packed column."));
+}
+
+static bool process_bmson_draw_pointer(const ComposePointerEventContext& input) {
+    const auto& view = *input.view;
+    show_packed_draw_source_tip(input);
+    if (state.bmson_point_capture) {
+        if (!bmson_point_capture_current(input)) state.bmson_point_capture.reset();
+        else if (input.left_released) finish_bmson_point_capture(input);
+        else if (!input.left_down) state.bmson_point_capture.reset();
+        return true;
+    }
+    if (!bmson_draw_can_start(input)) return false;
+    const auto* lane = bmson_lane_at(view, input.pointer_started_x, input.pointer_started_y);
+    if (!lane) return false;
+    if (!lane->stem && !packed_draw_source_available(view)) return true;
+    state.bmson_point_capture = worm_ui_nuklear_compose_state_t::bmson_point_capture_t{
+        view.project_id, view.chart_id, view.document_revision, lane->source_lane_id,
+        state.draw_source_id, input.pointer_started_x, input.pointer_started_y,
+        (input.pointer_modifiers & SDL_KMOD_SHIFT) != 0, !lane->stem, false};
+    if (!input.left_down) finish_bmson_point_capture(input);
+    return true;
+}
+
 void process_note_paint_pointer(const ComposePointerEventContext& input,
                                        bool& paint_pointer_consumed) {
     if (state.draw_left_cancelled_until_release) {
@@ -602,6 +682,7 @@ void process_note_paint_pointer(const ComposePointerEventContext& input,
         paint_pointer_consumed = true;
         return;
     }
+    if (process_bmson_draw_pointer(input)) { paint_pointer_consumed = true; return; }
     if (input.view->paste_active) { paint_pointer_consumed = true; return; }
     if (compose_area_pointer_consumed()) return;
     const auto& view = *input.view;
@@ -740,40 +821,6 @@ static void begin_area_selection_drag(const ComposePointerEventContext& input, b
     }
 }
 
-// A marker of the stem lane under the pointer; it names the sound channel a new point joins.
-static auto stem_lane_reference_marker(const WormUiComposeView& view, double x, double y) -> uint64_t {
-    for (size_t index = 0; index < view.bgm_lane_count; ++index) {
-        const auto& lane = view.bgm_lanes[index];
-        if (x < lane.bounds.left || x >= lane.bounds.right || y < lane.bounds.top || y >= lane.bounds.bottom)
-            continue;
-        const auto events = std::span(view.bgm_events, view.bgm_event_count);
-        const auto marker = std::ranges::find_if(events, [&](const auto& event) {
-            return event.bmson_slice && event.source_lane_id == lane.source_lane_id;
-        });
-        return marker == events.end() ? 0 : marker->event_id;
-    }
-    return 0;
-}
-
-// Click on empty space in a stem lane: add a continue point, or a restart point with Shift.
-static auto add_bmson_stem_point(const ComposePointerEventContext& input, double x, double y) -> bool {
-    const auto& view = *input.view;
-    // Plain or Shift (either key) only; any other modifier keeps its own meaning.
-    const auto shift_only = (input.pointer_modifiers & input.any_pointer_modifier & ~SDL_KMOD_SHIFT) == 0;
-    if (!shift_only || state.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off ||
-        state.resource_pointer_mode != worm_ui_nuklear_compose_resource_pointer_mode_t::off ||
-        view.note_paint_mode_active || view.semantic_layer_paint_mode_active || view.timing_focus)
-        return false;
-    const auto reference = stem_lane_reference_marker(view, x, y);
-    if (reference == 0) return false;
-    const auto restart = (input.pointer_modifiers & SDL_KMOD_SHIFT) != 0;
-    append_compose_input(input.action, restart ? WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART
-                                               : WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE,
-                         x, y, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                         WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, reference);
-    return true;
-}
-
 static void release_compose_selection_click(const ComposePointerEventContext& input) {
     if (state.area_selection_anchor_x >= input.note_field_left &&
         state.area_selection_anchor_x < input.note_field_right) {
@@ -786,9 +833,8 @@ static void release_compose_selection_click(const ComposePointerEventContext& in
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_MEASURE_SELECT,
                              state.area_selection_anchor_x, state.area_selection_anchor_y);
     } else {
-        // A click without a drag on empty space in a stem lane adds a point there.
-        static_cast<void>(add_bmson_stem_point(input, state.area_selection_anchor_x,
-                                               state.area_selection_anchor_y));
+        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BMSON_EMPTY_SELECT,
+                             state.area_selection_anchor_x, state.area_selection_anchor_y);
     }
 }
 

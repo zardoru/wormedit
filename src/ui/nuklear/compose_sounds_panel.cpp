@@ -1346,6 +1346,14 @@ void click_row(const SoundsPanel& panel, std::size_t shown_index, std::uint64_t 
         panel.action->compose_resource_id = id;
 }
 
+bool keysound_row_input_available(const SoundsPanel& panel) {
+    return !panel.view->input_occluded &&
+        !wormedit::ui::chrome::context_menu_owns_input(panel.state->keysound_group_menu) &&
+        !panel.state->keysound_filter_popup_open && !panel.state->keysound_filter_release_pending &&
+        !panel.state->keysound_renumber_confirmation_open && !panel.state->keysound_renumber_release_pending &&
+        !panel.state->keysound_slot_confirmation_open && !panel.state->keysound_slot_release_pending;
+}
+
 void render_row(const SoundsPanel& panel, std::size_t shown_index) {
     auto* context = panel.context;
     const auto id = panel.state->keysound_shown[shown_index];
@@ -1354,15 +1362,7 @@ void render_row(const SoundsPanel& panel, std::size_t shown_index) {
     if (!row) return;
     const auto hovered = nk_widget_is_hovered(context);
     const auto clicked = nk_widget_is_mouse_clicked(context, NK_BUTTON_LEFT) &&
-                         !panel.view->input_occluded &&
-                         !wormedit::ui::chrome::context_menu_owns_input(
-                             panel.state->keysound_group_menu) &&
-                         !panel.state->keysound_filter_popup_open &&
-                         !panel.state->keysound_filter_release_pending &&
-                         !panel.state->keysound_renumber_confirmation_open &&
-                         !panel.state->keysound_renumber_release_pending &&
-                         !panel.state->keysound_slot_confirmation_open &&
-                         !panel.state->keysound_slot_release_pending;
+                         keysound_row_input_available(panel);
     struct nk_rect bounds{};
     if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
     draw_row(panel, bounds, *row, worm_ui_keysound_is_selected(panel.state->keysound_selection, id),
@@ -1372,6 +1372,15 @@ void render_row(const SoundsPanel& panel, std::size_t shown_index) {
         if (!tip.empty()) wormedit::ui::nuklear::tooltip::text(context, tip);
     }
     if (clicked) click_row(panel, shown_index, id);
+    if (row->stem_source_lane_id && panel.view->note_paint_mode_active &&
+        !panel.view->timing_focus && keysound_row_input_available(panel) &&
+        nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT) &&
+        nk_input_has_mouse_click_in_rect(&context->input, NK_BUTTON_LEFT, bounds)) {
+        const auto& view = *panel.view;
+        panel.state->bmson_point_capture = worm_ui_nuklear_compose_state_t::bmson_point_capture_t{
+            view.project_id, view.chart_id, view.document_revision, row->stem_source_lane_id,
+            row->resource_id, 0, 0, true, false, true};
+    }
     if (!wormedit::ui::chrome::context_menu_owns_input(panel.state->keysound_group_menu) &&
         !panel.view->input_occluded &&
         nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) &&

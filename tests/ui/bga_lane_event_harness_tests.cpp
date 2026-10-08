@@ -2,6 +2,7 @@
 #include "ui/nuklear/compose_state.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/lane_profile_switch.h>
 
 #include <cmath>
@@ -13,6 +14,7 @@
 #include <source_location>
 #include <string>
 #include <string_view>
+#include <span>
 
 namespace {
 void check_bga(bool condition, const std::source_location location =
@@ -97,7 +99,8 @@ auto has_input(const workspace_action_snapshot_t& action, WormUiComposeInputKind
                std::uint64_t object_id) -> bool {
     const auto& value = action.get();
     return std::ranges::any_of(std::span(value.compose_inputs, value.compose_input_count),
-        [&](const auto& input) { return input.kind == kind && input.object_id == object_id; });
+        [&](const auto& input) { return input.kind == kind && ((kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE ||
+            kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART) ? input.lane_id : input.object_id) == object_id; });
 }
 
 auto has_input(const std::array<workspace_action_snapshot_t, 2>& actions,
@@ -605,7 +608,7 @@ auto any_input_of(const std::array<workspace_action_snapshot_t, 2>& actions, Wor
 
 struct stem_lane_fixture_t {
     nuklear_event_harness_t harness{1280, 800};
-    WormUiComposeBgmLaneView lanes[2]{{.bounds = {604, 0, 640, 600}, .source_lane_id = 44},
+    WormUiComposeBgmLaneView lanes[2]{{.bounds = {604, 0, 640, 600}, .source_lane_id = 44, .stem = true},
                                       {.bounds = {644, 0, 680, 600}, .source_lane_id = 45}};
     WormUiComposeBgmEventView marker{.bounds = {604, 20, 640, 36}, .event_id = 501, .source_lane_id = 44,
                                      .bmson_slice = true};
@@ -614,6 +617,8 @@ struct stem_lane_fixture_t {
         hide_compose_docks();
         auto& view = harness.view().compose;
         view.scene_available = true;
+        view.bmson_tools_available = true;
+        view.note_paint_mode_active = true;
         view.chart_id = 7;
         view.document_revision = 11;
         view.viewport_width_pixels = 900;
@@ -635,12 +640,12 @@ TEST_CASE("clicking empty space in a stem lane adds a continue point, and Shift 
     stem_lane_fixture_t f;
     const auto empty = f.at(622, 300);
     const auto plain = click(f.harness, empty.first, empty.second);
-    CHECK(has_input(plain, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, 501));
+    CHECK(has_input(plain, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, 44));
 
     const auto down = std::array{mouse_motion(empty.first, empty.second), mouse_button(true, empty.first, empty.second)};
     const auto up = std::array{mouse_motion(empty.first, empty.second), mouse_button(false, empty.first, empty.second)};
     const std::array shifted{f.harness.frame(down, SDL_KMOD_LSHIFT), f.harness.frame(up, SDL_KMOD_LSHIFT)};
-    CHECK(has_input(shifted, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART, 501));
+    CHECK(has_input(shifted, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART, 44));
 }
 
 TEST_CASE("stem point clicks ignore lanes without a stem and existing points",
@@ -660,6 +665,7 @@ TEST_CASE("dragging a selected note onto the BGM area moves it to a BGM lane ins
           "[frontend-state][event-harness][note-to-bgm]") {
     stem_lane_fixture_t f;
     auto& view = f.harness.view().compose;
+    view.note_paint_mode_active = false;
     WormUiComposeNoteView note{.bounds = {200, 296, 260, 304}, .note_id = 77, .lane_id = 3, .selected = true};
     view.note_endpoints = &note;
     view.note_endpoint_count = 1;
@@ -685,6 +691,7 @@ TEST_CASE("dragging a selected BGM marker onto a playfield lane asks to move it 
           "[frontend-state][event-harness][bgm-to-lane]") {
     stem_lane_fixture_t f;
     auto& view = f.harness.view().compose;
+    view.note_paint_mode_active = false;
     WormUiComposeLaneView lane{.bounds = {100, 0, 150, 600}, .lane_id = 3};
     view.lanes = &lane;
     view.lane_count = 1;
@@ -906,9 +913,10 @@ TEST_CASE("stem lane header edge resizes through production input and enables fa
     check_bga(no_stem_point_actions(moved));
     release_stem_edge(f, 264);
     (void)f.harness.frame();
+    f.harness.view().compose.note_paint_mode_active = true;
     const auto p = f.at(850, 300);
     const auto added = click(f.harness, p.first, p.second);
-    check_bga(has_input(added, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, 501));
+    check_bga(has_input(added, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, 44));
 }
 
 TEST_CASE("stem lane resize clamps and double click restores its default width",
@@ -1081,4 +1089,353 @@ TEST_CASE("Draw BGA source emits one stroke with the destination kind and no res
         }
     }
     check_bga(begins == 1 && releases == 1);
+}
+
+TEST_CASE("Draw accepts empty stem lanes while Select only clears selection",
+          "[event-harness][bmson-stem][draw]") {
+    stem_lane_fixture_t f;
+    f.harness.view().compose.bgm_event_count = 0;
+    const auto point = f.at(622, 300);
+    const auto draw = click(f.harness, point.first, point.second);
+    check_bga(has_input(draw, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, 44));
+    f.harness.view().compose.note_paint_mode_active = false;
+    const auto selected = click(f.harness, point.first, point.second);
+    check_bga(any_input_of(selected, WORM_UI_COMPOSE_INPUT_BMSON_EMPTY_SELECT));
+    check_bga(!any_input_of(selected, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE));
+}
+
+TEST_CASE("Packed Draw emits the current keysound and rejects a stem source",
+          "[event-harness][bmson-stem][draw]") {
+    stem_lane_fixture_t f;
+    auto& state = worm_ui_nuklear_compose_state();
+    state.draw_source_kind = 1;
+    state.draw_source_id = 81;
+    f.harness.view().compose.draw_source_kind = 1;
+    f.harness.view().compose.draw_source_id = 81;
+    const auto point = f.at(662, 300);
+    const auto placed = click(f.harness, point.first, point.second);
+    bool matched{};
+    for (const auto& snapshot : placed)
+        for (const auto& input : std::span(snapshot.get().compose_inputs, snapshot.get().compose_input_count))
+            matched |= input.kind == WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW &&
+                       input.lane_id == 45 && input.resource_id == 81;
+    check_bga(matched);
+    f.harness.view().compose.draw_source_stem_lane_id = 44;
+    f.harness.view().compose.draw_source_stem_lane_name = "Voice stem";
+    const auto rejected = click(f.harness, point.first, point.second);
+    check_bga(!any_input_of(rejected, WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW));
+}
+
+namespace {
+
+struct dock_stem_fixture_t {
+    nuklear_event_harness_t harness{1280, 800};
+    WormUiComposeBgmLaneView lanes[3]{
+        {.bounds = {604, 0, 640, 600}, .source_lane_id = 44, .stem = true},
+        {.bounds = {644, 0, 680, 600}, .source_lane_id = 45},
+        {.bounds = {684, 0, 720, 600}, .source_lane_id = 46, .stem = true},
+    };
+    WormUiComposeBgmEventView marker{.bounds = {604, 20, 640, 36}, .event_id = 501,
+        .source_lane_id = 44, .bmson_slice = true};
+    WormUiComposeKeysoundRowView source{.resource_id = 81, .slot = "", .name = "Dock stem sample",
+        .stem_source_lane_id = 44, .stem_lane_name = "Voice stem"};
+
+    dock_stem_fixture_t() {
+        REQUIRE(harness.ready());
+        auto& state = worm_ui_nuklear_compose_state();
+        hide_compose_docks();
+        state.inspector_visible = true;
+        state.sounds_panel_visible = true;
+        auto& view = harness.view().compose;
+        view.scene_available = true;
+        view.bmson_tools_available = true;
+        view.note_paint_mode_active = true;
+        view.project_id = 3;
+        view.chart_id = 7;
+        view.document_revision = 11;
+        view.viewport_width_pixels = 900;
+        view.viewport_height_pixels = 600;
+        view.playable_field_left_pixels = 90;
+        view.playable_field_right_pixels = 600;
+        view.bgm_lanes = lanes;
+        view.bgm_lane_count = 3;
+        view.bgm_events = &marker;
+        view.bgm_event_count = 1;
+        view.keysounds_available = true;
+        view.keysounds = &source;
+        view.keysound_count = 1;
+        view.keysound_total_count = 1;
+        (void)harness.frame();
+    }
+
+    auto field_point(std::size_t lane_index) {
+        constexpr std::array x{622.0, 662.0, 702.0};
+        return canvas_point(harness, x[lane_index], 300.0);
+    }
+
+    auto source_point() const { return harness.drawn_text_center("Dock stem sample"); }
+};
+
+auto stem_input(const workspace_action_snapshot_t& action) -> const WormUiComposeInputAction* {
+    const auto& value = action.get();
+    const auto inputs = std::span(value.compose_inputs, value.compose_input_count);
+    const auto found = std::ranges::find_if(inputs, [](const auto& input) {
+        return input.kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART ||
+               input.kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE ||
+               input.kind == WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW;
+    });
+    return found == inputs.end() ? nullptr : &*found;
+}
+
+auto drop_source_on_lane(dock_stem_fixture_t& fixture, std::size_t lane_index)
+    -> workspace_action_snapshot_t {
+    const auto source = fixture.source_point();
+    REQUIRE(source);
+    const auto press = mouse_button(true, source->first, source->second);
+    (void)fixture.harness.frame(std::span{&press, 1});
+    const auto target = fixture.field_point(lane_index);
+    const auto move = mouse_motion(target.first, target.second);
+    (void)fixture.harness.frame(std::span{&move, 1});
+    const auto release = mouse_button(false, target.first, target.second);
+    return fixture.harness.frame(std::span{&release, 1});
+}
+
+auto source_drop_cancelled(int transition) -> bool {
+    dock_stem_fixture_t fixture;
+    const auto source = fixture.source_point();
+    if (!source) return false;
+    const auto press = mouse_button(true, source->first, source->second);
+    (void)fixture.harness.frame(std::span{&press, 1});
+    const auto target = fixture.field_point(0);
+    auto& view = fixture.harness.view();
+    if (transition == 0) {
+        SDL_Event lost{};
+        lost.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+        lost.window.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+        (void)fixture.harness.frame(std::span{&lost, 1});
+    } else if (transition == 1) {
+        view.active_tab = WORM_UI_WORKSPACE_TAB_METADATA;
+        view.compose.visible = false;
+        view.metadata.visible = true;
+        (void)fixture.harness.frame();
+    } else {
+        ++view.compose.document_revision;
+        (void)fixture.harness.frame();
+    }
+    const auto release = mouse_button(false, target.first, target.second);
+    const auto action = fixture.harness.frame(std::span{&release, 1});
+    return stem_input(action) == nullptr &&
+           !worm_ui_nuklear_compose_state().bmson_point_capture.has_value();
+}
+
+auto ui_bmson_song() -> wormedit::song_document_t {
+    using namespace wormedit;
+    constexpr measure_id_t measure{14};
+    constexpr asset_id_t asset{10};
+    constexpr object_id_t lane{4};
+    constexpr object_id_t channel{5};
+    constexpr resource_id_t resource{11};
+    song_document_t song{.id = song_id_t{13}};
+    song.audio_assets.push_back({.id = asset, .source_path = "stem.wav",
+                                 .stream = {48'000, 2, 200'000, true}});
+    song.resources.push_back({.id = resource, .name = "Stem source", .asset = asset,
+                              .roles = {resource_role_t::bgm}});
+    chart_document_t chart{.id = chart_id_t{12}, .source_family = format_family_t::bmson};
+    chart.measures.push_back({.id = measure});
+    chart.bpms.push_back({.id = object_id_t{9}, .position = {measure, 0},
+                          .beats_per_minute = {120, 1}});
+    chart.bgm_source_lanes.push_back({.id = lane, .name = "Voice stem",
+                                      .stem_channel = channel});
+    chart.sound_channels.push_back({.id = channel, .name = "stem.wav",
+        .source_clip = {.id = clip_id_t{15}, .source = asset, .begin_frame = 0},
+        .events = {{.id = object_id_t{7}, .position = {measure, 240},
+                    .continuation = false, .playable = false}}});
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{8},
+        .position = {measure, 240}, .source_lane = lane, .sound = resource,
+        .sound_channel_event = object_id_t{7}});
+    song.charts.push_back(std::move(chart));
+    return song;
+}
+
+auto remap_bmson_stem_song(std::uint64_t lane_id, std::uint64_t resource_id,
+                            bool empty_channel = false) -> wormedit::song_document_t {
+    auto song = ui_bmson_song();
+    auto& chart = song.charts.front();
+    const auto channel = chart.sound_channels.front().id;
+    const auto lane = std::ranges::find_if(chart.bgm_source_lanes, [&](const auto& item) {
+        return item.stem_channel == channel;
+    });
+    REQUIRE(lane != chart.bgm_source_lanes.end());
+    const auto old_lane = lane->id;
+    lane->id = wormedit::object_id_t{lane_id};
+    const auto asset = chart.sound_channels.front().source_clip.source;
+    const auto resource = std::ranges::find_if(song.resources, [&](const auto& item) {
+        return item.asset == asset &&
+               std::ranges::find(item.roles, wormedit::resource_role_t::bgm) != item.roles.end();
+    });
+    REQUIRE(resource != song.resources.end());
+    const auto old_resource = resource->id;
+    resource->id = wormedit::resource_id_t{resource_id};
+    resource->missing = false;
+    song.audio_assets.front().stream = {48'000, 2, 200'000, true};
+    for (auto& measure : chart.measures) {
+        for (auto& bgm : measure.bgm_events) {
+            if (bgm.source_lane == old_lane) bgm.source_lane = lane->id;
+            if (bgm.sound == old_resource) bgm.sound = resource->id;
+        }
+        if (empty_channel) {
+            std::erase_if(measure.notes, [&](const auto& note) {
+                return note.sound_channel_event.has_value() &&
+                    std::ranges::any_of(chart.sound_channels.front().events, [&](const auto& event) {
+                        return event.id == *note.sound_channel_event;
+                    });
+            });
+            std::erase_if(measure.bgm_events, [&](const auto& bgm) {
+                return bgm.sound_channel_event.has_value() &&
+                    std::ranges::any_of(chart.sound_channels.front().events, [&](const auto& event) {
+                        return event.id == *bgm.sound_channel_event;
+                    });
+            });
+        }
+    }
+    if (empty_channel) {
+        chart.sound_channels.front().events.clear();
+        resource->name = chart.sound_channels.front().name;
+        resource->sound_kind = wormedit::sound_kind_t::stem;
+    }
+    return song;
+}
+
+auto make_packed_bmson_song(std::uint64_t lane_id, std::uint64_t resource_id)
+    -> wormedit::song_document_t {
+    auto song = remap_bmson_stem_song(44, 81);
+    auto& chart = song.charts.front();
+    auto asset = song.audio_assets.front();
+    asset.id = wormedit::asset_id_t{resource_id + 1};
+    asset.stream = {48'000, 2, 144'000, true};
+    song.audio_assets.push_back(asset);
+    auto resource = song.resources.front();
+    resource.id = wormedit::resource_id_t{resource_id};
+    resource.name = "Packed sample";
+    resource.asset = asset.id;
+    resource.roles = {wormedit::resource_role_t::sample};
+    song.resources.push_back(resource);
+    chart.bgm_source_lanes.push_back({.id = wormedit::object_id_t{lane_id},
+        .name = "Packed lane", .source_order = 1});
+    return song;
+}
+
+auto core_payload_undoes_once(const WormUiComposeInputAction& input, std::uint64_t row,
+                              bool empty_stem = false) -> bool {
+    auto song = input.kind == WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW
+        ? make_packed_bmson_song(input.lane_id, input.resource_id)
+        : remap_bmson_stem_song(input.lane_id, 81, empty_stem);
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto original_chart = history.document.charts.front();
+    const auto revision = history.document.revision;
+    wormedit::document_command_result_t result;
+    if (input.kind == WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW) {
+        result = wormedit::insert_bmson_packed_one_shot(history, revision,
+            history.document.charts.front().id, wormedit::object_id_t{input.lane_id},
+            wormedit::resource_id_t{input.resource_id},
+            {history.document.charts.front().measures.front().id, row});
+    } else {
+        const auto lane = std::ranges::find(history.document.charts.front().bgm_source_lanes,
+            wormedit::object_id_t{input.lane_id}, &wormedit::bgm_source_lane_t::id);
+        if (lane == history.document.charts.front().bgm_source_lanes.end() || !lane->stem_channel)
+            return false;
+        const auto channel = std::ranges::find(history.document.charts.front().sound_channels,
+            *lane->stem_channel, &wormedit::sound_channel_t::id);
+        if (channel == history.document.charts.front().sound_channels.end()) return false;
+        const auto geometry = wormedit::bmson_source_geometry_t{
+            .asset = channel->source_clip.source, .sample_rate = 48'000, .frame_count = 200'000};
+        result = wormedit::insert_bmson_stem_point(history, revision,
+            history.document.charts.front().id, channel->id,
+            {history.document.charts.front().measures.front().id, row},
+            input.kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART, geometry);
+    }
+    if (!result || history.undo.size() != 1 || !wormedit::validate_document(history.document).empty())
+        return false;
+    if (!wormedit::undo_document_command(history)) return false;
+    const auto& restored = history.document.charts.front();
+    return restored.sound_channels.size() == original_chart.sound_channels.size() &&
+           restored.bgm_source_lanes.size() == original_chart.bgm_source_lanes.size() &&
+           restored.measures.size() == original_chart.measures.size();
+}
+
+auto input_payload_undoes_once(const workspace_action_snapshot_t& action,
+                               WormUiComposeInputKind kind, std::uint64_t row,
+                               bool empty_stem = false) -> bool {
+    const auto* input = stem_input(action);
+    return input && input->kind == kind && core_payload_undoes_once(*input, row, empty_stem);
+}
+
+} // namespace
+
+TEST_CASE("Sounds dock stem source drops only onto its own stem lane and emits restart payload",
+          "[frontend-state][event-harness][bmson-stem][draw]") {
+    dock_stem_fixture_t fixture;
+    const auto action = drop_source_on_lane(fixture, 0);
+    const auto* input = stem_input(action);
+    REQUIRE(input);
+    check_bga(input->kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART);
+    check_bga(input->lane_id == 44 && input->resource_id == 81);
+    check_bga(input->resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM);
+    check_bga(core_payload_undoes_once(*input, 300));
+}
+
+TEST_CASE("Sounds dock stem drops to packed or other lanes and stale captures are discarded",
+          "[frontend-state][event-harness][bmson-stem][draw]") {
+    {
+        dock_stem_fixture_t packed;
+        check_bga(stem_input(drop_source_on_lane(packed, 1)) == nullptr);
+    }
+    {
+        dock_stem_fixture_t other_stem;
+        check_bga(stem_input(drop_source_on_lane(other_stem, 2)) == nullptr);
+    }
+    for (int transition = 0; transition < 3; ++transition)
+        check_bga(source_drop_cancelled(transition));
+}
+
+TEST_CASE("Emitted stem and packed draw payloads each commit one undoable BMSON command",
+          "[frontend-state][event-harness][bmson-stem][draw]") {
+    {
+        stem_lane_fixture_t stem;
+        const auto point = stem.at(622, 300);
+        const auto plain = click(stem.harness, point.first, point.second);
+        check_bga(input_payload_undoes_once(plain[1],
+            WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, 300));
+
+        const auto down = std::array{mouse_motion(point.first, point.second),
+                                     mouse_button(true, point.first, point.second)};
+        const auto up = std::array{mouse_motion(point.first, point.second),
+                                   mouse_button(false, point.first, point.second)};
+        (void)stem.harness.frame(down, SDL_KMOD_LSHIFT);
+        const auto shifted = stem.harness.frame(up, SDL_KMOD_LSHIFT);
+        check_bga(input_payload_undoes_once(shifted,
+            WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART, 300));
+    }
+    {
+        stem_lane_fixture_t empty;
+        empty.harness.view().compose.bgm_event_count = 0;
+        const auto empty_point = empty.at(622, 300);
+        const auto empty_click = click(empty.harness, empty_point.first, empty_point.second);
+        check_bga(input_payload_undoes_once(empty_click[1],
+            WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, 300, true));
+    }
+    {
+        stem_lane_fixture_t packed;
+        auto& state = worm_ui_nuklear_compose_state();
+        state.draw_source_kind = 1;
+        state.draw_source_id = 800'001;
+        packed.harness.view().compose.draw_source_kind = 1;
+        packed.harness.view().compose.draw_source_id = 800'001;
+        const auto packed_point = packed.at(662, 300);
+        const auto packed_click = click(packed.harness, packed_point.first, packed_point.second);
+        const auto* packed_input = stem_input(packed_click[1]);
+        check_bga(packed_input && packed_input->lane_id == 45 &&
+                  packed_input->resource_id == 800'001 &&
+                  core_payload_undoes_once(*packed_input, 90));
+    }
 }

@@ -240,6 +240,12 @@ struct worm_ui_nuklear_compose_state_t {
     double draw_right_anchor_y{};
     uint8_t draw_source_kind{};
     uint64_t draw_source_id{};
+    struct bmson_point_capture_t {
+        uint64_t project{}, chart{}, revision{}, lane{}, resource{};
+        double x{}, y{};
+        bool restart{}, packed{}, dock{};
+    };
+    std::optional<bmson_point_capture_t> bmson_point_capture;
     bool bmson_razor_pointer_active{};
     double bmson_razor_last_y_pixels{};
     bool bmson_marker_move_candidate_active{};

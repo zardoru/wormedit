@@ -4,7 +4,7 @@
 
 ## Immediate work
 
-Active 2026-10-08: [Layer tooling and editing feedback batch](../coordination/oct8-layer-feedback-batch.md), T-413 → T-414 and T-419 → T-420. Two Sol 6.1 medium worktrees with sequential Luna medium briefs; root coordinates shared source ownership, serial integration, final gates and cleanup.
+Active 2026-10-08: [Layer tooling and editing feedback batch](../coordination/oct8-layer-feedback-batch.md). T-413 and T-419 are reviewed and integrated; T-414 source chip and T-420 collision ghosts remain. Two Sol 6.1 medium worktrees use narrow executor briefs with the documented local fallback because the runtime rejected both Luna spawn and reactivation at its thread limit. Root coordinates shared ownership, serial integration, final main gates and cleanup.
 
 Completed in code 2026-10-08: [Draw workflow and BMSON conversion batch](../coordination/oct8-draw-conversion-batch.md), T-412/T-463/T-466/T-467. Main application build and **2,710/2,710 tests pass**. Draw supports span-aware stem points, dock stem drops and packed one-shots; sliced osu!mania/BMS exports publish atomically and report conversion losses as warnings. Main actual Kick exports retain all 514 voice/onset tuples and pass full-tail PCM tolerance. Merged dummy/software capture and all 15 original source hashes pass. Both workers and 8.57 GB generated builds/WAVs removed; only main remains, with branches/configurations/runtime/logs/manifests/probes retained. Native display/cadence remains unmeasured. T-413/T-414/T-389 and T-461/T-453 remain outside this batch; T-282 base-62 remains unimplemented.
 

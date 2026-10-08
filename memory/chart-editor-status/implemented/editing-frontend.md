@@ -2,6 +2,21 @@
 
 [Back to the implemented-capability index](../implemented.md).
 
+T-413/T-419 checkpoint (2026-10-08): Layer strokes add memberships, with
+Alt captured at stroke start for removal; repeated mixed note/BGM targets are
+idempotent and each changed stroke has one undo. Hidden/locked/missing targets
+reject atomically. Quantize now has aligned even/triplet grid chips, segmented
+space/halfway/hold-tail controls, cached selection counts and preset chips with
+validated custom/save/rename menus. Rename preserves settings/index and has one
+undo. Popup input/lifecycle and underlying tooltip suppression are covered.
+Optimized normal worker builds, Layer core1600/1600, Quantize core34/34,
+real rename dispatcher3/3 and full event234/234 pass; configured complexity
+has no new/increased violations. Root inspected the ordinary-object software
+capture. Added count work costs about 0.33/0.66 ms cold at 50k/100k notes;
+240 warm hits each make zero core calls. Final combined main gates await
+T-414/T-420; native display/cadence remains unmeasured.
+[Evidence](../../coordination/oct8-layer-feedback-batch.md).
+
 T-412/T-463 (2026-10-08): unified Draw places the current sound/silent/BGA source,
 with explicit right-drag erase and one undo per stroke; Select retains move and
 context gestures. BMSON stem clicks choose continue inside a sounding span and

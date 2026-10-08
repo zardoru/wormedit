@@ -62,6 +62,11 @@ T-414 panel work waits for release and integrated refresh. Actual preset rename
 dispatcher tests do need `tests/sys/compose_action_notification_tests.cpp`,
 because preview tests do not link the dispatcher; this exact loan is approved.
 
+T-419 `src/ui/nuklear/frontend.cpp` narrow supporting loan is approved for the
+quantize-popup accessor in existing shortcut/text-entry/modal gating and
+tab/hidden lifecycle cleanup. Keep unrelated input paths unchanged and compare
+existing complexity scores. Panel reset already provides a reset/shutdown hook.
+
 Runtime deviation: spawning the Luna executor and reactivating the prior Luna
 both failed with agent thread limit reached. No available API releases archived
 threads. Coordinators therefore use the workflow's documented local fallback:

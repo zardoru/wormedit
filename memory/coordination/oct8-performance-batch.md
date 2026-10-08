@@ -24,3 +24,18 @@ verify exact semantics/thread identity and configured complexity, then commit
 and explicitly release clean workers. Root reviews and integrates serially,
 runs normal full build/CTest and merged acceptance, commits planning/status,
 removes clean workers/generated builds and retains branches/logs/probes.
+
+Root Linux baseline build passes, but full suite reports 2583/2584 with the
+incoming mania half-microsecond rounding case failing at ±1.2345 ms on x86
+extended precision. Root owns the necessary portability follow-up in
+`src/formats/osu_mania.cpp` and `tests/formats/osu_mania_tests.cpp`; these paths
+do not overlap either worker. Ordinary timestamp scaling explicitly uses
+binary64 rounding consistently with the incoming Apple Silicon/MSVC path;
+checked integer scaling for large timestamps remains. Test exact ties and
+nearby values on both sides, retaining the bounds/overflow tests.
+
+Root portability follow-up: normal core target build and 42/42 mania CTests
+pass, including the exact half ties, neighboring fractional values and large
+timestamp bounds. Configured source clang-tidy baseline/current both report
+18 filtered compiler warnings and zero enabled-check violations. Full merged
+Linux suite remains a final batch gate.

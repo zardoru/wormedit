@@ -599,7 +599,11 @@ TEST_CASE("osu!mania source origins keep fractional microsecond half ties away f
         std::pair{"-1.2345", wormedit::signed_rational_t{-247, 200'000}},
         std::pair{"1.2345", wormedit::signed_rational_t{247, 200'000}},
         std::pair{"-0.0005", wormedit::signed_rational_t{-1, 1'000'000}},
-        std::pair{"0.0005", wormedit::signed_rational_t{1, 1'000'000}}};
+        std::pair{"0.0005", wormedit::signed_rational_t{1, 1'000'000}},
+        std::pair{"1.2344999999", wormedit::signed_rational_t{617, 500'000}},
+        std::pair{"-1.2344999999", wormedit::signed_rational_t{-617, 500'000}},
+        std::pair{"1.2345000001", wormedit::signed_rational_t{247, 200'000}},
+        std::pair{"-1.2345000001", wormedit::signed_rational_t{-247, 200'000}}};
     for (const auto& [milliseconds, expected] : cases) {
         INFO(milliseconds);
         const auto parsed = parse_inline(timing_fixture(

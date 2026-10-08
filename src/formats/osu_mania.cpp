@@ -1170,11 +1170,11 @@ auto position_at_time(long double time, const std::vector<measure_geometry_t>& g
 template <typename fail_t>
 auto source_microseconds(long double milliseconds, fail_t&& fail, std::size_t order = 0)
     -> std::int64_t {
-    // Preserve ordinary fractional rounding while the scaled integer still fits
-    // binary64's significand. Apple Silicon and MSVC give long double no extra
-    // precision: scaling a larger timestamp can round an overflow back in range.
+    // Use the same binary64 fractional rounding on every platform: extended
+    // precision can place decimal half ties just below their microsecond boundary.
+    // Larger timestamps need checked integer scaling to avoid rounded overflow.
     if (std::isfinite(milliseconds) && std::fabs(milliseconds) < 0x1p43L)
-        return static_cast<std::int64_t>(std::round(milliseconds * 1000.0L));
+        return static_cast<std::int64_t>(std::round(static_cast<double>(milliseconds) * 1000.0));
 
     const auto reject = [&] {
         fail(osu_mania_parse_diagnostic_code_t::invalid_timing_point,

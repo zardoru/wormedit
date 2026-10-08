@@ -30,6 +30,36 @@ Layer must select disjoint existing harness translation units or request a
 sequential loan. Any supporting-file extension requires root approval before
 edits. New source/test files and build manifests remain root-owned.
 
+T-413 exact regression ownership approved: `tests/core/interaction_tests.cpp`
+and `tests/ui/compose_bgm_layer_tests.cpp`. Supporting
+`src/ui/nuklear/compose_toolbar.cpp` is approved only for target-dependent Layer
+tool enable state and the required no-target tooltip. T-413 keeps inspector
+read-only. These paths are exclusive to Layer until checkpoint release.
+
+Additional T-413 supporting scope: `src/ui/nuklear/compose_object_input.cpp`
+for Alt removal routing, `src/sys/compose_semantic_layer_commands.h` for add/remove
+mode forwarding, `src/sys/compose_actions.cpp` and
+`src/sys/application_command_dispatch.cpp` for guarded Layer activation.
+Layer owns these until its checkpoint. T-419 may later borrow Compose actions
+only after that release, adding a preset-rename action while preserving all
+existing payloads/enums. Feedback owns `tests/sys/compose_quantize_preview_tests.cpp`
+now and may borrow `tests/sys/compose_action_notification_tests.cpp` after Layer
+release for preset transaction regressions. Record extensions on owning cards.
+
+T-413 further approved existing regressions:
+`tests/sys/application_commands_tests.cpp` and
+`tests/core/editor_scene_bgm_layers_tests.cpp` cover guarded activation and
+replace obsolete toggle expectations with idempotent add/remove behavior.
+T-419 uses `tests/sys/compose_quantize_preview_tests.cpp` for dispatcher/count
+regressions and `tests/ui/quantize_report_event_harness_tests.cpp` for report UI;
+the action-notification test loan is unnecessary unless later requested.
+
+Runtime deviation: spawning the Luna executor and reactivating the prior Luna
+both failed with agent thread limit reached. No available API releases archived
+threads. Coordinators therefore use the workflow's documented local fallback:
+write the same narrow executor briefs, implement locally, review actual diffs
+and gates, and leave durable task lists. Root still reviews/integrates separately.
+
 Layer completes T-413 and releases interaction paths before Feedback starts
 T-420. Feedback completes T-419 and releases frontend/projection before Layer
 starts T-414. Root integrates each reviewed checkpoint serially; coordinators

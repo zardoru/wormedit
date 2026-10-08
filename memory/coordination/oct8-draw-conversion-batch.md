@@ -172,3 +172,11 @@ Root application reporting scope: `src/sys/resource_job_state.h` and
 results carry loss detail into existing notification detail (4 KiB), because
 the 200-byte message field alone would truncate the report. Preserve background
 snapshot/export semantics and test warning-success plus pre-write rejection.
+
+T-467 clarification approved before its implementation, after the reviewed
+T-466 checkpoint: BMS requires a WAV binding for silent gameplay. Preserve
+soundless/EOF playable notes through one explicitly declared shared one-frame
+silent WAV/resource, generated only inside private staging. It is separate from
+source slice spans; capacity counts distinct audible spans, retained referenced
+WAV resources and one silent resource iff needed. Verify deterministic safe
+names, reimport/PCM, just-fit and atomic over-capacity refusal.

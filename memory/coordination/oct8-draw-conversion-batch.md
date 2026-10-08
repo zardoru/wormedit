@@ -146,3 +146,12 @@ Nuklear overwrites `clicked_pos` on release, so a batched press/motion/release
 must retain the actual press origin to distinguish erase from a context click.
 Preserve native cursor and other frontend routing; verify the batched path and
 baseline cognitive complexity.
+
+Additional conversion scope approved before edits:
+`include/wormedit/audio/slice_render.h`, `src/audio/slice_render.cpp`,
+`tests/core/audio_slice_render_tests.cpp`. Actual Kick voice tuples match, but
+PCM16 materialization clips decoded Ogg overshoots (kick_bass peak 1.11281).
+Add an explicit float32 WAV option used by conversion to preserve decoded PCM;
+keep existing PCM16 slicing defaults unchanged. Verify finite overshoot/native
+rate roundtrip through the production decoder and rerun actual Kick PCM before
+claiming T-466's audio gate.

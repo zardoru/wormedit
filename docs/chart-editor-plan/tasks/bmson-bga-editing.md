@@ -140,7 +140,8 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-453 Audit the verbs on BGM objects and play notes
 
-- **Status:** blocked-on-user (audit table complete; semantics need user approval before T-455)
+- **Status:** done (2026-10-08; table approved by the user with one amendment)
+- **User decision (2026-10-08):** the table is approved except the Select row: "BGM notes should in fact be placeable! I need to be able to place them manually, with a note tool!" BGM placement with Draw is [T-482](draw-tool.md#t-482-draw-places-bgm-events-on-bgm-lanes). The Paste row's stale BGM hold tail is [T-483](#t-483-paste-bgm-holds-with-their-tail-moved).
 - **Outcome:** a table on this card lists every editing verb, with its BGM path, its play-lane path, the behavior difference, and a proposed single semantic. The verbs: select, move by drag, Y-lock, lane key, Shift+lane key, move to BGM, delete, copy, paste, quantize, layer assign, select same sound, and audition.
 - **Read first:** `src/sys/compose_input.cpp`, `src/sys/compose_note_to_bgm.cpp`, `src/core/note_to_bgm.cpp`, `src/core/interaction.cpp`, `src/ui/nuklear/compose_object_input.cpp`.
 - **Files owned:** this card only.
@@ -191,7 +192,7 @@ Uncertain: "select same sound" (no sound-identity path found); Y-lock planner bo
 
 ## T-455 One core entry point per editing verb for mixed selections
 
-- **Status:** blocked-on T-453
+- **Status:** ready (T-453 approved 2026-10-08)
 - **Outcome:** each verb approved in T-453 has one core command that takes notes and BGM events together. `compose_input.cpp` no longer branches on "BGM selected" before choosing a verb, and every approved difference is a documented rule inside the command.
 - **Read first:** T-453's approved table, and the files it cites.
 - **Files owned:** recorded from T-453 before any edit.
@@ -203,3 +204,20 @@ Uncertain: "select same sound" (no sound-identity path found); Y-lock planner bo
 - **Reject/failure behavior:** a mixed command rejects atomically.
 - **Verify:** `ctest --test-dir build --output-on-failure`; `clang-tidy -p build` on the touched files.
 - **Out of scope:** new verbs.
+
+## T-483 Paste BGM holds with their tail moved
+
+- **Status:** ready
+- **Outcome:** copying and pasting a BGM event that has a native hold tail (`bgm_event_t::end`, added by T-423) pastes it with the tail moved by the same offset as the head, so its length is unchanged.
+- **Found by:** the T-453 audit (2026-10-08). `append_bgm` in `src/core/chart_clipboard.cpp` records a zero duration and keeps the payload's absolute `end`. `place_object` moves `position` but not `end`, so the pasted tail points at the original location.
+- **Read first:** `src/core/chart_clipboard.cpp` (`append_bgm`, `place_object`, the note duration path in `place_note`), `include/wormedit/core/document.h` (`bgm_event_t`).
+- **Files owned:** `src/core/chart_clipboard.cpp`, `tests/core/chart_clipboard_tests.cpp`, this card.
+- **Steps:**
+  1. Record a BGM hold's length as the clipboard duration, the same way notes record theirs.
+  2. On paste, rebuild `end` from the new head row plus that duration, using the note path's overflow and measure checks.
+  3. Tests: copy and paste a BGM hold one measure later and check that the tail moves with it; paste across a measure-length change; a paste that would overflow rejects; plain BGM events are unchanged.
+- **Invariants:** non-hold BGM paste is byte-identical. Undo restores exactly.
+- **Reject/failure behavior:** an unrepresentable tail rejects the whole paste atomically.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'clipboard|^core\.'`.
+- **Out of scope:** BMSON linked holds, which follow the T-423 linked rules. Coordinate with the active T-423 batch before editing if it still owns linked hold code.
+

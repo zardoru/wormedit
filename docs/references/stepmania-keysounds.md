@@ -104,4 +104,4 @@ Entries marked **unconfirmed** were not verified in fetched source.
   (`NoteDataWithScoring.cpp:36`), onto wormedit's semantic layers. That decision should
   go in the card, not in this reference.
 
-Out of scope for T-468: any implementation.
+Out of scope for T-468: any implementation. The follow-up plan is the [StepMania keysounds card group](../chart-editor-plan/tasks/stepmania-keysounds.md), T-478 to T-481.

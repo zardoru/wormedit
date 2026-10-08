@@ -82,3 +82,22 @@ it. There is no toggle.
 - **Reject/failure behavior:** a source deleted since it was picked shows "missing source" in the warning color, and Draw falls back to silent notes only after the user picks again.
 - **Verify:** `cmake --build build`; `ctest --test-dir build -L event-harness`; smoke captures.
 - **Out of scope:** the toolbar icons themselves.
+
+## T-482 Draw places BGM events on BGM lanes
+
+- **Status:** ready
+- **Decision (user, 2026-10-08, from the T-453 review):** "BGM notes should in fact be placeable! I need to be able to place them manually, with a note tool!" This overrides T-453's "BGM never places — intended" row.
+- **Outcome:** with Draw active and a sound as the current source, clicking or dragging on a BGM lane places BGM events with that sound, snapped to the grid, as one undo step per stroke. Right-drag on a BGM lane erases BGM events, as on key lanes. With no sound source, Draw on a BGM lane does nothing, and the canvas chip says "Pick a sound to draw BGM".
+- **Read first:** [T-412](#t-412-merge-note-paint-and-resource-placement-into-one-draw-tool) (Draw stroke and BGA stroke), `src/sys/compose_input.cpp` (Draw stroke dispatch and `resource_placement_kind_t::bgm_event`), `include/wormedit/core/resource_assignment.h` (the atomic BGA stroke API), `src/ui/nuklear/compose_viewport_input.cpp`.
+- **Files owned:** `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_viewport_input.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `include/wormedit/core/resource_assignment.h`, `src/core/resource_assignment.cpp`, `tests/core/resource_assignment_tests.cpp`, `src/sys/compose_view.cpp` (chip hint only), `tests/ui/nuklear_event_harness_tests.cpp`, this card.
+- **Steps:**
+  1. Record on this card how a Draw press on a BGM lane is routed today, with file:line.
+  2. Generalize T-412's atomic BGA stroke commit to BGM events: one command places every target cell of the stroke on the pressed BGM lane, skipping cells that already hold the same sound.
+  3. Route Draw presses and drags whose origin is a BGM lane to that stroke. Right-drag erases BGM events on that lane in one command.
+  4. For BMSON, a stroke on a stem lane follows the existing stem rules: it is rejected with the stem-rule message, and stem lanes are not drawable.
+  5. Event-harness cases: draw three BGM events in one stroke and undo once; right-drag erase; Draw with no source does nothing; a stem lane rejects.
+- **Invariants:** key-lane and BGA Draw behavior is unchanged. The 50,000-target stroke cap applies. Selecting BGM events with the Select tool is unchanged.
+- **Reject/failure behavior:** a stroke that would exceed format capacity, such as BMS IDs, rejects atomically with the reason.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`; `ctest --test-dir build -L event-harness`.
+- **Out of scope:** drawing BGM holds. Hold tails for BGM come from T-423, and a drag-length BGM hold is a later card.
+

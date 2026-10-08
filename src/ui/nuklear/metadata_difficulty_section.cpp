@@ -4,8 +4,11 @@
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/theme.h"
 
+#include <charconv>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -66,7 +69,34 @@ static void set_metadata_chart_action(WormUiWorkspaceAction* action,
     }
 }
 
+// Exact positive integer, with no sign, separators or surrounding text.
+static auto parse_resolution_text(const char* text) -> std::optional<std::uint64_t> {
+    const std::string_view view{text};
+    std::uint64_t value{};
+    const auto parsed = std::from_chars(view.data(), view.data() + view.size(), value);
+    if (view.empty() || parsed.ec != std::errc{} || parsed.ptr != view.data() + view.size() ||
+        value == 0)
+        return std::nullopt;
+    return value;
+}
+
+static void set_metadata_redivision_action(WormUiWorkspaceAction* action,
+                                           const WormUiMetadataView* metadata) {
+    if (!action || !metadata || action->metadata_edit != WORM_UI_METADATA_EDIT_NONE ||
+        !metadata->has_chart)
+        return;
+    const auto resolution = parse_resolution_text(state.chart_resolution_text.data());
+    if (!resolution)
+        return;
+    action->metadata_edit = WORM_UI_METADATA_EDIT_REDIVIDE_CHART;
+    action->metadata_document_revision = metadata->document_revision;
+    action->metadata_chart_id = metadata->chart_id;
+    action->metadata_redivision_resolution = *resolution;
+}
+
 void reset_difficulty_draft(const WormUiMetadataView& metadata) {
+    std::snprintf(state.chart_resolution_text.data(), state.chart_resolution_text.size(), "%llu",
+                  static_cast<unsigned long long>(metadata.chart_divisions_per_standard_measure));
     (void)copy_metadata_text(state.chart_name.data(), state.chart_name.size(), metadata.chart_name,
                              metadata.chart_name_bytes);
     (void)copy_metadata_text(state.chart_author.data(), state.chart_author.size(), metadata.chart_author,
@@ -100,6 +130,32 @@ auto difficulty_draft_changed(const WormUiMetadataView& metadata,
 }
 
 } // namespace
+
+// Resolution field plus Redivide button; a click on a valid, different resolution sets the action.
+static void render_resolution_row(const MetadataPanel& panel, bool editable) {
+    auto* context = panel.context;
+    const auto& metadata = *panel.metadata;
+    const auto resolution = parse_resolution_text(state.chart_resolution_text.data());
+    const auto redivide_enabled = editable && resolution &&
+        *resolution != metadata.chart_divisions_per_standard_measure;
+    nk_layout_row_begin(context, NK_DYNAMIC, 26, 3);
+    nk_layout_row_push(context, 0.28f);
+    nk_label(context, "Resolution", NK_TEXT_LEFT);
+    nk_layout_row_push(context, 0.57f);
+    if (!editable) nk_widget_disable_begin(context);
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
+                                         state.chart_resolution_text.data(),
+                                         state.chart_resolution_text.size(), nk_filter_decimal);
+    if (!editable) nk_widget_disable_end(context);
+    nk_layout_row_push(context, 0.15f);
+    if (!redivide_enabled) nk_widget_disable_begin(context);
+    const auto redivide = nk_button_label(context, "Redivide") != 0 && redivide_enabled;
+    if (!redivide_enabled) nk_widget_disable_end(context);
+    nk_layout_row_end(context);
+    if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0)
+        wormedit::ui::nuklear::tooltip::text(context, "Divisions per standard measure. Redivide moves every position exactly, or changes nothing.");
+    if (redivide) set_metadata_redivision_action(panel.action, &metadata);
+}
 
 void render_difficulty_section(const MetadataPanel& panel) {
     auto* context = panel.context;
@@ -144,6 +200,7 @@ void render_difficulty_section(const MetadataPanel& panel) {
         nk_label_colored(context, "Enter a number or fraction, e.g. 12 or 25/2.", NK_TEXT_LEFT,
                          wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::status));
     }
+    render_resolution_row(panel, editable);
     const auto changed = metadata_chart_changed(&metadata) != 0;
     const auto dirty = difficulty_draft_changed(metadata, rating);
     bool revert = false, apply = false;

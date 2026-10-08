@@ -27,6 +27,8 @@ struct worm_ui_nuklear_metadata_state_t {
     // Single-field exact rationals, parsed by worm_ui_nuklear_parse_metadata_rational().
     std::array<char, 64> chart_rating_text{};
     std::array<char, 64> audio_offset_text{};
+    // Divisions per standard measure for the Redivide action, parsed as an exact integer.
+    std::array<char, 32> chart_resolution_text{};
     // Scratch text for action payloads, which still carry numerator/denominator strings.
     std::array<char, 32> action_numerator_text{};
     std::array<char, 32> action_denominator_text{};

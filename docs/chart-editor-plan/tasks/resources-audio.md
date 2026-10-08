@@ -142,13 +142,12 @@ stale-plan check (rule 9) first.
 
 ## T-268 Add a "play sound on click" toggle
 
-- **Status:** partial (command, placement audition, and tests landed; toolbar toggle and command-flip test remain)
+- **Status:** partial (command, toolbar toggle, placement audition, and tests landed; two event-harness tooltip tests fail on the new toolbar cell)
 - **Done so far:** `audio.toggle_click_audition` registered in `src/core/command_registry.cpp` (no shortcut) with its checked state refreshed in `src/sys/main.cpp`; `dispatch_registered_application_command` in `src/sys/main.cpp` routes it through `toggle_audition_on_click` (`src/sys/options_runtime.cpp`, same `apply_program_preferences` save path as Options); placements that create a note (click, virtual/measure click, lane-key release, alt pointer hold, sample placement) audition it when the preference is on (`src/sys/compose_input.cpp`, `audition_created_note`); Shift lane assignment unchanged; test "Placement auditions the placed note only while click audition is on" in `tests/sys/application_commands_tests.cpp` (frame-timing exe, passes).
 - **Remaining:**
-  - Toolbar speaker toggle in `src/ui/nuklear/compose_toolbar.cpp` needs a view field carrying the preference: `WormUiComposeView` field in `src/ui/frontend.h` plus its projection in `src/sys/compose_view.cpp` (not in Files owned or approved; coordinator must approve). The toolbar can issue the command by setting `action->menu_command_id` to `audio.toggle_click_audition`.
-  - Command-flip unit test: `toggle_audition_on_click` lives in `src/sys/options_runtime.cpp`, which no test executable links for `application_commands_tests.cpp`; needs a `tests/CMakeLists.txt` change (not owned).
+  - Two event-harness tooltip tests fail: `frontend-state.Unavailable overview tooltip stays on its row and preserves panel tooltips` and `frontend-state.Disabled song bar icon keeps its tooltip and emits no toggle action` (`tests/ui/nuklear_event_harness_tests.cpp:1307`, hover coordinates). The toggle needs one extra cell in `layout_compose_toolbar`, which shifts the BGM song-bar cell. Fixing this needs the harness coordinates or the toolbar layout reviewed by the coordinator; the toggle is rendered last in the row and issues the command through `menu_command_id`.
   - Armed BGM/BGA resource placement does not audition: those results carry no created object id.
-  - `dispatch_registered_application_command` matches the command by id before parsing; `src/sys/application_commands.cpp` has no kind for it (not owned).
+  - Follow-up: `dispatch_registered_application_command` matches the command by id before parsing; `src/sys/application_commands.cpp` has no kind for it (not owned).
 - **Implementation audit (2026-10-07):** the `audition_on_click` editor preference already exists with an Options toggle (`src/sys/options_runtime.cpp:128`) and gates click audition in `src/sys/compose_input.cpp:2316`. What remains is the toolbar toggle and the `audio.toggle_click_audition` command, driving that same preference. The user calls the toolbar toggle necessary for BMS work.
 - **Outcome:** a toolbar toggle (speaker icon, command `audio.toggle_click_audition`, default on, as in iBMSC/BMSE) controls whether clicking, selecting, or placing a note or BGM event plays its sound; when off, clicks only select or place. Lane-key Shift assignment keeps its explicit audition.
 - **Current behavior (2026-09-30):** clicking a BGM event always passes `request_audition = true` (`select_compose_bgm_event` in `src/sys/compose_input.cpp`), note clicks request an audition too, and there is no way to turn it off.
@@ -163,7 +162,7 @@ stale-plan check (rule 9) first.
 - **Reject/failure behavior:** none.
 - **Verify:** standard build/test; manual: click notes with the toggle on and off.
 - **Out of scope:** audition volume (T-256).
-- **Result (2026-10-08):** partial: command, placement audition, and one frame-timing test landed; regexes `application_commands|command_registry|preferences|options` 24/24 passed, `^documentation\.` 1/1, `-L event-harness` 249/249; toolbar toggle blocked on a compose_view.cpp projection.
+- **Result (2026-10-08):** partial: command, toolbar toggle, placement audition, and two frame-timing tests landed; regexes `application_commands|command_registry|preferences|options` 24/24 passed, `^documentation\.` 1/1, `-L event-harness` 247/249 (two song-bar tooltip tests fail on the new toolbar cell).
 
 ## T-271 Generalize the chunked arena into a core library
 

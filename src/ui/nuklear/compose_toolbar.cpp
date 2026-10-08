@@ -1,5 +1,6 @@
 #include "ui/nuklear/compose_toolbar.h"
 #include "ui/nuklear/tooltip.h"
+#include <cstdio>
 #include "ui/nuklear/vector_icons.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/chrome.h"
@@ -533,7 +534,17 @@ static void layout_compose_toolbar(nk_context* context, int panel_icons) {
         wormedit::ui::chrome::layout_separator(context);
         layout_toolbar_icons(context, panel_icons); // Panels.
     }
+    layout_toolbar_icons(context, 1); // Click audition, rendered last.
     nk_layout_row_template_end(context);
+}
+
+// Last in the row so the icons before it keep their positions. Issues the registry command.
+static void render_click_audition_toggle(const ComposeToolbarContext& toolbar) {
+    if (wormedit::ui::chrome::IconButton{Glyph::audio_lines, "Play sound on click",
+            toolbar.view->audition_on_click}.render(toolbar.context) &&
+        toolbar.action->menu_command_id[0] == '\0')
+        std::snprintf(toolbar.action->menu_command_id, sizeof(toolbar.action->menu_command_id),
+                      "%s", "audio.toggle_click_audition");
 }
 
 void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
@@ -562,5 +573,6 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
         wormedit::ui::chrome::toolbar_separator(context);
         render_panel_group(toolbar);
     }
+    render_click_audition_toggle(toolbar);
     if (spacing_pushed) (void)nk_style_pop_vec2(context);
 }

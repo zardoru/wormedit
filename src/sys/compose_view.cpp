@@ -4175,6 +4175,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     auto& view = input.view;
     view.note_kind_palette_visible = application_state.editor_preferences.note_kind_palette_visible;
     view.lane_key_legend_visible = application_state.editor_preferences.lane_key_legend_visible;
+    view.audition_on_click = application_state.editor_preferences.audition_on_click;
     view.area_band_alpha = application_state.editor_preferences.area_band_alpha;
     view.armed_note_kind = static_cast<std::uint32_t>(retained_state->armed_note_kind);
     view.allowed_note_kind_mask = 0;

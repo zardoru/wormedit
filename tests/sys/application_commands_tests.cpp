@@ -1935,6 +1935,7 @@ TEST_CASE("Draw shortcut rejects a retained interaction without editable chart g
 #ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
 #include "sys/compose_input.h"
 #include "sys/compose_view.h"
+#include "sys/options_runtime.h"
 namespace {
 auto click_audition_song() -> wormedit::song_document_t {
     using namespace wormedit;
@@ -2004,5 +2005,24 @@ TEST_CASE("Placement auditions the placed note only while click audition is on",
           "[sys][application_commands][audition]") {
     check_placement_audition(false);
     check_placement_audition(true);
+}
+
+TEST_CASE("Click audition command flips the preference through the program save path",
+          "[sys][application_commands][audition]") {
+    namespace fs = std::filesystem;
+    const auto dir = fs::temp_directory_path() / "wormedit-t268-click-audition";
+    fs::create_directories(dir);
+    program_preferences_runtime_t program;
+    program.path = dir / "preferences.json";
+    bool enabled = program.preferences.editor.audition_on_click;
+    REQUIRE(enabled);
+    CHECK(toggle_audition_on_click(program, enabled).empty());
+    CHECK(!enabled);
+    CHECK(!program.preferences.editor.audition_on_click);
+    CHECK(fs::exists(program.path));
+    CHECK(toggle_audition_on_click(program, enabled).empty());
+    CHECK(enabled);
+    CHECK(program.preferences.editor.audition_on_click);
+    fs::remove_all(dir);
 }
 #endif

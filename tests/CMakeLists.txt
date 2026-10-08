@@ -682,6 +682,9 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             sys/compose_beat_fit_tests.cpp
             sys/compose_onset_snap_tests.cpp
             sys/application_commands_tests.cpp
+            ../src/sys/options_runtime.cpp
+            ../src/sys/preferences_runtime.cpp
+            ../src/sys/platform_shortcut_profile.cpp
             sys/manual_sound_group_command_tests.cpp
             ../src/sys/compose_sound_actions.cpp
             ../src/sys/application_command_dispatch.cpp

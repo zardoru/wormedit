@@ -2790,11 +2790,12 @@ void apply_compare_scroll_action(compare_scene_cache_t& cache,
 }
 
 auto stage_sound_import(const wormedit::song_document_t& document, wormedit::chart_id_t chart,
-                        std::span<const std::string> paths, wormedit::notification_sink_t& notifications) -> std::string {
+                        std::span<const std::string> paths, wormedit::notification_sink_t& notifications,
+                        std::uint8_t fixed_kind = 0) -> std::string {
     const auto target = std::ranges::find(document.charts, chart, &wormedit::chart_document_t::id);
     if (target == document.charts.end()) return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
         wormedit::notification_source_t::import_, "Select a difficulty before adding sounds.");
-    auto prepared = wormedit::sys::prepare_keysound_import(document, chart, paths);
+    auto prepared = wormedit::sys::prepare_keysound_import(document, chart, paths, fixed_kind);
     if (prepared.entries.empty()) return post_callback_feedback(notifications, prepared.skipped_unreadable
         ? wormedit::notification_severity_t::warning : wormedit::notification_severity_t::info,
         wormedit::notification_source_t::import_, prepared.message);
@@ -2806,7 +2807,7 @@ auto stage_sound_import(const wormedit::song_document_t& document, wormedit::cha
     for (std::size_t index = 0; index < prepared.entries.size(); ++index) {
         const auto& entry = prepared.entries[index];
         items.push_back({source_paths[index].c_str(), entry.asset.name.c_str(),
-                         static_cast<std::uint8_t>(entry.kind)});
+                         static_cast<std::uint8_t>(entry.kind), fixed_kind != 0});
     }
     std::vector<WormUiSoundImportGroup> groups;
     for (const auto& group : document.sound_groups)
@@ -2946,7 +2947,7 @@ auto dispatch_reviewed_sound_import(const WormUiWorkspaceAction& action,
         for (std::size_t index = 0; action.compose_import_paths &&
                                    index < action.compose_import_path_count; ++index)
             if (action.compose_import_paths[index]) paths.emplace_back(action.compose_import_paths[index]);
-        feedback = stage_sound_import(history.document, chart, paths, notifications);
+        feedback = stage_sound_import(history.document, chart, paths, notifications, action.sound_import_kind);
         return true;
     }
     if (interaction && editor_interaction_has_pending_gesture(*interaction)) {

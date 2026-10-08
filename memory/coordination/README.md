@@ -1,9 +1,12 @@
 # Worktree coordination pilot
 
-Active 2026-10-08: [selection and audition latency batch](oct8-performance-batch.md),
-T-477 measured cold quantize activation/revision work and T-473 off-thread
-audition priming/refill. Two Sol 6.1 medium coordinators with sequential Luna
-medium test work; root owns main, Linux verification and serial integration.
+Completed in code 2026-10-08: [selection and audition latency batch](oct8-performance-batch.md),
+T-477/T-473, with Sol 6.1 medium coordinators and sequential Luna medium tests.
+Main build and **2,599/2,599 tests pass**, including the Linux mania rounding
+follow-up. Matched late blocked-selection quantize median554→115ms; audition
+producer tracing has zero caller decoder reads. Cold stalls and actual Draw/UI,
+GPU/display and older-device gates remain. Only main remains; about 2.9 GB of
+builds removed, branches/logs/probes retained.
 
 Completed 2026-10-07: [dense-chart interaction and frame budget](oct7-dense-batch.md),
 T-475/T-476 plus the T-278 scheduling audit. Main application build and

@@ -164,7 +164,7 @@ measurements. Apply the stale-plan check (rule 9) first.
 
 ## T-473 Start auditions without decoding on the frame thread
 
-- **Status:** done (code and headless gates; actual Draw UI spike capture pending root acceptance)
+- **Status:** done in code (2026-10-08; root merged build and 2,599/2,599 tests pass; actual Draw UI spike capture remains pending)
 - **Outcome:** an audition (play sound on click, a Draw stroke, a lane key) returns from `audition_session_t::start` without decoding audio on the calling thread and without holding the session mutex while priming. A resident keysound starts in the next audio callback. A streamed sound (a stem, or a sound over the keysound budget) starts once the refill worker has its first block. The headless production dispatcher replay shows no audition-caused 12 ms Actions or Event handling entry; actual Draw UI timing remains a live acceptance gate.
 - **Read first:** `src/audio/audition_session.cpp` (`start`, which runs `pump_audition_lookahead` under `mutex_`), `src/sys/sdl_audition_output.cpp` (stream clears at lines 85, 138 and 143), `src/audio/audition_pump.cpp`, `src/audio/preview_session.cpp` (`prime_pending_`, the deferred priming T-470 used for seeks).
 - **Files owned:** `src/audio/audition_session.cpp`, `include/wormedit/audio/audition_session.h`, `src/audio/audition_pump.cpp`, `src/sys/sdl_audition_output.cpp`, `src/sys/sdl_audition_output.h`, `tests/core/audio_audition_session_tests.cpp`, `include/wormedit/audio/audition_pump.h`, `tests/sys/sdl_audition_output_tests.cpp`, `tests/sys/audition_notification_tests.cpp`, this card. Supporting extensions approved for the resident-only helper and worker/deferred-failure tests. A private friend test accessor exercises the exact production pump snapshot/completion helpers without runtime callbacks.
@@ -182,6 +182,8 @@ measurements. Apply the stale-plan check (rule 9) first.
 - **Reject/failure behavior:** a decode failure after start ends the audition with the existing notification, and leaves the transport untouched.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'audition'`; a spike log (`WORMEDIT_FRAME_SPIKE_LOG`, 12 ms) while drawing 20 notes with play sound on click on a BMSON stem shows no audition spike.
 - **Out of scope:** chart preview transport (T-474).
+
+- **Root integration:** `361bc12` integrates worker `d07c2b9`; normal main build and all **2,599 tests pass**. Independently relinked from normal optimized merged `dd8a8a1` targets: caller TID12 has zero decoder reads, refill TID14 has24. Parked-decoder replacement/Stop/newest sequence returns in1.258 ms wall/1.252 ms caller CPU; newest playback progresses after release. Twenty producer replays have p50/max wall0.153/0.226 ms and CPU0.150/0.226 ms. No12ms replay spike creates an entry; a separate0.000001ms threshold positive control writes20 entries, proving logger activation. No actual Draw gesture/frontend, geometry-probing wait or physical device/display claim. Root artifacts are `oct8-performance/root/merged-audition/`, with binary/source/build metadata and13 chart/audio preservation hashes. Worker is removed; standalone SDL dependency remains in `root/probe-libs`.
 
 ## T-474 Apply transport changes on the audio thread instead of waiting for its lock
 

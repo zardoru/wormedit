@@ -227,3 +227,11 @@ the compatible canonical layout; named output keeps its filename and checks
 BMS/PMS family compatibility before any publication. Other app requests preserve
 their existing profile behavior. Root adds directory/named-file warning-success
 and silent-BMS atomic publication regressions after shared test release.
+
+Additional T-463 production projection regression scope approved before edits:
+`tests/sys/frame_timing_tests.cpp` exercises `populate_compose_view` with two
+stems and a packed channel sharing an asset. Assert exact dock row/current
+source ownership, packed eligibility and cached identity/revision invalidation;
+manually populated harness rows alone cannot validate this new join. Existing
+semantic event/resource links are authoritative; ambiguous empty-channel
+ownership must not silently choose the first lane. Preserve the document model.

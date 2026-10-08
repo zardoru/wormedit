@@ -337,3 +337,17 @@ Feedback scratch readers use the separate frozen feedback headers; main
 document headers are untouched until reviewed integration. No linked codec,
 export or scene implementation is included in this grant. Required subsequent
 order remains 02a, 02d, 02c, 02b, then 03.
+
+T-422 worker `515287e` is reviewed and integrated as main `d50c6af`.
+All three software captures now pass, including the native right-click hint;
+root independently views the readable full text inside its popup. Scratch
+drivers retain projection storage and render between input frames, matching
+normal frontend cadence. Final native proof is six cases/461 assertions
+(independently repeated), full event executable 279 cases/3,775 assertions,
+event CTest label 249/249, ordinary affected build, docs and diff checks pass.
+The latest configured tidy log is `T422-final-tidy-no-new.log`; earlier
+`final2` contains a superseded new finding and is not accepted evidence.
+Five existing test title/score pairs and the unchanged existing header score
+29 remain; no new/increased findings. Assertion reduction removes duplicate
+checks while preserving all six behavior cases and exact document/selection
+proof. T-422 is complete; BGM native slice 02a is now the active implementation.

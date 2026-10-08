@@ -52,7 +52,7 @@ not a measured claim for WormEdit. Audio has separate callback/decode threads.
 
 - **Status:** ready
 - **Outcome:** an optimized integrated production workspace/projection/frontend/software-render probe reports useful frame work against 5 ms, distinct from presentation and pacing wait. Actual 200 Hz display certification remains pending unless a permitted real-display measurement exists.
-- **Read first:** `src/sys/application_frame_projection.cpp`, `src/sys/application_frame_services.cpp`, `src/sys/frame_timing.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/compose_canvas_render_tests.cpp`, T-475 above.
+- **Read first:** `src/sys/application_frame_projection.cpp`, `src/sys/application_frame_services.cpp`, `src/sys/frame_timing.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/field_renderer_tests.cpp`, T-475 above.
 - **Files owned:** this card only; root scratch probes outside the repository. Supporting production instrumentation requires exact recorded scope extension before edits.
 - **Steps:**
   1. Build normal optimized production targets and identify which frame stages the probe truly executes. Include frontend/software submission, matched-visible 50k/100k fixtures, warm follow/idle, selection, paint hover and boundary transitions where supported.

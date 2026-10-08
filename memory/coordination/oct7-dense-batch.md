@@ -25,3 +25,15 @@ presentation/pacing wait and real display cadence must be distinguished.
 Root preserves the two preexisting commits `b1450d2` and `279090b` and their
 T-473/T-474 planned work; these are outside this batch. Clean released workers
 and generated builds are removed after final gates; branches/logs retained.
+
+Scheduling audit integrated as `aa8b967` (worker `9c01b3c`): existing clamp/hook
+gates pass 8 cases/71 assertions. All nine production pools request low priority;
+preview refill requests high. Per-pool clamps are not a global CPU reservation.
+The clean scheduling tree is removed, branch/logs retained.
+
+Root scratch functional probe now calls the actual application frame projection,
+frontend composition and SDL software submission on a hidden dummy window.
+Five 50k-note scenarios execute with visible scene geometry and GPU-work counters;
+paint hover asserts a visible ghost over an empty cell. Debug runs are setup-only,
+not performance evidence. Event/action/jobs, active audio callbacks, physical
+presentation and pacing waits are omitted and will be identified explicitly.

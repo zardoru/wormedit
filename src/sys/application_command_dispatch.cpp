@@ -661,20 +661,33 @@ auto timing_insert_command(command_context_t& context) -> std::optional<command_
 }
 
 auto select_tool_command(command_context_t& context) -> std::optional<command_result_t> {
-    if (context.command.kind != command_kind_t::edit_tool_select) return std::nullopt;
+    const auto kind = context.command.kind;
+    if (kind != command_kind_t::edit_tool_select && kind != command_kind_t::edit_tool_draw &&
+        kind != command_kind_t::edit_tool_layer) return std::nullopt;
+    if (kind != command_kind_t::edit_tool_select &&
+        !wormedit::ui::compose_notes_editable(compose_mode_of(context.application_state)))
+        return reject_application_command(context.sink, "Draw and Layer are unavailable in Timing focus.",
+            notification_severity_t::warning, notification_source_t::edit);
     auto* state = context.compose();
     if (!state) return reject_application_command(context.sink, "Select requires the active Compose chart.",
         notification_severity_t::warning, notification_source_t::edit);
+    if (kind != command_kind_t::edit_tool_select &&
+        !std::holds_alternative<wormedit::editor_interaction_view_model_t>(
+            wormedit::inspect_editor_interaction(context.history, *state)))
+        return reject_application_command(context.sink,
+            "Draw and Layer require editable chart geometry.",
+            notification_severity_t::warning, notification_source_t::edit);
     if (editor_interaction_has_pending_gesture(*state)) {
         const auto canceled = wormedit::dispatch_editor_action(
             context.history, *state, wormedit::cancel_editor_gesture_action_t{});
         if (!canceled.accepted) return accept_editor_command(canceled, context.sink,
             "Gesture canceled.", notification_severity_t::warning, notification_source_t::edit);
     }
-    context.application_state.note_paint_mode_active = false;
-    context.application_state.semantic_layer_paint_mode_active = false;
+    context.application_state.bga_draw_stroke.reset();
+    context.application_state.note_paint_mode_active = kind == command_kind_t::edit_tool_draw;
+    context.application_state.semantic_layer_paint_mode_active = kind == command_kind_t::edit_tool_layer;
     post_command_message(context.sink, notification_severity_t::hint,
-        notification_source_t::edit, "Select tool active.");
+        notification_source_t::edit, "Compose tool selected.");
     return command_result_t{.accepted = true};
 }
 

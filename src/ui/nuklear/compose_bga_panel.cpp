@@ -124,24 +124,8 @@ void bga_lane_picker(nk_context* context, WormUiWorkspaceAction& action) {
 void toolbar(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear_compose_state_t& state,
               WormUiWorkspaceAction& action) {
     nk_layout_row_template_begin(context, 27);
-    IconButton::layout_columns(context, view.bga_ids_available ? 8 : 6);
+    IconButton::layout_columns(context, view.bga_ids_available ? 7 : 5);
     nk_layout_row_template_end(context);
-    const auto active = state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place &&
-        state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::bga;
-    const auto can_paint = state.armed_resource_id &&
-        state.armed_resource_id == state.bga_selection.primary &&
-        advance_eligible(view, state.armed_resource_id) &&
-        !view.note_paint_mode_active && !view.semantic_layer_paint_mode_active && !view.timing_focus;
-    if (!can_paint && !active) nk_widget_disable_begin(context);
-    if (IconButton{Glyph::paintbrush, "Paint selected BGA on the chart", active}.render(context) && (can_paint || active)) {
-        state.resource_pointer_mode = active ? worm_ui_nuklear_compose_resource_pointer_mode_t::off
-                                            : worm_ui_nuklear_compose_resource_pointer_mode_t::place;
-        state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
-        state.armed_from_sounds_dock = false;
-        state.armed_from_bga_dock = !active && can_paint;
-        reveal_empty_base_lane(action, view, active);
-    }
-    if (!can_paint && !active) nk_widget_disable_end(context);
     if (IconButton{Glyph::chevron_right, "Advance after place: arm the next available BGA shown",
                    state.bga_auto_increment_on_place}.render(context))
         state.bga_auto_increment_on_place = !state.bga_auto_increment_on_place;
@@ -214,6 +198,7 @@ void renumber_confirmation(nk_context* context, const WormUiComposeView& view,
     nk_popup_end(context);
 }
 void row(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear_compose_state_t& state,
+              WormUiWorkspaceAction& action,
           std::size_t index) {
     nk_layout_row_dynamic(context, 36, 1);
     const auto hovered = nk_widget_is_hovered(context);
@@ -257,6 +242,8 @@ void row(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear_com
     state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
     state.armed_from_sounds_dock = false;
     state.armed_from_bga_dock = eligible;
+    worm_ui_nuklear_pick_draw_source(state, action, 2, state.bga_selection.primary);
+    reveal_empty_base_lane(action, view, false);
     if (!eligible) state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
 }
 
@@ -324,7 +311,7 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
         if (matching) {
             worm_ui_keysound_prune(state->bga_selection, {view->bga_matching_ids, view->bga_total_matching});
             for (auto index = list.begin; index < std::min(list.end, static_cast<int>(view->bga_total_matching)); ++index)
-                row(context, *view, *state, static_cast<std::size_t>(index));
+                row(context, *view, *state, *action, static_cast<std::size_t>(index));
             if (!view->bga_total_matching) { nk_layout_row_dynamic(context, 36, 1); nk_label(context, "No BGA matches. Add or drop images here.", NK_TEXT_LEFT); }
         }
         nk_list_view_end(&list);

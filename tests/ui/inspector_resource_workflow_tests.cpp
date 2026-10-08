@@ -124,7 +124,7 @@ auto compact_layout_keeps_sound_picker(nuklear_event_harness_t& harness) -> bool
 
 auto compact_toolbar_sounds_toggle_status(nuklear_event_harness_t& harness) -> std::string_view {
     auto& state = worm_ui_nuklear_compose_state();
-    constexpr float sounds_button_x = 434.0f;
+    constexpr float sounds_button_x = 461.0f;
     // In the 700x800 harness, title (32), tabs (32), seek row (24), window padding,
     // and the toolbar's 27px row place the icon center at y=122.
     constexpr float toolbar_y = 122.0f;

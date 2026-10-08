@@ -17,26 +17,29 @@ void require_bga_row_armed(const worm_ui_nuklear_compose_state_t& state) {
     REQUIRE(state.armed_resource_id == 1400);
     REQUIRE(state.armed_from_bga_dock);
 }
-void require_bga_pointer_active(const worm_ui_nuklear_compose_state_t& state) {
-    REQUIRE(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
+void require_bga_draw_source(const worm_ui_nuklear_compose_state_t& state) {
+    REQUIRE(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+    REQUIRE(state.draw_source_kind == 2);
+    REQUIRE(state.draw_source_id == 1400);
 }
 void require_bga_auto_advance(const worm_ui_nuklear_compose_state_t& state) {
     REQUIRE(state.bga_auto_increment_on_place);
 }
 void check_resource_place(const WormUiComposeInputAction* input) {
     REQUIRE(input != nullptr);
-    CHECK(input->object_id == 1400);
+    CHECK(input->resource_id == 1400);
+    CHECK(input->paint_intent == 1);
     CHECK(input->resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGA);
 }
 void check_no_advance_before_dispatch(const worm_ui_nuklear_compose_state_t& state) {
     CHECK(state.armed_resource_id == 1400);
-    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
+    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
 }
 void check_successor_armed(const worm_ui_nuklear_compose_state_t& state) {
     CHECK(state.armed_resource_id == 1700);
     CHECK(state.bga_selection.primary == 1700);
     CHECK(state.bga_reveal_primary);
-    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
+    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
     CHECK(state.bga_auto_increment_on_place);
 }
 void check_order_exhausted(const worm_ui_nuklear_compose_state_t& state) {
@@ -55,7 +58,7 @@ auto find_resource_place(const std::vector<workspace_action_snapshot_t>& frames)
     for (const auto& frame : frames)
         for (std::size_t index = 0; index < frame.get().compose_input_count; ++index) {
             const auto& input = frame.get().compose_inputs[index];
-            if (input.kind == WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE) return &input;
+            if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) return &input;
         }
     return nullptr;
 }
@@ -147,9 +150,9 @@ TEST_CASE("BGA dock auto advance follows eligible filtered order after placement
 
     // Sort by BMP ID through the real toolbar, then enter a search in the
     // actual field. The projection consumer receives the resulting order.
-    click(harness, state.bga_list_x + state.bga_list_width * 0.8125f,
+    click(harness, state.bga_list_x + 207,
           state.bga_list_y + 43);
-    click(harness, state.bga_list_x + 90, state.bga_list_y + 59);
+    click(harness, state.bga_list_x + 90, state.bga_list_y + 73);
     SDL_Event search_text{};
     search_text.type = SDL_EVENT_TEXT_INPUT;
     search_text.text.type = SDL_EVENT_TEXT_INPUT;
@@ -173,20 +176,16 @@ TEST_CASE("BGA dock auto advance follows eligible filtered order after placement
     view.bga_advance_count = filtered_eligible.size();
     (void)harness.frame();
 
-    // The first row arms the eligible image. The paintbrush is the first toolbar
-    // control; the next control is the independent BGA advance toggle.
-    click(harness, state.bga_list_x + 70, state.bga_list_y + 112);
-    INFO("BGA row bounds " << state.bga_list_x << ',' << state.bga_list_y << ','
-         << state.bga_list_width << ',' << state.bga_list_height
-         << "; selection=" << state.bga_selection.primary
-         << "; armed=" << state.armed_resource_id
-         << "; BGA provenance=" << state.armed_from_bga_dock
-         << "; drawn text=" << harness.drawn_text());
+    // Picking a row selects the Draw source; Draw stays an independent toolbar tool.
+    const auto row_center = harness.drawn_text_center("01  zeta.png  · 0");
+    REQUIRE(row_center);
+    click(harness, row_center->first, row_center->second);
     require_bga_row_armed(state);
-    click(harness, state.bga_list_x + 22, state.bga_list_y + 43);
-    require_bga_pointer_active(state);
+    require_bga_draw_source(state);
+    view.note_paint_mode_active = true;
+    (void)harness.frame();
     const auto sounds_auto_advance = state.auto_increment_on_place;
-    click(harness, state.bga_list_x + state.bga_list_width * 0.19f, state.bga_list_y + 43);
+    click(harness, state.bga_list_x + 22, state.bga_list_y + 43);
     require_bga_auto_advance(state);
     check_sound_toggle_preserved(state.auto_increment_on_place, sounds_auto_advance);
 

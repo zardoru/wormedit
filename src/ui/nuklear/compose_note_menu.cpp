@@ -3,6 +3,7 @@
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/context_menu.h"
 #include "ui/nuklear/theme.h"
+#include "ui/nuklear/compose_state.h"
 #include "wormedit/nuklear_config.h"
 
 #include <algorithm>
@@ -166,7 +167,7 @@ void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceA
     if (chrome::popup_panel(context) || !menu.popup.open) return;
     const auto size = menu.submenu
         ? nk_vec2(392, 422)
-        : nk_vec2(primary_width + 2 * chrome::menu_padding, chrome::context_menu_height(1));
+        : nk_vec2(primary_width + 2 * chrome::menu_padding, chrome::context_menu_height(2));
     if (!chrome::context_menu_begin(menu.popup, context, stamp(view), size)) {
         if (!menu.popup.open) finish_close(view, action);
         return;
@@ -176,6 +177,17 @@ void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceA
     } else {
         nk_layout_row_dynamic(context, row_height, 1);
         menu.submenu = render_layer_submenu_button(context);
+        nk_layout_row_dynamic(context, row_height, 1);
+        const auto& source = worm_ui_nuklear_compose_state();
+        const auto can_replace = source.draw_source_kind == 1 && source.draw_source_id != 0;
+        if (!can_replace) nk_widget_disable_begin(context);
+        if (nk_button_label(context, "Replace sound with current source") && can_replace &&
+            raise(view, action, WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION)) {
+            action.compose_resource_id = source.draw_source_id;
+            chrome::context_menu_close(menu.popup);
+        }
+        if (!can_replace) nk_widget_disable_end(context);
+
     }
     chrome::context_menu_end(menu.popup, context);
 }
@@ -183,7 +195,8 @@ void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceA
 void open_at_pointer(nk_context* context, const WormUiComposeView& view,
                      WormUiWorkspaceAction& action, struct nk_rect viewport, double right) {
     const auto mouse = context->input.mouse.pos;
-    if (!nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) || mouse.x >= right ||
+    const auto opening = worm_ui_nuklear_compose_context_click(context, view);
+    if (!opening || mouse.x >= right ||
         !nk_input_is_mouse_hovering_rect(&context->input, viewport) ||
         wormedit::ui::chrome::popup_panel(context)) return;
     const auto x = (mouse.x - viewport.x) * view.viewport_width_pixels / viewport.w;

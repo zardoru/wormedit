@@ -201,6 +201,20 @@ struct place_virtual_bms_resource_action_t {
     std::optional<visual_event_kind_t> bga_kind;
 };
 
+struct bga_stroke_target_t {
+    local_position_t position;
+    visual_event_kind_t kind{visual_event_kind_t::background};
+};
+
+// Applies one atomic BGA draw/erase stroke. Draw preserves occupied cells;
+// erase removes events in the visited BGA lanes without requiring a resource.
+[[nodiscard]] auto apply_bga_stroke(document_history_t& history,
+                                    std::uint64_t expected_revision,
+                                    chart_id_t chart,
+                                    std::optional<resource_id_t> resource,
+                                    std::span<const bga_stroke_target_t> targets,
+                                    bool erase = false) -> document_command_result_t;
+
 struct move_bgm_event_action_t {
     chart_id_t chart;
     object_id_t event;

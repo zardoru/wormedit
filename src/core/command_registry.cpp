@@ -903,15 +903,24 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
         command_focus_scope_t::tab,
         {chord(shortcut_key_t::digit_1, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))},
         false, compose);
-    constexpr std::array note_kind_keys{shortcut_key_t::digit_2, shortcut_key_t::digit_3,
-        shortcut_key_t::digit_4, shortcut_key_t::digit_5, shortcut_key_t::digit_6,
-        shortcut_key_t::digit_7, shortcut_key_t::digit_8};
+    add_builtin(registry, invoker, "edit.tool_draw", "Draw tool", command_category_t::edit,
+        command_focus_scope_t::tab,
+        {chord(shortcut_key_t::digit_2, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))},
+        false, compose);
+    add_builtin(registry, invoker, "edit.tool_layer", "Layer tool", command_category_t::edit,
+        command_focus_scope_t::tab,
+        {chord(shortcut_key_t::digit_3, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))},
+        false, compose);
+    const std::array<std::vector<shortcut_chord_t>, 7> note_kind_shortcuts{{{}, {},
+        {chord(shortcut_key_t::digit_4, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))},
+        {chord(shortcut_key_t::digit_5, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))},
+        {chord(shortcut_key_t::digit_6, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))},
+        {chord(shortcut_key_t::digit_7, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))},
+        {chord(shortcut_key_t::digit_8, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))}}};
     for (std::size_t i = 0; i < note_kind_names.size(); ++i)
         add_builtin(registry, invoker, "edit.note_kind_" + std::string(note_kind_names[i]),
             "Arm note kind: " + std::string(note_kind_names[i]), command_category_t::edit,
-            command_focus_scope_t::tab,
-            {chord(note_kind_keys[i], static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))},
-            false, compose);
+            command_focus_scope_t::tab, note_kind_shortcuts[i], false, compose);
 
     constexpr std::array layer_keys{
         shortcut_key_t::digit_1, shortcut_key_t::digit_2, shortcut_key_t::digit_3,

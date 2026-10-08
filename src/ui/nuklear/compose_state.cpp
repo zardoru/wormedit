@@ -1,6 +1,7 @@
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include "ui/nuklear/theme.h"
+#include "wormedit/nuklear_config.h"
 
 #include <wormedit/core/numeric_text.h>
 
@@ -352,7 +353,10 @@ void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
             state.bga_auto_increment_on_place = false;
             state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
         }
-        if (next_resource_id) state.armed_resource_id = next_resource_id;
+        if (next_resource_id) {
+            state.armed_resource_id = next_resource_id;
+            if (state.draw_source_kind == 2) state.draw_source_id = next_resource_id;
+        }
         return;
     }
     if (!state.auto_increment_on_place) return;
@@ -370,6 +374,7 @@ void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
         state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     } else {
         state.armed_resource_id = next_resource_id;
+        if (state.draw_source_kind == 1) state.draw_source_id = next_resource_id;
     }
 }
 
@@ -746,4 +751,35 @@ void worm_ui_nuklear_pinch_input(worm_ui_nuklear_pinch_gesture_t& gesture,
         gesture.project_id != project_id || gesture.chart_id != chart_id ||
         gesture.count == gesture.pending.size()) { gesture = {}; return; }
     gesture.pending[gesture.count++] = {factor, gesture.mouse_x, gesture.mouse_y};
+}
+
+void worm_ui_nuklear_pick_draw_source(worm_ui_nuklear_compose_state_t& state,
+    WormUiWorkspaceAction& action, uint8_t kind, uint64_t id) {
+    state.draw_source_kind = id ? kind : 0;
+    state.draw_source_id = id;
+    if (!id) {
+        state.armed_resource_id = 0;
+        state.armed_from_sounds_dock = state.armed_from_bga_dock = false;
+        state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+    }
+    if (action.compose_input_count >= WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) return;
+    action.compose_inputs[action.compose_input_count++] = {
+        .kind = WORM_UI_COMPOSE_INPUT_DRAW_SOURCE,
+        .resource_role = state.draw_source_kind,
+        .resource_id = id};
+}
+
+bool worm_ui_nuklear_compose_context_click(const nk_context* context, const WormUiComposeView& view) {
+    if (!view.note_paint_mode_active)
+        return nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT);
+    const auto& mouse = context->input.mouse;
+    const auto& button = mouse.buttons[NK_BUTTON_RIGHT];
+    const auto& state = worm_ui_nuklear_compose_state();
+    const auto tracked = state.draw_right_press_pending || state.draw_right_release_pending || state.draw_right_candidate;
+    const auto x = tracked ? state.draw_right_screen_x : button.clicked_pos.x;
+    const auto y = tracked ? state.draw_right_screen_y : button.clicked_pos.y;
+    const auto current_x = tracked ? state.draw_right_current_screen_x : mouse.pos.x;
+    const auto current_y = tracked ? state.draw_right_current_screen_y : mouse.pos.y;
+    return nk_input_is_mouse_released(&context->input, NK_BUTTON_RIGHT) &&
+        !state.draw_right_dragged && std::hypot(current_x - x, current_y - y) < 3.0;
 }

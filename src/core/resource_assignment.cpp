@@ -9,6 +9,7 @@
 #include <limits>
 #include <optional>
 #include <ranges>
+#include <set>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -19,6 +20,8 @@ namespace wormedit {
 namespace {
 
 void reject(document_command_result_t& result, diagnostic_code_t code, std::string message);
+auto has_role(const resource_entry_t& resource, resource_role_t role) -> bool;
+auto next_chart_object_id(const chart_document_t& chart) -> std::optional<object_id_t>;
 
 auto resolve_bga_resource_kind(const song_document_t& document, resource_id_t id,
                                visual_event_kind_t requested, document_command_result_t& result)
@@ -45,6 +48,141 @@ auto resolve_bga_resource_kind(const song_document_t& document, resource_id_t id
     }
     return *lane == 0 ? (asset->kind == asset_kind_t::video
         ? visual_event_kind_t::video : visual_event_kind_t::background) : requested;
+}
+
+struct resolved_bga_stroke_target_t {
+    local_position_t position;
+    std::uint64_t row{};
+    std::size_t lane{};
+    visual_event_kind_t kind{visual_event_kind_t::background};
+};
+
+auto resolve_bga_stroke_kind(asset_kind_t asset_kind, visual_event_kind_t requested,
+                            document_command_result_t& result)
+    -> std::optional<visual_event_kind_t> {
+    const auto lane = editor_bga_lane_index(requested);
+    if (!lane) {
+        reject(result, diagnostic_code_t::unsupported_feature, "Unsupported BGA lane kind");
+        return std::nullopt;
+    }
+    if (asset_kind != asset_kind_t::image && asset_kind != asset_kind_t::video) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "BGA requires an image or video resource");
+        return std::nullopt;
+    }
+    if (asset_kind == asset_kind_t::video && *lane != 0) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "Video can only be placed in the BGA base lane");
+        return std::nullopt;
+    }
+    return *lane == 0 ? (asset_kind == asset_kind_t::video
+        ? visual_event_kind_t::video : visual_event_kind_t::background) : requested;
+}
+
+auto resolve_bga_stroke_targets(const measure_index_t& index,
+                                std::span<const bga_stroke_target_t> targets,
+                                std::optional<asset_kind_t> asset_kind, bool erase,
+                                document_command_result_t& result)
+    -> std::optional<std::vector<resolved_bga_stroke_target_t>> {
+    std::vector<resolved_bga_stroke_target_t> resolved;
+    resolved.reserve(targets.size());
+    std::set<std::pair<std::uint64_t, std::size_t>> seen;
+    for (const auto& target : targets) {
+        const auto row = absolute_row(index, target.position);
+        const auto kind = erase ? std::optional{target.kind}
+                                : resolve_bga_stroke_kind(*asset_kind, target.kind, result);
+        const auto lane = kind ? editor_bga_lane_index(*kind) : std::nullopt;
+        if (!kind || !lane) {
+            if (kind) reject(result, diagnostic_code_t::unsupported_feature,
+                             "Unsupported BGA lane kind");
+            return std::nullopt;
+        }
+        if (!row) {
+            reject(result, diagnostic_code_t::row_out_of_range,
+                   "BGA stroke row is outside the chart");
+            return std::nullopt;
+        }
+        if (seen.emplace(*row, *lane).second)
+            resolved.push_back({target.position, *row, *lane, *kind});
+    }
+    return resolved;
+}
+
+auto resolve_bga_stroke_resource(const song_document_t& document,
+                                 std::optional<resource_id_t> resource,
+                                 document_command_result_t& result)
+    -> std::optional<asset_kind_t> {
+    if (!resource) {
+        reject(result, diagnostic_code_t::invalid_id, "BGA draw requires a resource");
+        return std::nullopt;
+    }
+    const auto entry = std::ranges::find(document.resources, *resource, &resource_entry_t::id);
+    if (entry == document.resources.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "resource placement refers to an unknown catalog resource");
+        return std::nullopt;
+    }
+    if (entry->missing) {
+        reject(result, diagnostic_code_t::dangling_resource,
+               "cannot place a resource with a missing source");
+        return std::nullopt;
+    }
+    if (!has_role(*entry, resource_role_t::bga)) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "resource is incompatible with the requested placement");
+        return std::nullopt;
+    }
+    const auto asset = std::ranges::find(document.visual_assets, entry->asset, &visual_asset_t::id);
+    if (asset == document.visual_assets.end() ||
+        (asset->kind != asset_kind_t::image && asset->kind != asset_kind_t::video)) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "BGA requires an image or video resource");
+        return std::nullopt;
+    }
+    return asset->kind;
+}
+
+auto commit_bga_stroke_targets(document_history_t& history, std::size_t chart_offset,
+                               const measure_index_t& index,
+                               std::span<const resolved_bga_stroke_target_t> targets,
+                               std::optional<resource_id_t> resource, bool erase)
+    -> document_command_result_t {
+    document_command_result_t unchanged{.revision = history.document.revision, .diagnostics = {}};
+    auto proposed = history.document;
+    auto& chart = proposed.charts[chart_offset];
+    std::set<std::pair<std::uint64_t, std::size_t>> cells;
+    for (const auto& target : targets) cells.emplace(target.row, target.lane);
+    if (erase) {
+        std::erase_if(chart.bga_events, [&](const auto& event) {
+            const auto row = absolute_row(index, event.position);
+            const auto lane = editor_bga_lane_index(event.kind);
+            return row && lane && cells.contains({*row, *lane});
+        });
+        if (chart.bga_events.size() == history.document.charts[chart_offset].bga_events.size())
+            return unchanged;
+        return commit_document_command(history, std::move(proposed), "Erase BGA events");
+    }
+    std::set<std::pair<std::uint64_t, std::size_t>> occupied;
+    for (const auto& event : chart.bga_events) {
+        const auto row = absolute_row(index, event.position);
+        const auto lane = editor_bga_lane_index(event.kind);
+        if (row && lane) occupied.emplace(*row, *lane);
+    }
+    std::vector<resolved_bga_stroke_target_t> additions;
+    for (const auto& target : targets)
+        if (occupied.emplace(target.row, target.lane).second) additions.push_back(target);
+    if (additions.empty()) return unchanged;
+    const auto first_id = next_chart_object_id(history.document.charts[chart_offset]);
+    if (!first_id || additions.size() - 1 >
+            std::numeric_limits<std::uint64_t>::max() - first_id->value) {
+        reject(unchanged, diagnostic_code_t::invalid_id,
+               "BGA stroke chart object limit or ID space is exhausted");
+        return unchanged;
+    }
+    auto next_id = first_id->value;
+    for (const auto& target : additions)
+        chart.bga_events.push_back({.id = object_id_t{next_id++}, .position = target.position,
+                                    .resource = *resource, .kind = target.kind});
+    return commit_document_command(history, std::move(proposed), "Draw BGA events");
 }
 
 constexpr std::string_view bms36_digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -584,6 +722,42 @@ auto apply_resource_placement(document_history_t& history, std::uint64_t expecte
     }
     if (!placed) return result;
     return commit_document_command(history, std::move(proposed), "Place resource");
+}
+
+auto apply_bga_stroke(document_history_t& history, std::uint64_t expected_revision,
+                      chart_id_t chart_id, std::optional<resource_id_t> resource,
+                      std::span<const bga_stroke_target_t> targets, bool erase)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id, "BGA stroke document revision is stale");
+        return result;
+    }
+    if (targets.size() > 50'000) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "BGA stroke exceeds the per-gesture target cap");
+        return result;
+    }
+    const auto source_chart = std::ranges::find(history.document.charts, chart_id,
+                                                &chart_document_t::id);
+    if (!chart_id || source_chart == history.document.charts.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "BGA stroke chart is missing");
+        return result;
+    }
+    const auto asset_kind = erase ? std::optional<asset_kind_t>{}
+                                  : resolve_bga_stroke_resource(history.document, resource, result);
+    if (!erase && !asset_kind) return result;
+    const auto built = build_measure_index(*source_chart);
+    const auto* index = std::get_if<measure_index_t>(&built);
+    if (!index) {
+        reject(result, diagnostic_code_t::invalid_measure, "BGA stroke chart index is invalid");
+        return result;
+    }
+    auto resolved = resolve_bga_stroke_targets(*index, targets, asset_kind, erase, result);
+    if (!resolved) return result;
+    if (resolved->empty()) return result;
+    const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.begin());
+    return commit_bga_stroke_targets(history, chart_offset, *index, *resolved, resource, erase);
 }
 
 auto find_bgm_event(const chart_document_t& chart, object_id_t id) -> const bgm_event_t* {

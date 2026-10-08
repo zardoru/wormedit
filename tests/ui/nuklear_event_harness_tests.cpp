@@ -5,6 +5,8 @@
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/sound_import_runtime.h"
 
+#include <wormedit/core/command_registry.h>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -14,6 +16,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <tuple>
 
 TEST_CASE("Sound layer confirmation waits for a choice and rejects stale documents",
           "[unit][frontend-state][event-harness][sound-note-layers]") {
@@ -728,7 +731,7 @@ TEST_CASE("Compose toolbar color views change frontend state without document ac
     // 24 px toolbar icons: navigation, separator, six tools, separator, views.
     constexpr std::array views{View::snap, View::layer, View::normal};
     // The BGA lane visibility and Y-lock icons add two 27 px cells before the color group.
-    constexpr std::array positions{342.0f, 369.0f, 315.0f};
+    constexpr std::array positions{369.0f, 396.0f, 342.0f};
     for (std::size_t index = 0; index < views.size(); ++index) {
         const auto clicks = click_at(harness, positions[index], 122.0f);
         CHECK(worm_ui_nuklear_compose_state().color_view == views[index]);
@@ -992,7 +995,7 @@ TEST_CASE("Layer row menu releases its popup after a stale revision or hidden pa
     check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu.open);
     check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu.close_pending);
     (void)fixture.harness.frame();
-    (void)click_at(fixture.harness, 342, 122);
+    (void)click_at(fixture.harness, 369, 122);
     check_layer_menu(worm_ui_nuklear_compose_state().color_view ==
                      worm_ui_nuklear_compose_color_view_t::snap);
 }
@@ -1228,7 +1231,7 @@ TEST_CASE("Note menu retires chart and project changes without a lingering popup
     (void)fixture.harness.frame();
     check_layer_menu(!compose_note_menu_open());
     (void)fixture.harness.frame();
-    (void)click_at(fixture.harness, 342, 122);
+    (void)click_at(fixture.harness, 369, 122);
     check_layer_menu(worm_ui_nuklear_compose_state().color_view ==
                      worm_ui_nuklear_compose_color_view_t::snap);
 }
@@ -1339,6 +1342,7 @@ TEST_CASE("Clicking selected and unselected notes emits one audition selection",
 
 namespace {
 void check_bga_dock(bool value) { CHECK(value); }
+void check_draw_source(bool value) { CHECK(value); }
 void check_sound_slot_hidden(const std::string& drawn_text) {
     CHECK(drawn_text.find("0A  kick.wav") == std::string::npos);
 }
@@ -1367,6 +1371,8 @@ TEST_CASE("Selecting a sound keeps note painting armed with that sound and prese
         return action.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
     }));
     CHECK(state.armed_resource_id == 1400);
+    check_draw_source(state.draw_source_kind == 1);
+    check_draw_source(state.draw_source_id == 1400);
     CHECK(state.armed_from_sounds_dock);
     CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
     worm_ui_nuklear_advance_resource_picker(1400, 0);
@@ -1397,11 +1403,13 @@ TEST_CASE("BGA dock reuses list selection and arms resources outside the drawer 
     check_bga_dock(state.bga_selection.primary == 1400);
     check_bga_dock(state.armed_resource_id == 1400);
     check_bga_dock(state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::bga);
-    (void)click_at(harness, state.bga_list_x + 22, state.bga_list_y + 43);
-    check_bga_dock(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
+    check_bga_dock(state.draw_source_kind == 2);
+    check_bga_dock(state.draw_source_id == 1400);
+    check_bga_dock(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
     view.bga_rows = rows.data() + 1; view.bga_row_count = 1; view.bga_first_row = 1;
     (void)harness.frame();
-    check_bga_dock(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
+    check_bga_dock(state.draw_source_id == 1400);
+    check_bga_dock(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
     state.bga_panel_visible = false;
     (void)harness.frame();
     CHECK_FALSE(state.bga_list_valid);
@@ -1722,6 +1730,8 @@ TEST_CASE("Note paint carries the Sounds dock sound whichever was picked first",
     // Tool first, then sound: the sound pick leaves note paint and the place mode alone.
     view.note_paint_mode_active = true;
     state.armed_resource_id = 40;
+    state.draw_source_kind = 1;
+    state.draw_source_id = 40;
     state.armed_from_sounds_dock = true;
     state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     (void)harness.frame();
@@ -1754,18 +1764,18 @@ TEST_CASE("Note paint carries the Sounds dock sound whichever was picked first",
     view.armed_note_kind = 0;
     (void)harness.frame();
 
-    // A missing or non-dock sound never rides along; the stroke stays silent.
+    // Legacy arming does not change the explicit Draw source.
     state.armed_resource_id = 50;
     frames = click_at(harness, 300, 400);
     begin = find_compose_input(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN);
     REQUIRE(begin != nullptr);
-    CHECK(begin->resource_id == 0);
+    CHECK(begin->resource_id == 40);
     state.armed_resource_id = 40;
     state.armed_from_sounds_dock = false;
     frames = click_at(harness, 300, 400);
     begin = find_compose_input(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN);
     REQUIRE(begin != nullptr);
-    CHECK(begin->resource_id == 0);
+    CHECK(begin->resource_id == 40);
     state = {};
 }
 
@@ -2497,4 +2507,328 @@ TEST_CASE("sound_import section controls stay BMSON only and fixed review cancel
     const auto action = harness.frame();
     section_import_check(action.get().compose_action != WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT);
     section_import_check(!worm_ui_nuklear_sound_import_active());
+}
+
+namespace {
+
+auto has_draw_source_payload(const std::vector<workspace_action_snapshot_t>& frames,
+                             std::uint8_t kind, std::uint64_t id) -> bool {
+    for (const auto& frame : frames)
+        for (std::size_t index = 0; index < frame.get().compose_input_count; ++index) {
+            const auto& input = frame.get().compose_inputs[index];
+            if (input.kind == WORM_UI_COMPOSE_INPUT_DRAW_SOURCE &&
+                input.resource_role == kind && input.resource_id == id) return true;
+        }
+    return false;
+}
+
+auto has_draw_input(const std::vector<workspace_action_snapshot_t>& frames,
+                    WormUiComposeInputKind kind, std::uint8_t intent) -> bool {
+    const auto* input = find_compose_input(frames, kind);
+    return input && input->paint_intent == intent;
+}
+
+auto draw_right_event(bool down, float x, float y) -> SDL_Event {
+    auto event = button_event(down, x, y);
+    event.button.button = SDL_BUTTON_RIGHT;
+    return event;
+}
+
+auto right_draw_script(nuklear_event_harness_t& harness, float x, float y,
+                       float end_x, float end_y) -> std::vector<workspace_action_snapshot_t> {
+    const auto press = draw_right_event(true, x, y);
+    const auto motion = motion_event(end_x, end_y);
+    const auto release = draw_right_event(false, end_x, end_y);
+    std::array<event_step_t, 3> steps{};
+    steps[0].events = {motion_event(x, y), press};
+    steps[1].events = {motion};
+    steps[2].events = {motion_event(end_x, end_y), release};
+    return harness.run_script(steps);
+}
+
+void expect_draw(bool condition, std::source_location source = std::source_location::current()) {
+    INFO("Assertion caller line " << source.line());
+    CHECK(condition);
+}
+
+} // namespace
+
+TEST_CASE("Sound dock row sets the Draw source without activating a brush",
+          "[frontend-state][event-harness][draw]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    const std::array<WormUiComposeKeysoundRowView, 1> rows{{
+        {.resource_id = 1400, .slot = "01", .name = "kick.wav"}}};
+    view.keysounds = rows.data();
+    view.keysound_count = view.keysound_total_count = rows.size();
+    view.keysounds_available = true;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.sounds_panel_visible = true;
+    (void)harness.frame();
+    const auto row = harness.drawn_text_center("kick.wav");
+    REQUIRE(row.has_value());
+    const auto selected = click_at(harness, row->first, row->second);
+    expect_draw(has_draw_source_payload(selected, 1, 1400));
+    expect_draw(state.draw_source_kind == 1 && state.draw_source_id == 1400);
+    expect_draw(!view.note_paint_mode_active);
+    expect_draw(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+}
+
+TEST_CASE("BGA dock row carries its source payload without enabling resource placement",
+          "[frontend-state][event-harness][draw][bga]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    const std::array<std::uint64_t, 1> ids{1400};
+    const std::array<WormUiComposeBgaRowView, 1> rows{{
+        {.resource_id = 1400, .slot = "01", .name = "clip.png"}}};
+    view.bga_rows = rows.data();
+    view.bga_row_count = view.bga_total_matching = rows.size();
+    view.bga_matching_ids = ids.data();
+    view.bga_search = "";
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.bga_panel_visible = true;
+    (void)harness.frame();
+    REQUIRE(state.bga_list_valid);
+    const auto selected = click_at(harness, state.bga_list_x + 70, state.bga_list_y + 112);
+    expect_draw(has_draw_source_payload(selected, 2, 1400));
+    expect_draw(!view.note_paint_mode_active);
+    expect_draw(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+}
+
+TEST_CASE("Selecting the silent source emits a source payload and keeps Draw active",
+          "[frontend-state][event-harness][draw]") {
+    nuklear_event_harness_t harness;
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    view.note_paint_mode_active = true;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.draw_source_kind = 1;
+    state.draw_source_id = 40;
+    WormUiWorkspaceAction picked{};
+    worm_ui_nuklear_pick_draw_source(state, picked, 0, 0);
+    expect_draw(picked.compose_input_count == 1);
+    expect_draw(picked.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_DRAW_SOURCE);
+    expect_draw(picked.compose_inputs[0].resource_role == 0 &&
+                picked.compose_inputs[0].resource_id == 0);
+    const auto click = click_at(harness, 300, 400);
+    expect_draw(has_draw_input(click, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 1));
+    const auto* begin = find_compose_input(click, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN);
+    expect_draw(begin && begin->resource_id == 0);
+    expect_draw(view.note_paint_mode_active);
+}
+
+TEST_CASE("Draw opens the note menu on right click but erases only after right drag",
+          "[frontend-state][event-harness][draw]") {
+    {
+    note_menu_fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    view.note_paint_mode_active = true;
+    (void)fixture.harness.frame();
+    const auto click = right_click_at(fixture.harness, 300, 300);
+    expect_draw(click.size() == 2);
+    expect_draw(click[0].get().compose_action != WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+    expect_draw(click[1].get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+    expect_draw(find_compose_input(click, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) == nullptr);
+    expect_draw(compose_note_menu_open());
+
+    }
+    note_menu_fixture_t dragged_fixture;
+    auto& dragged_view = dragged_fixture.harness.view().compose;
+    dragged_view.note_paint_mode_active = true;
+    dragged_view.viewport_width_pixels = 1600.5;
+    dragged_view.viewport_height_pixels = 1100.25;
+    (void)dragged_fixture.harness.frame();
+    const auto drag = right_draw_script(dragged_fixture.harness, 300, 300, 304, 340);
+    expect_draw(has_draw_input(drag, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 2));
+    expect_draw(has_draw_input(drag, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE, 2));
+    expect_draw(has_draw_input(drag, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 2));
+    expect_draw(!compose_note_menu_open());
+}
+
+TEST_CASE("Right drag threshold uses screen pixels with fractional scene dimensions",
+          "[frontend-state][event-harness][draw]") {
+    note_menu_fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    view.note_paint_mode_active = true;
+    view.viewport_width_pixels = 1600.5;
+    view.viewport_height_pixels = 1100.25;
+    (void)fixture.harness.frame();
+    const auto press = draw_right_event(true, 300, 300);
+    (void)fixture.harness.frame(std::span{&press, 1});
+    const auto small_motion = motion_event(302.5f, 300);
+    const auto under_threshold = fixture.harness.frame(std::span{&small_motion, 1});
+    expect_draw(find_compose_input(std::vector<workspace_action_snapshot_t>{under_threshold},
+                                   WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) == nullptr);
+    const auto release = draw_right_event(false, 302.5f, 300);
+    const auto clicked = fixture.harness.frame(std::span{&release, 1});
+    expect_draw(clicked.get().compose_action == WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+}
+
+TEST_CASE("Draw rejects Timing focus and cancels a stroke on focus, tab, or occlusion changes",
+          "[frontend-state][event-harness][draw]") {
+    {
+    nuklear_event_harness_t timing{1280, 900};
+    REQUIRE(timing.ready());
+    timing.view().compose.timing_focus = true;
+    (void)timing.frame();
+    hover_at(timing, 136, 120);
+    INFO(timing.drawn_text());
+    expect_draw(timing.drawn_text().find("Draw unavailable:") != std::string::npos);
+    const auto timed_click = click_at(timing, 300, 400);
+    expect_draw(find_compose_input(timed_click, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) == nullptr);
+
+    }
+    const auto cancel_capture = [](int transition) {
+        INFO("Transition " << transition);
+        nuklear_event_harness_t harness;
+        REQUIRE(harness.ready());
+        auto& workspace = harness.view();
+        workspace.compose.note_paint_mode_active = true;
+        (void)harness.frame();
+        const auto down = button_event(true, 300, 400);
+        const auto started = harness.frame(std::span{&down, 1});
+        expect_draw(has_draw_input(std::vector<workspace_action_snapshot_t>{started},
+                                   WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 1));
+        if (transition == 0) {
+            SDL_Event lost{};
+            lost.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+            lost.window.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+            (void)harness.frame(std::span{&lost, 1});
+        } else if (transition == 1) {
+            workspace.active_tab = WORM_UI_WORKSPACE_TAB_METADATA;
+            workspace.compose.visible = false;
+            workspace.metadata.visible = true;
+            (void)harness.frame();
+        } else {
+            workspace.compose.input_occluded = true;
+            (void)harness.frame();
+        }
+        expect_draw(!worm_ui_nuklear_compose_state().note_paint_pointer_active);
+        expect_draw(!worm_ui_nuklear_compose_state().draw_erase_pointer_active);
+        const auto up = button_event(false, 300, 400);
+        const auto finished = harness.frame(std::span{&up, 1});
+        expect_draw(find_compose_input(std::vector<workspace_action_snapshot_t>{finished},
+                                       WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) == nullptr);
+    };
+    for (int transition = 0; transition != 3; ++transition) cancel_capture(transition);
+}
+
+TEST_CASE("Batched right press motion and release erases from the original press without opening a menu",
+          "[frontend-state][event-harness][draw]") {
+    note_menu_fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    view.note_paint_mode_active = true;
+    view.viewport_width_pixels = 1600.5;
+    view.viewport_height_pixels = 1100.25;
+    (void)fixture.harness.frame();
+    const std::array events{draw_right_event(true, 300, 300), motion_event(304, 340),
+        draw_right_event(false, 304, 340)};
+    const auto frame = fixture.harness.frame(events);
+    const auto& action = frame.get();
+    const std::vector frames{frame};
+    expect_draw(action.compose_action != WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU);
+    expect_draw(has_draw_input(frames,
+        WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 2));
+    expect_draw(has_draw_input(frames,
+        WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 2));
+    const auto* begin = find_compose_input(frames,
+        WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN);
+    REQUIRE(begin);
+    const auto begin_y = begin->y_pixels;
+    const auto release = std::ranges::find(std::span(action.compose_inputs, action.compose_input_count),
+        WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, &WormUiComposeInputAction::kind);
+    REQUIRE(release != std::span(action.compose_inputs, action.compose_input_count).end());
+    expect_draw(begin_y < release->y_pixels);
+    expect_draw(!compose_note_menu_open());
+}
+
+namespace {
+
+auto route_harness_shortcut(const WormUiWorkspaceAction& action,
+                            const wormedit::command_registry_t& registry)
+    -> wormedit::command_dispatch_result_t {
+    if (action.shortcut_event_count != 1) {
+        return {};
+    }
+    const auto& source = action.shortcut_events[0];
+    auto focus = wormedit::command_focus_t{
+        .text_entry_active = action.shortcut_text_entry_active,
+        .ime_composition_active = action.shortcut_ime_composition_active,
+        .workspace_active = action.shortcut_window_focused,
+        .active_tab = wormedit::workspace_tab_t::compose,
+        .visible_tabs = {wormedit::workspace_tab_t::compose},
+    };
+    return wormedit::dispatch_shortcut(
+        registry,
+        {.chord = {.key = static_cast<wormedit::shortcut_key_t>(source.hid_usage),
+                   .modifiers = source.modifiers},
+         .auto_repeat = source.repeat},
+        focus, wormedit::shortcut_primary_modifier_t::control);
+}
+
+auto harness_tool_chord(const WormUiWorkspaceAction& action, SDL_Scancode scancode) -> bool {
+    return action.shortcut_event_count == 1 &&
+           action.shortcut_events[0].hid_usage == static_cast<std::uint16_t>(scancode) &&
+           action.shortcut_events[0].modifiers == WORM_UI_SHORTCUT_MODIFIER_ALT &&
+           !action.shortcut_events[0].repeat && action.shortcut_window_focused &&
+           !action.shortcut_text_entry_active && !action.shortcut_ime_composition_active;
+}
+
+auto tool_route_matches(const WormUiWorkspaceAction& action, SDL_Scancode scancode,
+                        std::string_view expected,
+                        const wormedit::command_registry_t& registry) -> bool {
+    const auto dispatched = route_harness_shortcut(action, registry);
+    return harness_tool_chord(action, scancode) &&
+           dispatched.status == wormedit::command_dispatch_status_t::invoked &&
+           dispatched.command == wormedit::command_id_t{std::string(expected)} &&
+           action.compose_action == WORM_UI_COMPOSE_ACTION_NONE &&
+           action.compose_input_count == 0;
+}
+
+} // namespace
+
+TEST_CASE("Compose Alt tool shortcuts route through the ready command registry",
+          "[frontend-state][event-harness][command-registry][tools]") {
+    auto registry = wormedit::make_default_editor_command_registry(
+        [](const wormedit::command_invocation_context_t&) {
+            return wormedit::command_invocation_result_t{.accepted = true};
+        });
+    nuklear_event_harness_t harness;
+    REQUIRE(harness.ready());
+    (void)harness.frame();
+
+    constexpr std::array routes{
+        std::tuple{SDL_SCANCODE_1, SDLK_1, "edit.tool_select"},
+        std::tuple{SDL_SCANCODE_2, SDLK_2, "edit.tool_draw"},
+        std::tuple{SDL_SCANCODE_3, SDLK_3, "edit.tool_layer"},
+    };
+    for (const auto& [scan, key, expected] : routes) {
+        const auto press = key_event(SDL_EVENT_KEY_DOWN, key, scan);
+        const auto action = harness.frame(std::span{&press, 1}, SDL_KMOD_LALT);
+        expect_draw(tool_route_matches(action.get(), scan, expected, registry));
+    }
+}
+
+TEST_CASE("Unavailable Draw tool readiness rejects the routed shortcut",
+          "[frontend-state][event-harness][command-registry][tools]") {
+    auto registry = wormedit::make_default_editor_command_registry(
+        [](const wormedit::command_invocation_context_t&) {
+            return wormedit::command_invocation_result_t{.accepted = true};
+        });
+    REQUIRE(wormedit::update_command_state(registry, {"edit.tool_draw"}, false,
+                                            std::nullopt).applied);
+    nuklear_event_harness_t harness;
+    REQUIRE(harness.ready());
+    (void)harness.frame();
+    const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
+    const auto action = harness.frame(std::span{&press, 1}, SDL_KMOD_LALT);
+    const auto dispatched = route_harness_shortcut(action.get(), registry);
+    expect_draw(harness_tool_chord(action.get(), SDL_SCANCODE_2) &&
+          dispatched.status == wormedit::command_dispatch_status_t::disabled &&
+          dispatched.command == wormedit::command_id_t{"edit.tool_draw"});
 }

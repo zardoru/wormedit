@@ -304,6 +304,12 @@ struct commit_editor_area_selection_action_t {
 
 struct cancel_editor_area_selection_action_t {};
 
+enum class note_paint_intent_t {
+    toggle,
+    draw,
+    erase,
+};
+
 struct begin_note_paint_gesture_action_t {
     lane_id_t lane;
     local_position_t position;
@@ -311,6 +317,7 @@ struct begin_note_paint_gesture_action_t {
     // Sample-role resource written into every new note of the stroke (with
     // its sound_layer_defaults). Empty paints silent notes.
     std::optional<resource_id_t> sound;
+    note_paint_intent_t intent{note_paint_intent_t::toggle};
 };
 
 struct update_note_paint_gesture_action_t {
@@ -530,6 +537,7 @@ struct pending_note_paint_gesture_t {
     lane_id_t last_lane;
     local_position_t last_position;
     std::optional<resource_id_t> sound;
+    note_paint_intent_t intent{note_paint_intent_t::toggle};
 };
 
 struct note_paint_gesture_preview_t {
@@ -901,6 +909,11 @@ inline auto editor_cursor_screen_y_pixels(const editor_interaction_view_model_t&
 [[nodiscard]] auto editor_position_at_y_pixels(const chart_document_t& chart,
                                                const editor_interaction_view_model_t& view,
                                                double y_pixels) -> std::optional<local_position_t>;
+
+// The caller binds and retains this validated index to the current chart source.
+[[nodiscard]] auto editor_position_at_y_pixels(const chart_document_t& chart,
+    const measure_index_t& index, const editor_interaction_view_model_t& view,
+    double y_pixels) -> std::optional<local_position_t>;
 
 enum class editor_hit_target_kind_t {
     lane,

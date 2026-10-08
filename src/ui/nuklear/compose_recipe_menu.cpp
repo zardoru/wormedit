@@ -4,6 +4,7 @@
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/context_menu.h"
 #include "wormedit/nuklear_config.h"
+#include "ui/nuklear/compose_state.h"
 
 #include <algorithm>
 
@@ -104,7 +105,7 @@ void process_compose_recipe_menu(nk_context* context, const WormUiComposeView& v
         return;
     }
     const auto& mouse = context->input.mouse;
-    if (nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) && mouse.pos.x < input_right) {
+    if (worm_ui_nuklear_compose_context_click(context, view) && mouse.pos.x < input_right) {
         if (const auto* area = area_at(view, viewport, mouse.pos.x, mouse.pos.y)) {
             chrome::context_menu_open(menu, mouse.pos,
                                       {view.project_id, view.chart_id, view.document_revision,

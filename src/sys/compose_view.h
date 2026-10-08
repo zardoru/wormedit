@@ -19,6 +19,7 @@
 #include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/tap_timing_apply.h>
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/chart_clipboard.h>
 #include <wormedit/core/player_preview.h>
 #include <wormedit/core/sound_slice.h>
@@ -41,6 +42,7 @@
 #include <limits>
 #include <optional>
 #include <span>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -392,6 +394,19 @@ struct application_command_state_t {
     // Catalog sound the Compose keysound listbox asked to audition; consumed by
     // process_sound_audition_request once per frame.
     std::optional<wormedit::resource_id_t> pending_sound_audition;
+    struct bga_draw_stroke_t {
+        wormedit::chart_id_t chart;
+        uint64_t revision{};
+        std::optional<wormedit::resource_id_t> resource;
+        bool erase{};
+        uint64_t last_row{};
+        wormedit::measure_index_t geometry;
+        std::vector<wormedit::bga_stroke_target_t> targets;
+        std::set<std::pair<uint64_t, uint8_t>> visited;
+    };
+    std::optional<bga_draw_stroke_t> bga_draw_stroke;
+    uint8_t draw_source_kind{};
+    uint64_t draw_source_id{};
     bool note_paint_mode_active{};
     bool semantic_layer_paint_mode_active{};
     bool semantic_layer_solo_active{};

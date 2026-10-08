@@ -8,6 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <ranges>
 #include <span>
@@ -1834,4 +1835,132 @@ TEST_CASE("sound layer overwrite rejects locked note memberships atomically",
          .overwrite_note_layers = true}));
     CHECK(write_native_project(history.document).bytes == original);
     CHECK(history.undo.empty());
+}
+
+namespace {
+void check_bga_stroke(bool condition) { CHECK(condition); }
+void require_bga_stroke(bool condition) { REQUIRE(condition); }
+
+auto same_bga_events(std::span<const bga_event_t> left,
+                     std::span<const bga_event_t> right) -> bool {
+    if (left.size() != right.size()) return false;
+    for (std::size_t index = 0; index < left.size(); ++index)
+        if (left[index].id != right[index].id || left[index].position != right[index].position ||
+            left[index].resource != right[index].resource || left[index].kind != right[index].kind)
+            return false;
+    return true;
+}
+}
+
+TEST_CASE("BGA draw stroke preserves occupied cells and commits deduplicated targets once",
+          "[unit][core][resources][bga][stroke]") {
+    auto history = make_document_history(assignment_song());
+    const std::array targets{
+        bga_stroke_target_t{{measure_id_t{3}, 360}, visual_event_kind_t::background},
+        bga_stroke_target_t{{measure_id_t{3}, 240}, visual_event_kind_t::layer},
+        bga_stroke_target_t{{measure_id_t{3}, 240}, visual_event_kind_t::layer},
+        bga_stroke_target_t{{measure_id_t{3}, 480}, visual_event_kind_t::layer2},
+    };
+    const auto applied = apply_bga_stroke(history, history.document.revision, chart_id_t{2},
+                                          resource_id_t{3}, targets);
+    require_bga_stroke(static_cast<bool>(applied));
+    check_bga_stroke(history.document.charts.front().bga_events.size() == 3);
+    const auto& events = history.document.charts.front().bga_events;
+    check_bga_stroke(events.front().id == object_id_t{12} &&
+                     events.front().resource == resource_id_t{3} &&
+                     events.front().kind == visual_event_kind_t::background);
+    check_bga_stroke(events[1].position.row == 240 &&
+                     events[1].kind == visual_event_kind_t::layer);
+    check_bga_stroke(events[2].position.row == 480 &&
+                     events[2].kind == visual_event_kind_t::layer2);
+    check_bga_stroke(history.undo.size() == 1);
+    require_bga_stroke(undo_document_command(history));
+    check_bga_stroke(history.document.charts.front().bga_events.size() == 1);
+    check_bga_stroke(history.document.charts.front().bga_events.front().id == object_id_t{12});
+}
+
+TEST_CASE("BGA erase stroke removes video base lane without touching other layers",
+          "[unit][core][resources][bga][stroke]") {
+    auto song = assignment_song();
+    song.visual_assets.front().kind = asset_kind_t::video;
+    auto& events = song.charts.front().bga_events;
+    events.front().kind = visual_event_kind_t::video;
+    events.push_back({.id = object_id_t{13}, .position = {measure_id_t{3}, 360},
+                      .resource = resource_id_t{4}, .kind = visual_event_kind_t::layer});
+    events.push_back({.id = object_id_t{14}, .position = {measure_id_t{3}, 480},
+                      .resource = resource_id_t{3}, .kind = visual_event_kind_t::video});
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    const std::array targets{
+        bga_stroke_target_t{{measure_id_t{3}, 360}, visual_event_kind_t::background},
+    };
+    const auto erased = apply_bga_stroke(history, history.document.revision, chart_id_t{2},
+                                         std::nullopt, targets, true);
+    require_bga_stroke(static_cast<bool>(erased));
+    const auto& after = history.document.charts.front().bga_events;
+    check_bga_stroke(after.size() == 2);
+    check_bga_stroke(std::ranges::any_of(after, [](const auto& event) {
+        return event.id == object_id_t{13} && event.kind == visual_event_kind_t::layer;
+    }));
+    check_bga_stroke(std::ranges::any_of(after, [](const auto& event) {
+        return event.id == object_id_t{14} && event.position.row == 480;
+    }));
+    check_bga_stroke(history.undo.size() == 1);
+    require_bga_stroke(undo_document_command(history));
+    check_bga_stroke(history.document.charts.front().bga_events.size() == 3);
+}
+
+TEST_CASE("BGA draw on an occupied cell and erase on an empty cell are no-ops",
+          "[unit][core][resources][bga][stroke]") {
+    auto history = make_document_history(assignment_song());
+    const auto revision = history.document.revision;
+    const std::array occupied{
+        bga_stroke_target_t{{measure_id_t{3}, 360}, visual_event_kind_t::background}};
+    const auto draw = apply_bga_stroke(history, revision, chart_id_t{2}, resource_id_t{3}, occupied);
+    check_bga_stroke(!draw.applied && draw.diagnostics.empty());
+    const std::array empty{
+        bga_stroke_target_t{{measure_id_t{3}, 600}, visual_event_kind_t::layer2}};
+    const auto erase = apply_bga_stroke(history, revision, chart_id_t{2}, std::nullopt, empty, true);
+    check_bga_stroke(!erase.applied && erase.diagnostics.empty());
+    check_bga_stroke(history.document.revision == revision && history.undo.empty());
+    check_bga_stroke(history.document.charts.front().bga_events.front().id == object_id_t{12});
+}
+
+TEST_CASE("BGA strokes reject stale invalid video and over-cap batches atomically",
+          "[unit][core][resources][bga][stroke]") {
+    auto history = make_document_history(assignment_song());
+    const auto original = history.document.charts.front().bga_events;
+    const auto revision = history.document.revision;
+    const std::array valid_target{
+        bga_stroke_target_t{{measure_id_t{3}, 600}, visual_event_kind_t::layer},
+    };
+    check_bga_stroke(has_code(apply_bga_stroke(history, revision, chart_id_t{2},
+        resource_id_t{99}, valid_target), diagnostic_code_t::invalid_id));
+    check_bga_stroke(apply_bga_stroke(history, revision, chart_id_t{2}, resource_id_t{3},
+        std::span<const bga_stroke_target_t>{}).diagnostics.empty());
+    check_bga_stroke(has_code(apply_bga_stroke(history, revision + 1, chart_id_t{2},
+        resource_id_t{3}, valid_target), diagnostic_code_t::invalid_id));
+    auto video_song = assignment_song();
+    video_song.visual_assets.front().kind = asset_kind_t::video;
+    auto video_history = make_document_history(std::move(video_song));
+    const auto video_layer = std::array{
+        bga_stroke_target_t{{measure_id_t{3}, 600}, visual_event_kind_t::layer}};
+    check_bga_stroke(has_code(apply_bga_stroke(video_history, video_history.document.revision,
+        chart_id_t{2}, resource_id_t{3}, video_layer),
+        diagnostic_code_t::unsupported_feature));
+    const auto storyboard = std::array{
+        bga_stroke_target_t{{measure_id_t{3}, 600}, visual_event_kind_t::storyboard}};
+    check_bga_stroke(has_code(apply_bga_stroke(history, revision, chart_id_t{2},
+        resource_id_t{3}, storyboard), diagnostic_code_t::unsupported_feature));
+    const std::array invalid_row{
+        bga_stroke_target_t{{measure_id_t{999}, 0}, visual_event_kind_t::background}};
+    check_bga_stroke(has_code(apply_bga_stroke(history, revision, chart_id_t{2},
+        resource_id_t{3}, invalid_row), diagnostic_code_t::row_out_of_range));
+    std::vector<bga_stroke_target_t> capped(50'001,
+        bga_stroke_target_t{{measure_id_t{3}, 600}, visual_event_kind_t::background});
+    check_bga_stroke(has_code(apply_bga_stroke(history, revision, chart_id_t{2},
+        std::nullopt, capped, true), diagnostic_code_t::invalid_resolution));
+    check_bga_stroke(history.document.revision == revision && history.undo.empty());
+    check_bga_stroke(same_bga_events(history.document.charts.front().bga_events, original));
+    check_bga_stroke(video_history.document.revision == revision && video_history.undo.empty());
 }

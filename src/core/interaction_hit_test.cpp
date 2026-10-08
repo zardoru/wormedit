@@ -559,6 +559,11 @@ auto editor_position_at_y_pixels(const chart_document_t& chart,
     return position_at_row_y_pixels(chart, std::get<measure_index_t>(built_index), view, y_pixels);
 }
 
+auto editor_position_at_y_pixels(const chart_document_t& chart, const measure_index_t& index,
+    const editor_interaction_view_model_t& view, double y_pixels) -> std::optional<local_position_t> {
+    return position_at_row_y_pixels(chart, index, view, y_pixels);
+}
+
 auto build_editor_hit_test_index(const chart_document_t& chart, std::uint64_t document_revision)
     -> std::variant<editor_hit_test_index_t, diagnostic_list_t> {
     const auto built_index = build_measure_index(chart);

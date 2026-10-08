@@ -503,19 +503,6 @@ void sync_selected_slot_to_armed_resource(const SoundsPanel& panel) {
 
 // ---- Toolbar ----
 
-// Paint is the note-paint tool: the palette picks the kind, this dock the sound.
-auto paint_allowed(const SoundsPanel& panel) -> bool {
-    const auto& view = *panel.view;
-    return view.scene_available && !view.timing_stage_active && !view.timing_focus;
-}
-
-void toggle_paint(const SoundsPanel& panel) {
-    auto& state = *panel.state;
-    state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
-    state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
-    (void)raise(panel, WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE);
-}
-
 template <typename Button>
 auto toolbar_button(nk_context* context, bool enabled, const Button& button) -> bool;
 
@@ -619,7 +606,6 @@ void render_toolbar(const SoundsPanel& panel) {
     auto& state = *panel.state;
     const auto has_primary = state.keysound_selection.primary != 0;
     const auto has_selection = !state.keysound_selection.selected.empty();
-    const auto painting = panel.view->note_paint_mode_active;
     const auto spacing = context->style.window.spacing;
     const auto pushed = nk_style_push_vec2(context, &context->style.window.spacing,
                                            nk_vec2(2.0f, spacing.y)) != 0;
@@ -627,15 +613,8 @@ void render_toolbar(const SoundsPanel& panel) {
     IconButton::layout_columns(context, panel.view->keysound_ids_available ? 11 : 9, 27.0f);
     nk_layout_row_template_end(context);
 
-    const auto can_paint = paint_allowed(panel);
-    if (toolbar_button(context, can_paint || painting,
-            IconButton{Glyph::paintbrush,
-                       can_paint || painting
-                           ? "Paint: click the chart to place notes of the palette's kind "
-                             "with the selected sound"
-                           : "Paint is unavailable here",
-                       painting}))
-        toggle_paint(panel);
+    if (IconButton{Glyph::minus, "Current source: silent note", state.draw_source_kind == 0}.render(context))
+        worm_ui_nuklear_pick_draw_source(state, *panel.action, 0, 0);
     if (IconButton{Glyph::chevron_right, "Advance after place: arm the next available sound shown",
                    state.auto_increment_on_place}.render(context)) {
         state.auto_increment_on_place = !state.auto_increment_on_place;
@@ -900,9 +879,11 @@ void render_sound_slot_row(const SoundsPanel& panel, std::size_t index) {
         state.armed_from_sounds_dock = true;
         state.armed_from_bga_dock = false;
         state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
+        worm_ui_nuklear_pick_draw_source(state, *panel.action, 1, slot.resource_id);
         if (state.sounds_preview_on_click && raise(panel, WORM_UI_COMPOSE_ACTION_AUDITION_SOUND))
             panel.action->compose_resource_id = slot.resource_id;
     } else {
+        worm_ui_nuklear_pick_draw_source(state, *panel.action, 0, 0);
         state.armed_resource_id = 0;
         state.armed_from_sounds_dock = false;
         state.armed_from_bga_dock = false;
@@ -1359,6 +1340,7 @@ void click_row(const SoundsPanel& panel, std::size_t shown_index, std::uint64_t 
     state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
     state.armed_from_sounds_dock = true;
     state.armed_from_bga_dock = false;
+    worm_ui_nuklear_pick_draw_source(state, *panel.action, 1, state.keysound_selection.primary);
     if (state.sounds_preview_on_click && !ctrl && !shift && id == state.armed_resource_id &&
         raise(panel, WORM_UI_COMPOSE_ACTION_AUDITION_SOUND))
         panel.action->compose_resource_id = id;

@@ -1040,3 +1040,45 @@ TEST_CASE("batched stem body press followed by edge motion does not begin resizi
     const auto up = mouse_button(false, to.first, to.second);
     (void)f.harness.frame(std::span{&up, 1});
 }
+
+TEST_CASE("Draw BGA source emits one stroke with the destination kind and no resource pointer placement",
+          "[frontend-state][event-harness][bga][draw]") {
+    nuklear_event_harness_t harness;
+    REQUIRE(harness.ready());
+    hide_compose_docks();
+    auto& view = harness.view().compose;
+    view.viewport_width_pixels = 900;
+    view.viewport_height_pixels = 600;
+    view.playable_field_left_pixels = 138;
+    view.playable_field_right_pixels = 600;
+    view.bga_lane_visible = true;
+    view.bga_lane_bounds = {42, 0, 138, 600};
+    view.bga_lane_count = 2;
+    view.bga_lane_kinds[0] = 0;
+    view.bga_lane_kinds[1] = 5;
+    view.bga_lane_rects[0] = {42, 0, 90, 600};
+    view.bga_lane_rects[1] = {90, 0, 138, 600};
+    view.note_paint_mode_active = true;
+    auto& state = worm_ui_nuklear_compose_state();
+    (void)harness.frame();
+    state.draw_source_kind = 2;
+    state.draw_source_id = 91;
+    (void)harness.frame();
+    const auto center = rect_center(harness, view.bga_lane_rects[1]);
+    const auto frames = click(harness, center.first, center.second);
+    size_t begins{}, releases{};
+    for (const auto& frame : frames) {
+        for (size_t i = 0; i < frame.get().compose_input_count; ++i) {
+            const auto& input = frame.get().compose_inputs[i];
+            if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) {
+                ++begins;
+                check_bga(input.resource_id == 91 && input.paint_intent == 1);
+                check_bga(input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGA);
+                check_bga(input.bga_lane_kind == 5 && input.bga_lane_kind_valid);
+            }
+            releases += input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE;
+            check_bga(input.kind != WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE);
+        }
+    }
+    check_bga(begins == 1 && releases == 1);
+}

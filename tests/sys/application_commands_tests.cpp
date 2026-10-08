@@ -1235,6 +1235,10 @@ void check_note_kind_command_shortcut(const wormedit::command_registry_t& regist
     const auto registration = std::ranges::find_if(registry.commands,
         [&](const auto& entry) { return entry.id.value == id; });
     REQUIRE(registration != registry.commands.end());
+    if (index < 2) {
+        CHECK(registration->default_shortcuts.empty());
+        return;
+    }
     REQUIRE(registration->default_shortcuts.size() == 1);
     CHECK(registration->default_shortcuts.front().key ==
         static_cast<shortcut_key_t>(static_cast<unsigned>(shortcut_key_t::digit_2) + index));
@@ -1886,4 +1890,38 @@ TEST_CASE("Toolbar stop is transient while genuine audio failure remains durable
     check_transient_transport(center.unread_counts().warnings == 1);
 }
 
+#endif
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Draw and Layer shortcuts select tools without changing the armed note kind or history",
+          "[sys][application_commands][draw]") {
+    TimingInsertFixture fixture;
+    const auto revision = fixture.fixture.history.document.revision;
+    fixture.compose_state->armed_note_kind = wormedit::note_kind_t::hold;
+    require_transient_transport(fixture.invoke(application_command_kind_t::edit_tool_draw).accepted);
+    check_transient_transport(fixture.application_state.note_paint_mode_active);
+    check_transient_transport(!fixture.application_state.semantic_layer_paint_mode_active);
+    require_transient_transport(fixture.invoke(application_command_kind_t::edit_tool_layer).accepted);
+    check_transient_transport(!fixture.application_state.note_paint_mode_active);
+    check_transient_transport(fixture.application_state.semantic_layer_paint_mode_active);
+    require_transient_transport(fixture.invoke(application_command_kind_t::edit_tool_select).accepted);
+    check_transient_transport(!fixture.application_state.semantic_layer_paint_mode_active);
+    check_transient_transport(fixture.compose_state->armed_note_kind == wormedit::note_kind_t::hold);
+    check_transient_transport(fixture.fixture.history.document.revision == revision);
+    check_transient_transport(fixture.fixture.history.undo.empty());
+}
+
+TEST_CASE("Draw shortcut rejects a retained interaction without editable chart geometry",
+          "[sys][application_commands][draw]") {
+    TimingInsertFixture fixture;
+    auto& history = fixture.fixture.history;
+    history.document.charts.front().lane_layouts.clear();
+    const auto revision = history.document.revision;
+    check_transient_transport(!fixture.invoke(application_command_kind_t::edit_tool_draw).accepted);
+    check_transient_transport(!fixture.application_state.note_paint_mode_active);
+    check_transient_transport(history.document.revision == revision);
+    check_transient_transport(history.undo.empty());
+    check_transient_transport(fixture.latest_message() ==
+                             "Draw and Layer require editable chart geometry.");
+}
 #endif

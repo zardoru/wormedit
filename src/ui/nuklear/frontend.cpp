@@ -1293,10 +1293,40 @@ static bool queue_compose_pinch_event(const SDL_Event& event) {
 #endif
 }
 
+static void track_compose_draw_pointer(const SDL_Event& event) {
+    auto& state = worm_ui_nuklear_compose_state();
+    if (!g_window_focused || (!g_window && !g_headless)) return;
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        if (event.button.button != SDL_BUTTON_RIGHT ||
+            !frontend_event_window_matches(event.button.windowID, true) ||
+            !std::isfinite(event.button.x) || !std::isfinite(event.button.y)) return;
+        state.draw_right_native_down = event.button.down;
+        state.draw_right_current_screen_x = event.button.x;
+        state.draw_right_current_screen_y = event.button.y;
+        if (event.button.down) {
+            state.draw_right_press_pending = true;
+            state.draw_right_release_pending = false;
+            state.draw_right_dragged = false;
+            state.draw_right_screen_x = event.button.x;
+            state.draw_right_screen_y = event.button.y;
+        } else {
+            state.draw_right_release_pending = true;
+        }
+    } else if (event.type == SDL_EVENT_MOUSE_MOTION && state.draw_right_native_down &&
+        frontend_event_window_matches(event.motion.windowID, true)) {
+        state.draw_right_current_screen_x = event.motion.x;
+        state.draw_right_current_screen_y = event.motion.y;
+        state.draw_right_dragged = state.draw_right_dragged ||
+            std::hypot(event.motion.x - state.draw_right_screen_x,
+                       event.motion.y - state.draw_right_screen_y) >= 3.0;
+    }
+}
+
 static bool handle_workspace_frontend_event(const SDL_Event* event) {
     if (!g_context || !event) {
         return false;
     }
+    track_compose_draw_pointer(*event);
     if (queue_compose_pinch_event(*event)) return true;
     if (event->type == SDL_EVENT_WINDOW_FOCUS_LOST) {
         g_window_focused = false;

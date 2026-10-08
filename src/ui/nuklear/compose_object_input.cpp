@@ -488,11 +488,72 @@ auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& inpu
     return false;
 }
 
-void append_note_paint_begin(const ComposePointerEventContext& input) {
+static void emit_draw_stroke(const ComposePointerEventContext& input,
+    WormUiComposeInputKind kind, double x, double y, bool erase = false) {
     auto* action = input.action;
-    append_compose_input(action, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
-                         input.paint_anchor_x, input.paint_anchor_y);
-    worm_ui_nuklear_tag_last_compose_input_sound(state, *input.view, *action);
+    append_compose_input(action, kind, x, y);
+    if (!action->compose_input_count || state.action_overflowed) return;
+    auto& output = action->compose_inputs[action->compose_input_count - 1];
+    output.paint_intent = erase ? 2 : 1;
+    output.resource_id = erase ? 0 : state.draw_source_id;
+    if (state.draw_stroke_bga) {
+        output.resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGA;
+        output.bga_lane_kind = compose_bga_lane_kind_at(*input.view, x, y).value_or(255);
+        output.bga_lane_kind_valid = true;
+    } else if (!erase && state.draw_source_kind != 1) {
+        output.resource_id = 0;
+    }
+}
+
+void append_note_paint_begin(const ComposePointerEventContext& input) {
+    state.draw_stroke_bga = state.draw_source_kind == 2;
+    emit_draw_stroke(input, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
+        state.draw_stroke_bga ? input.pointer_started_x : input.paint_anchor_x,
+        input.paint_anchor_y);
+}
+
+bool process_draw_right_pointer(const ComposePointerEventContext& input) {
+    auto& mouse = input.context->input.mouse;
+    const auto& button = mouse.buttons[NK_BUTTON_RIGHT];
+    if (!input.view->note_paint_mode_active || !input.window_focused ||
+        input.view->input_occluded || input.view->timing_focus) {
+        if (state.draw_erase_pointer_active) append_compose_cancel_once(input.action);
+        state.draw_right_candidate = state.draw_erase_pointer_active = false;
+        state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
+        return false;
+    }
+    const auto started_inside = state.draw_right_screen_x >= input.viewport.x &&
+        state.draw_right_screen_x < input.editor_input_right && state.draw_right_screen_y >= input.viewport.y &&
+        state.draw_right_screen_y <= input.viewport.y + input.viewport.h;
+    if (state.draw_right_press_pending && !state.draw_right_candidate && started_inside) {
+        state.draw_right_candidate = true;
+        state.draw_right_anchor_x = (state.draw_right_screen_x - input.viewport.x) *
+            input.view->viewport_width_pixels / input.viewport.w;
+        state.draw_right_anchor_y = (state.draw_right_screen_y - input.viewport.y) *
+            input.view->viewport_height_pixels / input.viewport.h;
+    }
+    state.draw_right_press_pending = false;
+    if (!state.draw_right_candidate) { state.draw_right_release_pending = false; return false; }
+    const auto moved = state.draw_right_dragged ||
+        std::hypot(state.draw_right_current_screen_x - state.draw_right_screen_x,
+            state.draw_right_current_screen_y - state.draw_right_screen_y) >= 3.0;
+    if (moved && !state.draw_erase_pointer_active) {
+        state.draw_stroke_bga = compose_bga_lane_kind_at(*input.view,
+            state.draw_right_anchor_x, state.draw_right_anchor_y).has_value();
+        emit_draw_stroke(input, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
+            state.draw_right_anchor_x, state.draw_right_anchor_y, true);
+        state.draw_erase_pointer_active = state.draw_right_dragged = true;
+    }
+    if (state.draw_erase_pointer_active) {
+        emit_draw_stroke(input, button.down ? WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE :
+            WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, input.pointer_x, input.pointer_y, true);
+    }
+    const auto consumed = state.draw_erase_pointer_active;
+    if (!button.down) {
+        state.draw_right_candidate = state.draw_erase_pointer_active = false;
+        state.draw_right_release_pending = false;
+    }
+    return consumed;
 }
 
 // Hold and Roll need an explicit end, so their press goes to the click-click hold gesture and
@@ -502,42 +563,65 @@ static auto armed_kind_uses_hold_gesture(const WormUiComposeView& view) -> bool 
            view.armed_note_kind == static_cast<uint32_t>(wormedit::note_kind_t::roll);
 }
 
-void process_note_paint_pointer(const ComposePointerEventContext& input,
-                                       bool& paint_pointer_consumed) {
-    if (input.view->paste_active) { paint_pointer_consumed = true; return; }
-    if (compose_area_pointer_consumed()) return;
+static void update_draw_left_pointer(const ComposePointerEventContext& input) {
     const auto& view = *input.view;
     auto* action = input.action;
-    if (!state.action_overflowed && state.note_paint_pointer_active) {
-        if (!input.window_focused || !view.scene_available || !view.note_paint_mode_active ||
-            input.shortcut_event_count != 0 ||
-            (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
-            (!input.left_down && !input.left_released)) {
-            append_compose_cancel_once(action);
-            state.note_paint_pointer_active = false;
-        } else if (input.left_released) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE,
-                                 input.paint_pointer_x, input.paint_pointer_y);
-            state.note_paint_pointer_active = false;
-        } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input)) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE,
-                                 input.paint_pointer_x, input.paint_pointer_y);
-        }
-        return;
+    if (!input.window_focused || !view.scene_available || !view.note_paint_mode_active ||
+        input.shortcut_event_count != 0 ||
+        (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
+        (!input.left_down && !input.left_released)) {
+        append_compose_cancel_once(action);
+        state.note_paint_pointer_active = false;
+    } else if (input.left_released) {
+        emit_draw_stroke(input, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE,
+            state.draw_stroke_bga ? input.pointer_x : input.paint_pointer_x, input.paint_pointer_y);
+        state.note_paint_pointer_active = false;
+    } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input)) {
+        emit_draw_stroke(input, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE,
+            state.draw_stroke_bga ? input.pointer_x : input.paint_pointer_x, input.paint_pointer_y);
     }
-    if (!state.action_overflowed && view.scene_available && view.note_paint_mode_active &&
-        !armed_kind_uses_hold_gesture(view) && input.pointer_started_in_note_field &&
-        input.window_focused &&
+}
+
+static bool draw_left_can_start(const ComposePointerEventContext& input) {
+    const auto& view = *input.view;
+    const auto bga = state.draw_source_kind == 2;
+    const auto target = bga ? compose_bga_lane_kind_at(view, input.pointer_started_x,
+        input.pointer_started_y).has_value() : input.pointer_started_in_note_field;
+    return !state.action_overflowed && view.scene_available && view.note_paint_mode_active &&
+        (bga || !armed_kind_uses_hold_gesture(view)) && target && input.window_focused &&
         input.shortcut_event_count == 0 &&
         (input.pointer_modifiers & input.any_pointer_modifier) == 0 &&
         !state.pointer_hold_active && !state.lane_hold_active && !state.area_selection_active &&
-        !state.area_selection_candidate_active) {
+        !state.area_selection_candidate_active;
+}
+
+void process_note_paint_pointer(const ComposePointerEventContext& input,
+                                       bool& paint_pointer_consumed) {
+    if (state.draw_left_cancelled_until_release) {
+        if (!input.left_down) state.draw_left_cancelled_until_release = false;
+        paint_pointer_consumed = true;
+        return;
+    }
+    if (input.view->paste_active) { paint_pointer_consumed = true; return; }
+    if (compose_area_pointer_consumed()) return;
+    const auto& view = *input.view;
+    if (state.draw_source_kind == 2 && view.note_paint_mode_active &&
+        input.pointer_started_in_note_field && !state.note_paint_pointer_active) {
+        paint_pointer_consumed = true;
+        return;
+    }
+
+    if (!state.action_overflowed && state.note_paint_pointer_active) {
+        update_draw_left_pointer(input);
+        return;
+    }
+    if (draw_left_can_start(input)) {
         append_note_paint_begin(input);
         paint_pointer_consumed = true;
         state.note_paint_pointer_active = !state.action_overflowed && input.left_down;
         if (!state.action_overflowed && !input.left_down)
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE,
-                                 input.paint_pointer_x, input.paint_pointer_y);
+            emit_draw_stroke(input, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE,
+                state.draw_stroke_bga ? input.pointer_x : input.paint_pointer_x, input.paint_pointer_y);
     }
 }
 

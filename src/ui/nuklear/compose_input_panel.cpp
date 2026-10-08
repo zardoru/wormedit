@@ -35,6 +35,11 @@
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_note_menu.h"
 
+static void clear_note_paint_capture() {
+    state.draw_left_cancelled_until_release |= state.note_paint_pointer_active;
+    state.note_paint_pointer_active = false;
+}
+
 void reset_bmson_marker_move_capture() {
     state.bmson_marker_move_candidate_active = false;
     state.bmson_marker_move_active = false;
@@ -115,7 +120,9 @@ void append_compose_input(
         action->compose_input_count = WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY;
         state.cancel_pending = false;
         state.pointer_hold_active = false;
-        state.note_paint_pointer_active = false;
+        clear_note_paint_capture();
+        state.draw_right_candidate = state.draw_erase_pointer_active = false;
+        state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
         state.bmson_razor_pointer_active = false;
         reset_bmson_marker_move_capture();
         state.semantic_layer_paint_pointer_active = false;
@@ -261,7 +268,9 @@ void queue_compose_wheel_input(double delta_x, double delta_y, double mouse_x,
         state.pinch = {};
         state.key_event_count = 0;
         state.pointer_hold_active = false;
-        state.note_paint_pointer_active = false;
+        clear_note_paint_capture();
+        state.draw_right_candidate = state.draw_erase_pointer_active = false;
+        state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
         state.bmson_razor_pointer_active = false;
         reset_bmson_marker_move_capture();
         state.semantic_layer_paint_pointer_active = false;
@@ -306,6 +315,8 @@ void queue_compose_middle_click_input(float x, float y) {
 }
 
 void compose_handle_focus_lost_input() {
+    state.draw_right_candidate = state.draw_erase_pointer_active = false;
+    state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
     state.alt_wheel_last_event_ms.reset();
     state.tab_navigation.cancel();
     state.raw_tab_down = false;
@@ -468,7 +479,9 @@ static void cancel_pending_compose_panel_actions(WormUiWorkspaceAction* action) 
     state.cancel_pending = false;
     state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
-    state.note_paint_pointer_active = false;
+    clear_note_paint_capture();
+    state.draw_right_candidate = state.draw_erase_pointer_active = false;
+    state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
     state.bmson_razor_pointer_active = false;
     reset_bmson_marker_move_capture();
     state.semantic_layer_paint_pointer_active = false;
@@ -495,12 +508,14 @@ static void reset_compose_revision_state(bool chart_changed, WormUiWorkspaceActi
         reset_waveform_offset_drag();
     }
     state.waveform_overview_drag_active = false;
-    if (state.note_paint_pointer_active || state.semantic_layer_paint_pointer_active ||
+    if (state.note_paint_pointer_active || state.draw_erase_pointer_active || state.semantic_layer_paint_pointer_active ||
         state.space_range_hold_active || state.note_move_active || state.bmson_marker_move_active ||
         state.bga_event_move_active)
         append_compose_cancel_once(action);
     state.pointer_hold_active = false;
-    state.note_paint_pointer_active = false;
+    clear_note_paint_capture();
+    state.draw_right_candidate = state.draw_erase_pointer_active = false;
+    state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
     state.bmson_razor_pointer_active = false;
     reset_bmson_marker_move_capture();
     state.semantic_layer_paint_pointer_active = false;
@@ -533,12 +548,14 @@ static void clear_inactive_compose_panel(WormUiWorkspaceAction* action) {
     state.wheel_event_count = 0;
     state.middle_click_pending = false;
     state.keyboard_focus = false;
-    if (state.pointer_hold_active || state.lane_hold_active || state.note_paint_pointer_active ||
+    if (state.pointer_hold_active || state.lane_hold_active || state.note_paint_pointer_active || state.draw_erase_pointer_active ||
         state.semantic_layer_paint_pointer_active || state.space_range_hold_active ||
         state.area_selection_active)
         append_compose_cancel_once(action);
     state.pointer_hold_active = false;
-    state.note_paint_pointer_active = false;
+    clear_note_paint_capture();
+    state.draw_right_candidate = state.draw_erase_pointer_active = false;
+    state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
     state.semantic_layer_paint_pointer_active = false;
     state.lane_hold_active = false;
     state.lane_hold_count = 0;
@@ -563,10 +580,13 @@ static void clear_inactive_compose_panel(WormUiWorkspaceAction* action) {
 static void cancel_disabled_compose_paint_modes(const WormUiComposeView* view,
                                                 bool window_focused,
                                                 WormUiWorkspaceAction* action) {
-    if (state.note_paint_pointer_active &&
-        (!window_focused || !view->scene_available || !view->note_paint_mode_active)) {
+    if ((state.note_paint_pointer_active || state.draw_erase_pointer_active) &&
+        (!window_focused || !view->scene_available || !view->note_paint_mode_active ||
+         view->input_occluded || view->timing_focus)) {
         append_compose_cancel_once(action);
-        state.note_paint_pointer_active = false;
+        clear_note_paint_capture();
+        state.draw_right_candidate = state.draw_erase_pointer_active = false;
+        state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
     }
     if (state.semantic_layer_paint_pointer_active &&
         (!window_focused || !view->scene_available || !view->semantic_layer_paint_mode_active)) {
@@ -596,6 +616,8 @@ void prepare_compose_panel_input(const WormUiComposeView* view, bool compose_tab
         const auto revision_changed = state.last_document_revision != view->document_revision;
         if (project_changed) {
             state.armed_resource_id = 0;
+            state.draw_source_kind = 0;
+            state.draw_source_id = 0;
             state.auto_increment_on_place = false;
             state.resource_pointer_mode =
                 worm_ui_nuklear_compose_resource_pointer_mode_t::off;

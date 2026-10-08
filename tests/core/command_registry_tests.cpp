@@ -654,7 +654,7 @@ TEST_CASE("Compose palette Alt digits select exactly one tool", "[core][command-
         invoked = context.command.value;
         return command_invocation_result_t{.accepted = true};
     });
-    const std::array ids{"edit.tool_select", "edit.note_kind_tap", "edit.note_kind_hold",
+    const std::array ids{"edit.tool_select", "edit.tool_draw", "edit.tool_layer",
         "edit.note_kind_mine", "edit.note_kind_invisible", "edit.note_kind_lift",
         "edit.note_kind_fake", "edit.note_kind_roll"};
     for (unsigned digit = 0; digit < ids.size(); ++digit) {

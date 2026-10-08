@@ -41,3 +41,5 @@ auto compose_bga_lane_kind_at(const WormUiComposeView& view, double x, double y)
     -> std::optional<std::uint8_t>;
 bool compose_point_hits_selected_note(const WormUiComposeView* view, double x, double y);
 WormUiComposeSelectionMode compose_selection_mode(std::uint16_t modifiers);
+
+bool process_draw_right_pointer(const ComposePointerEventContext& input);

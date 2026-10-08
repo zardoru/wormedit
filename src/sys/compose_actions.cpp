@@ -495,6 +495,20 @@ std::optional<std::string> dispatch_compose_audio_offset(compose_action_context_
     return compose_action_success(context, "Audio offset changed.", notification_source_t::edit);
 }
 
+std::string select_compose_tool(compose_action_context_t& context) {
+    using namespace wormedit;
+    const auto& action = context.action;
+    auto& application_state = context.application_state;
+    if (action.compose_action != WORM_UI_COMPOSE_ACTION_SELECT_TOOL &&
+        !wormedit::ui::compose_notes_editable(compose_mode_of(application_state)))
+        return compose_action_warning(context, "Draw and Layer are unavailable in Timing focus.");
+    (void)dispatch_editor_action(context.history, context.state, cancel_editor_gesture_action_t{});
+    application_state.bga_draw_stroke.reset();
+    application_state.note_paint_mode_active = action.compose_action == WORM_UI_COMPOSE_ACTION_DRAW_TOOL;
+    application_state.semantic_layer_paint_mode_active = action.compose_action == WORM_UI_COMPOSE_ACTION_LAYER_TOOL;
+    return compose_action_info(context, "Compose tool selected.");
+}
+
 std::optional<std::string> dispatch_compose_view_action_group(compose_action_context_t& context) {
     using namespace wormedit;
     auto& action = context.action;
@@ -545,6 +559,10 @@ std::optional<std::string> dispatch_compose_view_action_group(compose_action_con
         status = "Compose field view reset.";
         break;
     }
+    case WORM_UI_COMPOSE_ACTION_SELECT_TOOL:
+    case WORM_UI_COMPOSE_ACTION_DRAW_TOOL:
+    case WORM_UI_COMPOSE_ACTION_LAYER_TOOL:
+        return select_compose_tool(context);
     case WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE:
         if (!wormedit::ui::compose_notes_editable(compose_mode_of(application_state)))
             return compose_action_warning(context, "Note painting is unavailable in Timing focus.");

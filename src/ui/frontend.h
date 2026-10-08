@@ -1194,6 +1194,8 @@ typedef struct WormUiComposeView {
     uint64_t compose_measure_count;
     uint32_t selected_bms_measure_number_plus_one;
     bool truncated;
+    uint8_t draw_source_kind; /* 0 none, 1 sound, 2 BGA */
+    uint64_t draw_source_id;
     bool note_paint_mode_active;
     bool semantic_layer_paint_mode_active;
     bool semantic_layer_gesture_active;
@@ -2188,6 +2190,9 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_SCROLL_DOWN,
     WORM_UI_COMPOSE_ACTION_RESET_VIEW,
     WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE,
+    WORM_UI_COMPOSE_ACTION_SELECT_TOOL,
+    WORM_UI_COMPOSE_ACTION_DRAW_TOOL,
+    WORM_UI_COMPOSE_ACTION_LAYER_TOOL,
     WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY,
     WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS,
     WORM_UI_COMPOSE_ACTION_TOGGLE_EDIT_SNAP,
@@ -2400,6 +2405,7 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT,
     WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION,
     WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL,
+    WORM_UI_COMPOSE_INPUT_DRAW_SOURCE,
 } WormUiComposeInputKind;
 
 typedef enum WormUiComposeNavigationAction {
@@ -2442,6 +2448,7 @@ typedef struct WormUiComposeInputAction {
     uint64_t resource_id;
     uint8_t bga_lane_kind;
     bool bga_lane_kind_valid;
+    uint8_t paint_intent; /* 0 legacy toggle, 1 draw, 2 erase */
 } WormUiComposeInputAction;
 
 /* Which part of a span (Kiai area, Speed transition, SV recipe) a drag holds; carried in

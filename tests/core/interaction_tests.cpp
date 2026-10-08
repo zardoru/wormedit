@@ -4598,6 +4598,147 @@ TEST_CASE("Armed tap-like kinds place and toggle without converting existing not
     }
 }
 
+namespace {
+void check_note_paint_intent(bool condition) { CHECK(condition); }
+
+template <typename T>
+void require_note_paint_intent(const T& condition,
+    std::source_location source = std::source_location::current()) {
+    INFO("Assertion caller line " << source.line());
+    REQUIRE(static_cast<bool>(condition));
+}
+
+auto note_paint_intent_stroke(document_history_t& history,
+                              editor_interaction_state_t& state,
+                              std::uint64_t begin_row,
+                              std::uint64_t end_row,
+                              note_paint_intent_t intent,
+                              std::optional<resource_id_t> sound = std::nullopt)
+    -> editor_interaction_result_t {
+    const auto index = std::get<measure_index_t>(build_measure_index(history.document.charts.front()));
+    const auto begin = position_at_absolute_row(index, begin_row);
+    const auto end = position_at_absolute_row(index, end_row);
+    require_note_paint_intent(begin && end);
+    const auto begun = dispatch_editor_action(history, state,
+        begin_note_paint_gesture_action_t{lane_id_t{1}, *begin,
+                                          true, sound, intent});
+    if (!begun) return begun;
+    return dispatch_editor_action(history, state,
+        end_note_paint_gesture_action_t{lane_id_t{1}, *end, true});
+}
+} // namespace
+
+TEST_CASE("explicit note draw preserves occupied taps and commits only empty cells",
+          "[unit][core][interaction][paint][intent]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes.push_back({
+        .id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}});
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto result = note_paint_intent_stroke(history, state, 0, 480,
+                                                  note_paint_intent_t::draw);
+    require_note_paint_intent(result);
+    check_note_paint_intent(result.document_changed);
+    check_note_paint_intent(note_count(history) == 3);
+    const auto* retained = find_note(history, object_id_t{101});
+    check_note_paint_intent(retained && retained->position == local_position_t{measure_id_t{1}, 240});
+    check_note_paint_intent(history.undo.size() == 1);
+    require_note_paint_intent(undo_document_command(history));
+    check_note_paint_intent(note_count(history) == 1);
+    retained = find_note(history, object_id_t{101});
+    check_note_paint_intent(retained && retained->position == local_position_t{measure_id_t{1}, 240});
+}
+
+TEST_CASE("explicit note erase removes encountered taps and holds once without adding",
+          "[unit][core][interaction][paint][intent]") {
+    auto song = make_song();
+    auto& notes = song.charts.front().measures.front().notes;
+    notes.push_back({.id = object_id_t{101}, .position = {measure_id_t{1}, 240},
+                     .lane = lane_id_t{1}});
+    notes.push_back({.id = object_id_t{102}, .position = {measure_id_t{1}, 480},
+                     .lane = lane_id_t{1}, .kind = note_kind_t::hold,
+                     .end = local_position_t{measure_id_t{1}, 720}});
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    state.armed_note_kind = note_kind_t::hold;
+    const auto result = note_paint_intent_stroke(history, state, 0, 960,
+                                                  note_paint_intent_t::erase);
+    require_note_paint_intent(result);
+    check_note_paint_intent(note_count(history) == 0);
+    check_note_paint_intent(history.undo.size() == 1);
+    require_note_paint_intent(undo_document_command(history));
+    check_note_paint_intent(note_count(history) == 2);
+}
+
+TEST_CASE("explicit draw and erase no-ops finish without a document edit",
+          "[unit][core][interaction][paint][intent]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes.push_back({
+        .id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}});
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto draw = note_paint_intent_stroke(history, state, 240, 240,
+                                                note_paint_intent_t::draw);
+    require_note_paint_intent(draw);
+    check_note_paint_intent(!draw.document_changed);
+    check_note_paint_intent(!state.pending_note_paint_gesture);
+    check_note_paint_intent(history.document.revision == 1 && history.undo.empty());
+    const auto erase = note_paint_intent_stroke(history, state, 0, 0,
+                                                 note_paint_intent_t::erase);
+    require_note_paint_intent(erase);
+    check_note_paint_intent(!erase.document_changed);
+    check_note_paint_intent(!state.pending_note_paint_gesture);
+    check_note_paint_intent(note_count(history) == 1);
+    check_note_paint_intent(history.document.revision == 1 && history.undo.empty());
+}
+
+TEST_CASE("explicit draw still rejects an incompatible hold overlap atomically",
+          "[unit][core][interaction][paint][intent]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes.push_back({
+        .id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1},
+        .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{1}, 480}});
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto result = note_paint_intent_stroke(history, state, 240, 240,
+                                                  note_paint_intent_t::draw);
+    check_note_paint_intent(!result);
+    check_note_paint_intent(has_code(result.diagnostics, diagnostic_code_t::collision));
+    check_note_paint_intent(note_count(history) == 1 && history.undo.empty());
+    check_note_paint_intent(history.document.revision == 1);
+}
+
+TEST_CASE("explicit note strokes cancel on capture loss or stale deleted sources",
+          "[unit][core][interaction][paint][intent]") {
+    auto history = make_document_history(make_paint_sound_song());
+    auto state = make_state(history);
+    require_note_paint_intent(dispatch_editor_action(history, state,
+        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true,
+                                          resource_id_t{7}, note_paint_intent_t::draw}));
+    require_note_paint_intent(dispatch_editor_action(history, state,
+        update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, false}));
+    check_note_paint_intent(!state.pending_note_paint_gesture);
+    check_note_paint_intent(note_count(history) == 0 && history.undo.empty());
+
+    require_note_paint_intent(dispatch_editor_action(history, state,
+        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true,
+                                          resource_id_t{7}, note_paint_intent_t::draw}));
+    auto externally_edited = history.document;
+    std::erase_if(externally_edited.resources,
+        [](const auto& resource) { return resource.id == resource_id_t{7}; });
+    externally_edited.charts.front().sound_layer_defaults.clear();
+    externally_edited.metadata.title = "resource removed during stroke";
+    require_note_paint_intent(commit_document_command(history, std::move(externally_edited),
+                                                       "Remove sample"));
+    const auto stale = dispatch_editor_action(history, state,
+        end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true});
+    check_note_paint_intent(!stale);
+    check_note_paint_intent(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    check_note_paint_intent(!state.pending_note_paint_gesture);
+    check_note_paint_intent(note_count(history) == 0 && history.undo.size() == 1);
+}
+
 TEST_CASE("Note kind arming rejects unsupported kinds and active gestures", "[interaction][note-kind]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;

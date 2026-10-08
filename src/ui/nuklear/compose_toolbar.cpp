@@ -117,13 +117,17 @@ static void render_tool_group(const ComposeToolbarContext& toolbar) {
     const bool paint_disabled = !view->scene_available || view->timing_focus;
     if (paint_disabled) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::select_cursor,
-            "Select (Alt+1)", !view->note_paint_mode_active}.render(context) &&
-        view->note_paint_mode_active && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
-    if (wormedit::ui::chrome::IconButton{Glyph::paintbrush, "Toggle note paint mode",
+            "Select (Alt+1)", !view->note_paint_mode_active && !view->semantic_layer_paint_mode_active}.render(context) &&
+        (view->note_paint_mode_active || view->semantic_layer_paint_mode_active) && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_TOOL;
+    if (wormedit::ui::chrome::IconButton{Glyph::paintbrush, paint_disabled ? "Draw unavailable: choose an editable chart outside Timing focus" : "Draw (Alt+2): place current source; right-drag erases",
             view->note_paint_mode_active}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
+        action->compose_action = WORM_UI_COMPOSE_ACTION_DRAW_TOOL;
+    if (wormedit::ui::chrome::IconButton{Glyph::layers, "Layer (Alt+3)",
+            view->semantic_layer_paint_mode_active}.render(context) &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_LAYER_TOOL;
     if (paint_disabled) nk_widget_disable_end(context);
     if (!view->scene_available) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::grid,
@@ -445,17 +449,17 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
     // Stable shortcut order differs from the document enum order.
     static constexpr Glyph icons[]{Glyph::square, Glyph::minus, Glyph::x,
         Glyph::eye, Glyph::chevron_left, Glyph::layers, Glyph::audio_lines};
-    static constexpr const char* labels[]{"Tap (Alt+2)", "Hold (Alt+3; click to begin hold gesture)",
+    static constexpr const char* labels[]{"Tap", "Hold (click to begin hold gesture)",
         "Mine (Alt+4)", "Invisible (Alt+5)", "Lift (Alt+6)", "Fake (Alt+7)",
         "Roll (Alt+8; click to begin hold gesture)"};
     // Select tool: the pointer selects instead of painting notes.
     nk_layout_row_static(toolbar.context, 30, 30, 1);
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::select_cursor,
-            "Select (Alt+1)", !toolbar.view->note_paint_mode_active}
+            "Select (Alt+1)", !toolbar.view->note_paint_mode_active &&
+                !toolbar.view->semantic_layer_paint_mode_active}
             .render(toolbar.context) &&
-        toolbar.view->note_paint_mode_active &&
         toolbar.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
+        toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_TOOL;
     for (std::size_t index = 0; index < std::size(note_palette_kinds); ++index) {
         const auto kind = note_palette_kinds[index];
         if (!note_palette_kind_allowed(*toolbar.view, kind)) continue;
@@ -490,7 +494,7 @@ static void layout_compose_toolbar(nk_context* context, int panel_icons) {
     nk_layout_row_template_begin(context, 27);
     layout_toolbar_icons(context, 3); // Navigation.
     wormedit::ui::chrome::layout_separator(context);
-    layout_toolbar_icons(context, 7); // Tools.
+    layout_toolbar_icons(context, 8); // Tools.
     wormedit::ui::chrome::layout_separator(context);
     layout_toolbar_icons(context, 3); // Color views.
     wormedit::ui::chrome::layout_separator(context);

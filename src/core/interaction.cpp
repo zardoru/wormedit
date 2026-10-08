@@ -880,6 +880,34 @@ auto paint_rows(const measure_index_t& index, std::span<const note_paint_target_
     return rows;
 }
 
+auto erase_active_paint_notes(std::map<std::uint64_t, paint_note_interval_t>& active,
+                              note_paint_plan_t& plan) -> void {
+    while (!active.empty()) {
+        const auto id = active.begin()->first;
+        plan.removals.push_back(object_id_t{id});
+        active.erase(active.begin());
+    }
+}
+
+auto process_draw_paint_row(const paint_row_t& row,
+                            note_paint_plan_t& plan,
+                            const std::map<std::uint64_t, paint_note_interval_t>& active,
+                            note_kind_t kind) -> std::optional<diagnostic_t> {
+    if (active.empty()) {
+        plan.additions.push_back(row.target);
+        return std::nullopt;
+    }
+    if (active.size() != 1)
+        return error(diagnostic_code_t::collision,
+                     "paint gesture overlaps multiple same-lane notes",
+                     active.begin()->second.note);
+    const auto& note = active.begin()->second;
+    if (note.kind == kind && !note.has_end && note.begin == row.row && note.end == row.row)
+        return std::nullopt;
+    return error(diagnostic_code_t::collision,
+                 "paint gesture overlaps a non-tap note", active.begin()->second.note);
+}
+
 struct paint_overlap_sweep_t {
     const std::vector<paint_note_interval_t>& intervals;
     std::size_t next_interval{};
@@ -888,6 +916,7 @@ struct paint_overlap_sweep_t {
         std::vector<std::pair<std::uint64_t, std::uint64_t>>,
         std::greater<>> ending;
     std::map<std::uint64_t, paint_note_interval_t> active;
+    note_paint_intent_t current_intent{note_paint_intent_t::toggle};
 
     auto process(const paint_row_t& row, note_paint_plan_t& plan, note_kind_t kind)
         -> std::optional<diagnostic_t> {
@@ -908,6 +937,12 @@ struct paint_overlap_sweep_t {
             active.erase(ending.top().second);
             ending.pop();
         }
+        if (current_intent == note_paint_intent_t::erase) {
+            erase_active_paint_notes(active, plan);
+            return std::nullopt;
+        }
+        if (current_intent == note_paint_intent_t::draw)
+            return process_draw_paint_row(row, plan, active, kind);
         if (active.empty()) {
             plan.additions.push_back(row.target);
             return std::nullopt;
@@ -928,7 +963,8 @@ struct paint_overlap_sweep_t {
 };
 
 auto plan_note_paint(const chart_document_t& chart, const measure_index_t& index,
-                     std::span<const note_paint_target_t> targets, note_kind_t kind)
+                     std::span<const note_paint_target_t> targets, note_kind_t kind,
+                     note_paint_intent_t intent)
     -> std::variant<note_paint_plan_t, diagnostic_list_t> {
     auto intervals = paint_note_intervals(chart, index);
     auto rows_result = paint_rows(index, targets);
@@ -938,7 +974,7 @@ auto plan_note_paint(const chart_document_t& chart, const measure_index_t& index
     plan.additions.reserve(rows.size());
     plan.removals.reserve(rows.size());
     paint_overlap_sweep_t sweep{.intervals = intervals, .next_interval = 0, .lane = std::nullopt,
-                                .ending = {}, .active = {}};
+                                .ending = {}, .active = {}, .current_intent = intent};
     for (const auto& row : rows) {
         if (auto failure = sweep.process(row, plan, kind)) return diagnostic_list_t{*failure};
     }
@@ -2458,6 +2494,11 @@ auto add_paint_path_cell(const note_paint_context_t& context, lane_id_t lane,
     return std::nullopt;
 }
 
+void cancel_stale_explicit_paint(editor_interaction_state_t& state) {
+    if (state.pending_note_paint_gesture->intent != note_paint_intent_t::toggle)
+        state.pending_note_paint_gesture.reset();
+}
+
 auto append_note_paint_target(note_paint_context_t& context, lane_id_t lane,
                               local_position_t position, bool pointer_captured)
     -> editor_interaction_result_t {
@@ -2469,10 +2510,12 @@ auto append_note_paint_target(note_paint_context_t& context, lane_id_t lane,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "note paint update requires an active gesture")});
     auto& pending = *state.pending_note_paint_gesture;
-    if (pending.document_revision != context.history.document.revision)
+    if (pending.document_revision != context.history.document.revision) {
+        cancel_stale_explicit_paint(state);
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "note paint gesture is stale after a document edit")});
+    }
     const auto target = snapped_position(context.chart, context.index, position,
                                          edit_snap_denominator(context.chart, state));
     if (!target)
@@ -2544,17 +2587,24 @@ auto is_paint_sample_resource(const song_document_t& document, resource_id_t id)
 
 auto begin_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
                               local_position_t position, bool pointer_captured,
-                              std::optional<resource_id_t> sound)
+                              std::optional<resource_id_t> sound,
+                              note_paint_intent_t intent)
     -> editor_interaction_result_t {
     auto& state = context.state;
-    if (state.armed_note_kind == note_kind_t::hold || state.armed_note_kind == note_kind_t::roll)
+    if (intent != note_paint_intent_t::toggle && intent != note_paint_intent_t::draw &&
+        intent != note_paint_intent_t::erase)
+        return diagnostic_result(context.history, state,
+            {error(diagnostic_code_t::invalid_hold, "note paint intent is invalid")});
+    if (intent != note_paint_intent_t::erase &&
+        (state.armed_note_kind == note_kind_t::hold || state.armed_note_kind == note_kind_t::roll))
         return diagnostic_result(context.history, state,
             {error(diagnostic_code_t::invalid_hold, "Use the hold gesture to place Hold or Roll notes; painting needs an explicit end.")});
     if (!pointer_captured)
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "pointer capture is required to begin note painting")});
-    if (sound && !is_paint_sample_resource(context.history.document, *sound))
+    if (intent != note_paint_intent_t::erase && sound &&
+        !is_paint_sample_resource(context.history.document, *sound))
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_id,
                                         "paint sound is not an existing sample resource")});
@@ -2587,6 +2637,7 @@ auto begin_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
         .last_lane = lane,
         .last_position = *target,
         .sound = sound,
+        .intent = intent,
     };
     pending.visited.reserve(64);
     pending.visited.insert({lane, *row});
@@ -2638,7 +2689,7 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
     for (auto& measure : prepared_chart->measures)
         prepared_measures.emplace(measure.id.value, &measure);
     auto next_id = first_id ? first_id->value : 0;
-    if (sound && !is_paint_sample_resource(history.document, *sound))
+    if (!plan.additions.empty() && sound && !is_paint_sample_resource(history.document, *sound))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
                                        "paint sound is not an existing sample resource")};
     const auto layers = resolve_placement_layers(*prepared_chart, armed_layers, sound);
@@ -2676,22 +2727,44 @@ auto end_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "note paint gesture was cancelled before commit")});
     const auto pending = *state.pending_note_paint_gesture;
-    if (pending.document_revision != context.history.document.revision)
+    if (pending.document_revision != context.history.document.revision) {
+        if (pending.intent != note_paint_intent_t::toggle)
+            state.pending_note_paint_gesture.reset();
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "note paint gesture is stale after a document edit")});
-    auto planned = plan_note_paint(context.chart, context.index, *pending.targets, state.armed_note_kind);
+    }
+    auto planned = plan_note_paint(context.chart, context.index, *pending.targets,
+                                   state.armed_note_kind, pending.intent);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, state, *diagnostics);
     const auto& plan = std::get<note_paint_plan_t>(planned);
-    if (plan.additions.empty() && plan.removals.empty())
+    if (plan.additions.empty() && plan.removals.empty() &&
+        pending.intent == note_paint_intent_t::toggle)
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_id,
                                         "paint gesture contains no note changes")});
+    if (plan.additions.empty() && plan.removals.empty()) {
+        state.pending_note_paint_gesture.reset();
+        const auto view = make_view(context.history, state);
+        return {
+            .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
+            .view = std::holds_alternative<editor_interaction_view_model_t>(view)
+                        ? std::optional{std::get<editor_interaction_view_model_t>(view)}
+                        : std::nullopt,
+            .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
+                               ? std::get<diagnostic_list_t>(view)
+                               : diagnostic_list_t{},
+        };
+    }
     auto prepared = prepare_note_paint_document(context.history, state.chart, plan, state.armed_note_kind,
                                            pending.sound, state.armed_note_layers);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&prepared))
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&prepared)) {
+        if (pending.intent == note_paint_intent_t::draw && pending.sound &&
+            !is_paint_sample_resource(context.history.document, *pending.sound))
+            state.pending_note_paint_gesture.reset();
         return diagnostic_result(context.history, state, *diagnostics);
+    }
     auto result = std::get<prepared_note_paint_t>(std::move(prepared));
     auto command = commit_document_command(context.history, std::move(result.document), "Paint notes");
     if (!command)
@@ -2720,7 +2793,8 @@ auto dispatch_note_paint_gesture(note_paint_context_t& context, const editor_ui_
             using action_t = std::decay_t<decltype(typed_action)>;
             if constexpr (std::is_same_v<action_t, begin_note_paint_gesture_action_t>)
                 return begin_note_paint_gesture(context, typed_action.lane, typed_action.position,
-                                                typed_action.pointer_captured, typed_action.sound);
+                                                typed_action.pointer_captured, typed_action.sound,
+                                                typed_action.intent);
             else if constexpr (std::is_same_v<action_t, update_note_paint_gesture_action_t>)
                 return append_note_paint_target(context, typed_action.lane, typed_action.position,
                                                 typed_action.pointer_captured);

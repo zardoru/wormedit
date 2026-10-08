@@ -1403,6 +1403,8 @@ bool initialize_compose_view_state(
                                            ? retained_state->pixels_per_standard_measure
                                            : wormedit::default_pixels_per_standard_measure;
     const auto notes_editable = wormedit::ui::compose_notes_editable(compose_mode_of(application_state));
+    view.draw_source_kind = application_state.draw_source_kind;
+    view.draw_source_id = application_state.draw_source_id;
     view.note_paint_mode_active = notes_editable && application_state.note_paint_mode_active;
     view.semantic_layer_paint_mode_active =
         notes_editable && application_state.semantic_layer_paint_mode_active;

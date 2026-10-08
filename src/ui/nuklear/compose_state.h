@@ -224,6 +224,22 @@ struct worm_ui_nuklear_compose_state_t {
     // The active pointer hold is a plain press-drag with Hold/Roll armed, so it needs no Alt.
     bool pointer_hold_without_alt{};
     bool note_paint_pointer_active{};
+    bool draw_stroke_bga{};
+    bool draw_erase_pointer_active{};
+    bool draw_left_cancelled_until_release{};
+    bool draw_right_candidate{};
+    bool draw_right_native_down{};
+    bool draw_right_press_pending{};
+    bool draw_right_release_pending{};
+    float draw_right_screen_x{};
+    float draw_right_screen_y{};
+    float draw_right_current_screen_x{};
+    float draw_right_current_screen_y{};
+    bool draw_right_dragged{};
+    double draw_right_anchor_x{};
+    double draw_right_anchor_y{};
+    uint8_t draw_source_kind{};
+    uint64_t draw_source_id{};
     bool bmson_razor_pointer_active{};
     double bmson_razor_last_y_pixels{};
     bool bmson_marker_move_candidate_active{};
@@ -689,3 +705,8 @@ auto worm_ui_nuklear_begin_shift_range(worm_ui_nuklear_compose_state_t& state,
     std::uint8_t shift_keys) -> bool;
 auto worm_ui_nuklear_release_shift_range(worm_ui_nuklear_compose_state_t& state,
     std::uint8_t released_key) -> bool;
+
+void worm_ui_nuklear_pick_draw_source(worm_ui_nuklear_compose_state_t&, WormUiWorkspaceAction&, uint8_t kind, uint64_t id);
+
+struct nk_context;
+bool worm_ui_nuklear_compose_context_click(const nk_context*, const WormUiComposeView&);

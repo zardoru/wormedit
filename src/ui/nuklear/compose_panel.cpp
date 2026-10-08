@@ -13,6 +13,7 @@
 #include "ui/nuklear/compose_toolbar.h"
 #include "ui/nuklear/compose_inspector.h"
 #include "ui/nuklear/compose_input_panel.h"
+#include "ui/nuklear/compose_input_internal.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_sounds_panel.h"
@@ -1100,6 +1101,11 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
 
 static void discard_occluded_compose_input(const ComposePanelRenderContext& panel) {
     worm_ui_nuklear_cancel_stem_lane_resize(state);
+    if (state.note_paint_pointer_active || state.draw_erase_pointer_active)
+        append_compose_cancel_once(panel.action);
+    state.draw_left_cancelled_until_release |= state.note_paint_pointer_active;
+    state.note_paint_pointer_active = state.draw_erase_pointer_active = state.draw_right_candidate = false;
+    state.draw_right_press_pending = state.draw_right_release_pending = state.draw_right_native_down = false;
     // Release previously held editor keys; Options owns new presses and wheel input.
     std::size_t releases{};
     for (std::size_t index = 0; index < state.key_event_count; ++index) {
@@ -1125,6 +1131,13 @@ static auto process_compose_owned_popups(const ComposePanelRenderContext& panel,
         process_compose_recipe_menu(panel.context, *panel.view, *panel.action, viewport,
                                     input_right, panel.window_focused);
     return area_owned || recipe_owned;
+}
+
+static void process_compose_draw_tools(const ComposePointerEventContext& input, bool& consumed) {
+    if (process_semantic_layer_paint_pointer(input, consumed)) return;
+    const auto right_consumed = !consumed && process_draw_right_pointer(input);
+    consumed |= right_consumed;
+    if (!right_consumed) process_note_paint_pointer(input, consumed);
 }
 
 static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
@@ -1295,8 +1308,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
                              paint_pointer_consumed;
     paint_pointer_consumed = process_bmson_razor_pointer(pointer_event, paint_pointer_consumed);
     paint_pointer_consumed = process_bmson_marker_move_pointer(pointer_event, paint_pointer_consumed);
-    if (!process_semantic_layer_paint_pointer(pointer_event, paint_pointer_consumed))
-        process_note_paint_pointer(pointer_event, paint_pointer_consumed);
+    process_compose_draw_tools(pointer_event, paint_pointer_consumed);
 
     process_compose_pointer_actions(pointer_event, paint_pointer_consumed);
     process_compose_drag_gestures(pointer_event, paint_pointer_consumed);

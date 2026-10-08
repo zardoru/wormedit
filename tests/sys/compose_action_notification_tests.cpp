@@ -819,3 +819,124 @@ TEST_CASE("Compose area quantize records the applied report rows", "[compose-act
     check_action(fixture.application.quantize_applied_report->rows.size() == 1);
     check_action(fixture.application.quantize_applied_report->total_rows == 1);
 }
+
+namespace {
+auto draw_bga_input(bga_input_fixture_t& fixture, WormUiComposeInputKind kind,
+    uint64_t row, bool erase = false) -> WormUiWorkspaceAction {
+    auto value = fixture.input(kind, 5);
+    value.compose_inputs[0].resource_id = erase ? 0 : 31;
+    value.compose_inputs[0].paint_intent = erase ? 2 : 1;
+    value.compose_inputs[0].y_pixels = compose_source_y(
+        row * fixture.state.pixels_per_standard_measure / 960.0 - fixture.state.viewport_scroll_pixels,
+        fixture.state.viewport_height_pixels,
+        compose_field_downscroll(fixture.history.document.charts.front(), fixture.application.editor_preferences));
+    return value;
+}
+}
+TEST_CASE("Draw BGA production stroke commits interpolated targets once and undo restores all",
+          "[bga][draw][compose-input]") {
+    bga_input_fixture_t fixture;
+    fixture.application.note_paint_mode_active = true;
+    auto begin = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240);
+    (void)fixture.dispatch_input(begin);
+    check_action(fixture.history.undo.empty());
+    auto release = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 720);
+    INFO(fixture.dispatch_input(release));
+    require_action(fixture.history.undo.size() == 1);
+    check_action(fixture.history.document.charts.front().bga_events.size() == 4);
+    check_action(!fixture.application.bga_draw_stroke);
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.charts.front().bga_events.size() == 1);
+}
+TEST_CASE("Draw BGA deleted source and Timing focus reject without undo",
+          "[bga][draw][compose-input]") {
+    bga_input_fixture_t fixture;
+    fixture.application.note_paint_mode_active = true;
+    auto begin = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240);
+    (void)fixture.dispatch_input(begin);
+    fixture.history.document.resources.clear();
+    const auto revision = fixture.history.document.revision;
+    auto release = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 480);
+    (void)fixture.dispatch_input(release);
+    fixture.check_unchanged(revision);
+    check_action(!fixture.application.bga_draw_stroke);
+    fixture.application.note_paint_mode_active = false;
+    (void)fixture.dispatch_input(begin);
+    fixture.check_unchanged(revision);
+    check_action(!fixture.application.bga_draw_stroke);
+}
+TEST_CASE("Draw BGA interpolation preserves absolute snap across a five eighths measure",
+          "[bga][draw][compose-input]") {
+    bga_input_fixture_t fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.measures.front().definition = {{5, 8}, meter_t{5, 8}};
+    chart.measures.push_back({.id = measure_id_t{2}});
+    fixture.application.note_paint_mode_active = true;
+    auto begin = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 480);
+    (void)fixture.dispatch_input(begin);
+    auto release = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 720);
+    (void)fixture.dispatch_input(release);
+    require_action(fixture.history.undo.size() == 1);
+    const auto& events = fixture.history.document.charts.front().bga_events;
+    require_action(events.size() == 3);
+    check_action(events[1].position == local_position_t{measure_id_t{1}, 480});
+    check_action(events[2].position == local_position_t{measure_id_t{2}, 120});
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.charts.front().bga_events.size() == 1);
+}
+TEST_CASE("Draw source choice projects session state without changing the document",
+          "[draw][compose-input]") {
+    bga_input_fixture_t fixture;
+    const auto revision = fixture.history.document.revision;
+    auto input = fixture.input(WORM_UI_COMPOSE_INPUT_DRAW_SOURCE, 0);
+    input.compose_inputs[0].resource_role = 2;
+    input.compose_inputs[0].resource_id = 31;
+    (void)fixture.dispatch_input(input);
+    check_action(fixture.application.draw_source_kind == 2);
+    check_action(fixture.application.draw_source_id == 31);
+    fixture.check_unchanged(revision);
+}
+
+namespace {
+auto note_draw_input(bga_input_fixture_t& fixture, WormUiComposeInputKind kind, uint8_t intent)
+    -> WormUiWorkspaceAction {
+    auto value = fixture.input(kind, 0);
+    value.compose_inputs[0].resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE;
+    value.compose_inputs[0].resource_id = 0;
+    value.compose_inputs[0].paint_intent = intent;
+    value.compose_inputs[0].x_pixels = 400;
+    return value;
+}
+void add_draw_test_note(bga_input_fixture_t& fixture) {
+    fixture.application.note_paint_mode_active = true;
+    fixture.history.document.charts.front().measures.front().notes = {{
+        .id = object_id_t{91}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}}};
+}
+}
+TEST_CASE("Draw intent reaches the production note dispatcher and preserves occupied taps",
+          "[draw][compose-input]") {
+    bga_input_fixture_t fixture;
+    add_draw_test_note(fixture);
+    auto begin = note_draw_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 1);
+    INFO(fixture.dispatch_input(begin));
+    require_action(fixture.state.pending_note_paint_gesture.has_value());
+    check_action(fixture.state.pending_note_paint_gesture->intent == note_paint_intent_t::draw);
+    auto end = note_draw_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 1);
+    INFO(fixture.dispatch_input(end));
+    check_action(fixture.history.undo.empty());
+    check_action(fixture.history.document.charts.front().measures.front().notes.front().id == object_id_t{91});
+    check_action(!fixture.state.pending_note_paint_gesture);
+}
+TEST_CASE("Explicit erase reaches the production note dispatcher and undo restores the note",
+          "[draw][compose-input]") {
+    bga_input_fixture_t fixture;
+    add_draw_test_note(fixture);
+    auto begin = note_draw_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 2);
+    (void)fixture.dispatch_input(begin);
+    auto end = note_draw_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 2);
+    INFO(fixture.dispatch_input(end));
+    require_action(fixture.history.undo.size() == 1);
+    check_action(fixture.history.document.charts.front().measures.front().notes.empty());
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.charts.front().measures.front().notes.front().id == object_id_t{91});
+}

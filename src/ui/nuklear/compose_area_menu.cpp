@@ -4,6 +4,7 @@
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/context_menu.h"
 #include "wormedit/nuklear_config.h"
+#include "ui/nuklear/compose_state.h"
 
 namespace {
 namespace chrome = wormedit::ui::chrome;
@@ -174,7 +175,7 @@ void process_compose_area_menu(nk_context* context, const WormUiComposeView& vie
     const auto& mouse = context->input.mouse;
     const bool inside =
         nk_input_is_mouse_hovering_rect(&context->input, rect) && mouse.pos.x < input_right;
-    if (nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) && inside) {
+    if (worm_ui_nuklear_compose_context_click(context, view) && inside) {
         chrome::context_menu_open(menu, mouse.pos, menu_stamp(view));
         consumed = true;
     }

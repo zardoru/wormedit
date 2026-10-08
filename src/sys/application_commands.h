@@ -65,6 +65,7 @@ enum class application_command_kind_t {
     semantic_layer_remove,
     semantic_layer_toggle,
     audio_paint_hitsound,
+    audio_toggle_click_audition,
 };
 
 struct application_command_t {

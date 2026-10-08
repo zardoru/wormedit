@@ -3562,7 +3562,9 @@ auto dispatch_click_audition_toggle(const wormedit::command_invocation_context_t
     wormedit::sys::program_preferences_runtime_t& program, application_command_state_t& state,
     wormedit::notification_sink_t& notifications)
     -> std::optional<wormedit::command_invocation_result_t> {
-    if (invocation.command.value != "audio.toggle_click_audition") return std::nullopt;
+    const auto command = parse_application_command(invocation.command.value);
+    if (!command || command->kind != wormedit::sys::application_command_kind_t::audio_toggle_click_audition)
+        return std::nullopt;
     const auto error = wormedit::sys::toggle_audition_on_click(program, state.editor_preferences.audition_on_click);
     if (!error.empty())
         return wormedit::sys::reject_application_command(notifications, error,

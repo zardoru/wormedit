@@ -202,3 +202,10 @@ pass. Keyed groups sort their members by absolute row then document ordinal.
 Caller-ID permutations cannot change automatic allocation. Explicit manual
 placement preserves the legacy caller-ID processing order as well as the
 requested-lane/right/left/new fallback; it ignores group preferences.
+
+The public pure allocator explicitly covers ordinary notes and rejects retained-
+linked BMSON selections with a typed diagnostic directing callers to the
+existing stem reassignment command. Unlinked BMSON notes remain ordinary. The
+command restores linked markers before planning ordinary occupancy and keeps
+mixed operations atomic, so it preserves stem ownership instead of publishing a
+misleading pure assignment. No new source-family restriction is introduced.

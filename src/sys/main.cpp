@@ -1406,10 +1406,17 @@ bool dispatch_project_chart_action(wormedit::sys::project_chart_runtime_t& runti
 void refresh_note_kind_commands(wormedit::command_registry_t& registry,
     const wormedit::chart_document_t* chart,
     const std::optional<wormedit::editor_interaction_state_t>& compose_state,
-    bool compose_ready, bool pending, bool paint_active) {
+    bool compose_ready, bool pending, const application_command_state_t& application) {
     using namespace wormedit;
+    const auto paint_active = application.note_paint_mode_active;
+    const auto layer_active = application.semantic_layer_paint_mode_active;
+    const auto tools_ready = compose_ready && !application.compose_timing_focus;
     (void)update_command_state(registry, command_id_t{"edit.tool_select"}, compose_ready,
-                                compose_ready && !paint_active);
+                                compose_ready && !paint_active && !layer_active);
+    (void)update_command_state(registry, command_id_t{"edit.tool_draw"}, tools_ready,
+                              tools_ready && paint_active);
+    (void)update_command_state(registry, command_id_t{"edit.tool_layer"}, tools_ready,
+                              tools_ready && layer_active);
     constexpr std::pair<std::string_view, note_kind_t> note_kinds[]{
         {"tap", note_kind_t::tap}, {"hold", note_kind_t::hold}, {"mine", note_kind_t::mine},
         {"invisible", note_kind_t::invisible}, {"lift", note_kind_t::lift},
@@ -1491,7 +1498,7 @@ void refresh_application_command_states(
     set("edit.cut", clipboard_selection);
     set("edit.paste", paste_target_available(compose_ready, pending, application_state));
     refresh_note_kind_commands(registry, chart, compose_state, compose_ready, pending,
-                                application_state.note_paint_mode_active);
+                                application_state);
 
     set("selection.clear", compose_ready && (inline_preview_active(application_state) ||
                                             application_state.paste_session.has_value() ||

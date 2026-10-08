@@ -29,6 +29,7 @@ struct output_group_export_task_result_t {
     bool published{};
     std::string message;
     wormedit::notification_severity_t severity{wormedit::notification_severity_t::error};
+    std::string detail;
 };
 
 struct pending_output_group_export_t {

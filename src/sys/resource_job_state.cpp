@@ -217,7 +217,10 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
         severity = wormedit::notification_severity_t::warning;
     }
     if (notifications_ && !status.empty())
-        notifications_->post(severity, wormedit::notification_source_t::export_, status);
+        notifications_->post({.severity = severity,
+                              .source = wormedit::notification_source_t::export_,
+                              .message = status,
+                              .detail = exported ? exported->detail : std::string{}});
     return status;
 }
 

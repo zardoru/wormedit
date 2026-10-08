@@ -235,3 +235,15 @@ source ownership, packed eligibility and cached identity/revision invalidation;
 manually populated harness rows alone cannot validate this new join. Existing
 semantic event/resource links are authoritative; ambiguous empty-channel
 ownership must not silently choose the first lane. Preserve the document model.
+
+Root editor integration now uses warning loss policy, bounded result summary
+and notification details. An isolated verification-only test driver linked to
+normal production frame-target objects passes three cases / 86 assertions
+across seven generated scenarios: both target families and directory/named
+paths, missing-source refusal before music/destination writes, silent BMS staging
+and incompatible named PMS rejection. Shared test source remains worker-owned;
+these regressions will be appended after release. Main full checkpoint build
+passes; independent main BMS Kick export into a dotted directory retains all
+514 voice tuples with zero onset shift and full 7,008,868-frame PCM maximum
+error 2.38419e-7 / RMS 2.05836e-9, zero samples above 2/32768. Main full batch
+suite and final Draw-dependent application rebuild remain pending.

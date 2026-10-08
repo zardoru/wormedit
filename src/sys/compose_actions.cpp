@@ -662,6 +662,48 @@ auto stage_output_music(const wormedit::song_document_t& snapshot,
     return std::nullopt;
 }
 
+void report_output_conversion_losses(const wormedit::conversion_result_t& converted,
+                                     output_group_export_task_result_t& completed) {
+    if (!completed.published) return;
+    std::size_t count{};
+    const wormedit::conversion_diagnostic_t* first{};
+    for (const auto& diagnostic : converted.diagnostics) {
+        if (!diagnostic.loss) continue;
+        ++count;
+        if (!first) first = &diagnostic;
+        if (completed.detail.size() >= wormedit::notification_detail_max_bytes) continue;
+        std::string detail = diagnostic.chart
+            ? "Chart " + std::to_string(diagnostic.chart->value) + ": " : std::string{};
+        if (!diagnostic.path.empty()) detail += diagnostic.path + ": ";
+        detail += diagnostic.message + "\n";
+        completed.detail += detail;
+        wormedit::truncate_notification_text(completed.detail, wormedit::notification_detail_max_bytes);
+    }
+    if (!first) return;
+    completed.message = "Output group published with " + std::to_string(count) +
+        (count == 1 ? " conversion loss: " : " conversion losses: ") + first->message;
+    wormedit::truncate_notification_text(completed.message, wormedit::notification_message_max_bytes);
+    completed.severity = wormedit::notification_severity_t::warning;
+}
+
+auto sliced_bms_destination_error(const wormedit::song_document_t& snapshot,
+    const wormedit::output_group_t& group, const wormedit::conversion_request_t& request,
+    const wormedit::conversion_result_t& converted) -> std::optional<std::string> {
+    if (group.family != wormedit::format_family_t::bms ||
+        !wormedit::conversion_needs_slice_spans(snapshot, request) ||
+        !group.relative_output_path.has_extension()) return std::nullopt;
+    const auto requested = group.relative_output_path.extension();
+    for (const auto& output : converted.outputs) {
+        const auto inferred = std::filesystem::path(output.suggested_filename).extension();
+        const bool incompatible = requested == ".pms" ? inferred != ".pms"
+            : inferred == ".pms" || (requested == ".bme" && inferred != ".bme");
+        if (incompatible)
+            return "BMSON lane layout requires " + inferred.string() +
+                " output; selected " + requested.string() + " filename is incompatible.";
+    }
+    return std::nullopt;
+}
+
 void complete_output_group_conversion(
     const wormedit::song_document_t& snapshot, const wormedit::output_group_t& group,
     wormedit::conversion_request_t& request, const std::filesystem::path& asset_base,
@@ -683,7 +725,21 @@ void complete_output_group_conversion(
         completed.severity = notification_severity_t::info;
         return;
     }
-    const auto published = publish_conversion_group_atomic(asset_base, group, request, converted);
+    if (auto error = sliced_bms_destination_error(snapshot, group, request, converted)) {
+        completed.message = *error;
+        completed.severity = notification_severity_t::error;
+        return;
+    }
+    conversion_publication_options_t publication;
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    if (conversion_needs_slice_spans(snapshot, request)) {
+        publication.stage_generated_files = [&](const auto& staging) {
+            return render_conversion_slice_plans(snapshot, converted, {asset_base, staging, stop});
+        };
+    }
+#endif
+    const auto published = publish_conversion_group_atomic(asset_base, group, request, converted,
+                                                           std::move(publication));
     completed.published = published.published;
     completed.message = published.published ? "Output group published from the selected revision."
                            : published.errors.empty() ? "Output group publication failed."
@@ -693,6 +749,34 @@ void complete_output_group_conversion(
                                                         : notification_severity_t::success;
     if (published.published && !published.warnings.empty())
         completed.message += " " + published.warnings.front();
+    if (published.published) {
+        for (const auto& warning : published.warnings) completed.detail += warning + "\n";
+        report_output_conversion_losses(converted, completed);
+    }
+}
+
+void complete_sliced_output_group_conversion(
+    const wormedit::song_document_t& snapshot, const wormedit::output_group_t& group,
+    wormedit::conversion_request_t& request, const std::filesystem::path& asset_base,
+    std::stop_token stop, output_group_export_task_result_t& completed) {
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    if (auto error = wormedit::prepare_conversion_slice_sources(snapshot, request, asset_base, stop)) {
+        completed.message = *error;
+        completed.severity = stop.stop_requested() ? notification_severity_t::info
+                                                   : notification_severity_t::error;
+        return;
+    }
+    complete_output_group_conversion(snapshot, group, request, asset_base, stop, completed);
+#else
+    const auto converted = convert_document(snapshot, request);
+    if (!converted || (converted.slice_plans.empty() && converted.asset_copies.empty() &&
+                       converted.silent_files.empty())) {
+        complete_output_group_conversion(snapshot, group, request, asset_base, stop, completed);
+        return;
+    }
+    completed.message = "BMSON sliced-audio conversion requires the audio decoder build.";
+    completed.severity = notification_severity_t::error;
+#endif
 }
 
 task_result_t run_output_group_export_task(const wormedit::song_document_t& snapshot,
@@ -705,6 +789,8 @@ task_result_t run_output_group_export_task(const wormedit::song_document_t& snap
     if (stop.stop_requested()) {
         completed->message = "Export cancelled before conversion.";
         completed->severity = notification_severity_t::info;
+    } else if (conversion_needs_slice_spans(snapshot, request)) {
+        complete_sliced_output_group_conversion(snapshot, group, request, asset_base, stop, *completed);
     } else if (auto staging_error = stage_output_music(snapshot, group, asset_base, stop)) {
         completed->message = *staging_error;
         completed->severity = stop.stop_requested() ? notification_severity_t::info
@@ -974,7 +1060,7 @@ auto prepare_output_export(compose_action_context_t& context)
     request.target = group.family;
     if (group.family != format_family_t::native_project) request.charts = group.charts;
     request.overwrite = context.action.compose_export_overwrite;
-    request.loss_policy = loss_policy_t::reject;
+    request.loss_policy = loss_policy_t::warn;
     if (group.family == format_family_t::stepmania) {
         request.stepmania = stepmania_export_policy_t{
             .file_profile = group.relative_output_path.extension() == ".sm" ||
@@ -982,7 +1068,8 @@ auto prepare_output_export(compose_action_context_t& context)
                 ? stepmania_profile_t::sm : stepmania_profile_t::ssc};
     } else if (group.family == format_family_t::bms) {
         const auto extension = group.relative_output_path.extension().string();
-        if (extension == ".bme" || extension == ".bml" || extension == ".pms")
+        if ((extension == ".bme" || extension == ".bml" || extension == ".pms") &&
+            !conversion_needs_slice_spans(doc, request))
             request.target_profile = extension.substr(1);
     }
     return output_export_plan_t{std::move(group), std::move(request)};

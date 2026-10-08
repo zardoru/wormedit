@@ -3,13 +3,25 @@
 #include "ui/frontend.h"
 #include "wormedit/nuklear_config.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <utility>
+
+struct WormUiTestingComposeGhostDrawState {
+    std::size_t emitted_segments{};
+    std::uint8_t red{}, green{}, blue{}, alpha{};
+};
 
 void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* view,
                                nk_command_buffer* canvas, struct nk_rect viewport);
 void reset_compose_canvas_viewport_for_testing();
+void draw_compose_quantize_ghosts_after_docks(nk_context* context,
+                                              const WormUiComposeView* view,
+                                              bool section_visible);
 auto compose_canvas_viewport_for_testing() -> std::optional<WormUiTestingRect>;
+auto compose_quantize_ghosts_drawn_for_testing() -> bool;
+auto compose_quantize_ghost_draw_state_for_testing() -> WormUiTestingComposeGhostDrawState;
 
 auto compose_timing_marker_at(const WormUiComposeView& view, double x, double y)
     -> const WormUiTimingMarkerView*;

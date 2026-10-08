@@ -1571,6 +1571,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         (double_click_count != 0 && !double_clicks)) {
         return;
     }
+    reset_compose_quantize_section_visibility();
     begin_layer_menu_input_frame();
     begin_compose_note_menu_frame();
     render_compose_toolbar({context, view, action});
@@ -1613,6 +1614,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     nk_group_end(context);
     }
     render_compose_side_docks(context, view, timing_view, action, dock_layout);
+    draw_compose_quantize_ghosts_after_docks(context, view,
+        inspector_drawn && compose_quantize_section_visible());
     nk_layout_space_end(context);
     worm_ui_nuklear_render_bga_stack_picker(context, view, action, &state);
     render_go_to_measure(context, *view, *action, window_focused);

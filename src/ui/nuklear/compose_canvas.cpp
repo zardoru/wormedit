@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_canvas.h"
+#include "ui/nuklear/compose_inspector.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/arrow_glyph.h"
@@ -32,6 +33,9 @@
 namespace {
 wormedit::ui::field::renderer_t* tile_renderer_override{};
 std::optional<WormUiTestingRect> last_compose_viewport_for_testing;
+std::optional<WormUiTestingRect> quantize_overlay_viewport;
+bool quantize_ghosts_drawn_this_frame{};
+WormUiTestingComposeGhostDrawState quantize_ghost_draw_state{};
 auto paint_field(nk_context* context) -> wormedit::ui::field::renderer_t& {
     return tile_renderer_override ? *tile_renderer_override :
         wormedit::ui::nuklear::compose_field(context);
@@ -179,10 +183,194 @@ struct static_paint_storage_t {
 
 void reset_compose_canvas_viewport_for_testing() {
     last_compose_viewport_for_testing.reset();
+    quantize_overlay_viewport.reset();
+    quantize_ghosts_drawn_this_frame = false;
+    quantize_ghost_draw_state = {};
+    reset_compose_quantize_section_visibility();
+}
+
+static auto field_color(nk_color) -> wormedit::ui::field::color_t;
+static void field_line(const ComposePaintContext&, float, float, float, float, float, nk_color,
+                       wormedit::ui::field::layer_t);
+
+static auto clip_quantize_line(float& x0, float& y0, float& x1, float& y1,
+                               struct nk_rect clip) -> bool {
+    const auto dx = x1 - x0;
+    const auto dy = y1 - y0;
+    float low = 0.0f, high = 1.0f;
+    const std::array<float, 4> p{-dx, dx, -dy, dy};
+    const std::array<float, 4> q{x0 - clip.x, clip.x + clip.w - x0,
+                                 y0 - clip.y, clip.y + clip.h - y0};
+    for (std::size_t index = 0; index < p.size(); ++index) {
+        if (std::abs(p[index]) < 0.0001f) {
+            if (q[index] < 0.0f) return false;
+            continue;
+        }
+        const auto ratio = q[index] / p[index];
+        if (p[index] < 0.0f) low = std::max(low, ratio);
+        else high = std::min(high, ratio);
+        if (low > high) return false;
+    }
+    const auto start_x = x0, start_y = y0;
+    x0 = start_x + low * dx; y0 = start_y + low * dy;
+    x1 = start_x + high * dx; y1 = start_y + high * dy;
+    return true;
+}
+
+static auto draw_quantize_dashed_connector(const ComposePaintContext& paint, float x0, float y0,
+                                           float x1, float y1, nk_color color) -> bool {
+    if (!clip_quantize_line(x0, y0, x1, y1, paint.viewport)) return false;
+    const auto dx = x1 - x0, dy = y1 - y0;
+    const auto length = std::hypot(dx, dy);
+    if (!(length > 0.0f)) return false;
+    constexpr float dash = 5.0f, gap = 4.0f;
+    bool emitted{};
+    for (float offset = 0.0f; offset < length; offset += dash + gap) {
+        const auto end = std::min(length, offset + dash);
+        field_line(paint, x0 + dx * offset / length, y0 + dy * offset / length,
+                   x0 + dx * end / length, y0 + dy * end / length, 1.5f, color, 10);
+        emitted = true;
+        ++quantize_ghost_draw_state.emitted_segments;
+        quantize_ghost_draw_state.red = color.r;
+        quantize_ghost_draw_state.green = color.g;
+        quantize_ghost_draw_state.blue = color.b;
+        quantize_ghost_draw_state.alpha = color.a;
+    }
+    return emitted;
+}
+
+static auto quantize_ghost_color(const WormUiComposeQuantizeGhostView& ghost, bool tail)
+    -> nk_color {
+    if (ghost.collision) {
+        auto color = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict);
+        color.a = 153;
+        return color;
+    }
+    if ((tail && (ghost.tail_halfway || ghost.stationary_tail_annotation)) ||
+        (!tail && ghost.head_halfway)) return nk_rgba(255, 190, 56, 190);
+    return nk_rgba(112, 220, 255, 170);
+}
+
+static auto draw_quantize_endpoint(const ComposePaintContext& paint, const WormUiComposeRect& source,
+                                   std::uint32_t glyph, nk_color color) -> bool {
+    const auto scale_x = paint.viewport.w / static_cast<float>(paint.view->viewport_width_pixels);
+    const auto scale_y = paint.viewport.h / static_cast<float>(paint.view->viewport_height_pixels);
+    const auto rect = nk_rect(paint.viewport.x + static_cast<float>(source.left) * scale_x,
+        paint.viewport.y + static_cast<float>(source.top) * scale_y,
+        static_cast<float>(source.right - source.left) * scale_x,
+        static_cast<float>(source.bottom - source.top) * scale_y);
+    if (rect.w <= 0.0f || rect.h <= 0.0f) return false;
+    bool emitted{};
+    if (wormedit::ui::is_arrow_glyph(static_cast<std::uint8_t>(glyph)) && rect.w >= 10.0f) {
+        const auto tile_size = rect.w;
+        const auto tile_x = rect.x;
+        const auto tile_y = rect.y + (rect.h - tile_size) * 0.5f;
+        const auto authored = wormedit::ui::arrow_polygon(static_cast<std::uint8_t>(glyph),
+                                                           tile_x, tile_y, tile_size);
+        for (std::size_t point = 0; point < authored.size(); ++point) {
+            const auto& from = authored[point];
+            const auto& to = authored[(point + 1) % authored.size()];
+            emitted = draw_quantize_dashed_connector(paint, from.x, from.y, to.x, to.y, color) || emitted;
+        }
+    } else {
+        emitted = draw_quantize_dashed_connector(paint, rect.x, rect.y, rect.x + rect.w, rect.y, color) || emitted;
+        emitted = draw_quantize_dashed_connector(paint, rect.x + rect.w, rect.y,
+            rect.x + rect.w, rect.y + rect.h, color) || emitted;
+        emitted = draw_quantize_dashed_connector(paint, rect.x + rect.w, rect.y + rect.h,
+            rect.x, rect.y + rect.h, color) || emitted;
+        emitted = draw_quantize_dashed_connector(paint, rect.x, rect.y + rect.h,
+            rect.x, rect.y, color) || emitted;
+    }
+    return emitted;
+}
+
+static auto quantize_screen_point(struct nk_rect viewport, const WormUiComposeView& view,
+                                 double x, double y) -> std::pair<float, float> {
+    return {viewport.x + static_cast<float>(x * viewport.w / view.viewport_width_pixels),
+            viewport.y + static_cast<float>(y * viewport.h / view.viewport_height_pixels)};
+}
+
+static auto draw_quantize_head_ghost(const ComposePaintContext& paint,
+    const WormUiComposeQuantizeGhostView& ghost, struct nk_rect viewport) -> bool {
+    const auto color = quantize_ghost_color(ghost, false);
+    bool emitted{};
+    if (ghost.moved_head) {
+        const auto [x0, y0] = quantize_screen_point(viewport, *paint.view,
+            ghost.before_head_anchor_x, ghost.before_head_anchor_y);
+        const auto [x1, y1] = quantize_screen_point(viewport, *paint.view,
+            ghost.after_head_anchor_x, ghost.after_head_anchor_y);
+        emitted = draw_quantize_dashed_connector(paint, x0, y0, x1, y1, color) || emitted;
+    }
+    emitted = draw_quantize_endpoint(paint, ghost.before_head, ghost.before_head_glyph, color) || emitted;
+    emitted = draw_quantize_endpoint(paint, ghost.after_head, ghost.after_head_glyph, color) || emitted;
+    return emitted;
+}
+
+static auto draw_quantize_tail_ghost(const ComposePaintContext& paint,
+    const WormUiComposeQuantizeGhostView& ghost, struct nk_rect viewport) -> bool {
+    const auto color = quantize_ghost_color(ghost, true);
+    bool emitted{};
+    if (ghost.moved_tail) {
+        const auto [x0, y0] = quantize_screen_point(viewport, *paint.view,
+            ghost.before_tail_anchor_x, ghost.before_tail_anchor_y);
+        const auto [x1, y1] = quantize_screen_point(viewport, *paint.view,
+            ghost.after_tail_anchor_x, ghost.after_tail_anchor_y);
+        emitted = draw_quantize_dashed_connector(paint, x0, y0, x1, y1, color) || emitted;
+    }
+    const auto [head_x, head_y] = quantize_screen_point(viewport, *paint.view,
+        ghost.after_head_anchor_x, ghost.after_head_anchor_y);
+    const auto [tail_x, tail_y] = quantize_screen_point(viewport, *paint.view,
+        ghost.after_tail_anchor_x, ghost.after_tail_anchor_y);
+    auto x0 = head_x, y0 = head_y, x1 = tail_x, y1 = tail_y;
+    if (clip_quantize_line(x0, y0, x1, y1, viewport)) {
+        field_line(paint, x0, y0, x1, y1, 3.0f,
+                   nk_rgba(color.r, color.g, color.b, 90), 9);
+        emitted = true;
+    }
+    emitted = draw_quantize_endpoint(paint, ghost.before_tail, ghost.before_tail_glyph, color) || emitted;
+    emitted = draw_quantize_endpoint(paint, ghost.after_tail, ghost.after_tail_glyph, color) || emitted;
+    return emitted;
+}
+
+static auto draw_quantize_ghost_rows(const ComposePaintContext& paint,
+                                    const WormUiComposeView& view, struct nk_rect viewport) -> bool {
+    bool emitted{};
+    for (std::size_t index = 0; index < view.quantize_ghost_count; ++index) {
+        const auto& ghost = view.quantize_ghosts[index];
+        emitted = draw_quantize_head_ghost(paint, ghost, viewport) || emitted;
+        if (ghost.has_tail) emitted = draw_quantize_tail_ghost(paint, ghost, viewport) || emitted;
+    }
+    return emitted;
+}
+
+void draw_compose_quantize_ghosts_after_docks(nk_context* context,
+                                              const WormUiComposeView* view,
+                                              bool section_visible) {
+    if (!quantize_overlay_viewport) return;
+    const auto saved = *quantize_overlay_viewport;
+    quantize_overlay_viewport.reset();
+    if (!context || !view || !section_visible || !view->quantize_ghosts_drawable ||
+        !view->scene_available || !view->quantize_ghosts || view->quantize_ghost_count == 0)
+        return;
+    const auto viewport = nk_rect(saved.x, saved.y, saved.width, saved.height);
+    auto* canvas = nk_window_get_canvas(context);
+    if (!canvas) return;
+    wormedit::ui::nuklear::begin_compose_field(context, {viewport.x, viewport.y, viewport.w, viewport.h});
+    const ComposePaintContext paint{context, view, canvas, viewport, viewport};
+    quantize_ghosts_drawn_this_frame = draw_quantize_ghost_rows(paint, *view, viewport);
+    wormedit::ui::nuklear::insert_compose_field(context, canvas, viewport);
 }
 
 auto compose_canvas_viewport_for_testing() -> std::optional<WormUiTestingRect> {
     return last_compose_viewport_for_testing;
+}
+
+auto compose_quantize_ghosts_drawn_for_testing() -> bool {
+    return quantize_ghosts_drawn_this_frame;
+}
+
+auto compose_quantize_ghost_draw_state_for_testing() -> WormUiTestingComposeGhostDrawState {
+    return quantize_ghost_draw_state;
 }
 
 static struct nk_rect compose_screen_rect(const WormUiComposeRect* source,
@@ -2835,6 +3023,7 @@ void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* vie
                                       nk_command_buffer* canvas, struct nk_rect viewport) {
     last_compose_viewport_for_testing = WormUiTestingRect{
         viewport.x, viewport.y, viewport.w, viewport.h};
+    quantize_overlay_viewport = last_compose_viewport_for_testing;
     static_paint_indices.refresh(*view);
     wormedit::ui::nuklear::begin_compose_field(context,
                                               {viewport.x, viewport.y, viewport.w, viewport.h});

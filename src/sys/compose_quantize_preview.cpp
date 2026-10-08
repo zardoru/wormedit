@@ -207,16 +207,25 @@ auto report_order(const quantize_report_row_t& left, const quantize_report_row_t
     return left.object.value < right.object.value;
 }
 
+auto candidate_has_report_row(const quantize_preview_t& preview,
+                              const note_report_candidate_t& candidate) -> bool {
+    return candidate.moved || candidate.collision ||
+           (preview.drawable && candidate.stationary_tail_annotation);
+}
+
 void append_report_rows(quantize_preview_t& preview,
                         const std::vector<note_report_candidate_t>& candidates) {
     for (const auto& candidate : candidates) {
-        if (!candidate.moved && !candidate.collision &&
-            !(preview.drawable && candidate.stationary_tail_annotation)) continue;
+        if (!candidate_has_report_row(preview, candidate)) continue;
         ++preview.report_total_rows;
         if (candidate.collision) ++preview.colliding_objects;
-        if (preview.report_rows.size() < quantize_report_row_capacity)
+        if (candidate.selected && preview.report_rows.size() < quantize_report_row_capacity)
             preview.report_rows.push_back(report_row(candidate));
     }
+    for (const auto& candidate : candidates)
+        if (!candidate.selected && candidate_has_report_row(preview, candidate) &&
+            preview.report_rows.size() < quantize_report_row_capacity)
+            preview.report_rows.push_back(report_row(candidate));
     preview.report_truncated = preview.report_total_rows > preview.report_rows.size();
     std::ranges::sort(preview.report_rows, report_order);
 }

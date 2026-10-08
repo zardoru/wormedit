@@ -298,6 +298,17 @@ void render_compose_transform_section(const ComposeInspectorContext& inspector) 
 }
 
 namespace {
+bool quantize_section_visible_this_frame{};
+
+auto quantize_bounds_intersect(struct nk_rect first, struct nk_rect last, struct nk_rect clip) -> bool {
+    const auto left = std::min(first.x, last.x);
+    const auto top = first.y;
+    const auto right = std::max(first.x + first.w, last.x + last.w);
+    const auto bottom = last.y + last.h;
+    return std::max(left, clip.x) < std::min(right, clip.x + clip.w) &&
+           std::max(top, clip.y) < std::min(bottom, clip.y + clip.h);
+}
+
 
 constexpr auto quantize_name_capacity = WORM_UI_COMPOSE_QUANTIZE_PRESET_NAME_BYTES + 1;
 std::array<char, quantize_name_capacity> quantize_preset_name{};
@@ -672,6 +683,14 @@ auto compose_quantize_owns_input() -> bool {
     return wormedit::ui::chrome::context_menu_owns_input(quantize_menu);
 }
 
+void reset_compose_quantize_section_visibility() {
+    quantize_section_visible_this_frame = false;
+}
+
+auto compose_quantize_section_visible() -> bool {
+    return quantize_section_visible_this_frame;
+}
+
 static auto quantize_presets_match(const WormUiComposeView& view) -> bool {
     if (view.quantize_preset_count != quantize_menu_presets.size())
         return false;
@@ -708,6 +727,7 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
     auto* context = inspector.context;
     auto* action = inspector.action;
     sync_quantize_grid_text(*view);
+    const auto section_clip = nk_window_get_canvas(context)->clip;
     wormedit::ui::chrome::context_menu_retire(quantize_menu, context);
     if (!quantize_menu.open) {
         if (quantize_grid_editing || quantize_grid_invalid)
@@ -717,6 +737,7 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
         sync_quantize_grid_text(*view);
     }
     nk_layout_row_dynamic(context, 18, 1);
+    const auto header_bounds = nk_widget_bounds(context);
     nk_labelf(context, NK_TEXT_LEFT, "Quantize (%zu)", view->selected_note_count);
     if (view->selected_note_count == 0) {
         nk_layout_row_dynamic(context, 18, 1);
@@ -772,4 +793,7 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
                                     view->quantize_applied_row_count,
                                     view->quantize_applied_total_rows,
                                     view->quantize_applied_rows_truncated, NK_MAXIMIZED);
+    const auto section_bounds = nk_widget_bounds(context);
+    quantize_section_visible_this_frame |= quantize_bounds_intersect(
+        header_bounds, section_bounds, section_clip);
 }

@@ -1149,13 +1149,43 @@ typedef struct WormUiComposeQuantizeReportRowView {
     WormUiComposeQuantizePositionView start_after;
     bool has_end_before;
     bool has_end_after;
+    uint64_t end_before_absolute_row;
+    uint64_t end_after_absolute_row;
     WormUiComposeQuantizePositionView end_before;
     WormUiComposeQuantizePositionView end_after;
     bool moved;
     bool collision;
     uint64_t collision_peer_id;
     bool has_collision_peer;
+    bool selected;
+    bool head_halfway;
+    bool tail_halfway;
+    bool stationary_tail_annotation;
 } WormUiComposeQuantizeReportRowView;
+
+typedef struct WormUiComposeQuantizeGhostView {
+    uint64_t object_id;
+    uint64_t lane_id;
+    uint32_t before_head_glyph;
+    uint32_t after_head_glyph;
+    uint32_t before_tail_glyph;
+    uint32_t after_tail_glyph;
+    WormUiComposeRect before_head;
+    WormUiComposeRect after_head;
+    WormUiComposeRect before_tail;
+    WormUiComposeRect after_tail;
+    double before_head_anchor_x, before_head_anchor_y;
+    double after_head_anchor_x, after_head_anchor_y;
+    double before_tail_anchor_x, before_tail_anchor_y;
+    double after_tail_anchor_x, after_tail_anchor_y;
+    bool has_tail;
+    bool moved_head;
+    bool moved_tail;
+    bool head_halfway;
+    bool tail_halfway;
+    bool stationary_tail_annotation;
+    bool collision;
+} WormUiComposeQuantizeGhostView;
 
 // Renderer-neutral field primitives projected into bounded scalar storage.
 // Coordinates are relative to the scene viewport; no chart/core types cross
@@ -1235,6 +1265,14 @@ typedef struct WormUiComposeView {
     size_t quantize_preview_row_count;
     size_t quantize_preview_total_rows;
     bool quantize_preview_rows_truncated;
+    uint64_t quantize_source_resolution;
+    uint64_t quantize_display_resolution;
+    uint64_t quantize_resolution_scale;
+    bool quantize_geometry_valid;
+    bool quantize_preview_drawable;
+    bool quantize_ghosts_drawable;
+    const WormUiComposeQuantizeGhostView* quantize_ghosts;
+    size_t quantize_ghost_count;
     char quantize_preview_message[96];
     // Report from the most recently applied request, retained across frames.
     const WormUiComposeQuantizeReportRowView* quantize_applied_rows;

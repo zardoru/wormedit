@@ -4,6 +4,8 @@
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_inspector.h"
+#include "ui/nuklear/compose_canvas.h"
+#include "ui/nuklear/theme.h"
 #include "ui/nuklear/sound_import_runtime.h"
 
 #include <wormedit/core/command_registry.h>
@@ -2940,6 +2942,120 @@ void check_quantize_preset_action(const WormUiWorkspaceAction& action, WormUiCom
     if (name)
         CHECK(std::string_view(action.compose_quantize_preset_name) == name);
 }
+
+void wheel_compose_inspector(nuklear_event_harness_t& harness, float x, float y,
+                             float direction) {
+    SDL_Event wheel{};
+    wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.mouse_x = static_cast<int>(x);
+    wheel.wheel.mouse_y = static_cast<int>(y);
+    wheel.wheel.y = direction;
+    const std::array events{motion_event(x, y), wheel};
+    (void)harness.frame(events);
+}
+
+auto scroll_compose_inspector_to(nuklear_event_harness_t& harness, std::string_view label,
+                                 float x, float y, float direction, int limit) -> bool {
+    for (int tick = 0; tick < limit; ++tick) {
+        if (harness.drawn_text_center(label)) return true;
+        wheel_compose_inspector(harness, x, y, direction);
+    }
+    return harness.drawn_text_center(label).has_value();
+}
+
+void check_quantize_ghost_initial_state(nuklear_event_harness_t& harness) {
+    const auto grid = click_quantize_label(harness, "1/16");
+    expect_draw(compose_quantize_ghosts_drawn_for_testing());
+    const auto amber_draw = compose_quantize_ghost_draw_state_for_testing();
+    expect_draw(amber_draw.emitted_segments > 40 && amber_draw.red == 255 &&
+                amber_draw.green == 190 && amber_draw.blue == 56 && amber_draw.alpha == 190);
+    check_quantize_settings(grid.get(), 16, 0, 0);
+}
+
+void check_quantize_ghost_visibility(nuklear_event_harness_t& harness,
+                                    WormUiComposeView& view) {
+    auto& inspector_state = worm_ui_nuklear_compose_state();
+    inspector_state.inspector_visible = false;
+    (void)harness.frame();
+    expect_draw(!compose_quantize_ghosts_drawn_for_testing());
+    inspector_state.inspector_visible = true;
+    (void)harness.frame();
+    expect_draw(compose_quantize_ghosts_drawn_for_testing());
+    harness.view().active_tab = WORM_UI_WORKSPACE_TAB_METADATA;
+    view.visible = false;
+    (void)harness.frame();
+    expect_draw(!compose_quantize_ghosts_drawn_for_testing());
+    harness.view().active_tab = WORM_UI_WORKSPACE_TAB_COMPOSE;
+    view.visible = true;
+    (void)harness.frame();
+    expect_draw(compose_quantize_ghosts_drawn_for_testing());
+}
+
+void check_quantize_ghost_scroll_clipping(nuklear_event_harness_t& harness) {
+    const auto quantize_label = harness.drawn_text_center("1/16");
+    expect_draw(quantize_label.has_value());
+    REQUIRE(scroll_compose_inspector_to(harness, "Transform", quantize_label->first,
+                                        quantize_label->second, -1.0f, 80));
+    auto transform = harness.drawn_text_center("Transform");
+    REQUIRE(transform.has_value());
+    (void)click_at(harness, transform->first, transform->second);
+    REQUIRE(scroll_compose_inspector_to(harness, "Measure at cursor", quantize_label->first,
+                                        quantize_label->second, -1.0f, 80));
+    const auto measure = harness.drawn_text_center("Measure at cursor");
+    REQUIRE(measure.has_value());
+    (void)click_at(harness, measure->first, measure->second);
+    REQUIRE(scroll_compose_inspector_to(harness, "1/16", quantize_label->first,
+                                        quantize_label->second, 1.0f, 120));
+    for (int tick = 0; tick < 120 && compose_quantize_ghosts_drawn_for_testing(); ++tick)
+        wheel_compose_inspector(harness, quantize_label->first, quantize_label->second, -1.0f);
+    expect_draw(!compose_quantize_ghosts_drawn_for_testing());
+    for (int tick = 0; tick < 120 && !compose_quantize_ghosts_drawn_for_testing(); ++tick)
+        wheel_compose_inspector(harness, quantize_label->first, quantize_label->second, 1.0f);
+    expect_draw(compose_quantize_ghosts_drawn_for_testing());
+}
+
+void check_quantize_ghost_bounds_and_collision(nuklear_event_harness_t& harness,
+                                               WormUiComposeQuantizeGhostView& ghost) {
+    const auto original_before_y = ghost.before_head_anchor_y;
+    const auto original_after_y = ghost.after_head_anchor_y;
+    ghost.before_head_anchor_y = -300.0;
+    ghost.after_head_anchor_y = 1700.0;
+    ghost.before_head.top = -310;
+    ghost.before_head.bottom = -294;
+    ghost.after_head.top = 1690;
+    ghost.after_head.bottom = 1706;
+    (void)harness.frame();
+    expect_draw(compose_quantize_ghosts_drawn_for_testing());
+    ghost.before_head_anchor_y = -3000.0;
+    ghost.after_head_anchor_y = -2800.0;
+    ghost.before_head.top = -3010;
+    ghost.before_head.bottom = -2994;
+    ghost.after_head.top = -2810;
+    ghost.after_head.bottom = -2794;
+    (void)harness.frame();
+    expect_draw(!compose_quantize_ghosts_drawn_for_testing());
+    ghost.before_head_anchor_y = original_before_y;
+    ghost.after_head_anchor_y = original_after_y;
+    ghost.before_head = {100, 100, 500, 116};
+    ghost.after_head = {600, 130, 1000, 146};
+    ghost.collision = true;
+    (void)harness.frame();
+    const auto red_draw = compose_quantize_ghost_draw_state_for_testing();
+    const auto conflict = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict);
+    expect_draw(red_draw.emitted_segments > 0 && red_draw.red == conflict.r &&
+                red_draw.green == conflict.g && red_draw.blue == conflict.b && red_draw.alpha == 153);
+    ghost.collision = false;
+}
+
+void check_quantize_ghost_overlay(nuklear_event_harness_t& harness,
+                                  WormUiComposeView& view,
+                                  WormUiComposeQuantizeGhostView& ghost) {
+    check_quantize_ghost_initial_state(harness);
+    check_quantize_ghost_visibility(harness, view);
+    check_quantize_ghost_scroll_clipping(harness);
+    check_quantize_ghost_bounds_and_collision(harness, ghost);
+}
 } // namespace
 
 TEST_CASE("Quantize sets 1/16 Authored and Later in three clicks then applies",
@@ -2948,13 +3064,30 @@ TEST_CASE("Quantize sets 1/16 Authored and Later in three clicks then applies",
     REQUIRE(harness.ready());
     seed_quantize_controls(harness);
     auto& view = harness.view().compose;
+    static WormUiComposeQuantizeGhostView ghosts[]{{
+        .object_id = 77, .lane_id = 1,
+        .before_head_glyph = static_cast<std::uint32_t>(wormedit::lane_glyph_t::arrow_up),
+        .after_head_glyph = static_cast<std::uint32_t>(wormedit::lane_glyph_t::arrow_up),
+        .before_head = {100, 100, 500, 116}, .after_head = {600, 130, 1000, 146},
+        .before_head_anchor_x = 115, .before_head_anchor_y = 108,
+        .after_head_anchor_x = 175, .after_head_anchor_y = 138,
+        .moved_head = true, .head_halfway = true}};
+    view.scene_available = true;
+    view.viewport_width_pixels = 1800;
+    view.viewport_height_pixels = 1400;
+    view.quantize_ghosts = ghosts;
+    view.quantize_ghost_count = 1;
+    view.quantize_ghosts_drawable = true;
     const auto grid = click_quantize_label(harness, "1/16");
+    expect_draw(compose_quantize_ghosts_drawn_for_testing());
     check_quantize_settings(grid.get(), 16, 0, 0);
     view.quantize_divisions = 16;
     const auto space = click_quantize_label(harness, "Authored");
+    expect_draw(compose_quantize_ghosts_drawn_for_testing());
     check_quantize_settings(space.get(), 16, 1, 0);
     view.quantize_space = 1;
     const auto later = click_quantize_label(harness, "Round later");
+    expect_draw(compose_quantize_ghosts_drawn_for_testing());
     check_quantize_settings(later.get(), 16, 1, 1);
     view.quantize_tie = 1;
     const auto applied = click_quantize_label(harness, "Apply quantization");
@@ -2963,6 +3096,36 @@ TEST_CASE("Quantize sets 1/16 Authored and Later in three clicks then applies",
     CHECK(applied.get().compose_quantize_space == 1);
     CHECK(applied.get().compose_quantize_tie == 1);
     CHECK(harness.drawn_text().find("Presets and settings") == std::string::npos);
+}
+
+TEST_CASE("Quantize ghost overlay follows visible section, scroll clipping and collision color",
+          "[frontend-state][event-harness][quantize]") {
+    nuklear_event_harness_t harness{1800, 500};
+    REQUIRE(harness.ready());
+    seed_quantize_controls(harness);
+    auto& view = harness.view().compose;
+    static WormUiComposeQuantizeGhostView ghost{
+        .object_id = 77, .lane_id = 1,
+        .before_head_glyph = static_cast<std::uint32_t>(wormedit::lane_glyph_t::arrow_up),
+        .after_head_glyph = static_cast<std::uint32_t>(wormedit::lane_glyph_t::arrow_up),
+        .before_head = {100, 100, 500, 116}, .after_head = {600, 130, 1000, 146},
+        .before_head_anchor_x = 300, .before_head_anchor_y = 108,
+        .after_head_anchor_x = 800, .after_head_anchor_y = 138,
+        .moved_head = true, .head_halfway = true};
+    view.scene_available = true;
+    view.viewport_width_pixels = 1800;
+    view.viewport_height_pixels = 600;
+    view.quantize_ghosts = &ghost;
+    view.quantize_ghost_count = 1;
+    view.quantize_ghosts_drawable = true;
+    auto& timing = harness.view().timing;
+    timing.stage_active = true;
+    timing.stage_lane = WORM_UI_TIMING_LANE_BPM;
+    timing.stage_marker_y_pixels = 1.0;
+    timing.stage_value = 120.0;
+    timing.stage_pause_unit = WORM_UI_TIMING_PAUSE_SECONDS;
+    (void)harness.frame();
+    check_quantize_ghost_overlay(harness, view, ghost);
 }
 
 TEST_CASE("Quantize headings retain counts and only advertise an actual Q binding",

@@ -413,6 +413,68 @@ TEST_CASE("quantize report caps rows after deterministic source-order retention"
     check_expectation(preview.report_rows.back().object == object_id_t{265});
 }
 
+TEST_CASE("quantize report keeps all selected collision rows ahead of 256 earlier occupants",
+          "[sys][quantize-preview][t437]") {
+    auto chart = chart_with_lanes(256);
+    std::vector<object_id_t> selected;
+    selected.reserve(256);
+    for (std::uint64_t index = 0; index < 256; ++index) {
+        const auto lane = lane_id_t{index + 1};
+        chart.measures.front().notes.push_back({.id = object_id_t{10 + index},
+            .position = {measure_id_t{1}, 0}, .lane = lane, .kind = note_kind_t::tap});
+    }
+    for (std::uint64_t index = 0; index < 256; ++index) {
+        const auto lane = lane_id_t{index + 1};
+        const auto id = object_id_t{266 + index};
+        chart.measures.front().notes.push_back({.id = id,
+            .position = {measure_id_t{1}, 120}, .lane = lane, .kind = note_kind_t::tap});
+        selected.push_back(id);
+    }
+    const auto preview = preview_quantize_selection(chart, selected, 4);
+    check_expectation(preview.drawable && preview.blocked != 0);
+    check_expectation(preview.colliding_objects == 512);
+    check_expectation(preview.report_total_rows == 512);
+    check_expectation(preview.report_rows.size() == quantize_report_row_capacity);
+    check_expectation(preview.report_truncated);
+    check_expectation(std::ranges::all_of(preview.report_rows,
+        [](const auto& row) { return row.selected; }));
+    check_expectation(std::ranges::all_of(selected, [&](const auto id) {
+        return std::ranges::find(preview.report_rows, id, &quantize_report_row_t::object) !=
+               preview.report_rows.end();
+    }));
+}
+
+TEST_CASE("quantize report deterministically fills spare rows after selected collision rows",
+          "[sys][quantize-preview][t437]") {
+    auto chart = chart_with_lanes(255);
+    for (std::uint64_t index = 0; index < 255; ++index) {
+        const auto lane = lane_id_t{index + 1};
+        chart.measures.front().notes.push_back({.id = object_id_t{10 + index},
+            .position = {measure_id_t{1}, 0}, .lane = lane, .kind = note_kind_t::tap});
+    }
+    std::vector<object_id_t> selected;
+    selected.reserve(255);
+    for (std::uint64_t index = 0; index < 255; ++index) {
+        const auto id = object_id_t{265 + index};
+        chart.measures.front().notes.push_back({.id = id,
+            .position = {measure_id_t{1}, 120}, .lane = lane_id_t{index + 1}, .kind = note_kind_t::tap});
+        selected.push_back(id);
+    }
+    const auto first = preview_quantize_selection(chart, selected, 4);
+    const auto second = preview_quantize_selection(chart, selected, 4);
+    check_expectation(first.drawable && first.blocked != 0);
+    check_expectation(first.colliding_objects == 510);
+    check_expectation(first.report_total_rows == 510);
+    check_expectation(first.report_rows.size() == quantize_report_row_capacity);
+    check_expectation(first.report_truncated);
+    check_expectation(std::ranges::count_if(first.report_rows,
+        [](const auto& row) { return row.selected; }) == 255);
+    check_expectation(std::ranges::count_if(first.report_rows,
+        [](const auto& row) { return !row.selected; }) == 1);
+    check_expectation(std::ranges::equal(first.report_rows, second.report_rows,
+        {}, &quantize_report_row_t::object, &quantize_report_row_t::object));
+}
+
 TEST_CASE("quantize stationary tail annotations share the bounded report capacity",
           "[sys][quantize-preview]") {
     auto chart = chart_with_lanes(257);

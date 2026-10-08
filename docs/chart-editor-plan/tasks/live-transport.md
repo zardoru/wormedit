@@ -73,7 +73,9 @@ measurements. Apply the stale-plan check (rule 9) first.
 
 ## T-273 Register audio sources lazily and off the frame thread
 
-- **Status:** ready
+- **Status:** partial (2026-10-08 stale-plan audit)
+- **Done so far:** deferred pending registration and scheduler probes (`register_audition_sources_deferred`, `start_audition_source_probes` in `src/sys/audio_source_registration.cpp`); probe states and a bounded decoder pool (`maximum_open_decoders = 8` in `include/wormedit/audio/source_registry.h`); 1,295-asset deferred-return test in `tests/sys/audio_source_registration_tests.cpp`.
+- **Remaining:** step 4, Save As rebasing in place (`reconcile_audition_sources` still clears and re-registers every asset); the step 5 test that Save As does not re-probe unchanged files; step 3 probe order by first use from the cursor is unverified.
 - **Outcome:** opening a project registers audio assets without opening any decoder on the frame thread; geometry probes run on the task scheduler in parallel (bounded), and a decoder is opened only while a source is being decoded, then closed; Save As only rebases paths in existing bindings instead of re-registering everything.
 - **Read first:** `src/sys/audio_source_registration.cpp` (`register_audition_sources`, `reconcile_audition_sources`), `src/audio/source_registry.cpp` (`register_source`, `entry_t`), `include/wormedit/audio/decoder.h`, `src/sys/main.cpp` (`reset_project_runtime_state`, the save-as path that calls `reconcile_audition_sources`).
 - **Files owned:** `include/wormedit/audio/source_registry.h`, `src/audio/source_registry.cpp`, `src/sys/audio_source_registration.cpp/.h`, `src/sys/main.cpp` (call sites only), `tests/core/audio_source_registry_tests.cpp`, `tests/sys/audio_source_registration_tests.cpp`.

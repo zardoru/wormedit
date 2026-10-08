@@ -73,7 +73,7 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 ## T-221 Route the global status string through notifications
 
-- **Status:** ready (T-219 is done; 2026-10-04 readiness audit)
+- **Status:** done (2026-10-08 stale-plan audit: `grep -n "std::string& status" src/sys/main.cpp` returns nothing; sinks via `notification_sink_t` in `include/wormedit/core/notifications.h`; full Debug suite 2,809/2,809 at `6a4ecfe`; remaining Compose-side status references are T-222 scope)
 - **Outcome:** every `status = "…"` / `status.assign` in `src/sys/main.cpp` posts a notification with an explicit severity and source instead; the `std::string& status` parameters are replaced by a `notification_sink_t&` (a thin handle that posts to the center).
 - **Read first:** `src/sys/main.cpp` (grep `std::string& status` and `status =`), `include/wormedit/core/notifications.h`.
 - **Files owned:** `src/sys/main.cpp`, `src/sys/timing_edit_runtime.cpp/.h`, `src/sys/metadata_actions.cpp/.h`, `src/sys/application_command_dispatch.cpp/.h`.
@@ -139,7 +139,7 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 ## T-223 Post worker and background failures
 
-- **Status:** ready (T-219 is done; 2026-10-04 readiness audit)
+- **Status:** done (2026-10-08 stale-plan audit: autosave, audio transport, export/resource, recovery and platform producers post typed notifications; repeated underruns collapse through the generic notification dedupe; full Debug suite 2,809/2,809 at `6a4ecfe`)
 - **Outcome:** autosave/backup failures, export and publication results, resource copy/import results, decode/source-unavailable and preview underruns, recovery scan findings, and SDL device failures post through the thread-safe inbox with the right source; repeated underruns collapse by dedupe.
 - **Read first:** `src/core/autosave_loop.cpp`, `src/sys/audio_transport_frame.cpp` (underrun and source-unavailable messages), `src/sys/compose_actions.cpp` (export worker), `src/sys/resource_job_state.cpp`, `src/sys/platform_recovery.cpp`.
 - **Files owned:** those files and headers.

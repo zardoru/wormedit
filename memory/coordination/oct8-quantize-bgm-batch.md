@@ -60,6 +60,10 @@ No quantize command policy changes. Approved supporting paths:
 `src/sys/compose_view.h`, `tests/sys/frame_timing_tests.cpp`,
 `src/ui/nuklear/compose_panel.cpp` and narrow inspector source/header visibility
 accessors. Feedback records exact ownership/purposes on its card before edits.
+`src/ui/nuklear/compose_canvas.h` is additionally approved for a post-dock overlay
+entry so visibility uses the current section clip/scroll state. Retained paint
+context is cleared each frame/hidden lifecycle; dynamic overlays stay outside
+static field caches and inside the field scissor.
 
 T-422 covers actual key event through document changes for three successive
 notes and undo, and makes the existing gesture discoverable. Plain lane keys
@@ -72,6 +76,18 @@ sound, identity/provenance/branch/layers and hold tails in the native project,
 commits one undo, and rejects atomically. Moving BGM back restores the hold.
 BMS exports only the head and reports tail loss without blocking publication.
 Existing BMSON stem and simple BGM moves must keep their behavior.
+
+T-423 first executor phase owns exactly existing `note_to_bgm.h`,
+`note_to_bgm.cpp` and `tests/core/note_to_bgm_tests.cpp`. Automatic placement uses
+the canonical group rule; explicit preferred-lane moves remain manual placement
+with their current right/left fallback. Capacity is explicit planner policy plus
+existing native limits, without invented source-family restrictions. Plan IDs
+remain original event IDs and the command result/routing API stays compatible.
+Later editor tail-loss reporting must not weaken a generic/CLI strict conversion
+policy. Imported BMS provenance preservation needs an export regression showing
+the old play-channel head is removed and the BGM head retained without duplication.
+Luna first executes T-437 report metadata; BGM pure allocator follows its reviewed
+checkpoint/release. No other implementation writer runs during each executor slice.
 
 Ordinary app/core/event/frame builds and all card gates are required. New C++
 functions stay at cognitive complexity 25 or below with configured header-inclusive

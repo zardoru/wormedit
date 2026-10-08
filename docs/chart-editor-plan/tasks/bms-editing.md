@@ -48,9 +48,10 @@ Notes with the same key at the same row necessarily spill to different lanes, an
 ## T-423 Add the group-aware "convert notes to BGM events" core command
 
 - **Status:** ready
-- **Outcome:** `convert_notes_to_bgm` turns a list of play-lane notes into BGM events at the same positions with the same sounds, using the allocation rule above, in one undo step. It returns the new event IDs, and core tests cover every rule step.
-- **Read first:** `include/wormedit/core/resource_assignment.h` (`move_bgm_event_action_t`, `move_virtual_bms_bgm_event_action_t`), `include/wormedit/core/document.h` (`bgm_event_t`, `resource_entry_t::sound_group`), `src/core/interaction.cpp` (selection and command helpers).
-- **Files owned:** new `include/wormedit/core/bgm_conversion.h`, new `src/core/bgm_conversion.cpp`, new `tests/core/bgm_conversion_tests.cpp`, `include/wormedit/core/document.h` (`bgm_event_t::end`), `src/core/document.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, the BMS writer and its loss report, `src/ui/nuklear/compose_canvas.cpp` (tail bar), `src/sys/compose_view.cpp`, `tests/formats/native_project_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, this card.
+- **Outcome:** the existing `move_notes_to_bgm` turns play-lane notes into BGM events at the same positions with the same sounds, using the allocation rule above for automatic placement, in one undo step. Its pure allocation plan exposes retained event IDs, and core tests cover every rule step.
+- **Read first:** `include/wormedit/core/note_to_bgm.h`, `src/core/note_to_bgm.cpp`, `tests/core/note_to_bgm_tests.cpp`, `include/wormedit/core/document.h` (`bgm_event_t`, `resource_entry_t::sound_group`).
+- **Files owned:** initial allocator phase: `include/wormedit/core/note_to_bgm.h`, `src/core/note_to_bgm.cpp`, `tests/core/note_to_bgm_tests.cpp`. Root owns this card and manifests. Later schema/native/validation/resource-assignment/export/projection paths require exact recorded root approval and a sequential handoff from T-437/T-422 before editing.
+- **Stale audit / policy (2026-10-08):** the existing command already supports one undo, BMSON stem preservation and reverse/mixed moves. Extend it rather than duplicate a `bgm_conversion` API. Automatic placement follows the canonical group rule; an explicit `preferred_lane` remains manual placement with its existing right/left fallback. Use explicit planner capacity policy and existing native lane/ID/order limits, without inventing unsupported-family restrictions. Preserve the existing command result and routing; expose event IDs through the plan. Ordinary conversion currently drops provenance and hold tails, and ignores sound groups. Schema work waits until shared-header consumers are frozen/released. Editor BMS export reports tail loss and continues; a generic strict conversion policy remains strict.
 - **Steps:**
   1. Add a pure allocator: (chart, notes, catalog) → a list of (note, BGM lane or new-lane index), or a rejection. Test it without a document history.
   2. Holds keep their tails. Add `std::optional<local_position_t> end` to `bgm_event_t`, and persist it natively with a migration where absent means none. Draw it as a bar in the BGM lane. BMS export writes the head only, and its loss report lists the dropped tails, because BMS BGM channels cannot hold long notes. Play-lane moves (lane keys and drags) turn a BGM event with `end` back into a hold.
@@ -66,7 +67,7 @@ Notes with the same key at the same row necessarily spill to different lanes, an
      - a hold keeps its tail as the BGM event's `end`, and moving it back to a play lane restores the same hold.
 - **Invariants:** sounds, positions, layers, branches and hold tails survive in the native project. Nothing outside the listed notes changes. The only loss is at BMS export, and the loss report states it.
 - **Reject/failure behavior:** any unplaceable note rejects the whole command with no partial change.
-- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^core\..*bgm_conversion'`; `clang-tidy -p build src/core/bgm_conversion.cpp`.
+- **Verify:** `cmake --build build`; run the existing core note-to-BGM test cases with a nonempty matched count and required full core suite; `clang-tidy -p build src/core/note_to_bgm.cpp`.
 - **Out of scope:** UI (T-424, T-425).
 
 ## T-424 Add the Move to BGM key and menu item, with a successive Shift variant

@@ -139,3 +139,10 @@ continue instead of rejecting solely for a loss. Root changes the application
 request to `loss_policy_t::warn` and presents conversion loss warnings on success
 after Draw releases `compose_actions.cpp`. Decode, invalid target, capacity and
 publication failures still reject atomically; CLI explicit loss policies remain.
+
+Additional Draw scope approved before edits: `src/ui/nuklear/frontend.cpp`
+for narrow right-button/motion press-origin tracking in existing Compose state.
+Nuklear overwrites `clicked_pos` on release, so a batched press/motion/release
+must retain the actual press origin to distinguish erase from a context click.
+Preserve native cursor and other frontend routing; verify the batched path and
+baseline cognitive complexity.

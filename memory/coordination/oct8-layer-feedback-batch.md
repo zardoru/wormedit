@@ -128,3 +128,17 @@ Draw initiation. Existing `tests/sys/frame_timing_tests.cpp` proves actual
 source projection/cache/UTF-8/missing behavior; `tests/ui/compose_bgm_layer_tests.cpp`
 owns chip routing/lifecycle regressions. No manifest additions. Arena-owned labels
 and cached source lookup avoid full catalog scans each warm frame.
+
+T-420 future supporting scope approved (implementation still follows the phase
+handoffs above): `include/wormedit/core/editor_scene.h` and
+`src/core/editor_scene.cpp` carry conflicts through endpoints and segmented hold
+bodies without rejecting geometry-valid conflict previews; malformed/stale
+proposals still fail. `src/sys/compose_input.cpp` may narrowly preserve an
+in-chart unavailable-lane move as a red proposal instead of canceling it, while
+outside-chart cancellation remains explicit. Existing
+`tests/core/editor_scene_tests.cpp` and narrow appended
+`tests/sys/frame_timing_tests.cpp` cases prove scene/projection/input behavior.
+Occupant outlines use deduplicated IDs against visible geometry, avoiding a
+full chart scan per ghost. Missing-lane proposals need explicit display-column
+geometry; relaxing lane validation alone is insufficient. Feedback records
+these supporting paths on its card before edits, after T-419 release.

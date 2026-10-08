@@ -179,3 +179,15 @@ and `assets/themes/ui-dark.json` for the card's conflict color role. Append the
 enum entry to preserve existing indices, define a red/coral built-in fallback
 and bundled role, and keep missing custom-theme entries on the fallback. Record
 these paths on the card before edits. Frontend phase still waits for T-414.
+
+Root reviewed frozen T-414 `0c638fc` and integrated it as `34df2c7`.
+Normal app/event/frame builds pass; full event240/240, full frame317/317,
+focused UI6/6 and producer4/4 pass. Header-inclusive ten-TU complexity comparison
+preserves all ten baseline findings. Root inspected the six-state montage and
+actual 640x720 narrow capture (chip right303, dock left330); software CJK font
+coverage remains limited, while source bytes and UTF-8 truncation are tested.
+All T-414 paths/jobs released. Feedback may now refresh onto this checkpoint
+and implement T-420 frontend/projection/input/theme/shared tests. Its frozen core
+gates pass, but independent review requests accurate split-stage/gutter fallback
+geometry for illegal lanes before final acceptance. The card stays ready until
+the full feature is verified. Layer remains released for final cleanup.

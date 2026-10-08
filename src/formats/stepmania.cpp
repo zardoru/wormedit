@@ -406,7 +406,7 @@ auto normalize_note_row(std::string_view source, std::uint32_t lanes, std::size_
     for (const auto& cell : cells) {
         const auto symbol = static_cast<char>(std::toupper(static_cast<unsigned char>(cell.symbol)));
         if (symbol != '0' && symbol != '1' && symbol != '2' && symbol != '3' && symbol != '4' &&
-            symbol != 'M' && symbol != 'L' && symbol != 'F')
+            symbol != 'M' && symbol != 'L' && symbol != 'F' && symbol != 'K')
             fail(stepmania_parse_diagnostic_code_t::invalid_notes,
                  "Note map contains an unsupported StepMania note symbol", source_order);
         result.symbols.push_back(symbol);
@@ -1087,6 +1087,47 @@ auto cell_sound(const keysound_context_t& context, const note_row_t& row, std::u
     return result;
 }
 
+// Returns the BGM source lane for the slot-th autokeysound of a row, creating
+// lanes left to right on first use and reusing them on later rows.
+auto autokeysound_lane(chart_document_t& chart, std::size_t slot, id_source_t& ids,
+                       std::size_t source_order) -> object_id_t {
+    while (chart.bgm_source_lanes.size() <= slot)
+        chart.bgm_source_lanes.push_back({
+            .id = ids.take<object_id_t>(),
+            .name = "BGM " + std::to_string(chart.bgm_source_lanes.size() + 1),
+            .source_order = source_order});
+    return chart.bgm_source_lanes[slot].id;
+}
+
+struct autokeysound_cell_t {
+    std::size_t measure{};
+    std::size_t line{};
+    std::uint32_t column{};
+    std::size_t slot{};
+    local_position_t position;
+    note_cell_sound_t sound;
+};
+
+// A `K` cell plays its keysound without being judged, so it becomes a BGM event.
+// One that would play nothing imports as nothing.
+void append_autokeysound(chart_document_t& chart, const autokeysound_cell_t& cell,
+                         id_source_t& ids, stepmania_profile_t profile, const field_t& field,
+                         std::vector<stepmania_parse_diagnostic_t>& diagnostics) {
+    if (!cell.sound.resource) {
+        if (cell.sound.suffix.empty())
+            append_keysound_warning(diagnostics, field,
+                "Autokeysound in measure " + std::to_string(cell.measure + 1) + " row " +
+                std::to_string(cell.line) + " has no keysound index and plays nothing");
+        return;
+    }
+    const auto lane = autokeysound_lane(chart, cell.slot, ids, field.order);
+    chart.measures[cell.measure].bgm_events.push_back({
+        .id = ids.take<object_id_t>(), .position = cell.position, .source_lane = lane,
+        .sound = cell.sound.resource, .structural_slot = cell.slot,
+        .provenance = note_provenance(profile, "K" + cell.sound.suffix + " column " +
+                                                   std::to_string(cell.column), field)});
+}
+
 void append_note_map_rows(chart_document_t& chart, const std::vector<std::vector<note_row_t>>& rows,
                           std::uint32_t lane_count, const lane_layout_t& layout,
                           id_source_t& ids, std::size_t& total_events,
@@ -1100,16 +1141,24 @@ void append_note_map_rows(chart_document_t& chart, const std::vector<std::vector
             const auto absolute = static_cast<std::uint64_t>(measure) *
                                   chart.divisions_per_standard_measure + row.position;
             const auto position = local_position(absolute, chart.divisions_per_standard_measure);
+            std::size_t autokeysounds_in_row{};
             for (std::uint32_t lane = 0; lane < lane_count; ++lane) {
                 if (row.symbols[lane] == '0') continue;
                 if (++total_events > options.max_events)
                     fail(stepmania_parse_diagnostic_code_t::event_limit,
                          "StepMania file exceeds the configured event limit",
                          note_field.order, note_field.offset);
+                auto sound = cell_sound(keysounds, row, lane, measure, note_field, diagnostics);
+                if (row.symbols[lane] == 'K') {
+                    const bool plays = sound.resource.has_value();
+                    append_autokeysound(chart, {measure, row.line, lane, autokeysounds_in_row,
+                                                position, std::move(sound)},
+                                        ids, profile, note_field, diagnostics);
+                    if (plays) ++autokeysounds_in_row;
+                    continue;
+                }
                 append_note_symbol(chart, layout, measure, lane, row.symbols[lane], position,
-                                   open_holds, ids, profile, note_field,
-                                   cell_sound(keysounds, row, lane, measure, note_field,
-                                              diagnostics));
+                                   open_holds, ids, profile, note_field, std::move(sound));
             }
         }
     }

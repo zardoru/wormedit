@@ -50,7 +50,8 @@ Order: T-478, then T-479, then T-480. T-481 waits on T-480.
 
 ## T-479 Import `K` autokeysounds as BGM events
 
-- **Status:** ready (T-478 done 2026-10-08)
+- **Status:** done
+- **Result (2026-10-08):** `K` cells import as BGM events on `BGM n` source lanes (one per concurrent `K` in a row, left to right, reused across rows); provenance spelling is `K[n] column c`; no gameplay note is created; an index-less or out-of-range `K` imports as nothing with one warning.
 - **Outcome:** each `K` cell imports as a BGM event at its row that plays the indexed keysound. Its StepMania column is kept in provenance. Gameplay lanes stay empty at that cell, so judged note counts match StepMania's.
 - **Read first:** the reference's "Autokeysound" section, `src/formats/stepmania.cpp` after T-478, `include/wormedit/core/document.h` (`bgm_event_t`, `bgm_source_lane_t`), the BMS importer's BGM lane creation in `src/formats/bms.cpp`.
 - **Files owned:** `src/formats/stepmania.cpp`, `include/wormedit/formats/stepmania.h`, `tests/formats/stepmania_tests.cpp`, the T-478 fixtures, this card.

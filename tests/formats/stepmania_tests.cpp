@@ -1225,13 +1225,6 @@ TEST_CASE("StepMania malformed keysound suffixes reject the chart",
         CHECK(result.diagnostics.front().code ==
               wormedit::stepmania_parse_diagnostic_code_t::invalid_notes);
     }
-    SECTION("K stays rejected until autokeysounds are modeled") {
-        const auto result = parse_inline(
-            "#KEYSOUNDS:a.wav;#NOTES:dance-single::Hard:1:0:\nK[0]000\n;",
-            wormedit::stepmania_profile_t::sm);
-        CHECK_FALSE(result.song.has_value());
-        REQUIRE(result.has_errors());
-    }
     SECTION("a suffix does not hide a column count mismatch") {
         const auto result = parse_inline(
             "#KEYSOUNDS:a.wav;#NOTES:dance-single::Hard:1:0:\n1[0]00\n;",
@@ -1257,4 +1250,41 @@ TEST_CASE("StepMania charts without keysounds import without sample resources or
         CHECK(result.diagnostics.empty());
         CHECK(sample_resources(*result.song).empty());
     }
+}
+
+TEST_CASE("StepMania K autokeysounds import as BGM events without judged notes",
+          "[unit][format][stepmania][keysounds]") {
+    const std::string source =
+        "#KEYSOUNDS:a.wav,b.wav;#BPMS:0=120;"
+        "#NOTES:dance-single::Hard:1:0,0,0,0,0:\n"
+        "K[0]K[1]00\n0200\n0K[1]00\n0300\n,\n"
+        "K000\nK[9]000\n1K[0]00\n0000\n;";
+    const auto result = parse_inline(source, wormedit::stepmania_profile_t::sm);
+    REQUIRE(result.song.has_value());
+    REQUIRE_FALSE(result.has_errors());
+    REQUIRE(wormedit::validate_document(*result.song).empty());
+    CHECK(warning_count(result) == 2);
+    const auto& chart = result.song->charts.front();
+    const auto samples = sample_resources(*result.song);
+    REQUIRE(samples.size() == 2);
+    // Judged notes: only the hold and the tap; K cells add none.
+    CHECK(chart.measures[0].notes.size() == 1);
+    CHECK(chart.measures[1].notes.size() == 1);
+    REQUIRE(chart.bgm_source_lanes.size() == 2);
+    const auto& first = chart.measures[0].bgm_events;
+    REQUIRE(first.size() == 3);
+    CHECK(first[0].source_lane == chart.bgm_source_lanes[0].id);
+    CHECK(first[1].source_lane == chart.bgm_source_lanes[1].id);
+    CHECK(first[0].position == first[1].position);
+    CHECK(first[0].sound == samples[0]->id);
+    CHECK(first[1].sound == samples[1]->id);
+    CHECK(first[0].provenance.source_spelling == "K[0] column 0");
+    CHECK(first[1].provenance.source_spelling == "K[1] column 1");
+    // This K sits on a column whose hold body is open in the same lane.
+    CHECK(first[2].source_lane == chart.bgm_source_lanes[0].id);
+    CHECK(first[2].provenance.source_spelling == "K[1] column 1");
+    const auto& second = chart.measures[1].bgm_events;
+    REQUIRE(second.size() == 1);
+    CHECK(second.front().source_lane == chart.bgm_source_lanes[0].id);
+    CHECK(second.front().sound == samples[0]->id);
 }

@@ -127,3 +127,9 @@ reviewed; Draw now loans Luna exclusively `tests/ui/nuklear_event_harness_tests.
 for source selection/clear, right-click versus erase drag at scaled viewports,
 and cancellation regressions. Sol keeps production and all build writes;
 release the test file before its review/build. Conversion retains its tests.
+
+Additional Draw scope approved before edits: `src/core/interaction_hit_test.cpp`
+for a narrow position-at-Y overload accepting the retained measure index, with
+its declaration in owned `interaction.h`. BGA strokes retain validated geometry
+once instead of rebuilding an index for every pointer update; exact placement
+and standard absolute snap semantics remain unchanged.

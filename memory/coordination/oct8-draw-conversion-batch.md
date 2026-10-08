@@ -46,3 +46,34 @@ headers and baseline scores: new functions <=25, no NOLINT or increased old
 violations. Coordinators review actual diffs/results, commit clean source and
 explicitly release all writes/jobs. Root integrates serially, normally builds
 and tests all main, commits planning results and removes clean worker builds.
+
+Supporting scopes approved before edits:
+
+- Draw: `src/ui/nuklear/compose_input_internal.h` for explicit stroke intent,
+  `compose_input_panel.cpp` for right-drag/context-menu arbitration and
+  `compose_panel.cpp` for source/capture lifecycle. Application state lives in
+  already-owned `src/sys/compose_view.h`; `application_commands.h` is not needed.
+  Concrete tests: `tests/core/interaction_tests.cpp`,
+  `tests/core/command_registry_tests.cpp`,
+  `tests/sys/compose_action_notification_tests.cpp`,
+  `tests/ui/nuklear_event_harness_tests.cpp`,
+  `tests/ui/bga_lane_event_harness_tests.cpp`. Preserve the legacy core paint
+  default for unrelated callers; Draw and erase send explicit intent.
+- Conversion: `include/wormedit/formats/conversion.h`,
+  `include/wormedit/formats/slice_spans.h`,
+  `src/formats/slice_span_render.cpp`,
+  `include/wormedit/formats/conversion_publication.h`,
+  `src/formats/conversion_publication.cpp`,
+  `src/formats/conversion_publication_storage.cpp`,
+  `src/tools/wormedit_convert.cpp`,
+  `tests/formats/conversion_publication_tests.cpp`,
+  `tests/formats/slice_span_render_tests.cpp`: explicit geometry/plans and
+  generated WAVs inside the existing atomic publication boundary. Pure core
+  conversion stays detached and decoder-free; decoder-OFF builds remain valid.
+  Generic conversions and existing overwrite/ownership policies stay intact.
+
+Cross-tree exception: Draw retains exclusive worker edits to
+`src/sys/compose_actions.cpp`. Conversion supplies narrow app caller plumbing
+to root as a patch/snippet; root integrates it serially after Draw releases the
+file. Conversion may not edit that worker file, avoiding two evolving copies.
+Root edits CMake manifests only after receiving exact dependency/source hunks.

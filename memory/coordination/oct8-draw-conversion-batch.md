@@ -77,3 +77,18 @@ Cross-tree exception: Draw retains exclusive worker edits to
 to root as a patch/snippet; root integrates it serially after Draw releases the
 file. Conversion may not edit that worker file, avoiding two evolving copies.
 Root edits CMake manifests only after receiving exact dependency/source hunks.
+
+Additional Draw scope approved before edits: `src/sys/application_commands.h`,
+`src/sys/application_commands.cpp`, `src/sys/application_command_dispatch.cpp`
+for Draw/Layer tool commands, `src/ui/nuklear/compose_note_menu.cpp` for Draw
+right-click release versus right-drag arbitration, and
+`tests/sys/application_commands_tests.cpp`. Select context menus and the
+existing Layer semantics stay intact; T-413 remains outside the batch.
+
+Root adds two guarded CLI dependency lines to conversion's `CMakeLists.txt`:
+link `wormedit::audio_decoder` and define `WORMEDIT_HAS_AUDIO_DECODER=1` only
+inside the enabled decoder block. Core remains decoder-free and CLI decoder-OFF
+behavior stays supported. This root-owned hunk travels with conversion's commit.
+Conversion has queued an appended `tests/formats/conversion_tests.cpp` Luna
+brief covering deduplicated stem/packed mappings, explicit silence, rejection,
+determinism and immutable input, after its API is ready and Draw releases Luna.

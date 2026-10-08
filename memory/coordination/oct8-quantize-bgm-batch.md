@@ -382,3 +382,14 @@ do not invent a rejection policy. The already-approved
 outer-command linked-hold batch regression: overlapping restores must reject
 atomically after observing earlier scratch restores. This is exact scope
 approval/readiness, not an executor grant while 02a verification is active.
+
+The linked assignment audit also confirms asymmetrical layer handling: BGM
+markers may carry semantic layers, playable linked notes are rejected for
+carrying them, and conversion currently drops them in both directions. Root
+approves removing only that empty-layer restriction and copying valid native
+semantic-layer vectors during linked tap/hold conversion. This preserves the
+T-423 native-field invariant and avoids stranding a restored layered note.
+Keep existing label/branch exclusions and source-link/slice restrictions.
+Layered linked tap and hold roundtrips, note-to-different-lane preservation and
+exact native Undo/Redo belong in the already-approved 02d tests. No new schema,
+API or source file is required; 02d execution still waits for its grant.

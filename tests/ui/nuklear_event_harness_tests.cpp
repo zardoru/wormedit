@@ -3,6 +3,7 @@
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_inspector.h"
 #include "ui/nuklear/sound_import_runtime.h"
 
 #include <wormedit/core/command_registry.h>
@@ -17,6 +18,7 @@
 #include <string_view>
 #include <utility>
 #include <tuple>
+
 
 TEST_CASE("Sound layer confirmation waits for a choice and rejects stale documents",
           "[unit][frontend-state][event-harness][sound-note-layers]") {
@@ -2831,4 +2833,327 @@ TEST_CASE("Unavailable Draw tool readiness rejects the routed shortcut",
     expect_draw(harness_tool_chord(action.get(), SDL_SCANCODE_2) &&
           dispatched.status == wormedit::command_dispatch_status_t::disabled &&
           dispatched.command == wormedit::command_id_t{"edit.tool_draw"});
+}
+
+namespace {
+auto click_quantize_label(nuklear_event_harness_t& harness, std::string_view label)
+    -> workspace_action_snapshot_t {
+    (void)harness.frame();
+    const auto center = harness.drawn_text_center(label);
+    REQUIRE(center.has_value());
+    const auto frames = click_at(harness, center->first, center->second);
+    for (const auto& frame : frames)
+        if (frame.get().compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+            return frame;
+    return frames.back();
+}
+
+void seed_quantize_controls(nuklear_event_harness_t& harness) {
+    auto& view = harness.view().compose;
+    view.project_id = 419;
+    view.chart_id = 419;
+    view.document_revision = 7;
+    view.selected_note_count = 3;
+    view.quantize_divisions = 4;
+    view.quantize_preview_moved = 2;
+    view.quantize_preview_halfway_notes = 2;
+    view.quantize_preview_holds = 1;
+    auto& state = worm_ui_nuklear_compose_state();
+    state.inspector_visible = true;
+    state.sounds_panel_visible = state.layers_panel_visible = false;
+}
+
+void check_quantize_settings(const WormUiWorkspaceAction& action, std::uint64_t grid,
+                             std::uint8_t space, std::uint8_t tie) {
+    CHECK(action.compose_action == WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS);
+    CHECK(action.compose_quantize_divisions == grid);
+    CHECK(action.compose_quantize_space == space);
+    CHECK(action.compose_quantize_tie == tie);
+    CHECK(action.compose_input_chart_id == 419);
+    CHECK(action.compose_input_document_revision == 7);
+}
+
+auto quantize_popup_field_has_text(const nuklear_event_harness_t& harness,
+                                   std::pair<float, float> heading, std::string_view text) -> bool {
+    for (const auto& item : harness.drawn_text_bounds()) {
+        if (std::string_view(item.text) == text && item.y > heading.second + 12 &&
+            item.y < heading.second + 40 && item.x > heading.first - 145 &&
+            item.x < heading.first + 145)
+            return true;
+    }
+    return false;
+}
+
+void replace_quantize_popup_field(nuklear_event_harness_t& harness, std::string_view heading,
+                                  std::string_view text, std::string_view current = {}) {
+    (void)harness.frame();
+    const auto title = harness.drawn_text_center(heading);
+    REQUIRE(title.has_value());
+    if (!current.empty())
+        REQUIRE(quantize_popup_field_has_text(harness, *title, current));
+    (void)click_at(harness, title->first, title->second + 27);
+    const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_A, SDL_SCANCODE_A);
+    (void)harness.frame(std::span{&press, 1}, SDL_KMOD_CTRL);
+    const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_A, SDL_SCANCODE_A);
+    (void)harness.frame(std::span{&release, 1}, SDL_KMOD_CTRL);
+    for (const char character : text) {
+        const char value[]{character, '\0'};
+        SDL_Event event{};
+        event.type = event.text.type = SDL_EVENT_TEXT_INPUT;
+        event.text.text = value;
+        (void)harness.frame(std::span{&event, 1});
+    }
+    INFO(harness.drawn_text());
+    REQUIRE(quantize_popup_field_has_text(harness, *title, text));
+}
+
+void check_quantize_input_blocked(const std::vector<workspace_action_snapshot_t>& frames) {
+    for (const auto& frame : frames) {
+        CHECK(frame.get().compose_input_count == 0);
+        CHECK(frame.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    }
+}
+
+void open_quantize_preset_menu(nuklear_event_harness_t& harness) {
+    (void)harness.frame();
+    const auto chip = harness.drawn_text_center("Default");
+    REQUIRE(chip.has_value());
+    (void)right_click_at(harness, chip->first, chip->second);
+    (void)harness.frame();
+    REQUIRE(compose_quantize_owns_input());
+    REQUIRE(harness.drawn_text_center("Rename").has_value());
+}
+
+void seed_quantize_presets(nuklear_event_harness_t& harness) {
+    seed_quantize_controls(harness);
+    static const std::array<WormUiComposeQuantizePresetView, 2> presets{
+        {{.name = "Default", .divisions = 16}, {.name = "Trills", .divisions = 24}}};
+    auto& view = harness.view().compose;
+    view.quantize_presets = presets.data();
+    view.quantize_preset_count = presets.size();
+}
+
+void check_quantize_preset_action(const WormUiWorkspaceAction& action, WormUiComposeActionKind kind,
+                                  const char* name = nullptr) {
+    CHECK(action.compose_action == kind);
+    CHECK(action.compose_quantize_preset_index == 0);
+    if (name)
+        CHECK(std::string_view(action.compose_quantize_preset_name) == name);
+}
+} // namespace
+
+TEST_CASE("Quantize sets 1/16 Authored and Later in three clicks then applies",
+          "[frontend-state][event-harness][quantize]") {
+    nuklear_event_harness_t harness{1800, 1400};
+    REQUIRE(harness.ready());
+    seed_quantize_controls(harness);
+    auto& view = harness.view().compose;
+    const auto grid = click_quantize_label(harness, "1/16");
+    check_quantize_settings(grid.get(), 16, 0, 0);
+    view.quantize_divisions = 16;
+    const auto space = click_quantize_label(harness, "Authored");
+    check_quantize_settings(space.get(), 16, 1, 0);
+    view.quantize_space = 1;
+    const auto later = click_quantize_label(harness, "Round later");
+    check_quantize_settings(later.get(), 16, 1, 1);
+    view.quantize_tie = 1;
+    const auto applied = click_quantize_label(harness, "Apply quantization");
+    CHECK(applied.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE);
+    CHECK(applied.get().compose_quantize_divisions == 16);
+    CHECK(applied.get().compose_quantize_space == 1);
+    CHECK(applied.get().compose_quantize_tie == 1);
+    CHECK(harness.drawn_text().find("Presets and settings") == std::string::npos);
+}
+
+TEST_CASE("Quantize headings retain counts and only advertise an actual Q binding",
+          "[frontend-state][event-harness][quantize]") {
+    nuklear_event_harness_t harness{1800, 1400};
+    seed_quantize_controls(harness);
+    (void)harness.frame();
+    CHECK(harness.drawn_text().find("Halfway notes · 2 in selection") != std::string::npos);
+    CHECK(harness.drawn_text().find("Hold tails · 1 hold in selection") != std::string::npos);
+    CHECK(harness.drawn_text().find("Apply quantization (Q)") == std::string::npos);
+    harness.view().compose.quantize_q_bound = true;
+    (void)harness.frame();
+    CHECK(harness.drawn_text().find("Apply quantization (Q)") != std::string::npos);
+    harness.view().compose.quantize_preview_blocked = 1;
+    const auto applied = click_quantize_label(harness, "Apply quantization (Q)");
+    CHECK(applied.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+}
+
+TEST_CASE("Quantize custom grid rejects zero and overflow then applies corrected input",
+          "[frontend-state][event-harness][quantize]") {
+    nuklear_event_harness_t harness{1800, 1400};
+    seed_quantize_controls(harness);
+    (void)click_quantize_label(harness, "custom…");
+    replace_quantize_popup_field(harness, "Grid divisions", "0", "4");
+    const auto invalid = click_quantize_label(harness, "Apply custom grid");
+    INFO(harness.drawn_text());
+    CHECK(invalid.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(compose_quantize_owns_input());
+    CHECK(harness.drawn_text().find("Grid must be a positive whole number") != std::string::npos);
+    replace_quantize_popup_field(harness, "Grid divisions", "18446744073709551616", "0");
+    CHECK(click_quantize_label(harness, "Apply custom grid").get().compose_action ==
+          WORM_UI_COMPOSE_ACTION_NONE);
+    replace_quantize_popup_field(harness, "Grid divisions", "12", "18446744073709551616");
+    const auto applied = click_quantize_label(harness, "Apply custom grid");
+    check_quantize_settings(applied.get(), 12, 0, 0);
+}
+
+TEST_CASE("Quantize preset chips select and expose Rename and Delete on right click",
+          "[frontend-state][event-harness][quantize]") {
+    nuklear_event_harness_t harness{1800, 1400};
+    seed_quantize_presets(harness);
+    const auto selected = click_quantize_label(harness, "Default");
+    check_quantize_preset_action(selected.get(), WORM_UI_COMPOSE_ACTION_SELECT_QUANTIZE_PRESET);
+    open_quantize_preset_menu(harness);
+    (void)click_quantize_label(harness, "Rename");
+    replace_quantize_popup_field(harness, "Rename preset", "Renamed", "Default");
+    const auto renamed = click_quantize_label(harness, "Rename");
+    check_quantize_preset_action(renamed.get(), WORM_UI_COMPOSE_ACTION_RENAME_QUANTIZE_PRESET,
+                                 "Renamed");
+    (void)harness.frame();
+    open_quantize_preset_menu(harness);
+    const auto deleted = click_quantize_label(harness, "Delete");
+    check_quantize_preset_action(deleted.get(), WORM_UI_COMPOSE_ACTION_DELETE_QUANTIZE_PRESET);
+}
+
+TEST_CASE("Quantize plus chip saves a unique named preset with unchanged settings payload",
+          "[frontend-state][event-harness][quantize]") {
+    nuklear_event_harness_t harness{1800, 1400};
+    seed_quantize_presets(harness);
+    (void)click_quantize_label(harness, "+");
+    replace_quantize_popup_field(harness, "Preset name", "Default");
+    CHECK(click_quantize_label(harness, "Save preset").get().compose_action ==
+          WORM_UI_COMPOSE_ACTION_NONE);
+    replace_quantize_popup_field(harness, "Preset name", "New preset", "Default");
+    const auto saved = click_quantize_label(harness, "Save preset");
+    CHECK(saved.get().compose_action == WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET);
+    CHECK(std::string_view(saved.get().compose_quantize_preset_name) == "New preset");
+    CHECK(saved.get().compose_quantize_divisions == 4);
+    CHECK(saved.get().compose_quantize_space == 0);
+    CHECK(saved.get().compose_quantize_tie == 0);
+}
+
+TEST_CASE("Quantize popups consume outside dismissal releases and global shortcuts",
+          "[frontend-state][event-harness][quantize]") {
+    nuklear_event_harness_t harness{1800, 1400};
+    seed_quantize_presets(harness);
+    open_quantize_preset_menu(harness);
+    const auto key = key_event(SDL_EVENT_KEY_DOWN, SDLK_Z, SDL_SCANCODE_Z);
+    const auto keyboard = harness.frame(std::span{&key, 1}, SDL_KMOD_CTRL);
+    CHECK(keyboard.get().shortcut_text_entry_active);
+    CHECK(keyboard.get().compose_input_count == 0);
+    check_quantize_input_blocked(click_at(harness, 500, 500));
+    (void)harness.frame();
+    CHECK_FALSE(compose_quantize_owns_input());
+    open_quantize_preset_menu(harness);
+    const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    CHECK(harness.frame(std::span{&escape, 1}).get().compose_input_count == 0);
+    const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+    CHECK(harness.frame(std::span{&release, 1}).get().compose_input_count == 0);
+    (void)harness.frame();
+    CHECK_FALSE(compose_quantize_owns_input());
+}
+
+TEST_CASE("Quantize popups reject stale revision chart and preset identity",
+          "[frontend-state][event-harness][quantize]") {
+    nuklear_event_harness_t harness{1800, 1400};
+    seed_quantize_presets(harness);
+    open_quantize_preset_menu(harness);
+    auto& view = harness.view().compose;
+    std::array<WormUiComposeQuantizePresetView, 2> changed{view.quantize_presets[0],
+                                                           view.quantize_presets[1]};
+    SECTION("revision") {
+        ++view.document_revision;
+    }
+    SECTION("chart") {
+        ++view.chart_id;
+    }
+    SECTION("preset identity without revision") {
+        view.quantize_preset_count = 0;
+    }
+    SECTION("preset settings without revision") {
+        ++changed[0].divisions;
+        view.quantize_presets = changed.data();
+    }
+    CHECK(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    CHECK(harness.drawn_text_center("Rename") == std::nullopt);
+    (void)harness.frame();
+    CHECK_FALSE(compose_quantize_owns_input());
+}
+
+TEST_CASE("Quantize popups close for a hidden inspector tab switch and lost focus",
+          "[frontend-state][event-harness][quantize]") {
+    nuklear_event_harness_t harness{1800, 1400};
+    seed_quantize_presets(harness);
+    open_quantize_preset_menu(harness);
+    SECTION("hidden inspector") {
+        worm_ui_nuklear_compose_state().inspector_visible = false;
+    }
+    SECTION("tab switch") {
+        harness.view().active_tab = WORM_UI_WORKSPACE_TAB_METADATA;
+        harness.view().compose.visible = false;
+    }
+    SECTION("lost focus") {
+        SDL_Event event{};
+        event.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+        (void)harness.frame(std::span{&event, 1});
+    }
+    (void)harness.frame();
+    CHECK_FALSE(compose_quantize_owns_input());
+}
+
+TEST_CASE("Frontend reset clears quantize popup state even when project IDs repeat",
+          "[frontend-state][event-harness][quantize]") {
+    {
+        nuklear_event_harness_t harness{1800, 1400};
+        seed_quantize_presets(harness);
+        open_quantize_preset_menu(harness);
+    }
+    nuklear_event_harness_t harness{1800, 1400};
+    seed_quantize_presets(harness);
+    (void)harness.frame();
+    CHECK_FALSE(compose_quantize_owns_input());
+    CHECK(harness.drawn_text_center("Rename") == std::nullopt);
+}
+
+TEST_CASE("Cancelling an invalid custom quantize draft restores current settings Apply",
+          "[frontend-state][event-harness][quantize]") {
+    nuklear_event_harness_t harness{1800, 1400};
+    seed_quantize_controls(harness);
+    (void)click_quantize_label(harness, "custom…");
+    replace_quantize_popup_field(harness, "Grid divisions", "0", "4");
+    REQUIRE(click_quantize_label(harness, "Apply custom grid").get().compose_action ==
+            WORM_UI_COMPOSE_ACTION_NONE);
+    REQUIRE(harness.drawn_text().find("Grid must be a positive whole number") != std::string::npos);
+    SECTION("outside dismissal") {
+        check_quantize_input_blocked(click_at(harness, 500, 500));
+    }
+    SECTION("Escape dismissal") {
+        const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+        (void)harness.frame(std::span{&press, 1});
+        const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+        (void)harness.frame(std::span{&release, 1});
+    }
+    (void)harness.frame();
+    CHECK_FALSE(compose_quantize_owns_input());
+    const auto applied = click_quantize_label(harness, "Apply quantization");
+    CHECK(applied.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE);
+    CHECK(applied.get().compose_quantize_divisions == 4);
+}
+
+TEST_CASE("Quantize popup owns right clicks over underlying preset chips through dismissal",
+          "[frontend-state][event-harness][quantize]") {
+    nuklear_event_harness_t harness{1800, 1400};
+    seed_quantize_presets(harness);
+    (void)harness.frame();
+    const auto preset = harness.drawn_text_center("Default");
+    REQUIRE(preset.has_value());
+    (void)click_quantize_label(harness, "custom…");
+    check_quantize_input_blocked(right_click_at(harness, preset->first, preset->second));
+    CHECK(harness.drawn_text_center("Rename") == std::nullopt);
+    (void)harness.frame();
+    CHECK_FALSE(compose_quantize_owns_input());
+    open_quantize_preset_menu(harness);
 }

@@ -14,7 +14,7 @@ valid position.
 
 ## T-419 Replace the quantize settings form with one-click controls
 
-- **Status:** ready
+- **Status:** done
 - **Mockup:** [quantize.svg](../mockups/quantize.svg) (reference: match its structure and hierarchy)
 - **Outcome:** the quantize section matches the layout below. Every setting changes with one click, a custom grid is the only typed value and sits behind "⋯", and presets are chips. An event-harness case sets 1/16, Authored and Later with three clicks and applies.
 - **Layout:** see the mockup. Changes from the user's review on 2026-10-05:
@@ -24,7 +24,7 @@ valid position.
   - **Tooltips:** each segment states its effect in one sentence. For example, Block apply's tooltip is "Don't quantize if any note is exactly halfway; those notes are listed."
   - **Field preview:** before and after ghosts on the field are T-437.
 - **Read first:** `src/ui/nuklear/compose_inspector.cpp` (`render_quantize_preset_picker`, `render_quantize_setting_fields`, `render_quantize_preset_actions`, `render_compose_quantize_section`), `src/ui/nuklear/chrome.h` (`button_style`, `mode_button`), `src/ui/nuklear/context_menu.h`.
-- **Files owned:** `src/ui/nuklear/compose_inspector.cpp`, `src/sys/compose_quantize_preview.cpp`, `src/sys/compose_quantize_preview.h`, `src/sys/compose_view.cpp`, `src/ui/frontend.h` (count fields), `tests/ui/nuklear_event_harness_tests.cpp`, this card.
+- **Files owned:** `src/ui/nuklear/compose_inspector.cpp`, `src/sys/compose_quantize_preview.cpp`, `src/sys/compose_quantize_preview.h`, `src/sys/compose_view.cpp`, `src/ui/frontend.h` (count fields), `tests/ui/nuklear_event_harness_tests.cpp`, `src/sys/compose_actions.cpp`, `tests/sys/compose_quantize_preview_tests.cpp`, `tests/ui/quantize_report_event_harness_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `src/ui/nuklear/compose_inspector.h`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/frontend.cpp`, this card. Supporting extensions approved by root on 2026-10-08: the existing dispatcher needs Rename; existing preview tests verify cached counts; existing action-notification tests exercise the real preset dispatcher; existing report harness assertions cover the expanded inspector. Popup hooks in inspector header, Compose panel, and frontend are an approved sequential support loan for input ownership and reset; T-414 waits for their release. Dispatcher editing waits for T-413 release.
 - **Steps:**
   1. Use `chrome::Segmented` and `chrome::ChipGrid` from T-436.
   2. Replace the grid text field with the two-row chip grid and a "custom…" popover holding the existing validated field and an Apply button.
@@ -35,6 +35,9 @@ valid position.
 - **Invariants:** `WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS` and the preset action payloads are byte-identical. A custom grid is validated exactly as now.
 - **Reject/failure behavior:** an invalid custom grid keeps the popover open with the reason shown under the field. A blocked preview disables Apply, and its tooltip gives the reason.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R 'quantize'`; `ctest --test-dir build -L event-harness`; an Xvfb capture of the inspector; `clang-tidy -p build src/ui/nuklear/compose_inspector.cpp`.
+- **Completion (2026-10-08):** implemented the aligned grid chips, segmented settings, retained halfway/hold counts, custom validation, preset save/select/rename/delete, and popup input/lifecycle ownership. Existing action values and payloads remain unchanged; Rename is appended. Q is currently unbound and its hint is omitted. Discarding an invalid draft restores the current settings, and underlying controls cannot replace the popup or open competing tooltips.
+- **Validation:** ordinary optimized app/core/event/frame-dispatcher builds passed; the actual three-click and lifecycle quantize event cases passed (11 cases, 185 assertions), the full event label passed (234 tests), core quantize/preview cases passed (34 cases, 169 assertions), and real rename dispatcher regressions passed (3 cases, 30 assertions). The card-required quantize CTest filter passed 36 tests. Configured header-inclusive complexity checks added no violations and increased no existing scores. Documentation checks and diff whitespace checks passed. An isolated SDL dummy/software capture linked the normal application objects; no desktop session was opened.
+- **Count cost:** counts run only on retained-preview cache misses and reuse validated measure geometry. The matched dense no-move/blocked fixture retained its early report return and added approximately 0.33 ms (50k notes) / 0.66 ms (100k notes) of cold index/count work; 240 warm hits at each size made zero core calls. Bounded arithmetic rejects invalid/nonrepresentable grid steps instead of wrapping halfway counts.
 - **Out of scope:** the toolbar edit-snap control (consider the same chips there later) and the quantize algorithm.
 
 ## T-437 Preview quantization as before and after ghosts on the field

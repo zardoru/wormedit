@@ -1222,6 +1222,8 @@ typedef struct WormUiComposeView {
     // Dry-run counts and bounded report for the current request.
     size_t quantize_preview_moved, quantize_preview_unchanged, quantize_preview_blocked;
     size_t quantize_preview_colliding_objects;
+    size_t quantize_preview_halfway_notes, quantize_preview_holds;
+    bool quantize_q_bound;
     const WormUiComposeQuantizeReportRowView* quantize_preview_rows;
     size_t quantize_preview_row_count;
     size_t quantize_preview_total_rows;
@@ -2313,6 +2315,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW,
     WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU,
     WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER,
+    WORM_UI_COMPOSE_ACTION_RENAME_QUANTIZE_PRESET,
 } WormUiComposeActionKind;
 
 typedef enum WormUiComposeInputKind {
@@ -2455,7 +2458,8 @@ typedef struct WormUiComposeInputAction {
     uint64_t resource_id;
     uint8_t bga_lane_kind;
     bool bga_lane_kind_valid;
-    uint8_t paint_intent; /* 0 legacy toggle, 1 draw, 2 erase */
+    uint8_t paint_intent; /* NOTE_PAINT: 0 legacy toggle, 1 draw, 2 erase;
+                            SEMANTIC_LAYER_PAINT_BEGIN: 1 add, 2 remove. */
 } WormUiComposeInputAction;
 
 /* Which part of a span (Kiai area, Speed transition, SV recipe) a drag holds; carried in

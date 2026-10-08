@@ -2858,6 +2858,7 @@ static void populate_quantize_preview(compose_scene_cache_t& cache,
     view.quantize_preview_moved = view.quantize_preview_unchanged = 0;
     view.quantize_preview_blocked = 0;
     view.quantize_preview_colliding_objects = 0;
+    view.quantize_preview_halfway_notes = view.quantize_preview_holds = 0;
     view.quantize_preview_message[0] = '\0';
     cache.quantize_preview_row_views.clear();
     populate_quantize_presets(cache, document, view);
@@ -2886,6 +2887,8 @@ static void populate_quantize_preview(compose_scene_cache_t& cache,
     view.quantize_preview_unchanged = preview.unchanged;
     view.quantize_preview_blocked = preview.blocked;
     view.quantize_preview_colliding_objects = preview.colliding_objects;
+    view.quantize_preview_halfway_notes = preview.halfway_notes;
+    view.quantize_preview_holds = preview.holds;
     cache.quantize_preview_row_views.reserve(preview.report_rows.size());
     for (const auto& row : preview.report_rows)
         cache.quantize_preview_row_views.push_back(quantize_report_row_view(row));

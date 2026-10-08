@@ -100,6 +100,10 @@ void check_selected_and_unselected_collision_rows(const quantize_preview_t& prev
     CHECK(peer->collision_peer == object_id_t{11});
 }
 
+void check_feedback_count(bool value) {
+    CHECK(value);
+}
+
 } // namespace
 
 TEST_CASE("quantize preview counts moved and unchanged notes", "[sys][quantize-preview]") {
@@ -109,6 +113,58 @@ TEST_CASE("quantize preview counts moved and unchanged notes", "[sys][quantize-p
     CHECK(preview.moved == 1);
     CHECK(preview.unchanged == 1);
     CHECK(preview.blocked == 0);
+}
+
+TEST_CASE("quantize preview retains halfway and hold counts without report rows",
+          "[sys][quantize-preview]") {
+    auto chart = chart_with_notes({120, 480});
+    chart.measures.front().notes[1].end = local_position_t{measure_id_t{1}, 600};
+    chart.measures.front().notes[1].kind = note_kind_t::hold;
+    quantize_request_t request{.divisions = 4,
+                               .tie = quantization_tie_t::reject,
+                               .holds = quantization_hold_t::start_only};
+    const auto blocked =
+        preview_quantize_selection(chart, {object_id_t{10}, object_id_t{11}}, request);
+    check_feedback_count(blocked.halfway_notes == 1);
+    check_feedback_count(blocked.holds == 1);
+    check_feedback_count(blocked.blocked != 0);
+    request.holds = quantization_hold_t::both_endpoints;
+    const auto tails =
+        preview_quantize_selection(chart, {object_id_t{10}, object_id_t{11}}, request);
+    check_feedback_count(tails.halfway_notes == 2);
+    request.tie = quantization_tie_t::earlier;
+    quantize_preview_cache_t cache;
+    const auto& cached = cache.get(chart, 1, {object_id_t{11}}, request);
+    check_feedback_count(cached.halfway_notes == 1);
+    check_feedback_count(cached.holds == 1);
+    check_feedback_count(&cache.get(chart, 1, {object_id_t{11}}, request) == &cached);
+}
+
+TEST_CASE("quantize preview counts authored and promoted grids exactly",
+          "[sys][quantize-preview]") {
+    auto chart = chart_with_notes({60});
+    quantize_request_t request{.divisions = 8};
+    check_feedback_count(
+        preview_quantize_selection(chart, {object_id_t{10}}, request).halfway_notes == 1);
+    request.divisions = 16;
+    check_feedback_count(
+        preview_quantize_selection(chart, {object_id_t{10}}, request).halfway_notes == 0);
+    chart.measures.front().definition = {{3, 4}, meter_t{3, 4}};
+    chart.measures.front().notes.front().position.row = 45;
+    request.divisions = 8;
+    request.space = quantization_space_t::authored_measure;
+    check_feedback_count(
+        preview_quantize_selection(chart, {object_id_t{10}}, request).halfway_notes == 1);
+    request.space = quantization_space_t::standard_measure;
+    check_feedback_count(
+        preview_quantize_selection(chart, {object_id_t{10}}, request).halfway_notes == 0);
+    request.divisions = 0;
+    check_feedback_count(
+        preview_quantize_selection(chart, {object_id_t{10}}, request).halfway_notes == 0);
+    request.divisions = 7;
+    request.allow_resolution_promotion = true;
+    const auto preview = preview_quantize_selection(chart, {object_id_t{10}}, request);
+    check_feedback_count(preview.halfway_notes == 0);
 }
 
 TEST_CASE("quantize report identifies a moved note", "[sys][quantize-preview]") {

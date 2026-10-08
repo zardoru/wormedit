@@ -5,6 +5,7 @@
 #include "core/quantize_geometry.h"
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <ranges>
 #include <unordered_map>
@@ -157,6 +158,57 @@ auto same_request_settings(const quantize_request_t& left, const quantize_reques
         left.allow_resolution_promotion == right.allow_resolution_promotion;
 }
 
+auto halfway_position(const detail::quantize_geometry_t& geometry, local_position_t position,
+                      const quantize_request_t& request, std::uint64_t resolution,
+                      std::uint64_t scale) -> bool {
+    const auto* entry = geometry.entry(position.measure);
+    const auto absolute = geometry.absolute(position);
+    if (!entry || !absolute || request.divisions == 0)
+        return false;
+    const auto authored = request.space == quantization_space_t::authored_measure;
+    const auto maximum = std::numeric_limits<std::uint64_t>::max();
+    if (scale == 0 || entry->row_capacity > maximum / scale || *absolute > maximum / scale)
+        return false;
+    const auto capacity = authored ? entry->row_capacity * scale : resolution;
+    if (capacity % request.divisions != 0)
+        return false;
+    const auto step = capacity / request.divisions;
+    if (step == 0 || step % 2 != 0)
+        return false;
+    const auto coordinate = (authored ? position.row : *absolute) * scale;
+    return coordinate % step == step / 2;
+}
+
+void populate_selection_counts(quantize_preview_t& preview, const chart_document_t& chart,
+                               const detail::quantize_geometry_t& geometry,
+                               const quantize_request_t& request,
+                               const quantization_result_t& result) {
+    std::unordered_set<std::uint64_t> selected;
+    for (const auto id : request.objects)
+        selected.insert(id.value);
+    if (selected.empty())
+        return;
+    const auto resolution = result.promoted_to.value_or(chart.divisions_per_standard_measure);
+    const auto scale = chart.divisions_per_standard_measure == 0
+                           ? 1
+                           : resolution / chart.divisions_per_standard_measure;
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            if (selected.erase(note.id.value) == 0)
+                continue;
+            if (note.end)
+                ++preview.holds;
+            const auto head = halfway_position(geometry, note.position, request, resolution, scale);
+            const auto tail = note.end && request.holds == quantization_hold_t::both_endpoints &&
+                              halfway_position(geometry, *note.end, request, resolution, scale);
+            if (head || tail)
+                ++preview.halfway_notes;
+            if (selected.empty())
+                return;
+        }
+    }
+}
+
 } // namespace
 
 auto preview_quantize_selection(const chart_document_t& chart,
@@ -184,14 +236,13 @@ auto preview_quantize_selection(const chart_document_t& chart,
     if (!result.chart && !result.diagnostics.empty())
         preview.message = result.diagnostics.front().message;
 
-    // Without moves, every valid collision group has the same before/after keys.
-    // Core validation above still supplies all rejection diagnostics.
-    if (result.quantized_moves.empty()) return preview;
-
     const auto built_index = build_measure_index(chart);
     if (std::holds_alternative<measure_index_t>(built_index)) {
-        const auto moves = note_moves(result);
         const detail::quantize_geometry_t geometry{std::get<measure_index_t>(built_index)};
+        populate_selection_counts(preview, chart, geometry, request, result);
+        // Retain the no-moves shortcut for collision grouping and report materialization.
+        if (result.quantized_moves.empty()) return preview;
+        const auto moves = note_moves(result);
         auto candidates = note_candidates(chart, geometry, moves);
         mark_note_collisions(candidates);
         append_report_rows(preview, candidates);

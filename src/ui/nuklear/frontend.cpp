@@ -13,6 +13,7 @@
 #include "ui/nuklear/audio_panel.h"
 #include "ui/nuklear/audio_state.h"
 #include "ui/nuklear/compose_panel.h"
+#include "ui/nuklear/compose_inspector.h"
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/nuklear/compose_layers_panel.h"
 #include "ui/nuklear/compose_note_menu.h"
@@ -493,7 +494,7 @@ static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_la
                                          compose_state.inline_timing_input_consumed ||
                                          compose_state.inline_offset_input_consumed ||
                                          compose_state.layers_menu_input_consumed ||
-                                         compose_note_menu_consumed();
+                                         compose_note_menu_consumed() || compose_quantize_owns_input();
     compose_state.inline_timing_input_consumed = false;
     compose_state.inline_offset_input_consumed = false;
     compose_state.layers_menu_input_consumed = false;
@@ -525,7 +526,7 @@ static void consume_compose_text_hotkeys(WormUiWorkspaceAction& action) {
     const auto count = std::exchange(g_compose_text_hotkey_count, std::size_t{});
     if (count == 0 || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE ||
         worm_ui_nuklear_compose_state().bgm_column_count_edit.input_owned ||
-        worm_ui_nuklear_compose_state().layers_menu_input_consumed || compose_note_menu_consumed() || nuklear_text_entry_active())
+        worm_ui_nuklear_compose_state().layers_menu_input_consumed || compose_note_menu_consumed() || compose_quantize_owns_input() || nuklear_text_entry_active())
         return;
     switch (g_compose_text_hotkeys[0]) {
     case '+': action.compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_IN; break;
@@ -973,7 +974,7 @@ static void close_notification_history_windows() {
 
 static bool compose_popup_owns_input() {
     const auto& compose = worm_ui_nuklear_compose_state();
-    return g_menu_popup_open || g_menu_popup_release_pending ||
+    return g_menu_popup_open || g_menu_popup_release_pending || compose_quantize_owns_input() ||
            compose_area_menu_open() || compose_area_menu_consumed() ||
            compose_recipe_menu_open() || compose_recipe_menu_consumed() ||
            compose.resource_export_group_popup_open || compose.resource_export_group_release_pending ||
@@ -2745,6 +2746,7 @@ static void retire_unavailable_layer_actions(const WormUiWorkspaceView& view) {
         view.compose.visible && !view.compose.input_occluded) return;
     auto& state = worm_ui_nuklear_compose_state();
     wormedit::ui::chrome::context_menu_abandon(state.layers_menu);
+    abandon_compose_quantize_popup();
     state.bga_stack_open = false;
     state.layers_menu_input_consumed = false;
     state.semantic_layer_name_editor_visible = false;

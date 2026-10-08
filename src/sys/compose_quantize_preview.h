@@ -32,6 +32,8 @@ struct quantize_preview_t {
     std::size_t selected{};
     std::size_t moved{};
     std::size_t unchanged{};
+    std::size_t halfway_notes{};
+    std::size_t holds{};
     // Collisions or other rejections that make the real command fail; Apply stays disabled.
     std::size_t blocked{};
     std::size_t colliding_objects{};

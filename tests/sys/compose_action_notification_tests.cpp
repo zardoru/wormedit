@@ -4,6 +4,7 @@
 #include "sys/compose_scroll_geometry.h"
 #include "sys/recipe_form.h"
 #include <cstdio>
+#include <cstring>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -1209,3 +1210,86 @@ TEST_CASE("BMSON editor BMS export materializes silent gameplay in private stagi
 }
 
 #endif
+
+namespace {
+void seed_quantize_rename(action_notification_fixture_t& fixture) {
+    fixture.history.document.quantization_presets = {
+        {.name = "Default", .divisions = 16},
+        {.name = "Trills",
+         .divisions = 24,
+         .space = quantization_space_t::authored_measure,
+         .tie = quantization_tie_t::later,
+         .holds = quantization_hold_t::start_only}};
+    fixture.application.quantize_editor =
+        application_command_state_t::quantize_editor_t{.song = fixture.history.document.id,
+                                                       .chart = fixture.state.chart,
+                                                       .request = {.divisions = 16},
+                                                       .preset_index = 0};
+}
+} // namespace
+
+TEST_CASE("Compose quantize preset rename preserves settings and commits one undo",
+          "[compose-action-notifications][quantize]") {
+    action_notification_fixture_t fixture;
+    seed_quantize_rename(fixture);
+    const auto presets = fixture.history.document.quantization_presets;
+    const auto revision = fixture.history.document.revision;
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_RENAME_QUANTIZE_PRESET);
+    std::snprintf(action.compose_quantize_preset_name, sizeof(action.compose_quantize_preset_name),
+                  "Renamed");
+    check_action(fixture.dispatch(action) == "Quantization preset renamed.");
+    auto expected = presets;
+    expected.front().name = "Renamed";
+    check_action(fixture.history.document.quantization_presets == expected);
+    check_action(fixture.history.document.revision == revision + 1);
+    check_action(fixture.history.undo.size() == 1);
+    check_action(fixture.application.quantize_editor->preset_index == 0);
+    check_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.quantization_presets == presets);
+}
+
+TEST_CASE(
+    "Compose quantize preset rename rejects invalid names indices and stale revisions atomically",
+    "[compose-action-notifications][quantize]") {
+    action_notification_fixture_t fixture;
+    seed_quantize_rename(fixture);
+    const auto presets = fixture.history.document.quantization_presets;
+    const auto revision = fixture.history.document.revision;
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_RENAME_QUANTIZE_PRESET);
+    std::snprintf(action.compose_quantize_preset_name, sizeof(action.compose_quantize_preset_name),
+                  "Renamed");
+    SECTION("empty name") {
+        action.compose_quantize_preset_name[0] = '\0';
+    }
+    SECTION("duplicate name") {
+        std::snprintf(action.compose_quantize_preset_name,
+                      sizeof(action.compose_quantize_preset_name), "Trills");
+    }
+    SECTION("unterminated overlength name") {
+        std::memset(action.compose_quantize_preset_name, 'x',
+                    sizeof(action.compose_quantize_preset_name));
+    }
+    SECTION("stale index") {
+        action.compose_quantize_preset_index = presets.size();
+    }
+    SECTION("stale revision") {
+        ++action.compose_input_document_revision;
+    }
+    check_action(!fixture.dispatch(action).empty());
+    check_action(fixture.history.document.quantization_presets == presets);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("Compose quantize preset rename to the existing name is a history no-op",
+          "[compose-action-notifications][quantize]") {
+    action_notification_fixture_t fixture;
+    seed_quantize_rename(fixture);
+    const auto revision = fixture.history.document.revision;
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_RENAME_QUANTIZE_PRESET);
+    std::snprintf(action.compose_quantize_preset_name, sizeof(action.compose_quantize_preset_name),
+                  "Default");
+    check_action(fixture.dispatch(action) == "Quantization preset name was unchanged.");
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+}

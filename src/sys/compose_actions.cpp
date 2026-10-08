@@ -3045,6 +3045,33 @@ auto delete_quantize_preset(compose_action_context_t& context) -> std::string {
     return compose_action_success(context, "Quantization preset deleted.");
 }
 
+auto rename_quantize_preset(compose_action_context_t& context) -> std::string {
+    using namespace wormedit;
+    const auto index = context.action.compose_quantize_preset_index;
+    const auto& presets = context.history.document.quantization_presets;
+    if (index >= presets.size())
+        return compose_action_warning(context, "The selected quantization preset is no longer available.");
+    const auto length = strnlen(context.action.compose_quantize_preset_name,
+                                sizeof(context.action.compose_quantize_preset_name));
+    if (length == 0 || length > quantization_preset_t::maximum_name_bytes)
+        return compose_action_warning(context, "Enter a name for the quantization preset (maximum 64 bytes).");
+    const std::string_view name(context.action.compose_quantize_preset_name, length);
+    for (std::size_t other = 0; other < presets.size(); ++other)
+        if (other != index && presets[other].name == name)
+            return compose_action_warning(context, "A quantization preset already has that name.");
+    if (presets[index].name == name)
+        return compose_action_info(context, "Quantization preset name was unchanged.", notification_source_t::edit);
+    auto proposed = context.history.document;
+    proposed.quantization_presets[index].name = name;
+    const auto committed = commit_document_command(context.history, std::move(proposed),
+                                                   "Rename quantization preset");
+    if (!committed)
+        return committed.diagnostics.empty()
+            ? compose_action_warning(context, "Quantization preset could not be renamed.")
+            : publish_compose_diagnostic(context, committed.diagnostics.front());
+    return compose_action_success(context, "Quantization preset renamed.");
+}
+
 auto dispatch_quantize_preset_action(compose_action_context_t& context)
     -> std::optional<std::string> {
     using namespace wormedit;
@@ -3056,6 +3083,8 @@ auto dispatch_quantize_preset_action(compose_action_context_t& context)
     if (kind == WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET) return save_quantize_preset(context);
     if (kind == WORM_UI_COMPOSE_ACTION_DELETE_QUANTIZE_PRESET)
         return delete_quantize_preset(context);
+    if (kind == WORM_UI_COMPOSE_ACTION_RENAME_QUANTIZE_PRESET)
+        return rename_quantize_preset(context);
     return std::nullopt;
 }
 

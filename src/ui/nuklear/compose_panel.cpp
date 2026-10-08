@@ -43,6 +43,7 @@
 #include <string>
 
 void worm_ui_nuklear_reset_compose_panel() {
+    reset_compose_quantize_popup();
     worm_ui_nuklear_reset_compose_markers();
     worm_ui_nuklear_reset_compose_state();
 }
@@ -1188,7 +1189,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         process_compose_note_menu(context, *view, *action, viewport, editor_input_right, window_focused);
     const bool owned_popup = !compose_note_menu_consumed() &&
         process_compose_owned_popups(panel, viewport, editor_input_right);
-    if (view->input_occluded || owned_popup || state.keysound_group_review.open ||
+    if (view->input_occluded || owned_popup || compose_quantize_owns_input() || state.keysound_group_review.open ||
         wormedit::ui::chrome::context_menu_owns_input(state.keysound_group_menu) ||
         wormedit::ui::chrome::context_menu_owns_input(state.layers_menu) ||
         state.bga_stack_open || state.bga_stack_release_pending ||
@@ -1565,6 +1566,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                          double_click_count, shortcut_event_count};
 
     const auto dock_layout = compose_dock_layout(context, view);
+    prepare_compose_quantize_input(context, *view, dock_layout.inspector_drawn, window_focused);
     const auto [compose_body_bounds, compose_body_height, inspector_drawn, inspector_width, layers_drawn, layers_width, sounds_drawn, sounds_width, bga_drawn, bga_width, measures_drawn, measures_width, branch_drawn, branch_width, side_width] = dock_layout;
     state.sound_list_valid = false;
     state.bga_list_valid = false;
@@ -1608,7 +1610,7 @@ bool worm_ui_nuklear_compose_lane_focused(const WormUiComposeView* view, bool co
                                           bool window_focused) {
     return compose_tab_active && worm_ui_nuklear_compose_canvas_input_available(
         view, window_focused, state.inline_timing_open || state.go_to_measure_open ||
-            state.layers_menu.open || state.layers_menu_input_consumed || compose_note_menu_consumed() ||
+            state.layers_menu.open || state.layers_menu_input_consumed || compose_quantize_owns_input() || compose_note_menu_consumed() ||
             state.bookmark_rename.active || state.bookmark_rename.release_pending ||
             worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_chooser), false) &&
         view->cursor && view->cursor->lane_id != 0;

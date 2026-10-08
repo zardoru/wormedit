@@ -2116,6 +2116,24 @@ auto dispatch_compose_offset_fit_input(
         notification_severity_t::hint, notification_source_t::input);
 }
 
+// Latest BPM change or timing anchor strictly before the beat row; that row is where the fit anchors.
+auto previous_beat_fit_anchor(const wormedit::chart_document_t& chart,
+                              const wormedit::measure_index_t& measures,
+                              std::uint64_t beat_row) -> std::optional<wormedit::local_position_t> {
+    std::optional<wormedit::local_position_t> anchor;
+    std::uint64_t anchor_row{};
+    const auto consider = [&](wormedit::local_position_t position) {
+        const auto row = wormedit::absolute_row(measures, position);
+        if (row && *row < beat_row && (!anchor || *row > anchor_row)) {
+            anchor = position;
+            anchor_row = *row;
+        }
+    };
+    for (const auto& bpm : chart.bpms) consider(bpm.position);
+    for (const auto& timing_anchor : chart.timing_anchors) consider(timing_anchor.position);
+    return anchor;
+}
+
 auto begin_compose_beat_fit(const WormUiComposeInputAction& input,
                             wormedit::document_history_t& history,
                             wormedit::workspace_controller_t& workspace,
@@ -2142,21 +2160,13 @@ auto begin_compose_beat_fit(const WormUiComposeInputAction& input,
         return compose_input_family_result_t{"Selected beat is outside the chart."};
     }
     const auto beat = local_position_t{entry.id, beat_row - entry.absolute_begin_row};
-    std::optional<object_id_t> previous_bpm;
-    std::uint64_t previous_row{};
-    for (const auto& bpm : input_chart->bpms) {
-        const auto row = absolute_row(measures, bpm.position);
-        if (row && *row < beat_row && (!previous_bpm || *row > previous_row)) {
-            previous_bpm = bpm.id;
-            previous_row = *row;
-        }
+    const auto anchor = previous_beat_fit_anchor(*input_chart, measures, beat_row);
+    if (!anchor) {
+        return compose_input_family_result_t{"No earlier BPM change or timing anchor can anchor this beat fit."};
     }
-    if (!previous_bpm) {
-        return compose_input_family_result_t{"No earlier BPM change can anchor this beat fit."};
-    }
-    const auto begun = begin_beat_interval_drag(history.document, input_chart->id, *previous_bpm,
-                                                beat, scene_cache.waveform_overview_sample_rate,
-                                                application_state.timing_locked);
+    const auto begun = begin_beat_interval_anchor_drag(history.document, input_chart->id, *anchor,
+                                                       beat, scene_cache.waveform_overview_sample_rate,
+                                                       application_state.timing_locked);
     if (!begun) {
         return input_diagnostic_feedback(begun.diagnostics, "Beat fit could not start.",
             notification_severity_t::warning, notification_source_t::edit);

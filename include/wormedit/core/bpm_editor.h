@@ -66,8 +66,11 @@ using bpm_edit_action_t =
 struct beat_interval_drag_t {
     chart_id_t chart;
     std::uint64_t document_revision{};
+    // Existing BPM event being updated, or a placeholder id when insert_bpm is set.
     object_id_t bpm_event;
+    // Anchor row: the existing BPM event's position, or where a new BPM event is inserted.
     local_position_t original_bpm_position;
+    bool insert_bpm{};
     local_position_t beat;
     std::uint32_t sample_rate{};
     std::uint64_t original_sample_frame{};
@@ -90,6 +93,14 @@ struct beat_interval_drag_result_t {
 [[nodiscard]] auto begin_beat_interval_drag(const song_document_t& document, chart_id_t chart,
                                             object_id_t bpm_event, local_position_t beat,
                                             std::uint32_t sample_rate, bool timing_locked = false)
+    -> beat_interval_drag_result_t;
+// Begins a fit anchored at a timing row. Updates the BPM event already at that
+// row, or inserts one there when none exists (committed as one undoable edit).
+[[nodiscard]] auto begin_beat_interval_anchor_drag(const song_document_t& document,
+                                                   chart_id_t chart, local_position_t anchor,
+                                                   local_position_t beat,
+                                                   std::uint32_t sample_rate,
+                                                   bool timing_locked = false)
     -> beat_interval_drag_result_t;
 [[nodiscard]] auto
 update_beat_interval_drag(const song_document_t& document, const beat_interval_drag_t& drag,

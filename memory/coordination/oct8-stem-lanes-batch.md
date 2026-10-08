@@ -1,0 +1,30 @@
+# Resizable stem lanes and filename labels
+
+Authorized 2026-10-08 after T-459/T-462. Base69c5443.
+Root owns main, status/manifests, supporting ownership approvals, acceptance
+and cleanup. T-464 coordinator `/root/bga_preview_next_61` (Sol6.1 medium) owns
+`wormedit-stem-lanes-oct8`, branch `batch/stem-lanes-oct8`; it loans existing
+`/root/budget_recovery_61/budget_luna` sequentially with exact exclusive briefs.
+One worker tree; each source/test handoff releases ownership before review.
+
+Stale-audit first, then follow T-464 steps: per-lane accumulated scene bounds;
+session view widths keyed by project/chart/lane; edge drag36..480px and
+double-click36px reset; stem filename at96px/full tooltip; mixed-width scene,
+hit testing, input and event-harness checks. Packed columns remain36px.
+No document, undo/export, stem timing/slice or T-459 cache identity changes.
+No T-461 conversion or T-463 Draw placement work. Coordinator requests exact
+supporting plumbing paths before edits and records approvals in the card.
+
+Scratch `wormedit-scratch-builds/oct8-stem-lanes/{worker,root}`. Normal offline
+optimized builds use immutable existing dependency source overrides, explicit
+WORMEDIT_OTOWORM_SOURCE_DIR and FETCHCONTENT_FULLY_DISCONNECTED; no submodule
+symlinks or substituted production objects. Max four compile jobs. Keep all GUI
+checks off the user's desktop; prior isolated-Xvfb restriction persists. Use
+event harness and actual SDL dummy/software Kick capture at300px; retain native
+window/GPU limitations. Original charts/audio remain read-only.
+
+Worker checks configured complexity including changed headers, focused
+scene/compose tests, complete event harness and docs, commits and releases all
+source/build work. Root reviews, integrates serially, builds/tests all main,
+repeats actual capture, commits status and removes clean worker/generated build.
+Retain branch, raw logs, configurations, source/link scripts and probes.

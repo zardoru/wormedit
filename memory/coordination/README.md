@@ -1,5 +1,9 @@
 # Worktree coordination pilot
 
+Active 2026-10-08: [resizable stem lanes and filename labels](oct8-stem-lanes-batch.md),
+T-464 in one Sol 6.1 medium worktree with sequential Luna medium briefs.
+Root owns main, final checks and cleanup.
+
 Completed in code 2026-10-08: [packed waveforms and sound-section imports](oct8-bmson-dock-batch.md),
 T-459/T-462 with two Sol 6.1 medium coordinators and sequential Luna medium briefs.
 Main build and **2,617/2,617 tests pass**. Real Kick software capture confirms

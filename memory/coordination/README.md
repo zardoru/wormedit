@@ -1,5 +1,10 @@
 # Worktree coordination pilot
 
+Active 2026-10-08: [Draw workflow and BMSON conversions](oct8-draw-conversion-batch.md),
+T-412 then T-463 in one Sol 6.1 medium tree; T-466 then T-467 in another.
+Sequential Luna medium briefs, shared root manifest ownership, serial main
+integration and cleanup. Original chart/audio inputs remain read-only.
+
 Completed in code 2026-10-08: [resizable stem lanes and filename labels](oct8-stem-lanes-batch.md),
 T-464 in one Sol 6.1 medium worktree with sequential Luna medium briefs.
 Root integrated and verified main: application build and **2,635/2,635 tests

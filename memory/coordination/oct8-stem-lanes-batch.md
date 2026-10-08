@@ -28,3 +28,22 @@ scene/compose tests, complete event harness and docs, commits and releases all
 source/build work. Root reviews, integrates serially, builds/tests all main,
 repeats actual capture, commits status and removes clean worker/generated build.
 Retain branch, raw logs, configurations, source/link scripts and probes.
+
+Supporting ownership approved before edits: `src/ui/nuklear/frontend.cpp` public
+width getter bridge, `src/ui/nuklear/compose_panel.cpp` header gesture/cursor/
+pointer-capture invocation, and `src/sys/compose_input.cpp` BGM horizontal-scroll
+maximum using accumulated lane widths. Callback state is already owned through
+`compose_view.h`; no `application_commands.h` change. Root exclusively owns the
+adjacent `src/sys/main.cpp` callback assignment, supplied as a worker patch.
+Concrete tests: `tests/core/editor_scene_tests.cpp`,
+`tests/core/editor_scene_bgm_layers_tests.cpp`,
+`tests/ui/nuklear_compose_state_tests.cpp`,
+`tests/ui/bga_lane_event_harness_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
+Luna owns core accumulation and the two scene tests; Sol owns all other paths,
+card updates, build writes and review after the exclusive scene release.
+
+Compatibility: legacy callers retain scalar fallback with an empty width span;
+production supplies a per-lane span defaulting to36px with packed lanes fixed.
+Scene cache snapshots own copied widths so in-place width changes invalidate
+geometry at the same document revision. Default real-Kick baseline capture is
+retained at `oct8-stem-lanes/root/kick-default-baseline.png`.

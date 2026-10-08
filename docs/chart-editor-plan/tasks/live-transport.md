@@ -148,16 +148,19 @@ measurements. Apply the stale-plan check (rule 9) first.
 
 ## T-278 Set thread priorities so background work cannot starve the frame
 
-- **Status:** ready
-- **Outcome:** the preview refill thread runs at high priority, the frame thread at normal priority, and task-scheduler workers (decode, preload, analysis) at low priority with a worker count of at most `hardware_concurrency − 2`; heavy preload (T-274) no longer causes frame or audio hitches.
-- **Read first:** `src/core/task_graph.cpp` (worker creation), `src/sys/sdl_preview_output.cpp` (refill thread), `docs/async-task-scheduling.md`.
-- **Files owned:** `src/core/task_graph.cpp`, `include/wormedit/core/task_graph.h`, `src/sys/sdl_preview_output.cpp`, `src/sys/main.cpp` (scheduler construction), `tests/core/task_graph_tests.cpp`.
+- **Status:** done (already implemented: `src/core/task_graph.cpp:390`, `src/sys/thread_priority.h:14`; manual priority efficacy/no-dropout checks pending)
+- **Outcome:** preview refill requests high OS priority, application task-scheduler workers request low priority, and the frame thread retains its default priority. Each scheduler clamps its own worker count; this is not a global CPU budget or a verified no-starvation guarantee.
+- **Read first:** `src/core/task_graph.cpp` (worker creation), `src/sys/sdl_preview_output.cpp` (refill thread), `docs/async-task-scheduling.md`, `src/sys/thread_priority.h`, `src/sys/main.cpp`.
+- **Files owned:** this T-278 section of `docs/chart-editor-plan/tasks/live-transport.md`, `docs/async-task-scheduling.md` (documentation-only stale-plan audit; no implementation edits).
 - **Steps:** 1. Optional per-scheduler priority hint applied with `SDL_SetCurrentThreadPriority` (or platform calls) at worker start. 2. Worker count clamp. 3. Test that the clamp and hint are applied (no timing assertions).
+- **Stale-plan audit:** implementation landed in `bf0d817`. Worker startup invokes the optional hook once before taking tasks; exceptions are ignored. Every production pool passes the low-priority hook: autosave, resource copy, player images, player video and audition probe/preload in `main.cpp`, plus waveform analysis, resource jobs, metadata assets and BGA runtime. Preview refill requests high priority at `sdl_preview_output.cpp:110`; there is no frame-thread priority setter.
+- **Limits:** requested zero becomes one; known `H > 2` caps each pool at `H - 2`; `H <= 2` allows one; unknown `H == 0` leaves the positive request uncapped. Multiple pools and auxiliary threads are not governed by an aggregate limit.
+- **Audit evidence:** read-only existing normal-build `build/tests/wormedit_core_tests '[task-graph]'` passes **8 cases / 71 assertions**, including clamp edge cases, once-per-worker startup, a throwing hook that still executes work, dependency order, cancellation and shutdown. Scheduling sources/tests match the audited worker base. No C++ changes or duplicate priority implementation were needed. Log: `wormedit-scratch-builds/dense-oct7/scheduling/task-graph-tests.log`. Actual OS denial/log de-duplication, successful priority changes and heavy-preload playback without dropouts were not measured by these tests.
 - **Invariants:** deterministic results regardless of priorities.
-- **Reject/failure behavior:** if the OS rejects a priority change, continue at default priority (one warning).
-- **Verify:** standard build/test; manual: start preload of a large BMS while playing; no dropouts.
+- **Reject/failure behavior:** OS priority rejection is nonfatal; log at most one warning per process and requested priority. A generic throwing startup hook does not abort its worker.
+- **Verify:** `build/tests/wormedit_core_tests '[task-graph]'` (8 cases / 71 assertions pass); `cmake -DWORMEDIT_SOURCE_ROOT=$PWD -P cmake/check_chart_editor_docs.cmake`; manual pending: observe priority effectiveness and preload a large BMS while playing, checking for dropouts.
 - **Out of scope:** realtime scheduling classes.
-- **Expected gain:** removes contention spikes during loading and analysis.
+- **Expected gain:** priority hints can reduce loading/analysis contention; platform efficacy and live no-dropout behavior remain unverified.
 
 ## T-473 Start auditions without decoding on the frame thread
 

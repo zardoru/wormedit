@@ -1,0 +1,21 @@
+#TITLE:Fixture: keysounds;
+#ARTIST:Wormedit fixture authors;
+#KEYSOUNDS:kick.wav,snare.wav,hat.wav;
+#OFFSET:0.000;
+#BPMS:0.000=120.000;
+#NOTES:
+     dance-single:
+     Fixture:
+     Hard:
+     5:
+     0.000,0.000,0.000,0.000,0.000:
+1[0]000
+02[1]00
+0300
+L[2]000
+,
+0M[0]00
+0001[7]
+0000
+0000
+;

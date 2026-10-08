@@ -347,21 +347,73 @@ auto note_rows_in_measure(std::string_view source, std::uint32_t lanes)
     return rows;
 }
 
+struct note_cell_text_t {
+    char symbol{};
+    std::string_view index_digits;
+};
+
+struct normalized_row_t {
+    std::string symbols;
+    // Digit text of each cell's `[n]` suffix; empty when no cell in the row has one.
+    std::vector<std::string> suffixes;
+};
+
+struct note_row_t {
+    std::uint64_t position{};
+    std::size_t line{};
+    std::string symbols;
+    std::vector<std::string> suffixes;
+};
+
+auto read_cell_index(std::string_view source, std::size_t& at, std::size_t source_order)
+    -> std::string_view {
+    const auto close = source.find(']', at);
+    if (close == std::string_view::npos)
+        fail(stepmania_parse_diagnostic_code_t::invalid_notes,
+             "Note row has an unterminated keysound index", source_order);
+    const auto digits = source.substr(at + 1, close - at - 1);
+    if (digits.empty() || !std::ranges::all_of(digits, [](char digit) {
+            return digit >= '0' && digit <= '9';
+        }))
+        fail(stepmania_parse_diagnostic_code_t::invalid_notes,
+             "Note row keysound index must be decimal digits", source_order);
+    at = close + 1;
+    return digits;
+}
+
+auto split_note_cells(std::string_view source, std::size_t source_order)
+    -> std::vector<note_cell_text_t> {
+    std::vector<note_cell_text_t> cells;
+    cells.reserve(source.size());
+    std::size_t at{};
+    while (at < source.size()) {
+        note_cell_text_t cell{.symbol = source[at++]};
+        if (at < source.size() && source[at] == '[')
+            cell.index_digits = read_cell_index(source, at, source_order);
+        cells.push_back(cell);
+    }
+    return cells;
+}
+
 auto normalize_note_row(std::string_view source, std::uint32_t lanes, std::size_t source_order)
-    -> std::string {
-    if (source.size() != lanes)
+    -> normalized_row_t {
+    const auto cells = split_note_cells(source, source_order);
+    if (cells.size() != lanes)
         fail(stepmania_parse_diagnostic_code_t::invalid_notes,
              "Note row column count does not match the declared step type", source_order);
-    std::string result;
-    result.reserve(lanes);
-    for (const auto character : source) {
-        const auto symbol = static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
+    normalized_row_t result;
+    result.symbols.reserve(lanes);
+    for (const auto& cell : cells) {
+        const auto symbol = static_cast<char>(std::toupper(static_cast<unsigned char>(cell.symbol)));
         if (symbol != '0' && symbol != '1' && symbol != '2' && symbol != '3' && symbol != '4' &&
             symbol != 'M' && symbol != 'L' && symbol != 'F')
             fail(stepmania_parse_diagnostic_code_t::invalid_notes,
                  "Note map contains an unsupported StepMania note symbol", source_order);
-        result.push_back(symbol);
+        result.symbols.push_back(symbol);
     }
+    if (std::ranges::any_of(cells, [](const auto& cell) { return !cell.index_digits.empty(); }))
+        for (const auto& cell : cells)
+            result.suffixes.emplace_back(cell.index_digits);
     return result;
 }
 
@@ -378,16 +430,16 @@ auto note_row_position(std::size_t row_index, std::size_t row_count, std::uint64
 auto parse_measure_rows(std::string_view raw_measure, std::uint32_t lanes,
                         std::uint64_t divisions, std::size_t max_events,
                         std::size_t& event_count, std::size_t source_order)
-    -> std::vector<std::pair<std::uint64_t, std::string>> {
+    -> std::vector<note_row_t> {
     const auto rows = note_rows_in_measure(raw_measure, lanes);
-    std::vector<std::pair<std::uint64_t, std::string>> result;
+    std::vector<note_row_t> result;
     result.reserve(rows.size());
     for (std::size_t index = 0; index < rows.size(); ++index) {
         auto row = normalize_note_row(rows[index], lanes, source_order);
         const auto position = note_row_position(index, rows.size(), divisions, source_order);
-        result.emplace_back(position, std::move(row));
+        result.push_back({position, index + 1, std::move(row.symbols), std::move(row.suffixes)});
         event_count += static_cast<std::size_t>(std::ranges::count_if(
-            result.back().second, [](char symbol) { return symbol != '0'; }));
+            result.back().symbols, [](char symbol) { return symbol != '0'; }));
         if (event_count > max_events)
             fail(stepmania_parse_diagnostic_code_t::event_limit,
                  "StepMania note map exceeds the configured event limit", source_order);
@@ -397,12 +449,12 @@ auto parse_measure_rows(std::string_view raw_measure, std::uint32_t lanes,
 
 auto parse_row_map(std::string_view source, std::uint32_t lanes, std::uint64_t divisions,
                    std::size_t max_measures, std::size_t max_events, std::size_t source_order)
-    -> std::vector<std::vector<std::pair<std::uint64_t, std::string>>> {
+    -> std::vector<std::vector<note_row_t>> {
     const auto measures = split(source, ',');
     if (measures.size() > max_measures)
         fail(stepmania_parse_diagnostic_code_t::measure_limit,
              "StepMania note map exceeds the configured measure limit", source_order);
-    std::vector<std::vector<std::pair<std::uint64_t, std::string>>> output;
+    std::vector<std::vector<note_row_t>> output;
     output.reserve(measures.size());
     std::size_t event_count{};
     for (const auto raw : measures)
@@ -470,6 +522,31 @@ auto stepmania_relative_path(std::string_view value) -> std::optional<std::files
     return path.lexically_normal();
 }
 
+auto add_audio_resource(song_document_t& song, id_source_t& ids,
+                        const stepmania_parse_options_t& options, const std::string& name,
+                        const std::filesystem::path& path, resource_role_t role,
+                        std::string source_field, std::size_t source_order) -> resource_id_t {
+    std::error_code error;
+    const bool missing = !options.asset_base_directory ||
+                         !std::filesystem::exists(*options.asset_base_directory / path, error) ||
+                         error;
+    const auto asset = ids.take<asset_id_t>();
+    const auto resource = ids.take<resource_id_t>();
+    song.audio_assets.push_back({.id = asset, .source_path = path});
+    song.resources.push_back({.id = resource,
+                              .name = name,
+                              .asset = asset,
+                              .roles = {role},
+                              .target_identities = {{format_family_t::stepmania, name,
+                                                     "audio-path"}},
+                              .missing = missing,
+                              .provenance = {format_family_t::stepmania,
+                                             options.profile == stepmania_profile_t::sm
+                                                 ? "sm" : "ssc",
+                                             std::move(source_field), name, source_order}});
+    return resource;
+}
+
 void add_stepmania_music(const std::vector<field_t>& fields,
                          const stepmania_parse_options_t& options,
                          song_document_t& song, id_source_t& ids) {
@@ -480,24 +557,102 @@ void add_stepmania_music(const std::vector<field_t>& fields,
     const auto path = stepmania_relative_path(name);
     if (!path)
         return;
-    std::error_code error;
-    const bool missing = !options.asset_base_directory ||
-                         !std::filesystem::exists(*options.asset_base_directory / *path, error) ||
-                         error;
-    const auto asset = ids.take<asset_id_t>();
-    const auto resource = ids.take<resource_id_t>();
-    song.audio_assets.push_back({.id = asset, .source_path = *path});
-    song.resources.push_back({.id = resource,
-                              .name = name,
-                              .asset = asset,
-                              .roles = {resource_role_t::music},
-                              .target_identities = {{format_family_t::stepmania, name,
-                                                     "audio-path"}},
-                              .missing = missing,
-                              .provenance = {format_family_t::stepmania,
-                                             options.profile == stepmania_profile_t::sm
-                                                 ? "sm" : "ssc",
-                                             "MUSIC", name, music->order}});
+    add_audio_resource(song, ids, options, name, *path, resource_role_t::music, "MUSIC",
+                       music->order);
+}
+
+// The song-level #KEYSOUNDS list. Entries keep their list position so a note's
+// `[n]` index addresses them directly; an unusable entry stays as a placeholder.
+struct keysound_list_t {
+    std::vector<std::string> names;
+    std::vector<std::optional<std::filesystem::path>> paths;
+    std::size_t order{};
+};
+
+void append_keysound_warning(std::vector<stepmania_parse_diagnostic_t>& diagnostics,
+                             const field_t& field, std::string message) {
+    diagnostics.push_back({diagnostic_severity_t::warning,
+                           stepmania_parse_diagnostic_code_t::malformed_tag,
+                           std::move(message), field.order, field.offset});
+}
+
+auto read_keysound_list(const std::vector<field_t>& song_fields, stepmania_profile_t profile,
+                        std::vector<stepmania_parse_diagnostic_t>& diagnostics)
+    -> keysound_list_t {
+    keysound_list_t list;
+    const auto* field = last_field(song_fields, "KEYSOUNDS");
+    if (!field || trim(field->value).empty())
+        return list;
+    list.order = field->order;
+    std::string_view value = field->value;
+    if (profile == stepmania_profile_t::ssc && value.starts_with("\\#"))
+        value.remove_prefix(1);
+    for (const auto entry : split(value, ',')) {
+        const auto position = list.names.size();
+        list.names.emplace_back(entry);
+        list.paths.push_back(stepmania_relative_path(entry));
+        if (entry.empty())
+            append_keysound_warning(diagnostics, *field,
+                "Empty #KEYSOUNDS entry " + std::to_string(position) + " is kept as a placeholder");
+        else if (!list.paths.back())
+            append_keysound_warning(diagnostics, *field,
+                "#KEYSOUNDS entry " + std::to_string(position) +
+                " is not a safe relative path and binds no sound");
+    }
+    return list;
+}
+
+struct keysound_context_t {
+    keysound_list_t list;
+    song_document_t& song;
+    id_source_t& ids;
+    const stepmania_parse_options_t& options;
+    std::map<std::size_t, resource_id_t> resolved;
+    std::map<std::string, resource_id_t> by_path;
+};
+
+struct note_cell_sound_t {
+    std::optional<resource_id_t> resource;
+    std::string suffix;
+};
+
+auto cell_has_sound_slot(char symbol) -> bool {
+    return symbol != '0' && symbol != '3';
+}
+
+auto parse_keysound_index(const keysound_list_t& list, const std::string& digits)
+    -> std::optional<std::size_t> {
+    std::uint64_t index{};
+    if (!parse_unsigned(digits, index) || index >= list.names.size())
+        return std::nullopt;
+    return static_cast<std::size_t>(index);
+}
+
+void register_keysound(keysound_context_t& context, std::size_t index) {
+    const auto& path = context.list.paths[index];
+    if (!path || context.resolved.contains(index))
+        return;
+    const auto key = path->generic_string();
+    auto found = context.by_path.find(key);
+    if (found == context.by_path.end())
+        found = context.by_path.emplace(key, add_audio_resource(
+            context.song, context.ids, context.options, context.list.names[index], *path,
+            resource_role_t::sample, "KEYSOUNDS", context.list.order)).first;
+    context.resolved.emplace(index, found->second);
+}
+
+// Registers the referenced files in list order so resource order follows #KEYSOUNDS.
+void register_referenced_keysounds(keysound_context_t& context,
+                                   const std::vector<std::vector<note_row_t>>& measures) {
+    std::set<std::size_t> referenced;
+    for (const auto& rows : measures)
+        for (const auto& row : rows)
+            for (std::size_t lane = 0; lane < row.suffixes.size(); ++lane)
+                if (cell_has_sound_slot(row.symbols[lane]))
+                    if (const auto index = parse_keysound_index(context.list, row.suffixes[lane]))
+                        referenced.insert(*index);
+    for (const auto index : referenced)
+        register_keysound(context, index);
 }
 
 auto as_metadata_group(const std::vector<field_t>& fields, stepmania_profile_t profile,
@@ -851,6 +1006,7 @@ struct pending_hold_t {
     note_kind_t kind;
     local_position_t position;
     std::size_t measure_index;
+    note_cell_sound_t sound;
 };
 
 auto note_kind_for_symbol(char symbol) -> note_kind_t {
@@ -878,7 +1034,8 @@ void append_hold_tail(chart_document_t& chart, const lane_layout_t& layout,
     chart.measures[found->second.measure_index].notes.push_back({
         .id=ids.take<object_id_t>(), .position=found->second.position,
         .lane=layout.lanes[lane_index].id, .kind=found->second.kind, .end=position,
-        .provenance=note_provenance(profile, "hold", field)});
+        .sound=found->second.sound.resource,
+        .provenance=note_provenance(profile, "hold" + found->second.sound.suffix, field)});
     open_holds.erase(found);
 }
 
@@ -886,14 +1043,16 @@ void append_note_symbol(chart_document_t& chart, const lane_layout_t& layout,
                         std::size_t measure_index, std::uint32_t lane_index, char symbol,
                         local_position_t position,
                         std::map<std::uint32_t, pending_hold_t>& open_holds,
-                        id_source_t& ids, stepmania_profile_t profile, const field_t& field) {
+                        id_source_t& ids, stepmania_profile_t profile, const field_t& field,
+                        note_cell_sound_t sound) {
     if (symbol == '0') return;
     if (symbol == '2' || symbol == '4') {
         if (open_holds.contains(lane_index))
             fail(stepmania_parse_diagnostic_code_t::invalid_hold,
                  "A hold head appears before the previous hold tail", field.order, field.offset);
         open_holds.emplace(lane_index, pending_hold_t{
-            symbol == '4' ? note_kind_t::roll : note_kind_t::hold, position, measure_index});
+            symbol == '4' ? note_kind_t::roll : note_kind_t::hold, position, measure_index,
+            std::move(sound)});
         return;
     }
     if (symbol == '3') {
@@ -903,30 +1062,54 @@ void append_note_symbol(chart_document_t& chart, const lane_layout_t& layout,
     }
     chart.measures[measure_index].notes.push_back({
         .id=ids.take<object_id_t>(), .position=position, .lane=layout.lanes[lane_index].id,
-        .kind=note_kind_for_symbol(symbol),
-        .provenance=note_provenance(profile, std::string(1, symbol), field)});
+        .kind=note_kind_for_symbol(symbol), .sound=sound.resource,
+        .provenance=note_provenance(profile, std::string(1, symbol) + sound.suffix, field)});
 }
 
-void append_note_map_rows(chart_document_t& chart,
-                          const std::vector<std::vector<std::pair<std::uint64_t, std::string>>>& rows,
+// Resolves a cell's `[n]` suffix. An index outside #KEYSOUNDS keeps the note
+// without a sound and warns once, naming the measure and row.
+auto cell_sound(const keysound_context_t& context, const note_row_t& row, std::uint32_t lane,
+                std::size_t measure, const field_t& field,
+                std::vector<stepmania_parse_diagnostic_t>& diagnostics) -> note_cell_sound_t {
+    if (row.suffixes.empty() || row.suffixes[lane].empty() || !cell_has_sound_slot(row.symbols[lane]))
+        return {};
+    note_cell_sound_t result{.suffix = "[" + row.suffixes[lane] + "]"};
+    const auto index = parse_keysound_index(context.list, row.suffixes[lane]);
+    if (!index) {
+        append_keysound_warning(diagnostics, field,
+            "Keysound index " + row.suffixes[lane] + " in measure " +
+            std::to_string(measure + 1) + " row " + std::to_string(row.line) +
+            " is outside #KEYSOUNDS; the note keeps no sound");
+        return result;
+    }
+    if (const auto found = context.resolved.find(*index); found != context.resolved.end())
+        result.resource = found->second;
+    return result;
+}
+
+void append_note_map_rows(chart_document_t& chart, const std::vector<std::vector<note_row_t>>& rows,
                           std::uint32_t lane_count, const lane_layout_t& layout,
                           id_source_t& ids, std::size_t& total_events,
                           const stepmania_parse_options_t& options,
-                          stepmania_profile_t profile, const field_t& note_field) {
+                          stepmania_profile_t profile, const field_t& note_field,
+                          const keysound_context_t& keysounds,
+                          std::vector<stepmania_parse_diagnostic_t>& diagnostics) {
     std::map<std::uint32_t, pending_hold_t> open_holds;
     for (std::size_t measure = 0; measure < rows.size(); ++measure) {
-        for (const auto& [row, symbols] : rows[measure]) {
+        for (const auto& row : rows[measure]) {
             const auto absolute = static_cast<std::uint64_t>(measure) *
-                                  chart.divisions_per_standard_measure + row;
+                                  chart.divisions_per_standard_measure + row.position;
             const auto position = local_position(absolute, chart.divisions_per_standard_measure);
             for (std::uint32_t lane = 0; lane < lane_count; ++lane) {
-                if (symbols[lane] == '0') continue;
+                if (row.symbols[lane] == '0') continue;
                 if (++total_events > options.max_events)
                     fail(stepmania_parse_diagnostic_code_t::event_limit,
                          "StepMania file exceeds the configured event limit",
                          note_field.order, note_field.offset);
-                append_note_symbol(chart, layout, measure, lane, symbols[lane], position,
-                                   open_holds, ids, profile, note_field);
+                append_note_symbol(chart, layout, measure, lane, row.symbols[lane], position,
+                                   open_holds, ids, profile, note_field,
+                                   cell_sound(keysounds, row, lane, measure, note_field,
+                                              diagnostics));
             }
         }
     }
@@ -981,6 +1164,7 @@ auto parse_one_chart(const chart_source_t& source, const std::vector<field_t>& s
                      const std::shared_ptr<const std::vector<std::byte>>& source_bytes,
                      const stepmania_parse_options_t& options, std::size_t chart_index,
                      id_source_t& ids, std::size_t& total_events,
+                     keysound_context_t& keysounds,
                      std::vector<stepmania_parse_diagnostic_t>& diagnostics)
     -> chart_document_t {
     const auto [step_type, description, difficulty, meter_text, radar] =
@@ -1040,8 +1224,9 @@ auto parse_one_chart(const chart_source_t& source, const std::vector<field_t>& s
                                   .position={measure_id_t{1}, 0}, .layout=layout});
     auto measures = make_note_measures(rows.size());
     chart.measures = measures;
+    register_referenced_keysounds(keysounds, rows);
     append_note_map_rows(chart, rows, *lane_count, layout, ids, total_events,
-                         options, profile, *note_field);
+                         options, profile, *note_field, keysounds, diagnostics);
     measures = std::move(chart.measures);
     const auto max_measure = maximum_timing_measure(chart, measures.size());
     extend_note_measures(measures, max_measure, options.max_measures, chart_index, *note_field);
@@ -1178,9 +1363,11 @@ auto parse_stepmania_document(std::span<const std::byte> bytes, std::string_view
     id_source_t ids;
     add_stepmania_music(song_fields, options, song, ids);
     std::size_t total_events{};
+    keysound_context_t keysounds{read_keysound_list(song_fields, options.profile, diagnostics),
+                                 song, ids, options, {}, {}};
     for (std::size_t index = 0; index < charts.size(); ++index)
         song.charts.push_back(parse_one_chart(charts[index], song_fields, options.profile,
-            source_bytes, options, index, ids, total_events, diagnostics));
+            source_bytes, options, index, ids, total_events, keysounds, diagnostics));
     append_duplicate_song_field_warnings(song_fields, diagnostics);
     return song;
 }

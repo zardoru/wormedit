@@ -1104,3 +1104,157 @@ TEST_CASE("pump-single and dance-solo fixtures import named arrow lanes and keep
         }
     }
 }
+
+namespace {
+
+auto parse_inline(const std::string& source, wormedit::stepmania_profile_t profile)
+    -> wormedit::stepmania_parse_result_t {
+    return wormedit::parse_stepmania_bytes(
+        std::as_bytes(std::span{source.data(), source.size()}), {.profile = profile});
+}
+
+auto sample_resources(const wormedit::song_document_t& song)
+    -> std::vector<const wormedit::resource_entry_t*> {
+    std::vector<const wormedit::resource_entry_t*> result;
+    for (const auto& resource : song.resources)
+        if (std::ranges::count(resource.roles, wormedit::resource_role_t::sample))
+            result.push_back(&resource);
+    return result;
+}
+
+auto resource_named(const wormedit::song_document_t& song, wormedit::resource_id_t id)
+    -> std::string {
+    const auto found = std::ranges::find(song.resources, id, &wormedit::resource_entry_t::id);
+    return found == song.resources.end() ? std::string{} : found->name;
+}
+
+auto warning_count(const wormedit::stepmania_parse_result_t& result) -> std::size_t {
+    return static_cast<std::size_t>(std::ranges::count(
+        result.diagnostics, wormedit::diagnostic_severity_t::warning,
+        &wormedit::stepmania_parse_diagnostic_t::severity));
+}
+
+}  // namespace
+
+TEST_CASE("StepMania SM keysounds bind per-note indices to sample resources",
+          "[unit][format][stepmania][keysounds]") {
+    const auto result = fixture("keysounds.sm", wormedit::stepmania_profile_t::sm);
+    REQUIRE(result.song.has_value());
+    REQUIRE_FALSE(result.has_errors());
+    const auto& song = *result.song;
+    REQUIRE(wormedit::validate_document(song).empty());
+    const auto samples = sample_resources(song);
+    REQUIRE(samples.size() == 3);
+    CHECK(samples[0]->name == "kick.wav");
+    CHECK(samples[1]->name == "snare.wav");
+    CHECK(samples[2]->name == "hat.wav");
+    CHECK(samples[0]->missing);
+    CHECK(samples[0]->provenance.source_field == "KEYSOUNDS");
+
+    const auto& chart = song.charts.front();
+    REQUIRE(chart.measures.size() == 2);
+    const auto& first = chart.measures[0].notes;
+    REQUIRE(first.size() == 3);
+    CHECK(first[0].kind == wormedit::note_kind_t::tap);
+    CHECK(first[0].sound == samples[0]->id);
+    CHECK(first[0].provenance.source_spelling == "1[0]");
+    CHECK(first[1].kind == wormedit::note_kind_t::hold);
+    CHECK(first[1].sound == samples[1]->id);
+    CHECK(first[1].provenance.source_spelling == "hold[1]");
+    CHECK(first[2].kind == wormedit::note_kind_t::lift);
+    CHECK(first[2].sound == samples[2]->id);
+    const auto& second = chart.measures[1].notes;
+    REQUIRE(second.size() == 2);
+    CHECK(second[0].kind == wormedit::note_kind_t::mine);
+    CHECK(second[0].sound == samples[0]->id);
+    // Index 7 is outside the three-entry list: the note stays, soundless, with one warning.
+    CHECK(second[1].kind == wormedit::note_kind_t::tap);
+    CHECK_FALSE(second[1].sound.has_value());
+    CHECK(second[1].provenance.source_spelling == "1[7]");
+    REQUIRE(result.diagnostics.size() == 1);
+    CHECK(result.diagnostics.front().severity == wormedit::diagnostic_severity_t::warning);
+    CHECK(result.diagnostics.front().message.find("measure 2 row 2") != std::string::npos);
+}
+
+TEST_CASE("StepMania SSC keysounds honor the backslash-hash escape",
+          "[unit][format][stepmania][keysounds]") {
+    const auto result = fixture("keysounds.ssc", wormedit::stepmania_profile_t::ssc);
+    REQUIRE(result.song.has_value());
+    REQUIRE_FALSE(result.has_errors());
+    CHECK(result.diagnostics.empty());
+    const auto& song = *result.song;
+    const auto samples = sample_resources(song);
+    REQUIRE(samples.size() == 2);
+    CHECK(samples[0]->name == "#first.wav");
+    CHECK(samples[1]->name == "second.wav");
+    const auto& notes = song.charts.front().measures.front().notes;
+    REQUIRE(notes.size() == 3);
+    CHECK(resource_named(song, *notes[0].sound) == "second.wav");
+    CHECK(resource_named(song, *notes[1].sound) == "#first.wav");
+    CHECK(resource_named(song, *notes[2].sound) == "second.wav");
+    CHECK(notes[0].sound == notes[2].sound);
+}
+
+TEST_CASE("StepMania keysound lists keep placeholders and register only used files",
+          "[unit][format][stepmania][keysounds]") {
+    const std::string source =
+        "#KEYSOUNDS:a.wav,,/abs.wav,b.wav;#BPMS:0=120;"
+        "#NOTES:dance-single::Hard:1:0,0,0,0,0:\n1[3]000\n0[1]100\n0001\n0000\n;";
+    const auto result = parse_inline(source, wormedit::stepmania_profile_t::sm);
+    REQUIRE(result.song.has_value());
+    CHECK(warning_count(result) == 2);
+    const auto samples = sample_resources(*result.song);
+    REQUIRE(samples.size() == 1);
+    CHECK(samples.front()->name == "b.wav");
+    const auto& notes = result.song->charts.front().measures.front().notes;
+    REQUIRE(notes.size() == 3);
+    CHECK(notes[0].sound == samples.front()->id);
+    CHECK_FALSE(notes[1].sound.has_value());
+    CHECK(notes[1].provenance.source_spelling == "1");
+}
+
+TEST_CASE("StepMania malformed keysound suffixes reject the chart",
+          "[unit][format][stepmania][keysounds]") {
+    for (const char* row : {"1[x]00", "1[]000", "1[2000", "1[-1]000", "1[0]x00"}) {
+        const std::string source = std::string("#KEYSOUNDS:a.wav;#NOTES:dance-single::Hard:1:0:\n") +
+                                   row + "\n;";
+        const auto result = parse_inline(source, wormedit::stepmania_profile_t::sm);
+        INFO(row);
+        CHECK_FALSE(result.song.has_value());
+        REQUIRE(result.has_errors());
+        CHECK(result.diagnostics.front().code ==
+              wormedit::stepmania_parse_diagnostic_code_t::invalid_notes);
+    }
+    SECTION("K stays rejected until autokeysounds are modeled") {
+        const auto result = parse_inline(
+            "#KEYSOUNDS:a.wav;#NOTES:dance-single::Hard:1:0:\nK[0]000\n;",
+            wormedit::stepmania_profile_t::sm);
+        CHECK_FALSE(result.song.has_value());
+        REQUIRE(result.has_errors());
+    }
+    SECTION("a suffix does not hide a column count mismatch") {
+        const auto result = parse_inline(
+            "#KEYSOUNDS:a.wav;#NOTES:dance-single::Hard:1:0:\n1[0]00\n;",
+            wormedit::stepmania_profile_t::sm);
+        CHECK_FALSE(result.song.has_value());
+    }
+}
+
+TEST_CASE("StepMania charts without keysounds import without sample resources or warnings",
+          "[unit][format][stepmania][keysounds]") {
+    for (const auto* name : {"pump-single.sm", "dance-solo.sm", "matched-timing.sm"}) {
+        const auto result = fixture(name, wormedit::stepmania_profile_t::sm);
+        INFO(name);
+        REQUIRE(result.song.has_value());
+        CHECK(result.diagnostics.empty());
+        CHECK(sample_resources(*result.song).empty());
+    }
+    SECTION("an unreferenced list registers no resource") {
+        const auto result = parse_inline(
+            "#KEYSOUNDS:a.wav,b.wav;#NOTES:dance-single::Hard:1:0:\n1000\n0100\n0010\n0001\n;",
+            wormedit::stepmania_profile_t::sm);
+        REQUIRE(result.song.has_value());
+        CHECK(result.diagnostics.empty());
+        CHECK(sample_resources(*result.song).empty());
+    }
+}

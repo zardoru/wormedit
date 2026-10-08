@@ -1,0 +1,17 @@
+#VERSION:0.83;
+#TITLE:Fixture: keysounds;
+#ARTIST:Wormedit fixture authors;
+#KEYSOUNDS:\#first.wav,second.wav;
+#OFFSET:0.000;
+#BPMS:0.000=120.000;
+#NOTEDATA:;
+#STEPSTYPE:dance-single;
+#DESCRIPTION:Fixture;
+#DIFFICULTY:Hard;
+#METER:5;
+#NOTES:
+1[1]000
+02[0]00
+0300
+L[1]000
+;

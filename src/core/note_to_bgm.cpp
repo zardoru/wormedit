@@ -4,7 +4,11 @@
 
 #include <algorithm>
 #include <limits>
+#include <map>
+#include <set>
 #include <string>
+#include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace wormedit {
@@ -14,19 +18,6 @@ auto rejected(std::uint64_t revision, diagnostic_code_t code, std::string messag
     -> document_command_result_t {
     return {.applied = false, .revision = revision,
             .diagnostics = {{diagnostic_severity_t::error, code, std::move(message), {}}}};
-}
-
-struct located_note_t {
-    measure_chunk_t* measure{};
-    std::vector<note_t>::iterator note;
-};
-
-auto find_note(chart_document_t& chart, object_id_t id) -> std::optional<located_note_t> {
-    for (auto& measure : chart.measures) {
-        const auto found = std::ranges::find(measure.notes, id, &note_t::id);
-        if (found != measure.notes.end()) return located_note_t{&measure, found};
-    }
-    return std::nullopt;
 }
 
 auto largest_object_id(const chart_document_t& chart) -> std::uint64_t {
@@ -43,65 +34,371 @@ auto largest_object_id(const chart_document_t& chart) -> std::uint64_t {
     return largest;
 }
 
-// The lane for a new event at `position`: the preferred one, else the nearest free one to its
-// right, then to its left; nullopt when every lane has an event there.
-auto free_lane(const chart_document_t& chart, local_position_t position,
-               std::optional<object_id_t> preferred) -> std::optional<object_id_t> {
-    std::unordered_set<std::uint64_t> taken;
-    for (const auto& measure : chart.measures)
-        for (const auto& event : measure.bgm_events)
-            if (event.position == position) taken.insert(event.source_lane.value);
-    std::vector<const bgm_source_lane_t*> lanes;
-    for (const auto& lane : chart.bgm_source_lanes) lanes.push_back(&lane);
-    std::ranges::stable_sort(lanes, {}, [](const auto* lane) { return lane->source_order; });
-    auto start = static_cast<std::size_t>(0);
-    if (preferred) {
-        const auto found = std::ranges::find_if(lanes, [&](const auto* lane) { return lane->id == *preferred; });
-        if (found != lanes.end()) start = static_cast<std::size_t>(found - lanes.begin());
+struct group_key_t {
+    bool is_group{};
+    std::uint64_t id{};
+    auto operator<=>(const group_key_t&) const = default;
+};
+
+struct candidate_t {
+    const note_t* note{};
+    std::size_t ordinal{};
+    std::uint64_t absolute_row{};
+    std::optional<group_key_t> group;
+};
+
+using resource_keys_t = std::unordered_map<std::uint64_t, group_key_t>;
+using measure_entries_t = std::unordered_map<std::uint64_t, measure_index_entry_t>;
+using occupancy_t = std::pair<std::uint64_t, std::uint64_t>;
+using group_lane_counts_t = std::map<group_key_t, std::map<std::uint64_t, std::size_t>>;
+struct lane_ref_t { std::uint64_t id{}; std::size_t order{}; };
+struct allocation_state_t {
+    std::set<occupancy_t> occupied;
+    std::vector<lane_ref_t> lanes;
+    std::unordered_map<std::uint64_t, std::size_t> lane_index;
+    std::map<group_key_t, std::vector<std::uint64_t>> preferences;
+    std::uint64_t largest_id{};
+    std::size_t next_order{};
+    bool order_exhausted{};
+};
+struct candidates_result_t {
+    std::vector<candidate_t> candidates;
+    std::map<group_key_t, std::size_t> group_first_ordinal;
+    std::optional<diagnostic_t> error;
+};
+
+auto indexed_absolute_row(const std::unordered_map<std::uint64_t, measure_index_entry_t>& measures,
+                          local_position_t position) -> std::optional<std::uint64_t> {
+    const auto found = measures.find(position.measure.value);
+    if (found == measures.end() || position.row >= found->second.row_capacity ||
+        position.row > std::numeric_limits<std::uint64_t>::max() - found->second.absolute_begin_row)
+        return std::nullopt;
+    return found->second.absolute_begin_row + position.row;
+}
+
+auto make_resource_keys(std::span<const resource_entry_t> resources) -> resource_keys_t {
+    resource_keys_t keys;
+    keys.reserve(resources.size());
+    for (const auto& resource : resources)
+        keys.emplace(resource.id.value, resource.sound_group
+            ? group_key_t{true, resource.sound_group->value} : group_key_t{false, resource.id.value});
+    return keys;
+}
+
+auto event_group(const bgm_event_t& event,
+                 const std::unordered_map<std::uint64_t, group_key_t>& resource_keys)
+    -> std::optional<group_key_t> {
+    if (!event.sound) return std::nullopt;
+    const auto found = resource_keys.find(event.sound->value);
+    return found == resource_keys.end() ? std::optional<group_key_t>{{false, event.sound->value}}
+                                        : std::optional<group_key_t>{found->second};
+}
+
+auto note_group(const note_t& note,
+                const std::unordered_map<std::uint64_t, group_key_t>& resource_keys)
+    -> std::optional<group_key_t> {
+    if (!note.sound) return std::nullopt;
+    const auto found = resource_keys.find(note.sound->value);
+    return found == resource_keys.end() ? std::optional<group_key_t>{{false, note.sound->value}}
+                                        : std::optional<group_key_t>{found->second};
+}
+
+auto plan_error(diagnostic_code_t code, std::string message) -> note_to_bgm_plan_t {
+    return {.diagnostics = {{diagnostic_severity_t::error, code, std::move(message), {}}}};
+}
+
+auto collect_candidates(const chart_document_t& chart, std::span<const object_id_t> ids,
+                        const resource_keys_t& resource_keys, const measure_entries_t& measure_entries)
+    -> candidates_result_t {
+    std::unordered_set<std::uint64_t> requested;
+    requested.reserve(ids.size());
+    for (const auto id : ids) {
+        if (!id || !requested.insert(id.value).second)
+            return {{}, {}, diagnostic_t{diagnostic_severity_t::error, diagnostic_code_t::duplicate_id,
+                "note move to BGM has an invalid or duplicate note ID", {}}};
     }
-    for (auto at = start; at < lanes.size(); ++at)
-        if (!taken.contains(lanes[at]->id.value)) return lanes[at]->id;
-    for (auto at = start; at-- > 0;)
-        if (!taken.contains(lanes[at]->id.value)) return lanes[at]->id;
+    std::vector<candidate_t> candidates;
+    candidates.reserve(ids.size());
+    std::map<group_key_t, std::size_t> group_first_ordinal;
+    std::size_t ordinal{};
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            if (!requested.contains(note.id.value)) { ++ordinal; continue; }
+            const auto absolute = indexed_absolute_row(measure_entries, note.position);
+            if (!absolute)
+                return {{}, {}, diagnostic_t{diagnostic_severity_t::error, diagnostic_code_t::row_out_of_range,
+                    "a selected note is outside measure geometry", {}}};
+            if (note.sound_channel_event)
+                return {{}, {}, diagnostic_t{diagnostic_severity_t::error, diagnostic_code_t::unsupported_feature,
+                    "retained linked notes must use the BMSON stem reassignment route", note.id}};
+            auto group = note_group(note, resource_keys);
+            if (group && !group_first_ordinal.contains(*group)) group_first_ordinal.emplace(*group, ordinal);
+            candidates.push_back({&note, ordinal++, *absolute, group});
+        }
+    }
+    if (candidates.size() != ids.size())
+        return {{}, {}, diagnostic_t{diagnostic_severity_t::error, diagnostic_code_t::invalid_id,
+            "note move to BGM names an unknown note", {}}};
+    return {std::move(candidates), std::move(group_first_ordinal), std::nullopt};
+}
+
+auto order_candidates(std::vector<candidate_t>& candidates, std::span<const object_id_t> ids,
+                      const std::map<group_key_t, std::size_t>& group_first_ordinal, bool manual) -> void {
+    std::unordered_map<std::uint64_t, std::size_t> caller_order;
+    if (manual) {
+        caller_order.reserve(ids.size());
+        for (std::size_t i = 0; i < ids.size(); ++i) caller_order.emplace(ids[i].value, i);
+    }
+    const auto cohort_order = [&](const candidate_t& candidate) {
+        return candidate.group ? group_first_ordinal.at(*candidate.group) : candidate.ordinal;
+    };
+    std::ranges::stable_sort(candidates, [&](const auto& left, const auto& right) {
+        if (manual) return caller_order.at(left.note->id.value) < caller_order.at(right.note->id.value);
+        const auto left_cohort = cohort_order(left);
+        const auto right_cohort = cohort_order(right);
+        return std::tie(left_cohort, left.absolute_row, left.ordinal) <
+               std::tie(right_cohort, right.absolute_row, right.ordinal);
+    });
+}
+
+auto rank_group_preferences(allocation_state_t& state, const group_lane_counts_t& counts) -> void {
+    for (const auto& [group, lane_counts] : counts) {
+        std::vector<std::pair<std::uint64_t, std::size_t>> ranked;
+        for (const auto& [lane, count] : lane_counts)
+            if (state.lane_index.contains(lane)) ranked.emplace_back(lane, count);
+        std::ranges::stable_sort(ranked, [&](const auto& left, const auto& right) {
+            if (left.second != right.second) return left.second > right.second;
+            return state.lane_index.at(left.first) < state.lane_index.at(right.first);
+        });
+        for (const auto& [lane, count] : ranked) { (void)count; state.preferences[group].push_back(lane); }
+    }
+}
+
+auto prepare_allocation_state(const chart_document_t& chart, const resource_keys_t& resource_keys,
+                              const measure_entries_t& measure_entries)
+    -> std::variant<allocation_state_t, diagnostic_t> {
+    allocation_state_t state;
+    group_lane_counts_t counts;
+    for (const auto& measure : chart.measures)
+        for (const auto& event : measure.bgm_events) {
+            const auto absolute = indexed_absolute_row(measure_entries, event.position);
+            if (!absolute)
+                return diagnostic_t{diagnostic_severity_t::error, diagnostic_code_t::row_out_of_range,
+                    "an existing BGM event is outside measure geometry", {}};
+            state.occupied.emplace(*absolute, event.source_lane.value);
+            if (const auto group = event_group(event, resource_keys)) ++counts[*group][event.source_lane.value];
+        }
+    for (const auto& lane : chart.bgm_source_lanes) state.lanes.push_back({lane.id.value, lane.source_order});
+    std::ranges::stable_sort(state.lanes, {}, &lane_ref_t::order);
+    for (std::size_t i = 0; i < state.lanes.size(); ++i) state.lane_index.emplace(state.lanes[i].id, i);
+    rank_group_preferences(state, counts);
+    state.largest_id = largest_object_id(chart);
+    for (const auto& lane : state.lanes) {
+        if (lane.order == std::numeric_limits<std::size_t>::max()) state.order_exhausted = true;
+        else state.next_order = std::max(state.next_order, lane.order + 1);
+    }
+    return state;
+}
+
+auto choose_free_lane(allocation_state_t& state, const candidate_t& candidate,
+                      std::optional<object_id_t> manual) -> std::optional<std::uint64_t> {
+    const auto free = [&](std::uint64_t lane) {
+        return !state.occupied.contains({candidate.absolute_row, lane});
+    };
+    if (manual) {
+        const auto target = state.lane_index.find(manual->value);
+        const auto start = target == state.lane_index.end() ? std::size_t{} : target->second;
+        for (auto i = start; i < state.lanes.size(); ++i) if (free(state.lanes[i].id)) return state.lanes[i].id;
+        for (auto i = start; i-- > 0;) if (free(state.lanes[i].id)) return state.lanes[i].id;
+        return std::nullopt;
+    }
+    if (candidate.group)
+        for (const auto lane : state.preferences[*candidate.group]) if (free(lane)) return lane;
+    for (const auto& lane : state.lanes) if (free(lane.id)) return lane.id;
     return std::nullopt;
 }
 
-auto add_bgm_lane(chart_document_t& chart, std::uint64_t& largest) -> std::optional<object_id_t> {
-    if (largest == std::numeric_limits<std::uint64_t>::max() || chart.bgm_source_lanes.size() >= 1'000'000)
+auto append_planned_lane(allocation_state_t& state, note_to_bgm_plan_t& plan,
+                         std::size_t existing_lane_count, note_to_bgm_policy_t policy)
+    -> std::optional<object_id_t> {
+    const auto lane_count = existing_lane_count + plan.new_lanes.size();
+    if (!policy.allow_new_lanes || lane_count >= policy.max_lanes || lane_count >= 1'000'000 ||
+        state.largest_id == std::numeric_limits<std::uint64_t>::max() || state.order_exhausted)
         return std::nullopt;
-    std::size_t order{};
-    for (const auto& lane : chart.bgm_source_lanes) order = std::max(order, lane.source_order + 1);
-    const object_id_t id{++largest};
-    chart.bgm_source_lanes.push_back({.id = id, .name = "BGM " + std::to_string(chart.bgm_source_lanes.size() + 1),
-                                      .source_order = order});
+    const object_id_t id{++state.largest_id};
+    const auto order = state.next_order;
+    state.order_exhausted = order == std::numeric_limits<std::size_t>::max();
+    if (!state.order_exhausted) ++state.next_order;
+    plan.new_lanes.push_back({id, "BGM " + std::to_string(lane_count + 1), order});
+    state.lanes.push_back({id.value, order});
+    state.lane_index.emplace(id.value, state.lanes.size() - 1);
     return id;
 }
 
-// An ordinary note becomes a BGM event at its own row, with its sound, layers and branch.
-auto convert_note(chart_document_t& chart, object_id_t id, std::optional<object_id_t> preferred,
-                  std::uint64_t& largest) -> bool {
-    const auto located = find_note(chart, id);
-    if (!located) return false;
-    auto lane = free_lane(chart, located->note->position, preferred);
-    if (!lane) lane = add_bgm_lane(chart, largest);
-    if (!lane) return false;
-    bgm_event_t event{.id = located->note->id, .position = located->note->position, .source_lane = *lane,
-                      .sound = located->note->sound, .sound_channel_event = std::nullopt,
-                      .structural_slot = 0, .branch = located->note->branch, .provenance = {}};
-    event.semantic_layers = located->note->semantic_layers;
-    const auto position = located->note->position;
-    auto& measure = *located->measure;
-    measure.notes.erase(located->note);
-    const auto destination = std::ranges::find(chart.measures, position.measure, &measure_chunk_t::id);
-    if (destination == chart.measures.end()) return false;
-    destination->bgm_events.push_back(std::move(event));
+auto allocate_candidates(const chart_document_t& chart, std::vector<candidate_t> candidates,
+                         allocation_state_t state, std::optional<object_id_t> manual,
+                         note_to_bgm_policy_t policy) -> note_to_bgm_plan_t {
+    note_to_bgm_plan_t plan;
+    plan.assignments.reserve(candidates.size());
+    plan.retained_event_ids.reserve(candidates.size());
+    for (const auto& candidate : candidates) {
+        auto lane = choose_free_lane(state, candidate, manual);
+        if (!lane) {
+            const auto added = append_planned_lane(state, plan, chart.bgm_source_lanes.size(), policy);
+            if (!added) return plan_error(diagnostic_code_t::collision,
+                                          "no BGM lane is available for every selected note");
+            lane = added->value;
+            if (candidate.group) state.preferences[*candidate.group].push_back(*lane);
+        }
+        state.occupied.emplace(candidate.absolute_row, *lane);
+        plan.assignments.push_back({candidate.note->id, object_id_t{*lane}});
+        plan.retained_event_ids.push_back(candidate.note->id);
+        if (candidate.group && std::ranges::find(state.preferences[*candidate.group], *lane) ==
+                                   state.preferences[*candidate.group].end())
+            state.preferences[*candidate.group].push_back(*lane);
+    }
+    return plan;
+}
+
+auto plan_allocation(const chart_document_t& chart, std::span<const resource_entry_t> resources,
+                     std::span<const object_id_t> ids, std::optional<object_id_t> manual_lane,
+                     note_to_bgm_policy_t policy) -> note_to_bgm_plan_t {
+    if (ids.empty() || ids.size() > 4096)
+        return plan_error(diagnostic_code_t::invalid_id, "note move to BGM needs 1 to 4096 notes");
+    const auto built = build_measure_index(chart);
+    if (!std::holds_alternative<measure_index_t>(built))
+        return plan_error(diagnostic_code_t::invalid_measure, "BGM allocation requires valid measure geometry");
+    const auto& geometry = std::get<measure_index_t>(built);
+    measure_entries_t measure_entries;
+    measure_entries.reserve(geometry.entries.size());
+    for (const auto& entry : geometry.entries) measure_entries.emplace(entry.id.value, entry);
+    const auto resource_keys = make_resource_keys(resources);
+    auto collected = collect_candidates(chart, ids, resource_keys, measure_entries);
+    if (collected.error)
+        return {.diagnostics = {std::move(*collected.error)}};
+    order_candidates(collected.candidates, ids, collected.group_first_ordinal, manual_lane.has_value());
+    auto prepared = prepare_allocation_state(chart, resource_keys, measure_entries);
+    if (const auto* failure = std::get_if<diagnostic_t>(&prepared))
+        return {.diagnostics = {*failure}};
+    return allocate_candidates(chart, std::move(collected.candidates),
+                                std::get<allocation_state_t>(std::move(prepared)), manual_lane, policy);
+}
+
+auto apply_plan(chart_document_t& chart, const note_to_bgm_plan_t& plan) -> bool {
+    for (const auto& lane : plan.new_lanes)
+        chart.bgm_source_lanes.push_back({.id = lane.id, .name = lane.name, .source_order = lane.source_order});
+    std::unordered_map<std::uint64_t, object_id_t> destinations;
+    destinations.reserve(plan.assignments.size());
+    for (const auto& assignment : plan.assignments) destinations.emplace(assignment.note.value, assignment.lane);
+    std::vector<note_t> converted;
+    converted.reserve(plan.assignments.size());
+    for (auto& measure : chart.measures) {
+        for (const auto& note : measure.notes)
+            if (destinations.contains(note.id.value)) converted.push_back(note);
+        std::erase_if(measure.notes, [&](const auto& note) { return destinations.contains(note.id.value); });
+    }
+    if (converted.size() != plan.assignments.size()) return false;
+    std::unordered_map<std::uint64_t, note_t> notes;
+    notes.reserve(converted.size());
+    for (auto& note : converted) notes.emplace(note.id.value, std::move(note));
+    std::unordered_map<std::uint64_t, std::size_t> measure_index;
+    for (std::size_t i = 0; i < chart.measures.size(); ++i)
+        measure_index.emplace(chart.measures[i].id.value, i);
+    for (const auto& assignment : plan.assignments) {
+        const auto found_note = notes.find(assignment.note.value);
+        if (found_note == notes.end()) return false;
+        const auto& note = found_note->second;
+        bgm_event_t event{.id = note.id, .position = note.position, .source_lane = assignment.lane,
+                          .sound = note.sound, .sound_channel_event = std::nullopt,
+                          .structural_slot = 0, .branch = note.branch, .provenance = note.provenance};
+        event.semantic_layers = note.semantic_layers;
+        const auto destination = measure_index.find(note.position.measure.value);
+        if (destination == measure_index.end()) return false;
+        chart.measures[destination->second].bgm_events.push_back(std::move(event));
+    }
     return true;
+}
+
+struct selected_note_sets_t {
+    std::vector<object_id_t> ordinary;
+    std::vector<object_id_t> bmson_linked;
+    std::optional<diagnostic_t> error;
+};
+
+auto partition_selected_notes(const chart_document_t& chart, std::span<const object_id_t> ids)
+    -> selected_note_sets_t {
+    std::unordered_set<std::uint64_t> requested;
+    requested.reserve(ids.size());
+    for (const auto id : ids)
+        if (!id || !requested.insert(id.value).second)
+            return {{}, {}, diagnostic_t{diagnostic_severity_t::error, diagnostic_code_t::duplicate_id,
+                "note move to BGM has duplicate or invalid IDs", {}}};
+    std::unordered_set<std::uint64_t> linked;
+    std::unordered_set<std::uint64_t> found;
+    found.reserve(ids.size());
+    for (const auto& measure : chart.measures)
+        for (const auto& note : measure.notes)
+            if (requested.contains(note.id.value)) {
+                found.insert(note.id.value);
+                if (note.sound_channel_event && chart.source_family == format_family_t::bmson)
+                    linked.insert(note.id.value);
+            }
+    if (found.size() != requested.size())
+        return {{}, {}, diagnostic_t{diagnostic_severity_t::error, diagnostic_code_t::invalid_id,
+            "note move to BGM names an unknown note", {}}};
+    selected_note_sets_t sets;
+    for (const auto id : ids) {
+        if (linked.contains(id.value)) sets.bmson_linked.push_back(id);
+        else sets.ordinary.push_back(id);
+    }
+    return sets;
+}
+
+auto reassign_bmson_notes(document_history_t& scratch, chart_id_t chart,
+                          std::span<const object_id_t> ids, std::uint64_t live_revision)
+    -> std::optional<document_command_result_t> {
+    for (const auto id : ids) {
+        const auto step = assign_bmson_sound_event(scratch, scratch.document.revision, chart, id, std::nullopt);
+        if (!step.applied) {
+            if (step.diagnostics.empty())
+                return rejected(live_revision, diagnostic_code_t::invalid_id,
+                                "a BMSON stem note could not be reassigned");
+            auto failure = step;
+            failure.revision = live_revision;
+            return failure;
+        }
+    }
+    return std::nullopt;
+}
+
+auto apply_ordinary_plan(document_history_t& scratch, chart_id_t chart_id,
+                         std::span<const object_id_t> ids, std::optional<object_id_t> preferred_lane,
+                         note_to_bgm_policy_t policy, std::uint64_t live_revision)
+    -> std::optional<document_command_result_t> {
+    if (ids.empty()) return std::nullopt;
+    const auto current = std::ranges::find(scratch.document.charts, chart_id, &chart_document_t::id);
+    const auto plan = plan_allocation(*current, scratch.document.resources, ids, preferred_lane, policy);
+    if (!plan.accepted())
+        return document_command_result_t{.applied = false, .revision = live_revision,
+                                         .diagnostics = plan.diagnostics};
+    auto& planned = *std::ranges::find(scratch.document.charts, chart_id, &chart_document_t::id);
+    if (!apply_plan(planned, plan))
+        return rejected(live_revision, diagnostic_code_t::invalid_id,
+                        "the BGM allocation plan could not be applied");
+    return std::nullopt;
 }
 
 } // namespace
 
+auto plan_notes_to_bgm(const chart_document_t& chart, std::span<const resource_entry_t> resources,
+                       std::span<const object_id_t> notes, std::optional<object_id_t> preferred_lane,
+                       note_to_bgm_policy_t policy) -> note_to_bgm_plan_t {
+    return plan_allocation(chart, resources, notes, preferred_lane, policy);
+}
+
 auto move_notes_to_bgm(document_history_t& history, std::uint64_t expected_revision, chart_id_t chart_id,
-                       std::span<const object_id_t> notes, std::optional<object_id_t> preferred_lane)
+                       std::span<const object_id_t> notes, std::optional<object_id_t> preferred_lane,
+                       note_to_bgm_policy_t policy)
     -> document_command_result_t {
     const auto revision = history.document.revision;
     if (expected_revision != revision)
@@ -111,28 +408,13 @@ auto move_notes_to_bgm(document_history_t& history, std::uint64_t expected_revis
     const auto found = std::ranges::find(history.document.charts, chart_id, &chart_document_t::id);
     if (!chart_id || found == history.document.charts.end())
         return rejected(revision, diagnostic_code_t::invalid_id, "note move to BGM refers to an unknown chart");
-    // Work on a copy of the whole history so a failure leaves the real one untouched, and fold
-    // the steps into one undo entry at the end.
+    const auto selection = partition_selected_notes(*found, notes);
+    if (selection.error) return {.applied = false, .revision = revision, .diagnostics = {*selection.error}};
     auto scratch = make_document_history(history.document);
-    for (const auto id : notes) {
-        auto& chart = *std::ranges::find(scratch.document.charts, chart_id, &chart_document_t::id);
-        const auto located = find_note(chart, id);
-        if (!located)
-            return rejected(revision, diagnostic_code_t::invalid_id, "note move to BGM names an unknown note");
-        if (located->note->sound_channel_event && chart.source_family == format_family_t::bmson) {
-            const auto step = assign_bmson_sound_event(scratch, scratch.document.revision, chart_id, id, std::nullopt);
-            if (!step.diagnostics.empty()) return step;
-            continue;
-        }
-        auto largest = largest_object_id(chart);
-        auto proposed = scratch.document;
-        auto& proposed_chart = *std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
-        if (!convert_note(proposed_chart, id, preferred_lane, largest))
-            return rejected(revision, diagnostic_code_t::invalid_id, "a note could not be moved to the BGM area");
-        const auto step = commit_document_command(scratch, std::move(proposed), "Move note to BGM");
-        if (!step.applied) return step.diagnostics.empty() ? rejected(revision, diagnostic_code_t::invalid_id,
-            "a note could not be moved to the BGM area") : step;
-    }
+    if (const auto failure = reassign_bmson_notes(scratch, chart_id, selection.bmson_linked, revision))
+        return *failure;
+    if (const auto failure = apply_ordinary_plan(scratch, chart_id, selection.ordinary,
+                                                 preferred_lane, policy, revision)) return *failure;
     return commit_document_command(history, std::move(scratch.document),
                                    notes.size() == 1 ? "Move note to BGM" : "Move notes to BGM");
 }

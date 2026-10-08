@@ -2,6 +2,8 @@
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/note_to_bgm.h>
 #include <wormedit/formats/bmson.h>
+#include <wormedit/formats/bms.h>
+#include <wormedit/formats/bms_writer.h>
 #include "sys/compose_note_to_bgm.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -11,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <span>
 #include <source_location>
 #include <string>
@@ -49,7 +52,309 @@ auto plain_song() -> song_document_t {
     return song;
 }
 
+auto grouped_song() -> song_document_t {
+    auto song = plain_song();
+    song.resources = {
+        {.id = resource_id_t{1}, .asset = asset_id_t{10}, .sound_group = sound_group_id_t{7}},
+        {.id = resource_id_t{2}, .asset = asset_id_t{11}, .sound_group = sound_group_id_t{7}},
+        {.id = resource_id_t{3}, .asset = asset_id_t{10}}};
+    auto& chart = song.charts.front();
+    chart.measures[0].notes[0].sound = resource_id_t{1};
+    chart.measures[0].notes[1].sound = resource_id_t{2};
+    chart.measures[1].notes[0].sound = resource_id_t{2};
+    chart.measures[1].bgm_events = {
+        {.id = object_id_t{20}, .position = {measure_id_t{2}, 100}, .source_lane = object_id_t{9},
+         .sound = resource_id_t{1}},
+        {.id = object_id_t{21}, .position = {measure_id_t{2}, 200}, .source_lane = object_id_t{10},
+         .sound = resource_id_t{1}},
+        {.id = object_id_t{22}, .position = {measure_id_t{2}, 300}, .source_lane = object_id_t{10},
+         .sound = resource_id_t{2}}};
+    return song;
+}
+
 } // namespace
+
+TEST_CASE("automatic BGM planning groups sounds and retains deterministic event identities",
+          "[unit][core][note-to-bgm]") {
+    const auto song = grouped_song();
+    const auto& chart = song.charts.front();
+    const std::array selected{object_id_t{1}, object_id_t{3}};
+    const auto plan = plan_notes_to_bgm(chart, song.resources, selected, std::nullopt);
+    require_move(plan.accepted());
+    require_move(plan.assignments.size() == 2);
+    check_move(plan.assignments[0].note == object_id_t{1});
+    check_move(plan.assignments[0].lane == object_id_t{10});
+    check_move(plan.assignments[1].note == object_id_t{3});
+    check_move(plan.assignments[1].lane == object_id_t{10});
+    check_move(plan.retained_event_ids == std::vector<object_id_t>{object_id_t{1}, object_id_t{3}});
+
+    const std::array reversed{object_id_t{3}, object_id_t{1}};
+    const auto permuted = plan_notes_to_bgm(chart, song.resources, reversed, std::nullopt);
+    require_move(permuted.accepted());
+    check_move(permuted.assignments == plan.assignments);
+}
+
+TEST_CASE("same-asset ungrouped resources do not join a tagged sound group",
+          "[unit][core][note-to-bgm]") {
+    auto song = grouped_song();
+    song.charts.front().measures[1].notes[0].sound = resource_id_t{3};
+    const auto& chart = song.charts.front();
+    const std::array selected{object_id_t{1}, object_id_t{3}};
+    const auto plan = plan_notes_to_bgm(chart, song.resources, selected, std::nullopt);
+    require_move(plan.accepted());
+    check_move(plan.assignments[0].lane == object_id_t{10});
+    check_move(plan.assignments[1].lane == object_id_t{9});
+}
+
+TEST_CASE("tagged groups and implicit resource keys stay distinct with deterministic tie ranking",
+          "[unit][core][note-to-bgm]") {
+    auto song = plain_song();
+    song.resources = {
+        {.id = resource_id_t{1}, .asset = asset_id_t{10}},
+        {.id = resource_id_t{2}, .asset = asset_id_t{11}, .sound_group = sound_group_id_t{1}}};
+    auto& chart = song.charts.front();
+    chart.measures[0].notes[0].sound = resource_id_t{1};
+    chart.measures[0].notes[1].sound = resource_id_t{2};
+    chart.measures[0].bgm_events = {
+        {.id = object_id_t{20}, .position = {measure_id_t{1}, 40}, .source_lane = object_id_t{9},
+         .sound = resource_id_t{1}},
+        {.id = object_id_t{21}, .position = {measure_id_t{1}, 80}, .source_lane = object_id_t{9},
+         .sound = resource_id_t{1}},
+        {.id = object_id_t{22}, .position = {measure_id_t{1}, 120}, .source_lane = object_id_t{10},
+         .sound = resource_id_t{2}},
+        {.id = object_id_t{23}, .position = {measure_id_t{1}, 160}, .source_lane = object_id_t{10},
+         .sound = resource_id_t{2}},
+        {.id = object_id_t{24}, .position = {measure_id_t{1}, 200}, .source_lane = object_id_t{10},
+         .sound = resource_id_t{1}},
+        {.id = object_id_t{25}, .position = {measure_id_t{1}, 220}, .source_lane = object_id_t{10},
+         .sound = resource_id_t{1}}};
+    const std::array selected{object_id_t{1}, object_id_t{2}};
+    const auto plan = plan_notes_to_bgm(chart, song.resources, selected, std::nullopt);
+    require_move(plan.accepted());
+    check_move(plan.assignments[0].lane == object_id_t{9});
+    check_move(plan.assignments[1].lane == object_id_t{10});
+}
+
+TEST_CASE("automatic BGM planning spills same-row notes and keeps silent notes on the lowest lane",
+          "[unit][core][note-to-bgm]") {
+    auto song = grouped_song();
+    auto& chart = song.charts.front();
+    chart.measures[0].notes[0].position.row = 480;
+    chart.measures[0].notes[1].position.row = 480;
+    chart.measures[0].notes[0].sound = resource_id_t{1};
+    chart.measures[0].notes[1].sound = resource_id_t{2};
+    const std::array both{object_id_t{2}, object_id_t{1}};
+    const auto plan = plan_notes_to_bgm(chart, song.resources, both, std::nullopt);
+    require_move(plan.accepted());
+    check_move(plan.assignments[0].lane == object_id_t{10});
+    check_move(plan.assignments[1].lane == object_id_t{9});
+
+    chart.measures[0].notes[0].sound.reset();
+    const std::array silent{object_id_t{1}};
+    const auto silent_plan = plan_notes_to_bgm(chart, song.resources, silent, std::nullopt);
+    require_move(silent_plan.accepted());
+    check_move(silent_plan.assignments.front().lane == object_id_t{9});
+}
+
+TEST_CASE("automatic allocation keeps first-appearance cohorts and silent notes in document order",
+          "[unit][core][note-to-bgm]") {
+    auto song = grouped_song();
+    auto& chart = song.charts.front();
+    chart.bgm_source_lanes.resize(1);
+    chart.measures[0].notes[0].position.row = 360;
+    chart.measures[0].notes[1].position.row = 360;
+    chart.measures[0].notes[0].sound.reset();
+    chart.measures[0].notes[1].sound = resource_id_t{1};
+    const std::array both{object_id_t{1}, object_id_t{2}};
+    const auto silent_first = plan_notes_to_bgm(chart, song.resources, both, std::nullopt);
+    require_move(silent_first.accepted());
+    check_move(silent_first.assignments[0].note == object_id_t{1});
+    check_move(silent_first.assignments[0].lane == object_id_t{9});
+    check_move(silent_first.assignments[1].lane == object_id_t{101});
+
+    std::swap(chart.measures[0].notes[0], chart.measures[0].notes[1]);
+    const auto keyed_first = plan_notes_to_bgm(chart, song.resources, both, std::nullopt);
+    require_move(keyed_first.accepted());
+    check_move(keyed_first.assignments[0].note == object_id_t{2});
+    check_move(keyed_first.assignments[0].lane == object_id_t{9});
+    check_move(keyed_first.assignments[1].lane == object_id_t{101});
+}
+
+TEST_CASE("a remembered spill lane outranks a newly free lower lane for later group notes",
+          "[unit][core][note-to-bgm]") {
+    auto song = plain_song();
+    song.resources = {{.id = resource_id_t{1}, .asset = asset_id_t{10},
+                       .sound_group = sound_group_id_t{7}}};
+    auto& chart = song.charts.front();
+    chart.bgm_source_lanes = {{.id = object_id_t{8}, .source_order = 0},
+                              {.id = object_id_t{9}, .source_order = 1},
+                              {.id = object_id_t{10}, .source_order = 2}};
+    chart.measures[0].notes[0].sound = resource_id_t{1};
+    chart.measures[1].notes[0].sound = resource_id_t{1};
+    chart.measures[0].bgm_events = {
+        {.id = object_id_t{20}, .position = {measure_id_t{1}, 40}, .source_lane = object_id_t{10},
+         .sound = resource_id_t{1}},
+        {.id = object_id_t{21}, .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{8}},
+        {.id = object_id_t{22}, .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{10},
+         .sound = resource_id_t{1}}};
+    chart.measures[1].bgm_events = {
+        {.id = object_id_t{23}, .position = {measure_id_t{2}, 0}, .source_lane = object_id_t{10},
+         .sound = resource_id_t{1}}};
+    const std::array selected{object_id_t{1}, object_id_t{3}};
+    const auto plan = plan_notes_to_bgm(chart, song.resources, selected, std::nullopt);
+    require_move(plan.accepted());
+    check_move(plan.assignments[0].lane == object_id_t{9});
+    check_move(plan.assignments[1].lane == object_id_t{9});
+}
+
+TEST_CASE("BGM source-order exhaustion only rejects required growth",
+          "[unit][core][note-to-bgm]") {
+    auto song = plain_song();
+    auto& chart = song.charts.front();
+    chart.bgm_source_lanes = {{.id = object_id_t{9},
+        .source_order = std::numeric_limits<std::size_t>::max() - 1}};
+    const std::array two{object_id_t{1}, object_id_t{2}};
+    const auto final_order = plan_notes_to_bgm(chart, song.resources, two, std::nullopt);
+    require_move(final_order.accepted());
+    require_move(final_order.new_lanes.size() == 1);
+    check_move(final_order.new_lanes.front().source_order == std::numeric_limits<std::size_t>::max());
+
+    chart.bgm_source_lanes.front().source_order = std::numeric_limits<std::size_t>::max();
+    const std::array one{object_id_t{1}};
+    const auto existing_lane = plan_notes_to_bgm(chart, song.resources, one, std::nullopt);
+    require_move(existing_lane.accepted());
+    check_move(existing_lane.new_lanes.empty());
+    const auto exhausted = plan_notes_to_bgm(chart, song.resources, two, std::nullopt);
+    check_move(!exhausted.accepted());
+}
+
+TEST_CASE("manual BGM placement keeps the right-then-left fallback and new-lane policy is atomic",
+          "[unit][core][note-to-bgm]") {
+    auto song = plain_song();
+    auto& chart = song.charts.front();
+    const std::array reversed{object_id_t{2}, object_id_t{1}};
+    const auto manual = plan_notes_to_bgm(chart, song.resources, reversed, object_id_t{9});
+    require_move(manual.accepted());
+    check_move(manual.assignments[0].note == object_id_t{2});
+    check_move(manual.assignments[0].lane == object_id_t{9});
+    check_move(manual.assignments[1].lane == object_id_t{10});
+    chart.measures[0].bgm_events = {
+        {.id = object_id_t{20}, .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{10}}};
+    const std::array one{object_id_t{1}};
+    const auto fallback = plan_notes_to_bgm(chart, song.resources, one, object_id_t{10});
+    require_move(fallback.accepted());
+    check_move(fallback.assignments.front().lane == object_id_t{9});
+    const auto invalid_target = plan_notes_to_bgm(chart, song.resources, one, object_id_t{0});
+    require_move(invalid_target.accepted());
+    check_move(invalid_target.assignments.front().lane == object_id_t{9});
+
+    chart.measures[0].notes.push_back(
+        {.id = object_id_t{4}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{3}});
+    chart.lane_layouts.front().layout.lanes.push_back({.id = lane_id_t{3}, .name = "C"});
+    const std::array three{object_id_t{1}, object_id_t{2}, object_id_t{4}};
+    const auto denied = plan_notes_to_bgm(chart, song.resources, three, std::nullopt,
+                                           {.allow_new_lanes = false, .max_lanes = 2});
+    check_move(!denied.accepted());
+    auto history = make_document_history(song);
+    const auto before = history.document;
+    const auto rejected = move_notes_to_bgm(history, history.document.revision, chart_id_t{1}, three,
+                                             std::nullopt, {.allow_new_lanes = false, .max_lanes = 2});
+    check_move(!rejected.applied);
+    check_move(history.document.revision == before.revision);
+    check_move(history.document.charts.front().measures[0].notes.size() ==
+               before.charts.front().measures[0].notes.size());
+    check_move(history.document.charts.front().measures[0].bgm_events.size() ==
+               before.charts.front().measures[0].bgm_events.size());
+    check_move(history.undo.empty());
+}
+
+TEST_CASE("ordinary BGM conversion preserves provenance and uses one undo entry",
+          "[unit][core][note-to-bgm]") {
+    auto song = plain_song();
+    auto& chart = song.charts.front();
+    chart.semantic_layers.push_back({.id = layer_id_t{5}, .name = "accent"});
+    chart.measures[0].notes[0].semantic_layers = {layer_id_t{5}};
+    chart.measures[0].notes[0].branch = branch_id_t{9};
+    chart.measures[0].notes[0].provenance = {
+        .family = format_family_t::bms, .profile = "bms", .source_field = "wav",
+        .source_spelling = "01", .source_order = 17};
+    const auto expected = chart.measures[0].notes[0].provenance;
+    auto history = make_document_history(song);
+    const std::array selected{object_id_t{1}};
+    const auto moved = move_notes_to_bgm(history, history.document.revision, chart_id_t{1}, selected, std::nullopt);
+    require_move(moved.applied);
+    const auto& events = history.document.charts.front().measures[0].bgm_events;
+    const auto event = std::ranges::find(events, object_id_t{1}, &bgm_event_t::id);
+    require_move(event != events.end());
+    check_move(event->provenance.family == expected.family);
+    check_move(event->provenance.profile == expected.profile);
+    check_move(event->provenance.source_field == expected.source_field);
+    check_move(event->provenance.source_spelling == expected.source_spelling);
+    check_move(event->provenance.source_order == expected.source_order);
+    check_move(event->semantic_layers == std::vector<layer_id_t>{layer_id_t{5}});
+    check_move(event->branch == branch_id_t{9});
+    check_move(history.undo.size() == 1);
+    require_move(undo_document_command(history));
+    check_move(redo_document_command(history));
+    const auto restored = std::ranges::find(history.document.charts.front().measures[0].bgm_events,
+                                             object_id_t{1}, &bgm_event_t::id);
+    require_move(restored != history.document.charts.front().measures[0].bgm_events.end());
+    check_move(restored->provenance.profile == expected.profile);
+    check_move(restored->provenance.source_order == expected.source_order);
+}
+
+TEST_CASE("moving an imported BMS note writes only its BGM occurrence",
+          "[unit][core][note-to-bgm][bms-writer]") {
+    const std::string source = "#TITLE allocator\n#PLAYER 1\n#BPM 120\n#WAV01 kick.wav\n#00011:01\n";
+    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
+        {.lane_profile_id = "bms-5k-outside-scratch"});
+    require_move(parsed.song.has_value());
+    auto history = make_document_history(*parsed.song);
+    const auto chart_id = history.document.charts.front().id;
+    const auto& chart_before = history.document.charts.front();
+    require_move(!chart_before.measures.empty());
+    require_move(!chart_before.measures.front().notes.empty());
+    const auto note_id = chart_before.measures.front().notes.front().id;
+    const std::array selected{note_id};
+    const auto moved = move_notes_to_bgm(history, history.document.revision,
+                                         chart_id, selected, std::nullopt);
+    require_move(moved.applied);
+    const auto written = write_bms(history.document,
+        {.lane_profile_id = "bms-5k-outside-scratch", .preserve_unchanged_source = true});
+    require_move(written.bytes.has_value());
+    const auto reparsed = parse_bms_bytes(std::as_bytes(std::span{written.bytes->data(), written.bytes->size()}),
+        {.lane_profile_id = "bms-5k-outside-scratch"});
+    require_move(reparsed.song.has_value());
+    const auto& roundtrip = reparsed.song->charts.front();
+    std::size_t note_count{};
+    std::size_t event_count{};
+    for (const auto& measure : roundtrip.measures) {
+        note_count += measure.notes.size();
+        event_count += measure.bgm_events.size();
+    }
+    check_move(note_count == 0);
+    check_move(event_count == 1);
+}
+
+TEST_CASE("sparse BGM plan handles many selected notes in one lane",
+          "[unit][core][note-to-bgm]") {
+    auto song = plain_song();
+    auto& notes = song.charts.front().measures[0].notes;
+    notes.clear();
+    std::vector<object_id_t> selected;
+    for (std::uint64_t i = 0; i < 512; ++i) {
+        const object_id_t id{1000 + i};
+        selected.push_back(id);
+        notes.push_back({.id = id, .position = {measure_id_t{1}, i}, .lane = lane_id_t{1}});
+    }
+    const auto& chart = song.charts.front();
+    const auto plan = plan_notes_to_bgm(chart, song.resources, selected, std::nullopt);
+    require_move(plan.accepted());
+    check_move(plan.assignments.size() == selected.size());
+    check_move(std::ranges::all_of(plan.assignments, [](const auto& item) {
+        return item.lane == object_id_t{9};
+    }));
+}
 
 TEST_CASE("notes moved to the BGM area take the preferred lane and shift over when it is taken",
           "[unit][core][note-to-bgm]") {
@@ -115,6 +420,57 @@ TEST_CASE("a BMSON stem tap goes back to its stem's BGM lane and keeps its slice
     REQUIRE(restored.bgm_events.size() == 1);
     CHECK(restored.bgm_events.front().sound_channel_event == bgm.sound_channel_event);
     CHECK(history.undo.size() == undo_before + 1);
+}
+
+TEST_CASE("pure ordinary planning rejects linked BMSON notes while mixed command reserves stem rows",
+          "[unit][core][note-to-bgm][bmson]") {
+    auto unlinked_song = plain_song();
+    unlinked_song.charts.front().source_family = format_family_t::bmson;
+    const std::array unlinked_ids{object_id_t{1}};
+    const auto unlinked = plan_notes_to_bgm(unlinked_song.charts.front(), unlinked_song.resources,
+        unlinked_ids, std::nullopt);
+    require_move(unlinked.accepted());
+
+    std::ifstream input(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / "published-vox-slicing.bmson",
+                        std::ios::binary);
+    const std::string bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
+    require_move(parsed.song.has_value());
+    auto song = *parsed.song;
+    song.audio_assets.front().stream = {48'000, 2, 200'000, true};
+    auto& setup_chart = song.charts.front();
+    const auto bgm_measure = std::ranges::find_if(setup_chart.measures,
+        [](const auto& measure) { return !measure.bgm_events.empty(); });
+    require_move(bgm_measure != setup_chart.measures.end());
+    const auto marker = bgm_measure->bgm_events.front();
+    const auto measure_index = static_cast<std::size_t>(bgm_measure - setup_chart.measures.begin());
+    setup_chart.lane_layouts.front().layout.lanes.push_back({.id = lane_id_t{9999}, .name = "ordinary"});
+    const auto ordinary_id = object_id_t{999999};
+    setup_chart.measures[measure_index].notes.push_back({.id = ordinary_id,
+        .position = marker.position, .lane = lane_id_t{9999}, .sound = marker.sound});
+
+    auto history = make_document_history(std::move(song));
+    auto& chart = history.document.charts.front();
+    const auto chart_id = chart.id;
+    const auto stem_lane = chart.lane_layouts.front().layout.lanes.front().id;
+    require_move(assign_bmson_sound_event(history, history.document.revision,
+                                         chart_id, marker.id, stem_lane).applied);
+    const std::array mixed{marker.id, ordinary_id};
+    const auto& linked_chart = history.document.charts.front();
+    const auto pure = plan_notes_to_bgm(linked_chart, history.document.resources, mixed, std::nullopt);
+    check_move(!pure.accepted());
+    check_move(pure.diagnostics.front().code == diagnostic_code_t::unsupported_feature);
+
+    const auto before_undo = history.undo.size();
+    const auto moved = move_notes_to_bgm(history, history.document.revision, chart_id, mixed, std::nullopt);
+    require_move(moved.applied);
+    const auto& result_measure = history.document.charts.front().measures[measure_index];
+    const auto stem = std::ranges::find(result_measure.bgm_events, marker.id, &bgm_event_t::id);
+    const auto ordinary = std::ranges::find(result_measure.bgm_events, ordinary_id, &bgm_event_t::id);
+    require_move(stem != result_measure.bgm_events.end());
+    require_move(ordinary != result_measure.bgm_events.end());
+    check_move(stem->source_lane != ordinary->source_lane);
+    check_move(history.undo.size() == before_undo + 1);
 }
 
 #include <wormedit/core/sound_slice.h>

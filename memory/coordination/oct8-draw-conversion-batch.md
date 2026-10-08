@@ -213,3 +213,8 @@ T-463 may proceed in order. Draw explicitly releases `src/sys/compose_actions.cp
 early because T-463 does not edit it; root may wire sliced app exports and warn
 policy now. Shared sys regression tests remain Draw-owned until final release.
 No per-frame interaction inspection is introduced for tool readiness.
+
+Additional T-463 scope approved before edits: `src/ui/nuklear/compose_panel.cpp`
+invokes cancellation of the new dock-stem drag capture on focus, inactive-tab
+and modal paths. Preserve existing resize/cursor behavior and panel routing;
+no manifests or other panel changes are required.

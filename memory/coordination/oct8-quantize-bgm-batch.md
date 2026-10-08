@@ -307,3 +307,10 @@ Main is clean and this reader is released, so the exclusive feedback worker may
 use four build jobs. This is the renderer integration checkpoint, not the final
 completed-batch test or capture gate. T-422 remains the sole implementation
 slice; native BGM/schema mutation still waits for its source/build handoff.
+
+T-422 verification follows the existing undo implementation: restoring
+`record.before` restores that document's historical revision as well as its
+contents. The draft test's monotonic revision increment expectation was wrong;
+root approves correcting it without changing command policy. Native events
+must also follow an initial composed frame, and manually constructed Undo input
+uses the complete existing dispatcher envelope, including viewport width.

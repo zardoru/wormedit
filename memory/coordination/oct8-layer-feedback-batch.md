@@ -107,3 +107,12 @@ Root main registry now gates `edit.tool_layer` on the same visible/unlocked
 target rule as toolbar and dispatcher activation. Normal app-only build passes;
 configured header-inclusive main tidy preserves baseline 27/27/29 findings
 without increases. Evidence: `root/registry-build.log` and main tidy logs.
+
+Root reviewed T-413 `d522e60` and integrated it as `1816237` after normal
+optimized app/core/event/frame builds, layer84/84, full core1600/1600,
+full harness223/223, relevant sys17/17 and documentation1/1 gates. All seven
+production and four changed test translation units pass header-inclusive
+baseline complexity comparisons (test baseline83/current81 findings, no new
+or increased scores). All T-413 paths/build jobs released. Feedback now owns
+Compose actions and action-notification tests for T-419 rename after refreshing
+onto integrated main. Layer T-414 remains read-only until T-419 release.

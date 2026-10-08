@@ -94,8 +94,14 @@ later covering more bmhelper functions.
 
 ## T-329 Redraw the Sounds tab: listbox, waveform column, properties column
 
-- **Status:** partial
-- **Implementation notes (2026-10-03):** first slice written but compiled only as a syntax check against Nuklear master (`audio_panel.cpp`) plus the headless suite (1225/1225): `WormUiSoundRowView` rows in `frontend.h` (cap 512), filled from `project_sound_list` in `workspace_projection.cpp`, and a three-column layout (searchable list, waveform, read-only properties) with side margins in `audio_panel.cpp`. Still open: Up/Down/double-click/Space audition, wheel zoom and pan on the waveform (needs the viewport projected from sys), drop files into the T-326 dialog, tag/kind editing (T-330). Needs Zar's SDL3 build to look at: `scripts/smoke-compose-virtual-x.sh /tmp/out.png audio`.
+- **Status:** partial (the tab is still in a poor state, user assessment 2026-10-07; first slice landed 2026-10-03, never looked at in the real window)
+- **Done so far (2026-10-03):** `WormUiSoundRowView` rows in `frontend.h` (cap 512), filled from `project_sound_list` in `workspace_projection.cpp`, and a three-column layout (searchable list, waveform, read-only properties) with side margins in `audio_panel.cpp`. At the time it was compiled only as a syntax check against Nuklear master, plus the headless suite (1225/1225).
+- **Remaining:**
+  1. Take an isolated Xvfb capture of the current tab (`scripts/smoke-compose-virtual-x.sh /tmp/out.png audio`) and record on this card what is broken or ugly.
+  2. Listbox keyboard model: Up/Down selection, double click or Space audition.
+  3. Waveform wheel zoom about the pointer and drag pan, with the viewport projected from sys (T-327); keep the offset drag.
+  4. Editable property fields, and dropping files onto the tab to open the T-326 import dialog.
+  5. Lay the columns out with the T-436 tokens and components.
 - **Outcome:** the tab shows a searchable listbox (click, Up/Down, double click or Space audition), a central zoomable waveform (wheel zoom about the pointer, drag pan, offset drag kept), and a right column with properties and side margins; dropping files opens the T-326 dialog.
 - **Read first:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/theme.cpp`, `src/ui/nuklear/metadata_panel.cpp` (margin pattern), `src/ui/nuklear/compose_resources.cpp`.
 - **Files owned:** `src/ui/nuklear/audio_panel.cpp/.h`, `src/ui/nuklear/audio_state.cpp/.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`.

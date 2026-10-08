@@ -242,7 +242,7 @@ Decision (user, 2026-09-30): permit at most one pixel of static-layer raster var
 
 ## T-252 Decide whether chrome widgets leave Nuklear too
 
-- **Status:** blocked-on T-250
+- **Status:** done (decided without the measurement step, user decision 2026-10-07: keep Nuklear for chrome, option (a). The field, waveform, minimap and player preview already run on wormedit renderers, and the frame pacing and stem work since then leaves no sign that chrome is the bottleneck. Chrome is themed by T-225 and built from the T-436 components on top of Nuklear. Reopen only if a profile shows Nuklear chrome costing real frame time.)
 - **Outcome:** with the field, waveform, minimap, and player preview on wormedit renderers, a measured decision on the rest of the UI: keep Nuklear for chrome, or replace it with wormedit components (buttons, lists, fields, menus) on the same renderer.
 - **Read first:** `docs/references/ui-backend-boundary.md`, T-246 reports before and after T-250, `docs/chart-editor-plan/tasks/panels-menus.md`.
 - **Files owned:** this card, `docs/references/ui-backend-boundary.md`.

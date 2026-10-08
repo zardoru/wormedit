@@ -153,7 +153,7 @@ The causes, found while planning:
 - **Invariants:** existing screens keep their behavior. Visual changes to existing widgets are limited to the token values, and smoke captures are compared before and after. Shadows never take input, because hit-testing stays on the window bounds.
 - **Reject/failure behavior:** a disabled component never emits an action.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R 'components'`; `ctest --test-dir build -L event-harness`; gallery capture; `clang-tidy -p build src/ui/nuklear/components.cpp`.
-- **Out of scope:** migrating whole screens. That is done in T-407, T-411, T-415 and T-419, and in later cleanup.
+- **Out of scope:** migrating whole screens. That is done in T-407, T-411, T-415 and T-419, and in later cleanup. Theming the stock Nuklear widgets with these tokens is [T-225](panels-menus.md#t-225-theme-every-nuklear-widget-from-the-design-tokens), merged with this card on 2026-10-07.
 - **Result:**
   - `ui_metrics.h` holds the tokens, `chrome::paint_surface` (levels 0-2) replaces `menu_panel`'s body (`menu_panel` now calls it at level 1 with its parent window as the clamp), and `chrome::surface_window_begin/end` give top-level windows a transparent fill plus the shadow.
   - `components.cpp` implements `Button`, `Checkbox`, `Segmented`, `ChipGrid` and `SelectionBar` once, from the tokens. Looks come from the pure functions `button_look` and `chip_look`. Segmented keeps keyboard focus in a caller-owned flag (a click takes it, a click elsewhere drops it) and Left/Right step the selection without wrapping.

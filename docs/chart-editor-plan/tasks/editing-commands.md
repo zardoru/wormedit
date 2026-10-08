@@ -283,7 +283,7 @@ Implementation review (2026-10-04): Panel created and eight inspector lane toggl
 
 ## T-286 Use the StepMania/ITG snap color palette
 
-- **Status:** ready
+- **Status:** deferred (was: ready; nice-to-have, user decision 2026-10-07: the palette is already drawn from `src/ui/nuklear/arrow_glyph.cpp:11`; only moving the table into the compose theme file remains)
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Implementation notes (2026-10-02, Claude):** classification now includes 48 (cyan) and 64 (green) and the tests cover them (arrow tests compiled standalone against `arrow_glyph.cpp`, 162 assertions pass). The palette is still a constant table in `arrow_glyph.cpp`; moving it into `assets/themes/compose-field.json` and `theme.cpp` remains, so this card stays open for that step.
 - **Stale-plan audit (2026-10-03):** the 48/64 classification already exists, but Compose still calls the hard-coded palette in unowned `src/ui/nuklear/arrow_glyph.cpp`. The theme file/accessor cannot become the palette’s sole source without replacing that table/API implementation.

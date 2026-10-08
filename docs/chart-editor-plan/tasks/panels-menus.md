@@ -24,18 +24,21 @@ Apply the stale-plan check (rule 9) first.
 ## T-225 Theme every Nuklear widget from the design tokens
 
 - **Status:** ready
-- **Outcome:** menus, contextual menus, combos, selectables, properties, edit fields, scrollbars, checkboxes, options, popups, tooltips, and tree headers all use the `theme::ui` roles (surface/hover/active/border/text/selected/accent) with one rounding (4 px) and one padding scale; every widget uses the same font.
-- **Read first:** `src/ui/nuklear/chrome.h` (`apply_theme`, `button_style`), `src/ui/nuklear/theme.cpp` (roles), `src/ui/nuklear/frontend.cpp` (font setup: grep `nk_font`, `font_atlas`, `nk_style_set_font`).
-- **Files owned:** `src/ui/nuklear/chrome.h`, `src/ui/nuklear/theme.cpp/.h`, `src/ui/nuklear/frontend.cpp` (font setup only), bundled theme JSON if roles are added.
-- **Design reference:** the palette at <https://octet.design/colors/palette/dark-header-color-palette-1731325758/>, expanded into Tailwind-style shade scales (50–950) where a role needs a lighter or darker step. The bundled `assets/themes/ui-dark.json` already expresses this (neutral, blue, coral, and lime scales, 50–950): `scales` hold the shades and `roles` point at them with `$scale.shade` tokens (see `resolve` in `theme.cpp`). New roles must reference existing scale shades; add a shade to a scale only when no existing step fits, and never hard-code a hex value in C++.
+- **Merged with T-436 (user decision 2026-10-07):** this card is now the second half of [T-436](dialogs.md#t-436-regularize-the-ui-components-one-set-of-sizes-radii-gaps-and-state-colors). T-436 built the tokens and wormedit's own components; this card applies the same tokens to the stock Nuklear widgets that are still drawn with near-default styling. It keeps its ID because T-226, T-228 and T-257 wait on it.
+- **Mockup:** [components.svg](../mockups/components.svg) (reference: match its structure and hierarchy)
+- **Outcome:** menus, context menus, combos, selectables, properties, edit fields, scrollbars, Nuklear checkboxes and options, popups, tooltips and tree headers take their heights, radii, gaps, font and state colors from `ui_metrics.h` and the `theme::ui` roles, matching the T-436 components beside them. Every widget uses one font object. The existing `WORMEDIT_UI_GALLERY=1` window shows each of these widgets in normal, hover, active and disabled states next to the T-436 components.
+- **Read first:** `src/ui/nuklear/ui_metrics.h`, `src/ui/nuklear/chrome.h` (`apply_theme`, `button_style`), `src/ui/nuklear/theme.cpp` (roles), `src/ui/nuklear/ui_gallery.cpp`, `src/ui/nuklear/frontend.cpp` (font setup: grep `nk_font`, `font_atlas`, `nk_style_set_font`).
+- **Files owned:** `src/ui/nuklear/chrome.h`, `src/ui/nuklear/ui_metrics.h`, `src/ui/nuklear/theme.cpp/.h`, `src/ui/nuklear/ui_gallery.cpp`, `src/ui/nuklear/frontend.cpp` (font setup only), `tests/ui/components_tests.cpp`, `assets/themes/ui-dark.json` if roles are added, this card.
+- **Design reference:** the T-436 tokens and state colors. Colors come from `assets/themes/ui-dark.json` (neutral, blue, coral and lime scales, 50–950, referenced by roles as `$scale.shade`), originally expanded from <https://octet.design/colors/palette/dark-header-color-palette-1731325758/>. T-436 left `destructive`, `destructive_text` and `text_faint` as constants in `ui_metrics.h`; move them into the theme roles here if this card needs them.
 - **Steps:**
-  1. Report which fonts are loaded and whether any code pushes a different font; if menus render with another font, find the cause and fix it (one font object for the whole context).
-  2. Extend `apply_theme` style group by style group; keep the existing roles and add at most `popup` and `separator` roles if needed, both defined in `ui-dark.json` as `$scale.shade` references.
-  3. Add a hidden debug gallery (environment variable `WORMEDIT_STYLE_GALLERY=1`) that opens one window showing every widget type in normal/hover/active/disabled states, for screenshots.
-- **Invariants:** layout sizes and hit areas unchanged except menu padding.
+  1. Report which fonts are loaded and whether any code pushes a different font. If menus render with another font, find the cause and fix it (one font object for the whole context).
+  2. Extend `apply_theme` one style group at a time, using the `ui_metrics.h` heights (24/28/32), radii (4 controls, 8 menus and popups) and gaps. Keep the existing roles and add at most `popup` and `separator` roles, both defined in `ui-dark.json` as `$scale.shade` references.
+  3. Add a "Stock widgets" section to the existing gallery in `ui_gallery.cpp`. Do not add a second gallery window or environment variable.
+  4. Extend the gallery draw test in `tests/ui/components_tests.cpp` so the new section draws inside the render target.
+- **Invariants:** layout sizes and hit areas are unchanged except menu padding and where a token value changes a height. Smoke captures are compared before and after.
 - **Reject/failure behavior:** none.
-- **Verify:** standard build/test; smoke PNGs of `compose` with a menu open, and of the gallery; compare against the toolbar buttons.
-- **Out of scope:** new colors, a light theme.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R 'components'`; `ctest --test-dir build -L event-harness`; `scripts/smoke-compose-virtual-x.sh /tmp/gallery.png gallery` and a `compose` capture with a menu open, compared against the T-436 buttons; `clang-tidy -p build src/ui/nuklear/ui_gallery.cpp`.
+- **Out of scope:** new colors, a light theme, and migrating screens onto the T-436 components (T-407, T-411, T-415, T-419).
 
 ## T-226 Move the menus to a conventional left menu bar
 

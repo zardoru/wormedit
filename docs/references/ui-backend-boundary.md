@@ -17,6 +17,8 @@ input, and periodic autosave scheduling remain.
 
 Nuklear is the initial editor frontend, not a permanent dependency of the application model. A future ImGui frontend or a Clay-based layout/widget frontend should be replaceable without changing chart storage, timing, audio, commands, selection, transport, format codecs, or renderer-neutral chart drawing.
 
+Chrome decision (T-252, 2026-10-07): the field, waveform, minimap and player preview run on wormedit renderers, and the remaining chrome (panels, menus, dialogs, docks) stays on Nuklear. It is themed from `ui_metrics.h` (T-225) and built from the shared components in `chrome` (T-436). Reopen this only if a profile shows Nuklear chrome costing real frame time.
+
 ## Boundary
 
 Use four layers:

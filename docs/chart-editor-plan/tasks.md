@@ -77,6 +77,7 @@ every number above T-476.
 9. **Stale-plan check first.** The stage roadmap lags the code. Before step 1, search for the behavior the **Outcome** describes (the card names a symbol or string to grep when it can). If it already works, set **Status** to `done (already implemented: <file:line>)`, change nothing else, and stop.
 10. A card whose status is `blocked-on-user` starts with a **STOP** step naming the [open question](decisions/open-questions.md) or missing input. Do not implement the provisional default unless the user says so.
 11. A card whose status starts with `deferred` is a late-stage ambition. Never pick it up while choosing work; start it only when the user names its ID. Its original status is kept in parentheses for when it is un-deferred.
+12. A card whose status starts with `partial` has landed code that does not yet meet its **Outcome**, and the card carries a **Done so far** and a **Remaining** list. It can be picked up like a `ready` card: start from **Remaining**, not from step 1, and keep both lists current. Cards that wait on it stay blocked until it is `done`.
 
 ## Standard wiring pattern for a new UI action
 
@@ -98,7 +99,7 @@ Copy this shape for every new card. Every heading is mandatory. The
 ```text
 ## T-NN Title (imperative, one behavior)
 
-- **Status:** ready | blocked-on-user | blocked-on <T-id> | deferred (was: …) | done
+- **Status:** ready | partial (…) | blocked-on-user | blocked-on <T-id> | deferred (was: …) | done
 - **Outcome:** one sentence a reviewer can check by running something.
 - **Read first:** exact paths (max 5).
 - **Files owned:** exact paths this card may create or edit.

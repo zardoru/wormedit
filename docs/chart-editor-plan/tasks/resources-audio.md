@@ -143,6 +143,7 @@ stale-plan check (rule 9) first.
 ## T-268 Add a "play sound on click" toggle
 
 - **Status:** ready
+- **Implementation audit (2026-10-07):** the `audition_on_click` editor preference already exists with an Options toggle (`src/sys/options_runtime.cpp:128`) and gates click audition in `src/sys/compose_input.cpp:2316`. What remains is the toolbar toggle and the `audio.toggle_click_audition` command, driving that same preference. The user calls the toolbar toggle necessary for BMS work.
 - **Outcome:** a toolbar toggle (speaker icon, command `audio.toggle_click_audition`, default on, as in iBMSC/BMSE) controls whether clicking, selecting, or placing a note or BGM event plays its sound; when off, clicks only select or place. Lane-key Shift assignment keeps its explicit audition.
 - **Current behavior (2026-09-30):** clicking a BGM event always passes `request_audition = true` (`select_compose_bgm_event` in `src/sys/compose_input.cpp`), note clicks request an audition too, and there is no way to turn it off.
 - **Read first:** `src/sys/compose_input.cpp` (`select_compose_bgm_event`, the batch loop that stores `result.audition` into `scene_cache.audition_request`), `src/core/interaction.cpp` (where `.audition` is set), `src/sys/compose_audition_requests.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/core/command_registry.cpp`.

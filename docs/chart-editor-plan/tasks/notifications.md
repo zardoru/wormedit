@@ -174,7 +174,7 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 ## T-374 Bound notification history activation to intended controls
 
-- **Status:** integrated defensive hardening; actual screenshot reproduction pending (2026-10-04)
+- **Status:** done (defensive hardening integrated 2026-10-04 with event-harness coverage; the user confirmed on 2026-10-07 that blank canvas clicks no longer open Notifications. The original screenshot was never reproduced with real SDL events.)
 - **Outcome:** clicking blank Compose canvas cannot open Notifications; the unread badge and View menu still open history through their intended controls.
 - **Read first:** `src/ui/nuklear/frontend.cpp`, `tests/ui/nuklear_event_harness.h/.cpp`, `docs/frontend-event-harness.md`.
 - **Files owned:** Luna exclusively owns `src/ui/nuklear/frontend.cpp` and new `tests/ui/notification_hit_region_event_harness_tests.cpp`; Sol owns narrow `tests/CMakeLists.txt` wiring and `memory/coordination/notification-ux.md`.

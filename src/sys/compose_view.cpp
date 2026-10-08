@@ -11,6 +11,7 @@
 #include <wormedit/core/rational.h>
 #include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/measure_editor.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/virtual_canvas.h>
@@ -365,6 +366,60 @@ auto cached_lane_layout_profile_choices(wormedit::format_family_t family,
     if (key >= cache.size() || mode_key >= cache.front().size()) return none;
     if (!cache[key][mode_key]) cache[key][mode_key] = make_lane_layout_profile_choices(family, mode);
     return *cache[key][mode_key];
+}
+
+struct measure_removal_cache_t {
+    bool valid{};
+    std::uint64_t song{}, revision{}, chart{}, measure{};
+    wormedit::measure_removal_proposal_t proposal;
+};
+
+// The proposal copies the chart, so it is reused until the document or cursor measure changes.
+auto cached_measure_removal(const wormedit::song_document_t& song, const wormedit::chart_document_t& chart,
+                            wormedit::measure_id_t measure) -> const wormedit::measure_removal_proposal_t& {
+    static measure_removal_cache_t cache;
+    const auto matches = cache.valid && cache.song == song.id.value && cache.revision == song.revision &&
+                         cache.chart == chart.id.value && cache.measure == measure.value;
+    if (!matches) {
+        cache.proposal = wormedit::propose_measure_removal(chart, measure);
+        cache.song = song.id.value;
+        cache.revision = song.revision;
+        cache.chart = chart.id.value;
+        cache.measure = measure.value;
+        cache.valid = true;
+    }
+    return cache.proposal;
+}
+
+void populate_measure_removal(WormUiComposeView& view, const wormedit::song_document_t& song,
+                              const wormedit::chart_document_t& chart,
+                              wormedit::local_position_t cursor, bool virtual_cursor) {
+    view.measure_removal_available = false;
+    view.measure_removal_has_contents = false;
+    view.measure_removal_blocked = false;
+    view.measure_removal_measure_id = 0;
+    view.measure_removal_message[0] = '\0';
+    view.measure_removal_deleted_notes = view.measure_removal_deleted_bgm_events = 0;
+    view.measure_removal_deleted_bga_events = view.measure_removal_shortened_holds = 0;
+    view.measure_removal_moved_positions = 0;
+    const auto materialized = std::ranges::any_of(
+        chart.measures, [&](const auto& measure) { return measure.id == cursor.measure; });
+    if (virtual_cursor || !materialized) return;
+    const auto& proposal = cached_measure_removal(song, chart, cursor.measure);
+    view.measure_removal_available = true;
+    view.measure_removal_measure_id = cursor.measure.value;
+    view.measure_removal_blocked = !proposal;
+    if (!proposal.diagnostics.empty())
+        std::snprintf(view.measure_removal_message, sizeof(view.measure_removal_message), "%s",
+                      proposal.diagnostics.front().message.c_str());
+    view.measure_removal_deleted_notes = proposal.deleted_notes;
+    view.measure_removal_deleted_bgm_events = proposal.deleted_bgm_events;
+    view.measure_removal_deleted_bga_events = proposal.deleted_bga_events;
+    view.measure_removal_shortened_holds = proposal.shortened_holds;
+    view.measure_removal_moved_positions = proposal.moved_positions;
+    view.measure_removal_has_contents = proposal.deleted_notes + proposal.deleted_bgm_events +
+                                            proposal.deleted_bga_events + proposal.shortened_holds +
+                                            proposal.moved_positions != 0;
 }
 
 void populate_lane_layout_editor(WormUiComposeView& view, const wormedit::chart_document_t& chart,
@@ -4192,6 +4247,8 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     populate_lane_layout_editor(view, chart, input.measures, interaction_view.cursor,
                                 retained_state && retained_state->virtual_bms_cursor_row.has_value(),
                                 interaction_view.selected_canvas_measure);
+    populate_measure_removal(view, history.document, chart, interaction_view.cursor,
+                             retained_state && retained_state->virtual_bms_cursor_row.has_value());
     populate_lane_layout_segments(flattened, chart, input.measures, interaction_view, downscroll, view);
     populate_quantize_preview(cache, history.document, chart, history.document.revision,
                               *retained_state, application_state, view);

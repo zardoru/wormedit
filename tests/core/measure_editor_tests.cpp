@@ -299,6 +299,38 @@ TEST_CASE("removing a measure with contents is one undoable command",
     CHECK(history.document.charts.front().measures[1].notes.size() == 1);
 }
 
+TEST_CASE("measure removal deletes contained BGA events and moves timing out of the measure",
+          "[core][measure-editor][removal]") {
+    auto song = removal_song();
+    song.audio_assets = {{.id = asset_id_t{1}, .source_path = "/tmp/bga.png"}};
+    song.resources = {{.id = resource_id_t{1}, .name = "bga", .asset = asset_id_t{1}}};
+    auto& chart = song.charts.front();
+    chart.bga_events.push_back({.id = object_id_t{43},
+                                .position = {measure_id_t{11}, 240},
+                                .resource = resource_id_t{1},
+                                .provenance = {.source_order = 20}});
+    chart.bga_events.push_back({.id = object_id_t{44},
+                                .position = {measure_id_t{10}, 240},
+                                .resource = resource_id_t{1},
+                                .provenance = {.source_order = 21}});
+    REQUIRE(validate_document(song).empty());
+    const auto proposal = propose_measure_removal(chart, measure_id_t{11});
+    REQUIRE(proposal);
+    CHECK(proposal.deleted_bga_events == 1);
+    CHECK(chart.bga_events.size() == 2);
+
+    auto history = make_document_history(std::move(song));
+    REQUIRE(apply_measure_edit(
+        history, history.document.revision,
+        remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{11}}));
+    const auto& edited = history.document.charts.front();
+    REQUIRE(edited.bga_events.size() == 1);
+    CHECK(edited.bga_events.front().id == object_id_t{44});
+    const auto moved = std::ranges::find(edited.bpms, object_id_t{42}, &bpm_event_t::id);
+    REQUIRE(moved != edited.bpms.end());
+    CHECK(moved->position == local_position_t{measure_id_t{12}, 0});
+}
+
 TEST_CASE("measure removal rejects stale, last-measure timing and sole measures",
           "[core][measure-editor][removal][negative]") {
     auto history = make_document_history(removal_song());

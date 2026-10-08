@@ -36,6 +36,7 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_COMPOSE_LAYOUT_PROFILE_CAPACITY 32
 #define WORM_UI_COMPOSE_LAYOUT_PROFILE_NAME_BYTES 64
 #define WORM_UI_COMPOSE_LAYOUT_PROFILE_ID_BYTES 64
+#define WORM_UI_COMPOSE_MEASURE_REMOVAL_MESSAGE_BYTES 192
 #define WORM_UI_COMPOSE_LAYOUT_SEGMENT_CAPACITY 2048
 #define WORM_UI_COMPOSE_BGM_EVENT_CAPACITY 32768
 #define WORM_UI_COMPOSE_BGA_EVENT_CAPACITY 32768
@@ -1220,6 +1221,16 @@ typedef struct WormUiComposeView {
     uint64_t lane_layout_edit_segment_id;
     bool lane_layout_edit_is_update;
     bool lane_layout_edit_available;
+    // Removing the cursor measure: `measure_removal_available` is false at a virtual cursor.
+    // Nonempty measures confirm first, and `measure_removal_message` explains a blocked removal.
+    bool measure_removal_available;
+    bool measure_removal_has_contents;
+    bool measure_removal_blocked;
+    uint64_t measure_removal_measure_id;
+    char measure_removal_message[WORM_UI_COMPOSE_MEASURE_REMOVAL_MESSAGE_BYTES];
+    size_t measure_removal_deleted_notes, measure_removal_deleted_bgm_events;
+    size_t measure_removal_deleted_bga_events, measure_removal_shortened_holds;
+    size_t measure_removal_moved_positions;
     char lane_layout_profile_names[WORM_UI_COMPOSE_LAYOUT_PROFILE_CAPACITY]
                                   [WORM_UI_COMPOSE_LAYOUT_PROFILE_NAME_BYTES];
     char lane_layout_profile_ids[WORM_UI_COMPOSE_LAYOUT_PROFILE_CAPACITY]
@@ -2304,6 +2315,8 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_BEFORE,
     WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_AFTER,
     WORM_UI_COMPOSE_ACTION_REMOVE_EMPTY_MEASURE,
+    // Confirmed removal of the cursor measure together with its contents.
+    WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS,
     WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR,
     WORM_UI_COMPOSE_ACTION_TRANSFORM_ROTATE_LEFT,
     WORM_UI_COMPOSE_ACTION_TRANSFORM_ROTATE_RIGHT,

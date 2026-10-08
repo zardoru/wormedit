@@ -1881,6 +1881,8 @@ auto cursor_measure_command_for(WormUiComposeActionKind kind)
     case WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_BEFORE: return cursor_measure_command_t::insert_before;
     case WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_AFTER: return cursor_measure_command_t::insert_after;
     case WORM_UI_COMPOSE_ACTION_REMOVE_EMPTY_MEASURE: return cursor_measure_command_t::remove_empty;
+    case WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS:
+        return cursor_measure_command_t::remove_with_contents;
     default: return std::nullopt;
     }
 }

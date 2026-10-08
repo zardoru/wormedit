@@ -191,3 +191,16 @@ and implement T-420 frontend/projection/input/theme/shared tests. Its frozen cor
 gates pass, but independent review requests accurate split-stage/gutter fallback
 geometry for illegal lanes before final acceptance. The card stays ready until
 the full feature is verified. Layer remains released for final cleanup.
+
+T-420 frontend review accepts conflict projection/style and motion notification
+suppression. The real dispatcher now preserves vertical proposals into an empty
+target layout while canceling outside-field/chart input; production regression
+gates remain pending. A quiet matched 100k-note core probe rejected the initial
+sweep for performance: single-note valid update thread CPU p50/p99 rose from
+11.066/11.409 ms to 21.180/21.587 ms, with ordinary allocations rising from
+42 to 200045. Two ordered-set nodes were allocated for every unrelated existing
+interval. Feedback must narrow sweep input to existing intervals overlapping
+moved ranges, preserving closed endpoints and all occupants, before acceptance.
+Layer owns scratch-only matched measurement support; no repository ownership is
+returned to it. Keep initial-after logs/snapshots as rejected-candidate evidence.
+These are core update costs, not display frame-time or native cadence measures.

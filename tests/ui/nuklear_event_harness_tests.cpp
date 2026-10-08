@@ -4056,3 +4056,129 @@ TEST_CASE("Native note drag releases while red without substituting a prior vali
                     move_event_input(moved, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE).y_pixels);
     expect_lane_key(!worm_ui_nuklear_compose_state().note_move_active);
 }
+
+namespace {
+
+struct bgm_draw_fixture_t {
+    nuklear_event_harness_t harness{1280, 900};
+    std::array<WormUiComposeBgmLaneView, 2> lanes{};
+    float left{}, top{}, lane_x{};
+
+    explicit bgm_draw_fixture_t(bool bmson = false, bool stem = false) {
+        REQUIRE(harness.ready());
+        auto& state = worm_ui_nuklear_compose_state();
+        state.inspector_visible = state.sounds_panel_visible = state.layers_panel_visible = false;
+        state.bga_panel_visible = false;
+        auto& view = harness.view().compose;
+        view.scene_available = true;
+        view.note_paint_mode_active = true;
+        view.bmson_tools_available = bmson;
+        (void)harness.frame();
+        const auto viewport = compose_canvas_viewport_for_testing();
+        REQUIRE(viewport.has_value());
+        left = viewport->x;
+        top = viewport->y;
+        view.viewport_width_pixels = viewport->width;
+        view.viewport_height_pixels = viewport->height;
+        lane_x = viewport->width * 0.6f;
+        lanes[0] = {.bounds = {lane_x, 0, lane_x + 40, viewport->height}, .source_lane_id = 71,
+                    .stem = stem};
+        lanes[1] = {.bounds = {lane_x + 44, 0, lane_x + 84, viewport->height},
+                    .source_lane_id = 72};
+        view.bgm_lanes = lanes.data();
+        view.bgm_lane_count = lanes.size();
+        view.draw_source_kind = state.draw_source_kind = 1;
+        view.draw_source_id = state.draw_source_id = 40;
+        state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+        (void)harness.frame();
+    }
+    [[nodiscard]] auto point(float dx, float y) const -> std::pair<float, float> {
+        return {left + lane_x + dx, top + y};
+    }
+};
+
+auto count_inputs(const std::vector<workspace_action_snapshot_t>& frames,
+                  WormUiComposeInputKind kind) -> std::size_t {
+    std::size_t count{};
+    for (const auto& frame : frames)
+        for (size_t index = 0; index < frame.get().compose_input_count; ++index)
+            count += frame.get().compose_inputs[index].kind == kind;
+    return count;
+}
+
+auto bgm_draw_drag(bgm_draw_fixture_t& f, float start_dx, float end_dx)
+    -> std::vector<workspace_action_snapshot_t> {
+    const auto from = f.point(start_dx, 100);
+    const auto mid = f.point(start_dx, 140);
+    const auto to = f.point(end_dx, 180);
+    std::array<event_step_t, 3> steps{};
+    steps[0].events = {motion_event(from.first, from.second), button_event(true, from.first, from.second)};
+    steps[1].events = {motion_event(mid.first, mid.second)};
+    steps[2].events = {motion_event(to.first, to.second), button_event(false, to.first, to.second)};
+    return f.harness.run_script(steps);
+}
+
+} // namespace
+
+TEST_CASE("Draw with a sound drags one BGM stroke tagged with the pressed lane",
+          "[frontend-state][event-harness][draw][bgm-draw]") {
+    bgm_draw_fixture_t f;
+    const auto frames = bgm_draw_drag(f, 20, 60);
+    expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) == 1);
+    expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) == 1);
+    expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE) >= 1);
+    expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN) == 0);
+    for (const auto& frame : frames)
+        for (size_t index = 0; index < frame.get().compose_input_count; ++index) {
+            const auto& input = frame.get().compose_inputs[index];
+            if (input.kind != WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN &&
+                input.kind != WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE &&
+                input.kind != WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) continue;
+            expect_draw(input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM);
+            expect_draw(input.lane_id == 71 && input.resource_id == 40 && input.paint_intent == 1);
+        }
+}
+
+TEST_CASE("Draw right-drag on a BGM lane erases that lane in one stroke",
+          "[frontend-state][event-harness][draw][bgm-draw]") {
+    bgm_draw_fixture_t f;
+    const auto from = f.point(60, 100);
+    const auto to = f.point(20, 180);
+    const auto frames = right_draw_script(f.harness, from.first, from.second, to.first, to.second);
+    expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) == 1);
+    expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) == 1);
+    for (const auto& frame : frames)
+        for (size_t index = 0; index < frame.get().compose_input_count; ++index) {
+            const auto& input = frame.get().compose_inputs[index];
+            if (input.kind != WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN &&
+                input.kind != WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE &&
+                input.kind != WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) continue;
+            expect_draw(input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM);
+            expect_draw(input.lane_id == 72 && input.resource_id == 0 && input.paint_intent == 2);
+        }
+}
+
+TEST_CASE("Draw without a sound source does nothing on a BGM lane",
+          "[frontend-state][event-harness][draw][bgm-draw]") {
+    bgm_draw_fixture_t f;
+    auto& state = worm_ui_nuklear_compose_state();
+    state.draw_source_kind = 0;
+    state.draw_source_id = 0;
+    f.harness.view().compose.draw_source_kind = 0;
+    f.harness.view().compose.draw_source_id = 0;
+    (void)f.harness.frame();
+    const auto frames = bgm_draw_drag(f, 20, 60);
+    for (const auto kind : {WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE,
+                            WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN,
+                            WORM_UI_COMPOSE_INPUT_POINTER_CLICK, WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE})
+        expect_draw(count_inputs(frames, kind) == 0);
+}
+
+TEST_CASE("Draw on a BMSON stem lane never starts a BGM stroke",
+          "[frontend-state][event-harness][draw][bgm-draw][bmson-stem]") {
+    bgm_draw_fixture_t f{true, true};
+    const auto frames = bgm_draw_drag(f, 20, 20);
+    expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) == 0);
+    expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE) == 0);
+    expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) == 0);
+}

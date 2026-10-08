@@ -4829,6 +4829,14 @@ void populate_draw_source_label(flattened_workspace_t& flattened, compose_scene_
     view.draw_source_missing = source.source_missing;
 }
 
+// Draw on a BGM lane needs a sound; with a silent source the chip says so. BMSON lanes use
+// stem and packed-column drawing, which have their own source tooltips.
+void populate_bgm_draw_hint(WormUiComposeView& view, const wormedit::chart_document_t& chart) {
+    if (view.draw_source_kind != 0 || chart.bgm_source_lanes.empty() ||
+        chart.source_family == wormedit::format_family_t::bmson) return;
+    view.draw_source_label = "silent note · Pick a sound to draw BGM";
+}
+
 void populate_draw_stem_sources(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
     const wormedit::song_document_t& document, const wormedit::chart_document_t& chart) {
     prepare_draw_stem_sources(cache, document, chart);
@@ -4902,6 +4910,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     const auto& chart = *chart_it;
     populate_draw_stem_sources(flattened, cache, history.document, chart);
     populate_draw_source_label(flattened, cache, history.document);
+    populate_bgm_draw_hint(view, chart);
     populate_branch_statement_metadata(flattened, chart);
     project_branch_statement_feedback(view, application_state, chart.id, history.document.revision);
     view.bgm_column_count = static_cast<std::uint32_t>(chart.bgm_source_lanes.size());

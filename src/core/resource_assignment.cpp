@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <map>
 #include <optional>
 #include <ranges>
 #include <set>
@@ -783,6 +784,200 @@ auto apply_bga_stroke(document_history_t& history, std::uint64_t expected_revisi
     if (resolved->empty()) return result;
     const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.begin());
     return commit_bga_stroke_targets(history, chart_offset, *index, *resolved, resource, erase);
+}
+
+namespace {
+
+struct bgm_stroke_cell_t {
+    local_position_t position;
+    std::uint64_t row{};
+};
+
+auto validate_bgm_stroke_lane(const chart_document_t& chart, object_id_t lane,
+                              document_command_result_t& result) -> bool {
+    if (chart.source_family == format_family_t::bmson) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "BMSON stem lanes are not drawable; place stem points on a stem lane instead");
+        return false;
+    }
+    if (std::ranges::find(chart.bgm_source_lanes, lane, &bgm_source_lane_t::id) ==
+        chart.bgm_source_lanes.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "BGM stroke refers to an unknown source lane");
+        return false;
+    }
+    return true;
+}
+
+auto has_bms_wav_identity(const resource_entry_t& resource) -> bool {
+    return std::ranges::any_of(resource.target_identities, [](const auto& identity) {
+        return identity.family == format_family_t::bms && identity.namespace_name == "WAV";
+    });
+}
+
+auto validate_bgm_stroke_resource(const song_document_t& document, const chart_document_t& chart,
+                                  std::optional<resource_id_t> id,
+                                  document_command_result_t& result) -> bool {
+    const auto entry = id ? std::ranges::find(document.resources, *id, &resource_entry_t::id)
+                          : document.resources.end();
+    if (entry == document.resources.end()) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "BGM draw requires a sound from the catalog");
+        return false;
+    }
+    if (entry->missing) {
+        reject(result, diagnostic_code_t::dangling_resource,
+               "cannot place a resource with a missing source");
+        return false;
+    }
+    const auto audio = std::ranges::find(document.audio_assets, entry->asset, &audio_asset_t::id);
+    if ((!has_role(*entry, resource_role_t::bgm) && !has_role(*entry, resource_role_t::sample)) ||
+        audio == document.audio_assets.end()) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "resource is incompatible with the requested placement");
+        return false;
+    }
+    if (chart.source_family == format_family_t::bms && !has_bms_wav_identity(*entry) &&
+        !find_bms_identifier_run(document, "WAV", 1)) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "BMS sound IDs are exhausted; this sound cannot be given an ID");
+        return false;
+    }
+    return true;
+}
+
+auto resolve_bgm_stroke_cells(const measure_index_t& index,
+                              std::span<const local_position_t> targets,
+                              document_command_result_t& result)
+    -> std::optional<std::vector<bgm_stroke_cell_t>> {
+    std::vector<bgm_stroke_cell_t> cells;
+    cells.reserve(targets.size());
+    std::set<std::uint64_t> seen;
+    for (const auto& position : targets) {
+        const auto row = absolute_row(index, position);
+        if (!row) {
+            reject(result, diagnostic_code_t::row_out_of_range,
+                   "BGM stroke row is outside the chart");
+            return std::nullopt;
+        }
+        if (seen.insert(*row).second) cells.push_back({position, *row});
+    }
+    return cells;
+}
+
+auto bgm_stroke_lane_events(const chart_document_t& chart, const measure_index_t& index,
+                            object_id_t lane) -> std::map<std::uint64_t, const bgm_event_t*> {
+    std::map<std::uint64_t, const bgm_event_t*> occupied;
+    for (const auto& measure : chart.measures)
+        for (const auto& event : measure.bgm_events) {
+            const auto row = event.source_lane == lane ? absolute_row(index, event.position)
+                                                       : std::nullopt;
+            if (row) occupied.emplace(*row, &event);
+        }
+    return occupied;
+}
+
+auto commit_bgm_stroke_erase(document_history_t& history, std::size_t chart_offset,
+                             const measure_index_t& index, object_id_t lane,
+                             std::span<const bgm_stroke_cell_t> cells)
+    -> document_command_result_t {
+    document_command_result_t unchanged{.revision = history.document.revision, .diagnostics = {}};
+    std::set<std::uint64_t> rows;
+    for (const auto& cell : cells) rows.insert(cell.row);
+    auto proposed = history.document;
+    std::size_t removed{};
+    for (auto& measure : proposed.charts[chart_offset].measures)
+        removed += std::erase_if(measure.bgm_events, [&](const auto& event) {
+            const auto row = event.source_lane == lane && !event.sound_channel_event
+                                 ? absolute_row(index, event.position) : std::nullopt;
+            return row && rows.contains(*row);
+        });
+    if (!removed) return unchanged;
+    return commit_document_command(history, std::move(proposed), "Erase BGM events");
+}
+
+auto commit_bgm_stroke_draw(document_history_t& history, std::size_t chart_offset,
+                            const measure_index_t& index, object_id_t lane, resource_id_t sound,
+                            std::span<const bgm_stroke_cell_t> cells)
+    -> document_command_result_t {
+    document_command_result_t unchanged{.revision = history.document.revision, .diagnostics = {}};
+    const auto& source = history.document.charts[chart_offset];
+    const auto occupied = bgm_stroke_lane_events(source, index, lane);
+    std::vector<bgm_stroke_cell_t> additions;
+    for (const auto& cell : cells) {
+        const auto found = occupied.find(cell.row);
+        if (found == occupied.end()) additions.push_back(cell);
+        else if (found->second->sound != std::optional{sound}) {
+            reject(unchanged, diagnostic_code_t::collision,
+                   "a different sound already occupies this BGM lane and row");
+            return unchanged;
+        }
+    }
+    if (additions.empty()) return unchanged;
+    const auto first_id = next_chart_object_id(source);
+    if (!first_id || additions.size() - 1 >
+                        std::numeric_limits<std::uint64_t>::max() - first_id->value) {
+        reject(unchanged, diagnostic_code_t::invalid_id,
+               "BGM stroke chart object limit or ID space is exhausted");
+        return unchanged;
+    }
+    auto proposed = history.document;
+    auto& chart = proposed.charts[chart_offset];
+    const auto layers = resolve_placement_layers(chart, std::nullopt, sound);
+    auto next_id = first_id->value;
+    for (const auto& cell : additions) {
+        const auto measure = std::ranges::find(chart.measures, cell.position.measure,
+                                               &measure_chunk_t::id);
+        if (measure == chart.measures.end()) {
+            reject(unchanged, diagnostic_code_t::invalid_measure,
+                   "BGM stroke measure is missing");
+            return unchanged;
+        }
+        measure->bgm_events.push_back({.id = object_id_t{next_id++}, .position = cell.position,
+            .source_lane = lane, .sound = sound, .sound_channel_event = std::nullopt,
+            .structural_slot = 0, .branch = std::nullopt, .provenance = {},
+            .semantic_layers = layers});
+    }
+    return commit_document_command(history, std::move(proposed), "Draw BGM events");
+}
+
+} // namespace
+
+auto apply_bgm_stroke(document_history_t& history, std::uint64_t expected_revision,
+                      chart_id_t chart_id, object_id_t source_lane,
+                      std::optional<resource_id_t> resource,
+                      std::span<const local_position_t> targets, bool erase)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id, "BGM stroke document revision is stale");
+        return result;
+    }
+    if (targets.size() > 50'000) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "BGM stroke exceeds the per-gesture target cap");
+        return result;
+    }
+    const auto source_chart = std::ranges::find(history.document.charts, chart_id,
+                                                &chart_document_t::id);
+    if (!chart_id || source_chart == history.document.charts.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "BGM stroke chart is missing");
+        return result;
+    }
+    if (!validate_bgm_stroke_lane(*source_chart, source_lane, result)) return result;
+    if (!erase && !validate_bgm_stroke_resource(history.document, *source_chart, resource, result))
+        return result;
+    const auto built = build_measure_index(*source_chart);
+    const auto* index = std::get_if<measure_index_t>(&built);
+    if (!index) {
+        reject(result, diagnostic_code_t::invalid_measure, "BGM stroke chart index is invalid");
+        return result;
+    }
+    const auto cells = resolve_bgm_stroke_cells(*index, targets, result);
+    if (!cells || cells->empty()) return result;
+    const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.begin());
+    return erase ? commit_bgm_stroke_erase(history, chart_offset, *index, source_lane, *cells)
+                 : commit_bgm_stroke_draw(history, chart_offset, *index, source_lane, *resource,
+                                          *cells);
 }
 
 auto find_bgm_event(const chart_document_t& chart, object_id_t id) -> const bgm_event_t* {

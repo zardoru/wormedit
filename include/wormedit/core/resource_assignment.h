@@ -215,6 +215,18 @@ struct bga_stroke_target_t {
                                     std::span<const bga_stroke_target_t> targets,
                                     bool erase = false) -> document_command_result_t;
 
+// Applies one atomic BGM draw/erase stroke on one source lane. Draw skips cells that
+// already hold the same sound and rejects the whole stroke when a different sound
+// occupies a cell; erase removes the lane's ordinary events at the visited rows.
+// BMSON charts are rejected: their stem lanes are not drawable.
+[[nodiscard]] auto apply_bgm_stroke(document_history_t& history,
+                                    std::uint64_t expected_revision,
+                                    chart_id_t chart,
+                                    object_id_t source_lane,
+                                    std::optional<resource_id_t> resource,
+                                    std::span<const local_position_t> targets,
+                                    bool erase = false) -> document_command_result_t;
+
 struct move_bgm_event_action_t {
     chart_id_t chart;
     object_id_t event;

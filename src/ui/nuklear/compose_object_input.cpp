@@ -496,6 +496,21 @@ auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& inpu
     return false;
 }
 
+// The BGM source lane under a Draw press on a native/BMS chart. BMSON lanes keep their own
+// stem and packed-column draw capture, so they never resolve here.
+static auto bgm_draw_lane_at(const WormUiComposeView& view, double x, double y)
+    -> const WormUiComposeBgmLaneView* {
+    if (view.bmson_tools_available) return nullptr;
+    for (const auto& lane : std::span(view.bgm_lanes, view.bgm_lane_count))
+        if (x >= lane.bounds.left && x < lane.bounds.right &&
+            y >= lane.bounds.top && y < lane.bounds.bottom) return &lane;
+    return nullptr;
+}
+
+static auto bgm_draw_source_ready() -> bool {
+    return state.draw_source_kind == 1 && state.draw_source_id != 0;
+}
+
 static void emit_draw_stroke(const ComposePointerEventContext& input,
     WormUiComposeInputKind kind, double x, double y, bool erase = false) {
     auto* action = input.action;
@@ -504,13 +519,23 @@ static void emit_draw_stroke(const ComposePointerEventContext& input,
     auto& output = action->compose_inputs[action->compose_input_count - 1];
     output.paint_intent = erase ? 2 : 1;
     output.resource_id = erase ? 0 : state.draw_source_id;
+    if (kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) {
+        const auto* pressed = erase
+            ? bgm_draw_lane_at(*input.view, state.draw_right_anchor_x, state.draw_right_anchor_y)
+            : bgm_draw_lane_at(*input.view, input.pointer_started_x, input.pointer_started_y);
+        state.draw_stroke_bgm_lane = pressed ? pressed->source_lane_id : 0;
+    }
     if (state.draw_stroke_bga) {
         output.resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGA;
         output.bga_lane_kind = compose_bga_lane_kind_at(*input.view, x, y).value_or(255);
         output.bga_lane_kind_valid = true;
+    } else if (state.draw_stroke_bgm_lane != 0) {
+        output.resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
+        output.lane_id = state.draw_stroke_bgm_lane;
     } else if (!erase && state.draw_source_kind != 1) {
         output.resource_id = 0;
     }
+    if (kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) state.draw_stroke_bgm_lane = 0;
 }
 
 void append_note_paint_begin(const ComposePointerEventContext& input) {
@@ -593,10 +618,12 @@ static void update_draw_left_pointer(const ComposePointerEventContext& input) {
 static bool draw_left_can_start(const ComposePointerEventContext& input) {
     const auto& view = *input.view;
     const auto bga = state.draw_source_kind == 2;
+    const auto bgm = bgm_draw_source_ready() &&
+        bgm_draw_lane_at(view, input.pointer_started_x, input.pointer_started_y) != nullptr;
     const auto target = bga ? compose_bga_lane_kind_at(view, input.pointer_started_x,
-        input.pointer_started_y).has_value() : input.pointer_started_in_note_field;
+        input.pointer_started_y).has_value() : (input.pointer_started_in_note_field || bgm);
     return !state.action_overflowed && view.scene_available && view.note_paint_mode_active &&
-        (bga || !armed_kind_uses_hold_gesture(view)) && target && input.window_focused &&
+        (bga || bgm || !armed_kind_uses_hold_gesture(view)) && target && input.window_focused &&
         input.shortcut_event_count == 0 &&
         (input.pointer_modifiers & input.any_pointer_modifier) == 0 &&
         !state.pointer_hold_active && !state.lane_hold_active && !state.area_selection_active &&
@@ -682,6 +709,13 @@ static bool process_bmson_draw_pointer(const ComposePointerEventContext& input) 
     return true;
 }
 
+static auto bgm_draw_press_without_source(const ComposePointerEventContext& input) -> bool {
+    const auto& view = *input.view;
+    return view.note_paint_mode_active && !bgm_draw_source_ready() && input.pointer_started_in_view &&
+        (input.left_down || input.left_released) &&
+        bgm_draw_lane_at(view, input.pointer_started_x, input.pointer_started_y) != nullptr;
+}
+
 void process_note_paint_pointer(const ComposePointerEventContext& input,
                                        bool& paint_pointer_consumed) {
     if (input.view->note_paint_mode_active && input.view->draw_source_missing) {
@@ -709,6 +743,12 @@ void process_note_paint_pointer(const ComposePointerEventContext& input,
 
     if (!state.action_overflowed && state.note_paint_pointer_active) {
         update_draw_left_pointer(input);
+        return;
+    }
+    // Without a sound there is nothing to draw in a BGM lane; the press must not fall through
+    // to a marquee or a selection.
+    if (bgm_draw_press_without_source(input)) {
+        paint_pointer_consumed = true;
         return;
     }
     if (draw_left_can_start(input)) {

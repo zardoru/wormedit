@@ -2031,3 +2031,111 @@ TEST_CASE("BGA strokes reject stale invalid video and over-cap batches atomicall
     check_bga_stroke(same_bga_events(history.document.charts.front().bga_events, original));
     check_bga_stroke(video_history.document.revision == revision && video_history.undo.empty());
 }
+
+namespace {
+auto bgm_stroke_events(const document_history_t& history) -> const std::vector<bgm_event_t>& {
+    return history.document.charts.front().measures.front().bgm_events;
+}
+}
+
+TEST_CASE("BGM draw stroke places deduplicated cells on one lane as one undo step",
+          "[unit][core][resources][bgm][stroke]") {
+    auto history = make_document_history(assignment_song());
+    const std::array targets{local_position_t{measure_id_t{3}, 240}, local_position_t{measure_id_t{3}, 360},
+                             local_position_t{measure_id_t{3}, 360}, local_position_t{measure_id_t{3}, 480}};
+    const auto applied = apply_bgm_stroke(history, history.document.revision, chart_id_t{2},
+                                          object_id_t{20}, resource_id_t{1}, targets);
+    require_bga_stroke(static_cast<bool>(applied));
+    const auto& events = bgm_stroke_events(history);
+    check_bga_stroke(events.size() == 3);
+    check_bga_stroke(events[1].position.row == 360 && events[1].source_lane == object_id_t{20} &&
+                     events[1].sound == resource_id_t{1});
+    check_bga_stroke(events[2].position.row == 480 && events[2].id.value > events[1].id.value);
+    check_bga_stroke(history.undo.size() == 1);
+    require_bga_stroke(undo_document_command(history));
+    check_bga_stroke(bgm_stroke_events(history).size() == 1);
+}
+
+TEST_CASE("BGM draw stroke over only same-sound cells is a no-op and a different sound rejects",
+          "[unit][core][resources][bgm][stroke]") {
+    auto history = make_document_history(assignment_song());
+    const auto revision = history.document.revision;
+    const std::array same{local_position_t{measure_id_t{3}, 240}};
+    const auto draw = apply_bgm_stroke(history, revision, chart_id_t{2}, object_id_t{20},
+                                       resource_id_t{1}, same);
+    check_bga_stroke(!draw.applied && draw.diagnostics.empty());
+    const std::array mixed{local_position_t{measure_id_t{3}, 360},
+                           local_position_t{measure_id_t{3}, 240}};
+    check_bga_stroke(has_code(apply_bgm_stroke(history, revision, chart_id_t{2}, object_id_t{20},
+        resource_id_t{2}, mixed), diagnostic_code_t::collision));
+    check_bga_stroke(history.document.revision == revision && history.undo.empty() &&
+                     bgm_stroke_events(history).size() == 1);
+}
+
+TEST_CASE("BGM erase stroke removes only the pressed lane's events in one step",
+          "[unit][core][resources][bgm][stroke]") {
+    auto song = assignment_song();
+    song.charts.front().bgm_source_lanes.push_back({.id = object_id_t{23}, .name = "BGM 2",
+                                                    .source_order = 1});
+    song.charts.front().measures.front().bgm_events.push_back(
+        {.id = object_id_t{13}, .position = {measure_id_t{3}, 240},
+         .source_lane = object_id_t{23}, .sound = resource_id_t{1}});
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    const std::array targets{local_position_t{measure_id_t{3}, 240},
+                             local_position_t{measure_id_t{3}, 600}};
+    const auto erased = apply_bgm_stroke(history, history.document.revision, chart_id_t{2},
+                                         object_id_t{20}, std::nullopt, targets, true);
+    require_bga_stroke(static_cast<bool>(erased));
+    check_bga_stroke(bgm_stroke_events(history).size() == 1 &&
+                     bgm_stroke_events(history).front().id == object_id_t{13});
+    check_bga_stroke(history.undo.size() == 1);
+    const auto empty = apply_bgm_stroke(history, history.document.revision, chart_id_t{2},
+                                        object_id_t{20}, std::nullopt, targets, true);
+    check_bga_stroke(!empty.applied && empty.diagnostics.empty());
+}
+
+TEST_CASE("BGM strokes reject invalid input atomically",
+          "[unit][core][resources][bgm][stroke]") {
+    auto history = make_document_history(assignment_song());
+    const auto revision = history.document.revision;
+    const std::array target{local_position_t{measure_id_t{3}, 600}};
+    check_bga_stroke(has_code(apply_bgm_stroke(history, revision + 1, chart_id_t{2},
+        object_id_t{20}, resource_id_t{1}, target), diagnostic_code_t::invalid_id));
+    check_bga_stroke(has_code(apply_bgm_stroke(history, revision, chart_id_t{2}, object_id_t{99},
+        resource_id_t{1}, target), diagnostic_code_t::invalid_id));
+    check_bga_stroke(has_code(apply_bgm_stroke(history, revision, chart_id_t{2}, object_id_t{20},
+        std::nullopt, target), diagnostic_code_t::invalid_id));
+    check_bga_stroke(has_code(apply_bgm_stroke(history, revision, chart_id_t{2}, object_id_t{20},
+        resource_id_t{3}, target), diagnostic_code_t::unsupported_feature));
+    check_bga_stroke(has_code(apply_bgm_stroke(history, revision, chart_id_t{2}, object_id_t{20},
+        resource_id_t{5}, target), diagnostic_code_t::dangling_resource));
+    const std::array bad_row{local_position_t{measure_id_t{999}, 0}};
+    check_bga_stroke(has_code(apply_bgm_stroke(history, revision, chart_id_t{2}, object_id_t{20},
+        resource_id_t{1}, bad_row), diagnostic_code_t::row_out_of_range));
+    const std::vector<local_position_t> capped(50'001, target.front());
+    check_bga_stroke(has_code(apply_bgm_stroke(history, revision, chart_id_t{2}, object_id_t{20},
+        std::nullopt, capped, true), diagnostic_code_t::invalid_resolution));
+    history.document.charts.front().source_family = format_family_t::bmson;
+    check_bga_stroke(has_code(apply_bgm_stroke(history, revision, chart_id_t{2}, object_id_t{20},
+        resource_id_t{1}, target), diagnostic_code_t::unsupported_feature));
+    check_bga_stroke(history.document.revision == revision && history.undo.empty() &&
+                     bgm_stroke_events(history).size() == 1);
+}
+
+TEST_CASE("BGM draw stroke rejects a sound that cannot get a BMS ID when IDs are exhausted",
+          "[unit][core][resources][bgm][stroke]") {
+    auto song = assignment_song();
+    song.charts.front().source_family = format_family_t::bms;
+    constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    for (std::size_t value = 1; value < 36 * 36; ++value)
+        song.resources.push_back({.id = resource_id_t{100 + value}, .asset = asset_id_t{1},
+            .roles = {resource_role_t::sample},
+            .target_identities = {{format_family_t::bms,
+                std::string{digits[value / 36], digits[value % 36]}, "WAV"}}});
+    auto history = make_document_history(std::move(song));
+    const std::array target{local_position_t{measure_id_t{3}, 600}};
+    check_bga_stroke(has_code(apply_bgm_stroke(history, history.document.revision, chart_id_t{2},
+        object_id_t{20}, resource_id_t{2}, target), diagnostic_code_t::invalid_id));
+    check_bga_stroke(history.undo.empty() && bgm_stroke_events(history).size() == 1);
+}

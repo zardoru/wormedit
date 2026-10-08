@@ -36,3 +36,20 @@ Each coordinator verifies focused tests, configured complexity<=25, docs and
 commit/release. Root reviews, cherry-picks serially, builds/tests all main,
 checks real-chart projection/import/rendering evidence, commits status and
 removes clean worker trees/builds; retain branches, logs and artifacts.
+
+Supporting ownership approved before implementation: T-459 may extend
+`src/sys/compose_view.h` for retained packed entries, `src/ui/field/field_renderer.h`
+and `.cpp` for typed cache identities, and `tests/ui/field_renderer_tests.cpp`
+for key isolation. T-462 may extend `sound_import_state.h`,
+`sound_import_runtime.h` and `.cpp`, `src/sys/compose_sound_actions.h`,
+`tests/sys/application_commands_tests.cpp`, and the single frontend picker
+forwarding call in `src/ui/nuklear/frontend.cpp`. Workers record these in their
+own card sections. Root exclusively owns `src/sys/main.cpp` for the three narrow
+staging changes: accept/forward fixed kind, retain it in reviewed items, and
+pass the section kind from the import request. Apply after contract integration.
+
+Root adds the existing `src/common/static_interval_index.cpp` to the core-test
+target in `tests/CMakeLists.txt` so pure packed-index tests link the reused
+interval-query implementation. No shared interval implementation edits.
+Packed sample tails may extend beyond authored rows using their own display
+clock; stem timing and authored chart data remain unchanged.

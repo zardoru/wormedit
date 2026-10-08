@@ -57,3 +57,12 @@ Supporting scope also includes `src/ui/nuklear/compose_object_input.h` for the
 header-resize entry point consumed by the panel; approved before that edit.
 Luna released the four core scene/source-test paths; Sol now owns their review
 and corrections alongside the remaining implementation and build work.
+
+The initially approved `tests/ui/field_renderer_tests.cpp` fixture cannot link
+the production canvas through its interface target. Its unbuilt append is
+withdrawn. Replacement approved before edits:
+`tests/ui/compose_stem_lane_render_tests.cpp` and one source-list line in
+`tests/CMakeLists.txt` for the existing frontend event test executable. A
+separate dummy/software rendering fixture verifies widened waveform scale and
+visible-lane clipping, with explicit SDL cleanup; ordinary event fixtures keep
+their no-video behavior. Legacy 36 px clipping stays pixel-compatible.

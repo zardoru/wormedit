@@ -173,3 +173,9 @@ out-of-chart members. Valid move geometry and safely clamped carriers use checke
 integer add/subtract, preserving exact large rows on platforms where long double
 has only double precision. Stale update cancels pending state; invalid release
 replans and commits nothing, with one aggregate warning instead of motion spam.
+
+T-420 future frontend support additionally approves `src/ui/nuklear/theme.cpp`
+and `assets/themes/ui-dark.json` for the card's conflict color role. Append the
+enum entry to preserve existing indices, define a red/coral built-in fallback
+and bundled role, and keep missing custom-theme entries on the fallback. Record
+these paths on the card before edits. Frontend phase still waits for T-414.

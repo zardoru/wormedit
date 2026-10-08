@@ -361,3 +361,24 @@ single owned session polled to its actual exit before tests/tidy. Cross-agent
 `ps` runs see only their sandbox PID namespace and cannot establish another
 agent's reader release. Rely on the owning session's completion/termination
 evidence, and never restart merely because redirected output is quiet.
+
+## Linked hold readiness clarification
+
+Read-only audit for later 02d finds that replacing tap-only guards is
+insufficient: linked hold assignment must check the entire inclusive span and
+editable lane roles at endpoints and every intervening layout transition.
+Keep BMSON's existing point-in-hold tap rejection, which differs from ordinary
+BGM's historical same-head-only tap rule. Small local helpers in the already
+approved `bmson_sound_channel_editor.cpp` suffice; no shared validator/header
+extension is needed. Exact source/semantic ends must match, and linked marker
+movement translates both ends atomically with its head.
+
+Root includes the minimal existing linked playable-note-to-different-lane fix
+in later 02d scope: the current assignment helper accepts that request but
+unconditionally dereferences the absent BGM pointer. Update the existing note
+in place after validation, preserving the supported API and same-lane no-op;
+do not invent a rejection policy. The already-approved
+`tests/core/note_to_bgm_tests.cpp` is additionally loaned to 02d solely for an
+outer-command linked-hold batch regression: overlapping restores must reject
+atomically after observing earlier scratch restores. This is exact scope
+approval/readiness, not an executor grant while 02a verification is active.

@@ -180,3 +180,19 @@ silent WAV/resource, generated only inside private staging. It is separate from
 source slice spans; capacity counts distinct audible spans, retained referenced
 WAV resources and one silent resource iff needed. Verify deterministic safe
 names, reimport/PCM, just-fit and atomic over-capacity refusal.
+
+T-463 supporting scopes approved before edits, after the reviewed T-412
+checkpoint: `compose_sounds_panel.cpp`, `compose_state.h/.cpp`,
+`compose_input_internal.h` and `src/sys/compose_view.h` for dock stem drag,
+source capture and explicit decoded geometry plumbing. Concrete tests are
+`tests/core/bmson_sound_channel_editor_tests.cpp`,
+`tests/sys/compose_action_notification_tests.cpp`,
+`tests/ui/bga_lane_event_harness_tests.cpp`. The pure core receives asset-bound
+native sample rate/frame count; sys checks retained binding identity/revision.
+Unknown ordinary span classification reports pending geometry; an empty first
+point or forced restart remains deterministic. Imported metadata is not mutated
+to fill decoder geometry. Root app export integration waits final Draw release.
+
+Conversion CLI follow-up scope: explicit publication directory semantics in
+already-owned API/options keep dotted output-directory names working for single
+and multiple charts while preserving default application single-file semantics.

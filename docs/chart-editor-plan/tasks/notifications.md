@@ -162,7 +162,9 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 ## T-224 Attach targets to validation and import diagnostics
 
-- **Status:** ready
+- **Status:** partial (core resolver and burst collapse landed; import-warning and export-loss targets blocked on files outside Files owned)
+- **Done so far:** `post_diagnostics` (center and sink) takes an optional `notification_target_resolver_t`; a supplied resolver is authoritative and std::monostate posts without Go to; without one each diagnostic keeps its own object. More than 20 diagnostics from one call collapse into one summary entry (highest severity, count plus first message, every message in detail, cut with "and N more" at the 4 KiB bound). Tests in `tests/core/notifications_tests.cpp`.
+- **Remaining:** (a) `src/sys/project_open.cpp` import warnings are plain strings in `project_open_result_t::warnings` (`src/sys/project_open.h`, not owned) and `src/sys/main.cpp` posts them through `project_import_warning` (`src/sys/project_import_feedback.h`, not owned) with no target; carrying positions needs a structured warning field in `project_open.h` and a `main.cpp` change, so coordinator approval is needed. (b) Export losses: `conversion_diagnostic_t` (`include/wormedit/formats/conversion.h`) has only chart id and path, no position or object, and `output_group_export_task_result_t` (`src/sys/resource_job_state.h`, not owned) has no target field. `src/sys/compose_actions.cpp` is unchanged.
 - **Outcome:** diagnostics that carry a chart position or object (import warnings, document validation, conversion losses) post with a target so Go to jumps to them; a burst of more than 20 from one operation collapses into one summary entry whose detail lists them all.
 - **Read first:** `include/wormedit/core/document.h` (diagnostic types), `include/wormedit/formats/conversion.h`, `src/sys/project_open.cpp`.
 - **Files owned:** `src/core/notifications.cpp`, `include/wormedit/core/notifications.h`, `src/sys/project_open.cpp`, `src/sys/compose_actions.cpp` (export results only), `tests/core/notifications_tests.cpp`.
@@ -171,6 +173,8 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 - **Reject/failure behavior:** unresolvable targets post without Go to.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`.
 - **Out of scope:** the Compare/Validate list (T-47) — it may later read the same entries.
+- **Result (2026-10-08):** resolver parameter and burst collapse landed with 4 new notification cases; `notification|project_open|^core\.` 1723/1723, full suite 2841/2841, event-harness 253/253, documentation passes. Import and export targets not done (see Remaining).
+
 
 ## T-374 Bound notification history activation to intended controls
 

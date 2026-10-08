@@ -60,6 +60,16 @@ struct notification_chart_position_t {
 using notification_target_t =
     std::variant<std::monostate, notification_chart_position_t, object_id_t>;
 
+// Maps one diagnostic to its "Go to" target. When supplied it is authoritative:
+// std::monostate posts the diagnostic without Go to. Without one, a diagnostic
+// keeps its own object as the target.
+using notification_target_resolver_t =
+    std::function<notification_target_t(const diagnostic_t&)>;
+
+// A burst of more than this many diagnostics from one call collapses into one
+// summary entry whose detail lists every message (bounded, see below).
+inline constexpr std::size_t notification_diagnostic_burst_limit = 20;
+
 struct notification_post_t {
     notification_severity_t severity{notification_severity_t::info};
     notification_source_t source{notification_source_t::system};
@@ -124,9 +134,13 @@ class notification_center_t {
     void post_transient_hint(notification_source_t source, std::string message);
     void post(notification_severity_t severity, notification_source_t source,
               std::string message);
-    // Maps diagnostic info/warning/error to the same severities; a diagnostic
-    // object becomes the entry's target.
-    void post_diagnostics(notification_source_t source, const diagnostic_list_t& diagnostics);
+    // Maps diagnostic info/warning/error to the same severities. Targets come from
+    // `resolve_target` when supplied, otherwise from each diagnostic's object. More
+    // than `notification_diagnostic_burst_limit` diagnostics post as one summary
+    // entry (highest severity, no target) whose detail lists all messages, ending
+    // with "and N more" when the 4 KiB detail bound cuts the list.
+    void post_diagnostics(notification_source_t source, const diagnostic_list_t& diagnostics,
+                          const notification_target_resolver_t& resolve_target = {});
 
     // Moves pending posts into the ring and records `now` as the frame time
     // used by `current_line`. Returns the number of inbox entries taken.
@@ -184,8 +198,8 @@ class notification_sink_t {
               std::string_view message) const noexcept;
     void post_transient_hint(notification_source_t source, std::string_view message) const noexcept;
     void post(const notification_post_t& request) const noexcept;
-    void post_diagnostics(notification_source_t source,
-                          const diagnostic_list_t& diagnostics) const noexcept;
+    void post_diagnostics(notification_source_t source, const diagnostic_list_t& diagnostics,
+                          const notification_target_resolver_t& resolve_target = {}) const noexcept;
 
   private:
     notification_center_t* center_;

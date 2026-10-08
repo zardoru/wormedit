@@ -218,3 +218,12 @@ Additional T-463 scope approved before edits: `src/ui/nuklear/compose_panel.cpp`
 invokes cancellation of the new dock-stem drag capture on focus, inactive-tab
 and modal paths. Preserve existing resize/cursor behavior and panel routing;
 no manifests or other panel changes are required.
+
+Root reviewed and integrated clean T-467 `f20582c` as `90482aa`; source ownership
+is released. Its normal/decoder-OFF, CLI, capacity, strict native PCM and actual
+Kick full-tail gates passed. Root app review found extension aliases (`bme`,
+`bml`, `pms`) are not canonical lane-profile IDs. Sliced BMSON app requests infer
+the compatible canonical layout; named output keeps its filename and checks
+BMS/PMS family compatibility before any publication. Other app requests preserve
+their existing profile behavior. Root adds directory/named-file warning-success
+and silent-BMS atomic publication regressions after shared test release.

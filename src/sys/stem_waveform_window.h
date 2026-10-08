@@ -1,13 +1,17 @@
 #pragma once
 
 #include <wormedit/audio/source_registry.h>
+#include "common/static_interval_index.h"
 #include <wormedit/core/document.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/sound_slice.h>
+#include <unordered_set>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <iterator>
 #include <optional>
 #include <span>
 #include <unordered_map>
@@ -15,6 +19,271 @@
 #include <vector>
 
 namespace wormedit::sys {
+
+// Packed geometry is independent of stem classification and the retained stem index.
+struct packed_waveform_piece_t {
+    object_id_t event;
+    object_id_t lane;
+    audio_clip_t clip;
+    local_position_t position;
+    std::uint64_t row{};
+    std::optional<std::uint64_t> next_row;
+    std::uint32_t sample_rate{};
+    std::optional<std::uint64_t> source_frames;
+    double begin_seconds{}, end_seconds{}, measure_seconds{};
+};
+struct packed_waveform_index_t {
+    const song_document_t* document{};
+    const chart_document_t* chart{};
+    std::uint64_t revision{}, timing_fingerprint{};
+    bool valid{};
+    std::uint64_t builds{}, cache_hits{};
+    mutable std::size_t queried_pieces{};
+    std::vector<audio::decoded_source_binding_t> bindings;
+    std::vector<packed_waveform_piece_t> pieces;
+    common::static_interval_index_t intervals;
+};
+
+inline auto packed_seconds(const timing_index_t& timing, std::uint64_t row,
+                           timing_boundary_side_t side = timing_boundary_side_t::event)
+    -> std::optional<double> {
+    const auto value = timing_at(timing, row, side);
+    if (!value.seconds || !value.seconds->denominator) return std::nullopt;
+    return static_cast<double>(value.seconds->numerator) / value.seconds->denominator;
+}
+inline auto packed_measure_seconds(const timing_index_t& timing,
+    const measure_index_entry_t& measure, std::uint64_t row) -> std::optional<double> {
+    const auto after = std::upper_bound(timing.rows.begin(), timing.rows.end(), row,
+        [](auto value, const auto& state) { return value < state.absolute_row; });
+    if (after == timing.rows.begin() || timing.divisions_per_standard_measure == 0)
+        return std::nullopt;
+    const auto bpm = std::prev(after)->effective_bpm;
+    if (bpm.numerator <= 0 || bpm.denominator == 0) return std::nullopt;
+    return 240.0 * static_cast<double>(measure.row_capacity) / timing.divisions_per_standard_measure *
+           static_cast<double>(bpm.denominator) / static_cast<double>(bpm.numerator);
+}
+struct packed_geometry_builder_t {
+    const song_document_t& document;
+    const chart_document_t& chart;
+    const timing_index_t& timing;
+    std::span<const audio::decoded_source_binding_t> bindings;
+    std::unordered_set<std::uint64_t> lanes;
+    std::unordered_map<std::uint64_t, const sound_channel_t*> channels;
+    std::unordered_map<std::uint64_t, const resource_entry_t*> resources;
+    std::unordered_map<std::uint64_t, const audio_asset_t*> assets;
+    std::unordered_map<std::uint64_t, const audio::decoded_source_binding_t*> sources;
+    std::unordered_map<std::uint64_t, const measure_index_entry_t*> measures;
+    std::unordered_map<std::uint64_t, sound_slice_result_t> slices;
+    std::unordered_set<std::uint64_t> continuation_channels;
+    std::unordered_map<std::uint64_t, const derived_sound_slice_t*> spans;
+};
+inline void prepare_packed_geometry(packed_geometry_builder_t& builder,
+                                    const measure_index_t& measures) {
+    for (const auto& lane : builder.chart.bgm_source_lanes)
+        if (!lane.stem_channel) builder.lanes.insert(lane.id.value);
+    for (const auto& channel : builder.chart.sound_channels)
+        for (const auto& event : channel.events) {
+            builder.channels.emplace(event.id.value, &channel);
+            if (event.continuation) builder.continuation_channels.insert(channel.id.value);
+        }
+    for (const auto& resource : builder.document.resources)
+        builder.resources.emplace(resource.id.value, &resource);
+    for (const auto& asset : builder.document.audio_assets) builder.assets.emplace(asset.id.value, &asset);
+    for (const auto& binding : builder.bindings) builder.sources.emplace(binding.asset.value, &binding);
+    for (const auto& measure : measures.entries) builder.measures.emplace(measure.id.value, &measure);
+}
+inline auto packed_event_clip(const packed_geometry_builder_t& builder, const bgm_event_t& event)
+    -> std::optional<audio_clip_t> {
+    const sound_channel_t* channel{};
+    if (event.sound_channel_event) {
+        const auto found = builder.channels.find(event.sound_channel_event->value);
+        if (found != builder.channels.end()) channel = found->second;
+    }
+    asset_id_t asset;
+    if (event.sound) {
+        const auto found = builder.resources.find(event.sound->value);
+        if (found == builder.resources.end()) return std::nullopt;
+        asset = found->second->asset;
+    } else if (channel) asset = channel->source_clip.source;
+    if (!asset || !builder.assets.contains(asset.value)) return std::nullopt;
+    if (channel && channel->source_clip.source != asset) return std::nullopt;
+    return channel ? channel->source_clip : audio_clip_t{.source = asset};
+}
+inline void packed_source_geometry(const packed_geometry_builder_t& builder,
+                                   packed_waveform_piece_t& piece) {
+    const auto* asset = builder.assets.at(piece.clip.source.value);
+    piece.sample_rate = asset->stream.sample_rate;
+    piece.source_frames = asset->stream.frame_count;
+    const auto source = builder.sources.find(piece.clip.source.value);
+    if (source == builder.sources.end()) return;
+    if (!piece.sample_rate) piece.sample_rate = source->second->source_sample_rate;
+    if (!piece.source_frames) piece.source_frames = source->second->source_frame_count;
+}
+inline auto packed_linked_span(packed_geometry_builder_t& builder, const bgm_event_t& event,
+                               packed_waveform_piece_t& piece) -> bool {
+    if (!event.sound_channel_event || !piece.sample_rate) return true;
+    const auto found = builder.channels.find(event.sound_channel_event->value);
+    if (found == builder.channels.end()) return false;
+    const auto& channel = *found->second;
+    if (!builder.continuation_channels.contains(channel.id.value)) return true;
+    auto [entry, inserted] = builder.slices.try_emplace(channel.id.value);
+    if (inserted) {
+        entry->second = derive_sound_channel_slices(builder.chart, channel,
+            piece.sample_rate, piece.source_frames);
+        if (entry->second) for (const auto& slice : entry->second.slices)
+            for (const auto id : slice.events) builder.spans.emplace(id.value, &slice);
+    }
+    if (!entry->second) return false;
+    const auto found_span = builder.spans.find(event.sound_channel_event->value);
+    if (found_span == builder.spans.end()) return false;
+    const auto* slice = found_span->second;
+    if (slice->absolute_row != piece.row) return false;
+    piece.clip.begin_frame = slice->source_begin_frame;
+    piece.clip.end_frame = slice->source_end_frame;
+    return true;
+}
+inline auto packed_event_row(const packed_geometry_builder_t& builder, local_position_t position)
+    -> std::optional<std::uint64_t> {
+    const auto measure = builder.measures.find(position.measure.value);
+    if (measure == builder.measures.end() || position.row >= measure->second->row_capacity ||
+        position.row > std::numeric_limits<std::uint64_t>::max() - measure->second->absolute_begin_row)
+        return std::nullopt;
+    return measure->second->absolute_begin_row + position.row;
+}
+inline auto make_packed_piece(packed_geometry_builder_t& builder, const bgm_event_t& event)
+    -> std::optional<packed_waveform_piece_t> {
+    const auto measure = builder.measures.find(event.position.measure.value);
+    const auto clip = packed_event_clip(builder, event);
+    if (!clip || measure == builder.measures.end() ||
+        event.position.row >= measure->second->row_capacity ||
+        event.position.row > std::numeric_limits<std::uint64_t>::max() - measure->second->absolute_begin_row)
+        return std::nullopt;
+    const auto row = measure->second->absolute_begin_row + event.position.row;
+    const auto seconds = packed_seconds(builder.timing, row);
+    const auto duration = packed_measure_seconds(builder.timing, *measure->second, row);
+    if (!seconds || !duration || !std::isfinite(*seconds) || !std::isfinite(*duration)) return std::nullopt;
+    packed_waveform_piece_t piece{.event = event.id, .lane = event.source_lane, .clip = *clip,
+        .position = event.position, .row = row, .begin_seconds = *seconds,
+        .end_seconds = std::numeric_limits<double>::infinity(), .measure_seconds = *duration};
+    packed_source_geometry(builder, piece);
+    if (!packed_linked_span(builder, event, piece)) return std::nullopt;
+    return piece;
+}
+inline auto packed_known_duration(const packed_waveform_piece_t& piece) -> std::optional<double> {
+    auto end = piece.clip.end_frame;
+    if (piece.source_frames) end = std::min(end.value_or(*piece.source_frames), *piece.source_frames);
+    if (!piece.sample_rate || !end) return std::nullopt;
+    if (*end <= piece.clip.begin_frame) return 0.0;
+    return static_cast<double>(*end - piece.clip.begin_frame) / piece.sample_rate;
+}
+inline void finish_packed_pieces(std::vector<packed_waveform_piece_t>& pieces,
+    const std::unordered_map<std::uint64_t, std::uint64_t>& next_rows,
+    const timing_index_t& timing) {
+    for (auto& piece : pieces) {
+        const auto next = next_rows.find(piece.event.value);
+        if (next != next_rows.end()) {
+            piece.next_row = next->second;
+            piece.end_seconds = packed_seconds(timing, next->second).value_or(piece.begin_seconds);
+        }
+        const auto duration = packed_known_duration(piece);
+        if (duration) piece.end_seconds = std::min(piece.end_seconds, piece.begin_seconds + *duration);
+    }
+    std::erase_if(pieces, [](const auto& piece) {
+        const auto duration = packed_known_duration(piece);
+        return (duration && *duration <= piece.measure_seconds) || piece.end_seconds <= piece.begin_seconds;
+    });
+}
+inline void append_next_packed_rows(
+    std::vector<std::pair<std::uint64_t, std::uint64_t>>& rows,
+    std::unordered_map<std::uint64_t, std::uint64_t>& next_rows) {
+    std::stable_sort(rows.begin(), rows.end(), [](const auto& left, const auto& right) {
+        return left.first < right.first;
+    });
+    std::optional<std::uint64_t> next;
+    for (std::size_t i = rows.size(); i > 0; --i) {
+        if (i < rows.size() && rows[i].first > rows[i - 1].first) next = rows[i].first;
+        if (next) next_rows.emplace(rows[i - 1].second, *next);
+    }
+}
+inline void prepare_packed_waveform_index(packed_waveform_index_t& index,
+    const song_document_t& document, const chart_document_t& chart,
+    std::span<const audio::decoded_source_binding_t> bindings, const timing_index_t& timing) {
+    if (index.valid && index.document == &document && index.chart == &chart &&
+        index.revision == document.revision && index.timing_fingerprint == timing.source_fingerprint &&
+        index.bindings.size() == bindings.size() && std::equal(index.bindings.begin(), index.bindings.end(), bindings.begin())) {
+        ++index.cache_hits; return;
+    }
+    const auto builds = index.builds + 1;
+    index = {};
+    index.builds = builds;
+    index.document = &document; index.chart = &chart; index.revision = document.revision;
+    index.timing_fingerprint = timing.source_fingerprint;
+    index.bindings.assign(bindings.begin(), bindings.end());
+    const auto measures = build_measure_index(chart);
+    if (chart.source_family != format_family_t::bmson || !std::holds_alternative<measure_index_t>(measures)) return;
+    packed_geometry_builder_t builder{document, chart, timing, bindings};
+    prepare_packed_geometry(builder, std::get<measure_index_t>(measures));
+    std::unordered_map<std::uint64_t, std::vector<std::pair<std::uint64_t, std::uint64_t>>> column_rows;
+    for (const auto& measure : chart.measures) for (const auto& event : measure.bgm_events) {
+        if (!builder.lanes.contains(event.source_lane.value)) continue;
+        const auto row = packed_event_row(builder, event.position);
+        if (row) column_rows[event.source_lane.value].emplace_back(*row, event.id.value);
+        if (auto piece = make_packed_piece(builder, event)) index.pieces.push_back(*piece);
+    }
+    std::unordered_map<std::uint64_t, std::uint64_t> next_rows;
+    for (auto& [lane, rows] : column_rows) append_next_packed_rows(rows, next_rows);
+    finish_packed_pieces(index.pieces, next_rows, timing);
+    std::vector<common::static_interval_t> intervals;
+    intervals.reserve(index.pieces.size());
+    for (std::size_t i = 0; i < index.pieces.size(); ++i)
+        intervals.push_back({index.pieces[i].begin_seconds,
+            std::min(index.pieces[i].end_seconds, std::numeric_limits<double>::max()), i});
+    index.intervals.rebuild(intervals);
+    index.valid = true;
+}
+inline auto visible_packed_waveform_pieces(const packed_waveform_index_t& index,
+    double begin_seconds, double end_seconds) -> std::vector<const packed_waveform_piece_t*> {
+    std::vector<const packed_waveform_piece_t*> result;
+    index.queried_pieces = 0;
+    if (!index.valid || !std::isfinite(begin_seconds) || !std::isfinite(end_seconds)) return result;
+    const auto queried = index.intervals.query(begin_seconds, end_seconds);
+    index.queried_pieces = queried.scanned;
+    for (const auto selected : queried.indices) {
+        const auto& piece = index.pieces[selected];
+        if (piece.begin_seconds < end_seconds && piece.end_seconds > begin_seconds) result.push_back(&piece);
+    }
+    return result;
+}
+
+inline auto packed_tail_seconds_per_row(const timing_index_t& timing) -> std::optional<double> {
+    if (timing.rows.empty() || timing.divisions_per_standard_measure == 0) return std::nullopt;
+    const auto bpm = timing.rows.back().effective_bpm;
+    if (bpm.numerator <= 0 || bpm.denominator == 0) return std::nullopt;
+    return 240.0 * static_cast<double>(bpm.denominator) / bpm.numerator /
+           timing.divisions_per_standard_measure;
+}
+inline auto packed_display_seconds(const timing_index_t& timing, std::uint64_t row,
+    timing_boundary_side_t side = timing_boundary_side_t::event) -> std::optional<double> {
+    if (row <= timing.total_rows) return packed_seconds(timing, row, side);
+    const auto end = packed_seconds(timing, timing.total_rows, timing_boundary_side_t::after_stops);
+    const auto scale = packed_tail_seconds_per_row(timing);
+    if (!end || !scale) return std::nullopt;
+    const auto seconds = *end + static_cast<double>(row - timing.total_rows) * *scale;
+    return std::isfinite(seconds) ? std::optional{seconds} : std::nullopt;
+}
+inline auto packed_window_seconds(const timing_index_t& timing, double scroll, double height, double zoom)
+    -> std::optional<std::pair<double, double>> {
+    if (!std::isfinite(scroll) || !std::isfinite(height) || !std::isfinite(zoom) ||
+        zoom <= 0 || height <= 0 || height > 4096 || std::abs(scroll) > 1e12) return std::nullopt;
+    const auto scale = static_cast<double>(timing.divisions_per_standard_measure) / zoom;
+    const auto first = std::max(0.0, std::floor((scroll - 1) * scale));
+    const auto last = std::max(0.0, std::ceil((scroll + height + 1) * scale));
+    if (!std::isfinite(last) || last >= static_cast<double>(std::numeric_limits<std::uint64_t>::max())) return std::nullopt;
+    const auto begin = packed_display_seconds(timing, static_cast<std::uint64_t>(first), timing_boundary_side_t::before_delays);
+    const auto end = packed_display_seconds(timing, static_cast<std::uint64_t>(last), timing_boundary_side_t::after_stops);
+    if (!begin || !end) return std::nullopt;
+    return std::pair{*begin, *end};
+}
 
 // A BMSON chart can have dozens of stems, but only the ones playing near the cursor are worth
 // decoding and drawing. The window is measured in chart measures around the cursor's measure.

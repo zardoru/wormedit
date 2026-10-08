@@ -673,4 +673,111 @@ TEST_CASE("BMSON stem runtime filters packed channels from actual mixed channel 
           "[sys][audio-notification][stem-cache][hybrid-lanes]") {
     check_audio_worker(mixed_filter_runtime_passes());
 }
+
+namespace {
+struct t459_packed_runtime_fixture_t {
+    wormedit::audio::decoded_source_registry_t sources;
+    wormedit::song_document_t document;
+    wormedit::workspace_controller_t workspace;
+    wormedit::editor_interaction_state_t interaction;
+    wormedit::sys::compose_scene_cache_t cache;
+};
+
+void prepare_t459_packed_runtime_fixture(t459_packed_runtime_fixture_t& fixture) {
+    using namespace wormedit;
+    fixture.document.id = song_id_t{900};
+    fixture.document.revision = 1;
+    fixture.document.audio_assets = {
+        {.id = asset_id_t{90}, .source_path = "silence.ogg"},
+        {.id = asset_id_t{91}, .source_path = "silence.ogg"},
+        {.id = asset_id_t{92}, .source_path = "sliced-seek-source.ogg"}};
+    fixture.document.resources = {
+        {.id = resource_id_t{190}, .name = "long packed", .asset = asset_id_t{90}},
+        {.id = resource_id_t{191}, .name = "short packed", .asset = asset_id_t{91}},
+        {.id = resource_id_t{192}, .name = "offscreen packed", .asset = asset_id_t{92}}};
+    chart_document_t chart;
+    chart.id = chart_id_t{901};
+    chart.source_family = format_family_t::bmson;
+    chart.divisions_per_standard_measure = 960;
+    for (std::uint64_t measure = 1; measure <= 10; ++measure)
+        chart.measures.push_back({.id = measure_id_t{measure}});
+    chart.bpms = {{.id = object_id_t{902}, .position = {measure_id_t{1}, 0},
+                   .beats_per_minute = {600, 1}}};
+    chart.bgm_source_lanes = {{.id = object_id_t{903}, .name = "BGM 1"}};
+    chart.sound_channels = {
+        {.id = object_id_t{100}, .source_clip = {.id = clip_id_t{110}, .source = asset_id_t{90}},
+         .events = {{.id = object_id_t{1100}, .position = {measure_id_t{1}, 0}}}},
+        {.id = object_id_t{101}, .source_clip = {.id = clip_id_t{111}, .source = asset_id_t{91},
+             .end_frame = 1},
+         .events = {{.id = object_id_t{1101}, .position = {measure_id_t{1}, 8}}}},
+        {.id = object_id_t{102}, .source_clip = {.id = clip_id_t{112}, .source = asset_id_t{92}},
+         .events = {{.id = object_id_t{1102}, .position = {measure_id_t{8}, 0}}}}};
+    chart.measures[0].bgm_events = {
+        {.id = object_id_t{1200}, .position = {measure_id_t{1}, 0},
+         .source_lane = object_id_t{903}, .sound = resource_id_t{190},
+         .sound_channel_event = object_id_t{1100}},
+        {.id = object_id_t{1201}, .position = {measure_id_t{1}, 8},
+         .source_lane = object_id_t{903}, .sound = resource_id_t{191},
+         .sound_channel_event = object_id_t{1101}}};
+    chart.measures[7].bgm_events = {{.id = object_id_t{1202},
+        .position = {measure_id_t{8}, 0}, .source_lane = object_id_t{903},
+        .sound = resource_id_t{192}, .sound_channel_event = object_id_t{1102}}};
+    fixture.document.charts.push_back(std::move(chart));
+
+    auto& stored_chart = fixture.document.charts.front();
+    fixture.workspace.active_tab = workspace_tab_t::compose;
+    fixture.workspace.selected_chart = stored_chart.id;
+    fixture.interaction.chart = stored_chart.id;
+    fixture.interaction.viewport_scroll_pixels = 0;
+    fixture.interaction.viewport_height_pixels = 64;
+    fixture.interaction.pixels_per_standard_measure = 960;
+    fixture.interaction.selected_objects = {
+        {editor_selection_object_kind_t::bgm_event, object_id_t{1200}}};
+    const auto timing = build_timing_index(stored_chart);
+    check_audio_worker(timing.index.has_value());
+    if (timing.index) {
+        fixture.cache.chart = stored_chart.id;
+        fixture.cache.revision = fixture.document.revision;
+        fixture.cache.marker_timing_index = *timing.index;
+    }
+    std::vector<audio::preview_metronome_source_binding_t> metronome;
+    const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
+    (void)sys::register_audition_sources(fixture.document, base, 1, fixture.sources, metronome);
+}
+
+auto t459_packed_runtime_filters_assets() -> bool {
+    using namespace wormedit;
+    t459_packed_runtime_fixture_t fixture;
+    prepare_t459_packed_runtime_fixture(fixture);
+    for (const auto asset : {asset_id_t{90}, asset_id_t{91}, asset_id_t{92}})
+        if (!fixture.sources.binding(asset)) return false;
+    sys::runtime::waveform_analysis_t runtime{fixture.sources};
+    const std::vector<const sound_channel_t*> no_visible_stems;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!runtime.stem_waveform_analysis(asset_id_t{90}) &&
+           std::chrono::steady_clock::now() < deadline) {
+        runtime.service(fixture.document, fixture.workspace, fixture.cache, &fixture.interaction);
+        runtime.service_compose_stem_waveforms(fixture.document, fixture.workspace,
+            fixture.cache, &fixture.interaction, no_visible_stems);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    for (std::size_t frame = 0; frame < 40; ++frame) {
+        runtime.service(fixture.document, fixture.workspace, fixture.cache, &fixture.interaction);
+        runtime.service_compose_stem_waveforms(fixture.document, fixture.workspace,
+            fixture.cache, &fixture.interaction, no_visible_stems);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return runtime.stem_waveform_analysis(asset_id_t{90}) &&
+        !runtime.stem_waveform_analysis(asset_id_t{91}) &&
+        !runtime.stem_waveform_analysis(asset_id_t{92}) &&
+        runtime.stem_waveform_cache_stats().entries == 1 &&
+        !runtime.channel_waveform_asset() && !runtime.channel_waveform_job().busy() &&
+        !runtime.channel_waveform_analysis();
+}
+} // namespace
+
+TEST_CASE("packed BMSON runtime analyzes only visible long packed BGM waveforms",
+          "[sys][audio-notification][stem-cache][T459]") {
+    check_audio_worker(t459_packed_runtime_filters_assets());
+}
 #endif

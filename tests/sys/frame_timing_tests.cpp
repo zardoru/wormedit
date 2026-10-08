@@ -5078,3 +5078,118 @@ TEST_CASE("Dense inspector missing locations recover on insertion and read curre
     t475_check(std::string_view(fixture.flattened.view.compose.selected_note_label) == "inserted");
     t475_compare_fresh(fixture);
 }
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+namespace {
+struct packed_projection_fixture_t : channel_projection_fixture_t {
+    packed_projection_fixture_t() {
+        auto& chart = history.document.charts.front();
+        chart.measures.resize(2);
+        chart.bpms = {{.id = object_id_t{99000}, .position = {measure_id_t{1}, 0},
+                       .beats_per_minute = {2400, 1}}};
+        chart.bgm_source_lanes = {{.id = object_id_t{3}}, {.id = object_id_t{4}}};
+        chart.sound_channels[0].source_clip.begin_frame =
+            history.document.audio_assets.back().stream.frame_count.value() / 4;
+        chart.sound_channels[1].source_clip.end_frame = 1;
+        chart.measures[0].bgm_events.push_back({.id = object_id_t{74002},
+            .position = {measure_id_t{1}, 480}, .source_lane = object_id_t{3}});
+        flattened.view.compose.selected_bmson_bgm_event_id = 0;
+        interaction.chart = chart.id;
+        interaction.pixels_per_standard_measure = interaction.viewport_height_pixels = 200;
+        cache.marker_timing_index = build_timing_index(chart).index;
+        expect_gpu_work(cache.marker_timing_index.has_value());
+    }
+    void project_packed(bool ready = true) {
+        const std::optional<asset_id_t> absent;
+        const std::shared_ptr<const audio::waveform_analysis_result_t> missing;
+        const bmson_waveform_projection_context_t context{flattened, history, workspace,
+            &interaction, cache, sources, {absent, missing}, {absent, missing}, 1,
+            [&](asset_id_t) { return ready ? channel_analysis : nullptr; }};
+        populate_bmson_waveform_projection(context);
+    }
+    auto piece() const -> const WormUiComposeStemWaveformView& {
+        const auto views = std::span(flattened.view.compose.stem_waveforms,
+                                     flattened.view.compose.stem_waveform_count);
+        const auto found = std::ranges::find(views, std::uint64_t{74000},
+                                             &WormUiComposeStemWaveformView::stem_key);
+        expect_gpu_work(found != views.end());
+        return *found;
+    }
+};
+void check_packed_clip_rows(const packed_projection_fixture_t& fixture) {
+    const auto& piece = fixture.piece();
+    expect_gpu_work(piece.piece_kind == WORM_UI_WAVEFORM_PIECE_PACKED_EVENT);
+    expect_gpu_work(piece.source_lane_id == 3 && !piece.pending && piece.row_count > 0);
+    const auto downscroll = compose_field_downscroll(fixture.history.document.charts.front());
+    for (const auto& row : std::span(piece.rows, piece.row_count)) {
+        expect_gpu_work(downscroll ? row.y_pixels >= 99 : row.y_pixels <= 101);
+        expect_gpu_work(row.absolute_peak[0] >= .20f);
+    }
+}
+}
+TEST_CASE("BMSON packed waveform uses its native clip and next column event",
+          "[sys][frame-timing][stem][bmson][packed-waveform]") {
+    packed_projection_fixture_t fixture;
+    fixture.project_packed();
+    check_packed_clip_rows(fixture);
+    const auto key = fixture.piece().stem_key;
+    const auto builds = fixture.cache.packed_waveform_index.builds;
+    fixture.interaction.viewport_scroll_pixels = 1;
+    fixture.project_packed();
+    expect_gpu_work(fixture.piece().stem_key == key);
+    expect_gpu_work(fixture.cache.packed_waveform_index.builds == builds);
+    INFO("Scrolled packed rows: " << fixture.cache.packed_waveforms.front().ring.projected_rows);
+    expect_gpu_work(fixture.cache.packed_waveforms.front().ring.projected_rows == 1);
+    const auto projected = fixture.cache.packed_waveforms.front().ring.projected_rows;
+    const auto calls = fixture.cache.packed_waveforms.front().ring.projection_calls;
+    const auto rows = fixture.cache.packed_waveforms.front().rows.data();
+    const auto source = fixture.cache.packed_waveforms.front().source;
+    fixture.project_packed();
+    expect_gpu_work(fixture.cache.packed_waveforms.front().ring.projected_rows == projected);
+    expect_gpu_work(fixture.cache.packed_waveforms.front().ring.projection_calls == calls);
+    expect_gpu_work(fixture.cache.packed_waveforms.front().rows.data() == rows);
+    expect_gpu_work(fixture.cache.packed_waveforms.front().source == source);
+    expect_gpu_work(fixture.cache.packed_waveform_index.builds == builds);
+}
+TEST_CASE("BMSON packed waveform pending band stays inside its event interval",
+          "[sys][frame-timing][stem][bmson][packed-waveform]") {
+    packed_projection_fixture_t fixture;
+    fixture.project_packed(false);
+    const auto piece = fixture.piece();
+    expect_gpu_work(piece.pending && piece.row_count == 0 && piece.bounded);
+    expect_gpu_work(piece.end_y_pixels - piece.begin_y_pixels <= 101);
+    expect_gpu_work(piece.begin_y_pixels >= 0 && piece.end_y_pixels <= 200);
+    fixture.project_packed();
+    check_packed_clip_rows(fixture);
+    fixture.history.document.audio_assets.back().stream.sample_rate = 0;
+    fixture.history.document.audio_assets.back().stream.frame_count.reset();
+    fixture.sources.clear();
+    ++fixture.history.document.revision;
+    fixture.project_packed(false);
+    expect_gpu_work(fixture.piece().pending && fixture.piece().bounded);
+}
+TEST_CASE("BMSON packed sample tail draws beyond authored timing without changing stems",
+          "[sys][frame-timing][stem][bmson][packed-waveform]") {
+    packed_projection_fixture_t fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.measures.resize(1);
+    chart.measures[0].bgm_events.resize(1);
+    ++fixture.history.document.revision;
+    fixture.cache.marker_timing_index = build_timing_index(chart).index;
+    const auto authored_rows = fixture.cache.marker_timing_index->total_rows;
+    fixture.interaction.viewport_scroll_pixels = 220;
+    fixture.project_packed();
+    const auto& piece = fixture.piece();
+    expect_gpu_work(!piece.pending && piece.row_count > 0);
+    expect_gpu_work(fixture.cache.packed_waveform_row_table.total_rows > authored_rows);
+    expect_gpu_work(fixture.cache.waveform_row_table.total_rows == authored_rows);
+    expect_gpu_work(fixture.cache.marker_timing_index->total_rows == authored_rows);
+    expect_gpu_work(chart.measures.size() == 1);
+    const auto previous_peak = piece.rows[0].absolute_peak[0];
+    chart.bpms.front().beats_per_minute = {4800, 1};
+    ++fixture.history.document.revision;
+    fixture.cache.marker_timing_index = build_timing_index(chart).index;
+    fixture.project_packed();
+    expect_gpu_work(fixture.piece().rows[0].absolute_peak[0] < previous_peak);
+}
+#endif

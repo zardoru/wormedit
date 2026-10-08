@@ -830,6 +830,11 @@ typedef enum WormUiShortcutModifier {
     WORM_UI_SHORTCUT_MODIFIER_META = 1 << 3,
 } WormUiShortcutModifier;
 
+typedef enum WormUiWaveformPieceKind {
+    WORM_UI_WAVEFORM_PIECE_STEM = 0,
+    WORM_UI_WAVEFORM_PIECE_PACKED_EVENT = 2,
+} WormUiWaveformPieceKind;
+
 typedef struct WormUiComposeStemWaveformView {
     /* Stable channel identity, independent of visible ordering and lane position. */
     uint64_t stem_key;
@@ -838,6 +843,11 @@ typedef struct WormUiComposeStemWaveformView {
     size_t row_count;
     /* The audio is still decoding or missing: draw a placeholder band instead of a waveform. */
     bool pending;
+    WormUiWaveformPieceKind piece_kind;
+    /* Packed pending bands use event-bounded viewport coordinates. */
+    bool bounded;
+    double begin_y_pixels;
+    double end_y_pixels;
 } WormUiComposeStemWaveformView;
 
 /* Where a stem's audio is cut: the row of one slice point, drawn in the stem's BGM lane even when

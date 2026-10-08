@@ -1193,3 +1193,82 @@ TEST_CASE("T469 stem zoom rejects incompatible retained texture identities",
           "[ui][field][stem][T469]") {
     expect_field(t469_incompatible_retained_textures_are_rejected());
 }
+
+namespace {
+auto t459_piece_rows(float amplitude) -> std::vector<envelope_row_t> {
+    std::vector<envelope_row_t> rows;
+    for (int world = -2; world < 66; ++world)
+        rows.push_back({static_cast<double>(world) + .5,
+                        {amplitude, amplitude}, {amplitude, amplitude}});
+    return rows;
+}
+
+auto t459_surface_has_channel(const field_submission_fixture_t& fixture,
+                              int first_x, int last_x, bool red) -> bool {
+    for (int y = 0; y < 64; ++y) {
+        for (int x = first_x; x < last_x; ++x) {
+            const auto pixel = fixture.pixel(x, y);
+            if (red ? (pixel.r > 180 && pixel.b < 80) : (pixel.b > 180 && pixel.r < 80))
+                return true;
+        }
+    }
+    return false;
+}
+
+auto t459_equal_numeric_piece_ids_stay_isolated() -> bool {
+    field_submission_fixture_t fixture;
+    renderer_t renderer;
+    constexpr auto id = std::numeric_limits<std::uint64_t>::max();
+    const waveform_piece_key_t stem{waveform_piece_kind_t::stem, id};
+    const waveform_piece_key_t packed{waveform_piece_kind_t::packed_event, id};
+    const std::array keys{stem, packed};
+    const auto stem_rows = t459_piece_rows(.8f);
+    const auto packed_rows = t459_piece_rows(.45f);
+    const auto changed_stem_rows = t459_piece_rows(.2f);
+    const envelope_style_t stem_style{{0, 0, 0, 0}, {255, 20, 20, 255}, false};
+    const envelope_style_t packed_style{{0, 0, 0, 0}, {20, 20, 255, 255}, false};
+    const SDL_FRect stem_bounds{14, 0, 48, 64};
+    const SDL_FRect packed_bounds{66, 0, 48, 64};
+
+    if (!SDL_SetRenderDrawColor(fixture.renderer, 0, 0, 0, 255) ||
+        !SDL_RenderClear(fixture.renderer)) return false;
+    renderer.begin({0, 0, 128, 128}, {1, 1}, {}, fixture.renderer);
+    renderer.pin_piece_envelopes(keys);
+    renderer.prepare_piece_zoom(1, keys);
+    if (!renderer.piece_envelope(stem, 6, stem_rows, stem_bounds, 0, 1, stem_style))
+        return false;
+    auto* stem_texture = renderer.batches().back().texture;
+    if (!renderer.piece_envelope(packed, 6, packed_rows, packed_bounds, 0, 1, packed_style))
+        return false;
+    auto* packed_texture = renderer.batches().back().texture;
+    if (!stem_texture || !packed_texture || stem_texture == packed_texture ||
+        !renderer.submit(fixture.renderer) || !SDL_RenderPresent(fixture.renderer))
+        return false;
+    if (!t459_surface_has_channel(fixture, 14, 62, true) ||
+        !t459_surface_has_channel(fixture, 66, 114, false) ||
+        renderer.envelope_work().cached_stems != 2)
+        return false;
+
+    const std::array reversed{packed, stem};
+    if (!SDL_SetRenderDrawColor(fixture.renderer, 0, 0, 0, 255) ||
+        !SDL_RenderClear(fixture.renderer)) return false;
+    renderer.begin({0, 0, 128, 128}, {1, 1}, {}, fixture.renderer);
+    renderer.pin_piece_envelopes(reversed);
+    renderer.prepare_piece_zoom(1, reversed);
+    if (!renderer.piece_envelope(packed, 6, packed_rows, packed_bounds, 1, 1, packed_style) ||
+        renderer.batches().back().texture != packed_texture ||
+        !renderer.piece_envelope(stem, 6, changed_stem_rows, stem_bounds, 1, 1, stem_style) ||
+        renderer.batches().back().texture != stem_texture ||
+        !renderer.submit(fixture.renderer) || !SDL_RenderPresent(fixture.renderer))
+        return false;
+    const auto work = renderer.envelope_work();
+    return work.cached_stems == 2 && work.regenerated_rows == 67 &&
+        t459_surface_has_channel(fixture, 14, 62, true) &&
+        t459_surface_has_channel(fixture, 66, 114, false);
+}
+} // namespace
+
+TEST_CASE("T459 stem and packed event waveform keys isolate equal numeric IDs",
+          "[ui][field][stem][T459]") {
+    expect_field(t459_equal_numeric_piece_ids_stay_isolated());
+}

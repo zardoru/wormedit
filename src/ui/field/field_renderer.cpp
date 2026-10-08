@@ -321,7 +321,7 @@ auto renderer_t::envelope(std::size_t slot, layer_t layer, std::span<const envel
                           SDL_FRect bounds, double origin, std::uint64_t generation,
                           envelope_style_t style, float y_scale) -> bool {
     // Slots zero and one are reserved; legacy stem indices use the channel pool.
-    const envelope_key_t key = slot < 2 ? envelope_key_t{true, slot} : envelope_key_t{false, slot - 2};
+    const envelope_key_t key = slot < 2 ? envelope_key_t{waveform_piece_kind_t::reserved, slot} : envelope_key_t{waveform_piece_kind_t::stem, slot - 2};
     return envelope_for_key(key, layer, rows, bounds, origin, generation, style, y_scale);
 }
 auto renderer_t::envelope_dimensions(SDL_FRect bounds, float y_scale) const
@@ -339,13 +339,40 @@ auto renderer_t::envelope_dimensions(SDL_FRect bounds, float y_scale) const
 auto renderer_t::reserve_envelope(std::size_t slot, SDL_FRect bounds, float y_scale) -> bool {
     const auto dimensions = envelope_dimensions(bounds, y_scale);
     return slot < 2 && dimensions &&
-        prepare_envelope_cache({true, slot}, dimensions->first, dimensions->second);
+        prepare_envelope_cache({waveform_piece_kind_t::reserved, slot}, dimensions->first, dimensions->second);
+}
+namespace {
+auto stem_piece_keys(std::span<const std::uint64_t> keys) -> std::vector<waveform_piece_key_t> {
+    std::vector<waveform_piece_key_t> result;
+    result.reserve(keys.size());
+    for (const auto key : keys) result.emplace_back(waveform_piece_kind_t::stem, key);
+    return result;
+}
 }
 void renderer_t::pin_stem_envelopes(std::span<const std::uint64_t> keys) {
+    pin_piece_envelopes(stem_piece_keys(keys));
+}
+void renderer_t::prepare_stem_zoom(double zoom, std::span<const std::uint64_t> keys,
+                                  std::size_t budget) {
+    prepare_piece_zoom(zoom, stem_piece_keys(keys), budget);
+}
+auto renderer_t::retain_stem_envelope(std::uint64_t key, layer_t layer, SDL_FRect bounds,
+    double origin, std::uint64_t generation, envelope_style_t style, float y_scale,
+    SDL_FRect& coverage) -> bool {
+    return retain_piece_envelope({waveform_piece_kind_t::stem, key}, layer, bounds,
+                                origin, generation, style, y_scale, coverage);
+}
+auto renderer_t::stem_envelope(std::uint64_t key, layer_t layer, std::span<const envelope_row_t> rows,
+    SDL_FRect bounds, double origin, std::uint64_t generation,
+    envelope_style_t style, float y_scale) -> bool {
+    return piece_envelope({waveform_piece_kind_t::stem, key}, layer, rows, bounds,
+                          origin, generation, style, y_scale);
+}
+void renderer_t::pin_piece_envelopes(std::span<const waveform_piece_key_t> keys) {
     pinned_stems_.clear();
     pinned_stems_.insert(keys.begin(), keys.end());
 }
-void renderer_t::prepare_stem_zoom(double zoom, std::span<const std::uint64_t> keys,
+void renderer_t::prepare_piece_zoom(double zoom, std::span<const waveform_piece_key_t> keys,
                                   std::size_t budget) {
     stem_zoom_enabled_ = std::isfinite(zoom) && zoom > 0;
     stem_zoom_changing_ = stem_zoom_enabled_ && stem_zoom_ > 0 && zoom != stem_zoom_;
@@ -359,12 +386,12 @@ void renderer_t::prepare_stem_zoom(double zoom, std::span<const std::uint64_t> k
         zoom_refill_keys_.insert(keys[(stem_zoom_cursor_ + index) % keys.size()]);
     stem_zoom_cursor_ = (stem_zoom_cursor_ + count) % keys.size();
 }
-auto renderer_t::retain_stem_envelope(std::uint64_t key, layer_t layer, SDL_FRect bounds,
+auto renderer_t::retain_piece_envelope(waveform_piece_key_t key, layer_t layer, SDL_FRect bounds,
     double origin, std::uint64_t generation, envelope_style_t style, float y_scale,
     SDL_FRect& coverage) -> bool {
     if (!stem_zoom_changing_ || zoom_refill_keys_.contains(key) || !std::isfinite(origin) ||
         std::abs(origin) > 1e12) return false;
-    const auto found = envelopes_.find({false, key});
+    const auto found = envelopes_.find(key);
     const auto dimensions = envelope_dimensions(bounds, y_scale);
     if (found == envelopes_.end() || !dimensions) return false;
     auto& cache = *found->second;
@@ -405,12 +432,12 @@ void draw_retained_stem_gaps(renderer_t& renderer, layer_t layer,
     }
 }
 } // namespace
-auto renderer_t::stem_envelope(std::uint64_t key, layer_t layer, std::span<const envelope_row_t> rows,
+auto renderer_t::piece_envelope(waveform_piece_key_t key, layer_t layer, std::span<const envelope_row_t> rows,
                                SDL_FRect bounds, double origin, std::uint64_t generation,
                                envelope_style_t style, float y_scale) -> bool {
     if (rows.empty()) return false;
     SDL_FRect coverage{};
-    if (retain_stem_envelope(key, layer, bounds, origin, generation, style, y_scale, coverage)) {
+    if (retain_piece_envelope(key, layer, bounds, origin, generation, style, y_scale, coverage)) {
         if (coverage.y > bounds.y || coverage.y + coverage.h < bounds.y + bounds.h)
             draw_retained_stem_gaps(*this, layer, rows, bounds, origin, style, y_scale, coverage);
         return true;
@@ -419,7 +446,7 @@ auto renderer_t::stem_envelope(std::uint64_t key, layer_t layer, std::span<const
         ++stem_fallbacks_;
         return false;
     }
-    const auto drawn = envelope_for_key({false, key}, layer, rows, bounds, origin, generation, style, y_scale);
+    const auto drawn = envelope_for_key(key, layer, rows, bounds, origin, generation, style, y_scale);
     if (!drawn) ++stem_fallbacks_;
     return drawn;
 }
@@ -432,8 +459,8 @@ auto renderer_t::envelope_bytes() const noexcept -> std::size_t {
 auto renderer_t::evict_offscreen_envelope(envelope_key_t except) -> bool {
     auto oldest = envelopes_.end();
     for (auto item = envelopes_.begin(); item != envelopes_.end(); ++item) {
-        if (item->first == except || item->first.first || item->second->active ||
-            pinned_stems_.contains(item->first.second)) continue;
+        if (item->first == except || item->first.first == waveform_piece_kind_t::reserved || item->second->active ||
+            pinned_stems_.contains(item->first)) continue;
         if (oldest == envelopes_.end() || item->second->last_drawn < oldest->second->last_drawn)
             oldest = item;
     }
@@ -445,7 +472,7 @@ auto renderer_t::evict_offscreen_envelope(envelope_key_t except) -> bool {
 auto renderer_t::evict_unsubmitted_stem() -> bool {
     auto oldest = envelopes_.end();
     for (auto item = envelopes_.begin(); item != envelopes_.end(); ++item) {
-        if (item->first.first || item->second->active) continue;
+        if (item->first.first == waveform_piece_kind_t::reserved || item->second->active) continue;
         if (oldest == envelopes_.end() || item->second->last_drawn < oldest->second->last_drawn)
             oldest = item;
     }
@@ -461,7 +488,7 @@ auto renderer_t::prepare_envelope_cache(envelope_key_t key, int width, int heigh
     auto* previous = found == envelopes_.end() ? nullptr : found->second.get();
     const auto bytes = static_cast<std::size_t>(width) * height * 4U;
     if (bytes > envelope_budget_bytes_) {
-        if (!key.first) ++envelope_budget_fallbacks_;
+        if (key.first != waveform_piece_kind_t::reserved) ++envelope_budget_fallbacks_;
         return nullptr;
     }
     if (previous && previous->active) return nullptr;
@@ -471,8 +498,8 @@ auto renderer_t::prepare_envelope_cache(envelope_key_t key, int width, int heigh
     // offscreen caches can make room; otherwise preserve the previous texture.
     while (envelope_bytes() > envelope_budget_bytes_ - bytes) {
         if (evict_offscreen_envelope(key)) continue;
-        if (key.first && evict_unsubmitted_stem()) continue;
-        if (!key.first) ++envelope_budget_fallbacks_;
+        if (key.first == waveform_piece_kind_t::reserved && evict_unsubmitted_stem()) continue;
+        if (key.first != waveform_piece_kind_t::reserved) ++envelope_budget_fallbacks_;
         return nullptr;
     }
     envelope_peak_bytes_ = std::max(envelope_peak_bytes_, envelope_bytes() + bytes);
@@ -506,7 +533,7 @@ auto renderer_t::envelope_for_key(envelope_key_t key, layer_t layer, std::span<c
     collect_envelope_rows(cache, rows, first);
     generation = envelope_generation(generation, bounds, style, y_scale);
     cache.content_identity = generation;
-    if (!key.first) {
+    if (key.first != waveform_piece_kind_t::reserved) {
         collected_stem_rows_ += rows.size();
         cache.zoom = stem_zoom_enabled_ ? stem_zoom_ : 1;
         if (stem_zoom_enabled_) generation = hash_value(generation, std::bit_cast<std::uint64_t>(stem_zoom_));
@@ -572,14 +599,14 @@ auto renderer_t::envelope_work() const noexcept -> envelope_work_t {
     work.budget_fallbacks = envelope_budget_fallbacks_;
     work.collected_stem_rows = collected_stem_rows_;
     work.stem_fallbacks = stem_fallbacks_;
-    for (const auto& [key, cache] : envelopes_) if (!key.first) ++work.cached_stems;
+    for (const auto& [key, cache] : envelopes_) if (key.first != waveform_piece_kind_t::reserved) ++work.cached_stems;
     for (const auto& [key, cache] : envelopes_) {
         if (!cache || !cache->active) continue;
         const auto regenerated = cache->deferred ? 0 : cache->plan.regenerated_rows();
         work.regenerated_rows += regenerated;
         work.retained_rows += cache->plan.capacity() - regenerated;
         work.raster_vertices += !cache->deferred && cache->raster ? cache->raster->workload().vertices : 0;
-        if (!key.first) {
+        if (key.first != waveform_piece_kind_t::reserved) {
             work.refilled_stems += cache->refill_attempts;
             work.deferred_stems += cache->deferred;
             work.stem_fallbacks += cache->fallback_submitted;

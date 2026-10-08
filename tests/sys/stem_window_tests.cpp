@@ -1,7 +1,9 @@
 #include "sys/stem_waveform_window.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <iostream>
 
 using namespace wormedit;
@@ -429,4 +431,196 @@ TEST_CASE("hybrid stem compatibility fallbacks exclude every packed channel",
     sys::stem_index_t index;
     check_mixed_stem_ids(sys::visible_stem_channels(song, chart, measure_id_t{1}, 2));
     check_mixed_stem_ids(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{1}, 2, {}));
+}
+
+namespace {
+void t459_add_packed_event(chart_document_t& chart, std::uint64_t measure,
+                           std::uint64_t row, std::uint64_t id, std::uint64_t lane,
+                           std::optional<std::uint64_t> resource,
+                           std::optional<object_id_t> channel_event = std::nullopt) {
+    chart.measures[measure - 1].bgm_events.push_back({
+        .id = object_id_t{id}, .position = {measure_id_t{measure}, row},
+        .source_lane = object_id_t{lane},
+        .sound = resource ? std::optional<resource_id_t>{resource_id_t{*resource}} : std::nullopt,
+        .sound_channel_event = channel_event});
+}
+
+auto t459_packed_fixture() -> song_document_t {
+    song_document_t song;
+    song.audio_assets = {
+        {.id = asset_id_t{1}, .stream = {100, 2, 1000, true}},
+        {.id = asset_id_t{2}, .stream = {100, 2, 200, true}},
+        {.id = asset_id_t{3}, .stream = {100, 2, 250, true}},
+        {.id = asset_id_t{4}, .stream = {100, 2, 350, true}}};
+    for (std::uint64_t id = 1; id <= 4; ++id)
+        song.resources.push_back({.id = resource_id_t{id}, .name = "sample",
+                                  .asset = asset_id_t{id}});
+    auto& chart = song.charts.emplace_back();
+    chart.source_family = format_family_t::bmson;
+    chart.divisions_per_standard_measure = 960;
+    for (std::uint64_t id = 1; id <= 8; ++id) {
+        chart.measures.push_back({.id = measure_id_t{id}});
+    }
+    chart.measures[1].definition = {{3, 4}, meter_t{3, 4}};
+    chart.bpms = {
+        {.id = object_id_t{900}, .position = {measure_id_t{1}, 0},
+         .beats_per_minute = {120, 1}},
+        {.id = object_id_t{901}, .position = {measure_id_t{2}, 0},
+         .beats_per_minute = {60, 1}},
+        {.id = object_id_t{902}, .position = {measure_id_t{4}, 0},
+         .beats_per_minute = {180, 1}}};
+    chart.bgm_source_lanes = {{.id = object_id_t{501}, .name = "BGM 1"},
+                              {.id = object_id_t{502}, .name = "BGM 2"}};
+    t459_add_packed_event(chart, 1, 0, 200, 501, 2); // exactly one authored measure
+    t459_add_packed_event(chart, 2, 0, 201, 501, 3); // shorter than 3/4 at 60 BPM
+    t459_add_packed_event(chart, 2, 240, 202, 501, 4); // longer than 3/4 at 60 BPM
+    t459_add_packed_event(chart, 3, 0, 203, 502, 1);
+    t459_add_packed_event(chart, 3, 120, 204, 501, 1); // another column cannot clip 203
+    t459_add_packed_event(chart, 3, 240, 205, 502, std::nullopt); // soundless next event
+    t459_add_packed_event(chart, 3, 480, 206, 502, 2); // short same-column next event
+    chart.sound_channels.push_back({.id = object_id_t{1000}, .source_clip = {
+        .source = asset_id_t{1}, .begin_frame = 100, .end_frame = 900},
+        .events = {{.id = object_id_t{1100}, .position = {measure_id_t{4}, 0}}}});
+    t459_add_packed_event(chart, 4, 0, 207, 502, 1, object_id_t{1100});
+    return song;
+}
+
+auto t459_piece(const sys::packed_waveform_index_t& index, std::uint64_t id)
+    -> const sys::packed_waveform_piece_t* {
+    const auto found = std::ranges::find_if(index.pieces, [id](const auto& piece) {
+        return piece.event == object_id_t{id};
+    });
+    return found == index.pieces.end() ? nullptr : &*found;
+}
+
+auto t459_threshold_clipping_and_native_clip() -> bool {
+    auto song = t459_packed_fixture();
+    auto& chart = song.charts.front();
+    const auto timing = build_timing_index(chart);
+    if (!timing.index) return false;
+    sys::packed_waveform_index_t index;
+    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
+    if (!index.valid || t459_piece(index, 200) || t459_piece(index, 201)) return false;
+    const auto* fractional_long = t459_piece(index, 202);
+    const auto* clipped = t459_piece(index, 203);
+    const auto* native_clip = t459_piece(index, 207);
+    if (!fractional_long || !clipped || !native_clip) return false;
+    const auto expected_next = std::uint64_t{960 + 720 + 240};
+    if (clipped->next_row != expected_next || std::abs(clipped->end_seconds - 6.0) > 1e-9)
+        return false;
+    if (fractional_long->measure_seconds != 3.0 || native_clip->clip.begin_frame != 100 ||
+        native_clip->clip.end_frame != 900 || native_clip->sample_rate != 100 ||
+        native_clip->source_frames != 1000) return false;
+    const auto visible = sys::visible_packed_waveform_pieces(index, 5.5, 5.8);
+    if (std::ranges::none_of(visible, [](const auto* piece) {
+            return piece->event == object_id_t{203};
+        })) return false;
+
+    auto short_song = song;
+    for (auto& asset : short_song.audio_assets) asset.stream.frame_count = 200;
+    ++short_song.revision;
+    auto& short_chart = short_song.charts.front();
+    const auto short_timing = build_timing_index(short_chart);
+    if (!short_timing.index) return false;
+    sys::packed_waveform_index_t short_index;
+    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
+    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
+    return short_index.valid && short_index.pieces.empty() && short_index.builds == 1 &&
+        short_index.cache_hits == 1 &&
+        sys::visible_packed_waveform_pieces(short_index, 0, 100).empty() &&
+        short_index.queried_pieces == 0;
+}
+
+auto t459_unknown_dense_fixture() -> song_document_t {
+    song_document_t song;
+    song.audio_assets = {{.id = asset_id_t{1}, .stream = {0, 2, std::nullopt, true}}};
+    song.resources = {{.id = resource_id_t{1}, .name = "pending", .asset = asset_id_t{1}}};
+    auto& chart = song.charts.emplace_back();
+    chart.source_family = format_family_t::bmson;
+    chart.divisions_per_standard_measure = 960;
+    for (std::uint64_t measure = 1; measure <= 20; ++measure) {
+        auto& chunk = chart.measures.emplace_back(measure_chunk_t{.id = measure_id_t{measure}});
+        for (std::uint64_t event = 0; event < 200; ++event) {
+            chunk.bgm_events.push_back({.id = object_id_t{measure * 1000 + event},
+                .position = {measure_id_t{measure}, event * 4}, .source_lane = object_id_t{501},
+                .sound = resource_id_t{1}});
+        }
+    }
+    chart.bpms = {{.id = object_id_t{900}, .position = {measure_id_t{1}, 0},
+                   .beats_per_minute = {120, 1}}};
+    chart.bgm_source_lanes = {{.id = object_id_t{501}, .name = "BGM 1"}};
+    return song;
+}
+
+auto t459_dense_unknown_query_is_bounded() -> bool {
+    auto song = t459_unknown_dense_fixture();
+    auto& chart = song.charts.front();
+    const auto timing = build_timing_index(chart);
+    if (!timing.index) return false;
+    sys::packed_waveform_index_t index;
+    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
+    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
+    if (!index.valid || index.builds != 1 || index.cache_hits != 1 || index.pieces.size() != 4000)
+        return false;
+    const auto pending = t459_piece(index, 16'000);
+    const auto selected = sys::visible_packed_waveform_pieces(index, 30.001, 30.005);
+    if (!pending || pending->sample_rate != 0 || pending->source_frames ||
+        !std::ranges::any_of(selected, [pending](const auto* piece) { return piece == pending; }) ||
+        index.queried_pieces >= index.pieces.size() / 10) return false;
+
+    auto short_song = t459_unknown_dense_fixture();
+    short_song.audio_assets.front().stream = {100, 2, 50, true};
+    auto& short_chart = short_song.charts.front();
+    const auto short_timing = build_timing_index(short_chart);
+    if (!short_timing.index) return false;
+    sys::packed_waveform_index_t short_index;
+    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
+    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
+    const auto empty = sys::visible_packed_waveform_pieces(short_index, 30.001, 30.005);
+    return short_index.valid && short_index.builds == 1 && short_index.cache_hits == 1 &&
+        short_index.pieces.empty() && empty.empty() && short_index.queried_pieces == 0;
+}
+} // namespace
+
+TEST_CASE("packed waveform projection honors current tempo length, lane clipping and native clips",
+          "[sys][stem][bmson][T459]") {
+    CHECK(t459_threshold_clipping_and_native_clip());
+}
+
+TEST_CASE("packed waveform interval index keeps unknown dense event queries bounded",
+          "[sys][stem][bmson][T459]") {
+    CHECK(t459_dense_unknown_query_is_bounded());
+}
+
+namespace {
+auto t459_stacked_piece_endpoints(bool reverse) -> bool {
+    auto song = t459_packed_fixture();
+    auto& chart = song.charts.front();
+    for (auto& measure : chart.measures) measure.bgm_events.clear();
+    t459_add_packed_event(chart, 1, 0, 2000, 501, 1);
+    t459_add_packed_event(chart, 1, 0, 2001, 501, 4);
+    t459_add_packed_event(chart, 1, 480, 2002, 501, std::nullopt);
+    t459_add_packed_event(chart, 4, 0, 2003, 501, 1);
+    t459_add_packed_event(chart, 4, 0, 2004, 501, 4);
+    if (reverse) for (auto& measure : chart.measures) std::ranges::reverse(measure.bgm_events);
+    const auto timing = build_timing_index(chart);
+    if (!timing.index) return false;
+    sys::packed_waveform_index_t index;
+    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
+    if (index.pieces.size() != 4) return false;
+    for (const auto id : {2000U, 2001U}) {
+        const auto* piece = t459_piece(index, id);
+        if (!piece || piece->next_row != 480 || piece->end_seconds != 1.0) return false;
+    }
+    const auto* first = t459_piece(index, 2003);
+    const auto* second = t459_piece(index, 2004);
+    if (!first || !second || first->next_row || second->next_row) return false;
+    return std::abs(first->end_seconds - first->begin_seconds - 10.0) < 1e-9 &&
+        std::abs(second->end_seconds - second->begin_seconds - 3.5) < 1e-9;
+}
+}
+TEST_CASE("packed waveform stacks share the next strictly later column trigger",
+          "[sys][stem][bmson][T459]") {
+    CHECK(t459_stacked_piece_endpoints(false));
+    CHECK(t459_stacked_piece_endpoints(true));
 }

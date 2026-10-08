@@ -8,9 +8,13 @@
 #include <map>
 #include <optional>
 #include <unordered_set>
+#include <set>
+#include <utility>
 
 namespace wormedit::ui::field {
 using layer_t = std::uint16_t;
+enum class waveform_piece_kind_t : std::uint8_t { stem = 0, reserved = 1, packed_event = 2 };
+using waveform_piece_key_t = std::pair<waveform_piece_kind_t, std::uint64_t>;
 struct color_t {
     std::uint8_t r{}, g{}, b{}, a{255};
 };
@@ -106,6 +110,16 @@ class renderer_t {
     auto stem_envelope(std::uint64_t key, layer_t layer, std::span<const envelope_row_t> rows,
                        SDL_FRect bounds, double world_origin, std::uint64_t generation,
                        envelope_style_t style, float y_scale = 1) -> bool;
+    void pin_piece_envelopes(std::span<const waveform_piece_key_t> keys);
+    void prepare_piece_zoom(double zoom, std::span<const waveform_piece_key_t> keys,
+                            std::size_t refill_budget = 8);
+    auto retain_piece_envelope(waveform_piece_key_t key, layer_t layer, SDL_FRect bounds,
+                              double origin, std::uint64_t generation,
+                              envelope_style_t style, float y_scale, SDL_FRect& coverage) -> bool;
+    auto piece_envelope(waveform_piece_key_t key, layer_t layer,
+                        std::span<const envelope_row_t> rows, SDL_FRect bounds,
+                        double origin, std::uint64_t generation,
+                        envelope_style_t style, float y_scale = 1) -> bool;
     auto envelope_work() const noexcept -> envelope_work_t;
     void limit_geometry(std::size_t bytes) noexcept;
     auto geometry_overflow() const noexcept -> bool { return geometry_overflow_; }
@@ -160,10 +174,10 @@ class renderer_t {
     bool geometry_overflow_{};
     auto reserve_geometry(std::size_t vertices, std::size_t indices) -> bool;
     // Reserved keys are separate from all channel IDs, including 0 and 1.
-    using envelope_key_t = std::pair<bool, std::uint64_t>;
+    using envelope_key_t = waveform_piece_key_t;
     std::map<envelope_key_t, std::unique_ptr<envelope_cache_t>> envelopes_;
-    std::unordered_set<std::uint64_t> pinned_stems_;
-    std::unordered_set<std::uint64_t> zoom_refill_keys_;
+    std::set<waveform_piece_key_t> pinned_stems_;
+    std::set<waveform_piece_key_t> zoom_refill_keys_;
     double stem_zoom_{};
     std::size_t stem_zoom_cursor_{}, collected_stem_rows_{}, stem_fallbacks_{};
     bool stem_zoom_enabled_{}, stem_zoom_changing_{};

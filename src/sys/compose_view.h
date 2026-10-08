@@ -252,6 +252,10 @@ struct compose_scene_cache_t {
         bool is_selected{};
     };
     std::vector<stem_waveform_cache_t> stem_waveforms;
+    packed_waveform_index_t packed_waveform_index;
+    audio::display_row_table_t packed_waveform_row_table;
+    std::uint64_t packed_clock_generation{};
+    std::vector<stem_waveform_cache_t> packed_waveforms;
     std::vector<WormUiComposeStemWaveformView> stem_waveform_views;
     std::vector<WormUiComposeStemCutView> stem_cut_views;
     std::optional<wormedit::audio::waveform_key_t> waveform_overview_key;

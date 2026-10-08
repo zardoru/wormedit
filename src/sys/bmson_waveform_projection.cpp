@@ -63,6 +63,7 @@ struct channel_ring_context_t {
     audio::channel_waveform_source_geometry_t source;
     double scroll{}, height{}, zoom{};
     channel_projection_target_t target;
+    const audio::display_row_table_t* table{};
 };
 auto channel_ring_slot(std::int64_t row, std::size_t count) -> std::size_t {
     const auto remainder = row % static_cast<std::int64_t>(count);
@@ -73,7 +74,7 @@ void project_channel_ring_range(const channel_ring_context_t& context, std::int6
     auto& cache = context.application.cache;
     auto& ring = context.target.ring;
     const auto projected = audio::project_channel_waveform(context.waveform, context.channel,
-        cache.waveform_row_table,
+        context.table ? *context.table : cache.waveform_row_table,
         {.viewport_scroll_pixels = static_cast<double>(begin),
          .viewport_height_pixels = static_cast<double>(count),
          .pixels_per_standard_measure = context.zoom,
@@ -182,7 +183,7 @@ auto stem_analysis_for(const bmson_waveform_projection_context_t& context, asset
     if (asset == context.workspace.transport.audio_asset && context.transport_waveform.asset == asset)
         return context.transport_waveform.analysis;
     if (context.channel_waveform.asset == asset) return context.channel_waveform.analysis;
-    return context.stem_analysis(asset);
+    return context.stem_analysis ? context.stem_analysis(asset) : nullptr;
 }
 
 // Retained slice-point event → the note or BGM marker that stands for it.
@@ -382,6 +383,159 @@ void populate_stem_waveforms(const bmson_waveform_projection_context_t& context)
     context.flattened.view.compose.stem_cut_count = cache.stem_cut_views.size();
 }
 
+// Only packed display pieces extend the last tempo beyond authored geometry.
+// The exact timing index and the existing shared stem table are untouched.
+auto packed_display_table(const bmson_waveform_projection_context_t& context)
+    -> const audio::display_row_table_t* {
+    auto& cache = context.cache;
+    const auto& base = cache.waveform_row_table;
+    const auto& view = context.flattened.view.compose;
+    if (!base.valid || !cache.marker_timing_index) return nullptr;
+    const auto end = std::ceil((context.interaction_state->viewport_scroll_pixels +
+        view.viewport_height_pixels + 2) * static_cast<double>(base.divisions) /
+        view.pixels_per_standard_measure);
+    if (!std::isfinite(end) || end >= static_cast<double>(std::numeric_limits<std::uint64_t>::max())) return nullptr;
+    if (end <= static_cast<double>(base.total_rows)) return &base;
+    const auto& timing = *cache.marker_timing_index;
+    const auto seconds = packed_seconds(timing, timing.total_rows, timing_boundary_side_t::after_stops);
+    const auto scale = packed_tail_seconds_per_row(timing);
+    if (!seconds || !scale) return nullptr;
+    auto& table = cache.packed_waveform_row_table;
+    if (!table.valid || cache.packed_clock_generation != base.clock_generation) {
+        table = base;
+        table.segments.push_back({static_cast<double>(base.total_rows), end, *seconds, *scale});
+        table.boundaries.push_back({});
+        cache.packed_clock_generation = base.clock_generation;
+    }
+    table.total_rows = static_cast<std::uint64_t>(end);
+    table.segments.back().end_row = end;
+    const auto finish = *seconds + (end - static_cast<double>(base.total_rows)) * *scale;
+    if (!std::isfinite(finish)) return nullptr;
+    table.boundaries.back() = {end, finish, finish, finish};
+    table.zoom = view.pixels_per_standard_measure;
+    table.scroll = context.interaction_state->viewport_scroll_pixels;
+    table.height = view.viewport_height_pixels;
+    table.first_world_pixel = static_cast<std::int64_t>(std::floor(table.scroll)) - 1;
+    table.rows.clear();
+    const auto count = static_cast<std::size_t>(std::ceil(table.height)) + 2;
+    const auto rows_per_pixel = static_cast<double>(table.divisions) / table.zoom;
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto world = table.first_world_pixel + static_cast<std::int64_t>(index);
+        const auto begin = std::clamp(static_cast<double>(world) * rows_per_pixel, 0.0, end);
+        const auto next = std::clamp((static_cast<double>(world) + 1) * rows_per_pixel, 0.0, end);
+        const auto first = audio::display_seconds_at(table, begin, timing_boundary_side_t::before_delays);
+        const auto last = audio::display_seconds_at(table, next, timing_boundary_side_t::before_delays);
+        table.rows.push_back({world, begin, next, first.value_or(0), last.value_or(0),
+                             first && last && begin < next && *first <= *last});
+    }
+    return &table;
+}
+
+auto packed_slices(const packed_waveform_piece_t& piece) -> sound_slice_result_t {
+    sound_slice_result_t result;
+    result.slices.push_back({piece.row, piece.clip.begin_frame, piece.clip.end_frame, true, {piece.event}});
+    if (piece.next_row)
+        result.slices.push_back({*piece.next_row, 0, 0, true, {}});
+    return result;
+}
+auto packed_slice_matches(const std::optional<sound_slice_result_t>& slices,
+                          const packed_waveform_piece_t& piece) -> bool {
+    if (!slices || slices->slices.size() != (piece.next_row ? 2U : 1U)) return false;
+    const auto& first = slices->slices.front();
+    return first.absolute_row == piece.row && first.source_begin_frame == piece.clip.begin_frame &&
+        first.source_end_frame == piece.clip.end_frame &&
+        (!piece.next_row || slices->slices.back().absolute_row == *piece.next_row);
+}
+auto project_packed_piece(const bmson_waveform_projection_context_t& context,
+    const packed_waveform_piece_t& piece, compose_scene_cache_t::stem_waveform_cache_t& entry,
+    const audio::display_row_table_t& table, bool downscroll) -> bool {
+    const auto binding = context.audition_sources.binding(piece.clip.source);
+    const auto analysis = stem_analysis_for(context, piece.clip.source);
+    const auto stored = std::ranges::find(context.history.document.audio_assets, piece.clip.source, &audio_asset_t::id);
+    if (!binding || stored == context.history.document.audio_assets.end() ||
+        !stored_source_matches(*stored, *binding) || !analysis_matches_binding(analysis, *binding) ||
+        analysis->waveform->key.source != binding->source) return false;
+    const auto& waveform = *analysis->waveform;
+    const auto revision = context.history.document.revision;
+    if (entry.source != &waveform || entry.source_generation != context.audition_source_generation ||
+        entry.revision != revision || !packed_slice_matches(entry.slices, piece)) {
+        entry.source = &waveform; entry.source_generation = context.audition_source_generation;
+        entry.revision = revision; entry.slices = packed_slices(piece);
+        entry.valid = entry.ring.valid = false;
+    }
+    const auto& view = context.flattened.view.compose;
+    const auto scroll = context.interaction_state->viewport_scroll_pixels;
+    if (!entry.valid || entry.scroll != scroll || entry.height != view.viewport_height_pixels ||
+        entry.zoom != view.pixels_per_standard_measure) {
+        entry.rows.clear();
+        const sound_channel_t channel{.id = piece.event, .source_clip = piece.clip};
+        const audio::channel_waveform_source_geometry_t source{
+            binding->source_sample_rate, binding->source_frame_count};
+        const channel_ring_context_t projection{context, waveform, channel, source,
+            scroll, view.viewport_height_pixels, view.pixels_per_standard_measure,
+            {entry.ring, entry.rows, entry.slices}, &table};
+        if (!populate_channel_ring(projection, downscroll)) return false;
+        entry.scroll = scroll; entry.height = view.viewport_height_pixels;
+        entry.zoom = view.pixels_per_standard_measure; entry.valid = true;
+    }
+    return true;
+}
+auto packed_pending_band(const packed_waveform_piece_t& piece,
+    const audio::display_row_table_t& table, bool downscroll) -> std::pair<double, double> {
+    double low = table.height, high = 0;
+    for (const auto& row : table.rows) {
+        if (!row.valid || row.begin_seconds >= piece.end_seconds || row.end_seconds <= piece.begin_seconds) continue;
+        const auto y = static_cast<double>(row.world_pixel) - std::floor(table.scroll);
+        low = std::min(low, y); high = std::max(high, y + 1);
+    }
+    if (low >= high) return {0, 0};
+    const auto begin = compose_source_y(std::clamp(low, 0.0, table.height), table.height, downscroll);
+    const auto end = compose_source_y(std::clamp(high, 0.0, table.height), table.height, downscroll);
+    return {std::min(begin, end), std::max(begin, end)};
+}
+void populate_packed_waveforms(const bmson_waveform_projection_context_t& context) {
+    auto& cache = context.cache;
+    const auto& view = context.flattened.view.compose;
+    if (!view.visible || !view.scene_available || !context.workspace.selected_chart ||
+        !context.interaction_state || !cache.marker_timing_index) return;
+    const auto chart = std::ranges::find(context.history.document.charts,
+        *context.workspace.selected_chart, &chart_document_t::id);
+    if (chart == context.history.document.charts.end() || chart->source_family != format_family_t::bmson) return;
+    prepare_packed_waveform_index(cache.packed_waveform_index, context.history.document,
+        *chart, context.audition_sources.bindings(), *cache.marker_timing_index);
+    const auto window = packed_window_seconds(*cache.marker_timing_index,
+        context.interaction_state->viewport_scroll_pixels, view.viewport_height_pixels,
+        view.pixels_per_standard_measure);
+    if (!window) return;
+    const auto pieces = visible_packed_waveform_pieces(cache.packed_waveform_index, window->first, window->second);
+    std::unordered_set<std::uint64_t> visible;
+    for (const auto* piece : pieces) visible.insert(piece->event.value);
+    std::erase_if(cache.packed_waveforms, [&](const auto& entry) { return !visible.contains(entry.channel.value); });
+    cache.packed_waveforms.reserve(pieces.size());
+    if (pieces.empty()) return;
+    const auto* table = packed_display_table(context);
+    if (!table) return;
+    const auto downscroll = compose_field_downscroll(*chart);
+    for (const auto* piece : pieces) {
+        auto entry = std::ranges::find(cache.packed_waveforms, piece->event,
+            &compose_scene_cache_t::stem_waveform_cache_t::channel);
+        if (entry == cache.packed_waveforms.end()) {
+            cache.packed_waveforms.emplace_back(); entry = std::prev(cache.packed_waveforms.end());
+            entry->channel = piece->event;
+        }
+        const auto ready = project_packed_piece(context, *piece, *entry, *table, downscroll);
+        const auto band = packed_pending_band(*piece, *table, downscroll);
+        if ((!ready && band.first < band.second) || (ready && !entry->rows.empty()))
+            cache.stem_waveform_views.push_back({.stem_key = piece->event.value,
+                .source_lane_id = piece->lane.value, .rows = ready ? entry->rows.data() : nullptr,
+                .row_count = ready ? entry->rows.size() : 0, .pending = !ready,
+                .piece_kind = WORM_UI_WAVEFORM_PIECE_PACKED_EVENT, .bounded = true,
+                .begin_y_pixels = band.first, .end_y_pixels = band.second});
+    }
+    context.flattened.view.compose.stem_waveforms = cache.stem_waveform_views.data();
+    context.flattened.view.compose.stem_waveform_count = cache.stem_waveform_views.size();
+}
+
 } // namespace
 
 auto prepare_compose_display_row_table(compose_scene_cache_t& cache,
@@ -394,6 +548,7 @@ auto prepare_compose_display_row_table(compose_scene_cache_t& cache,
         cache.waveform_envelope_ring.valid = cache.channel_envelope_ring.valid = false;
         cache.channel_waveform_projection_valid = false;
         cache.channel_waveform_slices.reset();
+        for (auto& entry : cache.packed_waveforms) entry.valid = entry.ring.valid = false;
         for (auto& entry : cache.stem_waveforms) {
             entry.valid = entry.ring.valid = false;
             entry.slices.reset();
@@ -411,6 +566,7 @@ void populate_bmson_waveform_projection(const bmson_waveform_projection_context_
             {compose.project_id, context.cache.chart.value, context.history.document.revision});
     }
     populate_stem_waveforms(context);
+    populate_packed_waveforms(context);
     if (!projection_ready(context))
         return;
 

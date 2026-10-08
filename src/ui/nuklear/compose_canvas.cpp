@@ -961,7 +961,7 @@ static void draw_compose_retained_gaps(const ComposePaintContext& paint,
 static auto draw_compose_envelope_texture(const ComposePaintContext& paint,
         const WormUiComposeWaveformRowView* source, size_t count, float center, float half_width,
         size_t slot, nk_color rms, nk_color peak, bool joined, uint64_t lane_key = 0,
-        std::optional<uint64_t> stem_key = std::nullopt) -> bool {
+        std::optional<wormedit::ui::field::waveform_piece_key_t> stem_key = std::nullopt) -> bool {
     const auto& view = *paint.view;
     const auto y_scale = paint.viewport.h / static_cast<float>(view.viewport_height_pixels);
     if (!std::isfinite(y_scale) || y_scale <= 0) return false;
@@ -984,7 +984,7 @@ static auto draw_compose_envelope_texture(const ComposePaintContext& paint,
     auto& renderer = paint_field(paint.context);
     const wormedit::ui::field::envelope_style_t style{field_color(rms), field_color(peak), joined};
     SDL_FRect coverage{};
-    if (stem_key && renderer.retain_stem_envelope(*stem_key, 6, bounds,
+    if (stem_key && renderer.retain_piece_envelope(*stem_key, 6, bounds,
             origin, key, style, y_scale, coverage)) {
         if (coverage.y > paint.viewport.y || coverage.y + coverage.h < paint.viewport.y + paint.viewport.h)
             draw_compose_retained_gaps(paint, source, count, center, half_width, peak, coverage);
@@ -999,7 +999,7 @@ static auto draw_compose_envelope_texture(const ComposePaintContext& paint,
                                                {row.absolute_peak[0], row.absolute_peak[1]}});
     }
     if (stem_key)
-        return renderer.stem_envelope(*stem_key, 6, rows, bounds, origin, key, style, y_scale);
+        return renderer.piece_envelope(*stem_key, 6, rows, bounds, origin, key, style, y_scale);
     return renderer.envelope(slot, 6, rows, bounds, origin, key, style, y_scale);
 }
 
@@ -1104,19 +1104,31 @@ static auto compose_stem_lane_rect(const ComposePaintContext& paint, uint64_t la
     return rect;
 }
 
+static auto compose_pending_piece_rect(const ComposePaintContext& paint,
+        const WormUiComposeStemWaveformView& piece, struct nk_rect rect) -> struct nk_rect {
+    if (!piece.bounded) return rect;
+    const auto first = compose_projected_y(paint, piece.begin_y_pixels);
+    const auto last = compose_projected_y(paint, piece.end_y_pixels);
+    const auto low = std::clamp(std::min(first, last), rect.y, rect.y + rect.h);
+    const auto high = std::clamp(std::max(first, last), rect.y, rect.y + rect.h);
+    return nk_rect(rect.x, low, rect.w, high - low);
+}
+
 // One stem piece: the waveform of the slices that sit in one lane.
 static void draw_compose_stem_piece(const ComposePaintContext& paint, const WormUiComposeStemWaveformView& stem) {
     const auto rect = compose_stem_lane_rect(paint, stem.source_lane_id);
     if (!rect) return;
     if (stem.pending || stem.row_count == 0) {
-        field_rect(paint, *rect, 0.0f, nk_rgba(146, 230, 251, stem.pending ? 22 : 0), 6);
+        field_rect(paint, compose_pending_piece_rect(paint, stem, *rect), 0.0f,
+            nk_rgba(146, 230, 251, stem.pending ? 22 : 0), 6);
         return;
     }
     const auto center = rect->x + rect->w * 0.5f;
     const auto half_width = rect->w * 0.43f;
     if (draw_compose_envelope_texture(paint, stem.rows, stem.row_count, center, half_width,
             0, nk_rgba(87, 157, 196, 96), nk_rgba(146, 230, 251, 190), true,
-            stem.source_lane_id, stem.stem_key)) return;
+            stem.source_lane_id, wormedit::ui::field::waveform_piece_key_t{
+                static_cast<wormedit::ui::field::waveform_piece_kind_t>(stem.piece_kind), stem.stem_key})) return;
     for (size_t row_index = 0; row_index < stem.row_count; ++row_index) {
         const auto& row = stem.rows[row_index];
         if (!finite_envelope_row(row)) continue;
@@ -1232,25 +1244,27 @@ static void reserve_compose_channel_envelope(const ComposePaintContext& paint) {
 }
 
 static void pin_compose_stem_envelopes(const ComposePaintContext& paint) {
-    std::vector<std::pair<float, uint64_t>> ordered;
+    using piece_key_t = wormedit::ui::field::waveform_piece_key_t;
+    std::vector<std::pair<float, piece_key_t>> ordered;
     const auto& view = *paint.view;
     ordered.reserve(view.stem_waveform_count);
     for (size_t index = 0; index < view.stem_waveform_count; ++index) {
         const auto& stem = view.stem_waveforms[index];
         if (stem.pending || stem.row_count == 0) continue;
         if (const auto rect = compose_stem_lane_rect(paint, stem.source_lane_id))
-            ordered.emplace_back(rect->x, stem.stem_key);
+            ordered.emplace_back(rect->x, piece_key_t{
+                static_cast<wormedit::ui::field::waveform_piece_kind_t>(stem.piece_kind), stem.stem_key});
     }
     // Schedule left-to-right without changing painter order for overlapping stems.
     std::stable_sort(ordered.begin(), ordered.end(), [](const auto& left, const auto& right) {
         return left.first < right.first;
     });
-    std::vector<uint64_t> keys;
+    std::vector<piece_key_t> keys;
     keys.reserve(ordered.size());
     for (const auto& entry : ordered) keys.push_back(entry.second);
     auto& renderer = paint_field(paint.context);
-    renderer.pin_stem_envelopes(keys);
-    renderer.prepare_stem_zoom(view.pixels_per_standard_measure, keys);
+    renderer.pin_piece_envelopes(keys);
+    renderer.prepare_piece_zoom(view.pixels_per_standard_measure, keys);
 }
 
 static void draw_compose_waveform_layer(const ComposePaintContext& paint,

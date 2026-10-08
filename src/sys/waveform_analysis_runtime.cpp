@@ -513,6 +513,34 @@ void waveform_analysis_t::start_stem_waveforms(const std::vector<asset_id_t>& wa
     }
 }
 
+namespace {
+void append_packed_waveform_assets(const song_document_t& document,
+    const workspace_controller_t& workspace, compose_scene_cache_t& cache,
+    const editor_interaction_state_t* interaction, const audio::decoded_source_registry_t& sources,
+    std::vector<asset_id_t>& wanted) {
+    if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart || !interaction ||
+        interaction->chart != *workspace.selected_chart || !cache.marker_timing_index) return;
+    const auto chart = std::ranges::find(document.charts, *workspace.selected_chart, &chart_document_t::id);
+    if (chart == document.charts.end() || chart->source_family != format_family_t::bmson ||
+        cache.chart != chart->id || cache.revision != document.revision) return;
+    prepare_packed_waveform_index(cache.packed_waveform_index, document, *chart,
+                                 sources.bindings(), *cache.marker_timing_index);
+    const auto window = packed_window_seconds(*cache.marker_timing_index,
+        interaction->viewport_scroll_pixels, interaction->viewport_height_pixels,
+        interaction->pixels_per_standard_measure);
+    if (!window) return;
+    const auto pieces = visible_packed_waveform_pieces(cache.packed_waveform_index,
+                                                     window->first, window->second);
+    std::unordered_set<std::uint64_t> seen;
+    for (const auto asset : wanted) seen.insert(asset.value);
+    for (const auto* piece : pieces) {
+        const auto asset = piece->clip.source;
+        if (asset != workspace.transport.audio_asset && seen.insert(asset.value).second)
+            wanted.push_back(asset);
+    }
+}
+}
+
 void waveform_analysis_t::service_stem_waveforms(
     const song_document_t& document, const workspace_controller_t& workspace,
     compose_scene_cache_t& compose_scene_cache,
@@ -520,8 +548,10 @@ void waveform_analysis_t::service_stem_waveforms(
     std::span<const sound_channel_t* const> visible_stems) {
     const auto selected = selected_channel_asset(document, workspace, compose_scene_cache,
                                                  compose_interaction_state);
-    const auto wanted = wanted_stem_assets(document, workspace, selected, compose_interaction_state,
-                                           visible_stems);
+    auto wanted = wanted_stem_assets(document, workspace, selected, compose_interaction_state,
+                                     visible_stems);
+    append_packed_waveform_assets(document, workspace, compose_scene_cache,
+                                  compose_interaction_state, sources_, wanted);
     std::unordered_set<std::uint64_t> wanted_ids;
     wanted_ids.reserve(wanted.size());
     for (const auto asset : wanted) wanted_ids.insert(asset.value);

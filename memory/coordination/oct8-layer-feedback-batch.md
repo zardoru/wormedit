@@ -163,3 +163,13 @@ than a one-frame delay; no new catalog scan. Pending reveal survives initial
 dock identity synchronization. Chip press capture is stamped against project,
 chart, revision, tool and source; stale held presses cancel through release.
 Missing-source styling reuses the existing notification warning theme role.
+
+T-420 review clarifies boundary behavior: an in-chart reference target may move
+another selected member beyond authored rows. Keep all proposed ghosts and mark
+that member invalid rather than freezing the group; clipped in-chart portions
+of invalid holds still participate in conflict marking. Outside-chart reference
+input still cancels. Finite floating-point rows are display-only for rejected
+out-of-chart members. Valid move geometry and safely clamped carriers use checked
+integer add/subtract, preserving exact large rows on platforms where long double
+has only double precision. Stale update cancels pending state; invalid release
+replans and commits nothing, with one aggregate warning instead of motion spam.

@@ -49,3 +49,32 @@ three narrow fixes; root approved bounded source-location memo slots, complete
 scene-index head occupancy (exact fallback), and call-lifetime validated geometry
 borrowing. Quantize activation/revision costs are retained separately, without
 a renderer or quantize-cache scope expansion.
+
+T-475 integrated as `616bc80` (worker `7000a98`), seven approved paths.
+Worker normal optimized build and 299/299 focused CTest pass; five new sys
+cases pass 1467 assertions and the geometry partition passes 59 assertions
+across eight cases. Configured complexity matches baseline: 85 existing warning
+instances, no new violations. Valid production-history commits and flattened
+resource views replaced invalid early test fixtures; assertions remain exact.
+The matched worker fixture at 100k notes plus 100k BGM events improves warm
+p99 selected-note 0.261→0.115 ms, BGM 0.279→0.112 ms and empty paint
+0.344→0.120 ms. Cold selected quantize activation remains 553 ms and selected
+revision rebuild 746 ms. This is projection evidence, not total frame cadence.
+Root preserves the original three chart hashes and a standalone SDL dependency
+in `root/probe-libs`; use `LD_LIBRARY_PATH` there for retained probe binaries
+after generated-build cleanup. Root full-suite and merged UI capture follow.
+
+Root normal main build and full CTest pass **2,582/2,582**. Merged optimized
+T-476 capture completes in 156.56 seconds: fourteen final pixel hashes and
+3,360 per-frame semantic/tile-counter samples match the baseline. Its distinct
+100k notes-only fixture lowers projection p99 selection 1.334→0.170 ms and
+paint 1.708→0.178 ms; cached follow 0.434→0.395 ms and combined boundaries
+2.283→1.820 ms. All raw boundary samples/maxima remain. Software pipeline p99
+still spans 40.10–52.67 ms and all cases miss 5 ms; software raster/tile
+preparation dominate, so GPU/display and older-device certification remain
+pending. Cold selection activation remains 193/560 ms at 50k/100k.
+After explicit worker release, root aligned the same optimized build with merged
+main through normal CMake dependencies, then captured with no other jobs.
+Both clean worker trees and about 3.1 GB of generated optimized builds removed;
+only main remains registered. Branches, logs, probe binaries, copied compile
+configuration and `root/probe-libs/libSDL3.so.0` remain for review.

@@ -1,8 +1,12 @@
 # Worktree coordination pilot
 
-Active batch: [dense-chart interaction and frame budget](oct7-dense-batch.md),
-T-475/T-476 plus the T-278 stale-plan audit. Optimized production measurements
-precede implementation; root owns main and frame-path evidence.
+Completed 2026-10-07: [dense-chart interaction and frame budget](oct7-dense-batch.md),
+T-475/T-476 plus the T-278 scheduling audit. Main application build and
+**2,582/2,582 tests pass**. Warm inspector/paint projection improves; fourteen
+merged renderer hashes and 3,360 per-frame samples match. Software rendering
+still misses 5 ms; real GPU/display and older-device validation remain pending.
+Only main remains after removing clean workers and about 3.1 GB of builds;
+branches/logs/probes retained.
 
 Completed in code 2026-10-07: [WSOLA and frame pacing batch](oct7-wsola-batch.md),
 T-471/T-472, reviewed with Sol 6.1 medium coordinators and Luna contributions.

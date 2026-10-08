@@ -206,3 +206,10 @@ layout after an actual recount. Autosave terminal-failure isolated rerun passes.
 Additional T-467 regression scope approved before edits:
 `tests/tools/wormedit_convert_tests.cpp` appends a real CLI multi-chart export
 into a dotted output directory. Existing target and manifests remain unchanged.
+
+Root reviewed T-412 checkpoint `e79d9f3` and integrated it as `20119e4` after
+its normal build, full core/event suites and configured baseline tidy gates.
+T-463 may proceed in order. Draw explicitly releases `src/sys/compose_actions.cpp`
+early because T-463 does not edit it; root may wire sliced app exports and warn
+policy now. Shared sys regression tests remain Draw-owned until final release.
+No per-frame interaction inspection is introduced for tool readiness.

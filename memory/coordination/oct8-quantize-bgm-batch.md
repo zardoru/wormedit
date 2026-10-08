@@ -266,3 +266,10 @@ coordinators are `feedback_recovery_61` and `bgm_recovery_61`, with sole executo
 jobs. The expanded existing Quantize UI test has a new complexity finding at 28;
 extract its cohesive overlay assertions before renewed tidy and ordinary gates.
 The other 15 configured baseline finding identities/scores remain unchanged.
+
+Recovered BGM brief audit orders the remaining executor slices as native
+schema/holds (02a), linked BMSON import/assignment (02d), remaining codec tails
+(02c), conditional BMS loss/publication (02b), then retained scene bars (03).
+The parser change precedes the codec roundtrip gate so BMSON reimport preserves
+semantic ends. Exact approved files and shared-source handoffs still apply;
+this readiness record is not a schema/frontend executor grant.

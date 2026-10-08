@@ -243,3 +243,15 @@ Allocator worker `bb6f713` is independently reviewed and integrated as main
 1,632/1,632, docs and unchanged configured tidy baseline pass. Root repeats the
 focused tests independently. This remains phase 1; native hold/schema/export
 and indexed tail rendering are pending. No final main gate has been claimed.
+
+## Reverse hold validation clarification
+
+The existing reverse move rejects only same-head occupancy; generic document
+validation does not reject overlapping note spans. The native-hold slice must
+therefore check the restored hold's full absolute interval in the already-owned
+`note_to_bgm.cpp`, including notes starting before it and previous restores in
+the same transaction. Follow interaction duration/move conventions: endpoints
+are inclusive, and the lane must remain available across intervening layout
+bands as well as at both endpoints. Preserve ordinary tap behavior and avoid a
+global document collision-policy change. These cases supplement the approved
+phase 02a acceptance, without extending file ownership.

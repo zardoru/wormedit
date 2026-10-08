@@ -92,3 +92,25 @@ behavior stays supported. This root-owned hunk travels with conversion's commit.
 Conversion has queued an appended `tests/formats/conversion_tests.cpp` Luna
 brief covering deduplicated stem/packed mappings, explicit silence, rejection,
 determinism and immutable input, after its API is ready and Draw releases Luna.
+
+Draw's second exclusive Luna brief is approved before edits:
+`src/core/resource_assignment.cpp`,
+`include/wormedit/core/resource_assignment.h` and
+`tests/core/resource_assignment_tests.cpp` implement one atomic BGA stroke
+through existing validation/commit infrastructure. Repeated per-event commits
+would violate T-412's one-undo invariant. Preserve the 50,000-target cap,
+event kinds/layers, source/revision checks and unchanged rejection state.
+The explicit note-intent slice was reviewed and released first; erased holds
+leave the active sweep to avoid repeated scans on later rows.
+
+Root's `src/sys/main.cpp` readiness hunk enables `edit.tool_draw` and
+`edit.tool_layer` beside `edit.tool_select` using existing Compose readiness.
+No broader main helper change. Conversion's app patch must branch before old
+music staging/discovery so failure cannot publish music ahead of chart/WAVs.
+
+Luna handoff: Draw's explicit note-intent and atomic BGA slices were released
+after exclusive edits/tests. Root transferred the single Luna to conversion's
+appended conversion tests once the concrete request/result API was ready.
+Draw retains all its review/source/build paths; another Luna handoff requires
+root coordination. Conversion deduplicates shared normalized spans across
+selected charts and preflights generated ID capacity before allocation.

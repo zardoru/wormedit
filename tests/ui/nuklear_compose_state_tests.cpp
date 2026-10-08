@@ -1167,7 +1167,7 @@ TEST_CASE("Compose color views choose tile and arrow base fills", "[compose][col
         const auto snap = wormedit::ui::arrow_snap_color(16);
         expected = nk_rgb(snap.red, snap.green, snap.blue);
     } else {
-        expected = wormedit::ui::theme::compose_key_color(3, false).note;
+        expected = wormedit::ui::theme::compose_key_color(3).note;
     }
     const auto actual = compose_note_base_fill(view, note);
     CHECK(actual.r == expected.r);
@@ -1187,10 +1187,11 @@ TEST_CASE("Compose hold fills use head snap and neutral hidden membership", "[co
     hold.semantic_blue = 143;
     hold.semantic_alpha = 201;
     const auto normal = compose_note_base_fill(View::normal, hold);
-    const auto key = wormedit::ui::theme::compose_key_color(3, false).note;
-    expect_inline(normal.r == key.r * 3 / 4);
-    expect_inline(normal.g == key.g * 3 / 4);
-    expect_inline(normal.b == key.b * 3 / 4);
+    const auto key = wormedit::ui::theme::compose_key_color(3).hold_body;
+    expect_inline(normal.r == key.r);
+    expect_inline(normal.g == key.g);
+    expect_inline(normal.b == key.b);
+    expect_inline(normal.a == key.a);
     const auto snap = compose_note_base_fill(View::snap, hold);
     const auto expected_snap = wormedit::ui::arrow_snap_color(8);
     expect_inline(snap.r == expected_snap.red);
@@ -1207,6 +1208,40 @@ TEST_CASE("Compose hold fills use head snap and neutral hidden membership", "[co
     expect_inline(hidden.r == neutral.r);
     expect_inline(hidden.g == neutral.g);
     expect_inline(hidden.b == neutral.b);
+}
+
+TEST_CASE("Compose key colors map each lane key to its note, lane, and hold colors", "[compose][key-color]") {
+    using namespace wormedit::ui::theme;
+    const auto key = GENERATE(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+    const auto colors = compose_key_color(static_cast<std::uint8_t>(key));
+    expect_inline(colors.has_color == (key != 0));
+    expect_inline(colors.note.a == 255);
+    expect_inline(colors.note_border.a == 255);
+    expect_inline(colors.lane.a == 255);
+    expect_inline(colors.hold_body.a < 255);
+    expect_inline(colors.note.r != colors.lane.r || colors.note.g != colors.lane.g ||
+                  colors.note.b != colors.lane.b);
+    // The lane is a dark shade: no brighter than its note.
+    expect_inline(colors.lane.r + colors.lane.g + colors.lane.b <
+                  colors.note.r + colors.note.g + colors.note.b);
+}
+
+TEST_CASE("Compose key colors fall back to generic outside the table", "[compose][key-color]") {
+    using namespace wormedit::ui::theme;
+    const auto generic = compose_key_color(0);
+    const auto unknown = compose_key_color(200);
+    expect_inline(!unknown.has_color);
+    expect_inline(unknown.note.r == generic.note.r);
+    expect_inline(unknown.note.g == generic.note.g);
+    expect_inline(unknown.note.b == generic.note.b);
+    expect_inline(unknown.lane.r == generic.lane.r);
+}
+
+TEST_CASE("Compose selection outline is green in the theme", "[compose][key-color]") {
+    const auto outline = wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::selection_outline);
+    expect_inline(outline.g > outline.r);
+    expect_inline(outline.g > outline.b);
+    expect_inline(outline.a == 255);
 }
 
 TEST_CASE("Compose color views default to Normal and unknown snaps use other grey", "[compose][color-view]") {

@@ -934,17 +934,14 @@ static void draw_compose_audio_bookmarks(const ComposePaintContext& paint,
     }
 }
 
-static struct nk_color compose_lane_color(uint8_t role, size_t display_order) {
-    const auto alternate = (display_order & 1U) != 0;
+// Generic lanes without a key color take their color from the lane role.
+static auto compose_lane_key_color(uint8_t key_color, uint8_t role) -> uint8_t {
+    if (key_color != 0) return key_color;
     switch (role) {
-    case 1: // scratch
-        return wormedit::ui::theme::compose_lane(0, alternate);
-    case 5: // free zone
-        return wormedit::ui::theme::compose_lane(1, alternate);
-    case 6: // foot pedal
-        return wormedit::ui::theme::compose_lane(2, alternate);
-    default:
-        return wormedit::ui::theme::compose_lane(3, alternate);
+    case 1: return 3; // scratch
+    case 5: return 5; // free zone
+    case 6: return 4; // foot pedal
+    default: return 0;
     }
 }
 
@@ -1070,10 +1067,9 @@ static void draw_compose_play_lanes(const ComposePaintContext& paint) {
         if (rect.w <= 0.0f || rect.h <= 0.0f) {
             continue;
         }
-        const auto key = wormedit::ui::theme::compose_key_color(lane.key_color,
-                                                                (lane.display_order & 1U) != 0);
-        field_rect(paint, rect, 0.0f,
-                   key.has_color ? key.lane : compose_lane_color(lane.role, lane.display_order));
+        const auto key = wormedit::ui::theme::compose_key_color(
+            compose_lane_key_color(lane.key_color, lane.role));
+        field_rect(paint, rect, 0.0f, key.lane);
         field_line(paint, rect.x, rect.y, rect.x, rect.y + rect.h, 1.0f,
                        nk_rgb(62, 70, 86));
 
@@ -2027,7 +2023,7 @@ static void draw_compose_timing_layer(const ComposePaintContext& paint,
 }
 
 static struct nk_color compose_selection_outline_color() {
-    return nk_rgb(74, 222, 128);
+    return wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::selection_outline);
 }
 
 static auto compose_move_conflict_color(bool ghost = false) -> nk_color {
@@ -2256,6 +2252,32 @@ static void draw_compose_note_sound_label(const ComposePaintContext& paint,
                  light_fill ? nk_rgb(16, 24, 36) : nk_rgb(248, 251, 255), 2);
 }
 
+// Semantic layer color as a 3 px stripe inside the left edge; the Layer view already fills with it.
+static void draw_compose_note_layer_stripe(const ComposePaintContext& paint,
+                                           const WormUiComposeNoteView& note, struct nk_rect tile) {
+    if (!note.semantic_color_visible || tile.w < 6.0f ||
+        worm_ui_nuklear_compose_state().color_view == worm_ui_nuklear_compose_color_view_t::layer ||
+        compose_note_is_transient(*paint.view, note)) return;
+    field_rect(paint, nk_rect(tile.x + 1.0f, tile.y, 3.0f, tile.h), 0.0f,
+               nk_rgba(note.semantic_red, note.semantic_green, note.semantic_blue,
+                       note.semantic_alpha), 2);
+}
+
+// Selected tiles keep their fill and get a 2 px green ring just outside the tile.
+static void draw_compose_note_border(const ComposePaintContext& paint,
+                                     const WormUiComposeNoteView& note,
+                                     const ComposeNoteStyle& style, struct nk_rect tile) {
+    if (compose_note_shows_selection_outline(*paint.view, note)) {
+        field_stroke_rect(paint, tile, 0.0f, 1.0f, nk_rgb(17, 24, 34), 2);
+        field_stroke_rect(paint, nk_rect(tile.x - 1.0f, tile.y - 1.0f, tile.w + 2.0f, tile.h + 2.0f),
+                          0.0f, 2.0f, compose_selection_outline_color(), 2);
+        return;
+    }
+    auto border = style.border;
+    if (note.proposal_ghost && !note.move_conflict) border.a = 170;
+    field_stroke_rect(paint, tile, 0.0f, style.border_width, border, 2);
+}
+
 static void draw_compose_note(const ComposePaintContext& paint,
                               const WormUiComposeNoteView& note) {
     const auto style = compose_note_style(*paint.view, note);
@@ -2267,10 +2289,9 @@ static void draw_compose_note(const ComposePaintContext& paint,
                               std::max(2.0f, rect.h));
     if (draw_compose_note_glyph(paint, note, tile)) return;
     field_rect(paint, tile, 0.0f, style.fill, 2);
-    auto border = style.border;
-    if (note.proposal_ghost && !note.move_conflict) border.a = 170;
-    field_stroke_rect(paint, tile, 0.0f, style.border_width, border, 2);
+    draw_compose_note_border(paint, note, style, tile);
     if (note.proposal_ghost) return;
+    draw_compose_note_layer_stripe(paint, note, tile);
     field_line(paint, tile.x + 1.0f, tile.y + 1.0f,
                    tile.x + tile.w - 1.0f, tile.y + 1.0f, 1.0f,
                    nk_rgba(255, 255, 255, 105), 2);

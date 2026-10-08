@@ -20,3 +20,6 @@ auto compose_timing_lane_inner_extent(const WormUiComposeView& view, WormUiTimin
 
 auto compose_editor_status_hint(const WormUiComposeView* view,
                                 const WormUiTimingView* timing_view) -> const char*;
+
+void draw_compose_tool_chip(nk_context*, const WormUiComposeView&, nk_command_buffer*, struct nk_rect);
+auto process_compose_tool_chip(nk_context*, const WormUiComposeView&, struct nk_rect, bool focused) -> bool;

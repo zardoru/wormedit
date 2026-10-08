@@ -684,6 +684,14 @@ static bool process_bmson_draw_pointer(const ComposePointerEventContext& input) 
 
 void process_note_paint_pointer(const ComposePointerEventContext& input,
                                        bool& paint_pointer_consumed) {
+    if (input.view->note_paint_mode_active && input.view->draw_source_missing) {
+        if (state.note_paint_pointer_active || state.bmson_point_capture)
+            append_compose_cancel_once(input.action);
+        state.note_paint_pointer_active = false;
+        state.bmson_point_capture.reset();
+        paint_pointer_consumed = true;
+        return;
+    }
     if (state.draw_left_cancelled_until_release) {
         if (!input.left_down) state.draw_left_cancelled_until_release = false;
         paint_pointer_consumed = true;

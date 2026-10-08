@@ -258,14 +258,36 @@ void sync_advance_ids(const WormUiComposeView& view, worm_ui_nuklear_compose_sta
 void reveal_armed_bga(nk_context* context, const WormUiComposeView& view,
                       worm_ui_nuklear_compose_state_t& state) {
     if (!state.bga_reveal_primary) return;
+    if (!view.bga_search || std::strcmp(view.bga_search, state.bga_search.data()) != 0) return;
     const auto matches = std::span(view.bga_matching_ids, view.bga_total_matching);
     const auto found = std::ranges::find(matches, state.bga_selection.primary);
     if (found != matches.end()) {
         const auto index = static_cast<std::size_t>(found - matches.begin());
         const auto y = index * static_cast<std::size_t>(36.0f + context->style.window.spacing.y);
         nk_group_set_scroll(context, "Compose BGA list", 0, static_cast<nk_uint>(y));
+        if (state.source_chip_reveal_kind == 2) {
+            if (index < view.bga_first_row || index - view.bga_first_row >= view.bga_row_count) return;
+            if (view.bga_rows[index - view.bga_first_row].resource_id != state.source_chip_reveal_id) return;
+            state.source_chip_reveal_kind = 0;
+            state.source_chip_reveal_id = 0;
+        }
     }
-    state.bga_reveal_primary = false;
+    if (found != matches.end()) state.bga_reveal_primary = false;
+}
+
+void restore_chip_bga_selection(const WormUiComposeView& view,
+                               worm_ui_nuklear_compose_state_t& state) {
+    if (state.source_chip_reveal_kind != 2) return;
+    if (state.chip_reveal_project != view.project_id || state.chip_reveal_chart != view.chart_id ||
+        view.draw_source_kind != 2 || view.draw_source_id != state.source_chip_reveal_id || view.draw_source_missing) {
+        state.source_chip_reveal_kind = 0;
+        state.source_chip_reveal_id = 0;
+        state.bga_reveal_primary = false;
+        return;
+    }
+    state.bga_selection.primary = state.source_chip_reveal_id;
+    state.bga_selection.selected = {state.source_chip_reveal_id};
+    state.bga_reveal_primary = true;
 }
 }
 void worm_ui_nuklear_bga_set_renderer(SDL_Renderer* value) {
@@ -282,6 +304,7 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
         worm_ui_nuklear_bga_set_renderer(renderer);
     }
     const auto bounds = nk_window_get_content_region(context);
+    restore_chip_bga_selection(*view, *state);
     state->bga_list_valid = true;
     state->bga_list_x = bounds.x; state->bga_list_y = bounds.y;
     state->bga_list_width = bounds.w; state->bga_list_height = bounds.h;

@@ -1198,9 +1198,12 @@ typedef struct WormUiComposeView {
     bool truncated;
     uint8_t draw_source_kind; /* 0 none, 1 sound, 2 BGA */
     uint64_t draw_source_id;
+    const char* draw_source_label; /* frame-owned, bounded UTF-8; includes resource identity */
+    bool draw_source_missing;
     bool draw_source_is_stem;
     uint64_t draw_source_stem_lane_id;
     const char* draw_source_stem_lane_name;
+    size_t semantic_layer_target_row;
     bool note_paint_mode_active;
     bool semantic_layer_paint_mode_active;
     bool semantic_layer_gesture_active;
@@ -1428,6 +1431,8 @@ typedef struct WormUiComposeView {
     bool keysound_display_rows_truncated;
     bool keysound_primary_display_index_valid;
     size_t keysound_primary_display_index;
+    uint64_t keysound_projected_primary_resource_id;
+    bool keysound_projected_filters_unrestricted;
     const uint64_t* keysound_listed_resource_ids;
     size_t keysound_listed_resource_count;
     const WormUiComposeKeysoundAdvanceRowView* keysound_advance_rows;

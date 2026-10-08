@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <source_location>
 
 namespace {
 
@@ -103,7 +104,11 @@ TEST_CASE("Layer painting can begin over a BGM event in its pane",
 namespace {
 // Keep Catch assertion macro control flow out of the gesture scenario itself.
 template <typename T> void require_layer_brush(const T& value) { REQUIRE(static_cast<bool>(value)); }
-template <typename T> void check_layer_brush(const T& value) { CHECK(static_cast<bool>(value)); }
+template <typename T> void check_layer_brush(const T& value,
+    std::source_location where = std::source_location::current()) {
+    INFO("gesture assertion at " << where.line());
+    CHECK(static_cast<bool>(value));
+}
 template <typename T> void check_no_layer_brush(const T& value) { CHECK_FALSE(static_cast<bool>(value)); }
 } // namespace
 
@@ -171,4 +176,185 @@ TEST_CASE("Layers row selects the brush target without assigning the selected ob
     REQUIRE_FALSE(frames.empty());
     check_layer_brush(frames.back().get().compose_action == WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER);
     check_layer_brush(frames.back().get().compose_semantic_layer_id == 7);
+}
+
+namespace {
+void initialize_chip(nuklear_event_harness_t& harness, uint8_t kind, uint64_t id,
+                     const char* label) {
+    auto& state = worm_ui_nuklear_compose_state();
+    state.inspector_visible = state.layers_panel_visible = state.sounds_panel_visible = false;
+    state.bga_panel_visible = false;
+    auto& view = harness.view().compose;
+    view.note_paint_mode_active = true;
+    view.keysounds_available = true;
+    view.draw_source_kind = kind;
+    view.draw_source_id = id;
+    view.draw_source_label = label;
+}
+
+auto click_chip(nuklear_event_harness_t& harness, const char* label)
+    -> std::vector<workspace_action_snapshot_t> {
+    (void)harness.frame();
+    const auto source = harness.drawn_text_center(label);
+    require_layer_brush(source.has_value());
+    return click_at(harness, source->first, source->second);
+}
+
+void check_chip_inputs_empty(const std::vector<workspace_action_snapshot_t>& frames) {
+    for (const auto& frame : frames) check_layer_brush(frame.get().compose_input_count == 0);
+}
+}
+
+TEST_CASE("Draw chip opens a hidden Sounds dock and waits for the exact unrestricted projection",
+          "[unit][event-harness][tool-chip]") {
+    nuklear_event_harness_t harness{1280, 900};
+    require_layer_brush(harness.ready());
+    initialize_chip(harness, 1, 179, "0A 音楽.wav");
+    auto& state = worm_ui_nuklear_compose_state();
+    auto& view = harness.view().compose;
+    state.keysound_search[0] = 'z';
+    state.keysound_slots_mode = true;
+    view.keysound_section_projection_available = true;
+    view.keysound_projected_primary_resource_id = 100;
+    view.keysound_primary_display_index_valid = true;
+    view.keysound_primary_display_index = 2;
+    check_chip_inputs_empty(click_chip(harness, "0A 音楽.wav"));
+    (void)harness.frame();
+    WormUiKeysoundDockRequest request{};
+    worm_ui_frontend_keysound_dock_request(&request);
+    check_layer_brush(state.sounds_panel_visible && state.keysound_selection.primary == 179);
+    check_layer_brush(request.primary_resource_id == 179 && !request.slots_mode);
+    check_layer_brush(!request.automatic_search[0] && !request.group_filter_active);
+    check_layer_brush(request.include_ungrouped && !request.layer_filter_kind);
+    check_layer_brush(state.source_chip_reveal_id == 179 && state.keysound_reveal_primary);
+    view.keysound_projected_primary_resource_id = request.primary_resource_id;
+    view.keysound_projected_filters_unrestricted = true;
+    view.keysound_primary_display_index = 80;
+    view.keysound_display_total_count = 81;
+    (void)harness.frame();
+    worm_ui_frontend_keysound_dock_request(&request);
+    check_layer_brush(request.automatic_first_row > 8);
+    check_layer_brush(state.source_chip_reveal_id == 179 && state.keysound_reveal_primary);
+    const uint64_t id{179};
+    WormUiComposeKeysoundRowView row{.resource_id = id, .slot = "0A", .name = "音楽.wav"};
+    WormUiComposeKeysoundDisplayRowView display{.kind = WORM_UI_COMPOSE_KEYSOUND_SOUND_ROW,
+                                               .resource_id = id};
+    view.keysounds = &row;
+    view.keysound_count = 1;
+    view.keysound_listed_resource_ids = &id;
+    view.keysound_listed_resource_count = 1;
+    view.keysound_display_rows = &display;
+    view.keysound_display_row_count = 1;
+    view.keysound_display_first_row = 80;
+    (void)harness.frame();
+    check_layer_brush(harness.drawn_text_center("音楽.wav").has_value());
+    check_layer_brush(state.source_chip_reveal_id == 0 && !state.keysound_reveal_primary);
+}
+
+TEST_CASE("Draw chip opens hidden BGA and retains reveal until its exact off-page resource arrives",
+          "[unit][event-harness][tool-chip][bga]") {
+    nuklear_event_harness_t harness{1280, 900};
+    require_layer_brush(harness.ready());
+    initialize_chip(harness, 2, 501, "501 preview image");
+    auto& state = worm_ui_nuklear_compose_state();
+    auto& view = harness.view().compose;
+    state.bga_search[0] = 'z';
+    view.bga_search = "z";
+    check_chip_inputs_empty(click_chip(harness, "501 preview image"));
+    (void)harness.frame();
+    WormUiBgaDockRequest request{};
+    worm_ui_frontend_bga_dock_request(&request);
+    check_layer_brush(state.bga_panel_visible && state.bga_selection.primary == 501);
+    check_layer_brush(!request.search[0] && state.source_chip_reveal_id == 501);
+    std::array<uint64_t, 80> ids{};
+    for (std::size_t index = 0; index < ids.size(); ++index) ids[index] = index + 100;
+    ids.back() = 501;
+    view.bga_search = request.search;
+    view.bga_matching_ids = ids.data();
+    view.bga_total_matching = ids.size();
+    (void)harness.frame();
+    check_layer_brush(state.source_chip_reveal_id == 501);
+    WormUiComposeBgaRowView row{.resource_id = 501, .slot = "0A", .name = "preview image"};
+    view.bga_rows = &row;
+    view.bga_row_count = 1;
+    view.bga_first_row = 79;
+    (void)harness.frame();
+    check_layer_brush(state.source_chip_reveal_id == 0 && !state.bga_reveal_primary);
+    check_layer_brush(harness.drawn_text_center("preview image  · 0").has_value());
+}
+
+TEST_CASE("Tool chip owns a held click across source change without painting on release",
+          "[unit][event-harness][tool-chip]") {
+    nuklear_event_harness_t harness{1280, 900};
+    require_layer_brush(harness.ready());
+    initialize_chip(harness, 1, 179, "0A sample");
+    (void)harness.frame();
+    const auto source = harness.drawn_text_center("0A sample");
+    require_layer_brush(source.has_value());
+    const auto pressed = harness.frame(std::array{motion_event(source->first, source->second),
+        button_event(true, source->first, source->second)});
+    check_chip_inputs_empty({pressed});
+    harness.view().compose.draw_source_id = 180;
+    harness.view().compose.document_revision = 2;
+    const auto held = harness.frame(std::array{motion_event(300, 400)});
+    check_layer_brush(held.get().compose_input_count == 0);
+    check_layer_brush(worm_ui_nuklear_compose_state().tool_chip_pointer_canceled);
+    const auto released = harness.frame(std::array{button_event(false, 300, 400)});
+    check_layer_brush(released.get().compose_input_count == 0);
+    check_no_layer_brush(worm_ui_nuklear_compose_state().tool_chip_pointer_active);
+}
+
+TEST_CASE("Layer chip opens hidden Layers for its off-page target and ignores an absent target",
+          "[unit][event-harness][tool-chip][semantic-layer]") {
+    nuklear_event_harness_t harness{1280, 900};
+    require_layer_brush(harness.ready());
+    initialize_chip(harness, 0, 0, "silent note");
+    auto& view = harness.view().compose;
+    view.note_paint_mode_active = false;
+    view.semantic_layer_paint_mode_active = true;
+    view.semantic_layer_target = {.layer_id = 100, .name = "Drums 99", .visible = true};
+    view.semantic_layer_target_row = 99;
+    view.semantic_layer_total_count = 100;
+    check_chip_inputs_empty(click_chip(harness, "Drums 99"));
+    const auto revealed = harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    check_layer_brush(state.layers_panel_visible && state.layer_chip_reveal_id == 0);
+    check_layer_brush(revealed.get().compose_semantic_layer_first_row > 8);
+    state.layers_panel_visible = false;
+    view.semantic_layer_target = {.name = "Pick a layer"};
+    check_chip_inputs_empty(click_chip(harness, "Pick a layer"));
+    check_no_layer_brush(state.layers_panel_visible);
+}
+
+TEST_CASE("Tool chip leaves outside canvas presses available and missing source does not paint",
+          "[unit][event-harness][tool-chip]") {
+    nuklear_event_harness_t harness{1280, 900};
+    require_layer_brush(harness.ready());
+    initialize_chip(harness, 0, 0, "silent note");
+    const auto outside = click_at(harness, 300, 400);
+    bool began{};
+    for (const auto& frame : outside) {
+        for (std::size_t index = 0; index < frame.get().compose_input_count; ++index)
+            began |= frame.get().compose_inputs[index].kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN;
+    }
+    check_layer_brush(began);
+    harness.view().compose.draw_source_kind = 1;
+    harness.view().compose.draw_source_id = 179;
+    harness.view().compose.draw_source_label = "missing source";
+    harness.view().compose.draw_source_missing = true;
+    check_chip_inputs_empty(click_chip(harness, "missing source"));
+    check_no_layer_brush(worm_ui_nuklear_compose_state().sounds_panel_visible);
+    check_chip_inputs_empty(click_at(harness, 300, 400));
+}
+
+TEST_CASE("A short Compose viewport never exposes an invisible tool-chip hit target",
+          "[unit][event-harness][tool-chip]") {
+    nuklear_event_harness_t harness{1280, 180};
+    require_layer_brush(harness.ready());
+    initialize_chip(harness, 1, 179, "0A sample");
+    (void)harness.frame();
+    check_no_layer_brush(harness.drawn_text_center("0A sample").has_value());
+    (void)click_at(harness, 250, 170);
+    check_no_layer_brush(worm_ui_nuklear_compose_state().tool_chip_pointer_active);
+    check_no_layer_brush(worm_ui_nuklear_compose_state().sounds_panel_visible);
 }

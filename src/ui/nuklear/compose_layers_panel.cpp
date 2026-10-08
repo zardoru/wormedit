@@ -432,6 +432,14 @@ void worm_ui_nuklear_render_compose_layers(struct nk_context* context,
     const LayersPanel panel{context, view, action, state};
     render_header(panel);
     render_layer_editors(panel);
+    if (state->layer_chip_reveal_id &&
+        state->chip_reveal_project == view->project_id && state->chip_reveal_chart == view->chart_id &&
+        state->layer_chip_reveal_id == view->semantic_layer_target.layer_id) {
+        nk_group_set_scroll(context, "Compose layer list", 0,
+            static_cast<nk_uint>((view->semantic_layer_target_row + 1) *
+                (row_height + context->style.window.spacing.y)));
+    }
+    state->layer_chip_reveal_id = 0;
     const auto region = nk_window_get_content_region(context);
     const auto remaining = region.y + region.h - nk_widget_position(context).y -
                            context->style.window.spacing.y;

@@ -240,6 +240,14 @@ struct worm_ui_nuklear_compose_state_t {
     double draw_right_anchor_y{};
     uint8_t draw_source_kind{};
     uint64_t draw_source_id{};
+    bool tool_chip_pointer_active{};
+    bool tool_chip_pointer_canceled{};
+    struct tool_chip_stamp_t {
+        std::uint64_t project{}, chart{}, revision{}, source{};
+        std::uint8_t kind{};
+    } tool_chip_stamp;
+    std::uint64_t chip_reveal_project{}, chip_reveal_chart{}, source_chip_reveal_id{}, layer_chip_reveal_id{};
+    std::uint8_t source_chip_reveal_kind{};
     struct bmson_point_capture_t {
         uint64_t project{}, chart{}, revision{}, lane{}, resource{};
         double x{}, y{};

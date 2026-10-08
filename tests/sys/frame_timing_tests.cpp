@@ -5349,3 +5349,131 @@ TEST_CASE("BMSON Draw source names remain frame owned after document edits and f
     t475_project(fixture);
     t475_check(std::string(fixture.flattened.view.compose.draw_source_stem_lane_name) == std::string(256, 'v'));
 }
+
+namespace {
+auto chip_source_song() -> song_document_t {
+    auto song = compose_test_song();
+    song.audio_assets = {{.id = asset_id_t{200}, .stream = {44'100, 2, 441'000, true}}};
+    for (std::uint64_t index = 0; index < 80; ++index)
+        song.resources.push_back({.id = resource_id_t{100 + index},
+            .name = "sample " + std::to_string(index), .asset = asset_id_t{200},
+            .roles = {resource_role_t::sample}});
+    song.resources.back().name = "音楽.wav";
+    song.resources.back().target_identities = {{.family = format_family_t::bms, .identifier = "0A", .namespace_name = "wav"}};
+    return song;
+}
+void project_chip_request(compose_test_fixture_t& fixture, WormUiKeysoundDockRequest request) {
+    t475_require(rebind_workspace(*fixture.binding.workspace, fixture.history));
+    const auto model = make_workspace_view(*fixture.binding.workspace, fixture.history.document);
+    t475_require(model.view.has_value());
+    fixture.flattened = flatten_workspace(*model.view, fixture.history.document, "", {}, false, {},
+        nullptr, dock_sort_t::natural_name, request, {}, {}, &fixture.cache.keysound_list_cache);
+    fixture.flattened.rebind_view_pointers();
+    populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.workspace,
+        fixture.cache, 1280, 980, fixture.interaction, fixture.application, nullptr);
+    t475_require(fixture.flattened.view.compose.scene_available);
+}
+auto dispatch_chip_input(compose_test_fixture_t& fixture, WormUiComposeInputAction input) -> std::string {
+    WormUiWorkspaceAction action{};
+    action.compose_input_chart_id = 1;
+    action.compose_input_project_id = fixture.history.document.id.value;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    action.compose_input_count = 1;
+    action.compose_inputs[0] = input;
+    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    return dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
+        *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
+}
+}
+
+TEST_CASE("Tool chip projects the actual off-page filtered sound with a retained source cache",
+          "[sys][compose][source-chip][frame-arena]") {
+    compose_test_fixture_t fixture(chip_source_song());
+    fixture.application.draw_source_kind = 1;
+    fixture.application.draw_source_id = 179;
+    WormUiKeysoundDockRequest request{};
+    request.include_ungrouped = true;
+    request.primary_resource_id = 100;
+    std::snprintf(request.automatic_search, sizeof(request.automatic_search), "not this source");
+    project_chip_request(fixture, request);
+    t475_check(std::string_view(fixture.flattened.view.compose.draw_source_label) == "0A 音楽.wav");
+    t475_check(!fixture.flattened.view.compose.draw_source_missing);
+    t475_check(!fixture.flattened.view.compose.keysound_projected_filters_unrestricted);
+    const auto builds = fixture.cache.draw_stem_sources.build_count;
+    request.automatic_search[0] = '\0';
+    request.primary_resource_id = 179;
+    request.automatic_row_limit = 8;
+    project_chip_request(fixture, request);
+    const auto& view = fixture.flattened.view.compose;
+    t475_check(view.keysound_projected_primary_resource_id == 179);
+    t475_check(view.keysound_projected_filters_unrestricted && view.keysound_primary_display_index_valid);
+    t475_check(view.keysound_primary_display_index == 80);
+    t475_check(view.keysound_display_total_count == 81);
+    t475_check(fixture.cache.draw_stem_sources.build_count == builds);
+}
+
+TEST_CASE("Tool chip names are bounded UTF-8 and survive a moved frame and source rename",
+          "[sys][compose][source-chip][frame-arena]") {
+    compose_test_fixture_t fixture(chip_source_song());
+    fixture.application.draw_source_kind = 1;
+    fixture.application.draw_source_id = 179;
+    t475_project(fixture);
+    auto retained = std::move(fixture.flattened);
+    auto proposed = fixture.history.document;
+    proposed.resources.back().name.clear();
+    for (int index = 0; index < 400; ++index) proposed.resources.back().name += "音";
+    const auto renamed = commit_document_command(fixture.history, std::move(proposed), "Rename chip source");
+    t475_require(renamed);
+    t475_project(fixture);
+    const std::string_view label = fixture.flattened.view.compose.draw_source_label;
+    t475_check(label.size() <= 512 && label.ends_with("…"));
+    t475_check(label.substr(3, label.size() - 6).size() % 3 == 0);
+    t475_check(std::string_view(retained.view.compose.draw_source_label) == "0A 音楽.wav");
+}
+
+TEST_CASE("Deleted Draw source remains picked and warns until an explicit repick",
+          "[sys][compose][source-chip][missing]") {
+    compose_test_fixture_t fixture(chip_source_song());
+    fixture.application.note_paint_mode_active = true;
+    fixture.application.draw_source_kind = 1;
+    fixture.application.draw_source_id = 179;
+    t475_project(fixture);
+    auto proposed = fixture.history.document;
+    proposed.resources.pop_back();
+    t475_require(commit_document_command(fixture.history, std::move(proposed), "Delete chip source"));
+    t475_project(fixture);
+    t475_check(fixture.application.draw_source_kind == 1 && fixture.application.draw_source_id == 179);
+    t475_check(fixture.flattened.view.compose.draw_source_missing);
+    t475_check(std::string_view(fixture.flattened.view.compose.draw_source_label) == "missing source");
+    const auto revision = fixture.history.document.revision;
+    const auto undos = fixture.history.undo.size();
+    const auto attempted = paint_stroke_inputs(fixture, 179);
+    const auto rejected = dispatch_chip_input(fixture, attempted.compose_inputs[0]);
+    t475_check(rejected.find("paint sound is not an existing sample resource") != std::string::npos);
+    t475_check(fixture.history.document.revision == revision && fixture.history.undo.size() == undos);
+    t475_check(!fixture.interaction->pending_note_paint_gesture);
+    const auto repicked = dispatch_chip_input(fixture, {.kind = WORM_UI_COMPOSE_INPUT_DRAW_SOURCE});
+    t475_check(repicked == "Draw source selected.");
+    t475_project(fixture);
+    t475_check(!fixture.flattened.view.compose.draw_source_missing);
+    t475_check(std::string_view(fixture.flattened.view.compose.draw_source_label) == "silent note");
+}
+
+TEST_CASE("Tool chip BGA uses resource identity and Layer reveals the off-page target ordinal",
+          "[sys][compose][source-chip][bga][semantic-layer]") {
+    compose_test_fixture_t fixture(bga_virtual_preview_song());
+    fixture.application.draw_source_kind = 2;
+    fixture.application.draw_source_id = 501;
+    for (std::uint64_t index = 0; index < 100; ++index)
+        fixture.history.document.charts.front().semantic_layers.push_back({
+            .id = layer_id_t{index + 1}, .name = "Drums " + std::to_string(index)});
+    fixture.application.semantic_layer_target = layer_id_t{100};
+    t475_project(fixture);
+    const auto& view = fixture.flattened.view.compose;
+    t475_check(std::string_view(view.draw_source_label) == "501 preview image");
+    t475_check(!view.draw_source_missing && view.draw_source_id != fixture.history.document.resources.front().asset.value);
+    t475_check(view.semantic_layer_target_row == 99);
+    t475_check(std::string_view(view.semantic_layer_target.name) == "Drums 99");
+}

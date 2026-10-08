@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_canvas.h"
+#include "ui/nuklear/chrome.h"
 #include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include "ui/nuklear/compose_area_menu.h"
@@ -2754,11 +2755,11 @@ auto compose_editor_status_hint(const WormUiComposeView* view,
     if (timing_view->stage_active && timing_view->stage_existing_object_id != 0)
         return "Drag outlined timing marker to resnap · edit/apply in side inspector";
     if (view->semantic_layer_paint_mode_active)
-        return "Layer paint armed · click/drag toggles layer · Esc cancels";
+        return "";
     if (view->semantic_layer_solo_active)
         return "Layer solo active · only selected-layer notes shown";
     if (view->note_paint_mode_active)
-        return "Paint armed · click/drag draws or erases · Esc cancels";
+        return "";
     if (view->waveform_overview_row_count != 0 && !view->waveform_timing_locked)
         return "Drag beat squares in rail to fit BPM · Shift+drag to shift offset · drag beat zero in song overview";
     return "↑/↓ move · drag selects/moves · Alt-drag hold · drag BMSON BGM to move";
@@ -2841,4 +2842,145 @@ void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* vie
     }
     wormedit::ui::nuklear::insert_compose_field(context, canvas, viewport);
     nk_push_scissor(canvas, parent_clip);
+}
+
+namespace {
+struct ToolChip {
+    struct nk_rect bounds{}, source_bounds{};
+    std::array<char, 516> source{};
+    const char* prefix{};
+    const char* suffix{};
+    bool layer{}, warning{};
+};
+
+auto chip_text_width(const nk_user_font* font, const char* text) -> float {
+    return font->width(font->userdata, font->height, text, static_cast<int>(std::strlen(text)));
+}
+
+void fit_chip_source(ToolChip& chip, const nk_user_font* font, const char* text, float width) {
+    int length{};
+    while (length < 512 && text[length]) ++length;
+    while (length && (static_cast<unsigned char>(text[length]) & 0xc0U) == 0x80U) --length;
+    if (font->width(font->userdata, font->height, text, length) <= width) {
+        std::memcpy(chip.source.data(), text, static_cast<std::size_t>(length));
+        return;
+    }
+    const auto prefix = fit_label_prefix(font, text, length, width);
+    if (prefix < 0) return;
+    std::memcpy(chip.source.data(), text, static_cast<std::size_t>(prefix));
+    std::memcpy(chip.source.data() + prefix, "…", 3);
+}
+
+auto tool_chip(nk_context* context, const WormUiComposeView& view, struct nk_rect field) -> ToolChip {
+    ToolChip chip;
+    const auto* font = context->style.font;
+    const auto available = field.w - 24.0f;
+    if (!font || available < 64 || field.h < 54 || (!view.note_paint_mode_active && !view.semantic_layer_paint_mode_active))
+        return chip;
+    chip.layer = view.semantic_layer_paint_mode_active;
+    chip.prefix = chip.layer ? "Layer · " : "Draw · ";
+    chip.suffix = available < 360 || (!chip.layer && !view.draw_source_kind) ? ""
+        : chip.layer ? " · Alt+drag removes" : " · right-drag erases";
+    chip.warning = !chip.layer && view.draw_source_missing;
+    const auto* source = chip.layer ? view.semantic_layer_target.name : view.draw_source_label;
+    if (!source) source = chip.layer ? "Pick a layer" : "silent note";
+    const auto prefix_width = chip_text_width(font, chip.prefix);
+    const auto suffix_width = chip_text_width(font, chip.suffix);
+    const auto source_width = std::max(0.0f, available - 40 - prefix_width - suffix_width);
+    fit_chip_source(chip, font, source, source_width);
+    const auto shown = chip_text_width(font, chip.source.data());
+    chip.bounds = nk_rect(field.x + 12, field.y + 12,
+        std::min(available, 40 + prefix_width + shown + suffix_width), 30);
+    chip.source_bounds = nk_rect(chip.bounds.x + 32 + prefix_width, chip.bounds.y,
+                                shown, chip.bounds.h);
+    return chip;
+}
+
+void reveal_chip_sound(const WormUiComposeView& view) {
+    state.sounds_panel_visible = true;
+    state.sounds_dock_bmson_tab = false;
+    state.keysound_slots_mode = false;
+    state.keysound_search.fill(0);
+    state.keysound_filters = {};
+    state.keysound_filters.include_ungrouped = true;
+    state.keysound_selection.primary = view.draw_source_id;
+    state.keysound_selection.selected = {view.draw_source_id};
+    state.keysound_reveal_primary = true;
+}
+
+void reveal_chip_source(const WormUiComposeView& view, bool layer) {
+    state.source_chip_reveal_kind = 0;
+    state.source_chip_reveal_id = state.layer_chip_reveal_id = 0;
+    state.keysound_reveal_primary = state.bga_reveal_primary = false;
+    state.chip_reveal_project = view.project_id;
+    state.chip_reveal_chart = view.chart_id;
+    if (layer) {
+        if (!view.semantic_layer_target.layer_id) return;
+        state.layers_panel_visible = true;
+        state.layer_chip_reveal_id = view.semantic_layer_target.layer_id;
+        return;
+    }
+    if (!view.draw_source_id || view.draw_source_missing) return;
+    state.source_chip_reveal_kind = view.draw_source_kind;
+    state.source_chip_reveal_id = view.draw_source_id;
+    if (view.draw_source_kind == 1) reveal_chip_sound(view);
+    else if (view.draw_source_kind == 2) {
+        state.bga_panel_visible = true;
+        state.bga_search.fill(0);
+        state.bga_selection.primary = view.draw_source_id;
+        state.bga_selection.selected = {view.draw_source_id};
+        state.bga_reveal_primary = true;
+    }
+}
+}
+
+void draw_compose_tool_chip(nk_context* context, const WormUiComposeView& view,
+                           nk_command_buffer* canvas, struct nk_rect field) {
+    const auto chip = tool_chip(context, view, field);
+    if (chip.bounds.w <= 0) return;
+    const auto clip = canvas->clip;
+    wormedit::ui::chrome::paint_surface(canvas, chip.bounds, 1, field);
+    nk_push_scissor(canvas, field);
+    const auto text = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text);
+    wormedit::ui::lucide::draw(context, nk_rect(chip.bounds.x + 4, chip.bounds.y + 3, 24, 24),
+        chip.layer ? wormedit::ui::lucide::Glyph::layers : wormedit::ui::lucide::Glyph::paintbrush, text);
+    auto bounds = nk_rect(chip.bounds.x + 32, chip.bounds.y + 7, chip.bounds.w - 36, 16);
+    nk_draw_text(canvas, bounds, chip.prefix, static_cast<int>(std::strlen(chip.prefix)),
+                 context->style.font, nk_rgba(0,0,0,0), text);
+    bounds.x = chip.source_bounds.x;
+    bounds.w = chip.source_bounds.w;
+    nk_draw_text(canvas, bounds, chip.source.data(), static_cast<int>(std::strlen(chip.source.data())),
+                 context->style.font, nk_rgba(0,0,0,0), chip.warning
+                    ? wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_bright) : text);
+    bounds.x += bounds.w;
+    bounds.w = std::max(0.0f, chip.bounds.x + chip.bounds.w - bounds.x - 4);
+    nk_draw_text(canvas, bounds, chip.suffix, static_cast<int>(std::strlen(chip.suffix)),
+                 context->style.font, nk_rgba(0,0,0,0), text);
+    nk_push_scissor(canvas, clip);
+}
+
+auto process_compose_tool_chip(nk_context* context, const WormUiComposeView& view,
+                              struct nk_rect field, bool focused) -> bool {
+    const auto chip = tool_chip(context, view, field);
+    const auto& button = context->input.mouse.buttons[NK_BUTTON_LEFT];
+    const auto source = chip.layer ? view.semantic_layer_target.layer_id : view.draw_source_id;
+    const auto kind = static_cast<std::uint8_t>(chip.layer ? 3
+        : view.note_paint_mode_active ? view.draw_source_kind : 4);
+    if (state.tool_chip_pointer_active) {
+        const auto& stamp = state.tool_chip_stamp;
+        state.tool_chip_pointer_canceled |= !focused || view.input_occluded ||
+            stamp.project != view.project_id || stamp.chart != view.chart_id ||
+            stamp.revision != view.document_revision || stamp.source != source || stamp.kind != kind;
+        if (!button.down) state.tool_chip_pointer_active = false;
+        return true;
+    }
+    if (!focused || view.input_occluded) return false;
+    if (chip.bounds.w <= 0 || !button.clicked ||
+        !nk_input_has_mouse_click_in_rect(&context->input, NK_BUTTON_LEFT, chip.bounds)) return false;
+    state.tool_chip_pointer_active = button.down != 0;
+    state.tool_chip_pointer_canceled = false;
+    state.tool_chip_stamp = {view.project_id, view.chart_id, view.document_revision, source, kind};
+    if (nk_input_has_mouse_click_in_rect(&context->input, NK_BUTTON_LEFT, chip.source_bounds))
+        reveal_chip_source(view, chip.layer);
+    return true;
 }

@@ -1147,6 +1147,13 @@ static void process_compose_draw_tools(const ComposePointerEventContext& input, 
     if (!right_consumed) process_note_paint_pointer(input, consumed);
 }
 
+static void draw_compose_editor_scene(const ComposePanelRenderContext& panel,
+    nk_command_buffer* canvas, struct nk_rect viewport, double input_right) {
+    draw_compose_scene_canvas(panel.context, panel.view, canvas, viewport);
+    draw_compose_tool_chip(panel.context, *panel.view, canvas,
+        nk_rect(viewport.x, viewport.y, static_cast<float>(input_right - viewport.x), viewport.h));
+}
+
 static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
                                         bool inspector_drawn, float inspector_width) {
     auto* context = panel.context;
@@ -1198,8 +1205,14 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         state.bookmark_rename.active || state.bookmark_rename.release_pending ||
         worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_chooser)) {
         discard_occluded_compose_input(panel);
-        draw_compose_scene_canvas(context, view, canvas, viewport);
+        draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
         render_compose_bookmark_rename(context, *view, *action, state.bookmark_rename, viewport, window_focused);
+        return;
+    }
+    if (process_compose_tool_chip(context, *view,
+            nk_rect(viewport.x, viewport.y, static_cast<float>(editor_input_right - viewport.x), viewport.h),
+            window_focused)) {
+        draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
         return;
     }
     const auto pointer_focus = update_compose_pointer_focus(
@@ -1210,7 +1223,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     const auto& left_button = context->input.mouse.buttons[NK_BUTTON_LEFT];
     process_compose_key_events(context, view, action, window_focused, ime_composition_active);
     if (state.go_to_measure_open) {
-        draw_compose_scene_canvas(context, view, canvas, viewport);
+        draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
         render_compose_bookmark_rename(context, *view, *action, state.bookmark_rename, viewport, window_focused);
         return;
     }
@@ -1320,7 +1333,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     process_compose_pointer_actions(pointer_event, paint_pointer_consumed);
     process_compose_drag_gestures(pointer_event, paint_pointer_consumed);
 
-    draw_compose_scene_canvas(context, view, canvas, viewport);
+    draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
     render_compose_bookmark_rename(context, *view, *action, state.bookmark_rename, viewport, window_focused);
     render_compose_inline_timing_editor(panel, viewport);
 }

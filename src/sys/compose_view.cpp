@@ -1405,6 +1405,9 @@ bool initialize_compose_view_state(
     const auto notes_editable = wormedit::ui::compose_notes_editable(compose_mode_of(application_state));
     view.draw_source_kind = application_state.draw_source_kind;
     view.draw_source_id = application_state.draw_source_id;
+    view.draw_source_label = "silent note";
+    view.draw_source_missing = false;
+    view.semantic_layer_target_row = 0;
     view.note_paint_mode_active = notes_editable && application_state.note_paint_mode_active;
     view.semantic_layer_paint_mode_active =
         notes_editable && application_state.semantic_layer_paint_mode_active;
@@ -1666,6 +1669,7 @@ bool populate_semantic_layer_palette(
         application_state.semantic_layer_target.value_or(wormedit::layer_id_t{}),
         &wormedit::semantic_layer_t::id);
     if (target != chart.semantic_layers.end()) {
+        view.semantic_layer_target_row = static_cast<std::size_t>(target - chart.semantic_layers.begin());
         const auto* name = flattened.arena() ? arena_string(*flattened.arena(), target->name) : nullptr;
         view.semantic_layer_target = {
             .layer_id = target->id.value, .name = name,
@@ -4463,10 +4467,17 @@ void prepare_draw_stem_sources(compose_scene_cache_t& cache,
     const wormedit::song_document_t& document, const wormedit::chart_document_t& chart) {
     auto& sources = cache.draw_stem_sources;
     if (sources.document == &document && sources.chart == &chart && sources.revision == document.revision) return;
-    sources = {&document, &chart, document.revision, sources.build_count + 1, {}, {}};
-    for (std::size_t index = 0; index < document.resources.size(); ++index)
+    const auto builds = sources.build_count + 1;
+    sources = {};
+    sources.document = &document;
+    sources.chart = &chart;
+    sources.revision = document.revision;
+    sources.build_count = builds;
+    for (std::size_t index = 0; index < document.resources.size(); ++index) {
+        sources.resource_indices.emplace(document.resources[index].id.value, index);
         if (document.resources[index].sound_kind == wormedit::sound_kind_t::stem)
             sources.explicit_stem_resources.emplace(document.resources[index].id.value, index);
+    }
     std::unordered_map<std::uint64_t, std::size_t> channel_lanes;
     for (std::size_t index = 0; index < chart.bgm_source_lanes.size(); ++index) {
         const auto& lane = chart.bgm_source_lanes[index];
@@ -4483,6 +4494,43 @@ auto draw_stem_source_name(flattened_workspace_t& flattened, std::string_view na
     const auto* owned = flattened.arena() ? arena_string(*flattened.arena(), name) : nullptr;
     if (!owned) flattened.view.compose.truncated = true;
     return owned ? owned : "";
+}
+
+auto bounded_draw_source_label(const wormedit::resource_entry_t& resource) -> std::string {
+    auto identifier = std::to_string(resource.id.value);
+    const auto identity = std::ranges::find(resource.target_identities,
+        wormedit::format_family_t::bms, &wormedit::target_resource_identity_t::family);
+    if (identity != resource.target_identities.end() && !identity->identifier.empty())
+        identifier = identity->identifier;
+    auto text = identifier + " " + (resource.name.empty() ? "unnamed source" : resource.name);
+    constexpr std::size_t limit = 512;
+    if (text.size() <= limit) return text;
+    auto end = limit - 3;
+    while (end && (static_cast<unsigned char>(text[end]) & 0xc0U) == 0x80U) --end;
+    text.resize(end);
+    text += "…";
+    return text;
+}
+
+void populate_draw_source_label(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+    const wormedit::song_document_t& document) {
+    auto& view = flattened.view.compose;
+    auto& source = cache.draw_stem_sources;
+    if (!source.source_label_valid || source.source_kind != view.draw_source_kind ||
+        source.source_id != view.draw_source_id) {
+        source.source_kind = view.draw_source_kind;
+        source.source_id = view.draw_source_id;
+        const auto found = source.resource_indices.find(view.draw_source_id);
+        source.source_missing = view.draw_source_kind != 0 && found == source.resource_indices.end();
+        source.source_label = view.draw_source_kind == 0 ? "silent note"
+            : source.source_missing ? "missing source"
+            : bounded_draw_source_label(document.resources[found->second]);
+        source.source_label_valid = true;
+    }
+    view.draw_source_label = view.draw_source_kind == 0 ? "silent note"
+        : source.source_missing ? "missing source"
+        : draw_stem_source_name(flattened, source.source_label);
+    view.draw_source_missing = source.source_missing;
 }
 
 void populate_draw_stem_sources(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
@@ -4557,6 +4605,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     }
     const auto& chart = *chart_it;
     populate_draw_stem_sources(flattened, cache, history.document, chart);
+    populate_draw_source_label(flattened, cache, history.document);
     populate_branch_statement_metadata(flattened, chart);
     project_branch_statement_feedback(view, application_state, chart.id, history.document.revision);
     view.bgm_column_count = static_cast<std::uint32_t>(chart.bgm_source_lanes.size());

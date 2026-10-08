@@ -1477,6 +1477,72 @@ void render_sound_group_context_menu(const SoundsPanel& panel) {
     chrome::context_menu_end(menu, context);
 }
 
+auto chip_sound_reveal_ready(const SoundsPanel& panel) -> bool {
+    const auto& state = *panel.state;
+    const auto& view = *panel.view;
+    return state.source_chip_reveal_kind != 1 ||
+        (view.keysound_projected_primary_resource_id == state.source_chip_reveal_id &&
+         view.keysound_projected_filters_unrestricted && view.keysound_primary_display_index_valid);
+}
+
+void restore_chip_sound_selection(const SoundsPanel& panel) {
+    auto& state = *panel.state;
+    const auto& view = *panel.view;
+    if (state.source_chip_reveal_kind != 1) return;
+    if (state.chip_reveal_project != view.project_id || state.chip_reveal_chart != view.chart_id ||
+        view.draw_source_kind != 1 || view.draw_source_id != state.source_chip_reveal_id || view.draw_source_missing) {
+        state.source_chip_reveal_kind = 0;
+        state.source_chip_reveal_id = 0;
+        state.keysound_reveal_primary = false;
+        return;
+    }
+    state.keysound_selection.primary = state.source_chip_reveal_id;
+    state.keysound_selection.selected = {state.source_chip_reveal_id};
+    state.keysound_search.fill(0);
+    state.keysound_filters = {};
+    state.keysound_filters.include_ungrouped = true;
+    state.keysound_filters.layer_chart_id = view.chart_id;
+    state.keysound_filter_states_by_project[view.project_id] = state.keysound_filters;
+    state.keysound_reveal_primary = true;
+}
+
+auto chip_sound_page_ready(const SoundsPanel& panel) -> bool {
+    const auto& state = *panel.state;
+    const auto& view = *panel.view;
+    if (state.source_chip_reveal_kind != 1) return true;
+    const auto primary = view.keysound_primary_display_index;
+    if (primary < view.keysound_display_first_row ||
+        primary - view.keysound_display_first_row >= view.keysound_display_row_count) return false;
+    const auto& row = view.keysound_display_rows[primary - view.keysound_display_first_row];
+    return row.kind == WORM_UI_COMPOSE_KEYSOUND_SOUND_ROW &&
+        row.resource_id == state.source_chip_reveal_id;
+}
+
+void reveal_sound_primary(const SoundsPanel& panel) {
+    auto* context = panel.context;
+    if (!panel.state->keysound_reveal_primary || !chip_sound_reveal_ready(panel)) return;
+    if (!panel.state->keysound_slots_mode &&
+        panel.view->keysound_section_projection_available &&
+        panel.view->keysound_primary_display_index_valid) {
+        nk_group_set_scroll(context, "Compose sound list", 0,
+            static_cast<nk_uint>(panel.view->keysound_primary_display_index *
+                (row_height + context->style.window.spacing.y)));
+    } else {
+        const auto primary = std::ranges::find(panel.state->keysound_shown,
+                                               panel.state->keysound_selection.primary);
+        if (primary != panel.state->keysound_shown.end())
+        nk_group_set_scroll(context, "Compose sound list", 0,
+            static_cast<nk_uint>(std::distance(panel.state->keysound_shown.begin(), primary) *
+                (row_height + context->style.window.spacing.y)));
+    }
+    if (!chip_sound_page_ready(panel)) return;
+    panel.state->keysound_reveal_primary = false;
+    if (panel.state->source_chip_reveal_kind == 1) {
+        panel.state->source_chip_reveal_kind = 0;
+        panel.state->source_chip_reveal_id = 0;
+    }
+}
+
 void render_list(const SoundsPanel& panel, float height) {
     auto* context = panel.context;
     // Before rows: they open the group menu, and the opening press must survive to its first begin.
@@ -1486,23 +1552,7 @@ void render_list(const SoundsPanel& panel, float height) {
     const auto count = static_cast<int>(automatic_sections
         ? panel.view->keysound_display_total_count : panel.state->keysound_shown.size());
     nk_layout_row_dynamic(context, height, 1);
-    if (panel.state->keysound_reveal_primary) {
-        if (!panel.state->keysound_slots_mode &&
-            panel.view->keysound_section_projection_available &&
-            panel.view->keysound_primary_display_index_valid) {
-            nk_group_set_scroll(context, "Compose sound list", 0,
-                static_cast<nk_uint>(panel.view->keysound_primary_display_index *
-                    (row_height + context->style.window.spacing.y)));
-        } else {
-            const auto primary = std::ranges::find(panel.state->keysound_shown,
-                                                   panel.state->keysound_selection.primary);
-            if (primary != panel.state->keysound_shown.end())
-            nk_group_set_scroll(context, "Compose sound list", 0,
-                static_cast<nk_uint>(std::distance(panel.state->keysound_shown.begin(), primary) *
-                    (row_height + context->style.window.spacing.y)));
-        }
-        panel.state->keysound_reveal_primary = false;
-    }
+    reveal_sound_primary(panel);
     struct nk_list_view list{};
     if (!nk_list_view_begin(context, &list, "Compose sound list", NK_WINDOW_BORDER,
                             static_cast<int>(row_height), std::max(count, 1))) return;
@@ -1612,6 +1662,7 @@ void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
     publish_drop_bounds(panel);
     sync_filter_state(panel);
     sync_with_document(panel);
+    restore_chip_sound_selection(panel);
     sync_sound_slots(panel);
     collect_shown_and_masks(panel);
     refresh_selected_slot_resource(panel);

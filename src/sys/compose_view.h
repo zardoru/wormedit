@@ -135,6 +135,11 @@ struct compose_scene_cache_t {
         std::uint64_t revision{}, build_count{};
         std::unordered_map<std::uint64_t, std::size_t> resource_lanes;
         std::unordered_map<std::uint64_t, std::size_t> explicit_stem_resources;
+        std::unordered_map<std::uint64_t, std::size_t> resource_indices;
+        std::uint8_t source_kind{};
+        std::uint64_t source_id{};
+        std::string source_label;
+        bool source_label_valid{}, source_missing{};
     } draw_stem_sources;
     std::optional<tap_timing_apply_proposal_t> tap_apply_proposal;
     std::optional<tap_timing_apply_proposal_t> tap_preview_binding;

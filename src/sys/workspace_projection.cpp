@@ -1012,6 +1012,12 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
     view.keysound_display_rows_truncated = list.display_truncated;
     view.keysound_primary_display_index_valid = list.primary_display_index.has_value();
     view.keysound_primary_display_index = list.primary_display_index.value_or(0);
+    const auto& request = projection.keysound_request;
+    view.keysound_projected_primary_resource_id = request.primary_resource_id;
+    view.keysound_projected_filters_unrestricted = !request.slots_mode &&
+        !request.automatic_search[0] && !request.group_filter_active &&
+        request.layer_filter_kind == WORM_UI_KEYSOUND_LAYER_FILTER_ANY &&
+        !request.collapsed_group_count && !request.ungrouped_collapsed && request.include_ungrouped;
     view.keysound_filter_layer_first = list.filter_layer_first;
     view.keysound_filter_layer_total = list.filter_layer_total;
     view.keysound_filter_selected_layer_valid = list.selected_filter_layer_valid;

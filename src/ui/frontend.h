@@ -308,6 +308,7 @@ typedef struct WormUiMetadataView {
     bool has_chart_rating;
     int64_t chart_rating_numerator;
     uint64_t chart_rating_denominator;
+    uint64_t chart_divisions_per_standard_measure;
     bool timing_locked;
     int64_t audio_offset_numerator;
     uint64_t audio_offset_denominator;
@@ -2545,6 +2546,7 @@ typedef enum WormUiMetadataEditKind {
     WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD,
     WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD,
     WORM_UI_METADATA_EDIT_OUTPUT_PATH,
+    WORM_UI_METADATA_EDIT_REDIVIDE_CHART,
 } WormUiMetadataEditKind;
 
 typedef enum WormUiClipboardAction {
@@ -2666,6 +2668,8 @@ typedef struct WormUiWorkspaceAction {
     const char* metadata_format_value;
     size_t metadata_output_group_index;
     const char* metadata_output_path;
+    // REDIVIDE_CHART: target divisions per standard measure (exact, 0 when unset).
+    uint64_t metadata_redivision_resolution;
     WormUiComposeActionKind compose_action;
     uint64_t compose_area_begin_row;
     uint64_t compose_area_end_row;

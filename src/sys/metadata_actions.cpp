@@ -4,6 +4,7 @@
 #include "ui/frontend.h"
 
 #include <wormedit/core/audio_offset_editor.h>
+#include <wormedit/core/command.h>
 #include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/core/workspace.h>
@@ -150,6 +151,31 @@ auto dispatch_format_edit(const WormUiWorkspaceAction& action, document_history_
         apply_metadata_edit(history, action.metadata_document_revision, edit), workspace, history);
 }
 
+auto redivision_rejection_message(const diagnostic_t& diagnostic) -> std::string {
+    auto message = "Resolution change rejected: " + diagnostic.message;
+    if (diagnostic.object) message += " (object " + std::to_string(diagnostic.object->value) + ")";
+    return message;
+}
+
+auto dispatch_redivision_edit(const WormUiWorkspaceAction& action, document_history_t& history,
+                              workspace_controller_t& workspace) -> metadata_edit_feedback_t {
+    if (action.metadata_chart_id == 0 || action.metadata_redivision_resolution == 0)
+        return {notification_severity_t::warning, "Resolution change payload is incomplete."};
+    auto redivision = apply_redivision_command(history, action.metadata_document_revision,
+                                               chart_id_t{action.metadata_chart_id},
+                                               action.metadata_redivision_resolution);
+    if (!redivision.command.applied && !redivision.command.diagnostics.empty())
+        return {notification_severity_t::error,
+                redivision_rejection_message(redivision.command.diagnostics.front())};
+    const auto moved = redivision.moves.size();
+    auto feedback = publish_metadata_edit(std::move(redivision.command), workspace, history);
+    if (feedback.severity == notification_severity_t::success)
+        feedback.message = "Redivided " + std::to_string(moved) + " positions to " +
+                           std::to_string(action.metadata_redivision_resolution) +
+                           " divisions per measure.";
+    return feedback;
+}
+
 auto dispatch_metadata_edit(const WormUiWorkspaceAction& action, document_history_t& history,
                             workspace_controller_t& workspace,
                             bool timing_locked) -> metadata_edit_feedback_t {
@@ -169,6 +195,8 @@ auto dispatch_metadata_edit(const WormUiWorkspaceAction& action, document_histor
                                 set_output_group_path_action_t{action.metadata_output_group_index,
                                                                action.metadata_output_path}),
             workspace, history);
+    case WORM_UI_METADATA_EDIT_REDIVIDE_CHART:
+        return dispatch_redivision_edit(action, history, workspace);
     case WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD:
     case WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD:
     case WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD:

@@ -110,7 +110,10 @@ static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
                            metadata->chart_author, metadata->chart_author_bytes);
     state.chart_rating_text.fill('\0');
     state.audio_offset_text.fill('\0');
+    state.chart_resolution_text.fill('\0');
     if (metadata->has_chart) {
+        std::snprintf(state.chart_resolution_text.data(), state.chart_resolution_text.size(), "%llu",
+                      static_cast<unsigned long long>(metadata->chart_divisions_per_standard_measure));
         if (metadata->has_chart_rating) {
             const auto rating = worm_ui_nuklear_format_metadata_rational(
                 {metadata->chart_rating_numerator, metadata->chart_rating_denominator});

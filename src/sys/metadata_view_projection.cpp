@@ -48,6 +48,16 @@ auto metadata_copy_preview_matches(const WormUiMetadataView& metadata,
         key.source_path.generic_string() == metadata.selected_music_source;
 }
 
+void populate_metadata_chart_resolution(flattened_workspace_t& flattened,
+                                       const wormedit::document_history_t& history) {
+    auto& metadata = flattened.view.metadata;
+    const auto chart = std::ranges::find_if(history.document.charts, [&](const auto& item) {
+        return item.id.value == metadata.chart_id;
+    });
+    if (chart == history.document.charts.end() || !metadata.has_chart) return;
+    metadata.chart_divisions_per_standard_measure = chart->divisions_per_standard_measure;
+}
+
 void populate_metadata_copy_preview(flattened_workspace_t& flattened,
                                     const wormedit::document_history_t& history,
                                     const runtime::metadata_asset_t& runtime) {
@@ -132,6 +142,7 @@ void populate_metadata_view_projection(
     metadata.dropped_output_relative_path = metadata_frame_text(flattened, metadata_drop.output_path);
 
     populate_metadata_music(flattened, history, workspace);
+    populate_metadata_chart_resolution(flattened, history);
     populate_metadata_copy_preview(flattened, history, metadata_asset_runtime);
     populate_metadata_output_groups(flattened, history, workspace);
 

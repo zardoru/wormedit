@@ -45,6 +45,47 @@ auto song_edit(const metadata_notification_fixture_t& fixture) -> WormUiWorkspac
     return action;
 }
 
+auto redivision_song(std::uint64_t row) -> song_document_t {
+    song_document_t song{
+        .id = song_id_t{1},
+        .charts =
+            {
+                {
+                    .id = chart_id_t{1},
+                    .measures = {{.id = measure_id_t{1}}},
+                    .lane_layouts =
+                        {
+                            {
+                                .id = object_id_t{1},
+                                .position = {measure_id_t{1}, 0},
+                                .layout =
+                                    {
+                                        .profile_id = "metadata-test",
+                                        .lanes = {{.id = lane_id_t{1}, .name = "Lane"}},
+                                    },
+                            },
+                        },
+                },
+            },
+    };
+    song.charts.front().measures.front().notes.push_back({
+        .id = object_id_t{2},
+        .position = {measure_id_t{1}, row},
+        .lane = lane_id_t{1},
+    });
+    return song;
+}
+
+auto redivision_action(const metadata_notification_fixture_t& fixture, std::uint64_t resolution)
+    -> WormUiWorkspaceAction {
+    WormUiWorkspaceAction action{};
+    action.metadata_edit = WORM_UI_METADATA_EDIT_REDIVIDE_CHART;
+    action.metadata_document_revision = fixture.history.document.revision;
+    action.metadata_chart_id = 1;
+    action.metadata_redivision_resolution = resolution;
+    return action;
+}
+
 void check_metadata_notification(bool value) { CHECK(value); }
 void require_metadata_notification(bool value) { REQUIRE(value); }
 
@@ -94,4 +135,39 @@ TEST_CASE("metadata malformed and stale edits post once without mutation", "[uni
     check_metadata_notification(fixture.history.undo.empty());
     check_metadata_notification(!fixture.dispatch(WormUiWorkspaceAction{}));
     check_metadata_notification(fixture.entries().size() == 2);
+}
+
+TEST_CASE("metadata redivision action redivides exactly or rejects inexact charts untouched",
+          "[unit][sys][metadata-notification]") {
+    metadata_notification_fixture_t fixture;
+    fixture.history = make_document_history(redivision_song(130));
+    const auto binding = make_workspace_controller(fixture.history);
+    require_metadata_notification(static_cast<bool>(binding));
+    fixture.workspace = *binding.workspace;
+
+    const auto applied = fixture.dispatch(redivision_action(fixture, 192));
+    require_metadata_notification(applied == "Redivided 1 positions to 192 divisions per measure.");
+    check_metadata_notification(fixture.history.document.charts.front().divisions_per_standard_measure == 192);
+    check_metadata_notification(fixture.history.document.charts.front().measures.front().notes.front().position.row == 26);
+    check_metadata_notification(fixture.history.undo.size() == 1);
+    auto entries = fixture.entries();
+    require_metadata_notification(entries.size() == 1);
+    expect_edit_entry(entries[0], notification_severity_t::success, *applied);
+
+    fixture.history = make_document_history(redivision_song(131));
+    const auto inexact_binding = make_workspace_controller(fixture.history);
+    require_metadata_notification(static_cast<bool>(inexact_binding));
+    fixture.workspace = *inexact_binding.workspace;
+    const auto revision = fixture.history.document.revision;
+    const auto rejected = fixture.dispatch(redivision_action(fixture, 192));
+    require_metadata_notification(static_cast<bool>(rejected));
+    check_metadata_notification(rejected->starts_with("Resolution change rejected: "));
+    check_metadata_notification(rejected->find("(object 2)") != std::string::npos);
+    check_metadata_notification(fixture.history.document.revision == revision);
+    check_metadata_notification(fixture.history.undo.empty());
+    check_metadata_notification(fixture.history.document.charts.front().divisions_per_standard_measure == 960);
+    check_metadata_notification(fixture.history.document.charts.front().measures.front().notes.front().position.row == 131);
+    entries = fixture.entries();
+    require_metadata_notification(entries.size() == 2);
+    expect_edit_entry(entries[0], notification_severity_t::error, *rejected);
 }

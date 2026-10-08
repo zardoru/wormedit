@@ -40,6 +40,12 @@ struct audition_pump_result_t {
     }
 };
 
+// Checks the same bounded initial lookahead against immutable resident PCM only.
+// Missing PCM returns nullopt; this function never opens or invokes a decoder.
+[[nodiscard]] auto prime_resident_audition(transport_t& transport, session_token_t token,
+                                          std::span<const audition_clip_t> clips)
+    -> std::optional<audition_pump_result_t>;
+
 // Control/worker-thread lookahead for an already scheduled one-shot. It plans
 // every distinct cache key before decoding, so an over-cap request has no
 // partial cache side effect. The transport generation gates every publication.

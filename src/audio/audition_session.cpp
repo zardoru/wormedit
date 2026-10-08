@@ -16,15 +16,8 @@ auto audition_session_t::start(std::span<const audition_clip_t> clips)
                 .transport = transport,
                 .prime = std::nullopt};
     }
-    const auto prime = pump_audition_lookahead(sources_, transport_, *transport.token, clips, 0);
-    if (!prime) {
-        static_cast<void>(bridge_.stop());
-        clear_state();
-        return {.status = audition_session_start_status_t::prime_failed,
-                .token = std::nullopt,
-                .transport = transport,
-                .prime = prime};
-    }
+    const auto prime = prime_resident_audition(transport_, *transport.token, clips);
+    prime_pending_ = !prime.has_value();
 
     token_ = transport.token;
     clips_.assign(clips.begin(), clips.end());
@@ -38,24 +31,25 @@ auto audition_session_t::start(std::span<const audition_clip_t> clips)
             .prime = prime};
 }
 
+auto audition_session_t::snapshot_pump_state() const -> pump_state_t {
+    const std::scoped_lock lock(mutex_);
+    return {token_, clips_, timeline_frame_};
+}
+
+auto audition_session_t::complete_pump(session_token_t token, audition_pump_result_t result)
+    -> audition_pump_result_t {
+    const std::scoped_lock lock(mutex_);
+    if (token_ != token) return {.status = audition_pump_status_t::stale_generation};
+    if (result) prime_pending_ = false;
+    return result;
+}
+
 auto audition_session_t::pump(audition_pump_options_t options) -> audition_pump_result_t {
-    std::optional<session_token_t> token;
-    std::vector<audition_clip_t> clips;
-    std::uint64_t timeline_frame{};
-    {
-        const std::scoped_lock lock(mutex_);
-        token = token_;
-        clips = clips_;
-        timeline_frame = timeline_frame_;
-    }
-    if (!token.has_value()) {
-        return {.status = audition_pump_status_t::stale_generation,
-                .requested_blocks = 0,
-                .decoded_blocks = 0,
-                .cached_blocks = 0,
-                .failure = std::nullopt};
-    }
-    return pump_audition_lookahead(sources_, transport_, *token, clips, timeline_frame, options);
+    const auto state = snapshot_pump_state();
+    if (!state.token) return {.status = audition_pump_status_t::stale_generation};
+    auto result = pump_audition_lookahead(sources_, transport_, *state.token, state.clips,
+                                          state.timeline_frame, options);
+    return complete_pump(*state.token, std::move(result));
 }
 
 auto audition_session_t::render(std::span<float> interleaved_stereo)
@@ -76,6 +70,14 @@ auto audition_session_t::render(std::span<float> interleaved_stereo)
                 .mix = {.status = transport_mix_status_t::stale_generation}};
     }
     const auto first_frame = timeline_frame_;
+    if (!transport_.is_current(*token_)) {
+        clear_state();
+        return {.status = audition_session_render_status_t::stale_generation,
+                .first_timeline_frame = first_frame};
+    }
+    if (prime_pending_)
+        return {.status = audition_session_render_status_t::priming,
+                .first_timeline_frame = first_frame};
     auto mixed = transport_.mix(*token_, first_frame, interleaved_stereo);
     if (mixed.status == transport_mix_status_t::stale_generation) {
         clear_state();
@@ -144,6 +146,7 @@ void audition_session_t::publish_playhead() noexcept {
 
 void audition_session_t::clear_state() noexcept {
     token_.reset();
+    prime_pending_ = false;
     clips_.clear();
     timeline_frame_ = 0;
     duration_frames_ = 0;

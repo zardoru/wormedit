@@ -29,6 +29,7 @@ struct audition_session_start_result_t {
 
 enum class audition_session_render_status_t {
     mixed,
+    priming,
     complete,
     stopped,
     invalid_buffer,
@@ -44,8 +45,8 @@ struct audition_session_render_result_t {
 };
 
 // Owns one active click-preview timeline above the transport bridge. start()
-// primes a complete bounded lookahead window before publishing an active
-// session. pump() performs decoder work off the realtime path; render() only
+// checks resident PCM before publishing; streamed priming remains pending until
+// pump() performs decoder work off the caller/realtime path. render() only
 // mixes cache-resident blocks and advances a monotonic output-frame cursor.
 class audition_session_t {
   public:
@@ -66,6 +67,15 @@ class audition_session_t {
     [[nodiscard]] auto timeline_frame() const -> std::uint64_t;
 
   private:
+    friend struct audition_session_test_access_t;
+    struct pump_state_t {
+        std::optional<session_token_t> token;
+        std::vector<audition_clip_t> clips;
+        std::uint64_t timeline_frame{};
+    };
+    [[nodiscard]] auto snapshot_pump_state() const -> pump_state_t;
+    [[nodiscard]] auto complete_pump(session_token_t token, audition_pump_result_t result)
+        -> audition_pump_result_t;
     void clear_state() noexcept;
     void publish_playhead() noexcept;
 
@@ -75,6 +85,7 @@ class audition_session_t {
     playhead_snapshot_t playhead_;
     std::uint64_t generation_{};
     mutable std::mutex mutex_;
+    bool prime_pending_{};
     std::optional<session_token_t> token_;
     std::vector<audition_clip_t> clips_;
     std::uint64_t timeline_frame_{};

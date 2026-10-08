@@ -144,3 +144,35 @@ TEST_CASE("SDL audition rejection preserves and resumes the previous active sess
     const audio_subsystem_t audio_subsystem;
     CHECK(rejected_audition_continues_previous_session());
 }
+
+namespace {
+void audition_expect(bool value) { REQUIRE(value); }
+auto streamed_audition_without_service() -> bool {
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    const auto source = sources.register_source({.asset = wormedit::asset_id_t{1},
+        .path = fixture_path("polyphonic-chord.ogg"),
+        .source = {"fixture:polyphonic-chord.ogg", "worker-only"}});
+    if (!source) return false;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    audition_transport_bridge_t bridge{transport};
+    audition_session_t session{sources, transport, bridge};
+    wormedit::sys::sdl_audition_output_t output{session};
+    if (!output.open()) return false;
+    const audition_clip_t clip{source.binding->source, 0, source.binding->output_frame_count, 1};
+    if (!output.start(std::span{&clip, 1})) return false;
+    const auto deadline = SDL_GetTicks() + 2000;
+    while (session.timeline_frame() == 0 && SDL_GetTicks() < deadline) SDL_Delay(2);
+    const bool progressed = session.timeline_frame() > 0;
+    static_cast<void>(output.stop());
+    return progressed && !output.service() && !session.active();
+}
+}
+TEST_CASE("SDL streamed audition decodes and advances without caller service",
+          "[integration][audio][sdl][audition][worker]") {
+    audition_expect(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    audition_expect(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const audio_subsystem_t lifetime;
+    audition_expect(streamed_audition_without_service());
+}

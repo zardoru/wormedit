@@ -136,6 +136,24 @@ auto decode_audition_plan(decoded_source_registry_t& sources, transport_t& trans
 
 } // namespace
 
+auto prime_resident_audition(transport_t& transport, session_token_t token,
+                              std::span<const audition_clip_t> clips)
+    -> std::optional<audition_pump_result_t> {
+    const audition_pump_options_t options;
+    if (!valid_options(clips, options)) return std::nullopt;
+    const auto plan = plan_audition_keys(clips, 0, options.lookahead_frames,
+                                         options.maximum_blocks);
+    if (plan.status != audition_pump_status_t::ready) return std::nullopt;
+    auto result = empty_result(audition_pump_status_t::ready);
+    result.requested_blocks = plan.keys.size();
+    for (const auto& key : plan.keys) {
+        const auto hit = transport.resident_block_hit(token, key);
+        if (!hit || hit->status != block_decode_status_t::cache_hit) return std::nullopt;
+        ++result.cached_blocks;
+    }
+    return result;
+}
+
 auto pump_audition_lookahead(decoded_source_registry_t& sources, transport_t& transport,
                              session_token_t token, std::span<const audition_clip_t> clips,
                              std::uint64_t timeline_frame, audition_pump_options_t options)

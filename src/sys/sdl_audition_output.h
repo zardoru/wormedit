@@ -6,6 +6,9 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 #include <optional>
 #include <span>
 #include <string>
@@ -46,8 +49,8 @@ struct sdl_audition_service_result_t {
 };
 
 // App-private SDL3 playback adapter. SDL's stream lock serializes callback
-// rendering with replacement and hard Stop; decoder refill remains on the UI
-// thread through service() and never runs inside the device callback.
+// rendering with replacement and hard Stop. Decoder work runs on one refill
+// worker; service() only consumes its generation-checked result.
 class sdl_audition_output_t {
   public:
     explicit sdl_audition_output_t(audio::audition_session_t& session) : session_(session) {}
@@ -68,6 +71,9 @@ class sdl_audition_output_t {
     }
 
   private:
+    void refill_loop(std::stop_token stop);
+    void set_refill_enabled(bool enabled) noexcept;
+    [[nodiscard]] auto take_refill_result() -> std::optional<audio::audition_pump_result_t>;
     static void SDLCALL stream_callback(void* userdata, SDL_AudioStream* stream,
                                         int additional_amount, int total_amount);
     void render_requested(SDL_AudioStream* stream, int additional_amount) noexcept;
@@ -82,6 +88,12 @@ class sdl_audition_output_t {
     };
 
     audio::audition_session_t& session_;
+    std::mutex refill_mutex_;
+    std::condition_variable refill_ready_;
+    std::jthread refill_worker_;
+    std::uint64_t refill_generation_{};
+    bool refill_enabled_{};
+    std::optional<audio::audition_pump_result_t> refill_result_;
     SDL_AudioStream* stream_{};
     std::atomic<callback_failure_t> callback_failure_{callback_failure_t::none};
     std::array<float, callback_frames * audio::output_channel_count> scratch_{};

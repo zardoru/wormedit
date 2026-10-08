@@ -1,4 +1,6 @@
 #include "sys/compose_audition_requests.h"
+#include "sys/audio_transport_frame.h"
+#include <SDL3/SDL_timer.h>
 #include <wormedit/audio/audition_resolver.h>
 #include <catch2/catch_test_macros.hpp>
 #include <SDL3/SDL_init.h>
@@ -108,4 +110,40 @@ TEST_CASE("Catalog SDL start failure and real dummy success use typed audition f
     expect_audition(entries[0].severity == notification_severity_t::success);
     expect_audition(fixture.center.statistics().posted == 2);
     expect_audition(fixture.center.current_line()->message == "Edit applied.");
+}
+
+namespace {
+auto wait_audition_failure(sdl_audition_output_t& output)
+    -> std::optional<sdl_audition_service_result_t> {
+    const auto deadline = SDL_GetTicks() + 2000;
+    while (SDL_GetTicks() < deadline) {
+        auto result = output.service();
+        if (result && !*result) return result;
+        SDL_Delay(2);
+    }
+    return std::nullopt;
+}
+}
+TEST_CASE("Deferred audition source failure retains existing notification and is consumed once",
+          "[audio][sdl][audition][audition-notification][deferred-failure]") {
+    expect_audition(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    expect_audition(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const audio_lifetime_t lifetime;
+    audition_fixture_t fixture;
+    expect_audition(fixture.output.open());
+    const audio::audition_clip_t missing{{"missing-asset", "missing-content"}, 0, 512, 1};
+    expect_audition(static_cast<bool>(fixture.output.start(std::span{&missing, 1})));
+    const auto failed = wait_audition_failure(fixture.output);
+    expect_audition(failed.has_value());
+    expect_audition(failed->status == sdl_audition_service_status_t::pump_failed);
+    expect_audition(failed->pump.has_value());
+    expect_audition(failed->pump->status == audio::audition_pump_status_t::source_unavailable);
+    static_cast<void>(fixture.output.stop());
+    post_audition_service_notifications(*failed, fixture.sink);
+    const auto entries = fixture.entries();
+    expect_audition(entries.size() == 1);
+    expect_audition(entries[0].message == "Audio preview stopped because its decoded source is unavailable.");
+    expect_audition(entries[0].source == notification_source_t::audio);
+    expect_audition(!fixture.output.service());
+    expect_audition(!fixture.audition_session.active());
 }

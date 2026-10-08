@@ -1,4 +1,4 @@
-#include "sys/frame_timing.h"
+#include "sys/thread_priority.h"
 #include "sys/sdl_audition_output.h"
 #include "sys/sdl_audio_stream_lock.h"
 
@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <utility>
 
 namespace wormedit::sys {
 namespace {
@@ -38,6 +39,14 @@ auto sdl_audition_output_t::open(std::string* error_message) -> bool {
         }
         return false;
     }
+    try {
+        refill_worker_ = std::jthread([this](std::stop_token stop) { refill_loop(stop); });
+    } catch (...) {
+        if (error_message) *error_message = "could not start the audition refill worker";
+        SDL_DestroyAudioStream(stream_);
+        stream_ = nullptr;
+        return false;
+    }
     return true;
 }
 
@@ -46,8 +55,52 @@ void sdl_audition_output_t::close() noexcept {
         return;
     }
     static_cast<void>(stop());
+    refill_worker_.request_stop();
+    refill_ready_.notify_all();
+    if (refill_worker_.joinable()) refill_worker_.join();
     SDL_DestroyAudioStream(stream_);
     stream_ = nullptr;
+}
+
+void sdl_audition_output_t::set_refill_enabled(bool enabled) noexcept {
+    {
+        const std::scoped_lock lock(refill_mutex_);
+        ++refill_generation_;
+        refill_enabled_ = enabled;
+        refill_result_.reset();
+    }
+    refill_ready_.notify_all();
+}
+
+auto sdl_audition_output_t::take_refill_result()
+    -> std::optional<audio::audition_pump_result_t> {
+    const std::scoped_lock lock(refill_mutex_);
+    return std::exchange(refill_result_, std::nullopt);
+}
+
+void sdl_audition_output_t::refill_loop(std::stop_token stop) {
+    apply_current_thread_priority(SDL_THREAD_PRIORITY_HIGH);
+    std::unique_lock lock(refill_mutex_);
+    while (!stop.stop_requested()) {
+        refill_ready_.wait(lock, [&] { return stop.stop_requested() || refill_enabled_; });
+        if (stop.stop_requested()) return;
+        const auto generation = refill_generation_;
+        lock.unlock();
+        audio::audition_pump_result_t result;
+        try { result = session_.pump(); }
+        catch (...) { result.status = audio::audition_pump_status_t::decode_failed; }
+        lock.lock();
+        if (generation == refill_generation_ && refill_enabled_ &&
+            (!refill_result_ || static_cast<bool>(*refill_result_))) {
+            if (!result || result.status == audio::audition_pump_status_t::complete)
+                refill_enabled_ = false;
+            if (result.status != audio::audition_pump_status_t::stale_generation)
+                refill_result_ = std::move(result);
+        }
+        refill_ready_.wait_for(lock, std::chrono::milliseconds(10), [&] {
+            return stop.stop_requested() || generation != refill_generation_ || !refill_enabled_;
+        });
+    }
 }
 
 auto sdl_audition_output_t::pause_device() noexcept -> bool {
@@ -77,6 +130,7 @@ auto sdl_audition_output_t::start(std::span<const audio::audition_clip_t> clips)
         return {.status = sdl_audition_start_status_t::device_failed,
                 .session = std::nullopt, .message = message};
     }
+    set_refill_enabled(false);
     auto started = session_.start(clips);
     auto status = sdl_audition_start_status_t::session_failed;
     std::string message;
@@ -95,6 +149,7 @@ auto sdl_audition_output_t::start(std::span<const audio::audition_clip_t> clips)
         message = sdl_error("could not reset and resume the audio output stream");
     }
     if (status == sdl_audition_start_status_t::device_failed) static_cast<void>(stop());
+    else set_refill_enabled(session_.active());
     return {.status = status, .session = std::move(started), .message = std::move(message)};
 }
 
@@ -109,24 +164,17 @@ auto sdl_audition_output_t::service() -> std::optional<sdl_audition_service_resu
             .pump = std::nullopt,
         };
     }
-    if (stream_ == nullptr || !session_.active()) {
-        return std::nullopt;
-    }
-    auto pumped = [&] {
-        frame_phase_scope_t pump(frame_phase_t::audio_pump);
-        return session_.pump();
-    }();
-    if (pumped.status == audio::audition_pump_status_t::stale_generation) {
-        return std::nullopt;
-    }
+    auto pumped = take_refill_result();
+    if (!pumped) return std::nullopt;
     return sdl_audition_service_result_t{
-        .status = pumped ? sdl_audition_service_status_t::ready
+        .status = *pumped ? sdl_audition_service_status_t::ready
                          : sdl_audition_service_status_t::pump_failed,
         .pump = std::move(pumped),
     };
 }
 
 auto sdl_audition_output_t::stop() noexcept -> audio::transport_stop_result_t {
+    set_refill_enabled(false);
     if (stream_ == nullptr) {
         callback_failure_.store(callback_failure_t::none, std::memory_order_release);
         return session_.stop();

@@ -997,6 +997,18 @@ TEST_CASE("bookmark dispatcher preserves one typed seek producer warning", "[uni
     check_layer_command(entries[0].count == 1);
 }
 
+TEST_CASE("next marker reaches an audio-time bookmark through the timing index",
+          "[unit][sys][commands][markers]") {
+    using namespace wormedit;
+    TimingInsertFixture fixture;
+    auto& chart = fixture.fixture.history.document.charts.front();
+    chart.bookmarks.push_back({.id = object_id_t{1002}, .label = "Audio",
+        .anchor = marker_anchor_t::audio_time, .audio_milliseconds = 2000});
+    check_layer_command(fixture.invoke(application_command_kind_t::navigation_next_marker).accepted);
+    // Cursor row 720 sits at 1400 ms (BPM 150 from row 480); 2000 ms is 360 rows later.
+    check_layer_command(fixture.compose_state->cursor == local_position_t{measure_id_t{2}, 120});
+}
+
 #else
 namespace {
 void check_area_unchanged(const AreaFixture& fixture, const std::optional<std::string>& original) {

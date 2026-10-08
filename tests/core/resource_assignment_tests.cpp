@@ -182,6 +182,14 @@ auto subset_identifiers(const document_history_t& history) -> std::vector<std::s
     return identifiers;
 }
 
+auto find_test_bgm_event(const chart_document_t& chart, object_id_t id) -> const bgm_event_t* {
+    for (const auto& measure : chart.measures) {
+        const auto found = std::ranges::find(measure.bgm_events, id, &bgm_event_t::id);
+        if (found != measure.bgm_events.end()) return &*found;
+    }
+    return nullptr;
+}
+
 void check_renumber_rejection(document_history_t& history, std::uint64_t expected,
                               std::vector<resource_id_t> ids,
                               const std::vector<std::string>& names_before,
@@ -263,6 +271,65 @@ TEST_CASE("ordinary BGM move preserves identity and advances occupied source lan
     REQUIRE(undo_document_command(history));
     CHECK(history.document.charts.front().measures.front().bgm_events.front().id ==
           object_id_t{11});
+}
+
+TEST_CASE("moving a tailed BGM head translates its end by the exact row delta",
+          "[unit][core][resources][bgm-move]") {
+    auto song = assignment_song();
+    auto& chart = song.charts.front();
+    chart.measures.push_back({.id = measure_id_t{4}});
+    chart.measures.push_back({.id = measure_id_t{5}});
+    chart.measures.front().bgm_events.front().end = local_position_t{measure_id_t{4}, 200};
+    check_wav_slot(validate_document(song).empty());
+    auto history = make_document_history(song);
+    const auto moved = apply_bgm_event_move(history, history.document.revision,
+        {.chart = chart_id_t{2}, .event = object_id_t{11},
+         .position = {measure_id_t{4}, 120}, .source_lane = object_id_t{20}});
+    check_wav_slot(static_cast<bool>(moved));
+    const auto locate_event = [&] {
+        return find_test_bgm_event(history.document.charts.front(), object_id_t{11});
+    };
+    check_wav_slot(locate_event() != nullptr);
+    check_wav_slot(locate_event()->position == local_position_t{measure_id_t{4}, 120});
+    check_wav_slot(locate_event()->end == local_position_t{measure_id_t{5}, 80});
+    check_wav_slot(static_cast<bool>(apply_bgm_event_move(history, history.document.revision,
+        {.chart = chart_id_t{2}, .event = object_id_t{11},
+         .position = {measure_id_t{3}, 120}, .source_lane = object_id_t{20}})));
+    check_wav_slot(locate_event() != nullptr);
+    check_wav_slot(locate_event()->position == local_position_t{measure_id_t{3}, 120});
+    check_wav_slot(locate_event()->end == local_position_t{measure_id_t{4}, 80});
+    check_wav_slot(locate_event()->structural_slot == 0);
+    check_wav_slot(locate_event()->provenance.source_field.empty());
+    check_wav_slot(static_cast<bool>(undo_document_command(history)));
+    check_wav_slot(locate_event()->end == local_position_t{measure_id_t{5}, 80});
+    check_wav_slot(static_cast<bool>(undo_document_command(history)));
+    check_wav_slot(history.document.charts.front().measures.front().bgm_events.front().end ==
+                   local_position_t{measure_id_t{4}, 200});
+    check_wav_slot(static_cast<bool>(redo_document_command(history)));
+    check_wav_slot(static_cast<bool>(redo_document_command(history)));
+    check_wav_slot(locate_event()->position == local_position_t{measure_id_t{3}, 120});
+    check_wav_slot(locate_event()->end == local_position_t{measure_id_t{4}, 80});
+}
+
+TEST_CASE("BGM head movement rejects translated tails outside the chart without history",
+          "[unit][core][resources][bgm-move]") {
+    auto song = assignment_song();
+    auto& chart = song.charts.front();
+    chart.measures.push_back({.id = measure_id_t{4}});
+    chart.measures.front().bgm_events.front().end = local_position_t{measure_id_t{4}, 900};
+    check_wav_slot(validate_document(song).empty());
+    auto history = make_document_history(song);
+    const auto before = history.document;
+    const auto result = apply_bgm_event_move(history, history.document.revision,
+        {.chart = chart_id_t{2}, .event = object_id_t{11},
+         .position = {measure_id_t{3}, 480}, .source_lane = object_id_t{20}});
+    check_wav_slot(!result);
+    const auto before_bytes = write_native_project(before);
+    const auto after_bytes = write_native_project(history.document);
+    check_wav_slot(before_bytes.bytes.has_value());
+    check_wav_slot(after_bytes.bytes.has_value());
+    check_wav_slot(*after_bytes.bytes == *before_bytes.bytes);
+    check_wav_slot(history.undo.empty());
 }
 
 TEST_CASE("BMS identifier runs skip undersized holes and capacity counts free ranges",

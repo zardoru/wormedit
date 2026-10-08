@@ -100,11 +100,43 @@ auto migrate_v4_to_v5(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 4> released_migrations{{
+auto migrate_v5_bgm_event(nlohmann::json& event) -> std::string {
+    if (!event.is_object()) return "BGM event must be an object";
+    if (!event.contains("end")) event["end"] = nullptr;
+    return {};
+}
+
+auto migrate_v5_measure(nlohmann::json& measure) -> std::string {
+    if (!measure.is_object() || !measure.contains("bgm_events")) return {};
+    if (!measure.at("bgm_events").is_array()) return "BGM events must be an array";
+    for (auto& event : measure.at("bgm_events"))
+        if (const auto error = migrate_v5_bgm_event(event); !error.empty()) return error;
+    return {};
+}
+
+auto migrate_v5_chart(nlohmann::json& chart) -> std::string {
+    if (!chart.is_object()) return "chart must be an object";
+    if (!chart.contains("measures")) return {};
+    if (!chart.at("measures").is_array()) return "chart measures must be an array";
+    for (auto& measure : chart.at("measures"))
+        if (const auto error = migrate_v5_measure(measure); !error.empty()) return error;
+    return {};
+}
+
+auto migrate_v5_to_v6(nlohmann::json& document) -> std::string {
+    if (!document.contains("charts")) return {};
+    if (!document.at("charts").is_array()) return "document charts must be an array";
+    for (auto& chart : document.at("charts"))
+        if (const auto error = migrate_v5_chart(chart); !error.empty()) return error;
+    return {};
+}
+
+constexpr std::array<migration_t, 5> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
     {4, &migrate_v4_to_v5},
+    {5, &migrate_v5_to_v6},
 }};
 
 } // namespace
@@ -162,7 +194,7 @@ constexpr std::string_view legacy_lane_prefix = "BGM source #";
 auto is_bms_zero_slot(const bgm_event_t& event) -> bool {
     constexpr std::string_view suffix = " object 00";
     const auto& field = event.provenance.source_field;
-    return !event.sound && event.provenance.family == format_family_t::bms &&
+    return !event.sound && !event.end && event.provenance.family == format_family_t::bms &&
            field.starts_with("01 slot ") && field.ends_with(suffix);
 }
 

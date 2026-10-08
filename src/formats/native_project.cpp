@@ -322,6 +322,7 @@ void to_json(json& value, const bgm_event_t& event) {
                  {"structural_slot", event.structural_slot},
                  {"branch", event.branch},
                  {"provenance", event.provenance}};
+    value["end"] = event.end;
     if (event.sound_channel_event.has_value()) {
         value["sound_channel_event"] = *event.sound_channel_event;
     }
@@ -337,6 +338,8 @@ void from_json(const json& value, bgm_event_t& event) {
     value.at("structural_slot").get_to(event.structural_slot);
     value.at("branch").get_to(event.branch);
     value.at("provenance").get_to(event.provenance);
+    event.end.reset();
+    if (const auto end = value.find("end"); end != value.end()) end->get_to(event.end);
     event.sound_channel_event.reset();
     if (const auto linked = value.find("sound_channel_event"); linked != value.end()) {
         linked->get_to(event.sound_channel_event);
@@ -469,10 +472,10 @@ namespace {
 
 constexpr std::string_view native_project_format = "wormedit-project";
 // The envelope (`format`, `format_version`, `document`) and the document schema evolve separately:
-// the envelope is still version 1, while the document is at schema 5 (older documents migrate on
+// the envelope is still version 1, while the document is at schema 6 (older documents migrate on
 // load; see native_project_migrations.cpp).
 constexpr std::uint32_t native_project_format_version = 1;
-constexpr std::uint32_t native_project_schema_version = 5;
+constexpr std::uint32_t native_project_schema_version = 6;
 
 auto path_to_utf8(const std::filesystem::path& path) -> std::string {
     const auto encoded = path.generic_u8string();
@@ -1180,6 +1183,8 @@ enum class schema_shape_context_t {
     storyboard_entry,
     charts,
     chart_entry,
+    bgm_events,
+    bgm_event_entry,
 };
 
 auto same_schema_shape(const json& input, const json& canonical,
@@ -1198,6 +1203,9 @@ auto allows_legacy_object_shape(const json& input, const json& canonical,
         return !input.contains("sv_recipes") && canonical.contains("sv_recipes") &&
                canonical.at("sv_recipes").empty();
     }
+    if (context == schema_shape_context_t::bgm_event_entry) {
+        return !input.contains("end") && canonical.contains("end");
+    }
     // Lane definitions saved before key colors existed; derived on load.
     return !input.contains("key_color") && canonical.contains("key_color");
 }
@@ -1209,6 +1217,9 @@ auto object_child_context(std::string_view key) -> schema_shape_context_t {
     if (key == "charts") {
         return schema_shape_context_t::charts;
     }
+    if (key == "bgm_events") {
+        return schema_shape_context_t::bgm_events;
+    }
     return schema_shape_context_t::ordinary;
 }
 
@@ -1218,6 +1229,9 @@ auto array_child_context(schema_shape_context_t context) -> schema_shape_context
     }
     if (context == schema_shape_context_t::charts) {
         return schema_shape_context_t::chart_entry;
+    }
+    if (context == schema_shape_context_t::bgm_events) {
+        return schema_shape_context_t::bgm_event_entry;
     }
     return schema_shape_context_t::ordinary;
 }

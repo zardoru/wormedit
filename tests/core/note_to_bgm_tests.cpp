@@ -4,6 +4,7 @@
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bms_writer.h>
+#include <wormedit/formats/native_project.h>
 #include "sys/compose_note_to_bgm.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -70,6 +71,44 @@ auto grouped_song() -> song_document_t {
         {.id = object_id_t{22}, .position = {measure_id_t{2}, 300}, .source_lane = object_id_t{10},
          .sound = resource_id_t{2}}};
     return song;
+}
+
+auto hold_restore_rejected(note_t obstacle) -> bool {
+    auto song = plain_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout.lanes.push_back({.id = lane_id_t{3}, .name = "C"});
+    chart.measures.front().bgm_events = {{.id = object_id_t{90},
+        .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{9},
+        .end = local_position_t{measure_id_t{2}, 120}}};
+    obstacle.lane = lane_id_t{3};
+    const auto destination = std::ranges::find(chart.measures, obstacle.position.measure,
+                                                &measure_chunk_t::id);
+    if (destination == chart.measures.end()) return false;
+    destination->notes.push_back(std::move(obstacle));
+    if (!validate_document(song).empty()) return false;
+    auto history = make_document_history(song);
+    const auto before = history.document;
+    const std::array events{object_id_t{90}};
+    const auto result = move_bgm_events_to_lane(history, history.document.revision,
+        chart_id_t{1}, events, lane_id_t{3});
+    const auto before_bytes = write_native_project(before);
+    const auto after_bytes = write_native_project(history.document);
+    return !result.applied && before_bytes.bytes && after_bytes.bytes &&
+           *before_bytes.bytes == *after_bytes.bytes && history.undo.empty();
+}
+
+auto find_test_note(const chart_document_t& chart, object_id_t id) -> const note_t* {
+    for (const auto& measure : chart.measures) {
+        const auto found = std::ranges::find(measure.notes, id, &note_t::id);
+        if (found != measure.notes.end()) return &*found;
+    }
+    return nullptr;
+}
+
+auto same_native_document(const song_document_t& left, const song_document_t& right) -> bool {
+    const auto left_bytes = write_native_project(left);
+    const auto right_bytes = write_native_project(right);
+    return left_bytes.bytes && right_bytes.bytes && *left_bytes.bytes == *right_bytes.bytes;
 }
 
 } // namespace
@@ -301,6 +340,177 @@ TEST_CASE("ordinary BGM conversion preserves provenance and uses one undo entry"
     require_move(restored != history.document.charts.front().measures[0].bgm_events.end());
     check_move(restored->provenance.profile == expected.profile);
     check_move(restored->provenance.source_order == expected.source_order);
+}
+
+TEST_CASE("cross-measure holds round-trip through BGM and retain one-step history",
+          "[unit][core][note-to-bgm][bgm-to-lane]") {
+    auto song = plain_song();
+    song.audio_assets.push_back({.id = asset_id_t{10}, .source_path = "hold.wav"});
+    song.resources.push_back({.id = resource_id_t{20}, .asset = asset_id_t{10},
+                              .roles = {resource_role_t::sample, resource_role_t::bgm}});
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout.lanes.push_back({.id = lane_id_t{3}, .name = "C"});
+    chart.semantic_layers.push_back({.id = layer_id_t{5}, .name = "accent"});
+    auto& source = chart.measures.front().notes.front();
+    source.kind = note_kind_t::hold;
+    source.end = local_position_t{measure_id_t{2}, 120};
+    source.sound = resource_id_t{20};
+    source.semantic_layers = {layer_id_t{5}};
+    source.branch = branch_id_t{9};
+    source.provenance = {.family = format_family_t::bms, .profile = "bms",
+                         .source_field = "11 slot 0 object 01", .source_order = 8};
+    const auto provenance = source.provenance;
+    require_move(validate_document(song).empty());
+    auto history = make_document_history(song);
+    const std::array selected{source.id};
+    require_move(move_notes_to_bgm(history, history.document.revision, chart_id_t{1}, selected,
+                                   std::nullopt).applied);
+    const auto& bgm = history.document.charts.front().measures.front().bgm_events.front();
+    check_move(bgm.id == source.id);
+    check_move(bgm.position == source.position);
+    check_move(bgm.sound == source.sound);
+    check_move(bgm.semantic_layers == source.semantic_layers);
+    check_move(bgm.branch == source.branch);
+    check_move(bgm.provenance.family == source.provenance.family);
+    check_move(bgm.provenance.profile == source.provenance.profile);
+    check_move(bgm.provenance.source_field == source.provenance.source_field);
+    check_move(bgm.provenance.source_spelling == source.provenance.source_spelling);
+    check_move(bgm.provenance.source_order == source.provenance.source_order);
+    check_move(bgm.end == local_position_t{measure_id_t{2}, 120});
+    const std::array bgm_ids{source.id};
+    require_move(move_bgm_events_to_lane(history, history.document.revision, chart_id_t{1},
+                                         bgm_ids, lane_id_t{3}).applied);
+    const auto* restored = find_test_note(history.document.charts.front(), source.id);
+    require_move(restored);
+    check_move(restored->kind == note_kind_t::hold);
+    check_move(restored->id == source.id);
+    check_move(restored->position == source.position);
+    check_move(restored->sound == source.sound);
+    check_move(restored->semantic_layers == source.semantic_layers);
+    check_move(restored->branch == source.branch);
+    check_move(restored->end == local_position_t{measure_id_t{2}, 120});
+    check_move(restored->provenance.family == provenance.family);
+    check_move(restored->provenance.profile == provenance.profile);
+    check_move(restored->provenance.source_field == provenance.source_field);
+    check_move(restored->provenance.source_spelling == provenance.source_spelling);
+    check_move(restored->provenance.source_order == provenance.source_order);
+    require_move(history.undo.size() == 2);
+    require_move(undo_document_command(history));
+    check_move(std::ranges::any_of(history.document.charts.front().measures, [&](const auto& measure) {
+        return std::ranges::any_of(measure.bgm_events, [&](const auto& event) {
+            return event.id == source.id && event.end == local_position_t{measure_id_t{2}, 120};
+        });
+    }));
+    require_move(undo_document_command(history));
+    require_move(redo_document_command(history));
+    require_move(redo_document_command(history));
+    restored = find_test_note(history.document.charts.front(), source.id);
+    require_move(restored);
+    check_move(restored->end == local_position_t{measure_id_t{2}, 120});
+}
+
+TEST_CASE("BGM hold restoration rejects occupied and unavailable intervals atomically",
+          "[unit][core][note-to-bgm][bgm-to-lane]") {
+    auto song = plain_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout.lanes.push_back({.id = lane_id_t{3}, .name = "C"});
+    chart.measures.front().bgm_events = {{.id = object_id_t{90},
+        .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{9},
+        .end = local_position_t{measure_id_t{2}, 120}}};
+    chart.measures.front().notes.push_back({.id = object_id_t{91},
+        .position = {measure_id_t{1}, 400}, .lane = lane_id_t{3}});
+    auto history = make_document_history(song);
+    const auto before = history.document;
+    const std::array event_ids{object_id_t{90}};
+    const auto result = move_bgm_events_to_lane(history, history.document.revision,
+        chart_id_t{1}, event_ids, lane_id_t{3});
+    check_move(!result.applied);
+    check_move(same_native_document(history.document, before));
+    check_move(history.undo.empty());
+
+    auto lost = plain_song();
+    auto& lost_chart = lost.charts.front();
+    lost_chart.lane_layouts.front().layout.lanes.push_back({.id = lane_id_t{3}, .name = "C"});
+    auto middle = lost_chart.lane_layouts.front();
+    middle.id = object_id_t{101};
+    middle.position = {measure_id_t{1}, 360};
+    std::erase_if(middle.layout.lanes, [](const auto& lane) { return lane.id == lane_id_t{3}; });
+    auto restored_layout = lost_chart.lane_layouts.front();
+    restored_layout.id = object_id_t{102};
+    restored_layout.position = {measure_id_t{2}, 0};
+    lost_chart.lane_layouts.push_back(middle);
+    lost_chart.lane_layouts.push_back(restored_layout);
+    lost_chart.measures.front().bgm_events = {{.id = object_id_t{92},
+        .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{9},
+        .end = local_position_t{measure_id_t{2}, 120}}};
+    auto unavailable = make_document_history(lost);
+    const std::array lost_ids{object_id_t{92}};
+    check_move(!move_bgm_events_to_lane(unavailable, unavailable.document.revision,
+        chart_id_t{1}, lost_ids, lane_id_t{3}).applied);
+    check_move(unavailable.undo.empty());
+
+    auto hidden = lost;
+    auto& hidden_chart = hidden.charts.front();
+    const auto transition = std::ranges::find(hidden_chart.lane_layouts,
+        local_position_t{measure_id_t{1}, 360}, &lane_layout_segment_t::position);
+    require_move(transition != hidden_chart.lane_layouts.end());
+    transition->layout.lanes.push_back({.id = lane_id_t{3}, .name = "C",
+                                        .role = lane_role_t::mine});
+    auto hidden_history = make_document_history(hidden);
+    const std::array hidden_ids{object_id_t{92}};
+    check_move(!move_bgm_events_to_lane(hidden_history, hidden_history.document.revision,
+        chart_id_t{1}, hidden_ids, lane_id_t{3}).applied);
+    check_move(hidden_history.undo.empty());
+}
+
+TEST_CASE("restored hold spans reject inclusive and nested note collisions",
+          "[unit][core][note-to-bgm][bgm-to-lane]") {
+    check_move(hold_restore_rejected({.id = object_id_t{101},
+        .position = {measure_id_t{1}, 240}, .lane = lane_id_t{3}}));
+    check_move(hold_restore_rejected({.id = object_id_t{102},
+        .position = {measure_id_t{2}, 120}, .lane = lane_id_t{3}}));
+    check_move(hold_restore_rejected({.id = object_id_t{103},
+        .position = {measure_id_t{1}, 400}, .lane = lane_id_t{3}}));
+    check_move(hold_restore_rejected({.id = object_id_t{104},
+        .position = {measure_id_t{1}, 120}, .lane = lane_id_t{3},
+        .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{1}, 260}}));
+    check_move(hold_restore_rejected({.id = object_id_t{105},
+        .position = {measure_id_t{1}, 300}, .lane = lane_id_t{3},
+        .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{1}, 400}}));
+    check_move(hold_restore_rejected({.id = object_id_t{106},
+        .position = {measure_id_t{1}, 100}, .lane = lane_id_t{3},
+        .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{2}, 200}}));
+    auto song = plain_song();
+    song.charts.front().lane_layouts.front().layout.lanes.push_back(
+        {.id = lane_id_t{3}, .name = "C"});
+    song.charts.front().measures.front().bgm_events = {
+        {.id = object_id_t{110}, .position = {measure_id_t{1}, 240},
+         .source_lane = object_id_t{9}, .end = local_position_t{measure_id_t{1}, 500}},
+        {.id = object_id_t{111}, .position = {measure_id_t{1}, 400},
+         .source_lane = object_id_t{9}, .end = local_position_t{measure_id_t{1}, 600}}};
+    auto history = make_document_history(song);
+    const auto before = history.document;
+    const std::array both{object_id_t{110}, object_id_t{111}};
+    check_move(!move_bgm_events_to_lane(history, history.document.revision, chart_id_t{1},
+                                        both, lane_id_t{3}).applied);
+    check_move(same_native_document(history.document, before));
+    check_move(history.undo.empty());
+}
+
+TEST_CASE("restoring a legacy BGM tap keeps its head-only occupancy rule",
+          "[unit][core][note-to-bgm][bgm-to-lane]") {
+    auto song = plain_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout.lanes.push_back({.id = lane_id_t{3}, .name = "C"});
+    chart.measures.front().notes.push_back({.id = object_id_t{120},
+        .position = {measure_id_t{1}, 240}, .lane = lane_id_t{3},
+        .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{1}, 400}});
+    chart.measures.front().bgm_events = {{.id = object_id_t{121},
+        .position = {measure_id_t{1}, 300}, .source_lane = object_id_t{9}}};
+    auto history = make_document_history(song);
+    const std::array selected{object_id_t{121}};
+    check_move(move_bgm_events_to_lane(history, history.document.revision, chart_id_t{1},
+                                       selected, lane_id_t{3}).applied);
 }
 
 TEST_CASE("moving an imported BMS note writes only its BGM occurrence",

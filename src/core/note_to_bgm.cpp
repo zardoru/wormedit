@@ -1,6 +1,7 @@
 #include <wormedit/core/note_to_bgm.h>
 
 #include <wormedit/core/bmson_sound_channel_editor.h>
+#include <wormedit/core/lane_profile_switch.h>
 
 #include <algorithm>
 #include <limits>
@@ -310,7 +311,8 @@ auto apply_plan(chart_document_t& chart, const note_to_bgm_plan_t& plan) -> bool
         const auto& note = found_note->second;
         bgm_event_t event{.id = note.id, .position = note.position, .source_lane = assignment.lane,
                           .sound = note.sound, .sound_channel_event = std::nullopt,
-                          .structural_slot = 0, .branch = note.branch, .provenance = note.provenance};
+                          .structural_slot = 0, .branch = note.branch, .provenance = note.provenance,
+                          .end = note.end};
         event.semantic_layers = note.semantic_layers;
         const auto destination = measure_index.find(note.position.measure.value);
         if (destination == measure_index.end()) return false;
@@ -434,21 +436,76 @@ auto find_bgm(chart_document_t& chart, object_id_t id) -> std::optional<located_
     return std::nullopt;
 }
 
-// An ordinary BGM event becomes a tap at its own row; false when the lane already has a note there.
+auto blocked_by_note(const chart_document_t& chart, const measure_index_t& index,
+                     lane_id_t lane, std::uint64_t begin, std::uint64_t finish) -> bool {
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            if (note.lane != lane) continue;
+            const auto other_begin = absolute_row(index, note.position);
+            const auto other_end = note.end ? absolute_row(index, *note.end) : other_begin;
+            if (!other_begin || !other_end || (*other_begin <= finish && begin <= *other_end))
+                return true;
+        }
+    }
+    return false;
+}
+
+auto editable_lane_at(const chart_document_t& chart, local_position_t position,
+                      lane_id_t lane) -> bool {
+    const auto* segment = active_lane_layout_segment(chart, position);
+    if (!segment) return false;
+    return std::ranges::any_of(segment->layout.lanes, [lane](const auto& item) {
+        return item.id == lane && item.role != lane_role_t::autoplay &&
+               item.role != lane_role_t::invisible && item.role != lane_role_t::mine;
+    });
+}
+
+auto layout_covers_hold(const chart_document_t& chart, const measure_index_t& index,
+                        const bgm_event_t& event, lane_id_t lane,
+                        std::uint64_t begin, std::uint64_t finish) -> bool {
+    if (!event.end || !editable_lane_at(chart, event.position, lane) ||
+        !editable_lane_at(chart, *event.end, lane)) return false;
+    for (const auto& segment : chart.lane_layouts) {
+        const auto row = absolute_row(index, segment.position);
+        if (row && *row > begin && *row <= finish && !editable_lane_at(chart, segment.position, lane))
+            return false;
+    }
+    return true;
+}
+
+// Validate a restored tap/hold against inclusive note intervals and lane-layout transitions.
+auto valid_restore_span(const chart_document_t& chart, const bgm_event_t& event,
+                        lane_id_t lane) -> bool {
+    if (!event.end) {
+        return std::ranges::none_of(chart.measures, [&](const auto& measure) {
+            return std::ranges::any_of(measure.notes, [&](const auto& note) {
+                return note.lane == lane && note.position == event.position;
+            });
+        });
+    }
+    const auto built = build_measure_index(chart);
+    if (!std::holds_alternative<measure_index_t>(built)) return false;
+    const auto& index = std::get<measure_index_t>(built);
+    const auto begin = absolute_row(index, event.position);
+    const auto finish = absolute_row(index, *event.end);
+    return begin && finish && *finish > *begin &&
+           !blocked_by_note(chart, index, lane, *begin, *finish) &&
+           layout_covers_hold(chart, index, event, lane, *begin, *finish);
+}
+
 auto convert_bgm_event(chart_document_t& chart, object_id_t id, lane_id_t lane) -> bool {
     const auto located = find_bgm(chart, id);
     if (!located) return false;
-    const auto position = located->event->position;
-    const auto occupied = std::ranges::any_of(chart.measures, [&](const auto& measure) {
-        return std::ranges::any_of(measure.notes, [&](const auto& note) {
-            return note.lane == lane && note.position == position;
-        });
-    });
-    if (occupied) return false;
-    note_t note{.id = located->event->id, .position = position, .lane = lane, .kind = note_kind_t::tap,
-                .end = std::nullopt, .sound = located->event->sound};
+    const auto event = *located->event;
+    const auto position = event.position;
+    const auto end = event.end;
+    if (!valid_restore_span(chart, event, lane)) return false;
+    note_t note{.id = event.id, .position = position, .lane = lane,
+                .kind = end ? note_kind_t::hold : note_kind_t::tap,
+                .end = end, .sound = event.sound};
     note.semantic_layers = located->event->semantic_layers;
     note.branch = located->event->branch;
+    note.provenance = located->event->provenance;
     located->measure->bgm_events.erase(located->event);
     const auto destination = std::ranges::find(chart.measures, position.measure, &measure_chunk_t::id);
     if (destination == chart.measures.end()) return false;
@@ -484,7 +541,8 @@ auto move_bgm_events_to_lane(document_history_t& history, std::uint64_t expected
         auto proposed = scratch.document;
         auto& proposed_chart = *std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
         if (!convert_bgm_event(proposed_chart, id, lane))
-            return rejected(revision, diagnostic_code_t::collision, "that lane already has a note at the row");
+            return rejected(revision, diagnostic_code_t::collision,
+                            "the target lane conflicts with the event row or hold span");
         const auto step = commit_document_command(scratch, std::move(proposed), "Move BGM event to lane");
         if (!step.applied) return step.diagnostics.empty() ? rejected(revision, diagnostic_code_t::invalid_id,
             "the event could not move to that lane") : step;

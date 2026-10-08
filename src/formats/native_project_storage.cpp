@@ -38,9 +38,9 @@ constexpr std::string_view recovery_format = "wormedit-recovery";
 constexpr std::uint64_t recovery_format_version = 1;
 
 // The envelope records the document schema of its payload. The payload is a native project, so any
-// schema the project reader can migrate (1-4) or read directly (5) is acceptable here.
+// schema the project reader can migrate (1-5) or read directly (6) is acceptable here.
 constexpr auto recovery_schema_readable(std::uint64_t schema) -> bool {
-    return schema >= 1 && schema <= 5;
+    return schema >= 1 && schema <= 6;
 }
 constexpr std::size_t maximum_diagnostics = 8;
 constexpr std::size_t maximum_diagnostic_message_bytes = 240;

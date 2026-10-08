@@ -321,6 +321,7 @@ struct bgm_event_t {
     std::optional<branch_id_t> branch;
     source_provenance_t provenance;
     std::vector<layer_id_t> semantic_layers;
+    std::optional<local_position_t> end{};
 };
 
 struct measure_chunk_t {
@@ -846,7 +847,7 @@ struct quantization_preset_t {
 };
 
 struct song_document_t {
-    std::uint32_t schema_version{5};
+    std::uint32_t schema_version{6};
     song_id_t id;
     std::uint64_t revision{};
     song_metadata_t metadata;

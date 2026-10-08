@@ -51,19 +51,20 @@ struct note_to_bgm_plan_t {
 // A BMSON tap that stands for a stem point returns to its stem's BGM lane and keeps its slice
 // point (the retained event just stops being playable). Ordinary notes become BGM events at the
 // same row. Explicit placement uses `preferred_lane`, then the next free lane to the right and
-// left, then creates a lane; automatic placement uses the group-aware plan. Hold tails are dropped
-// in this phase until the approved BGM tail schema phase lands. Unknown notes, a stale
-// revision, or a stem that cannot be reassigned reject the whole edit.
+// left, then creates a lane; automatic placement uses the group-aware plan. Hold ends and source
+// provenance are retained. Unknown notes, a stale revision, or a stem that cannot be reassigned
+// reject the whole edit.
 [[nodiscard]] auto move_notes_to_bgm(document_history_t& history, std::uint64_t expected_revision,
                                      chart_id_t chart, std::span<const object_id_t> notes,
                                      std::optional<object_id_t> preferred_lane,
                                      note_to_bgm_policy_t policy = {})
     -> document_command_result_t;
 
-// The reverse move, in one undo step: BGM events become playable taps in `lane`, keeping their row.
+// The reverse move, in one undo step: tailless BGM events become taps and end-bearing events
+// become holds in `lane`, preserving their row and end.
 // A BMSON marker that stands for a stem point becomes the stem's playable tap, keeping its slice
-// point; any other event becomes a plain tap with its sound, layers and branch. A lane that does
-// not exist at the row, or already holds a note there, rejects the whole edit.
+// point; ordinary events preserve their sound, layers, branch and provenance. Interval collisions
+// or an inactive lane anywhere across a restored hold reject the whole edit.
 [[nodiscard]] auto move_bgm_events_to_lane(document_history_t& history, std::uint64_t expected_revision,
                                            chart_id_t chart, std::span<const object_id_t> events,
                                            lane_id_t lane) -> document_command_result_t;

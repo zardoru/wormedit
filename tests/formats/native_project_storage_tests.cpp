@@ -889,7 +889,7 @@ TEST_CASE("schema-4 autosave preserves quantization presets through recovery",
     REQUIRE(saved.status == wormedit::native_project_autosave_status_t::published);
     const auto parsed = wormedit::parse_native_project_recovery_snapshot(read_text(recovery_path));
     REQUIRE(parsed.snapshot);
-    CHECK(parsed.snapshot->song.schema_version == 5);
+    CHECK(parsed.snapshot->song.schema_version == 6);
     CHECK(parsed.snapshot->song.quantization_presets == song.quantization_presets);
 }
 
@@ -900,10 +900,34 @@ TEST_CASE("recovery envelope accepts supported schema tags and rejects unknown v
     REQUIRE(wormedit::publish_native_project_recovery_atomic(
                 recovery_path, valid_song(2), {.session_sequence = 1}).published);
     auto envelope = nlohmann::json::parse(read_text(recovery_path));
-    for (const auto schema : std::array<std::uint64_t, 7>{0, 1, 2, 3, 4, 5, 6}) {
+    for (const auto schema : std::array<std::uint64_t, 8>{0, 1, 2, 3, 4, 5, 6, 7}) {
         INFO(schema);
         envelope["schema_version"] = schema;
         const auto parsed = wormedit::parse_native_project_recovery_snapshot(envelope.dump());
-        CHECK(parsed.snapshot.has_value() == (schema >= 1 && schema <= 5));
+        CHECK(parsed.snapshot.has_value() == (schema >= 1 && schema <= 6));
     }
+}
+
+TEST_CASE("schema 6 autosave recovery preserves a BGM tail",
+          "[unit][format][native-project][autosave][recovery]") {
+    using clock_t = wormedit::native_project_autosave_coordinator_t::clock_t;
+    temporary_directory_t directory;
+    auto song = valid_song(7);
+    song.charts = {{.id = wormedit::chart_id_t{1},
+        .measures = {{.id = wormedit::measure_id_t{1},
+            .bgm_events = {{.id = wormedit::object_id_t{2},
+                .position = {wormedit::measure_id_t{1}, 0},
+                .source_lane = wormedit::object_id_t{3},
+                .end = wormedit::local_position_t{wormedit::measure_id_t{1}, 1}}}}},
+        .bgm_source_lanes = {{.id = wormedit::object_id_t{3}, .name = "BGM"}}}};
+    wormedit::native_project_autosave_coordinator_t autosave(clock_t::time_point{});
+    const auto path = directory.path / "schema6.bak";
+    REQUIRE(autosave.maybe_autosave(song, clock_t::time_point{} + 5min, path).status ==
+            wormedit::native_project_autosave_status_t::published);
+    const auto recovered =
+        wormedit::parse_native_project_recovery_snapshot(read_text(path));
+    REQUIRE(recovered.snapshot);
+    REQUIRE(recovered.snapshot->song.schema_version == 6);
+    CHECK(recovered.snapshot->song.charts.front().measures.front().bgm_events.front().end ==
+          wormedit::local_position_t{wormedit::measure_id_t{1}, 1});
 }

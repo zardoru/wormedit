@@ -467,6 +467,31 @@ auto resolve_resource_placement_position(const chart_document_t& chart,
                                    snap_denominator);
 }
 
+auto translate_bgm_end(const measure_index_t& index, local_position_t old_head,
+                       local_position_t new_head, local_position_t old_end)
+    -> std::optional<local_position_t> {
+    const auto old_start = absolute_row(index, old_head);
+    const auto new_start = absolute_row(index, new_head);
+    const auto tail = absolute_row(index, old_end);
+    if (!old_start || !new_start || !tail || *tail <= *old_start) return std::nullopt;
+    std::uint64_t translated{};
+    if (*new_start >= *old_start) {
+        const auto delta = *new_start - *old_start;
+        if (*tail > std::numeric_limits<std::uint64_t>::max() - delta) return std::nullopt;
+        translated = *tail + delta;
+    } else {
+        const auto delta = *old_start - *new_start;
+        if (*tail < delta) return std::nullopt;
+        translated = *tail - delta;
+    }
+    for (const auto& entry : index.entries) {
+        if (translated >= entry.absolute_begin_row &&
+            translated - entry.absolute_begin_row < entry.row_capacity)
+            return local_position_t{entry.id, translated - entry.absolute_begin_row};
+    }
+    return std::nullopt;
+}
+
 auto next_bms_resource_identity(const song_document_t& document, bool visual_role)
     -> std::optional<target_resource_identity_t> {
     const std::string_view name_space = visual_role ? "BMP" : "WAV";
@@ -838,6 +863,17 @@ auto apply_bgm_event_move(document_history_t& history, std::uint64_t expected_re
         reject(result, diagnostic_code_t::invalid_id, "BGM move event no longer exists");
         return result;
     }
+    std::optional<local_position_t> moved_end;
+    if (original->end) {
+        const auto index = build_measure_index(*source_chart);
+        if (!std::holds_alternative<measure_index_t>(index) ||
+            !(moved_end = translate_bgm_end(std::get<measure_index_t>(index),
+                                            original->position, *target, *original->end))) {
+            reject(result, diagnostic_code_t::row_out_of_range,
+                   "BGM move would place its end outside the chart");
+            return result;
+        }
+    }
     if (is_branch_bgm_event(*source_chart, *original)) {
         reject(result, diagnostic_code_t::unsupported_feature,
                "BGM move requires an ordinary root event");
@@ -885,6 +921,7 @@ auto apply_bgm_event_move(document_history_t& history, std::uint64_t expected_re
         break;
     }
     moved.position = *target;
+    moved.end = moved_end;
     moved.source_lane = destination_lane;
     moved.structural_slot = 0;
     moved.provenance = {};

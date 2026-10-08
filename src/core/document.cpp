@@ -872,7 +872,8 @@ auto validate_chart_note(chart_object_validation_t& context, measure_id_t measur
 auto validate_chart_bgm(chart_object_validation_t& context, measure_id_t measure_id,
                         const bgm_event_t& bgm) -> void {
     validate_object_id(context.diagnostics, context.object_ids, bgm.id, "BGM event");
-    position_row_or_diagnostic(context.index, bgm.position, context.diagnostics, bgm.id);
+    const auto start =
+        position_row_or_diagnostic(context.index, bgm.position, context.diagnostics, bgm.id);
     if (bgm.position.measure != measure_id) {
         add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_measure,
                        "BGM event is stored outside the measure named by its position", bgm.id);
@@ -895,6 +896,14 @@ auto validate_chart_bgm(chart_object_validation_t& context, measure_id_t measure
         if (!layer || !context.layer_ids.contains(layer.value)) {
             add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
                            "BGM event refers to an unknown semantic layer", bgm.id);
+        }
+    }
+    if (bgm.end) {
+        const auto end = position_row_or_diagnostic(context.index, *bgm.end,
+                                                    context.diagnostics, bgm.id);
+        if (start && end && *end <= *start) {
+            add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_hold,
+                           "BGM event end must be after its start", bgm.id);
         }
     }
 }

@@ -155,3 +155,9 @@ Add an explicit float32 WAV option used by conversion to preserve decoded PCM;
 keep existing PCM16 slicing defaults unchanged. Verify finite overshoot/native
 rate roundtrip through the production decoder and rerun actual Kick PCM before
 claiming T-466's audio gate.
+
+Luna's read-only PCM diagnosis is released. Conversion now loans it exclusively
+appended helpers/cases in `tests/core/audio_slice_render_tests.cpp` for float32
+overshoot/native-rate roundtrip and pre-write invalid-input rejection. Sol owns
+the encoder/runtime and every build; no other Luna edits, and release before
+Sol review/build.

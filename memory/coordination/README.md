@@ -1,8 +1,12 @@
 # Worktree coordination pilot
 
-Active 2026-10-08: [packed waveforms and sound-section imports](oct8-bmson-dock-batch.md),
-T-459/T-462 in two Sol 6.1 medium worktrees with sequential Luna medium briefs.
-Root owns main, shared contracts/manifests, integration and cleanup.
+Completed in code 2026-10-08: [packed waveforms and sound-section imports](oct8-bmson-dock-batch.md),
+T-459/T-462 with two Sol 6.1 medium coordinators and sequential Luna medium briefs.
+Main build and **2,617/2,617 tests pass**. Real Kick software capture confirms
+three ready packed waveforms plus nine stems; section imports preserve fixed
+kind and create empty stems. Only main remains after 6.51 GB build cleanup;
+branches/logs/probes retained. Native picker/window/GPU checks remain unverified.
+Next independent hybrid card: T-464 resizable lanes and filename labels.
 
 Completed in code 2026-10-08: [selection and audition latency batch](oct8-performance-batch.md),
 T-477/T-473, with Sol 6.1 medium coordinators and sequential Luna medium tests.

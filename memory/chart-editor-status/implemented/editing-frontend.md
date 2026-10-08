@@ -2,6 +2,19 @@
 
 [Back to the implemented-capability index](../implemented.md).
 
+BMSON packed BGM events with samples longer than their authored measure at the
+event tempo now draw waveforms in their own columns. Typed event keys isolate
+them from stem/channel textures; native source clips, the next later column
+trigger, simultaneous starts, bounded pending bands and tails beyond authored
+rows are covered. The existing stem timing/slice path stays separate. Sounds
+has section-specific Add stem/Add keysound controls with fixed picker/review
+kind. Stem import creates an explicitly linked empty channel/lane with no event
+or marker; keysounds create resource only, preserving atomic import/undo and BMS
+slot behavior. T-459/T-462 main build and all 2,617 tests pass; independent real
+Kick measure 30 software capture confirms three packed pieces plus nine stems.
+Native picker/window/GPU checks remain unverified; no whole-frame performance
+claim. See the [batch evidence](../../coordination/oct8-bmson-dock-batch.md).
+
 Ctrl+Shift+G opens a bounded, paged bookmark chooser with beat/audio positions, names and stable IDs; navigation rejects stale context and preserves playback, including exact signed audio-time seeks. Clicking the right end of a bookmark line opens an inline rename editor; Enter creates one undoable name-only edit preserving the exact anchor, and Escape/blur/stale context cancel. SDL text events accept multi-codepoint UTF-8 input. Compose context menus, Sounds filters and resource dropdowns share context checks, outside/Escape dismissal and release ownership; global menus switch by title and block dismissal click-through, including coalesced input. T-370/T-371/T-372 passed 115 event-harness cases, the 1,769-test required partition, the 2,076-test full suite and isolated saved-document/playback/menu checks (2026-10-04; artifacts `/tmp/wormedit-bookmark-menu-batch/`).
 
 Project menu preferences now retain a per-user list of external BMS previewers with executable/wrapper paths and separate Start/Here/Stop argument templates. Registered transport commands tokenize quotes before substituting paths and source-facing measure numbers, export the selected active BMS branch beside its source/resource directory, and launch SDL processes asynchronously without a shell. Exclusive fixed preview files never replace an unknown existing file, live players retain busy previews, and failure/exit cleanup removes only files whose identity still belongs to the editor. Missing player paths open preferences; BMS export failures block launch and report the actual error.

@@ -53,3 +53,34 @@ target in `tests/CMakeLists.txt` so pure packed-index tests link the reused
 interval-query implementation. No shared interval implementation edits.
 Packed sample tails may extend beyond authored rows using their own display
 clock; stem timing and authored chart data remain unchanged.
+
+Completed integration 2026-10-08: T-462 worker 93e4cad -> main d4b810c,
+root staging d64590a; T-459 worker 43f5d00 -> main 40c9b58. Disjoint card/header
+hunks merged cleanly. Root normal application build and all 2,617 CTests pass.
+Main staging tidy preserves the three existing function/score warnings exactly;
+worker configured baseline comparisons report no new or increased violations.
+T-462 passes 199 event-harness cases plus core/state/actual-dispatch checks;
+T-459 passes 133 expanded waveform/BMSON/docs cases. Peer review found and fixed
+same-row stacks: every simultaneous start shares the next strictly later cutoff.
+
+Root independently compiled/linked the retained real-chart probe against normal
+main objects and ran SDL dummy/software capture. Kick measure 30 has registration
+failures 0, three ready packed pieces (`fx`, `hat`, `pc`), pending 0, twelve total
+views, index builds 1/query scans 3. The unobscured capture is retained in
+`wormedit-scratch-builds/oct8-bmson-docks/root/kick-measure 30.png`. Comparison
+records 1,681 cursor/status pixel differences between Debug main and optimized
+worker captures; all other pixels match. Full-frame pixel identity is not an
+acceptance claim. Three original chart hashes and thirteen Kick chart/audio
+hashes match after the repeat. Native picker/window/GPU cadence is unverified.
+
+The interval-query bound excludes registry binding copies/equality, visible
+piece lookups and viewport band calculations; whole-frame cost remains a
+separate measurement. No new FPS/deadline or asset-independent frame claim.
+T-462 adds section controls without implementing T-461's conversion verbs or
+T-463's point placement. Next independent hybrid card is T-464.
+
+Both clean released worker trees and 6.51 GB generated builds removed; only main
+remains registered. Branches, raw logs, source/link scripts, configurations,
+captures and standalone probes retained. Old worker probe ELFs can use
+`LD_LIBRARY_PATH=.../oct8-bmson-docks/root/probe-libs`; repeat against current
+main using the copied root linker/source and README.

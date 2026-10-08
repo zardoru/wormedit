@@ -76,7 +76,8 @@ Continuation stems need slicing for BMS as well, because BMS cannot express cont
 
 ## T-468 Pin StepMania's keysound model in a reference
 
-- **Status:** ready
+- **Status:** done (2026-10-08; reference written from StepMania 5 commit `825467bcd81c812b33ad684dc04dd151b2d5dec3`; see `docs/references/stepmania-keysounds.md`, which recommends an SM/SSC `#KEYSOUNDS` import follow-up card)
+- **Result:** Reference file `docs/references/stepmania-keysounds.md` added; no code changed. Gap confirmed: `src/formats/stepmania.cpp` has no keysound handling.
 - **Outcome:** `docs/references/stepmania-keysounds.md` documents, from the StepMania 5 source code (pinned commit):
   - the `#KEYSOUNDS` tag grammar in `.sm` and `.ssc`;
   - the per-note `[n]` index syntax;

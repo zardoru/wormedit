@@ -282,7 +282,7 @@ Implementation review (2026-10-04): Atomic Apply, rounded choices, combined cach
 
 ## T-283 Ctrl-drag a single beat to fit the audio (local fit)
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** Ctrl-dragging an unlocked beat marker in the Compose rail pins that beat to the pointer's audio frame by changing only the BPM segment from the previous anchor (or previous BPM change) to the dragged beat; the grid after it moves with the beat (user decision 2026-09-30, question 7); preview and commit work like the existing interval fit.
 - **Read first:** `include/wormedit/core/bpm_editor.h` (`begin_beat_interval_drag`, `update_beat_interval_drag_to_bpm`, `commit_beat_interval_drag`), `include/wormedit/core/timing_anchor_editor.h`, `src/sys/compose_input.cpp` (existing rail drag), `docs/chart-editor-plan/playback-audio.md` (beat-fit modes).
 - **Files owned:** `include/wormedit/core/bpm_editor.h`, `src/core/bpm_editor.cpp`, `tests/core/bpm_editor_tests.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_input_panel.cpp`.
@@ -291,6 +291,7 @@ Implementation review (2026-10-04): Atomic Apply, rounded choices, combined cach
 - **Reject/failure behavior:** non-positive or overflowing BPM rejects.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`; manual drag.
 - **Out of scope:** preserving both neighbors.
+- **Result (2026-10-08):** `begin_beat_interval_anchor_drag` anchors at the latest earlier BPM change or timing anchor; with no BPM change there it inserts one BPM change (exact rational, one undoable command, no-op release commits nothing) and otherwise updates the existing one. Locked-anchor and non-positive BPM rejects are kept; compose_input.cpp no longer rejects a timing-anchor-only anchor. `ctest -R '^core\.'` 1654/1654 passed, `-R 'beat fit|BPM|bpm'` 50/50 passed, event-harness 249/249 passed, `-R '^documentation\.'` 1/1 passed; clang-tidy reports no new complexity warnings in bpm_editor.cpp or compose_input.cpp (pre-existing: update_bmson_bgm_move, build_speed_graph).
 
 ## T-280 Add a time-anchoring policy for BPM edits
 

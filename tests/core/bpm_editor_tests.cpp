@@ -381,3 +381,81 @@ TEST_CASE("BPM editor rejects ambiguous stable IDs and event caps",
     CHECK(history.document.charts.front().bpms.size() == 1);
     CHECK(history.undo.empty());
 }
+
+TEST_CASE("beat fit without a BPM change at the anchor inserts one exact BPM as one undo step",
+          "[unit][core][bpm-editor][beat-fit]") {
+    auto history = make_document_history(bpm_song());
+    const auto anchor = local_position_t{measure_id_t{3}, 240};
+    const auto beat = local_position_t{measure_id_t{3}, 480};
+    const auto begun = begin_beat_interval_anchor_drag(history.document, chart_id_t{2}, anchor,
+                                                       beat, 48'000);
+    REQUIRE(begun);
+    CHECK(begun.drag->insert_bpm);
+    CHECK(begun.drag->original_bpm == signed_rational_t{120, 1});
+    CHECK(begun.drag->original_sample_frame == 48'000);
+
+    const auto proposed = update_beat_interval_drag(history.document, *begun.drag, 96'000);
+    REQUIRE(proposed);
+    CHECK(proposed.drag->proposed_bpm == signed_rational_t{40, 1});
+    CHECK(history.document.charts.front().bpms.size() == 1);
+
+    const auto undo_depth = history.undo.size();
+    const auto committed = commit_beat_interval_drag(history, *proposed.drag);
+    REQUIRE(committed);
+    const auto& bpms = history.document.charts.front().bpms;
+    REQUIRE(bpms.size() == 2);
+    const auto inserted = std::ranges::find(bpms, anchor, &bpm_event_t::position);
+    REQUIRE(inserted != bpms.end());
+    CHECK(inserted->beats_per_minute == signed_rational_t{40, 1});
+    CHECK(history.undo.size() == undo_depth + 1);
+
+    const auto refit = begin_beat_interval_anchor_drag(history.document, chart_id_t{2}, anchor,
+                                                       beat, 48'000);
+    REQUIRE(refit);
+    CHECK_FALSE(refit.drag->insert_bpm);
+    CHECK(refit.drag->original_sample_frame == 96'000);
+
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().bpms.size() == 1);
+    CHECK(history.document.charts.front().bpms.front().beats_per_minute ==
+          signed_rational_t{120, 1});
+}
+
+TEST_CASE("beat fit anchor reuses an existing BPM change and rejects impossible targets",
+          "[unit][core][bpm-editor][beat-fit]") {
+    auto history = make_document_history(bpm_song());
+    const auto beat = local_position_t{measure_id_t{3}, 480};
+    const auto begun = begin_beat_interval_anchor_drag(history.document, chart_id_t{2},
+                                                       {measure_id_t{3}, 0}, beat, 48'000);
+    REQUIRE(begun);
+    CHECK_FALSE(begun.drag->insert_bpm);
+    CHECK(begun.drag->bpm_event == object_id_t{10});
+
+    const auto impossible = update_beat_interval_drag(history.document, *begun.drag, 0);
+    CHECK_FALSE(impossible);
+    CHECK_FALSE(impossible.diagnostics.empty());
+}
+
+TEST_CASE("beat fit insert blocks when a locked anchor after the beat would move",
+          "[unit][core][bpm-editor][beat-fit]") {
+    auto song = bpm_song();
+    song.charts.front().timing_anchors.push_back({.id = object_id_t{11},
+        .position = {measure_id_t{3}, 720}, .source_sample_frame = 72'000, .locked = true});
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    const auto begun = begin_beat_interval_anchor_drag(history.document, chart_id_t{2},
+                                                       {measure_id_t{3}, 240},
+                                                       {measure_id_t{3}, 480}, 48'000);
+    REQUIRE(begun);
+    CHECK(begun.drag->insert_bpm);
+    CHECK_FALSE(update_beat_interval_drag(history.document, *begun.drag, 96'000));
+
+    auto unsafe = *begun.drag;
+    unsafe.proposed_sample_frame = 96'000;
+    unsafe.proposed_bpm = {40, 1};
+    const auto revision = history.document.revision;
+    const auto committed = commit_beat_interval_drag(history, unsafe);
+    CHECK_FALSE(committed);
+    CHECK(history.document.revision == revision);
+    CHECK(history.document.charts.front().bpms.size() == 1);
+}

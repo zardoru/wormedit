@@ -2,19 +2,25 @@
 
 [Back to the implemented-capability index](../implemented.md).
 
-T-413/T-419 checkpoint (2026-10-08): Layer strokes add memberships, with
+T-413/T-414/T-419 checkpoint (2026-10-08): Layer strokes add memberships, with
 Alt captured at stroke start for removal; repeated mixed note/BGM targets are
 idempotent and each changed stroke has one undo. Hidden/locked/missing targets
 reject atomically. Quantize now has aligned even/triplet grid chips, segmented
 space/halfway/hold-tail controls, cached selection counts and preset chips with
 validated custom/save/rename menus. Rename preserves settings/index and has one
 undo. Popup input/lifecycle and underlying tooltip suppression are covered.
+Draw/Layer now show a clipped source chip; clicking its source reveals the exact
+Sounds/BGA/Layer row across hidden docks, filtering and page delays. Deleted
+sources remain picked and warn until explicit repick. Held clicks are stamped
+and cannot leak into painting after source/chart changes. Labels use the
+revision-bound source cache and preserve bounded UTF-8 frame ownership.
 Optimized normal worker builds, Layer core1600/1600, Quantize core34/34,
-real rename dispatcher3/3 and full event234/234 pass; configured complexity
+real rename dispatcher3/3, full source-chip event240/240 and frame317/317 pass; configured complexity
 has no new/increased violations. Root inspected the ordinary-object software
 capture. Added count work costs about 0.33/0.66 ms cold at 50k/100k notes;
 240 warm hits each make zero core calls. Final combined main gates await
-T-414/T-420; native display/cadence remains unmeasured.
+T-420; six chip states are captured, including an actual 640x720 viewport.
+Software CJK glyph coverage is limited; native display/cadence remains unmeasured.
 [Evidence](../../coordination/oct8-layer-feedback-batch.md).
 
 T-412/T-463 (2026-10-08): unified Draw places the current sound/silent/BGA source,

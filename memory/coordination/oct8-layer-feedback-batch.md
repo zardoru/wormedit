@@ -54,6 +54,14 @@ T-419 uses `tests/sys/compose_quantize_preview_tests.cpp` for dispatcher/count
 regressions and `tests/ui/quantize_report_event_harness_tests.cpp` for report UI;
 the action-notification test loan is unnecessary unless later requested.
 
+T-419 further supporting scope approved: `src/ui/nuklear/compose_inspector.h`
+exposes quantize-popup ownership/lifecycle, and a narrow
+`src/ui/nuklear/compose_panel.cpp` hook makes popup dismissal/held releases own
+input before canvas processing. Feedback owns these through T-419; Layer's
+T-414 panel work waits for release and integrated refresh. Actual preset rename
+dispatcher tests do need `tests/sys/compose_action_notification_tests.cpp`,
+because preview tests do not link the dispatcher; this exact loan is approved.
+
 Runtime deviation: spawning the Luna executor and reactivating the prior Luna
 both failed with agent thread limit reached. No available API releases archived
 threads. Coordinators therefore use the workflow's documented local fallback:

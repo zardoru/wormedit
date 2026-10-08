@@ -1,6 +1,7 @@
 #include <wormedit/formats/slice_spans.h>
 #include <wormedit/formats/conversion.h>
 #include <wormedit/formats/bmson.h>
+#include <wormedit/formats/bms.h>
 #include <wormedit/formats/osu_mania.h>
 #include <wormedit/audio/audition_resolver.h>
 #include <wormedit/audio/offline_mix.h>
@@ -234,8 +235,12 @@ auto sliced_preview_pcm(const song_document_t& song, const std::filesystem::path
 void check_pcm_tolerance(const std::vector<float>& before, const std::vector<float>& after) {
     require_span(before.size() == after.size());
     float maximum{};
-    for (std::size_t index = 0; index < before.size(); ++index)
-        maximum = std::max(maximum, std::abs(before[index] - after[index]));
+    std::size_t maximum_index{};
+    for (std::size_t index = 0; index < before.size(); ++index) {
+        const auto error = std::abs(before[index] - after[index]);
+        if (error > maximum) { maximum = error; maximum_index = index; }
+    }
+    INFO("sample " << maximum_index << " original=" << before[maximum_index] << " reimport=" << after[maximum_index]);
     INFO("maximum preview PCM difference " << maximum);
     check_span(maximum <= 2.0F / 32768.0F);
 }
@@ -263,7 +268,13 @@ TEST_CASE("sliced BMSON conversion reimport matches production preview PCM",
 }
 
 namespace {
-void check_native_conversion_pcm(bool off_period) {
+auto authored_note_count(const song_document_t& song) -> std::size_t {
+    std::size_t count{};
+    for (const auto& measure : song.charts.front().measures) count += measure.notes.size();
+    return count;
+}
+
+void check_native_conversion_pcm(bool off_period, bool bms = false) {
     render_fixture_t fixture;
     std::vector<float> samples(48'000 * 2);
     for (std::size_t frame = 0; frame < 48'000; ++frame) {
@@ -276,8 +287,8 @@ void check_native_conversion_pcm(bool off_period) {
     stream.write(encoded.data(), static_cast<std::streamsize>(encoded.size()));
     stream.close();
     const auto song = sliced_pcm_song(off_period);
-    conversion_request_t request{.target = format_family_t::osu_mania,
-        .target_profile = "lazer-v128", .loss_policy = loss_policy_t::warn};
+    conversion_request_t request{.target = bms ? format_family_t::bms : format_family_t::osu_mania,
+        .target_profile = bms ? "bme-7k-outside-scratch" : "lazer-v128", .loss_policy = loss_policy_t::warn};
     require_span(!prepare_conversion_slice_sources(song, request, fixture.directory));
     require_span(request.slice_sources.front().native_sample_rate == 48'000);
     const auto converted = convert_document(song, request);
@@ -287,10 +298,13 @@ void check_native_conversion_pcm(bool off_period) {
     require_span(!render_conversion_slice_plans(song, converted,
         {fixture.directory, fixture.directory / "out", {}}));
     const auto& bytes = converted.outputs.front().bytes;
-    const auto parsed = parse_osu_mania_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-    require_span(parsed.song.has_value());
+    const auto raw = std::as_bytes(std::span{bytes.data(), bytes.size()});
+    const auto extension = std::filesystem::path{converted.outputs.front().suggested_filename}.extension().string();
+    const auto reimported = bms ? parse_bms_bytes(raw, {.file_extension = extension, .lane_profile_id = request.target_profile}).song : parse_osu_mania_bytes(raw).song;
+    require_span(reimported.has_value());
+    require_span(authored_note_count(*reimported) == authored_note_count(song));
     check_pcm_tolerance(sliced_preview_pcm(song, fixture.directory),
-        sliced_preview_pcm(*parsed.song, fixture.directory / "out"));
+        sliced_preview_pcm(*reimported, fixture.directory / "out"));
 }
 } // namespace
 
@@ -298,4 +312,36 @@ TEST_CASE("sliced conversion preserves native-rate float source overshoots in pr
           "[slice_spans][audio][conversion][sliced-conversion]") {
     check_native_conversion_pcm(false);
     check_native_conversion_pcm(true);
+}
+
+TEST_CASE("sliced BMS conversion preserves native-rate and off-period preview PCM",
+          "[slice_spans][audio][conversion][sliced-conversion]") {
+    check_native_conversion_pcm(false, true);
+    check_native_conversion_pcm(true, true);
+}
+
+TEST_CASE("BMS silent gameplay materializes one zero float sample",
+          "[slice_spans][audio][conversion][sliced-conversion]") {
+    render_fixture_t fixture;
+    auto song = sliced_pcm_song();
+    auto& chart = song.charts.front();
+    chart.sound_channels.clear();
+    for (auto& lane : chart.bgm_source_lanes) lane.stem_channel.reset();
+    for (auto& measure : chart.measures) {
+        measure.bgm_events.clear();
+        for (auto& note : measure.notes) { note.sound.reset(); note.sound_channel_event.reset(); }
+    }
+    const auto converted = convert_document(song,
+        {.target = format_family_t::bms, .loss_policy = loss_policy_t::warn});
+    require_span(static_cast<bool>(converted));
+    require_span(converted.silent_files.size() == 1);
+    std::filesystem::create_directory(fixture.directory / "out");
+    require_span(!render_conversion_slice_plans(song, converted,
+        {fixture.directory, fixture.directory / "out", {}}));
+    audio::decoder_t decoder;
+    require_span(decoder.open(fixture.directory / "out" / converted.silent_files.front()));
+    require_span(decoder.info()->output_frame_count == 1);
+    std::array<float, 2> sample{1, 1};
+    require_span(decoder.read_at(0, sample, 1).frames_read == 1);
+    check_span(sample[0] == 0 && sample[1] == 0);
 }

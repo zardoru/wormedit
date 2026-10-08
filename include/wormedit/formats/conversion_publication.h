@@ -55,7 +55,8 @@ struct staged_asset_discovery_t {
 [[nodiscard]] auto plan_conversion_publication(const std::filesystem::path& project_directory,
                                                const output_group_t& group,
                                                const conversion_request_t& request,
-                                               const conversion_result_t& converted)
+                                               const conversion_result_t& converted,
+                                               bool destination_is_directory = false)
     -> conversion_publication_plan_t;
 
 enum class conversion_publication_stage_t {
@@ -72,6 +73,8 @@ struct conversion_publication_options_t {
     std::function<bool(conversion_publication_stage_t)> allow_stage;
     // Called only inside private atomic staging, after all destination preflight.
     std::function<std::optional<std::string>(const std::filesystem::path&)> stage_generated_files;
+    // CLI directories may contain dots; default retains app file-path semantics.
+    bool destination_is_directory{};
 };
 
 struct conversion_publication_result_t {

@@ -649,7 +649,7 @@ auto publish_conversion_group_atomic(const fs::path& project_directory, const ou
                                      conversion_publication_options_t options)
     -> conversion_publication_result_t {
     conversion_publication_result_t result;
-    const auto plan = plan_conversion_publication(project_directory, group, request, converted);
+    const auto plan = plan_conversion_publication(project_directory, group, request, converted, options.destination_is_directory);
     if (!plan) {
         result.errors = plan.errors;
         return result;
@@ -658,7 +658,7 @@ auto publish_conversion_group_atomic(const fs::path& project_directory, const ou
         result.errors.emplace_back("Generated audio staging callback is required.");
         return result;
     }
-    const auto relative_directory = group.relative_output_path.has_extension()
+    const auto relative_directory = (!options.destination_is_directory && group.relative_output_path.has_extension())
                                         ? group.relative_output_path.parent_path()
                                         : group.relative_output_path;
     if (relative_directory.empty() || options.maximum_existing_bytes == 0 ||

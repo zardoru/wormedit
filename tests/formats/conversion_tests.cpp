@@ -518,3 +518,114 @@ TEST_CASE("soundless BMSON conversion needs no decoder geometry",
     check_conversion(converted.asset_copies.empty());
     check_conversion(converted.outputs.size() == 1);
 }
+
+namespace {
+auto bms_slice_request(const wormedit::song_document_t& song) -> wormedit::conversion_request_t {
+    auto request = sliced_conversion_request(song, song.charts.front().id);
+    request.target = wormedit::format_family_t::bms;
+    request.target_profile.clear();
+    return request;
+}
+void add_retained_wavs(wormedit::song_document_t& song, std::size_t count) {
+    for (std::size_t index = 0; index < count; ++index) {
+        song.resources.push_back({.id = wormedit::resource_id_t{1000 + index},
+            .name = "stem.wav", .asset = song.audio_assets.front().id,
+            .roles = {wormedit::resource_role_t::music}});
+    }
+}
+auto occurrence_count(std::string_view text, std::string_view needle) -> std::size_t {
+    std::size_t count{}, position{};
+    while ((position = text.find(needle, position)) != std::string_view::npos) {
+        ++count;
+        position += needle.size();
+    }
+    return count;
+}
+}
+
+TEST_CASE("BMSON BMS slicing preserves silent gameplay with one shared binding",
+          "[unit][format][conversion][bms_writer]") {
+    auto song = sliced_bmson_song();
+    require_conversion(song.has_value());
+    const auto original = wormedit::write_bmson(*song).json;
+    const auto result = wormedit::convert_document(*song, bms_slice_request(*song));
+    for (const auto& diagnostic : result.diagnostics) INFO(diagnostic.message);
+    require_conversion(static_cast<bool>(result));
+    check_conversion(result.silent_files.size() == 1);
+    check_conversion(result.slice_plans.front().spans.size() == 4);
+    check_conversion(occurrence_count(result.outputs.front().bytes, "#WAV") == 5);
+    check_conversion(result.outputs.front().bytes.find("conversion-silence.wav") != std::string::npos);
+    check_conversion(result.outputs.front().bytes.find("packed-one.wav") == std::string::npos);
+    check_conversion(wormedit::write_bmson(*song).json == original);
+}
+
+TEST_CASE("BMSON BMS capacity counts retained sounds and silence before publication",
+          "[unit][format][conversion][bms_writer]") {
+    auto song = sliced_bmson_song();
+    require_conversion(song.has_value());
+    add_retained_wavs(*song, 1290);
+    const auto fit = wormedit::convert_document(*song, bms_slice_request(*song));
+    for (const auto& diagnostic : fit.diagnostics) INFO(diagnostic.message);
+    require_conversion(static_cast<bool>(fit));
+    check_conversion(occurrence_count(fit.outputs.front().bytes, "#WAV") == 1295);
+    add_retained_wavs(*song, 1);
+    song->resources.back().id = wormedit::resource_id_t{9999};
+    const auto excess = wormedit::convert_document(*song, bms_slice_request(*song));
+    check_conversion(!excess);
+    check_conversion(has_transform_error(excess, "needs 1296 sounds, BMS holds 1295"));
+    check_conversion(excess.outputs.empty());
+    check_conversion(excess.slice_plans.empty());
+    check_conversion(excess.silent_files.empty());
+    check_conversion(excess.asset_copies.empty());
+}
+
+TEST_CASE("BMSON BMS soundless gameplay declares silence without decoder geometry",
+          "[unit][format][conversion][bms_writer]") {
+    auto song = sliced_bmson_song();
+    require_conversion(song.has_value());
+    auto& chart = song->charts.front();
+    chart.sound_channels.clear();
+    for (auto& lane : chart.bgm_source_lanes) lane.stem_channel.reset();
+    for (auto& measure : chart.measures) {
+        measure.bgm_events.clear();
+        for (auto& note : measure.notes) {
+            note.sound.reset();
+            note.sound_channel_event.reset();
+        }
+    }
+    auto request = bms_slice_request(*song);
+    request.slice_sources.clear();
+    const auto converted = wormedit::convert_document(*song, request);
+    require_conversion(static_cast<bool>(converted));
+    check_conversion(converted.slice_plans.empty());
+    check_conversion(converted.asset_copies.empty());
+    check_conversion(converted.silent_files.size() == 1);
+    check_conversion(occurrence_count(converted.outputs.front().bytes, "#WAV") == 1);
+    song->audio_assets.front().id = wormedit::asset_id_t{std::numeric_limits<std::uint64_t>::max()};
+    song->resources.front().asset = song->audio_assets.front().id;
+    const auto exhausted = wormedit::convert_document(*song, request);
+    check_conversion(!exhausted);
+    check_conversion(has_transform_error(exhausted, "silence asset/resource ID capacity"));
+    check_conversion(exhausted.silent_files.empty());
+}
+
+TEST_CASE("generated BMS silence does not hide same-named retained music",
+          "[unit][format][conversion][bms_writer]") {
+    auto song = sliced_bmson_song();
+    require_conversion(song.has_value());
+    auto& music = song->resources.front();
+    music.name = "conversion-silence.wav";
+    music.missing = false;
+    music.roles.push_back(wormedit::resource_role_t::music);
+    const auto converted = wormedit::convert_document(*song, bms_slice_request(*song));
+    std::string messages;
+    for (const auto& diagnostic : converted.diagnostics) messages += diagnostic.message + "\n";
+    INFO(messages);
+    require_conversion(static_cast<bool>(converted));
+    check_conversion(converted.silent_files.size() == 1);
+    check_conversion(converted.asset_copies.size() == 1);
+    const auto retained = "retained-" + std::to_string(music.asset.value) + ".wav";
+    check_conversion(converted.asset_copies.front().relative_path == retained);
+    check_conversion(converted.outputs.front().bytes.find(retained) != std::string::npos);
+    check_conversion(occurrence_count(converted.outputs.front().bytes, "#WAV") == 6);
+}

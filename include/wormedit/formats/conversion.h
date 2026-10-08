@@ -120,6 +120,8 @@ struct conversion_result_t {
     // Render these detached plans only inside atomic publication staging.
     std::vector<slice_span_plan_t> slice_plans;
     std::vector<conversion_asset_copy_t> asset_copies;
+    // Synthetic zero samples for soundless BMS gameplay, not source spans.
+    std::vector<std::filesystem::path> silent_files;
     std::vector<conversion_diagnostic_t> diagnostics;
 
     [[nodiscard]] auto has_errors() const -> bool;

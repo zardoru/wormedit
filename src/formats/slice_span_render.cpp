@@ -1,6 +1,7 @@
 #include <wormedit/formats/slice_spans.h>
 #include <wormedit/formats/conversion.h>
 #include <wormedit/audio/slice_render.h>
+#include <wormedit/core/atomic_file_storage.h>
 
 #include <algorithm>
 #include <array>
@@ -257,6 +258,13 @@ auto prepare_conversion_slice_sources(const song_document_t& song, conversion_re
 
 auto render_conversion_slice_plans(const song_document_t& song, const conversion_result_t& converted,
     const slice_span_render_options_t& options) -> std::optional<std::string> {
+    for (const auto& name : converted.silent_files) {
+        if (options.stop.stop_requested()) return "cancelled";
+        const std::array<float, 2> samples{};
+        const auto bytes = audio::encode_wav_float32(samples, slice_span_sample_rate);
+        const auto saved = save_file_atomic(options.output_directory / name, bytes, bytes.size());
+        if (!saved) return "Could not stage silent gameplay sample";
+    }
     for (const auto& copy : converted.asset_copies)
         if (auto failure = copy_conversion_asset(song, copy, options)) return failure;
     auto rendering = options;

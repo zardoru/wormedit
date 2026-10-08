@@ -255,6 +255,7 @@ auto publish_cli_slices(const song_document_t& song, const cli_request_t& reques
     group.family = request.conversion.target;
     group.relative_output_path = directory.filename();
     conversion_publication_options_t options;
+    options.destination_is_directory = true;
     options.stage_generated_files = [&](const auto& staging) {
         return render_conversion_slice_plans(song, converted,
             {request.input.parent_path(), staging, {}});
@@ -269,7 +270,7 @@ auto publish_cli_slices(const song_document_t& song, const cli_request_t& reques
     return std::nullopt;
 #else
     (void)song;
-    if (!converted.slice_plans.empty() || !converted.asset_copies.empty())
+    if (!converted.slice_plans.empty() || !converted.asset_copies.empty() || !converted.silent_files.empty())
         return "BMSON sliced-audio conversion requires the audio decoder build";
     return write_outputs(converted, request.output_directory, artifacts);
 #endif

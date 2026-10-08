@@ -568,3 +568,25 @@ TEST_CASE("generated audio staging rejects symlinks without touching the source"
     CHECK_FALSE(std::filesystem::exists(temporary.path / "exports"));
     check_publication(read(temporary.path / "source.wav") == "source");
 }
+
+TEST_CASE("conversion publication distinguishes dotted directories from chart filenames",
+          "[unit][format][publication][conversion]") {
+    temporary_directory_t temporary;
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
+        .relative_output_path = "kick-v1.2"};
+    const wormedit::conversion_request_t request{.target = wormedit::format_family_t::bmson};
+    auto result = converted("first.bmson");
+    result.outputs.push_back(result.outputs.front());
+    result.outputs.back().suggested_filename = "second.bmson";
+    const auto file_plan = wormedit::plan_conversion_publication(temporary.path, group, request, result);
+    check_publication(!file_plan);
+    const auto directory_plan = wormedit::plan_conversion_publication(temporary.path, group, request, result, true);
+    require_publication(static_cast<bool>(directory_plan));
+    check_publication(directory_plan.files.front().project_relative_path == "kick-v1.2/first.bmson");
+    const auto published = wormedit::publish_conversion_group_atomic(temporary.path, group, request,
+        result, {.destination_is_directory = true});
+    require_publication(published.published);
+    check_publication(read(temporary.path / "kick-v1.2/first.bmson") == "{}");
+    check_publication(read(temporary.path / "kick-v1.2/second.bmson") == "{}");
+    check_publication(!std::filesystem::exists(temporary.path / "first.bmson"));
+}

@@ -2,6 +2,7 @@
 #include <wormedit/formats/slice_spans.h>
 
 #include <wormedit/core/quantize.h>
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bms_writer.h>
@@ -400,9 +401,10 @@ void retain_slice_export_assets(std::vector<Asset>& assets,
 }
 
 void prepare_retained_slice_assets(song_document_t& song, const std::vector<chart_id_t>& charts,
-    const shared_slices_t& shared, conversion_result_t& result) {
+    const shared_slices_t& shared, const std::unordered_set<std::uint64_t>& silent_resources,
+    conversion_result_t& result) {
     const auto resources = referenced_slice_export_resources(song, charts);
-    std::unordered_set<std::uint64_t> generated;
+    auto generated = silent_resources;
     for (const auto& [identity, item] : shared) {
         (void)identity;
         generated.insert(item.resource.value);
@@ -413,6 +415,10 @@ void prepare_retained_slice_assets(song_document_t& song, const std::vector<char
             retained.insert(resource.asset.value);
     retain_slice_export_assets(song.audio_assets, retained, result);
     retain_slice_export_assets(song.visual_assets, retained, result);
+    for (auto& resource : song.resources) {
+        const auto copy = std::ranges::find(result.asset_copies, resource.asset, &conversion_asset_copy_t::asset);
+        if (copy != result.asset_copies.end()) resource.name = copy->relative_path.generic_string();
+    }
 }
 
 auto sliced_bgm_timestamp_error(const chart_document_t& chart) -> long double {
@@ -435,7 +441,7 @@ auto sliced_bgm_timestamp_error(const chart_document_t& chart) -> long double {
 
 void report_slice_timestamp_loss(const chart_document_t& chart, const conversion_request_t& request,
     conversion_result_t& result) {
-    if (request.target_profile == "lazer-v128") return;
+    if (request.target != format_family_t::osu_mania || request.target_profile == "lazer-v128") return;
     const auto error = sliced_bgm_timestamp_error(chart);
     if (error < 1e-9L) return;
     const auto severity = request.loss_policy == loss_policy_t::allow
@@ -454,9 +460,96 @@ void prepare_osu_slice_layout(chart_document_t& chart) {
             if (lane.role == lane_role_t::scratch) lane.role = lane_role_t::playable;
 }
 
+auto add_bms_silent_binding(song_document_t& song, const std::vector<chart_id_t>& charts,
+    conversion_result_t& result, std::unordered_set<std::uint64_t>& silent_resources) -> bool {
+    std::optional<resource_id_t> silence;
+    for (auto& chart : song.charts) {
+        if (chart.source_family != format_family_t::bmson ||
+            std::ranges::find(charts, chart.id) == charts.end()) continue;
+        for (auto& measure : chart.measures) {
+            for (auto& note : measure.notes) {
+                if (note.sound) continue;
+                if (!silence) {
+                    if (std::max(next_slice_asset(song), next_slice_resource(song)) ==
+                        std::numeric_limits<std::uint64_t>::max()) return false;
+                    const auto filename = "conversion-silence.wav";
+                    silence = append_slice_resource(song, {.begin_frame = 0, .end_frame = 1,
+                        .filename = filename});
+                    result.silent_files.emplace_back(filename);
+                    silent_resources.insert(silence->value);
+                }
+                note.sound = silence;
+            }
+        }
+    }
+    return true;
+}
+
+auto prepare_bms_slice_resources(song_document_t& song, const std::vector<chart_id_t>& charts,
+    const conversion_request_t& request, conversion_result_t& result,
+    std::unordered_set<std::uint64_t>& silent_resources) -> bool {
+    if (request.target != format_family_t::bms) return true;
+    if (!add_bms_silent_binding(song, charts, result, silent_resources)) {
+        add_diagnostic(result, diagnostic_severity_t::error,
+            conversion_diagnostic_code_t::transform_failed, conversion_stage_t::transform,
+            request.target, {}, "Generated silence asset/resource ID capacity exceeded");
+        return false;
+    }
+    const auto used = referenced_slice_export_resources(song, charts);
+    std::erase_if(song.resources, [&](const auto& resource) { return !used.contains(resource.id.value); });
+    const auto count = std::ranges::count_if(song.resources, [&](const auto& resource) {
+        return std::ranges::find(song.audio_assets, resource.asset, &audio_asset_t::id) != song.audio_assets.end();
+    });
+    constexpr std::size_t capacity = 1295;
+    if (static_cast<std::size_t>(count) <= capacity) return true;
+    add_diagnostic(result, diagnostic_severity_t::error,
+        conversion_diagnostic_code_t::transform_failed, conversion_stage_t::transform,
+        request.target, {}, "needs " + std::to_string(count) + " sounds, BMS holds " + std::to_string(capacity));
+    return false;
+}
+
+auto compatible_bms_layout(const lane_layout_t& source, const lane_layout_t& target) -> bool {
+    if (source.lanes.size() != target.lanes.size()) return false;
+    return std::ranges::all_of(source.lanes, [&](const auto& lane) {
+        const auto matching = [&](const auto& other) { return other.role == lane.role && other.stage == lane.stage; };
+        return std::ranges::count_if(source.lanes, matching) == std::ranges::count_if(target.lanes, matching);
+    });
+}
+
+void map_bms_slice_lanes(lane_layout_t& source, const lane_layout_t& target) {
+    std::map<std::pair<stage_group_t, lane_role_t>, std::size_t> next;
+    for (auto& lane : source.lanes) {
+        std::vector<const lane_definition_t*> matches;
+        for (const auto& candidate : target.lanes)
+            if (candidate.role == lane.role && candidate.stage == lane.stage) matches.push_back(&candidate);
+        std::ranges::sort(matches, {}, [](const auto* value) { return value->display_order; });
+        lane.bms_channels = matches.at(next[{lane.stage, lane.role}]++)->bms_channels;
+    }
+    source.profile_id = target.profile_id;
+}
+
+auto prepare_bms_slice_layout(chart_document_t& chart, const conversion_request_t& request,
+    conversion_result_t& result) -> bool {
+    for (auto& segment : chart.lane_layouts) {
+        const auto profiles = built_in_bms_lane_profiles();
+        const auto found = std::ranges::find_if(profiles, [&](const auto& descriptor) {
+            return (request.target_profile.empty() || descriptor.profile.layout.profile_id == request.target_profile) &&
+                compatible_bms_layout(segment.layout, descriptor.profile.layout);
+        });
+        if (found == profiles.end()) {
+            add_diagnostic(result, diagnostic_severity_t::error,
+                conversion_diagnostic_code_t::transform_failed, conversion_stage_t::transform,
+                request.target, chart.id, "BMSON lane layout has no compatible BMS channel profile");
+            return false;
+        }
+        map_bms_slice_lanes(segment.layout, found->profile.layout);
+    }
+    return true;
+}
+
 auto prepare_slice_exports(song_document_t& prepared, const conversion_request_t& request,
                            const std::vector<chart_id_t>& charts, conversion_result_t& result) -> bool {
-    if (request.target != format_family_t::osu_mania) return true;
+    if (request.target != format_family_t::osu_mania && request.target != format_family_t::bms) return true;
     auto options = request.slice_options;
     shared_slices_t shared;
     for (const auto id : charts) {
@@ -481,14 +574,19 @@ auto prepare_slice_exports(song_document_t& prepared, const conversion_request_t
         slice_span_plan_t render_plan;
         const auto resources = append_slice_resources(prepared, plan, shared, render_plan);
         apply_slice_bindings(*chart, plan, resources);
-        prepare_osu_slice_layout(*chart);
+        if (request.target == format_family_t::osu_mania) prepare_osu_slice_layout(*chart);
+        else if (!prepare_bms_slice_layout(*chart, request, result)) return false;
         report_slice_timestamp_loss(*chart, request, result);
         for (const auto& span : plan.spans) options.occupied_filenames.push_back(span.filename);
         if (!render_plan.spans.empty()) result.slice_plans.push_back(std::move(render_plan));
     }
     if (std::ranges::any_of(charts, [&](const auto id) {
             return selected_chart(prepared, id)->source_family == format_family_t::bmson;
-        })) prepare_retained_slice_assets(prepared, charts, shared, result);
+        })) {
+        std::unordered_set<std::uint64_t> silent_resources;
+        if (!prepare_bms_slice_resources(prepared, charts, request, result, silent_resources)) return false;
+        prepare_retained_slice_assets(prepared, charts, shared, silent_resources, result);
+    }
     return true;
 }
 
@@ -695,15 +793,18 @@ void write_bms_outputs(const song_document_t& prepared, const conversion_request
                                     ? bms_branch_policy_t::preserve_tree
                                     : bms_branch_policy_t::flatten_active;
         options.output_encoding = request.encoding;
-        if (!request.target_profile.empty()) {
+        if (!request.target_profile.empty() &&
+            selected_chart(prepared, chart_id)->source_family != format_family_t::bmson) {
             options.lane_profile_id = request.target_profile;
         }
         const auto written = write_bms(prepared, std::move(options));
         append_target_diagnostics(result, written.diagnostics, request.target, chart_id,
                                   request.loss_policy);
+        const auto* chart = selected_chart(prepared, chart_id);
+        const auto profile = request.target_profile.empty() && chart->source_family == format_family_t::bmson &&
+            !chart->lane_layouts.empty() ? chart->lane_layouts.front().layout.profile_id : request.target_profile;
         append_conversion_output(result, prepared, request, limits, chart_id,
-                                 std::string(bms_extension(request.target_profile)), written.bytes,
-                                 selected_chart(prepared, chart_id));
+                                 std::string(bms_extension(profile)), written.bytes, chart);
     }
 }
 
@@ -899,7 +1000,7 @@ auto plan_conversion_slice_spans(const song_document_t& song, chart_id_t chart,
 }
 
 auto conversion_needs_slice_spans(const song_document_t& song, const conversion_request_t& request) -> bool {
-    if (request.target != format_family_t::osu_mania) return false;
+    if (request.target != format_family_t::osu_mania && request.target != format_family_t::bms) return false;
     return std::ranges::any_of(song.charts, [&](const auto& chart) {
         const bool selected = request.chart ? chart.id == *request.chart :
             request.charts.empty() || std::ranges::find(request.charts, chart.id) != request.charts.end();
@@ -925,6 +1026,7 @@ auto convert_document(const song_document_t& song, const conversion_request_t& r
     if (!prepare_slice_exports(*prepared, request, charts, result)) {
         result.slice_plans.clear();
         result.asset_copies.clear();
+        result.silent_files.clear();
         return result;
     }
     auto stepmania_options =
@@ -933,6 +1035,7 @@ auto convert_document(const song_document_t& song, const conversion_request_t& r
                                      stepmania_options ? &*stepmania_options : nullptr)) {
         result.slice_plans.clear();
         result.asset_copies.clear();
+        result.silent_files.clear();
         return result;
     }
     return result;

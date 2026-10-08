@@ -76,10 +76,10 @@ auto append_conversion_files(const std::filesystem::path& project_directory,
                             const output_group_t& group, const conversion_request_t& request,
                             const conversion_result_t& converted,
                             conversion_publication_plan_t& plan,
-                            std::set<std::filesystem::path>& destinations)
+                            std::set<std::filesystem::path>& destinations, bool destination_is_directory)
     -> std::optional<std::string> {
     namespace fs = std::filesystem;
-    const bool file_path = group.relative_output_path.has_extension();
+    const bool file_path = (!destination_is_directory && group.relative_output_path.has_extension());
     const auto output_directory =
         file_path ? group.relative_output_path.parent_path() : group.relative_output_path;
     for (std::size_t index = 0; index < converted.outputs.size(); ++index) {
@@ -130,13 +130,16 @@ auto append_generated_file(const std::filesystem::path& name,
 auto append_generated_files(const std::filesystem::path& project_directory,
     const output_group_t& group, const conversion_request_t& request,
     const conversion_result_t& converted, conversion_publication_plan_t& plan,
-    std::set<std::filesystem::path>& destinations) -> std::optional<std::string> {
-    const auto directory = group.relative_output_path.has_extension()
+    std::set<std::filesystem::path>& destinations, bool destination_is_directory) -> std::optional<std::string> {
+    const auto directory = (!destination_is_directory && group.relative_output_path.has_extension())
         ? group.relative_output_path.parent_path() : group.relative_output_path;
     for (const auto& slice_plan : converted.slice_plans)
         for (const auto& span : slice_plan.spans)
             if (auto failure = append_generated_file(span.filename, project_directory, directory,
                     request.overwrite, plan, destinations)) return failure;
+    for (const auto& name : converted.silent_files)
+        if (auto failure = append_generated_file(name, project_directory, directory,
+                request.overwrite, plan, destinations)) return failure;
     for (const auto& copy : converted.asset_copies)
         if (auto failure = append_generated_file(copy.relative_path, project_directory, directory,
                 request.overwrite, plan, destinations)) return failure;
@@ -146,16 +149,17 @@ auto append_generated_files(const std::filesystem::path& project_directory,
 auto append_staged_assets(const std::filesystem::path& project_directory,
                           const output_group_t& group, const conversion_request_t& request,
                           conversion_publication_plan_t& plan,
-                          std::set<std::filesystem::path>& destinations)
+                          std::set<std::filesystem::path>& destinations, bool destination_is_directory)
     -> std::optional<std::string> {
     namespace fs = std::filesystem;
-    const auto asset_directory = export_asset_directory(group.relative_output_path);
+    const auto asset_directory = destination_is_directory
+        ? std::optional{group.relative_output_path / "assets"} : export_asset_directory(group.relative_output_path);
     if (!asset_directory) {
         return "Output asset directory is invalid.";
     }
     std::set<asset_id_t> asset_ids;
     std::set<fs::path> asset_destinations;
-    const auto output_directory = group.relative_output_path.has_extension()
+    const auto output_directory = (!destination_is_directory && group.relative_output_path.has_extension())
                                       ? group.relative_output_path.parent_path()
                                       : group.relative_output_path;
     for (const auto& staged : request.staged_assets) {
@@ -266,7 +270,7 @@ auto discover_staged_export_assets(const song_document_t& song, const output_gro
 
 auto plan_conversion_publication(const std::filesystem::path& project_directory,
                                  const output_group_t& group, const conversion_request_t& request,
-                                 const conversion_result_t& converted)
+                                 const conversion_result_t& converted, bool destination_is_directory)
     -> conversion_publication_plan_t {
     namespace fs = std::filesystem;
     conversion_publication_plan_t plan;
@@ -274,20 +278,20 @@ auto plan_conversion_publication(const std::filesystem::path& project_directory,
         group.family != request.target || !converted || converted.outputs.empty()) {
         return reject(std::move(plan), "Project, output group, or conversion result is invalid.");
     }
-    if (group.relative_output_path.has_extension() && converted.outputs.size() != 1) {
+    if ((!destination_is_directory && group.relative_output_path.has_extension()) && converted.outputs.size() != 1) {
         return reject(std::move(plan), "A single chart filename cannot hold multiple outputs.");
     }
     std::set<fs::path> destinations;
     if (auto error = append_conversion_files(project_directory, group, request, converted, plan,
-                                             destinations);
+                                             destinations, destination_is_directory);
         error.has_value()) {
         return reject(std::move(plan), std::move(*error));
     }
-    if (auto error = append_generated_files(project_directory, group, request, converted, plan, destinations);
+    if (auto error = append_generated_files(project_directory, group, request, converted, plan, destinations, destination_is_directory);
         error.has_value()) {
         return reject(std::move(plan), std::move(*error));
     }
-    if (auto error = append_staged_assets(project_directory, group, request, plan, destinations);
+    if (auto error = append_staged_assets(project_directory, group, request, plan, destinations, destination_is_directory);
         error.has_value()) {
         return reject(std::move(plan), std::move(*error));
     }

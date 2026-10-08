@@ -1,4 +1,6 @@
 #include <wormedit/formats/bms.h>
+#include <wormedit/formats/bmson.h>
+#include <wormedit/formats/native_project.h>
 #include <wormedit/formats/osu_mania.h>
 #include <wormedit/formats/stepmania.h>
 
@@ -255,4 +257,80 @@ TEST_CASE("wormedit-convert keeps existing files unless overwrite is requested",
     const auto third = run_tool(scratch, allowed);
     CHECK(third.status == 0);
     CHECK(read_file(path) != "sentinel");
+}
+
+namespace {
+void require_cli(bool value) { REQUIRE(value); }
+void check_cli(bool value) { CHECK(value); }
+auto write_two_silent_bmson_charts(const scratch_directory_t& scratch) -> std::filesystem::path {
+    constexpr std::string_view text = R"({"version":"1.0.0","info":{"title":"silent","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[]})";
+    auto parsed = wormedit::parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
+    require_cli(parsed.song.has_value());
+    auto second = parsed.song->charts.front();
+    second.id = wormedit::chart_id_t{second.id.value + 1000};
+    parsed.song->charts.push_back(second);
+    const auto saved = wormedit::write_native_project(*parsed.song);
+    require_cli(saved.bytes.has_value());
+    const auto input = scratch.path() / "multi.wormedit";
+    std::ofstream(input) << *saved.bytes;
+    return input;
+}
+}
+
+TEST_CASE("wormedit-convert publishes multiple charts inside dotted directories",
+          "[unit][tools][convert][conversion]") {
+    scratch_directory_t scratch("dotted-multi");
+    const auto input = write_two_silent_bmson_charts(scratch);
+    const auto output = scratch.path() / "kick-v1.2";
+    std::filesystem::create_directory(output);
+    const auto run = run_tool(scratch, {{"input", input.string()},
+        {"output_directory", output.string()}, {"target", "osu_mania"},
+        {"target_profile", "lazer-v128"}, {"loss_policy", "warn"}});
+    require_cli(run.status == 0);
+    require_cli(run.result.at("ok").get<bool>());
+    require_cli(run.result.at("artifacts").size() == 2);
+    for (const auto& artifact : run.result.at("artifacts")) {
+        const std::filesystem::path path{artifact.at("path").get<std::string>()};
+        check_cli(path.parent_path() == output);
+        check_cli(std::filesystem::is_regular_file(path));
+        check_cli(path.extension() == ".osu");
+    }
+    check_cli(!std::filesystem::exists(scratch.path() / "chart-1.osu"));
+}
+
+namespace {
+auto write_overcapacity_silent_bmson(const scratch_directory_t& scratch) -> std::filesystem::path {
+    const auto input = write_two_silent_bmson_charts(scratch);
+    auto parsed = wormedit::parse_native_project(read_file(input));
+    require_cli(parsed.song.has_value());
+    auto& song = *parsed.song;
+    song.charts.resize(1);
+    auto& chart = song.charts.front();
+    chart.measures.front().notes.push_back({.id = wormedit::object_id_t{10000},
+        .position = {chart.measures.front().id, 0}, .lane = chart.lane_layouts.front().layout.lanes.front().id});
+    song.audio_assets.push_back({.id = wormedit::asset_id_t{90000}, .source_path = "missing.wav"});
+    for (std::uint64_t index = 0; index < 1295; ++index)
+        song.resources.push_back({.id = wormedit::resource_id_t{90001 + index},
+            .name = "missing.wav", .asset = song.audio_assets.front().id,
+            .roles = {wormedit::resource_role_t::music}});
+    const auto saved = wormedit::write_native_project(song);
+    require_cli(saved.bytes.has_value());
+    std::ofstream(input) << *saved.bytes;
+    return input;
+}
+}
+TEST_CASE("wormedit-convert rejects BMS sound capacity before any generated writes",
+          "[unit][tools][convert][conversion]") {
+    scratch_directory_t scratch("bms-capacity");
+    const auto input = write_overcapacity_silent_bmson(scratch);
+    const auto output = scratch.path() / "bms-v1.2";
+    std::filesystem::create_directory(output);
+    std::ofstream(output / "manual.txt") << "keep";
+    const auto run = run_tool(scratch, {{"input", input.string()},
+        {"output_directory", output.string()}, {"target", "bms"}, {"loss_policy", "warn"}});
+    check_cli(run.status != 0);
+    check_cli(!run.result.at("ok").get<bool>());
+    check_cli(run.result.dump().find("needs 1296 sounds, BMS holds 1295") != std::string::npos);
+    check_cli(read_file(output / "manual.txt") == "keep");
+    check_cli(std::distance(std::filesystem::directory_iterator(output), std::filesystem::directory_iterator{}) == 1);
 }

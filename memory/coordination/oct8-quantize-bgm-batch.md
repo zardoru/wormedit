@@ -165,3 +165,30 @@ Conditional BMS conversion claims and clears retained playable endpoints and
 emits channel 01 in that same branch, without deleting native provenance,
 flattening the branch tree or replaying old notes. Frontend tail geometry support
 will be audited and recorded separately after the feedback handoff.
+
+## T-423 linked hold and retained scene support
+
+Read-only audits showed linked BMSON holds would reject and x=0 lengths would
+reimport without semantic ends. The exact parser/linked-assignment and retained
+scene paths below are approved within tail preservation, pending exclusive
+executor/source-build handoff (not a grant to edit shared feedback files):
+
+- `src/formats/bmson.cpp`
+- `tests/formats/bmson_tests.cpp`
+- `src/core/bmson_sound_channel_editor.cpp`
+- `tests/core/bmson_sound_channel_editor_tests.cpp`
+- `include/wormedit/core/editor_scene.h`
+- `src/core/editor_scene.cpp`
+- `tests/core/editor_scene_bgm_layers_tests.cpp`
+- `src/sys/compose_view.cpp`
+- `src/ui/frontend.h`
+- `src/ui/nuklear/compose_canvas.cpp`
+- `tests/sys/frame_timing_tests.cpp`
+- `tests/ui/nuklear_event_harness_tests.cpp`
+
+Retain established stem/slice behavior and branch restrictions. Index BGM tail
+intervals once per document revision so a visible tail with an offscreen head
+still renders without a per-frame chart scan. Keep head and body bounds distinct
+for labels/hits; tile hashes/window validity include ends and clipped bars.
+Frontend size budgets remain enforced. `compose_view.h` is not additionally
+approved for this phase absent a demonstrated cache need.

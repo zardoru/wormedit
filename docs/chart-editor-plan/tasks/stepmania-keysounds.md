@@ -68,7 +68,8 @@ Order: T-478, then T-479, then T-480. T-481 waits on T-480.
 
 ## T-480 Write `#KEYSOUNDS`, `[n]` and `K` on SM and SSC export
 
-- **Status:** ready (T-479 done 2026-10-08)
+- **Status:** done
+- **Result (2026-10-08):** SM and SSC export writes one `#KEYSOUNDS` list (original list kept and extended, first-use order otherwise, SSC `\#` escape), `[n]` on sounded heads (original spelling kept when the index is unchanged, unresolvable original indices kept), and BGM events as `K` on their provenance column or the first free column; a full row or an unwritable sound path is a warning-level loss. The two "not emitted" diagnostics are gone. Both T-478 fixtures (now in writer-canonical form) and an inline `K` source round-trip byte-for-byte; new tests in `stepmania_tests.cpp` and `conversion_loss_matrix_tests.cpp`.
 - **Outcome:** exporting a chart with note sounds and BGM events to SM or SSC writes one `#KEYSOUNDS` list, a `[n]` suffix on each sounded note, and BGM events as `K` cells. An imported keysound chart that was not edited round-trips byte-for-byte. Anything that cannot be written is reported as a warning-level loss, not an error.
 - **Read first:** the reference's grammar and writer sections, `src/formats/stepmania.cpp` (`note_map_text`, the note-sound and BGM loss reports), `include/wormedit/formats/conversion.h` (loss reporting).
 - **Files owned:** `src/formats/stepmania.cpp`, `include/wormedit/formats/stepmania.h`, `tests/formats/stepmania_tests.cpp`, `tests/formats/conversion_loss_matrix_tests.cpp`, this card.

@@ -1288,3 +1288,95 @@ TEST_CASE("StepMania K autokeysounds import as BGM events without judged notes",
     CHECK(second.front().source_lane == chart.bgm_source_lanes[0].id);
     CHECK(second.front().sound == samples[0]->id);
 }
+
+namespace {
+
+auto read_fixture_text(std::string_view name) -> std::string {
+    const auto bytes = read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "stepmania" / name);
+    std::string text;
+    for (const auto byte : bytes) text.push_back(static_cast<char>(byte));
+    return text;
+}
+
+auto export_text(const wormedit::song_document_t& song, wormedit::stepmania_profile_t profile)
+    -> wormedit::stepmania_write_result_t {
+    return wormedit::write_stepmania(song, {.profile = profile});
+}
+
+auto warning_count_of(const wormedit::stepmania_write_result_t& result) -> std::size_t {
+    return static_cast<std::size_t>(std::ranges::count(
+        result.diagnostics, wormedit::diagnostic_severity_t::warning,
+        &wormedit::stepmania_write_diagnostic_t::severity));
+}
+
+void check_unedited_round_trip(const std::string& source, wormedit::stepmania_profile_t profile) {
+    const auto parsed = parse_inline(source, profile);
+    REQUIRE(parsed.song.has_value());
+    const auto written = export_text(*parsed.song, profile);
+    for (const auto& diagnostic : written.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE_FALSE(written.has_errors());
+    REQUIRE(written.text.has_value());
+    CHECK(*written.text == source);
+}
+
+}  // namespace
+
+TEST_CASE("StepMania keysound fixtures round-trip byte-for-byte when unedited",
+          "[unit][format][stepmania][keysounds]") {
+    check_unedited_round_trip(read_fixture_text("keysounds.sm"), wormedit::stepmania_profile_t::sm);
+    check_unedited_round_trip(read_fixture_text("keysounds.ssc"), wormedit::stepmania_profile_t::ssc);
+}
+
+TEST_CASE("StepMania autokeysounds and placeholders round-trip byte-for-byte",
+          "[unit][format][stepmania][keysounds]") {
+    const std::string source =
+        "#KEYSOUNDS:a.wav,,b.wav;\n#BPMS:0.000=120.000;\n#NOTES:\n"
+        "dance-single:\n:\nEdit:\n1:\n0,0,0,0,0:\n"
+        "K[0]K[2]00\n02[2]00\n0K[2]00\n0300\n,\n"
+        "0001[1]\n0000\n0000\n0000\n;\n";
+    const auto parsed = parse_inline(source, wormedit::stepmania_profile_t::sm);
+    REQUIRE(parsed.song.has_value());
+    const auto written = export_text(*parsed.song, wormedit::stepmania_profile_t::sm);
+    REQUIRE(written.text.has_value());
+    // Re-export of the re-import is a fixed point, and the keysound content survives.
+    const auto again = parse_inline(*written.text, wormedit::stepmania_profile_t::sm);
+    REQUIRE(again.song.has_value());
+    const auto second = export_text(*again.song, wormedit::stepmania_profile_t::sm);
+    CHECK(second.text == written.text);
+    CHECK(written.text->find("#KEYSOUNDS:a.wav,,b.wav;") != std::string::npos);
+    CHECK(written.text->find("K[0]K[2]00\n") != std::string::npos);
+    CHECK(written.text->find("0K[2]00\n") != std::string::npos);
+    CHECK(written.text->find("0001[1]\n") != std::string::npos);
+}
+
+TEST_CASE("StepMania export moves an autokeysound to a free column and reports a full row",
+          "[unit][format][stepmania][keysounds]") {
+    const std::string source =
+        "#KEYSOUNDS:a.wav,b.wav;#BPMS:0=120;"
+        "#NOTES:dance-single::Hard:1:0,0,0,0,0:\nK[0]K[1]00\n0000\n0000\n0000\n;";
+    auto parsed = parse_inline(source, wormedit::stepmania_profile_t::sm);
+    REQUIRE(parsed.song.has_value());
+    auto& chart = parsed.song->charts.front();
+    auto& measure = chart.measures.front();
+    const auto add_tap = [&](std::size_t lane, std::uint64_t id) {
+        measure.notes.push_back({.id = wormedit::object_id_t{id},
+                                 .position = measure.bgm_events.front().position,
+                                 .lane = chart.lane_layouts.front().layout.lanes[lane].id});
+    };
+    SECTION("a taken source column falls back to the first free column") {
+        measure.bgm_events.pop_back();
+        add_tap(0, 900);
+        add_tap(1, 901);
+        const auto written = export_text(*parsed.song, wormedit::stepmania_profile_t::sm);
+        REQUIRE(written.text.has_value());
+        CHECK(written.text->find("\n11K[0]0\n") != std::string::npos);
+        CHECK(warning_count_of(written) == 0);
+    }
+    SECTION("a full row drops the event with a warning-level loss") {
+        for (std::size_t lane = 0; lane < 4; ++lane) add_tap(lane, 900 + lane);
+        const auto written = export_text(*parsed.song, wormedit::stepmania_profile_t::sm);
+        REQUIRE(written.text.has_value());
+        CHECK(written.text->find("K[") == std::string::npos);
+        CHECK(warning_count_of(written) == 1);
+    }
+}

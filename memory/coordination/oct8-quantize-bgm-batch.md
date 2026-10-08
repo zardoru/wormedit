@@ -282,7 +282,7 @@ and root's selected-retention scope. Root independently repeats 7 projection
 cases/90 assertions and 35 preview cases/204 assertions and reviews corrected
 full-width arrow captures. Ordinary worker targets, full frame 329/329, event
 243/243, quantize filter 46/46, docs and unchanged 15-finding tidy baseline pass.
-All renderer source readers are released. Final all-features main gates remain
+All renderer source readers are released. Final ordinary configured-main gates remain
 pending for the completed batch.
 
 The feedback worker merges main cleanly before the next slice. Root now grants
@@ -292,3 +292,11 @@ exactly `tests/ui/nuklear_event_harness_tests.cpp`, the hint-only
 `docs/chart-editor-plan/editing/interactions.md`. Use the finalized concrete
 scratch brief and existing production dispatcher closure. No additional
 implementation files, schema edits or BGM frontend work are granted yet.
+
+Root independently starts the ordinary main build after renderer integration.
+The observed existing main configuration is Debug, Lua OFF and video ON;
+workers are RelWithDebInfo with Lua/video OFF. Earlier "all-features main"
+wording was inaccurate. Preserve the existing configuration and finish its
+complete ordinary target set and test suite, reporting this feature coverage
+without an all-features claim. Main sources remain frozen during this reader;
+worker builds use at most two jobs until root releases its four-job build.

@@ -196,3 +196,13 @@ to fill decoder geometry. Root app export integration waits final Draw release.
 Conversion CLI follow-up scope: explicit publication directory semantics in
 already-owned API/options keep dotted output-directory names working for single
 and multiple charts while preserving default application single-file semantics.
+
+Additional T-412 regression scope approved: `tests/ui/bga_advance_workflow_tests.cpp`
+and `tests/ui/inspector_resource_workflow_tests.cpp` update actual toolbar and
+source-selection coordinates while preserving semantic and undo assertions.
+The current toolbar contains eight controls; retain the matching eight-slot
+layout after an actual recount. Autosave terminal-failure isolated rerun passes.
+
+Additional T-467 regression scope approved before edits:
+`tests/tools/wormedit_convert_tests.cpp` appends a real CLI multi-chart export
+into a dotted output directory. Existing target and manifests remain unchanged.

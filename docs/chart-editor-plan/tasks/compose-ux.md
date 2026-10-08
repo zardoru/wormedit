@@ -456,7 +456,7 @@ conditional optimization remains unproven.
 
 ## T-270 Color notes by their lane and select with a green outline
 
-- **Status:** blocked-on T-269
+- **Status:** ready (T-269 done 2026-10-08)
 - **Implementation notes (2026-10-02, uncompiled here: no SDL3):** selected notes and hold bodies keep their key-color fill and get a 2 px green outline (`compose_selection_outline_color`, `compose_note_shows_selection_outline` in `compose_canvas.cpp`) instead of turning cyan. The theme-file tokens and the 3 px semantic-layer stripe (steps 1, 3 partly) are still open; confirm with a local build and `scripts/smoke-compose-virtual-x.sh`.
 - **Outcome:** tile notes (BMS/BMSON/osu!/PMS lanes) fill with their lane's key color: scratch notes a strong red matching the scratch lane, black-key notes a deeper blue, white-key notes light neutral, PMS buttons their button color; each lane background is a dark shade of the same hue so note and lane read as a pair; selected notes keep their fill and get a 2 px green outline (iBMSC style) instead of turning cyan. Arrow lanes keep the snap colors from T-204.
 - **Read first:** `src/ui/nuklear/compose_canvas.cpp` (`compose_note_style`, `compose_lane_color`, hold body drawing), `assets/themes/compose-field.json`, `src/ui/nuklear/theme.cpp`, `docs/chart-editor-plan/tasks/panels-menus.md` (T-225 design reference: Tailwind-style scales from the octet.design palette).

@@ -111,7 +111,7 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 ## T-222 Route Compose, Timing, and dialog messages through notifications
 
-- **Status:** blocked-on T-221
+- **Status:** ready (T-221 done 2026-10-08)
 - **Outcome:** `compose_input_family_result_t` messages, `flattened.compose.status`, the Timing view `status`, and `g_project_dialog_error` post notifications; routine gesture messages ("Compose navigation canceled.", "… move") become `hint`, so they can no longer hide a command result (fixes the precedence half of T-207).
 - **Read first:** `src/sys/compose_input.cpp` (`continue_batch` messages), `src/sys/compose_actions.cpp` (`compose_result_status`), `src/sys/compose_view.cpp` (`view.status_text` assignments), `src/sys/timing_view.cpp`, `src/ui/nuklear/frontend.cpp` (`g_project_dialog_error`).
 - **Files owned:** those files and their headers, `src/ui/frontend.h`.

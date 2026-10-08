@@ -47,7 +47,7 @@ void choose_phase(worm_ui_sound_import_state_t& state, bool chart_has_bgm) {
         state.phase = worm_ui_sound_import_phase_t::review_list;
         return;
     }
-    const bool ambiguous = !chart_has_bgm &&
+    const bool ambiguous = !state.fixed_kind && !chart_has_bgm &&
                            is_stem_friendly(lower_extension(state.items.front().path));
     state.phase = ambiguous ? worm_ui_sound_import_phase_t::choose_kind
                             : worm_ui_sound_import_phase_t::ready;
@@ -86,7 +86,8 @@ auto worm_ui_nuklear_sound_import_add(worm_ui_sound_import_state_t& state,
                    })) {
             ++skipped_duplicate;
         } else {
-            state.items.push_back({path, display_name(path), default_kind(path, chart_has_bgm)});
+            state.items.push_back({path, display_name(path), state.fixed_kind
+                ? state.fixed_kind : default_kind(path, chart_has_bgm)});
             ++added;
         }
     }
@@ -176,12 +177,12 @@ void worm_ui_nuklear_sound_import_leave_all_ungrouped(worm_ui_sound_import_state
 
 void worm_ui_nuklear_sound_import_set_kind(worm_ui_sound_import_state_t& state,
                                            std::size_t index, std::uint8_t kind) {
-    if (index < state.items.size() && valid_kind(kind)) state.items[index].kind = kind;
+    if (!state.fixed_kind && index < state.items.size() && valid_kind(kind)) state.items[index].kind = kind;
 }
 
 void worm_ui_nuklear_sound_import_set_all_kinds(worm_ui_sound_import_state_t& state,
                                                 std::uint8_t kind) {
-    if (!valid_kind(kind)) return;
+    if (state.fixed_kind || !valid_kind(kind)) return;
     for (auto& item : state.items) item.kind = kind;
 }
 
@@ -255,4 +256,13 @@ void worm_ui_nuklear_sound_import_commit_succeeded(worm_ui_sound_import_state_t&
 
 void worm_ui_nuklear_sound_import_cancel(worm_ui_sound_import_state_t& state) {
     state = {};
+}
+
+void worm_ui_nuklear_sound_import_fix_kind(worm_ui_sound_import_state_t& state,
+                                          std::uint8_t kind) {
+    state.fixed_kind = valid_kind(kind) ? kind : 0;
+    if (!state.fixed_kind) return;
+    for (auto& item : state.items) item.kind = state.fixed_kind;
+    if (state.phase == worm_ui_sound_import_phase_t::choose_kind)
+        state.phase = worm_ui_sound_import_phase_t::review_list;
 }

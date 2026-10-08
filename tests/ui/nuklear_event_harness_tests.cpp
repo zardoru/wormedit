@@ -2427,3 +2427,74 @@ TEST_CASE("Options Audio exposes and edits the keysound memory field", "[options
     REQUIRE(edited != clicks.end());
     check_keysound_edit_action(edited->get().options);
 }
+
+namespace {
+void section_import_check(bool value) { CHECK(value); }
+void section_import_require(bool value) { REQUIRE(value); }
+void section_add_emits_picker_kind(std::string_view label, std::uint8_t kind) {
+    nuklear_event_harness_t harness{1280, 900};
+    auto& view = harness.view().compose;
+    view.bmson_tools_available = true;
+    view.keysounds_available = true;
+    (void)harness.frame();
+    const auto button = harness.drawn_text_center(label);
+    section_import_require(button.has_value());
+    const auto actions = click_at(harness, button->first, button->second);
+    const auto found = std::ranges::find_if(actions, [](const auto& a) {
+        return a.get().sound_import_pick_requested;
+    });
+    section_import_require(found != actions.end());
+    section_import_check(found->get().sound_import_kind == kind);
+}
+void section_review_submits_fixed_kind(std::uint8_t kind, bool stale = false) {
+    nuklear_event_harness_t harness{1280, 900};
+    auto& view = harness.view();
+    const auto bound_revision = view.document_revision;
+    const WormUiSoundImportItem item{"/music/new.ogg", "New sound", kind, true};
+    section_import_require(worm_ui_frontend_stage_sound_import(view.project_id,
+        view.selected_chart_id, view.document_revision, &item, 1, nullptr, 0, false, ""));
+    if (stale) ++view.document_revision;
+    (void)harness.frame();
+    section_import_check(worm_ui_nuklear_pending_sound_import().fixed_kind == kind);
+    section_import_check(harness.drawn_text().find(kind == 1 ? "Stem" : "Keysound") != std::string::npos);
+    const auto confirm = harness.drawn_text_center("Confirm import");
+    section_import_require(confirm.has_value());
+    const auto actions = click_at(harness, confirm->first, confirm->second);
+    const auto found = std::ranges::find_if(actions, [](const auto& a) {
+        return a.get().compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
+    });
+    section_import_require(found != actions.end());
+    section_import_check(found->get().sound_import_kind == kind);
+    section_import_check(found->get().compose_input_document_revision == bound_revision);
+    section_import_check(found->get().sound_import_item_count == 1);
+    section_import_check(found->get().sound_import_items[0].kind == kind);
+    section_import_check(found->get().sound_import_items[0].kind_fixed);
+}
+}
+TEST_CASE("sound_import BMSON section buttons preserve exact picker kind", "[event-harness][sound_import]") {
+    section_add_emits_picker_kind("Add stem…", WORM_UI_SOUND_IMPORT_STEM);
+    section_add_emits_picker_kind("Add keysound…", WORM_UI_SOUND_IMPORT_KEYSOUND);
+}
+TEST_CASE("sound_import section reviews submit fixed kind", "[event-harness][sound_import]") {
+    section_review_submits_fixed_kind(WORM_UI_SOUND_IMPORT_STEM);
+    section_review_submits_fixed_kind(WORM_UI_SOUND_IMPORT_KEYSOUND);
+    section_review_submits_fixed_kind(WORM_UI_SOUND_IMPORT_STEM, true);
+}
+
+TEST_CASE("sound_import section controls stay BMSON only and fixed review cancels changed chart",
+          "[event-harness][sound_import]") {
+    nuklear_event_harness_t harness{1280, 900};
+    auto& view = harness.view();
+    view.compose.bmson_tools_available = false;
+    view.compose.keysounds_available = true;
+    (void)harness.frame();
+    section_import_check(!harness.drawn_text_center("Add stem…").has_value());
+    section_import_check(!harness.drawn_text_center("Add keysound…").has_value());
+    const WormUiSoundImportItem item{"/music/new.ogg", "New sound", WORM_UI_SOUND_IMPORT_STEM, true};
+    section_import_require(worm_ui_frontend_stage_sound_import(view.project_id,
+        view.selected_chart_id, view.document_revision, &item, 1, nullptr, 0, false, ""));
+    ++view.selected_chart_id;
+    const auto action = harness.frame();
+    section_import_check(action.get().compose_action != WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT);
+    section_import_check(!worm_ui_nuklear_sound_import_active());
+}

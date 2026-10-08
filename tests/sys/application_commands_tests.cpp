@@ -425,6 +425,87 @@ auto prepared_sound_slot_batch_rejects_all_invalid_inputs() -> bool {
 }
 } // namespace
 
+namespace {
+void section_dispatch_check(bool value) { CHECK(value); }
+void section_dispatch_require(bool value) { REQUIRE(value); }
+
+void section_dispatch_preserves_model(std::uint8_t kind, bool reviewed) {
+    using namespace wormedit;
+    SoundImportDispatchFixture fixture;
+    const auto before = fixture.history.document.charts.front();
+    const auto resources = fixture.history.document.resources.size();
+    const auto path = sound_fixture_path("keysound-c4.ogg");
+    const std::array paths{path};
+    const auto prepared = prepare_keysound_import(fixture.history.document, fixture.chart, paths, kind);
+    section_dispatch_require(prepared.entries.size() == 1);
+    section_dispatch_check(static_cast<std::uint8_t>(prepared.entries.front().kind) == kind);
+    std::optional<std::string> message;
+    if (reviewed) {
+        const WormUiSoundImportItem item{path.c_str(), "Section sound", kind, true};
+        message = fixture.dispatch(&item, 1, nullptr, 0);
+    } else {
+        const auto* raw_path = path.c_str();
+        WormUiWorkspaceAction action{};
+        action.compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
+        action.sound_import_kind = kind;
+        action.compose_import_paths = &raw_path;
+        action.compose_import_path_count = 1;
+        message = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
+            fixture.chart, fixture.application_state, fixture.sink);
+    }
+    section_dispatch_require(message.has_value());
+    section_dispatch_require(fixture.history.document.resources.size() == resources + 1);
+    section_dispatch_check(static_cast<std::uint8_t>(fixture.history.document.resources.back().sound_kind) == kind);
+    const auto& after = fixture.history.document.charts.front();
+    const auto extra = kind == static_cast<std::uint8_t>(sound_kind_t::stem) ? 1U : 0U;
+    section_dispatch_require(after.sound_channels.size() == before.sound_channels.size() + extra);
+    section_dispatch_require(after.bgm_source_lanes.size() == before.bgm_source_lanes.size() + extra);
+    if (extra) {
+        section_dispatch_check(after.sound_channels.back().events.empty());
+        section_dispatch_check(after.bgm_source_lanes.back().stem_channel == after.sound_channels.back().id);
+    }
+    for (std::size_t i = 0; i < before.measures.size(); ++i)
+        section_dispatch_check(after.measures[i].bgm_events.size() == before.measures[i].bgm_events.size());
+    section_dispatch_check(fixture.history.undo.size() == 1);
+    section_dispatch_require(static_cast<bool>(undo_document_command(fixture.history)));
+    section_dispatch_check(fixture.history.document.resources.size() == resources);
+    section_dispatch_check(fixture.history.document.charts.front().sound_channels.size() == before.sound_channels.size());
+}
+}
+
+TEST_CASE("sound_import section producer and dispatch preserve stem and keysound intent",
+          "[unit][sys][sounds][import][sound_import]") {
+    section_dispatch_preserves_model(1, false);
+    section_dispatch_preserves_model(2, false);
+    section_dispatch_preserves_model(1, true);
+    section_dispatch_preserves_model(2, true);
+}
+
+TEST_CASE("sound_import fixed section confirmation rejects stale revision atomically",
+          "[unit][sys][sounds][import][sound_import]") {
+    SoundImportDispatchFixture fixture;
+    const auto path = sound_fixture_path("keysound-c4.ogg");
+    const WormUiSoundImportItem item{path.c_str(), "Section stem", 1, true};
+    WormUiWorkspaceAction action{};
+    action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
+    action.sound_import_project_id = fixture.history.document.id.value;
+    action.compose_input_chart_id = fixture.chart.value;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    action.sound_import_items = &item;
+    action.sound_import_item_count = 1;
+    action.sound_import_kind = 1;
+    ++fixture.history.document.revision;
+    const auto resources = fixture.history.document.resources.size();
+    const auto channels = fixture.history.document.charts.front().sound_channels.size();
+    const auto result = dispatch_compose_sound_action(action, fixture.history, fixture.workspace,
+        fixture.chart, fixture.application_state, fixture.sink);
+    section_dispatch_require(result.has_value());
+    section_dispatch_check(result->find("changed") != std::string::npos);
+    section_dispatch_check(fixture.history.document.resources.size() == resources);
+    section_dispatch_check(fixture.history.document.charts.front().sound_channels.size() == channels);
+    section_dispatch_check(fixture.history.undo.empty());
+}
+
 TEST_CASE("confirmed sound import dispatches reviewed names and memberships in one undo step",
           "[unit][sys][sounds][import]") {
     CHECK(reviewed_sound_import_dispatch_commits_once());

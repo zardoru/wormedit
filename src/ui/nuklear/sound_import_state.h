@@ -74,6 +74,7 @@ struct worm_ui_sound_import_state_t {
     std::uint64_t project_id{};
     std::uint64_t chart_id{};
     std::uint64_t document_revision{};
+    std::uint8_t fixed_kind{};
     std::size_t member_first_row{};
     std::size_t member_row_limit{32};
     bool ungrouped_expanded{};
@@ -134,3 +135,7 @@ void worm_ui_nuklear_sound_import_commit_succeeded(worm_ui_sound_import_state_t&
 
 // Discards the pending list and closes the dialog.
 void worm_ui_nuklear_sound_import_cancel(worm_ui_sound_import_state_t& state);
+
+// Locks section imports to their requested kind; zero retains generic import behavior.
+void worm_ui_nuklear_sound_import_fix_kind(worm_ui_sound_import_state_t& state,
+                                          std::uint8_t kind);

@@ -199,3 +199,29 @@ TEST_CASE("existing group matches are represented as joins and group names valid
     CHECK_FALSE(worm_ui_nuklear_sound_import_confirm(state).has_value());
     CHECK(state.message == "Group names must contain 1 to 64 bytes.");
 }
+
+namespace {
+void section_check(bool value) { CHECK(value); }
+void section_require(bool value) { REQUIRE(value); }
+void fixed_section_kind(std::uint8_t kind) {
+    worm_ui_sound_import_state_t state;
+    worm_ui_nuklear_sound_import_fix_kind(state, kind);
+    const auto input = paths({"/music/one.ogg", "/music/two.mp3"});
+    section_check(worm_ui_nuklear_sound_import_add(state, input, false) == 2);
+    worm_ui_nuklear_sound_import_set_kind(state, 0, WORM_UI_SOUND_IMPORT_SAMPLE);
+    worm_ui_nuklear_sound_import_set_all_kinds(state, WORM_UI_SOUND_IMPORT_SAMPLE);
+    section_check(state.fixed_kind == kind);
+    section_check(state.items[0].kind == kind && state.items[1].kind == kind);
+    const auto commit = worm_ui_nuklear_sound_import_confirm(state);
+    section_require(commit.has_value());
+    section_check(commit->items[0].kind == kind && commit->items[1].kind == kind);
+    worm_ui_nuklear_sound_import_commit_failed(state, "retry");
+    section_check(state.fixed_kind == kind);
+    worm_ui_nuklear_sound_import_cancel(state);
+    section_check(state.fixed_kind == 0 && state.items.empty());
+}
+}
+TEST_CASE("sound_import section kind remains fixed through review retry and cancel", "[frontend][sound_import]") {
+    fixed_section_kind(WORM_UI_SOUND_IMPORT_STEM);
+    fixed_section_kind(WORM_UI_SOUND_IMPORT_KEYSOUND);
+}

@@ -115,10 +115,11 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
 
 ## T-462 Add stems and keysounds from their own Sounds dock sections
 
-- **Status:** ready
+- **Status:** done (code and headless gates; root main wiring/integration pending)
 - **Outcome:** on a BMSON chart, the Sounds dock's Stems section has "Add stem…" and its Keysounds section has "Add keysound…". Adding a stem creates the resource, its empty channel and its stem lane, and places no event. Adding a keysound creates only the resource. The review dialog's kind is fixed to the section the user added from. On BMS charts, the stem kind is only a label.
 - **Read first:** `src/core/sound_import.cpp` (`append_stem`, `import_entry`), `src/sys/compose_sound_actions.cpp` (the two `apply_bulk_sound_import` calls), `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/sound_import_dialog.cpp`, `src/ui/nuklear/sound_import_state.cpp`.
-- **Files owned:** those five, plus `include/wormedit/core/sound_import.h`, `src/ui/frontend.h`, `tests/core/sound_import_tests.cpp`, `tests/ui/` import state tests and the event harness, this card.
+- **Files owned:** those five, plus `include/wormedit/core/sound_import.h`, `src/ui/frontend.h`, `tests/core/sound_import_tests.cpp`, `tests/ui/sound_import_state_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `src/ui/nuklear/sound_import_state.h`, `src/ui/nuklear/sound_import_runtime.cpp`, `src/ui/nuklear/sound_import_runtime.h` (approved fixed-kind picker/staging support), `src/sys/compose_sound_actions.h` (fixed-kind plan contract), `tests/sys/application_commands_tests.cpp` (producer/dispatcher regression), `src/ui/nuklear/frontend.cpp` (one existing picker call forwards kind; headless guard avoids native dialogs in the event harness), this card.
+- **Stale-plan audit (2026-10-08):** the model already permits an empty explicitly linked stem channel (T-457), but `append_stem` still created a restart event and BGM marker, consumed four object IDs, and omitted the link. The dock had only its generic picker, and review still allowed kind changes. This card changes those remaining producer/UI paths.
 - **Steps:**
   1. `append_stem` creates the channel and its stem lane with no event and no marker, and does so only for BMSON charts.
   2. Each section passes its kind into the import plan. The dialog shows the kind read-only.
@@ -126,7 +127,8 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
   4. Test: a stem added to a BMSON chart has a lane and zero events; a stem added to a BMS chart has neither; adding a keysound creates no lane.
 - **Invariants:** BMS bulk import and slot allocation are unchanged.
 - **Reject/failure behavior:** a failure in one entry rejects the whole import atomically, as it does today.
-- **Verify:** `ctest --test-dir build --output-on-failure -R sound_import`; `ctest --test-dir build -L event-harness`.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'sound_import|bulk import|BMS stems|keysound import|empty BMSON stem'`; `ctest --test-dir build -L event-harness`; run the core `[sounds][import]`, state `[sounds],[sound_import]`, and frame-timing `[sounds][import],[sound_import]` Catch filters to include import cases whose names do not contain `sound_import`.
+- **Evidence (2026-10-08 isolated worker):** fresh dependency-aware RelWithDebInfo core/state/event-harness/frame-timing builds pass. Core imports pass 128 assertions in 15 cases, state/retry/cancel checks 73 assertions in 9 cases, and actual prepare/quick-add/reviewed/stale-revision dispatch 87 assertions in 6 cases. Filtered CTest passes 17/17 and the complete event harness 199/199, including exact section picker kinds, read-only fixed-kind review, retained revision on confirmation, changed-chart cancellation, and existing BMS slot flows. BMSON stems now use exactly two object IDs, retain empty exported channels, and add no marker/event; keysounds and BMS stem labels add no channel/lane. Existing success/failure notification and atomic history checks pass. Configured clang-tidy has zero errors and no new or increased complexity violations; the 22 existing warning scores match baseline except the modified original core test improves from 89 to 60. Native picker/window visual inspection was not run. Root has the reviewed narrow `main.cpp` patch to forward the fixed kind through plan/staged items; main wiring and integrated full-suite gates remain root-owned.
 - **Out of scope:** placing points (T-463).
 
 ## T-463 Place stem points and packed one-shots with the Draw tool

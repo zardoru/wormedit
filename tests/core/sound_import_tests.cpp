@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <span>
 #include <string>
 
@@ -71,9 +72,140 @@ auto same_resource_group_links(const std::vector<resource_entry_t>& left,
     });
 }
 
+auto empty_stem_matches(const chart_document_t& chart, const resource_entry_t& resource,
+                        std::size_t channel_index) -> bool {
+    if (channel_index >= chart.sound_channels.size()) return false;
+    const auto& channel = chart.sound_channels[channel_index];
+    const auto lane = std::ranges::find_if(chart.bgm_source_lanes, [&](const auto& item) {
+        return item.stem_channel == channel.id;
+    });
+    const auto identity = std::ranges::find_if(resource.target_identities, [](const auto& item) {
+        return item.family == format_family_t::bmson &&
+               item.namespace_name == "sound_channel";
+    });
+    return channel.events.empty() && channel.name == resource.name &&
+        channel.source_clip.source == resource.asset && lane != chart.bgm_source_lanes.end() &&
+        lane->name == resource.name && identity != resource.target_identities.end();
+}
+
+auto exported_stems_remain_empty(const song_document_t& song, std::size_t first_channel,
+                                 std::size_t stem_count) -> bool {
+    const auto written = write_bmson(song);
+    if (!written.json) return false;
+    const auto reparsed = parse_bmson_bytes(std::as_bytes(
+        std::span{written.json->data(), written.json->size()}));
+    if (!reparsed.song || reparsed.song->charts.empty()) return false;
+    const auto& channels = reparsed.song->charts.front().sound_channels;
+    if (channels.size() < first_channel + stem_count) return false;
+    for (std::size_t index = first_channel; index < first_channel + stem_count; ++index)
+        if (!channels[index].events.empty()) return false;
+    return true;
+}
+
+auto undo_redo_stem_batch(document_history_t& history, std::size_t resource_count,
+                          std::size_t channel_count, std::size_t lane_count,
+                          std::size_t marker_count) -> bool {
+    if (history.undo.size() != 1 || !undo_document_command(history) ||
+        history.document.resources.size() != resource_count ||
+        history.document.charts.front().sound_channels.size() != channel_count ||
+        history.document.charts.front().bgm_source_lanes.size() != lane_count ||
+        bgm_marker_count(history.document.charts.front()) != marker_count ||
+        !redo_document_command(history)) return false;
+    const auto& chart = history.document.charts.front();
+    return history.document.resources.size() == resource_count + 3 &&
+        chart.sound_channels.size() == channel_count + 2 &&
+        chart.bgm_source_lanes.size() == lane_count + 2 &&
+        bgm_marker_count(chart) == marker_count;
+}
+
+auto bms_song_without_stems() -> song_document_t {
+    song_document_t song{.id = song_id_t{1}};
+    song.charts.push_back({.id = chart_id_t{1}, .source_family = format_family_t::bms,
+        .measures = {{.id = measure_id_t{1}}},
+        .lane_layouts = {{.id = object_id_t{1}, .position = {measure_id_t{1}, 0},
+            .layout = {.profile_id = "bms-test",
+                       .lanes = {{.id = lane_id_t{1}, .name = "Lane 1"}}}}}});
+    return song;
+}
+
+auto bms_stem_adds_catalog_only() -> bool {
+    auto history = make_document_history(bms_song_without_stems());
+    const auto before = history.document;
+    const auto result = apply_bulk_sound_import(history, history.document.revision,
+        reserved({.chart = chart_id_t{1}, .entries = {entry("bms-stem", sound_kind_t::stem)}},
+                 history.document));
+    if (!result || history.document.resources.size() != before.resources.size() + 1 ||
+        history.document.charts.front().sound_channels.size() != before.charts.front().sound_channels.size() ||
+        history.document.charts.front().bgm_source_lanes.size() != before.charts.front().bgm_source_lanes.size() ||
+        bgm_marker_count(history.document.charts.front()) != bgm_marker_count(before.charts.front()))
+        return false;
+    const auto& resource = history.document.resources.back();
+    return resource.sound_kind == sound_kind_t::stem &&
+        std::ranges::find(resource.roles, resource_role_t::bgm) != resource.roles.end() &&
+        history.undo.size() == 1;
+}
+
+auto keysound_adds_resource_only() -> bool {
+    auto history = make_document_history(bmson_song());
+    const auto& chart_before = history.document.charts.front();
+    const auto channels = chart_before.sound_channels.size();
+    const auto lanes = chart_before.bgm_source_lanes.size();
+    const auto markers = bgm_marker_count(chart_before);
+    const auto result = apply_bulk_sound_import(history, history.document.revision,
+        reserved({.chart = chart_before.id,
+                  .entries = {entry("key-only", sound_kind_t::keysound)}}, history.document));
+    if (!result) return false;
+    const auto& chart = history.document.charts.front();
+    const auto& resource = history.document.resources.back();
+    return resource.sound_kind == sound_kind_t::keysound &&
+        std::ranges::find(resource.roles, resource_role_t::bgm) == resource.roles.end() &&
+        chart.sound_channels.size() == channels && chart.bgm_source_lanes.size() == lanes &&
+        bgm_marker_count(chart) == markers && history.undo.size() == 1;
+}
+
+auto failed_later_stem_entry_is_atomic() -> bool {
+    auto history = make_document_history(bmson_song());
+    const auto resources = history.document.resources.size();
+    const auto channels = history.document.charts.front().sound_channels.size();
+    const auto lanes = history.document.charts.front().bgm_source_lanes.size();
+    const auto markers = bgm_marker_count(history.document.charts.front());
+    const auto revision = history.document.revision;
+    auto invalid = entry("invalid-later", sound_kind_t::stem);
+    invalid.tags = {"bad\ntag"};
+    const auto result = apply_bulk_sound_import(history, revision,
+        reserved({.chart = history.document.charts.front().id,
+                  .entries = {entry("valid-first", sound_kind_t::stem), invalid}}, history.document));
+    return !result && history.document.revision == revision &&
+        history.document.resources.size() == resources && history.undo.empty() &&
+        history.document.charts.front().sound_channels.size() == channels &&
+        history.document.charts.front().bgm_source_lanes.size() == lanes &&
+        bgm_marker_count(history.document.charts.front()) == markers;
+}
+
+auto stem_uses_exactly_two_object_ids() -> bool {
+    auto history = make_document_history(bmson_song());
+    auto& chart = history.document.charts.front();
+    const auto channel_count = chart.sound_channels.size();
+    const auto lane_count = chart.bgm_source_lanes.size();
+    chart.bgm_source_lanes.push_back({.id = object_id_t{
+        std::numeric_limits<std::uint64_t>::max() - 2}, .name = "ID boundary"});
+    const auto result = apply_bulk_sound_import(history, history.document.revision,
+        reserved({.chart = chart.id, .entries = {entry("last-two-ids", sound_kind_t::stem)}},
+                 history.document));
+    if (!result) return false;
+    const auto& updated = history.document.charts.front();
+    if (updated.sound_channels.size() != channel_count + 1 ||
+        updated.bgm_source_lanes.size() != lane_count + 2) return false;
+    const auto& channel = updated.sound_channels.back();
+    const auto& lane = updated.bgm_source_lanes.back();
+    return channel.id.value == std::numeric_limits<std::uint64_t>::max() - 1 &&
+        lane.id.value == std::numeric_limits<std::uint64_t>::max() &&
+        lane.stem_channel == channel.id && channel.events.empty();
+}
+
 } // namespace
 
-TEST_CASE("bulk import adds stems as BMSON channels visible as BGM markers in one undo step",
+TEST_CASE("bulk import adds linked empty BMSON stem channels and lanes atomically",
           "[unit][core][sounds][import]") {
     auto history = make_document_history(bmson_song());
     const auto chart_id = history.document.charts.front().id;
@@ -94,7 +226,7 @@ TEST_CASE("bulk import adds stems as BMSON channels visible as BGM markers in on
     CHECK(history.document.resources.size() == resources + 3);
     CHECK(chart.sound_channels.size() == channels + 2);
     CHECK(chart.bgm_source_lanes.size() == lanes + 2);
-    CHECK(bgm_marker_count(chart) == markers + 2);
+    CHECK(bgm_marker_count(chart) == markers);
     CHECK(validate_document(history.document).empty());
 
     const auto& drums = history.document.resources[resources];
@@ -102,29 +234,11 @@ TEST_CASE("bulk import adds stems as BMSON channels visible as BGM markers in on
     CHECK(drums.sound_kind == sound_kind_t::stem);
     CHECK(std::ranges::find(drums.roles, resource_role_t::bgm) != drums.roles.end());
     CHECK(history.document.resources.back().sound_kind == sound_kind_t::sample);
-
-    const auto& stem_channel = chart.sound_channels[channels];
-    REQUIRE(stem_channel.events.size() == 1);
-    CHECK_FALSE(stem_channel.events.front().continuation);
-    CHECK_FALSE(stem_channel.events.front().playable);
-    const auto& stem_marker = chart.measures.front().bgm_events.back();
-    CHECK(stem_marker.sound_channel_event == chart.sound_channels.back().events.front().id);
-
-    const auto written = write_bmson(history.document);
-    std::string messages;
-    for (const auto& d : written.diagnostics) messages += d.message + "; ";
-    INFO(messages);
-    REQUIRE(written.json);
-    const auto reparsed = parse_bmson_bytes(std::as_bytes(
-        std::span{written.json->data(), written.json->size()}));
-    REQUIRE(reparsed.song);
-    CHECK(reparsed.song->charts.front().sound_channels.size() == channels + 2);
-
-    REQUIRE(history.undo.size() == 1);
-    REQUIRE(undo_document_command(history));
-    CHECK(history.document.resources.size() == resources);
-    CHECK(history.document.charts.front().sound_channels.size() == channels);
-    CHECK(history.document.revision == revision);
+    CHECK(empty_stem_matches(chart, drums, channels));
+    CHECK(empty_stem_matches(chart, history.document.resources[resources + 1], channels + 1));
+    CHECK(exported_stems_remain_empty(history.document, channels, 2));
+    CHECK(undo_redo_stem_batch(history, resources, channels, lanes, markers));
+    CHECK(history.document.revision == revision + 1);
 }
 
 TEST_CASE("bulk import keeps list order and tags, and skips channels without a BMSON chart",
@@ -142,6 +256,26 @@ TEST_CASE("bulk import keeps list order and tags, and skips channels without a B
     CHECK(history.document.resources[resources].tags == std::vector<std::string>{"loop", "drums"});
     CHECK(history.document.resources[resources + 1].name == "b");
     CHECK(history.document.charts.front().sound_channels.size() == channels);
+}
+
+TEST_CASE("BMS stems remain catalog labels without BMSON lanes or channels",
+          "[unit][core][sounds][import][bms]") {
+    CHECK(bms_stem_adds_catalog_only());
+}
+
+TEST_CASE("keysound import creates only the resource",
+          "[unit][core][sounds][import][keysound]") {
+    CHECK(keysound_adds_resource_only());
+}
+
+TEST_CASE("a later invalid stem rejects the entire bulk import atomically",
+          "[unit][core][sounds][import][atomic]") {
+    CHECK(failed_later_stem_entry_is_atomic());
+}
+
+TEST_CASE("an empty BMSON stem consumes exactly two chart object IDs",
+          "[unit][core][sounds][import][ids]") {
+    CHECK(stem_uses_exactly_two_object_ids());
 }
 
 TEST_CASE("BMS bulk import allocates one contiguous run in entry order",

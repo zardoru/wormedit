@@ -12,7 +12,7 @@ worm_ui_sound_import_state_t pending;
 std::optional<worm_ui_sound_import_commit_t> submitted;
 std::vector<WormUiSoundImportItem> submitted_items;
 std::vector<WormUiSoundImportGroup> submitted_groups;
-struct picker_target_t { std::uint64_t project{}, chart{}, revision{}, generation{}; };
+struct picker_target_t { std::uint64_t project{}, chart{}, revision{}, generation{}; std::uint8_t kind{}; };
 struct picker_state_t {
     std::mutex mutex;
     bool open{}, ready{};
@@ -40,12 +40,13 @@ void submit_import(WormUiWorkspaceAction& action) {
     submitted_items.clear();
     submitted_groups.clear();
     for (const auto& item : submitted->items)
-        submitted_items.push_back({item.path.c_str(), item.name.c_str(), item.kind});
+        submitted_items.push_back({item.path.c_str(), item.name.c_str(), item.kind, pending.fixed_kind != 0});
     for (const auto& group : submitted->groups)
         submitted_groups.push_back({group.name.c_str(), group.existing_group
             ? group.existing_group->value : 0, group.member_indexes.data(), group.member_indexes.size()});
     action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
     action.sound_import_project_id = pending.project_id;
+    action.sound_import_kind = pending.fixed_kind;
     action.compose_input_chart_id = pending.chart_id;
     action.compose_input_document_revision = pending.document_revision;
     action.sound_import_items = submitted_items.data();
@@ -89,12 +90,13 @@ bool worm_ui_frontend_stage_sound_import(std::uint64_t project, std::uint64_t ch
         paths.emplace_back(items[index].path);
     }
     worm_ui_nuklear_sound_import_set_target(pending, project, chart, revision);
+    worm_ui_nuklear_sound_import_fix_kind(pending, items[0].kind_fixed ? items[0].kind : 0);
     worm_ui_nuklear_sound_import_add(pending, paths, chart_has_bgm);
     for (auto& item : pending.items) {
         const auto found = std::find_if(items, items + item_count, [&](const auto& candidate) {
             return item.path == candidate.path;
         });
-        if (found != items + item_count) { item.name = found->name; item.kind = found->kind; }
+        if (found != items + item_count) { item.name = found->name; item.kind = pending.fixed_kind ? pending.fixed_kind : found->kind; }
     }
     std::vector<worm_ui_sound_import_existing_group_t> groups;
     for (std::size_t index = 0; existing_groups && index < group_count; ++index)
@@ -112,7 +114,7 @@ void worm_ui_frontend_sound_import_result(bool applied, const char* message) {
     else worm_ui_nuklear_sound_import_commit_failed(pending, message ? message : "Import failed.");
 }
 
-void worm_ui_nuklear_sound_import_pick(SDL_Window* window, const WormUiWorkspaceView& view) {
+void worm_ui_nuklear_sound_import_pick(SDL_Window* window, const WormUiWorkspaceView& view, std::uint8_t kind) {
     if (!view.project_loaded || !view.selected_chart_id) return;
     picker_target_t* target{};
     {
@@ -122,7 +124,7 @@ void worm_ui_nuklear_sound_import_pick(SDL_Window* window, const WormUiWorkspace
         picker.ready = false;
         picker.paths.clear();
         target = new picker_target_t{view.project_id, view.selected_chart_id,
-                                     view.document_revision, picker.generation};
+                                     view.document_revision, picker.generation, kind};
         picker.target = *target;
     }
     SDL_ShowOpenFileDialog(picker_callback, target, window, nullptr, 0, nullptr, true);
@@ -140,6 +142,7 @@ void worm_ui_nuklear_consume_sound_picker(const WormUiWorkspaceView& view,
     for (const auto& path : picker.paths) picker.path_pointers.push_back(path.c_str());
     action.compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
     action.sound_import_project_id = view.project_id;
+    action.sound_import_kind = picker.target.kind;
     action.compose_input_chart_id = view.selected_chart_id;
     action.compose_input_document_revision = view.document_revision;
     action.compose_import_paths = picker.path_pointers.data();

@@ -36,9 +36,10 @@ struct prepared_sound_slot_batch_t {
     std::string reason;
 };
 
-// Stages only decodable audio candidates; it never mutates the document.
+// Stages decodable audio without mutation; a section kind fixes each candidate.
+// Zero keeps the generic keysound default and enables review kind choices.
 [[nodiscard]] auto prepare_keysound_import(const song_document_t& document, chart_id_t chart,
-                                           std::span<const std::string> paths)
+                                           std::span<const std::string> paths, std::uint8_t fixed_kind = 0)
     -> prepared_keysound_import_t;
 
 // Prepares a complete direct-slot preview in natural filename order. Every
@@ -49,7 +50,8 @@ struct prepared_sound_slot_batch_t {
                                             std::span<const std::string> paths)
     -> prepared_sound_slot_batch_t;
 
-// Registers dropped or picked audio files as keysounds in one undo step. Files
+// Registers dropped or picked audio in one undo step using the requested section
+// kind (keysounds by default). Files
 // that are not decodable audio, or that already back a sample, are skipped and
 // counted in the returned message. BMS charts give each new sound the next
 // free #WAV slot. The input order is sorted by file name for stable slots.

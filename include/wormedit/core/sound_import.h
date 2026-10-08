@@ -39,12 +39,12 @@ struct bulk_sound_import_action_t {
 // when possible, or in the fewest largest free ranges while preserving order.
 // Entries assigned to a group receive their own contiguous WAV ID run, and the
 // group edits commit with the import in the same history step.
-// Each stem imported into a BMSON chart also gets a sound
-// channel with a restart event at the first row and a linked semantic BGM
-// marker in its own BGM lane, so it appears in Compose. File copying stays with
-// the caller, which reserves consecutive asset IDs from `next_resource_asset_id`
-// for copied entries exactly as for a single import. One invalid entry (or a
-// duplicate source path) rejects the whole batch and leaves the document alone.
+// Each stem imported into a BMSON chart also gets an empty sound channel and
+// an explicitly linked empty BGM lane. It has no event or measure marker until
+// the user places one. The caller copies files and reserves consecutive asset
+// IDs from `next_resource_asset_id` for copied entries as for a single import.
+// One invalid entry (or duplicate source path) rejects the whole batch and
+// leaves the document alone.
 [[nodiscard]] auto apply_bulk_sound_import(document_history_t& history,
                                            std::uint64_t expected_revision,
                                            const bulk_sound_import_action_t& action)

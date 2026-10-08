@@ -277,43 +277,28 @@ auto next_channel_source_index(const song_document_t& document, const chart_docu
     return next;
 }
 
-// Adds the BMSON channel, restart event, BGM lane and linked marker for a stem.
+// Adds an empty BMSON channel and its explicitly linked presentation lane.
 auto append_stem(chart_document_t& chart, resource_entry_t& resource, std::size_t source_index,
                  object_id_scan_t& ids, document_command_result_t& result) -> bool {
-    if (chart.measures.empty() || ids.count > maximum_chart_objects - 4 ||
-        ids.largest > std::numeric_limits<std::uint64_t>::max() - 4) {
-        reject(result, "chart cannot hold another stem (no measure or object IDs exhausted)");
+    if (ids.count > maximum_chart_objects - 2 ||
+        ids.largest > std::numeric_limits<std::uint64_t>::max() - 2) {
+        reject(result, "chart cannot hold another stem (object IDs exhausted)");
         return false;
     }
-    const auto first = chart.measures.front().id;
-    const local_position_t position{first, 0};
     resource.target_identities.push_back(
         {format_family_t::bmson, std::to_string(source_index), "sound_channel"});
-    source_provenance_t provenance;
-    provenance.family = format_family_t::bmson;
-    provenance.source_field = "$.sound_channels[" + std::to_string(source_index) + "].notes[0]";
     const object_id_t channel_id{++ids.largest};
-    const object_id_t event_id{++ids.largest};
     const object_id_t lane_id{++ids.largest};
-    const object_id_t marker_id{++ids.largest};
-    ids.count += 4;
+    ids.count += 2;
     std::size_t order = 0;
     for (const auto& lane : chart.bgm_source_lanes) order = std::max(order, lane.source_order + 1);
-    chart.bgm_source_lanes.push_back({.id = lane_id, .name = resource.name, .source_order = order});
+    chart.bgm_source_lanes.push_back({.id = lane_id, .name = resource.name,
+                                      .source_order = order, .stem_channel = channel_id});
     chart.sound_channels.push_back(
         {.id = channel_id,
          .name = resource.name,
          .source_clip = {.id = clip_id_t{channel_id.value}, .source = resource.asset},
-         .events = {{.id = event_id, .position = position, .end = std::nullopt, .lane = lane_id_t{},
-                     .continuation = false, .playable = false, .provenance = provenance}}});
-    chart.measures.front().bgm_events.push_back({.id = marker_id,
-                                                  .position = position,
-                                                  .source_lane = lane_id,
-                                                  .sound = resource.id,
-                                                  .sound_channel_event = event_id,
-                                                  .structural_slot = 0,
-                                                  .branch = std::nullopt,
-                                                  .provenance = {}});
+         .events = {}});
     return true;
 }
 

@@ -2117,6 +2117,7 @@ typedef struct WormUiSoundImportItem {
     const char* path;
     const char* name;
     uint8_t kind;
+    bool kind_fixed;
 } WormUiSoundImportItem;
 
 typedef struct WormUiSoundSlotImportItem {
@@ -2650,6 +2651,8 @@ typedef struct WormUiWorkspaceAction {
     size_t compose_measure_id_count;
     uint32_t compose_second_meter_numerator, compose_second_meter_denominator;
     bool sound_import_pick_requested;
+    /* 0 generic import, 1 Stems section, 2 Keysounds section. */
+    uint8_t sound_import_kind;
     uint64_t sound_import_project_id;
     const WormUiSoundImportItem* sound_import_items;
     size_t sound_import_item_count;

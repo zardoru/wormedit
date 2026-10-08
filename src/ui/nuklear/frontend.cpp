@@ -2784,7 +2784,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     worm_ui_nuklear_compose_state().sound_list_valid = false;
     render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
     render_auxiliary_windows(WorkspaceRenderContext{*view, action, width, height});
-    if (action.sound_import_pick_requested) worm_ui_nuklear_sound_import_pick(g_window, *view);
+    if (action.sound_import_pick_requested && !g_headless)
+        worm_ui_nuklear_sound_import_pick(g_window, *view, action.sound_import_kind);
     worm_ui_nuklear_consume_sound_picker(*view, action);
     worm_ui_nuklear_render_pending_sound_import(g_context, *view, action, width, height);
     worm_ui_nuklear_render_sound_slot_batch(g_context,

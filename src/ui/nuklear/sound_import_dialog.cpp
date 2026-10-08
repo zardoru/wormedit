@@ -58,7 +58,10 @@ void render_import_items(nk_context* context, worm_ui_sound_import_state_t& stat
             context, NK_EDIT_FIELD, name.data(), static_cast<int>(name.size()), nk_filter_default);
         if (std::string_view{name.data()} != previous_name)
             item.name = name.data();
-        render_kind_choice(context, item);
+        if (state.fixed_kind)
+            nk_label(context, state.fixed_kind == WORM_UI_SOUND_IMPORT_STEM ? "Stem" : "Keysound",
+                      NK_TEXT_LEFT);
+        else render_kind_choice(context, item);
         if (nk_button_label(context, "×"))
             worm_ui_nuklear_sound_import_remove(state, static_cast<std::size_t>(index));
     }

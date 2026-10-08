@@ -271,7 +271,8 @@ auto ungrouped_entry_indexes(std::size_t entry_count,
 } // namespace
 
 auto import_keysound_feedback(document_history_t& history, workspace_controller_t& workspace,
-                           chart_id_t chart, std::span<const std::string> paths) -> sound_feedback_t {
+                           chart_id_t chart, std::span<const std::string> paths,
+                           sound_kind_t kind = sound_kind_t::keysound) -> sound_feedback_t {
     const auto target = std::ranges::find(history.document.charts, chart, &chart_document_t::id);
     if (target == history.document.charts.end()) return {notification_severity_t::warning, "Select a difficulty before adding sounds."};
     if (paths.empty()) return {notification_severity_t::info, "No files were dropped."};
@@ -282,13 +283,15 @@ auto import_keysound_feedback(document_history_t& history, workspace_controller_
     if (plan.entries.empty())
         return {plan.skipped_unreadable ? notification_severity_t::warning : notification_severity_t::info,
                 "No sounds were added" + skipped_suffix(plan) + "."};
+    for (auto& entry : plan.entries) entry.kind = kind;
     const auto count = plan.entries.size();
     const auto split_ids = target->source_family == format_family_t::bms &&
         count <= bms_identifier_capacity(history.document, "WAV").total -
                      bms_identifier_capacity(history.document, "WAV").used &&
         !find_bms_identifier_run(history.document, "WAV", count).has_value();
     const auto applied = apply_bulk_sound_import(history, history.document.revision,
-                                                 {.chart = {}, .entries = std::move(plan.entries)});
+                                                 {.chart = kind == sound_kind_t::stem ? chart : chart_id_t{},
+                                                  .entries = std::move(plan.entries)});
     if (!applied.diagnostics.empty()) return sound_diagnostic_feedback(applied.diagnostics.front());
     if (!applied.applied) return {notification_severity_t::info, "Sound import made no document change."};
     const auto rebound = rebind_workspace(workspace, history);
@@ -534,7 +537,9 @@ auto import_picked_files(const WormUiWorkspaceAction& action, document_history_t
     for (std::size_t index = 0; index < action.compose_import_path_count; ++index)
         if (action.compose_import_paths && action.compose_import_paths[index])
             paths.emplace_back(action.compose_import_paths[index]);
-    return import_keysound_feedback(history, workspace, chart, paths);
+    return import_keysound_feedback(history, workspace, chart, paths,
+        action.sound_import_kind == static_cast<std::uint8_t>(sound_kind_t::stem)
+            ? sound_kind_t::stem : sound_kind_t::keysound);
 }
 
 auto confirmed_import_entries(const WormUiWorkspaceAction& action, const song_document_t& document,
@@ -662,12 +667,14 @@ auto confirm_import(const WormUiWorkspaceAction& action, document_history_t& his
 } // namespace
 
 auto prepare_keysound_import(const song_document_t& document, chart_id_t chart,
-                             std::span<const std::string> paths) -> prepared_keysound_import_t {
+                             std::span<const std::string> paths, std::uint8_t fixed_kind) -> prepared_keysound_import_t {
     const auto target = std::ranges::find(document.charts, chart, &chart_document_t::id);
     if (target == document.charts.end())
         return {.message = "Select a difficulty before adding sounds."};
     auto plan = plan_sound_import(document, target->source_family == format_family_t::bms,
                                   {paths.begin(), paths.end()});
+    if (fixed_kind == static_cast<std::uint8_t>(sound_kind_t::stem))
+        for (auto& entry : plan.entries) entry.kind = sound_kind_t::stem;
     auto message = "Prepared " + sound_count_text(plan.entries.size()) + skipped_suffix(plan);
     if (plan.entries.size() > maximum_bulk_sound_import)
         message += ". This exceeds the 1295-file limit; remove files before confirming";

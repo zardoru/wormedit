@@ -1,5 +1,6 @@
 #include "ui/nuklear/compose_sounds_panel.h"
 #include "ui/nuklear/compose_bmson_tab.h"
+#include "ui/nuklear/sound_import_state.h"
 #include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/popup_lifecycle.h"
@@ -564,6 +565,28 @@ void render_add_sounds_button(const SoundsPanel& panel) {
         return;
     }
     show_picker(panel);
+}
+
+void render_section_add_buttons(const SoundsPanel& panel) {
+    if (!panel.view->bmson_tools_available || panel.state->keysound_slots_mode) return;
+    nk_layout_row_template_begin(panel.context, 24);
+    nk_layout_row_template_push_dynamic(panel.context);
+    nk_layout_row_template_push_static(panel.context, 116);
+    nk_layout_row_template_end(panel.context);
+    nk_label(panel.context, "Stems", NK_TEXT_LEFT);
+    if (nk_button_label(panel.context, "Add stem…")) {
+        panel.action->sound_import_pick_requested = true;
+        panel.action->sound_import_kind = WORM_UI_SOUND_IMPORT_STEM;
+    }
+    nk_layout_row_template_begin(panel.context, 24);
+    nk_layout_row_template_push_dynamic(panel.context);
+    nk_layout_row_template_push_static(panel.context, 116);
+    nk_layout_row_template_end(panel.context);
+    nk_label(panel.context, "Keysounds", NK_TEXT_LEFT);
+    if (nk_button_label(panel.context, "Add keysound…")) {
+        panel.action->sound_import_pick_requested = true;
+        panel.action->sound_import_kind = WORM_UI_SOUND_IMPORT_KEYSOUND;
+    }
 }
 
 void render_id_sort_controls(const SoundsPanel& panel) {
@@ -1604,6 +1627,7 @@ void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
     sync_selected_slot_to_armed_resource(panel);
     import_picked_files(panel);
     render_sound_panel_controls(panel);
+    render_section_add_buttons(panel);
     if (state->sounds_layers_open) render_layer_section(panel);
     const auto region = nk_window_get_content_region(context);
     const auto footer_height = (view->keysound_ids_available ? 44.0f : 0.0f) +

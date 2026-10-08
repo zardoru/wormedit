@@ -64,7 +64,7 @@ it. There is no toggle.
 
 ## T-414 Show the active tool and source in a canvas chip
 
-- **Status:** blocked-on T-419 (T-412 complete; wait for integrated frontend/projection release)
+- **Status:** ready (T-412/T-413/T-419 integrated; frontend/projection ownership released)
 - **Mockup:** [field-move-collision.svg](../mockups/field-move-collision.svg) (reference: match its structure and hierarchy)
 - **Outcome:** while Draw or Layer is active, a small chip at the top left of the field reads, for example, "✎ Draw · 0A kick.wav · right-drag erases", "✎ Draw · silent note" or "◈ Layer · Drums · Alt+drag removes". Clicking the chip's source name reveals that row in its dock.
 - **Read first:** `src/ui/nuklear/compose_canvas.cpp` (the status hint near "Paint armed"), `src/ui/nuklear/chrome.h`.

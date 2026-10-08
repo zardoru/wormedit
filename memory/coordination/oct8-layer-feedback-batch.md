@@ -142,3 +142,16 @@ Occupant outlines use deduplicated IDs against visible geometry, avoiding a
 full chart scan per ghost. Missing-lane proposals need explicit display-column
 geometry; relaxing lane validation alone is insufficient. Feedback records
 these supporting paths on its card before edits, after T-419 release.
+
+Root reviewed frozen T-419 `c4a8007` and integrated it as `bb1a901`.
+Normal optimized app/core/event/frame targets pass, quantize card36/36,
+core quantize/preview34/34, focused popup11/11, full event234/234,
+real rename dispatcher3/3 and documentation1/1 pass. Configured
+header-inclusive complexity preserves all baseline scores. Root inspected
+`feedback/capture/quantize-final.png`. Quiet matched dense fixtures show added
+cold index/count cost about 0.33/0.66 ms at 50k/100k notes; each 240 warm-hit
+run makes zero core calls. No cold speedup or native-cadence claim.
+All T-419 paths and build jobs released. Layer refreshes onto this integrated
+checkpoint and starts T-414 with its approved supporting scope. Feedback
+refreshes too and may start T-420 core interaction/scene only; frontend,
+projection, Compose input and shared sys/UI tests await T-414 integration.

@@ -571,6 +571,17 @@ auto dispatch_compose_cursor_input(const WormUiComposeInputAction&, wormedit::do
                                    wormedit::editor_interaction_state_t&,
                                    wormedit::editor_interaction_result_t&, std::string_view&)
     -> compose_input_family_result_t;
+// A placement that created a note auditions it while the click-audition preference is on.
+void audition_created_note(bool enabled, const wormedit::document_history_t& history,
+                           const wormedit::editor_interaction_state_t& state,
+                           wormedit::editor_interaction_result_t& result) {
+    if (!enabled || !result.accepted || !result.document_changed || !result.created_note) return;
+    result.audition = wormedit::editor_object_audition_request_t{
+        .document_revision = history.document.revision,
+        .chart = state.chart,
+        .object = {wormedit::editor_selection_object_kind_t::note, *result.created_note}};
+}
+
 auto dispatch_compose_lane_key_press(const WormUiComposeInputAction&, wormedit::document_history_t&,
                                      wormedit::editor_interaction_state_t&,
                                      wormedit::editor_interaction_result_t&, std::string_view&)
@@ -608,8 +619,12 @@ auto dispatch_compose_keyboard_input(
     case WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS:
         return dispatch_compose_lane_key_press(input, history, state, result, accepted);
     case WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE:
-        return dispatch_compose_lane_key_release(input, history, workspace, state, result,
-                                                 accepted);
+    {
+        auto released = dispatch_compose_lane_key_release(input, history, workspace, state, result,
+                                                          accepted);
+        audition_created_note(application.editor_preferences.audition_on_click, history, state, result);
+        return released;
+    }
     default:
         return {};
     }
@@ -1573,6 +1588,8 @@ auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
                                                                     .alt_or_option_down = true,
                                                                     .pointer_captured = true});
         if (releasing) advance_sound_after_paint_commit(result, sound, result.created_note.has_value());
+        if (releasing) audition_created_note(application_state.editor_preferences.audition_on_click,
+                                             history, state, result);
         accepted = releasing ? (result.document_changed ? "Pointer hold committed."
                                                         : "Pointer hold released.")
                              : "Pointer hold preview updated.";
@@ -2795,6 +2812,8 @@ auto place_note_from_pointer(const WormUiComposeInputAction& input,
             ? editor_ui_action_t{commit_hold_action_t{target.position}}
             : editor_ui_action_t{place_tap_action_t{target.position, sound}});
     advance_sound_after_paint_commit(result, sound, result.created_note.has_value());
+    audition_created_note(context.application_state.editor_preferences.audition_on_click,
+                          context.history, context.state, result);
     accepted = context.state.pending_hold ? "Hold gesture started; click its end row."
                                           : "Note placed.";
 }
@@ -2831,6 +2850,8 @@ auto place_virtual_note_from_pointer(const WormUiComposeInputAction& input,
         advance_sound_after_paint_commit(result, sound, result.created_note.has_value());
         accepted = "Note placed in virtual BMS measure.";
     }
+    audition_created_note(context.application_state.editor_preferences.audition_on_click,
+                          context.history, context.state, result);
 }
 
 auto finish_virtual_hold_at_authored_row(const WormUiComposeInputAction& input,
@@ -3147,6 +3168,8 @@ auto place_virtual_sample_resource(const WormUiComposeInputAction& input,
         context.history, context.state,
         wormedit::place_virtual_bms_tap_action_t{virtual_hit->first, virtual_hit->second,
                                                  spec.resource});
+    audition_created_note(context.application_state.editor_preferences.audition_on_click,
+                          context.history, context.state, result);
     if (result.document_changed)
         advance_dock_after_placement(context.history.document, spec.resource, spec.required_role);
     accepted = "Sample placed in BMS measure.";

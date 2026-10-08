@@ -944,6 +944,8 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
                 command_category_t::semantic_layer, command_focus_scope_t::tab, {}, true, compose);
     add_builtin(registry, invoker, "audio.paint_hitsound", "Paint Hitsound / Keysound",
                 command_category_t::audio, command_focus_scope_t::tab, {}, false, compose);
+    add_builtin(registry, invoker, "audio.toggle_click_audition", "Play Sound on Click",
+                command_category_t::audio, global, {}, false);
 
     return registry;
 }

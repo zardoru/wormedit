@@ -30,4 +30,8 @@ void open_options(options_runtime_t&, const program_preferences_t&);
 // Returns true only when an active category has been accepted into program preferences.
 [[nodiscard]] auto apply_options_action(options_runtime_t&, program_preferences_runtime_t&,
     const WormUiOptionsAction&) -> bool;
+// Flips the click-audition preference through the same save path as the Options page and
+// mirrors the accepted value into `enabled`. Returns the save error, or empty on success.
+[[nodiscard]] auto toggle_audition_on_click(program_preferences_runtime_t&, bool& enabled)
+    -> std::string;
 } // namespace wormedit::sys

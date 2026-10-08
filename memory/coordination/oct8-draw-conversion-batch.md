@@ -114,3 +114,10 @@ appended conversion tests once the concrete request/result API was ready.
 Draw retains all its review/source/build paths; another Luna handoff requires
 root coordination. Conversion deduplicates shared normalized spans across
 selected charts and preflights generated ID capacity before allocation.
+
+Additional Draw scope approved before edits: `src/ui/nuklear/compose_area_menu.cpp`
+and `src/ui/nuklear/compose_recipe_menu.cpp`, opening predicates only. These
+menus otherwise open on right press before Draw captures erase. Share the
+no-movement release predicate through owned Compose state helpers, use one
+screen-coordinate drag threshold, and preserve Select press behavior and menu
+contents.

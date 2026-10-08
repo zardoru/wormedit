@@ -165,3 +165,10 @@ appended helpers/cases in `tests/core/audio_slice_render_tests.cpp` for float32
 overshoot/native-rate roundtrip and pre-write invalid-input rejection. Sol owns
 the encoder/runtime and every build; no other Luna edits, and release before
 Sol review/build.
+
+Root application reporting scope: `src/sys/resource_job_state.h` and
+`src/sys/resource_job_state.cpp`, plus already-owned `compose_actions.cpp` and
+`tests/sys/compose_action_notification_tests.cpp` after Draw release. Export
+results carry loss detail into existing notification detail (4 KiB), because
+the 200-byte message field alone would truncate the report. Preserve background
+snapshot/export semantics and test warning-success plus pre-write rejection.

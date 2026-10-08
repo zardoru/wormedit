@@ -49,7 +49,8 @@ struct quantize_preview_t {
                                               const std::vector<object_id_t>& selected,
                                               quantize_request_t request) -> quantize_preview_t;
 
-// Recomputes only when the chart, document revision, selection or snap changed.
+// Recomputes when chart source identity, revision, selection or request settings change.
+// The caller retains the chart and advances revision for mutations.
 class quantize_preview_cache_t {
 public:
     [[nodiscard]] auto get(const chart_document_t& chart, std::uint64_t revision,
@@ -60,6 +61,7 @@ public:
                            const quantize_request_t& request) -> const quantize_preview_t&;
 
 private:
+    const chart_document_t* source_{};
     chart_id_t chart_{};
     std::uint64_t revision_{};
     quantize_request_t request_;

@@ -1,5 +1,7 @@
 #include <wormedit/core/quantize.h>
 
+#include "quantize_geometry.h"
+
 #include <algorithm>
 #include <limits>
 #include <numeric>
@@ -84,24 +86,6 @@ auto required_resolution(const chart_document_t& chart, const quantize_request_t
     return required_authored_resolution(chart, request.divisions);
 }
 
-auto position_for_absolute_row(const measure_index_t& index, std::uint64_t row)
-    -> std::optional<local_position_t> {
-    if (row >= index.total_rows) {
-        return std::nullopt;
-    }
-    const auto entry =
-        std::ranges::find_if(std::views::reverse(index.entries), [row](const auto& candidate) {
-            return candidate.absolute_begin_row <= row;
-        });
-    if (entry == index.entries.rend()) {
-        return std::nullopt;
-    }
-    return local_position_t{
-        .measure = entry->id,
-        .row = row - entry->absolute_begin_row,
-    };
-}
-
 auto nearest_multiple(std::uint64_t value, std::uint64_t step, quantization_tie_t tie,
                       diagnostic_list_t& diagnostics, object_id_t object)
     -> std::optional<std::uint64_t> {
@@ -138,7 +122,7 @@ auto nearest_multiple(std::uint64_t value, std::uint64_t step, quantization_tie_
 }
 
 struct quantization_position_context_t {
-    const measure_index_t& index;
+    const detail::quantize_geometry_t& index;
     std::uint64_t resolution;
     const quantize_request_t& request;
     diagnostic_list_t& diagnostics;
@@ -150,7 +134,7 @@ auto quantized_position(quantization_position_context_t& context, local_position
     const auto& index = context.index;
     const auto& request = context.request;
     auto& diagnostics = context.diagnostics;
-    const auto absolute = absolute_row(index, position);
+    const auto absolute = index.absolute(position);
     if (!absolute.has_value()) {
         error(diagnostics, diagnostic_code_t::row_out_of_range,
               "object position is outside the chart geometry", object);
@@ -164,9 +148,8 @@ auto quantized_position(quantization_position_context_t& context, local_position
         coordinate = *absolute;
         step = context.resolution / request.divisions;
     } else {
-        const auto entry = std::ranges::find_if(
-            index.entries, [&](const auto& candidate) { return candidate.id == position.measure; });
-        if (entry == index.entries.end() || entry->row_capacity % request.divisions != 0) {
+        const auto* entry = index.entry(position.measure);
+        if (entry == nullptr || entry->row_capacity % request.divisions != 0) {
             error(diagnostics, diagnostic_code_t::invalid_resolution,
                   "authored measure cannot be divided by the requested grid", object);
             return std::nullopt;
@@ -184,7 +167,7 @@ auto quantized_position(quantization_position_context_t& context, local_position
     if (!snapped.has_value() || *snapped > maximum - base) {
         return std::nullopt;
     }
-    const auto result = position_for_absolute_row(index, base + *snapped);
+    const auto result = index.position(base + *snapped);
     if (!result.has_value()) {
         error(diagnostics, diagnostic_code_t::row_out_of_range,
               "quantization would move the object beyond the final measure", object);
@@ -192,14 +175,14 @@ auto quantized_position(quantization_position_context_t& context, local_position
     return result;
 }
 
-auto note_collision_key(const measure_index_t& index, const note_t& note) -> std::string {
-    const auto row = absolute_row(index, note.position).value_or(maximum);
+auto note_collision_key(const detail::quantize_geometry_t& index, const note_t& note) -> std::string {
+    const auto row = index.absolute(note.position).value_or(maximum);
     return std::to_string(row) + ":" + std::to_string(note.lane.value);
 }
 
 auto validate_note_intervals_and_collisions(const chart_document_t& before,
                                             const chart_document_t& after,
-                                            const measure_index_t& index,
+                                            const detail::quantize_geometry_t& index,
                                             quantization_collision_t collision_policy,
                                             diagnostic_list_t& diagnostics) -> void {
     std::unordered_map<std::uint64_t, std::string> original_keys;
@@ -213,8 +196,8 @@ auto validate_note_intervals_and_collisions(const chart_document_t& before,
     for (const auto& measure : after.measures) {
         for (const auto& note : measure.notes) {
             if (note.end.has_value()) {
-                const auto begin = absolute_row(index, note.position);
-                const auto end = absolute_row(index, *note.end);
+                const auto begin = index.absolute(note.position);
+                const auto end = index.absolute(*note.end);
                 if (!begin.has_value() || !end.has_value() || *end <= *begin) {
                     error(diagnostics, diagnostic_code_t::invalid_hold,
                           "quantization would reverse or collapse a hold", note.id);
@@ -234,12 +217,12 @@ auto validate_note_intervals_and_collisions(const chart_document_t& before,
     }
 }
 
-auto validate_musical_spans(const chart_document_t& chart, const measure_index_t& index,
+auto validate_musical_spans(const chart_document_t& chart, const detail::quantize_geometry_t& index,
                             diagnostic_list_t& diagnostics) -> void {
     const auto validate_span = [&](local_position_t begin_position, local_position_t end_position,
                                    object_id_t object, std::string_view description) {
-        const auto begin = absolute_row(index, begin_position);
-        const auto end = absolute_row(index, end_position);
+        const auto begin = index.absolute(begin_position);
+        const auto end = index.absolute(end_position);
         if (!begin.has_value() || !end.has_value() || *end <= *begin) {
             error(diagnostics, diagnostic_code_t::invalid_hold,
                   std::string("quantization would reverse or collapse ") + std::string(description),
@@ -264,16 +247,16 @@ auto validate_musical_spans(const chart_document_t& chart, const measure_index_t
     }
 }
 
-auto effective_layout(const chart_document_t& chart, const measure_index_t& index,
+auto effective_layout(const chart_document_t& chart, const detail::quantize_geometry_t& index,
                       local_position_t position) -> const lane_layout_t* {
-    const auto event_row = absolute_row(index, position);
+    const auto event_row = index.absolute(position);
     if (!event_row.has_value()) {
         return nullptr;
     }
     const lane_layout_t* selected{};
     std::uint64_t selected_row{};
     for (const auto& segment : chart.lane_layouts) {
-        const auto segment_row = absolute_row(index, segment.position);
+        const auto segment_row = index.absolute(segment.position);
         if (segment_row.has_value() && *segment_row <= *event_row &&
             (selected == nullptr || *segment_row >= selected_row)) {
             selected = &segment.layout;
@@ -283,11 +266,11 @@ auto effective_layout(const chart_document_t& chart, const measure_index_t& inde
     return selected;
 }
 
-auto validate_layout_effects(const chart_document_t& chart, const measure_index_t& index,
+auto validate_layout_effects(const chart_document_t& chart, const detail::quantize_geometry_t& index,
                              diagnostic_list_t& diagnostics) -> void {
     std::unordered_set<std::uint64_t> layout_rows;
     for (const auto& segment : chart.lane_layouts) {
-        const auto row = absolute_row(index, segment.position);
+        const auto row = index.absolute(segment.position);
         if (row.has_value() && !layout_rows.insert(*row).second) {
             error(diagnostics, diagnostic_code_t::collision,
                   "quantization would collide lane-layout boundaries", segment.id);
@@ -490,7 +473,7 @@ auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_
         result.diagnostics = std::get<diagnostic_list_t>(built_index);
         return result;
     }
-    const auto& index = std::get<measure_index_t>(built_index);
+    const detail::quantize_geometry_t index{std::get<measure_index_t>(built_index)};
     const auto before_quantization = working;
     quantization_position_context_t position_context{
         index, working.divisions_per_standard_measure, request, result.diagnostics};

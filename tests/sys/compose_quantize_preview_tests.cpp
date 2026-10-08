@@ -307,3 +307,201 @@ TEST_CASE("quantize report caps rows while retaining full counts", "[sys][quanti
     CHECK(preview.report_truncated);
     CHECK(preview.colliding_objects == 300);
 }
+
+namespace {
+void t477_check(bool value) { CHECK(value); }
+void t477_require(bool value) { REQUIRE(value); }
+
+auto fractional_authored_chart() -> chart_document_t {
+    auto chart = chart_with_notes({});
+    chart.lane_layouts.front().layout.lanes.push_back(
+        {.id = lane_id_t{2}, .name = "Lane 2"});
+    chart.measures.front().notes.push_back({
+        .id = object_id_t{21}, .position = {measure_id_t{1}, 850},
+        .lane = lane_id_t{2}, .kind = note_kind_t::hold,
+        .end = local_position_t{measure_id_t{2}, 500}});
+    chart.measures.push_back({.id = measure_id_t{2},
+        .definition = {{3, 4}, meter_t{3, 4}},
+        .notes = {
+            {.id = object_id_t{20}, .position = {measure_id_t{2}, 250},
+             .lane = lane_id_t{1}, .kind = note_kind_t::tap},
+        }});
+    return chart;
+}
+
+auto capped_report_chart(std::size_t count, std::vector<object_id_t>& selected)
+    -> chart_document_t {
+    auto chart = chart_with_notes({});
+    selected.clear();
+    selected.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        const auto row = static_cast<std::uint64_t>(i + 1);
+        const object_id_t id{static_cast<std::uint64_t>(count + 9 - i)};
+        selected.push_back(id);
+        chart.measures.front().notes.push_back({.id = id,
+            .position = {measure_id_t{1}, row}, .lane = lane_id_t{1}, .kind = note_kind_t::tap});
+    }
+    return chart;
+}
+
+auto report_rows_sorted(const quantize_preview_t& preview) -> bool {
+    return std::ranges::is_sorted(preview.report_rows, [](const auto& left, const auto& right) {
+        if (left.start_after_absolute_row != right.start_after_absolute_row)
+            return left.start_after_absolute_row < right.start_after_absolute_row;
+        if (left.lane != right.lane) return left.lane.value < right.lane.value;
+        return left.object.value < right.object.value;
+    });
+}
+
+auto fractional_report_matches_golden() -> bool {
+    const auto chart = fractional_authored_chart();
+    const auto preview = preview_quantize_selection(chart,
+        {object_id_t{20}, object_id_t{21}}, quantize_request_t{
+            .divisions = 3, .space = quantization_space_t::authored_measure});
+    return preview.selected == 2 && preview.moved == 2 && preview.unchanged == 0 &&
+        preview.blocked == 0 && preview.report_rows.size() == 2 &&
+        preview.report_rows[0].object == object_id_t{21} &&
+        preview.report_rows[0].start_before_absolute_row == 850 &&
+        preview.report_rows[0].start_after_absolute_row == 960 &&
+        preview.report_rows[0].start_after == local_position_t{measure_id_t{2}, 0} &&
+        preview.report_rows[0].end_before == local_position_t{measure_id_t{2}, 500} &&
+        preview.report_rows[1].object == object_id_t{20} &&
+        preview.report_rows[1].start_before_absolute_row == 1'210 &&
+        preview.report_rows[1].start_after_absolute_row == 1'200 &&
+        preview.report_rows[1].start_after == local_position_t{measure_id_t{2}, 240} &&
+        preview.report_rows[0].end_after == local_position_t{measure_id_t{2}, 480};
+}
+
+auto invalid_selection_reports_are_preserved() -> bool {
+    const auto chart = chart_with_notes({0, 250});
+    const auto duplicate = preview_quantize_selection(chart,
+        {object_id_t{11}, object_id_t{11}}, 4);
+    const auto missing = preview_quantize_selection(chart, {object_id_t{99}}, 4);
+    return duplicate.selected == 2 && duplicate.moved == 0 && duplicate.unchanged == 2 &&
+        duplicate.blocked > 0 && duplicate.report_rows.empty() &&
+        duplicate.message.find("nonzero and unique") != std::string::npos &&
+        missing.selected == 1 && missing.moved == 0 && missing.unchanged == 1 &&
+        missing.blocked > 0 && missing.report_rows.empty() &&
+        missing.message.find("missing or non-positional") != std::string::npos;
+}
+
+auto cache_recomputes_for_equal_identity_replacement() -> bool {
+    auto first = chart_with_notes({0, 250});
+    auto replacement = chart_with_notes({0, 240});
+    quantize_preview_cache_t cache;
+    const std::vector<object_id_t> selected{object_id_t{11}};
+    const auto moved = cache.get(first, 7, selected, 4);
+    const auto unchanged = cache.get(replacement, 7, selected, 4);
+    return first.id == replacement.id && moved.moved == 1 &&
+        replacement.measures.front().notes.back().position.row == 240 &&
+        unchanged.moved == 0 && unchanged.unchanged == 1 && unchanged.report_rows.empty();
+}
+
+auto capped_report_boundary_is_source_ordered(std::size_t count) -> bool {
+    std::vector<object_id_t> selected;
+    const auto chart = capped_report_chart(count, selected);
+    const auto preview = preview_quantize_selection(chart, selected, 4);
+    if (preview.selected != count || preview.moved != count - 1 || preview.unchanged != 1 ||
+        preview.blocked == 0 || preview.colliding_objects != count ||
+        preview.report_rows.size() != std::min(count, quantize_report_row_capacity) ||
+        preview.report_total_rows != count || !report_rows_sorted(preview)) return false;
+    if (count == quantize_report_row_capacity)
+        return !preview.report_truncated &&
+            std::ranges::find(preview.report_rows, object_id_t{10},
+                              &quantize_report_row_t::object) != preview.report_rows.end();
+    return preview.report_truncated &&
+        std::ranges::find(preview.report_rows, object_id_t{10},
+                          &quantize_report_row_t::object) == preview.report_rows.end();
+}
+
+auto cache_settings_and_revision_change_results() -> bool {
+    auto chart = chart_with_notes({120});
+    quantize_preview_cache_t cache;
+    const std::vector<object_id_t> selected{object_id_t{10}};
+    const auto early = cache.get(chart, 1, selected, quantize_request_t{.divisions = 4});
+    auto later_request = quantize_request_t{.divisions = 4, .tie = quantization_tie_t::later};
+    const auto later = cache.get(chart, 1, selected, later_request);
+    chart.measures.front().notes.front().position.row = 240;
+    const auto revised = cache.get(chart, 2, selected, later_request);
+    const auto fractional = fractional_authored_chart();
+    quantize_preview_cache_t space_cache;
+    const auto standard_space = space_cache.get(fractional, 3,
+        {object_id_t{20}}, quantize_request_t{.divisions = 4});
+    const auto authored_space = space_cache.get(fractional, 3,
+        {object_id_t{20}}, quantize_request_t{
+            .divisions = 4, .space = quantization_space_t::authored_measure});
+    auto collision_chart = chart_with_notes({0, 100});
+    quantize_preview_cache_t collision_cache;
+    const std::vector<object_id_t> collision_selection{object_id_t{11}};
+    const auto rejected = collision_cache.get(collision_chart, 1, collision_selection,
+        quantize_request_t{.divisions = 4});
+    const auto allowed = collision_cache.get(collision_chart, 1, collision_selection,
+        quantize_request_t{.divisions = 4, .collisions = quantization_collision_t::allow});
+    return early.moved == 1 && early.report_rows.front().start_after.row == 0 &&
+        later.moved == 1 && later.report_rows.front().start_after.row == 240 &&
+        revised.moved == 0 && revised.unchanged == 1 && revised.report_rows.empty() &&
+        standard_space.report_rows.front().start_after.row == 240 &&
+        authored_space.report_rows.front().start_after.row == 180 &&
+        rejected.blocked > 0 && allowed.blocked == 0;
+}
+
+auto empty_and_unchanged_report_semantics() -> bool {
+    const auto empty = preview_quantize_selection(chart_with_notes({0}), {}, 4);
+    const auto unchanged = preview_quantize_selection(chart_with_notes({0}), {object_id_t{10}}, 4);
+    const auto invalid = preview_quantize_selection(chart_with_notes({0}), {object_id_t{10}},
+        quantize_request_t{.divisions = 0});
+    return empty.selected == 0 && empty.moved == 0 && empty.unchanged == 0 &&
+        empty.blocked == 0 && empty.report_rows.empty() && !empty.message.empty() &&
+        unchanged.selected == 1 && unchanged.moved == 0 && unchanged.unchanged == 1 &&
+        unchanged.blocked == 0 && unchanged.report_rows.empty() && unchanged.message.empty() &&
+        invalid.selected == 1 && invalid.moved == 0 && invalid.unchanged == 1 &&
+        invalid.blocked > 0 && invalid.report_rows.empty() && !invalid.message.empty();
+}
+} // namespace
+
+TEST_CASE("quantize report maps fractional authored measures and hold ends",
+          "[sys][quantize-preview]") {
+    t477_check(fractional_report_matches_golden());
+}
+
+TEST_CASE("quantize preview preserves duplicate and missing selection diagnostics",
+          "[sys][quantize-preview]") {
+    t477_check(invalid_selection_reports_are_preserved());
+}
+
+TEST_CASE("quantize preview cache invalidates for a new chart object with matching IDs",
+          "[sys][quantize-preview]") {
+    t477_check(cache_recomputes_for_equal_identity_replacement());
+}
+
+TEST_CASE("quantize report cap transitions at 256 and retains source-order candidates",
+          "[sys][quantize-preview]") {
+    t477_require(capped_report_boundary_is_source_ordered(quantize_report_row_capacity));
+    t477_check(capped_report_boundary_is_source_ordered(quantize_report_row_capacity + 1));
+}
+
+TEST_CASE("quantize preview cache observes settings and revision changes",
+          "[sys][quantize-preview]") {
+    t477_check(cache_settings_and_revision_change_results());
+}
+
+TEST_CASE("quantize preview keeps empty, unchanged, and invalid no-row report semantics",
+          "[sys][quantize-preview]") {
+    t477_check(empty_and_unchanged_report_semantics());
+}
+
+TEST_CASE("quantize no-move report preserves core validation and resolution promotion",
+          "[sys][quantize-preview]") {
+    auto chart = chart_with_notes({0});
+    const auto promoted = preview_quantize_selection(chart, {object_id_t{10}},
+        quantize_request_t{.divisions = 7, .allow_resolution_promotion = true});
+    t477_check(promoted.selected == 1 && promoted.moved == 0 && promoted.unchanged == 1);
+    t477_check(promoted.blocked == 0 && promoted.report_rows.empty());
+    chart.measures.front().notes.front().kind = note_kind_t::hold;
+    chart.measures.front().notes.front().end = local_position_t{measure_id_t{1}, 0};
+    const auto invalid_hold = preview_quantize_selection(chart, {object_id_t{10}}, 4);
+    t477_check(invalid_hold.moved == 0 && invalid_hold.unchanged == 1);
+    t477_check(invalid_hold.blocked > 0 && invalid_hold.report_rows.empty());
+    t477_check(invalid_hold.message.find("reverse or collapse") != std::string::npos);
+    t477_check(chart.divisions_per_standard_measure == 960);
+}

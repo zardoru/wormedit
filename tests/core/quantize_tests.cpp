@@ -245,3 +245,33 @@ TEST_CASE("quantization preserves unambiguous active lane layouts",
     CHECK(has_code(crossed_boundary.diagnostics, diagnostic_code_t::unknown_lane));
     CHECK(chart.measures[0].notes[0].position.row == 130);
 }
+
+TEST_CASE("quantize crosses exact fractional measure boundaries with unordered IDs",
+          "[unit][core][quantize][geometry]") {
+    auto chart = make_chart({3, 4}, true);
+    chart.measures[1].id = measure_id_t{9};
+    chart.measures.push_back({.id = measure_id_t{3}, .definition = {{1, 2}, std::nullopt}});
+    add_note(chart, object_id_t{20}, measure_id_t{1}, 710);
+    add_note(chart, object_id_t{21}, measure_id_t{9}, 950);
+    const auto result = quantize_chart_exact(chart, {.divisions = 4});
+    REQUIRE(result);
+    const local_position_t first_boundary{measure_id_t{9}, 0};
+    const local_position_t second_boundary{measure_id_t{3}, 0};
+    CHECK(find_note(*result.chart, object_id_t{20}).position == first_boundary);
+    CHECK(find_note(*result.chart, object_id_t{21}).position == second_boundary);
+    CHECK(chart.measures[0].notes[0].position.row == 710);
+    CHECK(chart.measures[1].notes[0].position.row == 950);
+}
+
+TEST_CASE("quantize rejects unknown and capacity positions without geometry repair",
+          "[unit][core][quantize][geometry][negative]") {
+    auto chart = make_chart({3, 4}, true);
+    add_note(chart, object_id_t{20}, measure_id_t{1}, 720);
+    const auto at_capacity = quantize_chart_exact(chart, {.divisions = 4});
+    CHECK_FALSE(at_capacity);
+    CHECK(has_code(at_capacity.diagnostics, diagnostic_code_t::row_out_of_range));
+    chart.measures[0].notes[0].position = {measure_id_t{99}, 0};
+    const auto unknown = quantize_chart_exact(chart, {.divisions = 4});
+    CHECK_FALSE(unknown);
+    CHECK(has_code(unknown.diagnostics, diagnostic_code_t::row_out_of_range));
+}

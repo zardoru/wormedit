@@ -2,6 +2,8 @@
 
 #include <wormedit/core/quantize.h>
 
+#include "core/quantize_geometry.h"
+
 #include <algorithm>
 #include <map>
 #include <ranges>
@@ -39,7 +41,7 @@ auto note_moves(const quantization_result_t& result)
     return moves;
 }
 
-auto note_candidates(const chart_document_t& chart, const measure_index_t& index,
+auto note_candidates(const chart_document_t& chart, const detail::quantize_geometry_t& index,
                      const std::unordered_map<std::uint64_t, moved_note_positions_t>& moves)
     -> std::vector<note_report_candidate_t> {
     std::vector<note_report_candidate_t> result;
@@ -55,8 +57,8 @@ auto note_candidates(const chart_document_t& chart, const measure_index_t& index
                 .note = &note,
                 .after_start = after_start,
                 .after_end = after_end,
-                .before_row = absolute_row(index, note.position),
-                .after_row = absolute_row(index, after_start),
+                .before_row = index.absolute(note.position),
+                .after_row = index.absolute(after_start),
                 .moved = moved,
             });
         }
@@ -182,10 +184,15 @@ auto preview_quantize_selection(const chart_document_t& chart,
     if (!result.chart && !result.diagnostics.empty())
         preview.message = result.diagnostics.front().message;
 
+    // Without moves, every valid collision group has the same before/after keys.
+    // Core validation above still supplies all rejection diagnostics.
+    if (result.quantized_moves.empty()) return preview;
+
     const auto built_index = build_measure_index(chart);
     if (std::holds_alternative<measure_index_t>(built_index)) {
         const auto moves = note_moves(result);
-        auto candidates = note_candidates(chart, std::get<measure_index_t>(built_index), moves);
+        const detail::quantize_geometry_t geometry{std::get<measure_index_t>(built_index)};
+        auto candidates = note_candidates(chart, geometry, moves);
         mark_note_collisions(candidates);
         append_report_rows(preview, candidates);
     }
@@ -202,9 +209,10 @@ auto quantize_preview_cache_t::get(const chart_document_t& chart, std::uint64_t 
 auto quantize_preview_cache_t::get(const chart_document_t& chart, std::uint64_t revision,
                                    const std::vector<object_id_t>& selected,
                                    const quantize_request_t& request) -> const quantize_preview_t& {
-    if (!value_ || chart_ != chart.id || revision_ != revision || selected_ != selected ||
-        !same_request_settings(request_, request)) {
+    if (!value_ || source_ != &chart || chart_ != chart.id || revision_ != revision ||
+        selected_ != selected || !same_request_settings(request_, request)) {
         value_ = preview_quantize_selection(chart, selected, request);
+        source_ = &chart;
         chart_ = chart.id;
         revision_ = revision;
         selected_ = selected;

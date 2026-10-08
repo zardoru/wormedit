@@ -42,7 +42,7 @@ valid position.
 
 ## T-437 Preview quantization as before and after ghosts on the field
 
-- **Status:** blocked-on T-419
+- **Status:** ready
 - **Mockup:** [quantize.svg](../mockups/quantize.svg) (reference: match its structure and hierarchy)
 - **Outcome:** while notes are selected and the quantize section is visible, every note that would move shows a ghost at its quantized position, joined by a thin line to its current one. Halfway notes are outlined in amber, and so are hold tails that stay in place. Colliding results are red, as in T-420. Changing any setting updates the ghosts on the next frame, so the effect of Halfway notes and Hold tails can be seen rather than read about.
 - **Read first:** `src/sys/compose_quantize_preview.h` (`quantize_report_row_t`), `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_canvas.cpp` (ghost drawing from T-420).
@@ -79,7 +79,7 @@ valid position.
 
 ## T-421 Add an "overwrite on move" setting that sends displaced notes to BGM
 
-- **Status:** blocked-on T-420, T-423
+- **Status:** blocked-on T-423
 - **Mockup:** [field-move-collision.svg](../mockups/field-move-collision.svg) (reference: match its structure and hierarchy)
 - **Outcome:** with Options → Editing → "When a move lands on a note" set to "Move it to a BGM lane", releasing over occupied cells commits the move and moves each occupant to the first BGM lane free at its row, keeping its sound, in one undo step. During the drag, those occupants show an amber "will move to BGM" ghost in their BGM destination instead of red. The default stays "Reject".
 - **Read first:** `src/core/interaction.cpp` (after T-420), `src/sys/preferences_runtime.cpp`, `src/ui/nuklear/options_window.cpp`, the core BGM lane model (`grep -rn bgm_lane include/wormedit/core`).

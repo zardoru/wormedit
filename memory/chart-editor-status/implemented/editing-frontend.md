@@ -2,7 +2,7 @@
 
 [Back to the implemented-capability index](../implemented.md).
 
-T-413/T-414/T-419 checkpoint (2026-10-08): Layer strokes add memberships, with
+T-413/T-414/T-419/T-420 completed (2026-10-08): Layer strokes add memberships, with
 Alt captured at stroke start for removal; repeated mixed note/BGM targets are
 idempotent and each changed stroke has one undo. Hidden/locked/missing targets
 reject atomically. Quantize now has aligned even/triplet grid chips, segmented
@@ -18,8 +18,20 @@ Optimized normal worker builds, Layer core1600/1600, Quantize core34/34,
 real rename dispatcher3/3, full source-chip event240/240 and frame317/317 pass; configured complexity
 has no new/increased violations. Root inspected the ordinary-object software
 capture. Added count work costs about 0.33/0.66 ms cold at 50k/100k notes;
-240 warm hits each make zero core calls. Final combined main gates await
-T-420; six chip states are captured, including an actual 640x720 viewport.
+240 warm hits each make zero core calls. Move ghosts follow occupied and illegal
+in-chart proposals in red, with all occupants outlined and a unique conflict
+count. Motion publishes no notifications; invalid release replans and warns
+once without changing document/history, while valid recovery commits one undo
+with hold spacing intact. Valid large rows use exact integer arithmetic; rejected
+overflow rows are display-only. Sparse/split/empty lane layouts retain physical
+ghost geometry. Filtering existing intervals against merged moved ranges removes
+unrelated allocation work; matched 100k-note valid update CPU p99 improves
+11.409→1.796 ms for one note and 14.375→2.474 ms for 256 notes. Collision UX
+changes intentionally, so those timings do not compare equivalent results.
+Normal main build and all 2,764 tests pass. Main-object captures cover six chip
+states, including an actual 640x720 viewport, Quantize and collision/recovery.
+Both workers and about 6.53 GB generated files were removed; branches,
+configurations, ordinary runtimes and complete evidence are retained.
 Software CJK glyph coverage is limited; native display/cadence remains unmeasured.
 [Evidence](../../coordination/oct8-layer-feedback-batch.md).
 

@@ -204,3 +204,44 @@ moved ranges, preserving closed endpoints and all occupants, before acceptance.
 Layer owns scratch-only matched measurement support; no repository ownership is
 returned to it. Keep initial-after logs/snapshots as rejected-candidate evidence.
 These are core update costs, not display frame-time or native cadence measures.
+
+## Final integration and cleanup
+
+Root accepted T-420 `cbc1ebf` and integrated it as `422ff9e`. Occupied/illegal
+proposals follow motion, all conflicting occupants are outlined, and release
+replans atomically. Empty-layout vertical proposals preserve original lanes;
+outside-field/chart reference input cancels. Motion publishes no notifications;
+invalid release emits one warning. Final worker gates: core 18 cases/344 assertions,
+card 110/110, scenes 48 cases/8595 assertions, full events 242/242, real dispatcher
+5 cases/74 assertions and full frame 322 cases/240373 assertions. Header-inclusive
+configured tidy preserves all 120 existing warning identities/scores. Fixtures use the
+application snap preference, production row mapping and stable note IDs.
+
+The corrected matched probe passes all 100 updates per case and removes roughly
+200k unrelated tree-node allocations. Valid CPU p50/p99 becomes 1.579/1.796 ms
+for one note and 2.405/2.474 ms for 256 notes, from 11.066/11.409 and 13.498/14.375.
+Collision updates now accept red geometry instead of rejecting/freezing, so their
+timings are explicitly different behavior. All headers match the measured
+snapshot; debug-stripped scratch copies of final interaction/scene objects are
+byte-identical to measured code. No production objects were modified or swapped.
+Proof: `feedback/performance/move/code-proof/proof.json`.
+
+Normal root main build exits 0 and the full **2,764/2,764** suite passes in 176.38 s
+(`root/main-build.log`, `root/main-tests.log`). Root independently relinked the
+drivers against ordinary main production objects and viewed all six chip states,
+Quantize and conflict/recovery captures (`root/main-captures/`). Narrow capture
+is 640x720. Captures use hidden SDL dummy/software rendering; native display and
+cadence remain unmeasured, and CJK software font coverage remains limited.
+Initial pixel comparisons record actual differences rather than claiming full
+image parity. Root corrected a scratch-driver lifetime mistake that freed the
+workspace model before rendering borrowed footer captions; the final drivers
+retain it through rendering and regenerate all states. Production is unchanged.
+
+Both released worktrees were clean and removed without force; only main remains.
+Their branches survive. Ordinary application/SDL runtimes, original build/test
+configuration and SHA manifests are retained under each worker's
+`retained-build/`; all logs, briefs, reviews, captures, immutable tidy baselines,
+matched probe binaries and ABI snapshots remain. Generated worker builds and
+trees remove 6,529,170,520 file bytes net of retained copies; exact accounting is
+`root/cleanup-report.json`. User chart/audio files and desktop app were untouched.
+T-422 is unblocked by this batch; T-421 now waits only on T-423.

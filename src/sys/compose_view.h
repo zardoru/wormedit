@@ -155,6 +155,15 @@ struct compose_scene_cache_t {
     std::size_t static_projection_index_bytes{}, static_projection_scanned{},
         static_projection_extracted{}, static_projection_reused_frames{};
 
+    // Two bounded source locations, invalidated with the document/chart scene.
+    struct selected_source_location_t {
+        wormedit::object_id_t id;
+        bool attempted{};
+        std::optional<std::pair<std::size_t, std::size_t>> location;
+    };
+    selected_source_location_t selected_note_source, selected_bgm_source;
+    std::size_t selected_source_scanned{}, selected_source_reused{}, paint_occupancy_scanned{};
+
     std::optional<wormedit::measure_index_t> cached_measure_index;
     wormedit::sys::stem_index_t stem_index;
     quantize_preview_cache_t quantize_preview;

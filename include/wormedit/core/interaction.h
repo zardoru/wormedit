@@ -884,6 +884,13 @@ inline auto editor_cursor_screen_y_pixels(const editor_interaction_view_model_t&
                                               const editor_interaction_state_t& state)
     -> std::variant<editor_interaction_view_model_t, diagnostic_list_t>;
 
+// Borrow revision-bound geometry for this call; the producer must bind its index
+// to this document/chart source and keep it alive through inspection. Missing or
+// stale chart/revision bindings use the same exact path as the overload above.
+[[nodiscard]] auto inspect_editor_interaction(const document_history_t& history,
+    const editor_interaction_state_t& state, editor_measure_geometry_t geometry)
+    -> std::variant<editor_interaction_view_model_t, diagnostic_list_t>;
+
 // Maps an exact chart position into backend-neutral vertical pixels for a view.
 [[nodiscard]] auto editor_position_y_pixels(const chart_document_t& chart,
                                             const editor_interaction_view_model_t& view,

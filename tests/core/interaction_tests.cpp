@@ -5287,3 +5287,109 @@ TEST_CASE("Y-lock keeps a dragged note on its row whatever the pointer does",
     CHECK(note->lane == lane_id_t{2});
     CHECK(note->position == (local_position_t{measure_id_t{1}, 100}));
 }
+
+namespace {
+void t475_check(bool value) { CHECK(value); }
+void t475_require(bool value) { REQUIRE(value); }
+
+auto t475_views_match(const editor_interaction_view_model_t& a,
+                      const editor_interaction_view_model_t& b) -> bool {
+    return a.chart == b.chart && a.active_lane == b.active_lane &&
+        a.active_lane_name == b.active_lane_name && a.cursor == b.cursor &&
+        a.virtual_bms_cursor_row == b.virtual_bms_cursor_row && a.cursor_subrow == b.cursor_subrow &&
+        a.active_snap_denominator == b.active_snap_denominator && a.snap_enabled == b.snap_enabled &&
+        a.y_lock == b.y_lock && a.supported_snap_denominators == b.supported_snap_denominators &&
+        a.document_revision == b.document_revision &&
+        a.pixels_per_standard_measure == b.pixels_per_standard_measure &&
+        a.viewport_scroll_pixels == b.viewport_scroll_pixels &&
+        a.viewport_height_pixels == b.viewport_height_pixels &&
+        a.fixed_cursor_screen_y_pixels == b.fixed_cursor_screen_y_pixels &&
+        a.pending_hold == b.pending_hold && a.additional_keyboard_holds == b.additional_keyboard_holds &&
+        a.pending_note_duration_gesture == b.pending_note_duration_gesture &&
+        a.pending_note_move_gesture == b.pending_note_move_gesture &&
+        a.retained_selection_range == b.retained_selection_range &&
+        a.retained_canvas_selection_range == b.retained_canvas_selection_range &&
+        a.selected_canvas_measure == b.selected_canvas_measure &&
+        a.selected_notes == b.selected_notes && a.selected_objects == b.selected_objects;
+}
+
+auto t475_results_match(
+    const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& a,
+    const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& b) -> bool {
+    if (a.index() != b.index()) return false;
+    if (const auto* view = std::get_if<editor_interaction_view_model_t>(&a))
+        return t475_views_match(*view, std::get<editor_interaction_view_model_t>(b));
+    const auto& left = std::get<diagnostic_list_t>(a);
+    const auto& right = std::get<diagnostic_list_t>(b);
+    if (left.size() != right.size()) return false;
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        if (left[i].code != right[i].code || left[i].message != right[i].message) return false;
+    }
+    return true;
+}
+
+auto t475_retained_matches_legacy(document_history_t& history,
+    const editor_interaction_state_t& state, editor_measure_geometry_t geometry) -> bool {
+    return t475_results_match(inspect_editor_interaction(history, state, geometry),
+                              inspect_editor_interaction(history, state));
+}
+} // namespace
+
+TEST_CASE("retained interaction geometry matches exact views as selection and previews change",
+          "[unit][core][interaction][geometry]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes.push_back({
+        .id = object_id_t{77}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}});
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    state.viewport_height_pixels = 400;
+    state.pixels_per_standard_measure = 400;
+    const auto& chart = history.document.charts.front();
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    auto geometry = editor_measure_geometry_t{chart.id, history.document.revision, &index};
+    t475_check(t475_retained_matches_legacy(history, state, geometry));
+
+    history.document.charts.front().lane_layouts.front().layout.lanes.front().name = "Renamed key";
+    ++history.document.revision;
+    const auto layout_index = std::get<measure_index_t>(build_measure_index(chart));
+    geometry = {chart.id, history.document.revision, &layout_index};
+    t475_check(t475_retained_matches_legacy(history, state, geometry));
+
+    state.cursor = {measure_id_t{2}, 240};
+    state.active_lane = lane_id_t{2};
+    state.pixels_per_standard_measure = 320;
+    state.viewport_scroll_pixels = 40;
+    t475_require(static_cast<bool>(dispatch_editor_action(history, state,
+        select_editor_notes_action_t{{object_id_t{77}}})));
+    t475_check(t475_retained_matches_legacy(history, state, geometry));
+
+    t475_require(static_cast<bool>(dispatch_editor_action(history, state,
+        begin_hold_action_t{{measure_id_t{1}, 720}})));
+    t475_require(static_cast<bool>(dispatch_editor_action(history, state,
+        update_hold_preview_action_t{{measure_id_t{2}, 240}})));
+    const auto retained = inspect_editor_interaction(history, state, geometry);
+    t475_require(std::holds_alternative<editor_interaction_view_model_t>(retained));
+    t475_check(std::get<editor_interaction_view_model_t>(retained).pending_hold.has_value());
+    t475_check(t475_retained_matches_legacy(history, state, geometry));
+    t475_check(t475_retained_matches_legacy(history, state, geometry));
+}
+
+TEST_CASE("missing and stale retained interaction geometry falls back to exact inspection",
+          "[unit][core][interaction][geometry]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    const auto& chart = history.document.charts.front();
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const editor_measure_geometry_t valid{chart.id, history.document.revision, &index};
+    t475_check(t475_retained_matches_legacy(history, state,
+        {chart.id, history.document.revision, nullptr}));
+    t475_check(t475_retained_matches_legacy(history, state,
+        {chart_id_t{99}, history.document.revision, &index}));
+    t475_check(t475_retained_matches_legacy(history, state,
+        {chart.id, history.document.revision + 1, &index}));
+
+    state.active_lane = lane_id_t{99};
+    const auto exact_error = inspect_editor_interaction(history, state);
+    t475_require(std::holds_alternative<diagnostic_list_t>(exact_error));
+    t475_check(t475_results_match(inspect_editor_interaction(history, state, valid), exact_error));
+}

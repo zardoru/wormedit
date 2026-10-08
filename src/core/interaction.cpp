@@ -15,6 +15,7 @@
 #include <functional>
 #include <limits>
 #include <map>
+#include <memory>
 #include <queue>
 #include <ranges>
 #include <set>
@@ -447,7 +448,8 @@ auto absolute_row_at_y_pixels(const chart_document_t& chart, const measure_index
 
 struct view_geometry_t {
     const chart_document_t* chart{};
-    measure_index_t index;
+    std::unique_ptr<measure_index_t> owned_index;
+    const measure_index_t& index;
     std::uint64_t absolute_row{};
     std::uint64_t canvas_rows{};
     local_position_t lane_position;
@@ -515,13 +517,6 @@ auto valid_viewport(const chart_document_t& chart, const measure_index_t& index,
     return true;
 }
 
-auto retained_or_built_measure_index(const chart_document_t& chart,
-                                     const measure_index_t* retained)
-    -> std::variant<measure_index_t, diagnostic_list_t> {
-    if (retained) return *retained;
-    return build_measure_index(chart);
-}
-
 auto resolve_view_geometry(const document_history_t& history,
                            const editor_interaction_state_t& state,
                            const measure_index_t* retained = nullptr)
@@ -530,9 +525,16 @@ auto resolve_view_geometry(const document_history_t& history,
     if (!chart)
         return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
                                        "editor interaction refers to an unknown chart")};
-    const auto built = retained_or_built_measure_index(*chart, retained);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built)) return *diagnostics;
-    auto index = std::get<measure_index_t>(built);
+    // A heap-stable owner keeps the reference valid when the result variant moves.
+    // Retained geometry is borrowed only for this synchronous inspection call.
+    std::unique_ptr<measure_index_t> owned;
+    if (!retained) {
+        auto built = build_measure_index(*chart);
+        if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built)) return *diagnostics;
+        owned = std::make_unique<measure_index_t>(std::get<measure_index_t>(std::move(built)));
+        retained = owned.get();
+    }
+    const auto& index = *retained;
     const auto canvas = resolve_canvas_cursor(*chart, index, state);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&canvas)) return *diagnostics;
     const auto cursor = std::get<canvas_cursor_t>(canvas);
@@ -554,7 +556,7 @@ auto resolve_view_geometry(const document_history_t& history,
     if (!valid_viewport(*chart, index, state))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
                                        "editor viewport geometry is invalid")};
-    return view_geometry_t{.chart = chart, .index = std::move(index),
+    return view_geometry_t{.chart = chart, .owned_index = std::move(owned), .index = index,
         .absolute_row = cursor.absolute_row, .canvas_rows = cursor.canvas_rows,
         .lane_position = lane_position, .lane = lane};
 }
@@ -1567,6 +1569,15 @@ auto inspect_editor_interaction(const document_history_t& history,
                                 const editor_interaction_state_t& state)
     -> std::variant<editor_interaction_view_model_t, diagnostic_list_t> {
     return make_view(history, state);
+}
+
+auto inspect_editor_interaction(const document_history_t& history,
+                                const editor_interaction_state_t& state,
+                                editor_measure_geometry_t geometry)
+    -> std::variant<editor_interaction_view_model_t, diagnostic_list_t> {
+    const auto* retained = geometry.index && geometry.chart == state.chart &&
+        geometry.document_revision == history.document.revision ? geometry.index : nullptr;
+    return make_view(history, state, retained);
 }
 
 namespace {

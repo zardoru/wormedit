@@ -2880,18 +2880,18 @@ void populate_compose_staged_draft(flattened_workspace_t& flattened,
 void populate_compose_selected_bgm(
     const wormedit::chart_document_t& chart,
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
-    WormUiComposeView& view);
+    WormUiComposeView& view, compose_scene_cache_t& cache);
 void populate_compose_selected_note(
     flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
-    WormUiComposeView& view);
+    WormUiComposeView& view, compose_scene_cache_t& cache);
 
 void populate_compose_selected_objects_and_drafts(
     flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
     const wormedit::document_history_t& history,
     application_command_state_t& application_state,
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
-    WormUiComposeView& view) {
+    WormUiComposeView& view, compose_scene_cache_t& cache) {
     if (application_state.bmson_marker_draft &&
         (application_state.bmson_marker_draft->chart != chart.id ||
          application_state.bmson_marker_draft->revision != history.document.revision)) {
@@ -2904,8 +2904,8 @@ void populate_compose_selected_objects_and_drafts(
          application_state.bmson_marker_move_preview->revision != history.document.revision)) {
         application_state.bmson_marker_move_preview.reset();
     }
-    populate_compose_selected_bgm(chart, retained_state, view);
-    populate_compose_selected_note(flattened, chart, retained_state, view);
+    populate_compose_selected_bgm(chart, retained_state, view, cache);
+    populate_compose_selected_note(flattened, chart, retained_state, view, cache);
 }
 
 void populate_compose_staged_draft(flattened_workspace_t& flattened,
@@ -2926,10 +2926,39 @@ void populate_compose_staged_draft(flattened_workspace_t& flattened,
     view.staged_bmson_marker_restarts = flattened.compose.bmson_draft_restart.data();
 }
 
+template<class Event>
+auto cached_selected_source(const wormedit::chart_document_t& chart,
+    wormedit::object_id_t id, compose_scene_cache_t::selected_source_location_t& slot,
+    std::vector<Event> wormedit::measure_chunk_t::* container,
+    compose_scene_cache_t& cache) -> const Event* {
+    if (slot.attempted && slot.id == id) {
+        if (!slot.location) return nullptr;
+        const auto [group, item] = *slot.location;
+        if (group < chart.measures.size()) {
+            const auto& events = chart.measures[group].*container;
+            if (item < events.size() && events[item].id == id) {
+                ++cache.selected_source_reused;
+                return &events[item];
+            }
+        }
+    }
+    slot = {.id = id, .attempted = true};
+    for (std::size_t group = 0; group < chart.measures.size(); ++group) {
+        const auto& events = chart.measures[group].*container;
+        for (std::size_t item = 0; item < events.size(); ++item) {
+            ++cache.selected_source_scanned;
+            if (events[item].id != id) continue;
+            slot.location = std::pair{group, item};
+            return &events[item];
+        }
+    }
+    return nullptr;
+}
+
 void populate_compose_selected_bgm(
     const wormedit::chart_document_t& chart,
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
-    WormUiComposeView& view) {
+    WormUiComposeView& view, compose_scene_cache_t& cache) {
     view.selected_bgm_event_count = retained_state
         ? static_cast<std::size_t>(std::ranges::count_if(
               retained_state->selected_objects, [](const auto& object) {
@@ -2940,38 +2969,33 @@ void populate_compose_selected_bgm(
         retained_state->selected_objects.front().kind !=
             wormedit::editor_selection_object_kind_t::bgm_event) return;
     const auto selected = retained_state->selected_objects.front().id;
-    for (const auto& measure : chart.measures) {
-        const auto event = std::ranges::find(measure.bgm_events, selected,
-                                              &wormedit::bgm_event_t::id);
-        if (event == measure.bgm_events.end()) continue;
-        view.selected_bgm_event_id = selected.value;
-        view.selected_assigned_resource_id = event->sound.value_or(wormedit::resource_id_t{}).value;
-        if (chart.source_family == wormedit::format_family_t::bmson && event->sound_channel_event) {
-            view.selected_bmson_bgm_event_id = selected.value;
-            view.selected_bmson_source_lane_id = event->source_lane.value;
-        }
-        break;
+    const auto* event = cached_selected_source(chart, selected, cache.selected_bgm_source,
+        &wormedit::measure_chunk_t::bgm_events, cache);
+    if (!event) return;
+    view.selected_bgm_event_id = selected.value;
+    view.selected_assigned_resource_id = event->sound.value_or(wormedit::resource_id_t{}).value;
+    if (chart.source_family == wormedit::format_family_t::bmson && event->sound_channel_event) {
+        view.selected_bmson_bgm_event_id = selected.value;
+        view.selected_bmson_source_lane_id = event->source_lane.value;
     }
 }
 
 void populate_compose_selected_note(
     flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
-    WormUiComposeView& view) {
+    WormUiComposeView& view, compose_scene_cache_t& cache) {
     if (retained_state->selected_notes.size() != 1) return;
     const auto note_id = retained_state->selected_notes.front();
-    for (const auto& measure : chart.measures) {
-        const auto note = std::ranges::find(measure.notes, note_id, &wormedit::note_t::id);
-        if (note == measure.notes.end()) continue;
-        if (note->label) flattened.compose.selected_note_label = *note->label;
-        view.selected_note_label = flattened.compose.selected_note_label.c_str();
-        view.selected_note_label_note_id = note_id.value;
-        view.selected_assigned_resource_id = note->sound.value_or(wormedit::resource_id_t{}).value;
-        if (chart.source_family == wormedit::format_family_t::bmson && note->sound_channel_event &&
-            note->kind == wormedit::note_kind_t::tap)
-            view.selected_bmson_note_event_id = note_id.value;
-        break;
-    }
+    const auto* note = cached_selected_source(chart, note_id, cache.selected_note_source,
+        &wormedit::measure_chunk_t::notes, cache);
+    if (!note) return;
+    if (note->label) flattened.compose.selected_note_label = *note->label;
+    view.selected_note_label = flattened.compose.selected_note_label.c_str();
+    view.selected_note_label_note_id = note_id.value;
+    view.selected_assigned_resource_id = note->sound.value_or(wormedit::resource_id_t{}).value;
+    if (chart.source_family == wormedit::format_family_t::bmson && note->sound_channel_event &&
+        note->kind == wormedit::note_kind_t::tap)
+        view.selected_bmson_note_event_id = note_id.value;
 }
 
 
@@ -3035,6 +3059,8 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         cache.scene_window.scene.reset();
         discard_compose_static_source(cache);
         cache.cached_measure_index.reset();
+        cache.selected_note_source = {};
+        cache.selected_bgm_source = {};
         cache.bgm_rows_by_id.clear();
         cache.hit_test_index.reset();
         cache.marker_timing_index.reset();
@@ -3223,7 +3249,9 @@ std::optional<wormedit::editor_interaction_view_model_t> inspect_compose_interac
                          : wormedit::editor_field_scroll_direction_t::up);
     if (geometry_changed && !editor_interaction_has_pending_gesture(*retained_state))
         (void)wormedit::synchronize_editor_cursor_to_viewport(input.chart, input.measures, *retained_state);
-    auto inspected = wormedit::inspect_editor_interaction(history, *retained_state);
+    auto inspected = wormedit::inspect_editor_interaction(history, *retained_state,
+        {.chart = input.chart.id, .document_revision = history.document.revision,
+         .index = &input.measures});
     if (!std::holds_alternative<wormedit::editor_interaction_view_model_t>(inspected)) {
         auto recovered = wormedit::recover_editor_interaction(history, *retained_state);
         if (!recovered.state || !recovered.view) {
@@ -3299,7 +3327,7 @@ std::uint64_t prepare_compose_projection_state(const compose_final_projection_co
     }
     populate_compose_selection_preview(cache, retained_state, interaction_view, view);
     populate_compose_selected_objects_and_drafts(flattened, chart, history,
-                                                 application_state, retained_state, view);
+                                                 application_state, retained_state, view, cache);
     auto canvas_rows = cache.index->measures.total_rows;
     if (wormedit::chart_has_virtual_tail(chart)) {
         const auto built_canvas = wormedit::build_virtual_canvas(chart);
@@ -4181,6 +4209,36 @@ void populate_compose_paste_projection(const compose_final_projection_context_t&
     view.paste_ghost_count = session.ghosts.size();
 }
 
+auto compose_paint_head_occupied(const compose_final_projection_context_t& input,
+    const wormedit::editor_hit_target_t& target, std::uint64_t row) -> bool {
+    auto& cache = input.cache;
+    // Successful scene indices contain every head; cap/geometry failures return
+    // diagnostics rather than a truncated index. Never use the visible window.
+    if (cache.index && cache.index->chart == input.chart.id &&
+        cache.index->document_revision == input.history.document.revision &&
+        cache.scene_document_identity == &input.history.document &&
+        cache.scene_chart_identity == &input.chart &&
+        cache.index->note_indices_by_id.size() == cache.index->notes.size()) {
+        const auto& notes = cache.index->notes;
+        auto note = std::ranges::lower_bound(notes, row, {},
+            &wormedit::editor_field_scene_note_source_t::begin_row);
+        for (; note != notes.end() && note->begin_row == row; ++note) {
+            ++cache.paint_occupancy_scanned;
+            if (note->lane == target.lane) return true;
+        }
+        return false;
+    }
+    // Exact fallback still restricts the head check to its authored measure.
+    const auto measure = std::ranges::find(input.chart.measures, target.position.measure,
+        &wormedit::measure_chunk_t::id);
+    if (measure == input.chart.measures.end()) return false;
+    for (const auto& note : measure->notes) {
+        ++cache.paint_occupancy_scanned;
+        if (note.lane == target.lane && note.position == target.position) return true;
+    }
+    return false;
+}
+
 void populate_compose_paint_ghost(const compose_final_projection_context_t& input) {
     using namespace wormedit;
     auto& view = input.view;
@@ -4212,11 +4270,7 @@ void populate_compose_paint_ghost(const compose_final_projection_context_t& inpu
                ghost_y <= value.bounds.bottom;
     });
     if (lane == lanes.end()) return;
-    bool occupied = false;
-    for (const auto& measure : input.chart.measures)
-        occupied = occupied || std::ranges::any_of(measure.notes, [&](const auto& note) {
-            return note.lane == target->lane && note.position == target->position;
-        });
+    const auto occupied = compose_paint_head_occupied(input, *target, *row);
     const auto rectangular = lane->glyph <= 1;
     const auto height = cache.preview_scene_request.note_head_height_pixels;
     const auto top = rectangular ? (input.downscroll ? ghost_y - height : ghost_y) : ghost_y - height / 2;

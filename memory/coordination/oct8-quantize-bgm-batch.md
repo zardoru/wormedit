@@ -255,3 +255,14 @@ are inclusive, and the lane must remain available across intervening layout
 bands as well as at both endpoints. Preserve ordinary tap behavior and avoid a
 global document collision-policy change. These cases supplement the approved
 phase 02a acceptance, without extending file ownership.
+
+## Runtime recovery
+
+The server restarted during the renderer's first ordinary affected-target build.
+The log reached event-harness object compilation but contains no successful exit,
+so it is not a passing gate. Sources and evidence survived. Recovered Sol
+coordinators are `feedback_recovery_61` and `bgm_recovery_61`, with sole executor
+`luna_recovery_oct8`. Their source-reader audit found no remaining compiler/tidy
+jobs. The expanded existing Quantize UI test has a new complexity finding at 28;
+extract its cohesive overlay assertions before renewed tidy and ordinary gates.
+The other 15 configured baseline finding identities/scores remain unchanged.

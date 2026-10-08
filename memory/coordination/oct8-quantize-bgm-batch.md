@@ -229,3 +229,11 @@ unchanged. Sol BGM owns its ordinary build/test readers while Luna writes the
 ten renderer files in the independent feedback tree. This overlap permits no
 BGM source mutation during readers; any repair returns the writer only after
 readers exit. No schema or shared tail frontend edits have been granted yet.
+
+Renderer review confirmed a report-starvation edge: 256 earlier-stored unselected
+collision occupants fill the retained table before any of 256 selected moved
+notes. Root loans only `compose_quantize_preview.cpp` and its existing preview
+tests back to this slice. Counts remain full; selected qualifying rows receive
+retention priority, spare capacity holds occupant evidence, and final table
+sorting stays deterministic. No doubled buffers, header change, per-frame scan
+or core call is allowed. This extends the ten-file renderer grant to twelve.

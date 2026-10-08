@@ -1109,7 +1109,7 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
         inline_preview_cursor.anchor.reset();
     };
     state.transport_loop_selection_active = [&] {
-        return preview_session.loop_region().has_value();
+        return preview_session.has_loop_region();
     };
     state.transport_set_loop_selection = [&](wormedit::chart_id_t chart_id,
         std::uint64_t expected_revision, std::uint64_t begin_row,

@@ -86,7 +86,15 @@ class sdl_preview_output_t {
     [[nodiscard]] auto playing() const noexcept -> bool;
     // Callback-resolution audible clock; reading never queries or locks SDL.
     [[nodiscard]] auto timeline_frame() const noexcept -> std::uint64_t;
+    // Queries SDL, which takes the stream lock that the audio callback holds while rendering;
+    // only the callback and one-off transport changes call it. Per-frame checks read
+    // published_latency_frames() instead.
     [[nodiscard]] auto source_latency_frames() const noexcept -> std::uint64_t;
+    // The latency the callback measured on its last run; lock-free and at most one device
+    // period old. It reaches zero once the output has drained.
+    [[nodiscard]] auto published_latency_frames() const noexcept -> std::uint64_t {
+        return published_latency_frames_.load(std::memory_order_acquire);
+    }
     [[nodiscard]] auto audio_device_id() const noexcept -> SDL_AudioDeviceID {
         return stream_ ? SDL_GetAudioStreamDevice(stream_) : 0;
     }
@@ -157,6 +165,7 @@ class sdl_preview_output_t {
     std::atomic<bool> output_playing_{};
     std::atomic<std::uint64_t> rendered_source_frame_{};
     std::atomic<std::uint64_t> buffered_source_frames_{};
+    std::atomic<std::uint64_t> published_latency_frames_{};
     std::uint64_t source_end_frame_{};
     const preview_schedule_t* retained_schedule_{};
     std::span<const audio::preview_object_source_binding_t> retained_objects_;

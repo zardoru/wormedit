@@ -310,7 +310,7 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
         };
     }
     if (loop_disable_pending_.load(std::memory_order_acquire)) {
-        if (source_latency_frames() != 0) return std::nullopt;
+        if (published_latency_frames() != 0) return std::nullopt;
         loop_disable_pending_.store(false, std::memory_order_release);
         const auto resumed = seek(loop_end_frame_.load(std::memory_order_relaxed));
         return sdl_preview_service_result_t{
@@ -397,7 +397,7 @@ auto sdl_preview_output_t::service_loop_boundary(
 
 auto sdl_preview_output_t::service_loop_restart() -> loop_restart_status_t {
     if (!loop_restart_pending_) return loop_restart_status_t::none;
-    if (source_latency_frames() != 0) return loop_restart_status_t::waiting_for_drain;
+    if (published_latency_frames() != 0) return loop_restart_status_t::waiting_for_drain;
     loop_restart_pending_ = false;
     if (!playing()) return loop_restart_status_t::failed;
     const auto loop = session_.loop_region();
@@ -414,6 +414,7 @@ auto sdl_preview_output_t::stop() noexcept -> audio::transport_stop_result_t {
     output_playing_.store(false, std::memory_order_release);
     output_playhead_cleared_.store(true, std::memory_order_release);
     buffered_source_frames_.store(0, std::memory_order_release);
+    published_latency_frames_.store(0, std::memory_order_release);
     rendered_source_frame_.store(0, std::memory_order_release);
     output_start_frame_.store(0, std::memory_order_release);
     if (stream_ == nullptr) {
@@ -493,6 +494,7 @@ void sdl_preview_output_t::publish_output_playhead() noexcept {
     const auto latency = source_latency_frames();
     const auto start = output_start_frame_.load(std::memory_order_acquire);
     const auto audible = rendered > latency ? std::max(start, rendered - latency) : start;
+    published_latency_frames_.store(latency, std::memory_order_release);
     session_.set_output_latency_frames(latency);
     output_playhead_.publish({.active = playing(), .timeline_frame = audible,
         .start_frame = start, .generation = output_generation_,

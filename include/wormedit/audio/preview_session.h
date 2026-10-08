@@ -101,6 +101,11 @@ class preview_session_t {
     // thread so device queues and their source clocks can be reset together.
     [[nodiscard]] auto set_loop_region(std::optional<preview_loop_region_t> region) -> bool;
     [[nodiscard]] auto loop_region() const -> std::optional<preview_loop_region_t>;
+    // Whether a loop region is set, without the session mutex (which rendering holds for a
+    // whole mix), for per-frame UI queries.
+    [[nodiscard]] auto has_loop_region() const noexcept -> bool {
+        return loop_region_set_.load(std::memory_order_acquire);
+    }
 
     void set_metronome_enabled(bool enabled);
     [[nodiscard]] auto metronome_enabled() const -> bool;
@@ -145,6 +150,8 @@ class preview_session_t {
     std::uint64_t start_frame_{};
     std::uint64_t minimum_end_frame_{};
     std::optional<preview_loop_region_t> loop_region_;
+    // Mirrors loop_region_.has_value(); written under the mutex, read lock-free.
+    std::atomic<bool> loop_region_set_{};
     std::atomic<std::uint64_t> output_latency_frames_{};
     std::atomic<std::uint8_t> metronome_count_in_measures_{};
 };

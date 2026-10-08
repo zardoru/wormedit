@@ -651,3 +651,18 @@ TEST_CASE("in-flight old preview pump cannot activate rapid-seek audio or undo S
     expect_pending(!stopped.session.active());
     expect_pending(!stopped.session.pump());
 }
+
+TEST_CASE("Loop region presence is readable without the session mutex and clears on Stop",
+          "[unit][audio][preview-session]") {
+    using wormedit::audio::preview_loop_region_t;
+    pending_preview_fixture_t fixture;
+    CHECK_FALSE(fixture.session.has_loop_region());
+    REQUIRE(fixture.session.set_loop_region(preview_loop_region_t{64, 4'096}));
+    CHECK(fixture.session.has_loop_region());
+    REQUIRE(fixture.session.set_loop_region(std::nullopt));
+    CHECK_FALSE(fixture.session.has_loop_region());
+    REQUIRE(fixture.session.set_loop_region(preview_loop_region_t{64, 4'096}));
+    static_cast<void>(fixture.session.stop());
+    CHECK_FALSE(fixture.session.has_loop_region());
+    CHECK(fixture.session.has_loop_region() == fixture.session.loop_region().has_value());
+}

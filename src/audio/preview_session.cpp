@@ -211,6 +211,7 @@ auto preview_session_t::set_loop_region(std::optional<preview_loop_region_t> reg
     if (region && region->begin_frame >= region->end_frame) return false;
     const std::scoped_lock lock(mutex_);
     loop_region_ = region;
+    loop_region_set_.store(region.has_value(), std::memory_order_release);
     return true;
 }
 
@@ -279,6 +280,7 @@ void preview_session_t::clear_state() noexcept {
     output_latency_frames_.store(0, std::memory_order_release);
     minimum_end_frame_ = 0;
     loop_region_.reset();
+    loop_region_set_.store(false, std::memory_order_release);
     ++generation_;
     publish_playhead();
 }

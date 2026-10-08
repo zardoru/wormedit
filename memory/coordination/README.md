@@ -1,5 +1,9 @@
 # Worktree coordination pilot
 
+Active 2026-10-08: [packed waveforms and sound-section imports](oct8-bmson-dock-batch.md),
+T-459/T-462 in two Sol 6.1 medium worktrees with sequential Luna medium briefs.
+Root owns main, shared contracts/manifests, integration and cleanup.
+
 Completed in code 2026-10-08: [selection and audition latency batch](oct8-performance-batch.md),
 T-477/T-473, with Sol 6.1 medium coordinators and sequential Luna medium tests.
 Main build and **2,599/2,599 tests pass**, including the Linux mania rounding

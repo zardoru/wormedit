@@ -155,3 +155,11 @@ All T-419 paths and build jobs released. Layer refreshes onto this integrated
 checkpoint and starts T-414 with its approved supporting scope. Feedback
 refreshes too and may start T-420 core interaction/scene only; frontend,
 projection, Compose input and shared sys/UI tests await T-414 integration.
+
+T-414 additional supporting scope: `src/sys/workspace_projection.cpp` projects
+the exact keysound request primary ID and cleared-filter state beside the
+existing display ordinal. Reveal waits for that matching projection rather
+than a one-frame delay; no new catalog scan. Pending reveal survives initial
+dock identity synchronization. Chip press capture is stamped against project,
+chart, revision, tool and source; stale held presses cancel through release.
+Missing-source styling reuses the existing notification warning theme role.

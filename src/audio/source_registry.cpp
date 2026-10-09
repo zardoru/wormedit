@@ -292,6 +292,22 @@ auto decoded_source_registry_t::streaming_decoder_count() const -> std::size_t {
     }));
 }
 
+auto decoded_source_registry_t::source_path(asset_id_t asset) const
+    -> std::optional<std::filesystem::path> {
+    const auto entry = asset ? find_entry(asset) : nullptr;
+    if (!entry) return std::nullopt;
+    const std::scoped_lock lifecycle(entry->lifecycle);
+    return entry->path;
+}
+
+auto decoded_source_registry_t::rebase_source(asset_id_t asset, std::filesystem::path path) -> bool {
+    const auto entry = asset ? find_entry(asset) : nullptr;
+    if (!entry || path.empty()) return false;
+    const std::scoped_lock lifecycle(entry->lifecycle);
+    entry->path = std::move(path);
+    return true;
+}
+
 auto decoded_source_registry_t::find_entry(asset_id_t asset) const -> std::shared_ptr<entry_t> {
     const std::scoped_lock lock(mutex_);
     const auto found = std::ranges::find_if(entries_, [asset](const auto& entry) {

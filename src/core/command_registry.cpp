@@ -272,10 +272,10 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
     return true;
 }
 
-[[nodiscard]] auto profiles_overlap(const command_registry_t& registry,
-                                    shortcut_primary_modifier_t primary_modifier)
-    -> diagnostic_list_t {
-    diagnostic_list_t diagnostics;
+[[nodiscard]] auto overlapping_chord_pairs(const command_registry_t& registry,
+                                           shortcut_primary_modifier_t primary_modifier)
+    -> std::vector<shortcut_conflict_t> {
+    std::vector<shortcut_conflict_t> pairs;
     for (std::size_t left_index = 0; left_index < registry.commands.size(); ++left_index) {
         const auto& left = registry.commands[left_index];
         for (std::size_t right_index = left_index + 1; right_index < registry.commands.size();
@@ -295,11 +295,21 @@ auto warning(diagnostic_code_t code, std::string message) -> diagnostic_t {
                         });
                 });
             if (collides) {
-                diagnostics.push_back(warning(diagnostic_code_t::duplicate_binding,
-                                              "shortcut conflict between '" + left.id.value +
-                                                  "' and '" + right.id.value + "'"));
+                pairs.push_back({.first = left.id, .second = right.id});
             }
         }
+    }
+    return pairs;
+}
+
+[[nodiscard]] auto profiles_overlap(const command_registry_t& registry,
+                                    shortcut_primary_modifier_t primary_modifier)
+    -> diagnostic_list_t {
+    diagnostic_list_t diagnostics;
+    for (const auto& pair : overlapping_chord_pairs(registry, primary_modifier)) {
+        diagnostics.push_back(warning(diagnostic_code_t::duplicate_binding,
+                                      "shortcut conflict between '" + pair.first.value +
+                                          "' and '" + pair.second.value + "'"));
     }
     return diagnostics;
 }
@@ -441,6 +451,12 @@ auto diagnose_shortcut_conflicts(const command_registry_t& registry,
                                  shortcut_primary_modifier_t primary_modifier)
     -> diagnostic_list_t {
     return profiles_overlap(registry, primary_modifier);
+}
+
+auto find_shortcut_conflicts(const command_registry_t& registry,
+                             shortcut_primary_modifier_t primary_modifier)
+    -> std::vector<shortcut_conflict_t> {
+    return overlapping_chord_pairs(registry, primary_modifier);
 }
 
 auto remap_command(command_registry_t& registry, const command_id_t& id,

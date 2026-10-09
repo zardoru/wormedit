@@ -65,6 +65,8 @@ add_executable(wormedit_core_tests
     core/compose_resource_presenter_tests.cpp
     core/command_registry_tests.cpp
     sys/application_commands_tests.cpp
+    sys/shortcut_rows_tests.cpp
+    ../src/sys/shortcut_rows.cpp
     sys/compose_bookmark_commands_tests.cpp
     sys/bookmark_rename_commands_tests.cpp
     sys/compose_playhead_skip_tests.cpp

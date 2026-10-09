@@ -282,6 +282,18 @@ struct shortcut_profile_result_t {
     const command_registry_t& registry,
     shortcut_primary_modifier_t primary_modifier = shortcut_primary_modifier_t::control)
     -> diagnostic_list_t;
+// The command pairs whose enabled-scope and chord collide, in registry order. These are the
+// same pairs diagnose_shortcut_conflicts reports, as data for callers that must not parse text.
+struct shortcut_conflict_t {
+    command_id_t first;
+    command_id_t second;
+
+    auto operator==(const shortcut_conflict_t&) const -> bool = default;
+};
+[[nodiscard]] auto find_shortcut_conflicts(
+    const command_registry_t& registry,
+    shortcut_primary_modifier_t primary_modifier = shortcut_primary_modifier_t::control)
+    -> std::vector<shortcut_conflict_t>;
 [[nodiscard]] auto serialize_shortcut_profile(const shortcut_profile_t& profile) -> std::string;
 
 struct shortcut_profile_parse_result_t {

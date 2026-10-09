@@ -381,26 +381,6 @@ auto clipboard_commands(command_context_t& context) -> std::optional<command_res
     return command_result_t{.accepted = true};
 }
 
-// Stem taps of a BMSON chart go back to the BGM area instead of cutting their slice point out of
-// the stem. Returns the command result when that settled the Delete, or nothing when the ordinary
-// delete should still run (no stem tap was selected, or other objects remain selected).
-auto delete_stem_taps_to_bgm(command_context_t& context, wormedit::editor_interaction_state_t& state)
-    -> std::optional<command_result_t> {
-    const auto to_bgm = wormedit::sys::move_selected_notes_to_bgm(context.history, state, std::nullopt, true, false);
-    if (!to_bgm.handled) return std::nullopt;
-    if (!to_bgm.command.applied)
-        return reject_application_command(
-            context.sink, to_bgm.command.diagnostics.empty() ? "The notes could not be moved to the BGM area."
-                                                             : to_bgm.command.diagnostics.front().message,
-            notification_severity_t::warning, notification_source_t::edit);
-    post_command_message(context.sink, notification_severity_t::success, notification_source_t::edit,
-                         "Stem notes moved to the BGM area.");
-    const auto rebound = context.rebind();
-    if (!rebound.accepted) return rebound;
-    if (to_bgm.selection_exhausted) return command_result_t{.accepted = true};
-    return std::nullopt;
-}
-
 auto edit_commands(command_context_t& context) -> std::optional<command_result_t> {
     if (const auto result = clipboard_commands(context)) return result;
     if (context.command.kind != command_kind_t::edit_delete) return std::nullopt;
@@ -426,7 +406,6 @@ auto edit_commands(command_context_t& context) -> std::optional<command_result_t
         if (!rebound.accepted) return rebound;
         return command_result_t{.accepted = true};
     }
-    if (const auto moved = delete_stem_taps_to_bgm(context, *state)) return *moved;
     const auto result = wormedit::dispatch_editor_action(
         context.history, *state, wormedit::delete_editor_selection_action_t{});
     auto accepted = accept_editor_command(

@@ -11,6 +11,7 @@
 #include <wormedit/core/notifications.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <limits>
 #include <string>
@@ -2117,5 +2118,52 @@ TEST_CASE("Measure split command keeps later heads fixed and cursor on the new h
     check_bookmark_callback(fixture.fixture.history.undo.size() == 1);
     require_bookmark_callback(fixture.invoke(application_command_kind_t::measures_split_at_cursor).accepted);
     check_bookmark_callback(fixture.fixture.history.undo.size() == 1);
+}
+#endif
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Edit menu Delete stages stem and ordinary removal atomically",
+          "[unit][sys][application_commands][mixed-delete][bmson]") {
+    using namespace wormedit;
+    const auto blocked = GENERATE(false, true);
+    TimingInsertFixture f;
+    auto& history = f.fixture.history;
+    history.document.audio_assets = {{.id = asset_id_t{5}, .stream = {48000, 2, 480000, true}}};
+    history.document.resources = {{.id = resource_id_t{6}, .asset = asset_id_t{5}, .roles = {resource_role_t::sample}}};
+    auto& chart = history.document.charts.front();
+    chart.source_family = format_family_t::bmson;
+    chart.measures.front().notes.resize(2);
+    auto& stem = chart.measures.front().notes.front();
+    stem.sound = resource_id_t{6};
+    stem.sound_channel_event = object_id_t{31};
+    chart.bgm_source_lanes = {{.id = object_id_t{22}, .stem_channel = object_id_t{30}}};
+    chart.sound_channels = {{.id = object_id_t{30}, .source_clip = {.id = clip_id_t{32}, .source = asset_id_t{5}},
+        .events = {{.id = object_id_t{31}, .position = stem.position, .lane = stem.lane}}}};
+    f.compose_state->selected_notes = {object_id_t{1}, object_id_t{2}};
+    f.compose_state->selected_objects = {{editor_selection_object_kind_t::note, object_id_t{1}},
+                                       {editor_selection_object_kind_t::note, object_id_t{2}}};
+    if (blocked) {
+        chart.measures.front().bgm_events.push_back({.id = object_id_t{33},
+            .position = {measure_id_t{1}, 720}, .source_lane = object_id_t{22},
+            .sound = resource_id_t{6}, .sound_channel_event = object_id_t{34}});
+        chart.sound_channels.front().events.push_back({.id = object_id_t{34},
+            .position = {measure_id_t{1}, 720}, .continuation = true, .playable = false});
+        f.compose_state->selected_objects.push_back({editor_selection_object_kind_t::bgm_event, object_id_t{33}});
+    }
+    require_layer_command(validate_document(history.document).empty());
+    const auto before = write_native_project(history.document).bytes;
+    const auto selection = f.compose_state->selected_objects;
+    const auto result = f.invoke(application_command_kind_t::edit_delete);
+    check_layer_command(result.accepted != blocked);
+    check_layer_command(history.undo.size() == (blocked ? 0 : 1));
+    if (blocked) {
+        check_layer_command(write_native_project(history.document).bytes == before);
+        check_layer_command(f.compose_state->selected_objects == selection);
+    } else {
+        check_layer_command(history.document.charts.front().measures.front().notes.empty());
+        check_layer_command(history.document.charts.front().measures.front().bgm_events.size() == 1);
+        require_layer_command(undo_document_command(history));
+        check_layer_command(write_native_project(history.document).bytes == before);
+    }
 }
 #endif

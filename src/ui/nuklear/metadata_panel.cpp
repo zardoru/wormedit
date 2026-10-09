@@ -157,6 +157,7 @@ static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
     state.format_value.clear();
     initialize_bms_field_buffers(metadata);
     initialize_bmson_field_buffers(metadata);
+    initialize_typed_field_buffers(metadata);
 }
 
 static int metadata_buffer_key_changed(const WormUiMetadataView* metadata) {

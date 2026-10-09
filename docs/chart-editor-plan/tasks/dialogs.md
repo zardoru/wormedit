@@ -25,11 +25,12 @@ The causes, found while planning:
 
 ## T-407 Add a shared `chrome::Dialog` component
 
-- **Status:** ready
+- **Status:** done
 - **Mockup:** [unsaved-changes.svg](../mockups/unsaved-changes.svg) (reference: match its structure and hierarchy)
 - **Outcome:** `chrome::Dialog` draws a dialog that follows the rules above. Unit tests show equal left and right insets, a height that fits its content within 1 px after the second frame, Escape mapped to cancel and Enter mapped to the primary action, and no dragging.
 - **Read first:** `src/ui/nuklear/chrome.h` (`menu_panel`, `menu_surface_begin`), `src/ui/nuklear/context_menu.h` (a lifecycle component with the same shape), `src/ui/nuklear/frontend.cpp` (`begin_project_modal`).
 - **Files owned:** new `src/ui/nuklear/dialog.h`, new `src/ui/nuklear/dialog.cpp`, `src/ui/nuklear/chrome.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`, new `tests/ui/dialog_tests.cpp`, this card.
+- **Result (2026-10-09):** `src/ui/nuklear/dialog.h/.cpp` add `chrome::Dialog` with `dialog_begin`, `dialog_footer_begin(buttons, destructive_first)`, `dialog_button(label, role)` and `dialog_end` returning `DialogResult` (primary, secondary, destructive, cancel). It paints through `surface_window_begin` at elevation 2 with 16 px padding and 8 px spacing (restored afterwards), NO_SCROLLBAR, no title bar and no dragging; a modal draws a dimming backdrop window (`rgba(0,0,0,0.35)`) that swallows input; the height is the previous frame's measured content, centered, clamped with a 16 px margin (the body then scrolls). Escape maps to cancel, Enter to primary when a primary button was drawn. `chrome.h` was not edited. Eight unit cases in `tests/ui/dialog_tests.cpp` (insets, height fit within 1 px, restore, Escape/Enter, roles and right alignment, no dragging, modal blocking, clamp) run in the event-harness executable with the `event-harness` label. Existing ad-hoc dialog windows for the migration cards are listed in the batch report.
 - **Steps:**
   1. Give the API `begin(context, id, title, {modal, closable, width})` → bool, `footer_begin()`, `button(label, role)` with roles primary, secondary and destructive, and `end()` → a result enum.
   2. Begin with `NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BORDER`, transparent window fills and a painted surface. Set `window.padding` to (16, 16) and `spacing` to (8, 8) for the duration, and restore them afterwards.

@@ -2552,13 +2552,6 @@ static nk_flags workspace_window_flags(const WormUiWorkspaceView& view) {
     return flags | (project_modal_active(view) ? NK_WINDOW_NO_INPUT : 0);
 }
 
-static bool begin_project_modal(const char* title, struct nk_rect bounds) {
-    nk_window_show(g_context, title, NK_SHOWN);
-    nk_window_set_focus(g_context, title);
-    return nk_begin(g_context, title, bounds,
-                    NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_NO_SCROLLBAR);
-}
-
 static wormedit::ui::chrome::Dialog g_project_modal_dialog;
 
 static void render_new_project_wizard(WormUiWorkspaceAction& action, int width, int height) {

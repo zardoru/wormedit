@@ -13,20 +13,23 @@ enum class UiColor {
     conflict, count
 };
 
-enum class ComposeColor { viewport, rail, grid, label, overview, semantic_layer_none, count };
+enum class ComposeColor {
+    viewport, rail, grid, label, overview, semantic_layer_none, selection_outline, count
+};
 
 // Call once before creating the first frame. WORMEDIT_THEME_DIR overrides the bundled files.
 void load(const std::filesystem::path& bundled_directory);
 auto ui(UiColor color) -> nk_color;
 auto compose(ComposeColor color) -> nk_color;
-auto compose_lane(size_t lane, bool alternate) -> nk_color;
 auto compose_note_accent(size_t index) -> nk_color;
-// Instrument colors for wormedit::lane_key_color_t values (0 = generic: has_color is false).
+// Colors for one wormedit::lane_key_color_t value. Values outside the table use generic.
 struct key_color_t {
     bool has_color{};
     nk_color lane;
     nk_color note;
+    nk_color note_border;
+    nk_color hold_body;
 };
-auto compose_key_color(std::uint8_t key_color, bool alternate) -> key_color_t;
+auto compose_key_color(std::uint8_t key_color) -> key_color_t;
 
 } // namespace wormedit::ui::theme

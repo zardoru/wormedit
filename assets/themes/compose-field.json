@@ -1,17 +1,140 @@
 {
   "description": "Compose canvas colors. Kept separate from application chrome so chart readability can evolve independently.",
+  "scales": {
+    "red": {
+      "100": "#fee2e2",
+      "300": "#fca5a5",
+      "400": "#f87171",
+      "700": "#b91c1c",
+      "900": "#7f1d1d",
+      "950": "#450a0a"
+    },
+    "yellow": {
+      "400": "#facc15",
+      "700": "#a16207",
+      "900": "#713f12",
+      "950": "#422006"
+    },
+    "green": {
+      "400": "#4ade80",
+      "700": "#15803d",
+      "900": "#14532d",
+      "950": "#052e16"
+    },
+    "blue": {
+      "400": "#60a5fa",
+      "500": "#3b82f6",
+      "700": "#1d4ed8",
+      "800": "#1e40af",
+      "900": "#1e3a8a",
+      "950": "#172554"
+    },
+    "amber": {
+      "400": "#fbbf24",
+      "700": "#b45309",
+      "900": "#78350f",
+      "950": "#451a03"
+    },
+    "cyan": {
+      "400": "#22d3ee",
+      "700": "#0e7490",
+      "900": "#164e63",
+      "950": "#083344"
+    },
+    "slate": {
+      "200": "#e2e8f0",
+      "700": "#334155"
+    },
+    "neutral": {
+      "100": "#e9ebf2",
+      "900": "#1e1f28",
+      "950": "#12131a"
+    }
+  },
   "roles": {
     "viewport": "#161921",
     "rail": "#12151d",
     "grid": "#3a4353",
     "label": "#bec4cf",
-    "overview": "#161f2a"
+    "overview": "#161f2a",
+    "selection_outline": "$green.400"
   },
-  "lane_backgrounds": {
-    "scratch": ["#2a273d", "#302c44"],
-    "free_zone": ["#2a313a", "#2f363f"],
-    "foot_pedal": ["#243436", "#283a3b"],
-    "default": ["#212835", "#252d3b"]
+  "key_colors": {
+    "generic": {
+      "note": "#85b6de",
+      "note_border": "#3a5a78",
+      "lane": "#212835",
+      "hold_body": "#85b6de99"
+    },
+    "white": {
+      "note": "$slate.200",
+      "note_border": "$slate.700",
+      "lane": "$neutral.950",
+      "hold_body": "#e2e8f099"
+    },
+    "black": {
+      "note": "$blue.500",
+      "note_border": "$blue.800",
+      "lane": "$blue.950",
+      "hold_body": "#3b82f699"
+    },
+    "scratch": {
+      "note": "$red.400",
+      "note_border": "$red.700",
+      "lane": "$red.950",
+      "hold_body": "#f8717199"
+    },
+    "foot_pedal": {
+      "note": "$cyan.400",
+      "note_border": "$cyan.700",
+      "lane": "$cyan.950",
+      "hold_body": "#22d3ee99"
+    },
+    "free_zone": {
+      "note": "$amber.400",
+      "note_border": "$amber.700",
+      "lane": "$amber.950",
+      "hold_body": "#fbbf2499"
+    },
+    "pms_white": {
+      "note": "$neutral.100",
+      "note_border": "$slate.700",
+      "lane": "$neutral.950",
+      "hold_body": "#e9ebf299"
+    },
+    "pms_yellow": {
+      "note": "$yellow.400",
+      "note_border": "$yellow.700",
+      "lane": "$yellow.950",
+      "hold_body": "#facc1599"
+    },
+    "pms_green": {
+      "note": "$green.400",
+      "note_border": "$green.700",
+      "lane": "$green.950",
+      "hold_body": "#4ade8099"
+    },
+    "pms_blue": {
+      "note": "$blue.400",
+      "note_border": "$blue.700",
+      "lane": "$blue.950",
+      "hold_body": "#60a5fa99"
+    },
+    "pms_red": {
+      "note": "$red.400",
+      "note_border": "$red.700",
+      "lane": "$red.950",
+      "hold_body": "#f8717199"
+    }
   },
-  "note_accents": ["#f2be66", "#b1ce81", "#71b8da", "#e08477", "#cf9968", "#b08eda", "#f474ae", "#82dbce"]
+  "note_accents": [
+    "#f2be66",
+    "#b1ce81",
+    "#71b8da",
+    "#e08477",
+    "#cf9968",
+    "#b08eda",
+    "#f474ae",
+    "#82dbce"
+  ]
 }

@@ -124,8 +124,15 @@ static auto compose_shift_keys(uint16_t modifiers) -> std::uint8_t {
 
 static bool release_compose_key_hold(const auto& key_event, WormUiWorkspaceAction* action) {
     if (!key_event.down) {
-        if (key_event.keycode == static_cast<std::uint32_t>(SDLK_TAB)) {
-            state.tab_navigation.cancel();
+        const auto held = state.tab_navigation.current_action();
+        const bool tab_release = key_event.keycode == static_cast<std::uint32_t>(SDLK_TAB);
+        const bool direction_release = key_event.scancode == state.tab_navigation.direction_scancode;
+        if (held && (state.tab_navigation.tab_down || state.tab_navigation.page_key) &&
+            (tab_release || direction_release))
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0.0, 0.0,
+                                 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE, *held);
+        if (tab_release) {
+            state.tab_navigation.release_tab(SDL_GetTicks());
             return true;
         }
         state.tab_navigation.release_direction(key_event.scancode);
@@ -167,7 +174,7 @@ static bool release_compose_key_hold(const auto& key_event, WormUiWorkspaceActio
     return false;
 }
 
-static void append_tab_navigation_step(WormUiWorkspaceAction* action,
+static void append_measure_navigation_step(WormUiWorkspaceAction* action,
                                        WormUiComposeNavigationAction navigation,
                                        std::uint16_t modifiers, const WormUiComposeView& view,
                                        bool pointer_paint_mode_active) {
@@ -188,8 +195,11 @@ static void append_tab_navigation_step(WormUiWorkspaceAction* action,
 
 static auto compose_page_navigation(WormUiComposeNavigationAction action)
     -> WormUiComposeNavigationAction {
-    return action == WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD ||
-                   action == WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD
+    if (action == WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD)
+        return WORM_UI_COMPOSE_NAVIGATION_DOUBLE_PAGE_BACKWARD;
+    if (action == WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD)
+        return WORM_UI_COMPOSE_NAVIGATION_DOUBLE_PAGE_FORWARD;
+    return action == WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD
                ? WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD
                : WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
 }
@@ -199,7 +209,7 @@ static bool process_compose_tab_key(const auto& event, const WormUiComposeView& 
     if (event.keycode != static_cast<std::uint32_t>(SDLK_TAB)) return false;
     state.raw_tab_down = true;
     const auto step = state.tab_navigation.press_tab(SDL_GetTicks());
-    if (step) append_tab_navigation_step(action, *step, event.modifiers, view,
+    if (step) append_measure_navigation_step(action, *step, event.modifiers, view,
                                          pointer_paint_mode_active);
     return true;
 }
@@ -216,7 +226,7 @@ static bool process_compose_horizontal_tab_key(const auto& event,
     const auto step = state.tab_navigation.press_direction(navigation, event.scancode,
                                                            SDL_GetTicks());
     if (!state.tab_navigation.tab_down) return false;
-    if (step) append_tab_navigation_step(action, *step, event.modifiers, view,
+    if (step) append_measure_navigation_step(action, *step, event.modifiers, view,
                                          pointer_paint_mode_active);
     return true;
 }
@@ -239,10 +249,12 @@ static bool process_compose_navigation_key(const auto& key_event,
         compose_navigation_action_for_key(key, key_event.modifiers, view->downscroll,
                                           &navigation_action);
     }
+    const bool page = navigation_action == WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD ||
+                      navigation_action == WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
     const auto step = state.tab_navigation.press_direction(
-        compose_page_navigation(navigation_action), key_event.scancode, SDL_GetTicks());
-    if (state.tab_navigation.tab_down) {
-        if (step) append_tab_navigation_step(action, *step, key_event.modifiers, *view,
+        compose_page_navigation(navigation_action), key_event.scancode, SDL_GetTicks(), page);
+    if (state.tab_navigation.tab_down || page) {
+        if (step) append_measure_navigation_step(action, *step, key_event.modifiers, *view,
                                              pointer_paint_mode_active);
         return true;
     }
@@ -519,6 +531,6 @@ void process_compose_key_events(struct nk_context* context, const WormUiComposeV
     const auto step = state.tab_navigation.advance(SDL_GetTicks(), keyboard_ready &&
                                                    !state.action_overflowed &&
                                                    !compose_area_capture_active());
-    if (step) append_tab_navigation_step(action, *step, SDL_GetModState(), *view,
+    if (step) append_measure_navigation_step(action, *step, SDL_GetModState(), *view,
                                          pointer_paint_mode_active);
 }

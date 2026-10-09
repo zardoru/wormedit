@@ -198,6 +198,15 @@ auto move_edit_cursor(cursor_navigation_context_t& context,
     return apply_cursor_navigation_target(context, target, *next_row, "cursor movement");
 }
 
+auto apply_page_distance_floor(std::uint64_t origin, std::uint64_t target,
+                                std::uint64_t total_rows,
+                                const page_edit_cursor_action_t& action) -> std::uint64_t {
+    if (action.minimum_rows == 0) return target;
+    if (action.direction == interaction_direction_t::forward)
+        return std::max(target, origin + std::min(action.minimum_rows, total_rows - 1 - origin));
+    return std::min(target, origin - std::min(action.minimum_rows, origin));
+}
+
 auto page_edit_cursor(cursor_navigation_context_t& context,
                       const page_edit_cursor_action_t& action) -> editor_interaction_result_t {
     if (action.direction != interaction_direction_t::backward &&
@@ -234,12 +243,14 @@ auto page_edit_cursor(cursor_navigation_context_t& context,
     const auto rounded = wide_math::add(
         division.quotient,
         remainder_rounds_up(division.remainder.low, source->row_capacity) ? 1U : 0U);
-    if (!wide_math::fits_u64(rounded) || rounded.low >= target_measure->row_capacity)
+    if (!wide_math::fits_u64(rounded) ||
+        (action.minimum_rows == 0 && rounded.low >= target_measure->row_capacity))
         return diagnostic_result(context.history, context.state,
             {error(diagnostic_code_t::row_out_of_range,
                    "cursor page target cannot represent its fractional row")});
-    const auto row = target_measure->begin_row + rounded.low;
-    const auto target = target_measure->authored ? position_at(context.index, row) : std::nullopt;
+    auto row = target_measure->begin_row + std::min(rounded.low, target_measure->row_capacity - 1);
+    row = apply_page_distance_floor(context.absolute, row, canvas->total_rows, action);
+    const auto target = row < context.index.total_rows ? position_at(context.index, row) : std::nullopt;
     return apply_cursor_navigation_target(context, target, row, "cursor paging");
 }
 

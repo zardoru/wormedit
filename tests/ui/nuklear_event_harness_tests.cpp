@@ -5017,3 +5017,78 @@ TEST_CASE("Tab measure chord routes one immediate step suppresses OS repeat and 
     expect_lane_key(!worm_ui_nuklear_compose_state().tab_navigation.direction);
     expect_lane_key(!worm_ui_nuklear_compose_state().tab_navigation.tab_down);
 }
+
+TEST_CASE("Page keys route one measure and Tab doubles their distance in either scroll direction",
+          "[frontend-state][event-harness][tab-repeat]") {
+    const auto tab = GENERATE(false, true);
+    const auto downscroll = GENERATE(false, true);
+    const auto visual_up = GENERATE(false, true);
+    nuklear_event_harness_t h{1280, 900};
+    h.view().compose.downscroll = downscroll;
+    (void)h.frame();
+    if (tab) {
+        const auto event = key_event(SDL_EVENT_KEY_DOWN, SDLK_TAB, SDL_SCANCODE_TAB);
+        (void)h.frame(std::span{&event, 1});
+    }
+    const auto key = visual_up ? SDLK_PAGEUP : SDLK_PAGEDOWN;
+    const auto scancode = visual_up ? SDL_SCANCODE_PAGEUP : SDL_SCANCODE_PAGEDOWN;
+    const auto event = key_event(SDL_EVENT_KEY_DOWN, key, scancode);
+    const auto output = h.frame(std::span{&event, 1});
+    const auto forward = downscroll == visual_up;
+    const auto expected = tab
+        ? (forward ? WORM_UI_COMPOSE_NAVIGATION_DOUBLE_PAGE_FORWARD
+                   : WORM_UI_COMPOSE_NAVIGATION_DOUBLE_PAGE_BACKWARD)
+        : (forward ? WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD
+                   : WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD);
+    std::size_t count{};
+    for (std::size_t i = 0; i < output.get().compose_input_count; ++i) {
+        const auto& input = output.get().compose_inputs[i];
+        if (input.kind != WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP) continue;
+        expect_lane_key(input.navigation_action == expected);
+        ++count;
+    }
+    expect_lane_key(count == 1);
+}
+
+TEST_CASE("Held Page repeats through the measure step path and releases without queued steps",
+          "[frontend-state][event-harness][tab-repeat]") {
+    const auto tab = GENERATE(false, true);
+    const auto release_tab = GENERATE(false, true);
+    nuklear_event_harness_t h{1280, 900};
+    (void)h.frame();
+    if (tab) {
+        const auto event = key_event(SDL_EVENT_KEY_DOWN, SDLK_TAB, SDL_SCANCODE_TAB);
+        (void)h.frame(std::span{&event, 1});
+    }
+    const auto page = key_event(SDL_EVENT_KEY_DOWN, SDLK_PAGEUP, SDL_SCANCODE_PAGEUP);
+    (void)h.frame(std::span{&page, 1});
+    for (int repeat = 0; repeat < 4; ++repeat) {
+        worm_ui_nuklear_compose_state().tab_navigation.next_repeat_ms = SDL_GetTicks();
+        const auto output = h.frame();
+        std::size_t count{};
+        for (std::size_t i = 0; i < output.get().compose_input_count; ++i) {
+            const auto& input = output.get().compose_inputs[i];
+            expect_lane_key(input.kind != WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS);
+            if (input.kind == WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP) ++count;
+        }
+        expect_lane_key(count == 1);
+    }
+    const auto os_repeat = key_event(SDL_EVENT_KEY_DOWN, SDLK_PAGEUP, SDL_SCANCODE_PAGEUP, true);
+    const auto ignored = h.frame(std::span{&os_repeat, 1});
+    for (std::size_t i = 0; i < ignored.get().compose_input_count; ++i)
+        expect_lane_key(ignored.get().compose_inputs[i].kind != WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP);
+    const bool release_modifier = tab && release_tab;
+    const auto release = key_event(SDL_EVENT_KEY_UP,
+        release_modifier ? SDLK_TAB : SDLK_PAGEUP,
+        release_modifier ? SDL_SCANCODE_TAB : SDL_SCANCODE_PAGEUP);
+    const auto output = h.frame(std::span{&release, 1});
+    bool released{};
+    for (std::size_t i = 0; i < output.get().compose_input_count; ++i) {
+        const auto& input = output.get().compose_inputs[i];
+        if (input.kind == WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE) released = true;
+        expect_lane_key(input.kind != WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP);
+    }
+    expect_lane_key(released);
+    if (!release_modifier)
+        expect_lane_key(!worm_ui_nuklear_compose_state().tab_navigation.direction);
+}

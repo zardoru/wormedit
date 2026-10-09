@@ -6718,3 +6718,37 @@ TEST_CASE("Mixed quantize retains playable and BGM stem source points with one U
     feedback_require(undo_document_command(f.history));
     feedback_check(feedback_document_bytes(f.history.document) == before);
 }
+
+namespace {
+void require_page_navigation(const auto& value) { REQUIRE(static_cast<bool>(value)); }
+void check_page_navigation(bool value) { CHECK(value); }
+} // namespace
+
+TEST_CASE("cursor paging minimum crosses tiny measures and clamps at canvas ends",
+          "[unit][core][interaction][navigation]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.measures = {
+        {.id = measure_id_t{1}},
+        {.id = measure_id_t{2}, .definition = {{1, 960}, std::nullopt}},
+        {.id = measure_id_t{3}, .definition = {{1, 960}, std::nullopt}},
+        {.id = measure_id_t{4}},
+    };
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{std::uint64_t{4}};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+        {measure_id_t{1}, 959}, snaps, 4, 192.0);
+    require_page_navigation(setup);
+    auto state = *setup.state;
+    require_page_navigation(dispatch_editor_action(history, state,
+        page_edit_cursor_action_t{interaction_direction_t::forward, 1, 480}));
+    check_page_navigation((state.cursor == local_position_t{measure_id_t{4}, 477}));
+    require_page_navigation(dispatch_editor_action(history, state,
+        page_edit_cursor_action_t{interaction_direction_t::backward, 1, 480}));
+    check_page_navigation((state.cursor == local_position_t{measure_id_t{1}, 959}));
+    require_page_navigation(dispatch_editor_action(history, state,
+        page_edit_cursor_action_t{interaction_direction_t::backward, 2, 960}));
+    check_page_navigation((state.cursor == local_position_t{measure_id_t{1}, 0}));
+    check_page_navigation(history.undo.empty());
+    check_page_navigation(history.document.revision == 1);
+}

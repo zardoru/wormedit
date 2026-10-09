@@ -77,6 +77,10 @@ auto compose_navigation_action(WormUiComposeNavigationAction action)
         return editor_navigation_action_t::page_backward;
     case WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD:
         return editor_navigation_action_t::page_forward;
+    case WORM_UI_COMPOSE_NAVIGATION_DOUBLE_PAGE_BACKWARD:
+        return editor_navigation_action_t::double_page_backward;
+    case WORM_UI_COMPOSE_NAVIGATION_DOUBLE_PAGE_FORWARD:
+        return editor_navigation_action_t::double_page_forward;
     }
     return std::nullopt;
 }
@@ -108,6 +112,35 @@ auto staged_input_severity(bool staged, wormedit::notification_severity_t fallba
     return staged ? wormedit::notification_severity_t::hint : fallback;
 }
 
+auto navigation_measure_count(wormedit::editor_navigation_action_t action) -> std::uint64_t {
+    using enum wormedit::editor_navigation_action_t;
+    switch (action) {
+    case page_backward: case page_forward: return 1;
+    case double_page_backward: case double_page_forward: return 2;
+    default: return 0;
+    }
+}
+
+auto navigation_minimum_rows(const wormedit::document_history_t& history,
+                             const wormedit::editor_interaction_state_t& state,
+                             wormedit::editor_navigation_action_t action) -> std::uint64_t {
+    const auto found = std::ranges::find(history.document.charts, state.chart,
+                                         &wormedit::chart_document_t::id);
+    if (found == history.document.charts.end()) return 0;
+    const auto divisions = found->divisions_per_standard_measure;
+    return navigation_measure_count(action) == 2 ? divisions : divisions / 2 + divisions % 2;
+}
+
+auto navigation_page_message(wormedit::editor_navigation_action_t action) -> std::string_view {
+    using enum wormedit::editor_navigation_action_t;
+    switch (action) {
+    case double_page_backward: return "Edit cursor paged backward by two measures (at least four beats).";
+    case double_page_forward: return "Edit cursor paged forward by two measures (at least four beats).";
+    case page_backward: return "Edit cursor paged backward by one measure (at least two beats).";
+    default: return "Edit cursor paged forward by one measure (at least two beats).";
+    }
+}
+
 // While the preview plays, navigation skips the playhead instead of moving the edit cursor.
 struct playhead_navigation_feedback_t {
     std::string message;
@@ -126,13 +159,14 @@ auto skip_playhead_for_navigation(wormedit::editor_navigation_action_t action,
     if (found == history.document.charts.end())
         return {"The selected difficulty is no longer available."};
     const auto forward = action == editor_navigation_action_t::cursor_forward ||
-                         action == editor_navigation_action_t::page_forward;
-    const auto paged = action == editor_navigation_action_t::page_backward ||
-                       action == editor_navigation_action_t::page_forward;
+                         action == editor_navigation_action_t::page_forward ||
+                         action == editor_navigation_action_t::double_page_forward;
+    const auto measures = navigation_measure_count(action);
+    const auto paged = measures != 0;
     const auto outcome = skip_playing_playhead(
         application, *found, state.active_snap_denominator,
-        paged ? playhead_skip_unit_t::measure : playhead_skip_unit_t::beat,
-        forward ? 1.0 : -1.0);
+        paged ? playhead_skip_unit_t::page : playhead_skip_unit_t::beat,
+        (forward ? 1.0 : -1.0) * (paged ? static_cast<double>(measures) : 1.0));
     return {.message = outcome.status,
             .severity = outcome.accepted ? notification_severity_t::hint
                                          : notification_severity_t::warning,
@@ -173,14 +207,18 @@ auto dispatch_compose_navigation_actions(const wormedit::editor_navigation_actio
             accepted = "Edit cursor moved forward.";
             break;
         case editor_navigation_action_t::page_backward:
+        case editor_navigation_action_t::double_page_backward:
             result = dispatch_editor_action(
-                history, state, page_edit_cursor_action_t{interaction_direction_t::backward, 1});
-            accepted = "Edit cursor paged backward by one measure.";
+                history, state, page_edit_cursor_action_t{interaction_direction_t::backward, navigation_measure_count(actions[index]),
+                    navigation_minimum_rows(history, state, actions[index])});
+            accepted = navigation_page_message(actions[index]);
             break;
         case editor_navigation_action_t::page_forward:
+        case editor_navigation_action_t::double_page_forward:
             result = dispatch_editor_action(
-                history, state, page_edit_cursor_action_t{interaction_direction_t::forward, 1});
-            accepted = "Edit cursor paged forward by one measure.";
+                history, state, page_edit_cursor_action_t{interaction_direction_t::forward, navigation_measure_count(actions[index]),
+                    navigation_minimum_rows(history, state, actions[index])});
+            accepted = navigation_page_message(actions[index]);
             break;
         }
         status = compose_result_status(result, accepted);
@@ -642,8 +680,7 @@ auto dispatch_compose_navigation_input(
     switch (input.kind) {
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP: {
         const auto navigation = compose_navigation_action(input.navigation_action);
-        if (!navigation || (*navigation != editor_navigation_action_t::page_backward &&
-                            *navigation != editor_navigation_action_t::page_forward))
+        if (!navigation || navigation_measure_count(*navigation) == 0)
             return "Compose measure navigation step used an unknown action.";
         editor_navigation_action_batch_t batch;
         batch.actions[batch.count++] = *navigation;
@@ -4029,8 +4066,11 @@ auto dispatch_compose_input_with_travel(const WormUiComposeInputAction& input,
 
 void finish_interrupted_compose_travel(const WormUiComposeInputAction& input,
                                        compose_input_context_t& context) {
+    if (input.kind == WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE) {
+        context.scene_cache.navigation_travel.cancel();
+        return;
+    }
     if (input.kind == WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP ||
-        input.kind == WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE ||
         input.kind == WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION) return;
     // This input was validated against this revision; its own edit may have advanced history.
     context.scene_cache.navigation_travel.finish(

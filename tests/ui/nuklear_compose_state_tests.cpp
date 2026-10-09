@@ -993,7 +993,7 @@ TEST_CASE("SDL Compose wheel unit normalization rejects nonfinite input",
     expect_inline((zero->delta_x==0 && zero->delta_y==0 && zero->coarse_steps));
 }
 
-TEST_CASE("Tab chord pauses 350 milliseconds then repeats every 200 milliseconds", "[frontend][tab-repeat]") {
+TEST_CASE("Tab chord pauses 350 milliseconds then repeats every 100 milliseconds", "[frontend][tab-repeat]") {
     worm_ui_nuklear_tab_navigation_t held;
     const auto page = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
     expect_inline(!held.press_tab(100));
@@ -1001,6 +1001,8 @@ TEST_CASE("Tab chord pauses 350 milliseconds then repeats every 200 milliseconds
     expect_inline(!held.press_direction(page, 82, 130));
     expect_inline(!held.advance(469, true));
     expect_inline(held.advance(470, true) == page);
+    expect_inline(!held.advance(569, true));
+    expect_inline(held.advance(570, true) == page);
     expect_inline(!held.advance(669, true));
     expect_inline(held.advance(670, true) == page);
     expect_inline(held.advance(5'000, true) == page);
@@ -1440,4 +1442,29 @@ TEST_CASE("Invisible notes retain palette RGB with reduced opacity in every colo
     const auto invisible = compose_note_base_fill(view,note);
     expect_inline(visible.r == invisible.r && visible.g == invisible.g && visible.b == invisible.b);
     expect_inline(invisible.a == static_cast<unsigned>(visible.a)*3/5);
+}
+
+TEST_CASE("Plain Page uses Tab cadence and changes distance without retaining repeat debt",
+          "[frontend][tab-repeat]") {
+    worm_ui_nuklear_tab_navigation_t held;
+    const auto one = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+    const auto two = WORM_UI_COMPOSE_NAVIGATION_DOUBLE_PAGE_FORWARD;
+    expect_inline(held.press_direction(two, 78, 100, true) == one);
+    expect_inline(!held.advance(449, true));
+    expect_inline(held.advance(450, true) == one);
+    expect_inline(!held.advance(549, true));
+    expect_inline(held.advance(550, true) == one);
+    expect_inline(held.press_tab(560) == two);
+    expect_inline(!held.advance(909, true));
+    expect_inline(held.advance(910, true) == two);
+    held.release_tab(920);
+    expect_inline(!held.advance(1019, true));
+    expect_inline(held.advance(1020, true) == one);
+    expect_inline(held.advance(5000, true) == one);
+    expect_inline(!held.advance(5000, true));
+    held.release_direction(78);
+    expect_inline(!held.advance(10000, true));
+    expect_inline(held.press_direction(two, 78, 11000, true) == one);
+    expect_inline(!held.advance(12000, false));
+    expect_inline(!held.advance(13000, true));
 }

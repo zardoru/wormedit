@@ -84,6 +84,14 @@ auto playhead_skip_target_row(const measure_index_t& measures, double playhead_r
     }
     case playhead_skip_unit_t::measure:
         return clamp_row(measure_target(measures, playhead_row, amount), measures);
+    case playhead_skip_unit_t::page: {
+        if (divisions_per_measure == 0) return std::nullopt;
+        const auto distance = std::ceil(static_cast<double>(divisions_per_measure) / 2.0 *
+                                        std::abs(std::round(amount)));
+        const auto target = measure_target(measures, playhead_row, amount);
+        return clamp_row(amount > 0 ? std::max(target, playhead_row + distance)
+                                    : std::min(target, playhead_row - distance), measures);
+    }
     case playhead_skip_unit_t::rows:
         return clamp_row(playhead_row + std::round(amount), measures);
     }

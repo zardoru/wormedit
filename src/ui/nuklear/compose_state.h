@@ -88,14 +88,25 @@ inline auto worm_ui_nuklear_beat_fit_line(const WormUiComposeGridLineView& line)
     return line.chart_row != 0 && line.kind >= 1 && line.kind <= 3;
 }
 
-// A canvas-owned Tab chord has its own cadence; ordinary navigation is unchanged.
+// Page keys and Tab chords share one canvas-owned cadence and discard repeat debt.
 struct worm_ui_nuklear_tab_navigation_t {
     bool tab_down{};
+    bool page_key{};
     std::uint32_t direction_scancode{};
     std::optional<WormUiComposeNavigationAction> direction{};
     std::uint64_t next_repeat_ms{};
 
-    void schedule(std::uint64_t now, std::uint64_t delay = 200) noexcept {
+    auto current_action() const noexcept -> std::optional<WormUiComposeNavigationAction> {
+        if (!page_key || tab_down || !direction) return direction;
+        return *direction == WORM_UI_COMPOSE_NAVIGATION_DOUBLE_PAGE_BACKWARD
+            ? WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD : WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+    }
+    void release_tab(std::uint64_t now) noexcept {
+        if (!page_key) { cancel(); return; }
+        tab_down = false;
+        schedule(now);
+    }
+    void schedule(std::uint64_t now, std::uint64_t delay = 100) noexcept {
         constexpr auto maximum = std::numeric_limits<std::uint64_t>::max();
         next_repeat_ms = now > maximum - delay ? maximum : now + delay;
     }
@@ -107,18 +118,20 @@ struct worm_ui_nuklear_tab_navigation_t {
         return direction;
     }
     auto press_direction(WormUiComposeNavigationAction action,
-                         std::uint32_t scancode, std::uint64_t now) noexcept
+                         std::uint32_t scancode, std::uint64_t now, bool page = false) noexcept
         -> std::optional<WormUiComposeNavigationAction> {
         if (direction && direction_scancode == scancode) return std::nullopt;
         direction = action;
         direction_scancode = scancode;
-        if (!tab_down) return std::nullopt;
+        page_key = page;
+        if (!tab_down && !page_key) return std::nullopt;
         schedule(now, 350);
-        return direction;
+        return current_action();
     }
     void release_direction(std::uint32_t scancode) noexcept {
         if (scancode != direction_scancode) return;
         direction.reset();
+        page_key = false;
         direction_scancode = 0;
         next_repeat_ms = 0;
     }
@@ -126,12 +139,12 @@ struct worm_ui_nuklear_tab_navigation_t {
     auto advance(std::uint64_t now, bool canvas_available) noexcept
         -> std::optional<WormUiComposeNavigationAction> {
         if (!canvas_available) { cancel(); return std::nullopt; }
-        if (!tab_down || !direction || now < next_repeat_ms ||
+        if ((!tab_down && !page_key) || !direction || now < next_repeat_ms ||
             next_repeat_ms == std::numeric_limits<std::uint64_t>::max())
             return std::nullopt;
         // Delayed frames emit once and discard debt, never replay a burst of moves.
         schedule(now);
-        return direction;
+        return current_action();
     }
 };
 

@@ -1662,3 +1662,83 @@ TEST_CASE("An edit during Tab travel finishes at the chosen cursor after advanci
     check_action(f.state.viewport_scroll_pixels == destination);
     check_action((f.state.cursor == local_position_t{measure_id_t{2}, 0}));
 }
+
+TEST_CASE("Page navigation distance and minimum match while stopped and playing",
+          "[compose-action-notifications][navigation-travel][playhead-skip]") {
+    const auto playing = GENERATE(false, true);
+    const auto doubled = GENERATE(false, true);
+    const auto short_measures = GENERATE(false, true);
+    bga_input_fixture_t f;
+    auto& chart = f.history.document.charts.front();
+    chart.measures.push_back({.id = measure_id_t{2}});
+    chart.measures.push_back({.id = measure_id_t{3}});
+    chart.measures.push_back({.id = measure_id_t{4}});
+    if (short_measures) {
+        chart.measures[1].definition = {{1, 960}, std::nullopt};
+        chart.measures[2].definition = {{1, 960}, std::nullopt};
+    }
+    place_cursor_at(f.state, {measure_id_t{1}, 959});
+    f.application.transport_preview_playing = [=] { return playing; };
+    f.application.preview_playhead_absolute_row = 959;
+    f.application.transport_seek = [](std::uint64_t) { return std::string{}; };
+    auto action = f.input(doubled ? WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP
+                                  : WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
+    action.compose_inputs[0].navigation_action = doubled
+        ? WORM_UI_COMPOSE_NAVIGATION_DOUBLE_PAGE_FORWARD : WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+    (void)f.dispatch_input(action);
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto expected = short_measures ? (doubled ? 1919 : 1439) : (doubled ? 2879 : 1919);
+    if (playing) check_action(f.application.preview_playhead_absolute_row == expected);
+    else check_action(absolute_row(index, f.state.cursor) == expected);
+    f.check_unchanged(1);
+}
+
+TEST_CASE("Measure key release freezes the viewport and discards all remaining travel",
+          "[compose-action-notifications][navigation-travel]") {
+    const auto doubled = GENERATE(false, true);
+    bga_input_fixture_t f;
+    auto& chart = f.history.document.charts.front();
+    chart.measures.push_back({.id = measure_id_t{2}});
+    chart.measures.push_back({.id = measure_id_t{3}});
+    f.state.pixels_per_standard_measure = 600;
+    f.state.viewport_scroll_pixels = -100;
+    auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP, 0);
+    action.compose_inputs[0].navigation_action = doubled
+        ? WORM_UI_COMPOSE_NAVIGATION_DOUBLE_PAGE_FORWARD : WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+    (void)f.dispatch_input(action);
+    require_action(f.cache.navigation_travel.target.has_value());
+    auto idle = action;
+    idle.compose_input_count = 0;
+    (void)dispatch_compose_input_action(idle, f.history, f.workspace, f.state, f.viewport,
+        f.navigation, f.application, f.cache, 0.02, &f.sink);
+    const auto stopped_scroll = f.state.viewport_scroll_pixels;
+    const auto stopped_cursor = f.state.cursor;
+    action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE;
+    (void)f.dispatch_input(action);
+    check_action(!f.cache.navigation_travel.target);
+    (void)dispatch_compose_input_action(idle, f.history, f.workspace, f.state, f.viewport,
+        f.navigation, f.application, f.cache, 0.1, &f.sink);
+    check_action(f.state.viewport_scroll_pixels == stopped_scroll);
+    check_action(f.state.cursor == stopped_cursor);
+    f.check_unchanged(1);
+}
+
+TEST_CASE("Large measure travel reaches only the latest destination within 75 milliseconds",
+          "[compose-action-notifications][navigation-travel]") {
+    editor_interaction_state_t state;
+    state.chart = chart_id_t{1};
+    state.pixels_per_standard_measure = 100;
+    state.viewport_scroll_pixels = 2000;
+    compose_navigation_travel_t travel;
+    travel.begin(state, 1, 0);
+    travel.advance(state, 1, false, 0.02);
+    const auto intermediate = state.viewport_scroll_pixels;
+    check_action(intermediate > 0 && intermediate < 2000);
+    state.viewport_scroll_pixels = 4000;
+    travel.begin(state, 1, intermediate);
+    travel.advance(state, 1, false, 0.075);
+    check_action(state.viewport_scroll_pixels == 4000);
+    check_action(!travel.target);
+    travel.advance(state, 1, false, 0.1);
+    check_action(state.viewport_scroll_pixels == 4000);
+}

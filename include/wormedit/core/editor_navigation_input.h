@@ -15,6 +15,8 @@ enum class editor_navigation_action_t {
     cursor_forward,
     page_backward,
     page_forward,
+    double_page_backward,
+    double_page_forward,
 };
 
 inline constexpr std::size_t maximum_editor_navigation_actions_per_advance = 4;

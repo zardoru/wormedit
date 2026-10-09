@@ -121,3 +121,23 @@ TEST_CASE("beat skips ignore editing snap including unsupported denominators", "
     check_beat_skip(playhead_skip_target_row(two_measures(), 1, playhead_skip_unit_t::beat, 1, 5, 16) == 2);
     check_beat_skip(playhead_skip_target_row(two_measures(), 1, playhead_skip_unit_t::beat, -1, 1, 16) == 0);
 }
+
+TEST_CASE("page skips enforce two beats per step across tiny measures", "[sys][playhead-skip]") {
+    auto measures = two_measures();
+    measures.entries = {
+        {.id = measure_id_t{1}, .absolute_begin_row = 0, .row_capacity = 960},
+        {.id = measure_id_t{2}, .absolute_begin_row = 960, .row_capacity = 1},
+        {.id = measure_id_t{3}, .absolute_begin_row = 961, .row_capacity = 1},
+        {.id = measure_id_t{4}, .absolute_begin_row = 962, .row_capacity = 960},
+    };
+    measures.total_rows = 1922;
+    const auto target = [&](double row, double amount) {
+        return playhead_skip_target_row(measures, row, playhead_skip_unit_t::page, amount, 960, 4);
+    };
+    CHECK(target(959, 1) == 1439);
+    CHECK(target(1439, -1) == 959);
+    CHECK(target(959, 2) == 1919);
+    CHECK(target(1919, 1) == 1921);
+    CHECK(target(10, -2) == 0);
+    CHECK(skip(100, playhead_skip_unit_t::page, 1) == 1060);
+}

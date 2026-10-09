@@ -64,6 +64,8 @@ struct move_edit_cursor_action_t {
 struct page_edit_cursor_action_t {
     interaction_direction_t direction{interaction_direction_t::forward};
     std::uint64_t measure_count{1};
+    // Optional absolute row-distance floor, clamped to canvas ends.
+    std::uint64_t minimum_rows{};
 };
 
 // Moves directly to an exact chart position without applying the active snap.

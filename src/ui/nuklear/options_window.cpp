@@ -1,5 +1,6 @@
 #include "ui/nuklear/options_window.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/shortcuts_panel.h"
 #include "wormedit/nuklear_config.h"
 #include <array>
 
@@ -77,7 +78,7 @@ void audio_page(nk_context* context, const WormUiOptionsView* view, WormUiOption
     nk_label_wrap(context, "Raising the budget loads skipped keysounds for the open project. Lowering it limits future loads and keeps playing sounds in memory.");
 }
 std::array<WormUiOptionsPageRenderer, WORM_UI_OPTIONS_CATEGORY_COUNT> pages{
-    general_page, editor_page, audio_page, placeholder, placeholder, placeholder};
+    general_page, editor_page, audio_page, placeholder, wormedit::ui::nuklear::render_shortcuts_page, placeholder};
 void emit(WormUiOptionsAction& action, const WormUiOptionsView& view, WormUiOptionsActionKind kind) {
     if (action.kind != WORM_UI_OPTIONS_NONE) return;
     action = {.kind = kind, .revision = view.revision, .category = view.category};
@@ -131,6 +132,9 @@ bool worm_ui_nuklear_options_view_valid(const WormUiOptionsView* view) {
     if ((view->diagnostic_count && !view->diagnostics) || (view->player_count && !view->players)) return false;
     for (size_t i = 0; i < view->diagnostic_count; ++i)
         if (!view->diagnostics[i].message) return false;
+    if (view->shortcut_row_count > WORM_UI_SHORTCUT_ROW_CAPACITY || (view->shortcut_row_count && !view->shortcut_rows)) return false;
+    for (size_t i = 0; i < view->shortcut_row_count; ++i)
+        if (!view->shortcut_rows[i].label || !view->shortcut_rows[i].chord) return false;
     return true;
 }
 void worm_ui_nuklear_render_options_window(nk_context* context, const WormUiOptionsView* view,

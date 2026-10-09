@@ -3066,6 +3066,41 @@ TEST_CASE("Options Audio exposes and edits the keysound memory field", "[options
     check_keysound_edit_action(edited->get().options);
 }
 
+TEST_CASE("Input shortcuts page lists rows and Change requests a capture", "[options][shortcuts][event-harness]") {
+    nuklear_event_harness_t harness{1280, 900};
+    static const WormUiShortcutRowView rows[]{{"Play", "Space", false}, {"Undo", "Ctrl+Z", true}};
+    harness.view().options = {.visible = true, .revision = 33, .category = WORM_UI_OPTIONS_INPUT,
+        .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = "",
+        .shortcut_rows = rows, .shortcut_row_count = 2};
+    (void)harness.frame();
+    REQUIRE(harness.drawn_text_center("Undo"));
+    REQUIRE(harness.drawn_text_center("Ctrl+Z  (conflict)"));
+    // Rows draw top to bottom, so the last "Change" label belongs to the second row.
+    const auto change = harness.drawn_text_center("Change");
+    REQUIRE(change);
+    const auto clicks = click_at(harness, change->first, change->second);
+    const auto requested = std::ranges::find_if(clicks, [](const auto& frame) {
+        return frame.get().options.kind == WORM_UI_OPTIONS_SHORTCUT_CAPTURE;
+    });
+    REQUIRE(requested != clicks.end());
+    CHECK(requested->get().options.shortcut_row == 1);
+}
+
+TEST_CASE("Key presses during a shortcut capture reach the frame's shortcut events", "[options][shortcuts][event-harness]") {
+    nuklear_event_harness_t harness{1280, 900};
+    static const WormUiShortcutRowView rows[]{{"Play", "Space", false}};
+    harness.view().options = {.visible = true, .revision = 34, .category = WORM_UI_OPTIONS_INPUT,
+        .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = "",
+        .shortcut_rows = rows, .shortcut_row_count = 1, .shortcut_capturing = true, .shortcut_capture_row = 0};
+    (void)harness.frame();
+    REQUIRE(harness.drawn_text_center("Press a chord..."));
+    const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_K, SDL_SCANCODE_K);
+    const std::array<SDL_Event, 1> events{press};
+    const auto snapshot = harness.frame(events);
+    REQUIRE(snapshot.get().shortcut_event_count == 1);
+    CHECK(snapshot.get().shortcut_events[0].hid_usage == 0x0e);
+}
+
 namespace {
 void section_import_check(bool value) { CHECK(value); }
 void section_import_require(bool value) { REQUIRE(value); }

@@ -361,6 +361,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/external_player_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/options_window.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/shortcuts_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/notification_toasts.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/notification_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/tap_timing_panel.cpp"

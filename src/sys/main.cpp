@@ -43,6 +43,7 @@
 #include "sys/external_player.h"
 #include "sys/preferences_runtime.h"
 #include "sys/options_runtime.h"
+#include <set>
 #include "sys/notification_history_runtime.h"
 #include <SDL3/SDL_clipboard.h>
 #include "sys/project_view.h"
@@ -1175,12 +1176,224 @@ void initialize_preferred_transport(const wormedit::program_preferences_t& prefe
         state.transport_keep_pitch = preferences.audio.keep_pitch;
 }
 
+constexpr auto application_primary_modifier() -> wormedit::shortcut_primary_modifier_t {
+#if defined(__APPLE__)
+    return wormedit::shortcut_primary_modifier_t::meta;
+#else
+    return wormedit::shortcut_primary_modifier_t::control;
+#endif
+}
+
+auto shortcut_profile_path(const wormedit::sys::program_preferences_runtime_t& preferences)
+    -> std::filesystem::path {
+    auto path = std::filesystem::path{preferences.preferences.general.shortcut_profile_path};
+    if (path.is_relative()) path = preferences.path.parent_path() / path;
+    return path;
+}
+
 auto load_preferred_shortcuts(const wormedit::sys::program_preferences_runtime_t& preferences,
     wormedit::command_registry_t& registry) -> wormedit::shortcut_profile_startup_result_t {
     if (preferences.path.empty()) return {};
-    auto path = std::filesystem::path{preferences.preferences.general.shortcut_profile_path};
-    if (path.is_relative()) path = preferences.path.parent_path() / path;
-    return wormedit::load_shortcut_profile_for_startup(path, registry);
+    return wormedit::load_shortcut_profile_for_startup(shortcut_profile_path(preferences), registry);
+}
+
+// Input & shortcuts model: bounded rows and key capture, kept free of UI toolkit types.
+// Rows point into the projection's strings, which are rebuilt every frame.
+constexpr std::uint16_t first_letter_usage = 0x04;
+constexpr std::uint16_t last_letter_usage = 0x1d;
+constexpr std::uint16_t first_digit_usage = 0x1e;
+constexpr std::uint16_t last_digit_usage = 0x26;
+constexpr std::uint16_t digit_zero_usage = 0x27;
+constexpr std::uint16_t first_function_usage = 0x3a;
+constexpr std::uint16_t last_function_usage = 0x45;
+constexpr std::size_t max_chords_shown = 8;
+
+auto key_name(std::uint16_t usage) -> std::string {
+    if (usage >= first_letter_usage && usage <= last_letter_usage)
+        return std::string(1, static_cast<char>('A' + (usage - first_letter_usage)));
+    if (usage >= first_digit_usage && usage <= last_digit_usage)
+        return std::string(1, static_cast<char>('1' + (usage - first_digit_usage)));
+    if (usage == digit_zero_usage) return "0";
+    if (usage >= first_function_usage && usage <= last_function_usage)
+        return "F" + std::to_string(usage - first_function_usage + 1);
+    switch (static_cast<wormedit::shortcut_key_t>(usage)) {
+    case wormedit::shortcut_key_t::enter: return "Enter";
+    case wormedit::shortcut_key_t::escape: return "Escape";
+    case wormedit::shortcut_key_t::backspace: return "Backspace";
+    case wormedit::shortcut_key_t::space: return "Space";
+    case wormedit::shortcut_key_t::delete_key: return "Delete";
+    case wormedit::shortcut_key_t::right: return "Right";
+    case wormedit::shortcut_key_t::left: return "Left";
+    case wormedit::shortcut_key_t::down: return "Down";
+    case wormedit::shortcut_key_t::up: return "Up";
+    default: return {};
+    }
+}
+
+// Quoted command ids in wormedit::diagnose_shortcut_conflicts messages ("... between 'a' and 'b'").
+auto conflicting_command_ids(const wormedit::diagnostic_list_t& diagnostics) -> std::set<std::string> {
+    std::set<std::string> ids;
+    for (const auto& diagnostic : diagnostics) {
+        std::size_t open = diagnostic.message.find('\'');
+        while (open != std::string::npos) {
+            const auto close = diagnostic.message.find('\'', open + 1);
+            if (close == std::string::npos) break;
+            ids.insert(diagnostic.message.substr(open + 1, close - open - 1));
+            open = diagnostic.message.find('\'', close + 1);
+        }
+    }
+    return ids;
+}
+
+auto shortcut_chord_text(const wormedit::shortcut_chord_t& chord) -> std::string {
+    const auto key = key_name(static_cast<std::uint16_t>(chord.key));
+    if (key.empty()) return {};
+    constexpr std::array<std::pair<wormedit::shortcut_modifier_t, std::string_view>, 5> names{{
+        {wormedit::shortcut_modifier_t::control, "Ctrl"}, {wormedit::shortcut_modifier_t::shift, "Shift"},
+        {wormedit::shortcut_modifier_t::alt, "Alt"}, {wormedit::shortcut_modifier_t::meta, "Meta"},
+        {wormedit::shortcut_modifier_t::primary, "Primary"}}};
+    std::string text;
+    for (const auto& [modifier, name] : names) {
+        if ((chord.modifiers & static_cast<wormedit::shortcut_modifiers_t>(modifier)) == 0) continue;
+        text += std::string(name) + "+";
+    }
+    return text + key;
+}
+
+struct shortcut_rows_projection_t {
+    std::vector<WormUiShortcutRowView> rows;
+    std::vector<wormedit::command_id_t> commands;
+    std::vector<std::string> labels;
+    std::vector<std::string> chords;
+};
+
+auto shortcut_chord_list_text(const std::vector<wormedit::shortcut_chord_t>& chords) -> std::string {
+    if (chords.empty()) return "Unbound";
+    std::string text;
+    for (std::size_t index = 0; index < chords.size() && index < max_chords_shown; ++index) {
+        if (index != 0) text += ", ";
+        text += shortcut_chord_text(chords[index]);
+    }
+    return text;
+}
+
+void project_shortcut_rows(const wormedit::command_registry_t& registry,
+                           wormedit::shortcut_primary_modifier_t primary, shortcut_rows_projection_t& out) {
+    const auto conflicts = conflicting_command_ids(wormedit::diagnose_shortcut_conflicts(registry, primary));
+    const auto count = std::min(registry.commands.size(),
+                                static_cast<std::size_t>(WORM_UI_SHORTCUT_ROW_CAPACITY));
+    out.commands.clear();
+    out.labels.clear();
+    out.chords.clear();
+    out.rows.clear();
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& command = registry.commands[index];
+        out.commands.push_back(command.id);
+        out.labels.push_back(command.display_name.empty() ? command.id.value : command.display_name);
+        out.chords.push_back(shortcut_chord_list_text(command.current_shortcuts));
+    }
+    for (std::size_t index = 0; index < count; ++index) {
+        out.rows.push_back({.label = out.labels[index].c_str(), .chord = out.chords[index].c_str(),
+                            .conflict = conflicts.contains(out.commands[index].value)});
+    }
+}
+
+
+auto captured_shortcut_chord(std::span<const WormUiShortcutEvent> events)
+    -> std::optional<wormedit::shortcut_chord_t> {
+    for (const auto& event : events) {
+        if (event.repeat || event.tap_timing_space || key_name(event.hid_usage).empty()) continue;
+        return wormedit::shortcut_chord_t{.key = static_cast<wormedit::shortcut_key_t>(event.hid_usage),
+                                .modifiers = event.modifiers};
+    }
+    return std::nullopt;
+}
+
+// Input & shortcuts editing: the projection feeds the Options page, and `capture` holds
+// the command waiting for its next key press.
+struct shortcut_editor_runtime_t {
+    shortcut_rows_projection_t rows;
+    std::optional<wormedit::command_id_t> capture;
+};
+
+// Fills the page rows only while Input & shortcuts is the visible category.
+void attach_shortcut_rows(WormUiOptionsView& view, const wormedit::sys::options_runtime_t& options,
+    shortcut_editor_runtime_t& editor, const wormedit::command_registry_t& registry) {
+    if (!options.visible || options.category != WORM_UI_OPTIONS_INPUT) {
+        editor.capture.reset();
+        return;
+    }
+    project_shortcut_rows(registry, application_primary_modifier(), editor.rows);
+    view.shortcut_rows = editor.rows.rows.data();
+    view.shortcut_row_count = editor.rows.rows.size();
+    const auto capturing = editor.capture ? std::ranges::find(editor.rows.commands, *editor.capture)
+                                          : editor.rows.commands.end();
+    view.shortcut_capturing = capturing != editor.rows.commands.end();
+    view.shortcut_capture_row = view.shortcut_capturing
+        ? static_cast<std::size_t>(capturing - editor.rows.commands.begin()) : 0;
+    if (!view.shortcut_capturing) editor.capture.reset();
+}
+
+// Returns true when the action belonged to the shortcut editor and was consumed here.
+auto handle_shortcut_editor_action(shortcut_editor_runtime_t& editor, const WormUiOptionsAction& action,
+    const wormedit::sys::options_runtime_t& options, wormedit::notification_sink_t& notifications) -> bool {
+    if (action.kind != WORM_UI_OPTIONS_SHORTCUT_CAPTURE && action.kind != WORM_UI_OPTIONS_SHORTCUT_CANCEL)
+        return false;
+    if (action.revision != options.revision) return true;
+    if (action.kind == WORM_UI_OPTIONS_SHORTCUT_CANCEL) {
+        editor.capture.reset();
+        return true;
+    }
+    if (action.shortcut_row >= editor.rows.commands.size()) {
+        notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::input,
+                           "That shortcut row is no longer available.");
+        return true;
+    }
+    editor.capture = editor.rows.commands[action.shortcut_row];
+    return true;
+}
+
+// Remaps and persists one captured chord. The in-memory mapping stays even when the save fails.
+void remap_and_save_shortcut(wormedit::command_registry_t& registry, const wormedit::command_id_t& id,
+    const wormedit::shortcut_chord_t& chord, const wormedit::sys::program_preferences_runtime_t& preferences,
+    wormedit::notification_sink_t& notifications) {
+    const auto remapped = wormedit::remap_command(registry, id, {chord});
+    if (!remapped.applied) {
+        notifications.post(wormedit::notification_severity_t::error, wormedit::notification_source_t::input,
+                           remapped.diagnostics.empty() ? "Shortcut could not be changed."
+                                                        : remapped.diagnostics.front().message);
+        return;
+    }
+    const auto saved = wormedit::save_shortcut_profile_atomic(shortcut_profile_path(preferences),
+                                                              wormedit::make_shortcut_profile(registry, "user"));
+    if (saved)
+        notifications.post(wormedit::notification_severity_t::success, wormedit::notification_source_t::input,
+                           "Shortcut saved: " + id.value);
+    else
+        notifications.post(wormedit::notification_severity_t::error, wormedit::notification_source_t::system,
+                           "Shortcut kept for this session, but the profile was not saved: " + saved.error);
+    if (!remapped.diagnostics.empty())
+        notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::input,
+                           "Shortcut conflict: " + remapped.diagnostics.front().message);
+}
+
+// Consumes the frame's key batch while a capture is waiting, so no command runs from it.
+void consume_shortcut_capture(shortcut_editor_runtime_t& editor, WormUiWorkspaceAction& action,
+    wormedit::command_registry_t& registry, const wormedit::sys::program_preferences_runtime_t& preferences,
+    wormedit::notification_sink_t& notifications) {
+    if (!editor.capture) return;
+    const auto chord = captured_shortcut_chord(
+        {action.shortcut_events, action.shortcut_event_count});
+    if (!chord) return;
+    action.shortcut_event_count = 0;
+    const auto id = *editor.capture;
+    editor.capture.reset();
+    if (chord->key == wormedit::shortcut_key_t::escape && chord->modifiers == 0) {
+        notifications.post(wormedit::notification_severity_t::info, wormedit::notification_source_t::input,
+                           "Shortcut change canceled.");
+        return;
+    }
+    remap_and_save_shortcut(registry, id, *chord, preferences, notifications);
 }
 
 void persist_session_preferences(wormedit::sys::program_preferences_runtime_t& runtime,
@@ -1222,6 +1435,15 @@ void dispatch_options_frame_action(wormedit::sys::options_runtime_t& options,
         ++players.revision;
     }
     if (options.category == WORM_UI_OPTIONS_AUDIO) initialize_preferred_transport(program.preferences, state);
+}
+
+// Shortcut-editor actions never reach the program-preference runtime.
+void dispatch_options_page_action(shortcut_editor_runtime_t& editor, wormedit::sys::options_runtime_t& options,
+    wormedit::sys::program_preferences_runtime_t& program, const WormUiOptionsAction& action,
+    external_player_runtime_t& players, application_command_state_t& state,
+    wormedit::native_project_autosave_loop_t& autosave, wormedit::notification_sink_t& notifications) {
+    if (handle_shortcut_editor_action(editor, action, options, notifications)) return;
+    dispatch_options_frame_action(options, program, action, players, state, autosave, notifications);
 }
 
 auto external_source_measure(const wormedit::chart_document_t& chart,
@@ -1600,13 +1822,6 @@ auto application_command_focus(const WormUiWorkspaceAction& action,
     return focus;
 }
 
-constexpr auto application_primary_modifier() -> wormedit::shortcut_primary_modifier_t {
-#if defined(__APPLE__)
-    return wormedit::shortcut_primary_modifier_t::meta;
-#else
-    return wormedit::shortcut_primary_modifier_t::control;
-#endif
-}
 
 void post_shortcut_rejection(wormedit::notification_sink_t& notifications,
                             const wormedit::command_registry_t& registry,
@@ -3909,6 +4124,7 @@ int main(int argc, char** argv) {
     external_player_runtime_t external_player_runtime;
     wormedit::sys::project_chart_runtime_t project_chart_runtime;
     wormedit::sys::options_runtime_t options_runtime;
+    shortcut_editor_runtime_t shortcut_editor;
     pending_close_t pending_close;
     auto program_preferences = wormedit::sys::load_program_preferences_runtime();
     initialize_program_preferences(program_preferences, external_player_runtime, application_command_state, notification_sink);
@@ -4252,6 +4468,7 @@ int main(int argc, char** argv) {
             flattened.view.transport_keep_pitch_available = application_command_state.transport_keep_pitch_available;
             flattened.view.notifications = notification_view;
             flattened.view.options = wormedit::sys::options_view(options_runtime);
+            attach_shortcut_rows(flattened.view.options, options_runtime, shortcut_editor, command_registry);
             flattened.view.timing_settings_visible = application_command_state.timing_settings_visible;
             flattened.view.metronome_volume = application_command_state.metronome_volume;
             flattened.view.metronome_count_in = application_command_state.metronome_count_in;
@@ -4289,7 +4506,7 @@ int main(int argc, char** argv) {
 #endif
                 dispatch_open_workspace_actions(pending_close, workspace_frame_action_context, action,
                     program_preferences.preferences.general.confirm_unsaved_close, [&] {
-                dispatch_options_frame_action(options_runtime, program_preferences, action.options,
+                dispatch_options_page_action(shortcut_editor, options_runtime, program_preferences, action.options,
                     external_player_runtime, application_command_state, autosave_loop, notification_sink);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
                 resident_loader.set_budget_bytes(static_cast<std::size_t>(program_preferences.preferences.audio.keysound_budget_mib) * 1024ULL * 1024ULL);
@@ -4299,6 +4516,8 @@ int main(int argc, char** argv) {
                 post_tap_apply_feedback(tap_applied, notification_sink);
                 wormedit::sys::apply_timing_settings_action(application_command_state, action.timing_settings);
                 publish_tap_assist();
+                consume_shortcut_capture(shortcut_editor, action, command_registry, program_preferences,
+                    notification_sink);
                 const bool shortcut_handled = process_compose_frame_action(
                     compose_frame_action_context, action, compose_viewport_delta_seconds);
                 const bool external_handled =

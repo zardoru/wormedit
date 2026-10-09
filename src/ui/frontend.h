@@ -2004,6 +2004,13 @@ typedef struct WormUiOptionsDiagnostic {
     WormUiOptionsField field;
     const char* message;
 } WormUiOptionsDiagnostic;
+// Input & shortcuts rows: one per registry command, at most the registry's command cap.
+#define WORM_UI_SHORTCUT_ROW_CAPACITY 512
+typedef struct WormUiShortcutRowView {
+    const char* label;
+    const char* chord;
+    bool conflict;
+} WormUiShortcutRowView;
 typedef struct WormUiOptionsView {
     bool visible;
     uint64_t revision;
@@ -2027,11 +2034,17 @@ typedef struct WormUiOptionsView {
     const WormUiOptionsDiagnostic* diagnostics;
     size_t diagnostic_count;
     const char* status;
+    // Input & shortcuts page only; empty when that page is not the active category.
+    const WormUiShortcutRowView* shortcut_rows;
+    size_t shortcut_row_count;
+    bool shortcut_capturing;
+    size_t shortcut_capture_row;
 } WormUiOptionsView;
 typedef enum WormUiOptionsActionKind {
     WORM_UI_OPTIONS_NONE = 0, WORM_UI_OPTIONS_OPEN, WORM_UI_OPTIONS_CLOSE,
     WORM_UI_OPTIONS_SELECT_CATEGORY, WORM_UI_OPTIONS_APPLY,
-    WORM_UI_OPTIONS_REVERT, WORM_UI_OPTIONS_DEFAULTS, WORM_UI_OPTIONS_EDIT_FIELD
+    WORM_UI_OPTIONS_REVERT, WORM_UI_OPTIONS_DEFAULTS, WORM_UI_OPTIONS_EDIT_FIELD,
+    WORM_UI_OPTIONS_SHORTCUT_CAPTURE, WORM_UI_OPTIONS_SHORTCUT_CANCEL
 } WormUiOptionsActionKind;
 // EDIT_FIELD payload is consumed immediately; strings are bounded and owned.
 #define WORM_UI_OPTIONS_TEXT_CAPACITY 4097
@@ -2044,6 +2057,8 @@ typedef struct WormUiOptionsAction {
     bool boolean;
     uint32_t player_index;
     uint32_t family_index;
+    // SHORTCUT_CAPTURE: index into the view's shortcut rows.
+    uint32_t shortcut_row;
     char text[WORM_UI_OPTIONS_TEXT_CAPACITY];
 } WormUiOptionsAction;
 

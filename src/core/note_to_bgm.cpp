@@ -594,4 +594,79 @@ auto move_selected_objects_to_lane(document_history_t& history, std::uint64_t ex
                                    "Assign selected objects to lane");
 }
 
+namespace {
+auto note_conversion_pending(const editor_interaction_state_t& state) -> bool {
+    return state.pending_hold || !state.additional_keyboard_holds.empty() ||
+           state.pending_virtual_lane_key || state.pending_note_duration_gesture ||
+           state.pending_note_move_gesture || state.pending_note_paint_gesture ||
+           state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
+           state.pending_space_range_selection;
+}
+
+auto selected_conversion_notes(const editor_interaction_state_t& state) -> std::vector<object_id_t> {
+    auto ids = state.selected_notes;
+    for (const auto& object : state.selected_objects)
+        if (object.kind == editor_selection_object_kind_t::note) ids.push_back(object.id);
+    std::ranges::sort(ids, {}, &object_id_t::value);
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    return ids;
+}
+
+auto first_conversion_note(const chart_document_t& chart, std::span<const object_id_t> ids)
+    -> object_id_t {
+    using key_t = std::tuple<std::size_t, std::uint64_t, std::uint64_t, std::uint64_t>;
+    std::optional<key_t> first;
+    for (std::size_t i = 0; i < chart.measures.size(); ++i)
+        for (const auto& note : chart.measures[i].notes) {
+            if (std::ranges::find(ids, note.id) == ids.end()) continue;
+            const key_t key{i, note.position.row, note.lane.value, note.id.value};
+            if (!first || key < *first) first = key;
+        }
+    return first ? object_id_t{std::get<3>(*first)} : object_id_t{};
+}
+
+void finish_note_conversion_selection(editor_interaction_state_t& state,
+                                       std::span<const object_id_t> moving, bool successive) {
+    const auto moved = [&](object_id_t id) { return std::ranges::find(moving, id) != moving.end(); };
+    std::erase_if(state.selected_notes, moved);
+    std::erase_if(state.selected_objects, [&](const auto& object) {
+        return object.kind == editor_selection_object_kind_t::note && moved(object.id);
+    });
+    if (!successive)
+        for (const auto id : moving)
+            state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, id});
+}
+} // namespace
+
+auto move_editor_selection_to_bgm(document_history_t& history, std::uint64_t expected_revision,
+                                  editor_interaction_state_t& state,
+                                  std::optional<object_id_t> lane, bool successive)
+    -> selected_note_to_bgm_result_t {
+    auto moving = selected_conversion_notes(state);
+    if (moving.empty()) return {};
+    selected_note_to_bgm_result_t result{.handled = true};
+    if (expected_revision != history.document.revision || note_conversion_pending(state)) {
+        result.command = rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                                   "note move to BGM has stale input or an active gesture");
+        return result;
+    }
+    const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    if (chart == history.document.charts.end()) {
+        result.command = rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                                   "note move to BGM refers to an unknown chart");
+        return result;
+    }
+    const auto selected = partition_selected_notes(*chart, moving);
+    if (selected.error) {
+        result.command = {.revision = history.document.revision, .diagnostics = {*selected.error}};
+        return result;
+    }
+    if (successive) moving = {first_conversion_note(*chart, moving)};
+    result.command = move_notes_to_bgm(history, expected_revision, state.chart, moving, lane);
+    if (!result.command.applied) return result;
+    finish_note_conversion_selection(state, moving, successive);
+    result.selection_exhausted = state.selected_notes.empty() && state.selected_objects.empty();
+    return result;
+}
+
 } // namespace wormedit

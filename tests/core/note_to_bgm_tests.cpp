@@ -8,6 +8,7 @@
 #include "sys/compose_note_to_bgm.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <array>
@@ -1012,4 +1013,57 @@ TEST_CASE("a BMSON stem marker moves to a playfield lane and back without losing
     const auto tap = std::ranges::find(note->notes, marker.id, &note_t::id);
     CHECK(tap->sound_channel_event == marker.sound_channel_event);
     CHECK(tap->lane == lane);
+}
+
+TEST_CASE("Core Move to BGM owns mixed selection and successive document order",
+          "[unit][core][note-to-bgm][selection-to-bgm]") {
+    const auto successive = GENERATE(false, true);
+    auto song = plain_song();
+    song.charts.front().measures.front().bgm_events.push_back({.id = object_id_t{50},
+        .position = {measure_id_t{1}, 0}, .source_lane = object_id_t{9}});
+    auto history = make_document_history(std::move(song));
+    const auto before = write_native_project(history.document).bytes;
+    editor_interaction_state_t state;
+    state.chart = chart_id_t{1};
+    state.selected_notes = {object_id_t{3}, object_id_t{2}, object_id_t{1}};
+    state.selected_objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{50}},
+        {editor_selection_object_kind_t::note, object_id_t{3}},
+        {editor_selection_object_kind_t::note, object_id_t{2}},
+        {editor_selection_object_kind_t::note, object_id_t{1}}};
+    const auto result = move_editor_selection_to_bgm(history, history.document.revision,
+                                                     state, std::nullopt, successive);
+    require_move(result.handled && result.command.applied);
+    check_move(history.undo.size() == 1);
+    check_move(state.selected_objects.front() == editor_selection_object_t{editor_selection_object_kind_t::bgm_event, object_id_t{50}});
+    check_move(history.document.charts.front().measures.front().bgm_events.front().id == object_id_t{50});
+    check_move(history.document.charts.front().measures.front().bgm_events.front().position.row == 0);
+    if (successive) {
+        check_move(state.selected_notes == std::vector{object_id_t{3}, object_id_t{2}});
+        check_move(state.selected_objects.size() == 3);
+        check_move(history.document.charts.front().measures.front().notes.front().id == object_id_t{2});
+    } else {
+        check_move(state.selected_notes.empty() && state.selected_objects.size() == 4);
+        check_move(history.document.charts.front().measures.front().notes.empty());
+        check_move(history.document.charts.front().measures.back().notes.empty());
+    }
+    require_move(undo_document_command(history));
+    check_move(write_native_project(history.document).bytes == before);
+}
+
+TEST_CASE("Core Move to BGM rejects missing notes stale input and active gestures atomically",
+          "[unit][core][note-to-bgm][selection-to-bgm]") {
+    const auto rejected_kind = GENERATE(0, 1, 2);
+    auto history = make_document_history(plain_song());
+    const auto before = write_native_project(history.document).bytes;
+    editor_interaction_state_t state;
+    state.chart = chart_id_t{1};
+    state.selected_notes = {object_id_t{1}, object_id_t{2}};
+    if (rejected_kind == 0) state.selected_notes.push_back(object_id_t{999});
+    if (rejected_kind == 2) state.pending_note_move_gesture.emplace();
+    const auto selection = state.selected_notes;
+    const auto revision = history.document.revision - (rejected_kind == 1 ? 1 : 0);
+    const auto result = move_editor_selection_to_bgm(history, revision, state, std::nullopt, true);
+    require_move(result.handled && !result.command.applied && !result.command.diagnostics.empty());
+    check_move(history.undo.empty() && state.selected_notes == selection);
+    check_move(write_native_project(history.document).bytes == before);
 }

@@ -322,8 +322,8 @@ auto note_to_bgm_command(command_context_t& context) -> std::optional<command_re
         !wormedit::ui::compose_notes_editable(compose_mode_of(context.application_state)))
         return reject_application_command(context.sink, "Move to BGM requires selected notes on an editable BMS chart.",
                                           notification_severity_t::hint, notification_source_t::edit);
-    const auto moved = move_selected_notes_to_bgm(context.history, *state, std::nullopt, false, true,
-                                                 kind == command_kind_t::edit_move_next_to_bgm);
+    const auto moved = move_editor_selection_to_bgm(context.history, context.history.document.revision, *state,
+        std::nullopt, kind == command_kind_t::edit_move_next_to_bgm);
     if (!moved.handled)
         return reject_application_command(context.sink, "Select playable notes before moving them to BGM.",
                                           notification_severity_t::hint, notification_source_t::edit);

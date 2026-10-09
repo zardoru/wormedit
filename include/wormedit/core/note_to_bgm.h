@@ -60,6 +60,20 @@ struct note_to_bgm_plan_t {
                                      note_to_bgm_policy_t policy = {})
     -> document_command_result_t;
 
+struct selected_note_to_bgm_result_t {
+    bool handled{};
+    document_command_result_t command;
+    bool selection_exhausted{};
+};
+
+// Approved note-only verb: existing selected BGM events remain selected and unchanged.
+// Ordinary moves retain converted points in the selection. Successive moves take the first
+// selected note in document order and deselect it. Missing notes or stale input reject atomically.
+[[nodiscard]] auto move_editor_selection_to_bgm(document_history_t& history,
+    std::uint64_t expected_revision, editor_interaction_state_t& state,
+    std::optional<object_id_t> lane = std::nullopt, bool successive = false)
+    -> selected_note_to_bgm_result_t;
+
 // The reverse move, in one undo step: tailless BGM events become taps and end-bearing events
 // become holds in `lane`, preserving their row and end.
 // A BMSON marker that stands for a stem point becomes the stem's playable tap, keeping its slice

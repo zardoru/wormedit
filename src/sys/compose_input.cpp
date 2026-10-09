@@ -3566,23 +3566,20 @@ auto input_result_severity(const WormUiComposeInputAction& input,
     }
 }
 
-// Moves the selected playable notes to the BGM area through the shared command (see
-// `move_selected_notes_to_bgm`); false when none qualified, or, for the Delete key, when other
-// selected objects remain for the ordinary delete.
+// UI translation only: core owns ordering, validation and the resulting selection.
 auto move_selected_notes_to_bgm_input(compose_input_context_t& context,
-                                      wormedit::editor_interaction_result_t& result,
-                                      std::string_view& accepted, std::optional<wormedit::object_id_t> lane,
-                                      bool only_stem_taps, bool keep_selected, bool successive = false) -> bool {
+    wormedit::editor_interaction_result_t& result, std::string_view& accepted,
+    std::optional<wormedit::object_id_t> lane, bool successive) -> bool {
     if (!context.input_is_current()) return false;
-    const auto outcome = wormedit::sys::move_selected_notes_to_bgm(
-        context.history, context.state, lane, only_stem_taps, keep_selected, successive);
+    const auto outcome = wormedit::move_editor_selection_to_bgm(context.history,
+        context.history.document.revision, context.state, lane, successive);
     if (!outcome.handled) return false;
     result.accepted = outcome.command.applied;
     result.document_changed = outcome.command.applied;
     result.diagnostics = outcome.command.diagnostics;
     accepted = outcome.command.applied ? "Notes moved to the BGM area."
                                        : "The notes could not be moved to the BGM area.";
-    return !outcome.command.applied || !only_stem_taps || outcome.selection_exhausted;
+    return true;
 }
 
 // Explicit note/BGM conversion and the drop of BGM events on the playfield.
@@ -3610,7 +3607,7 @@ auto dispatch_note_to_bgm_input(const WormUiComposeInputAction& input, compose_i
     }
     if (input.kind != WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM) return std::nullopt;
     const auto lane = input.lane_id != 0 ? std::optional<object_id_t>{object_id_t{input.lane_id}} : std::nullopt;
-    if (!move_selected_notes_to_bgm_input(context, result, accepted, lane, false, true, input.successive))
+    if (!move_selected_notes_to_bgm_input(context, result, accepted, lane, input.successive))
         return compose_input_family_result_t{"Select playable notes before moving them to the BGM area."};
     return compose_input_family_result_t::continue_with_result();
 }

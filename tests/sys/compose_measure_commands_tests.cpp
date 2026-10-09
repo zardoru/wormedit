@@ -182,7 +182,7 @@ TEST_CASE("selected notes move to the BGM area and leave the selection", "[sys][
     fixture_t fixture({measure_id_t{3}, 0});
     fixture.state.selected_notes = {object_id_t{40}};
     fixture.state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{40}}};
-    const auto outcome = wormedit::sys::move_selected_notes_to_bgm(fixture.history, fixture.state, std::nullopt, false, true);
+    const auto outcome = move_editor_selection_to_bgm(fixture.history, fixture.history.document.revision, fixture.state);
     REQUIRE(outcome.handled);
     REQUIRE(outcome.command.applied);
     CHECK(fixture.measures()[0].notes.empty());
@@ -193,14 +193,6 @@ TEST_CASE("selected notes move to the BGM area and leave the selection", "[sys][
     CHECK(fixture.history.undo.size() == 1);
 }
 
-TEST_CASE("Delete only redirects BMSON stem taps", "[sys][note-to-bgm]") {
-    fixture_t fixture({measure_id_t{3}, 0});
-    fixture.state.selected_notes = {object_id_t{40}};
-    // An ordinary note on a non-BMSON chart is not a stem tap: the caller deletes it as usual.
-    const auto outcome = wormedit::sys::move_selected_notes_to_bgm(fixture.history, fixture.state, std::nullopt, true, false);
-    CHECK_FALSE(outcome.handled);
-    CHECK(fixture.measures()[0].notes.size() == 1);
-}
 
 TEST_CASE("confirmed removal drops deleted notes from the selection so the field scene stays valid",
           "[sys][measure-commands]") {

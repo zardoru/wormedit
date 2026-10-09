@@ -580,6 +580,40 @@ TEST_CASE("Tap timing dispatch accepts workspace taps and rejects text entry", "
 }
 
 namespace {
+void check_timing_lock_chord(const command_registry_t& registry,
+                             shortcut_primary_modifier_t primary,
+                             shortcut_modifier_t modifier) {
+    CHECK(diagnose_shortcut_conflicts(registry, primary).empty());
+    const auto focus = focus_for_compose();
+    const shortcut_event_t lock{.chord = {.key = shortcut_key_t::t,
+        .modifiers = modifier | shortcut_modifier_t::shift}};
+    const auto dispatched = dispatch_shortcut(registry, lock, focus, primary);
+    CHECK(dispatched.status == command_dispatch_status_t::invoked);
+    CHECK(dispatched.command == command_id_t{"timing.toggle_lock"});
+    auto old = lock;
+    old.chord.key = shortcut_key_t::l;
+    CHECK_FALSE(dispatch_shortcut(registry, old, focus, primary).command.has_value());
+    CHECK(dispatch_shortcut(registry, {.chord = {.key = shortcut_key_t::t}},
+                            focus, primary).command == command_id_t{"timing.tap"});
+    auto text_focus = focus;
+    text_focus.text_entry_active = true;
+    CHECK(dispatch_shortcut(registry, lock, text_focus, primary).status ==
+          command_dispatch_status_t::focus_consumed);
+}
+}
+
+TEST_CASE("Timing Lock uses Primary Shift T in Compose without shortcut conflicts",
+          "[unit][commands][command_registry]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    auto registry = make_default_editor_command_registry(make_invoker(calls));
+    REQUIRE(update_command_state(registry, {"timing.tap"}, true, std::nullopt).applied);
+    check_timing_lock_chord(registry, shortcut_primary_modifier_t::control,
+                            shortcut_modifier_t::control);
+    check_timing_lock_chord(registry, shortcut_primary_modifier_t::meta,
+                            shortcut_modifier_t::meta);
+}
+
+namespace {
 void check_notification_chord(const command_registry_t& registry,
                               shortcut_primary_modifier_t primary_mode,
                               shortcut_modifier_t primary_key) {

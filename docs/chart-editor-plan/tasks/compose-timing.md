@@ -29,7 +29,8 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 
 ## T-314 Draw Stop and Delay as dead spans that block note placement
 
-- **Status:** done (2026-10-09; audit below)
+- **Status:** partial (2026-10-09 coordinator review: placement, paste and drag rejection are complete; the waveform gap is not)
+- **Remaining:** step 1's waveform gap. The 2026-10-09 capture (`t314-wave.png`) shows the aligned waveform running continuously through the hatched Stop band, because the stop's audio time collapses to one row. Blank the waveform inside each dead-span band so it reads as eaten time, matching the Warp gap rule from the done card below.
 - **Outcome:** In Compose a Stop or Delay appears as a hatched block (fixed pixel height, label with duration) in the field and waveform; notes cannot be placed, pasted or dragged into it, and the waveform shows the span as eaten time.
 - **Read first:** `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/sys/compose_dead_spans.h` (T-313), `src/ui/compose_mode.h`.
 - **Files owned:** `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_waveform_overlays.cpp`, `src/ui/compose_mode.h`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`.

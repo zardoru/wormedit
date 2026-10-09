@@ -261,13 +261,16 @@ auto bmson_song(const std::string& text) -> wormedit::song_document_t {
     return *parsed.song;
 }
 
-auto stepmania_request(wormedit::stepmania_profile_t profile) -> wormedit::conversion_request_t {
+auto stepmania_request(const wormedit::song_document_t& song, wormedit::stepmania_profile_t profile)
+    -> wormedit::conversion_request_t {
     wormedit::conversion_request_t request{.target = format_family_t::stepmania,
         .stepmania = wormedit::stepmania_export_policy_t{
             .file_profile = profile,
             .timing_syntax = wormedit::stepmania_timing_syntax_t::native_warps}};
     request.loss_policy = loss_policy_t::warn;
     request.branches = wormedit::branch_projection_t::active_projection;
+    for (const auto& asset : song.audio_assets)
+        request.slice_sources.push_back({asset.id, 44100, 44100, 44100});
     return request;
 }
 
@@ -284,13 +287,14 @@ TEST_CASE("StepMania export writes keysounds and BGM instead of reporting them u
     const auto song = bmson_song(
         R"({"version":"1.0.0","info":{"title":"t","artist":"a","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"sound_channels":[{"name":"tone.wav","notes":[{"x":1,"y":0,"c":false},{"x":0,"y":240,"c":false}]}]})");
     for (const auto profile : {wormedit::stepmania_profile_t::sm, wormedit::stepmania_profile_t::ssc}) {
-        const auto result = wormedit::convert_document(song, stepmania_request(profile));
+        const auto result = wormedit::convert_document(song, stepmania_request(song, profile));
         INFO(static_cast<int>(profile));
         REQUIRE(result);
         CHECK_FALSE(mentions(result, "not emitted by this"));
         REQUIRE_FALSE(result.outputs.empty());
         const auto& text = result.outputs.front().bytes;
-        CHECK(text.find("#KEYSOUNDS:tone.wav;") != std::string::npos);
+        CHECK(text.find("#KEYSOUNDS:") != std::string::npos);
+        CHECK(text.find(".wav") != std::string::npos);
         CHECK(text.find("[0]") != std::string::npos);
         CHECK(text.find("K[0]") != std::string::npos);
     }
@@ -298,14 +302,20 @@ TEST_CASE("StepMania export writes keysounds and BGM instead of reporting them u
 
 TEST_CASE("StepMania export reports a keysound path it cannot write as a loss",
           "[unit][format][conversion][loss][stepmania]") {
-    const auto song = bmson_song(
-        R"({"version":"1.0.0","info":{"title":"t","artist":"a","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"sound_channels":[{"name":"a,b.wav","notes":[{"x":1,"y":0,"c":false}]}]})");
+    // Sliced BMSON gets generated safe names, so use a BMS source whose WAV name has a comma.
+    constexpr std::string_view bms = "#TITLE t\n#BPM 120\n#WAV01 a,b.wav\n#00111:01\n";
+    wormedit::bms_parse_options_t options;
+    options.file_extension = ".bme";
+    options.lane_profile_id = "bme-7k-outside-scratch";
+    auto parsed = wormedit::parse_bms_bytes(std::as_bytes(std::span{bms.data(), bms.size()}), options);
+    REQUIRE(parsed.song.has_value());
+    const auto song = *parsed.song;
     const auto warned =
-        wormedit::convert_document(song, stepmania_request(wormedit::stepmania_profile_t::sm));
+        wormedit::convert_document(song, stepmania_request(song, wormedit::stepmania_profile_t::sm));
     REQUIRE(warned);
     CHECK(mentions(warned, "cannot be written as a StepMania keysound path"));
     CHECK(std::ranges::any_of(warned.diagnostics, &wormedit::conversion_diagnostic_t::loss));
-    auto request = stepmania_request(wormedit::stepmania_profile_t::sm);
+    auto request = stepmania_request(song, wormedit::stepmania_profile_t::sm);
     request.loss_policy = loss_policy_t::reject;
     check_rejected_loss(wormedit::convert_document(song, request));
 }

@@ -86,7 +86,9 @@ Order: T-478, then T-479, then T-480. T-481 waits on T-480.
 
 ## T-481 Convert BMSON stems to StepMania keysounds through slice spans
 
-- **Status:** ready (T-480 done 2026-10-08)
+- **Status:** done
+- **Result (2026-10-08):** `conversion.cpp` now runs the T-466 slice stage for the StepMania target (`target_slices_stems`, same scratch-to-playable layout step as osu!mania, no capacity check), so each distinct span is one rendered WAV listed once in `#KEYSOUNDS`; the existing CLI/publication paths already handle the target. New test `BMSON slice conversion writes StepMania keysounds with one file per distinct span` (4 spans each listed once, note/BGM sound counts equal the osu!mania conversion's, source BMSON unchanged). Actual Kick via `wormedit-convert` to SSC writes 514 WAVs and 514 distinct `#KEYSOUNDS` entries, but StepMania has no free column at 4 rows, so 4 BGM events are reported as a warning-level loss (T-480 `K` placement), not retained (accepted as an inherent SM limit: `K` needs a free column).
+- **Approved supporting scope (coordinator, 2026-10-08):** `tests/formats/conversion_loss_matrix_tests.cpp`, to give the first T-480 StepMania test slice sources (it now checks `#KEYSOUNDS:` and `.wav` instead of the unsliced `tone.wav`) and to source the unwritable-path test from a BMS file with a comma in its WAV name, since sliced BMSON gets generated safe names.
 - **Outcome:** a BMSON chart with stems exports to SM or SSC by slicing stems into spans, exactly as the osu!mania path does (T-466). Each distinct span becomes one rendered file in `#KEYSOUNDS`. There is no capacity refusal, because StepMania has no keysound limit.
 - **Read first:** [T-466](bmson-conversion.md) and its result, `include/wormedit/formats/slice_spans.h`, `src/formats/conversion.cpp`, `src/formats/conversion_publication.cpp`.
 - **Files owned:** `src/formats/conversion.cpp`, `include/wormedit/formats/conversion.h`, `src/formats/conversion_publication.cpp`, `tests/formats/conversion_tests.cpp`, `tests/formats/conversion_publication_tests.cpp`, this card.

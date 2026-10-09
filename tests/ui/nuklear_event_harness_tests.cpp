@@ -4686,3 +4686,29 @@ TEST_CASE("Same sound add shortcut keeps selection and Sounds dock fallbacks", "
     keys = compose_sound_selection_keys(fixture.history.document, chart, *fixture.interaction, fixture.application);
     expect_lane_key(keys.size() == 1 && keys[0].value == 2);
 }
+
+TEST_CASE("Appearance field colors picker emits the selected scheme as a typed draft edit",
+          "[theme][options][event-harness]") {
+    using namespace wormedit::ui::theme;
+    const auto themes=std::filesystem::path(__FILE__).parent_path().parent_path().parent_path()/"assets/themes";
+    load(themes);
+    nuklear_event_harness_t harness{1280,900};
+    harness.view().options={.visible=true,.revision=92,.category=WORM_UI_OPTIONS_DISPLAY,
+        .field_scheme="wormedit",.theme="",.dock_layout="",.shortcut_profile_path="",.status=""};
+    (void)harness.frame();
+    REQUIRE(harness.drawn_text_center("Field colors"));
+    const auto picker=harness.drawn_text_center("Wormedit");
+    REQUIRE(picker);
+    (void)click_at(harness,picker->first,picker->second);
+    const auto choice=harness.drawn_text_center("iBMSC · IIDX");
+    REQUIRE(choice);
+    const auto clicks=click_at(harness,choice->first,choice->second);
+    const auto edited=std::ranges::find_if(clicks,[](const auto& frame) {
+        return frame.get().options.kind==WORM_UI_OPTIONS_EDIT_FIELD;
+    });
+    REQUIRE(edited!=clicks.end());
+    CHECK(edited->get().options.field==WORM_UI_OPTIONS_FIELD_FIELD_SCHEME);
+    CHECK(std::string(edited->get().options.text)=="ibmsc-iidx");
+    CHECK(edited->get().options.revision==92);
+    CHECK(field_scheme_id()=="wormedit");
+}

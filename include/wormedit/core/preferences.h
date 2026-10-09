@@ -49,6 +49,7 @@ struct display_preferences_t {
     std::string theme; // Empty selects the bundled default; environment override remains independent.
     std::uint32_t ui_scale_percent{}; // 0 = automatic; explicit values are 100..200.
     bool frame_timing_overlay{};
+    std::string field_scheme{"wormedit"};
     auto operator==(const display_preferences_t&) const -> bool = default;
 };
 struct external_player_definition_t {

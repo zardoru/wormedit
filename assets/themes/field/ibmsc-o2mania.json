@@ -1,0 +1,247 @@
+{
+  "version": 2,
+  "name": "iBMSC · O2Mania",
+  "source": {
+    "repository": "https://github.com/Shimi9999/pBMSC",
+    "commit": "06aaf7438dbca3c8a0611bd13d134f6d1ce04a28",
+    "file": "misc/Data/O2Mania.Theme.xml",
+    "unknown_columns": [],
+    "fallback": "Missing roles, key positions and timing kinds inherit Wormedit. Fonts and widths are not imported."
+  },
+  "roles": {
+    "viewport": "#000000ff",
+    "beat_line": "#3a3a3a35",
+    "subgrid_line": "#3a3a3a5b",
+    "measure_line": "#5252525f",
+    "lane_line": "#373737ff",
+    "lane_label": "#00ff00ff",
+    "selection_outline": "#ff0000ff",
+    "hover_border": "#00ff00ff",
+    "erase_border": "#00ffffff",
+    "selection_box": "#ffffffc0",
+    "timing_hover": "#ff808080",
+    "timing_selected": "#ff808032",
+    "selection_box_border": "#ffffffc0",
+    "selection_add": "#ffffffc0",
+    "selection_toggle": "#ffffffc0",
+    "selection_add_border": "#ffffffc0",
+    "selection_toggle_border": "#ffffffc0",
+    "subgrid_emphasis": "#3a3a3a5b",
+    "grid": "#373737ff",
+    "bgm_line": "#373737ff",
+    "band": "#000000ff",
+    "band_split": "#000000ff",
+    "band_top": "#5252525f",
+    "band_bottom": "#3a3a3a35",
+    "hold_hover": "#00ff00ff",
+    "arrow_selection": "#ff0000ff"
+  },
+  "keys": {
+    "1p": {
+      "1": {
+        "lane": "#ffffff14",
+        "lane_alternate": "#ffffff14",
+        "note": "#b0b0b0ff",
+        "hold_body": "#c0c0c0ff",
+        "long_note": "#c0c0c0ff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      },
+      "2": {
+        "lane": "#0033ff14",
+        "lane_alternate": "#0033ff14",
+        "note": "#62b0ffff",
+        "hold_body": "#6ab0f7ff",
+        "long_note": "#6ab0f7ff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      },
+      "3": {
+        "lane": "#ffffff14",
+        "lane_alternate": "#ffffff14",
+        "note": "#b0b0b0ff",
+        "hold_body": "#c0c0c0ff",
+        "long_note": "#c0c0c0ff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      },
+      "4": {
+        "lane": "#f38b0c16",
+        "lane_alternate": "#f38b0c16",
+        "note": "#ffc862ff",
+        "hold_body": "#f7c66aff",
+        "long_note": "#f7c66aff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      },
+      "5": {
+        "lane": "#ffffff14",
+        "lane_alternate": "#ffffff14",
+        "note": "#b0b0b0ff",
+        "hold_body": "#c0c0c0ff",
+        "long_note": "#c0c0c0ff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      },
+      "6": {
+        "lane": "#0033ff14",
+        "lane_alternate": "#0033ff14",
+        "note": "#62b0ffff",
+        "hold_body": "#6ab0f7ff",
+        "long_note": "#6ab0f7ff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      },
+      "7": {
+        "lane": "#ffffff14",
+        "lane_alternate": "#ffffff14",
+        "note": "#b0b0b0ff",
+        "hold_body": "#c0c0c0ff",
+        "long_note": "#c0c0c0ff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      },
+      "scratch": {
+        "lane": "#00000000",
+        "lane_alternate": "#00000000",
+        "note": "#808080ff",
+        "hold_body": "#909090ff",
+        "long_note": "#909090ff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      }
+    },
+    "2p": {
+      "1": {
+        "lane": "#ffffff14",
+        "lane_alternate": "#ffffff14",
+        "note": "#b0b0b0ff",
+        "hold_body": "#c0c0c0ff",
+        "long_note": "#c0c0c0ff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      },
+      "2": {
+        "lane": "#0033ff14",
+        "lane_alternate": "#0033ff14",
+        "note": "#62b0ffff",
+        "hold_body": "#6ab0f7ff",
+        "long_note": "#6ab0f7ff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      },
+      "3": {
+        "lane": "#ffffff14",
+        "lane_alternate": "#ffffff14",
+        "note": "#b0b0b0ff",
+        "hold_body": "#c0c0c0ff",
+        "long_note": "#c0c0c0ff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      },
+      "4": {
+        "lane": "#f38b0c16",
+        "lane_alternate": "#f38b0c16",
+        "note": "#ffc862ff",
+        "hold_body": "#f7c66aff",
+        "long_note": "#f7c66aff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      },
+      "5": {
+        "lane": "#ffffff14",
+        "lane_alternate": "#ffffff14",
+        "note": "#b0b0b0ff",
+        "hold_body": "#c0c0c0ff",
+        "long_note": "#c0c0c0ff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      },
+      "6": {
+        "lane": "#0033ff14",
+        "lane_alternate": "#0033ff14",
+        "note": "#62b0ffff",
+        "hold_body": "#6ab0f7ff",
+        "long_note": "#6ab0f7ff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      },
+      "7": {
+        "lane": "#ffffff14",
+        "lane_alternate": "#ffffff14",
+        "note": "#b0b0b0ff",
+        "hold_body": "#c0c0c0ff",
+        "long_note": "#c0c0c0ff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      },
+      "scratch": {
+        "lane": "#00000000",
+        "lane_alternate": "#00000000",
+        "note": "#808080ff",
+        "hold_body": "#909090ff",
+        "long_note": "#909090ff",
+        "label": "#000000ff",
+        "long_label": "#000000ff",
+        "lane_label": "#00ff00ff"
+      }
+    }
+  },
+  "timing": {
+    "scroll": {
+      "lane": "#00000000",
+      "lane_alternate": "#00000000",
+      "note": "#00000000",
+      "hold_body": "#00000000",
+      "long_note": "#00000000",
+      "label": "#ff0000ff",
+      "long_label": "#ff0000ff",
+      "lane_label": "#00ff00ff"
+    },
+    "bpm": {
+      "lane": "#00000000",
+      "lane_alternate": "#00000000",
+      "note": "#00000000",
+      "hold_body": "#00000000",
+      "long_note": "#00000000",
+      "label": "#ff0000ff",
+      "long_label": "#ff0000ff",
+      "lane_label": "#00ff00ff"
+    },
+    "stop": {
+      "lane": "#00000000",
+      "lane_alternate": "#00000000",
+      "note": "#00000000",
+      "hold_body": "#00000000",
+      "long_note": "#00000000",
+      "label": "#ff0000ff",
+      "long_label": "#ff0000ff",
+      "lane_label": "#00ff00ff"
+    }
+  },
+  "bgm": {
+    "lane": "#00000000",
+    "lane_alternate": "#00000000",
+    "note": "#e18080ff",
+    "hold_body": "#dc8585ff",
+    "long_note": "#dc8585ff",
+    "label": "#000000ff",
+    "long_label": "#000000ff",
+    "lane_label": "#00ff00ff"
+  }
+}

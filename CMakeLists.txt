@@ -525,8 +525,12 @@ if(WORMEDIT_BUILD_APP)
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/assets/themes")
     configure_file("${CMAKE_SOURCE_DIR}/assets/themes/ui-dark.json"
                    "${CMAKE_BINARY_DIR}/assets/themes/ui-dark.json" COPYONLY)
-    configure_file("${CMAKE_SOURCE_DIR}/assets/themes/compose-field.json"
-                   "${CMAKE_BINARY_DIR}/assets/themes/compose-field.json" COPYONLY)
+    file(GLOB WORMEDIT_FIELD_SCHEMES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/assets/themes/field/*.json")
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/assets/themes/field")
+    foreach(scheme IN LISTS WORMEDIT_FIELD_SCHEMES)
+        get_filename_component(scheme_name "${scheme}" NAME)
+        configure_file("${scheme}" "${CMAKE_BINARY_DIR}/assets/themes/field/${scheme_name}" COPYONLY)
+    endforeach()
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/assets/icons/lucide")
     configure_file("${CMAKE_SOURCE_DIR}/assets/icons/lucide/LICENSE"
                    "${CMAKE_BINARY_DIR}/assets/icons/lucide/LICENSE" COPYONLY)
@@ -571,8 +575,9 @@ if(WORMEDIT_BUILD_APP)
     endif()
     install(FILES assets/fonts/AdwaitaMono-Regular.ttf assets/fonts/LICENSE
         DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/fonts")
-    install(FILES assets/themes/ui-dark.json assets/themes/compose-field.json
-        DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/themes")
+    install(FILES assets/themes/ui-dark.json DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/themes")
+    install(DIRECTORY assets/themes/field DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/themes"
+        FILES_MATCHING PATTERN "*.json")
     install(FILES assets/icons/lucide/LICENSE
         DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/icons/lucide")
     install(FILES LICENSE README.md DESTINATION "${WORMEDIT_INSTALL_BINDIR}")

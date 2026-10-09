@@ -391,6 +391,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     )
 
     add_executable(wormedit_frontend_state_tests
+        ui/theme_tests.cpp
         ui/nuklear_audio_state_tests.cpp
         ui/arrow_glyph_tests.cpp
         ui/compose_bookmark_label_tests.cpp

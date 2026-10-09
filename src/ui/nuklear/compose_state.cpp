@@ -56,7 +56,8 @@ auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
         return compose_layer_fill(note);
     if (color_view == worm_ui_nuklear_compose_color_view_t::snap ||
         (note.glyph >= 2 && note.glyph <= 5)) return compose_snap_fill(note.snap_class);
-    return wormedit::ui::theme::compose_key_color(note.key_color).note;
+    const auto colors=wormedit::ui::theme::compose_key_color(note.key_color, note.display_lane_number);
+    return note.kind==1 || note.kind==2 ? colors.long_note.value_or(colors.note) : colors.note;
 }
 
 auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
@@ -65,7 +66,7 @@ auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
         return compose_layer_fill(hold);
     if (color_view == worm_ui_nuklear_compose_color_view_t::snap)
         return compose_snap_fill(hold.snap_class);
-    return wormedit::ui::theme::compose_key_color(hold.key_color).hold_body;
+    return wormedit::ui::theme::compose_key_color(hold.key_color, hold.display_lane_number).hold_body;
 }
 
 auto worm_ui_nuklear_normalize_compose_wheel(double x, double y, double mouse_x,

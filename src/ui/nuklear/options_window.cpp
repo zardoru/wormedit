@@ -1,12 +1,15 @@
 #include "ui/nuklear/options_window.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/theme.h"
+#include <cstdio>
+#include <string_view>
 #include "ui/nuklear/shortcuts_panel.h"
 #include "wormedit/nuklear_config.h"
 #include <array>
 
 namespace {
 constexpr std::array<const char*, WORM_UI_OPTIONS_CATEGORY_COUNT> category_names{
-    "General", "Editor", "Playback & audio", "Display", "Input & shortcuts", "External players"};
+    "General", "Editor", "Playback & audio", "Appearance", "Input & shortcuts", "External players"};
 constexpr std::array<const char*, WORM_UI_OPTIONS_CATEGORY_COUNT> category_descriptions{
     "Autosave, recent files, and confirmation when closing unsaved work.",
     "Defaults for editing new charts and minimap interaction.",
@@ -88,8 +91,26 @@ void audio_page(nk_context* context, const WormUiOptionsView* view, WormUiOption
     nk_layout_row_dynamic(context, 48, 1);
     nk_label_wrap(context, "Raising the budget loads skipped keysounds for the open project. Lowering it limits future loads and keeps playing sounds in memory.");
 }
+void appearance_page(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
+    const auto& schemes = wormedit::ui::theme::field_schemes();
+    std::vector<const char*> labels;
+    int selected = 0;
+    for (std::size_t index = 0; index < schemes.size(); ++index) {
+        labels.push_back(schemes[index].name.c_str());
+        if (view->field_scheme && schemes[index].id == view->field_scheme) selected = static_cast<int>(index);
+    }
+    nk_layout_row_dynamic(context, 28, 2);
+    nk_label(context, "Field colors", NK_TEXT_LEFT);
+    if (labels.empty()) { nk_label(context, "Wormedit", NK_TEXT_LEFT); return; }
+    const auto value = wormedit::ui::chrome::safe_combo(context, labels.data(),
+        static_cast<int>(labels.size()), selected, 24, nk_vec2(240, 280));
+    if (value == selected || action->kind != WORM_UI_OPTIONS_NONE) return;
+    *action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view->revision, .category = view->category,
+        .field = WORM_UI_OPTIONS_FIELD_FIELD_SCHEME};
+    snprintf(action->text, sizeof(action->text), "%s", schemes[static_cast<std::size_t>(value)].id.c_str());
+}
 std::array<WormUiOptionsPageRenderer, WORM_UI_OPTIONS_CATEGORY_COUNT> pages{
-    general_page, editor_page, audio_page, placeholder, wormedit::ui::nuklear::render_shortcuts_page, placeholder};
+    general_page, editor_page, audio_page, appearance_page, wormedit::ui::nuklear::render_shortcuts_page, placeholder};
 void emit(WormUiOptionsAction& action, const WormUiOptionsView& view, WormUiOptionsActionKind kind) {
     if (action.kind != WORM_UI_OPTIONS_NONE) return;
     action = {.kind = kind, .revision = view.revision, .category = view.category};

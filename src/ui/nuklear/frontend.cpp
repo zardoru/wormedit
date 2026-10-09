@@ -2998,3 +2998,7 @@ void worm_ui_frontend_render(int window_width, int window_height) {
             g_notification_context_initialized ? &g_notification_context : nullptr);
     }
 }
+
+bool worm_ui_frontend_select_field_scheme(const char* id) {
+    return wormedit::ui::theme::select_field_scheme(id ? id : "");
+}

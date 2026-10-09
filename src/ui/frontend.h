@@ -2021,7 +2021,7 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_SCROLL_DIRECTION, WORM_UI_OPTIONS_FIELD_ANCHOR,
     WORM_UI_OPTIONS_FIELD_NOTE_PALETTE, WORM_UI_OPTIONS_FIELD_LANE_LEGEND,
     WORM_UI_OPTIONS_FIELD_AREA_ALPHA, WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK,
-    WORM_UI_OPTIONS_FIELD_MOVE_COLLISION_POLICY
+    WORM_UI_OPTIONS_FIELD_MOVE_COLLISION_POLICY, WORM_UI_OPTIONS_FIELD_FIELD_SCHEME
 } WormUiOptionsField;
 typedef struct WormUiOptionsDiagnostic {
     WormUiOptionsField field;
@@ -2050,6 +2050,7 @@ typedef struct WormUiOptionsView {
     bool minimap_click_moves_paused_playhead;
     uint32_t keysound_budget_mib;
     uint64_t rate_numerator, rate_denominator;
+    const char* field_scheme;
     const char* theme;
     const char* dock_layout;
     const char* shortcut_profile_path;
@@ -2895,6 +2896,8 @@ typedef struct WormUiWorkspaceAction {
 // Private application/frontend boundary. Implementations own all widget
 // toolkit state and translate semantic views into typed actions.
 bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer);
+// Select a loaded field palette; empty or unknown IDs use Wormedit. Chrome is unaffected.
+bool worm_ui_frontend_select_field_scheme(const char* id);
 // Initialize the same event/action frontend without a window or renderer for integration tests.
 bool worm_ui_frontend_init_headless(int width, int height);
 // Actual in-window chrome height; headless initialization keeps the fallback layout.

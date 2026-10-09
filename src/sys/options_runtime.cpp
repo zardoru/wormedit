@@ -65,6 +65,7 @@ void validate_editor(options_runtime_t& r) {
         "Scroll direction must be Profile default, Up, or Down.");
 }
 void validate_display(options_runtime_t& r) {
+    diagnose(r, WORM_UI_OPTIONS_FIELD_FIELD_SCHEME, valid_text(r.draft.display.field_scheme), "Field scheme name is too long or contains a null character.");
     diagnose(r, WORM_UI_OPTIONS_FIELD_THEME, valid_text(r.draft.display.theme), "Theme path is too long or contains a null character.");
     const auto scale = r.draft.display.ui_scale_percent;
     diagnose(r, WORM_UI_OPTIONS_FIELD_SCALE, scale == 0 || (scale >= 100 && scale <= 200), "Scale must be automatic or between 100 and 200 percent.");
@@ -145,6 +146,7 @@ auto edit_audio(program_preferences_t& p, const WormUiOptionsAction& a) -> bool 
 }
 auto edit_display(program_preferences_t& p, const WormUiOptionsAction& a) -> bool {
     switch (a.field) {
+    case WORM_UI_OPTIONS_FIELD_FIELD_SCHEME: p.display.field_scheme = a.text; return true;
     case WORM_UI_OPTIONS_FIELD_THEME: p.display.theme = a.text; return true;
     case WORM_UI_OPTIONS_FIELD_SCALE: p.display.ui_scale_percent = static_cast<std::uint32_t>(a.integer); return true;
     case WORM_UI_OPTIONS_FIELD_LAYOUT: p.layout.dock_layout = a.text; return true;
@@ -258,7 +260,7 @@ auto options_view(options_runtime_t& r) -> WormUiOptionsView {
         .minimap_click_moves_paused_playhead = p.minimap.click_moves_paused_playhead,
         .keysound_budget_mib = p.audio.keysound_budget_mib,
         .rate_numerator = p.audio.playback_rate.numerator, .rate_denominator = p.audio.playback_rate.denominator,
-        .theme = p.display.theme.c_str(), .dock_layout = p.layout.dock_layout.c_str(),
+        .field_scheme = p.display.field_scheme.c_str(), .theme = p.display.theme.c_str(), .dock_layout = p.layout.dock_layout.c_str(),
         .shortcut_profile_path = p.general.shortcut_profile_path.c_str(), .players = r.player_views.data(),
         .player_count = r.player_views.size(), .selected_player = p.players.selected,
         .diagnostics = r.diagnostic_views.data(), .diagnostic_count = r.diagnostic_views.size(), .status = r.status.c_str()};

@@ -1,4 +1,6 @@
 {
+  "version": 2,
+  "name": "Wormedit",
   "description": "Compose canvas colors. Kept separate from application chrome so chart readability can evolve independently.",
   "scales": {
     "red": {
@@ -57,74 +59,130 @@
     "grid": "#3a4353",
     "label": "#bec4cf",
     "overview": "#161f2a",
-    "selection_outline": "$green.400"
+    "selection_outline": "$green.400",
+    "measure_line": "#5f6b80",
+    "beat_line": "#3c4658",
+    "subgrid_line": "#2a313f",
+    "subgrid_emphasis": "#343d4e",
+    "lane_line": "#3e4656",
+    "lane_label": "#f0f4fa",
+    "conflict": "#f87459",
+    "hover_fill": "#ffe27f",
+    "hover_border": "#fff7be",
+    "hold_hover": "#ffeb94",
+    "erase_fill": "#f45e6fd2",
+    "erase_border": "#ffb8be",
+    "note_border": "#111822",
+    "selection_box": "#65b7f222",
+    "selection_box_border": "#65b7f2",
+    "selection_add": "#71d6a422",
+    "selection_add_border": "#71d6a4",
+    "selection_toggle": "#c597f522",
+    "selection_toggle_border": "#c597f5",
+    "bgm_selected": "#f8e0ff",
+    "bgm_border": "#32233a",
+    "bgm_label": "#fff5ff",
+    "band": "#191d27",
+    "band_split": "#1b1f2b",
+    "band_top": "#505b70",
+    "band_bottom": "#3d4657",
+    "bgm_line": "#4f435b",
+    "timing_note": "#12161f",
+    "timing_border": "#37404f",
+    "timing_selected": "#745c31",
+    "timing_hover": "#ffdc70",
+    "timing_title_bg": "#12151dd7",
+    "tail": "#71c9d8",
+    "arrow_selection": "#dcf7ff"
   },
   "key_colors": {
     "generic": {
       "note": "#85b6de",
       "note_border": "#3a5a78",
       "lane": "#212835",
-      "hold_body": "#85b6de99"
+      "hold_body": "#85b6de99",
+      "lane_alternate": "#212835",
+      "lane_label": "#f0f4fa"
     },
     "white": {
       "note": "$slate.200",
       "note_border": "$slate.700",
       "lane": "$neutral.950",
-      "hold_body": "#e2e8f099"
+      "hold_body": "#e2e8f099",
+      "lane_alternate": "$neutral.950",
+      "lane_label": "#f0f4fa"
     },
     "black": {
       "note": "$blue.500",
       "note_border": "$blue.800",
       "lane": "$blue.950",
-      "hold_body": "#3b82f699"
+      "hold_body": "#3b82f699",
+      "lane_alternate": "$blue.950",
+      "lane_label": "#f0f4fa"
     },
     "scratch": {
       "note": "$red.400",
       "note_border": "$red.700",
       "lane": "$red.950",
-      "hold_body": "#f8717199"
+      "hold_body": "#f8717199",
+      "lane_alternate": "$red.950",
+      "lane_label": "#f0f4fa"
     },
     "foot_pedal": {
       "note": "$cyan.400",
       "note_border": "$cyan.700",
       "lane": "$cyan.950",
-      "hold_body": "#22d3ee99"
+      "hold_body": "#22d3ee99",
+      "lane_alternate": "$cyan.950",
+      "lane_label": "#f0f4fa"
     },
     "free_zone": {
       "note": "$amber.400",
       "note_border": "$amber.700",
       "lane": "$amber.950",
-      "hold_body": "#fbbf2499"
+      "hold_body": "#fbbf2499",
+      "lane_alternate": "$amber.950",
+      "lane_label": "#f0f4fa"
     },
     "pms_white": {
       "note": "$neutral.100",
       "note_border": "$slate.700",
       "lane": "$neutral.950",
-      "hold_body": "#e9ebf299"
+      "hold_body": "#e9ebf299",
+      "lane_alternate": "$neutral.950",
+      "lane_label": "#f0f4fa"
     },
     "pms_yellow": {
       "note": "$yellow.400",
       "note_border": "$yellow.700",
       "lane": "$yellow.950",
-      "hold_body": "#facc1599"
+      "hold_body": "#facc1599",
+      "lane_alternate": "$yellow.950",
+      "lane_label": "#f0f4fa"
     },
     "pms_green": {
       "note": "$green.400",
       "note_border": "$green.700",
       "lane": "$green.950",
-      "hold_body": "#4ade8099"
+      "hold_body": "#4ade8099",
+      "lane_alternate": "$green.950",
+      "lane_label": "#f0f4fa"
     },
     "pms_blue": {
       "note": "$blue.400",
       "note_border": "$blue.700",
       "lane": "$blue.950",
-      "hold_body": "#60a5fa99"
+      "hold_body": "#60a5fa99",
+      "lane_alternate": "$blue.950",
+      "lane_label": "#f0f4fa"
     },
     "pms_red": {
       "note": "$red.400",
       "note_border": "$red.700",
       "lane": "$red.950",
-      "hold_body": "#f8717199"
+      "hold_body": "#f8717199",
+      "lane_alternate": "$red.950",
+      "lane_label": "#f0f4fa"
     }
   },
   "note_accents": [
@@ -136,5 +194,14 @@
     "#b08eda",
     "#f474ae",
     "#82dbce"
-  ]
+  ],
+  "keys": {},
+  "bgm": {
+    "lane": "#26222f",
+    "lane_alternate": "#2b2634",
+    "note": "#b174cf",
+    "hold_body": "#665871",
+    "label": "#fff5ff"
+  },
+  "timing": {}
 }

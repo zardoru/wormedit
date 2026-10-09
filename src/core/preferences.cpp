@@ -156,7 +156,8 @@ void read_editor_audio(preference_reader_t& reader, const json_t& root) {
 void read_display_minimap_layout(preference_reader_t& reader, const json_t& root) {
     auto& values = reader.result.preferences;
     const auto& display = reader.section(root, "display");
-    reader.check_keys(display, {"theme", "ui_scale_percent", "frame_timing_overlay"});
+    reader.check_keys(display, {"field_scheme", "theme", "ui_scale_percent", "frame_timing_overlay"});
+    reader.string(display, "field_scheme", values.display.field_scheme);
     reader.string(display, "theme", values.display.theme);
     reader.integer(display, "ui_scale_percent", values.display.ui_scale_percent, 0, 200);
     reader.boolean(display, "frame_timing_overlay", values.display.frame_timing_overlay);
@@ -208,7 +209,7 @@ auto valid_preferences(const program_preferences_t& value) -> bool {
         valid_string(value.general.shortcut_profile_path) && !value.general.shortcut_profile_path.empty() &&
         valid_editor(value.editor) &&
         supported_rate(value.audio.playback_rate) && value.audio.keysound_budget_mib >= 256 &&
-        value.audio.keysound_budget_mib <= 8192 && valid_string(value.display.theme) &&
+        value.audio.keysound_budget_mib <= 8192 && valid_string(value.display.theme) && valid_string(value.display.field_scheme) &&
         (value.display.ui_scale_percent == 0 ||
             (value.display.ui_scale_percent >= 100 && value.display.ui_scale_percent <= 200)) &&
         valid_external_player_preferences(value.players) && valid_string(value.layout.dock_layout);
@@ -228,7 +229,7 @@ auto preferences_json(const program_preferences_t& value) -> json_t {
         {"audio", {{"playback_rate", {{"numerator", value.audio.playback_rate.numerator},
             {"denominator", value.audio.playback_rate.denominator}}}, {"keep_pitch", value.audio.keep_pitch},
             {"keysound_budget_mib", value.audio.keysound_budget_mib}}},
-        {"display", {{"theme", value.display.theme}, {"ui_scale_percent", value.display.ui_scale_percent},
+        {"display", {{"field_scheme", value.display.field_scheme}, {"theme", value.display.theme}, {"ui_scale_percent", value.display.ui_scale_percent},
             {"frame_timing_overlay", value.display.frame_timing_overlay}}},
         {"players", {{"selected", value.players.selected}, {"definitions", std::move(players)}}},
         {"minimap", {{"click_moves_paused_playhead", value.minimap.click_moves_paused_playhead}}},

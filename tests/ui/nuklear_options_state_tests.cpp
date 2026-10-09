@@ -1,6 +1,7 @@
 #include "sys/options_runtime.h"
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <cstring>
 #include <algorithm>
 #include <iterator>
 #include <limits>
@@ -324,4 +325,29 @@ TEST_CASE("Editing collision policy applies to disk and Defaults restores Reject
         move_collision_policy_t::displace_to_bgm);
     (void)apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS));
     expect_options(options_view(runtime).move_collision_policy == 0);
+}
+
+TEST_CASE("Field theme Options edits stay draft until Apply and persist independently of chrome", "[options][theme]") {
+    temporary_preferences_t file;
+    program_preferences_runtime_t program{.path=file.directory/"preferences.json"};
+    options_runtime_t runtime;
+    open_options(runtime,program.preferences);
+    select(runtime,program,WORM_UI_OPTIONS_DISPLAY);
+    auto edit=action(runtime,WORM_UI_OPTIONS_EDIT_FIELD,WORM_UI_OPTIONS_DISPLAY);
+    edit.field=WORM_UI_OPTIONS_FIELD_FIELD_SCHEME;
+    std::strcpy(edit.text,"ibmsc-o2mania");
+    expect_options(!(apply_options_action(runtime,program,edit)));
+    expect_options(program.preferences.display.field_scheme=="wormedit");
+    expect_options(std::string(options_view(runtime).field_scheme)=="ibmsc-o2mania");
+    expect_options(apply_options_action(runtime,program,action(runtime,WORM_UI_OPTIONS_APPLY)));
+    expect_options(program.preferences.display.field_scheme=="ibmsc-o2mania");
+    expect_options(program.preferences.display.theme.empty());
+    const auto loaded=load_program_preferences(program.path);
+    expect_options(loaded.contents.parsed);
+    expect_options(loaded.contents.preferences.display.field_scheme=="ibmsc-o2mania");
+    expect_options(!(apply_options_action(runtime,program,action(runtime,WORM_UI_OPTIONS_DEFAULTS))));
+    expect_options(runtime.draft.display.field_scheme=="wormedit");
+    expect_options(program.preferences.display.field_scheme=="ibmsc-o2mania");
+    expect_options(!(apply_options_action(runtime,program,action(runtime,WORM_UI_OPTIONS_REVERT))));
+    expect_options(runtime.draft.display.field_scheme=="ibmsc-o2mania");
 }

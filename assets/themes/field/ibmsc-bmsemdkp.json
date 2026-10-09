@@ -1,0 +1,95 @@
+{
+  "version": 2,
+  "name": "iBMSC · BMSE mdkp",
+  "source": {
+    "repository": "https://github.com/Shimi9999/pBMSC",
+    "commit": "06aaf7438dbca3c8a0611bd13d134f6d1ce04a28",
+    "file": "misc/Data/BMSEmdkp.Theme.xml",
+    "unknown_columns": [
+      "LB",
+      "LG",
+      "LW",
+      "LY",
+      "RB",
+      "RED",
+      "RG",
+      "RW",
+      "RY"
+    ],
+    "fallback": "Missing roles, key positions and timing kinds inherit Wormedit. Fonts and widths are not imported."
+  },
+  "roles": {
+    "viewport": "#000000ff",
+    "beat_line": "#606060ff",
+    "subgrid_line": "#c0c0c0ff",
+    "measure_line": "#ffffffff",
+    "lane_line": "#808080ff",
+    "lane_label": "#00ff00ff",
+    "selection_outline": "#00ffffff",
+    "hover_border": "#ffffffff",
+    "erase_border": "#ff00ffff",
+    "selection_box": "#ffffffc0",
+    "timing_hover": "#ff808080",
+    "timing_selected": "#ff808032",
+    "selection_box_border": "#ffffffc0",
+    "selection_add": "#ffffffc0",
+    "selection_toggle": "#ffffffc0",
+    "selection_add_border": "#ffffffc0",
+    "selection_toggle_border": "#ffffffc0",
+    "subgrid_emphasis": "#c0c0c0ff",
+    "grid": "#808080ff",
+    "bgm_line": "#808080ff",
+    "band": "#000000ff",
+    "band_split": "#000000ff",
+    "band_top": "#ffffffff",
+    "band_bottom": "#606060ff",
+    "hold_hover": "#ffffffff",
+    "arrow_selection": "#00ffffff"
+  },
+  "keys": {
+    "1p": {},
+    "2p": {}
+  },
+  "timing": {
+    "scroll": {
+      "lane": "#303000ff",
+      "lane_alternate": "#303000ff",
+      "note": "#80800080",
+      "hold_body": "#80800080",
+      "long_note": "#80800080",
+      "label": "#ffffffff",
+      "long_label": "#ffffffff",
+      "lane_label": "#00ff00ff"
+    },
+    "bpm": {
+      "lane": "#303000ff",
+      "lane_alternate": "#303000ff",
+      "note": "#80800080",
+      "hold_body": "#80800080",
+      "long_note": "#80800080",
+      "label": "#ffffffff",
+      "long_label": "#ffffffff",
+      "lane_label": "#00ff00ff"
+    },
+    "stop": {
+      "lane": "#303000ff",
+      "lane_alternate": "#303000ff",
+      "note": "#80800080",
+      "hold_body": "#80800080",
+      "long_note": "#80800080",
+      "label": "#ffffffff",
+      "long_label": "#ffffffff",
+      "lane_label": "#00ff00ff"
+    }
+  },
+  "bgm": {
+    "lane": "#300000ff",
+    "lane_alternate": "#300000ff",
+    "note": "#80000080",
+    "hold_body": "#80000080",
+    "long_note": "#80000080",
+    "label": "#ffffffff",
+    "long_label": "#ffffffff",
+    "lane_label": "#00ff00ff"
+  }
+}

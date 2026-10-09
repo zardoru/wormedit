@@ -3,6 +3,8 @@
 #include "ui/nuklear/chrome.h"
 #include "wormedit/nuklear_config.h"
 
+#include <optional>
+
 namespace wormedit::ui::chrome {
 
 // One shared dialog surface (see docs/chart-editor-plan/tasks/dialogs.md for the rules): an
@@ -36,6 +38,13 @@ struct DialogOptions {
     bool closable{false};  // shows the close icon (non-modal tools); confirmations use Escape
     float width{420.0f};
     struct nk_vec2 area{}; // The window the dialog is centered in; empty uses the app viewport.
+    // Escape cancels. Modal dialogs default to true; a non-modal tool leaves Escape to the
+    // workspace unless it opts in.
+    std::optional<bool> escape_cancels{};
+    // The dialog ignores pointer and key input this frame (a closing click still being released).
+    bool no_input{};
+    // Enter triggers the primary button. Same default; a tool with text fields leaves it off.
+    std::optional<bool> enter_confirms{};
 };
 
 struct Dialog {
@@ -51,9 +60,12 @@ struct Dialog {
     float saved_border{};
     nk_flags saved_window_flags{};
     bool primary_drawn{};
+    bool enter_pending{};  // Enter was pressed this frame and the primary button should act.
     bool open{};
     bool modal{};
     bool closable{};
+    bool escape_cancels{};
+    bool enter_confirms{};
 };
 
 inline constexpr float dialog_padding = metrics::gap_large;
@@ -77,12 +89,14 @@ void dialog_footer_begin(Dialog& dialog, nk_context* context, int buttons,
                          bool destructive_first = false,
                          float button_width = dialog_button_width);
 
-// One footer button. Records its role as the result when clicked.
+// One footer button. Records its role as the result when clicked; the enabled primary button
+// also reports Enter (when the dialog allows it) as a click.
 auto dialog_button(Dialog& dialog, nk_context* context, const char* label,
                    DialogButtonRole role, bool enabled = true) -> bool;
 
 // Ends the window, restores the style, and returns the result of this frame: a clicked
-// button, Enter for the primary action, or Escape/close icon for cancel.
+// button, or Escape/close icon for cancel. Enter acts through the primary button, so a
+// disabled primary button ignores it.
 auto dialog_end(Dialog& dialog, nk_context* context) -> DialogResult;
 
 } // namespace wormedit::ui::chrome

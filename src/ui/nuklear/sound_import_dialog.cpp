@@ -1,5 +1,6 @@
 #include "ui/nuklear/sound_import_dialog.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/dialog.h"
 
 #include <algorithm>
 #include <array>
@@ -159,9 +160,13 @@ void render_group_candidates(nk_context* context,
 
 void render_keysound_group_rows(nk_context* context,
                                 worm_ui_keysound_group_review_t& state) {
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
+    const auto leave_bounds = nk_widget_bounds(context);
     if (nk_button_label(context, "Leave all ungrouped"))
         worm_ui_keysound_group_review_leave_all_ungrouped(state);
+    if (wormedit::ui::nuklear::tooltip::hovered(context, leave_bounds))
+        wormedit::ui::nuklear::tooltip::text(context,
+            "Edit group names or move sounds between groups, or leave them all ungrouped.");
     render_group_proposals(context, state);
     render_group_candidates(context, state);
 }
@@ -256,33 +261,37 @@ auto worm_ui_nuklear_render_sound_import_dialog(nk_context* context,
     -> worm_ui_sound_import_dialog_action_t {
     if (!context || state.phase == worm_ui_sound_import_phase_t::closed)
         return worm_ui_sound_import_dialog_action_t::none;
-    const auto width = static_cast<float>(std::clamp(window_width - 32, 1, 720));
-    const auto height = static_cast<float>(std::clamp(window_height - 32, 1, 680));
-    const auto bounds = nk_rect((static_cast<float>(window_width) - width) / 2.0F,
-                                (static_cast<float>(window_height) - height) / 2.0F,
-                                width, height);
-    if (!nk_begin(context, "Review sound import", bounds,
-                   NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE))
-        return worm_ui_sound_import_dialog_action_t::none;
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_label(context, "Review names, kinds, and suggested groups before importing.", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, std::max(140.0F, height - 190.0F), 1);
-    if (nk_group_begin(context, "Sound import review body", NK_WINDOW_BORDER)) {
-        render_import_items(context, state);
-        render_group_rows(context, state);
-        nk_group_end(context);
-    }
-    if (!state.message.empty()) {
-        nk_layout_row_dynamic(context, 20, 1);
-        nk_label_colored(context, state.message.c_str(), NK_TEXT_LEFT, nk_rgb(226, 166, 64));
-    }
-    nk_layout_row_dynamic(context, 30, 2);
+    namespace chrome = wormedit::ui::chrome;
+    static chrome::Dialog dialog;
     auto result = worm_ui_sound_import_dialog_action_t::none;
-    if (nk_button_label(context, "Cancel")) result = worm_ui_sound_import_dialog_action_t::cancel;
-    if (nk_button_label(context, "Confirm import"))
-        result = worm_ui_sound_import_dialog_action_t::confirm;
-    nk_end(context);
+    // The review body scrolls inside a fixed-height group; the dialog fits around it.
+    constexpr float body_height = 400.0F;
+    if (chrome::dialog_begin(dialog, context, "Review sound import", "Review sound import",
+                             {.modal = true, .width = 720.0F,
+                              .area = nk_vec2(static_cast<float>(window_width),
+                                              static_cast<float>(window_height))})) {
+        nk_layout_row_dynamic(context, body_height, 1);
+        if (nk_group_begin(context, "Sound import review body", NK_WINDOW_BORDER)) {
+            render_import_items(context, state);
+            render_group_rows(context, state);
+            nk_group_end(context);
+        }
+        if (!state.message.empty())
+            chrome::dialog_text(dialog, context, state.message.c_str(), chrome::color(chrome::UiColor::conflict));
+        chrome::dialog_footer_begin(dialog, context, 2, false, 120.0F);
+        if (chrome::dialog_button(dialog, context, "Cancel", chrome::DialogButtonRole::secondary))
+            result = worm_ui_sound_import_dialog_action_t::cancel;
+        if (chrome::dialog_button(dialog, context, "Confirm import", chrome::DialogButtonRole::primary))
+            result = worm_ui_sound_import_dialog_action_t::confirm;
+    }
+    if (chrome::dialog_end(dialog, context) == chrome::DialogResult::cancel)
+        result = worm_ui_sound_import_dialog_action_t::cancel;
     return result;
+}
+
+auto& group_review_dialog() {
+    static wormedit::ui::chrome::Dialog dialog;
+    return dialog;
 }
 
 auto group_review_stale(const WormUiComposeView& view,
@@ -293,12 +302,11 @@ auto group_review_stale(const WormUiComposeView& view,
 
 void render_manual_group_contents(nk_context* context, const WormUiComposeView& view,
                                   worm_ui_keysound_group_review_t& state) {
-    nk_label(context, "Group selected sounds", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 26, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(
         context, NK_EDIT_FIELD, state.manual_group_name.data(),
         static_cast<int>(state.manual_group_name.size()), nk_filter_default);
-    nk_layout_row_dynamic(context, 26, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     const char* destination = "Create new group";
     if (state.target_group_id != 0 && view.compose_sound_groups) {
         const auto* end = view.compose_sound_groups + view.compose_sound_group_count;
@@ -361,53 +369,49 @@ void render_group_review_footer(nk_context* context, const WormUiComposeView& vi
                                 WormUiWorkspaceAction& action,
                                 worm_ui_keysound_group_review_t& state,
                                 bool& release_pending, bool stale) {
+    namespace chrome = wormedit::ui::chrome;
+    auto& dialog = group_review_dialog();
     int keep = state.keep_ids_together ? 1 : 0;
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     nk_checkbox_label(context, "Keep IDs together", &keep);
     state.keep_ids_together = keep != 0;
-    if (!state.message.empty()) {
-        nk_layout_row_dynamic(context, 26, 1);
-        nk_label_colored(context, state.message.c_str(), NK_TEXT_LEFT, nk_rgb(226, 166, 64));
-    }
-    nk_layout_row_dynamic(context, 30, 2);
-    if (nk_button_label(context, "Confirm") && !stale &&
-        action.compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        submit_group_review(action, view, state, release_pending);
-    if (nk_button_label(context, "Cancel")) {
+    if (!state.message.empty())
+        chrome::dialog_text(dialog, context, state.message.c_str(), chrome::color(chrome::UiColor::conflict));
+    chrome::dialog_footer_begin(dialog, context, 2);
+    if (chrome::dialog_button(dialog, context, "Cancel", chrome::DialogButtonRole::secondary)) {
         worm_ui_keysound_group_review_cancel(state);
         release_pending = true;
     }
+    if (chrome::dialog_button(dialog, context, "Confirm", chrome::DialogButtonRole::primary) && !stale &&
+        action.compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        submit_group_review(action, view, state, release_pending);
 }
 
 void worm_ui_nuklear_render_keysound_group_review(
     nk_context* context, const WormUiComposeView& view, WormUiWorkspaceAction& action,
     worm_ui_keysound_group_review_t& state, bool& release_pending,
     int window_width, int window_height) {
+    namespace chrome = wormedit::ui::chrome;
     if (!context || !state.open) return;
-    const auto width = static_cast<float>(std::clamp(window_width - 32, 1, 700));
-    const auto height = static_cast<float>(std::clamp(window_height - 32, 1, 640));
-    const auto bounds = nk_rect((static_cast<float>(window_width) - width) / 2.0F,
-                                (static_cast<float>(window_height) - height) / 2.0F,
-                                width, height);
-    nk_window_show(context, "Group selected sounds", NK_SHOWN);
-    nk_window_set_focus(context, "Group selected sounds");
-    const auto window_flags = NK_WINDOW_BORDER | NK_WINDOW_TITLE |
-                              NK_WINDOW_NO_SCROLLBAR |
-                              (release_pending ? NK_WINDOW_NO_INPUT : NK_WINDOW_MOVABLE);
-    if (nk_begin(context, "Group selected sounds", bounds,
-                 window_flags)) {
+    auto& dialog = group_review_dialog();
+    if (chrome::dialog_begin(dialog, context, "Group selected sounds", "Group selected sounds",
+                             {.modal = true, .width = 700.0F,
+                              .area = nk_vec2(static_cast<float>(window_width),
+                                              static_cast<float>(window_height)),
+                              .no_input = release_pending})) {
         const auto stale = group_review_stale(view, state);
-        nk_layout_row_dynamic(context, 25, 1);
         if (stale) {
             state.message = "The sound list changed. Close this review and suggest again.";
-            nk_label_wrap(context, state.message.c_str());
         } else if (state.manual) {
             render_manual_group_contents(context, view, state);
         } else {
-            nk_label_wrap(context, "Review suggestions. Edit names, move sounds, or leave them ungrouped.");
             render_keysound_group_rows(context, state);
         }
         render_group_review_footer(context, view, action, state, release_pending, stale);
     }
-    nk_end(context);
+    // Escape cancels like the Cancel button.
+    if (chrome::dialog_end(dialog, context) == chrome::DialogResult::cancel && state.open) {
+        worm_ui_keysound_group_review_cancel(state);
+        release_pending = true;
+    }
 }

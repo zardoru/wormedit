@@ -403,11 +403,11 @@ TEST_CASE("Headless frontend new-project wizard cancel closes and permits reopen
     static_cast<void>(harness.frame());
     REQUIRE(worm_ui_frontend_request_new_project());
     static_cast<void>(harness.frame());
+    static_cast<void>(harness.frame());  // The dialog fits its content on its second frame.
 
-    // The wizard is centered at (230,258), 500x204. Its last row begins at y=366;
-    // the button centers are in the two 242px columns at y=406.
-    constexpr float button_y = 406.0f;
-    const auto cancel_actions = click_at(harness, 350.0f, button_y);
+    const auto cancel = harness.drawn_text_center("Cancel");
+    REQUIRE(cancel);
+    const auto cancel_actions = click_at(harness, cancel->first, cancel->second);
     CHECK(cancel_actions[0].get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
     CHECK(worm_ui_frontend_request_new_project());
 }
@@ -419,8 +419,11 @@ TEST_CASE("Headless frontend new-project wizard creates the default 7K layout",
     static_cast<void>(harness.frame());
     REQUIRE(worm_ui_frontend_request_new_project());
     static_cast<void>(harness.frame());
+    static_cast<void>(harness.frame());  // The dialog fits its content on its second frame.
 
-    const auto create_actions = click_at(harness, 610.0f, 406.0f);
+    const auto create = harness.drawn_text_center("Create project");
+    REQUIRE(create);
+    const auto create_actions = click_at(harness, create->first, create->second);
     CHECK(create_actions[0].get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
     CHECK(create_actions[0].get().new_project_layout_index == 3);
 }
@@ -2214,6 +2217,7 @@ void stage_grouped_import(nuklear_event_harness_t& harness) {
     const auto& view = harness.view();
     REQUIRE(worm_ui_frontend_stage_sound_import(view.project_id, view.selected_chart_id,
         view.document_revision, items.data(), items.size(), nullptr, 0, true, ""));
+    (void)harness.frame();  // A dialog fits its content on its second frame.
 }
 
 void check_retained_import_after_failure() {
@@ -2250,8 +2254,10 @@ TEST_CASE("Sound group name field replaces selected text from captured keyboard 
     REQUIRE(worm_ui_nuklear_pending_sound_import().groups.size() == 1);
     CHECK(worm_ui_nuklear_pending_sound_import().groups.front().name == "kick");
 
-    // The centered 720x680 review window places its group-name field near this point.
-    (void)click_at(harness, 550.0F, 350.0F);
+    // The group-name field shows the group name; click into it.
+    const auto name_field = harness.drawn_text_center("kick");
+    REQUIRE(name_field);
+    (void)click_at(harness, name_field->first, name_field->second);
     const auto select_all = key_event(SDL_EVENT_KEY_DOWN, SDLK_A, SDL_SCANCODE_A);
     (void)harness.frame(std::span{&select_all, 1}, SDL_KMOD_CTRL);
     const auto release_a = key_event(SDL_EVENT_KEY_UP, SDLK_A, SDL_SCANCODE_A);
@@ -3221,6 +3227,7 @@ void section_review_submits_fixed_kind(std::uint8_t kind, bool stale = false) {
         view.selected_chart_id, view.document_revision, &item, 1, nullptr, 0, false, ""));
     if (stale) ++view.document_revision;
     (void)harness.frame();
+    (void)harness.frame();  // A dialog fits its content on its second frame.
     section_import_check(worm_ui_nuklear_pending_sound_import().fixed_kind == kind);
     section_import_check(harness.drawn_text().find(kind == 1 ? "Stem" : "Keysound") != std::string::npos);
     const auto confirm = harness.drawn_text_center("Confirm import");
@@ -5192,4 +5199,210 @@ TEST_CASE("Unsaved changes shows a status line only for a failed save",
           "[frontend-state][event-harness][dialog][close-confirmation]") {
     close_dialog_fixture_t f{false, "Save failed: disk full"};
     CHECK(f.harness.drawn_text().find("Save failed: disk full") != std::string::npos);
+}
+
+namespace {
+
+struct external_player_fixture_t {
+    nuklear_event_harness_t harness{1280, 900};
+    std::array<WormUiExternalPlayerDefinitionView, 2> players{{
+        {"Alpha", "/usr/bin/alpha", "--start", "--here <measure>", "--stop"},
+        {"Beta", "/usr/bin/beta", "", "", ""}}};
+    external_player_fixture_t() {
+        REQUIRE(harness.ready());
+        harness.view().external_player = {.visible = 1, .revision = 3, .players = players.data(),
+                                          .player_count = players.size(), .selected = 0};
+        (void)harness.frame();
+        (void)harness.frame();
+    }
+    // The first non-empty external-player action across the frames of a gesture.
+    static auto action_of(const std::vector<workspace_action_snapshot_t>& frames)
+        -> const WormUiExternalPlayerAction* {
+        for (const auto& frame : frames)
+            if (frame.get().external_player.kind != WORM_UI_EXTERNAL_PLAYER_NONE)
+                return &frame.get().external_player;
+        return nullptr;
+    }
+    auto click_label(const char* label) {
+        const auto center = harness.drawn_text_center(label);
+        REQUIRE(center);
+        return click_at(harness, center->first, center->second);
+    }
+};
+
+} // namespace
+
+TEST_CASE("External player preferences dialog keeps every action",
+          "[frontend-state][event-harness][dialog][external-player]") {
+    {
+        external_player_fixture_t f;
+        const auto& text = f.harness.drawn_text();
+        CHECK(text.find("External player preferences") != std::string::npos);
+        CHECK(text.find("Templates:") == std::string::npos);
+        const auto* saved = external_player_fixture_t::action_of(f.click_label("Save"));
+        REQUIRE(saved);
+        CHECK(saved->kind == WORM_UI_EXTERNAL_PLAYER_SAVE);
+        CHECK(saved->selected == 0);
+        CHECK(std::string(saved->name) == "Alpha");
+        CHECK(std::string(saved->path) == "/usr/bin/alpha");
+        CHECK(std::string(saved->here_arguments) == "--here <measure>");
+    }
+    {
+        external_player_fixture_t f;
+        const auto* added = external_player_fixture_t::action_of(f.click_label("Add"));
+        REQUIRE(added);
+        CHECK(added->kind == WORM_UI_EXTERNAL_PLAYER_ADD);
+    }
+    {
+        external_player_fixture_t f;
+        const auto* removed = external_player_fixture_t::action_of(f.click_label("Remove"));
+        REQUIRE(removed);
+        CHECK(removed->kind == WORM_UI_EXTERNAL_PLAYER_REMOVE);
+    }
+    {
+        external_player_fixture_t f;
+        const auto* closed = external_player_fixture_t::action_of(f.click_label("Close"));
+        REQUIRE(closed);
+        CHECK(closed->kind == WORM_UI_EXTERNAL_PLAYER_CLOSE);
+    }
+    {
+        external_player_fixture_t f;
+        const auto* selected = external_player_fixture_t::action_of(f.click_label("Beta"));
+        REQUIRE(selected);
+        CHECK(selected->kind == WORM_UI_EXTERNAL_PLAYER_SELECT);
+        CHECK(selected->selected == 1);
+    }
+}
+
+TEST_CASE("Review sound import dialog has Cancel and Confirm with Enter and no help sentence",
+          "[frontend-state][event-harness][sound-import][dialog]") {
+    {
+        nuklear_event_harness_t harness{1280, 900};
+        REQUIRE(harness.ready());
+        (void)harness.frame();
+        stage_grouped_import(harness);
+        (void)harness.frame();
+        CHECK(harness.drawn_text().find("Review sound import") != std::string::npos);
+        CHECK(harness.drawn_text().find("Review names, kinds") == std::string::npos);
+        const auto cancel = harness.drawn_text_center("Cancel");
+        REQUIRE(cancel);
+        (void)click_at(harness, cancel->first, cancel->second);
+        CHECK_FALSE(worm_ui_nuklear_sound_import_active());
+    }
+    {
+        nuklear_event_harness_t harness{1280, 900};
+        REQUIRE(harness.ready());
+        (void)harness.frame();
+        stage_grouped_import(harness);
+        (void)harness.frame();
+        const auto enter = key_event(SDL_EVENT_KEY_DOWN, SDLK_RETURN, SDL_SCANCODE_RETURN);
+        const auto action = harness.frame(std::span{&enter, 1});
+        CHECK(action.get().compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT);
+    }
+}
+
+namespace {
+
+struct project_modal_fixture_t {
+    nuklear_event_harness_t harness{1280, 900};
+    explicit project_modal_fixture_t(const char* audio_path) {
+        REQUIRE(harness.ready());
+        harness.view().pending_new_project_audio_path = audio_path;
+        (void)harness.frame();
+        (void)harness.frame();
+        (void)harness.frame();
+    }
+    auto click_button(const char* label) {
+        const auto center = harness.drawn_text_center(label);
+        REQUIRE(center);
+        return click_at(harness, center->first, center->second);
+    }
+    static auto kind_of(const std::vector<workspace_action_snapshot_t>& frames) -> WormUiWorkspaceActionKind {
+        for (const auto& frame : frames)
+            if (frame.get().kind != WORM_UI_WORKSPACE_ACTION_NONE) return frame.get().kind;
+        return WORM_UI_WORKSPACE_ACTION_NONE;
+    }
+};
+
+} // namespace
+
+TEST_CASE("Create project dialog keeps its actions and drops the repeated prompt",
+          "[frontend-state][event-harness][dialog][project-modal]") {
+    {
+        project_modal_fixture_t f{"/music/song.ogg"};
+        const auto& text = f.harness.drawn_text();
+        CHECK(text.find("Import audio as a new project?") != std::string::npos);
+        CHECK(text.find("/music/song.ogg") != std::string::npos);
+        CHECK(text.find("Choose the initial chart layout") == std::string::npos);
+        const auto frames = f.click_button("Create project");
+        CHECK(project_modal_fixture_t::kind_of(frames) == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
+        for (const auto& frame : frames)
+            if (frame.get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT) {
+                CHECK(std::string(frame.get().project_path) == "/music/song.ogg");
+                CHECK(frame.get().new_project_layout_index == 0);
+            }
+    }
+    {
+        project_modal_fixture_t f{"/music/song.ogg"};
+        CHECK(project_modal_fixture_t::kind_of(f.click_button("Cancel")) ==
+              WORM_UI_WORKSPACE_ACTION_CANCEL_AUDIO_PROJECT);
+    }
+    {
+        project_modal_fixture_t f{"/music/song.ogg"};
+        const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+        CHECK(project_modal_fixture_t::kind_of({f.harness.frame(std::span{&escape, 1})}) ==
+              WORM_UI_WORKSPACE_ACTION_CANCEL_AUDIO_PROJECT);
+    }
+    {
+        project_modal_fixture_t f{"/music/song.ogg"};
+        const auto enter = key_event(SDL_EVENT_KEY_DOWN, SDLK_RETURN, SDL_SCANCODE_RETURN);
+        CHECK(project_modal_fixture_t::kind_of({f.harness.frame(std::span{&enter, 1})}) ==
+              WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
+    }
+}
+
+TEST_CASE("BMS text encoding dialog keeps its actions and drops the repeated prompt",
+          "[frontend-state][event-harness][dialog][project-modal]") {
+    const auto make = [](nuklear_event_harness_t& harness) {
+        REQUIRE(harness.ready());
+        harness.view().pending_bms_encoding_path = "/charts/song.bms";
+        (void)harness.frame();
+        (void)harness.frame();
+        (void)harness.frame();
+    };
+    {
+        nuklear_event_harness_t harness{1280, 900};
+        make(harness);
+        const auto& text = harness.drawn_text();
+        CHECK(text.find("BMS text encoding") != std::string::npos);
+        CHECK(text.find("/charts/song.bms") != std::string::npos);
+        CHECK(text.find("Choose the BMS text encoding") == std::string::npos);
+        const auto open = harness.drawn_text_center("Open chart");
+        REQUIRE(open);
+        const auto frames = click_at(harness, open->first, open->second);
+        bool opened = false;
+        for (const auto& frame : frames)
+            if (frame.get().kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE) {
+                opened = true;
+                CHECK(std::string(frame.get().project_path) == "/charts/song.bms");
+                CHECK(frame.get().bms_encoding_index == 1);
+            }
+        CHECK(opened);
+    }
+    {
+        nuklear_event_harness_t harness{1280, 900};
+        make(harness);
+        const auto cancel = harness.drawn_text_center("Cancel");
+        REQUIRE(cancel);
+        bool canceled = false;
+        for (const auto& frame : click_at(harness, cancel->first, cancel->second))
+            canceled |= frame.get().kind == WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING;
+        CHECK(canceled);
+    }
+    {
+        nuklear_event_harness_t harness{1280, 900};
+        make(harness);
+        const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+        CHECK(harness.frame(std::span{&escape, 1}).get().kind == WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING);
+    }
 }

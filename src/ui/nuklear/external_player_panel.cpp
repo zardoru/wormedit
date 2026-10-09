@@ -1,5 +1,6 @@
 #include "ui/nuklear/external_player_panel.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/dialog.h"
 #include "wormedit/nuklear_config.h"
 
 #include <cstdio>
@@ -13,6 +14,7 @@ struct player_draft_t {
     WormUiExternalPlayerAction values{};
 };
 player_draft_t draft;
+wormedit::ui::chrome::Dialog external_player_dialog;
 
 void copy_field(char* target, size_t capacity, const char* value) {
     std::snprintf(target, capacity, "%s", value ? value : "");
@@ -30,16 +32,21 @@ void refresh_draft(const WormUiExternalPlayerView& view) {
     copy_field(draft.values.stop_arguments, sizeof(draft.values.stop_arguments), player.stop_arguments);
 }
 
-void edit_field(nk_context* context, const char* label, char* value, int capacity) {
-    nk_layout_row_dynamic(context, 22, 1);
-    nk_label(context, label, NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 28, 1);
+void edit_field(nk_context* context, const char* label, char* value, int capacity,
+                const char* tooltip = nullptr) {
+    nk_layout_row_dynamic(context, 15, 1);
+    const auto label_bounds = nk_widget_bounds(context);
+    nk_label_colored(context, label, NK_TEXT_LEFT,
+                     wormedit::ui::chrome::color(wormedit::ui::chrome::UiColor::text_muted));
+    if (tooltip && wormedit::ui::nuklear::tooltip::hovered(context, label_bounds))
+        wormedit::ui::nuklear::tooltip::text(context, tooltip);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
     wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, value, capacity, nk_filter_default);
 }
 
 void render_player_list(nk_context* context, const WormUiExternalPlayerView& view,
                         WormUiExternalPlayerAction& action) {
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_dynamic(context, wormedit::ui::metrics::control_compact, 1);
     for (size_t index = 0; index < view.player_count; ++index) {
         const auto* name = view.players[index].name;
         if (nk_option_label(context, name && *name ? name : "Unnamed player", index == view.selected)) {
@@ -52,22 +59,28 @@ void render_player_list(nk_context* context, const WormUiExternalPlayerView& vie
 }
 
 void render_draft(nk_context* context, WormUiExternalPlayerAction& action) {
+    namespace chrome = wormedit::ui::chrome;
+    constexpr auto templates = "Arguments may use <apppath>, <filename> and <measure>.";
     edit_field(context, "Name", draft.values.name, sizeof(draft.values.name));
     edit_field(context, "Player or wrapper path", draft.values.path, sizeof(draft.values.path));
-    edit_field(context, "Play from start arguments", draft.values.start_arguments, sizeof(draft.values.start_arguments));
-    edit_field(context, "Play from here arguments", draft.values.here_arguments, sizeof(draft.values.here_arguments));
-    edit_field(context, "Stop arguments", draft.values.stop_arguments, sizeof(draft.values.stop_arguments));
-    nk_layout_row_dynamic(context, 26, 1);
-    nk_label(context, "Templates: <apppath>, <filename>, <measure>", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 28, 4);
-    if (nk_button_label(context, "Save")) {
+    edit_field(context, "Play from start arguments", draft.values.start_arguments,
+               sizeof(draft.values.start_arguments), templates);
+    edit_field(context, "Play from here arguments", draft.values.here_arguments,
+               sizeof(draft.values.here_arguments), templates);
+    edit_field(context, "Stop arguments", draft.values.stop_arguments,
+               sizeof(draft.values.stop_arguments), templates);
+    chrome::dialog_footer_begin(external_player_dialog, context, 4, true);
+    if (chrome::dialog_button(external_player_dialog, context, "Remove", chrome::DialogButtonRole::destructive))
+        action.kind = WORM_UI_EXTERNAL_PLAYER_REMOVE;
+    if (chrome::dialog_button(external_player_dialog, context, "Add", chrome::DialogButtonRole::secondary))
+        action.kind = WORM_UI_EXTERNAL_PLAYER_ADD;
+    if (chrome::dialog_button(external_player_dialog, context, "Close", chrome::DialogButtonRole::secondary))
+        action.kind = WORM_UI_EXTERNAL_PLAYER_CLOSE;
+    if (chrome::dialog_button(external_player_dialog, context, "Save", chrome::DialogButtonRole::primary)) {
         action = draft.values;
         action.kind = WORM_UI_EXTERNAL_PLAYER_SAVE;
         action.selected = draft.selected;
     }
-    if (nk_button_label(context, "Add")) action.kind = WORM_UI_EXTERNAL_PLAYER_ADD;
-    if (nk_button_label(context, "Remove")) action.kind = WORM_UI_EXTERNAL_PLAYER_REMOVE;
-    if (nk_button_label(context, "Close")) action.kind = WORM_UI_EXTERNAL_PLAYER_CLOSE;
 }
 } // namespace
 
@@ -78,14 +91,15 @@ void worm_ui_nuklear_render_external_player_panel(nk_context* context,
         return;
     }
     refresh_draft(*view);
-    const auto bounds = nk_rect(80, 50, 620, 560);
-    const bool content = nk_begin(context, "External player preferences", bounds,
-        NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_TITLE);
-    if (content) {
+    namespace chrome = wormedit::ui::chrome;
+    if (chrome::dialog_begin(external_player_dialog, context, "External player preferences",
+                             "External player preferences",
+                             {.modal = false, .closable = true, .width = 560.0f})) {
         if (view->players) render_player_list(context, *view, *action);
         render_draft(context, *action);
     }
-    nk_end(context);
+    if (chrome::dialog_end(external_player_dialog, context) == chrome::DialogResult::cancel)
+        action->kind = WORM_UI_EXTERNAL_PLAYER_CLOSE;
 }
 
 void worm_ui_nuklear_reset_external_player_panel(void) { draft = {}; }

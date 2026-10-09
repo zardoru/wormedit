@@ -25,11 +25,12 @@ The causes, found while planning:
 
 ## T-407 Add a shared `chrome::Dialog` component
 
-- **Status:** ready
+- **Status:** done
 - **Mockup:** [unsaved-changes.svg](../mockups/unsaved-changes.svg) (reference: match its structure and hierarchy)
 - **Outcome:** `chrome::Dialog` draws a dialog that follows the rules above. Unit tests show equal left and right insets, a height that fits its content within 1 px after the second frame, Escape mapped to cancel and Enter mapped to the primary action, and no dragging.
 - **Read first:** `src/ui/nuklear/chrome.h` (`menu_panel`, `menu_surface_begin`), `src/ui/nuklear/context_menu.h` (a lifecycle component with the same shape), `src/ui/nuklear/frontend.cpp` (`begin_project_modal`).
 - **Files owned:** new `src/ui/nuklear/dialog.h`, new `src/ui/nuklear/dialog.cpp`, `src/ui/nuklear/chrome.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`, new `tests/ui/dialog_tests.cpp`, this card.
+- **Result (2026-10-09):** `src/ui/nuklear/dialog.h/.cpp` add `chrome::Dialog` with `dialog_begin`, `dialog_footer_begin(buttons, destructive_first)`, `dialog_button(label, role)` and `dialog_end` returning `DialogResult` (primary, secondary, destructive, cancel). It paints through `surface_window_begin` at elevation 2 with 16 px padding and 8 px spacing (restored afterwards), NO_SCROLLBAR, no title bar and no dragging; a modal draws a dimming backdrop window (`rgba(0,0,0,0.35)`) that swallows input; the height is the previous frame's measured content, centered, clamped with a 16 px margin (the body then scrolls). Escape maps to cancel, Enter to primary when a primary button was drawn. `chrome.h` was not edited. Eight unit cases in `tests/ui/dialog_tests.cpp` (insets, height fit within 1 px, restore, Escape/Enter, roles and right alignment, no dragging, modal blocking, clamp) run in the event-harness executable with the `event-harness` label. Existing ad-hoc dialog windows for the migration cards are listed in the batch report.
 - **Steps:**
   1. Give the API `begin(context, id, title, {modal, closable, width})` → bool, `footer_begin()`, `button(label, role)` with roles primary, secondary and destructive, and `end()` → a result enum.
   2. Begin with `NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BORDER`, transparent window fills and a painted surface. Set `window.padding` to (16, 16) and `spacing` to (8, 8) for the duration, and restore them afterwards.
@@ -43,11 +44,12 @@ The causes, found while planning:
 
 ## T-408 Rebuild Unsaved changes on the shared dialog
 
-- **Status:** blocked-on T-407
+- **Status:** done
 - **Mockup:** [unsaved-changes.svg](../mockups/unsaved-changes.svg) (reference: match its structure and hierarchy)
 - **Outcome:** the dialog shows the title "Unsaved changes", then "Save your changes before quitting WormEdit?" (or "…closing this project?"), then a footer with `[Discard changes]` at the left and `[Cancel] [Save]` at the right, where Save is primary. It shows no import or other notification text and leaves no empty space.
 - **Read first:** `src/ui/nuklear/frontend.cpp` (`render_close_confirmation`), `src/sys/main.cpp` (`close_confirmation_view`, `close_feedback`), `src/ui/frontend.h` (`WormUiCloseConfirmationView`).
 - **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp`, `src/ui/frontend.h` (`status_text` of the close view only), event-harness tests, this card.
+- **Result (2026-10-09):** `render_close_confirmation` now uses `chrome::Dialog` (modal, 440 px, footer `[Discard changes]` far left, `[Cancel] [Save]` with Save primary, Escape cancels, Enter saves) and the same decision, project and revision stamps and save flow as before. `src/sys/main.cpp` stops passing the last notification: `pending_close_t::save_failure` is set to "Save failed: <reason>" only when a save started from this dialog fails, and the view shows it as a conflict-colored line. The Dialog API grew `dialog_text` (wrapped paragraphs, no hand-picked row heights) and a `button_width` footer argument, and it now zeroes Nuklear's square window border while open (it left stray corner pixels over the painted rounded border). Four event-harness cases (text, each button with stamps, Escape and Enter, the failure line). Real-window Xvfb before and after captures: `/home/zardoru/devel/wormedit-scratch-builds/t408/` (`before.png`, `after.png`).
 - **Steps:**
   1. Stop passing `close_feedback` into the view. Show a status line only for a failed save from this dialog, such as "Save failed: <reason>".
   2. Render with `chrome::Dialog` and modal mode on. Escape cancels and Enter saves.
@@ -59,7 +61,7 @@ The causes, found while planning:
 
 ## T-409 Redesign the Tap timing tool
 
-- **Status:** blocked-on T-407
+- **Status:** ready (T-407 done 2026-10-09)
 - **Mockup:** [tap-timing.svg](../mockups/tap-timing.svg) (reference: match its structure and hierarchy)
 - **Outcome:** Tap timing matches the layout below in an Xvfb capture. It is 420 px wide and fits its content. Each tap pulses the ring, and the result is a large BPM readout instead of five help sentences.
 - **Read first:** `src/ui/nuklear/tap_timing_panel.cpp`, `src/ui/frontend.h` (`WormUiTapTimingView`), `src/ui/nuklear/frontend.cpp` (font atlas setup near `nk_font_atlas_add_from_file`).
@@ -100,7 +102,8 @@ The causes, found while planning:
 - **Not reached:** the Xvfb capture with Tap timing over the status-bar overview. A status-bar overview needs a song with audio (BGM events or a waveform); a template chart has neither, so the event-harness cases stand in for the real window.
 - **Outcome:** with Tap timing (or any window) over the status-bar overview, hovering the dialog never shows "Audio is unavailable for this chart overview." An event-harness case checks a covered widget and an uncovered one.
 - **Read first:** `src/ui/nuklear/tooltip.h`, `src/ui/nuklear/tooltip.cpp`, `src/ui/nuklear/frontend.cpp` (`render_status_minimap`).
-- **Files owned:** `src/ui/nuklear/tooltip.cpp`, `src/ui/nuklear/tooltip.h`, `src/ui/nuklear/frontend.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, this card. Follow-up paths (approved 2026-10-09): `src/ui/nuklear/components.cpp`, `src/ui/nuklear/chrome.h`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_note_menu.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/tooltip.h`.
+- **Files owned:** `src/ui/nuklear/tooltip.cpp`, `src/ui/nuklear/tooltip.h`, `src/ui/nuklear/frontend.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, this card. Follow-up paths (approved 2026-10-09): `src/ui/nuklear/components.cpp`, `src/ui/nuklear/chrome.h`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_note_menu.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/tooltip.h`., `src/ui/nuklear/context_menu.cpp` (disabled-reason tooltip, approved 2026-10-09).
+- **Result (2026-10-09, t410-menu):** `context_menu_button` (`context_menu.cpp`) now uses `tooltip::hovered` for the disabled-reason tooltip, so a covered menu item no longer shows it. No new event-harness case yet; the covered path is not reproduced in the harness.
 - **Steps:**
   1. Add `tooltip::hovered(context, bounds)`. It requires `nk_input_is_mouse_hovering_rect` and that the current window is the hovered one, using `nk_window_is_hovered` together with Nuklear's top-window check.
   2. Replace the raw rectangle checks that feed tooltips in `frontend.cpp`, then grep the other Nuklear units for the same pattern.
@@ -112,7 +115,7 @@ The causes, found while planning:
 
 ## T-411 Move the remaining dialogs onto the shared dialog
 
-- **Status:** blocked-on T-407
+- **Status:** ready (T-407 done 2026-10-09)
 - **Mockup:** [unsaved-changes.svg](../mockups/unsaved-changes.svg) (reference: match its structure and hierarchy)
 - **Outcome:** Timing Settings, External player preferences, Review sound import, Group selected sounds, Assign BMS WAV slots, the new project wizard and the project modals use `chrome::Dialog`. `grep -n NK_WINDOW_TITLE src/ui/nuklear` lists only windows the user may drag: Options, Notifications and Player preview.
 - **Read first:** `src/ui/nuklear/dialog.h`, each listed source (`grep -rn 'nk_begin(' src/ui/nuklear`).

@@ -748,18 +748,9 @@ static void draw_compose_grid_line(const ComposePaintContext& paint,
         return;
     const auto y = paint.viewport.y + static_cast<float>(line.y_pixels) * paint.viewport.h /
                                           static_cast<float>(view.viewport_height_pixels);
-    struct nk_color color = compose(ComposeColor::subgrid_line);
-    float thickness = 0.7f;
-    if (line.kind == 3) {
-        color = compose(ComposeColor::measure_line);
-        thickness = 1.2f;
-    } else if (line.kind == 1 || line.kind == 2) {
-        color = compose(ComposeColor::beat_line);
-        thickness = line.emphasis >= 2 ? 1.1f : 0.9f;
-    } else if (line.emphasis >= 2) {
-        color = compose(ComposeColor::subgrid_emphasis);
-    }
-    field.hline(1, paint.viewport.x, paint.viewport.x + paint.viewport.w, y, thickness,
+    const auto style = wormedit::ui::theme::compose_grid_line_style(line.kind, line.emphasis, line.snap_class);
+    const auto color = style.color;
+    field.hline(1, paint.viewport.x, paint.viewport.x + paint.viewport.w, y, style.thickness,
                 {color.r, color.g, color.b, color.a});
     draw_compose_grid_tick(paint, line, y);
 }

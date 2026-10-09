@@ -55,3 +55,15 @@ TEST_CASE("Arrow palette preserves the confirmed snap hues and other fallback",
     }
     CHECK(wormedit::ui::arrow_snap_color(255).red == expected.back().red);
 }
+
+TEST_CASE("Fractional grid rows classify exactly without rounding or overflow", "[frontend-state][arrow][snap-grid]") {
+    using wormedit::ui::note_snap_class;
+    struct row_t { std::uint64_t whole, numerator, denominator, divisions; std::uint8_t expected; };
+    const std::array rows{
+        row_t{1, 1, 4, 5, 4}, row_t{0, 5, 8, 5, 8}, row_t{1, 2, 8, 5, 4},
+        row_t{0, 1, 2, 960, 0}, row_t{0, 1, 0, 960, 0}, row_t{0, 1, 1, 960, 0},
+        row_t{std::numeric_limits<std::uint64_t>::max() / 4, 3, 4,
+              std::numeric_limits<std::uint64_t>::max(), 4}};
+    for (const auto& row : rows)
+        CHECK(note_snap_class(row.whole, row.numerator, row.denominator, row.divisions) == row.expected);
+}

@@ -1,0 +1,78 @@
+#include "ui/nuklear/compose_snap_grid.h"
+#include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/theme.h"
+#include <algorithm>
+#include <array>
+#include <cstdio>
+
+namespace {
+using namespace wormedit::ui::chrome;
+auto stamp(const WormUiComposeView& view) -> PopupContextStamp {
+    return {view.project_id, view.chart_id, view.document_revision};
+}
+void emit_snap(nk_context* context, const WormUiComposeView& view,
+               WormUiWorkspaceAction& action, std::uint64_t denominator) {
+    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    action.compose_action = WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP;
+    action.compose_input_project_id = view.project_id;
+    action.compose_input_chart_id = view.chart_id;
+    action.compose_input_document_revision = view.document_revision;
+    action.compose_snap_denominator = denominator;
+    context_menu_close(worm_ui_nuklear_compose_state().snap_grid_menu, context);
+}
+void move_choice(nk_context* context, int count, int& selected) {
+    int delta{};
+    if (nk_input_is_key_pressed(&context->input, NK_KEY_LEFT)) --delta;
+    if (nk_input_is_key_pressed(&context->input, NK_KEY_RIGHT)) ++delta;
+    if (nk_input_is_key_pressed(&context->input, NK_KEY_UP)) delta -= 4;
+    if (nk_input_is_key_pressed(&context->input, NK_KEY_DOWN)) delta += 4;
+    selected = std::clamp(selected + delta, 0, count - 1);
+}
+void render_grid_popup(nk_context* context, const WormUiComposeView& view,
+                       WormUiWorkspaceAction& action, bool available) {
+    auto& state = worm_ui_nuklear_compose_state();
+    auto& menu = state.snap_grid_menu;
+    const auto count = static_cast<int>(std::min<std::size_t>(view.supported_snap_denominator_count, 32));
+    if (!available || count == 0) context_menu_close(menu, context);
+    const auto height = context_menu_height(static_cast<float>((count + 3) / 4 + 2));
+    if (!context_menu_begin(menu, context, stamp(view), nk_vec2(280, height))) return;
+    std::array<std::array<char, 24>, 32> storage{};
+    std::array<const char*, 32> labels{};
+    for (int index = 0; index < count; ++index) {
+        std::snprintf(storage[index].data(), storage[index].size(), "1/%llu",
+                      static_cast<unsigned long long>(view.supported_snap_denominators[index]));
+        labels[index] = storage[index].data();
+    }
+    move_choice(context, count, state.snap_grid_choice);
+    nk_layout_row_dynamic(context, 22, 1);
+    nk_label(context, "Editing grid", NK_TEXT_LEFT);
+    const auto chosen = ChipGrid{labels.data(), count, state.snap_grid_choice, 4}.render(context).chosen;
+    if (chosen >= 0) emit_snap(context, view, action, view.supported_snap_denominators[chosen]);
+    else if (nk_input_is_key_pressed(&context->input, NK_KEY_ENTER))
+        emit_snap(context, view, action, view.supported_snap_denominators[state.snap_grid_choice]);
+    nk_layout_row_dynamic(context, 20, 1);
+    nk_label(context, "Arrows · Enter · Esc", NK_TEXT_LEFT);
+    context_menu_end(menu, context);
+}
+}
+
+void render_compose_snap_badge(nk_context* context, const WormUiComposeView& view,
+                               WormUiWorkspaceAction& action, bool available) {
+    auto& state = worm_ui_nuklear_compose_state();
+    auto& menu = state.snap_grid_menu;
+    (void)context_menu_update(menu, context);
+    char label[24];
+    std::snprintf(label, sizeof(label), "1/%llu",
+                  static_cast<unsigned long long>(view.area_snap_denominator));
+    const auto bounds = nk_widget_bounds(context);
+    if (Chip{label, menu.open, available, context_menu_owns_input(menu) ? nullptr : "Choose editing grid"}.render(context)) {
+        state.snap_grid_choice = 0;
+        const auto count = std::min<std::size_t>(view.supported_snap_denominator_count, 32);
+        for (std::size_t index = 0; index < count; ++index)
+            if (view.supported_snap_denominators[index] == view.area_snap_denominator)
+                state.snap_grid_choice = static_cast<int>(index);
+        context_menu_open(menu, nk_vec2(bounds.x, bounds.y), stamp(view));
+    }
+    render_grid_popup(context, view, action, available);
+}

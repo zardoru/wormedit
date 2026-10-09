@@ -511,6 +511,7 @@ typedef struct WormUiComposeGridLineView {
     uint8_t emphasis;
     uint32_t measure_number;
     uint64_t chart_row;
+    uint8_t snap_class; // Exact standard-measure subdivision; 0 = other.
 } WormUiComposeGridLineView;
 
 typedef struct WormUiComposeLaneLayoutSegmentView {
@@ -2041,7 +2042,8 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_SCROLL_DIRECTION, WORM_UI_OPTIONS_FIELD_ANCHOR,
     WORM_UI_OPTIONS_FIELD_NOTE_PALETTE, WORM_UI_OPTIONS_FIELD_LANE_LEGEND,
     WORM_UI_OPTIONS_FIELD_AREA_ALPHA, WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK,
-    WORM_UI_OPTIONS_FIELD_MOVE_COLLISION_POLICY, WORM_UI_OPTIONS_FIELD_FIELD_SCHEME
+    WORM_UI_OPTIONS_FIELD_MOVE_COLLISION_POLICY, WORM_UI_OPTIONS_FIELD_FIELD_SCHEME,
+    WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID
 } WormUiOptionsField;
 typedef struct WormUiOptionsDiagnostic {
     WormUiOptionsField field;
@@ -2067,6 +2069,7 @@ typedef struct WormUiOptionsView {
     bool note_kind_palette_visible, lane_key_legend_visible;
     bool audition_on_click;
     bool confirm_unsaved_close, keep_pitch, frame_timing_overlay;
+    bool snap_colored_grid;
     bool minimap_click_moves_paused_playhead;
     uint32_t keysound_budget_mib;
     uint64_t rate_numerator, rate_denominator;
@@ -2346,6 +2349,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY,
     WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS,
     WORM_UI_COMPOSE_ACTION_TOGGLE_EDIT_SNAP,
+    WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP,
     WORM_UI_COMPOSE_ACTION_TOGGLE_Y_LOCK,
     WORM_UI_COMPOSE_ACTION_RATE_SLOWER,
     WORM_UI_COMPOSE_ACTION_RATE_FASTER,
@@ -2810,6 +2814,7 @@ typedef struct WormUiWorkspaceAction {
     uint64_t compose_input_document_revision;
     size_t compose_quantize_preset_index;
     bool compose_quantize_preset_selected;
+    uint64_t compose_snap_denominator;
     uint64_t compose_quantize_divisions;
     uint8_t compose_quantize_space;
     uint8_t compose_quantize_tie;
@@ -2928,6 +2933,7 @@ typedef struct WormUiWorkspaceAction {
 bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer);
 // Select a loaded field palette; empty or unknown IDs use Wormedit. Chrome is unaffected.
 bool worm_ui_frontend_select_field_scheme(const char* id);
+void worm_ui_frontend_set_snap_colored_grid(bool enabled);
 // Initialize the same event/action frontend without a window or renderer for integration tests.
 bool worm_ui_frontend_init_headless(int width, int height);
 // Actual in-window chrome height; headless initialization keeps the fallback layout.

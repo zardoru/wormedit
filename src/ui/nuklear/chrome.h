@@ -206,6 +206,15 @@ struct Segmented {
     auto render(nk_context* context) const -> int;
 };
 
+// One chip in the caller's current layout row (the grid uses the same visual style).
+struct Chip {
+    const char* label;
+    bool chosen{};
+    bool enabled{true};
+    const char* tooltip{};
+    auto render(nk_context* context) const -> bool;
+};
+
 struct ChipGrid {
     struct Result {
         int chosen{-1};

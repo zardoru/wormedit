@@ -303,6 +303,21 @@ void draw_chip(nk_context* context, struct nk_rect chip, const char* label, bool
 
 } // namespace
 
+auto Chip::render(nk_context* context) const -> bool {
+    struct nk_rect bounds{};
+    const auto cell = nk_widget(&bounds, context);
+    if (cell == NK_WIDGET_INVALID) return false;
+    const auto height = std::min(bounds.h, metrics::control_compact);
+    const auto chip = nk_rect(bounds.x + metrics::gap_small * 0.5f,
+        bounds.y + (bounds.h - height) * 0.5f,
+        std::max(0.0f, bounds.w - metrics::gap_small), height);
+    const auto hit = hit_test(context, cell, chip, enabled);
+    const auto state = state_of(hit, enabled);
+    draw_chip(context, chip, label, false, state, chip_look(chosen, state));
+    tooltip_if_hovered(context, hit, tooltip);
+    return enabled && hit.clicked;
+}
+
 auto ChipGrid::render(nk_context* context) const -> Result {
     Result result;
     const int slots = count + (add_label ? 1 : 0);

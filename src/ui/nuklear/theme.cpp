@@ -1,4 +1,5 @@
 #include "ui/nuklear/theme.h"
+#include "ui/nuklear/arrow_glyph.h"
 
 #include <nlohmann/json.hpp>
 
@@ -237,6 +238,7 @@ field_palette_t active = default_palette();
 std::string active_id = "wormedit";
 std::set<std::string> warned_ids;
 std::uint64_t generation{};
+bool colored_grid{true};
 constexpr std::array<std::string_view, 8> timing_names{"bpm",   "scroll", "speed", "stop",
                                                        "delay", "warp",   "kiai",  "anchor"};
 
@@ -565,6 +567,25 @@ auto field_scheme_id() -> std::string_view {
 auto field_generation() -> std::uint64_t {
     return generation;
 }
+void set_snap_colored_grid(bool enabled) {
+    if (colored_grid == enabled) return;
+    colored_grid = enabled;
+    ++generation;
+}
+auto snap_colored_grid() -> bool { return colored_grid; }
+auto compose_grid_line_style(std::uint8_t kind, std::uint8_t emphasis, std::uint8_t snap_class)
+    -> grid_line_style_t {
+    if (colored_grid) {
+        const auto rgb = wormedit::ui::arrow_snap_color(snap_class);
+        const auto thickness = kind == 3 ? 2.0f : snap_class == 4 ? 1.6f : 1.0f;
+        return {nk_rgba(rgb.red, rgb.green, rgb.blue, 210), thickness};
+    }
+    if (kind == 3) return {compose(ComposeColor::measure_line), 1.2f};
+    if (kind == 1 || kind == 2)
+        return {compose(ComposeColor::beat_line), emphasis >= 2 ? 1.1f : 0.9f};
+    return {compose(emphasis >= 2 ? ComposeColor::subgrid_emphasis : ComposeColor::subgrid_line), 0.7f};
+}
+
 auto field_uses_positions() -> bool {
     return !active.positions.empty();
 }

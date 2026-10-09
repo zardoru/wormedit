@@ -557,6 +557,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/markers_event_harness_tests.cpp
         ui/bookmark_chooser_event_harness_tests.cpp
         ui/dock_shortcut_event_harness_tests.cpp
+        ui/snap_grid_event_harness_tests.cpp
         ui/sound_picker_event_harness_tests.cpp
         ui/bookmark_rename_event_harness_tests.cpp
         ui/popup_menu_event_harness_tests.cpp

@@ -128,3 +128,25 @@ TEST_CASE("Field theme switching discards old position colors and binds scratch 
     bind_field_layout(lanes);
     check_color(compose_key_color(1, 1).note, compose_key_color(1).note);
 }
+
+TEST_CASE("Snap grid uses note hues and stronger beats with immediate style invalidation", "[theme][snap-grid]") {
+    set_snap_colored_grid(true);
+    const auto generation = field_generation();
+    set_snap_colored_grid(true);
+    expect_theme(field_generation() == generation);
+    const auto red = compose_grid_line_style(1, 1, 4);
+    const auto blue = compose_grid_line_style(0, 0, 8);
+    check_color(red.color, nk_rgba(235, 73, 79, 210));
+    check_color(blue.color, nk_rgba(75, 139, 240, 210));
+    expect_theme(red.thickness > blue.thickness);
+    expect_theme(compose_grid_line_style(3, 2, 4).thickness > red.thickness);
+    set_snap_colored_grid(false);
+    expect_theme(field_generation() > generation);
+    expect_theme(!snap_colored_grid());
+    check_color(compose_grid_line_style(3, 2, 4).color, compose(ComposeColor::measure_line));
+    check_color(compose_grid_line_style(1, 1, 4).color, compose(ComposeColor::beat_line));
+    check_color(compose_grid_line_style(0, 0, 8).color, compose(ComposeColor::subgrid_line));
+    expect_theme(compose_grid_line_style(3, 2, 4).thickness == 1.2f);
+    expect_theme(compose_grid_line_style(0, 0, 8).thickness == 0.7f);
+    set_snap_colored_grid(true);
+}

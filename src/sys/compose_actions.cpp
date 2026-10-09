@@ -3237,10 +3237,29 @@ auto rename_quantize_preset(compose_action_context_t& context) -> std::string {
     return compose_action_success(context, "Quantization preset renamed.");
 }
 
+auto set_edit_snap_from_badge(compose_action_context_t& context) -> std::string {
+    const auto divisions = context.action.compose_snap_denominator;
+    if (editor_interaction_has_pending_gesture(context.state) ||
+        context.application_state.paste_session)
+        return compose_action_warning(context, "Finish or cancel the active Compose gesture before changing snapping.");
+    if (std::ranges::find(context.state.supported_snap_denominators, divisions) ==
+        context.state.supported_snap_denominators.end())
+        return compose_action_warning(context, "This chart cannot snap to that grid.");
+    const auto result = wormedit::dispatch_editor_action(context.history, context.state,
+        wormedit::set_edit_snap_action_t{divisions});
+    if (!result.accepted) return compose_interaction_feedback(context, result, "Editing grid was unchanged.");
+    context.application_state.requested_snap_denominators.insert_or_assign(context.state.chart.value, divisions);
+    auto& editor = quantize_editor_for(context);
+    editor.request.divisions = divisions;
+    editor.preset_index.reset();
+    return compose_action_info(context, "Editing grid: 1/" + std::to_string(divisions) + ".");
+}
+
 auto dispatch_quantize_preset_action(compose_action_context_t& context)
     -> std::optional<std::string> {
     using namespace wormedit;
     const auto kind = context.action.compose_action;
+    if (kind == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP) return set_edit_snap_from_badge(context);
     if (kind == WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS)
         return apply_quantize_settings_from_action(context);
     if (kind == WORM_UI_COMPOSE_ACTION_SELECT_QUANTIZE_PRESET)

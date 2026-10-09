@@ -304,3 +304,18 @@ TEST_CASE("Move collision preference defaults to Reject and persists displacemen
     values.editor.move_collision_policy = static_cast<move_collision_policy_t>(2);
     expect_preference(!serialize_program_preferences(values));
 }
+
+TEST_CASE("Snap-colored grid defaults on and round-trips its saved opt-out", "[preferences][snap-grid]") {
+    expect_preference(parse_program_preferences(R"({"version":1,"display":{}})").preferences.display.snap_colored_grid);
+    auto values = default_program_preferences();
+    values.display.snap_colored_grid = false;
+    const auto encoded = serialize_program_preferences(values);
+    require_preference(encoded.has_value());
+    expect_preference(parse_program_preferences(*encoded).preferences == values);
+    for (const auto literal : {"null", "1", "\"false\"", "[]"}) {
+        const auto invalid = parse_program_preferences(
+            "{\"display\":{\"snap_colored_grid\":" + std::string(literal) + "}}");
+        expect_preference(invalid.preferences.display.snap_colored_grid);
+        expect_preference(!invalid.warnings.empty());
+    }
+}

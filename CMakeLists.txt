@@ -385,6 +385,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_recipe_form.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_canvas.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_toolbar.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_snap_grid.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_inspector.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_input_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_keyboard_input.cpp"

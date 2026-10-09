@@ -91,7 +91,7 @@ void audio_page(nk_context* context, const WormUiOptionsView* view, WormUiOption
     nk_layout_row_dynamic(context, 48, 1);
     nk_label_wrap(context, "Raising the budget loads skipped keysounds for the open project. Lowering it limits future loads and keeps playing sounds in memory.");
 }
-void appearance_page(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
+void field_scheme_picker(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
     const auto& schemes = wormedit::ui::theme::field_schemes();
     std::vector<const char*> labels;
     int selected = 0;
@@ -108,6 +108,13 @@ void appearance_page(nk_context* context, const WormUiOptionsView* view, WormUiO
     *action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view->revision, .category = view->category,
         .field = WORM_UI_OPTIONS_FIELD_FIELD_SCHEME};
     snprintf(action->text, sizeof(action->text), "%s", schemes[static_cast<std::size_t>(value)].id.c_str());
+}
+void appearance_page(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
+    field_scheme_picker(context, view, action);
+    edit_toggle(context, *view, *action, "High-contrast snap-colored grid",
+        WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID, view->snap_colored_grid);
+    nk_layout_row_dynamic(context, 38, 1);
+    nk_label_wrap(context, "Color grid lines by note subdivision, with stronger red beats. Turn off to use the field theme's original grid.");
 }
 std::array<WormUiOptionsPageRenderer, WORM_UI_OPTIONS_CATEGORY_COUNT> pages{
     general_page, editor_page, audio_page, appearance_page, wormedit::ui::nuklear::render_shortcuts_page, placeholder};

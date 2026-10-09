@@ -110,6 +110,11 @@ auto field_schemes() -> const std::vector<field_scheme_t>&;
 auto select_field_scheme(std::string_view id) -> bool;
 auto field_scheme_id() -> std::string_view;
 auto field_generation() -> std::uint64_t;
+void set_snap_colored_grid(bool enabled);
+auto snap_colored_grid() -> bool;
+struct grid_line_style_t { nk_color color; float thickness; };
+auto compose_grid_line_style(std::uint8_t kind, std::uint8_t emphasis, std::uint8_t snap_class)
+    -> grid_line_style_t;
 auto field_uses_positions() -> bool;
 
 } // namespace wormedit::ui::theme

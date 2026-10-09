@@ -1220,6 +1220,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     if (view->input_occluded || owned_popup || compose_quantize_owns_input() || state.keysound_group_review.open ||
         wormedit::ui::chrome::context_menu_owns_input(state.keysound_group_menu) ||
         wormedit::ui::chrome::context_menu_owns_input(state.layers_menu) ||
+        wormedit::ui::chrome::context_menu_owns_input(state.snap_grid_menu) ||
         state.bga_stack_open || state.bga_stack_release_pending ||
         state.bga_renumber_confirmation_open ||
         state.bga_renumber_release_pending || compose_note_menu_consumed() ||
@@ -1640,7 +1641,8 @@ bool worm_ui_nuklear_compose_lane_focused(const WormUiComposeView* view, bool co
                                           bool window_focused) {
     return compose_tab_active && worm_ui_nuklear_compose_canvas_input_available(
         view, window_focused, state.inline_timing_open || state.go_to_measure_open ||
-            state.layers_menu.open || state.layers_menu_input_consumed || compose_quantize_owns_input() || compose_note_menu_consumed() ||
+            state.layers_menu.open || state.layers_menu_input_consumed || compose_quantize_owns_input() ||
+            wormedit::ui::chrome::context_menu_owns_input(state.snap_grid_menu) || compose_note_menu_consumed() ||
             state.bookmark_rename.active || state.bookmark_rename.release_pending ||
             (worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_chooser) || compose_sound_picker_owns_input(state.sound_picker)), false) &&
         view->cursor && view->cursor->lane_id != 0;

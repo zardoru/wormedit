@@ -916,7 +916,10 @@ void project_compose_grid_lines(const compose_scene_projection_context_t& projec
                                    ? measure_number
                                    : 0,
              .chart_row =
-             line.chart_row.fractional_rows.numerator == 0 ? line.chart_row.whole_rows : 0},
+             line.chart_row.fractional_rows.numerator == 0 ? line.chart_row.whole_rows : 0,
+             .snap_class = wormedit::ui::note_snap_class(line.chart_row.whole_rows,
+                 line.chart_row.fractional_rows.numerator,
+                 line.chart_row.fractional_rows.denominator, chart.divisions_per_standard_measure)},
              line.chart_row)) {
             view.truncated = true;
             break;

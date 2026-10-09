@@ -147,6 +147,7 @@ auto edit_audio(program_preferences_t& p, const WormUiOptionsAction& a) -> bool 
 auto edit_display(program_preferences_t& p, const WormUiOptionsAction& a) -> bool {
     switch (a.field) {
     case WORM_UI_OPTIONS_FIELD_FIELD_SCHEME: p.display.field_scheme = a.text; return true;
+    case WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID: p.display.snap_colored_grid = a.boolean; return true;
     case WORM_UI_OPTIONS_FIELD_THEME: p.display.theme = a.text; return true;
     case WORM_UI_OPTIONS_FIELD_SCALE: p.display.ui_scale_percent = static_cast<std::uint32_t>(a.integer); return true;
     case WORM_UI_OPTIONS_FIELD_LAYOUT: p.layout.dock_layout = a.text; return true;
@@ -257,6 +258,7 @@ auto options_view(options_runtime_t& r) -> WormUiOptionsView {
         .audition_on_click = p.editor.audition_on_click,
         .confirm_unsaved_close = p.general.confirm_unsaved_close, .keep_pitch = p.audio.keep_pitch,
         .frame_timing_overlay = p.display.frame_timing_overlay,
+        .snap_colored_grid = p.display.snap_colored_grid,
         .minimap_click_moves_paused_playhead = p.minimap.click_moves_paused_playhead,
         .keysound_budget_mib = p.audio.keysound_budget_mib,
         .rate_numerator = p.audio.playback_rate.numerator, .rate_denominator = p.audio.playback_rate.denominator,

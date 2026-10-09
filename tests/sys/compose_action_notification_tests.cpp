@@ -1491,3 +1491,43 @@ TEST_CASE("Compose workspace boundary creates and removes a BMS branch block and
     check_action(find_node(bms_control_kind_t::random) == nullptr);
     check_action(fixture.history.undo.empty());
 }
+
+TEST_CASE("Snap badge changes supported editing grid without editing the document or quantize policies", "[unit][sys][compose-action][snap-grid]") {
+    action_notification_fixture_t fixture;
+    fixture.state.supported_snap_denominators = {4, 8, 16};
+    auto settings = fixture.action(WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS);
+    settings.compose_quantize_divisions = 4;
+    (void)fixture.dispatch(settings);
+    fixture.application.quantize_editor->request.tie = quantization_tie_t::later;
+    auto snap = fixture.action(WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP);
+    snap.compose_snap_denominator = 8;
+    const auto revision = fixture.history.document.revision;
+    (void)fixture.dispatch(snap);
+    check_action(fixture.state.active_snap_denominator == 8);
+    check_action(fixture.application.requested_snap_denominators.at(1) == 8);
+    check_action(fixture.application.quantize_editor->request.divisions == 8);
+    check_action(fixture.application.quantize_editor->request.tie == quantization_tie_t::later);
+    snap.compose_snap_denominator = 7;
+    (void)fixture.dispatch(snap);
+    check_action(fixture.state.active_snap_denominator == 8);
+    snap.compose_snap_denominator = 16;
+    ++snap.compose_input_document_revision;
+    (void)fixture.dispatch(snap);
+    check_action(fixture.state.active_snap_denominator == 8);
+    check_action(fixture.history.document.revision == revision && fixture.history.undo.empty());
+}
+
+TEST_CASE("Snap badge refuses active gestures and paste previews", "[unit][sys][compose-action][snap-grid]") {
+    for (const bool paste : {false, true}) {
+        action_notification_fixture_t fixture;
+        fixture.state.supported_snap_denominators = {4, 8};
+        if (paste) fixture.application.paste_session = application_command_state_t::paste_session_t{};
+        else fixture.state.pending_hold.emplace();
+        auto snap = fixture.action(WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP);
+        snap.compose_snap_denominator = 8;
+        (void)fixture.dispatch(snap);
+        check_action(fixture.state.active_snap_denominator == 4);
+        check_action(fixture.application.requested_snap_denominators.empty());
+        check_action(fixture.history.undo.empty());
+    }
+}

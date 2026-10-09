@@ -56,6 +56,39 @@ auto note_snap_class(std::uint64_t row, std::uint64_t divisions_per_standard_mea
     return 0;
 }
 
+namespace {
+auto scaled_remainder(std::uint64_t value, std::uint64_t scale,
+                      std::uint64_t modulus) -> std::uint64_t {
+    value %= modulus;
+    std::uint64_t result{};
+    // scale is at most 64; modular addition avoids overflow even at UINT64_MAX.
+    for (std::uint64_t index = 0; index < scale; ++index) {
+        if (value >= modulus - result) result -= modulus - value;
+        else result += value;
+    }
+    return result;
+}
+}
+
+auto note_snap_class(std::uint64_t whole, std::uint64_t numerator,
+                     std::uint64_t denominator, std::uint64_t divisions) -> std::uint8_t {
+    if (denominator == 0 || numerator >= denominator || divisions == 0) return 0;
+    if (numerator == 0) return note_snap_class(whole, divisions);
+    const auto reduction = std::gcd(numerator, denominator);
+    numerator /= reduction;
+    denominator /= reduction;
+    for (const auto snap : snap_classes) {
+        const auto common = std::gcd(static_cast<std::uint64_t>(snap), divisions);
+        const auto scale = snap / common;
+        const auto divisor = divisions / common;
+        if (scale % denominator != 0) continue;
+        const auto fraction = (numerator * (scale / denominator)) % divisor;
+        const auto remainder = scaled_remainder(whole, scale, divisor);
+        if (fraction == 0 ? remainder == 0 : remainder == divisor - fraction) return snap;
+    }
+    return 0;
+}
+
 auto arrow_snap_color(std::uint8_t snap_class) -> arrow_color_t {
     for (std::size_t index = 0; index < snap_classes.size(); ++index) {
         if (snap_class == snap_classes[index]) return snap_colors[index];

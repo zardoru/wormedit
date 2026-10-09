@@ -351,3 +351,24 @@ TEST_CASE("Field theme Options edits stay draft until Apply and persist independ
     expect_options(!(apply_options_action(runtime,program,action(runtime,WORM_UI_OPTIONS_REVERT))));
     expect_options(runtime.draft.display.field_scheme=="ibmsc-o2mania");
 }
+
+TEST_CASE("Appearance snap grid opt-out stays draft until Apply and supports Defaults and Revert", "[options][snap-grid]") {
+    temporary_preferences_t file;
+    program_preferences_runtime_t program{.path = file.directory / "preferences.json"};
+    options_runtime_t runtime;
+    open_options(runtime, program.preferences);
+    select(runtime, program, WORM_UI_OPTIONS_DISPLAY);
+    auto edit = action(runtime, WORM_UI_OPTIONS_EDIT_FIELD, WORM_UI_OPTIONS_DISPLAY);
+    edit.field = WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID;
+    edit.boolean = false;
+    expect_options(!apply_options_action(runtime, program, edit));
+    expect_options(!options_view(runtime).snap_colored_grid);
+    expect_options(program.preferences.display.snap_colored_grid);
+    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(!load_program_preferences(program.path).contents.preferences.display.snap_colored_grid);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS)));
+    expect_options(options_view(runtime).snap_colored_grid);
+    expect_options(!program.preferences.display.snap_colored_grid);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT)));
+    expect_options(!options_view(runtime).snap_colored_grid);
+}

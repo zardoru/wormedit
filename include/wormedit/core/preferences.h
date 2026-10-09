@@ -50,6 +50,7 @@ struct display_preferences_t {
     std::uint32_t ui_scale_percent{}; // 0 = automatic; explicit values are 100..200.
     bool frame_timing_overlay{};
     std::string field_scheme{"wormedit"};
+    bool snap_colored_grid{true};
     auto operator==(const display_preferences_t&) const -> bool = default;
 };
 struct external_player_definition_t {

@@ -1324,8 +1324,10 @@ void dispatch_options_frame_action(wormedit::sys::options_runtime_t& options,
         ++players.revision;
     }
     if (options.category == WORM_UI_OPTIONS_AUDIO) initialize_preferred_transport(program.preferences, state);
-    if (options.category == WORM_UI_OPTIONS_DISPLAY)
+    if (options.category == WORM_UI_OPTIONS_DISPLAY) {
         worm_ui_frontend_select_field_scheme(program.preferences.display.field_scheme.c_str());
+        worm_ui_frontend_set_snap_colored_grid(program.preferences.display.snap_colored_grid);
+    }
 }
 
 // Shortcut-editor actions never reach the program-preference runtime.
@@ -4090,6 +4092,7 @@ int main(int argc, char** argv) {
     auto program_preferences = wormedit::sys::load_program_preferences_runtime();
     initialize_program_preferences(program_preferences, external_player_runtime, application_command_state, notification_sink);
     worm_ui_frontend_select_field_scheme(program_preferences.preferences.display.field_scheme.c_str());
+    worm_ui_frontend_set_snap_colored_grid(program_preferences.preferences.display.snap_colored_grid);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     resident_loader.set_budget_bytes(static_cast<std::size_t>(program_preferences.preferences.audio.keysound_budget_mib) * 1024ULL * 1024ULL);
 #endif

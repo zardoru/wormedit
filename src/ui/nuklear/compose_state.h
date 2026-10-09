@@ -468,6 +468,8 @@ struct worm_ui_nuklear_compose_state_t {
     bool stem_lane_resize_cursor_requested{};
     // Stem lane whose right edge is hovered or being dragged this frame; drives the edge highlight.
     std::uint64_t stem_lane_resize_hover_lane{};
+    wormedit::ui::chrome::ContextMenu snap_grid_menu{.title = "Editing grid"};
+    int snap_grid_choice{};
     bool inspector_visible{true};
     // Keysound listbox (compose_sounds_panel.cpp).
     bool sounds_panel_visible{true};

@@ -9,6 +9,8 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 
 ## Card groups
 
+- [Snap controls and grid readability](tasks/snap-grid.md)
+
 - [Dock and layer shortcuts](tasks/dock-shortcuts.md)
 
 - [Go to sound](tasks/go-to-sound.md)
@@ -67,7 +69,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Bookmark rename harness gesture alignment](tasks/bookmark-rename-harness.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-500.
+every number above T-502.
 
 ## Rules for whoever executes a card
 

@@ -24,6 +24,10 @@ auto arrow_polygon(std::uint8_t direction, float x, float y, float size)
 auto note_snap_class(std::uint64_t row, std::uint64_t divisions_per_standard_measure)
     -> std::uint8_t;
 
+// Exact fractional chart rows, without rounding into a neighboring snap class.
+auto note_snap_class(std::uint64_t whole, std::uint64_t numerator,
+                     std::uint64_t denominator, std::uint64_t divisions) -> std::uint8_t;
+
 struct arrow_color_t {
     std::uint8_t red;
     std::uint8_t green;

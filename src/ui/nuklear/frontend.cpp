@@ -19,6 +19,7 @@
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_snap_grid.h"
 #include "ui/nuklear/sound_import_runtime.h"
 #include "ui/nuklear/compose_bga_panel.h"
 #include "ui/nuklear/compose_input_panel.h"
@@ -494,7 +495,8 @@ static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_la
                                          compose_state.inline_timing_input_consumed ||
                                          compose_state.inline_offset_input_consumed ||
                                          compose_state.layers_menu_input_consumed ||
-                                         compose_note_menu_consumed() || compose_quantize_owns_input();
+                                         compose_note_menu_consumed() || compose_quantize_owns_input() ||
+                                         wormedit::ui::chrome::context_menu_owns_input(compose_state.snap_grid_menu);
     compose_state.inline_timing_input_consumed = false;
     compose_state.inline_offset_input_consumed = false;
     compose_state.layers_menu_input_consumed = false;
@@ -526,7 +528,8 @@ static void consume_compose_text_hotkeys(WormUiWorkspaceAction& action) {
     const auto count = std::exchange(g_compose_text_hotkey_count, std::size_t{});
     if (count == 0 || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE ||
         worm_ui_nuklear_compose_state().bgm_column_count_edit.input_owned ||
-        worm_ui_nuklear_compose_state().layers_menu_input_consumed || compose_note_menu_consumed() || compose_quantize_owns_input() || nuklear_text_entry_active())
+        worm_ui_nuklear_compose_state().layers_menu_input_consumed || compose_note_menu_consumed() || compose_quantize_owns_input() ||
+        wormedit::ui::chrome::context_menu_owns_input(worm_ui_nuklear_compose_state().snap_grid_menu) || nuklear_text_entry_active())
         return;
     switch (g_compose_text_hotkeys[0]) {
     case '+': action.compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_IN; break;
@@ -977,6 +980,7 @@ static void close_notification_history_windows() {
 static bool compose_popup_owns_input() {
     const auto& compose = worm_ui_nuklear_compose_state();
     return g_menu_popup_open || g_menu_popup_release_pending || compose_quantize_owns_input() ||
+           wormedit::ui::chrome::context_menu_owns_input(compose.snap_grid_menu) ||
            compose_area_menu_open() || compose_area_menu_consumed() ||
            compose_recipe_menu_open() || compose_recipe_menu_consumed() ||
            compose.resource_export_group_popup_open || compose.resource_export_group_release_pending ||
@@ -1296,9 +1300,16 @@ static bool capture_sound_picker_key(const SDL_KeyboardEvent& event) {
     return true;
 }
 
+static bool capture_snap_grid_key(const SDL_KeyboardEvent& event) {
+    if (!wormedit::ui::chrome::context_menu_owns_input(
+            worm_ui_nuklear_compose_state().snap_grid_menu)) return false;
+    forward_modal_key(event);
+    return true;
+}
+
 static bool capture_compose_modal_key(const SDL_KeyboardEvent& event) {
     const auto& compose = worm_ui_nuklear_compose_state();
-    if (capture_sound_picker_key(event) || capture_bookmark_editor_key(event)) return true;
+    if (capture_snap_grid_key(event) || capture_sound_picker_key(event) || capture_bookmark_editor_key(event)) return true;
     const bool escape_menu = g_menu_popup_open || g_menu_popup_release_pending ||
         compose.keysound_filter_popup_open || compose.keysound_filter_release_pending;
     if (escape_menu && event.key == SDLK_ESCAPE) {
@@ -1502,6 +1513,7 @@ static void render_workspace_error(WormUiWorkspaceAction* action, int width, int
     if (nk_begin(g_context, "wormedit-workspace", nk_rect(0, 0, (float)width, (float)height),
                  NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND | (input_blocked ? NK_WINDOW_NO_INPUT : 0))) {
         nk_layout_row_dynamic(g_context, 30, 1);
+        wormedit::ui::chrome::context_menu_retire(worm_ui_nuklear_compose_state().snap_grid_menu, g_context);
         nk_label(g_context, "The editor could not display this workspace frame.", NK_TEXT_LEFT);
         nk_layout_row_dynamic(g_context, 72, 1);
         nk_label_wrap(g_context, diagnostic && diagnostic[0]
@@ -1991,6 +2003,17 @@ static void render_notification_landing_status(const WormUiWorkspaceView& view,
     render_notification_badge(view.notifications, action);
 }
 
+static bool snap_badge_available(const WormUiWorkspaceView& view) {
+    const auto own = wormedit::ui::chrome::context_menu_owns_input(
+        worm_ui_nuklear_compose_state().snap_grid_menu);
+    return g_window_focused && view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE &&
+        view.compose.scene_available && !view.compose.input_occluded && !view.options.visible &&
+        !project_modal_active(view) && !g_notification_modal && !project_dialog_active() &&
+        !nuklear_text_entry_active() && !g_ime_composition_active &&
+        !notification_document_gesture_active() && !view.compose.paste_active &&
+        (!compose_popup_owns_input() || own);
+}
+
 static void render_status_bar(const WormUiWorkspaceView* view,
                               WormUiWorkspaceAction* action) {
     const bool snap_label_visible = view->compose.visible && view->compose.area_snap_denominator != 0;
@@ -2041,8 +2064,7 @@ static void render_status_bar(const WormUiWorkspaceView* view,
     render_metronome_toggle(*view, *action);
     render_transport_rate(*view, action);
     if (snap_label_visible)
-        nk_labelf(g_context, NK_TEXT_CENTERED, "Snap 1/%llu",
-                  static_cast<unsigned long long>(view->compose.area_snap_denominator));
+        render_compose_snap_badge(g_context, view->compose, *action, snap_badge_available(*view));
     if (zoom_label_visible)
         nk_labelf(g_context, NK_TEXT_CENTERED, "%.0f px/measure",
                   view->compose.pixels_per_standard_measure);
@@ -2646,6 +2668,7 @@ static void render_empty_project_window(const WorkspaceRenderContext& frame) {
     if (nk_begin(g_context, "wormedit-workspace",
                  nk_rect(0, 0, static_cast<float>(frame.width), static_cast<float>(frame.height)),
                  workspace_window_flags(frame.view))) {
+        wormedit::ui::chrome::context_menu_retire(worm_ui_nuklear_compose_state().snap_grid_menu, g_context);
         worm_ui_nuklear_dismiss_layer_popup(g_context);
         dismiss_compose_note_popup(g_context);
         render_title_bar(&frame.view, &frame.action);
@@ -2771,6 +2794,7 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
     if (nk_begin(g_context, "wormedit-workspace",
                  nk_rect(0, 0, static_cast<float>(frame.width), static_cast<float>(frame.height)),
                  workspace_window_flags(frame.view))) {
+        wormedit::ui::chrome::context_menu_retire(worm_ui_nuklear_compose_state().snap_grid_menu, g_context);
         worm_ui_nuklear_dismiss_layer_popup(g_context);
         dismiss_compose_note_popup(g_context);
         render_title_bar(&view, &action);
@@ -2860,6 +2884,7 @@ static void retire_unavailable_layer_actions(const WormUiWorkspaceView& view) {
         !view.options.visible && !project_modal_active(view)) return;
     auto& state = worm_ui_nuklear_compose_state();
     state.layer_creation_request.reset();
+    wormedit::ui::chrome::context_menu_abandon(state.snap_grid_menu);
     wormedit::ui::chrome::context_menu_abandon(state.layers_menu);
     abandon_compose_quantize_popup();
     state.bga_stack_open = false;
@@ -2930,6 +2955,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
 
     if (validation_error) {
         worm_ui_nuklear_compose_state().layer_creation_request.reset();
+        wormedit::ui::chrome::context_menu_abandon(worm_ui_nuklear_compose_state().snap_grid_menu);
         render_workspace_error(&action, width, height, validation_error, view->close_confirmation.visible);
         render_close_confirmation(view->close_confirmation, action, width, height);
         worm_ui_nuklear_render_keysound_group_review(g_context, view->compose, action,
@@ -3091,6 +3117,10 @@ void worm_ui_frontend_render(int window_width, int window_height) {
         wormedit::ui::nuklear::render_sdl_backend(g_context, NK_ANTI_ALIASING_ON,
             g_notification_context_initialized ? &g_notification_context : nullptr);
     }
+}
+
+void worm_ui_frontend_set_snap_colored_grid(bool enabled) {
+    wormedit::ui::theme::set_snap_colored_grid(enabled);
 }
 
 bool worm_ui_frontend_select_field_scheme(const char* id) {

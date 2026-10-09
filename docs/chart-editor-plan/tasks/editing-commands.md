@@ -160,9 +160,9 @@ Implementation review (2026-10-04): Panel created and eight inspector lane toggl
 
 ## T-59 Remap shortcuts in a preferences window and save them
 
-- **Status:** partial (Input & shortcuts page, capture, conflicts, save-on-remap landed; restart persistence not yet checked in the app)
+- **Status:** done (restart persistence verified 2026-10-08 in isolated Xvfb)
 - **Done so far:** `src/ui/nuklear/shortcuts_panel.cpp/.h` renders the Options Input & shortcuts page from the view. The toolkit-free model lives in `src/sys/shortcut_rows.h/.cpp`: bounded row projection (label, chord text, conflict flag), chord text, and `capture_shortcut_batch`, which skips repeats, tap-timing presses, modifier-only and unknown usages, and returns cancel for Escape without modifiers. Conflicts come from the new structured `find_shortcut_conflicts` in `include/wormedit/core/command_registry.h`, which returns the same pairs as `diagnose_shortcut_conflicts` without changing its text. `src/sys/main.cpp` calls the model, projects rows only while that page is visible, consumes the capture batch so no command runs, calls `remap_command`, saves with `save_shortcut_profile_atomic` on each successful remap, and posts errors and conflicts as notifications. A failed save keeps the in-memory mapping. Frontend contract: `WormUiShortcutRowView`, `WORM_UI_OPTIONS_SHORTCUT_CAPTURE/CANCEL`, row fields on `WormUiOptionsView`/`WormUiOptionsAction`. Tests: `tests/sys/shortcut_rows_tests.cpp` (chord text, conflict flags, capture filter), `tests/core/command_registry_tests.cpp` (structured conflicts, save/reload round trip, failed save keeps mapping), `tests/ui/nuklear_event_harness_tests.cpp` (page rows, Change click, key batch during capture).
-- **Remaining:** restart the app and confirm a remap persists (manual check, owned by the coordinator; needs the isolated Xvfb path).
+- **Remaining:** none for the restart check. Known gap: the comma key (HID 0x36, the default chord of workspace.options) has no name in the chord-text table, so the Options row shows an empty chord. Tracked as a follow-up, not fixed here.
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** remap, conflict diagnosis, and atomic profile persistence exist, but no Shortcuts window/capture UI does. The frontend shell is the only panel/event orchestrator and is not owned; frontend event-test linkage is omitted too. No remapping implementation was started.
 - **Outcome:** a Shortcuts window lists every registry command with its chord; the user can capture a new chord, see conflicts, and the profile is saved with `save_shortcut_profile_atomic`.
@@ -177,6 +177,7 @@ Implementation review (2026-10-04): Panel created and eight inspector lane toggl
 - **Reject/failure behavior:** failed save keeps the in-memory mapping and reports the error.
 - **Verify:** standard build/test; restart the app and confirm the remap persists.
 - **Out of scope:** command palette (T-60).
+- **Result (2026-10-08):** restart persistence verified in isolated Xvfb with a fixed XDG_DATA_HOME. Launch 1 remapped Save Project to Ctrl+Shift+K; the saved shortcuts.json holds `document.save_project` key 14, modifiers 3. Launch 2 reopened the same page and still shows Ctrl+Shift+K. Screenshots (outside the repo): `/home/zardoru/.claude/jobs/4e7ef06b/tmp/t59/out/launch1-1-capturing.png`, `launch1-1-after-remap.png`, `launch2-2-reopened.png`.
 
 ## T-60 Add a searchable command menu
 

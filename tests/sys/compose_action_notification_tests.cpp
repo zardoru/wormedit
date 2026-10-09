@@ -1304,6 +1304,29 @@ auto draw_bgm_input(bga_input_fixture_t& fixture, WormUiComposeInputKind kind, u
     return value;
 }
 }
+TEST_CASE("A single BGM click stroke commits once without a draw warning",
+          "[bgm][draw][compose-input]") {
+    bga_input_fixture_t fixture;
+    fixture.history.document.audio_assets = {{.id = asset_id_t{71}}};
+    fixture.history.document.resources.push_back({.id = resource_id_t{33}, .asset = asset_id_t{71},
+        .roles = {resource_role_t::sample}});
+    fixture.history.document.charts.front().bgm_source_lanes = {{.id = object_id_t{50}, .name = "BGM"}};
+    fixture.application.note_paint_mode_active = true;
+    // A click presses and releases on the same row, so the release lands on the begin's row.
+    auto begin = draw_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 240);
+    check_action(fixture.dispatch_input(begin) == "BGM Draw stroke preview updated.");
+    auto release = draw_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 240);
+    check_action(fixture.dispatch_input(release) == "BGM Draw stroke committed.");
+    require_action(fixture.history.undo.size() == 1);
+    std::size_t total{};
+    for (const auto& measure : fixture.history.document.charts.front().measures)
+        total += measure.bgm_events.size();
+    check_action(total == 1);
+    check_action(!fixture.application.bga_draw_stroke);
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.undo.empty());
+}
+
 TEST_CASE("Draw BGM production stroke commits once and erase removes the lane once",
           "[bgm][draw][compose-input]") {
     bga_input_fixture_t fixture;

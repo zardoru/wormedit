@@ -248,7 +248,7 @@ static void render_channel_map_section(const MetadataPanel& panel) {
             nk_label(context, message, NK_TEXT_LEFT);
         else
             nk_label_colored(context, message, NK_TEXT_LEFT,
-                             wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::status));
+                             wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict));
     }
     if (preview) set_channel_map_preview_action(panel.action, metadata);
     if (apply && panel.action->metadata_edit == WORM_UI_METADATA_EDIT_NONE) {
@@ -313,12 +313,12 @@ static void render_batch_section(const MetadataPanel& panel, bool editable) {
     muted_label(context, "Apply Mapper or Rating to several difficulties");
     for (std::size_t index = 0; index < metadata.chart_choice_count; ++index) {
         const auto& choice = metadata.chart_choices[index];
-        nk_bool on = batch_chart_selected(choice.chart_id) ? nk_true : nk_false;
+        const auto selected = batch_chart_selected(choice.chart_id);
         nk_layout_row_dynamic(context, 22, 1);
-        if (!editable) nk_widget_disable_begin(context);
-        (void)nk_checkbox_label(context, choice.name ? choice.name : "", &on);
-        if (!editable) nk_widget_disable_end(context);
-        if (editable) set_batch_chart_selected(choice.chart_id, on != nk_false);
+        const wormedit::ui::chrome::Checkbox box{choice.name ? choice.name : "",
+            selected ? wormedit::ui::chrome::CheckState::on : wormedit::ui::chrome::CheckState::off,
+            nullptr, editable};
+        if (box.render(context) && editable) set_batch_chart_selected(choice.chart_id, !selected);
     }
     const auto enabled = editable && !state.batch_selected_charts.empty();
     nk_layout_row_dynamic(context, 26, 2);
@@ -371,7 +371,7 @@ void render_difficulty_section(const MetadataPanel& panel) {
     if (!rating) {
         nk_layout_row_dynamic(context, 19, 1);
         nk_label_colored(context, "Enter a number or fraction, e.g. 12 or 25/2.", NK_TEXT_LEFT,
-                         wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::status));
+                         wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict));
     }
     render_resolution_row(panel, editable);
     const auto changed = metadata_chart_changed(&metadata) != 0;

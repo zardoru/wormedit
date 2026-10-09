@@ -62,7 +62,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-202 Show and create SPEEDS as span objects in Compose
 
-- **Status:** ready
+- **Status:** done (2026-10-09)
 - **Outcome:** each SPEEDS transition draws in the SPD lane as a span from its row over its transition length (beats or seconds, using the existing evaluator spans); "Add SPEEDS span" from the area menu creates a speed event at the band start whose duration equals the band length in beats; dragging the span's end edits the duration.
 - **Read first:** `src/sys/timing_view.cpp` (`append_speed_spans_to_cache`), `include/wormedit/core/scroll_speed_editor.h` (`apply_scroll_speed_edit`), `include/wormedit/core/timing_lane_controller.h`.
 - **Files owned:** `src/sys/compose_view.cpp`, `src/sys/compose_actions.cpp`, `src/sys/compose_input.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_inspector.cpp`, `tests/core/scroll_speed_editor_tests.cpp`.
@@ -71,6 +71,8 @@ Apply the stale-plan check (rule 9) first.
 - **Reject/failure behavior:** a band crossing a warp in seconds mode shows the evaluator's diagnostic.
 - **Verify:** standard build/test.
 - **Out of scope:** SCROLLS recipes (T-201 covers them).
+- **Result (2026-10-09):** audit found spans already drawn (`draw_compose_speed_spans`), the end-edge drag already writing the duration exactly (`speed_transition_between` in `compose_input.cpp`: beats = rows*4/divisions as a reduced rational, or the timing index's elapsed seconds for seconds-mode events), and "Add SPEEDS span" a disabled placeholder. Now `WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN` (area menu, enabled unless the area is virtual) inserts a speed event at the band start with `transition_beats` = band length in beats (neutral 1x multiplier, edited afterwards) through `apply_scroll_speed_edit`, one undo step (`add_speed_span_over_area`, `compose_area_actions.cpp`); no area or an empty one rejects with a warning and changes nothing. Tests in `compose_action_notification_tests.cpp` (2 beats for half a measure, undo, no-area rejection). No menu-level harness test: no precedent for driving the area context menu there. Xvfb capture: `sweep/t202-menu2.png` (menu) and `sweep/t202-after.png` (marker and span in the SPD lane, "SPEEDS span added over the selected area."). The end-drag exactness is by code reading only; it has no new test.
+
 
 ## T-203 Retire the Timing tab once Compose has parity
 

@@ -76,8 +76,8 @@ void render_menu(nk_context* context, const WormUiComposeView& view,
                WORM_UI_COMPOSE_ACTION_AREA_DELETE, action);
     menu_entry(context, "Add SV recipe", reason_unless(!view.area_range_virtual, materialize),
                WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE, action);
-    menu_entry(context, "Add SPEEDS span", "Speed span creation from an area is not available yet",
-               WORM_UI_COMPOSE_ACTION_NONE, action);
+    menu_entry(context, "Add SPEEDS span", reason_unless(!view.area_range_virtual, materialize),
+               WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN, action);
     chrome::context_menu_end(menu, context);
 }
 

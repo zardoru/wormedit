@@ -1742,3 +1742,34 @@ TEST_CASE("Large measure travel reaches only the latest destination within 75 mi
     travel.advance(state, 1, false, 0.1);
     check_action(state.viewport_scroll_pixels == 4000);
 }
+
+TEST_CASE("Add SPEEDS span from an area writes the length in beats as one undo step",
+          "[compose-action-notifications][speeds]") {
+    action_notification_fixture_t fixture;
+    // Rows 240..720 of a 960-row measure: half a measure, which is two beats.
+    fixture.state.retained_selection_range = position_span_t{{measure_id_t{1}, 240}, {measure_id_t{1}, 720}};
+    check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN)) ==
+                 "SPEEDS span added over the selected area.");
+    require_action(fixture.history.undo.size() == 1);
+    const auto& speeds = fixture.history.document.charts.front().speeds;
+    require_action(speeds.size() == 1);
+    check_action(speeds.front().position == local_position_t{measure_id_t{1}, 240});
+    check_action(speeds.front().transition_beats == rational_t{2, 1});
+    check_action_false(speeds.front().transition_is_seconds);
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::success);
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.charts.front().speeds.empty());
+}
+
+TEST_CASE("Add SPEEDS span without an area changes nothing", "[compose-action-notifications][speeds]") {
+    action_notification_fixture_t fixture;
+    const auto revision = fixture.history.document.revision;
+    (void)fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN));
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+    const auto entries = fixture.entries();
+    require_action(entries.size() == 1);
+    check_action(entries.front().severity == notification_severity_t::warning);
+}

@@ -6600,3 +6600,82 @@ TEST_CASE("Single BGM cancel and stale release discard shared previews without m
     feedback_check(history.document.charts.front().measures.size() == 2);
     feedback_check(bgm_move_event(history, object_id_t{301})->position == local_position_t{measure_id_t{1}, 480});
 }
+
+namespace {
+struct stem_delete_fixture_t {
+    document_history_t history;
+    editor_interaction_state_t state;
+    object_id_t stem;
+    object_id_t source_event;
+    stem_delete_fixture_t() {
+        std::ifstream input(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / "published-vox-slicing.bmson", std::ios::binary);
+        const std::string bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+        auto parsed = parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
+        feedback_require(parsed.song);
+        parsed.song->audio_assets.front().stream = {48000, 2, 200000, true};
+        auto& chart = parsed.song->charts.front();
+        const auto note = chart.measures.front().notes.front();
+        stem = note.id;
+        source_event = *note.sound_channel_event;
+        chart.bgm_source_lanes.push_back({.id = object_id_t{90002}, .name = "Ordinary", .source_order = 99});
+        chart.measures.back().notes.push_back({.id = object_id_t{90000}, .position = {chart.measures.back().id, 0}, .lane = note.lane});
+        chart.measures.back().bgm_events.push_back({.id = object_id_t{90001}, .position = {chart.measures.back().id, 0}, .source_lane = object_id_t{90002}});
+        history = make_document_history(std::move(*parsed.song));
+        const std::array snaps{std::uint64_t{4}};
+        auto setup = make_editor_interaction(history, history.document.charts.front().id, note.lane, note.position, snaps, 4);
+        feedback_require(setup);
+        state = *setup.state;
+    }
+};
+}
+
+TEST_CASE("Core Delete converts stem taps and deletes ordinary mixed objects in one atomic command",
+          "[unit][core][interaction][delete][mixed-delete][bmson]") {
+    const auto invalid_member = GENERATE(false, true);
+    stem_delete_fixture_t f;
+    const auto original = feedback_document_bytes(f.history.document);
+    f.state.selected_notes = {f.stem, object_id_t{90000}};
+    f.state.selected_objects = {{editor_selection_object_kind_t::note, f.stem},
+        {editor_selection_object_kind_t::note, object_id_t{90000}},
+        {editor_selection_object_kind_t::bgm_event, object_id_t{90001}}};
+    if (invalid_member) f.state.selected_objects.push_back({editor_selection_object_kind_t::bookmark, object_id_t{999999}});
+    const auto selection = f.state.selected_objects;
+    const auto result = dispatch_editor_action(f.history, f.state, delete_editor_selection_action_t{});
+    feedback_check(result.accepted != invalid_member);
+    feedback_check(f.history.undo.size() == (invalid_member ? 0 : 1));
+    if (invalid_member) {
+        feedback_check(feedback_document_bytes(f.history.document) == original);
+        feedback_check(f.state.selected_objects == selection);
+        return;
+    }
+    feedback_check(!find_note(f.history, f.stem) && !find_note(f.history, object_id_t{90000}));
+    const auto* moved = bgm_move_event(f.history, f.stem);
+    feedback_require(moved);
+    feedback_check(moved->sound_channel_event == f.source_event);
+    feedback_check(!bgm_move_event(f.history, object_id_t{90001}));
+    feedback_check(f.state.selected_objects.empty() && f.state.selected_notes.empty());
+    feedback_require(undo_document_command(f.history));
+    feedback_check(feedback_document_bytes(f.history.document) == original);
+}
+
+TEST_CASE("Cursor Delete on a stem point keeps its source and linked mixed rejection is atomic",
+          "[unit][core][interaction][delete][mixed-delete][bmson]") {
+    const auto mixed_linked = GENERATE(false, true);
+    stem_delete_fixture_t f;
+    const auto original = feedback_document_bytes(f.history.document);
+    if (mixed_linked) {
+        const auto& linked = f.history.document.charts.front().measures[1].bgm_events.front();
+        f.state.selected_objects = {{editor_selection_object_kind_t::note, f.stem},
+            {editor_selection_object_kind_t::bgm_event, linked.id}};
+        f.state.selected_notes = {f.stem};
+    }
+    const auto result = dispatch_editor_action(f.history, f.state, delete_editor_selection_action_t{});
+    feedback_check(result.accepted != mixed_linked);
+    feedback_check(f.history.undo.size() == (mixed_linked ? 0 : 1));
+    if (mixed_linked) feedback_check(feedback_document_bytes(f.history.document) == original);
+    else {
+        feedback_check(!find_note(f.history, f.stem));
+        feedback_require(bgm_move_event(f.history, f.stem));
+        feedback_check(bgm_move_event(f.history, f.stem)->sound_channel_event == f.source_event);
+    }
+}

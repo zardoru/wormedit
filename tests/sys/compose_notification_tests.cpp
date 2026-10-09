@@ -415,3 +415,33 @@ TEST_CASE("Single BGM dispatcher routes horizontal and virtual targets through t
     check_mixed_input(fixture.history.document.charts.front().measures.size() == 1);
     check_mixed_input(fixture.history.document.charts.front().measures.front().bgm_events.front().source_lane == object_id_t{4});
 }
+
+TEST_CASE("Delete dispatcher commits stem conversion and ordinary deletion as one shared command",
+          "[unit][sys][compose-notification][mixed-delete][bmson]") {
+    compose_notification_fixture_t f;
+    f.history.document.audio_assets = {{.id = asset_id_t{5}, .stream = {48000, 2, 480000, true}}};
+    f.history.document.resources = {{.id = resource_id_t{6}, .asset = asset_id_t{5}, .roles = {resource_role_t::sample}}};
+    auto& chart = f.history.document.charts.front();
+    chart.source_family = format_family_t::bmson;
+    chart.bgm_source_lanes = {{.id = object_id_t{22}, .stem_channel = object_id_t{30}}};
+    auto& note = chart.measures.front().notes.front();
+    note.sound = resource_id_t{6};
+    note.sound_channel_event = object_id_t{31};
+    chart.sound_channels = {{.id = object_id_t{30}, .name = "Stem",
+        .source_clip = {.id = clip_id_t{32}, .source = asset_id_t{5}, .end_frame = 480000},
+        .events = {{.id = object_id_t{31}, .position = note.position, .lane = note.lane}}}};
+    chart.measures.front().notes.push_back({.id = object_id_t{2}, .position = {measure_id_t{1}, 360}, .lane = lane_id_t{1}});
+    f.state.selected_notes.push_back(object_id_t{2});
+    f.state.selected_objects.push_back({editor_selection_object_kind_t::note, object_id_t{2}});
+    REQUIRE(validate_document(f.history.document).empty());
+    const auto status = f.input(WORM_UI_COMPOSE_INPUT_DELETE_SELECTION);
+    INFO(status);
+    const auto& deleted = f.history.document.charts.front();
+    check_mixed_input(deleted.measures.front().notes.empty());
+    REQUIRE(deleted.measures.front().bgm_events.size() == 1);
+    check_mixed_input(deleted.measures.front().bgm_events.front().sound_channel_event == object_id_t{31});
+    check_mixed_input(!deleted.sound_channels.front().events.front().playable);
+    check_mixed_input(f.history.undo.size() == 1);
+    REQUIRE(undo_document_command(f.history));
+    check_mixed_input(f.history.document.charts.front().measures.front().notes.size() == 2);
+}

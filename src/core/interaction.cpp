@@ -2363,6 +2363,27 @@ auto complete_editor_delete(editor_delete_context_t context, bool changed)
     };
 }
 
+// Delete removes playable stem points from the keys without cutting them out of the audio stem.
+// Stage this conversion alongside ordinary deletion, so a later guard cannot leave a partial edit.
+auto stage_delete_stem_points(song_document_t& proposed, const editor_delete_context_t& context,
+                              const editor_delete_ids_t& ids)
+    -> std::variant<std::size_t, diagnostic_list_t> {
+    if (context.chart.source_family != format_family_t::bmson) return std::size_t{0};
+    std::vector<object_id_t> stems;
+    for (const auto& measure : context.chart.measures)
+        for (const auto& note : measure.notes) {
+            const auto selected = ids.total() != 0 ? ids.notes.contains(note.id.value)
+                : note.position == context.state.cursor && note.lane == context.state.active_lane;
+            if (selected && note.sound_channel_event) stems.push_back(note.id);
+        }
+    if (stems.empty()) return std::size_t{0};
+    auto scratch = make_document_history(proposed);
+    const auto moved = move_notes_to_bgm(scratch, scratch.document.revision, context.state.chart, stems, std::nullopt);
+    if (!moved.applied) return moved.diagnostics;
+    proposed = std::move(scratch.document);
+    return stems.size();
+}
+
 auto delete_editor_selection(editor_delete_context_t context) -> editor_interaction_result_t {
     auto collected = collect_delete_ids(context.state);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&collected))
@@ -2385,8 +2406,11 @@ auto delete_editor_selection(editor_delete_context_t context) -> editor_interact
     }
 
     auto proposed = context.history.document;
+    auto staged = stage_delete_stem_points(proposed, context, ids);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&staged))
+        return diagnostic_result(context.history, context.state, *diagnostics);
     auto* chart = find_chart(proposed, context.state.chart);
-    std::size_t removed{};
+    auto removed = std::get<std::size_t>(staged);
     const auto selected = ids.total() != 0;
     removed += std::erase_if(chart->bookmarks, [&](const auto& bookmark) {
         return ids.bookmarks.contains(bookmark.id.value);

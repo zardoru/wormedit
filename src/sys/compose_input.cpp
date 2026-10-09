@@ -3585,14 +3585,11 @@ auto move_selected_notes_to_bgm_input(compose_input_context_t& context,
     return !outcome.command.applied || !only_stem_taps || outcome.selection_exhausted;
 }
 
-// The Delete key on stem taps and the drop of selected notes on the BGM area.
+// Explicit note/BGM conversion and the drop of BGM events on the playfield.
 auto dispatch_note_to_bgm_input(const WormUiComposeInputAction& input, compose_input_context_t& context,
                                 wormedit::editor_interaction_result_t& result, std::string_view& accepted)
     -> std::optional<compose_input_family_result_t> {
     using wormedit::object_id_t;
-    if (input.kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION &&
-        move_selected_notes_to_bgm_input(context, result, accepted, std::nullopt, true, false))
-        return compose_input_family_result_t::continue_with_result();
     if (input.kind == WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE) {
         // A drop on the playfield assigns the selected objects through the shared core action.
         const auto dragged = input.object_id != 0 ? std::optional<wormedit::object_id_t>{wormedit::object_id_t{input.object_id}}

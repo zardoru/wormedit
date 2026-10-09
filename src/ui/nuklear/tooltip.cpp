@@ -71,6 +71,19 @@ auto natural_width(nk_context* context, std::string_view text) -> float {
     return widest;
 }
 
+// Nuklear draws windows in list order, so the last visible window containing the pointer is the
+// one on top. Minimized windows are hit only on their header.
+auto topmost_window_at_pointer(const nk_context* context) -> const struct nk_window* {
+    const struct nk_window* top{};
+    for (const auto* window = context->begin; window; window = window->next) {
+        if ((window->flags & NK_WINDOW_HIDDEN) != 0) continue;
+        auto bounds = window->bounds;
+        if ((window->flags & NK_WINDOW_MINIMIZED) != 0) bounds.h = window->layout->header_height;
+        if (nk_input_is_mouse_hovering_rect(&context->input, bounds)) top = window;
+    }
+    return top;
+}
+
 auto initial_padding(const nk_context* context) -> struct nk_vec2 {
     return {
         std::max(context->style.window.popup_padding.x, context->style.window.menu_padding.x),
@@ -180,6 +193,12 @@ void draw_text(nk_context* context, const text_plan_t& plan) {
 
 void end(nk_context* context) {
     if (context) nk_tooltip_end(context);
+}
+
+auto hovered(nk_context* context, struct nk_rect bounds) -> bool {
+    if (!context || !context->current) return false;
+    if (!nk_input_is_mouse_hovering_rect(&context->input, bounds)) return false;
+    return topmost_window_at_pointer(context) == context->current;
 }
 
 void text(nk_context* context, std::string_view value, float preferred_outer_width) {

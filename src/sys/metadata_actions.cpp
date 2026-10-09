@@ -104,6 +104,38 @@ auto dispatch_chart_edit(const WormUiWorkspaceAction& action, document_history_t
         workspace, history);
 }
 
+auto dispatch_batch_chart_edit(const WormUiWorkspaceAction& action, document_history_t& history,
+                               workspace_controller_t& workspace) -> metadata_edit_feedback_t {
+    const auto count = action.metadata_batch_chart_count;
+    if (count == 0 || count > WORM_UI_METADATA_BATCH_CHART_CAPACITY ||
+        !action.metadata_batch_chart_ids ||
+        (action.metadata_batch_edit_author && !action.metadata_chart_author) ||
+        (action.metadata_batch_edit_rating && action.metadata_has_chart_rating &&
+         (!action.metadata_chart_rating_numerator_text ||
+          !action.metadata_chart_rating_denominator_text)))
+        return {notification_severity_t::warning, "Batch metadata edit payload is incomplete."};
+    batch_chart_metadata_action_t batch;
+    for (std::size_t index = 0; index < count; ++index)
+        batch.charts.push_back(chart_id_t{action.metadata_batch_chart_ids[index]});
+    if (action.metadata_batch_edit_author) batch.author = action.metadata_chart_author;
+    batch.edit_rating = action.metadata_batch_edit_rating;
+    if (batch.edit_rating) {
+        const auto rating = make_chart_rating_metadata_edit(
+            batch.charts.front(), !action.metadata_has_chart_rating,
+            action.metadata_chart_rating_numerator_text ? action.metadata_chart_rating_numerator_text : "",
+            action.metadata_chart_rating_denominator_text ? action.metadata_chart_rating_denominator_text : "");
+        if (!rating)
+            return {notification_severity_t::warning, "Rating must use a signed 64-bit numerator and positive 64-bit denominator."};
+        batch.rating = rating->rating;
+    }
+    auto feedback = publish_metadata_edit(
+        apply_batch_chart_metadata_edit(history, action.metadata_document_revision, batch),
+        workspace, history);
+    if (feedback.severity == notification_severity_t::success)
+        feedback.message = "Metadata updated for " + std::to_string(count) + " difficulties.";
+    return feedback;
+}
+
 auto dispatch_audio_offset_edit(const WormUiWorkspaceAction& action,
                                 document_history_t& history,
                                 workspace_controller_t& workspace,
@@ -247,6 +279,8 @@ auto dispatch_metadata_edit(const WormUiWorkspaceAction& action, document_histor
         return dispatch_song_edit(action, history, workspace);
     case WORM_UI_METADATA_EDIT_CHART:
         return dispatch_chart_edit(action, history, workspace);
+    case WORM_UI_METADATA_EDIT_BATCH_CHART:
+        return dispatch_batch_chart_edit(action, history, workspace);
     case WORM_UI_METADATA_EDIT_AUDIO_OFFSET:
         return dispatch_audio_offset_edit(action, history, workspace, timing_locked);
     case WORM_UI_METADATA_EDIT_OUTPUT_PATH:

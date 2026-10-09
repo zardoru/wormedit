@@ -25,6 +25,7 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_METADATA_FORMAT_FIELD_CAPACITY 128
 #define WORM_UI_METADATA_FORMAT_TARGET_CAPACITY 14
 #define WORM_UI_METADATA_CHANNEL_MAP_LANE_CAPACITY 256
+#define WORM_UI_METADATA_BATCH_CHART_CAPACITY 256
 #define WORM_UI_COMPOSE_BAND_CAPACITY 4096
 #define WORM_UI_COMPOSE_LANE_CAPACITY 32768
 #define WORM_UI_COMPOSE_GRID_CAPACITY 16384
@@ -277,6 +278,12 @@ typedef struct WormUiMetadataChannelMapLaneView {
     const char* channels[4];
 } WormUiMetadataChannelMapLaneView;
 
+// One difficulty offered by the Metadata multi-select; name is valid for the frame.
+typedef struct WormUiMetadataChartChoice {
+    uint64_t chart_id;
+    const char* name;
+} WormUiMetadataChartChoice;
+
 typedef struct WormUiAudioWaveformColumnView {
     float minimum[2];
     float maximum[2];
@@ -376,6 +383,9 @@ typedef struct WormUiMetadataView {
     size_t channel_map_preview_conflict_count;
     const char* channel_map_preview_message;
     bool channel_map_apply_enabled;
+    const WormUiMetadataChartChoice* chart_choices;
+    size_t chart_choice_count;
+    bool chart_choices_truncated;
 } WormUiMetadataView;
 
 typedef struct WormUiSoundRowView {
@@ -2585,6 +2595,10 @@ typedef enum WormUiMetadataEditKind {
     WORM_UI_METADATA_EDIT_REDIVIDE_CHART,
     WORM_UI_METADATA_EDIT_PREVIEW_CHANNEL_MAP,
     WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP,
+    // Author and/or rating written to metadata_batch_chart_ids in one command. The author is
+    // metadata_chart_author; the rating is metadata_has_chart_rating plus the numerator/denominator
+    // texts (no rating clears it).
+    WORM_UI_METADATA_EDIT_BATCH_CHART,
 } WormUiMetadataEditKind;
 
 typedef enum WormUiClipboardAction {
@@ -2713,6 +2727,10 @@ typedef struct WormUiWorkspaceAction {
     size_t metadata_channel_map_lane_count;
     const uint64_t* metadata_channel_map_lane_ids;
     const char* const* metadata_channel_map_texts;
+    const uint64_t* metadata_batch_chart_ids;
+    size_t metadata_batch_chart_count;
+    bool metadata_batch_edit_author;
+    bool metadata_batch_edit_rating;
     WormUiComposeActionKind compose_action;
     uint64_t compose_area_begin_row;
     uint64_t compose_area_end_row;

@@ -4,6 +4,7 @@
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/theme.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <cstdio>
@@ -257,6 +258,78 @@ static void render_channel_map_section(const MetadataPanel& panel) {
     }
 }
 
+static auto batch_chart_selected(std::uint64_t id) -> bool {
+    const auto& selected = state.batch_selected_charts;
+    return std::find(selected.begin(), selected.end(), id) != selected.end();
+}
+
+static void set_batch_chart_selected(std::uint64_t id, bool on) {
+    auto& selected = state.batch_selected_charts;
+    const auto found = std::find(selected.begin(), selected.end(), id);
+    if (on && found == selected.end()) selected.push_back(id);
+    if (!on && found != selected.end()) selected.erase(found);
+}
+
+// Drops selected ids that no longer exist so a stale selection can never reach the command.
+static void prune_batch_selection(const WormUiMetadataView& metadata) {
+    std::erase_if(state.batch_selected_charts, [&](std::uint64_t id) {
+        return std::none_of(metadata.chart_choices, metadata.chart_choices + metadata.chart_choice_count,
+                            [&](const auto& choice) { return choice.chart_id == id; });
+    });
+}
+
+static void set_batch_chart_action(const MetadataPanel& panel, bool rating_edit) {
+    auto* action = panel.action;
+    const auto& metadata = *panel.metadata;
+    if (action->metadata_edit != WORM_UI_METADATA_EDIT_NONE || state.batch_selected_charts.empty())
+        return;
+    const auto rating = metadata_chart_rating_value(&metadata);
+    if (rating_edit && !rating) return;
+    state.batch_action_chart_ids = state.batch_selected_charts;
+    action->metadata_edit = WORM_UI_METADATA_EDIT_BATCH_CHART;
+    action->metadata_document_revision = metadata.document_revision;
+    action->metadata_batch_chart_ids = state.batch_action_chart_ids.data();
+    action->metadata_batch_chart_count = state.batch_action_chart_ids.size();
+    action->metadata_batch_edit_author = !rating_edit;
+    action->metadata_batch_edit_rating = rating_edit;
+    action->metadata_chart_author = state.chart_author.data();
+    action->metadata_has_chart_rating = rating_edit && rating->has_rating;
+    if (!action->metadata_has_chart_rating) return;
+    std::snprintf(state.action_numerator_text.data(), state.action_numerator_text.size(), "%lld",
+                  static_cast<long long>(rating->numerator));
+    std::snprintf(state.action_denominator_text.data(), state.action_denominator_text.size(), "%llu",
+                  static_cast<unsigned long long>(rating->denominator));
+    action->metadata_chart_rating_numerator_text = state.action_numerator_text.data();
+    action->metadata_chart_rating_denominator_text = state.action_denominator_text.data();
+}
+
+// Checkbox per difficulty plus buttons that write the Mapper or Rating draft to all checked ones.
+static void render_batch_section(const MetadataPanel& panel, bool editable) {
+    auto* context = panel.context;
+    const auto& metadata = *panel.metadata;
+    if (metadata.chart_choice_count < 2) return;
+    prune_batch_selection(metadata);
+    nk_layout_row_dynamic(context, 19, 1);
+    muted_label(context, "Apply Mapper or Rating to several difficulties");
+    for (std::size_t index = 0; index < metadata.chart_choice_count; ++index) {
+        const auto& choice = metadata.chart_choices[index];
+        nk_bool on = batch_chart_selected(choice.chart_id) ? nk_true : nk_false;
+        nk_layout_row_dynamic(context, 22, 1);
+        if (!editable) nk_widget_disable_begin(context);
+        (void)nk_checkbox_label(context, choice.name ? choice.name : "", &on);
+        if (!editable) nk_widget_disable_end(context);
+        if (editable) set_batch_chart_selected(choice.chart_id, on != nk_false);
+    }
+    const auto enabled = editable && !state.batch_selected_charts.empty();
+    nk_layout_row_dynamic(context, 26, 2);
+    if (!enabled) nk_widget_disable_begin(context);
+    const auto author = nk_button_label(context, "Apply Mapper") != 0 && enabled;
+    const auto rating = nk_button_label(context, "Apply Rating") != 0 && enabled;
+    if (!enabled) nk_widget_disable_end(context);
+    if (author) set_batch_chart_action(panel, false);
+    if (rating) set_batch_chart_action(panel, true);
+}
+
 void render_difficulty_section(const MetadataPanel& panel) {
     auto* context = panel.context;
     const auto& metadata = *panel.metadata;
@@ -313,6 +386,7 @@ void render_difficulty_section(const MetadataPanel& panel) {
     }
     if (revert) reset_difficulty_draft(metadata);
     if (apply) set_metadata_chart_action(panel.action, &metadata, 0);
+    render_batch_section(panel, editable);
     render_channel_map_section(panel);
     nk_tree_pop(context);
 }

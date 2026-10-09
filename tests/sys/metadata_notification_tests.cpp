@@ -322,3 +322,35 @@ TEST_CASE("stale channel-map preview rejects apply without touching the document
     check_metadata_notification(visible_channel(fixture, 0) == first);
     check_metadata_notification(fixture.history.undo.size() == 1);
 }
+
+TEST_CASE("batch metadata edit writes every selected difficulty in one undo step",
+          "[unit][sys][metadata-notification][batch]") {
+    metadata_notification_fixture_t fixture;
+    REQUIRE(apply_new_chart_command(fixture.history, fixture.history.document.revision));
+    REQUIRE(fixture.history.document.charts.size() == 2);
+    const std::array<std::uint64_t, 2> ids{fixture.history.document.charts[0].id.value,
+                                           fixture.history.document.charts[1].id.value};
+    const auto undo_before = fixture.history.undo.size();
+
+    WormUiWorkspaceAction action{};
+    action.metadata_edit = WORM_UI_METADATA_EDIT_BATCH_CHART;
+    action.metadata_batch_chart_ids = ids.data();
+    action.metadata_batch_chart_count = ids.size();
+    action.metadata_batch_edit_author = true;
+    action.metadata_chart_author = "Shared mapper";
+
+    // A stale revision rejects everything.
+    action.metadata_document_revision = fixture.history.document.revision - 1;
+    const auto stale = fixture.dispatch(action);
+    require_metadata_notification(stale.has_value());
+    check_metadata_notification(fixture.history.undo.size() == undo_before);
+    for (const auto& chart : fixture.history.document.charts)
+        check_metadata_notification(chart.metadata.author != "Shared mapper");
+
+    action.metadata_document_revision = fixture.history.document.revision;
+    const auto applied = fixture.dispatch(action);
+    check_metadata_notification(applied == "Metadata updated for 2 difficulties.");
+    check_metadata_notification(fixture.history.undo.size() == undo_before + 1);
+    for (const auto& chart : fixture.history.document.charts)
+        check_metadata_notification(chart.metadata.author == "Shared mapper");
+}

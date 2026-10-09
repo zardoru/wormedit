@@ -108,45 +108,19 @@ auto move_selected_notes_to_bgm(document_history_t& history, editor_interaction_
 
 auto move_selected_bgm_to_lane(document_history_t& history, editor_interaction_state_t& state, lane_id_t lane,
                                std::optional<object_id_t> also, bool successive) -> note_to_bgm_outcome_t {
-    auto moving_notes = collect_selected_note_ids(state);
-    auto moving = collect_selected_bgm_ids(state, also);
-    if (moving.empty() || !lane) return {};
-    if (successive) {
-        const auto chart = std::ranges::find(history.document.charts, state.chart,
-                                             &chart_document_t::id);
-        if (chart == history.document.charts.end()) return {};
-        const auto first = first_selected_lane_object(*chart, moving_notes, moving);
-        if (!first) return {};
-        if (first->kind == editor_selection_object_kind_t::note) {
-            moving_notes = {first->id};
-            moving.clear();
-        } else {
-            moving = {first->id};
-            moving_notes.clear();
-        }
-    }
-    note_to_bgm_outcome_t outcome{.handled = true};
-    outcome.command = move_selected_objects_to_lane(history, history.document.revision, state,
-                                                     moving_notes, moving, lane);
-    if (!outcome.command.applied) return outcome;
-    const auto is_moved = [&](object_id_t id) { return std::ranges::find(moving, id) != moving.end(); };
-    const auto is_moved_note = [&](object_id_t id) {
-        return std::ranges::find(moving_notes, id) != moving_notes.end();
-    };
-    if (successive) std::erase_if(state.selected_notes, is_moved_note);
-    std::erase_if(state.selected_objects, [&](const auto& object) {
-        return (object.kind == editor_selection_object_kind_t::bgm_event && is_moved(object.id)) ||
-               (successive && object.kind == editor_selection_object_kind_t::note &&
-                is_moved_note(object.id));
-    });
-    if (!successive) {
-        for (const auto id : moving) {
-            state.selected_notes.push_back(id);
-            state.selected_objects.push_back({editor_selection_object_kind_t::note, id});
-        }
-    }
-    outcome.selection_exhausted = state.selected_objects.empty() && state.selected_notes.empty();
-    return outcome;
+    auto proposed_state = state;
+    if (also && std::ranges::none_of(proposed_state.selected_objects, [&](const auto& object) {
+            return object.kind == editor_selection_object_kind_t::bgm_event && object.id == *also;
+        }))
+        proposed_state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, *also});
+    if (collect_selected_bgm_ids(proposed_state, std::nullopt).empty() || !lane) return {};
+    const auto result = dispatch_editor_action(
+        history, proposed_state, assign_selected_objects_to_lane_action_t{lane, successive});
+    if (result.accepted) state = std::move(proposed_state);
+    return {.handled = true,
+            .command = {.applied = result.accepted, .revision = history.document.revision,
+                        .diagnostics = result.diagnostics},
+            .selection_exhausted = state.selected_objects.empty() && state.selected_notes.empty()};
 }
 
 } // namespace wormedit::sys

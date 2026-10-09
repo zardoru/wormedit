@@ -730,12 +730,15 @@ auto dispatch_compose_lane_key_press(const WormUiComposeInputAction& input,
     if (input.lane_id == 0) {
         return "Lane-key input did not identify a chart lane.";
     }
-    if (!state.selected_notes.empty()) {
+    if (!state.selected_notes.empty() || std::ranges::any_of(state.selected_objects, [](const auto& object) {
+            return object.kind == editor_selection_object_kind_t::note ||
+                   object.kind == editor_selection_object_kind_t::bgm_event;
+        })) {
         result = dispatch_editor_action(
             history, state,
-            assign_selected_notes_to_lane_action_t{lane_id_t{input.lane_id}, input.successive});
-        accepted = input.successive ? "Next selected note assigned to lane."
-                                    : "Selected notes assigned to lane.";
+            assign_selected_objects_to_lane_action_t{lane_id_t{input.lane_id}, input.successive});
+        accepted = input.successive ? "Next selected object assigned to lane."
+                                    : "Selected objects assigned to lane.";
     } else {
         result = dispatch_editor_action(
             history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{input.lane_id},
@@ -3689,8 +3692,8 @@ auto dispatch_note_to_bgm_input(const WormUiComposeInputAction& input, compose_i
     if (input.kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION &&
         move_selected_notes_to_bgm_input(context, result, accepted, std::nullopt, true, false))
         return compose_input_family_result_t::continue_with_result();
-    if (input.kind == WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE || input.kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS) {
-        // A lane key with BGM events selected, or a drop on the field, moves them into that lane.
+    if (input.kind == WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE) {
+        // A drop on the playfield assigns the selected objects through the shared core action.
         const auto dragged = input.object_id != 0 ? std::optional<wormedit::object_id_t>{wormedit::object_id_t{input.object_id}}
                                                   : std::nullopt;
         if (!context.input_is_current() || input.lane_id == 0) return std::nullopt;

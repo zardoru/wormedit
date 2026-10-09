@@ -560,14 +560,14 @@ auto move_selected_objects_to_lane(document_history_t& history, std::uint64_t ex
     if (expected_revision != revision)
         return rejected(revision, diagnostic_code_t::invalid_id,
                         "lane assignment has a stale document revision");
-    if ((!notes.empty() && notes.size() > 4096) || (!events.empty() && events.size() > 4096) ||
-        notes.size() + events.size() > 4096 || !lane)
+    if (notes.size() > 1'000'000 || events.size() > 4096 || !lane)
         return rejected(revision, diagnostic_code_t::invalid_id,
-                        "lane assignment needs 1 to 4096 selected objects and a lane");
+                        "lane assignment exceeds the selection limit or has no lane");
     if (notes.empty() && events.empty())
         return rejected(revision, diagnostic_code_t::invalid_id,
                         "lane assignment needs at least one selected object");
     auto scratch = make_document_history(history.document);
+    const auto scratch_revision = scratch.document.revision;
     if (!notes.empty()) {
         auto scratch_state = state;
         scratch_state.chart = state.chart;
@@ -575,9 +575,7 @@ auto move_selected_objects_to_lane(document_history_t& history, std::uint64_t ex
         std::erase_if(scratch_state.selected_objects, [](const auto& object) {
             return object.kind == editor_selection_object_kind_t::note;
         });
-        const auto assigned = dispatch_editor_action(
-            scratch, scratch_state,
-            assign_selected_notes_to_lane_action_t{lane, false});
+        const auto assigned = assign_note_lanes(scratch, scratch_state, lane);
         if (!assigned.accepted)
             return {.applied = false, .revision = revision,
                     .diagnostics = std::move(assigned.diagnostics)};
@@ -590,6 +588,8 @@ auto move_selected_objects_to_lane(document_history_t& history, std::uint64_t ex
             return moved;
         }
     }
+    if (scratch.document.revision == scratch_revision)
+        return {.applied = true, .revision = revision, .diagnostics = {}};
     return commit_document_command(history, std::move(scratch.document),
                                    "Assign selected objects to lane");
 }

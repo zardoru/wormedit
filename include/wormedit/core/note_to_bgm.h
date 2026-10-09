@@ -69,6 +69,11 @@ struct note_to_bgm_plan_t {
                                            chart_id_t chart, std::span<const object_id_t> events,
                                            lane_id_t lane) -> document_command_result_t;
 
+// Internal note-part validator/application used by the atomic mixed lane command.
+[[nodiscard]] auto assign_note_lanes(document_history_t& history,
+                                      editor_interaction_state_t& state, lane_id_t lane)
+    -> editor_interaction_result_t;
+
 // Assigns a mixed selected note/BGM set into a lane as one all-or-nothing undo command.
 [[nodiscard]] auto move_selected_objects_to_lane(
     document_history_t& history, std::uint64_t expected_revision,

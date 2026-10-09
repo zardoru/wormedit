@@ -2371,7 +2371,7 @@ auto validate_assignment_intervals(std::span<const assignment_interval_t> interv
 }
 
 auto assign_selected_notes_to_lane(lane_assignment_context_t context,
-                                   const assign_selected_notes_to_lane_action_t& action)
+                                   const assign_selected_objects_to_lane_action_t& action)
     -> editor_interaction_result_t {
     auto collected = collect_assignment_candidates(context);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&collected))
@@ -2446,6 +2446,105 @@ auto assign_selected_notes_to_lane(lane_assignment_context_t context,
                            : diagnostic_list_t{},
         .audition = audition,
     };
+}
+
+struct lane_move_candidate_t {
+    std::size_t measure{};
+    std::uint64_t row{};
+    editor_selection_object_kind_t kind{};
+    object_id_t id;
+    lane_id_t lane;
+};
+
+auto precedes(const lane_move_candidate_t& left, const lane_move_candidate_t& right) -> bool {
+    return std::tie(left.measure, left.row, left.kind, left.lane.value, left.id.value) <
+           std::tie(right.measure, right.row, right.kind, right.lane.value, right.id.value);
+}
+
+auto first_selected_lane_object(const chart_document_t& chart,
+                                std::span<const object_id_t> notes,
+                                std::span<const object_id_t> bgm_events)
+    -> std::optional<lane_move_candidate_t> {
+    std::unordered_set<std::uint64_t> note_ids, event_ids;
+    for (const auto id : notes) note_ids.insert(id.value);
+    for (const auto id : bgm_events) event_ids.insert(id.value);
+    std::optional<lane_move_candidate_t> first;
+    const auto consider = [&](lane_move_candidate_t candidate) {
+        if (!first || precedes(candidate, *first)) first = candidate;
+    };
+    for (std::size_t index = 0; index < chart.measures.size(); ++index) {
+        const auto& measure = chart.measures[index];
+        for (const auto& note : measure.notes)
+            if (note_ids.contains(note.id.value))
+                consider({index, note.position.row, editor_selection_object_kind_t::note,
+                          note.id, note.lane});
+        for (const auto& event : measure.bgm_events)
+            if (event_ids.contains(event.id.value))
+                consider({index, event.position.row,
+                          editor_selection_object_kind_t::bgm_event, event.id,
+                          lane_id_t{event.source_lane.value}});
+    }
+    return first;
+}
+
+auto selected_lane_assignment_ids(const editor_interaction_state_t& state)
+    -> std::pair<std::vector<object_id_t>, std::vector<object_id_t>> {
+    auto notes = state.selected_notes;
+    std::unordered_set<std::uint64_t> note_ids;
+    for (const auto id : notes) note_ids.insert(id.value);
+    std::vector<object_id_t> events;
+    for (const auto& object : state.selected_objects) {
+        if (object.kind == editor_selection_object_kind_t::note &&
+            note_ids.insert(object.id.value).second) notes.push_back(object.id);
+        if (object.kind == editor_selection_object_kind_t::bgm_event) events.push_back(object.id);
+    }
+    return {std::move(notes), std::move(events)};
+}
+
+auto assign_selected_objects_to_lane(lane_assignment_context_t context,
+                                     const assign_selected_objects_to_lane_action_t& action)
+    -> editor_interaction_result_t {
+    auto [notes, events] = selected_lane_assignment_ids(context.state);
+    const auto first = action.successive ? first_selected_lane_object(context.chart, notes, events)
+                                         : std::nullopt;
+    if (action.successive && first) {
+        notes = first->kind == editor_selection_object_kind_t::note
+                    ? std::vector{first->id} : std::vector<object_id_t>{};
+        events = first->kind == editor_selection_object_kind_t::bgm_event
+                    ? std::vector{first->id} : std::vector<object_id_t>{};
+    }
+    const auto revision = context.history.document.revision;
+    const auto command = move_selected_objects_to_lane(
+        context.history, revision, context.state, notes, events, action.lane);
+    if (!command.applied)
+        return diagnostic_result(context.history, context.state, command.diagnostics);
+    std::unordered_set<std::uint64_t> assigned_ids;
+    for (const auto id : notes) assigned_ids.insert(id.value);
+    for (const auto id : events) assigned_ids.insert(id.value);
+    const auto assigned = [&](object_id_t id) { return assigned_ids.contains(id.value); };
+    if (action.successive) {
+        std::erase_if(context.state.selected_notes, assigned);
+        std::erase_if(context.state.selected_objects, [&](const auto& object) {
+            return (object.kind == editor_selection_object_kind_t::note ||
+                    object.kind == editor_selection_object_kind_t::bgm_event) && assigned(object.id);
+        });
+    } else {
+        std::erase_if(context.state.selected_objects, [&](const auto& object) {
+            return object.kind == editor_selection_object_kind_t::bgm_event && assigned(object.id);
+        });
+        for (const auto id : events) {
+            context.state.selected_notes.push_back(id);
+            context.state.selected_objects.push_back({editor_selection_object_kind_t::note, id});
+        }
+    }
+    context.state.active_lane = action.lane;
+    auto result = interaction_view_result(context.history, context.state,
+                                          revision != context.history.document.revision);
+    if (action.successive && first)
+        result.audition = editor_object_audition_request_t{
+            .document_revision = context.history.document.revision, .chart = context.state.chart,
+            .object = {editor_selection_object_kind_t::note, first->id}};
+    return result;
 }
 
 struct note_gesture_context_t {
@@ -5531,9 +5630,9 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
     };
 
     const auto handle_assign_selected_notes_to_lane =
-        [&](const assign_selected_notes_to_lane_action_t& typed_action)
+        [&](const assign_selected_objects_to_lane_action_t& typed_action)
             -> editor_interaction_result_t {
-            return assign_selected_notes_to_lane({history, state, *chart, index}, typed_action);
+            return assign_selected_objects_to_lane({history, state, *chart, index}, typed_action);
         };
 
     const auto handle_adjust_editor_zoom = [&](const adjust_editor_zoom_action_t& typed_action) {
@@ -5631,7 +5730,7 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
 
     case 39: return handle_select_editor_lane(std::get<select_editor_lane_action_t>(action));
 
-    case 40: return handle_assign_selected_notes_to_lane(std::get<assign_selected_notes_to_lane_action_t>(action));
+    case 40: return handle_assign_selected_notes_to_lane(std::get<assign_selected_objects_to_lane_action_t>(action));
 
     case 41: return handle_adjust_editor_zoom(std::get<adjust_editor_zoom_action_t>(action));
 
@@ -5649,6 +5748,19 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
 } // namespace wormedit
 
 namespace wormedit {
+
+auto assign_note_lanes(document_history_t& history, editor_interaction_state_t& state,
+                       lane_id_t lane) -> editor_interaction_result_t {
+    const auto* chart = find_chart(history.document, state.chart);
+    if (!chart)
+        return diagnostic_result(history, state, {error(diagnostic_code_t::invalid_id,
+                                                        "lane assignment chart is unavailable")});
+    auto built = build_measure_index(*chart);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built))
+        return diagnostic_result(history, state, *diagnostics);
+    return assign_selected_notes_to_lane({history, state, *chart, std::get<measure_index_t>(built)},
+                                         {lane, false});
+}
 
 auto prune_stale_selection(const chart_document_t& chart, std::uint64_t document_revision,
                            editor_interaction_state_t& state) -> bool {

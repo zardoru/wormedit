@@ -422,10 +422,10 @@ struct select_editor_lane_action_t {
     lane_id_t lane;
 };
 
-// A bare lane key assigns every selected note and keeps the selection. The
-// successive (Shift + lane) form assigns only the first note in deterministic
+// A bare lane key assigns every selected note/BGM event and keeps the selection. The
+// successive (Shift + lane) form assigns only the first object in deterministic
 // chart order, removes it from the selection, and returns an audition request.
-struct assign_selected_notes_to_lane_action_t {
+struct assign_selected_objects_to_lane_action_t {
     lane_id_t lane;
     bool successive{};
 };
@@ -472,7 +472,7 @@ using editor_ui_action_t = std::variant<
     space_range_selection_action_t, cancel_editor_gesture_action_t, select_editor_notes_action_t,
     select_editor_objects_action_t, delete_editor_selection_action_t,
     resize_note_durations_action_t,
-    select_editor_lane_action_t, assign_selected_notes_to_lane_action_t,
+    select_editor_lane_action_t, assign_selected_objects_to_lane_action_t,
     adjust_editor_zoom_action_t, scroll_editor_view_action_t, set_edit_snap_action_t>;
 
 // Exact, revision-bound result that a pending hold would publish. The source

@@ -2723,7 +2723,7 @@ void t422_check_shift_step(t422_fixture_t& fixture, song_document_t& expected_do
                            std::string_view original_bytes) {
     const auto ids = std::array{object_id_t{101}, object_id_t{102}, object_id_t{103}};
     const auto revision = fixture.history.document.revision;
-    CHECK(t422_shift_press(fixture) == "Next selected note assigned to lane.");
+    CHECK(t422_shift_press(fixture) == "Next selected object assigned to lane.");
     CHECK(fixture.history.document.revision == revision + 1);
     CHECK(fixture.history.undo.size() == step + 1);
     t422_check_selection(fixture, t422_expected_remaining_notes(step),
@@ -2812,7 +2812,7 @@ TEST_CASE("A plain profile lane key moves all selected notes and preserves their
         {editor_selection_object_kind_t::note, object_id_t{101}},
         {editor_selection_object_kind_t::note, object_id_t{102}}};
     const auto revision = fixture.history.document.revision;
-    CHECK(t422_lane_press(fixture, SDL_KMOD_NONE) == "Selected notes assigned to lane.");
+    CHECK(t422_lane_press(fixture, SDL_KMOD_NONE) == "Selected objects assigned to lane.");
     CHECK(fixture.history.document.revision == revision + 1);
     CHECK(fixture.history.undo.size() == 1);
     t422_check_selection(fixture, selection, selected_objects);
@@ -2857,7 +2857,7 @@ void t422_reject_without_mutation(t422_fixture_t& fixture, std::string_view reas
 TEST_CASE("A lane overlap rejects Shift assignment without changing document or selection",
           "[frontend-state][event-harness][lane-key-move-and-deselect]") {
     t422_fixture_t fixture{t422_song(true)};
-    CHECK(t422_shift_press(fixture) == "Next selected note assigned to lane.");
+    CHECK(t422_shift_press(fixture) == "Next selected object assigned to lane.");
     const std::vector<object_id_t> selection{object_id_t{103}, object_id_t{102}};
     const std::vector<editor_selection_object_t> objects{
         {editor_selection_object_kind_t::note, object_id_t{103}},
@@ -2869,8 +2869,8 @@ TEST_CASE("A lane overlap rejects Shift assignment without changing document or 
 TEST_CASE("A lane missing from the effective layout rejects the final successive assignment",
           "[frontend-state][event-harness][lane-key-move-and-deselect]") {
     t422_fixture_t fixture{t422_song(false, true)};
-    CHECK(t422_shift_press(fixture) == "Next selected note assigned to lane.");
-    CHECK(t422_shift_press(fixture) == "Next selected note assigned to lane.");
+    CHECK(t422_shift_press(fixture) == "Next selected object assigned to lane.");
+    CHECK(t422_shift_press(fixture) == "Next selected object assigned to lane.");
     const std::vector<object_id_t> selection{object_id_t{103}};
     const std::vector<editor_selection_object_t> objects{
         {editor_selection_object_kind_t::note, object_id_t{103}}};

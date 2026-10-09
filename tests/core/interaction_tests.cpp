@@ -4199,7 +4199,7 @@ TEST_CASE("bare lane assignment moves every selected note and retains selection"
         history, state, select_editor_notes_action_t{{object_id_t{102}, object_id_t{101}}}));
 
     const auto assigned = dispatch_editor_action(
-        history, state, assign_selected_notes_to_lane_action_t{lane_id_t{2}, false});
+        history, state, assign_selected_objects_to_lane_action_t{lane_id_t{2}, false});
     REQUIRE(assigned);
     CHECK(assigned.document_changed);
     CHECK_FALSE(assigned.audition.has_value());
@@ -4228,7 +4228,7 @@ TEST_CASE("Shift lane assignment consumes deterministic selected notes and reque
         select_editor_notes_action_t{{object_id_t{101}, object_id_t{103}, object_id_t{102}}}));
 
     const auto first = dispatch_editor_action(
-        history, state, assign_selected_notes_to_lane_action_t{lane_id_t{2}, true});
+        history, state, assign_selected_objects_to_lane_action_t{lane_id_t{2}, true});
     REQUIRE(first);
     CHECK(first.document_changed);
     REQUIRE(first.audition.has_value());
@@ -4240,7 +4240,7 @@ TEST_CASE("Shift lane assignment consumes deterministic selected notes and reque
     CHECK(find_note(history, object_id_t{102})->lane == lane_id_t{2});
 
     const auto second = dispatch_editor_action(
-        history, state, assign_selected_notes_to_lane_action_t{lane_id_t{2}, true});
+        history, state, assign_selected_objects_to_lane_action_t{lane_id_t{2}, true});
     REQUIRE(second);
     REQUIRE(second.audition.has_value());
     CHECK(second.audition->object ==
@@ -4266,7 +4266,7 @@ TEST_CASE("lane assignment rejects selected and existing collisions atomically",
     const auto revision = history.document.revision;
 
     const auto selected_collision = dispatch_editor_action(
-        history, state, assign_selected_notes_to_lane_action_t{lane_id_t{2}, false});
+        history, state, assign_selected_objects_to_lane_action_t{lane_id_t{2}, false});
     CHECK_FALSE(selected_collision);
     CHECK(has_code(selected_collision.diagnostics, diagnostic_code_t::collision));
     CHECK(history.document.revision == revision);
@@ -4275,7 +4275,7 @@ TEST_CASE("lane assignment rejects selected and existing collisions atomically",
     REQUIRE(
         dispatch_editor_action(history, state, select_editor_notes_action_t{{object_id_t{104}}}));
     const auto existing_collision = dispatch_editor_action(
-        history, state, assign_selected_notes_to_lane_action_t{lane_id_t{2}, false});
+        history, state, assign_selected_objects_to_lane_action_t{lane_id_t{2}, false});
     CHECK_FALSE(existing_collision);
     CHECK(has_code(existing_collision.diagnostics, diagnostic_code_t::collision));
     CHECK(find_note(history, object_id_t{104})->lane == lane_id_t{1});
@@ -4307,7 +4307,7 @@ TEST_CASE("lane assignment remains bounded for fifty thousand selected notes",
     REQUIRE(dispatch_editor_action(history, state, select_editor_notes_action_t{selected}));
 
     const auto assigned = dispatch_editor_action(
-        history, state, assign_selected_notes_to_lane_action_t{lane_id_t{2}, false});
+        history, state, assign_selected_objects_to_lane_action_t{lane_id_t{2}, false});
     REQUIRE(assigned);
     CHECK(assigned.document_changed);
     CHECK(assigned.view->selected_notes.size() == 50'000);
@@ -6234,4 +6234,54 @@ TEST_CASE("Selected-note BGM drop shifts the whole cohort and ignores playable o
         feedback_check(event->source_lane == preview.lane);
     }
     feedback_check(find_note(history, object_id_t{201}) && history.undo.size() == 1);
+}
+
+TEST_CASE("shared lane action assigns mixed selections and audits successive BGM conversion",
+          "[unit][core][interaction][selection][lane]") {
+    auto song = make_song();
+    auto& measure = song.charts.front().measures.front();
+    measure.notes = {{.id = object_id_t{101}, .position = {measure_id_t{1}, 480},
+                      .lane = lane_id_t{1}}};
+    song.charts.front().bgm_source_lanes = {{.id = object_id_t{201}, .name = "BGM"}};
+    measure.bgm_events = {{.id = object_id_t{202}, .position = {measure_id_t{1}, 0},
+                           .source_lane = object_id_t{201}}};
+    auto history = make_document_history(song);
+    auto state = make_state(history);
+    state.selected_notes = {object_id_t{101}};
+    state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}},
+                              {editor_selection_object_kind_t::bgm_event, object_id_t{202}}};
+    const auto successive = GENERATE(false, true);
+    const auto result = dispatch_editor_action(
+        history, state, assign_selected_objects_to_lane_action_t{lane_id_t{2}, successive});
+    feedback_require(result.accepted);
+    feedback_check(history.undo.size() == 1);
+    feedback_check(find_note(history, object_id_t{202})->lane == lane_id_t{2});
+    feedback_check(find_note(history, object_id_t{101})->lane == lane_id_t{successive ? 1U : 2U});
+    feedback_check(state.active_lane == lane_id_t{2});
+    feedback_check(result.audition.has_value() == successive);
+    feedback_check(state.selected_notes.size() == (successive ? 1 : 2));
+    feedback_require(undo_document_command(history));
+    feedback_check(history.document.charts.front().measures.front().bgm_events.front().id == object_id_t{202});
+}
+
+TEST_CASE("shared lane action rejects mixed collisions without consuming selection",
+          "[unit][core][interaction][selection][lane]") {
+    auto song = make_song();
+    auto& measure = song.charts.front().measures.front();
+    measure.notes = {{.id = object_id_t{101}, .position = {measure_id_t{1}, 0},
+                      .lane = lane_id_t{1}}};
+    song.charts.front().bgm_source_lanes = {{.id = object_id_t{201}, .name = "BGM"}};
+    measure.bgm_events = {{.id = object_id_t{202}, .position = {measure_id_t{1}, 0},
+                           .source_lane = object_id_t{201}}};
+    auto history = make_document_history(song);
+    auto state = make_state(history);
+    state.selected_notes = {object_id_t{101}};
+    state.selected_objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{202}}};
+    const auto result = dispatch_editor_action(
+        history, state, assign_selected_objects_to_lane_action_t{lane_id_t{2}, false});
+    feedback_check(!result.accepted);
+    feedback_check(history.undo.empty());
+    feedback_check(find_note(history, object_id_t{101})->lane == lane_id_t{1});
+    feedback_check(state.selected_objects.size() == 1);
+    feedback_check(state.selected_notes.size() == 1);
 }

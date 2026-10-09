@@ -507,8 +507,7 @@ auto valid_scene_index(const chart_document_t& chart, const editor_field_scene_i
            index.note_tree_leaf_base != 0 && index.note_tree_leaf_base >= index.notes.size() &&
            index.note_tree_leaf_base <= std::numeric_limits<std::size_t>::max() / 2 &&
            index.note_tree_max_end.size() == index.note_tree_leaf_base * 2 &&
-           index.note_indices_by_id.size() == index.notes.size() &&
-           view.selected_notes.size() <= index.notes.size();
+           index.note_indices_by_id.size() == index.notes.size();
 }
 
 auto valid_scene_request_geometry(const editor_field_scene_request_t& request,

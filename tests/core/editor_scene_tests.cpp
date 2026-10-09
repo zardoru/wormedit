@@ -2203,3 +2203,18 @@ TEST_CASE("move empty target band retains sparse source lane physical geometry",
     CHECK(ghost->bounds.left == Catch::Approx(110));
     CHECK(ghost->bounds.right == Catch::Approx(210));
 }
+
+TEST_CASE("field scene skips selected IDs that no longer exist instead of rejecting the view",
+          "[unit][core][editor-scene][selection]") {
+    const auto chart = scene_chart();
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    auto stale = view();
+    stale.selected_notes = {wormedit::object_id_t{11}, wormedit::object_id_t{900},
+                            wormedit::object_id_t{901}};
+    const auto result = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), stale,
+        {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(result);
+    CHECK(result.scene->visible_end_row > result.scene->visible_begin_row);
+}

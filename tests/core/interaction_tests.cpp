@@ -5997,3 +5997,33 @@ TEST_CASE("move range filter retains a hold crossing multiple disjoint proposed 
     }
     check_feedback_rejected_release(fixture, {measure_id_t{1}, 600}, 2);
 }
+
+TEST_CASE("stale selected objects are pruned once per document revision and survivors stay",
+          "[core][interaction][selection]") {
+    auto song = make_song();
+    auto& measure = song.charts.front().measures.front();
+    measure.notes.push_back({.id = object_id_t{5}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}});
+    measure.notes.push_back({.id = object_id_t{6}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}});
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    state.selected_notes = {object_id_t{5}, object_id_t{6}};
+    state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{5}},
+                              {editor_selection_object_kind_t::note, object_id_t{6}}};
+    state.retained_selection_range = position_span_t{{measure_id_t{1}, 0}, {measure_id_t{2}, 0}};
+    CHECK_FALSE(prune_stale_selection(history.document.charts.front(), 1, state));
+
+    // A command removed note 6 and measure 2 (here: a edited copy of the chart).
+    auto edited = history.document.charts.front();
+    edited.measures.front().notes.pop_back();
+    edited.measures.pop_back();
+    CHECK(prune_stale_selection(edited, 2, state));
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{5}});
+    REQUIRE(state.selected_objects.size() == 1);
+    CHECK(state.selected_objects.front().id == object_id_t{5});
+    CHECK_FALSE(state.retained_selection_range.has_value());
+
+    // Same revision: nothing is rescanned, even if a stale id reappears.
+    state.selected_notes.push_back(object_id_t{99});
+    CHECK_FALSE(prune_stale_selection(edited, 2, state));
+    CHECK(state.selected_notes.size() == 2);
+}

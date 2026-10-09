@@ -234,6 +234,46 @@ auto canvas_keyboard_hold_previews(const chart_document_t& chart, const measure_
     return previews;
 }
 
+template <typename Values>
+void add_ids(std::unordered_set<std::uint64_t>& ids, const Values& values) {
+    for (const auto& value : values) ids.insert(value.id.value);
+}
+
+// Existing IDs of one selectable object family; scanned once per revision change.
+auto existing_ids(const chart_document_t& chart, editor_selection_object_kind_t kind)
+    -> std::unordered_set<std::uint64_t> {
+    using kind_t = editor_selection_object_kind_t;
+    std::unordered_set<std::uint64_t> ids;
+    switch (kind) {
+    case kind_t::note:
+        for (const auto& measure : chart.measures) add_ids(ids, measure.notes);
+        break;
+    case kind_t::bgm_event:
+        for (const auto& measure : chart.measures) add_ids(ids, measure.bgm_events);
+        break;
+    case kind_t::bpm_event: add_ids(ids, chart.bpms); break;
+    case kind_t::stop_event:
+    case kind_t::delay_event: add_ids(ids, chart.pauses); break;
+    case kind_t::warp_event: add_ids(ids, chart.warps); break;
+    case kind_t::scroll_event: add_ids(ids, chart.scrolls); break;
+    case kind_t::speed_event: add_ids(ids, chart.speeds); break;
+    case kind_t::kiai_event: add_ids(ids, chart.kiai); break;
+    case kind_t::timing_anchor: add_ids(ids, chart.timing_anchors); break;
+    case kind_t::bga_event: add_ids(ids, chart.bga_events); break;
+    case kind_t::bookmark: add_ids(ids, chart.bookmarks); break;
+    case kind_t::section: add_ids(ids, chart.sections); break;
+    }
+    return ids;
+}
+
+auto span_measures_exist(const chart_document_t& chart, const position_span_t& span) -> bool {
+    const auto has = [&](measure_id_t id) {
+        return std::ranges::any_of(chart.measures,
+                                   [id](const auto& measure) { return measure.id == id; });
+    };
+    return has(span.begin.measure) && has(span.end.measure);
+}
+
 auto find_active_lane(const chart_document_t& chart, const measure_index_t& index,
                       local_position_t position, lane_id_t id) -> const lane_definition_t*;
 
@@ -5467,5 +5507,34 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
     }
 }
 } // namespace
+
+} // namespace wormedit
+
+namespace wormedit {
+
+auto prune_stale_selection(const chart_document_t& chart, std::uint64_t document_revision,
+                           editor_interaction_state_t& state) -> bool {
+    if (state.selection_checked_revision == document_revision) return false;
+    state.selection_checked_revision = document_revision;
+    const auto before = state.selected_notes.size() + state.selected_objects.size();
+    std::map<editor_selection_object_kind_t, std::unordered_set<std::uint64_t>> existing;
+    const auto exists = [&](editor_selection_object_kind_t kind, object_id_t id) {
+        auto found = existing.find(kind);
+        if (found == existing.end()) found = existing.emplace(kind, existing_ids(chart, kind)).first;
+        return found->second.contains(id.value);
+    };
+    std::erase_if(state.selected_notes, [&](object_id_t id) {
+        return !exists(editor_selection_object_kind_t::note, id);
+    });
+    std::erase_if(state.selected_objects, [&](const editor_selection_object_t& object) {
+        return !exists(object.kind, object.id);
+    });
+    bool changed = before != state.selected_notes.size() + state.selected_objects.size();
+    if (state.retained_selection_range && !span_measures_exist(chart, *state.retained_selection_range)) {
+        state.retained_selection_range.reset();
+        changed = true;
+    }
+    return changed;
+}
 
 } // namespace wormedit

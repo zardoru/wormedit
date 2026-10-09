@@ -619,7 +619,7 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 
 ## T-485 Keep the Compose field alive when the selection holds deleted objects
 
-- **Status:** ready
+- **Status:** done (2026-10-08)
 - **Found by:** the 2026-10-08 real-window sweep. Removing a measure deleted its notes but left their IDs selected, and the next field-scene build rejected the view ("field-scene index, view, or geometry is invalid", "Chart field is unavailable") until Undo. The T-71 path now clears its selection, but any other command that deletes selected objects can hit the same failure.
 - **Outcome:** after any document change, selection state only refers to objects that still exist, and the field-scene build never fails because of a stale selected ID.
 - **Read first:** the field-scene check `view.selected_notes.size() <= index.notes.size()` and its neighbours (grep "field-scene index, view, or geometry is invalid"), `include/wormedit/core/interaction.h` (`editor_interaction_state_t` selection fields), `src/sys/compose_view.cpp`.
@@ -633,4 +633,6 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 - **Reject/failure behavior:** none; pruning never mutates the document.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`; `ctest --test-dir build -L event-harness`; full suite.
 - **Out of scope:** selection persistence across sessions.
+- **Result (2026-10-08):** `prune_stale_selection(chart, revision, state)` (`interaction.cpp`, `selection_checked_revision` in the state) drops selected notes/objects of every family and a retained span whose measures are gone; it runs once per revision change from `inspect_compose_interaction` (the one place), scanning only the families actually selected, and is a no-op on steady frames. The field-scene validity check no longer compares the selection size with the note count, so an unknown selected ID is ignored. Step 4 deliberately keeps the T-71 clear: it also resets canvas-measure selection and canvas spans, which the general prune does not cover. Tests: scene test (failed before), prune test in `interaction_tests.cpp`. Full suite 2874/2874, event-harness 255/255.
+
 

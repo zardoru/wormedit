@@ -629,3 +629,66 @@ TEST_CASE("generated BMS silence does not hide same-named retained music",
     check_conversion(converted.outputs.front().bytes.find(retained) != std::string::npos);
     check_conversion(occurrence_count(converted.outputs.front().bytes, "#WAV") == 6);
 }
+
+namespace {
+
+auto stepmania_slice_request(const wormedit::song_document_t& song) -> wormedit::conversion_request_t {
+    auto request = sliced_conversion_request(song, song.charts.front().id);
+    request.target = wormedit::format_family_t::stepmania;
+    request.target_profile.clear();
+    request.stepmania = wormedit::stepmania_export_policy_t{
+        .file_profile = wormedit::stepmania_profile_t::ssc,
+        .timing_syntax = wormedit::stepmania_timing_syntax_t::native_warps,
+        .implementation_profile = wormedit::stepmania_implementation_profile_t::stepmania_5_1};
+    return request;
+}
+
+auto keysound_index_count(const wormedit::song_document_t& song) -> std::pair<std::size_t, std::size_t> {
+    std::size_t notes{};
+    std::size_t bgm{};
+    for (const auto& chart : song.charts)
+        for (const auto& measure : chart.measures) {
+            for (const auto& note : measure.notes) notes += note.sound.has_value() ? 1U : 0U;
+            for (const auto& event : measure.bgm_events) bgm += event.sound.has_value() ? 1U : 0U;
+        }
+    return {notes, bgm};
+}
+
+} // namespace
+
+TEST_CASE("BMSON slice conversion writes StepMania keysounds with one file per distinct span",
+          "[unit][format][conversion][slice_span][stepmania]") {
+    auto song = sliced_bmson_song();
+    require_conversion(song.has_value());
+    const auto original_bmson = wormedit::write_bmson(*song);
+    const auto request = stepmania_slice_request(*song);
+    const auto converted = wormedit::convert_document(*song, request);
+    std::string messages;
+    for (const auto& diagnostic : converted.diagnostics) messages += diagnostic.message + "\n";
+    INFO(messages);
+    require_conversion(static_cast<bool>(converted));
+    require_conversion(converted.outputs.size() == 1 && converted.slice_plans.size() == 1);
+    const auto& bytes = converted.outputs.front().bytes;
+    const auto& spans = converted.slice_plans.front().spans;
+    check_conversion(spans.size() == 4);
+    // The stem plays one span twice; every distinct span is listed exactly once.
+    for (const auto& span : spans) check_conversion(occurrence_count(bytes, span.filename) == 1);
+    const auto parsed = wormedit::parse_stepmania_bytes(
+        std::as_bytes(std::span{bytes.data(), bytes.size()}),
+        {.profile = wormedit::stepmania_profile_t::ssc});
+    require_conversion(parsed.song.has_value());
+    check_conversion(!parsed.has_errors());
+    // Every voice/onset binding the osu!mania path keeps survives the StepMania export.
+    const auto osu = wormedit::convert_document(*song, sliced_conversion_request(*song, song->charts.front().id));
+    require_conversion(static_cast<bool>(osu));
+    const auto osu_parsed = wormedit::parse_osu_mania_bytes(std::as_bytes(std::span{
+        osu.outputs.front().bytes.data(), osu.outputs.front().bytes.size()}));
+    require_conversion(osu_parsed.song.has_value());
+    const auto expected = keysound_index_count(*osu_parsed.song);
+    const auto actual = keysound_index_count(*parsed.song);
+    check_conversion(actual.second == expected.second);
+    check_conversion(actual.first + actual.second > 0);
+    check_conversion(actual.first == expected.first);
+    check_conversion(actual.first + actual.second > spans.size());
+    check_conversion(wormedit::write_bmson(*song).json == original_bmson.json);
+}

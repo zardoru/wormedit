@@ -547,9 +547,14 @@ auto prepare_bms_slice_layout(chart_document_t& chart, const conversion_request_
     return true;
 }
 
+auto target_slices_stems(format_family_t target) -> bool {
+    return target == format_family_t::osu_mania || target == format_family_t::bms ||
+           target == format_family_t::stepmania;
+}
+
 auto prepare_slice_exports(song_document_t& prepared, const conversion_request_t& request,
                            const std::vector<chart_id_t>& charts, conversion_result_t& result) -> bool {
-    if (request.target != format_family_t::osu_mania && request.target != format_family_t::bms) return true;
+    if (!target_slices_stems(request.target)) return true;
     auto options = request.slice_options;
     shared_slices_t shared;
     for (const auto id : charts) {
@@ -574,7 +579,8 @@ auto prepare_slice_exports(song_document_t& prepared, const conversion_request_t
         slice_span_plan_t render_plan;
         const auto resources = append_slice_resources(prepared, plan, shared, render_plan);
         apply_slice_bindings(*chart, plan, resources);
-        if (request.target == format_family_t::osu_mania) prepare_osu_slice_layout(*chart);
+        if (request.target == format_family_t::osu_mania || request.target == format_family_t::stepmania)
+            prepare_osu_slice_layout(*chart);
         else if (!prepare_bms_slice_layout(*chart, request, result)) return false;
         report_slice_timestamp_loss(*chart, request, result);
         for (const auto& span : plan.spans) options.occupied_filenames.push_back(span.filename);
@@ -1000,7 +1006,7 @@ auto plan_conversion_slice_spans(const song_document_t& song, chart_id_t chart,
 }
 
 auto conversion_needs_slice_spans(const song_document_t& song, const conversion_request_t& request) -> bool {
-    if (request.target != format_family_t::osu_mania && request.target != format_family_t::bms) return false;
+    if (!target_slices_stems(request.target)) return false;
     return std::ranges::any_of(song.charts, [&](const auto& chart) {
         const bool selected = request.chart ? chart.id == *request.chart :
             request.charts.empty() || std::ranges::find(request.charts, chart.id) != request.charts.end();

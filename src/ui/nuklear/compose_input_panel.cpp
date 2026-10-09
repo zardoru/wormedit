@@ -399,6 +399,34 @@ uint64_t compose_bgm_event_at(const WormUiComposeView* view, double x, double y)
     return 0;
 }
 
+uint64_t compose_sound_object_at(const WormUiComposeView& view, double x, double y) {
+    if (!std::isfinite(x) || !std::isfinite(y)) return 0;
+    for (size_t i = view.note_endpoint_count; i-- > 0;) {
+        const auto& note = view.note_endpoints[i];
+        if (note.proposal_ghost || note.paint_preview) continue;
+        const auto& r = note.bounds;
+        if (x >= r.left && x <= r.right && std::abs(y - (r.top + r.bottom) / 2) <= 8)
+            return note.note_id;
+    }
+    for (size_t i = view.hold_body_count; i-- > 0;) {
+        const auto& note = view.hold_bodies[i];
+        const auto& r = note.bounds;
+        if (!note.proposal_ghost && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)
+            return note.note_id;
+    }
+    if (const auto bgm = compose_bgm_event_at(&view, x, y)) return bgm;
+    for (size_t i = 0; i < view.stem_cut_count; ++i) {
+        const auto& cut = view.stem_cuts[i];
+        if (std::abs(y - cut.y_pixels) > 6) continue;
+        for (size_t j = 0; j < view.bgm_lane_count; ++j) {
+            const auto& lane = view.bgm_lanes[j];
+            if (lane.source_lane_id == cut.bgm_lane_id && x >= lane.bounds.left && x <= lane.bounds.right)
+                return cut.object_id;
+        }
+    }
+    return 0;
+}
+
 uint64_t compose_bga_event_at(const WormUiComposeView* view, double x, double y) {
     if (!view || !view->bga_lane_visible || !std::isfinite(x) || !std::isfinite(y)) return 0;
     for (size_t index = 0; index < view->bga_event_count; ++index) {
@@ -1202,6 +1230,31 @@ static auto process_compose_bga_event_pointer(const ComposePointerEventContext& 
                                               bool paint_pointer_consumed) -> bool {
     if (update_bga_event_move_capture(input)) return true;
     return begin_bga_event_move_capture(input, paint_pointer_consumed);
+}
+
+void update_compose_sound_hover(const ComposePointerEventContext& input) {
+    input.action->compose_sound_hover_object_id = !state.action_overflowed && input.window_focused &&
+        input.view->scene_available && input.pointer_inside && !input.compose_pointer_captured
+        ? compose_sound_object_at(*input.view, input.pointer_x, input.pointer_y) : 0;
+}
+
+auto handle_same_sound_pointer(const ComposePointerEventContext& input) -> bool {
+#if defined(__APPLE__)
+    const bool primary = (input.pointer_modifiers & SDL_KMOD_GUI) != 0;
+#else
+    const bool primary = (input.pointer_modifiers & SDL_KMOD_CTRL) != 0;
+#endif
+    const bool shift = (input.pointer_modifiers & SDL_KMOD_SHIFT) != 0;
+    const bool alt = (input.pointer_modifiers & SDL_KMOD_ALT) != 0;
+    if (!primary || shift == alt || !input.window_focused || input.compose_pointer_captured ||
+        !input.view->scene_available || state.action_overflowed || !input.pointer_inside) return false;
+    const auto object = compose_sound_object_at(*input.view, input.pointer_started_x, input.pointer_started_y);
+    if (!object) return false;
+    if (input.pointer_clicked)
+        append_compose_input(input.action, shift ? WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE :
+            WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_CHART, input.pointer_x, input.pointer_y, 0, false,
+            WORM_UI_COMPOSE_SELECTION_TOGGLE, WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, object);
+    return input.left_down || input.left_released || input.pointer_clicked;
 }
 
 void process_compose_pointer_actions(const ComposePointerEventContext& input,

@@ -67,10 +67,12 @@ User feedback from 2026-10-07, with the causes found while planning:
 
 ## T-449 Select same sound on BMSON selects the whole stem
 
-- **Status:** blocked-on T-426
+- **Status:** done (2026-10-09; shared selector, three-channel regressions, normal application build and full 2,949-test suite pass)
+- **Result:** all three gestures key linked semantic notes/BGM markers to the retained channel; projected cut lines provide the same stable source. The three-channel fixture keeps channels sharing an asset distinct, checks visible/whole scope and rejects unlinked objects. Sounds rows reuse the existing channel-resource binding resolver; ambiguous reuse selects nothing. Selection remains transient with no Undo. See [batch evidence](../../../memory/coordination/oct9-sound-selection-batch.md).
+- **Supporting-file ownership (2026-10-09):** coordinator approved the shared input-panel source/header and event harness for picking stem cut-line sources and verifying BGM/cut routing through the T-426 inputs.
 - **Outcome:** on a BMSON chart, the three [T-426](bms-editing.md) gestures use the sound channel (the stem) as the key. They select every tap and BGM marker of that channel: visible ones for Ctrl+Shift+Click, the whole chart for Ctrl+Alt+Click and Ctrl+Shift+A. Selecting a stem's cut line counts as a source.
 - **Read first:** the T-426 card and its selector, `include/wormedit/core/document.h` (`sound_channel_t`, `sound_channel_event`), `src/sys/bmson_waveform_projection.cpp` (`rebuild_point_refs`).
-- **Files owned:** the T-426 selector source and tests, `src/sys/compose_input.cpp`, this card.
+- **Files owned:** the T-426 selector source and tests, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_input_panel.h`, `tests/ui/nuklear_event_harness_tests.cpp`, this card.
 - **Steps:**
   1. Extend the selector key with `sound_channel` for BMSON.
   2. Map notes and BGM events through `sound_channel_event` to their channel.

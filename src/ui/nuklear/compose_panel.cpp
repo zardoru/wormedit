@@ -1154,6 +1154,26 @@ static void draw_compose_editor_scene(const ComposePanelRenderContext& panel,
         nk_rect(viewport.x, viewport.y, static_cast<float>(input_right - viewport.x), viewport.h));
 }
 
+static void process_compose_canvas_tools(const ComposePointerEventContext& pointer_event,
+    bool paint_pointer_consumed) {
+    const bool same_sound_pointer = !paint_pointer_consumed && handle_same_sound_pointer(pointer_event);
+    paint_pointer_consumed |= same_sound_pointer;
+    paint_pointer_consumed = process_compose_timing_marker_pointer(pointer_event,
+                                                                    paint_pointer_consumed) ||
+                             paint_pointer_consumed;
+    paint_pointer_consumed = begin_compose_resource_pointer(pointer_event, paint_pointer_consumed) ||
+                             paint_pointer_consumed;
+    paint_pointer_consumed = process_bmson_razor_pointer(pointer_event, paint_pointer_consumed);
+    paint_pointer_consumed = process_bmson_marker_move_pointer(pointer_event, paint_pointer_consumed);
+    process_compose_draw_tools(pointer_event, paint_pointer_consumed);
+
+    if (!same_sound_pointer) {
+        process_compose_pointer_actions(pointer_event, paint_pointer_consumed);
+        process_compose_drag_gestures(pointer_event, paint_pointer_consumed);
+    }
+
+}
+
 static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
                                         bool inspector_drawn, float inspector_width) {
     auto* context = panel.context;
@@ -1314,6 +1334,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
          editor_input_right, note_field_left, note_field_right},
         compose_pointer_captured, window_focused);
     pointer_event.compose_pointer_captured = compose_pointer_captured;
+    update_compose_sound_hover(pointer_event);
     pointer_event.compose_note_double_click_in_view = compose_note_double_click_in_view;
     bool paint_pointer_consumed =
         state.inline_timing_open || state.bookmark_rename.active || state.bookmark_rename.release_pending || state.note_paint_pointer_active ||
@@ -1321,17 +1342,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         state.bmson_razor_pointer_active || state.bmson_marker_move_candidate_active ||
         state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
         compose_action_has_cancel(action);
-    paint_pointer_consumed = process_compose_timing_marker_pointer(pointer_event,
-                                                                    paint_pointer_consumed) ||
-                             paint_pointer_consumed;
-    paint_pointer_consumed = begin_compose_resource_pointer(pointer_event, paint_pointer_consumed) ||
-                             paint_pointer_consumed;
-    paint_pointer_consumed = process_bmson_razor_pointer(pointer_event, paint_pointer_consumed);
-    paint_pointer_consumed = process_bmson_marker_move_pointer(pointer_event, paint_pointer_consumed);
-    process_compose_draw_tools(pointer_event, paint_pointer_consumed);
-
-    process_compose_pointer_actions(pointer_event, paint_pointer_consumed);
-    process_compose_drag_gestures(pointer_event, paint_pointer_consumed);
+    process_compose_canvas_tools(pointer_event, paint_pointer_consumed);
 
     draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
     render_compose_bookmark_rename(context, *view, *action, state.bookmark_rename, viewport, window_focused);

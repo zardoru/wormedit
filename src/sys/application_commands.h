@@ -37,6 +37,7 @@ enum class application_command_kind_t {
     edit_tool_layer,
     selection_clear,
     selection_select_all,
+    selection_select_same_sound_chart,
     selection_invert,
     navigation_previous_snap,
     navigation_next_snap,

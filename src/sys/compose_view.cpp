@@ -1,3 +1,4 @@
+#include "sys/compose_sound_selection.h"
 #include "sys/frame_timing.h"
 #include "sys/compose_view.h"
 #include "sys/recipe_form.h"
@@ -1460,6 +1461,7 @@ bool initialize_compose_view_state(
     view.bga_revealed_lane_mask = retained_state ? retained_state->bga_revealed_lane_mask : 0;
     view.playable_field_left_pixels = compose_measure_rail_width_pixels;
     view.playable_field_right_pixels = view.viewport_width_pixels;
+    view.same_sound_selection_available = false;
     view.move_to_bgm_available = false;
     view.bms_measure_labels = false;
     view.bmson_tools_available = false;
@@ -4268,6 +4270,8 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     const auto& timing_stage = input.timing_stage;
     const auto downscroll = input.downscroll;
     flattened.compose.interaction_view = interaction_view;
+    view.same_sound_selection_available = compose_sound_selection_available(history.document, chart,
+        *retained_state, application_state);
     view.move_to_bgm_available = chart.source_family == wormedit::format_family_t::bms &&
         !editor_interaction_has_pending_gesture(*retained_state) && !application_state.paste_session &&
         (!retained_state->selected_notes.empty() || std::ranges::any_of(retained_state->selected_objects,

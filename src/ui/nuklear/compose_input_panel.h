@@ -33,3 +33,9 @@ void process_compose_pointer_actions(const ComposePointerEventContext& input,
 void compose_handle_focus_lost_input();
 
 void discard_compose_frame_input();
+
+uint64_t compose_sound_object_at(const WormUiComposeView& view, double x, double y);
+
+auto handle_same_sound_pointer(const ComposePointerEventContext& input) -> bool;
+
+void update_compose_sound_hover(const ComposePointerEventContext& input);

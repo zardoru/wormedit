@@ -328,6 +328,11 @@ struct compose_scene_cache_t {
 enum class external_player_action_t;
 
 struct application_command_state_t {
+    // Fresh per-frame source context, stamped to prevent cross-chart/stale hover reuse.
+    std::optional<wormedit::chart_id_t> sound_selection_chart;
+    std::uint64_t sound_selection_revision{};
+    std::optional<wormedit::object_id_t> sound_selection_hover;
+    std::vector<wormedit::resource_id_t> sound_selection_dock;
     std::optional<wormedit::chart_clipboard_t> chart_clipboard;
     struct bms_branch_statement_feedback_t {
         wormedit::chart_id_t chart;

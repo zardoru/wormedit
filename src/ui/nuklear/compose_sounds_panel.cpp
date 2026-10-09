@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_sounds_panel.h"
+#include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_bmson_tab.h"
 #include "ui/nuklear/sound_import_state.h"
 #include "ui/nuklear/tooltip.h"
@@ -1466,9 +1467,14 @@ void render_sound_group_context_menu(const SoundsPanel& panel) {
                                             panel.view->document_revision, menu.stamp.object_id};
     if (!chrome::context_menu_begin(menu, context, current,
                                     nk_vec2(chrome::context_menu_width,
-                                            chrome::context_menu_height(3))))
+                                            chrome::context_menu_height(4))))
         return;
-    if (chrome::context_menu_item(menu, context, "Group..."))
+    if (chrome::context_menu_item(menu, context, "Select same sound (whole chart)")) {
+        append_compose_input(panel.action, WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_CHART,
+            0, 0, 0, false, WORM_UI_COMPOSE_SELECTION_ADD);
+        if (panel.action->compose_input_count)
+            panel.action->compose_inputs[panel.action->compose_input_count - 1].resource_id = menu.stamp.object_id;
+    } else if (chrome::context_menu_item(menu, context, "Group..."))
         open_manual_group_review(panel);
     else if (chrome::context_menu_item(menu, context, "Ungroup"))
         raise_on_selection(panel, WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS);

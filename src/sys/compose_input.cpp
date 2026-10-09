@@ -1,4 +1,5 @@
 #include "sys/compose_input.h"
+#include "sys/compose_sound_selection.h"
 #include "sys/compose_note_to_bgm.h"
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_minimap_navigation.h"
@@ -2924,6 +2925,25 @@ auto select_or_place_virtual_pointer(const WormUiComposeInputAction& input,
     return std::nullopt;
 }
 
+auto select_compose_same_sound(const WormUiComposeInputAction& input, compose_input_context_t& context,
+    wormedit::editor_interaction_result_t& result, std::string_view& accepted) -> std::optional<std::string> {
+    using namespace wormedit;
+    const auto* chart = context.chart();
+    if (!chart || !context.input_is_current()) return "Sound selection source is stale.";
+    const auto key = input.resource_id
+        ? sound_selection_resource_key(context.history.document, *chart, resource_id_t{input.resource_id})
+        : sound_selection_object_key(context.history.document, *chart, object_id_t{input.object_id});
+    std::vector<editor_selection_object_t> objects;
+    if (key) objects = compose_same_sound_objects(context.history.document, *chart, context.state,
+        context.application_state, std::span{&*key, 1}, input.kind == WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE);
+    const auto mode = context.selection_mode(input.selection_mode);
+    if (!mode) return "Sound selection mode is invalid.";
+    result = dispatch_editor_action(context.history, context.state,
+        select_editor_objects_action_t{std::move(objects), *mode, false});
+    accepted = "Matching sounds selected.";
+    return std::nullopt;
+}
+
 auto select_compose_pointer_target(const WormUiComposeInputAction& input,
                                    compose_input_context_t& context,
                                    wormedit::editor_interaction_result_t& result,
@@ -3523,6 +3543,11 @@ auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE:
         if (const auto error = move_compose_bookmark(input, context, result, accepted))
+            return compose_input_rejection(*error, result);
+        return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE:
+    case WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_CHART:
+        if (const auto error = select_compose_same_sound(input, context, result, accepted))
             return compose_input_rejection(*error, result);
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_POINTER_CLICK:

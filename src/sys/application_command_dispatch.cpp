@@ -5,6 +5,7 @@
 #include "sys/compose_bookmark_commands.h"
 #include "sys/compose_clipboard_selection.h"
 #include "sys/compose_input.h"
+#include "sys/compose_sound_selection.h"
 #include "sys/compose_scroll_geometry.h"
 #include "sys/compose_timing_delete.h"
 #include "sys/compose_view.h"
@@ -401,10 +402,29 @@ auto edit_commands(command_context_t& context) -> std::optional<command_result_t
     return accepted;
 }
 
+auto same_sound_command(command_context_t& context) -> command_result_t {
+    using namespace wormedit;
+    auto* state = context.compose();
+    const auto* chart = selected_chart(context.history, context.workspace);
+    if (!state || !chart)
+        return reject_application_command(context.sink, "Hover a note or select a sound first",
+            notification_severity_t::hint, notification_source_t::edit);
+    const auto keys = compose_sound_selection_keys(context.history.document, *chart, *state, context.application_state);
+    if (keys.empty())
+        return reject_application_command(context.sink, "Hover a note or select a sound first",
+            notification_severity_t::hint, notification_source_t::edit);
+    auto objects = compose_same_sound_objects(context.history.document, *chart, *state,
+        context.application_state, keys, false);
+    return accept_editor_command(dispatch_editor_action(context.history, *state,
+        select_editor_objects_action_t{std::move(objects), editor_area_selection_mode_t::add, false}),
+        context.sink, "Matching sounds added to selection.", notification_severity_t::success, notification_source_t::edit);
+}
+
 auto selection_commands(command_context_t& context) -> std::optional<command_result_t> {
     using namespace wormedit;
     const auto kind = context.command.kind;
     auto* state = context.compose();
+    if (kind == command_kind_t::selection_select_same_sound_chart) return same_sound_command(context);
     if (kind == command_kind_t::selection_clear)
         return clear_selection_or_cancel_preview(context.history, state,
                                                  context.application_state, context.sink);

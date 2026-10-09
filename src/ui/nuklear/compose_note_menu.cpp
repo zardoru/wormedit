@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_note_menu.h"
+#include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/context_menu.h"
@@ -185,12 +186,24 @@ void render_bgm_action(nk_context* context, const WormUiComposeView& view,
     }
 }
 
+void render_sound_selection(nk_context* context, WormUiWorkspaceAction& action) {
+    for (const bool visible : {true, false}) {
+        nk_layout_row_dynamic(context, row_height, 1);
+        if (nk_button_label(context, visible ? "Select same sound (visible)" : "Select same sound (whole chart)")) {
+            append_compose_input(&action, visible ? WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE :
+                WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_CHART, 0, 0, 0, false,
+                WORM_UI_COMPOSE_SELECTION_ADD, WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, menu.note);
+            chrome::context_menu_close(menu.popup);
+        }
+    }
+}
+
 void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceAction& action) {
     bgm_tooltip_pending = false;
     if (chrome::popup_panel(context) || !menu.popup.open) return;
     const auto size = menu.submenu
         ? nk_vec2(392, 422)
-        : nk_vec2(root_width + 2 * chrome::menu_padding, chrome::context_menu_height(4));
+        : nk_vec2(root_width + 2 * chrome::menu_padding, chrome::context_menu_height(6));
     if (!chrome::context_menu_begin(menu.popup, context, stamp(view), size)) {
         if (!menu.popup.open) finish_close(view, action);
         return;
@@ -211,6 +224,7 @@ void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceA
         }
         if (!can_replace) nk_widget_disable_end(context);
         render_bgm_action(context, view, action);
+        render_sound_selection(context, action);
         nk_layout_row_dynamic(context, row_height, 1);
         nk_label(context, "Shift + lane key moves one, then deselects", NK_TEXT_LEFT);
 

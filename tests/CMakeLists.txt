@@ -75,6 +75,7 @@ add_executable(wormedit_core_tests
     sys/bga_list_projection_tests.cpp
     ../src/sys/bga_list_projection.cpp
     sys/compose_measure_commands_tests.cpp
+    sys/sound_selection_tests.cpp
     sys/compose_selection_transform_tests.cpp
     sys/compose_label_search_tests.cpp
     sys/compose_dead_spans_tests.cpp

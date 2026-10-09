@@ -1,3 +1,4 @@
+#include "sys/application_command_dispatch.h"
 #include "sys/frame_timing.h"
 #include "sys/application_defaults.h"
 #include "sys/timing_view.h"
@@ -6051,4 +6052,45 @@ TEST_CASE("Compose shows rejected BGM displacement destinations in red and commi
     }));
     (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 600);
     expect_compose_test(fixture.compose.history.undo.empty() && !fixture.compose.interaction->pending_note_move_gesture);
+}
+
+TEST_CASE("Same sound registered command uses hover selection and dock adds without Undo", "[sys][compose][select-same-sound]") {
+    compose_test_fixture_t fixture;
+    auto& song = fixture.history.document;
+    song.audio_assets = {{.id = asset_id_t{1}, .source_path = "kick.wav"},
+                         {.id = asset_id_t{2}, .source_path = "snare.wav"}};
+    song.resources = {{.id = resource_id_t{1}, .name = "kick", .asset = asset_id_t{1}, .roles = {resource_role_t::sample}},
+                      {.id = resource_id_t{2}, .name = "snare", .asset = asset_id_t{2}, .roles = {resource_role_t::sample}}};
+    auto& notes = song.charts[0].measures[0].notes;
+    notes[0].sound = notes[1].sound = resource_id_t{1};
+    notes[2].sound = resource_id_t{2};
+    fixture.project();
+    auto& application = fixture.application;
+    application.sound_selection_chart = chart_id_t{1};
+    application.sound_selection_revision = song.revision;
+    application.sound_selection_dock = {resource_id_t{2}};
+    application.sound_selection_hover = notes[0].id;
+    notification_center_t center;
+    notification_sink_t sink{center};
+    std::optional<timing_lane_pseudonote_preview_t> timing;
+    const auto command = application_command_t{.kind = application_command_kind_t::selection_select_same_sound_chart};
+    auto invoke = [&] {
+        return invoke_application_command(command, fixture.history, *fixture.binding.workspace,
+            fixture.interaction, timing, application, sink);
+    };
+    const auto revision = song.revision;
+    expect_compose_test(invoke().accepted);
+    expect_compose_test(fixture.interaction->selected_notes == std::vector<object_id_t>{notes[0].id, notes[1].id});
+    application.sound_selection_hover.reset();
+    expect_compose_test(invoke().accepted); // Selection takes precedence over the dock.
+    expect_compose_test(fixture.interaction->selected_notes.size() == 2);
+    fixture.interaction->selected_notes.clear();
+    fixture.interaction->selected_objects.clear();
+    expect_compose_test(invoke().accepted);
+    expect_compose_test(fixture.interaction->selected_notes == std::vector<object_id_t>{notes[2].id});
+    application.sound_selection_dock.clear();
+    fixture.interaction->selected_notes.clear();
+    fixture.interaction->selected_objects.clear();
+    expect_compose_test(!invoke().accepted);
+    expect_compose_test(song.revision == revision && fixture.history.undo.empty());
 }

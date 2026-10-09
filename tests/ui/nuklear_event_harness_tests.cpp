@@ -8,6 +8,7 @@
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/sound_import_runtime.h"
 #include "sys/compose_input.h"
+#include "sys/compose_sound_selection.h"
 #include "sys/compose_view.h"
 
 #include <wormedit/core/command_registry.h>
@@ -16,6 +17,7 @@
 #include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <array>
@@ -4519,4 +4521,168 @@ TEST_CASE("BGM displacement status reports the affected notes during a drag", "[
     fixture.harness.view().compose.move_to_bgm_count = 2;
     (void)fixture.harness.frame();
     expect_lane_key(fixture.harness.drawn_text().find("2 notes will move to BGM") != std::string::npos);
+}
+
+TEST_CASE("Combined primary clicks toggle matching sounds twice without editing", "[frontend-state][event-harness][select-same-sound]") {
+    const bool visible = GENERATE(true, false);
+    t422_fixture_t fixture{t422_song()};
+    fixture.interaction->selected_notes.clear();
+    fixture.interaction->selected_objects.clear();
+    fixture.project();
+    const auto center = t422_note_screen_center(fixture, 101);
+    REQUIRE(center);
+#if defined(__APPLE__)
+    const auto primary = SDL_KMOD_GUI;
+#else
+    const auto primary = SDL_KMOD_CTRL;
+#endif
+    const auto modifiers = static_cast<SDL_Keymod>(primary | (visible ? SDL_KMOD_SHIFT : SDL_KMOD_ALT));
+    const auto kind = visible ? WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE : WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_CHART;
+    const auto before = t422_native_bytes(fixture.history.document);
+    for (int repeat = 0; repeat < 2; ++repeat) {
+        const auto [x, y] = *center;
+        const std::array down{motion_event(x, y), button_event(true, x, y)};
+        const auto pressed = fixture.harness.frame(down, modifiers);
+        for (std::size_t i = 0; i < pressed.get().compose_input_count; ++i)
+            expect_t422(pressed.get().compose_inputs[i].kind == kind);
+        (void)fixture.dispatch(pressed);
+        const std::array up{button_event(false, x, y)};
+        const auto released = fixture.harness.frame(up, modifiers);
+        for (std::size_t i = 0; i < released.get().compose_input_count; ++i)
+            expect_t422(released.get().compose_inputs[i].kind == kind);
+        (void)fixture.dispatch(released);
+        expect_t422(repeat == 0 ? !fixture.interaction->selected_notes.empty() : fixture.interaction->selected_notes.empty());
+        expect_t422(t422_native_bytes(fixture.history.document) == before);
+        fixture.project();
+    }
+    expect_t422(!undo_document_command(fixture.history));
+}
+
+TEST_CASE("Same sound hover travels with the remappable add shortcut", "[frontend-state][event-harness][select-same-sound]") {
+    move_event_fixture_t fixture;
+    const std::array motion{motion_event(300, 400)};
+    const auto hovered = fixture.harness.frame(motion);
+    expect_lane_key(hovered.get().compose_sound_hover_object_id == 101);
+    const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_A, SDL_SCANCODE_A);
+#if defined(__APPLE__)
+    const auto modifiers = static_cast<SDL_Keymod>(SDL_KMOD_GUI | SDL_KMOD_SHIFT);
+#else
+    const auto modifiers = static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_SHIFT);
+#endif
+    const auto frame = fixture.harness.frame(std::span{&press, 1}, modifiers);
+    expect_lane_key(frame.get().compose_sound_hover_object_id == 101);
+    expect_lane_key(frame.get().shortcut_event_count == 1);
+    expect_lane_key(frame.get().shortcut_events[0].hid_usage == static_cast<std::uint16_t>(wormedit::shortcut_key_t::a));
+}
+
+TEST_CASE("Note menu sends same sound scope and stable source ID", "[frontend-state][event-harness][select-same-sound]") {
+    const bool visible = GENERATE(true, false);
+    note_menu_fixture_t fixture;
+    (void)right_click_at(fixture.harness, 300, 300);
+    (void)fixture.harness.frame();
+    const auto center = fixture.harness.drawn_text_center(visible ? "Select same sound (visible)" : "Select same sound (whole chart)");
+    REQUIRE(center);
+    const auto frames = click_at(fixture.harness, center->first, center->second);
+    bool found{};
+    for (const auto& frame : frames) {
+        for (std::size_t i = 0; i < frame.get().compose_input_count; ++i) {
+            const auto& input = frame.get().compose_inputs[i];
+            if (input.kind != (visible ? WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE : WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_CHART)) continue;
+            expect_lane_key(input.object_id == 42);
+            expect_lane_key(input.selection_mode == WORM_UI_COMPOSE_SELECTION_ADD);
+            found = true;
+        }
+    }
+    expect_lane_key(found);
+}
+
+TEST_CASE("Same sound combined clicks route BGM markers and stem cut sources", "[frontend-state][event-harness][select-same-sound][bmson]") {
+    const bool cut = GENERATE(true, false);
+    move_event_fixture_t fixture{true};
+    auto& view = fixture.harness.view().compose;
+    const auto x = fixture.notes[0].bounds.left + 200;
+    const auto y = fixture.notes[0].bounds.top;
+    WormUiComposeBgmLaneView lane{.bounds = {x - 15, 0, x + 15, view.viewport_height_pixels}, .source_lane_id = 90, .stem = true};
+    WormUiComposeBgmEventView marker{.bounds = {x - 10, y - 5, x + 10, y + 5}, .event_id = 201, .source_lane_id = 90};
+    WormUiComposeStemCutView point{.y_pixels = y, .bgm_lane_id = 90, .object_is_note = true, .object_id = 101};
+    view.bgm_lanes = &lane;
+    view.bgm_lane_count = 1;
+    view.bgm_events = cut ? nullptr : &marker;
+    view.bgm_event_count = cut ? 0 : 1;
+    view.stem_cuts = cut ? &point : nullptr;
+    view.stem_cut_count = cut ? 1 : 0;
+    view.bmson_tools_available = true;
+    (void)fixture.harness.frame();
+    const auto viewport = compose_canvas_viewport_for_testing();
+    REQUIRE(viewport);
+    const auto screen_x = viewport->x + static_cast<float>(x * viewport->width / view.viewport_width_pixels);
+    const auto screen_y = viewport->y + static_cast<float>(y * viewport->height / view.viewport_height_pixels);
+#if defined(__APPLE__)
+    const auto modifiers = static_cast<SDL_Keymod>(SDL_KMOD_GUI | SDL_KMOD_ALT);
+#else
+    const auto modifiers = static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_ALT);
+#endif
+    const std::array down{motion_event(screen_x, screen_y), button_event(true, screen_x, screen_y)};
+    const auto pressed = fixture.harness.frame(down, modifiers);
+    const std::array up{button_event(false, screen_x, screen_y)};
+    const auto released = fixture.harness.frame(up, modifiers);
+    bool found{};
+    for (const auto* frame : {&pressed, &released}) {
+        for (std::size_t i = 0; i < frame->get().compose_input_count; ++i) {
+            const auto& input = frame->get().compose_inputs[i];
+            expect_lane_key(input.kind == WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_CHART);
+            expect_lane_key(input.object_id == (cut ? 101 : 201));
+            found = true;
+        }
+    }
+    expect_lane_key(found);
+}
+
+TEST_CASE("Same sound add shortcut keeps selection and Sounds dock fallbacks", "[frontend-state][event-harness][select-same-sound]") {
+    auto song = t422_song();
+    song.audio_assets.push_back({.id = asset_id_t{2}, .source_path = "snare.wav"});
+    song.resources.push_back({.id = resource_id_t{2}, .name = "snare", .asset = asset_id_t{2}, .roles = {resource_role_t::sample}});
+    song.charts[0].measures[0].notes[0].sound = resource_id_t{2};
+    t422_fixture_t fixture{std::move(song)};
+    auto& ui = worm_ui_nuklear_compose_state();
+    ui.sounds_panel_visible = true;
+    const std::array rows{WormUiComposeKeysoundRowView{.resource_id = 1, .slot = "01", .name = "kick"},
+        WormUiComposeKeysoundRowView{.resource_id = 2, .slot = "02", .name = "snare"}};
+    const std::array<std::uint64_t, 2> resources{1, 2};
+    auto& view = fixture.harness.view().compose;
+    view.keysounds_available = true;
+    view.keysounds = rows.data();
+    view.keysound_count = view.keysound_total_count = rows.size();
+    view.keysound_listed_resource_ids = view.keysound_all_resource_ids = resources.data();
+    view.keysound_listed_resource_count = view.keysound_all_resource_count = resources.size();
+    (void)fixture.harness.frame();
+    ui.keysound_selection.selected = {2};
+    ui.keysound_selection.primary = 2;
+    expect_lane_key(ui.sound_list_valid);
+    const std::array motion{motion_event(ui.sound_list_x + ui.sound_list_width / 2,
+        ui.sound_list_y + ui.sound_list_height / 2)};
+    (void)fixture.harness.frame(motion);
+    const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_A, SDL_SCANCODE_A);
+#if defined(__APPLE__)
+    const auto modifiers = static_cast<SDL_Keymod>(SDL_KMOD_GUI | SDL_KMOD_SHIFT);
+#else
+    const auto modifiers = static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_SHIFT);
+#endif
+    const auto frame = fixture.harness.frame(std::span{&press, 1}, modifiers);
+    expect_lane_key(frame.get().shortcut_event_count == 1);
+    expect_lane_key(frame.get().compose_sound_hover_object_id == 0);
+    WormUiKeysoundDockRequest dock{};
+    worm_ui_frontend_keysound_dock_request(&dock);
+    expect_lane_key(dock.selected_resource_count == 1 && dock.selected_resource_ids[0] == 2);
+    fixture.application.sound_selection_chart = chart_id_t{frame.get().compose_input_chart_id};
+    fixture.application.sound_selection_revision = frame.get().compose_input_document_revision;
+    fixture.application.sound_selection_dock = {resource_id_t{dock.selected_resource_ids[0]}};
+    fixture.interaction->selected_notes = {object_id_t{101}};
+    fixture.interaction->selected_objects.clear();
+    const auto& chart = fixture.history.document.charts[0];
+    auto keys = compose_sound_selection_keys(fixture.history.document, chart, *fixture.interaction, fixture.application);
+    expect_lane_key(keys.size() == 1 && keys[0].value == 1);
+    fixture.interaction->selected_notes.clear();
+    keys = compose_sound_selection_keys(fixture.history.document, chart, *fixture.interaction, fixture.application);
+    expect_lane_key(keys.size() == 1 && keys[0].value == 2);
 }

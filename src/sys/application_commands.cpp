@@ -38,6 +38,7 @@ constexpr command_name_t command_names[]{
     {"edit.tool_draw", application_command_kind_t::edit_tool_draw},
     {"edit.tool_layer", application_command_kind_t::edit_tool_layer},
     {"selection.clear", application_command_kind_t::selection_clear},
+    {"selection.select_same_sound_chart", application_command_kind_t::selection_select_same_sound_chart},
     {"selection.select_all", application_command_kind_t::selection_select_all},
     {"selection.invert", application_command_kind_t::selection_invert},
     {"navigation.previous_snap", application_command_kind_t::navigation_previous_snap},

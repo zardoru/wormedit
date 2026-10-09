@@ -1292,6 +1292,7 @@ typedef struct WormUiComposeView {
     bool semantic_layer_paint_mode_active;
     bool semantic_layer_gesture_active;
     size_t selected_note_count;
+    bool same_sound_selection_available;
     bool move_to_bgm_available;
     char move_to_bgm_shortcut[64];
     // Grids the chart can snap to (the Quantize chips outside it are quantize-only).
@@ -2449,6 +2450,8 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND,
     WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD,
     WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD,
+    WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE,
+    WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_CHART,
     WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
     WORM_UI_COMPOSE_INPUT_MEASURE_SELECT,
     WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE,
@@ -2783,6 +2786,7 @@ typedef struct WormUiWorkspaceAction {
     uint8_t compose_quantize_holds;
     char compose_quantize_preset_name[WORM_UI_COMPOSE_QUANTIZE_PRESET_NAME_BYTES + 1];
     double compose_input_viewport_width_pixels;
+    uint64_t compose_sound_hover_object_id;
     bool compose_has_pointer_hover;
     double compose_pointer_hover_x_pixels;
     double compose_pointer_hover_y_pixels;

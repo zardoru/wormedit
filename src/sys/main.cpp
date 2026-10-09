@@ -1,3 +1,4 @@
+#include "sys/compose_sound_selection.h"
 #if defined(WORMEDIT_HAS_MACOS_MENU)
 #include "sys/macos_menu.h"
 #endif
@@ -1595,6 +1596,14 @@ void attach_bgm_shortcut(WormUiComposeView& view, const wormedit::command_regist
     std::snprintf(view.move_to_bgm_shortcut, sizeof(view.move_to_bgm_shortcut), "%s", shortcut.c_str());
 }
 
+void refresh_same_sound_command(wormedit::command_registry_t& registry,
+    const wormedit::document_history_t& history, const wormedit::chart_document_t* chart,
+    const std::optional<wormedit::editor_interaction_state_t>& state, bool ready,
+    const application_command_state_t& application) {
+    const bool enabled = ready && wormedit::sys::compose_sound_selection_available(history.document, *chart, *state, application);
+    (void)wormedit::update_command_state(registry, {"selection.select_same_sound_chart"}, enabled, std::nullopt);
+}
+
 void refresh_application_command_states(
     wormedit::command_registry_t& registry, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
@@ -1644,6 +1653,7 @@ void refresh_application_command_states(
                                             pending || !compose_state->selected_objects.empty() ||
                                              application_state.note_paint_mode_active ||
                                              application_state.semantic_layer_paint_mode_active));
+    refresh_same_sound_command(registry, history, chart, compose_state, compose_ready, application_state);
     set("selection.select_all", compose_ready);
     set("selection.invert", compose_ready);
     const bool marker_navigation_available =
@@ -2180,6 +2190,19 @@ void cancel_stale_compose_interaction(
             compose_interaction_state.reset();
         }
     }
+}
+
+void refresh_sound_selection_context(const WormUiWorkspaceAction& action,
+    application_command_state_t& sound_context) {
+    sound_context.sound_selection_chart = wormedit::chart_id_t{action.compose_input_chart_id};
+    sound_context.sound_selection_revision = action.compose_input_document_revision;
+    sound_context.sound_selection_hover = action.compose_sound_hover_object_id
+        ? std::optional{wormedit::object_id_t{action.compose_sound_hover_object_id}} : std::nullopt;
+    WormUiKeysoundDockRequest sound_dock{};
+    worm_ui_frontend_keysound_dock_request(&sound_dock);
+    sound_context.sound_selection_dock.clear();
+    for (size_t i = 0; i < sound_dock.selected_resource_count; ++i)
+        sound_context.sound_selection_dock.push_back(wormedit::resource_id_t{sound_dock.selected_resource_ids[i]});
 }
 
 template <typename Context>
@@ -4401,6 +4424,7 @@ int main(int argc, char** argv) {
             wormedit::sys::refresh_macos_menu_shortcuts(command_registry);
 #endif
             auto action = worm_ui_frontend_compose(&flattened.view);
+            refresh_sound_selection_context(action, application_command_state);
             dispatch_native_menu_command(action, command_registry, history, workspace,
                 compose_interaction_state, application_command_state, notification_sink);
             retain_compose_hover_timing(compose_scene_cache, flattened.view, action);

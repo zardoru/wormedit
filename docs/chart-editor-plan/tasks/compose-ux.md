@@ -616,3 +616,21 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 - **Verify:** standard build/test; configured clang-tidy; isolated Xvfb/SDL-dummy short-chart audio-tail playback and Stop checks with 35 percent anchor.
 - **Evidence:** Authoritative application build passed; full suite passed 1207/1207 (54.63 s), and focused checkpoint passed 49/49, including same-window margin changes. Configured clang-tidy found no new complexity violations. Fresh and cached scenes agree at default 20 percent, configured 35 percent and 10 percent end margins in both directions; invalid margins and out-of-bounds scroll reject. Real isolated Xvfb/SDL-dummy checks at 35 percent verified Play, short-chart audio-tail seeking, Stop and resize in upscroll/downscroll without chart mutation. Literal Compose smoke passed and its PNG was inspected. Reproduction, logs, scripts and inspected PNGs: `/tmp/wormedit-t306/`; final smoke: `/tmp/wormedit-t306/final-smoke.png`.
 - **Out of scope:** T-272 measure-index borrowing, overview placement, unrelated rendering optimizations.
+
+## T-485 Keep the Compose field alive when the selection holds deleted objects
+
+- **Status:** ready
+- **Found by:** the 2026-10-08 real-window sweep. Removing a measure deleted its notes but left their IDs selected, and the next field-scene build rejected the view ("field-scene index, view, or geometry is invalid", "Chart field is unavailable") until Undo. The T-71 path now clears its selection, but any other command that deletes selected objects can hit the same failure.
+- **Outcome:** after any document change, selection state only refers to objects that still exist, and the field-scene build never fails because of a stale selected ID.
+- **Read first:** the field-scene check `view.selected_notes.size() <= index.notes.size()` and its neighbours (grep "field-scene index, view, or geometry is invalid"), `include/wormedit/core/interaction.h` (`editor_interaction_state_t` selection fields), `src/sys/compose_view.cpp`.
+- **Files owned:** `src/core/interaction.cpp`, `include/wormedit/core/interaction.h`, `tests/core/interaction_tests.cpp`, the file holding the field-scene check and its test, `src/sys/compose_view.cpp`, `tests/sys/compose_measure_commands_tests.cpp`, this card.
+- **Steps:**
+  1. Write a failing test: select notes, delete them through a path other than measure removal (an undo of their creation, or a core edit), and build the field scene.
+  2. Prune selected notes, objects and retained ranges against the current document once per document revision change, in one place, and drop IDs that no longer exist.
+  3. Make the field-scene build skip unknown selected IDs instead of rejecting the whole view, so a missed prune degrades gracefully.
+  4. Remove the special-case clear in the T-71 path if the general prune covers it, keeping its test.
+- **Invariants:** selection of surviving objects is preserved across edits and Undo/Redo. Pruning is O(selection), not a whole-chart scan per frame.
+- **Reject/failure behavior:** none; pruning never mutates the document.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`; `ctest --test-dir build -L event-harness`; full suite.
+- **Out of scope:** selection persistence across sessions.
+

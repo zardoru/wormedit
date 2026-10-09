@@ -103,3 +103,20 @@ it. There is no toggle.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`; `ctest --test-dir build -L event-harness`.
 - **Out of scope:** drawing BGM holds. Hold tails for BGM come from T-423, and a drag-length BGM hold is a later card.
 
+## T-484 Draw places keysound events on BMSON packed columns
+
+- **Status:** ready (user: Codex batch unlocked, 2026-10-08; keep bmson_sound_channel_editor.cpp edits additive because T-423 02d edits to it are still pending integration)
+- **Decision (user, 2026-10-08):** authorized extending Draw to BMSON after T-482 shipped BMS-style charts only.
+- **Outcome:** with Draw active and a sound source, a stroke on a BMSON packed keysound column adds sound-channel events for that sound, as one undo step. Right-drag erases them. Stem lanes stay non-drawable with the existing stem-rule message.
+- **Read first:** [T-482](#t-482-draw-places-bgm-events-on-bgm-lanes) and its result, `src/core/bmson_sound_channel_editor.cpp`, `include/wormedit/core/resource_assignment.h` (`apply_bgm_stroke`), [BMSON hybrid lanes](bmson-hybrid-lanes.md) (packed versus stem lanes).
+- **Files owned:** `src/core/bmson_sound_channel_editor.cpp`, `tests/core/bmson_sound_channel_editor_tests.cpp`, `src/core/resource_assignment.cpp`, `include/wormedit/core/resource_assignment.h`, `tests/core/resource_assignment_tests.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `src/sys/compose_input.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, this card.
+- **Steps:**
+  1. Wait until the T-423 batch releases `bmson_sound_channel_editor.cpp` and `bmson.cpp`, then record how a packed column maps to sound channels (one channel per sound, or a shared packed channel).
+  2. Add a packed-column stroke command beside `apply_bgm_stroke`: it places events in the sound's channel, creating the channel when the sound has none, and keeps the slice and continue rules.
+  3. Route Draw presses on packed columns to it, and keep the stem-lane rejection.
+  4. Tests: a three-cell stroke on a packed column with one undo; erase; a stem lane rejects; the BMSON export round-trips the drawn events.
+- **Invariants:** existing BMSON stems, slices and packed classification are unchanged, and imported BMSON exports byte-identically when nothing was drawn.
+- **Reject/failure behavior:** a stroke the channel model cannot represent rejects atomically with the reason.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'bmson|^core\.'`; `ctest --test-dir build -L event-harness`.
+- **Out of scope:** drawing on stem lanes.
+

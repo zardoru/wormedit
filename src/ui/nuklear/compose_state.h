@@ -3,6 +3,7 @@
 #include "ui/frontend.h"
 #include "ui/nuklear/keysound_list_state.h"
 #include "ui/nuklear/compose_bookmark_chooser.h"
+#include "ui/nuklear/compose_sound_picker.h"
 #include "ui/nuklear/compose_bookmark_rename.h"
 #include "ui/nuklear/context_menu.h"
 #include "ui/nuklear/sound_slot_batch.h"
@@ -348,6 +349,7 @@ struct worm_ui_nuklear_compose_state_t {
     std::array<char, 64> inline_timing_text{};
     std::array<char, 128> inline_timing_error{};
     bookmark_chooser_state_t bookmark_chooser;
+    sound_picker_state_t sound_picker;
     bookmark_rename_editor_t bookmark_rename;
     // Window position of the last note double-click, where the inline note-label editor opens.
     float note_label_anchor_x{};

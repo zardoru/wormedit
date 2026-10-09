@@ -9,6 +9,8 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 
 ## Card groups
 
+- [Go to sound](tasks/go-to-sound.md)
+
 - [High-refresh frame pacing](tasks/frame-pacing.md)
 
 - [osu!mania SpecialStyle 12K and 16K layouts](tasks/osu-specialstyle.md)
@@ -63,7 +65,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Bookmark rename harness gesture alignment](tasks/bookmark-rename-harness.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-496.
+every number above T-497.
 
 ## Rules for whoever executes a card
 

@@ -472,6 +472,7 @@ struct application_command_state_t {
     };
     std::optional<minimap_start_frame_t> minimap_start_frame;
     std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_bookmark_chooser;
+    std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_sound_picker;
     // Pixels the frontend's left dock takes from the Compose field; absent means none.
     std::function<int()> compose_left_dock_pixels;
     std::function<double(std::uint64_t, std::uint64_t, std::uint64_t)> compose_bgm_lane_width;

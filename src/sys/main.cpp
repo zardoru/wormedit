@@ -1606,6 +1606,10 @@ void refresh_same_sound_command(wormedit::command_registry_t& registry,
     (void)wormedit::update_command_state(registry, {"selection.select_same_sound_chart"}, enabled, std::nullopt);
 }
 
+auto sound_picker_command_available(bool compose_ready, bool pending) -> bool {
+    return compose_ready && !pending;
+}
+
 void refresh_application_command_states(
     wormedit::command_registry_t& registry, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
@@ -1662,6 +1666,7 @@ void refresh_application_command_states(
         compose_ready && wormedit::has_marker_navigation_targets(*chart);
     set("navigation.previous_marker", marker_navigation_available);
     set("navigation.next_marker", marker_navigation_available);
+    set("navigation.go_to_sound", sound_picker_command_available(compose_ready, pending));
     set("navigation.previous_bookmark", compose_ready);
     set("navigation.next_bookmark", compose_ready);
     set("markers.add_bookmark", compose_ready);
@@ -2366,6 +2371,7 @@ void reset_project_edit_state(application_command_state_t& current) {
     next.transport_preview_end_frame = std::move(current.transport_preview_end_frame);
     next.minimap_click_moves_paused_playhead = current.minimap_click_moves_paused_playhead;
     next.open_bookmark_chooser = std::move(current.open_bookmark_chooser);
+    next.open_sound_picker = std::move(current.open_sound_picker);
     next.transport_play_pause = std::move(current.transport_play_pause);
     next.transport_play_from_start = std::move(current.transport_play_from_start);
     next.transport_seek = std::move(current.transport_seek);
@@ -4062,6 +4068,7 @@ int main(int argc, char** argv) {
     wormedit::editor_navigation_input_controller_t compose_navigation_input;
     application_command_state_t application_command_state;
     application_command_state.open_bookmark_chooser = worm_ui_frontend_open_bookmark_chooser;
+    application_command_state.open_sound_picker = worm_ui_frontend_open_sound_picker;
     application_command_state.compose_left_dock_pixels = worm_ui_frontend_compose_left_dock_pixels;
     application_command_state.compose_bgm_lane_width = worm_ui_frontend_compose_bgm_lane_width;
     external_player_runtime_t external_player_runtime;

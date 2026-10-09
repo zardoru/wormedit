@@ -791,3 +791,17 @@ TEST_CASE("Primary M splits a measure without shortcut conflicts", "[commands][m
     CHECK(diagnose_shortcut_conflicts(registry,shortcut_primary_modifier_t::control).empty());
     CHECK(diagnose_shortcut_conflicts(registry,shortcut_primary_modifier_t::meta).empty());
 }
+
+TEST_CASE("Go to sound uses the platform primary K chord in Compose", "[core][command_registry][sound-picker]") {
+    const auto registry = make_default_editor_command_registry(make_invoker(
+        std::make_shared<std::vector<command_id_t>>()));
+    for (const auto primary : {shortcut_primary_modifier_t::control, shortcut_primary_modifier_t::meta}) {
+        const auto modifier = primary == shortcut_primary_modifier_t::control
+            ? shortcut_modifier_t::control : shortcut_modifier_t::meta;
+        const auto dispatched = dispatch_shortcut(registry,
+            {.chord = {.key = shortcut_key_t::k, .modifiers = static_cast<shortcut_modifiers_t>(modifier)}},
+            focus_for_compose(), primary);
+        CHECK(dispatched.status == command_dispatch_status_t::invoked);
+        CHECK(dispatched.command == command_id_t{"navigation.go_to_sound"});
+    }
+}

@@ -1223,7 +1223,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         state.bga_renumber_confirmation_open ||
         state.bga_renumber_release_pending || compose_note_menu_consumed() ||
         state.bookmark_rename.active || state.bookmark_rename.release_pending ||
-        worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_chooser)) {
+        (worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_chooser) || compose_sound_picker_owns_input(state.sound_picker))) {
         discard_occluded_compose_input(panel);
         draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
         render_compose_bookmark_rename(context, *view, *action, state.bookmark_rename, viewport, window_focused);
@@ -1631,6 +1631,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     worm_ui_nuklear_render_bga_stack_picker(context, view, action, &state);
     render_go_to_measure(context, *view, *action, window_focused);
     (void)worm_ui_nuklear_render_compose_bookmark_chooser(context, view->bookmark_chooser, action, window_focused, &state.bookmark_chooser);
+    render_compose_sound_picker(context, *view, *action, state, window_focused);
 }
 
 bool worm_ui_nuklear_compose_lane_focused(const WormUiComposeView* view, bool compose_tab_active,
@@ -1639,6 +1640,6 @@ bool worm_ui_nuklear_compose_lane_focused(const WormUiComposeView* view, bool co
         view, window_focused, state.inline_timing_open || state.go_to_measure_open ||
             state.layers_menu.open || state.layers_menu_input_consumed || compose_quantize_owns_input() || compose_note_menu_consumed() ||
             state.bookmark_rename.active || state.bookmark_rename.release_pending ||
-            worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_chooser), false) &&
+            (worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_chooser) || compose_sound_picker_owns_input(state.sound_picker)), false) &&
         view->cursor && view->cursor->lane_id != 0;
 }

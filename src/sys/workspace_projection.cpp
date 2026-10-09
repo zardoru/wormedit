@@ -8,6 +8,7 @@
 #include "sys/sound_list_projection.h"
 #include "sys/sound_usage_projection.h"
 #include "sys/bookmark_chooser_projection.h"
+#include "sys/sound_picker_projection.h"
 #include "wormedit/config.h"
 
 #include <wormedit/core/resource_file_copy.h>
@@ -993,6 +994,35 @@ void append_compose_keysound_indices(flattened_workspace_t& result,
     view.keysound_all_resource_count = result.compose.keysound.all_resource_id.size();
 }
 
+void populate_sound_picker(const workspace_projection_context_t& projection,
+                           const wormedit::chart_document_t& chart) {
+    auto& view = projection.result.view.compose.sound_picker;
+    const auto& request = projection.keysound_request;
+    if (!request.sound_picker_open) return;
+    auto* arena = projection.result.arena();
+    if (!arena) return;
+    sound_picker_cache_t uncached;
+    auto* cache = &uncached;
+    if (projection.keysound_cache) {
+        auto& stored = projection.keysound_cache->sound_picker;
+        if (!stored) stored = std::make_shared<sound_picker_cache_t>();
+        cache = stored.get();
+    }
+    const auto query = bounded_text(request.sound_picker_query, sizeof(request.sound_picker_query) - 1);
+    const auto& result = project_sound_picker(*cache, projection.document, chart, query);
+    std::copy(query.begin(), query.end(), view.query);
+    view.total_count = result.total;
+    for (const auto& row : result.rows) {
+        const auto* label = arena_format(*arena, "%s%s%s%s  (#%llu)",
+            row.slot.empty() ? "" : row.slot.c_str(), row.slot.empty() ? "" : " · ",
+            row.name.empty() ? "(unnamed sound)" : row.name.c_str(),
+            row.missing ? " · Missing" : "", static_cast<unsigned long long>(row.resource.value));
+        if (!label) return;
+        view.rows[view.row_count++] = {row.resource.value, label, row.missing};
+    }
+    view.ready = true;
+}
+
 void populate_compose_keysounds(const workspace_projection_context_t& projection,
                                 wormedit::chart_id_t chart_id) {
     auto& result = projection.result;
@@ -1002,6 +1032,7 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
                                          &wormedit::chart_document_t::id);
     view.keysounds_available = chart != projection.document.charts.end();
     if (!arena || !view.keysounds_available) return;
+    populate_sound_picker(projection, *chart);
     keysound_list_t uncached;
     const auto& list = project_compose_keysounds(projection, *chart, uncached);
     clear_compose_keysound_counts(view);

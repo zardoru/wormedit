@@ -1375,3 +1375,35 @@ TEST_CASE("Bookmark chooser arena exhaustion publishes a consistent bounded page
     CHECK(view.truncated);
     CHECK(view.row_count == 0);
 }
+
+TEST_CASE("Go to sound frame searches beyond dock filters and owns moved display labels",
+          "[sys][frame-arena][sound-picker]") {
+    auto document = compose_resource_document(300);
+    document.charts.push_back({.id = wormedit::chart_id_t{1}});
+    document.resources.back().name = "Super Snare Roll";
+    WormUiKeysoundDockRequest request{};
+    request.sound_picker_open = true;
+    std::strcpy(request.sound_picker_query, "SSR");
+    std::strcpy(request.automatic_search, "no dock matches");
+    request.automatic_first_row = 100;
+    request.automatic_row_limit = 1;
+    auto frame = project_resource_rows(document, nullptr, request);
+    check_frame_storage(frame.view.compose.keysound_count == 0);
+    check_frame_storage(frame.view.compose.sound_picker.ready);
+    check_frame_storage(frame.view.compose.sound_picker.total_count == 1);
+    REQUIRE(frame.view.compose.sound_picker.row_count == 1);
+    check_frame_storage(frame.view.compose.sound_picker.rows[0].resource_id == 300);
+    document.resources.clear();
+    auto moved = std::move(frame);
+    moved.rebind_view_pointers();
+    check_frame_storage(std::strstr(moved.view.compose.sound_picker.rows[0].label, "Super Snare Roll") != nullptr);
+    request.sound_picker_open = false;
+    auto closed = project_resource_rows(document, nullptr, request);
+    check_frame_storage(!closed.view.compose.sound_picker.ready);
+    check_frame_storage(closed.view.compose.sound_picker.row_count == 0);
+    request.sound_picker_open = true;
+    std::fill(std::begin(request.sound_picker_query), std::end(request.sound_picker_query), 'x');
+    const auto bounded = project_resource_rows(document, nullptr, request);
+    check_frame_storage(bounded.view.compose.sound_picker.ready);
+    check_frame_storage(std::strlen(bounded.view.compose.sound_picker.query) == 95);
+}

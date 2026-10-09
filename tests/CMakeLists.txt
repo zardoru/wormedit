@@ -34,6 +34,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_playhead_skip.cpp
     ../src/sys/compose_bgm_bar.cpp
     ../src/sys/sound_list_projection.cpp
+    ../src/sys/sound_picker_projection.cpp
     ../src/sys/compose_measure_commands.cpp
     ../src/sys/compose_note_to_bgm.cpp
     ../src/sys/compose_selection_transform.cpp
@@ -555,6 +556,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/keep_pitch_event_harness_tests.cpp
         ui/markers_event_harness_tests.cpp
         ui/bookmark_chooser_event_harness_tests.cpp
+        ui/sound_picker_event_harness_tests.cpp
         ui/bookmark_rename_event_harness_tests.cpp
         ui/popup_menu_event_harness_tests.cpp
         ../src/sys/bookmark_rename_commands.cpp
@@ -583,6 +585,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/compose_view.cpp
         ../src/sys/recipe_form.cpp
         ../src/sys/sound_list_projection.cpp
+        ../src/sys/sound_picker_projection.cpp
         ../src/sys/sound_usage_projection.cpp
         ../src/sys/workspace_projection.cpp
         ${WORMEDIT_UI_FRONTEND_SOURCES}
@@ -659,6 +662,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/workspace_projection.cpp
         ../src/sys/bookmark_chooser_projection.cpp
         ../src/sys/sound_list_projection.cpp
+        ../src/sys/sound_picker_projection.cpp
         ../src/sys/sound_usage_projection.cpp
         sys/sound_usage_projection_tests.cpp
         sys/bookmark_chooser_projection_tests.cpp
@@ -728,6 +732,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/workspace_projection.cpp
         ../src/sys/bookmark_chooser_projection.cpp
         ../src/sys/sound_list_projection.cpp
+        ../src/sys/sound_picker_projection.cpp
         ../src/sys/timing_view.cpp
         ../src/sys/recipe_form.cpp
         ../src/sys/compose_resource_presenter.cpp

@@ -1,4 +1,5 @@
 #include "sys/sound_list_projection.h"
+#include "sys/sound_picker_projection.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -618,4 +619,66 @@ TEST_CASE("Non BMSON Sounds list and missing asset stem eligibility remain uncha
     check_sound_projection(std::ranges::none_of(list.rows, [](const auto& row) {
         return row.resource == resource_id_t{1};
     }));
+}
+
+TEST_CASE("Go to sound fuzzy search covers the full catalog and caches idle frames", "[sound-picker][projection]") {
+    auto song = large_projection_catalog();
+    song.resources[song.resources.size() - 2].name = "Super Snare Roll";
+    const auto wanted = song.resources[song.resources.size() - 2].id;
+    sound_picker_cache_t cache;
+    const auto& first = project_sound_picker(cache, song, song.charts.front(), "SSR");
+    require_sound_projection(first.rows.size() == 1);
+    check_sound_projection(first.rows.front().resource == wanted);
+    check_sound_projection(cache.catalog_builds == 1);
+    check_sound_projection(cache.query_builds == 1);
+    (void)project_sound_picker(cache, song, song.charts.front(), "ssr");
+    check_sound_projection(cache.catalog_builds == 1);
+    check_sound_projection(cache.query_builds == 1);
+    const auto& all = project_sound_picker(cache, song, song.charts.front(), "");
+    check_sound_projection(all.total == 540);
+    check_sound_projection(all.rows.size() == 20);
+    check_sound_projection(cache.catalog_builds == 1);
+    song.resources[song.resources.size() - 2].missing = true;
+    ++song.revision;
+    const auto& missing = project_sound_picker(cache, song, song.charts.front(), "ssr");
+    require_sound_projection(missing.rows.size() == 1);
+    check_sound_projection(missing.rows.front().missing);
+    check_sound_projection(cache.catalog_builds == 2);
+}
+
+TEST_CASE("Go to sound ranks exact prefix substring and fuzzy matches deterministically", "[sound-picker][projection]") {
+    auto song = catalog();
+    song.resources.clear();
+    for (const auto& name : {"Kinetic Click", "Big kick", "Kick tail", "Kick", "Kick"}) {
+        const auto id = static_cast<std::uint64_t>(song.resources.size() + 10);
+        song.resources.push_back({.id = resource_id_t{id}, .name = name,
+            .asset = asset_id_t{2}, .roles = {resource_role_t::sample}});
+    }
+    sound_picker_cache_t cache;
+    const auto& found = project_sound_picker(cache, song, song.charts.front(), "kick");
+    require_sound_projection(found.rows.size() == 5);
+    check_sound_projection(found.rows[0].resource == resource_id_t{13});
+    check_sound_projection(found.rows[1].resource == resource_id_t{14});
+    check_sound_projection(found.rows[2].name == "Kick tail");
+    check_sound_projection(found.rows[3].name == "Big kick");
+    check_sound_projection(found.rows[4].name == "Kinetic Click");
+}
+
+TEST_CASE("Go to sound follows dock eligibility and searches WAV IDs", "[sound-picker][projection]") {
+    auto song = catalog();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    song.resources[1].target_identities.push_back({.family = format_family_t::bms,
+        .identifier = "A7", .namespace_name = "WAV"});
+    sound_picker_cache_t cache;
+    const auto& slot = project_sound_picker(cache, song, chart, "a7");
+    require_sound_projection(slot.rows.size() == 1);
+    check_sound_projection(slot.rows.front().resource == resource_id_t{2});
+    const auto& bms = project_sound_picker(cache, song, chart, "");
+    check_sound_projection(bms.total == 1);
+    chart.source_family = format_family_t::bmson;
+    ++song.revision;
+    const auto& bmson = project_sound_picker(cache, song, chart, "");
+    check_sound_projection(bmson.total == 3);
+    check_sound_projection(project_sound_picker(cache, song, chart, "a7").rows.empty());
 }

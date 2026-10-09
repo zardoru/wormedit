@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <wormedit/core/document.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/natural_order.h>
@@ -193,7 +195,10 @@ struct keysound_list_request_t {
     bool ids_available{true};
 };
 
+struct sound_picker_cache_t;
+
 struct keysound_list_cache_t {
+    std::shared_ptr<sound_picker_cache_t> sound_picker;
     [[nodiscard]] auto projection_build_count() const noexcept -> std::size_t {
         return projection_builds_;
     }

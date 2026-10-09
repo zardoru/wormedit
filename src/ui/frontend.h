@@ -1022,7 +1022,21 @@ typedef struct WormUiBgaDockRequest {
     bool sort_by_id;
 } WormUiBgaDockRequest;
 
+typedef struct WormUiSoundPickerRowView {
+    uint64_t resource_id;
+    const char* label;
+    bool missing;
+} WormUiSoundPickerRowView;
+typedef struct WormUiSoundPickerView {
+    char query[96];
+    WormUiSoundPickerRowView rows[20];
+    size_t row_count, total_count;
+    bool ready;
+} WormUiSoundPickerView;
+
 typedef struct WormUiKeysoundDockRequest {
+    bool sound_picker_open;
+    char sound_picker_query[96];
     bool sort_by_id;
     bool slots_mode;
     uint16_t selected_slot;
@@ -1668,6 +1682,7 @@ typedef struct WormUiComposeView {
     size_t selected_bgm_event_count;
     size_t semantic_layer_unassigned_bgm_count;
     WormUiBookmarkChooserView bookmark_chooser;
+    WormUiSoundPickerView sound_picker;
     size_t move_conflict_count;
     size_t move_to_bgm_count; // Unique moved-note count, before geometry truncation.
 } WormUiComposeView;
@@ -3029,6 +3044,7 @@ void worm_ui_frontend_bga_move_preview(uint64_t* chart_id, uint64_t* document_re
 void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request);
 void worm_ui_frontend_bookmark_chooser_request(WormUiBookmarkChooserRequest* request);
 bool worm_ui_frontend_open_bookmark_chooser(uint64_t project_id, uint64_t chart_id, uint64_t revision);
+bool worm_ui_frontend_open_sound_picker(uint64_t project_id, uint64_t chart_id, uint64_t revision);
 /* Width in logical pixels the BMS branch dock took from the left of the Compose field last frame;
    the Compose projection narrows its viewport by it. Zero while the dock is hidden. */
 int worm_ui_frontend_compose_left_dock_pixels(void);

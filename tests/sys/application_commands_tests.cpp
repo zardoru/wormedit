@@ -1848,6 +1848,39 @@ TEST_CASE("Go To Bookmark command rejects a missing or blocked chooser callback"
     fixture.application_state.open_bookmark_chooser = [](auto, auto, auto) { return false; };
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).accepted);
 }
+TEST_CASE("Go to sound command opens the retained chooser with the active context",
+          "[sys][application_commands][sound-picker]") {
+    TimingInsertFixture fixture;
+    const auto revision = fixture.fixture.history.document.revision;
+    const auto cursor = fixture.compose_state->cursor;
+    unsigned calls{};
+    fixture.application_state.open_sound_picker = [&](std::uint64_t project,
+        std::uint64_t chart, std::uint64_t expected_revision) {
+        ++calls;
+        check_bookmark_callback(project == fixture.fixture.history.document.id.value);
+        check_bookmark_callback(chart == fixture.compose_state->chart.value);
+        check_bookmark_callback(expected_revision == revision);
+        return true;
+    };
+    require_bookmark_callback(fixture.invoke(application_command_kind_t::navigation_go_to_sound).accepted);
+    check_bookmark_callback(calls == 1);
+    check_bookmark_callback(fixture.fixture.history.document.revision == revision);
+    check_bookmark_callback(fixture.compose_state->cursor == cursor);
+    fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_sound).accepted);
+    check_bookmark_callback(calls == 1);
+}
+
+TEST_CASE("Go to sound command rejects a missing or blocked chooser callback",
+          "[sys][application_commands][sound-picker]") {
+    TimingInsertFixture fixture;
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_sound).accepted);
+    fixture.application_state.open_sound_picker = [](auto, auto, auto) { return false; };
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_sound).accepted);
+    fixture.application_state.open_sound_picker = [](auto, auto, auto) { return true; };
+    fixture.compose_state->pending_note_duration_gesture.emplace();
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_sound).accepted);
+}
 #endif
 
 namespace {

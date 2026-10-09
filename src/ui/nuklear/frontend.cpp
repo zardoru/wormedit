@@ -800,6 +800,8 @@ void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request) 
     if (!request) return;
     const auto& state = worm_ui_nuklear_compose_state();
     *request = {};
+    request->sound_picker_open = state.sound_picker.open;
+    std::copy(state.sound_picker.query.begin(), state.sound_picker.query.end(), request->sound_picker_query);
     request->sort_by_id = state.keysound_sort_by_id;
     request->slots_mode = state.keysound_slots_mode;
     request->selected_slot = state.keysound_selected_slot;
@@ -942,7 +944,7 @@ static bool notification_editor_text_owned() {
     return (nuklear_text_entry_active() && !nk_window_is_active(g_context, "Notifications")) ||
         g_ime_composition_active || compose.inline_timing_open || compose.inline_offset_open ||
         compose.go_to_measure_open || compose.bookmark_rename.active ||
-        worm_ui_nuklear_bookmark_chooser_owns_input(compose.bookmark_chooser);
+        (worm_ui_nuklear_bookmark_chooser_owns_input(compose.bookmark_chooser) || compose_sound_picker_owns_input(compose.sound_picker));
 }
 
 static bool notification_external_pointer_active() {
@@ -985,7 +987,7 @@ static bool compose_popup_owns_input() {
            compose.bga_stack_open || compose.bga_stack_release_pending ||
            compose.bga_renumber_confirmation_open || compose.bga_renumber_release_pending ||
            compose_note_menu_open() || compose_note_menu_consumed() ||
-           worm_ui_nuklear_bookmark_chooser_owns_input(compose.bookmark_chooser);
+           (worm_ui_nuklear_bookmark_chooser_owns_input(compose.bookmark_chooser) || compose_sound_picker_owns_input(compose.sound_picker));
 }
 
 int worm_ui_frontend_compose_left_dock_pixels(void) {
@@ -999,6 +1001,17 @@ bool worm_ui_frontend_open_bookmark_chooser(uint64_t project_id, uint64_t chart_
         compose.bookmark_rename.active || compose.bookmark_rename.release_pending ||
         compose_popup_owns_input()) return false;
     worm_ui_nuklear_bookmark_chooser_open(compose.bookmark_chooser, project_id, chart_id, revision);
+    return true;
+}
+
+bool worm_ui_frontend_open_sound_picker(uint64_t project_id, uint64_t chart_id, uint64_t revision) {
+    auto& compose = worm_ui_nuklear_compose_state();
+    if (!g_context || !g_window_focused || !g_compose_area_shortcuts_active ||
+        g_notification_modal || project_dialog_active() || nuklear_text_entry_active() ||
+        g_ime_composition_active || compose.inline_timing_open || compose.inline_offset_open ||
+        compose.go_to_measure_open || compose.bookmark_rename.active ||
+        compose.bookmark_rename.release_pending || compose_popup_owns_input()) return false;
+    open_compose_sound_picker(compose.sound_picker, project_id, chart_id, revision);
     return true;
 }
 
@@ -1218,9 +1231,22 @@ static bool capture_bookmark_editor_key(const SDL_KeyboardEvent& event) {
     return true;
 }
 
+static bool capture_sound_picker_key(const SDL_KeyboardEvent& event) {
+    auto& picker = worm_ui_nuklear_compose_state().sound_picker;
+    if (!compose_sound_picker_owns_input(picker)) return false;
+    // Enter commits IME composition before it can confirm a sound.
+    if (g_ime_composition_active && event.down &&
+        (event.key == SDLK_RETURN || event.key == SDLK_KP_ENTER))
+        return true;
+    forward_modal_key(event);
+    if (event.down && !event.repeat && event.key == SDLK_ESCAPE)
+        cancel_compose_sound_picker(picker);
+    return true;
+}
+
 static bool capture_compose_modal_key(const SDL_KeyboardEvent& event) {
     const auto& compose = worm_ui_nuklear_compose_state();
-    if (capture_bookmark_editor_key(event)) return true;
+    if (capture_sound_picker_key(event) || capture_bookmark_editor_key(event)) return true;
     const bool escape_menu = g_menu_popup_open || g_menu_popup_release_pending ||
         compose.keysound_filter_popup_open || compose.keysound_filter_release_pending;
     if (escape_menu && event.key == SDLK_ESCAPE) {
@@ -2153,6 +2179,14 @@ static bool options_owns_content_input(const WormUiWorkspaceView& view) {
     return nk_window_is_active(g_context, "Options") && nuklear_text_entry_active();
 }
 
+static void retire_sound_picker(const WormUiWorkspaceView& view, WormUiWorkspaceAction& action) {
+    if (view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && view.compose.visible &&
+        !view.options.visible && !project_modal_active(view)) return;
+    auto& state = worm_ui_nuklear_compose_state();
+    cancel_compose_sound_picker(state.sound_picker);
+    render_compose_sound_picker(g_context, view.compose, action, state, false);
+}
+
 static void retire_bookmark_editors(const WormUiWorkspaceView& view, WormUiWorkspaceAction& action) {
     if (view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && view.compose.visible) return;
     auto& state = worm_ui_nuklear_compose_state();
@@ -2181,6 +2215,7 @@ static void render_workspace_content(const WormUiWorkspaceView& view,
                                      workspace_content_flags(view.compose.visible, padded)) != 0;
     if (padded) nk_style_pop_vec2(g_context);
     if (!open) return;
+    retire_sound_picker(view, action);
     retire_bookmark_editors(view, action);
     if (view.setup.visible) {
         worm_ui_nuklear_render_setup_panel(g_context, &view.setup, &action);

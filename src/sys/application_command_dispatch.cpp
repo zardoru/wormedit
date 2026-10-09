@@ -594,6 +594,23 @@ auto open_bookmark_chooser_command(command_context_t& context) -> std::optional<
     return command_result_t{.accepted = true};
 }
 
+auto open_sound_picker_command(command_context_t& context) -> std::optional<command_result_t> {
+    if (context.command.kind != command_kind_t::navigation_go_to_sound) return std::nullopt;
+    auto* interaction = context.compose();
+    if (!interaction || !context.application_state.open_sound_picker)
+        return reject_application_command(context.sink, "Sound picker requires the active Compose chart.",
+            notification_severity_t::warning, notification_source_t::input);
+    if (editor_interaction_has_pending_gesture(*interaction) || context.application_state.paste_session)
+        return reject_application_command(context.sink, "Finish or cancel the active Compose gesture first.",
+            notification_severity_t::warning, notification_source_t::input);
+    const bool opened = context.application_state.open_sound_picker(
+        context.history.document.id.value, interaction->chart.value, context.history.document.revision);
+    if (!opened) return reject_application_command(context.sink,
+        "Sound picker is unavailable while another editor owns input.",
+        notification_severity_t::warning, notification_source_t::input);
+    return command_result_t{.accepted = true};
+}
+
 // Primary+Up/Down jump bookmarks in screen direction; Primary+B adds one here.
 auto bookmark_commands(command_context_t& context) -> std::optional<command_result_t> {
     using namespace wormedit;
@@ -921,6 +938,7 @@ auto invoke_application_command(
     if (auto result = selection_commands(context)) return *result;
     if (auto result = navigation_commands(context)) return *result;
     if (auto result = open_bookmark_chooser_command(context)) return *result;
+    if (auto result = open_sound_picker_command(context)) return *result;
     if (auto result = bookmark_commands(context)) return *result;
     if (auto result = workspace_tab_command(context)) return *result;
     if (auto result = timing_insert_command(context)) return *result;

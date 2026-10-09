@@ -50,6 +50,7 @@ constexpr command_name_t command_names[]{
     {"navigation.previous_bookmark", application_command_kind_t::navigation_previous_bookmark},
     {"navigation.next_bookmark", application_command_kind_t::navigation_next_bookmark},
     {"navigation.go_to_bookmark", application_command_kind_t::navigation_go_to_bookmark},
+    {"navigation.go_to_sound", application_command_kind_t::navigation_go_to_sound},
     {"markers.add_bookmark", application_command_kind_t::markers_add_bookmark},
     {"view.notifications", application_command_kind_t::view_notifications},
     {"workspace.options", application_command_kind_t::workspace_options},

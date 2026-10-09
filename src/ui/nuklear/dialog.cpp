@@ -77,6 +77,7 @@ auto dialog_begin(Dialog& dialog, nk_context* context, const char* id, const cha
     dialog.closable = options.closable;
     dialog.escape_cancels = options.escape_cancels.value_or(options.modal);
     dialog.enter_confirms = options.enter_confirms.value_or(options.modal);
+    dialog.enter_pending = dialog.enter_confirms && nk_input_is_key_pressed(&context->input, NK_KEY_ENTER);
     const auto area = dialog_area(options, context);
     if (options.modal) draw_backdrop(context, id, area);
     bool clamped{};
@@ -167,7 +168,11 @@ auto dialog_button(Dialog& dialog, nk_context* context, const char* label,
                     : role == DialogButtonRole::destructive ? ButtonKind::destructive
                                                             : ButtonKind::secondary;
     if (role == DialogButtonRole::primary) dialog.primary_drawn = enabled;
-    const auto clicked = Button{label, kind, nullptr, enabled}.render(context);
+    auto clicked = Button{label, kind, nullptr, enabled}.render(context);
+    if (role == DialogButtonRole::primary && enabled && dialog.enter_pending && !clicked) {
+        clicked = true;
+        dialog.enter_pending = false;
+    }
     if (clicked && dialog.result == DialogResult::none)
         dialog.result = role == DialogButtonRole::primary ? DialogResult::primary
                       : role == DialogButtonRole::destructive ? DialogResult::destructive
@@ -189,8 +194,6 @@ auto dialog_end(Dialog& dialog, nk_context* context) -> DialogResult {
         if (dialog.result == DialogResult::none) {
             if (dialog.escape_cancels && nk_input_is_key_pressed(&input, NK_KEY_TEXT_RESET_MODE))
                 dialog.result = DialogResult::cancel;
-            else if (dialog.enter_confirms && dialog.has_primary && nk_input_is_key_pressed(&input, NK_KEY_ENTER))
-                dialog.result = DialogResult::primary;
         }
     }
     surface_window_end(context, dialog.surface);

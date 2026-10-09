@@ -19,6 +19,7 @@ void stage_batch(nuklear_event_harness_t& harness, const char* reason = "") {
     REQUIRE(worm_ui_frontend_stage_sound_slot_batch(view.project_id, view.chart_id,
         view.document_revision, 35, items.data(), items.size(), reason));
     (void)harness.frame();
+    (void)harness.frame();  // A dialog fits its content on its second frame.
 }
 auto click(nuklear_event_harness_t& harness, const char* text) -> workspace_action_snapshot_t {
     const auto center = harness.drawn_text_center(text);
@@ -88,4 +89,41 @@ TEST_CASE("Escape and a stale document cancel WAV batch review", "[event-harness
     ++harness.view().compose.document_revision;
     (void)harness.frame();
     CHECK_FALSE(worm_ui_nuklear_compose_state().keysound_slot_batch.open);
+}
+
+TEST_CASE("WAV batch dialog Cancel closes it and Enter confirms",
+          "[event-harness][sound-slot-batch][dialog]") {
+    {
+        nuklear_event_harness_t harness{960, 720};
+        REQUIRE(harness.ready());
+        enable_slots(harness);
+        stage_batch(harness);
+        (void)click(harness, "Cancel");
+        CHECK_FALSE(worm_ui_nuklear_compose_state().keysound_slot_batch.open);
+    }
+    {
+        nuklear_event_harness_t harness{960, 720};
+        REQUIRE(harness.ready());
+        enable_slots(harness);
+        stage_batch(harness);
+        SDL_Event enter{};
+        enter.type = SDL_EVENT_KEY_DOWN;
+        enter.key.key = SDLK_RETURN;
+        enter.key.scancode = SDL_SCANCODE_RETURN;
+        enter.key.down = true;
+        const auto snapshot = harness.frame(std::array{enter});
+        check_confirmed_batch(snapshot.get());
+    }
+    {
+        nuklear_event_harness_t harness{960, 720};
+        REQUIRE(harness.ready());
+        enable_slots(harness);
+        stage_batch(harness, "One file cannot be decoded.");
+        SDL_Event enter{};
+        enter.type = SDL_EVENT_KEY_DOWN;
+        enter.key.key = SDLK_RETURN;
+        enter.key.scancode = SDL_SCANCODE_RETURN;
+        enter.key.down = true;
+        CHECK(harness.frame(std::array{enter}).get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    }
 }

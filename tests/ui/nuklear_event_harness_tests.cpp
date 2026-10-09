@@ -4819,3 +4819,54 @@ TEST_CASE("Overview tooltip stays hidden under a covering Tap timing window", "[
     hover_overview_label(harness, *label);
     CHECK_FALSE(harness.drawn_text_center(overview_tooltip).has_value());
 }
+
+namespace {
+// One chart row on the Project tab. Its "Open" strip button carries the tooltip "Open in
+// Compose" and sits under the Tap timing window's rectangle at this window size.
+void configure_project_row(nuklear_event_harness_t& harness, WormUiProjectChartRow* row) {
+    harness.view().setup.visible = true;
+    harness.view().setup.stepmania_policy_status = "Ready";
+    harness.view().setup.stepmania_policy_valid = true;
+    harness.view().setup.charts = row;
+    harness.view().setup.chart_row_count = 1;
+    harness.view().setup.chart_count = 1;
+}
+}
+
+TEST_CASE("Chart row button tooltip shows when no window covers it", "[tooltip][event-harness][components]") {
+    WormUiProjectChartRow row{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
+        .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
+    nuklear_event_harness_t harness{1280, 720};
+    configure_project_row(harness, &row);
+    (void)harness.frame();
+    const auto open = harness.drawn_text_center("Open");
+    REQUIRE(open);
+    hover_overview_label(harness, *open);
+    CHECK(harness.drawn_text_center("Open in Compose").has_value());
+}
+
+TEST_CASE("Chart row button tooltip stays hidden under a covering Tap timing window", "[tooltip][event-harness][components]") {
+    WormUiProjectChartRow row{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
+        .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
+    nuklear_event_harness_t harness{1280, 720};
+    configure_project_row(harness, &row);
+    (void)harness.frame();
+    // Clicking empty workspace makes the workspace the active window before Tap timing opens.
+    std::array<event_step_t, 2> click{};
+    click[0].events = {motion_event(1200.0f, 400.0f), button_event(true, 1200.0f, 400.0f)};
+    click[1].events = {motion_event(1200.0f, 400.0f), button_event(false, 1200.0f, 400.0f)};
+    (void)harness.run_script(click);
+    harness.view().tap_timing.visible = true;
+    (void)harness.frame();
+    (void)harness.frame();
+    const auto open = harness.drawn_text_center("Open");
+    REQUIRE(open);
+    WormUiTestingRect tap{};
+    REQUIRE(worm_ui_frontend_window_bounds_for_testing("Tap timing", &tap));
+    const bool inside_x = open->first >= tap.x && open->first <= tap.x + tap.width;
+    const bool inside_y = open->second >= tap.y && open->second <= tap.y + tap.height;
+    REQUIRE(inside_x);
+    REQUIRE(inside_y);
+    hover_overview_label(harness, *open);
+    CHECK_FALSE(harness.drawn_text_center("Open in Compose").has_value());
+}

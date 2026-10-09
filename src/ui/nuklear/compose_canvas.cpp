@@ -2580,7 +2580,7 @@ static auto hovered_compose_stem_header(const ComposePaintContext& paint,
     const WormUiComposeBgmLaneView& lane, struct nk_rect rect) -> const char* {
     if (!lane.stem || !lane.filename || paint.view->input_occluded || rect.w <= 0) return nullptr;
     const auto header = nk_rect(rect.x, paint.viewport.y, rect.w, 18);
-    return nk_input_is_mouse_hovering_rect(&paint.context->input, header) ? lane.filename : nullptr;
+    return wormedit::ui::nuklear::tooltip::hovered(paint.context, header) ? lane.filename : nullptr;
 }
 static auto draw_compose_bgm_lane_labels(const ComposePaintContext& paint) -> const char* {
     const char* hovered_filename{};
@@ -2618,7 +2618,7 @@ static void draw_compose_bga_stack(const ComposePaintContext& paint,
     std::snprintf(label, sizeof(label), "%zu events", event.overlap_count);
     field_text(paint, rect, label, static_cast<int>(std::strlen(label)),
                paint.context->style.font, nk_rgb(95, 74, 132), nk_rgb(255, 255, 255), 4);
-    if (nk_input_is_mouse_hovering_rect(&paint.context->input, rect))
+    if (wormedit::ui::nuklear::tooltip::hovered(paint.context, rect))
         wormedit::ui::nuklear::tooltip::text(paint.context,
             "Choose a BGA event at this measure");
 }
@@ -2667,7 +2667,7 @@ static void draw_compose_bga_event(const ComposePaintContext& paint, size_t inde
         field_text(paint, text_rect, label, static_cast<int>(strlen(label)),
                        paint.context->style.font, fill, nk_rgb(255, 255, 245), 4);
     }
-    if (nk_input_is_mouse_hovering_rect(&paint.context->input, rect))
+    if (wormedit::ui::nuklear::tooltip::hovered(paint.context, rect))
         wormedit::ui::nuklear::tooltip::text(paint.context,
             event.missing ? "Missing BGA resource" : event.name);
 }

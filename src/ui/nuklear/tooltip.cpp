@@ -195,7 +195,7 @@ void end(nk_context* context) {
     if (context) nk_tooltip_end(context);
 }
 
-auto hovered(nk_context* context, struct nk_rect bounds) -> bool {
+auto hovered(const nk_context* context, struct nk_rect bounds) -> bool {
     if (!context || !context->current) return false;
     if (!nk_input_is_mouse_hovering_rect(&context->input, bounds)) return false;
     return topmost_window_at_pointer(context) == context->current;

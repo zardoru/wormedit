@@ -12,6 +12,8 @@ constexpr nk_color transparent{0, 0, 0, 0};
 
 struct hit_t {
     bool hovered{};
+    // Hovered and not covered by another window; only tooltips use this.
+    bool tooltip_hovered{};
     bool pressed{};
     bool clicked{};
 };
@@ -27,6 +29,7 @@ auto hit_test(const nk_context* context, nk_widget_layout_states state, struct n
     const auto& input = context->input;
     hit.hovered = nk_input_is_mouse_hovering_rect(&input, area) &&
                   nk_input_is_mouse_hovering_rect(&input, context->current->layout->clip);
+    hit.tooltip_hovered = hit.hovered && nuklear::tooltip::hovered(context, area);
     if (!hit.hovered || !enabled || state == NK_WIDGET_DISABLED) return hit;
     hit.pressed = nk_input_is_mouse_down(&input, NK_BUTTON_LEFT) != 0;
     hit.clicked = nk_input_has_mouse_click_in_button_rect(&input, NK_BUTTON_LEFT, area) != 0 &&
@@ -72,7 +75,7 @@ void paint_look(nk_context* context, struct nk_rect area, float radius, const Co
 }
 
 void tooltip_if_hovered(nk_context* context, const hit_t& hit, const char* tooltip) {
-    if (hit.hovered && tooltip && tooltip[0]) nuklear::tooltip::text(context, tooltip);
+    if (hit.tooltip_hovered && tooltip && tooltip[0]) nuklear::tooltip::text(context, tooltip);
 }
 
 auto with_alpha(nk_color color, nk_byte alpha) -> nk_color {

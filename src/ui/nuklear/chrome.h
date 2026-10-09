@@ -138,7 +138,8 @@ inline void button_feedback(nk_context* context, struct nk_rect bounds, bool sel
     if (button_hovered(context, bounds)) {
         nk_stroke_rect(nk_window_get_canvas(context), bounds, metrics::radius_control, 1.0f,
                        color(UiColor::border_hover));
-        if (tooltip && tooltip[0] != '\0') nuklear::tooltip::text(context, tooltip);
+        if (tooltip && tooltip[0] != '\0' && nuklear::tooltip::hovered(context, bounds))
+            nuklear::tooltip::text(context, tooltip);
     } else if (selected) {
         nk_stroke_rect(nk_window_get_canvas(context), bounds, metrics::radius_control, 1.0f,
                        color(UiColor::selected));

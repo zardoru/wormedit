@@ -82,6 +82,12 @@ struct cycle_edit_snap_action_t {
     interaction_direction_t direction{interaction_direction_t::forward};
 };
 
+// Sets the editing snap to one specific grid. A denominator the chart cannot snap to leaves the
+// snap unchanged and is not an error (the Quantize grid chips share this value).
+struct set_edit_snap_action_t {
+    std::uint64_t denominator{};
+};
+
 // The position is the view's unsnapped hit-test result. The controller maps it
 // onto the current exact snap before placing or removing a tap note.
 struct place_tap_action_t {
@@ -462,7 +468,7 @@ using editor_ui_action_t = std::variant<
     select_editor_objects_action_t, delete_editor_selection_action_t,
     resize_note_durations_action_t,
     select_editor_lane_action_t, assign_selected_notes_to_lane_action_t,
-    adjust_editor_zoom_action_t, scroll_editor_view_action_t>;
+    adjust_editor_zoom_action_t, scroll_editor_view_action_t, set_edit_snap_action_t>;
 
 // Exact, revision-bound result that a pending hold would publish. The source
 // anchor/moving endpoint stay on pending_hold_t so controllers can update the

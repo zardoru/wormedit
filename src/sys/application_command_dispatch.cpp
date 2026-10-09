@@ -38,6 +38,18 @@ void remember_snap_denominator(application_command_state_t& state, wormedit::cha
     }
 }
 
+// One shared grid: the Quantize target follows the snap, keeping its other settings.
+void follow_snap_with_quantize_grid(application_command_state_t& application,
+                                    const wormedit::document_history_t& history,
+                                    const wormedit::editor_interaction_state_t& state) {
+    auto& editor = application.quantize_editor;
+    if (!editor || editor->song != history.document.id || editor->chart != state.chart ||
+        editor->request.divisions == state.active_snap_denominator)
+        return;
+    editor->request.divisions = state.active_snap_denominator;
+    editor->preset_index.reset();
+}
+
 auto clear_selection_or_cancel_preview(wormedit::document_history_t& history,
                                        wormedit::editor_interaction_state_t* state,
                                        application_command_state_t& application_state,
@@ -434,9 +446,11 @@ auto navigation_commands(command_context_t& context) -> std::optional<command_re
             ? interaction_direction_t::backward : interaction_direction_t::forward;
         const auto result = dispatch_editor_action(context.history, *state,
                                                    cycle_edit_snap_action_t{direction});
-        if (result.accepted)
+        if (result.accepted) {
             remember_snap_denominator(context.application_state, state->chart,
                                       state->active_snap_denominator);
+            follow_snap_with_quantize_grid(context.application_state, context.history, *state);
+        }
         return accept_editor_command(result, context.sink,
             direction == interaction_direction_t::backward ? "Previous snap selected."
                                                              : "Next snap selected.",

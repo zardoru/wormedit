@@ -4263,3 +4263,23 @@ TEST_CASE("Draw on a BMSON packed column with no usable sound does nothing",
                                 WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN})
             expect_draw(count_inputs(*frames, kind) == 0);
 }
+
+TEST_CASE("Quantize chips outside the chart's snap list explain they are quantize-only",
+          "[ui][event-harness][quantize-snap]") {
+    nuklear_event_harness_t harness;
+    seed_quantize_controls(harness);
+    auto& view = harness.view().compose;
+    view.supported_snap_denominators[0] = 4;
+    view.supported_snap_denominators[1] = 8;
+    view.supported_snap_denominator_count = 2;
+    (void)harness.frame();
+    const auto center = harness.drawn_text_center("1/16");
+    REQUIRE(center.has_value());
+    hover_at(harness, center->first, center->second);
+    check_tooltip_text(harness, "Quantize only");
+    const auto supported = harness.drawn_text_center("1/8");
+    REQUIRE(supported.has_value());
+    hover_at(harness, supported->first, supported->second);
+    INFO(harness.drawn_text());
+    check_no_tooltip_text(harness, "Quantize only");
+}

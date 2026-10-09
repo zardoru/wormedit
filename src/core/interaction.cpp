@@ -4062,6 +4062,17 @@ auto cycle_editor_snap(document_history_t& history, editor_interaction_state_t& 
     return interaction_view_result(history, state, false);
 }
 
+auto set_editor_snap(document_history_t& history, editor_interaction_state_t& state,
+                     const set_edit_snap_action_t& action) -> editor_interaction_result_t {
+    const auto supported = std::ranges::find(state.supported_snap_denominators, action.denominator);
+    if (supported != state.supported_snap_denominators.end() &&
+        action.denominator != state.active_snap_denominator) {
+        state.active_snap_denominator = action.denominator;
+        state.active_snap_was_fallback = false;
+    }
+    return interaction_view_result(history, state, false);
+}
+
 auto adjust_editor_zoom(document_history_t& history, editor_interaction_state_t& state,
                         const chart_document_t& chart, const measure_index_t& index,
                         std::uint64_t absolute, const adjust_editor_zoom_action_t& action)
@@ -4801,6 +4812,7 @@ auto validate_active_gesture_action(const document_history_t& history,
         !std::holds_alternative<page_edit_cursor_action_t>(action) &&
         !std::holds_alternative<jump_edit_cursor_action_t>(action) &&
         !std::holds_alternative<cycle_edit_snap_action_t>(action) &&
+        !std::holds_alternative<set_edit_snap_action_t>(action) &&
         !std::holds_alternative<adjust_editor_zoom_action_t>(action) &&
         !std::holds_alternative<scroll_editor_view_action_t>(action))
         return diagnostic_result(
@@ -4817,6 +4829,7 @@ auto virtual_cursor_action_allowed(const editor_interaction_state_t& state,
         std::holds_alternative<jump_edit_cursor_action_t>(action) ||
         std::holds_alternative<select_bms_canvas_measure_action_t>(action) ||
         std::holds_alternative<cycle_edit_snap_action_t>(action) ||
+        std::holds_alternative<set_edit_snap_action_t>(action) ||
         std::holds_alternative<place_virtual_bms_tap_action_t>(action) ||
         std::holds_alternative<place_virtual_bms_hold_action_t>(action) ||
         std::holds_alternative<begin_lane_key_hold_gesture_action_t>(action) ||
@@ -5205,6 +5218,9 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
     const auto handle_cycle_edit_snap = [&](const cycle_edit_snap_action_t& typed_action) {
         return cycle_editor_snap(history, state, typed_action);
     };
+    const auto handle_set_edit_snap = [&](const set_edit_snap_action_t& typed_action) {
+        return set_editor_snap(history, state, typed_action);
+    };
 
     virtual_note_context_t virtual_notes{history, state, *chart, index};
     const auto handle_place_virtual_bms_hold = [&](const place_virtual_bms_hold_action_t& typed_action) -> editor_interaction_result_t {
@@ -5500,6 +5516,8 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
     case 41: return handle_adjust_editor_zoom(std::get<adjust_editor_zoom_action_t>(action));
 
     case 42: return handle_scroll_editor_view(std::get<scroll_editor_view_action_t>(action));
+
+    case 43: return handle_set_edit_snap(std::get<set_edit_snap_action_t>(action));
 
     default:
         return diagnostic_result(history, state,

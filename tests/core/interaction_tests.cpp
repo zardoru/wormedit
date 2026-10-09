@@ -6027,3 +6027,25 @@ TEST_CASE("stale selected objects are pruned once per document revision and surv
     CHECK_FALSE(prune_stale_selection(edited, 2, state));
     CHECK(state.selected_notes.size() == 2);
 }
+
+TEST_CASE("setting the editing snap accepts only supported grids without touching the document",
+          "[core][interaction][snap]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    const auto revision = history.document.revision;
+    const auto before = state.active_snap_denominator;
+    const auto other = state.supported_snap_denominators.back() == before
+                           ? state.supported_snap_denominators.front()
+                           : state.supported_snap_denominators.back();
+
+    const auto set = dispatch_editor_action(history, state, set_edit_snap_action_t{other});
+    CHECK(set.accepted);
+    CHECK(state.active_snap_denominator == other);
+    CHECK_FALSE(state.active_snap_was_fallback);
+
+    const auto unsupported = dispatch_editor_action(history, state, set_edit_snap_action_t{7});
+    CHECK(unsupported.diagnostics.empty());
+    CHECK(state.active_snap_denominator == other);
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+}

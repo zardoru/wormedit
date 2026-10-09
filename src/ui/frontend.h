@@ -1287,6 +1287,9 @@ typedef struct WormUiComposeView {
     bool semantic_layer_paint_mode_active;
     bool semantic_layer_gesture_active;
     size_t selected_note_count;
+    // Grids the chart can snap to (the Quantize chips outside it are quantize-only).
+    uint64_t supported_snap_denominators[32];
+    size_t supported_snap_denominator_count;
     // Quantization request currently selected in the inspector.
     uint64_t quantize_divisions;
     uint8_t quantize_space;

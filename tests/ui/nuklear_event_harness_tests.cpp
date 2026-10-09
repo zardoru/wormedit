@@ -5360,3 +5360,49 @@ TEST_CASE("Create project dialog keeps its actions and drops the repeated prompt
               WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
     }
 }
+
+TEST_CASE("BMS text encoding dialog keeps its actions and drops the repeated prompt",
+          "[frontend-state][event-harness][dialog][project-modal]") {
+    const auto make = [](nuklear_event_harness_t& harness) {
+        REQUIRE(harness.ready());
+        harness.view().pending_bms_encoding_path = "/charts/song.bms";
+        (void)harness.frame();
+        (void)harness.frame();
+        (void)harness.frame();
+    };
+    {
+        nuklear_event_harness_t harness{1280, 900};
+        make(harness);
+        const auto& text = harness.drawn_text();
+        CHECK(text.find("BMS text encoding") != std::string::npos);
+        CHECK(text.find("/charts/song.bms") != std::string::npos);
+        CHECK(text.find("Choose the BMS text encoding") == std::string::npos);
+        const auto open = harness.drawn_text_center("Open chart");
+        REQUIRE(open);
+        const auto frames = click_at(harness, open->first, open->second);
+        bool opened = false;
+        for (const auto& frame : frames)
+            if (frame.get().kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE) {
+                opened = true;
+                CHECK(std::string(frame.get().project_path) == "/charts/song.bms");
+                CHECK(frame.get().bms_encoding_index == 1);
+            }
+        CHECK(opened);
+    }
+    {
+        nuklear_event_harness_t harness{1280, 900};
+        make(harness);
+        const auto cancel = harness.drawn_text_center("Cancel");
+        REQUIRE(cancel);
+        bool canceled = false;
+        for (const auto& frame : click_at(harness, cancel->first, cancel->second))
+            canceled |= frame.get().kind == WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING;
+        CHECK(canceled);
+    }
+    {
+        nuklear_event_harness_t harness{1280, 900};
+        make(harness);
+        const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+        CHECK(harness.frame(std::span{&escape, 1}).get().kind == WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING);
+    }
+}

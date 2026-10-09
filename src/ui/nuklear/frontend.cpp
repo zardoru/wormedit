@@ -2635,36 +2635,32 @@ static void render_bms_encoding_dialog(const WormUiWorkspaceView& view,
         ++count;
     }
     if (g_bms_encoding_choice >= count) g_bms_encoding_choice = 0;
-    const float popup_width = std::min(520.0f, std::max(280.0f, width - 24.0f));
-    const float popup_height = 252.0f;
-    const auto bounds = nk_rect((width - popup_width) * 0.5f,
-                                (height - popup_height) * 0.5f,
-                                popup_width, popup_height);
-    if (!begin_project_modal("BMS text encoding", bounds)) {
-        nk_end(g_context);
-        return;
+    namespace chrome = wormedit::ui::chrome;
+    auto& dialog = g_project_modal_dialog;
+    if (chrome::dialog_begin(dialog, g_context, "BMS text encoding", "BMS text encoding",
+            {.modal = true, .width = 520.0f,
+             .area = nk_vec2(static_cast<float>(width), static_cast<float>(height))})) {
+        chrome::dialog_text(dialog, g_context, path.c_str(), chrome::color(chrome::UiColor::text_muted));
+        chrome::dialog_text(dialog, g_context, "This chart contains non-ASCII text without a UTF-8 BOM.",
+                            chrome::color(chrome::UiColor::text));
+        nk_layout_row_dynamic(g_context, 15, 1);
+        nk_label_colored(g_context, "Encoding", NK_TEXT_LEFT, chrome::color(chrome::UiColor::text_muted));
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_default, 1);
+        g_bms_encoding_choice = chrome::safe_combo(g_context, labels.data(), count,
+                                          g_bms_encoding_choice, 25, nk_vec2(250.0f, 180.0f));
+        chrome::dialog_footer_begin(dialog, g_context, 2, false, 120.0f);
+        if (chrome::dialog_button(dialog, g_context, "Cancel", chrome::DialogButtonRole::secondary))
+            cancel_bms_encoding_dialog(action);
+        if (chrome::dialog_button(dialog, g_context, "Open chart", chrome::DialogButtonRole::primary) &&
+            action.kind == WORM_UI_WORKSPACE_ACTION_NONE &&
+            path.size() < sizeof(action.project_path)) {
+            action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
+            action.bms_encoding_index = indexes[static_cast<std::size_t>(g_bms_encoding_choice)];
+            std::memcpy(action.project_path, path.c_str(), path.size() + 1);
+        }
     }
-    nk_layout_row_dynamic(g_context, 30, 1);
-    nk_label(g_context, "Choose the BMS text encoding", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(g_context, 46, 1);
-    nk_label_wrap(g_context, path.c_str());
-    nk_layout_row_dynamic(g_context, 42, 1);
-    nk_label_wrap(g_context, "This chart contains non-ASCII text without a UTF-8 BOM.");
-    nk_layout_row_dynamic(g_context, 30, 1);
-    g_bms_encoding_choice = wormedit::ui::chrome::safe_combo(g_context, labels.data(), count,
-                                      g_bms_encoding_choice, 25, nk_vec2(250.0f, 180.0f));
-    nk_layout_row_dynamic(g_context, 34, 2);
-    if (nk_button_label(g_context, "Cancel")) {
+    if (chrome::dialog_end(dialog, g_context) == chrome::DialogResult::cancel)
         cancel_bms_encoding_dialog(action);
-    }
-    if (nk_button_label(g_context, "Open chart") &&
-        action.kind == WORM_UI_WORKSPACE_ACTION_NONE &&
-        path.size() < sizeof(action.project_path)) {
-        action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
-        action.bms_encoding_index = indexes[static_cast<std::size_t>(g_bms_encoding_choice)];
-        std::memcpy(action.project_path, path.c_str(), path.size() + 1);
-    }
-    nk_end(g_context);
 }
 
 static void render_project_modals(const WorkspaceRenderContext& frame) {

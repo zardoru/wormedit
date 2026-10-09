@@ -150,3 +150,40 @@ TEST_CASE("Escape without modifiers cancels a capture, and modified Escape is a 
     REQUIRE(chord.chord.has_value());
     CHECK(chord.chord->key == shortcut_key_t::escape);
 }
+
+namespace {
+
+auto primary_modifier() -> shortcut_modifiers_t {
+    return static_cast<shortcut_modifiers_t>(shortcut_modifier_t::primary);
+}
+
+auto hid_chord(std::uint16_t usage, shortcut_modifiers_t modifiers) -> shortcut_chord_t {
+    return {.key = static_cast<shortcut_key_t>(usage), .modifiers = modifiers};
+}
+
+} // namespace
+
+TEST_CASE("punctuation keys have legends, so workspace.options reads Primary+,", "[sys][shortcut-rows]") {
+    CHECK(shortcut_chord_text(hid_chord(0x36, primary_modifier())) == "Primary+,");
+    CHECK(shortcut_chord_text(hid_chord(0x2d, 0)) == "-");
+    CHECK(shortcut_chord_text(hid_chord(0x31, control_modifier())) == "Ctrl+\\");
+}
+
+TEST_CASE("keypad keys have legends", "[sys][shortcut-rows]") {
+    CHECK(shortcut_chord_text(hid_chord(0x59, 0)) == "Keypad 1");
+    CHECK(shortcut_chord_text(hid_chord(0x62, 0)) == "Keypad 0");
+    CHECK(shortcut_chord_text(hid_chord(0x58, 0)) == "Keypad Enter");
+}
+
+TEST_CASE("navigation keys have legends", "[sys][shortcut-rows]") {
+    CHECK(shortcut_chord_text(hid_chord(0x4f, 0)) == "Right");
+    CHECK(shortcut_chord_text(hid_chord(0x4a, shift_modifier())) == "Shift+Home");
+    CHECK(shortcut_chord_text(hid_chord(0x4e, 0)) == "PageDown");
+}
+
+TEST_CASE("capture accepts a punctuation key press", "[sys][shortcut-rows]") {
+    const std::array<WormUiShortcutEvent, 1> batch{event(0x36, primary_modifier() & 0)};
+    const auto captured = capture_shortcut_batch(batch);
+    REQUIRE(captured.chord.has_value());
+    CHECK(captured.chord->key == static_cast<shortcut_key_t>(0x36));
+}

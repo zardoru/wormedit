@@ -120,3 +120,20 @@ it. There is no toggle.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'bmson|^core\.'`; `ctest --test-dir build -L event-harness`.
 - **Out of scope:** drawing on stem lanes.
 
+## T-486 Export BMSON channels created by single-click packed placement
+
+- **Status:** ready
+- **Found by:** T-484 (2026-10-08). `insert_bmson_packed_one_shot` in `src/core/bmson_sound_channel_editor.cpp` creates a packed sound channel with `end_frame` set and without the `sound_channel` resource identity and `$.sound_channels[N]` event provenance the BMSON writer needs to pair and export the channel, so a chart containing such a channel fails to export. Draw strokes since T-484 use `apply_bmson_packed_stroke`, which creates channels correctly.
+- **Outcome:** a BMSON chart with a channel created by single-click packed placement exports and reparses with the same events, like a stroke-created channel.
+- **Read first:** `src/core/bmson_sound_channel_editor.cpp` (`insert_bmson_packed_one_shot`, `apply_bmson_packed_stroke`), `src/formats/bmson_writer.cpp` (channel pairing).
+- **Files owned:** `src/core/bmson_sound_channel_editor.cpp`, `tests/core/bmson_sound_channel_editor_tests.cpp`, this card.
+- **Steps:**
+  1. Write a failing test: one-shot placement on a fresh packed column, then export and reparse.
+  2. Make the one-shot path create the channel the way the stroke path does, sharing one helper.
+  3. Check whether existing callers still need the one-shot path at all, and record the answer on this card.
+- **Invariants:** imported BMSON with no edits exports byte-identically.
+- **Reject/failure behavior:** unchanged.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'bmson|^core\.'`.
+- **Out of scope:** stem lanes.
+- **Coordination:** run after the T-423 02d edits to this file are integrated.
+

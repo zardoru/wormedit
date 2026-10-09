@@ -500,6 +500,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/external_player.cpp
         src/sys/preferences_runtime.cpp
         src/sys/options_runtime.cpp
+        src/sys/shortcut_rows.cpp
         src/sys/notification_history_runtime.cpp
         src/sys/project_view.cpp
         src/sys/tap_timing_runtime.cpp

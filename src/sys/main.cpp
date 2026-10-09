@@ -43,6 +43,7 @@
 #include "sys/external_player.h"
 #include "sys/preferences_runtime.h"
 #include "sys/options_runtime.h"
+#include "sys/shortcut_rows.h"
 #include <set>
 #include "sys/notification_history_runtime.h"
 #include <SDL3/SDL_clipboard.h>
@@ -1197,122 +1198,10 @@ auto load_preferred_shortcuts(const wormedit::sys::program_preferences_runtime_t
     return wormedit::load_shortcut_profile_for_startup(shortcut_profile_path(preferences), registry);
 }
 
-// Input & shortcuts model: bounded rows and key capture, kept free of UI toolkit types.
-// Rows point into the projection's strings, which are rebuilt every frame.
-constexpr std::uint16_t first_letter_usage = 0x04;
-constexpr std::uint16_t last_letter_usage = 0x1d;
-constexpr std::uint16_t first_digit_usage = 0x1e;
-constexpr std::uint16_t last_digit_usage = 0x26;
-constexpr std::uint16_t digit_zero_usage = 0x27;
-constexpr std::uint16_t first_function_usage = 0x3a;
-constexpr std::uint16_t last_function_usage = 0x45;
-constexpr std::size_t max_chords_shown = 8;
-
-auto key_name(std::uint16_t usage) -> std::string {
-    if (usage >= first_letter_usage && usage <= last_letter_usage)
-        return std::string(1, static_cast<char>('A' + (usage - first_letter_usage)));
-    if (usage >= first_digit_usage && usage <= last_digit_usage)
-        return std::string(1, static_cast<char>('1' + (usage - first_digit_usage)));
-    if (usage == digit_zero_usage) return "0";
-    if (usage >= first_function_usage && usage <= last_function_usage)
-        return "F" + std::to_string(usage - first_function_usage + 1);
-    switch (static_cast<wormedit::shortcut_key_t>(usage)) {
-    case wormedit::shortcut_key_t::enter: return "Enter";
-    case wormedit::shortcut_key_t::escape: return "Escape";
-    case wormedit::shortcut_key_t::backspace: return "Backspace";
-    case wormedit::shortcut_key_t::space: return "Space";
-    case wormedit::shortcut_key_t::delete_key: return "Delete";
-    case wormedit::shortcut_key_t::right: return "Right";
-    case wormedit::shortcut_key_t::left: return "Left";
-    case wormedit::shortcut_key_t::down: return "Down";
-    case wormedit::shortcut_key_t::up: return "Up";
-    default: return {};
-    }
-}
-
-// Quoted command ids in wormedit::diagnose_shortcut_conflicts messages ("... between 'a' and 'b'").
-auto conflicting_command_ids(const wormedit::diagnostic_list_t& diagnostics) -> std::set<std::string> {
-    std::set<std::string> ids;
-    for (const auto& diagnostic : diagnostics) {
-        std::size_t open = diagnostic.message.find('\'');
-        while (open != std::string::npos) {
-            const auto close = diagnostic.message.find('\'', open + 1);
-            if (close == std::string::npos) break;
-            ids.insert(diagnostic.message.substr(open + 1, close - open - 1));
-            open = diagnostic.message.find('\'', close + 1);
-        }
-    }
-    return ids;
-}
-
-auto shortcut_chord_text(const wormedit::shortcut_chord_t& chord) -> std::string {
-    const auto key = key_name(static_cast<std::uint16_t>(chord.key));
-    if (key.empty()) return {};
-    constexpr std::array<std::pair<wormedit::shortcut_modifier_t, std::string_view>, 5> names{{
-        {wormedit::shortcut_modifier_t::control, "Ctrl"}, {wormedit::shortcut_modifier_t::shift, "Shift"},
-        {wormedit::shortcut_modifier_t::alt, "Alt"}, {wormedit::shortcut_modifier_t::meta, "Meta"},
-        {wormedit::shortcut_modifier_t::primary, "Primary"}}};
-    std::string text;
-    for (const auto& [modifier, name] : names) {
-        if ((chord.modifiers & static_cast<wormedit::shortcut_modifiers_t>(modifier)) == 0) continue;
-        text += std::string(name) + "+";
-    }
-    return text + key;
-}
-
-struct shortcut_rows_projection_t {
-    std::vector<WormUiShortcutRowView> rows;
-    std::vector<wormedit::command_id_t> commands;
-    std::vector<std::string> labels;
-    std::vector<std::string> chords;
-};
-
-auto shortcut_chord_list_text(const std::vector<wormedit::shortcut_chord_t>& chords) -> std::string {
-    if (chords.empty()) return "Unbound";
-    std::string text;
-    for (std::size_t index = 0; index < chords.size() && index < max_chords_shown; ++index) {
-        if (index != 0) text += ", ";
-        text += shortcut_chord_text(chords[index]);
-    }
-    return text;
-}
-
-void project_shortcut_rows(const wormedit::command_registry_t& registry,
-                           wormedit::shortcut_primary_modifier_t primary, shortcut_rows_projection_t& out) {
-    const auto conflicts = conflicting_command_ids(wormedit::diagnose_shortcut_conflicts(registry, primary));
-    const auto count = std::min(registry.commands.size(),
-                                static_cast<std::size_t>(WORM_UI_SHORTCUT_ROW_CAPACITY));
-    out.commands.clear();
-    out.labels.clear();
-    out.chords.clear();
-    out.rows.clear();
-    for (std::size_t index = 0; index < count; ++index) {
-        const auto& command = registry.commands[index];
-        out.commands.push_back(command.id);
-        out.labels.push_back(command.display_name.empty() ? command.id.value : command.display_name);
-        out.chords.push_back(shortcut_chord_list_text(command.current_shortcuts));
-    }
-    for (std::size_t index = 0; index < count; ++index) {
-        out.rows.push_back({.label = out.labels[index].c_str(), .chord = out.chords[index].c_str(),
-                            .conflict = conflicts.contains(out.commands[index].value)});
-    }
-}
-
-
-auto captured_shortcut_chord(std::span<const WormUiShortcutEvent> events)
-    -> std::optional<wormedit::shortcut_chord_t> {
-    for (const auto& event : events) {
-        if (event.repeat || event.tap_timing_space || key_name(event.hid_usage).empty()) continue;
-        return wormedit::shortcut_chord_t{.key = static_cast<wormedit::shortcut_key_t>(event.hid_usage),
-                                .modifiers = event.modifiers};
-    }
-    return std::nullopt;
-}
-
 // Input & shortcuts editing: the projection feeds the Options page, and `capture` holds
 // the command waiting for its next key press.
 struct shortcut_editor_runtime_t {
-    shortcut_rows_projection_t rows;
+    wormedit::sys::shortcut_rows_projection_t rows;
     std::optional<wormedit::command_id_t> capture;
 };
 
@@ -1323,7 +1212,7 @@ void attach_shortcut_rows(WormUiOptionsView& view, const wormedit::sys::options_
         editor.capture.reset();
         return;
     }
-    project_shortcut_rows(registry, application_primary_modifier(), editor.rows);
+    wormedit::sys::project_shortcut_rows(registry, application_primary_modifier(), editor.rows);
     view.shortcut_rows = editor.rows.rows.data();
     view.shortcut_row_count = editor.rows.rows.size();
     const auto capturing = editor.capture ? std::ranges::find(editor.rows.commands, *editor.capture)
@@ -1382,18 +1271,17 @@ void consume_shortcut_capture(shortcut_editor_runtime_t& editor, WormUiWorkspace
     wormedit::command_registry_t& registry, const wormedit::sys::program_preferences_runtime_t& preferences,
     wormedit::notification_sink_t& notifications) {
     if (!editor.capture) return;
-    const auto chord = captured_shortcut_chord(
-        {action.shortcut_events, action.shortcut_event_count});
-    if (!chord) return;
+    const auto captured = wormedit::sys::capture_shortcut_batch({action.shortcut_events, action.shortcut_event_count});
+    if (!captured.cancel && !captured.chord) return;
     action.shortcut_event_count = 0;
     const auto id = *editor.capture;
     editor.capture.reset();
-    if (chord->key == wormedit::shortcut_key_t::escape && chord->modifiers == 0) {
+    if (captured.cancel) {
         notifications.post(wormedit::notification_severity_t::info, wormedit::notification_source_t::input,
                            "Shortcut change canceled.");
         return;
     }
-    remap_and_save_shortcut(registry, id, *chord, preferences, notifications);
+    remap_and_save_shortcut(registry, id, *captured.chord, preferences, notifications);
 }
 
 void persist_session_preferences(wormedit::sys::program_preferences_runtime_t& runtime,

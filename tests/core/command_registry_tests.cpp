@@ -685,6 +685,18 @@ const shortcut_chord_t remap_test_chord{.key = shortcut_key_t::k,
 
 } // namespace
 
+void check_save_and_reload(const command_registry_t& registry, const std::shared_ptr<std::vector<command_id_t>>& calls,
+                           const std::filesystem::path& path) {
+    REQUIRE(save_shortcut_profile_atomic(path, make_shortcut_profile(registry, "user")));
+    auto reloaded = remap_test_registry(calls);
+    const auto loaded = load_shortcut_profile(path);
+    REQUIRE(loaded);
+    REQUIRE(apply_shortcut_profile(reloaded, *loaded.profile).applied);
+    const auto* command = find_command(reloaded, {"test.remap"});
+    REQUIRE(command != nullptr);
+    CHECK(command->current_shortcuts == std::vector<shortcut_chord_t>{remap_test_chord});
+}
+
 TEST_CASE("remapped shortcut survives atomic save and reload", "[core][command-registry][shortcut]") {
     const auto calls = std::make_shared<std::vector<command_id_t>>();
     auto registry = remap_test_registry(calls);
@@ -694,16 +706,7 @@ TEST_CASE("remapped shortcut survives atomic save and reload", "[core][command-r
     const auto directory = std::filesystem::temp_directory_path() / "wormedit-remap-persistence-test";
     std::filesystem::remove_all(directory);
     std::filesystem::create_directories(directory);
-    const auto path = directory / "shortcuts.json";
-    REQUIRE(save_shortcut_profile_atomic(path, make_shortcut_profile(registry, "user")));
-
-    auto reloaded = remap_test_registry(calls);
-    const auto loaded = load_shortcut_profile(path);
-    REQUIRE(loaded);
-    REQUIRE(apply_shortcut_profile(reloaded, *loaded.profile).applied);
-    const auto* command = find_command(reloaded, {"test.remap"});
-    REQUIRE(command != nullptr);
-    CHECK(command->current_shortcuts == std::vector<shortcut_chord_t>{remap_test_chord});
+    check_save_and_reload(registry, calls, directory / "shortcuts.json");
     std::filesystem::remove_all(directory);
 }
 
@@ -721,4 +724,27 @@ TEST_CASE("failed remap save keeps the in-memory shortcut", "[core][command-regi
     CHECK(find_command(registry, {"test.remap"})->current_shortcuts ==
           std::vector<shortcut_chord_t>{remap_test_chord});
     std::filesystem::remove_all(directory);
+}
+
+void check_conflict_pairs_match_diagnostic(const command_registry_t& registry) {
+    const auto pairs = find_shortcut_conflicts(registry);
+    REQUIRE(pairs.size() == 1);
+    CHECK(pairs.front() == shortcut_conflict_t{.first = {"test.first"}, .second = {"test.second"}});
+}
+
+TEST_CASE("structured shortcut conflicts name the same pairs as the diagnostic", "[core][command-registry][shortcut]") {
+    const auto calls = std::make_shared<std::vector<command_id_t>>();
+    command_registry_t registry;
+    const shortcut_chord_t shared{.key = shortcut_key_t::q, .modifiers = 0};
+    REQUIRE(register_command(registry, registration("test.first", command_focus_scope_t::global, shared,
+        make_invoker(calls))).applied);
+    REQUIRE(register_command(registry, registration("test.second", command_focus_scope_t::global, shared,
+        make_invoker(calls))).applied);
+    REQUIRE(register_command(registry, registration("test.third", command_focus_scope_t::global,
+        shortcut_chord_t{.key = shortcut_key_t::w, .modifiers = 0}, make_invoker(calls))).applied);
+
+    check_conflict_pairs_match_diagnostic(registry);
+    const auto diagnostics = diagnose_shortcut_conflicts(registry);
+    REQUIRE(diagnostics.size() == 1);
+    CHECK(diagnostics.front().message == "shortcut conflict between 'test.first' and 'test.second'");
 }

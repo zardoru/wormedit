@@ -136,7 +136,7 @@ auto context_menu_button(nk_context* context, const char* label, const char* dis
     const auto clicked = nk_button_label_styled(context, &style, label) != 0;
     if (!disabled_reason) return clicked;
     nk_widget_disable_end(context);
-    if (disabled_reason[0] != '\0' && button_hovered(context, bounds))
+    if (disabled_reason[0] != '\0' && nuklear::tooltip::hovered(context, bounds))
         nuklear::tooltip::text(context, disabled_reason);
     return false;
 }

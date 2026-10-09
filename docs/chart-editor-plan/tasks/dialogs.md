@@ -44,7 +44,7 @@ The causes, found while planning:
 
 ## T-408 Rebuild Unsaved changes on the shared dialog
 
-- **Status:** blocked-on T-407
+- **Status:** ready (T-407 done 2026-10-09)
 - **Mockup:** [unsaved-changes.svg](../mockups/unsaved-changes.svg) (reference: match its structure and hierarchy)
 - **Outcome:** the dialog shows the title "Unsaved changes", then "Save your changes before quitting WormEdit?" (or "…closing this project?"), then a footer with `[Discard changes]` at the left and `[Cancel] [Save]` at the right, where Save is primary. It shows no import or other notification text and leaves no empty space.
 - **Read first:** `src/ui/nuklear/frontend.cpp` (`render_close_confirmation`), `src/sys/main.cpp` (`close_confirmation_view`, `close_feedback`), `src/ui/frontend.h` (`WormUiCloseConfirmationView`).
@@ -60,7 +60,7 @@ The causes, found while planning:
 
 ## T-409 Redesign the Tap timing tool
 
-- **Status:** blocked-on T-407
+- **Status:** ready (T-407 done 2026-10-09)
 - **Mockup:** [tap-timing.svg](../mockups/tap-timing.svg) (reference: match its structure and hierarchy)
 - **Outcome:** Tap timing matches the layout below in an Xvfb capture. It is 420 px wide and fits its content. Each tap pulses the ring, and the result is a large BPM readout instead of five help sentences.
 - **Read first:** `src/ui/nuklear/tap_timing_panel.cpp`, `src/ui/frontend.h` (`WormUiTapTimingView`), `src/ui/nuklear/frontend.cpp` (font atlas setup near `nk_font_atlas_add_from_file`).
@@ -113,7 +113,7 @@ The causes, found while planning:
 
 ## T-411 Move the remaining dialogs onto the shared dialog
 
-- **Status:** blocked-on T-407
+- **Status:** ready (T-407 done 2026-10-09)
 - **Mockup:** [unsaved-changes.svg](../mockups/unsaved-changes.svg) (reference: match its structure and hierarchy)
 - **Outcome:** Timing Settings, External player preferences, Review sound import, Group selected sounds, Assign BMS WAV slots, the new project wizard and the project modals use `chrome::Dialog`. `grep -n NK_WINDOW_TITLE src/ui/nuklear` lists only windows the user may drag: Options, Notifications and Player preview.
 - **Read first:** `src/ui/nuklear/dialog.h`, each listed source (`grep -rn 'nk_begin(' src/ui/nuklear`).

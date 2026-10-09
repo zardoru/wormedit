@@ -611,6 +611,31 @@ auto open_sound_picker_command(command_context_t& context) -> std::optional<comm
     return command_result_t{.accepted = true};
 }
 
+auto compose_auxiliary_command(command_context_t& context) -> std::optional<command_result_t> {
+    if (auto result = open_sound_picker_command(context)) return result;
+    WormUiComposeDockCommand dock;
+    switch (context.command.kind) {
+    case command_kind_t::view_open_layers: dock = WORM_UI_COMPOSE_DOCK_OPEN_LAYERS; break;
+    case command_kind_t::semantic_layer_create: dock = WORM_UI_COMPOSE_DOCK_CREATE_LAYER; break;
+    case command_kind_t::view_toggle_sounds: dock = WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS; break;
+    default: return std::nullopt;
+    }
+    auto* interaction = context.compose();
+    if (!interaction || context.application_state.compose_timing_focus ||
+        !context.application_state.compose_dock_command)
+        return reject_application_command(context.sink, "Dock command requires the active Compose chart.",
+            notification_severity_t::warning, notification_source_t::input);
+    if (editor_interaction_has_pending_gesture(*interaction) || context.application_state.paste_session)
+        return reject_application_command(context.sink, "Finish or cancel the active Compose gesture first.",
+            notification_severity_t::warning, notification_source_t::input);
+    const bool accepted = context.application_state.compose_dock_command(dock,
+        context.history.document.id.value, interaction->chart.value, context.history.document.revision);
+    if (!accepted) return reject_application_command(context.sink,
+        "Dock command is unavailable while another editor owns input.",
+        notification_severity_t::warning, notification_source_t::input);
+    return command_result_t{.accepted = true};
+}
+
 // Primary+Up/Down jump bookmarks in screen direction; Primary+B adds one here.
 auto bookmark_commands(command_context_t& context) -> std::optional<command_result_t> {
     using namespace wormedit;
@@ -938,7 +963,7 @@ auto invoke_application_command(
     if (auto result = selection_commands(context)) return *result;
     if (auto result = navigation_commands(context)) return *result;
     if (auto result = open_bookmark_chooser_command(context)) return *result;
-    if (auto result = open_sound_picker_command(context)) return *result;
+    if (auto result = compose_auxiliary_command(context)) return *result;
     if (auto result = bookmark_commands(context)) return *result;
     if (auto result = workspace_tab_command(context)) return *result;
     if (auto result = timing_insert_command(context)) return *result;

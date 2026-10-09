@@ -410,6 +410,19 @@ void render_list(const LayersPanel& panel, float height) {
     nk_list_view_end(&list);
 }
 
+void reveal_added_layer(const LayersPanel& panel) {
+    auto& state = *panel.state;
+    const auto& view = *panel.view;
+    if (view.semantic_layer_total_count > state.layers_panel_total_count &&
+        view.semantic_layer_target.layer_id &&
+        view.semantic_layer_target_row >= state.layers_panel_total_count) {
+        state.layer_chip_reveal_id = view.semantic_layer_target.layer_id;
+        state.chip_reveal_project = view.project_id;
+        state.chip_reveal_chart = view.chart_id;
+    }
+    state.layers_panel_total_count = view.semantic_layer_total_count;
+}
+
 } // namespace
 
 void worm_ui_nuklear_dismiss_layer_popup(struct nk_context* context) {
@@ -423,6 +436,7 @@ void worm_ui_nuklear_render_compose_layers(struct nk_context* context,
     if (!context || !view || !action || !state) return;
     if (state->layers_panel_chart_id != view->chart_id ||
         state->layers_panel_project_id != view->project_id) {
+        state->layers_panel_total_count = view->semantic_layer_total_count;
         state->layers_panel_project_id = view->project_id;
         state->layers_panel_chart_id = view->chart_id;
         nk_group_set_scroll(context, "Compose layer list", 0, 0);
@@ -430,6 +444,7 @@ void worm_ui_nuklear_render_compose_layers(struct nk_context* context,
     // Before rows: they open the menu, and the opening press must survive to its first begin.
     (void)wormedit::ui::chrome::context_menu_update(state->layers_menu, context);
     const LayersPanel panel{context, view, action, state};
+    reveal_added_layer(panel);
     render_header(panel);
     render_layer_editors(panel);
     if (state->layer_chip_reveal_id &&

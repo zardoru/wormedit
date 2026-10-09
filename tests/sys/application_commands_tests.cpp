@@ -58,6 +58,15 @@ TEST_CASE("application command IDs parse into typed commands", "[unit][sys][comm
                                  .semantic_layer_slot = 12}));
 }
 
+TEST_CASE("Dock command IDs parse into typed commands", "[unit][sys][commands][dock-shortcuts]") {
+    CHECK(parse_application_command("view.open_layers") ==
+          application_command_t{.kind = application_command_kind_t::view_open_layers});
+    CHECK(parse_application_command("semantic_layer.create") ==
+          application_command_t{.kind = application_command_kind_t::semantic_layer_create});
+    CHECK(parse_application_command("view.toggle_sounds") ==
+          application_command_t{.kind = application_command_kind_t::view_toggle_sounds});
+}
+
 TEST_CASE("application command parser rejects unknown IDs and malformed slots",
           "[unit][sys][commands]") {
     CHECK_FALSE(parse_application_command("not.a.command"));
@@ -1848,6 +1857,53 @@ TEST_CASE("Go To Bookmark command rejects a missing or blocked chooser callback"
     fixture.application_state.open_bookmark_chooser = [](auto, auto, auto) { return false; };
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::navigation_go_to_bookmark).accepted);
 }
+TEST_CASE("Dock commands use the active Compose context without editing history",
+          "[sys][application_commands][dock-shortcuts]") {
+    TimingInsertFixture fixture;
+    const auto revision = fixture.fixture.history.document.revision;
+    const auto undo_size = fixture.fixture.history.undo.size();
+    unsigned calls{};
+    fixture.application_state.compose_dock_command = [&](WormUiComposeDockCommand dock,
+        std::uint64_t project, std::uint64_t chart, std::uint64_t expected_revision) {
+        ++calls;
+        check_bookmark_callback(dock <= WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS);
+        check_bookmark_callback(project == fixture.fixture.history.document.id.value);
+        check_bookmark_callback(chart == fixture.compose_state->chart.value);
+        check_bookmark_callback(expected_revision == revision);
+        return true;
+    };
+    for (const auto kind : {application_command_kind_t::view_open_layers,
+                            application_command_kind_t::semantic_layer_create,
+                            application_command_kind_t::view_toggle_sounds}) {
+        require_bookmark_callback(fixture.invoke(kind).accepted);
+        fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
+        check_bookmark_callback(!fixture.invoke(kind).accepted);
+        fixture.workspace.active_tab = wormedit::workspace_tab_t::compose;
+        fixture.compose_state->pending_note_duration_gesture.emplace();
+        check_bookmark_callback(!fixture.invoke(kind).accepted);
+        fixture.compose_state->pending_note_duration_gesture.reset();
+        fixture.application_state.compose_timing_focus = true;
+        check_bookmark_callback(!fixture.invoke(kind).accepted);
+        fixture.application_state.compose_timing_focus = false;
+    }
+    check_bookmark_callback(calls == 3);
+    check_bookmark_callback(fixture.fixture.history.document.revision == revision);
+    check_bookmark_callback(fixture.fixture.history.undo.size() == undo_size);
+}
+
+TEST_CASE("Dock commands reject absent and unavailable callbacks",
+          "[sys][application_commands][dock-shortcuts]") {
+    TimingInsertFixture fixture;
+    for (const auto kind : {application_command_kind_t::view_open_layers,
+                            application_command_kind_t::semantic_layer_create,
+                            application_command_kind_t::view_toggle_sounds}) {
+        fixture.application_state.compose_dock_command = {};
+        check_bookmark_callback(!fixture.invoke(kind).accepted);
+        fixture.application_state.compose_dock_command = [](auto, auto, auto, auto) { return false; };
+        check_bookmark_callback(!fixture.invoke(kind).accepted);
+    }
+}
+
 TEST_CASE("Go to sound command opens the retained chooser with the active context",
           "[sys][application_commands][sound-picker]") {
     TimingInsertFixture fixture;

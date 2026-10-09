@@ -592,7 +592,7 @@ void check_timing_lock_chord(const command_registry_t& registry,
     CHECK(dispatched.command == command_id_t{"timing.toggle_lock"});
     auto old = lock;
     old.chord.key = shortcut_key_t::l;
-    CHECK_FALSE(dispatch_shortcut(registry, old, focus, primary).command.has_value());
+    CHECK(dispatch_shortcut(registry, old, focus, primary).command == command_id_t{"semantic_layer.create"});
     CHECK(dispatch_shortcut(registry, {.chord = {.key = shortcut_key_t::t}},
                             focus, primary).command == command_id_t{"timing.tap"});
     auto text_focus = focus;
@@ -838,4 +838,64 @@ TEST_CASE("Go to sound uses the platform primary K chord in Compose", "[core][co
         CHECK(dispatched.status == command_dispatch_status_t::invoked);
         CHECK(dispatched.command == command_id_t{"navigation.go_to_sound"});
     }
+}
+
+namespace {
+void check_dock_registry(bool value) { CHECK(value); }
+void check_dock_shortcut(const command_registry_t& registry, shortcut_key_t key,
+                         shortcut_modifiers_t modifiers, const char* id,
+                         shortcut_primary_modifier_t primary) {
+    shortcut_event_t event{.chord = {key, modifiers}};
+    auto focus = focus_for_compose();
+    const auto dispatched = dispatch_shortcut(registry, event, focus, primary);
+    check_dock_registry(dispatched.status == command_dispatch_status_t::invoked);
+    check_dock_registry(dispatched.command == command_id_t{id});
+    event.auto_repeat = true;
+    check_dock_registry(dispatch_shortcut(registry, event, focus, primary).status ==
+                        command_dispatch_status_t::repeat_suppressed || std::string_view{id} == "navigation.go_to_sound");
+    event.auto_repeat = false;
+    focus.text_entry_active = true;
+    check_dock_registry(dispatch_shortcut(registry, event, focus, primary).status ==
+                        command_dispatch_status_t::focus_consumed);
+    focus.text_entry_active = false;
+    focus.ime_composition_active = true;
+    check_dock_registry(dispatch_shortcut(registry, event, focus, primary).status ==
+                        command_dispatch_status_t::focus_consumed);
+    focus.ime_composition_active = false;
+    focus.modal_active = true;
+    check_dock_registry(dispatch_shortcut(registry, event, focus, primary).status ==
+                        command_dispatch_status_t::focus_consumed);
+    focus.modal_active = false;
+    focus.active_tab = workspace_tab_t::metadata;
+    check_dock_registry(dispatch_shortcut(registry, event, focus, primary).status ==
+                        command_dispatch_status_t::no_match);
+}
+}
+TEST_CASE("Dock shortcuts distinguish Layers creation Sounds toggle and Go to sound",
+          "[core][command_registry][dock-shortcuts]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    auto registry = make_default_editor_command_registry(make_invoker(calls));
+    for (const auto primary : {shortcut_primary_modifier_t::control, shortcut_primary_modifier_t::meta}) {
+        const auto modifier = primary == shortcut_primary_modifier_t::control
+            ? shortcut_modifier_t::control : shortcut_modifier_t::meta;
+        check_dock_registry(diagnose_shortcut_conflicts(registry, primary).empty());
+        check_dock_shortcut(registry, shortcut_key_t::l, static_cast<shortcut_modifiers_t>(modifier),
+                            "view.open_layers", primary);
+        check_dock_shortcut(registry, shortcut_key_t::l, modifier | shortcut_modifier_t::shift,
+                            "semantic_layer.create", primary);
+        check_dock_shortcut(registry, shortcut_key_t::k, modifier | shortcut_modifier_t::shift,
+                            "view.toggle_sounds", primary);
+        check_dock_shortcut(registry, shortcut_key_t::k, static_cast<shortcut_modifiers_t>(modifier),
+                            "navigation.go_to_sound", primary);
+        for (const auto key : {shortcut_key_t::l, shortcut_key_t::k})
+            check_dock_registry(dispatch_shortcut(registry, {.chord = {key,
+                modifier | shortcut_modifier_t::shift}, .auto_repeat = true}, focus_for_compose(),
+                primary).status == command_dispatch_status_t::repeat_suppressed);
+    }
+    const shortcut_chord_t remapped{shortcut_key_t::f8};
+    check_dock_registry(remap_command(registry, {"view.toggle_sounds"}, {remapped}).applied);
+    check_dock_registry(dispatch_shortcut(registry, {.chord = remapped}, focus_for_compose(), shortcut_primary_modifier_t::control).command ==
+                        command_id_t{"view.toggle_sounds"});
+    check_dock_registry(!dispatch_shortcut(registry, {.chord = {shortcut_key_t::k,
+        shortcut_modifier_t::control | shortcut_modifier_t::shift}}, focus_for_compose(), shortcut_primary_modifier_t::control).command);
 }

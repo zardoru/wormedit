@@ -847,6 +847,16 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
     add_builtin(registry, invoker, "navigation.go_to_sound", "Go to sound",
                 command_category_t::navigation, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::k, primary())}, false, compose);
+    // Dock visibility mutates session UI state; suppress held-key repeats.
+    add_builtin(registry, invoker, "view.open_layers", "Open Layers",
+                command_category_t::workspace, command_focus_scope_t::tab,
+                {chord(shortcut_key_t::l, primary())}, true, compose);
+    add_builtin(registry, invoker, "semantic_layer.create", "Create Layer",
+                command_category_t::semantic_layer, command_focus_scope_t::tab,
+                {chord(shortcut_key_t::l, modified(shortcut_modifier_t::shift))}, true, compose);
+    add_builtin(registry, invoker, "view.toggle_sounds", "Toggle Sounds Dock",
+                command_category_t::workspace, command_focus_scope_t::tab,
+                {chord(shortcut_key_t::k, modified(shortcut_modifier_t::shift))}, true, compose);
     add_builtin(registry, invoker, "markers.add_bookmark", "Add Bookmark",
                 command_category_t::edit, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::b, primary())}, true, compose);

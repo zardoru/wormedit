@@ -1606,6 +1606,14 @@ void refresh_same_sound_command(wormedit::command_registry_t& registry,
     (void)wormedit::update_command_state(registry, {"selection.select_same_sound_chart"}, enabled, std::nullopt);
 }
 
+void refresh_compose_dock_commands(wormedit::command_registry_t& registry, bool compose_ready,
+                                    bool pending, const application_command_state_t& application) {
+    const bool enabled = compose_ready && !pending && !application.compose_timing_focus &&
+                         !application.paste_session;
+    for (const auto id : {"view.open_layers", "semantic_layer.create", "view.toggle_sounds"})
+        (void)wormedit::update_command_state(registry, {id}, enabled, std::nullopt);
+}
+
 auto sound_picker_command_available(bool compose_ready, bool pending) -> bool {
     return compose_ready && !pending;
 }
@@ -1667,6 +1675,7 @@ void refresh_application_command_states(
     set("navigation.previous_marker", marker_navigation_available);
     set("navigation.next_marker", marker_navigation_available);
     set("navigation.go_to_sound", sound_picker_command_available(compose_ready, pending));
+    refresh_compose_dock_commands(registry, compose_ready, pending, application_state);
     set("navigation.previous_bookmark", compose_ready);
     set("navigation.next_bookmark", compose_ready);
     set("markers.add_bookmark", compose_ready);
@@ -2372,6 +2381,7 @@ void reset_project_edit_state(application_command_state_t& current) {
     next.minimap_click_moves_paused_playhead = current.minimap_click_moves_paused_playhead;
     next.open_bookmark_chooser = std::move(current.open_bookmark_chooser);
     next.open_sound_picker = std::move(current.open_sound_picker);
+    next.compose_dock_command = std::move(current.compose_dock_command);
     next.transport_play_pause = std::move(current.transport_play_pause);
     next.transport_play_from_start = std::move(current.transport_play_from_start);
     next.transport_seek = std::move(current.transport_seek);
@@ -4069,6 +4079,7 @@ int main(int argc, char** argv) {
     application_command_state_t application_command_state;
     application_command_state.open_bookmark_chooser = worm_ui_frontend_open_bookmark_chooser;
     application_command_state.open_sound_picker = worm_ui_frontend_open_sound_picker;
+    application_command_state.compose_dock_command = worm_ui_frontend_compose_dock_command;
     application_command_state.compose_left_dock_pixels = worm_ui_frontend_compose_left_dock_pixels;
     application_command_state.compose_bgm_lane_width = worm_ui_frontend_compose_bgm_lane_width;
     external_player_runtime_t external_player_runtime;

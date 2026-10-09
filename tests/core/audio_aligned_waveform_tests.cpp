@@ -1041,3 +1041,25 @@ TEST_CASE("channel_waveform display RMS uses matching pyramid bins and refines c
     check_display_column(clipped, .4f, std::sqrt(.05f));
     CHECK(base_only_low_zoom_keeps_channel_peaks());
 }
+
+TEST_CASE("song overview clamps a viewport that extends past the audio end",
+          "[unit][audio][waveform][aligned]") {
+    const auto chart = chart_fixture();
+    const auto waveform = pulse_waveform();
+    const auto timing = wormedit::build_timing_index(chart);
+    REQUIRE(timing);
+    // The 2 s audio ends long before the 2880-row chart does, so these scrolls reach past it.
+    for (const double scroll : {480.0, 960.0, 3840.0, 9600.0}) {
+        const wormedit::audio::aligned_waveform_request_t viewport{
+            .viewport_scroll_pixels = scroll,
+            .viewport_height_pixels = 480.0,
+            .pixels_per_standard_measure = 960.0,
+        };
+        const auto overview =
+            wormedit::audio::project_waveform_overview(waveform, *timing.index, viewport, 200);
+        REQUIRE(overview);
+        CHECK(overview.visible_end_fraction == 1.0);
+        CHECK(overview.visible_begin_fraction >= 0.0);
+        CHECK(overview.visible_begin_fraction <= overview.visible_end_fraction);
+    }
+}

@@ -113,6 +113,70 @@ auto diagnostic_severity(diagnostic_severity_t severity) noexcept -> notificatio
     return notification_severity_t::error;
 }
 
+auto diagnostic_target(const diagnostic_t& diagnostic,
+                       const notification_target_resolver_t& resolve_target)
+    -> notification_target_t {
+    if (resolve_target)
+        return resolve_target(diagnostic);
+    if (diagnostic.object)
+        return *diagnostic.object;
+    return std::monostate{};
+}
+
+// Reserved after each listed line so the "and N more" footer always fits.
+constexpr std::size_t collapsed_footer_reserve = 32;
+
+// One "- message" line per diagnostic, stopping before the 4 KiB detail bound.
+auto collapsed_diagnostic_detail(const diagnostic_list_t& diagnostics) -> std::string {
+    std::string detail;
+    std::size_t listed = 0;
+    for (const auto& diagnostic : diagnostics) {
+        const auto line = "- " + diagnostic.message + "\n";
+        if (detail.size() + line.size() + collapsed_footer_reserve > notification_detail_max_bytes)
+            break;
+        detail += line;
+        ++listed;
+    }
+    if (listed < diagnostics.size())
+        return detail + "and " + std::to_string(diagnostics.size() - listed) + " more";
+    if (!detail.empty())
+        detail.pop_back();
+    return detail;
+}
+
+auto collapsed_diagnostic_post(notification_source_t source, const diagnostic_list_t& diagnostics)
+    -> notification_post_t {
+    auto highest = notification_severity_t::info;
+    for (const auto& diagnostic : diagnostics)
+        highest = std::max(highest, diagnostic_severity(diagnostic.severity));
+    return notification_post_t{
+        .severity = highest,
+        .source = source,
+        .message = std::to_string(diagnostics.size()) + " diagnostics: " +
+                   diagnostics.front().message,
+        .detail = collapsed_diagnostic_detail(diagnostics),
+        .target = {}};
+}
+
+// The posts one diagnostic call produces, before any sink-specific detail rules.
+auto diagnostic_posts(notification_source_t source, const diagnostic_list_t& diagnostics,
+                      const notification_target_resolver_t& resolve_target)
+    -> std::vector<notification_post_t> {
+    if (diagnostics.size() > notification_diagnostic_burst_limit)
+        return {collapsed_diagnostic_post(source, diagnostics)};
+    std::vector<notification_post_t> posts;
+    posts.reserve(diagnostics.size());
+    for (const auto& diagnostic : diagnostics) {
+        posts.push_back(notification_post_t{
+            .severity = diagnostic_severity(diagnostic.severity),
+            .source = source,
+            .message = diagnostic.message,
+            .detail = {},
+            .target = diagnostic_target(diagnostic, resolve_target)});
+    }
+    return posts;
+}
+
 void add_statistics(notification_statistics_t& total, const notification_statistics_t& part) {
     total.posted += part.posted;
     total.merged += part.merged;
@@ -187,17 +251,10 @@ void notification_center_t::post(notification_severity_t severity, notification_
 }
 
 void notification_center_t::post_diagnostics(notification_source_t source,
-                                             const diagnostic_list_t& diagnostics) {
-    for (const auto& diagnostic : diagnostics) {
-        notification_post_t request{.severity = diagnostic_severity(diagnostic.severity),
-                                    .source = source,
-                                    .message = diagnostic.message,
-                                    .detail = {},
-                                    .target = {}};
-        if (diagnostic.object)
-            request.target = *diagnostic.object;
+                                             const diagnostic_list_t& diagnostics,
+                                             const notification_target_resolver_t& resolve_target) {
+    for (auto& request : diagnostic_posts(source, diagnostics, resolve_target))
         post(std::move(request));
-    }
 }
 
 void notification_sink_t::post(notification_severity_t severity, notification_source_t source,
@@ -243,19 +300,21 @@ void notification_sink_t::post(const notification_post_t& request) const noexcep
 }
 
 void notification_sink_t::post_diagnostics(notification_source_t source,
-                                           const diagnostic_list_t& diagnostics) const noexcept {
-    for (const auto& diagnostic : diagnostics) {
-        if (diagnostic.message.empty())
+                                           const diagnostic_list_t& diagnostics,
+                                           const notification_target_resolver_t& resolve_target) const noexcept {
+    std::vector<notification_post_t> posts;
+    try {
+        posts = diagnostic_posts(source, diagnostics, resolve_target);
+    } catch (...) {
+        // A throwing resolver or allocation drops this batch without escaping.
+        return;
+    }
+    for (auto& request : posts) {
+        if (request.message.empty())
             continue;
         try {
-            notification_post_t request{.severity = diagnostic_severity(diagnostic.severity),
-                                        .source = source,
-                                        .message = diagnostic.message,
-                                        .detail = diagnostic.message.size() > notification_message_max_bytes
-                                            ? diagnostic.message : std::string{},
-                                        .target = {}};
-            if (diagnostic.object)
-                request.target = *diagnostic.object;
+            if (request.detail.empty() && request.message.size() > notification_message_max_bytes)
+                request.detail = request.message;
             center_->post(std::move(request));
         } catch (...) {
             // Keep attempting later diagnostics if one entry cannot be posted.

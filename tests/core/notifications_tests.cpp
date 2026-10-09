@@ -585,6 +585,103 @@ TEST_CASE("notification center posts diagnostic objects as targets", "[notificat
     CHECK(std::holds_alternative<std::monostate>(entries[0].target));
 }
 
+TEST_CASE("notification diagnostics use a supplied target resolver authoritatively",
+          "[notifications]") {
+    const manual_clock_t clock;
+    notification_center_t center{clock.function()};
+    const diagnostic_list_t diagnostics{
+        diagnostic_t{.severity = diagnostic_severity_t::warning,
+                     .code = diagnostic_code_t::dropped_feature,
+                     .message = "Mapped",
+                     .object = object_id_t{42}},
+        diagnostic_t{.severity = diagnostic_severity_t::error,
+                     .code = diagnostic_code_t::unknown_lane,
+                     .message = "Unresolvable",
+                     .object = object_id_t{43}},
+    };
+    center.post_diagnostics(notification_source_t::format, diagnostics,
+                            [](const diagnostic_t& diagnostic) -> notification_target_t {
+                                if (diagnostic.message == "Mapped") return object_id_t{99};
+                                return std::monostate{};
+                            });
+    center.drain_inbox(clock.now());
+
+    const auto entries = center.snapshot(10);
+    REQUIRE(entries.size() == 2);
+    CHECK(std::get<object_id_t>(entries[1].target) == object_id_t{99});
+    CHECK(std::holds_alternative<std::monostate>(entries[0].target));
+}
+
+// Warnings "Item 0".."Item N-1" with one error at index 5.
+auto numbered_burst(int count) -> diagnostic_list_t {
+    diagnostic_list_t burst;
+    for (int index = 0; index < count; ++index)
+        burst.push_back(diagnostic_t{.severity = index == 5 ? diagnostic_severity_t::error
+                                                            : diagnostic_severity_t::warning,
+                                     .code = diagnostic_code_t::dropped_feature,
+                                     .message = "Item " + std::to_string(index),
+                                     .object = object_id_t{static_cast<std::uint64_t>(index + 1)}});
+    return burst;
+}
+
+void check_numbered_summary(const notification_entry_t& summary) {
+    CHECK(summary.severity == notification_severity_t::error);
+    CHECK(summary.message == "21 diagnostics: Item 0");
+    CHECK(std::holds_alternative<std::monostate>(summary.target));
+    CHECK(summary.detail.starts_with("- Item 0\n"));
+    CHECK(summary.detail.ends_with("- Item 20"));
+}
+
+TEST_CASE("notification diagnostics collapse a burst into one bounded summary",
+          "[notifications]") {
+    const manual_clock_t clock;
+    notification_center_t center{clock.function()};
+    center.post_diagnostics(notification_source_t::format, numbered_burst(21));
+    center.drain_inbox(clock.now());
+
+    const auto entries = center.snapshot(10);
+    REQUIRE(entries.size() == 1);
+    check_numbered_summary(entries[0]);
+}
+
+TEST_CASE("notification diagnostic burst detail keeps the bound and counts omitted lines",
+          "[notifications]") {
+    notification_center_t center{[] { return 0ns; }};
+    const notification_sink_t sink{center};
+    diagnostic_list_t burst;
+    for (int index = 0; index < 30; ++index)
+        burst.push_back(diagnostic_t{.severity = diagnostic_severity_t::warning,
+                                     .code = diagnostic_code_t::dropped_feature,
+                                     .message = std::string(300, static_cast<char>('a' + index % 26)),
+                                     .object = std::nullopt});
+    sink.post_diagnostics(notification_source_t::import_, burst);
+    center.drain_inbox(0ns);
+
+    const auto entries = center.snapshot(10);
+    REQUIRE(entries.size() == 1);
+    CHECK(entries[0].detail.size() <= notification_detail_max_bytes);
+    CHECK(entries[0].detail.find("and ") != std::string::npos);
+    CHECK(entries[0].detail.find(" more") != std::string::npos);
+}
+
+TEST_CASE("notification sink applies resolver targets to diagnostics", "[notifications]") {
+    notification_center_t center{[] { return 0ns; }};
+    const notification_sink_t sink{center};
+    sink.post_diagnostics(notification_source_t::format,
+                          diagnostic_list_t{diagnostic_t{.severity = diagnostic_severity_t::error,
+                                                         .code = diagnostic_code_t::unknown_lane,
+                                                         .message = "Resolved",
+                                                         .object = object_id_t{5}}},
+                          [](const diagnostic_t&) -> notification_target_t {
+                              return object_id_t{77};
+                          });
+    center.drain_inbox(0ns);
+
+    const auto entries = center.snapshot(10);
+    REQUIRE(entries.size() == 1);
+    CHECK(std::get<object_id_t>(entries[0].target) == object_id_t{77});
+}
+
 TEST_CASE("notification sink preserves explicit posts and suppresses empty messages",
           "[notifications]") {
     const manual_clock_t clock;

@@ -3022,6 +3022,97 @@ TEST_CASE("BMS branch panel shows control nodes as a tree and unparsed statement
     CHECK(harness.drawn_text().find("#TITLE odd") == std::string::npos);
 }
 
+namespace {
+
+auto block_action_from(const std::vector<workspace_action_snapshot_t>& frames,
+                       WormUiComposeActionKind kind) -> const WormUiWorkspaceAction* {
+    for (const auto& frame : frames)
+        if (frame.get().compose_action == kind) return &frame.get();
+    return nullptr;
+}
+
+void click_label(nuklear_event_harness_t& harness, const char* label) {
+    const auto center = harness.drawn_text_center(label);
+    REQUIRE(center);
+    (void)click_at(harness, center->first, center->second);
+    (void)harness.frame();
+}
+
+auto click_button(nuklear_event_harness_t& harness, const char* label)
+    -> std::vector<workspace_action_snapshot_t> {
+    const auto center = harness.drawn_text_center(label);
+    REQUIRE(center);
+    return click_at(harness, center->first, center->second);
+}
+
+} // namespace
+
+TEST_CASE("BMS branch outline buttons emit create, remove and leaf move actions",
+          "[frontend-state][event-harness][bms-branch]") {
+    nuklear_event_harness_t harness{1600, 1000};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    view.chart_id = 7;
+    view.document_revision = 21;
+    const std::array<WormUiComposeBranchRowView, 7> rows{{
+        {.display_text = "BMS program", .depth = 0, .active = true, .node_id = 1},
+        {.display_text = "#TITLE odd", .depth = 1, .active = true, .node_id = 9,
+         .raw_statement = true, .statement_id = 9},
+        {.display_text = "#RANDOM 2", .depth = 1, .active = true, .has_source_order = true,
+         .source_order = 4, .node_id = 2, .choice_block = true},
+        {.display_text = "#IF group", .depth = 2, .active = true, .has_source_order = true,
+         .source_order = 5, .node_id = 3},
+        {.display_text = "#IF 1", .depth = 3, .active = true, .has_source_order = true,
+         .source_order = 6, .node_id = 4},
+        {.display_text = "#ELSEIF 2", .depth = 3, .active = false, .has_source_order = true,
+         .source_order = 7, .node_id = 5},
+        {.display_text = "#ENDIF end", .depth = 2, .active = true, .has_source_order = true,
+         .source_order = 8, .node_id = 6}}};
+    const std::array<WormUiComposeBranchChoiceView, 1> choices{{
+        {.branch_id = 2, .kind = WORM_UI_COMPOSE_BRANCH_RANDOM, .has_source_order = true,
+         .source_order = 4, .active = true, .editable = true, .has_next_value = true, .next_value = 1}}};
+    view.branch_outline_available = true;
+    view.branch_rows = rows.data(); view.branch_row_count = rows.size();
+    view.branch_choices = choices.data(); view.branch_choice_count = choices.size();
+    worm_ui_nuklear_compose_state().inspector_visible = true;
+    (void)harness.frame();
+    (void)harness.frame();
+
+    // Nothing selected that the buttons can act on: the root is selected, no statement chosen.
+    for (const auto* label : {"New block", "Remove block", "Leaf up", "Leaf down"})
+        CHECK(block_action_from(click_button(harness, label), WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK) == nullptr);
+
+    click_label(harness, " ▶ #TITLE odd");
+    const auto create = click_button(harness, "New block");
+    const auto* created = block_action_from(create, WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK);
+    REQUIRE(created);
+    CHECK(created->compose_branch_statement_id == 9);
+    CHECK(created->compose_input_chart_id == 7);
+    CHECK(created->compose_input_document_revision == 21);
+
+    click_label(harness, "#4 #RANDOM 2");
+    const auto* removed = block_action_from(click_button(harness, "Remove block"),
+                                            WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK);
+    REQUIRE(removed);
+    CHECK(removed->compose_branch_id == 2);
+
+    click_label(harness, "#6 #IF 1");
+    CHECK(block_action_from(click_button(harness, "Leaf up"), WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF) == nullptr);
+    const auto* down = block_action_from(click_button(harness, "Leaf down"),
+                                         WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF);
+    REQUIRE(down);
+    CHECK(down->compose_branch_id == 4);
+    CHECK(down->compose_branch_value == 1);
+
+    click_label(harness, "(inactive) #7 #ELSEIF 2");
+    const auto* up = block_action_from(click_button(harness, "Leaf up"),
+                                       WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF);
+    REQUIRE(up);
+    CHECK(up->compose_branch_id == 5);
+    CHECK(up->compose_branch_value == -1);
+    CHECK(block_action_from(click_button(harness, "Leaf down"), WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF) == nullptr);
+}
+
 TEST_CASE("BMS branch dock pushes the field over and hides on a narrow window",
           "[frontend-state][event-harness][bms-branch]") {
     const auto field_left = [](int width, bool with_branches) {

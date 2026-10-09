@@ -98,4 +98,24 @@ struct bms_branch_block_remove_command_t {
     document_history_t& history, std::uint64_t expected_revision,
     bms_branch_block_remove_command_t request) -> document_command_result_t;
 
+enum class bms_branch_leaf_move_direction_t { up, down };
+
+struct bms_branch_leaf_move_command_t {
+    chart_id_t chart;
+    branch_id_t random_block;
+    branch_id_t leaf;
+    // Identity of the moved leaf header, so a stale outline row rejects.
+    std::size_t expected_leaf_source_order{};
+    std::string expected_leaf_original_text;
+    bms_branch_leaf_move_direction_t direction{bms_branch_leaf_move_direction_t::up};
+};
+
+// Swaps the bodies of two adjacent #IF/#ELSEIF leaves of one RANDOM block, so the leaf
+// content moves while the #IF/#ELSEIF values stay in order. The block's active choice
+// follows the moved content. Leaves with nested control flow, #ELSE leaves and edges
+// reject atomically. One undoable history command.
+[[nodiscard]] auto apply_bms_branch_leaf_move_command(
+    document_history_t& history, std::uint64_t expected_revision,
+    bms_branch_leaf_move_command_t request) -> document_command_result_t;
+
 } // namespace wormedit

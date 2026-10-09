@@ -911,6 +911,143 @@ auto remove_block(document_history_t& history, const chart_document_t& chart,
                              "Remove empty BMS branch block");
 }
 
+
+struct leaf_swap_t {
+    const bms_control_node_t* block{};
+    const bms_control_node_t* upper{};
+    const bms_control_node_t* lower{};
+    std::size_t upper_body_begin{};
+    std::size_t lower_body_begin{};
+    std::size_t lower_body_end{};
+};
+
+auto movable_leaf(const bms_control_node_t& leaf) -> bool {
+    return (leaf.kind == bms_control_kind_t::if_branch ||
+            leaf.kind == bms_control_kind_t::else_if_branch) &&
+           std::ranges::all_of(leaf.children, [](const auto& child) {
+               return child.kind == bms_control_kind_t::raw_statement;
+           });
+}
+
+// The one if-group of a canonical block, or null when the block has another shape.
+auto leaf_group(const bms_control_node_t& block) -> const bms_control_node_t* {
+    if (block.kind != bms_control_kind_t::random || block.children.size() != 1) return nullptr;
+    const auto& group = block.children.front();
+    if (group.kind != bms_control_kind_t::if_group || !group.close_source_span) return nullptr;
+    return &group;
+}
+
+auto find_leaf_swap(const bms_control_node_t& block, branch_id_t leaf_id,
+                    bms_branch_leaf_move_direction_t direction,
+                    document_command_result_t& result) -> std::optional<leaf_swap_t> {
+    const auto* group = leaf_group(block);
+    if (group == nullptr) {
+        add_block_error(result, "BMS branch leaf is stale or its block has an unsupported shape");
+        return std::nullopt;
+    }
+    const auto leaf = std::ranges::find(group->children, leaf_id, &bms_control_node_t::id);
+    if (leaf == group->children.end()) {
+        add_block_error(result, "BMS branch leaf is stale or its block has an unsupported shape");
+        return std::nullopt;
+    }
+    const auto index = static_cast<std::size_t>(leaf - group->children.begin());
+    const auto up = direction == bms_branch_leaf_move_direction_t::up;
+    if (up ? index == 0 : index + 1 >= group->children.size()) {
+        add_block_error(result, "BMS branch leaf is already at the edge of its block");
+        return std::nullopt;
+    }
+    const auto& upper = group->children[up ? index - 1 : index];
+    const auto& lower = group->children[up ? index : index + 1];
+    if (!movable_leaf(upper) || !movable_leaf(lower)) {
+        add_block_error(result, "only plain #IF and #ELSEIF leaves without nested blocks can be reordered");
+        return std::nullopt;
+    }
+    const auto next = std::next(group->children.begin(), static_cast<std::ptrdiff_t>(up ? index + 1 : index + 2));
+    const auto lower_end = next == group->children.end() ? group->close_source_span->byte_begin
+                                                           : next->source_span.byte_begin;
+    return leaf_swap_t{&block, &upper, &lower, upper.source_span.byte_end,
+                       lower.source_span.byte_end, lower_end};
+}
+
+auto swapped_region(const std::vector<std::byte>& bytes, const leaf_swap_t& swap)
+    -> std::vector<std::byte> {
+    const auto at = [&](std::size_t offset) { return bytes.begin() + static_cast<std::ptrdiff_t>(offset); };
+    const auto header_begin = swap.lower->source_span.byte_begin;
+    std::vector<std::byte> region;
+    region.insert(region.end(), at(swap.lower_body_begin), at(swap.lower_body_end));
+    region.insert(region.end(), at(header_begin), at(swap.lower_body_begin));
+    region.insert(region.end(), at(swap.upper_body_begin), at(header_begin));
+    return region;
+}
+
+auto leaf_move_choices(const chart_document_t& baseline_chart, const bms_control_node_t& candidate_tree,
+                       std::span<const std::byte> bytes, const leaf_swap_t& swap, std::size_t begin,
+                       std::size_t end) -> std::vector<bms_parse_options_t::branch_choice_t> {
+    auto choices = choices_for_insert(baseline_chart, candidate_tree, bytes, begin, end, 0, 0,
+                                      count_line_starts(bytes, begin));
+    choices.pop_back();
+    const auto order = count_line_starts(bytes, swap.block->source_span.byte_begin);
+    const auto upper = swap.upper->value.value_or(0);
+    const auto lower = swap.lower->value.value_or(0);
+    for (auto& choice : choices) {
+        if (choice.control_source_order != order) continue;
+        if (choice.selected_value == upper) choice.selected_value = lower;
+        else if (choice.selected_value == lower) choice.selected_value = upper;
+    }
+    return choices;
+}
+
+auto leaf_move(document_history_t& history, const chart_document_t& chart,
+               const bms_branch_leaf_move_command_t& request) -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision};
+    const auto* old_block = chart.bms_control_tree ? tree_node(*chart.bms_control_tree,
+                                                               request.random_block) : nullptr;
+    const auto* old_leaf = chart.bms_control_tree ? tree_node(*chart.bms_control_tree, request.leaf)
+                                                  : nullptr;
+    if (old_block == nullptr || old_leaf == nullptr ||
+        old_leaf->source_order != request.expected_leaf_source_order ||
+        old_leaf->original_text != request.expected_leaf_original_text) {
+        add_block_error(result, "BMS branch leaf is stale or not reorderable");
+        return result;
+    }
+    auto serialized = retained_bms_bytes(history.document, chart);
+    auto baseline = serialized ? parse_unselected(*serialized, chart) : std::nullopt;
+    if (!baseline || baseline->charts.size() != 1 || !baseline->charts.front().bms_control_tree ||
+        !chart.bms_control_tree) {
+        add_block_error(result, "current BMS document cannot be reparsed before the leaf move");
+        return result;
+    }
+    auto& baseline_chart = baseline->charts.front();
+    (void)restore_baseline_node_ids(*chart.bms_control_tree, *baseline_chart.bms_control_tree);
+    baseline_chart.active_branch_selection = chart.active_branch_selection;
+    const auto* block = tree_node(*baseline_chart.bms_control_tree, request.random_block);
+    if (!all_selected_branches_present(baseline_chart) || block == nullptr) {
+        add_block_error(result, "serialized BMS source no longer contains the branch block");
+        return result;
+    }
+    const auto swap = find_leaf_swap(*block, request.leaf, request.direction, result);
+    if (!swap) return result;
+    const auto region = swapped_region(*serialized, *swap);
+    const auto begin = swap->upper_body_begin;
+    const auto end = swap->lower_body_end;
+    if (std::equal(region.begin(), region.end(), serialized->begin() + static_cast<std::ptrdiff_t>(begin))) {
+        add_block_error(result, "the two BMS leaves have identical bodies; there is nothing to reorder");
+        return result;
+    }
+    std::copy(region.begin(), region.end(), serialized->begin() + static_cast<std::ptrdiff_t>(begin));
+    auto unselected = parse_unselected(*serialized, baseline_chart);
+    if (!unselected || unselected->charts.empty() || !unselected->charts.front().bms_control_tree) {
+        add_block_error(result, "reordered BMS branch block failed structural validation");
+        return result;
+    }
+    const auto choices = leaf_move_choices(baseline_chart, *unselected->charts.front().bms_control_tree,
+                                           *serialized, *swap, begin, end);
+    return publish_reparsed(history, chart, std::move(*serialized), choices,
+                            *baseline_chart.bms_control_tree, begin, end, 0, 0, true,
+                            request.direction == bms_branch_leaf_move_direction_t::up
+                                ? "Move BMS branch leaf up" : "Move BMS branch leaf down");
+}
+
 } // namespace
 
 auto apply_bms_branch_statement_edit_command(document_history_t& history,
@@ -1038,6 +1175,23 @@ auto apply_bms_branch_block_remove_command(document_history_t& history,
     }
     if (!preserve_guard(result, history.document, *chart)) return result;
     return remove_block(history, *chart, request);
+}
+
+auto apply_bms_branch_leaf_move_command(document_history_t& history, std::uint64_t expected_revision,
+                                        bms_branch_leaf_move_command_t request)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision};
+    if (expected_revision != history.document.revision) {
+        add_block_error(result, "BMS branch leaf move revision is stale");
+        return result;
+    }
+    const auto* chart = chart_for_block(history.document, request.chart);
+    if (chart == nullptr) {
+        add_block_error(result, "selected BMS chart no longer exists");
+        return result;
+    }
+    if (!preserve_guard(result, history.document, *chart)) return result;
+    return leaf_move(history, *chart, request);
 }
 
 } // namespace wormedit

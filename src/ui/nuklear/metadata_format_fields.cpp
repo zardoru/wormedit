@@ -374,7 +374,7 @@ static void render_bms_field_hint(nk_context* context, size_t typed, bool editab
         nk_layout_row_dynamic(context, 18, 1);
         nk_label_colored(context, "Enter an unsigned number before applying this field.",
                          NK_TEXT_LEFT,
-                         wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::status));
+                         wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict));
     } else {
         char hint[128];
         (void)std::snprintf(hint, sizeof(hint),
@@ -492,7 +492,7 @@ static void render_bmson_field_hint(const MetadataPanel& panel, bool editable, b
     nk_layout_row_dynamic(panel.context, 18, 1);
     nk_label_colored(panel.context, "Enter a valid nonnegative number or text value.",
                      NK_TEXT_LEFT,
-                     wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::status));
+                     wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict));
 }
 
 static void render_bmson_field(const MetadataPanel& panel,
@@ -675,7 +675,7 @@ static void render_typed_field(const MetadataPanel& panel, std::size_t slot,
     } else if (error && !empty_new) {
         nk_layout_row_dynamic(context, 18, 1);
         nk_label_colored(context, error->c_str(), NK_TEXT_LEFT,
-                         wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::status));
+                         wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict));
     }
 }
 

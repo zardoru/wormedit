@@ -622,6 +622,9 @@ static bool draw_left_can_start(const ComposePointerEventContext& input) {
         bgm_draw_lane_at(view, input.pointer_started_x, input.pointer_started_y) != nullptr;
     const auto target = bga ? compose_bga_lane_kind_at(view, input.pointer_started_x,
         input.pointer_started_y).has_value() : (input.pointer_started_in_note_field || bgm);
+    // A sample or BGA stroke starts only from a press or a release this frame. The pointer
+    // started position is stale between clicks, so hovering must not emit empty strokes.
+    if ((bga || bgm) && !input.left_down && !input.left_released) return false;
     return !state.action_overflowed && view.scene_available && view.note_paint_mode_active &&
         (bga || bgm || !armed_kind_uses_hold_gesture(view)) && target && input.window_focused &&
         input.shortcut_event_count == 0 &&

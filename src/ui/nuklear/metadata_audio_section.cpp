@@ -111,7 +111,7 @@ void render_audio_sync_section(const MetadataPanel& panel) {
     if (!parsed) {
         nk_layout_row_dynamic(context, 19, 1);
         nk_label_colored(context, "Enter a number or fraction, e.g. -0.125, 1/3 or -125 ms.",
-                         NK_TEXT_LEFT, wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::status));
+                         NK_TEXT_LEFT, wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict));
     }
     if (metadata.timing_locked || metadata.audio_offset_locked)
         muted_label(context, metadata.audio_offset_locked ? "Unlock audio offset in Compose to edit it."

@@ -37,8 +37,8 @@ std::array<nk_color, compose_names.size()> compose_colors{
 auto builtin_key_colors() -> std::array<key_color_t, key_names.size()> {
     std::array<key_color_t, key_names.size()> colors{};
     for (size_t index = 0; index < colors.size(); ++index) {
-        colors[index] = {index != 0, nk_rgb(33, 40, 53), nk_rgb(37, 45, 59),
-                         nk_rgb(133, 182, 222), nk_rgb(58, 90, 120), nk_rgba(133, 182, 222, 153)};
+        colors[index] = {index != 0, nk_rgb(33, 40, 53), nk_rgb(133, 182, 222),
+                         nk_rgb(58, 90, 120), nk_rgba(133, 182, 222, 153)};
     }
     return colors;
 }
@@ -117,7 +117,6 @@ void read_key_entry(const nlohmann::json& document, const nlohmann::json& entry,
     resolve(document, entry.value("note", nlohmann::json{}), color.note);
     resolve(document, entry.value("note_border", nlohmann::json{}), color.note_border);
     resolve(document, entry.value("lane", nlohmann::json{}), color.lane);
-    resolve(document, entry.value("lane_alt", nlohmann::json{}), color.lane_alt);
     resolve(document, entry.value("hold_body", nlohmann::json{}), color.hold_body);
 }
 

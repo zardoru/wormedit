@@ -64,77 +64,66 @@
       "note": "#85b6de",
       "note_border": "#3a5a78",
       "lane": "#212835",
-      "lane_alt": "#252d3b",
       "hold_body": "#85b6de99"
     },
     "white": {
       "note": "$slate.200",
       "note_border": "$slate.700",
       "lane": "$neutral.950",
-      "lane_alt": "$neutral.900",
       "hold_body": "#e2e8f099"
     },
     "black": {
       "note": "$blue.500",
       "note_border": "$blue.800",
       "lane": "$blue.950",
-      "lane_alt": "$blue.900",
       "hold_body": "#3b82f699"
     },
     "scratch": {
       "note": "$red.400",
       "note_border": "$red.700",
       "lane": "$red.950",
-      "lane_alt": "$red.900",
       "hold_body": "#f8717199"
     },
     "foot_pedal": {
       "note": "$cyan.400",
       "note_border": "$cyan.700",
       "lane": "$cyan.950",
-      "lane_alt": "$cyan.900",
       "hold_body": "#22d3ee99"
     },
     "free_zone": {
       "note": "$amber.400",
       "note_border": "$amber.700",
       "lane": "$amber.950",
-      "lane_alt": "$amber.900",
       "hold_body": "#fbbf2499"
     },
     "pms_white": {
       "note": "$neutral.100",
       "note_border": "$slate.700",
       "lane": "$neutral.950",
-      "lane_alt": "$neutral.900",
       "hold_body": "#e9ebf299"
     },
     "pms_yellow": {
       "note": "$yellow.400",
       "note_border": "$yellow.700",
       "lane": "$yellow.950",
-      "lane_alt": "$yellow.900",
       "hold_body": "#facc1599"
     },
     "pms_green": {
       "note": "$green.400",
       "note_border": "$green.700",
       "lane": "$green.950",
-      "lane_alt": "$green.900",
       "hold_body": "#4ade8099"
     },
     "pms_blue": {
       "note": "$blue.400",
       "note_border": "$blue.700",
       "lane": "$blue.950",
-      "lane_alt": "$blue.900",
       "hold_body": "#60a5fa99"
     },
     "pms_red": {
       "note": "$red.400",
       "note_border": "$red.700",
       "lane": "$red.950",
-      "lane_alt": "$red.900",
       "hold_body": "#f8717199"
     }
   },

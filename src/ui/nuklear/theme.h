@@ -26,7 +26,6 @@ auto compose_note_accent(size_t index) -> nk_color;
 struct key_color_t {
     bool has_color{};
     nk_color lane;
-    nk_color lane_alt;
     nk_color note;
     nk_color note_border;
     nk_color hold_body;

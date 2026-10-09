@@ -313,3 +313,23 @@ TEST_CASE("Typed quantize rejects a missing BGM or collapsed tail without partia
     CHECK(has_code(missing.diagnostics, diagnostic_code_t::invalid_id));
     CHECK(chart.measures.front().notes.front().position.row == 250);
 }
+
+TEST_CASE("Mixed quantize rejects branch-owned BGM identified by its retained source statement",
+          "[unit][core][quantize][mixed-quantize][bms]") {
+    auto chart = make_chart();
+    chart.source_family = format_family_t::bms;
+    add_note(chart, object_id_t{20}, measure_id_t{1}, 250);
+    chart.bgm_source_lanes.push_back({.id = object_id_t{30}});
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{21},
+        .position = {measure_id_t{1}, 130}, .source_lane = object_id_t{30},
+        .provenance = {.family = format_family_t::bms, .source_spelling = "01", .source_order = 7}});
+    chart.bms_control_tree = bms_control_node_t{.id = branch_id_t{1}, .kind = bms_control_kind_t::root,
+        .children = {{.id = branch_id_t{2}, .kind = bms_control_kind_t::random,
+            .children = {{.id = branch_id_t{3}, .kind = bms_control_kind_t::raw_statement, .source_order = 7}}}}};
+    const auto result = quantize_chart_exact(chart, {.divisions = 4,
+        .selection = quantize_selection_t{{object_id_t{20}}, {object_id_t{21}}}});
+    CHECK_FALSE(result);
+    CHECK(has_code(result.diagnostics, diagnostic_code_t::unsupported_feature));
+    CHECK(chart.measures.front().notes.front().position.row == 250);
+    CHECK(chart.measures.front().bgm_events.front().position.row == 130);
+}

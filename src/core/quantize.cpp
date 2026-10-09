@@ -466,13 +466,31 @@ auto selected_quantization_objects(const quantize_request_t& request,
     return result;
 }
 
+auto quantization_branch_sources(const chart_document_t& chart) -> std::unordered_set<std::size_t> {
+    std::unordered_set<std::size_t> orders;
+    if (!chart.bms_control_tree) return orders;
+    const auto visit = [&](const auto& self, const bms_control_node_t& node, bool branched) -> void {
+        if (branched) orders.insert(node.source_order);
+        const auto boundary = node.kind == bms_control_kind_t::random ||
+            node.kind == bms_control_kind_t::switch_block || node.kind == bms_control_kind_t::if_group ||
+            node.kind == bms_control_kind_t::if_branch || node.kind == bms_control_kind_t::else_if_branch ||
+            node.kind == bms_control_kind_t::else_branch || node.kind == bms_control_kind_t::case_branch ||
+            node.kind == bms_control_kind_t::default_branch;
+        for (const auto& child : node.children) self(self, child, branched || boundary);
+    };
+    visit(visit, *chart.bms_control_tree, false);
+    return orders;
+}
+
 // Keep retained BMSON slice events attached to their semantic note/BGM. Continue/restart,
 // channel identity and playback properties are unchanged by quantizing a slice boundary.
 auto sync_quantized_source(chart_document_t& chart, const auto& object,
                            const quantization_selection_t& selection,
+                           const std::unordered_set<std::size_t>& branch_sources,
                            quantize_object_family_t family, diagnostic_list_t& diagnostics) -> void {
     if (!selection.selected.contains({family, object.id.value})) return;
-    if (object.branch)
+    if (object.branch || (object.provenance.family == format_family_t::bms &&
+        !object.provenance.source_spelling.empty() && branch_sources.contains(object.provenance.source_order)))
         error(diagnostics, diagnostic_code_t::unsupported_feature,
               "Quantizing branch-owned objects is unavailable.", object.id);
     if (!object.sound_channel_event) return;
@@ -532,11 +550,12 @@ auto synchronize_quantized_selection(chart_document_t& chart,
                                      const quantization_selection_t& selection,
                                      diagnostic_list_t& diagnostics) -> void {
     if (!selection.typed) return;
+    const auto branch_sources = quantization_branch_sources(chart);
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes)
-            sync_quantized_source(chart, note, selection, quantize_object_family_t::note, diagnostics);
+            sync_quantized_source(chart, note, selection, branch_sources, quantize_object_family_t::note, diagnostics);
         for (const auto& event : measure.bgm_events)
-            sync_quantized_source(chart, event, selection, quantize_object_family_t::bgm_event, diagnostics);
+            sync_quantized_source(chart, event, selection, branch_sources, quantize_object_family_t::bgm_event, diagnostics);
     }
 }
 

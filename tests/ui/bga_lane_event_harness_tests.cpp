@@ -3,6 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <wormedit/core/bmson_sound_channel_editor.h>
+#include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/lane_profile_switch.h>
 
 #include <cmath>
@@ -1117,13 +1118,14 @@ TEST_CASE("Packed Draw emits the current keysound and rejects a stem source",
     bool matched{};
     for (const auto& snapshot : placed)
         for (const auto& input : std::span(snapshot.get().compose_inputs, snapshot.get().compose_input_count))
-            matched |= input.kind == WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW &&
+            matched |= input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN &&
+                       input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM &&
                        input.lane_id == 45 && input.resource_id == 81;
     check_bga(matched);
     f.harness.view().compose.draw_source_stem_lane_id = 44;
     f.harness.view().compose.draw_source_stem_lane_name = "Voice stem";
     const auto rejected = click(f.harness, point.first, point.second);
-    check_bga(!any_input_of(rejected, WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW));
+    check_bga(!any_input_of(rejected, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN));
 }
 
 namespace {
@@ -1363,6 +1365,21 @@ auto core_payload_undoes_once(const WormUiComposeInputAction& input, std::uint64
            restored.measures.size() == original_chart.measures.size();
 }
 
+auto packed_stroke_undoes_once(const WormUiComposeInputAction& input, std::uint64_t row) -> bool {
+    auto history = wormedit::make_document_history(
+        make_packed_bmson_song(input.lane_id, input.resource_id));
+    const std::array cells{wormedit::local_position_t{
+        history.document.charts.front().measures.front().id, row}};
+    const auto original = history.document.charts.front().sound_channels.size();
+    const auto result = wormedit::apply_bmson_packed_stroke(history, history.document.revision,
+        history.document.charts.front().id, wormedit::object_id_t{input.lane_id},
+        wormedit::resource_id_t{input.resource_id}, cells);
+    if (!result || history.undo.size() != 1 || !wormedit::validate_document(history.document).empty())
+        return false;
+    return wormedit::undo_document_command(history) &&
+           history.document.charts.front().sound_channels.size() == original;
+}
+
 auto input_payload_undoes_once(const workspace_action_snapshot_t& action,
                                WormUiComposeInputKind kind, std::uint64_t row,
                                bool empty_stem = false) -> bool {
@@ -1433,9 +1450,13 @@ TEST_CASE("Emitted stem and packed draw payloads each commit one undoable BMSON 
         packed.harness.view().compose.draw_source_id = 800'001;
         const auto packed_point = packed.at(662, 300);
         const auto packed_click = click(packed.harness, packed_point.first, packed_point.second);
-        const auto* packed_input = stem_input(packed_click[1]);
+        const WormUiComposeInputAction* packed_input{};
+        for (const auto& snapshot : packed_click)
+            for (const auto& input : std::span(snapshot.get().compose_inputs,
+                                               snapshot.get().compose_input_count))
+                if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) packed_input = &input;
         check_bga(packed_input && packed_input->lane_id == 45 &&
                   packed_input->resource_id == 800'001 &&
-                  core_payload_undoes_once(*packed_input, 90));
+                  packed_stroke_undoes_once(*packed_input, 90));
     }
 }

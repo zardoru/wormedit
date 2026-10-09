@@ -3898,6 +3898,12 @@ auto finish_bga_draw(const WormUiComposeInputAction& input, compose_input_contex
     result.accepted = applied.applied || applied.diagnostics.empty();
     result.document_changed = applied.applied;
     result.diagnostics = applied.diagnostics;
+    // BMSON strokes change retained sound channels, which the workspace binds.
+    if (bgm && applied.applied) {
+        const auto rebound = wormedit::rebind_workspace(context.workspace, context.history);
+        if (!rebound && !rebound.diagnostics.empty())
+            result.diagnostics.push_back(rebound.diagnostics.front());
+    }
     if (applied.applied && stroke.resource && !stroke.erase && !bgm)
         advance_dock_after_placement(context.history.document, *stroke.resource, wormedit::resource_role_t::bga);
 }

@@ -10,6 +10,9 @@ namespace wormedit::ui::nuklear::tooltip {
 namespace {
 
 struct nk_rect app_viewport{};
+// Space between the popup's clip edge and its text. Nuklear scissors popup content at the
+// layout edge, so text starting exactly there loses the left side of its first glyph.
+constexpr float text_inset = 4.0F;
 
 auto codepoint_size(std::string_view text, std::size_t offset) -> std::size_t {
     const auto first = static_cast<unsigned char>(text[offset]);
@@ -97,7 +100,7 @@ auto plan_text(nk_context* context, std::string_view text, float preferred_outer
     const auto padding = initial_padding(context);
     const auto border = initial_border(context);
     const auto max_outer_width = std::min(std::max(1.0F, preferred_outer_width), app_viewport.w);
-    const auto text_padding_x = 2.0F * context->style.text.padding.x;
+    const auto text_padding_x = 2.0F * context->style.text.padding.x + text_inset;
     const auto minimum_width = context->style.font->height + text_padding_x +
                                2.0F * padding.x + 2.0F * border;
     const auto outer_width = std::min(std::max(natural_width(context, text) +
@@ -133,7 +136,7 @@ auto place(nk_context* context, float outer_width, float content_height)
     const auto border = initial_border(context);
     const auto width = std::min(outer_width, app_viewport.w);
     const auto height = content_height + 2.0F * padding.y + 2.0F * border;
-    if (width - 2.0F * context->style.text.padding.x -
+    if (width - 2.0F * context->style.text.padding.x - text_inset -
             2.0F * padding.x - 2.0F * border < context->style.font->height ||
         height > app_viewport.h)
         return std::nullopt;
@@ -161,10 +164,18 @@ auto begin(nk_context* context, const placement_t& placement) -> bool {
 
 void draw_text(nk_context* context, const text_plan_t& plan) {
     if (!context || !context->style.font) return;
+    // The column gap would add to the inset, which plan_text does not measure, so it is zero here.
+    const auto spacing = context->style.window.spacing;
+    nk_style_push_vec2(context, &context->style.window.spacing, nk_vec2(0.0F, spacing.y));
     for (const auto& line : plan.lines) {
-        nk_layout_row_dynamic(context, context->style.font->height, 1);
+        nk_layout_row_template_begin(context, context->style.font->height);
+        nk_layout_row_template_push_static(context, text_inset);
+        nk_layout_row_template_push_dynamic(context);
+        nk_layout_row_template_end(context);
+        nk_spacer(context);
         nk_text(context, line.data(), static_cast<int>(line.size()), NK_TEXT_LEFT);
     }
+    nk_style_pop_vec2(context);
 }
 
 void end(nk_context* context) {

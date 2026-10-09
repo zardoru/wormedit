@@ -2608,6 +2608,8 @@ struct pending_close_t {
     std::uint8_t layout_index{};
     std::uint8_t encoding_index{};
     bool awaiting_encoding{};
+    // Shown in the confirmation only when a save started from it failed.
+    std::string save_failure;
 };
 
 template <typename Context>
@@ -2717,7 +2719,9 @@ void save_before_confirmed_close(pending_close_t& pending, Context& context, con
                               "The project changed while closing. Cancel and review the current project.");
         return;
     }
+    pending.save_failure.clear();
     const bool saved = save_project_session(context, action);
+    if (!saved) pending.save_failure = "Save failed: " + context.close_feedback_ref;
     if (saved && context.history_ref.document.id == id && context.history_ref.document.revision == revision &&
         !wormedit::is_document_dirty(context.history_ref))
         (void)finish_confirmed_close(pending, context);
@@ -3479,11 +3483,11 @@ void begin_notification_frame(notification_frame_context_t& context,
     context.center.drain_inbox(now);
 }
 
-auto close_confirmation_view(const pending_close_t& pending, bool has_native_path, const std::string& close_feedback)
+auto close_confirmation_view(const pending_close_t& pending, bool has_native_path)
     -> WormUiCloseConfirmationView {
     return {.visible = pending.target != close_target_t::none && !pending.awaiting_encoding,
         .application = pending.target == close_target_t::application, .has_native_path = has_native_path,
-        .project_id = pending.project.value, .revision = pending.revision, .status_text = close_feedback.c_str()};
+        .project_id = pending.project.value, .revision = pending.revision, .status_text = pending.save_failure.c_str()};
 }
 
 template <typename Model, typename Context>
@@ -3505,7 +3509,7 @@ auto handle_workspace_view_error(const Model& model, Context& context,
         wormedit::sys::projection_diagnostic_severity(model.diagnostics),
         wormedit::notification_source_t::document, diagnostic}}, context.notification_sink_ref);
     const auto close = close_confirmation_view(pending_close, context.native_project_loaded_ref &&
-        !context.active_project_path_ref.empty(), context.close_feedback_ref);
+        !context.active_project_path_ref.empty());
     const auto action = worm_ui_frontend_workspace_error(diagnostic.c_str(), &notifications, &close);
     pending_notification = action.notifications;
     if (dispatch_close_confirmation(pending_close, context, action, confirm)) return true;
@@ -4463,7 +4467,7 @@ int main(int argc, char** argv) {
             flattened.view.metronome_volume = application_command_state.metronome_volume;
             flattened.view.metronome_count_in = application_command_state.metronome_count_in;
             flattened.view.close_confirmation = close_confirmation_view(pending_close,
-                native_project_loaded && !active_project_path.empty(), close_feedback);
+                native_project_loaded && !active_project_path.empty());
             project_external_player_view(external_player_runtime, flattened.view);
             wormedit::sys::project_chart_view(project_chart_runtime, history.document, flattened.view.setup);
             project_tap_timing(tap_runtime, tap_clock, command_registry, flattened.view);

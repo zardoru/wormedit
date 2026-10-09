@@ -5092,3 +5092,104 @@ TEST_CASE("Held Page repeats through the measure step path and releases without 
     if (!release_modifier)
         expect_lane_key(!worm_ui_nuklear_compose_state().tab_navigation.direction);
 }
+
+namespace {
+
+struct close_dialog_fixture_t {
+    nuklear_event_harness_t harness{1280, 900};
+    close_dialog_fixture_t(bool application = false, const char* status = "") {
+        REQUIRE(harness.ready());
+        auto& view = harness.view();
+        view.close_confirmation = {.visible = true, .application = application, .has_native_path = true,
+                                   .project_id = 5, .revision = 9, .status_text = status};
+        (void)harness.frame();
+        (void)harness.frame();
+    }
+    // The first non-empty close decision across the frames of one gesture.
+    static auto decision_of(const std::vector<workspace_action_snapshot_t>& frames)
+        -> const WormUiWorkspaceAction* {
+        for (const auto& frame : frames)
+            if (frame.get().close_decision != WORM_UI_CLOSE_NONE) return &frame.get();
+        return nullptr;
+    }
+    auto click_button(const char* label) {
+        const auto center = harness.drawn_text_center(label);
+        REQUIRE(center);
+        return click_at(harness, center->first, center->second);
+    }
+    auto press_key(SDL_Keycode key, SDL_Scancode scancode) {
+        const auto down = key_event(SDL_EVENT_KEY_DOWN, key, scancode);
+        std::vector<workspace_action_snapshot_t> frames{harness.frame(std::span{&down, 1})};
+        const auto up = key_event(SDL_EVENT_KEY_UP, key, scancode);
+        frames.push_back(harness.frame(std::span{&up, 1}));
+        return frames;
+    }
+};
+
+} // namespace
+
+TEST_CASE("Unsaved changes shows the shared dialog text and no notification text",
+          "[frontend-state][event-harness][dialog][close-confirmation]") {
+    {
+    close_dialog_fixture_t project;
+    const auto& text = project.harness.drawn_text();
+    CHECK(text.find("Unsaved changes") != std::string::npos);
+    CHECK(text.find("Save your changes before closing this project?") != std::string::npos);
+    CHECK(text.find("Discard changes") != std::string::npos);
+    CHECK(text.find("Cancel") != std::string::npos);
+    CHECK(text.find("Save failed") == std::string::npos);
+    }
+    close_dialog_fixture_t application{true};
+    CHECK(application.harness.drawn_text().find("Save your changes before quitting WormEdit?") !=
+          std::string::npos);
+}
+
+TEST_CASE("Unsaved changes buttons emit their decisions with the stamps",
+          "[frontend-state][event-harness][dialog][close-confirmation]") {
+    {
+        close_dialog_fixture_t f;
+        const auto* decided = close_dialog_fixture_t::decision_of(f.click_button("Cancel"));
+        REQUIRE(decided);
+        CHECK(decided->close_decision == WORM_UI_CLOSE_CANCEL);
+        CHECK(decided->close_project_id == 5);
+        CHECK(decided->close_revision == 9);
+    }
+    {
+        close_dialog_fixture_t f;
+        const auto* decided = close_dialog_fixture_t::decision_of(f.click_button("Discard changes"));
+        REQUIRE(decided);
+        CHECK(decided->close_decision == WORM_UI_CLOSE_DISCARD);
+    }
+    {
+        close_dialog_fixture_t f;
+        const auto* decided = close_dialog_fixture_t::decision_of(f.click_button("Save"));
+        REQUIRE(decided);
+        CHECK(decided->close_decision == WORM_UI_CLOSE_SAVE);
+        CHECK(decided->kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
+        CHECK(decided->close_project_id == 5);
+        CHECK(decided->close_revision == 9);
+    }
+}
+
+TEST_CASE("Unsaved changes maps Escape to cancel and Enter to save",
+          "[frontend-state][event-harness][dialog][close-confirmation]") {
+    {
+        close_dialog_fixture_t f;
+        const auto* decided = close_dialog_fixture_t::decision_of(f.press_key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE));
+        REQUIRE(decided);
+        CHECK(decided->close_decision == WORM_UI_CLOSE_CANCEL);
+    }
+    {
+        close_dialog_fixture_t f;
+        const auto* decided = close_dialog_fixture_t::decision_of(f.press_key(SDLK_RETURN, SDL_SCANCODE_RETURN));
+        REQUIRE(decided);
+        CHECK(decided->close_decision == WORM_UI_CLOSE_SAVE);
+        CHECK(decided->kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
+    }
+}
+
+TEST_CASE("Unsaved changes shows a status line only for a failed save",
+          "[frontend-state][event-harness][dialog][close-confirmation]") {
+    close_dialog_fixture_t f{false, "Save failed: disk full"};
+    CHECK(f.harness.drawn_text().find("Save failed: disk full") != std::string::npos);
+}

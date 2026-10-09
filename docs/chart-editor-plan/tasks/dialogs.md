@@ -44,11 +44,12 @@ The causes, found while planning:
 
 ## T-408 Rebuild Unsaved changes on the shared dialog
 
-- **Status:** ready (T-407 done 2026-10-09)
+- **Status:** done
 - **Mockup:** [unsaved-changes.svg](../mockups/unsaved-changes.svg) (reference: match its structure and hierarchy)
 - **Outcome:** the dialog shows the title "Unsaved changes", then "Save your changes before quitting WormEdit?" (or "…closing this project?"), then a footer with `[Discard changes]` at the left and `[Cancel] [Save]` at the right, where Save is primary. It shows no import or other notification text and leaves no empty space.
 - **Read first:** `src/ui/nuklear/frontend.cpp` (`render_close_confirmation`), `src/sys/main.cpp` (`close_confirmation_view`, `close_feedback`), `src/ui/frontend.h` (`WormUiCloseConfirmationView`).
 - **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp`, `src/ui/frontend.h` (`status_text` of the close view only), event-harness tests, this card.
+- **Result (2026-10-09):** `render_close_confirmation` now uses `chrome::Dialog` (modal, 440 px, footer `[Discard changes]` far left, `[Cancel] [Save]` with Save primary, Escape cancels, Enter saves) and the same decision, project and revision stamps and save flow as before. `src/sys/main.cpp` stops passing the last notification: `pending_close_t::save_failure` is set to "Save failed: <reason>" only when a save started from this dialog fails, and the view shows it as a conflict-colored line. The Dialog API grew `dialog_text` (wrapped paragraphs, no hand-picked row heights) and a `button_width` footer argument, and it now zeroes Nuklear's square window border while open (it left stray corner pixels over the painted rounded border). Four event-harness cases (text, each button with stamps, Escape and Enter, the failure line). Real-window Xvfb before and after captures: `/home/zardoru/devel/wormedit-scratch-builds/t408/` (`before.png`, `after.png`).
 - **Steps:**
   1. Stop passing `close_feedback` into the view. Show a status line only for a failed save from this dialog, such as "Save failed: <reason>".
   2. Render with `chrome::Dialog` and modal mode on. Escape cancels and Enter saves.

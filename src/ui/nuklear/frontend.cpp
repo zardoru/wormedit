@@ -24,6 +24,7 @@
 #include "ui/nuklear/compose_bga_panel.h"
 #include "ui/nuklear/compose_input_panel.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/dialog.h"
 #include "ui/nuklear/popup_lifecycle.h"
 #include "ui/nuklear/compose_recipe_menu.h"
 #include "ui/nuklear/content_margin.h"
@@ -1478,33 +1479,47 @@ void worm_ui_frontend_end_input(void) {
     }
 }
 
+static wormedit::ui::chrome::Dialog g_close_dialog;
+
+// Maps a dialog result to the close decision; Save also starts the save, through the file
+// dialog when the project has no native path yet.
+static void apply_close_result(const WormUiCloseConfirmationView& view, WormUiWorkspaceAction& action,
+                               wormedit::ui::chrome::DialogResult result) {
+    using wormedit::ui::chrome::DialogResult;
+    WormUiCloseDecision decision = WORM_UI_CLOSE_NONE;
+    if (result == DialogResult::cancel || result == DialogResult::secondary) decision = WORM_UI_CLOSE_CANCEL;
+    else if (result == DialogResult::destructive) decision = WORM_UI_CLOSE_DISCARD;
+    else if (result == DialogResult::primary) {
+        decision = WORM_UI_CLOSE_SAVE;
+        if (view.has_native_path)
+            action.kind = WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT;
+        else start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
+    }
+    if (decision == WORM_UI_CLOSE_NONE) return;
+    action.close_decision = decision;
+    action.close_project_id = view.project_id;
+    action.close_revision = view.revision;
+}
+
 static void render_close_confirmation(const WormUiCloseConfirmationView& view,
     WormUiWorkspaceAction& action, int width, int height) {
     if (!view.visible) return;
-    if (nk_begin(g_context, "Unsaved changes", nk_rect(width / 2.0f - 200, height / 2.0f - 95, 400, 190),
-        NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_NO_SCROLLBAR)) {
-        nk_layout_row_dynamic(g_context, 45, 1);
-        nk_label_wrap(g_context, view.application
-            ? "Save your changes before quitting WormEdit?" : "Save your changes before closing this project?");
-        nk_layout_row_dynamic(g_context, 30, 3);
-        WormUiCloseDecision decision = WORM_UI_CLOSE_NONE;
-        if (nk_button_label(g_context, "Cancel")) decision = WORM_UI_CLOSE_CANCEL;
-        if (nk_button_label(g_context, "Discard changes")) decision = WORM_UI_CLOSE_DISCARD;
-        if (nk_button_label(g_context, "Save")) {
-            decision = WORM_UI_CLOSE_SAVE;
-            if (view.has_native_path)
-                action.kind = WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT;
-            else start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
-        }
-        if (decision != WORM_UI_CLOSE_NONE) {
-            action.close_decision = decision;
-            action.close_project_id = view.project_id;
-            action.close_revision = view.revision;
-        }
-        nk_layout_row_dynamic(g_context, 40, 1);
-        nk_label_wrap(g_context, view.status_text ? view.status_text : "");
+    namespace chrome = wormedit::ui::chrome;
+    auto& dialog = g_close_dialog;
+    if (chrome::dialog_begin(dialog, g_context, "Unsaved changes", "Unsaved changes",
+                             {.modal = true, .width = 440.0f,
+                              .area = nk_vec2(static_cast<float>(width), static_cast<float>(height))})) {
+        chrome::dialog_text(dialog, g_context, view.application
+            ? "Save your changes before quitting WormEdit?"
+            : "Save your changes before closing this project?", chrome::color(chrome::UiColor::text));
+        if (view.status_text && view.status_text[0])
+            chrome::dialog_text(dialog, g_context, view.status_text, chrome::color(chrome::UiColor::conflict));
+        chrome::dialog_footer_begin(dialog, g_context, 3, true, 120.0f);
+        chrome::dialog_button(dialog, g_context, "Discard changes", chrome::DialogButtonRole::destructive);
+        chrome::dialog_button(dialog, g_context, "Cancel", chrome::DialogButtonRole::secondary);
+        chrome::dialog_button(dialog, g_context, "Save", chrome::DialogButtonRole::primary);
     }
-    nk_end(g_context);
+    apply_close_result(view, action, chrome::dialog_end(dialog, g_context));
 }
 
 static void render_workspace_error(WormUiWorkspaceAction* action, int width, int height,

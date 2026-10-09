@@ -3,6 +3,8 @@
 #include "ui/nuklear/chrome.h"
 #include "wormedit/nuklear_config.h"
 
+#include <optional>
+
 namespace wormedit::ui::chrome {
 
 // One shared dialog surface (see docs/chart-editor-plan/tasks/dialogs.md for the rules): an
@@ -36,6 +38,9 @@ struct DialogOptions {
     bool closable{false};  // shows the close icon (non-modal tools); confirmations use Escape
     float width{420.0f};
     struct nk_vec2 area{}; // The window the dialog is centered in; empty uses the app viewport.
+    // Escape cancels. Modal dialogs default to true; a non-modal tool leaves Escape to the
+    // workspace unless it opts in.
+    std::optional<bool> escape_cancels{};
 };
 
 struct Dialog {
@@ -54,6 +59,7 @@ struct Dialog {
     bool open{};
     bool modal{};
     bool closable{};
+    bool escape_cancels{};
 };
 
 inline constexpr float dialog_padding = metrics::gap_large;

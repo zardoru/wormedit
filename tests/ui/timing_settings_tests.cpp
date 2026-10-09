@@ -8,6 +8,7 @@ namespace {
 auto click_text(nuklear_event_harness_t& harness, std::string_view label)
     -> workspace_action_snapshot_t {
     (void)harness.frame();
+    (void)harness.frame();  // A dialog fits its content on its second frame.
     INFO("Click label: " << label);
     INFO(harness.drawn_text());
     const auto center = harness.drawn_text_center(label);
@@ -131,43 +132,50 @@ TEST_CASE("Timing Settings exposes live enable volume and bounded count-in contr
     const auto count = click_text(harness, "More count-in");
     CHECK(count.get().timing_settings.change_count_in);
     CHECK(count.get().timing_settings.count_in == 1);
-    CHECK(harness.drawn_text().find("No preroll") != std::string::npos);
+    // The count-in explanation lives in a tooltip, not in the body.
+    CHECK(harness.drawn_text().find("No preroll") == std::string::npos);
+    CHECK(harness.drawn_text().find("Count-in before beat zero") == std::string::npos);
 }
 
-TEST_CASE("Moved Timing Settings owns blank-body clicks and close then reopen keeps controls",
+TEST_CASE("Timing Settings owns blank-body clicks, cannot be dragged, and close then reopen keeps controls",
           "[event-harness][timing-panels]") {
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
     auto& view = harness.view();
     view.timing_settings_visible = true;
     (void)harness.frame();
+    (void)harness.frame();
+    WormUiTestingRect before{};
+    REQUIRE(worm_ui_frontend_window_bounds_for_testing("Timing Settings", &before));
+    // A drag from the title row does not move the dialog.
     SDL_Event down{};
     down.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
     down.button.button = SDL_BUTTON_LEFT;
     down.button.down = true;
-    down.button.x = 500;
-    down.button.y = 132;
+    down.button.x = before.x + 60;
+    down.button.y = before.y + 22;
     SDL_Event initial_motion{};
     initial_motion.type = SDL_EVENT_MOUSE_MOTION;
-    initial_motion.motion.x = 500;
-    initial_motion.motion.y = 132;
+    initial_motion.motion.x = down.button.x;
+    initial_motion.motion.y = down.button.y;
     (void)harness.frame(std::array{initial_motion, down});
     SDL_Event motion{};
     motion.type = SDL_EVENT_MOUSE_MOTION;
-    motion.motion.x = 200;
-    motion.motion.y = 132;
+    motion.motion.x = down.button.x - 200;
+    motion.motion.y = down.button.y;
     motion.motion.state = SDL_BUTTON_LMASK;
     const auto moved = harness.frame(std::array{motion});
     CHECK(moved.get().compose_input_count == 0);
     down.type = SDL_EVENT_MOUSE_BUTTON_UP;
     down.button.down = false;
-    down.button.x = 200;
+    down.button.x = motion.motion.x;
     (void)harness.frame(std::array{down});
     WormUiTestingRect bounds{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Timing Settings", &bounds));
-    CHECK(bounds.x < 340);
-    CHECK(click_position(harness, bounds.x + 180, bounds.y + 330).get().compose_input_count == 0);
-    const auto closed = click_position(harness, bounds.x + bounds.width - 16, bounds.y + 14);
+    CHECK(bounds.x == before.x);
+    CHECK(bounds.y == before.y);
+    CHECK(click_position(harness, bounds.x + 180, bounds.y + bounds.height - 6).get().compose_input_count == 0);
+    const auto closed = click_position(harness, bounds.x + bounds.width - 28, bounds.y + 28);
     CHECK(closed.get().timing_settings.close);
     view.timing_settings_visible = false;
     (void)harness.frame();

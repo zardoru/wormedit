@@ -75,6 +75,7 @@ auto dialog_begin(Dialog& dialog, nk_context* context, const char* id, const cha
     dialog.primary_drawn = false;
     dialog.modal = options.modal;
     dialog.closable = options.closable;
+    dialog.escape_cancels = options.escape_cancels.value_or(options.modal);
     const auto area = dialog_area(options, context);
     if (options.modal) draw_backdrop(context, id, area);
     bool clamped{};
@@ -90,7 +91,8 @@ auto dialog_begin(Dialog& dialog, nk_context* context, const char* id, const cha
     window.spacing = nk_vec2(dialog_spacing, dialog_spacing);
     dialog.saved_window_flags = NK_WINDOW_BORDER | (clamped ? 0 : NK_WINDOW_NO_SCROLLBAR);
     nk_window_show(context, id, NK_SHOWN);
-    nk_window_set_focus(context, id);
+    // A modal keeps focus; a tool window is focused by Nuklear when it first appears.
+    if (options.modal) nk_window_set_focus(context, id);
     dialog.surface = surface_window_begin(context, id, dialog.bounds, dialog.saved_window_flags, 2);
     dialog.open = dialog.surface.open;
     if (!dialog.open) return false;
@@ -184,7 +186,7 @@ auto dialog_end(Dialog& dialog, nk_context* context) -> DialogResult {
         dialog.has_primary = dialog.primary_drawn;
         const auto& input = context->input;
         if (dialog.result == DialogResult::none) {
-            if (nk_input_is_key_pressed(&input, NK_KEY_TEXT_RESET_MODE))
+            if (dialog.escape_cancels && nk_input_is_key_pressed(&input, NK_KEY_TEXT_RESET_MODE))
                 dialog.result = DialogResult::cancel;
             else if (dialog.has_primary && nk_input_is_key_pressed(&input, NK_KEY_ENTER))
                 dialog.result = DialogResult::primary;

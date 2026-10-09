@@ -239,6 +239,7 @@ std::string active_id = "wormedit";
 std::set<std::string> warned_ids;
 std::uint64_t generation{};
 bool colored_grid{true};
+std::uint32_t grid_opacity_percent{35};
 constexpr std::array<std::string_view, 8> timing_names{"bpm",   "scroll", "speed", "stop",
                                                        "delay", "warp",   "kiai",  "anchor"};
 
@@ -573,12 +574,19 @@ void set_snap_colored_grid(bool enabled) {
     ++generation;
 }
 auto snap_colored_grid() -> bool { return colored_grid; }
+void set_snap_grid_opacity(std::uint32_t percent) {
+    percent = std::min(percent, std::uint32_t{100});
+    if (grid_opacity_percent == percent) return;
+    grid_opacity_percent = percent;
+    ++generation;
+}
 auto compose_grid_line_style(std::uint8_t kind, std::uint8_t emphasis, std::uint8_t snap_class)
     -> grid_line_style_t {
     if (colored_grid) {
         const auto rgb = wormedit::ui::arrow_snap_color(snap_class);
         const auto thickness = kind == 3 ? 2.0f : snap_class == 4 ? 1.6f : 1.0f;
-        return {nk_rgba(rgb.red, rgb.green, rgb.blue, 210), thickness};
+        return {nk_rgba(rgb.red, rgb.green, rgb.blue,
+            static_cast<int>((grid_opacity_percent * 255 + 50) / 100)), thickness};
     }
     if (kind == 3) return {compose(ComposeColor::measure_line), 1.2f};
     if (kind == 1 || kind == 2)

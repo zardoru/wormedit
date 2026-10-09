@@ -51,6 +51,7 @@ struct display_preferences_t {
     bool frame_timing_overlay{};
     std::string field_scheme{"wormedit"};
     bool snap_colored_grid{true};
+    std::uint32_t snap_grid_opacity_percent{35};
     auto operator==(const display_preferences_t&) const -> bool = default;
 };
 struct external_player_definition_t {

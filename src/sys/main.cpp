@@ -1311,6 +1311,9 @@ void dispatch_options_frame_action(wormedit::sys::options_runtime_t& options,
     external_player_runtime_t& players, application_command_state_t& state,
     wormedit::native_project_autosave_loop_t& autosave, wormedit::notification_sink_t& notifications) {
     const bool accepted = wormedit::sys::apply_options_action(options, program, action);
+    worm_ui_frontend_set_snap_grid_opacity(options.visible
+        ? options.draft.display.snap_grid_opacity_percent
+        : program.preferences.display.snap_grid_opacity_percent);
     if (options.notification) notifications.post(*options.notification);
     if (!accepted) return;
     if (options.category == WORM_UI_OPTIONS_GENERAL)
@@ -4093,6 +4096,7 @@ int main(int argc, char** argv) {
     initialize_program_preferences(program_preferences, external_player_runtime, application_command_state, notification_sink);
     worm_ui_frontend_select_field_scheme(program_preferences.preferences.display.field_scheme.c_str());
     worm_ui_frontend_set_snap_colored_grid(program_preferences.preferences.display.snap_colored_grid);
+    worm_ui_frontend_set_snap_grid_opacity(program_preferences.preferences.display.snap_grid_opacity_percent);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     resident_loader.set_budget_bytes(static_cast<std::size_t>(program_preferences.preferences.audio.keysound_budget_mib) * 1024ULL * 1024ULL);
 #endif

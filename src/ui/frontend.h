@@ -2043,7 +2043,7 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_NOTE_PALETTE, WORM_UI_OPTIONS_FIELD_LANE_LEGEND,
     WORM_UI_OPTIONS_FIELD_AREA_ALPHA, WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK,
     WORM_UI_OPTIONS_FIELD_MOVE_COLLISION_POLICY, WORM_UI_OPTIONS_FIELD_FIELD_SCHEME,
-    WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID
+    WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID, WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY
 } WormUiOptionsField;
 typedef struct WormUiOptionsDiagnostic {
     WormUiOptionsField field;
@@ -2070,6 +2070,7 @@ typedef struct WormUiOptionsView {
     bool audition_on_click;
     bool confirm_unsaved_close, keep_pitch, frame_timing_overlay;
     bool snap_colored_grid;
+    uint32_t snap_grid_opacity_percent;
     bool minimap_click_moves_paused_playhead;
     uint32_t keysound_budget_mib;
     uint64_t rate_numerator, rate_denominator;
@@ -2934,6 +2935,7 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer);
 // Select a loaded field palette; empty or unknown IDs use Wormedit. Chrome is unaffected.
 bool worm_ui_frontend_select_field_scheme(const char* id);
 void worm_ui_frontend_set_snap_colored_grid(bool enabled);
+void worm_ui_frontend_set_snap_grid_opacity(uint32_t percent);
 // Initialize the same event/action frontend without a window or renderer for integration tests.
 bool worm_ui_frontend_init_headless(int width, int height);
 // Actual in-window chrome height; headless initialization keeps the fallback layout.

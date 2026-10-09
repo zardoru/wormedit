@@ -3123,6 +3123,10 @@ void worm_ui_frontend_set_snap_colored_grid(bool enabled) {
     wormedit::ui::theme::set_snap_colored_grid(enabled);
 }
 
+void worm_ui_frontend_set_snap_grid_opacity(uint32_t percent) {
+    wormedit::ui::theme::set_snap_grid_opacity(percent);
+}
+
 bool worm_ui_frontend_select_field_scheme(const char* id) {
     return wormedit::ui::theme::select_field_scheme(id ? id : "");
 }

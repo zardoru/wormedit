@@ -109,12 +109,24 @@ void field_scheme_picker(nk_context* context, const WormUiOptionsView* view, Wor
         .field = WORM_UI_OPTIONS_FIELD_FIELD_SCHEME};
     snprintf(action->text, sizeof(action->text), "%s", schemes[static_cast<std::size_t>(value)].id.c_str());
 }
+void grid_opacity_slider(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action) {
+    nk_layout_row_dynamic(context, 28, 2);
+    nk_labelf(context, NK_TEXT_LEFT, "Grid opacity · %u%%", view.snap_grid_opacity_percent);
+    if (!view.snap_colored_grid) nk_widget_disable_begin(context);
+    int percent = static_cast<int>(view.snap_grid_opacity_percent);
+    const bool changed = nk_slider_int(context, 0, &percent, 100, 1) != 0;
+    if (!view.snap_colored_grid) nk_widget_disable_end(context);
+    if (!changed || !view.snap_colored_grid || action.kind != WORM_UI_OPTIONS_NONE) return;
+    action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
+        .field = WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY, .integer = static_cast<std::uint64_t>(percent)};
+}
 void appearance_page(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
     field_scheme_picker(context, view, action);
-    edit_toggle(context, *view, *action, "High-contrast snap-colored grid",
+    edit_toggle(context, *view, *action, "Snap-colored grid",
         WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID, view->snap_colored_grid);
+    grid_opacity_slider(context, *view, *action);
     nk_layout_row_dynamic(context, 38, 1);
-    nk_label_wrap(context, "Color grid lines by note subdivision, with stronger red beats. Turn off to use the field theme's original grid.");
+    nk_label_wrap(context, "Opacity previews immediately; Apply saves it. Turn off snap colors to use the field theme's original grid.");
 }
 std::array<WormUiOptionsPageRenderer, WORM_UI_OPTIONS_CATEGORY_COUNT> pages{
     general_page, editor_page, audio_page, appearance_page, wormedit::ui::nuklear::render_shortcuts_page, placeholder};

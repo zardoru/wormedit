@@ -319,3 +319,21 @@ TEST_CASE("Snap-colored grid defaults on and round-trips its saved opt-out", "[p
         expect_preference(!invalid.warnings.empty());
     }
 }
+
+TEST_CASE("Snap grid opacity defaults mild and rejects invalid saved values", "[preferences][snap-grid][opacity]") {
+    expect_preference(parse_program_preferences("{}").preferences.display.snap_grid_opacity_percent == 35);
+    auto values = default_program_preferences();
+    for (const auto percent : {0u, 35u, 100u}) {
+        values.display.snap_grid_opacity_percent = percent;
+        const auto encoded = serialize_program_preferences(values);
+        require_preference(encoded.has_value());
+        expect_preference(parse_program_preferences(*encoded).preferences == values);
+    }
+    for (const auto literal : {"-1", "101", "18446744073709551615", "null", "true", "35.5", "\"50\""}) {
+        const auto parsed = parse_program_preferences("{\"display\":{\"snap_grid_opacity_percent\":" + std::string(literal) + "}}");
+        expect_preference(parsed.preferences.display.snap_grid_opacity_percent == 35);
+        expect_preference(!parsed.warnings.empty());
+    }
+    values.display.snap_grid_opacity_percent = 101;
+    expect_preference(!serialize_program_preferences(values));
+}

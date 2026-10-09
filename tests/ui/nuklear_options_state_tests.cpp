@@ -372,3 +372,28 @@ TEST_CASE("Appearance snap grid opt-out stays draft until Apply and supports Def
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT)));
     expect_options(!options_view(runtime).snap_colored_grid);
 }
+
+TEST_CASE("Grid opacity draft Apply Revert Defaults and wide values stay bounded", "[options][snap-grid][opacity]") {
+    temporary_preferences_t file;
+    program_preferences_runtime_t program{.path = file.directory / "preferences.json"};
+    options_runtime_t runtime;
+    open_options(runtime, program.preferences);
+    select(runtime, program, WORM_UI_OPTIONS_DISPLAY);
+    auto edit = action(runtime, WORM_UI_OPTIONS_EDIT_FIELD, WORM_UI_OPTIONS_DISPLAY);
+    edit.field = WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY;
+    edit.integer = 60;
+    expect_options(!apply_options_action(runtime, program, edit));
+    expect_options(options_view(runtime).snap_grid_opacity_percent == 60);
+    expect_options(program.preferences.display.snap_grid_opacity_percent == 35);
+    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(load_program_preferences(program.path).contents.preferences.display.snap_grid_opacity_percent == 60);
+    edit.revision = runtime.revision;
+    edit.integer = std::numeric_limits<std::uint64_t>::max();
+    expect_options(!apply_options_action(runtime, program, edit));
+    expect_options(options_view(runtime).snap_grid_opacity_percent == 100);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT)));
+    expect_options(options_view(runtime).snap_grid_opacity_percent == 60);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS)));
+    expect_options(options_view(runtime).snap_grid_opacity_percent == 35);
+    expect_options(program.preferences.display.snap_grid_opacity_percent == 60);
+}

@@ -136,8 +136,8 @@ TEST_CASE("Snap grid uses note hues and stronger beats with immediate style inva
     expect_theme(field_generation() == generation);
     const auto red = compose_grid_line_style(1, 1, 4);
     const auto blue = compose_grid_line_style(0, 0, 8);
-    check_color(red.color, nk_rgba(235, 73, 79, 210));
-    check_color(blue.color, nk_rgba(75, 139, 240, 210));
+    check_color(red.color, nk_rgba(235, 73, 79, 89));
+    check_color(blue.color, nk_rgba(75, 139, 240, 89));
     expect_theme(red.thickness > blue.thickness);
     expect_theme(compose_grid_line_style(3, 2, 4).thickness > red.thickness);
     set_snap_colored_grid(false);
@@ -148,5 +148,26 @@ TEST_CASE("Snap grid uses note hues and stronger beats with immediate style inva
     check_color(compose_grid_line_style(0, 0, 8).color, compose(ComposeColor::subgrid_line));
     expect_theme(compose_grid_line_style(3, 2, 4).thickness == 1.2f);
     expect_theme(compose_grid_line_style(0, 0, 8).thickness == 0.7f);
+    set_snap_colored_grid(true);
+}
+
+TEST_CASE("Snap grid opacity spans zero to full and invalidates styles only on changes", "[theme][snap-grid][opacity]") {
+    set_snap_colored_grid(true);
+    set_snap_grid_opacity(35);
+    const auto generation = field_generation();
+    set_snap_grid_opacity(35);
+    expect_theme(field_generation() == generation);
+    set_snap_grid_opacity(0);
+    expect_theme(compose_grid_line_style(1, 1, 4).color.a == 0);
+    expect_theme(field_generation() > generation);
+    set_snap_grid_opacity(100);
+    expect_theme(compose_grid_line_style(1, 1, 4).color.a == 255);
+    const auto full_generation = field_generation();
+    set_snap_grid_opacity(999);
+    expect_theme(field_generation() == full_generation);
+    set_snap_colored_grid(false);
+    set_snap_grid_opacity(0);
+    check_color(compose_grid_line_style(1, 1, 4).color, compose(ComposeColor::beat_line));
+    set_snap_grid_opacity(35);
     set_snap_colored_grid(true);
 }

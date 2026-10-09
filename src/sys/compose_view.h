@@ -383,20 +383,6 @@ struct application_command_state_t {
         wormedit::local_position_t last_position;
     };
     std::optional<bmson_razor_stroke_t> bmson_razor_stroke;
-    struct bmson_marker_move_preview_t {
-        wormedit::chart_id_t chart;
-        std::uint64_t revision{};
-        wormedit::object_id_t event;
-        wormedit::object_id_t source_lane;
-        bool linked_bmson{};
-        std::uint64_t snap_denominator{};
-        wormedit::local_position_t target;
-        // Where the drag started, which Y-lock holds the event to.
-        wormedit::local_position_t origin;
-        std::optional<std::uint64_t> virtual_canvas_row;
-        bool valid{};
-    };
-    std::optional<bmson_marker_move_preview_t> bmson_marker_move_preview;
     bool timing_locked{};
     // Head event of the Kiai area selected on the canvas (0 when none); Delete removes it.
     std::uint64_t kiai_selected_head{};

@@ -1482,3 +1482,33 @@ TEST_CASE("Mixed selection starts a BGM drag without a singular inspector event"
     check_bga(has_input({released, released}, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE, 501));
     check_bga(!any_input_of({released, released}, WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK));
 }
+
+TEST_CASE("Single ordinary BGM drag sends the destination source lane through release",
+          "[frontend-state][event-harness][single-bgm-move]") {
+    stem_lane_fixture_t f;
+    auto& view = f.harness.view().compose;
+    view.note_paint_mode_active = false;
+    f.marker.selected = true;
+    f.marker.bmson_slice = false;
+    f.lanes[0].stem = false;
+    view.selected_bgm_event_id = 501;
+    view.selected_bgm_event_count = 1;
+    (void)f.harness.frame();
+    const auto from = f.at(622, 28);
+    const auto to = f.at(662, 128);
+    const std::array down{mouse_motion(from.first, from.second), mouse_button(true, from.first, from.second)};
+    (void)f.harness.frame(down);
+    const std::array drag{mouse_motion(to.first, to.second)};
+    const auto moving = f.harness.frame(drag);
+    check_bga(has_input({moving, moving}, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_BEGIN, 501));
+    const std::array up{mouse_motion(to.first, to.second), mouse_button(false, to.first, to.second)};
+    const auto released = f.harness.frame(up);
+    const auto& output = released.get();
+    const auto inputs = std::span(output.compose_inputs, output.compose_input_count);
+    const auto found = std::ranges::find_if(inputs, [](const auto& input) {
+        return input.kind == WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE;
+    });
+    REQUIRE(found != inputs.end());
+    check_bga(found->object_id == 501 && found->lane_id == 45);
+    check_bga(!any_input_of({released, released}, WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK));
+}

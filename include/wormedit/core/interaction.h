@@ -175,7 +175,7 @@ struct release_note_duration_gesture_action_t {
     local_position_t reference_end;
 };
 
-// Translate the selected playable notes by the snapped delta between the
+// Translate the selected notes and BGM events by the snapped delta between the
 // reference head and this position. A nonzero reference lane supplies a
 // display-column delta that is applied atomically to every selected note;
 // zero retains its original lane for backwards-compatible vertical moves.
@@ -188,14 +188,20 @@ struct update_note_move_gesture_action_t {
     local_position_t reference_position;
     lane_id_t reference_lane{};
     bool to_bgm{};
+    // For a BGM reference, the ordinary event's preferred source lane; linked stems keep their lane.
     std::optional<object_id_t> preferred_bgm_lane;
+    // Absolute destination in the unmaterialized BMS tail (BGM reference only).
+    std::optional<std::uint64_t> virtual_bgm_row;
 };
 
 struct release_note_move_gesture_action_t {
     local_position_t reference_position;
     lane_id_t reference_lane{};
     bool to_bgm{};
+    // For a BGM reference, the ordinary event's preferred source lane; linked stems keep their lane.
     std::optional<object_id_t> preferred_bgm_lane;
+    // Absolute destination in the unmaterialized BMS tail (BGM reference only).
+    std::optional<std::uint64_t> virtual_bgm_row;
 };
 
 struct note_paint_target_t {
@@ -549,6 +555,8 @@ struct note_move_bgm_preview_t {
     local_position_t position;
     std::optional<local_position_t> end;
     std::optional<resource_id_t> sound;
+    std::optional<std::uint64_t> canvas_begin_row;
+    std::optional<std::uint64_t> canvas_end_row;
     auto operator==(const note_move_bgm_preview_t&) const -> bool = default;
 };
 
@@ -572,6 +580,7 @@ struct pending_note_move_gesture_t {
     std::vector<note_move_bgm_preview_t> bgm_preview;
     std::vector<note_move_bgm_lane_preview_t> new_bgm_lanes;
     std::vector<std::string> bgm_diagnostics;
+    std::optional<std::uint64_t> virtual_bgm_row;
 
     auto operator==(const pending_note_move_gesture_t&) const -> bool = default;
 };

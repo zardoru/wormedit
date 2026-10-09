@@ -1075,7 +1075,9 @@ auto collect_move_proposals(scene_geometry_context_t& context, move_proposals_t&
         return true;
     }
     const auto& pending = *context.view.pending_note_move_gesture;
-    if (pending.document_revision != context.index.document_revision || pending.notes.empty() ||
+    if (pending.document_revision != context.index.document_revision ||
+        (pending.notes.empty() && std::ranges::find(context.index.bgm_events, pending.reference_note,
+            &editor_field_scene_bgm_source_t::event) == context.index.bgm_events.end()) ||
         pending.notes.size() != pending.preview.size() ||
         pending.notes.size() > context.index.notes.size()) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
@@ -2086,8 +2088,9 @@ auto append_bgm_move_previews(scene_geometry_context_t& context, const visible_b
     const auto& pending = *context.view.pending_note_move_gesture;
     for (const auto& preview : pending.bgm_preview) {
         if (!operate()) return false;
-        const auto begin = absolute_row(context.index.measures, preview.position);
-        const auto end = preview.end ? absolute_row(context.index.measures, *preview.end) : begin;
+        const auto begin = preview.canvas_begin_row ? preview.canvas_begin_row : absolute_row(context.index.measures, preview.position);
+        const auto end = preview.canvas_end_row ? preview.canvas_end_row
+            : preview.end ? absolute_row(context.index.measures, *preview.end) : begin;
         if (!begin || !end) return false;
         const auto count = context.scene.bgm_events.size();
         const editor_field_scene_bgm_source_t source{.event = preview.note, .source_lane = preview.lane,

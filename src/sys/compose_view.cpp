@@ -1376,34 +1376,11 @@ void project_compose_marker_draft(const compose_scene_projection_context_t& proj
 void project_compose_marker_previews(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.flattened;
     const auto& scene = projection.scene;
-    const auto& application_state = projection.application_state;
-    const auto& interaction_view = projection.interaction_view;
     auto& view = projection.view;
-    const auto pixels_per_row = projection.pixels_per_row;
-    const auto downscroll = projection.downscroll;
     const auto convert_rect = [](const wormedit::editor_field_rect_t& rect) {
         return WormUiComposeRect{rect.left, rect.top, rect.right, rect.bottom};
     };
     project_compose_marker_draft(projection);
-    if (application_state.bmson_marker_move_preview && pixels_per_row > 0.0) {
-        const auto& preview = *application_state.bmson_marker_move_preview;
-        const auto lane = std::ranges::find_if(scene.bgm_lanes, [&](const auto& candidate) {
-            return candidate.source_lane == preview.source_lane;
-        });
-        const auto row = preview.virtual_canvas_row
-            ? preview.virtual_canvas_row
-            : wormedit::absolute_row(projection.index.measures, preview.target);
-        if (lane != scene.bgm_lanes.end() && row) {
-            const auto y = compose_project_y(*row, pixels_per_row,
-                                             interaction_view.viewport_scroll_pixels,
-                                             view.viewport_height_pixels, downscroll);
-            if (y >= -8.0 && y <= view.viewport_height_pixels + 8.0) {
-                flattened.compose.bgm.move = WormUiComposeBgmMovePreviewView{
-                    .bounds = {lane->bounds.left, y - 8.0, lane->bounds.right, y + 8.0},
-                    .valid = preview.valid};
-            }
-        }
-    }
     if (scene.cursor) {
         flattened.compose.cursor = WormUiComposeCursorView{
             .bounds = convert_rect(scene.cursor->bounds),
@@ -3246,11 +3223,7 @@ void populate_compose_selected_objects_and_drafts(
         application_state.bmson_razor_stroke.reset();
     }
     populate_compose_staged_draft(flattened, application_state, view);
-    if (application_state.bmson_marker_move_preview &&
-        (application_state.bmson_marker_move_preview->chart != chart.id ||
-         application_state.bmson_marker_move_preview->revision != history.document.revision)) {
-        application_state.bmson_marker_move_preview.reset();
-    }
+
     populate_compose_selected_bgm(chart, retained_state, view, cache);
     populate_compose_selected_note(flattened, chart, retained_state, view, cache);
 }

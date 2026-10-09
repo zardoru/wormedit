@@ -1,4 +1,5 @@
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/editor_scene.h>
 #include <wormedit/core/virtual_canvas.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
@@ -6424,4 +6425,178 @@ TEST_CASE("Mixed BMSON drag preserves the retained stem point or rejects both pa
     feedback_check(moved->position == local_position_t{measure_id_t{1}, collision ? 480U : 720U});
     feedback_check(history.document.charts.front().sound_channels.front().events.front().position == moved->position);
     feedback_check(validate_document(history.document).empty());
+}
+
+namespace {
+auto single_bgm_state(document_history_t& history) -> editor_interaction_state_t {
+    auto state = make_state(history);
+    state.selected_notes.clear();
+    state.selected_objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{301}}};
+    return state;
+}
+void check_virtual_bgm_scene(const document_history_t& history, editor_interaction_view_model_t view) {
+    const auto& chart = history.document.charts.front();
+    view.pixels_per_standard_measure = 240;
+    view.viewport_scroll_pixels = 480;
+    view.viewport_height_pixels = 480;
+    const auto built = build_editor_field_scene_index(chart, history.document.revision);
+    feedback_require(std::holds_alternative<editor_field_scene_index_t>(built));
+    const auto scene = make_editor_field_scene(chart, std::get<editor_field_scene_index_t>(built), view,
+        {.field_left_pixels = 0, .field_width_pixels = 400,
+         .bgm_pane_left_pixels = 400, .bgm_pane_width_pixels = 100, .bgm_lane_width_pixels = 40,
+         .include_virtual_bms_tail = true});
+    INFO((scene.diagnostics.empty() ? "No scene diagnostics" : scene.diagnostics.front().message));
+    feedback_require(scene);
+    const auto ghost = std::ranges::find_if(scene.scene->bgm_events, [](const auto& event) { return event.proposal_ghost; });
+    feedback_require(ghost != scene.scene->bgm_events.end());
+    feedback_check(ghost->event == object_id_t{301} && ghost->has_tail && !ghost->move_conflict);
+}
+
+}
+
+TEST_CASE("Single BGM horizontal moves share the gesture and preserve tails under Y-lock",
+          "[unit][core][interaction][move][single-bgm-move]") {
+    auto song = bgm_move_song(true);
+    auto& chart = song.charts.front();
+    chart.bgm_source_lanes.push_back({.id = object_id_t{310}, .name = "BGM 2", .source_order = 1});
+    chart.measures.front().bgm_events.front().end = local_position_t{measure_id_t{1}, 720};
+    auto history = make_document_history(song);
+    auto state = single_bgm_state(history);
+    state.y_lock = true;
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{301}}));
+    const update_note_move_gesture_action_t target{{measure_id_t{2}, 240}, {}, false, object_id_t{310}};
+    feedback_require(dispatch_editor_action(history, state, target));
+    feedback_check(state.pending_note_move_gesture->bgm_preview.front().lane == object_id_t{310});
+    feedback_check(history.undo.empty());
+    feedback_require(dispatch_editor_action(history, state,
+        release_note_move_gesture_action_t{target.reference_position, {}, false, target.preferred_bgm_lane}));
+    const auto* moved = bgm_move_event(history, object_id_t{301});
+    feedback_check(moved->position == local_position_t{measure_id_t{1}, 480});
+    feedback_check(moved->end == local_position_t{measure_id_t{1}, 720});
+    feedback_check(moved->source_lane == object_id_t{310});
+    feedback_check(history.undo.size() == 1 && !state.pending_note_move_gesture);
+    feedback_require(undo_document_command(history));
+    feedback_check(bgm_move_event(history, object_id_t{301})->source_lane == object_id_t{300});
+}
+
+TEST_CASE("Single BGM collision previews the actual newly allocated lane before one Undo",
+          "[unit][core][interaction][move][single-bgm-move]") {
+    auto song = bgm_move_song(true);
+    song.charts.front().measures.front().bgm_events.push_back(
+        {.id = object_id_t{302}, .position = {measure_id_t{1}, 720}, .source_lane = object_id_t{300}});
+    auto history = make_document_history(song);
+    auto state = single_bgm_state(history);
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{301}}));
+    feedback_require(dispatch_editor_action(history, state,
+        update_note_move_gesture_action_t{{measure_id_t{1}, 720}, {}, false, object_id_t{300}}));
+    feedback_require(state.pending_note_move_gesture->new_bgm_lanes.size() == 1);
+    const auto lane = state.pending_note_move_gesture->bgm_preview.front().lane;
+    feedback_check(lane == state.pending_note_move_gesture->new_bgm_lanes.front().id);
+    feedback_check(history.document.charts.front().bgm_source_lanes.size() == 1 && history.undo.empty());
+    feedback_require(dispatch_editor_action(history, state,
+        release_note_move_gesture_action_t{{measure_id_t{1}, 720}, {}, false, object_id_t{300}}));
+    feedback_check(bgm_move_event(history, object_id_t{301})->source_lane == lane);
+    feedback_check(history.undo.size() == 1);
+    feedback_require(undo_document_command(history));
+    feedback_check(history.document.charts.front().bgm_source_lanes.size() == 1);
+}
+
+TEST_CASE("Single BGM virtual move previews without materializing and restores exact chart on Undo",
+          "[unit][core][interaction][move][single-bgm-move][virtual]") {
+    const auto requested_row = GENERATE(std::uint64_t{2400}, std::uint64_t{2500});
+    auto song = bgm_move_song(true);
+    song.charts.front().measures.front().bgm_events.front().end = local_position_t{measure_id_t{1}, 720};
+    auto history = make_document_history(song);
+    song.revision = history.document.revision;
+    auto state = single_bgm_state(history);
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{301}}));
+    const auto updated = dispatch_editor_action(history, state,
+        update_note_move_gesture_action_t{{}, {}, false, object_id_t{300}, requested_row});
+    feedback_require(updated);
+    check_virtual_bgm_scene(history, *updated.view);
+    const auto& preview = state.pending_note_move_gesture->bgm_preview.front();
+    feedback_check(preview.canvas_begin_row == 2400 && preview.canvas_end_row == 2640);
+    feedback_check(history.document.charts.front().measures.size() == 2 && history.undo.empty());
+    feedback_require(dispatch_editor_action(history, state,
+        release_note_move_gesture_action_t{{}, {}, false, object_id_t{300}, requested_row}));
+    const auto index = std::get<measure_index_t>(build_measure_index(history.document.charts.front()));
+    const auto* moved = bgm_move_event(history, object_id_t{301});
+    feedback_check(absolute_row(index, moved->position) == 2400);
+    feedback_check(absolute_row(index, *moved->end) == 2640);
+    feedback_check(history.document.charts.front().measures.size() == 3 && history.undo.size() == 1);
+    feedback_require(undo_document_command(history));
+    auto restored = history.document;
+    restored.revision = song.revision;
+    feedback_check(feedback_document_bytes(restored) == feedback_document_bytes(song));
+}
+
+TEST_CASE("Single BGM invalid lane and virtual overflow reject atomically and recover the preview",
+          "[unit][core][interaction][move][single-bgm-move]") {
+    const auto virtual_overflow = GENERATE(false, true);
+    auto history = make_document_history(bgm_move_song(true));
+    auto state = single_bgm_state(history);
+    const auto original = feedback_document_bytes(history.document);
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{301}}));
+    const update_note_move_gesture_action_t invalid{{measure_id_t{1}, 720}, {}, false,
+        virtual_overflow ? object_id_t{300} : object_id_t{999},
+        virtual_overflow ? std::optional<std::uint64_t>{960000} : std::nullopt};
+    feedback_check(!dispatch_editor_action(history, state, invalid));
+    feedback_check(state.pending_note_move_gesture->bgm_preview.empty());
+    feedback_check(!state.pending_note_move_gesture->bgm_diagnostics.empty());
+    feedback_require(dispatch_editor_action(history, state, update_note_move_gesture_action_t{{measure_id_t{1}, 720}}));
+    feedback_check(state.pending_note_move_gesture->bgm_diagnostics.empty());
+    feedback_check(!dispatch_editor_action(history, state,
+        release_note_move_gesture_action_t{invalid.reference_position, {}, false, invalid.preferred_bgm_lane, invalid.virtual_bgm_row}));
+    feedback_check(!state.pending_note_move_gesture && history.undo.empty());
+    feedback_check(feedback_document_bytes(history.document) == original);
+}
+
+TEST_CASE("Single stem BGM uses shared move policy and rejects virtual targets without breaking links",
+          "[unit][core][interaction][move][single-bgm-move][bmson]") {
+    const auto virtual_target = GENERATE(false, true);
+    auto song = bgm_move_song(true);
+    song.audio_assets = {{.id = asset_id_t{10}, .stream = {48000, 2, 480000, true}}};
+    song.resources = {{.id = resource_id_t{20}, .asset = asset_id_t{10}, .roles = {resource_role_t::sample}}};
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bmson;
+    chart.bpms = {{.id = object_id_t{500}, .position = {measure_id_t{1}, 0}, .beats_per_minute = {120, 1}}};
+    chart.bgm_source_lanes.front().stem_channel = object_id_t{400};
+    chart.bgm_source_lanes.push_back({.id = object_id_t{310}, .source_order = 1});
+    auto& bgm = chart.measures.front().bgm_events.front();
+    bgm.sound = resource_id_t{20};
+    bgm.sound_channel_event = object_id_t{402};
+    chart.sound_channels = {{.id = object_id_t{400}, .name = "Stem",
+        .source_clip = {.id = clip_id_t{401}, .source = asset_id_t{10}, .end_frame = 480000},
+        .events = {{.id = object_id_t{402}, .position = bgm.position, .playable = false}}}};
+    auto history = make_document_history(song);
+    auto state = single_bgm_state(history);
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{301}}));
+    const auto moved = dispatch_editor_action(history, state,
+        release_note_move_gesture_action_t{{measure_id_t{1}, 720}, {}, false, object_id_t{310},
+            virtual_target ? std::optional<std::uint64_t>{2400} : std::nullopt});
+    feedback_check(moved.accepted != virtual_target);
+    const auto* event = bgm_move_event(history, object_id_t{301});
+    feedback_check(event->source_lane == object_id_t{300} && event->sound_channel_event == object_id_t{402});
+    feedback_check(event->position == local_position_t{measure_id_t{1}, virtual_target ? 480U : 720U});
+    feedback_check(history.document.charts.front().sound_channels.front().events.front().position == event->position);
+    feedback_check(history.undo.size() == (virtual_target ? 0 : 1));
+    feedback_check(validate_document(history.document).empty() && !state.pending_note_move_gesture);
+}
+
+TEST_CASE("Single BGM cancel and stale release discard shared previews without materializing measures",
+          "[unit][core][interaction][move][single-bgm-move][virtual]") {
+    const auto stale = GENERATE(false, true);
+    auto history = make_document_history(bgm_move_song(true));
+    auto state = single_bgm_state(history);
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{301}}));
+    feedback_require(dispatch_editor_action(history, state,
+        update_note_move_gesture_action_t{{}, {}, false, object_id_t{300}, 2400}));
+    if (stale) {
+        ++history.document.revision;
+        feedback_check(!dispatch_editor_action(history, state,
+            release_note_move_gesture_action_t{{}, {}, false, object_id_t{300}, 2400}));
+    } else feedback_require(dispatch_editor_action(history, state, cancel_editor_gesture_action_t{}));
+    feedback_check(!state.pending_note_move_gesture && history.undo.empty());
+    feedback_check(history.document.charts.front().measures.size() == 2);
+    feedback_check(bgm_move_event(history, object_id_t{301})->position == local_position_t{measure_id_t{1}, 480});
 }

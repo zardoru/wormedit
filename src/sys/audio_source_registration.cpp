@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <system_error>
 #include <unordered_set>
 #include <mutex>
 #include <optional>
@@ -48,26 +49,47 @@ auto asset_registration(const song_document_t& document, const audio_asset_t& as
     };
 }
 
+// Probe order follows registration order: the song (music-role resources) first, then
+// keysounds by first use from the start of the chart, then anything unreferenced.
+auto probe_order(const song_document_t& document) -> std::vector<const audio_asset_t*> {
+    std::vector<asset_id_t> ids;
+    for (const auto& resource : document.resources) {
+        if (std::ranges::find(resource.roles, resource_role_t::music) != resource.roles.end())
+            ids.push_back(resource.asset);
+    }
+    for (const auto asset : first_use_asset_order(document)) ids.push_back(asset);
+    std::vector<const audio_asset_t*> order;
+    std::unordered_set<std::uint64_t> seen;
+    for (const auto id : ids) {
+        const auto found = std::ranges::find(document.audio_assets, id, &audio_asset_t::id);
+        if (found != document.audio_assets.end() && seen.insert(id.value).second)
+            order.push_back(&*found);
+    }
+    return order;
+}
+
+// Registers one asset; false when the registry rejects it.
+auto register_one_asset(const song_document_t& document, const audio_asset_t& asset,
+                        std::filesystem::path resolved_path, std::uint64_t generation,
+                        audio::decoded_source_registry_t& sources, bool defer) -> bool {
+    auto registration = asset_registration(document, asset, std::move(resolved_path), generation);
+    const auto registered = defer ? sources.register_source_pending(std::move(registration))
+                                  : sources.register_source(std::move(registration));
+    return defer ? registered.status == audio::source_registration_status_t::pending
+                 : static_cast<bool>(registered);
+}
+
 auto register_assets(const song_document_t& document, const std::filesystem::path& asset_base,
                      std::uint64_t generation, audio::decoded_source_registry_t& sources,
                      bool defer) -> std::size_t {
     // Every authored asset plus the three generated metronome accents must fit.
     sources.ensure_source_capacity(document.audio_assets.size() + 3);
     std::size_t unavailable{};
-    for (const auto& asset : document.audio_assets) {
-        const auto resolved_path = resolve_asset_path(asset, asset_base);
-        if (!resolved_path) {
+    for (const auto* asset : probe_order(document)) {
+        const auto resolved_path = resolve_asset_path(*asset, asset_base);
+        if (!resolved_path ||
+            !register_one_asset(document, *asset, *resolved_path, generation, sources, defer))
             ++unavailable;
-            continue;
-        }
-        auto registration = asset_registration(document, asset, *resolved_path, generation);
-        const auto registered = defer ? sources.register_source_pending(std::move(registration))
-                                      : sources.register_source(std::move(registration));
-        const auto accepted = defer ? registered.status == audio::source_registration_status_t::pending
-                                    : static_cast<bool>(registered);
-        if (!accepted) {
-            ++unavailable;
-        }
     }
     return unavailable;
 }
@@ -499,17 +521,112 @@ void resident_sample_loader_t::start(const song_document_t& document,
     if (!added || !scheduler_.submit(std::move(graph))) state->running = false;
 }
 
+namespace {
+
+using resolved_inventory_t = std::vector<audition_asset_entry_t>;
+
+// Resolved paths (empty when unusable), so a Save As that only moves the base is not a change.
+auto resolved_inventory(const song_document_t& document, const std::filesystem::path& asset_base)
+    -> resolved_inventory_t {
+    resolved_inventory_t inventory;
+    inventory.reserve(document.audio_assets.size());
+    for (const auto& asset : document.audio_assets) {
+        inventory.emplace_back(asset.id,
+                               resolve_asset_path(asset, asset_base).value_or(std::filesystem::path{}));
+    }
+    return inventory;
+}
+
+auto same_file(const std::filesystem::path& left, const std::filesystem::path& right) -> bool {
+    std::error_code error;
+    return std::filesystem::equivalent(left, right, error) && !error;
+}
+
+struct source_reconciliation_plan_t {
+    std::vector<audition_asset_entry_t> rebase;  // same file under a new path
+    std::vector<audition_asset_entry_t> add;     // register (new, or replacing a changed file)
+    std::vector<asset_id_t> remove;              // drop the old registration
+    std::size_t unresolved{};
+    [[nodiscard]] auto changes_sources() const -> bool { return !add.empty() || !remove.empty(); }
+};
+
+void plan_asset(const audio::decoded_source_registry_t& sources, const audition_asset_entry_t& next,
+                source_reconciliation_plan_t& plan) {
+    const auto& [id, path] = next;
+    const auto registered = sources.source_path(id);
+    if (path.empty()) ++plan.unresolved;
+    if (registered && *registered == path) return;
+    if (registered && !path.empty() && same_file(*registered, path)) {
+        plan.rebase.push_back(next);
+        return;
+    }
+    if (registered) plan.remove.push_back(id);
+    if (!path.empty()) plan.add.push_back(next);
+}
+
+auto plan_source_reconciliation(const audition_source_reconciliation_context_t& context,
+                                const resolved_inventory_t& next_inventory)
+    -> source_reconciliation_plan_t {
+    source_reconciliation_plan_t plan;
+    for (const auto& next : next_inventory) plan_asset(context.sources, next, plan);
+    for (const auto& [id, path] : context.asset_inventory) {
+        const auto kept = std::ranges::find(next_inventory, id, &audition_asset_entry_t::first);
+        if (kept == next_inventory.end()) plan.remove.push_back(id);
+    }
+    return plan;
+}
+
+auto apply_source_plan(const audition_source_reconciliation_context_t& context,
+                       const source_reconciliation_plan_t& plan) -> std::size_t {
+    for (const auto asset : plan.remove) static_cast<void>(context.sources.remove(asset));
+    context.sources.ensure_source_capacity(context.document.audio_assets.size() + 3);
+    std::size_t unavailable = plan.unresolved;
+    for (const auto& [id, path] : plan.add) {
+        const auto found = std::ranges::find(context.document.audio_assets, id, &audio_asset_t::id);
+        if (found == context.document.audio_assets.end() ||
+            !register_one_asset(context.document, *found, path, context.generation, context.sources,
+                                context.probe_scheduler != nullptr))
+            ++unavailable;
+    }
+    return unavailable;
+}
+
+// Same project, some assets added/removed/changed: keep every unchanged binding (identity and
+// decoded data) and only touch what differs. Unchanged files are never re-probed.
+auto reconcile_in_place(audition_source_reconciliation_context_t& context,
+                        resolved_inventory_t next_inventory, bool stop_playback)
+    -> std::optional<std::size_t> {
+    const auto plan = plan_source_reconciliation(context, next_inventory);
+    for (const auto& [id, path] : plan.rebase) static_cast<void>(context.sources.rebase_source(id, path));
+    context.asset_inventory = std::move(next_inventory);
+    if (!plan.changes_sources()) return std::nullopt;
+    if (stop_playback) {
+        context.stop_playback();
+        context.invalidate_preview();
+    }
+    context.reset_waveform();
+    if (context.resident_loader != nullptr) context.resident_loader->cancel();
+    ++context.generation;
+    const auto unavailable = apply_source_plan(context, plan);
+    if (context.probe_scheduler != nullptr) {
+        start_audition_source_probes(context.sources, *context.probe_scheduler);
+    }
+    if (context.resident_loader != nullptr && context.probe_scheduler != nullptr) {
+        context.resident_loader->start(context.document, context.asset_base, context.generation,
+                                       context.sources);
+    }
+    return unavailable;
+}
+
+} // namespace
+
 auto reconcile_audition_sources(
     audition_source_reconciliation_context_t context, bool stop_playback)
     -> std::optional<std::size_t> {
-    std::vector<audition_asset_entry_t> next_inventory;
-    next_inventory.reserve(context.document.audio_assets.size());
-    for (const auto& asset : context.document.audio_assets) {
-        next_inventory.emplace_back(asset.id, asset.source_path);
-    }
-    if (context.source_project == context.document.id &&
-        context.asset_inventory == next_inventory) {
-        return std::nullopt;
+    auto next_inventory = resolved_inventory(context.document, context.asset_base);
+    if (context.source_project == context.document.id) {
+        if (context.asset_inventory == next_inventory) return std::nullopt;
+        return reconcile_in_place(context, std::move(next_inventory), stop_playback);
     }
     if (stop_playback) {
         context.stop_playback();

@@ -165,6 +165,98 @@ TEST_CASE("reconciling an unchanged audio inventory does not register or probe a
     CHECK(sources.pending_count() == 0);
 }
 
+namespace {
+struct save_as_fixture_t {
+    wormedit::song_document_t document;
+    std::filesystem::path original_base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
+    std::filesystem::path alias_base;
+    wormedit::audio::decoded_source_registry_t sources;
+    std::vector<wormedit::audio::preview_metronome_source_binding_t> metronome;
+    std::optional<wormedit::song_id_t> source_project;
+    std::vector<wormedit::sys::audition_asset_entry_t> inventory;
+    std::uint64_t generation{};
+    int stops = 0;
+
+    save_as_fixture_t() {
+        document.id = wormedit::song_id_t{80};
+        document.audio_assets.push_back({.id = wormedit::asset_id_t{1}, .source_path = "keysound-c4.ogg"});
+        document.audio_assets.push_back({.id = wormedit::asset_id_t{2}, .source_path = "keysound-e4.ogg"});
+        alias_base = std::filesystem::temp_directory_path() / "wormedit-save-as-alias-80";
+        std::error_code error;
+        std::filesystem::remove_all(alias_base, error);
+        std::filesystem::create_directory_symlink(original_base, alias_base, error);
+    }
+    ~save_as_fixture_t() {
+        std::error_code error;
+        std::filesystem::remove_all(alias_base, error);
+    }
+    auto reconcile(const std::filesystem::path& base) {
+        return wormedit::sys::reconcile_audition_sources(
+            {document, base, source_project, inventory, generation, sources, metronome,
+             [&] { ++stops; }, [] {}, [] {}, nullptr},
+            true);
+    }
+};
+} // namespace
+
+TEST_CASE("Save As rebases unchanged audio sources in place and re-probes only changed files",
+          "[integration][sys][audio-source-registration][lazy]") {
+    save_as_fixture_t fixture;
+    REQUIRE(fixture.reconcile(fixture.original_base) == std::optional<std::size_t>{0});
+    const auto first = fixture.sources.binding(wormedit::asset_id_t{1});
+    const auto second = fixture.sources.binding(wormedit::asset_id_t{2});
+    REQUIRE(first);
+    REQUIRE(second);
+    const auto generation = fixture.generation;
+    const auto stops = fixture.stops;
+
+    // Save As: the same files now resolve through a different project directory.
+    CHECK_FALSE(fixture.reconcile(fixture.alias_base).has_value());
+    CHECK(fixture.generation == generation);
+    CHECK(fixture.stops == stops);
+    CHECK(fixture.sources.pending_count() == 0);
+    CHECK(fixture.sources.binding(wormedit::asset_id_t{1}) == first);
+    CHECK(fixture.sources.binding(wormedit::asset_id_t{2}) == second);
+    CHECK(fixture.sources.source_path(wormedit::asset_id_t{1}) ==
+          (fixture.alias_base / "keysound-c4.ogg").lexically_normal());
+
+    // One asset now points at a different file: only that one is registered (and probed) again.
+    fixture.document.audio_assets[1].source_path = "keysound-g4.ogg";
+    REQUIRE(fixture.reconcile(fixture.alias_base) == std::optional<std::size_t>{0});
+    CHECK(fixture.generation == generation + 1);
+    CHECK(fixture.sources.binding(wormedit::asset_id_t{1}) == first);
+    const auto changed = fixture.sources.binding(wormedit::asset_id_t{2});
+    REQUIRE(changed);
+    CHECK(changed->source != second->source);
+}
+
+TEST_CASE("audio sources are registered song first, then keysounds by first use",
+          "[unit][sys][audio-source-registration][lazy]") {
+    using namespace wormedit;
+    song_document_t document;
+    document.id = song_id_t{81};
+    for (std::uint64_t id = 1; id <= 4; ++id) {
+        document.audio_assets.push_back({.id = asset_id_t{id}, .source_path = "keysound-c4.ogg"});
+        document.resources.push_back({.id = resource_id_t{10 + id}, .asset = asset_id_t{id}});
+    }
+    document.resources[3].roles.push_back(resource_role_t::music);
+    chart_document_t chart;
+    measure_chunk_t measure;
+    measure.notes.push_back({.position = {measure_id_t{1}, 0}, .sound = resource_id_t{13}});
+    chart.measures.push_back(std::move(measure));
+    document.charts.push_back(std::move(chart));
+    audio::decoded_source_registry_t sources;
+    std::vector<audio::preview_metronome_source_binding_t> metronome;
+    const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
+    REQUIRE(sys::register_audition_sources_deferred(document, base, 1, sources, metronome) == 0);
+    // Probing claims the oldest pending source first, so completing one probe at a time
+    // settles the song, then the first-used keysound, then the rest.
+    for (const auto expected : {asset_id_t{4}, asset_id_t{3}, asset_id_t{1}, asset_id_t{2}}) {
+        REQUIRE(sources.probe_next_pending());
+        CHECK(sources.binding(expected).has_value());
+    }
+}
+
 TEST_CASE("reconciling after linking an absolute asset into an unsaved project registers it",
           "[integration][sys][audio-source-registration][lazy]") {
     wormedit::song_document_t document;
@@ -268,9 +360,9 @@ TEST_CASE("the resident loader decodes keysounds once and rebinds them on reconc
     sources.await_pending();
     const auto rebound = sources.binding(wormedit::asset_id_t{5});
     expect_registration(rebound.has_value());
-    expect_registration(rebound->source != binding->source);
+    // The unchanged keysound keeps its identity, so its resident data stays valid.
+    expect_registration(rebound->source == binding->source);
     expect_registration(store.snapshot()->find(rebound->source) != nullptr);
-    expect_registration(store.snapshot()->find(binding->source) == nullptr);
     expect_registration(store.snapshot()->size() == 2);
     expect_registration(store.stats().decode_count == 2);
 }

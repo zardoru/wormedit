@@ -109,6 +109,11 @@ class decoded_source_registry_t {
     // Open decoders of long sources (see long_source_frames). They stay open because
     // reopening one rescans the file, and they do not count against the bound above.
     [[nodiscard]] auto streaming_decoder_count() const -> std::size_t;
+    // Path an authored asset is registered under, or nullopt when it is not registered.
+    [[nodiscard]] auto source_path(asset_id_t asset) const -> std::optional<std::filesystem::path>;
+    // Points an authored asset at a new path for the same file. Identity, binding, probe state
+    // and any open decoder are kept, so nothing is re-probed. False if the asset is unknown.
+    [[nodiscard]] auto rebase_source(asset_id_t asset, std::filesystem::path path) -> bool;
     [[nodiscard]] auto register_generated_source(generated_source_registration_t registration)
         -> source_registration_result_t;
     [[nodiscard]] auto remove(asset_id_t asset) -> bool;

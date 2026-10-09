@@ -41,6 +41,8 @@ struct DialogOptions {
     // Escape cancels. Modal dialogs default to true; a non-modal tool leaves Escape to the
     // workspace unless it opts in.
     std::optional<bool> escape_cancels{};
+    // The dialog ignores pointer and key input this frame (a closing click still being released).
+    bool no_input{};
     // Enter triggers the primary button. Same default; a tool with text fields leaves it off.
     std::optional<bool> enter_confirms{};
 };

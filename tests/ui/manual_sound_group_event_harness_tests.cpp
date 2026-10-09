@@ -138,6 +138,7 @@ TEST_CASE("Rejecting every sound group suggestion closes without an edit",
     review.candidates = {{.id = 9, .name = "hat01"}, {.id = 4, .name = "hat02"}};
     review.groups = {{.name = "hat", .accepted = true, .member_ids = {9, 4}}};
     (void)harness.frame();
+    (void)harness.frame();  // A dialog fits its content on its second frame.
     const auto leave = harness.drawn_text_center("Leave all ungrouped");
     require_event(leave.has_value());
     auto ignored = click_at(harness, leave->first, leave->second);
@@ -184,4 +185,47 @@ TEST_CASE("Sounds right-click menu opens Group review without editing on the pre
     (void)harness.frame();
     check_event(state.keysound_group_review.open);
     check_event(state.keysound_group_review.manual);
+}
+
+TEST_CASE("Group selected sounds dialog has Cancel, Confirm with Enter, and no title-repeating label",
+          "[frontend-state][event-harness][sound-groups][dialog]") {
+    const auto open_manual = [](nuklear_event_harness_t& harness) -> auto& {
+        auto& view = harness.view().compose;
+        view.keysounds_available = true;
+        (void)harness.frame();
+        auto& review = worm_ui_nuklear_compose_state().keysound_group_review;
+        review.open = true;
+        review.manual = true;
+        review.project_id = view.project_id;
+        review.chart_id = view.chart_id;
+        review.document_revision = view.document_revision;
+        review.candidates = {{.id = 9, .name = "hat01"}};
+        std::snprintf(review.manual_group_name.data(), review.manual_group_name.size(), "%s", "Hats");
+        (void)harness.frame();
+        (void)harness.frame();
+        return review;
+    };
+    {
+        nuklear_event_harness_t harness{1280, 900};
+        auto& review = open_manual(harness);
+        const auto& text = harness.drawn_text();
+        const auto first = text.find("Group selected sounds");
+        check_event(first != std::string::npos && text.find("Group selected sounds", first + 1) == std::string::npos);
+        const auto cancel = harness.drawn_text_center("Cancel");
+        require_event(cancel.has_value());
+        (void)click_at(harness, cancel->first, cancel->second);
+        check_event(!review.open);
+    }
+    {
+        nuklear_event_harness_t harness{1280, 900};
+        auto& review = open_manual(harness);
+        SDL_Event enter{};
+        enter.type = SDL_EVENT_KEY_DOWN;
+        enter.key.key = SDLK_RETURN;
+        enter.key.scancode = SDL_SCANCODE_RETURN;
+        enter.key.down = true;
+        const auto action = harness.frame(std::array{enter});
+        check_event(action.get().compose_action == WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS);
+        check_event(!review.open);
+    }
 }

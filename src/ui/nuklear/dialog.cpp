@@ -91,7 +91,8 @@ auto dialog_begin(Dialog& dialog, nk_context* context, const char* id, const cha
     window.border = 0.0f;
     window.padding = nk_vec2(dialog_padding, dialog_padding);
     window.spacing = nk_vec2(dialog_spacing, dialog_spacing);
-    dialog.saved_window_flags = NK_WINDOW_BORDER | (clamped ? 0 : NK_WINDOW_NO_SCROLLBAR);
+    dialog.saved_window_flags = NK_WINDOW_BORDER | (clamped ? 0 : NK_WINDOW_NO_SCROLLBAR) |
+                                (options.no_input ? NK_WINDOW_NO_INPUT : 0);
     nk_window_show(context, id, NK_SHOWN);
     // A modal keeps focus; a tool window is focused by Nuklear when it first appears.
     if (options.modal) nk_window_set_focus(context, id);

@@ -46,6 +46,62 @@ void worm_ui_nuklear_toggle_project_chart_selection(project_chart_selection_t& s
     } else if (id && state.count < state.ids.size()) state.ids[state.count++] = id;
 }
 
+namespace {
+
+auto shown_index(std::span<const std::uint64_t> shown, std::uint64_t id) -> std::size_t {
+    return static_cast<std::size_t>(std::find(shown.begin(), shown.end(), id) - shown.begin());
+}
+
+void select_only(project_chart_selection_t& state, std::uint64_t id) {
+    state.ids[0] = id;
+    state.count = id ? 1 : 0;
+}
+
+void select_range(project_chart_selection_t& state, std::span<const std::uint64_t> shown,
+                  std::size_t first, std::size_t last) {
+    state.count = 0;
+    for (auto index = std::min(first, last); index <= std::max(first, last); ++index)
+        if (shown[index] && state.count < state.ids.size()) state.ids[state.count++] = shown[index];
+}
+
+} // namespace
+
+void worm_ui_nuklear_click_project_chart(project_chart_selection_t& state,
+    std::span<const std::uint64_t> shown, std::uint64_t id, bool ctrl, bool shift) {
+    if (!id) return;
+    const auto found = shown_index(shown, id);
+    const bool anchor_shown = state.anchor && shown_index(shown, state.anchor) < shown.size();
+    if (shift && anchor_shown && found < shown.size()) {
+        select_range(state, shown, shown_index(shown, state.anchor), found);
+        return;
+    }
+    if (ctrl) {
+        worm_ui_nuklear_toggle_project_chart_selection(state, id);
+    } else {
+        select_only(state, id);
+    }
+    state.anchor = id;
+}
+
+void worm_ui_nuklear_toggle_all_project_charts(project_chart_selection_t& state,
+    std::span<const std::uint64_t> shown) {
+    const auto summary = worm_ui_nuklear_project_selection_summary(state, shown);
+    state.count = 0;
+    if (summary == project_selection_summary_t::all) return;
+    for (const auto id : shown) {
+        if (id && state.count < state.ids.size()) state.ids[state.count++] = id;
+    }
+}
+
+project_selection_summary_t worm_ui_nuklear_project_selection_summary(
+    const project_chart_selection_t& state, std::span<const std::uint64_t> shown) {
+    std::size_t selected = 0;
+    for (const auto id : shown)
+        if (worm_ui_nuklear_project_chart_selected(state, id)) ++selected;
+    if (selected == 0) return project_selection_summary_t::none;
+    return selected == shown.size() ? project_selection_summary_t::all : project_selection_summary_t::partial;
+}
+
 void worm_ui_nuklear_reconcile_project_selection(project_chart_selection_t& state, const WormUiSetupView& view) {
     if (state.song != view.song_id || state.session_generation != view.session_generation) {
         state = {.song = view.song_id, .session_generation = view.session_generation};
@@ -59,6 +115,7 @@ void worm_ui_nuklear_reconcile_project_selection(project_chart_selection_t& stat
     for (std::size_t index = 0; index < state.count; ++index)
         if (exists(state.ids[index])) state.ids[kept++] = state.ids[index];
     state.count = kept;
+    if (!exists(state.anchor)) state.anchor = 0;
     if (!exists(state.pending_delete) || state.pending_delete_revision != view.document_revision)
         state.pending_delete = 0;
 }

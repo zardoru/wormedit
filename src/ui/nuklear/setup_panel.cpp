@@ -1,11 +1,18 @@
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/setup_panel.h"
 #include "ui/nuklear/setup_state.h"
+#include "ui/nuklear/tooltip.h"
 
 #include "wormedit/nuklear_config.h"
 
 #include <array>
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <string>
+#include <utility>
+
+#include <SDL3/SDL_keyboard.h>
 
 namespace {
 
@@ -88,7 +95,8 @@ void render_delete_confirmation(nk_context* context, const WormUiSetupView& view
 void render_chart_actions(nk_context* context, const WormUiSetupView& view,
     const WormUiProjectChartRow& row, WormUiWorkspaceAction& action) {
     nk_layout_row_dynamic(context, 25, 6);
-    if (nk_button_label(context, "Open in Compose")) publish_chart_action(view, action, WORM_UI_PROJECT_CHART_OPEN, row.chart_id);
+    if (wormedit::ui::chrome::Button{"Open", wormedit::ui::chrome::ButtonKind::secondary, "Open in Compose"}.render(context))
+        publish_chart_action(view, action, WORM_UI_PROJECT_CHART_OPEN, row.chart_id);
     if (nk_button_label(context, "Duplicate")) publish_chart_action(view, action, WORM_UI_PROJECT_CHART_DUPLICATE, row.chart_id);
     if (nk_button_label(context, "Delete")) {
         project_state.selection.pending_delete = row.chart_id;
@@ -100,19 +108,110 @@ void render_chart_actions(nk_context* context, const WormUiSetupView& view,
     render_delete_confirmation(context, view, row, action);
 }
 
+// Fixed table template: grip, checkbox, eight text columns sharing the rest, and actions.
+constexpr float grip_width = 18.0f;
+constexpr float checkbox_width = 26.0f;
+constexpr float actions_width = 64.0f;
+constexpr float cell_padding = 6.0f;
+// Name, Author, Rating, Mode, Keys, Groups, Notes, Length.
+constexpr std::array<float, 8> text_shares{22.0f, 18.0f, 8.0f, 12.0f, 6.0f, 14.0f, 8.0f, 8.0f};
+constexpr std::size_t column_count = 11;
+using column_widths_t = std::array<float, 8>;
+using table_ratios_t = std::array<float, column_count>;
+
+auto column_widths(float available) -> column_widths_t {
+    const auto flexible = std::max(0.0f, available - grip_width - checkbox_width - actions_width);
+    constexpr float share_total = 96.0f;
+    column_widths_t widths{};
+    for (std::size_t index = 0; index < widths.size(); ++index)
+        widths[index] = flexible * text_shares[index] / share_total;
+    return widths;
+}
+
+// Every table row uses the same fractions of the panel width, so the header and rows align.
+auto table_ratios(float available, const column_widths_t& widths) -> table_ratios_t {
+    const auto total = std::max(1.0f, available);
+    table_ratios_t ratios{grip_width / total, checkbox_width / total};
+    for (std::size_t index = 0; index < widths.size(); ++index) ratios[index + 2] = widths[index] / total;
+    ratios[column_count - 1] = actions_width / total;
+    return ratios;
+}
+
+void begin_table_row(nk_context* context, float height, const table_ratios_t& ratios) {
+    nk_layout_row(context, NK_DYNAMIC, height, static_cast<int>(column_count), ratios.data());
+}
+
+// Shortens to the cell with "…" and returns the text to draw; a fit leaves it unchanged.
+auto fit_cell_text(const nk_user_font* font, const char* text, float width) -> std::string {
+    constexpr const char* ellipsis = "\xE2\x80\xA6";
+    const auto length = static_cast<int>(std::strlen(text));
+    const float budget = width - cell_padding;
+    if (font->width(font->userdata, font->height, text, length) <= budget) return text;
+    const auto ellipsis_width = font->width(font->userdata, font->height, ellipsis, 3);
+    int keep = 0;
+    for (int end = 1; end < length; ++end) {
+        if ((static_cast<unsigned char>(text[end]) & 0xC0U) == 0x80U) continue;
+        if (font->width(font->userdata, font->height, text, end) + ellipsis_width > budget) break;
+        keep = end;
+    }
+    return std::string(text, static_cast<std::size_t>(keep)) + ellipsis;
+}
+
+// A text cell that ellipsizes and shows the full text in a tooltip when it was shortened.
+void text_cell(nk_context* context, const char* text, float width) {
+    const auto shown = fit_cell_text(context->style.font, text, width);
+    nk_label(context, shown.c_str(), NK_TEXT_LEFT);
+    if (shown != text && nk_widget_is_hovered(context))
+        wormedit::ui::nuklear::tooltip::text(context, text);
+}
+
+auto shift_or_ctrl(int modifiers) -> std::pair<bool, bool> {
+    return {(modifiers & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0, (modifiers & SDL_KMOD_SHIFT) != 0};
+}
+
+void render_table_header(nk_context* context, const std::array<std::uint64_t, WORM_UI_PROJECT_CHART_CAPACITY>& shown,
+    std::size_t shown_count, const column_widths_t& widths, const table_ratios_t& ratios) {
+    const auto summary = worm_ui_nuklear_project_selection_summary(project_state.selection, {shown.data(), shown_count});
+    begin_table_row(context, 22, ratios);
+    nk_label(context, "", NK_TEXT_LEFT);
+    const auto state = summary == project_selection_summary_t::all ? wormedit::ui::chrome::CheckState::on
+        : summary == project_selection_summary_t::partial ? wormedit::ui::chrome::CheckState::mixed
+        : wormedit::ui::chrome::CheckState::off;
+    if (wormedit::ui::chrome::Checkbox{"", state, "Select all charts"}.render(context))
+        worm_ui_nuklear_toggle_all_project_charts(project_state.selection, {shown.data(), shown_count});
+    std::size_t column = 0;
+    for (const auto* heading : {"Name", "Author", "Rating", "Mode", "Keys", "Groups", "Notes", "Length"})
+        text_cell(context, heading, widths[column++]);
+    nk_label(context, "", NK_TEXT_LEFT);
+}
+
 void render_chart_row(nk_context* context, const WormUiSetupView& view,
-    const WormUiProjectChartRow& row, WormUiWorkspaceAction& action) {
-    nk_layout_row_dynamic(context, 26, 8);
-    nk_bool selected = worm_ui_nuklear_project_chart_selected(project_state.selection, row.chart_id);
-    if (nk_checkbox_label(context, row.name, &selected))
-        worm_ui_nuklear_toggle_project_chart_selection(project_state.selection, row.chart_id);
-    nk_label(context, row.author, NK_TEXT_LEFT);
-    nk_label(context, row.rating, NK_TEXT_LEFT);
-    nk_label(context, row.mode, NK_TEXT_LEFT);
-    nk_labelf(context, NK_TEXT_LEFT, "%u keys", row.key_count);
-    nk_label(context, row.output_groups, NK_TEXT_LEFT);
-    nk_labelf(context, NK_TEXT_LEFT, "%llu notes", static_cast<unsigned long long>(row.note_count));
-    nk_label(context, row.length, NK_TEXT_LEFT);
+    const WormUiProjectChartRow& row, const std::array<std::uint64_t, WORM_UI_PROJECT_CHART_CAPACITY>& shown,
+    std::size_t shown_count, const column_widths_t& widths, const table_ratios_t& ratios,
+    WormUiWorkspaceAction& action) {
+    begin_table_row(context, 26, ratios);
+    nk_label(context, "", NK_TEXT_LEFT);
+    const bool selected = worm_ui_nuklear_project_chart_selected(project_state.selection, row.chart_id);
+    if (wormedit::ui::chrome::Checkbox{"", selected ? wormedit::ui::chrome::CheckState::on : wormedit::ui::chrome::CheckState::off,
+            "Select chart"}.render(context))
+        worm_ui_nuklear_click_project_chart(project_state.selection, {shown.data(), shown_count}, row.chart_id, true, false);
+    nk_bool name_selected = selected;
+    const auto name = fit_cell_text(context->style.font, row.name, widths[0]);
+    if (nk_selectable_label(context, name.c_str(), NK_TEXT_LEFT, &name_selected)) {
+        const auto modifiers = SDL_GetModState();
+        const auto [ctrl, shift] = shift_or_ctrl(modifiers);
+        worm_ui_nuklear_click_project_chart(project_state.selection, {shown.data(), shown_count}, row.chart_id, ctrl, shift);
+    }
+    if (name != row.name && nk_widget_is_hovered(context))
+        wormedit::ui::nuklear::tooltip::text(context, row.name);
+    text_cell(context, row.author, widths[1]);
+    text_cell(context, row.rating, widths[2]);
+    text_cell(context, row.mode, widths[3]);
+    nk_labelf(context, NK_TEXT_LEFT, "%u", row.key_count);
+    text_cell(context, row.output_groups, widths[5]);
+    nk_labelf(context, NK_TEXT_LEFT, "%llu", static_cast<unsigned long long>(row.note_count));
+    text_cell(context, row.length, widths[7]);
+    nk_label(context, "", NK_TEXT_LEFT);
     render_chart_actions(context, view, row, action);
     if (row.diagnostic && row.diagnostic[0]) {
         nk_layout_row_dynamic(context, 22, 1);
@@ -124,19 +223,29 @@ void render_project_charts(nk_context* context, const WormUiSetupView& view, Wor
     if (project_state.selection.song != view.song_id ||
         project_state.selection.session_generation != view.session_generation) project_state = {};
     worm_ui_nuklear_reconcile_project_selection(project_state.selection, view);
-    nk_layout_row_dynamic(context, 28, 2);
-    if (nk_button_label(context, "New Chart")) publish_chart_action(view, action, WORM_UI_PROJECT_CHART_NEW, 0);
-    if (nk_button_label(context, "Clear selection")) project_state.selection.count = 0;
+    std::array<std::uint64_t, WORM_UI_PROJECT_CHART_CAPACITY> shown{};
+    const auto shown_count = std::min<std::size_t>(view.chart_row_count, shown.size());
+    for (std::size_t index = 0; index < shown_count; ++index) shown[index] = view.charts[index].chart_id;
+
+    constexpr float heading_ratios[]{0.85f, 0.15f};
+    nk_layout_row(context, NK_DYNAMIC, 28, 2, heading_ratios);
+    nk_labelf(context, NK_TEXT_LEFT, "%zu charts · %zu selected", view.chart_count,
+              project_state.selection.count);
+    if (wormedit::ui::chrome::Button{"+", wormedit::ui::chrome::ButtonKind::primary, "New chart"}.render(context))
+        publish_chart_action(view, action, WORM_UI_PROJECT_CHART_NEW, 0);
     if (view.charts_truncated) {
         nk_layout_row_dynamic(context, 22, 1);
         nk_label(context, "Showing the first 256 charts; the project contains additional charts.", NK_TEXT_LEFT);
     }
     render_project_batch(context, view, action);
-    nk_layout_row_dynamic(context, 22, 8);
-    for (const auto* heading : {"Name", "Author", "Rating", "Mode", "Keys", "Output groups", "Notes", "Length"})
-        nk_label(context, heading, NK_TEXT_LEFT);
-    for (size_t index = 0; index < view.chart_row_count; ++index)
-        render_chart_row(context, view, view.charts[index], action);
+    // The table fills the panel's row, not the whole window: a one-column row supplies that width.
+    nk_layout_row_dynamic(context, 22, 1);
+    const auto available = nk_widget_width(context);
+    const auto widths = column_widths(available);
+    const auto ratios = table_ratios(available, widths);
+    render_table_header(context, shown, shown_count, widths, ratios);
+    for (size_t index = 0; index < shown_count; ++index)
+        render_chart_row(context, view, view.charts[index], shown, shown_count, widths, ratios, action);
 }
 
 } // namespace

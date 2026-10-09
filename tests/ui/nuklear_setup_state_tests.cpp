@@ -2,6 +2,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
+#include <cstddef>
+#include <vector>
+
 TEST_CASE("Nuklear setup view bounds every scalar export choice",
           "[unit][frontend][setup]") {
     WormUiSetupView view{
@@ -84,4 +88,68 @@ TEST_CASE("Project chart view bounds rows and requires complete scalar row strin
     expect_project_state(!worm_ui_nuklear_setup_view_valid(&view));
     view.charts = nullptr;
     expect_project_state(!worm_ui_nuklear_setup_view_valid(&view));
+}
+
+namespace {
+const std::array<std::uint64_t, 5> shown_rows{10, 20, 30, 40, 50};
+
+auto selected_ids(const project_chart_selection_t& state) -> std::vector<std::uint64_t> {
+    return {state.ids.begin(), state.ids.begin() + static_cast<std::ptrdiff_t>(state.count)};
+}
+}
+
+TEST_CASE("Project row clicks: plain selects one, Ctrl toggles, Shift selects the range from the anchor",
+          "[unit][frontend][setup]") {
+    project_chart_selection_t state;
+    worm_ui_nuklear_click_project_chart(state, shown_rows, 20, false, false);
+    CHECK(selected_ids(state) == std::vector<std::uint64_t>{20});
+    worm_ui_nuklear_click_project_chart(state, shown_rows, 40, true, false);
+    CHECK(selected_ids(state) == std::vector<std::uint64_t>{20, 40});
+}
+
+TEST_CASE("Project row Shift ranges extend from the last clicked row", "[unit][frontend][setup]") {
+    project_chart_selection_t state;
+    worm_ui_nuklear_click_project_chart(state, shown_rows, 20, false, false);
+    worm_ui_nuklear_click_project_chart(state, shown_rows, 40, true, false);
+    // The Ctrl-click on 40 moved the anchor there, so Shift ranges start from 40.
+    worm_ui_nuklear_click_project_chart(state, shown_rows, 10, false, true);
+    CHECK(selected_ids(state) == std::vector<std::uint64_t>{10, 20, 30, 40});
+    CHECK(state.anchor == 40);
+    worm_ui_nuklear_click_project_chart(state, shown_rows, 50, false, true);
+    CHECK(selected_ids(state) == std::vector<std::uint64_t>{40, 50});
+    worm_ui_nuklear_click_project_chart(state, shown_rows, 30, true, false);
+    CHECK(selected_ids(state) == std::vector<std::uint64_t>{40, 50, 30});
+    CHECK(state.anchor == 30);
+}
+
+TEST_CASE("Shift-click without an anchor on screen behaves as a plain click", "[unit][frontend][setup]") {
+    project_chart_selection_t state;
+    worm_ui_nuklear_click_project_chart(state, shown_rows, 30, false, true);
+    CHECK(selected_ids(state) == std::vector<std::uint64_t>{30});
+    CHECK(state.anchor == 30);
+}
+
+TEST_CASE("Header select-all toggles every shown row and reports partial state", "[unit][frontend][setup]") {
+    project_chart_selection_t state;
+    CHECK(worm_ui_nuklear_project_selection_summary(state, shown_rows) == project_selection_summary_t::none);
+    worm_ui_nuklear_click_project_chart(state, shown_rows, 10, false, false);
+    CHECK(worm_ui_nuklear_project_selection_summary(state, shown_rows) == project_selection_summary_t::partial);
+    worm_ui_nuklear_toggle_all_project_charts(state, shown_rows);
+    CHECK(worm_ui_nuklear_project_selection_summary(state, shown_rows) == project_selection_summary_t::all);
+    CHECK(state.count == shown_rows.size());
+    worm_ui_nuklear_toggle_all_project_charts(state, shown_rows);
+    CHECK(state.count == 0);
+}
+
+TEST_CASE("Selection anchor is dropped when its chart leaves the table", "[unit][frontend][setup]") {
+    WormUiProjectChartRow rows[]{{.chart_id = 10}, {.chart_id = 20}};
+    auto view = selection_view(rows, 2);
+    project_chart_selection_t state;
+    worm_ui_nuklear_reconcile_project_selection(state, view);
+    worm_ui_nuklear_click_project_chart(state, std::array<std::uint64_t, 2>{10, 20}, 20, false, false);
+    CHECK(state.anchor == 20);
+    view.chart_row_count = 1;
+    worm_ui_nuklear_reconcile_project_selection(state, view);
+    CHECK(state.anchor == 0);
+    CHECK(state.count == 0);
 }

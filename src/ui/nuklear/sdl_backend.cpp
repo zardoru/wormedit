@@ -80,11 +80,24 @@ static nk_flags convert_nuklear_commands(nk_context* context, nk_buffer* command
     return result;
 }
 
+// Nuklear draws window headers and backgrounds under its "no clip" rect,
+// {-8192, -8192, 16384, 16384}. The SDL GPU renderer forwards clip rects
+// unclamped, and Metal's unsigned MTLScissorRect turns the negative origin
+// into a huge offset that discards those draws. Keep scissors on the viewport.
+static auto clamp_clip_to_viewport(SDL_Renderer* renderer, SDL_Rect rect) -> SDL_Rect {
+    SDL_Rect viewport{};
+    if (!SDL_GetRenderViewport(renderer, &viewport)) return rect;
+    const SDL_Rect bounds{0, 0, viewport.w, viewport.h};
+    SDL_Rect clamped{};
+    return SDL_GetRectIntersection(&rect, &bounds, &clamped) ? clamped : SDL_Rect{};
+}
+
 static bool set_nuklear_clip_rect(SDL_Renderer* renderer, const SDL_Rect* rect) {
-    const auto result = SDL_SetRenderClipRect(renderer, rect);
+    const auto clamped = rect ? clamp_clip_to_viewport(renderer, *rect) : SDL_Rect{};
+    const auto result = SDL_SetRenderClipRect(renderer, rect ? &clamped : nullptr);
     if (result) {
         g_gpu_submission->current_clip_enabled = rect != nullptr;
-        g_gpu_submission->current_clip = rect ? *rect : SDL_Rect{};
+        g_gpu_submission->current_clip = clamped;
     }
     return result;
 }

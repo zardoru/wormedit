@@ -27,6 +27,8 @@ enum class UiColor {
     accent,
     status,
     conflict,
+    separator,
+    popup,
     count
 };
 

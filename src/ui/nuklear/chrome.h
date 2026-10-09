@@ -399,7 +399,7 @@ inline void menu_separator(nk_context* context) {
     if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
     const auto y = bounds.y + bounds.h * 0.5f;
     nk_stroke_line(nk_window_get_canvas(context), bounds.x + 4.0f, y, bounds.x + bounds.w - 4.0f, y,
-                   1.0f, color(UiColor::border));
+                   1.0f, color(UiColor::separator));
 }
 
 // Dropdowns, context menus and popups share one surface language with the buttons:
@@ -452,6 +452,9 @@ inline void apply_dropdown_theme(nk_context* context) {
     style.menu_button.border = 0.0f;
     style.menu_button.border_color = nk_rgba(0, 0, 0, 0);
     style.menu_button.rounding = metrics::radius_control;
+    style.menu_button.text_normal = color(UiColor::text);
+    style.menu_button.text_hover = color(UiColor::text_bright);
+    style.menu_button.text_active = color(UiColor::text_bright);
     style.selectable.normal = nk_style_item_color(nk_rgba(0, 0, 0, 0));
     style.selectable.hover = hover;
     style.selectable.pressed = active;
@@ -465,6 +468,140 @@ inline void apply_dropdown_theme(nk_context* context) {
     style.selectable.text_hover_active = color(UiColor::selected_text);
     style.selectable.text_pressed_active = color(UiColor::selected_text);
     style.selectable.rounding = 3.0f;
+}
+
+// Edit fields, property boxes, sliders and progress bars share one control surface, border and
+// radius. Sizes and padding stay as Nuklear set them, so only colors and rounding change here.
+inline void apply_field_theme(nk_context* context) {
+    auto& style = context->style;
+    const auto surface = nk_style_item_color(color(UiColor::surface));
+    const auto hover = nk_style_item_color(color(UiColor::surface_hover));
+    const auto active = nk_style_item_color(color(UiColor::surface_active));
+    const auto border = color(UiColor::border);
+    const auto text = color(UiColor::text);
+    const auto text_bright = color(UiColor::text_bright);
+    const auto accent = color(UiColor::selected);
+    auto& edit = style.edit;
+    edit.normal = surface;
+    edit.hover = hover;
+    edit.active = active;
+    edit.border_color = border;
+    edit.rounding = metrics::radius_control;
+    edit.cursor_normal = text_bright;
+    edit.cursor_hover = text_bright;
+    edit.cursor_text_normal = text;
+    edit.cursor_text_hover = text_bright;
+    edit.text_normal = text;
+    edit.text_hover = text_bright;
+    edit.text_active = text_bright;
+    edit.selected_normal = accent;
+    edit.selected_hover = accent;
+    edit.selected_text_normal = text_bright;
+    edit.selected_text_hover = text_bright;
+    auto& property = style.property;
+    property.normal = surface;
+    property.hover = hover;
+    property.active = active;
+    property.border_color = border;
+    property.label_normal = text;
+    property.label_hover = text_bright;
+    property.label_active = text_bright;
+    property.rounding = metrics::radius_control;
+    property.edit = edit;
+    auto& slider = style.slider;
+    slider.normal = surface;
+    slider.hover = hover;
+    slider.active = active;
+    slider.border_color = border;
+    slider.bar_normal = color(UiColor::surface_hover);
+    slider.bar_hover = color(UiColor::surface_active);
+    slider.bar_active = color(UiColor::surface_active);
+    slider.bar_filled = accent;
+    slider.cursor_normal = nk_style_item_color(text);
+    slider.cursor_hover = nk_style_item_color(text_bright);
+    slider.cursor_active = nk_style_item_color(text_bright);
+    slider.rounding = metrics::radius_control;
+    auto& progress = style.progress;
+    progress.normal = surface;
+    progress.hover = hover;
+    progress.active = active;
+    progress.border_color = border;
+    progress.cursor_normal = nk_style_item_color(accent);
+    progress.cursor_hover = nk_style_item_color(accent);
+    progress.cursor_active = nk_style_item_color(accent);
+    progress.rounding = metrics::radius_control;
+    progress.cursor_rounding = metrics::radius_control;
+}
+
+// Scrollbars sit flat on their panel; the thumb is a rounded surface that lights up on hover.
+inline void apply_scrollbar_theme(nk_context* context) {
+    const auto clear = nk_style_item_color(nk_rgba(0, 0, 0, 0));
+    for (auto* scroll : {&context->style.scrollh, &context->style.scrollv}) {
+        scroll->normal = clear;
+        scroll->hover = clear;
+        scroll->active = clear;
+        scroll->border_color = nk_rgba(0, 0, 0, 0);
+        scroll->border = 0.0f;
+        scroll->rounding = metrics::radius_control;
+        scroll->cursor_normal = nk_style_item_color(color(UiColor::surface_active));
+        scroll->cursor_hover = nk_style_item_color(color(UiColor::surface_hover));
+        scroll->cursor_active = nk_style_item_color(color(UiColor::border_hover));
+        scroll->cursor_border_color = nk_rgba(0, 0, 0, 0);
+        scroll->border_cursor = 0.0f;
+        scroll->rounding_cursor = metrics::radius_control;
+    }
+}
+
+// Stock checkboxes and option buttons: the same surface and border as the fields, with the
+// selected mark in the accent. Spacing and sizes stay as Nuklear set them.
+inline void apply_toggle_theme(nk_context* context) {
+    auto& style = context->style;
+    const auto surface = nk_style_item_color(color(UiColor::surface));
+    const auto hover = nk_style_item_color(color(UiColor::surface_hover));
+    const auto active = nk_style_item_color(color(UiColor::surface_active));
+    for (auto* toggle : {&style.checkbox, &style.option}) {
+        toggle->normal = surface;
+        toggle->hover = hover;
+        toggle->active = active;
+        toggle->border_color = color(UiColor::border);
+        toggle->border = 1.0f;
+        toggle->cursor_normal = nk_style_item_color(color(UiColor::selected));
+        toggle->cursor_hover = nk_style_item_color(color(UiColor::selected));
+        toggle->text_normal = color(UiColor::text);
+        toggle->text_hover = color(UiColor::text_bright);
+        toggle->text_active = color(UiColor::text_bright);
+    }
+}
+
+// Tooltips take the border used by menus, so hints read as part of the same surface family.
+inline void apply_tooltip_theme(nk_context* context) {
+    context->style.window.tooltip_border_color = color(UiColor::border_hover);
+    context->style.window.tooltip_border = 1.0f;
+}
+
+// Tree headers and tab rows: flat on the panel, with the same hover and active fills as the
+// menus. Node and tab buttons are the chevrons that open and close the section.
+inline void apply_header_theme(nk_context* context) {
+    auto& style = context->style;
+    const auto clear = nk_style_item_color(nk_rgba(0, 0, 0, 0));
+    const auto hover = nk_style_item_color(color(UiColor::surface_hover));
+    const auto active = nk_style_item_color(color(UiColor::surface_active));
+    style.tab.background = clear;
+    style.tab.border_color = color(UiColor::border);
+    style.tab.text = color(UiColor::text);
+    style.tab.rounding = metrics::radius_control;
+    for (auto* button : {&style.tab.tab_maximize_button, &style.tab.tab_minimize_button,
+                         &style.tab.node_maximize_button, &style.tab.node_minimize_button}) {
+        button->normal = clear;
+        button->hover = hover;
+        button->active = active;
+        button->border_color = nk_rgba(0, 0, 0, 0);
+        button->border = 0.0f;
+        button->text_normal = color(UiColor::text_muted);
+        button->text_hover = color(UiColor::text_bright);
+        button->text_active = color(UiColor::text_bright);
+        button->rounding = metrics::radius_control;
+    }
 }
 
 inline void apply_theme(nk_context* context) {
@@ -484,6 +621,11 @@ inline void apply_theme(nk_context* context) {
     context->style.button.rounding = metrics::radius_control;
     context->style.tab.background = nk_style_item_color(color(UiColor::surface));
     apply_dropdown_theme(context);
+    apply_field_theme(context);
+    apply_scrollbar_theme(context);
+    apply_toggle_theme(context);
+    apply_tooltip_theme(context);
+    apply_header_theme(context);
 }
 
 } // namespace wormedit::ui::chrome

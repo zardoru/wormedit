@@ -114,7 +114,7 @@ void paint_surface(struct nk_command_buffer* canvas, struct nk_rect bounds, int 
                          metrics::radius_surface + grow, nk_rgba(0, 0, 0, shadow.alpha));
         }
     }
-    nk_fill_rect(canvas, bounds, metrics::radius_surface, color(UiColor::surface));
+    nk_fill_rect(canvas, bounds, metrics::radius_surface, color(UiColor::popup));
     nk_stroke_rect(canvas, bounds, metrics::radius_surface, 1.0f, color(UiColor::border_hover));
     nk_push_scissor(canvas, clip);
 }

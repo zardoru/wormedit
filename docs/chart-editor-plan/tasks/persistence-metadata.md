@@ -141,7 +141,7 @@ Verified 2026-10-03: fourteen core regression cases cover confirmed drops and un
 
 ## T-129 Add typed per-format metadata forms
 
-- **Status:** ready
+- **Status:** done
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Implementation notes (2026-10-01):** steps 1 and 2 are done: `format_field_schema.h` has the typed table (`format_field_schemas`, `find_format_field_schema`) and `validate_format_field_value` with plain-ASCII integer/decimal parsing, case-insensitive choices (StepMania `DIFFICULTY`) and single-line text. Stored names are the exact `ordered_fields` spellings: BMS tokens without `#`, StepMania tags, osu! `Difficulty.HPDrainRate`/`Difficulty.OverallDifficulty`/`Metadata.Version`, BMSON `info.level`/`info.judge_rank`/`info.total`. Tests in `tests/core/format_field_schema_tests.cpp`. Step 3 (the typed widgets) remains.
 - **Outcome:** Metadata's format section shows named typed fields for BMS (`#PLAYER`, `#RANK`, `#TOTAL`, `#PLAYLEVEL`, `#DIFFICULTY`), StepMania (`#CREDIT`, `#DIFFICULTY`, `#METER`), osu! (`HPDrainRate`, `OverallDifficulty`, `Version`), and BMSON (`level`, `judge_rank`, `total`) that read/write the existing ordered format fields.
@@ -152,6 +152,9 @@ Verified 2026-10-03: fourteen core regression cases cover confirmed drops and un
 - **Reject/failure behavior:** out-of-range values show an inline error and are not applied.
 - **Verify:** standard build/test; smoke PNG of `metadata`.
 - **Out of scope:** new fields not listed here.
+- **Supporting scope (coordinator, 2026-10-08):** `tests/sys/metadata_notification_tests.cpp`.
+- **Result (2026-10-08):** `metadata_format_fields.cpp` now drives typed widgets from `format_field_schemas`: a generic "Typed fields" block renders every schema field without a bespoke editor (BMS `PLAYER`, all StepMania, all osu!mania, BMSON `info.level`) and edits through the existing insert/replace/erase actions (existing field keeps its scope; a new one goes to the song group unless only the chart has one). The bespoke BMS/BMSON numeric checks now call `validate_format_field_value` where the schema covers the field (RANK, TOTAL, PLAYLEVEL, DIFFICULTY, judge_rank, total), so ranges come from one table; invalid values show the schema's inline message and Apply stays disabled, so nothing is dispatched. New test per family in `metadata_notification_tests.cpp` (insert and replace write the ordered field; out-of-range fails the validator the UI gates on). The dispatcher itself does not re-validate ranges, since the generic ordered-field editor also uses it. Manual smoke PNG of `metadata` not taken.
+
 
 ## T-295 Validate every opened document before using it
 

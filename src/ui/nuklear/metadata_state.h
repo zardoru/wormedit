@@ -72,6 +72,14 @@ struct worm_ui_nuklear_metadata_state_t {
     std::array<bool, bmson_field_count> bmson_field_chart_scoped{};
     std::array<bool, bmson_field_count> bmson_field_valid{};
     std::string bmson_action_json_value;
+    // Schema-driven typed fields (format_field_schema.h) that have no bespoke editor above.
+    static constexpr std::size_t typed_field_capacity = 8;
+    static constexpr std::size_t typed_field_value_bytes = 1024;
+    std::array<std::array<char, typed_field_value_bytes + 1>, typed_field_capacity> typed_fields{};
+    std::array<std::size_t, typed_field_capacity> typed_field_indices{};
+    std::array<std::size_t, typed_field_capacity> typed_field_occurrences{};
+    std::array<bool, typed_field_capacity> typed_field_chart_scoped{};
+    std::array<bool, typed_field_capacity> typed_field_valid{};
     std::size_t selected_output_group_index{std::numeric_limits<std::size_t>::max()};
     std::uint64_t output_path_buffer_revision{std::numeric_limits<std::uint64_t>::max()};
     std::size_t output_path_buffer_group_index{std::numeric_limits<std::size_t>::max()};

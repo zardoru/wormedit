@@ -1,6 +1,7 @@
 #include "sys/metadata_actions.h"
 #include "ui/frontend.h"
 #include <wormedit/core/chart_editor.h>
+#include <wormedit/core/format_field_schema.h>
 #include <wormedit/core/lane_profiles.h>
 #include <catch2/catch_test_macros.hpp>
 
@@ -353,4 +354,75 @@ TEST_CASE("batch metadata edit writes every selected difficulty in one undo step
     check_metadata_notification(fixture.history.undo.size() == undo_before + 1);
     for (const auto& chart : fixture.history.document.charts)
         check_metadata_notification(chart.metadata.author == "Shared mapper");
+}
+
+namespace {
+struct typed_family_case_t {
+    format_family_t family;
+    const char* name;
+    const char* value;
+    const char* replacement;
+    const char* out_of_range;
+};
+
+auto song_format_group(const metadata_notification_fixture_t& fixture, format_family_t family)
+    -> const format_metadata_t* {
+    for (const auto& group : fixture.history.document.metadata.format_groups)
+        if (group.family == family) return &group;
+    return nullptr;
+}
+
+WormUiWorkspaceAction typed_format_action(const metadata_notification_fixture_t& fixture,
+                                          WormUiMetadataEditKind kind, format_family_t family,
+                                          const char* name, const char* value,
+                                          std::size_t index) {
+    WormUiWorkspaceAction action{};
+    action.metadata_edit = kind;
+    action.metadata_document_revision = fixture.history.document.revision;
+    action.metadata_format_family = static_cast<std::uint8_t>(family);
+    action.metadata_format_index = index;
+    action.metadata_format_name = name;
+    action.metadata_format_value = value;
+    return action;
+}
+} // namespace
+
+TEST_CASE("typed per-format fields write the ordered field and out-of-range values never dispatch",
+          "[unit][sys][metadata-notification][typed-fields]") {
+    const typed_family_case_t cases[]{
+        {format_family_t::bms, "PLAYER", "2", "3", "9"},
+        {format_family_t::stepmania, "METER", "12", "13", "1000"},
+        {format_family_t::osu_mania, "Difficulty.HPDrainRate", "7.5", "8", "11"},
+        {format_family_t::bmson, "info.level", "5", "6", "-1"},
+    };
+    for (const auto& item : cases) {
+        CAPTURE(item.name);
+        metadata_notification_fixture_t fixture;
+        const auto* schema = find_format_field_schema(item.family, item.name);
+        REQUIRE(schema != nullptr);
+        CHECK_FALSE(validate_format_field_value(*schema, item.value).has_value());
+        CHECK_FALSE(validate_format_field_value(*schema, item.replacement).has_value());
+        // The editor refuses to build an action from this value, so nothing is dispatched.
+        CHECK(validate_format_field_value(*schema, item.out_of_range).has_value());
+        const auto revision = fixture.history.document.revision;
+        CHECK(fixture.history.undo.empty());
+
+        REQUIRE(fixture.dispatch(typed_format_action(
+                    fixture, WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD, item.family, item.name,
+                    item.value, 0)) == "Metadata updated.");
+        const auto* group = song_format_group(fixture, item.family);
+        REQUIRE(group != nullptr);
+        REQUIRE(group->ordered_fields.size() == 1);
+        CHECK(group->ordered_fields.front() ==
+              std::pair<std::string, std::string>{item.name, item.value});
+
+        REQUIRE(fixture.dispatch(typed_format_action(
+                    fixture, WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD, item.family, item.name,
+                    item.replacement, 0)) == "Metadata updated.");
+        group = song_format_group(fixture, item.family);
+        REQUIRE(group != nullptr);
+        CHECK(group->ordered_fields.front().second == item.replacement);
+        CHECK(fixture.history.undo.size() == 2);
+        CHECK(fixture.history.document.revision > revision);
+    }
 }

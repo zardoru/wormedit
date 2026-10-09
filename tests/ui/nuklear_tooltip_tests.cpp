@@ -49,7 +49,12 @@ void check_inside(struct nk_rect rect, struct nk_rect viewport) {
 auto drawn_tooltip_text(nk_context& context, struct nk_rect viewport) -> std::string {
     std::string drawn;
     const nk_command* command{};
+    // Text may not start on its scissor's left edge: that clips the first glyph's left side.
+    float scissor_left = -1.0e9f;
     nk_foreach(command, &context) {
+        if (command->type == NK_COMMAND_SCISSOR) {
+            scissor_left = static_cast<float>(reinterpret_cast<const nk_command_scissor*>(command)->x);
+        }
         if (command->type == NK_COMMAND_RECT) {
             const auto* border = reinterpret_cast<const nk_command_rect*>(command);
             check_inside(nk_rect(border->x, border->y, border->w, border->h), viewport);
@@ -57,6 +62,7 @@ auto drawn_tooltip_text(nk_context& context, struct nk_rect viewport) -> std::st
         if (command->type != NK_COMMAND_TEXT) continue;
         const auto* text = reinterpret_cast<const nk_command_text*>(command);
         check_inside(nk_rect(text->x, text->y, text->w, text->h), viewport);
+        verify_tooltip(static_cast<float>(text->x) >= scissor_left + 3.0f);
         const auto width = glyph_width({}, text->height, text->string, text->length);
         verify_tooltip(width <= static_cast<float>(text->w) + 1.0f);
         drawn.append(text->string, static_cast<std::size_t>(text->length));

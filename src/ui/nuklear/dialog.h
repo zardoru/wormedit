@@ -41,6 +41,8 @@ struct DialogOptions {
     // Escape cancels. Modal dialogs default to true; a non-modal tool leaves Escape to the
     // workspace unless it opts in.
     std::optional<bool> escape_cancels{};
+    // Enter triggers the primary button. Same default; a tool with text fields leaves it off.
+    std::optional<bool> enter_confirms{};
 };
 
 struct Dialog {
@@ -60,6 +62,7 @@ struct Dialog {
     bool modal{};
     bool closable{};
     bool escape_cancels{};
+    bool enter_confirms{};
 };
 
 inline constexpr float dialog_padding = metrics::gap_large;

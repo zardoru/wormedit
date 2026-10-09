@@ -76,6 +76,7 @@ auto dialog_begin(Dialog& dialog, nk_context* context, const char* id, const cha
     dialog.modal = options.modal;
     dialog.closable = options.closable;
     dialog.escape_cancels = options.escape_cancels.value_or(options.modal);
+    dialog.enter_confirms = options.enter_confirms.value_or(options.modal);
     const auto area = dialog_area(options, context);
     if (options.modal) draw_backdrop(context, id, area);
     bool clamped{};
@@ -188,7 +189,7 @@ auto dialog_end(Dialog& dialog, nk_context* context) -> DialogResult {
         if (dialog.result == DialogResult::none) {
             if (dialog.escape_cancels && nk_input_is_key_pressed(&input, NK_KEY_TEXT_RESET_MODE))
                 dialog.result = DialogResult::cancel;
-            else if (dialog.has_primary && nk_input_is_key_pressed(&input, NK_KEY_ENTER))
+            else if (dialog.enter_confirms && dialog.has_primary && nk_input_is_key_pressed(&input, NK_KEY_ENTER))
                 dialog.result = DialogResult::primary;
         }
     }

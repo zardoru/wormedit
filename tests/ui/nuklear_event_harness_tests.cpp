@@ -5193,3 +5193,76 @@ TEST_CASE("Unsaved changes shows a status line only for a failed save",
     close_dialog_fixture_t f{false, "Save failed: disk full"};
     CHECK(f.harness.drawn_text().find("Save failed: disk full") != std::string::npos);
 }
+
+namespace {
+
+struct external_player_fixture_t {
+    nuklear_event_harness_t harness{1280, 900};
+    std::array<WormUiExternalPlayerDefinitionView, 2> players{{
+        {"Alpha", "/usr/bin/alpha", "--start", "--here <measure>", "--stop"},
+        {"Beta", "/usr/bin/beta", "", "", ""}}};
+    external_player_fixture_t() {
+        REQUIRE(harness.ready());
+        harness.view().external_player = {.visible = 1, .revision = 3, .players = players.data(),
+                                          .player_count = players.size(), .selected = 0};
+        (void)harness.frame();
+        (void)harness.frame();
+    }
+    // The first non-empty external-player action across the frames of a gesture.
+    static auto action_of(const std::vector<workspace_action_snapshot_t>& frames)
+        -> const WormUiExternalPlayerAction* {
+        for (const auto& frame : frames)
+            if (frame.get().external_player.kind != WORM_UI_EXTERNAL_PLAYER_NONE)
+                return &frame.get().external_player;
+        return nullptr;
+    }
+    auto click_label(const char* label) {
+        const auto center = harness.drawn_text_center(label);
+        REQUIRE(center);
+        return click_at(harness, center->first, center->second);
+    }
+};
+
+} // namespace
+
+TEST_CASE("External player preferences dialog keeps every action",
+          "[frontend-state][event-harness][dialog][external-player]") {
+    {
+        external_player_fixture_t f;
+        const auto& text = f.harness.drawn_text();
+        CHECK(text.find("External player preferences") != std::string::npos);
+        CHECK(text.find("Templates:") == std::string::npos);
+        const auto* saved = external_player_fixture_t::action_of(f.click_label("Save"));
+        REQUIRE(saved);
+        CHECK(saved->kind == WORM_UI_EXTERNAL_PLAYER_SAVE);
+        CHECK(saved->selected == 0);
+        CHECK(std::string(saved->name) == "Alpha");
+        CHECK(std::string(saved->path) == "/usr/bin/alpha");
+        CHECK(std::string(saved->here_arguments) == "--here <measure>");
+    }
+    {
+        external_player_fixture_t f;
+        const auto* added = external_player_fixture_t::action_of(f.click_label("Add"));
+        REQUIRE(added);
+        CHECK(added->kind == WORM_UI_EXTERNAL_PLAYER_ADD);
+    }
+    {
+        external_player_fixture_t f;
+        const auto* removed = external_player_fixture_t::action_of(f.click_label("Remove"));
+        REQUIRE(removed);
+        CHECK(removed->kind == WORM_UI_EXTERNAL_PLAYER_REMOVE);
+    }
+    {
+        external_player_fixture_t f;
+        const auto* closed = external_player_fixture_t::action_of(f.click_label("Close"));
+        REQUIRE(closed);
+        CHECK(closed->kind == WORM_UI_EXTERNAL_PLAYER_CLOSE);
+    }
+    {
+        external_player_fixture_t f;
+        const auto* selected = external_player_fixture_t::action_of(f.click_label("Beta"));
+        REQUIRE(selected);
+        CHECK(selected->kind == WORM_UI_EXTERNAL_PLAYER_SELECT);
+        CHECK(selected->selected == 1);
+    }
+}

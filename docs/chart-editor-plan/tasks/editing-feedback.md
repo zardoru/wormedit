@@ -103,7 +103,7 @@ valid position.
 
 ## T-487 Make the Quantize grid and the editing snap one shared grid
 
-- **Status:** ready
+- **Status:** done (2026-10-08)
 - **Decision (user, 2026-10-08):** the Quantize grid chips should set the snap: "if they don't I would like them to." Option chosen: one shared grid in both directions.
 - **Current behavior:** the T-419 grid chips set only `quantize_divisions` through `WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS` (`render_quantize_grid` in `src/ui/nuklear/compose_inspector.cpp`). The editing snap `active_snap_denominator` changes only by cycling with Previous/Next Snap (`cycle_edit_snap_action_t` in `src/core/interaction.cpp`). No action sets a specific snap. Both values count divisions per standard measure.
 - **Outcome:** clicking a grid chip, or applying a custom grid, sets the quantize target and the editing snap together, and the status bar's "Snap 1/n" follows. Changing the snap with Previous/Next Snap moves the highlighted chip and the quantize target with it. A grid the chart cannot snap to (not in `supported_snap_denominators`) sets only the quantize target. Its chip tooltip says "Quantize only: this chart cannot snap to 1/n."
@@ -119,4 +119,6 @@ valid position.
 - **Reject/failure behavior:** an unsupported snap value is not an error. It leaves the snap unchanged and posts no notification.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`; `ctest --test-dir build -L event-harness`; full suite.
 - **Out of scope:** a toolbar snap chip control.
+- **Result (2026-10-08):** `set_edit_snap_action_t` (core, supported grids only, silent no-op otherwise); grid chips, custom Apply and presets set the quantize target and the snap together (`share_quantize_grid_with_snap`, `compose_actions.cpp`); Previous/Next Snap moves the quantize target (other settings kept, preset cleared) in `application_command_dispatch.cpp`. The view projects `supported_snap_denominators`; unsupported chips show "Quantize only: this chart cannot snap to 1/n." (tooltip hit-testing is local to `compose_inspector.cpp` because `ChipGrid` has no per-chip tooltips). Tests: core set-snap test, sys shared-grid test (`compose_action_notification_tests.cpp`), harness tooltip test. The set-snap and shared-grid tests were written alongside the implementation, not shown failing first. Real-window capture shows "Snap 1/16" after clicking the 1/16 chip. Full suite 2888/2888, event-harness 258/258.
+
 

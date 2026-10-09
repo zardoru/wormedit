@@ -1359,3 +1359,42 @@ TEST_CASE("Draw BGM production stroke commits once and erase removes the lane on
     require_action(undo_document_command(fixture.history));
     check_action(count() == 0);
 }
+
+#include "sys/application_command_dispatch.h"
+
+TEST_CASE("Quantize grid and editing snap are one shared grid",
+          "[unit][sys][compose-action][quantize-snap]") {
+    action_notification_fixture_t fixture;
+    fixture.state.supported_snap_denominators = {4, 8, 16};
+    auto grid = [&](std::uint64_t divisions) {
+        auto value = fixture.action(WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS);
+        value.compose_quantize_divisions = divisions;
+        return value;
+    };
+    const auto revision = fixture.history.document.revision;
+
+    (void)fixture.dispatch(grid(16));
+    check_action(fixture.state.active_snap_denominator == 16);
+    check_action(fixture.application.requested_snap_denominators.at(1) == 16);
+    check_action(fixture.application.quantize_editor->request.divisions == 16);
+
+    // A grid the chart cannot snap to sets only the quantize target.
+    fixture.entries();
+    (void)fixture.dispatch(grid(12));
+    check_action(fixture.state.active_snap_denominator == 16);
+    check_action(fixture.application.quantize_editor->request.divisions == 12);
+
+    // Next snap moves the quantize target with it and keeps the other settings.
+    fixture.application.quantize_editor->request.tie = quantization_tie_t::later;
+    std::optional<editor_interaction_state_t> compose = fixture.state;
+    std::optional<timing_lane_pseudonote_preview_t> preview;
+    const auto result = invoke_application_command(
+        {.kind = application_command_kind_t::navigation_next_snap}, fixture.history,
+        fixture.workspace, compose, preview, fixture.application, fixture.sink);
+    require_action(result.accepted);
+    check_action(compose->active_snap_denominator == 4);
+    check_action(fixture.application.quantize_editor->request.divisions == 4);
+    check_action(fixture.application.quantize_editor->request.tie == quantization_tie_t::later);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+}

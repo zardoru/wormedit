@@ -1,6 +1,7 @@
 #include "ui/nuklear/compose_inspector.h"
 #include "ui/nuklear/meter_state.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/ui_metrics.h"
 #include "ui/nuklear/context_menu.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_resources.h"
@@ -483,6 +484,29 @@ auto quantize_segments(nk_context* c, const char* const* labels, int count, int 
     }
     return result;
 }
+auto snap_supported(const WormUiComposeView& v, std::uint64_t denominator) -> bool {
+    return std::find(v.supported_snap_denominators,
+                     v.supported_snap_denominators + v.supported_snap_denominator_count,
+                     denominator) != v.supported_snap_denominators + v.supported_snap_denominator_count;
+}
+
+// Chips outside the chart's snap list set only the quantize target; say so on hover.
+void quantize_grid_tooltip(nk_context* c, const WormUiComposeView& v, struct nk_rect grid,
+                           const std::uint64_t* values, const char* const* labels, int count,
+                           int columns) {
+    if (compose_quantize_owns_input()) return;
+    const auto cell_w = grid.w / static_cast<float>(columns);
+    const auto row_h = wormedit::ui::metrics::control_compact + c->style.window.spacing.y;
+    const auto& mouse = c->input.mouse.pos;
+    if (mouse.x < grid.x || mouse.y < grid.y || mouse.x >= grid.x + grid.w) return;
+    const auto slot = static_cast<int>((mouse.y - grid.y) / row_h) * columns +
+                      static_cast<int>((mouse.x - grid.x) / cell_w);
+    if (slot < 0 || slot >= count || snap_supported(v, values[slot])) return;
+    char text[64];
+    std::snprintf(text, sizeof(text), "Quantize only: this chart cannot snap to %s.", labels[slot]);
+    wormedit::ui::nuklear::tooltip::text(c, text);
+}
+
 void render_quantize_grid(const ComposeInspectorContext& i) {
     const auto& v = *i.view;
     auto* c = i.context;
@@ -494,8 +518,12 @@ void render_quantize_grid(const ComposeInspectorContext& i) {
         if (values[x] == v.quantize_divisions)
             selected = x;
     nk_layout_row_dynamic(c, 18, 1);
+    auto grid_bounds = nk_widget_bounds(c);
     nk_label(c, "Grid", NK_TEXT_LEFT);
+    // The chip rows start one row spacing below the label.
+    grid_bounds.y += grid_bounds.h + c->style.window.spacing.y;
     const auto grid = wormedit::ui::chrome::ChipGrid{grids, 10, selected, 5}.render(c);
+    quantize_grid_tooltip(c, v, grid_bounds, values, grids, 10, 5);
     if (grid.chosen >= 0) {
         quantize_grid_invalid = quantize_grid_editing = false;
         set_quantize_action(i, WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS, values[grid.chosen],

@@ -2956,6 +2956,16 @@ auto quantize_editor_for(compose_action_context_t& context)
     return *editor;
 }
 
+// The Quantize grid and the editing snap are one grid: setting the target also sets the snap
+// when the chart supports it. An unsupported grid stays quantize-only, silently.
+void share_quantize_grid_with_snap(compose_action_context_t& context, std::uint64_t divisions) {
+    const auto result = wormedit::dispatch_editor_action(
+        context.history, context.state, wormedit::set_edit_snap_action_t{divisions});
+    if (result.accepted && context.state.active_snap_denominator == divisions)
+        context.application_state.requested_snap_denominators.insert_or_assign(
+            context.state.chart.value, divisions);
+}
+
 auto apply_quantize_settings_from_action(compose_action_context_t& context)
     -> std::optional<std::string> {
     auto& editor = quantize_editor_for(context);
@@ -2965,6 +2975,7 @@ auto apply_quantize_settings_from_action(compose_action_context_t& context)
         "Quantization settings must use a positive grid and supported policies.");
     editor.request = *request;
     editor.preset_index.reset();
+    share_quantize_grid_with_snap(context, request->divisions);
     return compose_action_info(context, "Quantization settings updated.");
 }
 
@@ -2978,6 +2989,7 @@ auto select_quantize_preset(compose_action_context_t& context) -> std::string {
     editor.request = {.divisions = preset.divisions, .space = preset.space, .tie = preset.tie,
                       .collisions = quantization_collision_t::reject, .holds = preset.holds};
     editor.preset_index = index;
+    share_quantize_grid_with_snap(context, preset.divisions);
     return compose_action_info(context, "Quantization preset selected.");
 }
 

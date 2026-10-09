@@ -2949,6 +2949,10 @@ static void populate_quantize_preview(compose_scene_cache_t& cache,
     populate_quantize_applied_report(cache, document, chart, application, view);
     const auto request = active_quantize_request(application, document, chart,
                                                 state.active_snap_denominator);
+    view.supported_snap_denominator_count = std::min(state.supported_snap_denominators.size(),
+        std::size(view.supported_snap_denominators));
+    std::copy_n(state.supported_snap_denominators.begin(), view.supported_snap_denominator_count,
+                view.supported_snap_denominators);
     view.quantize_divisions = request.divisions;
     view.quantize_space = static_cast<std::uint8_t>(request.space);
     view.quantize_tie = static_cast<std::uint8_t>(request.tie);

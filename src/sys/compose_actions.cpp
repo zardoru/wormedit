@@ -2951,6 +2951,120 @@ std::string dispatch_bms_branch_statement_action(
     return message;
 }
 
+struct bms_leaf_target_t {
+    const wormedit::bms_control_node_t* block{};
+    const wormedit::bms_control_node_t* leaf{};
+};
+
+// The #RANDOM block whose single if-group holds the leaf with this id.
+void find_bms_leaf_target(const wormedit::bms_control_node_t& node, std::uint64_t id,
+                          bms_leaf_target_t& result) {
+    using kind_t = wormedit::bms_control_kind_t;
+    if (node.kind == kind_t::random)
+        for (const auto& group : node.children)
+            for (const auto& leaf : group.children)
+                if (leaf.id.value == id) {
+                    result = {&node, &leaf};
+                    return;
+                }
+    for (const auto& child : node.children) {
+        find_bms_leaf_target(child, id, result);
+        if (result.leaf) return;
+    }
+}
+
+auto find_bms_control_node(const wormedit::bms_control_node_t& node, std::uint64_t id)
+    -> const wormedit::bms_control_node_t* {
+    if (node.id.value == id) return &node;
+    for (const auto& child : node.children)
+        if (const auto* found = find_bms_control_node(child, id)) return found;
+    return nullptr;
+}
+
+struct bms_block_outcome_t {
+    wormedit::document_command_result_t result;
+    std::string message;  // success text, or the reason nothing was attempted
+    bool attempted{true};
+};
+
+auto run_bms_block_command(const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+                           const wormedit::chart_document_t& chart, wormedit::chart_id_t chart_id)
+    -> bms_block_outcome_t {
+    using namespace wormedit;
+    const auto revision = action.compose_input_document_revision;
+    const auto& tree = *chart.bms_control_tree;
+    if (action.compose_action == WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK) {
+        const auto* statement = find_bms_control_node(tree, action.compose_branch_statement_id);
+        if (!statement || statement->kind != bms_control_kind_t::raw_statement)
+            return {{}, "Select a raw BMS statement at the top level first.", false};
+        return {apply_bms_branch_block_create_command(history, revision,
+            {.chart = chart_id, .first_statement = statement->id,
+             .first_source_order = statement->source_order, .first_source_span = statement->source_span,
+             .first_original_text = statement->original_text, .last_statement = statement->id,
+             .last_source_order = statement->source_order, .last_source_span = statement->source_span,
+             .last_original_text = statement->original_text}),
+                "BMS branch block created."};
+    }
+    if (action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK) {
+        const auto* block = find_bms_control_node(tree, action.compose_branch_id);
+        if (!block) return {{}, "Select a BMS RANDOM block first.", false};
+        return {apply_bms_branch_block_remove_command(history, revision,
+            {.chart = chart_id, .random_block = block->id, .expected_source_order = block->source_order,
+             .expected_source_span = block->source_span, .expected_original_text = block->original_text}),
+                "Empty BMS branch block removed."};
+    }
+    bms_leaf_target_t target;
+    find_bms_leaf_target(tree, action.compose_branch_id, target);
+    if (!target.leaf) return {{}, "Select a BMS branch leaf first.", false};
+    return {apply_bms_branch_leaf_move_command(history, revision,
+        {.chart = chart_id, .random_block = target.block->id, .leaf = target.leaf->id,
+         .expected_leaf_source_order = target.leaf->source_order,
+         .expected_leaf_original_text = target.leaf->original_text,
+         .direction = action.compose_branch_value < 0 ? bms_branch_leaf_move_direction_t::up
+                                                       : bms_branch_leaf_move_direction_t::down}),
+            "BMS branch leaf moved."};
+}
+
+std::string dispatch_bms_branch_block_action(
+    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+    wormedit::workspace_controller_t& workspace,
+    const std::optional<wormedit::editor_interaction_state_t>& interaction_state,
+    notification_sink_t notifications) {
+    using namespace wormedit;
+    const auto warning = [&](std::string message) {
+        notifications.post(notification_severity_t::warning, notification_source_t::format, message);
+        return message;
+    };
+    if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
+        workspace.selected_chart->value != action.compose_input_chart_id)
+        return warning("BMS branch block action ignored because the selected chart changed.");
+    if (interaction_state && editor_interaction_has_pending_gesture(*interaction_state))
+        return warning("Finish or cancel the active Compose gesture before editing a BMS branch.");
+    const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
+                                         &chart_document_t::id);
+    if (chart == history.document.charts.end() || !chart->bms_control_tree)
+        return warning("The selected chart has no BMS branch outline.");
+    if (history.document.revision != action.compose_input_document_revision)
+        return warning("BMS branch block action ignored because the document revision changed.");
+    const auto outcome = run_bms_block_command(action, history, *chart, *workspace.selected_chart);
+    const auto& applied = outcome.result;
+    const auto& success = outcome.message;
+    if (!outcome.attempted) return warning(success);
+    if (!applied.applied) {
+        if (applied.diagnostics.empty())
+            return warning("BMS branch block edit was rejected without changing the document.");
+        return publish_bms_diagnostic(notifications, applied.diagnostics.front());
+    }
+    const auto rebound = rebind_workspace(workspace, history);
+    notifications.post(notification_severity_t::success, notification_source_t::edit, success);
+    if (!rebound) {
+        const auto message = std::string{"BMS branch changed, but workspace rebinding failed."};
+        notifications.post(notification_severity_t::error, notification_source_t::document, message);
+        return message;
+    }
+    return success;
+}
+
 auto quantize_request_from_action(const WormUiWorkspaceAction& action,
                                  std::uint64_t fallback_divisions,
                                  const std::vector<wormedit::object_id_t>& objects)
@@ -3268,7 +3382,10 @@ auto dispatch_compose_view_action(
         action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE ||
         action.compose_action == WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT ||
         action.compose_action == WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT ||
-        action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT) {
+        action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT ||
+        action.compose_action == WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK ||
+        action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK ||
+        action.compose_action == WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF) {
         return notifications
             ? (notifications->post(notification_severity_t::warning, notification_source_t::format,
                                    "BMS branch actions must use the workspace action boundary."),
@@ -3312,6 +3429,15 @@ auto dispatch_compose_workspace_action(
         action.compose_action == WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT ||
         action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT) {
         const auto status = dispatch_bms_branch_statement_action(
+            action, history, workspace, interaction_state, notifications);
+        retain_bms_statement_feedback(application_state, workspace.selected_chart,
+                                      history.document.revision, status);
+        return true;
+    }
+    if (action.compose_action == WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK ||
+        action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK ||
+        action.compose_action == WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF) {
+        const auto status = dispatch_bms_branch_block_action(
             action, history, workspace, interaction_state, notifications);
         retain_bms_statement_feedback(application_state, workspace.selected_chart,
                                       history.document.revision, status);

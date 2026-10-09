@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -383,6 +384,89 @@ void render_node_statements(const branch_tree_context_t& tree) {
     }
 }
 
+
+// Structure of the selected control node, derived from the outline rows: a leaf sits two levels
+// below a RANDOM block (block -> if-group -> leaf), and its siblings are the leaves of that group.
+struct selected_outline_node_t {
+    bool block{};
+    bool leaf{};
+    bool has_previous_leaf{};
+    bool has_next_leaf{};
+};
+
+auto outline_parent_index(const WormUiComposeView& view, std::size_t index) -> std::optional<std::size_t> {
+    const auto depth = view.branch_rows[index].depth;
+    for (auto candidate = index; candidate-- > 0;)
+        if (!view.branch_rows[candidate].raw_statement && view.branch_rows[candidate].depth < depth)
+            return candidate;
+    return std::nullopt;
+}
+
+auto selected_outline_node(const WormUiComposeView& view, std::uint64_t node_id) -> selected_outline_node_t {
+    selected_outline_node_t result;
+    const auto index = selected_node_index(view, node_id);
+    if (!index) return result;
+    const auto& row = view.branch_rows[*index];
+    result.block = row.choice_block;
+    const auto group = outline_parent_index(view, *index);
+    const auto block = group ? outline_parent_index(view, *group) : std::nullopt;
+    if (!block || !view.branch_rows[*block].choice_block || view.branch_rows[*group].choice_block) return result;
+    result.leaf = true;
+    for (auto before = *index; before-- > *group + 1;)
+        if (!view.branch_rows[before].raw_statement && view.branch_rows[before].depth == row.depth)
+            result.has_previous_leaf = true;
+    for (auto after = *index + 1; after < view.branch_row_count && view.branch_rows[after].depth > view.branch_rows[*group].depth; ++after)
+        if (!view.branch_rows[after].raw_statement && view.branch_rows[after].depth == row.depth)
+            result.has_next_leaf = true;
+    return result;
+}
+
+void set_block_action(WormUiWorkspaceAction* action, const WormUiComposeView& view,
+                      WormUiComposeActionKind kind, std::uint64_t node, std::uint64_t statement,
+                      std::int64_t value) {
+    if (!action || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    action->compose_action = kind;
+    action->compose_input_chart_id = view.chart_id;
+    action->compose_input_document_revision = view.document_revision;
+    action->compose_branch_id = node;
+    action->compose_branch_statement_id = statement;
+    action->compose_branch_value = value;
+}
+
+void block_button(struct nk_context* context, const char* label, bool enabled, const char* tip,
+                  const std::function<void()>& on_click) {
+    if (!enabled) nk_widget_disable_begin(context);
+    const auto clicked = nk_button_label(context, label) != 0;
+    if (!enabled) nk_widget_disable_end(context);
+    if (clicked && enabled) on_click();
+    (void)tip;
+}
+
+// Block-level edits: wrap the selected raw statement, remove the selected empty block, and
+// move the selected leaf. The application revalidates every identity before editing.
+void render_branch_block_buttons(const branch_tree_context_t& tree) {
+    const auto& view = tree.view;
+    const auto node = selected_outline_node(view, tree.state.selected_node_id);
+    const auto statement = selected_branch_statement(view, tree.state.selected_statement_id) != nullptr;
+    const auto node_id = tree.state.selected_node_id;
+    nk_layout_row_dynamic(tree.context, 4.0f, 1);
+    nk_rule_horizontal(tree.context, nk_rgb(68, 75, 92), nk_false);
+    nk_layout_row_dynamic(tree.context, 24.0f, 4);
+    block_button(tree.context, "New block", statement, "", [&] {
+        set_block_action(tree.action, view, WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK, 0,
+                         tree.state.selected_statement_id, 0);
+    });
+    block_button(tree.context, "Remove", node.block, "", [&] {
+        set_block_action(tree.action, view, WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK, node_id, 0, 0);
+    });
+    block_button(tree.context, "Leaf up", node.leaf && node.has_previous_leaf, "", [&] {
+        set_block_action(tree.action, view, WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF, node_id, 0, -1);
+    });
+    block_button(tree.context, "Leaf down", node.leaf && node.has_next_leaf, "", [&] {
+        set_block_action(tree.action, view, WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF, node_id, 0, 1);
+    });
+}
+
 } // namespace
 
 bool worm_ui_nuklear_bms_branch_panel_visible(const WormUiComposeView* view) {
@@ -415,6 +499,7 @@ void worm_ui_nuklear_render_bms_branch_panel(struct nk_context* context,
         if (!shown) render_branch_choice(context, choice, action);
     }
     render_branch_tree(tree);
+    render_branch_block_buttons(tree);
     render_node_statements(tree);
     render_branch_statement_editor(context, *view, action, editor_state);
     if (view->branch_rows_truncated || view->branch_choices_truncated ||

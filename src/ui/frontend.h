@@ -2453,6 +2453,12 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT,
     WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT,
     WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT,
+    /* compose_branch_statement_id: the selected root raw statement to wrap in a two-leaf block. */
+    WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK,
+    /* compose_branch_id: the empty #RANDOM block to remove. */
+    WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK,
+    /* compose_branch_id: the leaf to move; compose_branch_value: -1 up, +1 down. */
+    WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF,
     WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART,
     WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE,
     WORM_UI_COMPOSE_ACTION_SELECT_QUANTIZE_PRESET,

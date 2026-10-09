@@ -38,6 +38,22 @@ constexpr std::string_view empty_branch_source = "#PLAYER 1\n"
                                                 "#ENDIF\n"
                                                 "#ENDRANDOM\n";
 
+constexpr std::string_view three_leaf_source = "#PLAYER 1\n"
+                                              "#TITLE Leaf move test\n"
+                                              "#BPM 120\n"
+                                              "#WAV01 one.wav\n"
+                                              "#WAV02 two.wav\n"
+                                              "#WAV03 three.wav\n"
+                                              "#RANDOM 3\n"
+                                              "#IF 1\n"
+                                              "#00011:0100\n"
+                                              "#ELSEIF 2\n"
+                                              "#00011:0200\n"
+                                              "#ELSEIF 3\n"
+                                              "#00011:0300\n"
+                                              "#ENDIF\n"
+                                              "#ENDRANDOM\n";
+
 auto source_line_order(std::string_view text, std::string_view line) -> std::size_t {
     const auto offset = text.find(line);
     if (offset == std::string_view::npos) {
@@ -1165,4 +1181,109 @@ TEST_CASE("BMS branch selection rejects stale invalid and lossy proposals atomic
     CHECK(unrepresentable.document.charts.front().active_branch_selection.front().selected_value ==
           1);
     CHECK(unrepresentable.undo.empty());
+}
+
+namespace {
+
+auto make_three_leaf_history(std::int64_t selected) -> document_history_t {
+    bms_parse_options_t options;
+    options.lane_profile_id = "bme-7k-outside-scratch";
+    options.branch_choices = {{.control_source_order = source_line_order(three_leaf_source, "#RANDOM 3"),
+                               .selected_value = selected}};
+    const auto parsed = parse_bms_bytes(
+        std::as_bytes(std::span{three_leaf_source.data(), three_leaf_source.size()}), std::move(options));
+    if (!parsed.song || parsed.has_errors()) throw std::runtime_error("three-leaf fixture did not parse");
+    return make_document_history(*parsed.song);
+}
+
+auto leaf_move_request(const document_history_t& history, std::string_view header,
+                       bms_branch_leaf_move_direction_t direction) -> bms_branch_leaf_move_command_t {
+    const auto& tree = chart_tree(history);
+    const auto* block = find_node(tree, bms_control_kind_t::random, "#RANDOM 3");
+    const auto* leaf = find_node(tree, bms_control_kind_t::if_branch, header);
+    if (leaf == nullptr) leaf = find_node(tree, bms_control_kind_t::else_if_branch, header);
+    if (block == nullptr || leaf == nullptr) throw std::runtime_error("leaf not found");
+    return {.chart = history.document.charts.front().id, .random_block = block->id, .leaf = leaf->id,
+            .expected_leaf_source_order = leaf->source_order,
+            .expected_leaf_original_text = leaf->original_text, .direction = direction};
+}
+
+auto serialized_source(const document_history_t& history) -> std::string {
+    return retained_bms_bytes(history.document);
+}
+
+} // namespace
+
+TEST_CASE("BMS branch leaf move swaps bodies and keeps the active leaf selected",
+          "[unit][core][bms][branch][block][leaf-move]") {
+    auto history = make_three_leaf_history(2);
+    REQUIRE(first_note_resource_name(history.document) == "two.wav");
+    const auto moved = apply_bms_branch_leaf_move_command(history, history.document.revision,
+        leaf_move_request(history, "#ELSEIF 2", bms_branch_leaf_move_direction_t::up));
+    REQUIRE(moved.applied);
+    CHECK(history.undo.size() == 1);
+    CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 1);
+    CHECK(first_note_resource_name(history.document) == "two.wav");
+    const auto text = serialized_source(history);
+    CHECK(text.find("#IF 1\n#00011:0200\n#ELSEIF 2\n#00011:0100\n#ELSEIF 3\n#00011:0300\n#ENDIF") !=
+          std::string::npos);
+    const auto again = apply_bms_branch_leaf_move_command(history, history.document.revision,
+        leaf_move_request(history, "#ELSEIF 3", bms_branch_leaf_move_direction_t::up));
+    REQUIRE(again.applied);
+    CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 1);
+    CHECK(first_note_resource_name(history.document) == "two.wav");
+    REQUIRE(undo_document_command(history));
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 2);
+    CHECK(serialized_source(history).find("#IF 1\n#00011:0100\n#ELSEIF 2\n#00011:0200") !=
+          std::string::npos);
+}
+
+TEST_CASE("BMS branch leaf move down renumbers the unselected side consistently",
+          "[unit][core][bms][branch][block][leaf-move]") {
+    auto history = make_three_leaf_history(3);
+    const auto moved = apply_bms_branch_leaf_move_command(history, history.document.revision,
+        leaf_move_request(history, "#IF 1", bms_branch_leaf_move_direction_t::down));
+    REQUIRE(moved.applied);
+    CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 3);
+    CHECK(first_note_resource_name(history.document) == "three.wav");
+    CHECK(serialized_source(history).find("#IF 1\n#00011:0200\n#ELSEIF 2\n#00011:0100\n#ELSEIF 3") !=
+          std::string::npos);
+}
+
+TEST_CASE("BMS branch leaf move rejects edges stale input and else leaves atomically",
+          "[unit][core][bms][branch][block][leaf-move][negative]") {
+    auto history = make_three_leaf_history(2);
+    const auto revision = history.document.revision;
+    const auto before = serialized_source(history);
+    const auto rejected = [&](auto result) {
+        CHECK_FALSE(result.applied);
+        CHECK_FALSE(result.diagnostics.empty());
+        CHECK(history.document.revision == revision);
+        CHECK(history.undo.empty());
+        CHECK(serialized_source(history) == before);
+    };
+    rejected(apply_bms_branch_leaf_move_command(history, revision,
+        leaf_move_request(history, "#IF 1", bms_branch_leaf_move_direction_t::up)));
+    rejected(apply_bms_branch_leaf_move_command(history, revision,
+        leaf_move_request(history, "#ELSEIF 3", bms_branch_leaf_move_direction_t::down)));
+    rejected(apply_bms_branch_leaf_move_command(history, revision + 1,
+        leaf_move_request(history, "#ELSEIF 2", bms_branch_leaf_move_direction_t::up)));
+    auto stale = leaf_move_request(history, "#ELSEIF 2", bms_branch_leaf_move_direction_t::up);
+    stale.expected_leaf_original_text = "#ELSEIF 9";
+    rejected(apply_bms_branch_leaf_move_command(history, revision, stale));
+    auto with_else = make_history();
+    const auto else_revision = with_else.document.revision;
+    const auto& tree = chart_tree(with_else);
+    const auto* block = find_node(tree, bms_control_kind_t::random, "#RANDOM 2");
+    const auto* leaf = find_node(tree, bms_control_kind_t::if_branch, "#IF 1");
+    REQUIRE((block && leaf));
+    const auto result = apply_bms_branch_leaf_move_command(with_else, else_revision,
+        {.chart = with_else.document.charts.front().id, .random_block = block->id, .leaf = leaf->id,
+         .expected_leaf_source_order = leaf->source_order,
+         .expected_leaf_original_text = leaf->original_text,
+         .direction = bms_branch_leaf_move_direction_t::down});
+    CHECK_FALSE(result.applied);
+    CHECK_FALSE(result.diagnostics.empty());
+    CHECK(with_else.document.revision == else_revision);
 }

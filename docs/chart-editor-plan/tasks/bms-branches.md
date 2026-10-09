@@ -44,12 +44,13 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-92 Add block create/remove and leaf reorder to the outline
 
-- **Status:** ready
+- **Status:** done
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Outcome:** outline buttons create a block from the current selection, remove an empty block, and move a leaf up/down.
 - **Read first:** `include/wormedit/core/bms_branch_editor.h`, `src/ui/nuklear/bms_branch_panel.cpp`.
 - **Files owned:** `src/ui/nuklear/bms_branch_panel.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `src/core/bms_branch_editor.cpp` (leaf reorder command), `tests/core/bms_branch_editor_tests.cpp`. User-approved supporting scope (2026-10-03): `include/wormedit/core/bms_branch_editor.h`.
 - **Implementation audit (2026-10-03):** create/remove commands now exist, but no public leaf-reorder command is declared. Its typed request and callable declaration require `include/wormedit/core/bms_branch_editor.h`, which this card omits. Header ownership was approved by the user on 2026-10-03; no implementation was started.
+- **Result (2026-10-09):** `apply_bms_branch_leaf_move_command` (header, `src/core/bms_branch_editor.cpp`) swaps the bodies of two adjacent plain `#IF`/`#ELSEIF` leaves of one RANDOM block as one revision-checked undoable command, so the `#IF`/`#ELSEIF` values stay in order and the block's active choice follows the moved content; `#ELSE` leaves, nested control flow, edges and stale identities reject atomically, and the one-chart restrictions are unchanged. The outline has four buttons (New block, Remove block, Leaf up, Leaf down) wired through `WORM_UI_COMPOSE_ACTION_CREATE/REMOVE_BMS_BRANCH_BLOCK` and `MOVE_BMS_BRANCH_LEAF` to `dispatch_bms_branch_block_action`. Tests: 3 core cases, 1 event-harness case (all four buttons), 1 sys dispatch case in `tests/sys/compose_action_notification_tests.cpp` (coordinator-approved supporting path, create then undo and a rejected remove). Real-window Xvfb captures on `control-flow-mixed.bms`: `/home/zardoru/devel/wormedit-scratch-builds/t92/` (`leaf-selected.png`, `block-selected.png`). Full suite 3047/3047.
 - **Steps:**
   0. Scope extension approved by the user (2026-10-03).
   1. Core leaf-reorder command with test.

@@ -433,13 +433,12 @@ void set_block_action(WormUiWorkspaceAction* action, const WormUiComposeView& vi
     action->compose_branch_value = value;
 }
 
-void block_button(struct nk_context* context, const char* label, bool enabled, const char* tip,
+void block_button(struct nk_context* context, const char* label, bool enabled,
                   const std::function<void()>& on_click) {
     if (!enabled) nk_widget_disable_begin(context);
     const auto clicked = nk_button_label(context, label) != 0;
     if (!enabled) nk_widget_disable_end(context);
     if (clicked && enabled) on_click();
-    (void)tip;
 }
 
 // Block-level edits: wrap the selected raw statement, remove the selected empty block, and
@@ -451,18 +450,19 @@ void render_branch_block_buttons(const branch_tree_context_t& tree) {
     const auto node_id = tree.state.selected_node_id;
     nk_layout_row_dynamic(tree.context, 4.0f, 1);
     nk_rule_horizontal(tree.context, nk_rgb(68, 75, 92), nk_false);
-    nk_layout_row_dynamic(tree.context, 24.0f, 4);
-    block_button(tree.context, "New block", statement, "", [&] {
+    nk_layout_row_dynamic(tree.context, 24.0f, 2);
+    block_button(tree.context, "New block", statement, [&] {
         set_block_action(tree.action, view, WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK, 0,
                          tree.state.selected_statement_id, 0);
     });
-    block_button(tree.context, "Remove", node.block, "", [&] {
+    block_button(tree.context, "Remove block", node.block, [&] {
         set_block_action(tree.action, view, WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK, node_id, 0, 0);
     });
-    block_button(tree.context, "Leaf up", node.leaf && node.has_previous_leaf, "", [&] {
+    nk_layout_row_dynamic(tree.context, 24.0f, 2);
+    block_button(tree.context, "Leaf up", node.leaf && node.has_previous_leaf, [&] {
         set_block_action(tree.action, view, WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF, node_id, 0, -1);
     });
-    block_button(tree.context, "Leaf down", node.leaf && node.has_next_leaf, "", [&] {
+    block_button(tree.context, "Leaf down", node.leaf && node.has_next_leaf, [&] {
         set_block_action(tree.action, view, WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF, node_id, 0, 1);
     });
 }

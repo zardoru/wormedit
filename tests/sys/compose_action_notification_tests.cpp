@@ -9,6 +9,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <wormedit/formats/bmson.h>
+#include <wormedit/formats/bms.h>
 #include <wormedit/audio/slice_render.h>
 #include <wormedit/core/notifications.h>
 #include <wormedit/core/lane_profile_switch.h>
@@ -1429,4 +1430,64 @@ TEST_CASE("BMSON lane_mode dispatcher shares channel and sound targets with atom
     check_action(fixture.history.document.resources.front().sound_kind == sound_kind_t::keysound);
     check_action(undo_document_command(fixture.history));
     check_action(fixture.history.document.charts.front().sound_channels.front().events.back().continuation);
+}
+
+TEST_CASE("Compose workspace boundary creates and removes a BMS branch block and undoes each",
+          "[compose-action-notifications][bms-branch]") {
+    constexpr std::string_view text = "#PLAYER 1\n#TITLE Block action test\n#BPM 120\n"
+                                      "#WAV01 one.wav\n#WAV02 two.wav\n#00011:0100\n";
+    bms_parse_options_t options;
+    options.lane_profile_id = "bme-7k-outside-scratch";
+    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{text.data(), text.size()}), std::move(options));
+    require_action(parsed.song.has_value() && !parsed.has_errors());
+    action_notification_fixture_t fixture;
+    fixture.history = make_document_history(*parsed.song);
+    fixture.workspace = *make_workspace_controller(fixture.history).workspace;
+    fixture.workspace.active_tab = workspace_tab_t::compose;
+    fixture.workspace.selected_chart = fixture.history.document.charts.front().id;
+    fixture.state.chart = fixture.history.document.charts.front().id;
+    metadata_drop_state_t drop;
+    runtime::metadata_asset_t metadata{fixture.sink};
+    std::optional<editor_interaction_state_t> interaction{fixture.state};
+    const auto dispatch = [&](WormUiWorkspaceAction action) {
+        action.compose_input_chart_id = fixture.history.document.charts.front().id.value;
+        action.compose_input_document_revision = fixture.history.document.revision;
+        return dispatch_compose_workspace_action(action, fixture.history, fixture.workspace,
+            interaction, 800, fixture.application, {}, fixture.scheduler, fixture.resource_copy,
+            fixture.export_runtime, false, drop, metadata, fixture.sink);
+    };
+    const auto find_node = [&](bms_control_kind_t kind) -> const bms_control_node_t* {
+        const auto* found = static_cast<const bms_control_node_t*>(nullptr);
+        const auto visit = [&](const auto& self, const bms_control_node_t& node) -> void {
+            if (!found && node.kind == kind && node.original_text != "#00011:0100") found = &node;
+            for (const auto& child : node.children) self(self, child);
+        };
+        visit(visit, *fixture.history.document.charts.front().bms_control_tree);
+        return found;
+    };
+    const auto* statement = [&] {
+        const auto* raw = static_cast<const bms_control_node_t*>(nullptr);
+        for (const auto& node : fixture.history.document.charts.front().bms_control_tree->children)
+            if (node.kind == bms_control_kind_t::raw_statement && node.original_text == "#WAV02 two.wav")
+                raw = &node;
+        return raw;
+    }();
+    require_action(statement != nullptr);
+    WormUiWorkspaceAction create{};
+    create.compose_action = WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK;
+    create.compose_branch_statement_id = statement->id.value;
+    check_action(dispatch(create));
+    check_action(fixture.history.undo.size() == 1);
+    const auto* block = find_node(bms_control_kind_t::random);
+    require_action(block != nullptr);
+    WormUiWorkspaceAction remove{};
+    remove.compose_action = WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK;
+    remove.compose_branch_id = block->id.value;
+    // The created block holds the wrapped statement, so removal rejects without changing history.
+    const auto revision = fixture.history.document.revision;
+    check_action(dispatch(remove));
+    check_action(fixture.history.document.revision == revision && fixture.history.undo.size() == 1);
+    require_action(undo_document_command(fixture.history));
+    check_action(find_node(bms_control_kind_t::random) == nullptr);
+    check_action(fixture.history.undo.empty());
 }

@@ -1,6 +1,7 @@
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/nuklear/compose_inspector.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/compose_waveform_gaps.h"
 #include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include "ui/nuklear/compose_area_menu.h"
@@ -1515,14 +1516,33 @@ static void pin_compose_stem_envelopes(const ComposePaintContext& paint) {
     renderer.prepare_piece_zoom(view.pixels_per_standard_measure, keys);
 }
 
+// The song, stem and channel waveforms skip Stop and Delay bands: that time takes no rows.
+static void draw_compose_waveforms_outside_pauses(const ComposePaintContext& paint) {
+    std::vector<std::pair<float, float>> bands;
+    for (size_t index = 0; index < paint.view->dead_span_count; ++index) {
+        const auto& span = paint.view->dead_spans[index];
+        if (span.kind > 1) continue;
+        const auto rect = compose_screen_rect(&span.bounds, paint.view, paint.viewport);
+        if (rect.h > 0.0f) bands.emplace_back(rect.y, rect.y + rect.h);
+    }
+    auto& field = paint_field(paint.context);
+    for (const auto& strip : compose_waveform_strips(
+             paint.viewport.y, paint.viewport.y + paint.viewport.h, std::move(bands))) {
+        const auto previous = field.push_clip(
+            {paint.viewport.x, strip.top, paint.viewport.w, strip.bottom - strip.top});
+        draw_compose_waveform(paint);
+        draw_compose_stem_waveforms(paint);
+        draw_compose_channel_waveform(paint);
+        field.pop_clip(previous);
+    }
+}
+
 static void draw_compose_waveform_layer(const ComposePaintContext& paint,
                                         const ComposeTimingLaneLayout& layout) {
     pin_compose_stem_envelopes(paint);
     reserve_compose_song_envelope(paint);
     reserve_compose_channel_envelope(paint);
-    draw_compose_waveform(paint);
-    draw_compose_stem_waveforms(paint);
-    draw_compose_channel_waveform(paint);
+    draw_compose_waveforms_outside_pauses(paint);
     draw_compose_beat_fit_region(paint, layout);
     draw_compose_differences(paint);
 }

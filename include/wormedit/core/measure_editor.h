@@ -102,6 +102,11 @@ struct measure_removal_proposal_t {
 [[nodiscard]] auto propose_measure_removal(const chart_document_t& chart, measure_id_t measure)
     -> measure_removal_proposal_t;
 
+// True when a timing event, layout segment, hold end, marker or other positioned object
+// still names `measure`. Such a measure cannot be deleted as an empty one.
+[[nodiscard]] auto measure_holds_positioned_objects(const chart_document_t& chart,
+                                                    measure_id_t measure) -> bool;
+
 // Append default 4/4 measures through the source audio's end using the chart's
 // final BPM and exact existing timing. Existing IDs and positions stay intact.
 // Unknown stream lengths are a no-op; invalid or excessive extents fail before

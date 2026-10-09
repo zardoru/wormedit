@@ -260,13 +260,21 @@ measure_removal_confirmation_t measure_removal_confirmation;
 void render_measure_removal_summary(const ComposeInspectorContext& inspector) {
     const auto* view = inspector.view;
     auto* context = inspector.context;
-    nk_layout_row_dynamic(context, 20, 1);
-    nk_labelf(context, NK_TEXT_LEFT, "Deletes %zu notes, %zu BGM and %zu BGA events.",
-              view->measure_removal_deleted_notes, view->measure_removal_deleted_bgm_events,
-              view->measure_removal_deleted_bga_events);
-    nk_labelf(context, NK_TEXT_LEFT, "Shortens %zu holds and moves %zu timing events to the next measure.",
-              view->measure_removal_shortened_holds, view->measure_removal_moved_positions);
-    if (view->measure_removal_blocked) nk_label_wrap(context, view->measure_removal_message);
+    // Wrapped, not clipped: the inspector is narrow and the counts must stay readable.
+    char text[160];
+    nk_layout_row_dynamic(context, 38, 1);
+    std::snprintf(text, sizeof(text), "Deletes %zu notes, %zu BGM and %zu BGA events.",
+                  view->measure_removal_deleted_notes, view->measure_removal_deleted_bgm_events,
+                  view->measure_removal_deleted_bga_events);
+    nk_label_wrap(context, text);
+    nk_layout_row_dynamic(context, 56, 1);
+    std::snprintf(text, sizeof(text), "Shortens %zu holds and moves %zu timing events to the next measure.",
+                  view->measure_removal_shortened_holds, view->measure_removal_moved_positions);
+    nk_label_wrap(context, text);
+    if (view->measure_removal_blocked) {
+        nk_layout_row_dynamic(context, 56, 1);
+        nk_label_wrap(context, view->measure_removal_message);
+    }
 }
 
 void render_measure_removal_confirmation(const ComposeInspectorContext& inspector) {
@@ -282,8 +290,8 @@ void render_measure_removal_confirmation(const ComposeInspectorContext& inspecto
         confirmation.open = false;
         return;
     }
-    nk_layout_row_dynamic(context, 20, 1);
-    nk_label(context, "Remove this measure and its contents?", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 38, 1);
+    nk_label_wrap(context, "Remove this measure and its contents?");
     render_measure_removal_summary(inspector);
     nk_layout_row_dynamic(context, 24, 2);
     const auto blocked = view->measure_removal_blocked;

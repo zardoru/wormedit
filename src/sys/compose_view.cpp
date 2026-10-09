@@ -417,9 +417,13 @@ void populate_measure_removal(WormUiComposeView& view, const wormedit::song_docu
     view.measure_removal_deleted_bga_events = proposal.deleted_bga_events;
     view.measure_removal_shortened_holds = proposal.shortened_holds;
     view.measure_removal_moved_positions = proposal.moved_positions;
-    view.measure_removal_has_contents = proposal.deleted_notes + proposal.deleted_bgm_events +
-                                            proposal.deleted_bga_events + proposal.shortened_holds +
-                                            proposal.moved_positions != 0;
+    // A blocked removal of a measure that still anchors objects must show its reason instead of
+    // falling back to the plain delete, which would be rejected as an unknown measure.
+    view.measure_removal_has_contents =
+        proposal.deleted_notes + proposal.deleted_bgm_events + proposal.deleted_bga_events +
+                proposal.shortened_holds + proposal.moved_positions != 0 ||
+        (view.measure_removal_blocked &&
+         wormedit::measure_holds_positioned_objects(chart, cursor.measure));
 }
 
 void populate_lane_layout_editor(WormUiComposeView& view, const wormedit::chart_document_t& chart,

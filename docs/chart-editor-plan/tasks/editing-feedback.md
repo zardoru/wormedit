@@ -100,3 +100,23 @@ valid position.
 - **Reject/failure behavior:** if any displacement has no destination, the whole move is rejected and its ghosts show red, as in T-420.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^core\.'`; `ctest --test-dir build -L event-harness`.
 - **Out of scope:** applying the policy to paste and draw strokes. Add a follow-up card once the user has tried it on moves.
+
+## T-487 Make the Quantize grid and the editing snap one shared grid
+
+- **Status:** ready
+- **Decision (user, 2026-10-08):** the Quantize grid chips should set the snap: "if they don't I would like them to." Option chosen: one shared grid in both directions.
+- **Current behavior:** the T-419 grid chips set only `quantize_divisions` through `WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS` (`render_quantize_grid` in `src/ui/nuklear/compose_inspector.cpp`). The editing snap `active_snap_denominator` changes only by cycling with Previous/Next Snap (`cycle_edit_snap_action_t` in `src/core/interaction.cpp`). No action sets a specific snap. Both values count divisions per standard measure.
+- **Outcome:** clicking a grid chip, or applying a custom grid, sets the quantize target and the editing snap together, and the status bar's "Snap 1/n" follows. Changing the snap with Previous/Next Snap moves the highlighted chip and the quantize target with it. A grid the chart cannot snap to (not in `supported_snap_denominators`) sets only the quantize target. Its chip tooltip says "Quantize only: this chart cannot snap to 1/n."
+- **Read first:** `include/wormedit/core/interaction.h` (`cycle_edit_snap_action_t`, the action variant), `src/core/interaction.cpp` (`cycle_edit_snap`), `src/sys/compose_actions.cpp` (`SET_QUANTIZE_SETTINGS` handling and `quantize_request_from_action`), `src/ui/nuklear/compose_inspector.cpp` (`render_quantize_grid`).
+- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `tests/core/interaction_tests.cpp`, `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_inspector.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, this card.
+- **Steps:**
+  1. Core: add `set_edit_snap_action_t{denominator}`, accepted only when the denominator is supported, using the same state update as `cycle_edit_snap`.
+  2. Grid chip and custom Apply: after the quantize settings are stored, also set the editing snap when it is supported.
+  3. Snap cycling: after the snap changes, set the quantize target to the new denominator, keeping space, halfway and hold-tail settings. Quantize presets that carry their own grid still set both.
+  4. Project a per-chip "snappable" flag, or the supported list, so unsupported chips show the quantize-only tooltip.
+  5. Tests: a core test for the set action (supported and unsupported); an event-harness test where clicking 1/16 makes the snap 16 and Next Snap then moves the chip; an unsupported value leaves the snap unchanged.
+- **Invariants:** neither setting touches the document or creates an undo step. Quantize-preview memoization stays warm when only the snap changes and the grid already matches.
+- **Reject/failure behavior:** an unsupported snap value is not an error. It leaves the snap unchanged and posts no notification.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`; `ctest --test-dir build -L event-harness`; full suite.
+- **Out of scope:** a toolbar snap chip control.
+

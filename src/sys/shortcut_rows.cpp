@@ -18,8 +18,13 @@ constexpr std::uint16_t last_digit_usage = 0x26;
 constexpr std::uint16_t digit_zero_usage = 0x27;
 constexpr std::uint16_t first_function_usage = 0x3a;
 constexpr std::uint16_t last_function_usage = 0x45;
+constexpr std::uint16_t first_keypad_digit_usage = 0x59;
+constexpr std::uint16_t last_keypad_digit_usage = 0x61;
 constexpr std::size_t max_chords_shown = 8;
 
+// Names follow the usual English keyboard legends. Usages come from the USB HID Keyboard
+// page, so punctuation and keypad keys are named here even though shortcut_key_t has no
+// enumerator for them.
 auto key_name(std::uint16_t usage) -> std::string {
     if (usage >= first_letter_usage && usage <= last_letter_usage)
         return std::string(1, static_cast<char>('A' + (usage - first_letter_usage)));
@@ -28,16 +33,42 @@ auto key_name(std::uint16_t usage) -> std::string {
     if (usage == digit_zero_usage) return "0";
     if (usage >= first_function_usage && usage <= last_function_usage)
         return "F" + std::to_string(usage - first_function_usage + 1);
-    switch (static_cast<shortcut_key_t>(usage)) {
-    case shortcut_key_t::enter: return "Enter";
-    case shortcut_key_t::escape: return "Escape";
-    case shortcut_key_t::backspace: return "Backspace";
-    case shortcut_key_t::space: return "Space";
-    case shortcut_key_t::delete_key: return "Delete";
-    case shortcut_key_t::right: return "Right";
-    case shortcut_key_t::left: return "Left";
-    case shortcut_key_t::down: return "Down";
-    case shortcut_key_t::up: return "Up";
+    if (usage >= first_keypad_digit_usage && usage <= last_keypad_digit_usage)
+        return "Keypad " + std::to_string(usage - first_keypad_digit_usage + 1);
+    switch (usage) {
+    case 0x28: return "Enter";
+    case 0x29: return "Escape";
+    case 0x2a: return "Backspace";
+    case 0x2b: return "Tab";
+    case 0x2c: return "Space";
+    case 0x2d: return "-";
+    case 0x2e: return "=";
+    case 0x2f: return "[";
+    case 0x30: return "]";
+    case 0x31: return "\\";
+    case 0x33: return ";";
+    case 0x34: return "'";
+    case 0x35: return "`";
+    case 0x36: return ",";
+    case 0x37: return ".";
+    case 0x38: return "/";
+    case 0x49: return "Insert";
+    case 0x4a: return "Home";
+    case 0x4b: return "PageUp";
+    case 0x4c: return "Delete";
+    case 0x4d: return "End";
+    case 0x4e: return "PageDown";
+    case 0x4f: return "Right";
+    case 0x50: return "Left";
+    case 0x51: return "Down";
+    case 0x52: return "Up";
+    case 0x54: return "Keypad /";
+    case 0x55: return "Keypad *";
+    case 0x56: return "Keypad -";
+    case 0x57: return "Keypad +";
+    case 0x58: return "Keypad Enter";
+    case 0x62: return "Keypad 0";
+    case 0x63: return "Keypad .";
     default: return {};
     }
 }

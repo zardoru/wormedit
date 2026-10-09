@@ -304,3 +304,84 @@ TEST_CASE("Unchanged BGM move keeps the original stop boundary", "[unit][sys][co
         "BGM event remained at its original position.");
     CHECK(fixture.history.undo.empty());
 }
+
+namespace {
+void check_mixed_input(bool value) { CHECK(value); }
+void setup_mixed_bgm_input(compose_notification_fixture_t& fixture) {
+    auto& chart = fixture.history.document.charts.front();
+    chart.lane_layouts.front().layout.lanes.front().glyph = lane_glyph_t::arrow_up;
+    chart.bgm_source_lanes = {{.id = object_id_t{4}}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{45},
+        .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{4}}};
+    fixture.state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, object_id_t{45}});
+    fixture.state.viewport_height_pixels = 400;
+    fixture.state.pixels_per_standard_measure = 240;
+    fixture.state.viewport_scroll_pixels = 0;
+}
+auto mixed_bgm_input(compose_notification_fixture_t& fixture, WormUiComposeInputKind kind, double y)
+    -> std::string {
+    WormUiWorkspaceAction action{};
+    action.compose_input_chart_id = fixture.state.chart.value;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    action.compose_input_viewport_width_pixels = 800;
+    action.compose_input_count = 1;
+    action.compose_inputs[0].kind = kind;
+    action.compose_inputs[0].y_pixels = y;
+    action.compose_inputs[0].lane_id = 4;
+    action.compose_inputs[0].object_id = 45;
+    return dispatch_compose_input_action(action, fixture.history, fixture.workspace, fixture.state,
+        fixture.viewport, fixture.navigation, fixture.application, fixture.cache, 0, &fixture.sink);
+}
+}
+
+TEST_CASE("BGM drag dispatch moves a mixed selection through the shared core gesture",
+          "[unit][sys][compose-notification][mixed-move]") {
+    compose_notification_fixture_t fixture;
+    setup_mixed_bgm_input(fixture);
+    (void)mixed_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_BEGIN, 60);
+    REQUIRE(fixture.state.pending_note_move_gesture);
+    const auto updated = mixed_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_UPDATE, 120);
+    INFO(updated);
+    REQUIRE(fixture.state.pending_note_move_gesture);
+    check_mixed_input(fixture.state.pending_note_move_gesture->bgm_preview.front().position == local_position_t{measure_id_t{1}, 480});
+    (void)mixed_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE, 120);
+    const auto& measure = fixture.history.document.charts.front().measures.front();
+    check_mixed_input(measure.notes.front().position == local_position_t{measure_id_t{1}, 360});
+    check_mixed_input(measure.bgm_events.front().position == local_position_t{measure_id_t{1}, 480});
+    check_mixed_input(fixture.history.undo.size() == 1 && !fixture.state.pending_note_move_gesture);
+    check_mixed_input(fixture.state.selected_objects.size() == 2);
+}
+
+TEST_CASE("BGM drag dispatch cancels or rejects the whole mixed selection",
+          "[unit][sys][compose-notification][mixed-move]") {
+    compose_notification_fixture_t fixture;
+    setup_mixed_bgm_input(fixture);
+    fixture.history.document.charts.front().measures.front().notes.push_back(
+        {.id = object_id_t{2}, .position = {measure_id_t{1}, 360}, .lane = lane_id_t{1}});
+    (void)mixed_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_BEGIN, 60);
+    REQUIRE(fixture.state.pending_note_move_gesture);
+    (void)mixed_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_CANCEL, 60);
+    check_mixed_input(!fixture.state.pending_note_move_gesture && fixture.history.undo.empty());
+    (void)mixed_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_BEGIN, 60);
+    (void)mixed_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE, 120);
+    check_mixed_input(!fixture.state.pending_note_move_gesture && fixture.history.undo.empty());
+    check_mixed_input(fixture.history.document.charts.front().measures.front().notes.front().position == local_position_t{measure_id_t{1}, 120});
+}
+
+TEST_CASE("BGM drag Y-lock holds the origin even outside authored chart rows",
+          "[unit][sys][compose-notification][mixed-move][y-lock]") {
+    compose_notification_fixture_t fixture;
+    setup_mixed_bgm_input(fixture);
+    fixture.state.y_lock = true;
+    (void)mixed_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_BEGIN, 60);
+    (void)mixed_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE, -10000);
+    check_mixed_input(!fixture.state.pending_note_move_gesture && fixture.history.undo.empty());
+    check_mixed_input(fixture.history.document.charts.front().measures.front().bgm_events.front().position == local_position_t{measure_id_t{1}, 240});
+    fixture.state.selected_notes.clear();
+    fixture.state.selected_objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{45}}};
+    (void)mixed_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_BEGIN, 60);
+    REQUIRE(fixture.application.bmson_marker_move_preview);
+    (void)mixed_bgm_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE, -10000);
+    check_mixed_input(fixture.history.undo.empty());
+    check_mixed_input(fixture.history.document.charts.front().measures.front().bgm_events.front().position == local_position_t{measure_id_t{1}, 240});
+}

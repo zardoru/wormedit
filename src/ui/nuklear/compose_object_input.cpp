@@ -411,6 +411,13 @@ static void update_bmson_marker_move_candidate(const ComposePointerEventContext&
     }
 }
 
+static auto selected_bgm_drag_reference(const ComposePointerEventContext& input) -> uint64_t {
+    const auto id = compose_bgm_event_at(input.view, input.pointer_started_x, input.pointer_started_y);
+    for (const auto& event : std::span(input.view->bgm_events, input.view->bgm_event_count))
+        if (event.event_id == id && event.selected) return id;
+    return 0;
+}
+
 static auto bmson_marker_move_can_start(const ComposePointerEventContext& input,
                                         bool paint_pointer_consumed) -> bool {
     const auto& view = *input.view;
@@ -421,14 +428,12 @@ static auto bmson_marker_move_can_start(const ComposePointerEventContext& input,
            state.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off &&
            state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off &&
            !view.note_paint_mode_active && !view.semantic_layer_paint_mode_active &&
-           view.selected_bgm_event_id != 0 &&
-           compose_bgm_event_at(&view, input.pointer_started_x, input.pointer_started_y) ==
-               view.selected_bgm_event_id;
+           selected_bgm_drag_reference(input) != 0;
 }
 
 static void begin_bmson_marker_move_candidate(const ComposePointerEventContext& input) {
     state.bmson_marker_move_candidate_active = true;
-    state.bmson_marker_move_event_id = input.view->selected_bgm_event_id;
+    state.bmson_marker_move_event_id = selected_bgm_drag_reference(input);
     state.bmson_marker_move_anchor_x = input.pointer_started_x;
     state.bmson_marker_move_anchor_y = input.pointer_started_y;
     state.bmson_marker_move_anchor_screen_x = input.left_clicked_screen_x;

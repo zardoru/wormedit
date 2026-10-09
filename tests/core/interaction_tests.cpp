@@ -6285,3 +6285,143 @@ TEST_CASE("shared lane action rejects mixed collisions without consuming selecti
     feedback_check(state.selected_objects.size() == 1);
     feedback_check(state.selected_notes.size() == 1);
 }
+
+namespace {
+auto mixed_move_state(document_history_t& history) -> editor_interaction_state_t {
+    auto state = make_state(history);
+    state.selected_notes = {object_id_t{101}};
+    state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}},
+                              {editor_selection_object_kind_t::bgm_event, object_id_t{301}}};
+    return state;
+}
+}
+
+TEST_CASE("Mixed dragging from either kind translates heads and tails with one Undo",
+          "[unit][core][interaction][move][mixed-move]") {
+    const auto from_bgm = GENERATE(false, true);
+    auto song = bgm_move_song(true);
+    song.charts.front().measures.front().bgm_events.front().end = local_position_t{measure_id_t{1}, 720};
+    auto history = make_document_history(song);
+    auto state = mixed_move_state(history);
+    const auto reference = object_id_t{from_bgm ? 301U : 101U};
+    const auto target = local_position_t{measure_id_t{1}, from_bgm ? 720U : 240U};
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{reference}));
+    feedback_require(dispatch_editor_action(history, state, update_note_move_gesture_action_t{target}));
+    feedback_check(history.undo.empty());
+    feedback_check(state.pending_note_move_gesture->bgm_preview.front().position == local_position_t{measure_id_t{1}, 720});
+    feedback_require(dispatch_editor_action(history, state, release_note_move_gesture_action_t{target}));
+    feedback_check(find_note(history, object_id_t{101})->position == local_position_t{measure_id_t{1}, 240});
+    const auto* bgm = bgm_move_event(history, object_id_t{301});
+    feedback_require(bgm);
+    feedback_check(bgm->position == local_position_t{measure_id_t{1}, 720});
+    feedback_check(bgm->end == local_position_t{measure_id_t{2}, 0});
+    feedback_check(bgm->source_lane == object_id_t{300});
+    feedback_check(state.selected_notes.size() == 1 && state.selected_objects.size() == 2);
+    feedback_check(history.undo.size() == 1 && !state.pending_note_move_gesture);
+    feedback_require(undo_document_command(history));
+    auto restored = history.document;
+    restored.revision = song.revision;
+    feedback_check(feedback_document_bytes(restored) == feedback_document_bytes(song));
+}
+
+TEST_CASE("Mixed dragging rejects either part's collision atomically and clears release ghosts",
+          "[unit][core][interaction][move][mixed-move]") {
+    const auto bgm_collision = GENERATE(false, true);
+    auto song = bgm_move_song(true);
+    if (bgm_collision)
+        song.charts.front().measures.front().bgm_events.push_back(
+            {.id = object_id_t{302}, .position = {measure_id_t{1}, 720}, .source_lane = object_id_t{300}});
+    else
+        song.charts.front().measures.front().notes.push_back(
+            {.id = object_id_t{103}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}});
+    auto history = make_document_history(song);
+    song.revision = history.document.revision;
+    auto state = mixed_move_state(history);
+    const auto selected = state.selected_objects;
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
+    feedback_require(dispatch_editor_action(history, state,
+        update_note_move_gesture_action_t{{measure_id_t{1}, 240}}));
+    feedback_check(state.pending_note_move_gesture->conflicting_notes != 0);
+    feedback_check(!dispatch_editor_action(history, state,
+        release_note_move_gesture_action_t{{measure_id_t{1}, 240}}));
+    feedback_check(feedback_document_bytes(history.document) == feedback_document_bytes(song));
+    feedback_check(state.selected_objects == selected);
+    feedback_check(history.undo.empty() && !state.pending_note_move_gesture);
+}
+
+TEST_CASE("Mixed Y-lock preserves both rows while note lane changes remain available",
+          "[unit][core][interaction][move][mixed-move]") {
+    const auto from_bgm = GENERATE(false, true);
+    auto history = make_document_history(bgm_move_song(true));
+    auto state = mixed_move_state(history);
+    state.y_lock = true;
+    history.document.charts.front().lane_layouts.front().layout.lanes[1].display_order = 1;
+    feedback_require(dispatch_editor_action(history, state,
+        begin_note_move_gesture_action_t{object_id_t{from_bgm ? 301U : 101U}}));
+    const auto result = dispatch_editor_action(history, state,
+        release_note_move_gesture_action_t{{measure_id_t{2}, 0}, lane_id_t{2}});
+    feedback_require(result);
+    feedback_check(find_note(history, object_id_t{101})->position == local_position_t{measure_id_t{1}, 0});
+    feedback_check(find_note(history, object_id_t{101})->lane == lane_id_t{from_bgm ? 1U : 2U});
+    feedback_check(bgm_move_event(history, object_id_t{301})->position == local_position_t{measure_id_t{1}, 480});
+    feedback_check(bgm_move_event(history, object_id_t{301})->source_lane == object_id_t{300});
+    feedback_check(history.undo.size() == (from_bgm ? 0 : 1));
+}
+
+TEST_CASE("Mixed drag vacates selected BGM rows together and rejects translated tail overflow",
+          "[unit][core][interaction][move][mixed-move]") {
+    const auto overflow = GENERATE(false, true);
+    auto song = bgm_move_song(true);
+    song.charts.front().measures.front().bgm_events.push_back(
+        {.id = object_id_t{302}, .position = {measure_id_t{1}, 720}, .source_lane = object_id_t{300}});
+    if (overflow)
+        song.charts.front().measures.front().bgm_events.back().end = local_position_t{song.charts.front().measures.back().id, 900};
+    auto history = make_document_history(song);
+    auto state = mixed_move_state(history);
+    state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, object_id_t{302}});
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
+    const auto result = dispatch_editor_action(history, state,
+        release_note_move_gesture_action_t{{measure_id_t{1}, 240}});
+    feedback_check(result.accepted != overflow);
+    feedback_check(history.undo.size() == (overflow ? 0 : 1));
+    feedback_check(!state.pending_note_move_gesture);
+}
+
+TEST_CASE("Mixed BMSON drag preserves the retained stem point or rejects both parts",
+          "[unit][core][interaction][move][mixed-move][bmson]") {
+    const auto collision = GENERATE(false, true);
+    auto song = bgm_move_song(true);
+    song.audio_assets = {{.id = asset_id_t{10}, .stream = {48000, 2, 480000, true}}};
+    song.resources = {{.id = resource_id_t{20}, .asset = asset_id_t{10}, .roles = {resource_role_t::sample}}};
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bmson;
+    chart.bpms = {{.id = object_id_t{500}, .position = {measure_id_t{1}, 0}, .beats_per_minute = {120, 1}}};
+    chart.bgm_source_lanes.front().stem_channel = object_id_t{400};
+    auto& bgm = chart.measures.front().bgm_events.front();
+    bgm.sound = resource_id_t{20};
+    bgm.sound_channel_event = object_id_t{402};
+    chart.sound_channels = {{.id = object_id_t{400}, .name = "Stem",
+        .source_clip = {.id = clip_id_t{401}, .source = asset_id_t{10}, .end_frame = 480000},
+        .events = {{.id = object_id_t{402}, .position = bgm.position, .playable = false}}}};
+    if (collision) {
+        chart.sound_channels.front().events.push_back(
+            {.id = object_id_t{403}, .position = {measure_id_t{1}, 720}, .continuation = true, .playable = false});
+        chart.measures.front().bgm_events.push_back({.id = object_id_t{302},
+            .position = {measure_id_t{1}, 720}, .source_lane = object_id_t{300},
+            .sound = resource_id_t{20}, .sound_channel_event = object_id_t{403}});
+    }
+    feedback_require(validate_document(song).empty());
+    auto history = make_document_history(song);
+    auto state = mixed_move_state(history);
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
+    const auto result = dispatch_editor_action(history, state,
+        release_note_move_gesture_action_t{{measure_id_t{1}, 240}});
+    feedback_check(result.accepted != collision);
+    feedback_check(history.undo.size() == (collision ? 0 : 1));
+    const auto* moved = bgm_move_event(history, object_id_t{301});
+    feedback_check(moved->sound_channel_event == object_id_t{402});
+    feedback_check(moved->source_lane == object_id_t{300});
+    feedback_check(moved->position == local_position_t{measure_id_t{1}, collision ? 480U : 720U});
+    feedback_check(history.document.charts.front().sound_channels.front().events.front().position == moved->position);
+    feedback_check(validate_document(history.document).empty());
+}

@@ -1460,3 +1460,25 @@ TEST_CASE("Emitted stem and packed draw payloads each commit one undoable BMSON 
                   packed_stroke_undoes_once(*packed_input, 90));
     }
 }
+
+TEST_CASE("Mixed selection starts a BGM drag without a singular inspector event",
+          "[frontend-state][event-harness][mixed-move]") {
+    stem_lane_fixture_t f;
+    auto& view = f.harness.view().compose;
+    view.note_paint_mode_active = false;
+    f.marker.selected = true;
+    view.selected_bgm_event_id = 0;
+    view.selected_bgm_event_count = 2;
+    (void)f.harness.frame();
+    const auto from = f.at(622, 28);
+    const auto to = f.at(622, 128);
+    const std::array down{mouse_motion(from.first, from.second), mouse_button(true, from.first, from.second)};
+    (void)f.harness.frame(down);
+    const std::array drag{mouse_motion(to.first, to.second)};
+    const auto moving = f.harness.frame(drag);
+    check_bga(has_input({moving, moving}, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_BEGIN, 501));
+    const std::array up{mouse_motion(to.first, to.second), mouse_button(false, to.first, to.second)};
+    const auto released = f.harness.frame(up);
+    check_bga(has_input({released, released}, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE, 501));
+    check_bga(!any_input_of({released, released}, WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK));
+}

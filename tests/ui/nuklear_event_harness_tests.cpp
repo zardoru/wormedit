@@ -4712,3 +4712,11 @@ TEST_CASE("Appearance field colors picker emits the selected scheme as a typed d
     CHECK(edited->get().options.revision==92);
     CHECK(field_scheme_id()=="wormedit");
 }
+
+TEST_CASE("Mixed move conflict status describes the whole selection", "[frontend-state][event-harness][mixed-move]") {
+    move_event_fixture_t fixture;
+    fixture.harness.view().compose.move_conflict_count = 1;
+    fixture.harness.view().compose.selected_bgm_event_count = 1;
+    (void)fixture.harness.frame();
+    expect_lane_key(fixture.harness.drawn_text().find("Selected objects cannot move here") != std::string::npos);
+}

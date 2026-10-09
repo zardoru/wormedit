@@ -2720,6 +2720,17 @@ void populate_compose_recipe_form(flattened_workspace_t& flattened, const wormed
     view.recipe_form.form = wormedit::sys::recipe_form_from_recipe(*recipe);
 }
 
+auto converted_bgm_preview_count(const wormedit::editor_interaction_state_t& state) -> std::size_t {
+    if (!state.pending_note_move_gesture) return 0;
+    std::unordered_set<std::uint64_t> selected_bgm;
+    for (const auto& object : state.selected_objects)
+        if (object.kind == wormedit::editor_selection_object_kind_t::bgm_event)
+            selected_bgm.insert(object.id.value);
+    return std::ranges::count_if(state.pending_note_move_gesture->bgm_preview, [&](const auto& preview) {
+        return !selected_bgm.contains(preview.note.value);
+    });
+}
+
 void populate_compose_selection_preview(
     const compose_scene_cache_t& cache,
     std::optional<wormedit::editor_interaction_state_t>& retained_state,
@@ -2791,8 +2802,7 @@ void populate_compose_selection_preview(
     }
     view.move_conflict_count = retained_state->pending_note_move_gesture
                                    ? retained_state->pending_note_move_gesture->conflicting_notes : 0;
-    view.move_to_bgm_count = retained_state->pending_note_move_gesture
-        ? retained_state->pending_note_move_gesture->bgm_preview.size() : 0;
+    view.move_to_bgm_count = converted_bgm_preview_count(*retained_state);
     view.selected_note_count = retained_state->selected_notes.size();
     view.selected_object_count = retained_state->selected_objects.size();
 }

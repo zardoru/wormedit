@@ -1,5 +1,6 @@
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/snap.h>
+#include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/note_to_bgm.h>
 #include <wormedit/core/dead_span_rules.h>
 
@@ -1353,6 +1354,7 @@ struct note_move_plan_t {
     std::vector<object_id_t> notes;
     std::vector<moved_note_t> moved;
     std::vector<object_id_t> occupants;
+    std::vector<note_move_bgm_preview_t> bgm_moves;
 };
 
 struct note_move_parameters_t {
@@ -1747,7 +1749,7 @@ auto plan_note_move(const chart_document_t& chart, const measure_index_t& index,
         return diagnostics;
     }
     note_move_plan_t plan{.reference_note = reference_id, .reference_lane = parameters.target_lane,
-        .reference_position = parameters.snapped_position, .notes = std::move(targets), .moved = {}};
+        .reference_position = parameters.snapped_position, .notes = std::move(targets), .moved = {}, .occupants = {}, .bgm_moves = {}};
     note_move_context_t context{.chart = chart, .index = index, .parameters = parameters,
         .targets = collected.target_notes, .collisions = collected.collisions};
     plan.moved.reserve(plan.notes.size());
@@ -1756,6 +1758,140 @@ auto plan_note_move(const chart_document_t& chart, const measure_index_t& index,
             return diagnostic_list_t{*failure};
     mark_move_collisions(collected.collisions, plan);
     return plan;
+}
+
+auto selected_move_bgm_ids(const editor_interaction_state_t& state, object_id_t reference,
+                           std::span<const object_id_t>) -> std::vector<object_id_t> {
+    const auto reference_selected = std::ranges::find(state.selected_notes, reference) != state.selected_notes.end() ||
+        std::ranges::any_of(state.selected_objects, [&](const auto& object) { return object.id == reference; });
+    if (!reference_selected) return {};
+    std::vector<object_id_t> ids;
+    for (const auto& object : state.selected_objects)
+        if (object.kind == editor_selection_object_kind_t::bgm_event) ids.push_back(object.id);
+    return ids;
+}
+
+auto translated_object_position(const measure_index_t& index, local_position_t position,
+                                 std::uint64_t origin, std::uint64_t target)
+    -> std::optional<local_position_t> {
+    const auto row = absolute_row(index, position);
+    if (!row) return std::nullopt;
+    const auto delta = target >= origin ? target - origin : origin - target;
+    if (target < origin && delta > *row) return std::nullopt;
+    if (target >= origin && delta > std::numeric_limits<std::uint64_t>::max() - *row)
+        return std::nullopt;
+    return position_at_absolute_row(index, target >= origin ? *row + delta : *row - delta);
+}
+
+auto append_selected_bgm_moves(const chart_document_t& chart, const measure_index_t& index,
+                                std::span<const object_id_t> ids, local_position_t origin,
+                                note_move_plan_t& plan) -> diagnostic_list_t {
+    const auto from = absolute_row(index, origin);
+    const auto to = absolute_row(index, plan.reference_position);
+    if (!from || !to) return {error(diagnostic_code_t::row_out_of_range, "Mixed move reference is outside chart geometry")};
+    for (const auto id : ids) {
+        const auto* event = find_bgm_event(chart, id);
+        if (!event) return {error(diagnostic_code_t::invalid_id, "Selected BGM event is unavailable", id)};
+        const auto position = translated_object_position(index, event->position, *from, *to);
+        const auto end = event->end ? translated_object_position(index, *event->end, *from, *to) : std::nullopt;
+        if (!position || (event->end && !end))
+            return {error(diagnostic_code_t::row_out_of_range, "Mixed move would place a BGM head or tail outside the chart", id)};
+        plan.bgm_moves.push_back({id, event->source_lane, *position, end, event->sound});
+    }
+    return {};
+}
+
+auto plan_selected_object_move(const chart_document_t& chart, const measure_index_t& index,
+                               const editor_interaction_state_t& state,
+                               std::vector<object_id_t> notes, object_id_t reference,
+                               local_position_t position, lane_id_t lane,
+                               std::uint64_t snap, bool exact)
+    -> std::variant<note_move_plan_t, diagnostic_list_t> {
+    const auto bgm_ids = selected_move_bgm_ids(state, reference, notes);
+    const auto* reference_note = find_note(chart, reference);
+    const auto* reference_bgm = find_bgm_event(chart, reference);
+    if (reference_note) {
+        auto planned = plan_note_move(chart, index, std::move(notes), reference, position, lane,
+                                      snap, exact, state.y_lock);
+        if (auto* plan = std::get_if<note_move_plan_t>(&planned)) {
+            auto diagnostics = append_selected_bgm_moves(chart, index, bgm_ids, reference_note->position, *plan);
+            if (!diagnostics.empty()) return diagnostics;
+        }
+        return planned;
+    }
+    if (!reference_bgm || bgm_ids.empty())
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_id, "Move reference is unavailable", reference)};
+    const auto target = state.y_lock ? std::optional{reference_bgm->position}
+        : resolve_resource_placement_position(chart, position, exact ? 0 : snap);
+    if (!target) return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range, "BGM move reference is outside chart geometry")};
+    note_move_plan_t plan{.reference_note = reference, .reference_lane = state.active_lane,
+                          .reference_position = *target, .notes = {}, .moved = {}, .occupants = {}, .bgm_moves = {}};
+    if (!notes.empty()) {
+        const auto* first = find_note(chart, notes.front());
+        const auto origin = absolute_row(index, reference_bgm->position);
+        const auto destination = absolute_row(index, *target);
+        const auto shifted = first && origin && destination
+            ? translated_object_position(index, first->position, *origin, *destination) : std::nullopt;
+        if (!shifted) return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range, "Mixed move note is outside chart geometry")};
+        auto planned = plan_note_move(chart, index, std::move(notes), first->id, *shifted, {}, 0, true, state.y_lock);
+        if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned)) return *diagnostics;
+        plan = std::get<note_move_plan_t>(std::move(planned));
+        plan.reference_note = reference;
+        plan.reference_position = *target;
+    }
+    auto diagnostics = append_selected_bgm_moves(chart, index, bgm_ids, reference_bgm->position, plan);
+    if (!diagnostics.empty()) return diagnostics;
+    return plan;
+}
+
+auto relocate_selected_bgm(song_document_t& proposed, chart_id_t chart_id,
+                            const note_move_plan_t& plan) -> diagnostic_list_t {
+    if (plan.bgm_moves.empty()) return {};
+    auto scratch = make_document_history(proposed);
+    std::vector<bgm_event_t> ordinary;
+    for (const auto& preview : plan.bgm_moves) {
+        auto* chart = find_chart(scratch.document, chart_id);
+        const auto* source = find_bgm_event(*chart, preview.note);
+        if (!source) return {error(diagnostic_code_t::invalid_id, "Selected BGM event is unavailable", preview.note)};
+        if (source->sound_channel_event) {
+            const auto moved = move_bmson_bgm_marker(scratch, scratch.document.revision, chart_id,
+                                                     preview.note, preview.position);
+            if (!moved.diagnostics.empty()) return moved.diagnostics;
+        } else {
+            auto moved = *source;
+            if (moved.position != preview.position || moved.end != preview.end) {
+                moved.structural_slot = 0;
+                moved.provenance = {};
+            }
+            moved.position = preview.position;
+            moved.end = preview.end;
+            ordinary.push_back(std::move(moved));
+        }
+    }
+    auto* chart = find_chart(scratch.document, chart_id);
+    for (auto& measure : chart->measures)
+        std::erase_if(measure.bgm_events, [&](const auto& event) {
+            return std::ranges::any_of(ordinary, [&](const auto& moved) { return moved.id == event.id; });
+        });
+    for (auto& moved : ordinary) {
+        const auto destination = std::ranges::find(chart->measures, moved.position.measure, &measure_chunk_t::id);
+        if (destination == chart->measures.end())
+            return {error(diagnostic_code_t::invalid_measure, "Mixed move BGM destination is unavailable", moved.id)};
+        destination->bgm_events.push_back(std::move(moved));
+    }
+    // Validate the complete destination set, so selected objects vacate their old rows together.
+    // The ordinary single-object validator allocates lanes on collision; a group move keeps lanes.
+    for (const auto& preview : plan.bgm_moves) {
+        const auto* source = find_bgm_event(*find_chart(scratch.document, chart_id), preview.note);
+        if (source->sound_channel_event) continue;
+        const auto validated = apply_bgm_event_move(scratch, scratch.document.revision,
+            {.chart = chart_id, .event = preview.note, .position = preview.position, .source_lane = preview.lane});
+        if (!validated.diagnostics.empty()) return validated.diagnostics;
+        if (validated.applied)
+            return {error(diagnostic_code_t::collision, "Mixed move would collide in a BGM source lane", preview.note)};
+    }
+    proposed = std::move(scratch.document);
+    return {};
 }
 
 auto move_previews(const note_move_plan_t& plan) -> std::vector<note_move_preview_t> {
@@ -2663,6 +2799,10 @@ auto release_note_duration_gesture(note_gesture_context_t& context,
     return context.apply_duration_plan(std::get<duration_resize_plan_t>(planned));
 }
 
+auto relocate_moved_notes(chart_document_t& chart, const note_move_plan_t& plan,
+                          document_history_t& history, editor_interaction_state_t& state)
+    -> std::optional<diagnostic_t>;
+
 auto stage_bgm_note_move(const document_history_t& history, editor_interaction_state_t& state,
                          const note_move_plan_t& plan, const pending_note_move_gesture_t& pending)
     -> std::variant<song_document_t, diagnostic_list_t>;
@@ -2685,12 +2825,27 @@ void prepare_rejected_bgm_preview(const chart_document_t& chart, const note_move
     }
 }
 
+void prepare_selected_bgm_preview(note_gesture_context_t& context, const note_move_plan_t& plan,
+                                  pending_note_move_gesture_t& pending) {
+    if (plan.bgm_moves.empty()) return;
+    auto proposed = context.history.document;
+    auto* chart = find_chart(proposed, context.state.chart);
+    const auto note_failure = relocate_moved_notes(*chart, plan, context.history, context.state);
+    const auto failures = note_failure ? diagnostic_list_t{*note_failure}
+                                       : relocate_selected_bgm(proposed, context.state.chart, plan);
+    for (const auto& failure : failures) pending.bgm_diagnostics.push_back(failure.message);
+    if (!failures.empty()) pending.conflicting_notes = std::max(std::size_t{1}, pending.conflicting_notes);
+}
+
 auto prepare_bgm_move_preview(note_gesture_context_t& context, const note_move_plan_t& plan,
                                pending_note_move_gesture_t& pending) -> void {
-    pending.bgm_preview.clear();
+    pending.bgm_preview = plan.bgm_moves;
     pending.new_bgm_lanes.clear();
     pending.bgm_diagnostics.clear();
-    if (!pending.to_bgm && (!pending.displace_to_bgm || plan.occupants.empty())) return;
+    if (!pending.to_bgm && (!pending.displace_to_bgm || plan.occupants.empty())) {
+        prepare_selected_bgm_preview(context, plan, pending);
+        return;
+    }
     auto staged = stage_bgm_note_move(context.history, context.state, plan, pending);
     if (const auto* failures = std::get_if<diagnostic_list_t>(&staged)) {
         for (const auto& failure : *failures) pending.bgm_diagnostics.push_back(failure.message);
@@ -2730,15 +2885,15 @@ auto begin_note_move_gesture(note_gesture_context_t& context, object_id_t refere
                                  {error(diagnostic_code_t::invalid_hold,
                                         "another editor gesture is already active")});
     const auto* reference = find_note(context.chart, reference_id);
-    if (!reference || (reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold))
-        return diagnostic_result(
-            context.history, state,
-            {error(diagnostic_code_t::invalid_id,
-                   "note move gesture requires a tap or hold reference note", reference_id)});
+    const auto* bgm_reference = find_bgm_event(context.chart, reference_id);
+    if ((!reference && !bgm_reference) ||
+        (reference && reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold))
+        return diagnostic_result(context.history, state,
+            {error(diagnostic_code_t::invalid_id, "Move requires a tap, hold or BGM reference", reference_id)});
     auto targets = state.selected_notes;
-    if (std::ranges::find(targets, reference_id) == targets.end())
+    if (!bgm_reference && std::ranges::find(targets, reference_id) == targets.end())
         targets = {reference_id};
-    auto planned = context.make_move_plan(targets, reference_id, reference->position, lane_id_t{},
+    auto planned = context.make_move_plan(targets, reference_id, reference ? reference->position : bgm_reference->position, lane_id_t{},
                                           true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, state, *diagnostics);
@@ -2835,6 +2990,8 @@ auto release_note_move_gesture(note_gesture_context_t& context,
         if (!committed) return reject(std::move(committed.diagnostics));
         context.state.pending_note_move_gesture.reset();
         set_selected_notes(context.state, pending.to_bgm ? std::vector<object_id_t>{} : plan.notes);
+        for (const auto& moved : plan.bgm_moves)
+            context.state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, moved.note});
         if (pending.to_bgm) {
             for (const auto id : plan.notes)
                 context.state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, id});
@@ -5203,7 +5360,9 @@ auto stage_bgm_note_move(const document_history_t& history, editor_interaction_s
                                           plan.notes, pending.preferred_bgm_lane, policy);
         if (!converted) return converted.diagnostics;
     }
-    auto failures = validate_document(scratch.document);
+    auto failures = relocate_selected_bgm(scratch.document, state.chart, plan);
+    if (!failures.empty()) return failures;
+    failures = validate_document(scratch.document);
     if (!failures.empty()) return failures;
     return std::move(scratch.document);
 }
@@ -5212,16 +5371,27 @@ auto apply_note_move_plan(document_history_t& history, editor_interaction_state_
                           const note_move_plan_t& plan) -> editor_interaction_result_t {
     auto proposed = history.document;
     auto* chart = find_chart(proposed, state.chart);
-    const auto changed = note_move_changes(*chart, plan);
+    const auto changed = note_move_changes(*chart, plan) || std::ranges::any_of(plan.bgm_moves, [&](const auto& move) {
+        const auto* source = find_bgm_event(*chart, move.note);
+        return !source || source->position != move.position || source->end != move.end;
+    });
     if (changed) {
         if (auto failure = relocate_moved_notes(*chart, plan, history, state))
             return diagnostic_result(history, state, {*failure});
+        auto failures = relocate_selected_bgm(proposed, state.chart, plan);
+        if (!failures.empty()) {
+            state.pending_note_move_gesture.reset();
+            return diagnostic_result(history, state, std::move(failures));
+        }
         auto command = commit_document_command(history, std::move(proposed),
-            plan.notes.size() == 1 ? "Move note" : "Move selected notes");
+            plan.bgm_moves.empty() ? (plan.notes.size() == 1 ? "Move note" : "Move selected notes")
+                                   : "Move selected chart objects");
         if (!command) return diagnostic_result(history, state, std::move(command.diagnostics));
     }
     state.pending_note_move_gesture.reset();
     set_selected_notes(state, plan.notes);
+    for (const auto& moved : plan.bgm_moves)
+        state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, moved.note});
     state.active_lane = plan.reference_lane;
     place_cursor_at(state, plan.reference_position);
     auto result = interaction_view_result(history, state, changed);
@@ -5344,8 +5514,8 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
     const auto make_move_plan = [&](std::vector<object_id_t> targets, object_id_t reference,
                                     local_position_t position, lane_id_t lane,
                                     bool exact_position = false) {
-        return plan_note_move(*chart, index, std::move(targets), reference, position, lane,
-                              edit_snap_denominator(*chart, state), exact_position, state.y_lock);
+        return plan_selected_object_move(*chart, index, state, std::move(targets), reference, position, lane,
+                                         edit_snap_denominator(*chart, state), exact_position);
     };
     const auto apply_duration_plan = [&](const duration_resize_plan_t& plan) {
         return apply_duration_resize_plan(history, state, plan);

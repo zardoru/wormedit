@@ -21,6 +21,7 @@
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/workspace.h>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/catch_approx.hpp>
 #include <cstdio>
 #include <cstring>
@@ -6093,4 +6094,32 @@ TEST_CASE("Same sound registered command uses hover selection and dock adds with
     fixture.interaction->selected_objects.clear();
     expect_compose_test(!invoke().accepted);
     expect_compose_test(song.revision == revision && fixture.history.undo.empty());
+}
+
+TEST_CASE("Compose mixed move projects BGM tails and collision ghosts without a conversion count",
+          "[sys][compose][mixed-move]") {
+    const auto collision = GENERATE(false, true);
+    auto song = move_feedback_dispatch_song();
+    auto& chart = song.charts.front();
+    chart.bgm_source_lanes = {{.id = object_id_t{400}, .name = "BGM"}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{401},
+        .position = {measure_id_t{1}, 120}, .source_lane = object_id_t{400},
+        .end = local_position_t{measure_id_t{1}, 240}}};
+    if (collision) chart.measures.front().bgm_events.push_back({.id = object_id_t{402},
+        .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{400}});
+    move_feedback_dispatch_fixture_t fixture{std::move(song)};
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE, 240);
+    fixture.compose.interaction->selected_objects.push_back(
+        {editor_selection_object_kind_t::bgm_event, object_id_t{401}});
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN, 240);
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 360);
+    fixture.compose.project();
+    const auto& view = fixture.compose.flattened.view.compose;
+    expect_compose_test(view.scene_available && view.move_to_bgm_count == 0);
+    expect_compose_test((view.move_conflict_count != 0) == collision);
+    const auto events = std::span(view.bgm_events, view.bgm_event_count);
+    expect_compose_test(std::ranges::any_of(events, [collision](const auto& event) {
+        return event.event_id == 401 && event.proposal_ghost && event.has_tail && event.move_conflict == collision;
+    }));
+    expect_compose_test(fixture.compose.history.undo.empty());
 }

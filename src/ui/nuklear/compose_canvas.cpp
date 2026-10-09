@@ -3050,7 +3050,9 @@ static void draw_compose_editor_overlays(const ComposePaintContext& paint,
 static auto compose_move_status_hint(const WormUiComposeView* view) -> const char* {
     static std::string message;
     if (!view) return nullptr;
-    if (view->move_conflict_count) message = std::to_string(view->move_conflict_count) + " notes would overlap";
+    if (view->move_conflict_count) message = view->selected_bgm_event_count
+        ? "Selected objects cannot move here"
+        : std::to_string(view->move_conflict_count) + " notes would overlap";
     else if (view->move_to_bgm_count) message = std::to_string(view->move_to_bgm_count) + " notes will move to BGM";
     else return nullptr;
     return message.c_str();

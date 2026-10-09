@@ -827,6 +827,14 @@ auto begin_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_c
         context;
     if (gesture_active)
         return "Finish or cancel the active Compose gesture before moving a BGM event.";
+    if (!state.selected_notes.empty() || state.selected_objects.size() > 1) {
+        const auto result = dispatch_editor_action(history, state,
+            begin_note_move_gesture_action_t{object_id_t{input.object_id},
+                application_state.editor_preferences.move_collision_policy == move_collision_policy_t::displace_to_bgm});
+        return result.accepted ? compose_input_family_result_t::continue_batch("Selected-object move started.")
+            : compose_input_family_result_t{result.diagnostics.empty() ? "Selected-object move could not start."
+                                                                       : result.diagnostics.front().message};
+    }
     const object_id_t event{input.object_id};
     if (state.selected_objects.size() != 1 ||
         state.selected_objects.front().kind != editor_selection_object_kind_t::bgm_event ||
@@ -928,6 +936,59 @@ auto commit_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
         notification_source_t::edit);
 }
 
+template <typename PositionAtComposeY>
+auto update_selected_bgm_move(const WormUiComposeInputAction& input,
+                              bmson_compose_context_t& context,
+                              PositionAtComposeY&& position_at_compose_y)
+    -> compose_input_family_result_t {
+    using namespace wormedit;
+    auto& [action, history, workspace, state, application_state, scene_cache, gesture_active] = context;
+    const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    const auto view = compose_view_for_state(history, state);
+    auto position = chart != history.document.charts.end() && view
+        ? position_at_compose_y(*chart, *view, input.y_pixels) : std::nullopt;
+    if (state.y_lock) position = state.pending_note_move_gesture->preview_position;
+    if (!position) {
+        (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+        return "Selected-object move fell outside chart geometry.";
+    }
+    const auto result = input.kind == WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE
+        ? dispatch_editor_action(history, state, release_note_move_gesture_action_t{*position, {}, false, std::nullopt})
+        : dispatch_editor_action(history, state, update_note_move_gesture_action_t{*position, {}, false, std::nullopt});
+    if (!result.accepted)
+        return result.diagnostics.empty() ? "Selected-object move could not be applied."
+                                          : result.diagnostics.front().message;
+    if (result.document_changed) {
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) return "Objects moved, but workspace rebinding failed.";
+    }
+    return compose_input_family_result_t::continue_batch(
+        result.document_changed ? "Selected objects moved to the snapped row."
+                                : "Selected-object move preview updated.");
+}
+
+auto validate_bgm_drag_lane(const wormedit::chart_document_t& chart, wormedit::object_id_t event,
+                            std::uint64_t requested_lane, wormedit::local_position_t target,
+                            bool y_locked,
+                            application_command_state_t::bmson_marker_move_preview_t& preview) -> bool {
+    using namespace wormedit;
+    if (y_locked && preview.linked_bmson) {
+        preview.valid = false;
+    } else if (preview.linked_bmson) {
+        const auto source = find_bmson_marker_source(chart, event);
+        if (!source) return false;
+        preview.valid = std::ranges::none_of(source->channel->events, [&](const auto& candidate) {
+            return candidate.id != source->source_event && candidate.position == target;
+        });
+    } else {
+        preview.source_lane = object_id_t{requested_lane};
+        preview.valid = std::ranges::any_of(chart.bgm_source_lanes, [&](const auto& lane) {
+            return lane.id == preview.source_lane;
+        });
+    }
+    return true;
+}
+
 template <typename PositionAtComposeY, typename VirtualBmsRowAt>
 auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_context_t& context,
                            PositionAtComposeY&& position_at_compose_y,
@@ -935,6 +996,9 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
     using namespace wormedit;
     auto& [action, history, workspace, state, application_state, scene_cache, gesture_active] =
         context;
+    if (state.pending_note_move_gesture &&
+        state.pending_note_move_gesture->reference_note == object_id_t{input.object_id})
+        return update_selected_bgm_move(input, context, position_at_compose_y);
     auto& preview = application_state.bmson_marker_move_preview;
     const object_id_t event{input.object_id};
     if (!preview || preview->chart != state.chart ||
@@ -949,7 +1013,8 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
         preview.reset();
         return "BGM event drag lost its chart field.";
     }
-    const auto raw = position_at_compose_y(*chart, *view, input.y_pixels);
+    const auto raw = state.y_lock ? std::optional{preview->origin}
+                                  : position_at_compose_y(*chart, *view, input.y_pixels);
     const auto target =
         raw ? resolve_resource_placement_position(*chart, *raw, preview->snap_denominator)
             : std::nullopt;
@@ -967,26 +1032,13 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
             "BGM event drag cannot snap to this chart row.", notification_severity_t::warning);
     }
     // Y-lock: the event keeps its row. A BMSON marker lives in its stem's lane, so it can go nowhere.
-    const auto y_locked = state.y_lock && !preview->virtual_canvas_row;
+    const auto y_locked = state.y_lock;
     if (y_locked) preview->target = preview->origin;
     else if (target)
         preview->target = *target;
-    if (y_locked && preview->linked_bmson) {
-        preview->valid = false;
-    } else if (preview->linked_bmson) {
-        const auto source = find_bmson_marker_source(*chart, event);
-        if (!source) {
-            preview.reset();
-            return "BMSON BGM marker source event is unavailable.";
-        }
-        preview->valid = std::ranges::none_of(source->channel->events, [&](const auto& candidate) {
-            return candidate.id != source->source_event && candidate.position == *target;
-        });
-    } else {
-        preview->source_lane = object_id_t{input.lane_id};
-        preview->valid = std::ranges::any_of(chart->bgm_source_lanes, [&](const auto& lane) {
-            return lane.id == preview->source_lane;
-        });
+    if (!validate_bgm_drag_lane(*chart, event, input.lane_id, preview->target, y_locked, *preview)) {
+        preview.reset();
+        return "BMSON BGM marker source event is unavailable.";
     }
     const auto unavailable = y_locked && preview->linked_bmson
         ? "Y-lock is on: stem markers only move in time." : "BGM move target is unavailable.";
@@ -1202,6 +1254,9 @@ auto dispatch_bmson_compose_input(
     case WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE:
         return update_bmson_bgm_move(input, context, position_at_compose_y, virtual_bms_row_at);
     case WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_CANCEL:
+        if (context.state.pending_note_move_gesture)
+            (void)wormedit::dispatch_editor_action(context.history, context.state,
+                                                  wormedit::cancel_editor_gesture_action_t{});
         application_state.bmson_marker_move_preview.reset();
         return compose_input_family_result_t::stop_with_feedback("BMSON BGM marker drag canceled.",
             wormedit::notification_severity_t::hint, wormedit::notification_source_t::input);

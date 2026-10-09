@@ -1427,3 +1427,17 @@ TEST_CASE("Stem lane resize capture cancels on stale chart occlusion or focus lo
           "[frontend-state][stem-lane-width]") {
     expect_inline(stem_lane_resize_stales_on_view_changes());
 }
+
+TEST_CASE("Invisible notes retain palette RGB with reduced opacity in every color view", "[compose][color-view][invisible]") {
+    using View = worm_ui_nuklear_compose_color_view_t;
+    const auto view = GENERATE(View::normal, View::snap, View::layer);
+    WormUiComposeNoteView note{};
+    note.semantic_color_visible = true;
+    note.semantic_red = 190; note.semantic_green = 140; note.semantic_blue = 80; note.semantic_alpha = 200;
+    note.snap_class = 16;
+    const auto visible = compose_note_base_fill(view,note);
+    note.kind = 3;
+    const auto invisible = compose_note_base_fill(view,note);
+    expect_inline(visible.r == invisible.r && visible.g == invisible.g && visible.b == invisible.b);
+    expect_inline(invisible.a == static_cast<unsigned>(visible.a)*3/5);
+}

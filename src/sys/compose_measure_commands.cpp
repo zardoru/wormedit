@@ -1,6 +1,7 @@
 #include "sys/compose_measure_commands.h"
 
 #include <algorithm>
+#include <wormedit/core/snap.h>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -95,6 +96,34 @@ auto parse_meter_part(std::string_view text) -> std::optional<std::uint32_t> {
 }
 
 } // namespace
+
+auto apply_cursor_measure_split(document_history_t& history, editor_interaction_state_t& state,
+                                 notification_severity_t* severity) -> std::string {
+    set_feedback_severity(severity, notification_severity_t::warning);
+    if (state.virtual_bms_cursor_row) return "Materialize the cursor measure before splitting it.";
+    if (state.cursor.row == 0) {
+        set_feedback_severity(severity, notification_severity_t::hint);
+        return "The cursor is already on a measure head.";
+    }
+    const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    if (chart == history.document.charts.end()) return "The selected chart is unavailable.";
+    const auto index = build_measure_index(*chart);
+    const auto* before = std::get_if<measure_index_t>(&index);
+    const auto row = before ? absolute_row(*before, state.cursor) : std::nullopt;
+    if (!row) return "The cursor is outside the authored chart.";
+    const auto result = apply_measure_edit(history, history.document.revision,
+        split_measure_action_t{state.chart, state.cursor});
+    if (!result) return rejection(result, "The measure could not be split.", severity);
+    const auto current = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    const auto after = build_measure_index(*current);
+    if (const auto* measures = std::get_if<measure_index_t>(&after))
+        if (const auto position = position_at_absolute_row(*measures, *row)) place_cursor_at(state, *position);
+    state.retained_selection_range.reset();
+    state.retained_canvas_selection_range.reset();
+    state.selected_canvas_measure.reset();
+    set_feedback_severity(severity, notification_severity_t::success);
+    return "Measure split at cursor.";
+}
 
 auto apply_cursor_measure_meter(document_history_t& history, editor_interaction_state_t& state,
                                 std::string_view numerator, std::string_view denominator,

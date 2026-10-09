@@ -2103,3 +2103,19 @@ TEST_CASE("Loop selection command rejects missing invalid and unavailable areas"
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::transport_loop_selection).accepted);
 }
 #endif
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Measure split command keeps later heads fixed and cursor on the new head", "[sys][application_commands][measure-split]") {
+    TimingInsertFixture fixture;
+    const auto result = fixture.invoke(application_command_kind_t::measures_split_at_cursor);
+    require_bookmark_callback(result.accepted);
+    const auto& chart = fixture.fixture.history.document.charts.front();
+    check_bookmark_callback(chart.measures.size() == 3);
+    check_bookmark_callback(chart.measures.back().id == wormedit::measure_id_t{2});
+    check_bookmark_callback(fixture.compose_state->cursor.row == 0);
+    check_bookmark_callback(fixture.compose_state->cursor.measure == chart.measures[1].id);
+    check_bookmark_callback(fixture.fixture.history.undo.size() == 1);
+    require_bookmark_callback(fixture.invoke(application_command_kind_t::measures_split_at_cursor).accepted);
+    check_bookmark_callback(fixture.fixture.history.undo.size() == 1);
+}
+#endif

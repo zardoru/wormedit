@@ -26,6 +26,11 @@ auto compose_layer_fill(const Note& note) -> nk_color {
                        note.semantic_alpha);
     return wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::semantic_layer_none);
 }
+auto compose_kind_fill(const WormUiComposeNoteView& note, nk_color color) -> nk_color {
+    // Invisible notes remain editable, but their fill distinguishes them from visible notes.
+    if (note.kind == 3) color.a = static_cast<nk_byte>(static_cast<unsigned>(color.a) * 3 / 5);
+    return color;
+}
 auto compose_snap_fill(std::uint8_t snap_class) -> nk_color {
     const auto color = wormedit::ui::arrow_snap_color(snap_class);
     return nk_rgb(color.red, color.green, color.blue);
@@ -53,11 +58,11 @@ auto compose_arrow_layer_outline_visible(worm_ui_nuklear_compose_color_view_t co
 auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
                             const WormUiComposeNoteView& note) -> nk_color {
     if (color_view == worm_ui_nuklear_compose_color_view_t::layer)
-        return compose_layer_fill(note);
+        return compose_kind_fill(note, compose_layer_fill(note));
     if (color_view == worm_ui_nuklear_compose_color_view_t::snap ||
-        (note.glyph >= 2 && note.glyph <= 5)) return compose_snap_fill(note.snap_class);
+        (note.glyph >= 2 && note.glyph <= 5)) return compose_kind_fill(note, compose_snap_fill(note.snap_class));
     const auto colors=wormedit::ui::theme::compose_key_color(note.key_color, note.display_lane_number);
-    return note.kind==1 || note.kind==2 ? colors.long_note.value_or(colors.note) : colors.note;
+    return compose_kind_fill(note, note.kind==1 || note.kind==2 ? colors.long_note.value_or(colors.note) : colors.note);
 }
 
 auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,

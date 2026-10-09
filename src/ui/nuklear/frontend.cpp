@@ -2337,7 +2337,7 @@ static void render_transport_seek_bar(const WormUiWorkspaceView& view,
             ((view.transport_end_frame % seek_steps) * seek_position) / seek_steps;
     }
     report_transport_seek_hover(view, action, bounds);
-    if (draggable) render_seek_grip(bounds, seek_position, seek_steps);
+    render_seek_grip(bounds, seek_position, seek_steps);
 }
 
 // Flat stand-in while the song's waveform is still being prepared.

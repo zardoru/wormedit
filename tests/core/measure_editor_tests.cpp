@@ -1,4 +1,7 @@
 #include <wormedit/core/measure_editor.h>
+#include <wormedit/formats/bms.h>
+#include <wormedit/formats/bms_writer.h>
+#include <wormedit/formats/bmson.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/virtual_canvas.h>
 
@@ -562,4 +565,100 @@ TEST_CASE("an empty leading measure that anchors BPM and layout cannot be delete
                                           delete_measure_action_t{chart_id_t{2}, measure_id_t{10}});
     CHECK_FALSE(plain);
     CHECK(history.document.charts.front().measures.size() == 3);
+}
+
+TEST_CASE("Measure split preserves all existing heads absolute rows and duration", "[core][measure-editor][measure-split]") {
+    auto document = measure_song();
+    auto& chart = document.charts.front();
+    chart.measures[0].notes = {{.id = object_id_t{40}, .position = {measure_id_t{10},120},
+        .lane = lane_id_t{20}, .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{10},800}}};
+    chart.bgm_source_lanes = {{.id = object_id_t{43}, .name = "BGM"}};
+    chart.measures[0].bgm_events = {{.id = object_id_t{41}, .position = {measure_id_t{10},600},
+        .source_lane = object_id_t{43},
+        .end = local_position_t{measure_id_t{11},100}}};
+    chart.bpms.push_back({.id=object_id_t{42}, .position={measure_id_t{10},600}, .beats_per_minute={150,1}});
+    auto history = make_document_history(document);
+    const auto before = build_measure_index(chart);
+    const auto before_timing = build_timing_index(chart);
+    const auto result = apply_measure_edit(history, 5, split_measure_action_t{chart.id,{measure_id_t{10},480}});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.applied);
+    const auto& split = history.document.charts.front();
+    const auto after = build_measure_index(split);
+    const auto& index = std::get<measure_index_t>(after);
+    check_audio_extent(split.measures.size() == 4);
+    check_audio_extent(index.total_rows == std::get<measure_index_t>(before).total_rows);
+    for (const auto& measure : document.charts.front().measures)
+        check_audio_extent(absolute_row(index, {measure.id,0}) == absolute_row(std::get<measure_index_t>(before),{measure.id,0}));
+    check_audio_extent(split.measures[1].id == measure_id_t{13});
+    check_audio_extent(absolute_row(index,split.measures[0].notes.front().position) == 120);
+    check_audio_extent(absolute_row(index,*split.measures[0].notes.front().end) == 800);
+    check_audio_extent(absolute_row(index,split.measures[1].bgm_events.front().position) == 600);
+    check_audio_extent(absolute_row(index,*split.measures[1].bgm_events.front().end) == 1060);
+    check_audio_extent(absolute_row(index,split.bpms.back().position) == 600);
+    const auto timing = build_timing_index(split);
+    REQUIRE(timing);
+    REQUIRE(before_timing);
+    check_audio_extent(timing.index->rows.back().after_stops_seconds == before_timing.index->rows.back().after_stops_seconds);
+    check_audio_extent(validate_document(history.document).empty());
+    check_audio_extent(history.undo.size() == 1);
+    check_audio_extent(undo_document_command(history));
+    check_audio_extent(history.document.charts.front().measures.size() == 3);
+    check_audio_extent(history.document.charts.front().measures[0].bgm_events.front().position.row == 600);
+    check_audio_extent(redo_document_command(history));
+    check_audio_extent(history.document.charts.front().measures.size() == 4);
+}
+
+TEST_CASE("Measure split head stale invalid and limit boundaries leave history unchanged", "[core][measure-editor][measure-split]") {
+    auto history = make_document_history(measure_song());
+    check_audio_extent(!apply_measure_edit(history,5,split_measure_action_t{chart_id_t{2},{measure_id_t{10},0}}).applied);
+    check_audio_extent(!apply_measure_edit(history,4,split_measure_action_t{chart_id_t{2},{measure_id_t{10},480}}).applied);
+    check_audio_extent(!apply_measure_edit(history,5,split_measure_action_t{chart_id_t{2},{measure_id_t{10},960}}).applied);
+    check_audio_extent(!apply_measure_edit(history,5,split_measure_action_t{chart_id_t{2},{measure_id_t{10},480}}, {.maximum_measures=3}).applied);
+    check_audio_extent(history.undo.empty());
+    check_audio_extent(history.document.revision == 5);
+}
+
+TEST_CASE("Measure split supports imported BMS without moving exported later heads", "[core][measure-editor][measure-split]") {
+    const std::string source = "#PLAYER 1\n#BPM 120\n#WAV01 kick.wav\n#00111:01\n#00211:01\n";
+    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(),source.size()}), {.lane_profile_id="bme-7k-outside-scratch"});
+    REQUIRE(parsed.song);
+    auto history = make_document_history(*parsed.song);
+    const auto& chart = history.document.charts.front();
+    const auto id = chart.id;
+    const auto measure = chart.measures.front().id;
+    const auto half = chart.divisions_per_standard_measure/2;
+    REQUIRE(apply_measure_edit(history,history.document.revision,split_measure_action_t{id,{measure,half}}).applied);
+    const auto written = write_bms(history.document);
+    for (const auto& diagnostic : written.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(written.bytes);
+    const auto reloaded = parse_bms_bytes(std::as_bytes(std::span{written.bytes->data(),written.bytes->size()}), {.lane_profile_id="bme-7k-outside-scratch"});
+    REQUIRE(reloaded.song);
+    const auto& after = reloaded.song->charts.front();
+    const auto index = build_measure_index(after);
+    check_audio_extent(absolute_row(std::get<measure_index_t>(index),after.measures[2].notes.front().position) == after.divisions_per_standard_measure);
+    check_audio_extent(absolute_row(std::get<measure_index_t>(index),after.measures[3].notes.front().position) == after.divisions_per_standard_measure*2);
+}
+
+TEST_CASE("Measure split preserves retained BMSON source heads and tails", "[core][measure-editor][measure-split]") {
+    const std::string source = R"({"version":"1.0.0","info":{"title":"split","mode_hint":"beat-7k","init_bpm":120,"resolution":240},"lines":[{"y":0},{"y":960},{"y":1920}],"sound_channels":[{"name":"kick.wav","notes":[{"x":1,"y":240,"l":480,"c":false},{"x":0,"y":600,"l":600,"c":false}]}]})";
+    const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{source.data(),source.size()}));
+    REQUIRE(parsed.song);
+    auto history = make_document_history(*parsed.song);
+    const auto& chart = history.document.charts.front();
+    const auto id = chart.id; const auto measure = chart.measures.front().id;
+    REQUIRE(apply_measure_edit(history,history.document.revision,split_measure_action_t{id,{measure,chart.divisions_per_standard_measure/2}}).applied);
+    const auto& split = history.document.charts.front();
+    const auto index = build_measure_index(split);
+    const auto& rows = std::get<measure_index_t>(index);
+    const auto& events = split.sound_channels.front().events;
+    check_audio_extent(absolute_row(rows,events[0].position) == 240);
+    check_audio_extent(absolute_row(rows,*events[0].end) == 720);
+    check_audio_extent(absolute_row(rows,events[1].position) == 600);
+    check_audio_extent(absolute_row(rows,*events[1].end) == 1200);
+    const auto written = write_bmson(history.document);
+    REQUIRE(written.json);
+    const auto reloaded = parse_bmson_bytes(std::as_bytes(std::span{written.json->data(),written.json->size()}));
+    REQUIRE(reloaded.song);
+    check_audio_extent(validate_document(*reloaded.song).empty());
 }

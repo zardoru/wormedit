@@ -91,3 +91,28 @@ TEST_CASE("Save As leaves relative paths unchanged without a known source base",
     CHECK(document.midi_assets[0].source_path == original.midi_assets[0].source_path);
     CHECK(document.generator_recipes[0].source_path == original.generator_recipes[0].source_path);
 }
+
+TEST_CASE("Portability warning detects absolute and escaping paths across asset kinds", "[sys][project-save-paths][portability]") {
+    auto document = sample_document();
+    CHECK(wormedit::sys::nonportable_project_asset_count(document) == 0);
+    document.audio_assets.front().source_path = "/outside/kick.wav";
+    document.visual_assets.front().source_path = "../background.png";
+    document.midi_assets.front().source_path = "C:/sounds/song.mid";
+    document.generator_recipes.front().source_path = "assets/../../recipe.lua";
+    CHECK(wormedit::sys::nonportable_project_asset_count(document) == 4);
+    document.audio_assets.front().source_path = "assets/../kick.wav";
+    CHECK(wormedit::sys::nonportable_project_asset_count(document) == 3);
+}
+
+TEST_CASE("Portability warning scans revisions and avoids repeated notices on ordinary edits", "[sys][project-save-paths][portability]") {
+    auto document = sample_document();
+    wormedit::sys::project_portability_notice_t notice;
+    CHECK_FALSE(notice.update(document,1));
+    document.audio_assets.front().source_path = "/outside/kick.wav";
+    ++document.revision;
+    CHECK(notice.update(document,1));
+    CHECK_FALSE(notice.update(document,1));
+    ++document.revision;
+    CHECK_FALSE(notice.update(document,1));
+    CHECK(notice.update(document,2));
+}

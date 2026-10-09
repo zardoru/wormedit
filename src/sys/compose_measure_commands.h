@@ -12,6 +12,9 @@
 
 namespace wormedit::sys {
 
+[[nodiscard]] auto apply_cursor_measure_split(document_history_t& history,
+    editor_interaction_state_t& state, notification_severity_t* severity = nullptr) -> std::string;
+
 enum class cursor_measure_command_t { insert_before, insert_after, remove_empty, remove_with_contents };
 
 // Inserts a measure (a copy of the cursor measure's definition) before or after the measure that

@@ -781,3 +781,13 @@ TEST_CASE("Shift Space loops the Compose selection and retains transport focus g
           command_dispatch_status_t::no_match);
     CHECK(calls->size() == 1);
 }
+
+TEST_CASE("Primary M splits a measure without shortcut conflicts", "[commands][measure-split]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto focus = focus_for_compose();
+    const auto event = shortcut_event_t{.chord={shortcut_key_t::m,static_cast<shortcut_modifiers_t>(shortcut_modifier_t::control)}};
+    CHECK(dispatch_shortcut(registry,event,focus,shortcut_primary_modifier_t::control).command == command_id_t{"measures.split_at_cursor"});
+    CHECK(diagnose_shortcut_conflicts(registry,shortcut_primary_modifier_t::control).empty());
+    CHECK(diagnose_shortcut_conflicts(registry,shortcut_primary_modifier_t::meta).empty());
+}

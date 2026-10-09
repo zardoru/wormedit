@@ -23,6 +23,7 @@ constexpr command_name_t command_names[]{
     {"transport.play_stop", application_command_kind_t::transport_play_stop},
     {"transport.play_pause", application_command_kind_t::transport_play_pause},
     {"transport.play_from_start", application_command_kind_t::transport_play_from_start},
+    {"measures.split_at_cursor", application_command_kind_t::measures_split_at_cursor},
     {"transport.loop_selection", application_command_kind_t::transport_loop_selection},
     {"transport.stop", application_command_kind_t::transport_stop},
     {"transport.toggle_metronome", application_command_kind_t::transport_toggle_metronome},

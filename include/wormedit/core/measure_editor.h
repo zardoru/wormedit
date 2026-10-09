@@ -62,6 +62,12 @@ struct materialize_measures_action_t {
     std::size_t count{};
 };
 
+// Inserts a bar line without changing the chart duration or any absolute object row.
+struct split_measure_action_t {
+    chart_id_t chart;
+    local_position_t position;
+};
+
 struct delete_measure_action_t {
     chart_id_t chart;
     measure_id_t measure;
@@ -79,7 +85,7 @@ struct remove_measure_with_contents_action_t {
 using measure_edit_action_t =
     std::variant<insert_measure_action_t, update_measure_definition_action_t,
                  update_measures_definition_action_t,
-                 resize_measure_keep_rows_action_t, move_bar_line_action_t, materialize_measures_action_t, delete_measure_action_t, remove_measure_with_contents_action_t>;
+                 resize_measure_keep_rows_action_t, move_bar_line_action_t, materialize_measures_action_t, split_measure_action_t, delete_measure_action_t, remove_measure_with_contents_action_t>;
 
 struct measure_removal_proposal_t {
     std::size_t deleted_notes{};

@@ -1,5 +1,6 @@
 #include "sys/application_command_dispatch.h"
 #include "sys/compose_note_to_bgm.h"
+#include "sys/compose_measure_commands.h"
 #include "sys/compose_semantic_layer_commands.h"
 
 #include "sys/compose_bookmark_commands.h"
@@ -214,6 +215,19 @@ auto metronome_command(command_context_t& context) -> std::optional<command_resu
         notification_source_t::audio, context.application_state.transport_metronome_enabled
             ? "Metronome enabled." : "Metronome disabled.");
     return command_result_t{.accepted = true};
+}
+
+auto split_measure_command(command_context_t& context) -> std::optional<command_result_t> {
+    if (context.command.kind != command_kind_t::measures_split_at_cursor) return std::nullopt;
+    auto* state = context.compose();
+    if (!state || editor_interaction_has_pending_gesture(*state) || context.application_state.paste_session)
+        return reject_application_command(context.sink, "Finish the current gesture before splitting a measure.",
+            notification_severity_t::warning, notification_source_t::edit);
+    auto severity = notification_severity_t::warning;
+    const auto message = apply_cursor_measure_split(context.history, *state, &severity);
+    post_command_message(context.sink, severity, notification_source_t::edit, message);
+    if (severity == notification_severity_t::warning) return command_result_t{};
+    return context.rebind();
 }
 
 auto loop_selection_command(command_context_t& context) -> std::optional<command_result_t> {
@@ -919,6 +933,7 @@ auto invoke_application_command(
     if (auto result = history_command(context)) return *result;
     if (auto result = select_tool_command(context)) return *result;
     if (auto result = note_kind_command(context)) return *result;
+    if (auto result = split_measure_command(context)) return *result;
     if (auto result = loop_selection_command(context)) return *result;
     if (auto result = transport_command(context)) return *result;
     if (auto result = external_player_command(context)) return *result;

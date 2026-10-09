@@ -8,6 +8,7 @@
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <numeric>
 #include <ranges>
 #include <span>
 #include <string>
@@ -99,10 +100,13 @@ enum class free_position_kind_t { hold_end, other };
 // BGM buckets, plus the hold ends of the bucketed notes.
 template <typename Chart, typename Visit>
 void for_each_free_position(Chart& chart, Visit&& visit) {
+    const auto ends = [&](auto& objects) {
+        for (auto& object : objects)
+            if (object.end) visit(*object.end, free_position_kind_t::hold_end);
+    };
     for (auto& measure : chart.measures) {
-        for (auto& note : measure.notes) {
-            if (note.end) visit(*note.end, free_position_kind_t::hold_end);
-        }
+        ends(measure.notes);
+        ends(measure.bgm_events);
     }
     const auto other = [&](auto& values) {
         for (auto& value : values) visit(value.position, free_position_kind_t::other);
@@ -364,6 +368,7 @@ struct rowed_note_t {
 struct rowed_bgm_t {
     bgm_event_t event;
     std::uint64_t row{};
+    std::optional<std::uint64_t> end_row;
 };
 
 struct rowed_free_t {
@@ -396,8 +401,9 @@ auto lift_bucketed_objects(chart_document_t& chart, const measure_index_t& index
         }
         for (auto& event : measure.bgm_events) {
             const auto row = absolute_row(index, event.position);
-            if (!row) return false;
-            bgm.push_back({std::move(event), *row});
+            const auto end = event.end ? absolute_row(index, *event.end) : std::nullopt;
+            if (!row || (event.end && !end)) return false;
+            bgm.push_back({std::move(event), *row, end});
         }
         measure.notes.clear();
         measure.bgm_events.clear();
@@ -439,8 +445,10 @@ auto place_lifted_objects(chart_document_t& chart, const measure_index_t& after,
     }
     for (auto& item : bgm) {
         const auto position = place(item.row);
-        if (!position) return false;
+        const auto end = item.end_row ? place(*item.end_row) : std::nullopt;
+        if (!position || (item.end_row && !end)) return false;
         item.event.position = *position;
+        item.event.end = end;
         bucket_of(position->measure).bgm_events.push_back(std::move(item.event));
     }
     for (auto at = first_measure; at < chart.measures.size(); ++at) {
@@ -472,7 +480,7 @@ auto resize_keeping_rows(chart_document_t& chart, std::span<const measure_assign
     for (const auto& assignment : assignments) chart.measures[assignment.index].definition = assignment.definition;
     std::uint64_t last_row = 0;
     for (const auto& item : notes) last_row = std::max({last_row, item.row, item.end_row.value_or(0)});
-    for (const auto& item : bgm) last_row = std::max(last_row, item.row);
+    for (const auto& item : bgm) last_row = std::max({last_row, item.row, item.end_row.value_or(0)});
     for (const auto& item : free_rows) last_row = std::max(last_row, item.row);
     // Appended measures are 4/4 at the chart resolution, so this terminates after at most
     // last_row / rows-per-measure steps, and the measure cap bounds it.
@@ -485,6 +493,63 @@ auto resize_keeping_rows(chart_document_t& chart, std::span<const measure_assign
     if (!std::holds_alternative<measure_index_t>(index)) return false;
     return place_lifted_objects(chart, std::get<measure_index_t>(index), measure_index, notes, bgm,
                                free_rows);
+}
+
+auto definition_for_rows(std::uint64_t rows, std::uint64_t resolution) -> measure_definition_t {
+    const auto divisor = std::gcd(rows, resolution);
+    const rational_t length{rows / divisor, resolution / divisor};
+    const auto meters = suggest_meters(length);
+    return {length, meters.empty() ? std::nullopt : std::optional{meters.front()}};
+}
+
+auto split_measure_at(chart_document_t& chart, local_position_t position,
+                      const measure_edit_limits_t& limits) -> bool {
+    const auto old_index = build_measure_index(chart);
+    const auto* before = std::get_if<measure_index_t>(&old_index);
+    const auto target = std::ranges::find(chart.measures, position.measure, &measure_chunk_t::id);
+    if (!before || target == chart.measures.end() || !absolute_row(*before, position)) return false;
+    const auto capacity = validate_measure(chart.divisions_per_standard_measure, target->definition);
+    if (!capacity || position.row == 0 || position.row >= *capacity.row_capacity ||
+        chart.measures.size() >= limits.maximum_measures ||
+        std::max(position.row, *capacity.row_capacity - position.row) > limits.maximum_rows_per_measure) return false;
+    const auto id = next_measure_id(chart);
+    if (!id) return false;
+    const auto at = static_cast<std::size_t>(target - chart.measures.begin());
+    std::vector<rowed_note_t> notes;
+    std::vector<rowed_bgm_t> bgm;
+    std::vector<rowed_free_t> free_rows;
+    if (!lift_bucketed_objects(chart, *before, 0, notes, bgm) ||
+        !collect_free_rows(chart, *before, free_rows)) return false;
+    chart.measures[at].definition = definition_for_rows(position.row, chart.divisions_per_standard_measure);
+    chart.measures.insert(chart.measures.begin() + at + 1, measure_chunk_t{
+        .id = *id, .definition = definition_for_rows(*capacity.row_capacity - position.row,
+                                                    chart.divisions_per_standard_measure)});
+    shift_projections_for_insert(chart, at + 1);
+    const auto new_index = build_measure_index(chart);
+    const auto* after = std::get_if<measure_index_t>(&new_index);
+    return after && place_lifted_objects(chart, *after, 0, notes, bgm, free_rows);
+}
+
+auto has_conditional_measures(const bms_control_node_t& node) -> bool {
+    if (node.kind != bms_control_kind_t::root && node.kind != bms_control_kind_t::raw_statement) return true;
+    return std::ranges::any_of(node.children, has_conditional_measures);
+}
+
+void apply_measure_action(measure_edit_context_t& context, const split_measure_action_t& edit) {
+    auto* chart = target_measure_chart(context, edit.chart);
+    if (!chart) return;
+    if (edit.position.row == 0) return;
+    if (chart->bms_control_tree && has_conditional_measures(*chart->bms_control_tree)) {
+        reject(context.result, diagnostic_code_t::unsupported_feature,
+               "measure splitting requires resolved BMS conditional branches");
+        return;
+    }
+    if (!split_measure_at(*chart, edit.position, context.limits)) {
+        reject(context.result, diagnostic_code_t::invalid_measure, "the measure could not be split at this row");
+        return;
+    }
+    context.changed = true;
+    context.label = "Split measure at cursor";
 }
 
 auto apply_measure_action(measure_edit_context_t& context,

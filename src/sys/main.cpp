@@ -3885,6 +3885,15 @@ void retain_compose_bgm_window_capture(
         .sample_rate = view.compose.waveform_overview_sample_rate};
 }
 
+void publish_project_portability_notice(wormedit::sys::project_portability_notice_t& notice,
+    const wormedit::document_history_t& history, std::uint64_t session,
+    wormedit::notification_sink_t& sink) {
+    if (notice.update(history.document, session))
+        sink.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::document,
+            "Some assets are linked by absolute paths or paths outside the project folder. "
+            "Moving this project to another environment may break those links. Copy the assets into the project to make it portable.");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -4239,7 +4248,10 @@ int main(int argc, char** argv) {
     };
     notification_frame_context_t notification_context{notifications, notification_history,
         history, workspace, compose_interaction_state, notification_sink};
+    wormedit::sys::project_portability_notice_t portability_notice;
     while (running) {
+        publish_project_portability_notice(portability_notice, history,
+            project_chart_runtime.session_generation, notification_sink);
         const auto frame_start_ns = SDL_GetTicksNS();
         const auto notification_now = notification_frame_time();
         recovery_scan_feedback.publish(recovery_controller.view(), notification_sink);

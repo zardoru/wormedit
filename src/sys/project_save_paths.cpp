@@ -29,6 +29,37 @@ void rebase_path(std::filesystem::path& path,
 
 } // namespace
 
+auto nonportable_project_asset_count(const song_document_t& document) -> std::size_t {
+    const auto external = [](const std::filesystem::path& path) {
+        if (path.empty()) return false;
+        const auto text = path.generic_string();
+        if (path.is_absolute() || (text.size() > 2 && text[1] == ':') || text.starts_with("\\")) return true;
+        const auto normalized = path.lexically_normal();
+        return normalized.begin() != normalized.end() && *normalized.begin() == "..";
+    };
+    std::size_t count{};
+    const auto scan = [&](const auto& assets) {
+        for (const auto& asset : assets) count += external(asset.source_path);
+    };
+    scan(document.audio_assets);
+    scan(document.visual_assets);
+    scan(document.midi_assets);
+    scan(document.generator_recipes);
+    return count;
+}
+
+auto project_portability_notice_t::update(const song_document_t& document,
+                                          std::uint64_t session_generation) -> bool {
+    const bool new_project = session_generation_ != session_generation || !revision_;
+    if (!new_project && revision_ == document.revision) return false;
+    const auto count = nonportable_project_asset_count(document);
+    const bool warn = count != 0 && (new_project || count != external_count_);
+    revision_ = document.revision;
+    session_generation_ = session_generation;
+    external_count_ = count;
+    return warn;
+}
+
 void rebase_project_paths(song_document_t& document,
                           const std::filesystem::path& old_base,
                           const std::filesystem::path& new_base) {

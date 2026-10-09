@@ -4768,3 +4768,105 @@ TEST_CASE("Real Shift Space events route to the selection loop command", "[front
     check_layer_menu(route_harness_shortcut(action.get(), registry).status == wormedit::command_dispatch_status_t::invoked);
     check_layer_menu(calls == 1);
 }
+
+namespace {
+// A compose view whose status-bar overview has no audio row, so the overview label is drawn.
+void configure_empty_overview(nuklear_event_harness_t& harness) {
+    auto& compose = harness.view().compose;
+    compose.visible = true;
+    compose.scene_available = true;
+    compose.has_bgm_events = true;
+    compose.bgm_bar_row_count = 0;
+    compose.bgm_bar_reserved = true;
+}
+
+// Moves the pointer onto the label twice so Nuklear registers hover before the tooltip pass.
+void hover_overview_label(nuklear_event_harness_t& harness, std::pair<float, float> point) {
+    std::array<event_step_t, 2> script{};
+    script[0].events = {motion_event(point.first, point.second)};
+    script[1].events = {motion_event(point.first + 1.0f, point.second)};
+    (void)harness.run_script(script);
+}
+
+constexpr char overview_tooltip[] = "Audio is unavailable for this chart overview.";
+}
+
+TEST_CASE("Overview tooltip shows on an uncovered overview label", "[tooltip][event-harness]") {
+    nuklear_event_harness_t harness{1280, 720};
+    configure_empty_overview(harness);
+    (void)harness.frame();
+    const auto label = harness.drawn_text_center("Overview unavailable");
+    REQUIRE(label);
+    hover_overview_label(harness, *label);
+    CHECK(harness.drawn_text_center(overview_tooltip).has_value());
+}
+
+TEST_CASE("Overview tooltip stays hidden under a covering Tap timing window", "[tooltip][event-harness]") {
+    nuklear_event_harness_t harness{1280, 720};
+    configure_empty_overview(harness);
+    harness.view().tap_timing.visible = true;
+    (void)harness.frame();
+    (void)harness.frame();
+    const auto label = harness.drawn_text_center("Overview unavailable");
+    REQUIRE(label);
+    WormUiTestingRect tap{};
+    REQUIRE(worm_ui_frontend_window_bounds_for_testing("Tap timing", &tap));
+    // The label must lie inside the covering window for this case to test coverage.
+    const bool inside_x = label->first >= tap.x && label->first <= tap.x + tap.width;
+    const bool inside_y = label->second >= tap.y && label->second <= tap.y + tap.height;
+    REQUIRE(inside_x);
+    REQUIRE(inside_y);
+    hover_overview_label(harness, *label);
+    CHECK_FALSE(harness.drawn_text_center(overview_tooltip).has_value());
+}
+
+namespace {
+// One chart row on the Project tab. Its "Open" strip button carries the tooltip "Open in
+// Compose" and sits under the Tap timing window's rectangle at this window size.
+void configure_project_row(nuklear_event_harness_t& harness, WormUiProjectChartRow* row) {
+    harness.view().setup.visible = true;
+    harness.view().setup.stepmania_policy_status = "Ready";
+    harness.view().setup.stepmania_policy_valid = true;
+    harness.view().setup.charts = row;
+    harness.view().setup.chart_row_count = 1;
+    harness.view().setup.chart_count = 1;
+}
+}
+
+TEST_CASE("Chart row button tooltip shows when no window covers it", "[tooltip][event-harness][components]") {
+    WormUiProjectChartRow row{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
+        .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
+    nuklear_event_harness_t harness{1280, 720};
+    configure_project_row(harness, &row);
+    (void)harness.frame();
+    const auto open = harness.drawn_text_center("Open");
+    REQUIRE(open);
+    hover_overview_label(harness, *open);
+    CHECK(harness.drawn_text_center("Open in Compose").has_value());
+}
+
+TEST_CASE("Chart row button tooltip stays hidden under a covering Tap timing window", "[tooltip][event-harness][components]") {
+    WormUiProjectChartRow row{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
+        .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
+    nuklear_event_harness_t harness{1280, 720};
+    configure_project_row(harness, &row);
+    (void)harness.frame();
+    // Clicking empty workspace makes the workspace the active window before Tap timing opens.
+    std::array<event_step_t, 2> click{};
+    click[0].events = {motion_event(1200.0f, 400.0f), button_event(true, 1200.0f, 400.0f)};
+    click[1].events = {motion_event(1200.0f, 400.0f), button_event(false, 1200.0f, 400.0f)};
+    (void)harness.run_script(click);
+    harness.view().tap_timing.visible = true;
+    (void)harness.frame();
+    (void)harness.frame();
+    const auto open = harness.drawn_text_center("Open");
+    REQUIRE(open);
+    WormUiTestingRect tap{};
+    REQUIRE(worm_ui_frontend_window_bounds_for_testing("Tap timing", &tap));
+    const bool inside_x = open->first >= tap.x && open->first <= tap.x + tap.width;
+    const bool inside_y = open->second >= tap.y && open->second <= tap.y + tap.height;
+    REQUIRE(inside_x);
+    REQUIRE(inside_y);
+    hover_overview_label(harness, *open);
+    CHECK_FALSE(harness.drawn_text_center("Open in Compose").has_value());
+}

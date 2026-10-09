@@ -185,7 +185,7 @@ void render_bgm_action(nk_context* context, const WormUiComposeView& view,
     }
     if (!view.move_to_bgm_available) {
         nk_widget_disable_end(context);
-        if (nk_input_is_mouse_hovering_rect(&context->input, nk_widget_bounds(context)))
+        if (wormedit::ui::nuklear::tooltip::hovered(context, nk_widget_bounds(context)))
             bgm_tooltip_pending = true;
     }
 }

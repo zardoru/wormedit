@@ -964,6 +964,7 @@ void report_compose_bgm_hover(struct nk_context* context, const WormUiComposeVie
         view->hover_timing_sample_rate != view->waveform_overview_sample_rate) {
         return;
     }
+    if (!wormedit::ui::nuklear::tooltip::hovered(context, geometry.bounds)) return;
     wormedit::ui::chrome::timing_tooltip(context, view->hover_timing_label, instructions);
 }
 

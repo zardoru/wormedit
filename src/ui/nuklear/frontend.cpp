@@ -1712,7 +1712,7 @@ static void end_menu() {
 
 static bool bgm_menu_disabled_tooltip(const wormedit::ui::workspace_menu_item_t& item) {
     if (item.action == MenuAction::move_to_bgm && !item.enabled &&
-        nk_input_is_mouse_hovering_rect(&g_context->input, nk_widget_bounds(g_context)))
+        wormedit::ui::nuklear::tooltip::hovered(g_context, nk_widget_bounds(g_context)))
         return true;
     return false;
 }
@@ -1731,7 +1731,7 @@ static void render_workspace_menu(const char* title, float rows, float width,
         if (!item.enabled) nk_widget_disable_end(g_context);
         bgm_tooltip = bgm_tooltip || bgm_menu_disabled_tooltip(item);
         sound_tooltip = sound_tooltip || (item.action == MenuAction::select_same_sound && !item.enabled &&
-            nk_input_is_mouse_hovering_rect(&g_context->input, nk_widget_bounds(g_context)));
+            wormedit::ui::nuklear::tooltip::hovered(g_context, nk_widget_bounds(g_context)));
         if (chosen && item.enabled && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
             apply_workspace_menu_action(item.action, view, action);
     }
@@ -1885,7 +1885,7 @@ static void render_status_minimap(const WormUiWorkspaceView& view,
         nk_widget_disable_begin(g_context);
         nk_label(g_context, "Overview unavailable", NK_TEXT_CENTERED);
         nk_widget_disable_end(g_context);
-        if (nk_input_is_mouse_hovering_rect(&g_context->input, bounds))
+        if (wormedit::ui::nuklear::tooltip::hovered(g_context, bounds))
             wormedit::ui::nuklear::tooltip::text(
                 g_context, "Audio is unavailable for this chart overview.");
         return;
@@ -2395,7 +2395,8 @@ static void report_transport_seek_hover(const WormUiWorkspaceView& view,
     const auto& compose = view.compose;
     if (compose.hover_timing_valid && compose.hover_timing_source_frame == action.hover_source_frame &&
         compose.hover_timing_total_frames == view.transport_end_frame &&
-        compose.hover_timing_sample_rate == view.transport_sample_rate)
+        compose.hover_timing_sample_rate == view.transport_sample_rate &&
+        wormedit::ui::nuklear::tooltip::hovered(g_context, bounds))
         wormedit::ui::chrome::timing_tooltip(g_context, compose.hover_timing_label);
 }
 

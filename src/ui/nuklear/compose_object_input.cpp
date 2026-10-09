@@ -773,7 +773,9 @@ void process_note_paint_pointer(const ComposePointerEventContext& input,
 
 // The pointer is over the BGM area, to the right of the playable field.
 static auto note_move_over_bgm_pane(const ComposePointerEventContext& input) -> bool {
-    return input.view->bgm_lane_count != 0 && input.pointer_inside && input.pointer_x >= input.note_field_right;
+    return (input.view->bgm_lane_count != 0 || input.view->bms_measure_labels ||
+            input.view->bmson_tools_available) && input.pointer_inside &&
+           input.pointer_x >= input.note_field_right;
 }
 
 // The BGM source lane whose column holds the pointer, or 0 between or beyond the columns.
@@ -785,6 +787,15 @@ static auto bgm_lane_under_pointer(const ComposePointerEventContext& input) -> u
             return lane.source_lane_id;
     }
     return 0;
+}
+
+static void append_note_move_input(const ComposePointerEventContext& input,
+                                    WormUiComposeInputKind kind) {
+    const auto count = input.action->compose_input_count;
+    append_compose_input(input.action, kind, input.pointer_x, input.pointer_y,
+                         bgm_lane_under_pointer(input));
+    if (input.action->compose_input_count > count)
+        input.action->compose_inputs[count].note_move_to_bgm = note_move_over_bgm_pane(input);
 }
 
 static auto update_note_move_candidate(const ComposePointerEventContext& input,
@@ -807,9 +818,8 @@ static auto update_note_move_candidate(const ComposePointerEventContext& input,
                                  state.note_move_anchor_x, state.note_move_anchor_y);
             state.note_move_candidate_active = false;
             state.note_move_active = !state.action_overflowed;
-            if (state.note_move_active && !note_move_over_bgm_pane(input))
-                append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE,
-                                     input.pointer_x, input.pointer_y);
+            if (state.note_move_active)
+                append_note_move_input(input, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE);
         }
     }
     return true;
@@ -822,20 +832,11 @@ static auto update_note_move_active(const ComposePointerEventContext& input,
     if (!input.window_focused || (!input.left_down && !input.left_released)) {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
         state.note_move_active = false;
-    } else if (input.left_released && note_move_over_bgm_pane(input)) {
-        // Dropped on the BGM area: the notes become BGM events instead of moving in the field.
-        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
-        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM,
-                             input.pointer_x, input.pointer_y, bgm_lane_under_pointer(input));
-        state.note_move_active = false;
     } else if (input.left_released) {
-        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE,
-                             input.pointer_x, input.pointer_y);
+        append_note_move_input(input, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE);
         state.note_move_active = false;
-    } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input) &&
-               !note_move_over_bgm_pane(input)) {
-        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE,
-                             input.pointer_x, input.pointer_y);
+    } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input)) {
+        append_note_move_input(input, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE);
     }
     return true;
 }

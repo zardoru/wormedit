@@ -677,15 +677,15 @@ TEST_CASE("dragging a selected note onto the BGM area moves it to a BGM lane ins
     (void)f.harness.frame(down);
     const std::array drag{mouse_motion(to.first, to.second)};
     const auto dragging = f.harness.frame(drag);
-    CHECK_FALSE(any_input_of({dragging, dragging}, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE));
+    CHECK(any_input_of({dragging, dragging}, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE));
     const std::array up{mouse_motion(to.first, to.second), mouse_button(false, to.first, to.second)};
     const auto released = f.harness.frame(up);
     const auto& inputs = released.get();
     const auto drop = std::ranges::find_if(std::span(inputs.compose_inputs, inputs.compose_input_count),
-        [](const auto& input) { return input.kind == WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM; });
+        [](const auto& input) { return input.kind == WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE; });
     REQUIRE(drop != std::span(inputs.compose_inputs, inputs.compose_input_count).end());
-    CHECK(drop->lane_id == 45);
-    CHECK_FALSE(any_input_of({released, released}, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE));
+    CHECK((drop->lane_id == 45 && drop->note_move_to_bgm));
+    CHECK_FALSE(any_input_of({released, released}, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE));
 }
 
 TEST_CASE("dragging a selected BGM marker onto a playfield lane asks to move it into that lane",

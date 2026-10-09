@@ -3994,7 +3994,12 @@ struct move_event_fixture_t {
     nuklear_event_harness_t harness{1280, 900};
     std::array<WormUiComposeNoteView, 3> notes{};
     std::array<WormUiComposeHoldView, 1> holds{};
-    move_event_fixture_t() {
+    explicit move_event_fixture_t(bool hide_panels = false) {
+        if (hide_panels) {
+            auto& state = worm_ui_nuklear_compose_state();
+            state.inspector_visible = state.sounds_panel_visible = state.layers_panel_visible = false;
+            state.bga_panel_visible = false;
+        }
         expect_lane_key(harness.ready());
         const std::array motion{motion_event(300, 400)};
         const auto hover = harness.frame(motion);
@@ -4479,4 +4484,39 @@ TEST_CASE("Note menu exposes the BGM action with its projected shortcut and disa
     CHECK(std::ranges::any_of(clicked, [](const auto& frame) {
         return std::string_view{frame.get().menu_command_id} == "edit.move_to_bgm";
     }));
+}
+
+TEST_CASE("Native selected-note drag sends live BGM targets and can return to the playfield", "[frontend-state][event-harness][move][bgm-move]") {
+    move_event_fixture_t fixture{true};
+    auto& view = fixture.harness.view().compose;
+    const auto viewport = compose_canvas_viewport_for_testing();
+    expect_lane_key(viewport.has_value());
+    const auto bgm_x = static_cast<double>(view.viewport_width_pixels) * .75;
+    std::array<WormUiComposeBgmLaneView, 1> lanes{{{.bounds = {bgm_x, 0, bgm_x + 36, view.viewport_height_pixels},
+        .source_lane_id = 71}}};
+    view.bgm_lanes = lanes.data();
+    view.bgm_lane_count = 1;
+    view.playable_field_right_pixels = bgm_x;
+    (void)fixture.harness.frame();
+    (void)fixture.start();
+    const auto screen_x = viewport->x + static_cast<float>((bgm_x + 18) * viewport->width / view.viewport_width_pixels);
+    const std::array over{motion_event(screen_x, 460)};
+    const auto entered = fixture.harness.frame(over);
+    const auto& input = move_event_input(entered, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE);
+    INFO("BGM input " << input.note_move_to_bgm << " lane " << input.lane_id << " x " << input.x_pixels << " BGM " << bgm_x << " fieldright " << view.playable_field_right_pixels);
+    expect_lane_key(input.note_move_to_bgm && input.lane_id == 71);
+    const auto returned = fixture.move(440);
+    expect_lane_key(!move_event_input(returned, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE).note_move_to_bgm);
+    (void)fixture.harness.frame(over);
+    const std::array up{button_event(false, screen_x, 460)};
+    const auto released = fixture.harness.frame(up);
+    expect_lane_key(move_event_input(released, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE).note_move_to_bgm);
+    expect_lane_key(!worm_ui_nuklear_compose_state().note_move_active);
+}
+
+TEST_CASE("BGM displacement status reports the affected notes during a drag", "[frontend-state][event-harness][move][bgm-move]") {
+    move_event_fixture_t fixture;
+    fixture.harness.view().compose.move_to_bgm_count = 2;
+    (void)fixture.harness.frame();
+    expect_lane_key(fixture.harness.drawn_text().find("2 notes will move to BGM") != std::string::npos);
 }

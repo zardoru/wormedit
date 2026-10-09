@@ -1,5 +1,6 @@
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/snap.h>
+#include <wormedit/core/note_to_bgm.h>
 #include <wormedit/core/dead_span_rules.h>
 
 #include "interaction_cursor.h"
@@ -2563,7 +2564,64 @@ auto release_note_duration_gesture(note_gesture_context_t& context,
     return context.apply_duration_plan(std::get<duration_resize_plan_t>(planned));
 }
 
-auto begin_note_move_gesture(note_gesture_context_t& context, object_id_t reference_id)
+auto stage_bgm_note_move(const document_history_t& history, editor_interaction_state_t& state,
+                         const note_move_plan_t& plan, const pending_note_move_gesture_t& pending)
+    -> std::variant<song_document_t, diagnostic_list_t>;
+
+void prepare_rejected_bgm_preview(const chart_document_t& chart, const note_move_plan_t& plan,
+                                  pending_note_move_gesture_t& pending) {
+    auto lane = pending.preferred_bgm_lane.value_or(chart.bgm_source_lanes.empty()
+        ? object_id_t{std::numeric_limits<std::uint64_t>::max()} : chart.bgm_source_lanes.front().id);
+    if (chart.bgm_source_lanes.empty()) pending.new_bgm_lanes.push_back({lane, 0});
+    if (pending.to_bgm) {
+        for (const auto& moved : plan.moved) {
+            const auto* note = find_note(chart, moved.id);
+            pending.bgm_preview.push_back({moved.id, lane, moved.position, moved.end_position, note->sound});
+        }
+        return;
+    }
+    for (const auto id : plan.occupants) {
+        const auto* note = find_note(chart, id);
+        if (note) pending.bgm_preview.push_back({id, lane, note->position, note->end, note->sound});
+    }
+}
+
+auto prepare_bgm_move_preview(note_gesture_context_t& context, const note_move_plan_t& plan,
+                               pending_note_move_gesture_t& pending) -> void {
+    pending.bgm_preview.clear();
+    pending.new_bgm_lanes.clear();
+    pending.bgm_diagnostics.clear();
+    if (!pending.to_bgm && (!pending.displace_to_bgm || plan.occupants.empty())) return;
+    auto staged = stage_bgm_note_move(context.history, context.state, plan, pending);
+    if (const auto* failures = std::get_if<diagnostic_list_t>(&staged)) {
+        for (const auto& failure : *failures) pending.bgm_diagnostics.push_back(failure.message);
+        pending.conflicting_notes = std::max(std::size_t{1}, pending.conflicting_notes);
+        prepare_rejected_bgm_preview(context.chart, plan, pending);
+        return;
+    }
+    const auto& chart = *find_chart(std::get<song_document_t>(staged), context.state.chart);
+    const auto& ids = pending.to_bgm ? pending.notes : plan.occupants;
+    for (const auto& lane : chart.bgm_source_lanes)
+        if (std::ranges::find(context.chart.bgm_source_lanes, lane.id, &bgm_source_lane_t::id) ==
+            context.chart.bgm_source_lanes.end()) pending.new_bgm_lanes.push_back({lane.id, lane.source_order});
+    for (const auto& measure : chart.measures) {
+        for (const auto& event : measure.bgm_events) {
+            if (std::ranges::find(ids, event.id) == ids.end()) continue;
+            pending.bgm_preview.push_back({event.id, event.source_lane, event.position,
+                                           event.end, event.sound});
+        }
+    }
+    pending.conflicting_notes = 0;
+    pending.occupants.clear();
+    for (auto& preview : pending.preview) {
+        if (preview.conflict != note_move_conflict_t::occupied) continue;
+        preview.conflict = note_move_conflict_t::none;
+        preview.occupant.reset();
+    }
+}
+
+auto begin_note_move_gesture(note_gesture_context_t& context, object_id_t reference_id,
+                              bool displace_to_bgm)
     -> editor_interaction_result_t {
     auto& state = context.state;
     if (state.pending_hold || state.pending_note_duration_gesture || state.pending_note_move_gesture ||
@@ -2594,6 +2652,7 @@ auto begin_note_move_gesture(note_gesture_context_t& context, object_id_t refere
         .preview = move_previews(plan),
         .occupants = plan.occupants,
         .conflicting_notes = move_conflict_count(plan),
+        .displace_to_bgm = displace_to_bgm,
     };
     const auto view = make_view(context.history, state);
     return {
@@ -2609,7 +2668,8 @@ auto begin_note_move_gesture(note_gesture_context_t& context, object_id_t refere
 
 auto update_note_move_gesture(note_gesture_context_t& context,
                               local_position_t requested_position,
-                              lane_id_t requested_lane) -> editor_interaction_result_t {
+                              lane_id_t requested_lane, bool to_bgm,
+                              std::optional<object_id_t> preferred_bgm_lane) -> editor_interaction_result_t {
     auto& state = context.state;
     if (!state.pending_note_move_gesture)
         return diagnostic_result(context.history, state,
@@ -2623,7 +2683,7 @@ auto update_note_move_gesture(note_gesture_context_t& context,
                                         "note move gesture is stale after a document edit")});
     }
     auto planned = context.make_move_plan(pending.notes, pending.reference_note, requested_position,
-                                          requested_lane, false);
+                                          to_bgm ? lane_id_t{} : requested_lane, false);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, state, *diagnostics);
     const auto& plan = std::get<note_move_plan_t>(planned);
@@ -2631,6 +2691,9 @@ auto update_note_move_gesture(note_gesture_context_t& context,
     state.pending_note_move_gesture->preview = move_previews(plan);
     state.pending_note_move_gesture->occupants = plan.occupants;
     state.pending_note_move_gesture->conflicting_notes = move_conflict_count(plan);
+    state.pending_note_move_gesture->to_bgm = to_bgm;
+    state.pending_note_move_gesture->preferred_bgm_lane = preferred_bgm_lane;
+    prepare_bgm_move_preview(context, plan, *state.pending_note_move_gesture);
     const auto view = make_view(context.history, state);
     return {
         .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
@@ -2645,23 +2708,43 @@ auto update_note_move_gesture(note_gesture_context_t& context,
 
 auto release_note_move_gesture(note_gesture_context_t& context,
                                local_position_t requested_position,
-                               lane_id_t requested_lane) -> editor_interaction_result_t {
+                               lane_id_t requested_lane, bool to_bgm,
+                               std::optional<object_id_t> preferred_bgm_lane) -> editor_interaction_result_t {
     // A release that cannot commit ends the gesture: leaving it pending would keep drawing the
     // last valid preview as a ghost note.
     const auto reject = [&](diagnostic_list_t diagnostics) {
         context.state.pending_note_move_gesture.reset();
         return diagnostic_result(context.history, context.state, std::move(diagnostics));
     };
-    auto updated = update_note_move_gesture(context, requested_position, requested_lane);
+    auto updated = update_note_move_gesture(context, requested_position, requested_lane,
+                                             to_bgm, preferred_bgm_lane);
     if (!updated)
         return context.state.pending_note_move_gesture ? reject(std::move(updated.diagnostics))
                                                        : updated;
     const auto pending = *context.state.pending_note_move_gesture;
     auto planned = context.make_move_plan(pending.notes, pending.reference_note,
-                                          pending.preview_position, requested_lane, true);
+                                          pending.preview_position, to_bgm ? lane_id_t{} : requested_lane, true);
     if (auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return reject(std::move(*diagnostics));
     const auto& plan = std::get<note_move_plan_t>(planned);
+    if (pending.to_bgm || (pending.displace_to_bgm && !plan.occupants.empty())) {
+        auto staged = stage_bgm_note_move(context.history, context.state, plan, pending);
+        if (auto* failures = std::get_if<diagnostic_list_t>(&staged)) return reject(*failures);
+        auto committed = commit_document_command(context.history,
+            std::move(std::get<song_document_t>(staged)),
+            pending.to_bgm ? "Move selected notes to BGM" : "Move notes and displace to BGM");
+        if (!committed) return reject(std::move(committed.diagnostics));
+        context.state.pending_note_move_gesture.reset();
+        set_selected_notes(context.state, pending.to_bgm ? std::vector<object_id_t>{} : plan.notes);
+        if (pending.to_bgm) {
+            for (const auto id : plan.notes)
+                context.state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, id});
+        }
+        place_cursor_at(context.state, plan.reference_position);
+        auto result = interaction_view_result(context.history, context.state, true);
+        result.accepted = true;
+        return result;
+    }
     const auto conflicts = move_conflict_count(plan);
     if (conflicts != 0) {
         auto warning =
@@ -2684,13 +2767,16 @@ auto dispatch_note_gesture(note_gesture_context_t& context, const editor_ui_acti
             else if constexpr (std::is_same_v<action_t, release_note_duration_gesture_action_t>)
                 return release_note_duration_gesture(context, typed_action.reference_end);
             else if constexpr (std::is_same_v<action_t, begin_note_move_gesture_action_t>)
-                return begin_note_move_gesture(context, typed_action.reference_note);
+                return begin_note_move_gesture(context, typed_action.reference_note,
+                                               typed_action.displace_to_bgm);
             else if constexpr (std::is_same_v<action_t, update_note_move_gesture_action_t>)
                 return update_note_move_gesture(context, typed_action.reference_position,
-                                                typed_action.reference_lane);
+                                                typed_action.reference_lane, typed_action.to_bgm,
+                                                typed_action.preferred_bgm_lane);
             else if constexpr (std::is_same_v<action_t, release_note_move_gesture_action_t>)
                 return release_note_move_gesture(context, typed_action.reference_position,
-                                                typed_action.reference_lane);
+                                                typed_action.reference_lane, typed_action.to_bgm,
+                                                typed_action.preferred_bgm_lane);
             else
                 return diagnostic_result(context.history, context.state,
                                          {error(diagnostic_code_t::invalid_id,
@@ -4918,6 +5004,7 @@ auto move_linked_sound_events(chart_document_t& chart, const note_move_plan_t& p
             const auto event = std::ranges::find(events, *note->sound_channel_event, &sound_channel_event_t::id);
             if (event == events.end()) continue;
             event->position = candidate.position;
+            event->end = candidate.end_position;
             if (event->playable) event->lane = candidate.lane;
             moved.channels.push_back(index);
             moved.events.push_back(event->id);
@@ -4987,6 +5074,39 @@ auto relocate_moved_notes(chart_document_t& chart, const note_move_plan_t& plan,
     }
     (void)state;
     return sync_linked_sound_events(chart, plan, history.document);
+}
+
+auto stage_bgm_note_move(const document_history_t& history, editor_interaction_state_t& state,
+                         const note_move_plan_t& plan, const pending_note_move_gesture_t& pending)
+    -> std::variant<song_document_t, diagnostic_list_t> {
+    for (const auto& moved : plan.moved) {
+        if (moved.conflict == note_move_conflict_t::none ||
+            (pending.to_bgm && moved.conflict == note_move_conflict_t::out_of_lane)) continue;
+        if (moved.conflict != note_move_conflict_t::occupied)
+            return diagnostic_list_t{error(diagnostic_code_t::collision, "Note move lies outside chart geometry")};
+        if (!pending.to_bgm && (!pending.displace_to_bgm || !moved.occupant ||
+            std::ranges::find(plan.notes, *moved.occupant) != plan.notes.end()))
+            return diagnostic_list_t{error(diagnostic_code_t::collision, "Selected notes would overlap")};
+    }
+    auto scratch = make_document_history(history.document);
+    const auto* source = find_chart(history.document, state.chart);
+    const note_to_bgm_policy_t policy{.allow_new_lanes = source->source_family == format_family_t::bms ||
+        source->source_family == format_family_t::bmson || source->source_family == format_family_t::native_project};
+    if (!pending.to_bgm) {
+        auto converted = move_notes_to_bgm(scratch, scratch.document.revision, state.chart, plan.occupants, std::nullopt, policy);
+        if (!converted) return converted.diagnostics;
+    }
+    auto* chart = find_chart(scratch.document, state.chart);
+    if (auto failure = relocate_moved_notes(*chart, plan, scratch, state))
+        return diagnostic_list_t{*failure};
+    if (pending.to_bgm) {
+        auto converted = move_notes_to_bgm(scratch, scratch.document.revision, state.chart,
+                                          plan.notes, pending.preferred_bgm_lane, policy);
+        if (!converted) return converted.diagnostics;
+    }
+    auto failures = validate_document(scratch.document);
+    if (!failures.empty()) return failures;
+    return std::move(scratch.document);
 }
 
 auto apply_note_move_plan(document_history_t& history, editor_interaction_state_t& state,

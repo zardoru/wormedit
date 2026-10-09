@@ -2465,15 +2465,7 @@ struct ComposeHoveredBgm {
     bool slice{};
 };
 
-static void draw_compose_bgm_event(const ComposePaintContext& paint,
-                                  const WormUiComposeBgmEventView& event,
-                                  ComposeHoveredBgm& hovered) {
-    auto head = event.bounds;
-    if (event.has_tail) {
-        head.top = event.head_top_pixels;
-        head.bottom = event.head_bottom_pixels;
-    }
-    const auto rect = compose_screen_rect(&head, paint.view, paint.viewport);
+static auto compose_bgm_event_fill(const WormUiComposeBgmEventView& event) -> nk_color {
     auto fill = event.has_sound ? nk_rgb(177, 116, 207) : nk_rgb(102, 88, 113);
     if (worm_ui_nuklear_compose_state().color_view ==
         worm_ui_nuklear_compose_color_view_t::layer) {
@@ -2483,6 +2475,20 @@ static void draw_compose_bgm_event(const ComposePaintContext& paint,
             : wormedit::ui::theme::compose(
                   wormedit::ui::theme::ComposeColor::semantic_layer_none);
     }
+    if (event.proposal_ghost) fill = event.move_conflict ? nk_rgb(230, 70, 65) : nk_rgb(238, 176, 65);
+    return fill;
+}
+
+static void draw_compose_bgm_event(const ComposePaintContext& paint,
+                                  const WormUiComposeBgmEventView& event,
+                                  ComposeHoveredBgm& hovered) {
+    auto head = event.bounds;
+    if (event.has_tail) {
+        head.top = event.head_top_pixels;
+        head.bottom = event.head_bottom_pixels;
+    }
+    const auto rect = compose_screen_rect(&head, paint.view, paint.viewport);
+    const auto fill = compose_bgm_event_fill(event);
     if (event.has_tail) {
         auto body = compose_screen_rect(&event.bounds, paint.view, paint.viewport);
         const auto inset = body.w * 0.325f;
@@ -2508,7 +2514,7 @@ static void draw_compose_bgm_event(const ComposePaintContext& paint,
                      static_cast<int>(strlen(event.sound_label)), paint.context->style.font, fill,
                      nk_rgb(255, 245, 255), 3);
     }
-    if (event.sound_detail && nk_input_is_mouse_hovering_rect(&paint.context->input, rect)) {
+    if (!event.proposal_ghost && event.sound_detail && nk_input_is_mouse_hovering_rect(&paint.context->input, rect)) {
         hovered = {event.sound_detail, event.bmson_restart, event.bmson_slice};
     }
 }
@@ -2738,14 +2744,14 @@ static ComposeHoveredBgm draw_compose_audio_markers(const ComposePaintContext& p
     ComposeHoveredBgm hovered{};
     const bool selected=std::ranges::any_of(
         std::span(paint.view->bgm_events,paint.view->bgm_event_count),
-        [](const auto& event) { return event.selected; });
+        [](const auto& event) { return event.selected || event.proposal_ghost; });
     if (draw_events)
         draw_compose_cached_pass(paint,8,true,selected,[&](const ComposePaintContext& cached) { draw_compose_bgm_events(cached,hovered); });
     // Hover details are independent of the retained visual pass.
     for (size_t index=0; index<paint.view->bgm_event_count; ++index) {
         const auto& event=paint.view->bgm_events[index];
         const auto head = compose_bgm_head_bounds(event);
-        if (event.sound_detail && nk_input_is_mouse_hovering_rect(&paint.context->input,
+        if (!event.proposal_ghost && event.sound_detail && nk_input_is_mouse_hovering_rect(&paint.context->input,
             compose_screen_rect(&head,paint.view,paint.viewport)))
             hovered={event.sound_detail,event.bmson_restart,event.bmson_slice};
     }
@@ -3035,13 +3041,10 @@ static void draw_compose_editor_overlays(const ComposePaintContext& paint,
 
 static auto compose_move_status_hint(const WormUiComposeView* view) -> const char* {
     static std::string message;
-    static std::size_t previous_count = 0;
-    if (!view || view->move_conflict_count == 0)
-        return nullptr;
-    if (previous_count != view->move_conflict_count) {
-        message = std::to_string(view->move_conflict_count) + " notes would overlap";
-        previous_count = view->move_conflict_count;
-    }
+    if (!view) return nullptr;
+    if (view->move_conflict_count) message = std::to_string(view->move_conflict_count) + " notes would overlap";
+    else if (view->move_to_bgm_count) message = std::to_string(view->move_to_bgm_count) + " notes will move to BGM";
+    else return nullptr;
     return message.c_str();
 }
 
@@ -3137,7 +3140,7 @@ void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* vie
         draw_compose_timing_layer(paint, timing_layout);
         const bool active_notes=compose_notes_require_direct(*view);
         const bool active_bgm=std::ranges::any_of(std::span(view->bgm_events,view->bgm_event_count),
-            [](const auto& event) { return event.selected; });
+            [](const auto& event) { return event.selected || event.proposal_ghost; });
         const auto hold_holes=compose_hover_holes(paint,7);
         const auto note_holes=compose_hover_holes(paint,9);
         const bool grouped=!active_notes && !active_bgm && hold_holes.has_value();

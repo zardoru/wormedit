@@ -59,10 +59,21 @@ void scroll_directions(nk_context* context, const WormUiOptionsView& view, WormU
             .family_index = static_cast<uint32_t>(index)};
     }
 }
+void move_collision_policy(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action) {
+    constexpr const char* labels[]{"Reject", "Move it to a BGM lane"};
+    nk_layout_row_dynamic(context, 28, 2);
+    nk_label(context, "When a move lands on a note", NK_TEXT_LEFT);
+    const auto value = static_cast<int>(view.move_collision_policy);
+    const auto selected = wormedit::ui::chrome::safe_combo(context, labels, 2, value, 24, nk_vec2(240, 100));
+    if (selected == value || action.kind != WORM_UI_OPTIONS_NONE) return;
+    action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
+        .field = WORM_UI_OPTIONS_FIELD_MOVE_COLLISION_POLICY, .integer = static_cast<uint64_t>(selected)};
+}
 void editor_page(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
     edit_toggle(context, *view, *action, "Play sounds on note clicks",
         WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK, view->audition_on_click);
     edit_integer(context, *view, *action, "Default snap denominator", WORM_UI_OPTIONS_FIELD_SNAP, view->default_snap, 1, 1920);
+    move_collision_policy(context, *view, *action);
     scroll_directions(context, *view, *action);
     edit_integer(context, *view, *action, "Following anchor (%)", WORM_UI_OPTIONS_FIELD_ANCHOR, view->playhead_anchor_percent, 0, 100);
     edit_toggle(context, *view, *action, "Show note-kind palette", WORM_UI_OPTIONS_FIELD_NOTE_PALETTE, view->note_kind_palette_visible);

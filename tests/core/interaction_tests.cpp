@@ -6049,3 +6049,189 @@ TEST_CASE("setting the editing snap accepts only supported grids without touchin
     CHECK(history.document.revision == revision);
     CHECK(history.undo.empty());
 }
+
+namespace {
+auto bgm_move_song(bool busy = false) -> song_document_t {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    chart.bgm_source_lanes = {{.id = object_id_t{300}, .name = "BGM", .source_order = 0}};
+    chart.measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1},
+         .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{1}, 720}},
+    };
+    if (busy) chart.measures.front().bgm_events.push_back(
+        {.id = object_id_t{301}, .position = {measure_id_t{1}, 480}, .source_lane = object_id_t{300}});
+    return song;
+}
+auto bgm_move_event(const document_history_t& history, object_id_t id) -> const bgm_event_t* {
+    for (const auto& measure : history.document.charts.front().measures) {
+        const auto found = std::ranges::find(measure.bgm_events, id, &bgm_event_t::id);
+        if (found != measure.bgm_events.end()) return &*found;
+    }
+    return nullptr;
+}
+}
+
+TEST_CASE("Dragging into BGM previews shifted destinations and returning leaves the document untouched",
+          "[unit][core][interaction][move][bgm-move]") {
+    auto history = make_document_history(bgm_move_song());
+    auto state = make_state(history);
+    const auto original = feedback_document_bytes(history.document);
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{102}}));
+    feedback_require(dispatch_editor_action(history, state,
+        update_note_move_gesture_action_t{{measure_id_t{2}, 0}, {}, true}));
+    const auto& pending = *state.pending_note_move_gesture;
+    feedback_check(pending.to_bgm && pending.bgm_preview.size() == 1);
+    feedback_check(pending.bgm_preview.front().position == local_position_t{measure_id_t{2}, 0});
+    feedback_check(pending.bgm_preview.front().end == local_position_t{measure_id_t{2}, 240});
+    feedback_check(pending.bgm_preview.front().lane == object_id_t{300});
+    feedback_require(dispatch_editor_action(history, state,
+        update_note_move_gesture_action_t{{measure_id_t{1}, 240}, lane_id_t{2}}));
+    feedback_check(!state.pending_note_move_gesture->to_bgm);
+    feedback_check(state.pending_note_move_gesture->bgm_preview.empty());
+    feedback_check(feedback_document_bytes(history.document) == original && history.undo.empty());
+    feedback_require(dispatch_editor_action(history, state, cancel_editor_gesture_action_t{}));
+}
+
+TEST_CASE("BGM drag commits row delta and tail in exactly one undo step",
+          "[unit][core][interaction][move][bgm-move]") {
+    auto history = make_document_history(bgm_move_song());
+    auto state = make_state(history);
+    const auto original = history.document;
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{102}}));
+    feedback_require(dispatch_editor_action(history, state,
+        release_note_move_gesture_action_t{{measure_id_t{2}, 0}, {}, true}));
+    const auto* event = bgm_move_event(history, object_id_t{102});
+    feedback_require(event);
+    feedback_check(event->position == local_position_t{measure_id_t{2}, 0});
+    feedback_check(event->end == local_position_t{measure_id_t{2}, 240});
+    feedback_check(!find_note(history, object_id_t{102}) && history.undo.size() == 1);
+    feedback_require(undo_document_command(history));
+    auto restored = history.document;
+    restored.revision = original.revision;
+    feedback_check(feedback_document_bytes(restored) == feedback_document_bytes(original));
+    feedback_require(redo_document_command(history));
+    feedback_check(bgm_move_event(history, object_id_t{102}));
+}
+
+TEST_CASE("Move displacement allocates occupants to BGM and preserves hold tails atomically",
+          "[unit][core][interaction][move][bgm-move]") {
+    const auto busy = GENERATE(false, true);
+    auto song = bgm_move_song(busy);
+    song.audio_assets = {{.id = asset_id_t{10}, .stream = {48000, 2, 480000, true}}};
+    song.resources = {{.id = resource_id_t{20}, .asset = asset_id_t{10}, .roles = {resource_role_t::sample}}};
+    song.charts.front().semantic_layers = {{.id = layer_id_t{1}, .name = "Drums"}};
+    auto& occupant = song.charts.front().measures.front().notes[1];
+    occupant.sound = resource_id_t{20};
+    occupant.semantic_layers = {layer_id_t{1}};
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto original = history.document;
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}, true}));
+    feedback_require(dispatch_editor_action(history, state,
+        update_note_move_gesture_action_t{{measure_id_t{1}, 480}, lane_id_t{1}}));
+    const auto& pending = *state.pending_note_move_gesture;
+    feedback_check(pending.conflicting_notes == 0 && pending.bgm_preview.size() == 1);
+    feedback_check(pending.new_bgm_lanes.size() == static_cast<std::size_t>(busy));
+    const auto destination = pending.bgm_preview.front().lane;
+    feedback_require(dispatch_editor_action(history, state,
+        release_note_move_gesture_action_t{{measure_id_t{1}, 480}, lane_id_t{1}}));
+    feedback_check(find_note(history, object_id_t{101})->position == local_position_t{measure_id_t{1}, 480});
+    const auto* event = bgm_move_event(history, object_id_t{102});
+    feedback_require(event);
+    feedback_check(event->source_lane == destination && event->end == local_position_t{measure_id_t{1}, 720});
+    feedback_check(event->sound == resource_id_t{20} && event->semantic_layers == std::vector<layer_id_t>{layer_id_t{1}});
+    feedback_check(history.undo.size() == 1 && !find_note(history, object_id_t{102}));
+    feedback_require(undo_document_command(history));
+    auto restored = history.document;
+    restored.revision = original.revision;
+    feedback_check(feedback_document_bytes(restored) == feedback_document_bytes(original));
+}
+
+TEST_CASE("A displacement with no permitted BGM capacity rejects the whole move",
+          "[unit][core][interaction][move][bgm-move]") {
+    auto song = bgm_move_song(true);
+    song.charts.front().source_family = format_family_t::stepmania;
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto original = feedback_document_bytes(history.document);
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}, true}));
+    feedback_require(dispatch_editor_action(history, state,
+        update_note_move_gesture_action_t{{measure_id_t{1}, 480}, lane_id_t{1}}));
+    feedback_check(state.pending_note_move_gesture->conflicting_notes == 1);
+    feedback_check(!state.pending_note_move_gesture->bgm_diagnostics.empty());
+    feedback_check(!dispatch_editor_action(history, state,
+        release_note_move_gesture_action_t{{measure_id_t{1}, 480}, lane_id_t{1}}));
+    feedback_check(!state.pending_note_move_gesture);
+    feedback_check(history.undo.empty() && feedback_document_bytes(history.document) == original);
+}
+
+TEST_CASE("Dragging a retained BMSON hold into BGM shifts its source head and tail together",
+          "[unit][core][interaction][move][bgm-move][bmson]") {
+    auto song = bgm_move_song();
+    song.audio_assets = {{.id = asset_id_t{10}, .stream = {48000, 2, 480000, true}}};
+    song.resources = {{.id = resource_id_t{20}, .asset = asset_id_t{10}, .roles = {resource_role_t::sample}}};
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bmson;
+    chart.bpms = {{.id = object_id_t{500}, .position = {measure_id_t{1}, 0}, .beats_per_minute = {120, 1}}};
+    chart.measures.front().notes.resize(1);
+    auto& note = chart.measures.front().notes.front();
+    note.kind = note_kind_t::hold;
+    note.end = local_position_t{measure_id_t{1}, 240};
+    note.sound = resource_id_t{20};
+    note.sound_channel_event = object_id_t{402};
+    chart.sound_channels = {{.id = object_id_t{400}, .name = "Stem",
+        .source_clip = {.id = clip_id_t{401}, .source = asset_id_t{10}, .end_frame = 480000},
+        .events = {{.id = object_id_t{402}, .position = note.position, .end = note.end, .lane = note.lane}}}};
+    chart.bgm_source_lanes.front().stem_channel = object_id_t{400};
+    for (const auto& diagnostic : validate_document(song)) UNSCOPED_INFO(diagnostic.message);
+    feedback_require(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
+    const auto released = dispatch_editor_action(history, state,
+        release_note_move_gesture_action_t{{measure_id_t{1}, 480}, {}, true});
+    for (const auto& diagnostic : released.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    feedback_require(released);
+    const auto* event = bgm_move_event(history, object_id_t{101});
+    feedback_require(event);
+    feedback_check(event->position == local_position_t{measure_id_t{1}, 480});
+    feedback_check(event->end == local_position_t{measure_id_t{1}, 720});
+    const auto& source = history.document.charts.front().sound_channels.front().events.front();
+    feedback_check(!source.playable && source.position == event->position && source.end == event->end);
+    feedback_check(state.selected_objects == std::vector<editor_selection_object_t>{
+        {editor_selection_object_kind_t::bgm_event, object_id_t{101}}});
+    feedback_check(history.undo.size() == 1);
+}
+
+TEST_CASE("Selected-note BGM drop shifts the whole cohort and ignores playable occupants",
+          "[unit][core][interaction][move][bgm-move]") {
+    auto song = bgm_move_song();
+    auto& chart = song.charts.front();
+    chart.measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{2}},
+        {.id = object_id_t{201}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{301},
+        .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{300}}};
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    feedback_require(dispatch_editor_action(history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
+    feedback_require(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
+    feedback_require(dispatch_editor_action(history, state,
+        update_note_move_gesture_action_t{{measure_id_t{1}, 240}, {}, true}));
+    const auto pending = *state.pending_note_move_gesture;
+    feedback_check(pending.bgm_preview.size() == 2 && pending.new_bgm_lanes.size() == 2);
+    feedback_check(pending.conflicting_notes == 0);
+    feedback_require(dispatch_editor_action(history, state,
+        release_note_move_gesture_action_t{{measure_id_t{1}, 240}, {}, true}));
+    for (const auto& preview : pending.bgm_preview) {
+        const auto* event = bgm_move_event(history, preview.note);
+        feedback_require(event);
+        feedback_check(event->position == local_position_t{measure_id_t{1}, 240});
+        feedback_check(event->source_lane == preview.lane);
+    }
+    feedback_check(find_note(history, object_id_t{201}) && history.undo.size() == 1);
+}

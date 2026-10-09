@@ -724,6 +724,8 @@ typedef struct WormUiComposeBgmEventView {
     bool bmson_restart;
     bool selected;
     bool has_tail;
+    bool proposal_ghost;
+    bool move_conflict;
     const char* sound_label;
     const char* sound_detail;
     bool semantic_color_visible;
@@ -1660,7 +1662,8 @@ typedef struct WormUiComposeView {
     size_t selected_bgm_event_count;
     size_t semantic_layer_unassigned_bgm_count;
     WormUiBookmarkChooserView bookmark_chooser;
-    size_t move_conflict_count; // Unique moved-note count, before geometry truncation.
+    size_t move_conflict_count;
+    size_t move_to_bgm_count; // Unique moved-note count, before geometry truncation.
 } WormUiComposeView;
 
 typedef struct WormUiTimingSpeedView {
@@ -2016,7 +2019,8 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_PLAYER_ADD, WORM_UI_OPTIONS_FIELD_PLAYER_REMOVE,
     WORM_UI_OPTIONS_FIELD_SCROLL_DIRECTION, WORM_UI_OPTIONS_FIELD_ANCHOR,
     WORM_UI_OPTIONS_FIELD_NOTE_PALETTE, WORM_UI_OPTIONS_FIELD_LANE_LEGEND,
-    WORM_UI_OPTIONS_FIELD_AREA_ALPHA, WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK
+    WORM_UI_OPTIONS_FIELD_AREA_ALPHA, WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK,
+    WORM_UI_OPTIONS_FIELD_MOVE_COLLISION_POLICY
 } WormUiOptionsField;
 typedef struct WormUiOptionsDiagnostic {
     WormUiOptionsField field;
@@ -2038,6 +2042,7 @@ typedef struct WormUiOptionsView {
     uint32_t autosave_minutes, recent_files_count, default_snap, ui_scale_percent;
     uint32_t scroll_directions[6];
     uint32_t playhead_anchor_percent, area_band_alpha;
+    uint32_t move_collision_policy;
     bool note_kind_palette_visible, lane_key_legend_visible;
     bool audition_on_click;
     bool confirm_unsaved_close, keep_pitch, frame_timing_overlay;
@@ -2555,6 +2560,7 @@ typedef struct WormUiComposeInputAction {
     uint8_t resource_role;
     bool successive;
     bool razor_stroke_start;
+    bool note_move_to_bgm;
     WormUiComposeSelectionMode selection_mode;
     WormUiComposeNavigationAction navigation_action;
     double x_pixels;

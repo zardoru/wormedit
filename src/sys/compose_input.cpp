@@ -1823,7 +1823,8 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
         state.active_lane = target->lane;
         place_cursor_on_picked_row(state, target->position);
         result =
-            dispatch_editor_action(history, state, begin_note_move_gesture_action_t{*target->note});
+            dispatch_editor_action(history, state, begin_note_move_gesture_action_t{*target->note,
+                application_state.editor_preferences.move_collision_policy == move_collision_policy_t::displace_to_bgm});
         accepted = "Selected-note move started.";
         return compose_input_family_result_t::continue_with_result();
     }
@@ -1833,17 +1834,19 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
                                     std::max(0.0, view->viewport_height_pixels - 0.001));
     const auto position = position_at_compose_y(*chart, *view, y);
     const auto target = hit_target_at(*chart, *view, input.x_pixels, input.y_pixels);
-    if (!position || !target) {
+    if (!position || (!target && !input.note_move_to_bgm)) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         return "Note move input fell outside chart lane geometry and was canceled.";
     }
     if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE) {
         result = dispatch_editor_action(history, state,
-                                        update_note_move_gesture_action_t{*position, target->lane});
+                                        update_note_move_gesture_action_t{*position, target ? target->lane : lane_id_t{},
+                                            input.note_move_to_bgm, input.lane_id ? std::optional{object_id_t{input.lane_id}} : std::nullopt});
         accepted = "Selected-note move preview updated.";
     } else {
         result = dispatch_editor_action(
-            history, state, release_note_move_gesture_action_t{*position, target->lane});
+            history, state, release_note_move_gesture_action_t{*position, target ? target->lane : lane_id_t{},
+                input.note_move_to_bgm, input.lane_id ? std::optional{object_id_t{input.lane_id}} : std::nullopt});
         accepted =
             result.document_changed ? "Selected notes moved." : "Selected-note move released.";
     }

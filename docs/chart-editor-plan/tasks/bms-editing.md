@@ -101,13 +101,16 @@ Notes with the same key at the same row necessarily spill to different lanes, an
 
 ## T-425 Drag selected notes into the BGM area to convert them
 
-- **Status:** blocked-on T-420, T-423
+- **Status:** done (2026-10-09)
+- **Implementation / verification (2026-10-09):** Live move updates carry the BGM target/preferred lane and row delta; preview destinations come from the shared conversion command on a scratch document. Accepted ghosts are amber, rejected ghosts red, including tails and new lane headers. Returning to the playfield restores ordinary move previews. Release commits once and selects the resulting BGM events; rejection changes nothing. Normal main build and full **2,939/2,939** suite pass, including 265 event-harness cases. Source/test complexity checks introduce no new/increased findings; three reviewed main-object software captures and release/Undo checks pass. Native-window smoke remains blocked by Xvfb sockets. See [batch evidence](../../../memory/coordination/oct9-bgm-move-batch.md).
 - **Outcome:** during a note move, crossing into the BGM area shows amber ghosts in the lanes T-423 would choose, offset by the drag's row delta. Releasing there converts the notes in one undo step, and moving back out returns to a normal move.
-- **Read first:** `src/core/interaction.cpp` (`update_note_move_gesture` after T-420), `include/wormedit/core/bgm_conversion.h`, `src/ui/nuklear/compose_canvas.cpp` (move ghosts, BGM lanes).
-- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `tests/core/` interaction tests, `tests/ui/nuklear_event_harness_tests.cpp`, this card.
+- **Read first:** `src/core/interaction.cpp` (`update_note_move_gesture` after T-420), `include/wormedit/core/note_to_bgm.h`, `src/ui/nuklear/compose_canvas.cpp` (move ghosts, BGM lanes).
+- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `tests/core/` interaction tests, `tests/ui/nuklear_event_harness_tests.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `include/wormedit/core/editor_scene.h`, `src/core/editor_scene.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, this card.
+- **Supporting-file ownership (2026-10-09):** coordinator extends Files owned to `tests/sys/frame_timing_tests.cpp` (production input routing and projection regressions); `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_object_input.cpp` (route live BGM move updates/releases); `include/wormedit/core/editor_scene.h`, `src/core/editor_scene.cpp` (transient destination geometry); `src/ui/nuklear/compose_input_panel.cpp` (ignore ghosts during picking). These support the stated gesture outcome. T-420/T-423 are complete; the old blocked status was stale.
+- **Additional supporting ownership (2026-10-09):** `tests/ui/bga_lane_event_harness_tests.cpp` contains the legacy drop routing regression; update it to verify live BGM updates/releases instead of the removed cancel-and-convert route.
 - **Steps:**
   1. Give the move gesture a `to_bgm` target state when the pointer's lane is a BGM lane. The preview runs the T-423 allocator on the shifted positions.
-  2. Draw the amber ghosts, and on release commit through `convert_notes_to_bgm` with the row delta applied.
+  2. Draw the amber ghosts, and on release commit through `move_notes_to_bgm` with the row delta applied.
   3. Add tests for in-and-out without a commit and for converting with a row delta.
 - **Invariants:** a move that stays in play lanes behaves exactly as in T-420.
 - **Reject/failure behavior:** if the allocator rejects, the ghosts show red, and releasing changes nothing.

@@ -389,6 +389,7 @@ uint64_t compose_bgm_event_at(const WormUiComposeView* view, double x, double y)
     }
     for (size_t index = view->bgm_event_count; index-- > 0;) {
         const auto& event = view->bgm_events[index];
+        if (event.proposal_ghost) continue;
         if (x >= event.bounds.left && x <= event.bounds.right &&
             y >= (event.has_tail ? event.head_top_pixels : event.bounds.top) &&
             y <= (event.has_tail ? event.head_bottom_pixels : event.bounds.bottom)) {

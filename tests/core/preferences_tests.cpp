@@ -290,3 +290,17 @@ TEST_CASE("keysound budget invalid JSON types retain the default", "[preferences
         check_keysound_preference(value, 512);
     CHECK(wormedit::parse_program_preferences("{}").preferences.audio.keysound_budget_mib == 512);
 }
+
+TEST_CASE("Move collision preference defaults to Reject and persists displacement safely", "[unit][core][preferences][bgm-move]") {
+    auto values = default_program_preferences();
+    expect_preference(values.editor.move_collision_policy == move_collision_policy_t::reject);
+    values.editor.move_collision_policy = move_collision_policy_t::displace_to_bgm;
+    const auto encoded = serialize_program_preferences(values);
+    require_preference(encoded.has_value());
+    expect_preference(parse_program_preferences(*encoded).preferences == values);
+    const auto invalid = parse_program_preferences(R"({"editor":{"move_collision_policy":"delete"}})");
+    expect_preference(!invalid.warnings.empty());
+    expect_preference(invalid.preferences.editor.move_collision_policy == move_collision_policy_t::reject);
+    values.editor.move_collision_policy = static_cast<move_collision_policy_t>(2);
+    expect_preference(!serialize_program_preferences(values));
+}

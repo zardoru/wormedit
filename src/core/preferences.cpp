@@ -90,7 +90,11 @@ void read_editor(preference_reader_t& reader, const json_t& root) {
     const auto& section = reader.section(root, "editor");
     auto& value = reader.result.preferences.editor;
     reader.check_keys(section, {"default_snap", "scroll_directions", "playhead_anchor_percent",
-        "note_kind_palette_visible", "lane_key_legend_visible", "area_band_alpha", "audition_on_click"});
+        "note_kind_palette_visible", "lane_key_legend_visible", "area_band_alpha", "audition_on_click", "move_collision_policy"});
+    std::string policy{"reject"};
+    reader.string(section, "move_collision_policy", policy);
+    if (policy == "displace_to_bgm") value.move_collision_policy = move_collision_policy_t::displace_to_bgm;
+    else if (policy != "reject") reader.warn("Unknown move_collision_policy; Reject retained.");
     reader.integer(section, "default_snap", value.default_snap, 1, 1920);
     reader.integer(section, "playhead_anchor_percent", value.playhead_anchor_percent, 0, 100);
     reader.integer(section, "area_band_alpha", value.area_band_alpha, 0, 255);
@@ -103,7 +107,7 @@ void read_editor(preference_reader_t& reader, const json_t& root) {
         reader.integer(scroll, scroll_keys[index], value.scroll_directions[index], 0, 2);
 }
 auto valid_editor(const editor_preferences_t& value) -> bool {
-    return value.default_snap >= 1 && value.default_snap <= 1920 &&
+    return static_cast<std::uint32_t>(value.move_collision_policy) <= 1 && value.default_snap >= 1 && value.default_snap <= 1920 &&
         value.playhead_anchor_percent <= 100 && value.area_band_alpha <= 255 &&
         std::ranges::all_of(value.scroll_directions, [](auto direction) { return direction <= 2; });
 }
@@ -111,7 +115,8 @@ auto editor_json(const editor_preferences_t& value) -> json_t {
     auto scroll = json_t::object();
     for (std::size_t index = 0; index < scroll_keys.size(); ++index)
         scroll[scroll_keys[index]] = value.scroll_directions[index];
-    return {{"default_snap", value.default_snap}, {"scroll_directions", std::move(scroll)},
+    return {{"move_collision_policy", value.move_collision_policy == move_collision_policy_t::reject ? "reject" : "displace_to_bgm"},
+        {"default_snap", value.default_snap}, {"scroll_directions", std::move(scroll)},
         {"playhead_anchor_percent", value.playhead_anchor_percent},
         {"note_kind_palette_visible", value.note_kind_palette_visible},
         {"lane_key_legend_visible", value.lane_key_legend_visible}, {"area_band_alpha", value.area_band_alpha},

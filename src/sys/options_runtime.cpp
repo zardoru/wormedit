@@ -56,6 +56,8 @@ void validate_editor(options_runtime_t& r) {
         "Snap must be between 1 and 1920.");
     diagnose(r, WORM_UI_OPTIONS_FIELD_ANCHOR, e.playhead_anchor_percent <= 100,
         "Following anchor must be between 0 and 100 percent.");
+    diagnose(r, WORM_UI_OPTIONS_FIELD_MOVE_COLLISION_POLICY, static_cast<std::uint32_t>(e.move_collision_policy) <= 1,
+        "Choose Reject or Move it to a BGM lane.");
     diagnose(r, WORM_UI_OPTIONS_FIELD_AREA_ALPHA, e.area_band_alpha <= 255,
         "Area-band opacity must be between 0 and 255.");
     diagnose(r, WORM_UI_OPTIONS_FIELD_SCROLL_DIRECTION,
@@ -122,6 +124,7 @@ auto edit_editor(program_preferences_t& p, const WormUiOptionsAction& a) -> bool
         if (a.family_index >= p.editor.scroll_directions.size()) return false;
         p.editor.scroll_directions[a.family_index] = static_cast<std::uint32_t>(a.integer); return true;
     case WORM_UI_OPTIONS_FIELD_ANCHOR: p.editor.playhead_anchor_percent = static_cast<std::uint32_t>(a.integer); return true;
+    case WORM_UI_OPTIONS_FIELD_MOVE_COLLISION_POLICY: p.editor.move_collision_policy = static_cast<move_collision_policy_t>(a.integer); return true;
     case WORM_UI_OPTIONS_FIELD_AREA_ALPHA: p.editor.area_band_alpha = static_cast<std::uint32_t>(a.integer); return true;
     case WORM_UI_OPTIONS_FIELD_NOTE_PALETTE: p.editor.note_kind_palette_visible = a.boolean; return true;
     case WORM_UI_OPTIONS_FIELD_LANE_LEGEND: p.editor.lane_key_legend_visible = a.boolean; return true;
@@ -247,6 +250,7 @@ auto options_view(options_runtime_t& r) -> WormUiOptionsView {
             p.editor.scroll_directions[2], p.editor.scroll_directions[3], p.editor.scroll_directions[4],
             p.editor.scroll_directions[5]},
         .playhead_anchor_percent = p.editor.playhead_anchor_percent, .area_band_alpha = p.editor.area_band_alpha,
+        .move_collision_policy = static_cast<std::uint32_t>(p.editor.move_collision_policy),
         .note_kind_palette_visible = p.editor.note_kind_palette_visible, .lane_key_legend_visible = p.editor.lane_key_legend_visible,
         .audition_on_click = p.editor.audition_on_click,
         .confirm_unsaved_close = p.general.confirm_unsaved_close, .keep_pitch = p.audio.keep_pitch,

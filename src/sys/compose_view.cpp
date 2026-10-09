@@ -1120,6 +1120,8 @@ void project_compose_bgm_events(flattened_workspace_t& flattened,
              .bmson_restart = event.bmson_restart.value_or(false),
              .selected = event.selected,
              .has_tail = event.has_tail,
+             .proposal_ghost = event.proposal_ghost,
+             .move_conflict = event.move_conflict,
              .sound_label = sound == flattened.compose.sound_labels.end()
                                 ? (event.sound ? "?" : "") : sound->second.first.c_str(),
              .sound_detail = sound == flattened.compose.sound_labels.end()
@@ -2787,6 +2789,8 @@ void populate_compose_selection_preview(
     }
     view.move_conflict_count = retained_state->pending_note_move_gesture
                                    ? retained_state->pending_note_move_gesture->conflicting_notes : 0;
+    view.move_to_bgm_count = retained_state->pending_note_move_gesture
+        ? retained_state->pending_note_move_gesture->bgm_preview.size() : 0;
     view.selected_note_count = retained_state->selected_notes.size();
     view.selected_object_count = retained_state->selected_objects.size();
 }
@@ -4235,6 +4239,13 @@ void prepare_compose_bgm_widths(const wormedit::chart_document_t& chart,
         cache.bgm_lane_widths_pixels.push_back(std::isnan(width) ? 36.0 : std::clamp(width, 36.0, 480.0));
     }
 }
+auto compose_has_bgm_pane(const chart_document_t& chart,
+                           const editor_interaction_view_model_t& view) -> bool {
+    return !chart.bgm_source_lanes.empty() || chart.source_family == format_family_t::bms ||
+        chart.source_family == format_family_t::bmson || (view.pending_note_move_gesture &&
+        !view.pending_note_move_gesture->new_bgm_lanes.empty());
+}
+
 bool compose_project_scene(const compose_final_projection_context_t& input,
                            std::uint64_t canvas_rows) {
     auto& flattened = input.flattened;
@@ -4301,7 +4312,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
         wormedit::editor_bga_visible_lane_mask(chart, interaction_view.bga_revealed_lane_mask) != 0;
     const auto horizontal_layout =
         compose_horizontal_layout(view.viewport_width_pixels, maximum_layout_lane_count(chart),
-                                  !chart.bgm_source_lanes.empty(),
+                                  compose_has_bgm_pane(chart, interaction_view),
                                   interaction_view.bga_lane_visible ? std::popcount(
                                       wormedit::editor_bga_visible_lane_mask(chart,
                                           interaction_view.bga_revealed_lane_mask)) : 0,
@@ -4332,7 +4343,10 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     prepare_compose_bgm_widths(chart, history.document.id.value, cache, application_state);
     const auto bgm_content = wormedit::editor_bgm_content_width_pixels(chart,
         {.bgm_lane_widths_pixels = cache.bgm_lane_widths_pixels});
-    const auto maximum_bgm_scroll = std::max(0.0, bgm_content - bgm_pane_width);
+    const auto preview_lane_count = interaction_view.pending_note_move_gesture
+        ? interaction_view.pending_note_move_gesture->new_bgm_lanes.size() : 0;
+    const auto maximum_bgm_scroll = std::max(0.0,
+        bgm_content + preview_lane_count * compose_bgm_lane_width_pixels - bgm_pane_width);
     auto& bgm_horizontal_scroll = application_state.bgm_horizontal_scroll_pixels[chart.id.value];
     bgm_horizontal_scroll = std::clamp(bgm_horizontal_scroll, 0.0, maximum_bgm_scroll);
     view.bgm_horizontal_scroll_pixels = bgm_horizontal_scroll;

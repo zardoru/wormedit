@@ -306,3 +306,22 @@ TEST_CASE("Options Audio clamps wide keysound actions and applies persisted budg
     (void)apply_options_action(runtime, program, edit);
     expect_options(options_view(runtime).keysound_budget_mib == 256);
 }
+
+TEST_CASE("Editing collision policy applies to disk and Defaults restores Reject", "[options][bgm-move]") {
+    temporary_preferences_t temporary;
+    program_preferences_runtime_t program;
+    program.path = temporary.directory / "preferences.json";
+    options_runtime_t runtime;
+    open_options(runtime, program.preferences);
+    select(runtime, program, WORM_UI_OPTIONS_EDITOR);
+    auto edit = action(runtime, WORM_UI_OPTIONS_EDIT_FIELD, WORM_UI_OPTIONS_EDITOR);
+    edit.field = WORM_UI_OPTIONS_FIELD_MOVE_COLLISION_POLICY;
+    edit.integer = 1;
+    (void)apply_options_action(runtime, program, edit);
+    expect_options(options_view(runtime).move_collision_policy == 1 && options_view(runtime).can_apply);
+    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(load_program_preferences(program.path).contents.preferences.editor.move_collision_policy ==
+        move_collision_policy_t::displace_to_bgm);
+    (void)apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS));
+    expect_options(options_view(runtime).move_collision_policy == 0);
+}

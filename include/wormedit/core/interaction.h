@@ -181,16 +181,21 @@ struct release_note_duration_gesture_action_t {
 // zero retains its original lane for backwards-compatible vertical moves.
 struct begin_note_move_gesture_action_t {
     object_id_t reference_note;
+    bool displace_to_bgm{};
 };
 
 struct update_note_move_gesture_action_t {
     local_position_t reference_position;
     lane_id_t reference_lane{};
+    bool to_bgm{};
+    std::optional<object_id_t> preferred_bgm_lane;
 };
 
 struct release_note_move_gesture_action_t {
     local_position_t reference_position;
     lane_id_t reference_lane{};
+    bool to_bgm{};
+    std::optional<object_id_t> preferred_bgm_lane;
 };
 
 struct note_paint_target_t {
@@ -538,6 +543,21 @@ struct note_move_preview_t {
     auto operator==(const note_move_preview_t&) const -> bool = default;
 };
 
+struct note_move_bgm_preview_t {
+    object_id_t note;
+    object_id_t lane;
+    local_position_t position;
+    std::optional<local_position_t> end;
+    std::optional<resource_id_t> sound;
+    auto operator==(const note_move_bgm_preview_t&) const -> bool = default;
+};
+
+struct note_move_bgm_lane_preview_t {
+    object_id_t id;
+    std::size_t source_order{};
+    auto operator==(const note_move_bgm_lane_preview_t&) const -> bool = default;
+};
+
 struct pending_note_move_gesture_t {
     object_id_t reference_note;
     std::uint64_t document_revision{};
@@ -546,6 +566,12 @@ struct pending_note_move_gesture_t {
     std::vector<note_move_preview_t> preview;
     std::vector<object_id_t> occupants;
     std::size_t conflicting_notes{};
+    bool to_bgm{};
+    bool displace_to_bgm{};
+    std::optional<object_id_t> preferred_bgm_lane;
+    std::vector<note_move_bgm_preview_t> bgm_preview;
+    std::vector<note_move_bgm_lane_preview_t> new_bgm_lanes;
+    std::vector<std::string> bgm_diagnostics;
 
     auto operator==(const pending_note_move_gesture_t&) const -> bool = default;
 };

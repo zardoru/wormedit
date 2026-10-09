@@ -5853,7 +5853,7 @@ struct move_feedback_dispatch_fixture_t {
         (void)dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN, 240);
         expect_compose_test(compose.interaction->pending_note_move_gesture.has_value());
     }
-    auto dispatch(WormUiComposeInputKind kind, double row) -> std::string {
+    auto dispatch(WormUiComposeInputKind kind, double row, bool to_bgm = false) -> std::string {
         WormUiWorkspaceAction action{};
         action.compose_input_project_id = compose.history.document.id.value;
         action.compose_input_chart_id = 1;
@@ -5864,7 +5864,8 @@ struct move_feedback_dispatch_fixture_t {
             editor_field_scroll_direction_t::down;
         action.compose_inputs[0] = {
             .kind = kind,
-            .x_pixels = x,
+            .note_move_to_bgm = to_bgm,
+            .x_pixels = to_bgm ? view.playable_field_right_pixels + 10 : x,
             .y_pixels = compose_project_y(row + .000001, pixels_per_row,
                 compose.interaction->viewport_scroll_pixels, view.viewport_height_pixels,
                 downscroll)};
@@ -5990,4 +5991,64 @@ TEST_CASE("Compose no-hit move outside the horizontal field cancels without edit
     expect_compose_test(!fixture.compose.interaction->pending_note_move_gesture);
     expect_compose_test(fixture.compose.history.document.revision == 1);
     expect_compose_test(fixture.compose.history.undo.empty());
+}
+
+TEST_CASE("Compose routes a shifted BGM drop and projects transient amber hold ghosts", "[sys][compose][bgm-move]") {
+    move_feedback_dispatch_fixture_t fixture;
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 480, true);
+    fixture.compose.project();
+    const auto& view = fixture.compose.flattened.view.compose;
+    expect_compose_test(view.scene_available && view.move_conflict_count == 0);
+    expect_compose_test(view.move_to_bgm_count == 1);
+    const auto events = std::span(view.bgm_events, view.bgm_event_count);
+    expect_compose_test(std::ranges::any_of(events, [](const auto& event) {
+        return event.proposal_ghost && event.has_tail && !event.move_conflict;
+    }));
+    expect_compose_test(fixture.compose.history.undo.empty());
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 480, true);
+    expect_compose_test(fixture.compose.history.undo.size() == 1);
+    expect_compose_test(!fixture.compose.interaction->pending_note_move_gesture);
+    const auto& measures = fixture.compose.history.document.charts.front().measures;
+    const auto event = std::ranges::find(measures.front().bgm_events, object_id_t{101}, &bgm_event_t::id);
+    expect_compose_test(event != measures.front().bgm_events.end());
+    expect_compose_test(event->position == local_position_t{measure_id_t{1}, 480});
+    expect_compose_test(event->end == local_position_t{measure_id_t{1}, 600});
+}
+
+TEST_CASE("Compose captures the collision preference and previews every displaced occupant", "[sys][compose][bgm-move]") {
+    move_feedback_dispatch_fixture_t fixture;
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE, 240);
+    fixture.compose.application.editor_preferences.move_collision_policy = move_collision_policy_t::displace_to_bgm;
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN, 240);
+    // The option is captured at begin; changing it mid-drag cannot change the transaction.
+    fixture.compose.application.editor_preferences.move_collision_policy = move_collision_policy_t::reject;
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 600);
+    fixture.compose.project();
+    const auto& view = fixture.compose.flattened.view.compose;
+    expect_compose_test(view.scene_available && view.move_conflict_count == 0 && view.move_to_bgm_count == 2);
+    const auto events = std::span(view.bgm_events, view.bgm_event_count);
+    expect_compose_test(std::ranges::count_if(events, [](const auto& event) {
+        return event.proposal_ghost && !event.move_conflict;
+    }) == 2);
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 600);
+    expect_compose_test(fixture.compose.history.undo.size() == 1);
+    expect_compose_test(!fixture.compose.interaction->pending_note_move_gesture);
+}
+
+TEST_CASE("Compose shows rejected BGM displacement destinations in red and commits nothing", "[sys][compose][bgm-move]") {
+    auto song = move_feedback_dispatch_song();
+    song.charts.front().source_family = format_family_t::stepmania;
+    move_feedback_dispatch_fixture_t fixture{std::move(song)};
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE, 240);
+    fixture.compose.application.editor_preferences.move_collision_policy = move_collision_policy_t::displace_to_bgm;
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN, 240);
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 600);
+    fixture.compose.project();
+    const auto& view = fixture.compose.flattened.view.compose;
+    expect_compose_test(view.scene_available && view.move_conflict_count == 1);
+    expect_compose_test(std::ranges::any_of(std::span(view.bgm_events, view.bgm_event_count), [](const auto& event) {
+        return event.proposal_ghost && event.move_conflict;
+    }));
+    (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 600);
+    expect_compose_test(fixture.compose.history.undo.empty() && !fixture.compose.interaction->pending_note_move_gesture);
 }

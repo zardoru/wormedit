@@ -26,7 +26,9 @@ struct general_preferences_t {
 };
 enum class editor_mode_family_t : std::uint32_t { beatmania, popn, dance, pump, keyboard, other };
 inline constexpr std::size_t editor_mode_family_count = 6;
+enum class move_collision_policy_t : std::uint32_t { reject, displace_to_bgm };
 struct editor_preferences_t {
+    move_collision_policy_t move_collision_policy{move_collision_policy_t::reject};
     std::uint32_t default_snap{4};
     // Indexed by editor_mode_family_t; 0 preserves the profile, 1 up, 2 down.
     std::array<std::uint32_t, editor_mode_family_count> scroll_directions{};

@@ -178,6 +178,8 @@ struct editor_field_bgm_event_geometry_t {
     editor_field_rect_t bounds;
     editor_field_rect_t head_bounds;
     bool has_tail{};
+    bool proposal_ghost{};
+    bool move_conflict{};
     std::optional<color_rgba_t> semantic_color;
 };
 

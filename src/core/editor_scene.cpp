@@ -1082,6 +1082,7 @@ auto collect_move_proposals(scene_geometry_context_t& context, move_proposals_t&
                                             "field-scene note move preview is malformed or stale"));
         return false;
     }
+    if (pending.to_bgm) return true;
     std::unordered_set<std::uint64_t> expected;
     expected.reserve(pending.notes.size());
     for (const auto note : pending.notes) {
@@ -2055,6 +2056,51 @@ auto append_visible_bgm_events(scene_geometry_context_t& context, const visible_
     return !failed;
 }
 
+template <typename Operate, typename Consume>
+auto append_bgm_preview_lanes(scene_geometry_context_t& context, visible_bgm_lanes_t& lanes,
+                              Operate&& operate, Consume&& consume) -> bool {
+    if (!context.view.pending_note_move_gesture) return true;
+    const auto& request = context.request;
+    auto offset = editor_bgm_content_width_pixels(context.chart, request);
+    for (const auto& lane : context.view.pending_note_move_gesture->new_bgm_lanes) {
+        if (!operate()) return false;
+        const auto left = request.bgm_pane_left_pixels + offset - request.bgm_horizontal_scroll_pixels;
+        const auto right = left + request.bgm_lane_width_pixels;
+        offset += request.bgm_lane_width_pixels;
+        const auto pane_right = request.bgm_pane_left_pixels + request.bgm_pane_width_pixels;
+        if (right <= request.bgm_pane_left_pixels || left >= pane_right) continue;
+        if (!consume()) return false;
+        const editor_field_rect_t bounds{std::max(left, request.bgm_pane_left_pixels), 0,
+            std::min(right, pane_right), context.view.viewport_height_pixels};
+        lanes.emplace(lane.id.value, bounds);
+        context.scene.bgm_lanes.push_back({.source_lane = lane.id, .source_order = lane.source_order, .bounds = bounds,
+            .unclipped_left_pixels = left, .unclipped_right_pixels = right});
+    }
+    return true;
+}
+
+template <typename Operate, typename Consume, typename YForRow>
+auto append_bgm_move_previews(scene_geometry_context_t& context, const visible_bgm_lanes_t& lanes,
+                              Operate&& operate, Consume&& consume, YForRow&& y_for_row) -> bool {
+    if (!context.view.pending_note_move_gesture) return true;
+    const auto& pending = *context.view.pending_note_move_gesture;
+    for (const auto& preview : pending.bgm_preview) {
+        if (!operate()) return false;
+        const auto begin = absolute_row(context.index.measures, preview.position);
+        const auto end = preview.end ? absolute_row(context.index.measures, *preview.end) : begin;
+        if (!begin || !end) return false;
+        const auto count = context.scene.bgm_events.size();
+        const editor_field_scene_bgm_source_t source{.event = preview.note, .source_lane = preview.lane,
+            .row = *begin, .end_row = *end, .sound = preview.sound};
+        if (!append_bgm_geometry(context, source, lanes, {}, consume, y_for_row)) return false;
+        if (context.scene.bgm_events.size() == count) continue;
+        auto& event = context.scene.bgm_events.back();
+        event.proposal_ghost = true;
+        event.move_conflict = !pending.bgm_diagnostics.empty();
+    }
+    return true;
+}
+
 template <typename Operate, typename Consume, typename YForRow>
 auto compose_bgm_pane(scene_geometry_context_t& context, Operate&& operate, Consume&& consume,
                       YForRow&& y_for_row) -> bool {
@@ -2066,8 +2112,10 @@ auto compose_bgm_pane(scene_geometry_context_t& context, Operate&& operate, Cons
         ? static_cast<long double>(context.chart.bgm_source_lanes.size()) *
               static_cast<long double>(request.bgm_lane_width_pixels)
         : static_cast<long double>(editor_bgm_content_width_pixels(context.chart, request));
+    const auto preview_width = context.view.pending_note_move_gesture
+        ? context.view.pending_note_move_gesture->new_bgm_lanes.size() * request.bgm_lane_width_pixels : 0.0;
     const auto maximum_scroll =
-        std::max(0.0L, content_width - static_cast<long double>(request.bgm_pane_width_pixels));
+        std::max(0.0L, content_width + preview_width - static_cast<long double>(request.bgm_pane_width_pixels));
     if (static_cast<long double>(request.bgm_horizontal_scroll_pixels) > maximum_scroll) {
         context.diagnostics.push_back(
             error(diagnostic_code_t::row_out_of_range,
@@ -2076,7 +2124,9 @@ auto compose_bgm_pane(scene_geometry_context_t& context, Operate&& operate, Cons
     }
     visible_bgm_lanes_t visible_lanes;
     return append_visible_bgm_lanes(context, operate, consume, visible_lanes) &&
-           append_visible_bgm_events(context, visible_lanes, operate, consume, y_for_row);
+           append_visible_bgm_events(context, visible_lanes, operate, consume, y_for_row) &&
+           append_bgm_preview_lanes(context, visible_lanes, operate, consume) &&
+           append_bgm_move_previews(context, visible_lanes, operate, consume, y_for_row);
 }
 
 template <typename Operate, typename Consume, typename YForRow>

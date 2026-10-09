@@ -2116,9 +2116,6 @@ TEST_CASE("BGM strokes reject invalid input atomically",
     const std::vector<local_position_t> capped(50'001, target.front());
     check_bga_stroke(has_code(apply_bgm_stroke(history, revision, chart_id_t{2}, object_id_t{20},
         std::nullopt, capped, true), diagnostic_code_t::invalid_resolution));
-    history.document.charts.front().source_family = format_family_t::bmson;
-    check_bga_stroke(has_code(apply_bgm_stroke(history, revision, chart_id_t{2}, object_id_t{20},
-        resource_id_t{1}, target), diagnostic_code_t::unsupported_feature));
     check_bga_stroke(history.document.revision == revision && history.undo.empty() &&
                      bgm_stroke_events(history).size() == 1);
 }

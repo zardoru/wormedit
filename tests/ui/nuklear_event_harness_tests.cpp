@@ -4217,3 +4217,49 @@ TEST_CASE("Draw on a BMSON stem lane never starts a BGM stroke",
     expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE) == 0);
     expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) == 0);
 }
+
+TEST_CASE("Draw on a BMSON packed column drags one BGM stroke and right-drag erases it",
+          "[frontend-state][event-harness][draw][bgm-draw][bmson-stem]") {
+    bgm_draw_fixture_t f{true, true};
+    const auto frames = bgm_draw_drag(f, 60, 60);
+    expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) == 1);
+    expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) == 1);
+    expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW) == 0);
+    expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE) == 0);
+    for (const auto& frame : frames)
+        for (size_t index = 0; index < frame.get().compose_input_count; ++index) {
+            const auto& input = frame.get().compose_inputs[index];
+            if (input.kind != WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN &&
+                input.kind != WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE &&
+                input.kind != WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) continue;
+            expect_draw(input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM);
+            expect_draw(input.lane_id == 72 && input.resource_id == 40 && input.paint_intent == 1);
+        }
+    const auto from = f.point(60, 100);
+    const auto to = f.point(60, 180);
+    const auto erase = right_draw_script(f.harness, from.first, from.second, to.first, to.second);
+    expect_draw(count_inputs(erase, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) == 1);
+    const auto* begin = find_compose_input(erase, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN);
+    expect_draw(begin && begin->paint_intent == 2 && begin->lane_id == 72 &&
+                begin->resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM);
+}
+
+TEST_CASE("Draw on a BMSON packed column with no usable sound does nothing",
+          "[frontend-state][event-harness][draw][bgm-draw][bmson-stem]") {
+    bgm_draw_fixture_t f{true, true};
+    f.harness.view().compose.draw_source_is_stem = true;
+    f.harness.view().compose.draw_source_stem_lane_id = 71;
+    (void)f.harness.frame();
+    const auto stem_source = bgm_draw_drag(f, 60, 60);
+    f.harness.view().compose.draw_source_is_stem = false;
+    f.harness.view().compose.draw_source_stem_lane_id = 0;
+    worm_ui_nuklear_compose_state().draw_source_kind = 0;
+    f.harness.view().compose.draw_source_kind = 0;
+    (void)f.harness.frame();
+    const auto silent = bgm_draw_drag(f, 60, 60);
+    for (const auto* frames : {&stem_source, &silent})
+        for (const auto kind : {WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE,
+                                WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW,
+                                WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN})
+            expect_draw(count_inputs(*frames, kind) == 0);
+}

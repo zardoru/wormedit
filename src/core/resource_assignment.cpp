@@ -795,11 +795,6 @@ struct bgm_stroke_cell_t {
 
 auto validate_bgm_stroke_lane(const chart_document_t& chart, object_id_t lane,
                               document_command_result_t& result) -> bool {
-    if (chart.source_family == format_family_t::bmson) {
-        reject(result, diagnostic_code_t::unsupported_feature,
-               "BMSON stem lanes are not drawable; place stem points on a stem lane instead");
-        return false;
-    }
     if (std::ranges::find(chart.bgm_source_lanes, lane, &bgm_source_lane_t::id) ==
         chart.bgm_source_lanes.end()) {
         reject(result, diagnostic_code_t::invalid_id, "BGM stroke refers to an unknown source lane");
@@ -963,6 +958,9 @@ auto apply_bgm_stroke(document_history_t& history, std::uint64_t expected_revisi
         reject(result, diagnostic_code_t::invalid_id, "BGM stroke chart is missing");
         return result;
     }
+    if (source_chart->source_family == format_family_t::bmson)
+        return apply_bmson_packed_stroke(history, expected_revision, chart_id, source_lane,
+                                         resource, targets, erase);
     if (!validate_bgm_stroke_lane(*source_chart, source_lane, result)) return result;
     if (!erase && !validate_bgm_stroke_resource(history.document, *source_chart, resource, result))
         return result;

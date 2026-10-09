@@ -496,19 +496,20 @@ auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& inpu
     return false;
 }
 
-// The BGM source lane under a Draw press on a native/BMS chart. BMSON lanes keep their own
-// stem and packed-column draw capture, so they never resolve here.
+// The BGM source lane under a Draw press. On a BMSON chart only packed (non-stem) columns
+// resolve here; stem lanes keep their own point capture and are never drawn as strokes.
 static auto bgm_draw_lane_at(const WormUiComposeView& view, double x, double y)
     -> const WormUiComposeBgmLaneView* {
-    if (view.bmson_tools_available) return nullptr;
     for (const auto& lane : std::span(view.bgm_lanes, view.bgm_lane_count))
-        if (x >= lane.bounds.left && x < lane.bounds.right &&
+        if (!(view.bmson_tools_available && lane.stem) && x >= lane.bounds.left && x < lane.bounds.right &&
             y >= lane.bounds.top && y < lane.bounds.bottom) return &lane;
     return nullptr;
 }
 
-static auto bgm_draw_source_ready() -> bool {
-    return state.draw_source_kind == 1 && state.draw_source_id != 0;
+// A sound is the current Draw source and, on BMSON, it is not owned by a stem lane.
+static auto bgm_draw_source_ready(const WormUiComposeView& view) -> bool {
+    return state.draw_source_kind == 1 && state.draw_source_id != 0 &&
+           !view.draw_source_stem_lane_id && !view.draw_source_is_stem;
 }
 
 static void emit_draw_stroke(const ComposePointerEventContext& input,
@@ -618,7 +619,7 @@ static void update_draw_left_pointer(const ComposePointerEventContext& input) {
 static bool draw_left_can_start(const ComposePointerEventContext& input) {
     const auto& view = *input.view;
     const auto bga = state.draw_source_kind == 2;
-    const auto bgm = bgm_draw_source_ready() &&
+    const auto bgm = bgm_draw_source_ready(view) &&
         bgm_draw_lane_at(view, input.pointer_started_x, input.pointer_started_y) != nullptr;
     const auto target = bga ? compose_bga_lane_kind_at(view, input.pointer_started_x,
         input.pointer_started_y).has_value() : (input.pointer_started_in_note_field || bgm);
@@ -677,7 +678,7 @@ static bool bmson_draw_can_start(const ComposePointerEventContext& input) {
 }
 
 static bool packed_draw_source_available(const WormUiComposeView& view) {
-    return state.draw_source_kind == 1 && state.draw_source_id && !view.draw_source_stem_lane_id && !view.draw_source_is_stem;
+    return bgm_draw_source_ready(view);
 }
 
 static void show_packed_draw_source_tip(const ComposePointerEventContext& input) {
@@ -703,7 +704,8 @@ static bool process_bmson_draw_pointer(const ComposePointerEventContext& input) 
     if (!bmson_draw_can_start(input)) return false;
     const auto* lane = bmson_lane_at(view, input.pointer_started_x, input.pointer_started_y);
     if (!lane) return false;
-    if (!lane->stem && !packed_draw_source_available(view)) return true;
+    // Packed columns draw as BGM-style strokes; only the missing-source case stops here.
+    if (!lane->stem) return !packed_draw_source_available(view);
     state.bmson_point_capture = worm_ui_nuklear_compose_state_t::bmson_point_capture_t{
         view.project_id, view.chart_id, view.document_revision, lane->source_lane_id,
         state.draw_source_id, input.pointer_started_x, input.pointer_started_y,
@@ -714,7 +716,7 @@ static bool process_bmson_draw_pointer(const ComposePointerEventContext& input) 
 
 static auto bgm_draw_press_without_source(const ComposePointerEventContext& input) -> bool {
     const auto& view = *input.view;
-    return view.note_paint_mode_active && !bgm_draw_source_ready() && input.pointer_started_in_view &&
+    return view.note_paint_mode_active && !bgm_draw_source_ready(view) && input.pointer_started_in_view &&
         (input.left_down || input.left_released) &&
         bgm_draw_lane_at(view, input.pointer_started_x, input.pointer_started_y) != nullptr;
 }

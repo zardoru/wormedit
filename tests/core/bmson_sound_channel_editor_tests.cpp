@@ -1,5 +1,6 @@
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/editor_scene.h>
+#include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/sound_slice.h>
 #include <wormedit/formats/bmson.h>
 
@@ -885,4 +886,131 @@ TEST_CASE("BMSON semantic binding keeps duplicate asset stems and packed keysoun
 TEST_CASE("BMSON empty stem binding rejects duplicate same-name candidates",
           "[unit][core][bmson][stem]") {
     expect_bmson_core(ambiguous_empty_stem_binding_rejects());
+}
+
+namespace {
+
+auto total_channel_events(const wormedit::chart_document_t& chart) -> std::size_t {
+    std::size_t total{};
+    for (const auto& channel : chart.sound_channels) total += channel.events.size();
+    return total;
+}
+
+auto packed_lane_bgm_count(const wormedit::chart_document_t& chart, wormedit::object_id_t lane)
+    -> std::size_t {
+    std::size_t total{};
+    for (const auto& measure : chart.measures)
+        total += static_cast<std::size_t>(std::ranges::count(measure.bgm_events, lane,
+                                                             &wormedit::bgm_event_t::source_lane));
+    return total;
+}
+
+struct packed_stroke_fixture_t {
+    wormedit::document_history_t history = wormedit::make_document_history(packed_song());
+    wormedit::chart_id_t chart = history.document.charts.front().id;
+    wormedit::object_id_t lane = history.document.charts.front().bgm_source_lanes.back().id;
+    wormedit::resource_id_t resource = history.document.resources.back().id;
+    std::vector<wormedit::local_position_t> cells;
+    explicit packed_stroke_fixture_t(std::initializer_list<std::uint64_t> rows) {
+        for (const auto row : rows) cells.push_back(first_measure_position(history.document, row));
+    }
+    auto draw(bool erase = false) {
+        return wormedit::apply_bmson_packed_stroke(history, history.document.revision, chart, lane,
+                                                   erase ? std::nullopt : std::optional{resource},
+                                                   cells, erase);
+    }
+};
+
+} // namespace
+
+TEST_CASE("Packed BMSON stroke places three cells in one undo step and exports",
+          "[unit][core][bmson][packed-stroke]") {
+    packed_stroke_fixture_t f{90, 120, 150, 120};
+    const auto channels = f.history.document.charts.front().sound_channels.size();
+    const auto events = total_channel_events(f.history.document.charts.front());
+    const auto undo = f.history.undo.size();
+    REQUIRE(f.draw());
+    const auto& chart = f.history.document.charts.front();
+    CHECK(f.history.undo.size() == undo + 1);
+    CHECK(chart.sound_channels.size() == channels + 1);
+    CHECK(total_channel_events(chart) == events + 3);
+    CHECK(packed_lane_bgm_count(chart, f.lane) == 3);
+    CHECK(wormedit::validate_document(f.history.document).empty());
+    const auto written = wormedit::write_bmson(f.history.document);
+    INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));
+    REQUIRE(written.json);
+    const auto reparsed = wormedit::parse_bmson_bytes(
+        std::as_bytes(std::span{written.json->data(), written.json->size()}));
+    REQUIRE(reparsed.song);
+    CHECK(total_channel_events(reparsed.song->charts.front()) == total_channel_events(chart));
+    REQUIRE(wormedit::undo_document_command(f.history));
+    CHECK(f.history.document.charts.front().sound_channels.size() == channels);
+    CHECK(total_channel_events(f.history.document.charts.front()) == events);
+}
+
+TEST_CASE("Packed BMSON stroke skips rows already showing the sound and reuses the channel",
+          "[unit][core][bmson][packed-stroke]") {
+    packed_stroke_fixture_t f{90, 120};
+    REQUIRE(f.draw());
+    const auto revision = f.history.document.revision;
+    const auto again = f.draw();
+    CHECK_FALSE(again.applied);
+    CHECK(again.diagnostics.empty());
+    CHECK(f.history.document.revision == revision);
+    f.cells = {first_measure_position(f.history.document, 120),
+               first_measure_position(f.history.document, 150)};
+    const auto channels = f.history.document.charts.front().sound_channels.size();
+    REQUIRE(f.draw());
+    const auto& chart = f.history.document.charts.front();
+    CHECK(chart.sound_channels.size() == channels);
+    CHECK(chart.sound_channels.back().events.size() == 3);
+    CHECK(packed_lane_bgm_count(chart, f.lane) == 3);
+}
+
+TEST_CASE("Packed BMSON right-drag erase removes the column's events in one step",
+          "[unit][core][bmson][packed-stroke]") {
+    packed_stroke_fixture_t f{90, 120, 150};
+    REQUIRE(f.draw());
+    const auto undo = f.history.undo.size();
+    f.cells = {first_measure_position(f.history.document, 90),
+               first_measure_position(f.history.document, 120),
+               first_measure_position(f.history.document, 180)};
+    REQUIRE(f.draw(true));
+    const auto& chart = f.history.document.charts.front();
+    CHECK(f.history.undo.size() == undo + 1);
+    CHECK(packed_lane_bgm_count(chart, f.lane) == 1);
+    CHECK(chart.sound_channels.back().events.size() == 1);
+    CHECK(wormedit::validate_document(f.history.document).empty());
+    const auto empty = f.draw(true);
+    CHECK(empty.diagnostics.empty());
+    REQUIRE(wormedit::undo_document_command(f.history));
+    CHECK(packed_lane_bgm_count(f.history.document.charts.front(), f.lane) == 3);
+}
+
+TEST_CASE("Packed BMSON stroke rejects stem lanes and stale input atomically",
+          "[unit][core][bmson][packed-stroke]") {
+    packed_stroke_fixture_t f{90, 120};
+    const auto revision = f.history.document.revision;
+    const auto stem_lane = f.history.document.charts.front().bgm_source_lanes.front().id;
+    REQUIRE(f.history.document.charts.front().bgm_source_lanes.front().stem_channel);
+    const auto stem = wormedit::apply_bmson_packed_stroke(f.history, revision, f.chart, stem_lane,
+                                                          f.resource, f.cells);
+    REQUIRE_FALSE(stem.diagnostics.empty());
+    CHECK(stem.diagnostics.front().message.find("stem lanes are not drawable") != std::string::npos);
+    CHECK_FALSE(wormedit::apply_bmson_packed_stroke(f.history, revision + 1, f.chart, f.lane,
+                                                    f.resource, f.cells).diagnostics.empty());
+    CHECK_FALSE(wormedit::apply_bmson_packed_stroke(f.history, revision, f.chart, f.lane,
+                                                    wormedit::resource_id_t{1}, f.cells)
+                    .diagnostics.empty());
+    CHECK_FALSE(wormedit::apply_bmson_packed_stroke(f.history, revision, f.chart, f.lane,
+                                                    std::nullopt, f.cells).diagnostics.empty());
+    f.history.document.resources.front().sound_kind = wormedit::sound_kind_t::stem;
+    CHECK_FALSE(wormedit::apply_bmson_packed_stroke(f.history, revision, f.chart, f.lane,
+                                                    f.history.document.resources.front().id,
+                                                    f.cells).diagnostics.empty());
+    CHECK(f.history.document.revision == revision);
+    CHECK(f.history.undo.empty());
+    const std::vector<wormedit::local_position_t> capped(50'001, f.cells.front());
+    CHECK_FALSE(wormedit::apply_bmson_packed_stroke(f.history, revision, f.chart, f.lane,
+                                                    f.resource, capped).diagnostics.empty());
 }

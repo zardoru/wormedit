@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace wormedit::ui::chrome {
 namespace {
@@ -80,6 +82,10 @@ auto dialog_begin(Dialog& dialog, nk_context* context, const char* id, const cha
     auto& window = context->style.window;
     dialog.saved_padding = window.padding;
     dialog.saved_spacing = window.spacing;
+    // The painted surface draws the rounded 1 px border; Nuklear's square one would leave
+    // stray pixels at the corners.
+    dialog.saved_border = window.border;
+    window.border = 0.0f;
     window.padding = nk_vec2(dialog_padding, dialog_padding);
     window.spacing = nk_vec2(dialog_spacing, dialog_spacing);
     dialog.saved_window_flags = NK_WINDOW_BORDER | (clamped ? 0 : NK_WINDOW_NO_SCROLLBAR);
@@ -92,15 +98,61 @@ auto dialog_begin(Dialog& dialog, nk_context* context, const char* id, const cha
     return true;
 }
 
-void dialog_footer_begin(Dialog& dialog, nk_context* context, int buttons, bool destructive_first) {
+namespace {
+
+// Greedy word wrap that splits long words by byte so a line never overflows.
+auto wrap_dialog_text(nk_context* context, std::string_view text, float width)
+    -> std::vector<std::string> {
+    std::vector<std::string> lines;
+    const auto* font = context->style.font;
+    const auto measure = [&](std::string_view part) {
+        return font->width(font->userdata, font->height, part.data(), static_cast<int>(part.size()));
+    };
+    std::string line;
+    std::size_t position = 0;
+    while (position < text.size()) {
+        const auto end = text.find(' ', position);
+        const auto word = text.substr(position, end == std::string_view::npos ? end : end - position);
+        position = end == std::string_view::npos ? text.size() : end + 1;
+        const auto candidate = line.empty() ? std::string(word) : line + " " + std::string(word);
+        if (measure(candidate) <= width || line.empty()) {
+            line = candidate;
+            continue;
+        }
+        lines.push_back(line);
+        line = std::string(word);
+    }
+    if (!line.empty() || lines.empty()) lines.push_back(line);
+    return lines;
+}
+
+} // namespace
+
+void dialog_text(Dialog& dialog, nk_context* context, const char* text, struct nk_color tint) {
+    (void)dialog;
+    const auto width = nk_window_get_content_region(context).w;
+    auto& spacing = context->style.window.spacing;
+    const auto saved = spacing.y;
+    const auto lines = wrap_dialog_text(context, text ? text : "", width);
+    for (std::size_t index = 0; index < lines.size(); ++index) {
+        // Lines of one paragraph sit tight; the last row keeps the normal row gap.
+        spacing.y = index + 1 < lines.size() ? 2.0f : saved;
+        nk_layout_row_dynamic(context, context->style.font->height, 1);
+        nk_label_colored(context, lines[index].c_str(), NK_TEXT_LEFT, tint);
+    }
+    spacing.y = saved;
+}
+
+void dialog_footer_begin(Dialog& dialog, nk_context* context, int buttons, bool destructive_first,
+                         float button_width) {
     (void)dialog;
     buttons = std::max(1, buttons);
     nk_layout_row_template_begin(context, dialog_button_height);
     const auto fixed = destructive_first ? buttons - 1 : buttons;
-    if (destructive_first) nk_layout_row_template_push_static(context, dialog_button_width);
+    if (destructive_first) nk_layout_row_template_push_static(context, button_width);
     nk_layout_row_template_push_variable(context, 1.0f);
     for (int index = 0; index < fixed; ++index)
-        nk_layout_row_template_push_static(context, dialog_button_width);
+        nk_layout_row_template_push_static(context, button_width);
     nk_layout_row_template_end(context);
     // The variable spacer follows the destructive button, or leads the row without one.
     if (!destructive_first) nk_spacing(context, 1);
@@ -141,6 +193,7 @@ auto dialog_end(Dialog& dialog, nk_context* context) -> DialogResult {
     surface_window_end(context, dialog.surface);
     context->style.window.padding = dialog.saved_padding;
     context->style.window.spacing = dialog.saved_spacing;
+    context->style.window.border = dialog.saved_border;
     dialog.open = false;
     return dialog.result;
 }

@@ -48,6 +48,7 @@ struct Dialog {
     // Per-frame state restored by dialog_end().
     SurfaceWindow surface{};
     struct nk_vec2 saved_padding{}, saved_spacing{};
+    float saved_border{};
     nk_flags saved_window_flags{};
     bool primary_drawn{};
     bool open{};
@@ -65,10 +66,16 @@ inline constexpr float dialog_button_width = 96.0f;
 auto dialog_begin(Dialog& dialog, nk_context* context, const char* id, const char* title,
                   const DialogOptions& options = {}) -> bool;
 
+// A paragraph in the body: wrapped to the dialog's content width, one tight row per line, so
+// the measured height needs no hand-picked row height. Draw it before the footer.
+void dialog_text(Dialog& dialog, nk_context* context, const char* text, struct nk_color tint);
+
 // Starts the footer row: `buttons` equal-width buttons, right-aligned, 28 px tall. With
 // `destructive_first`, the first button sits at the far left, apart from the others.
+// `button_width` is the width of every button; widen it for long labels.
 void dialog_footer_begin(Dialog& dialog, nk_context* context, int buttons,
-                         bool destructive_first = false);
+                         bool destructive_first = false,
+                         float button_width = dialog_button_width);
 
 // One footer button. Records its role as the result when clicked.
 auto dialog_button(Dialog& dialog, nk_context* context, const char* label,

@@ -881,6 +881,16 @@ enum class branch_projection_t {
     active_projection,
 };
 
+// Editor targets explicitly name their family as well as ID. Presence, even when empty,
+// means selected objects only; the legacy objects list retains its chart-wide semantics.
+struct quantize_selection_t {
+    std::vector<object_id_t> notes;
+    std::vector<object_id_t> bgm_events;
+    auto operator==(const quantize_selection_t&) const -> bool = default;
+};
+
+enum class quantize_object_family_t { other, note, bgm_event };
+
 struct quantize_request_t {
     std::uint64_t divisions{};
     quantization_space_t space{quantization_space_t::standard_measure};
@@ -889,6 +899,7 @@ struct quantize_request_t {
     quantization_hold_t holds{quantization_hold_t::both_endpoints};
     bool allow_resolution_promotion{false};
     std::vector<object_id_t> objects;
+    std::optional<quantize_selection_t> selection;
 };
 
 enum class diagnostic_severity_t {
@@ -959,6 +970,7 @@ struct redivision_move_t {
     position_role_t role{position_role_t::point};
     local_position_t before;
     local_position_t after;
+    quantize_object_family_t family{quantize_object_family_t::other};
 };
 
 struct redivision_result_t {

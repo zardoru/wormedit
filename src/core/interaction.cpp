@@ -6017,6 +6017,21 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
 }
 } // namespace
 
+auto editor_quantize_selection(const editor_interaction_state_t& state) -> quantize_selection_t {
+    quantize_selection_t result{.notes = state.selected_notes};
+    for (const auto& object : state.selected_objects) {
+        if (object.kind == editor_selection_object_kind_t::note) result.notes.push_back(object.id);
+        if (object.kind == editor_selection_object_kind_t::bgm_event) result.bgm_events.push_back(object.id);
+    }
+    const auto normalize = [](auto& ids) {
+        std::ranges::sort(ids, {}, &object_id_t::value);
+        ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    };
+    normalize(result.notes);
+    normalize(result.bgm_events);
+    return result;
+}
+
 } // namespace wormedit
 
 namespace wormedit {

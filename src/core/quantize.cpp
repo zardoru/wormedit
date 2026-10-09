@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <limits>
+#include <map>
+#include <set>
+#include <tuple>
 #include <numeric>
 #include <ranges>
 #include <string>
@@ -349,13 +352,15 @@ auto rehome_measure_objects(chart_document_t& chart, diagnostic_list_t& diagnost
 auto transform_measure_positions(measure_chunk_t& measure, const quantize_request_t& request,
                                  const auto& transform) -> void {
     for (auto& note : measure.notes) {
-        transform(note.position, note.id, position_role_t::point);
+        transform(note.position, note.id, position_role_t::point, quantize_object_family_t::note);
         if (note.end.has_value() && request.holds == quantization_hold_t::both_endpoints) {
-            transform(*note.end, note.id, position_role_t::note_end);
+            transform(*note.end, note.id, position_role_t::note_end, quantize_object_family_t::note);
         }
     }
     for (auto& bgm : measure.bgm_events) {
-        transform(bgm.position, bgm.id, position_role_t::point);
+        transform(bgm.position, bgm.id, position_role_t::point, quantize_object_family_t::bgm_event);
+        if (bgm.end && request.holds == quantization_hold_t::both_endpoints)
+            transform(*bgm.end, bgm.id, position_role_t::note_end, quantize_object_family_t::bgm_event);
     }
 }
 
@@ -426,17 +431,113 @@ auto prepare_quantization_chart(const chart_document_t& chart, const quantize_re
     return std::move(*promotion.chart);
 }
 
+struct quantization_selection_t {
+    using key_t = std::pair<quantize_object_family_t, std::uint64_t>;
+    std::set<key_t> selected;
+    std::set<key_t> matched;
+    bool typed{};
+
+    auto includes(object_id_t object, quantize_object_family_t family) -> bool {
+        if (!typed && selected.empty()) return true;
+        const key_t key{typed ? family : quantize_object_family_t::other, object.value};
+        if (!selected.contains(key)) return false;
+        matched.insert(key);
+        return true;
+    }
+};
+
 auto selected_quantization_objects(const quantize_request_t& request,
-                                    diagnostic_list_t& diagnostics)
-    -> std::unordered_set<std::uint64_t> {
-    std::unordered_set<std::uint64_t> selected;
-    for (const auto object : request.objects) {
-        if (!object || !selected.insert(object.value).second) {
-            error(diagnostics, diagnostic_code_t::invalid_id,
-                  "quantization object IDs must be nonzero and unique", object);
+                                    diagnostic_list_t& diagnostics) -> quantization_selection_t {
+    quantization_selection_t result{.typed = request.selection.has_value()};
+    const auto append = [&](const auto& ids, quantize_object_family_t family) {
+        for (const auto id : ids)
+            if (!id || !result.selected.emplace(family, id.value).second)
+                error(diagnostics, diagnostic_code_t::invalid_id,
+                      "quantization identities must be nonzero and unique within their family", id);
+    };
+    if (request.selection) {
+        append(request.selection->notes, quantize_object_family_t::note);
+        append(request.selection->bgm_events, quantize_object_family_t::bgm_event);
+        if (result.selected.empty())
+            error(diagnostics, diagnostic_code_t::invalid_id, "Select notes or BGM before quantizing.");
+    } else {
+        append(request.objects, quantize_object_family_t::other);
+    }
+    return result;
+}
+
+// Keep retained BMSON slice events attached to their semantic note/BGM. Continue/restart,
+// channel identity and playback properties are unchanged by quantizing a slice boundary.
+auto sync_quantized_source(chart_document_t& chart, const auto& object,
+                           const quantization_selection_t& selection,
+                           quantize_object_family_t family, diagnostic_list_t& diagnostics) -> void {
+    if (!selection.selected.contains({family, object.id.value})) return;
+    if (object.branch)
+        error(diagnostics, diagnostic_code_t::unsupported_feature,
+              "Quantizing branch-owned objects is unavailable.", object.id);
+    if (!object.sound_channel_event) return;
+    for (auto& channel : chart.sound_channels) {
+        const auto event = std::ranges::find(channel.events, *object.sound_channel_event,
+                                              &sound_channel_event_t::id);
+        if (event == channel.events.end()) continue;
+        event->position = object.position;
+        event->end = object.end;
+        return;
+    }
+    error(diagnostics, diagnostic_code_t::invalid_id, "The selected stem point is missing.", object.id);
+}
+
+auto validate_quantized_bgm(const chart_document_t& before, chart_document_t& after,
+                            const detail::quantize_geometry_t& index,
+                            quantization_collision_t policy, diagnostic_list_t& diagnostics) -> void {
+    std::unordered_map<std::uint64_t, std::pair<object_id_t, local_position_t>> original;
+    for (const auto& measure : before.measures)
+        for (const auto& event : measure.bgm_events)
+            original.emplace(event.id.value, std::pair{event.source_lane, event.position});
+    std::map<std::pair<std::uint64_t, std::uint64_t>, object_id_t> occupied;
+    for (const auto& measure : after.measures) {
+        for (const auto& event : measure.bgm_events) {
+            if (event.end && index.absolute(*event.end).value_or(0) <= index.absolute(event.position).value_or(maximum))
+                error(diagnostics, diagnostic_code_t::invalid_hold,
+                      "quantization would reverse or collapse a BGM hold", event.id);
+            const auto key = std::pair{event.source_lane.value, index.absolute(event.position).value_or(maximum)};
+            const auto [found, inserted] = occupied.emplace(key, event.id);
+            if (!inserted && policy != quantization_collision_t::allow &&
+                original[found->second.value] != original[event.id.value])
+                error(diagnostics, diagnostic_code_t::collision,
+                      "quantization would collide BGM events in one source lane", event.id);
         }
     }
-    return selected;
+}
+
+auto validate_quantized_stems(const chart_document_t& before, const chart_document_t& after,
+                               diagnostic_list_t& diagnostics) -> void {
+    for (std::size_t i = 0; i < after.sound_channels.size(); ++i) {
+        const auto& channel = after.sound_channels[i];
+        const auto& previous = before.sound_channels[i];
+        std::map<std::tuple<std::uint64_t, std::uint64_t, bool>, object_id_t> occupied;
+        for (const auto& event : channel.events) {
+            const auto [found, inserted] = occupied.emplace(std::tuple{event.position.measure.value, event.position.row, event.playable}, event.id);
+            if (inserted) continue;
+            const auto old = std::ranges::find(previous.events, event.id, &sound_channel_event_t::id);
+            const auto peer = std::ranges::find(previous.events, found->second, &sound_channel_event_t::id);
+            if (old != previous.events.end() && peer != previous.events.end() && old->position != peer->position)
+                error(diagnostics, diagnostic_code_t::collision,
+                      "another point of this stem is already on that row", event.id);
+        }
+    }
+}
+
+auto synchronize_quantized_selection(chart_document_t& chart,
+                                     const quantization_selection_t& selection,
+                                     diagnostic_list_t& diagnostics) -> void {
+    if (!selection.typed) return;
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes)
+            sync_quantized_source(chart, note, selection, quantize_object_family_t::note, diagnostics);
+        for (const auto& event : measure.bgm_events)
+            sync_quantized_source(chart, event, selection, quantize_object_family_t::bgm_event, diagnostics);
+    }
 }
 
 } // namespace
@@ -450,7 +551,7 @@ auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_
         return result;
     }
 
-    const auto selected = selected_quantization_objects(request, result.diagnostics);
+    auto selected = selected_quantization_objects(request, result.diagnostics);
     if (!result.diagnostics.empty()) {
         return result;
     }
@@ -477,21 +578,10 @@ auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_
     const auto before_quantization = working;
     quantization_position_context_t position_context{
         index, working.divisions_per_standard_measure, request, result.diagnostics};
-    std::unordered_set<std::uint64_t> matched;
     bool failed = false;
-    const auto should_move = [&](object_id_t object) {
-        if (selected.empty()) {
-            return true;
-        }
-        if (selected.contains(object.value)) {
-            matched.insert(object.value);
-            return true;
-        }
-        return false;
-    };
     const auto transform = [&](local_position_t& position, object_id_t object,
-                               position_role_t role) {
-        if (!should_move(object)) {
+                               position_role_t role, quantize_object_family_t family = quantize_object_family_t::other) {
+        if (!selected.includes(object, family)) {
             return;
         }
         const auto before = position;
@@ -507,6 +597,7 @@ auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_
                 .role = role,
                 .before = before,
                 .after = position,
+                .family = family,
             });
         }
     };
@@ -515,16 +606,19 @@ auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_
         failed = true;
     }
 
-    for (const auto requested : selected) {
-        if (!matched.contains(requested)) {
+    for (const auto& requested : selected.selected) {
+        if (!selected.matched.contains(requested)) {
             error(result.diagnostics, diagnostic_code_t::invalid_id,
                   "quantization request refers to a missing or non-positional object",
-                  object_id_t{requested});
+                  object_id_t{requested.second});
             failed = true;
         }
     }
     validate_note_intervals_and_collisions(before_quantization, working, index, request.collisions,
                                            result.diagnostics);
+    validate_quantized_bgm(before_quantization, working, index, request.collisions, result.diagnostics);
+    synchronize_quantized_selection(working, selected, result.diagnostics);
+    if (selected.typed) validate_quantized_stems(before_quantization, working, result.diagnostics);
     validate_musical_spans(working, index, result.diagnostics);
     validate_layout_effects(working, index, result.diagnostics);
     if (failed || !result.diagnostics.empty()) {

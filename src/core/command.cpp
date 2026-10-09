@@ -1,6 +1,7 @@
 #include <wormedit/core/command.h>
 
 #include <wormedit/core/virtual_canvas.h>
+#include <wormedit/core/sound_slice.h>
 
 #include <algorithm>
 #include <limits>
@@ -36,6 +37,29 @@ void mark_retained_sources_changed(song_document_t& document) {
             group.encoding.unchanged_since_import = false;
         }
     }
+}
+
+auto quantized_stem_audio_valid(const song_document_t& song, const chart_document_t& before,
+                                const chart_document_t& chart,
+                                diagnostic_list_t& diagnostics) -> bool {
+    for (std::size_t i = 0; i < chart.sound_channels.size(); ++i) {
+        const auto& channel = chart.sound_channels[i];
+        const auto& previous = before.sound_channels[i];
+        const auto unchanged = std::ranges::equal(channel.events, previous.events, [](const auto& a, const auto& b) {
+            return a.position == b.position && a.end == b.end;
+        });
+        if (unchanged) continue;
+        const auto asset = std::ranges::find(song.audio_assets, channel.source_clip.source,
+                                             &audio_asset_t::id);
+        if (asset == song.audio_assets.end() || asset->stream.sample_rate == 0) continue;
+        if (!derive_sound_channel_slices(chart, channel, asset->stream.sample_rate,
+                                         asset->stream.frame_count)) {
+            diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                "quantizing these points would leave the stem with unusable slices"));
+            return false;
+        }
+    }
+    return true;
 }
 
 } // namespace
@@ -134,6 +158,8 @@ auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
         return result;
     }
 
+    if (request.selection && !quantized_stem_audio_valid(history.document, *chart, *proposal.chart,
+                                                        result.command.diagnostics)) return result;
     auto proposed_document = history.document;
     const auto proposed_chart = std::ranges::find_if(
         proposed_document.charts, [chart_id](const auto& item) { return item.id == chart_id; });

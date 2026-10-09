@@ -57,30 +57,9 @@ auto snap_area_row(const wormedit::chart_document_t& chart, std::uint64_t row,
     return wormedit::snap_absolute_row(chart, row, denominator);
 }
 
-bool area_quantization_ids_overlap(const wormedit::chart_document_t& chart,
-                                   const std::vector<wormedit::object_id_t>& selected) {
-    const auto overlaps = [&](const auto& values) {
-        return std::ranges::any_of(values, [&](const auto& value) {
-            return std::ranges::find(selected, value.id) != selected.end();
-        });
-    };
-    for (const auto& measure : chart.measures)
-        if (overlaps(measure.bgm_events))
-            return true;
-    return overlaps(chart.lane_layouts) || overlaps(chart.bpms) || overlaps(chart.pauses) ||
-           overlaps(chart.scrolls) || overlaps(chart.speeds) || overlaps(chart.kiai) ||
-           overlaps(chart.timing_anchors) || overlaps(chart.bga_events) || overlaps(chart.warps) ||
-           overlaps(chart.bookmarks) || overlaps(chart.sections);
-}
-
 std::string quantize_compose_area_selection(area_action_context_t& context,
                                             const wormedit::chart_document_t& chart) {
     using namespace wormedit;
-    if (area_quantization_ids_overlap(chart, context.state.selected_notes))
-        return area_rejection(context, "Selection quantization is unavailable because object identities overlap.");
-
-    if (context.state.selected_notes.empty())
-        return area_rejection(context, "Select notes before quantizing.");
     const auto& action = context.action;
     if (action.compose_quantize_space > static_cast<std::uint8_t>(quantization_space_t::authored_measure) ||
         action.compose_quantize_tie > static_cast<std::uint8_t>(quantization_tie_t::reject) ||
@@ -98,12 +77,12 @@ std::string quantize_compose_area_selection(area_action_context_t& context,
                                                          ? quantization_hold_t::both_endpoints
                                                          : static_cast<quantization_hold_t>(
                                                                action.compose_quantize_holds),
-                                            .objects = context.state.selected_notes};
+                                            .selection = editor_quantize_selection(context.state)};
     const auto result = apply_quantize_command(context.history, context.state.chart, request);
     if (!result.command.diagnostics.empty() && !result.command.applied)
         return area_diagnostic(context, result.command.diagnostics.front());
     return result.command.applied
-        ? area_feedback(context, "Selected notes quantized.", notification_severity_t::success,
+        ? area_feedback(context, "Selected objects quantized.", notification_severity_t::success,
                         notification_source_t::edit)
         : area_rejection(context, "Selection quantization rejected.");
 }

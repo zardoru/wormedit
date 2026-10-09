@@ -655,7 +655,7 @@ TEST_CASE("area quantize collision rejection preserves history", "[sys][quantize
     CHECK(history.document.charts.front().measures.front().notes.back().position.row == 100);
 }
 
-TEST_CASE("area quantize rejects selection IDs shared with timing objects",
+TEST_CASE("area quantize rejects invalid documents with duplicate timing identities",
           "[sys][quantize-preview]") {
     auto chart = chart_with_notes({250});
     chart.bpms.push_back({.id = object_id_t{10}, .position = {measure_id_t{1}, 0},
@@ -671,10 +671,10 @@ TEST_CASE("area quantize rejects selection IDs shared with timing objects",
                                        quantization_hold_t::both_endpoints);
     const auto result = dispatch_compose_area_action(action, history, state);
     REQUIRE(result.has_value());
-    CHECK(result->find("identities overlap") != std::string::npos);
     CHECK(history.document.revision == revision);
     CHECK(history.undo.empty());
     CHECK(history.document.charts.front().measures.front().notes.front().position.row == 250);
+    CHECK(history.document.charts.front().bpms.front().position.row == 0);
 }
 
 TEST_CASE("quantize report caps rows while retaining full counts", "[sys][quantize-preview]") {
@@ -893,4 +893,62 @@ TEST_CASE("quantize no-move report preserves core validation and resolution prom
     t477_check(invalid_hold.blocked > 0 && invalid_hold.report_rows.empty());
     t477_check(invalid_hold.message.find("reverse or collapse") != std::string::npos);
     t477_check(chart.divisions_per_standard_measure == 960);
+}
+
+TEST_CASE("Mixed quantize preview and Apply keep note and BGM tails distinct",
+          "[sys][quantize-preview][mixed-quantize]") {
+    auto chart = chart_with_notes({250});
+    chart.bgm_source_lanes.push_back({.id = object_id_t{30}});
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{11},
+        .position = {measure_id_t{1}, 130}, .source_lane = object_id_t{30},
+        .end = local_position_t{measure_id_t{1}, 610}});
+    auto history = history_with_chart(chart);
+    editor_interaction_state_t state;
+    state.chart = chart.id;
+    state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{10}},
+        {editor_selection_object_kind_t::bgm_event, object_id_t{11}}};
+    const quantize_request_t request{.divisions = 4, .selection = editor_quantize_selection(state)};
+    quantize_preview_cache_t cache;
+    const auto& preview = cache.get(chart, 0, {}, request);
+    require_expectation(preview.selected == 2 && preview.moved == 2 && preview.holds == 1);
+    require_expectation(preview.blocked == 0 && preview.drawable && preview.report_rows.size() == 2);
+    check_expectation(std::ranges::count(preview.report_rows, true, &quantize_report_row_t::bgm) == 1);
+    const auto action = area_quantize_action(history, 4, quantization_space_t::standard_measure,
+        quantization_tie_t::earlier, quantization_hold_t::both_endpoints);
+    const auto response = dispatch_compose_area_action(action, history, state);
+    require_expectation(response.has_value() && history.undo.size() == 1);
+    check_expectation(history.document.charts.front().measures.front().notes.front().position.row == 240);
+    check_expectation(history.document.charts.front().measures.front().bgm_events.front().end->row == 720);
+    require_expectation(undo_document_command(history));
+    check_expectation(history.document.charts.front().measures.front().bgm_events.front().end->row == 610);
+    state.selected_objects.erase(state.selected_objects.begin());
+    const quantize_request_t bgm_request{.divisions = 4, .selection = editor_quantize_selection(state)};
+    const auto& bgm = cache.get(chart, 0, {}, bgm_request);
+    check_expectation(bgm.selected == 1 && bgm.moved == 1 && bgm.report_rows.size() == 1);
+    check_expectation(bgm.report_rows.front().bgm);
+}
+
+TEST_CASE("A BGM collision rejects the whole mixed quantize without changing selection",
+          "[sys][quantize-preview][mixed-quantize]") {
+    auto chart = chart_with_notes({250});
+    chart.bgm_source_lanes.push_back({.id = object_id_t{30}});
+    chart.measures.front().bgm_events = {
+        {.id = object_id_t{11}, .position = {measure_id_t{1}, 130}, .source_lane = object_id_t{30}},
+        {.id = object_id_t{12}, .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{30}}};
+    auto history = history_with_chart(chart);
+    editor_interaction_state_t state;
+    state.chart = chart.id;
+    state.selected_notes = {object_id_t{10}};
+    state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{10}},
+        {editor_selection_object_kind_t::bgm_event, object_id_t{11}}};
+    const auto selection = state.selected_objects;
+    const auto preview = preview_quantize_selection(chart, state.selected_notes,
+        {.divisions = 4, .selection = editor_quantize_selection(state)});
+    check_expectation(preview.blocked != 0 && preview.colliding_objects == 2);
+    const auto action = area_quantize_action(history, 4, quantization_space_t::standard_measure,
+        quantization_tie_t::earlier, quantization_hold_t::both_endpoints);
+    require_expectation(dispatch_compose_area_action(action, history, state).has_value());
+    check_expectation(history.undo.empty() && state.selected_objects == selection);
+    check_expectation(history.document.charts.front().measures.front().notes.front().position.row == 250);
+    check_expectation(history.document.charts.front().measures.front().bgm_events.front().position.row == 130);
 }

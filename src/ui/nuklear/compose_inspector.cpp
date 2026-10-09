@@ -545,9 +545,9 @@ void render_quantize_setting_fields(const ComposeInspectorContext& i) {
                                "Divide each authored measure into this many equal parts."};
     constexpr const char* ties[]{"Round earlier", "Round later", "Block apply"};
     constexpr const char* tt[]{
-        "Round halfway notes to the earlier grid line.",
-        "Round halfway notes to the later grid line.",
-        "Don't quantize if any note is exactly halfway; those notes are listed."};
+        "Round halfway objects to the earlier grid line.",
+        "Round halfway objects to the later grid line.",
+        "Don't quantize if any selected object is exactly halfway; those objects are listed."};
     constexpr const char* holds[]{"Leave in place", "Snap too"};
     constexpr const char* ht[]{
         "Snap the head and leave the tail in place, changing the hold length.",
@@ -556,7 +556,7 @@ void render_quantize_setting_fields(const ComposeInspectorContext& i) {
     nk_label(c, "Space", NK_TEXT_LEFT);
     const auto space = quantize_segments(c, spaces, 2, v.quantize_space, st);
     nk_layout_row_dynamic(c, 18, 1);
-    nk_labelf(c, NK_TEXT_LEFT, "Halfway notes · %zu in selection",
+    nk_labelf(c, NK_TEXT_LEFT, "Halfway objects · %zu in selection",
               v.quantize_preview_halfway_notes);
     const auto tie =
         quantize_segments(c, ties, 3, v.quantize_tie, tt, v.quantize_preview_halfway_notes == 0);
@@ -718,13 +718,15 @@ void render_quantize_report_row(nk_context* context,
                                 const WormUiComposeQuantizeReportRowView& row) {
     std::array<char, 192> label{};
     if (row.has_collision_peer) {
-        std::snprintf(label.data(), label.size(), "Note %llu · lane %llu · %s, collision with %llu",
+        std::snprintf(label.data(), label.size(), "%s %llu · lane %llu · %s, collision with %llu",
+                      row.bgm ? "BGM" : "Note",
                       static_cast<unsigned long long>(row.object_id),
                       static_cast<unsigned long long>(row.lane_id),
                       row.moved ? "moved" : "unchanged",
                       static_cast<unsigned long long>(row.collision_peer_id));
     } else {
-        std::snprintf(label.data(), label.size(), "Note %llu · lane %llu · %s%s",
+        std::snprintf(label.data(), label.size(), "%s %llu · lane %llu · %s%s",
+                      row.bgm ? "BGM" : "Note",
                       static_cast<unsigned long long>(row.object_id),
                       static_cast<unsigned long long>(row.lane_id),
                       row.moved ? "moved" : "unchanged", row.collision ? " · collision" : "");
@@ -843,10 +845,10 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
     }
     nk_layout_row_dynamic(context, 18, 1);
     const auto header_bounds = nk_widget_bounds(context);
-    nk_labelf(context, NK_TEXT_LEFT, "Quantize (%zu)", view->selected_note_count);
-    if (view->selected_note_count == 0) {
+    nk_labelf(context, NK_TEXT_LEFT, "Quantize (%zu)", (view->selected_note_count + view->selected_bgm_event_count));
+    if ((view->selected_note_count + view->selected_bgm_event_count) == 0) {
         nk_layout_row_dynamic(context, 18, 1);
-        nk_label(context, "Select notes first", NK_TEXT_LEFT);
+        nk_label(context, "Select notes or BGM first", NK_TEXT_LEFT);
     } else if (view->quantize_preview_blocked != 0) {
         nk_layout_row_dynamic(context, 18, 1);
         nk_labelf(context, NK_TEXT_LEFT, "Blocked: %zu issue(s), %zu colliding objects",
@@ -866,7 +868,7 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
     render_quantize_preset_picker(inspector);
     if (popup_owns_input)
         nk_widget_disable_end(context);
-    const auto enabled = view->scene_available && view->selected_note_count != 0 &&
+    const auto enabled = view->scene_available && (view->selected_note_count + view->selected_bgm_event_count) != 0 &&
                          view->quantize_preview_blocked == 0 && view->quantize_preview_moved != 0 &&
                          !quantize_grid_editing && !quantize_grid_invalid && !popup_owns_input;
     if (!enabled)
@@ -881,7 +883,7 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
         wormedit::ui::nuklear::tooltip::text(
             context, view->quantize_preview_blocked
                          ? view->quantize_preview_message
-                         : "Select notes that would move and finish editing a valid grid.");
+                         : "Select notes or BGM that would move and finish editing a valid grid.");
     if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         set_quantize_action(inspector, WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE,
                             view->quantize_divisions, view->quantize_space, view->quantize_tie,

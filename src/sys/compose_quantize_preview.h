@@ -31,6 +31,7 @@ struct quantize_report_row_t {
     bool head_halfway{};
     bool tail_halfway{};
     bool stationary_tail_annotation{};
+    bool bgm{};
 };
 
 // Dry-run result for a selected-note quantization request. Report rows contain every moved or

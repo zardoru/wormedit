@@ -3794,7 +3794,7 @@ TEST_CASE("Quantize headings retain counts and only advertise an actual Q bindin
     nuklear_event_harness_t harness{1800, 1400};
     seed_quantize_controls(harness);
     (void)harness.frame();
-    CHECK(harness.drawn_text().find("Halfway notes · 2 in selection") != std::string::npos);
+    CHECK(harness.drawn_text().find("Halfway objects · 2 in selection") != std::string::npos);
     CHECK(harness.drawn_text().find("Hold tails · 1 hold in selection") != std::string::npos);
     CHECK(harness.drawn_text().find("Apply quantization (Q)") == std::string::npos);
     harness.view().compose.quantize_q_bound = true;

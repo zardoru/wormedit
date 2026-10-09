@@ -51,7 +51,7 @@ void render_menu(nk_context* context, const WormUiComposeView& view,
     }
     constexpr const char* materialize = "Materialize the selected measures first";
     menu_entry(context, "Quantize selection",
-               reason_unless(view.selected_note_count != 0, "Select notes first"),
+               reason_unless(view.selected_note_count + view.selected_bgm_event_count != 0, "Select notes or BGM first"),
                WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE, action);
     menu_entry(context, "Create section",
                reason_unless(view.beat_section_selection_span_available, materialize),

@@ -6679,3 +6679,42 @@ TEST_CASE("Cursor Delete on a stem point keeps its source and linked mixed rejec
         feedback_check(bgm_move_event(f.history, f.stem)->sound_channel_event == f.source_event);
     }
 }
+
+TEST_CASE("Mixed quantize retains playable and BGM stem source points with one Undo",
+          "[unit][core][interaction][quantize][mixed-quantize][bmson]") {
+    stem_delete_fixture_t f;
+    auto& chart = f.history.document.charts.front();
+    auto& note = chart.measures.front().notes.front();
+    note.position.row += 10;
+    const auto bgm_measure = std::ranges::find_if(chart.measures, [](const auto& measure) {
+        return std::ranges::any_of(measure.bgm_events, [](const auto& event) { return event.sound_channel_event.has_value(); });
+    });
+    feedback_require(bgm_measure != chart.measures.end());
+    auto& bgm = *std::ranges::find_if(bgm_measure->bgm_events, [](const auto& event) { return event.sound_channel_event.has_value(); });
+    bgm.position.row += 10;
+    const auto bgm_id = bgm.id;
+    const auto bgm_source = *bgm.sound_channel_event;
+    for (auto& channel : chart.sound_channels)
+        for (auto& event : channel.events) {
+            if (event.id == f.source_event) event.position = note.position;
+            if (event.id == bgm_source) event.position = bgm.position;
+        }
+    const auto before = feedback_document_bytes(f.history.document);
+    f.state.selected_notes = {note.id};
+    f.state.selected_objects = {{editor_selection_object_kind_t::note, note.id},
+                               {editor_selection_object_kind_t::bgm_event, bgm_id}};
+    const auto result = apply_quantize_command(f.history, chart.id,
+        {.divisions = 4, .selection = editor_quantize_selection(f.state)});
+    feedback_require(result.command.applied);
+    feedback_check(f.history.undo.size() == 1);
+    const auto& quantized = f.history.document.charts.front();
+    feedback_check(validate_document(f.history.document).empty());
+    feedback_check(quantized.measures.front().notes.front().position.row == 240);
+    for (const auto& channel : quantized.sound_channels)
+        for (const auto& event : channel.events) {
+            if (event.id == f.source_event) feedback_check(event.position.row == 240 && event.playable);
+            if (event.id == bgm_source) feedback_check(event.position.row == 720 && !event.playable && event.continuation);
+        }
+    feedback_require(undo_document_command(f.history));
+    feedback_check(feedback_document_bytes(f.history.document) == before);
+}

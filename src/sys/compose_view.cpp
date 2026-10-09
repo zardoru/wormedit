@@ -2817,7 +2817,8 @@ static auto quantize_report_row_view(const quantize_report_row_t& row)
             .selected = row.selected,
             .head_halfway = row.head_halfway,
             .tail_halfway = row.tail_halfway,
-            .stationary_tail_annotation = row.stationary_tail_annotation};
+            .stationary_tail_annotation = row.stationary_tail_annotation,
+            .bgm = row.bgm};
 }
 
 static auto active_quantize_request(application_command_state_t& application,
@@ -2944,7 +2945,7 @@ static void populate_quantize_preview(compose_scene_cache_t& cache,
     populate_quantize_presets(cache, document, view);
     populate_measure_rows(cache, chart, view);
     populate_quantize_applied_report(cache, document, chart, application, view);
-    const auto request = active_quantize_request(application, document, chart,
+    auto request = active_quantize_request(application, document, chart,
                                                 state.active_snap_denominator);
     view.supported_snap_denominator_count = std::min(state.supported_snap_denominators.size(),
         std::size(view.supported_snap_denominators));
@@ -2960,13 +2961,14 @@ static void populate_quantize_preview(compose_scene_cache_t& cache,
         application.quantize_editor->preset_index.has_value();
     view.quantize_selected_preset_index = view.quantize_selected_preset_valid
         ? *application.quantize_editor->preset_index : 0;
-    if (state.selected_notes.empty()) {
+    request.selection = wormedit::editor_quantize_selection(state);
+    if (request.selection->notes.empty() && request.selection->bgm_events.empty()) {
         view.quantize_preview_rows = nullptr;
         view.quantize_preview_row_count = view.quantize_preview_total_rows = 0;
         view.quantize_preview_rows_truncated = false;
         return;
     }
-    const auto& preview = cache.quantize_preview.get(chart, revision, state.selected_notes, request);
+    const auto& preview = cache.quantize_preview.get(chart, revision, request.selection->notes, request);
     view.quantize_source_resolution = preview.source_resolution;
     view.quantize_display_resolution = preview.display_resolution;
     view.quantize_resolution_scale = preview.resolution_scale;
@@ -3047,7 +3049,7 @@ auto quantize_endpoint_bounds(const quantize_lane_geometry_t& lane, double y, do
     return {lane.left, top, lane.right, bottom};
 }
 
-auto quantize_row_visible(const wormedit::editor_field_scene_note_source_t& note,
+auto quantize_row_visible(const auto& note,
                           const wormedit::editor_field_scene_request_t& request) -> bool {
     const auto has_layer = [&](wormedit::layer_id_t layer) {
         return std::ranges::find(note.semantic_layers, layer) != note.semantic_layers.end();
@@ -3159,6 +3161,65 @@ auto add_quantize_tail_geometry(WormUiComposeQuantizeGhostView& ghost,
     return true;
 }
 
+auto bgm_quantize_ghost(const WormUiComposeQuantizeReportRowView& report,
+    const wormedit::chart_document_t& chart, const wormedit::editor_field_scene_request_t& request,
+    std::uint64_t scale, double pixels_per_row, double scroll, double height, bool downscroll)
+    -> std::optional<WormUiComposeQuantizeGhostView> {
+    const auto lane = std::ranges::find(chart.bgm_source_lanes, wormedit::object_id_t{report.lane_id},
+                                       &wormedit::bgm_source_lane_t::id);
+    if (lane == chart.bgm_source_lanes.end()) return std::nullopt;
+    const auto lane_index = static_cast<std::size_t>(lane - chart.bgm_source_lanes.begin());
+    auto left = request.bgm_pane_left_pixels - request.bgm_horizontal_scroll_pixels;
+    for (std::size_t i = 0; i < lane_index; ++i)
+        left += wormedit::editor_bgm_lane_width_pixels(chart, request, i);
+    const auto right = left + wormedit::editor_bgm_lane_width_pixels(chart, request, lane_index);
+    const quantize_lane_geometry_t bounds{left, right, wormedit::lane_glyph_t::bar};
+    const auto direction = downscroll ? wormedit::editor_field_scroll_direction_t::down
+                                      : wormedit::editor_field_scroll_direction_t::up;
+    const auto endpoint = [&](std::uint64_t row, bool promoted) {
+        const auto coordinate = promoted ? static_cast<long double>(row) / scale : row;
+        const auto y = compose_project_y(coordinate, pixels_per_row, scroll, height, downscroll);
+        return quantize_endpoint_bounds(bounds, y, request.note_head_height_pixels, direction);
+    };
+    WormUiComposeQuantizeGhostView ghost{};
+    ghost.object_id = report.object_id;
+    ghost.lane_id = report.lane_id;
+    ghost.before_head = endpoint(report.start_before_absolute_row, false);
+    ghost.after_head = endpoint(report.start_after_absolute_row, true);
+    ghost.before_head_anchor_x = ghost.after_head_anchor_x = (left + right) / 2;
+    ghost.before_head_anchor_y = downscroll ? ghost.before_head.bottom : ghost.before_head.top;
+    ghost.after_head_anchor_y = downscroll ? ghost.after_head.bottom : ghost.after_head.top;
+    ghost.moved_head = report.start_after_absolute_row % scale != 0 ||
+                       report.start_before_absolute_row != report.start_after_absolute_row / scale;
+    ghost.head_halfway = report.head_halfway;
+    ghost.tail_halfway = report.tail_halfway;
+    ghost.stationary_tail_annotation = report.stationary_tail_annotation;
+    ghost.collision = report.collision;
+    ghost.has_tail = report.has_end_before && report.has_end_after;
+    if (ghost.has_tail) {
+        ghost.before_tail = endpoint(report.end_before_absolute_row, false);
+        ghost.after_tail = endpoint(report.end_after_absolute_row, true);
+        ghost.before_tail_anchor_x = ghost.after_tail_anchor_x = (left + right) / 2;
+        ghost.before_tail_anchor_y = downscroll ? ghost.before_tail.bottom : ghost.before_tail.top;
+        ghost.after_tail_anchor_y = downscroll ? ghost.after_tail.bottom : ghost.after_tail.top;
+        ghost.moved_tail = report.end_after_absolute_row % scale != 0 ||
+                           report.end_before_absolute_row != report.end_after_absolute_row / scale;
+    }
+    return ghost;
+}
+
+void append_bgm_quantize_ghost(compose_scene_cache_t& cache,
+    const WormUiComposeQuantizeReportRowView& report, const wormedit::chart_document_t& chart,
+    const wormedit::editor_field_scene_request_t& request, std::uint64_t scale,
+    double pixels_per_row, double scroll, double height, bool downscroll) {
+    const auto event = std::ranges::find(cache.index->bgm_events,
+        wormedit::object_id_t{report.object_id}, &wormedit::editor_field_scene_bgm_source_t::event);
+    if (event == cache.index->bgm_events.end() || !quantize_row_visible(*event, request)) return;
+    const auto ghost = bgm_quantize_ghost(report, chart, request, scale,
+        pixels_per_row, scroll, height, downscroll);
+    if (ghost) cache.quantize_ghost_views.push_back(*ghost);
+}
+
 static void populate_quantize_ghost_geometry(compose_scene_cache_t& cache,
     const wormedit::song_document_t& document, const wormedit::chart_document_t& chart,
     application_command_state_t& application, const wormedit::editor_interaction_state_t& state,
@@ -3168,12 +3229,13 @@ static void populate_quantize_ghost_geometry(compose_scene_cache_t& cache,
     view.quantize_ghosts = nullptr;
     view.quantize_ghost_count = 0;
     view.quantize_ghosts_drawable = false;
-    if (!cache.index || state.selected_notes.empty() || !view.scene_available ||
+    if (!cache.index || !view.scene_available ||
         cache.quantize_preview_row_views.empty()) return;
-    const auto quantize_request = active_quantize_request(application, document, chart,
+    auto quantize_request = active_quantize_request(application, document, chart,
                                                          state.active_snap_denominator);
+    quantize_request.selection = wormedit::editor_quantize_selection(state);
     const auto& preview = cache.quantize_preview.get(chart, document.revision,
-                                                     state.selected_notes, quantize_request);
+                                                     quantize_request.selection->notes, quantize_request);
     if (!preview.drawable || !preview.geometry_valid || preview.resolution_scale == 0) return;
     const auto& request = cache.preview_scene_request;
     std::unordered_map<const wormedit::editor_field_scene_layout_source_t*,
@@ -3182,6 +3244,11 @@ static void populate_quantize_ghost_geometry(compose_scene_cache_t& cache,
         quantize_report_row_capacity, cache.quantize_preview_row_views.size()));
     for (const auto& report : cache.quantize_preview_row_views) {
         if (!report.selected || report.object_id == 0) continue;
+        if (report.bgm) {
+            append_bgm_quantize_ghost(cache, report, chart, request, preview.resolution_scale,
+                pixels_per_row, interaction.viewport_scroll_pixels, view.viewport_height_pixels, downscroll);
+            continue;
+        }
         const auto found = cache.index->note_indices_by_id.find(report.object_id);
         if (found == cache.index->note_indices_by_id.end()) continue;
         const auto& note = cache.index->notes[found->second];

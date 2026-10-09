@@ -204,6 +204,7 @@ auto report_order(const quantize_report_row_t& left, const quantize_report_row_t
     if (left.start_after_absolute_row != right.start_after_absolute_row)
         return left.start_after_absolute_row < right.start_after_absolute_row;
     if (left.lane != right.lane) return left.lane.value < right.lane.value;
+    if (left.bgm != right.bgm) return left.bgm < right.bgm;
     return left.object.value < right.object.value;
 }
 
@@ -235,7 +236,8 @@ auto same_request_settings(const quantize_request_t& left, const quantize_reques
     return left.divisions == right.divisions && left.space == right.space &&
         left.tie == right.tie && left.collisions == right.collisions &&
         left.holds == right.holds &&
-        left.allow_resolution_promotion == right.allow_resolution_promotion;
+        left.allow_resolution_promotion == right.allow_resolution_promotion &&
+        left.selection == right.selection;
 }
 
 auto halfway_position(const detail::quantize_geometry_t& geometry, local_position_t position,
@@ -378,8 +380,8 @@ auto candidates_have_bounded_geometry(
 }
 
 void populate_status(quantize_preview_t& preview, const quantization_result_t& result) {
-    std::unordered_set<std::uint64_t> moved_ids;
-    for (const auto& move : result.quantized_moves) moved_ids.insert(move.object.value);
+    std::set<std::pair<quantize_object_family_t, std::uint64_t>> moved_ids;
+    for (const auto& move : result.quantized_moves) moved_ids.emplace(move.family, move.object.value);
     preview.moved = moved_ids.size();
     preview.unchanged = preview.selected > preview.moved ? preview.selected - preview.moved : 0;
     preview.blocked = result.chart ? 0 : std::max<std::size_t>(result.diagnostics.size(), 1);
@@ -447,6 +449,64 @@ void populate_geometry_report(quantize_preview_t& preview, const chart_document_
     populate_moved_report(preview, chart, selected, request, result, geometry);
 }
 
+auto report_family_result(const quantization_result_t& result, quantize_object_family_t family)
+    -> quantization_result_t {
+    quantization_result_t filtered;
+    if (result.chart) filtered.chart.emplace();
+    filtered.promoted_to = result.promoted_to;
+    filtered.diagnostics = result.diagnostics;
+    for (const auto& move : result.quantized_moves)
+        if (move.family == family) filtered.quantized_moves.push_back(move);
+    return filtered;
+}
+
+auto bgm_report_chart(const chart_document_t& chart) -> chart_document_t {
+    chart_document_t projected;
+    projected.id = chart.id;
+    projected.divisions_per_standard_measure = chart.divisions_per_standard_measure;
+    for (const auto& measure : chart.measures) {
+        measure_chunk_t chunk;
+        chunk.id = measure.id;
+        chunk.definition = measure.definition;
+        for (const auto& event : measure.bgm_events)
+            chunk.notes.push_back({.id = event.id, .position = event.position,
+                                   .lane = lane_id_t{event.source_lane.value}, .end = event.end});
+        projected.measures.push_back(std::move(chunk));
+    }
+    return projected;
+}
+
+void populate_typed_report(quantize_preview_t& preview, const chart_document_t& chart,
+                           quantize_request_t request, const quantization_result_t& result,
+                           const detail::quantize_geometry_t& geometry) {
+    const auto selection = *request.selection;
+    request.selection.reset();
+    request.objects = selection.notes;
+    const auto notes = report_family_result(result, quantize_object_family_t::note);
+    if (!selection.notes.empty())
+        populate_geometry_report(preview, chart, selection.notes, request, notes, geometry);
+    else preview.geometry_valid = preview.drawable = true;
+    if (selection.bgm_events.empty()) return;
+    quantize_preview_t bgm;
+    set_report_resolution(bgm, chart, result);
+    request.objects = selection.bgm_events;
+    const auto events = report_family_result(result, quantize_object_family_t::bgm_event);
+    const auto projected = bgm_report_chart(chart);
+    populate_geometry_report(bgm, projected, selection.bgm_events, request, events, geometry);
+    preview.holds += bgm.holds;
+    preview.halfway_notes += bgm.halfway_notes;
+    preview.colliding_objects += bgm.colliding_objects;
+    preview.report_total_rows += bgm.report_total_rows;
+    preview.geometry_valid = preview.geometry_valid && bgm.geometry_valid;
+    preview.drawable = preview.geometry_valid;
+    for (auto row : bgm.report_rows) {
+        row.bgm = true;
+        if (preview.report_rows.size() < quantize_report_row_capacity) preview.report_rows.push_back(row);
+    }
+    preview.report_truncated = preview.report_total_rows > preview.report_rows.size();
+    std::ranges::sort(preview.report_rows, report_order);
+}
+
 } // namespace
 
 auto preview_quantize_selection(const chart_document_t& chart,
@@ -459,9 +519,10 @@ auto preview_quantize_selection(const chart_document_t& chart,
 auto preview_quantize_selection(const chart_document_t& chart,
                                 const std::vector<object_id_t>& selected,
                                 quantize_request_t request) -> quantize_preview_t {
-    quantize_preview_t preview{.selected = selected.size()};
-    if (selected.empty()) {
-        preview.message = "Select notes to preview quantization.";
+    quantize_preview_t preview{.selected = request.selection
+        ? request.selection->notes.size() + request.selection->bgm_events.size() : selected.size()};
+    if (preview.selected == 0) {
+        preview.message = "Select notes or BGM to preview quantization.";
         return preview;
     }
     request.objects = selected;
@@ -472,7 +533,8 @@ auto preview_quantize_selection(const chart_document_t& chart,
     const auto built_index = build_measure_index(chart);
     if (std::holds_alternative<measure_index_t>(built_index)) {
         const detail::quantize_geometry_t geometry{std::get<measure_index_t>(built_index)};
-        populate_geometry_report(preview, chart, selected, request, result, geometry);
+        if (request.selection) populate_typed_report(preview, chart, request, result, geometry);
+        else populate_geometry_report(preview, chart, selected, request, result, geometry);
     }
     return preview;
 }

@@ -239,14 +239,16 @@ struct compose_test_fixture_t {
 
 void dispatch_t437_quantize_settings(compose_test_fixture_t& fixture,
     quantization_tie_t tie, quantization_hold_t holds, std::uint64_t divisions = 4,
-    quantization_space_t space = quantization_space_t::standard_measure) {
+    quantization_space_t space = quantization_space_t::standard_measure,
+    bool apply = false) {
     notification_center_t center;
     notification_sink_t sink{center};
     task_scheduler_t scheduler{1, 1};
     runtime::resource_copy_t resource_copy{sink};
     runtime::output_group_export_t export_runtime{sink};
     WormUiWorkspaceAction action{};
-    action.compose_action = WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS;
+    action.compose_action = apply ? WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE
+                                  : WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS;
     action.compose_input_project_id = fixture.history.document.id.value;
     action.compose_input_chart_id = fixture.history.document.charts.front().id.value;
     action.compose_input_document_revision = fixture.history.document.revision;
@@ -6122,4 +6124,43 @@ TEST_CASE("Compose mixed move projects BGM tails and collision ghosts without a 
         return event.event_id == 401 && event.proposal_ghost && event.has_tail && event.move_conflict == collision;
     }));
     expect_compose_test(fixture.compose.history.undo.empty());
+}
+
+TEST_CASE("Mixed quantize projects BGM hold ghosts and refreshes a BGM-only selection",
+          "[sys][frame-timing][mixed-quantize]") {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    chart.measures.front().notes.resize(1);
+    chart.measures.front().notes.front().position.row = 130;
+    const auto id = chart.measures.front().notes.front().id;
+    chart.bgm_source_lanes.push_back({.id = object_id_t{90001}, .source_order = 0});
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{90002}, .position = {measure_id_t{1}, 130},
+        .source_lane = object_id_t{90001}, .end = local_position_t{measure_id_t{1}, 610}});
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.project();
+    fixture.interaction->selected_notes = {id};
+    fixture.interaction->selected_objects = {{editor_selection_object_kind_t::note, id},
+        {editor_selection_object_kind_t::bgm_event, object_id_t{90002}}};
+    dispatch_t437_quantize_settings(fixture, quantization_tie_t::earlier,
+                                    quantization_hold_t::both_endpoints);
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.quantize_preview_moved == 2);
+    expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 2);
+    fixture.interaction->selected_notes.clear();
+    fixture.interaction->selected_objects.erase(fixture.interaction->selected_objects.begin());
+    fixture.project();
+    const auto& view = fixture.flattened.view.compose;
+    expect_compose_test(view.selected_bgm_event_count == 1 && view.quantize_preview_moved == 1);
+    expect_compose_test(view.quantize_preview_row_count == 1 && view.quantize_preview_rows[0].bgm);
+    expect_compose_test(view.quantize_ghost_count == 1 && view.quantize_ghosts[0].has_tail);
+    expect_compose_test(view.quantize_ghosts[0].before_head.left >= view.playable_field_right_pixels);
+    expect_compose_test(fixture.history.undo.empty());
+    dispatch_t437_quantize_settings(fixture, quantization_tie_t::earlier,
+        quantization_hold_t::both_endpoints, 4, quantization_space_t::standard_measure, true);
+    expect_compose_test(fixture.history.undo.size() == 1);
+    expect_compose_test(fixture.application.quantize_applied_report.has_value());
+    expect_compose_test(fixture.application.quantize_applied_report->rows.size() == 1 &&
+                        fixture.application.quantize_applied_report->rows.front().bgm);
+    expect_compose_test(fixture.history.document.charts.front().measures.front().notes.front().position.row == 130);
+    expect_compose_test(fixture.history.document.charts.front().measures.front().bgm_events.front().position.row == 240);
 }

@@ -275,3 +275,41 @@ TEST_CASE("quantize rejects unknown and capacity positions without geometry repa
     CHECK_FALSE(unknown);
     CHECK(has_code(unknown.diagnostics, diagnostic_code_t::row_out_of_range));
 }
+
+TEST_CASE("Typed quantize isolates numeric aliases and quantizes BGM endpoints",
+          "[unit][core][quantize][mixed-quantize]") {
+    auto chart = make_chart();
+    add_note(chart, object_id_t{20}, measure_id_t{1}, 250);
+    chart.bpms.push_back({.id = object_id_t{20}, .position = {measure_id_t{1}, 125}, .beats_per_minute = {120, 1}});
+    chart.bgm_source_lanes.push_back({.id = object_id_t{30}});
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{20},
+        .position = {measure_id_t{1}, 130}, .source_lane = object_id_t{30},
+        .end = local_position_t{measure_id_t{1}, 610}});
+    const auto result = quantize_chart_exact(chart, {.divisions = 4,
+        .selection = quantize_selection_t{{object_id_t{20}}, {object_id_t{20}}}});
+    REQUIRE(result);
+    CHECK(find_note(*result.chart, object_id_t{20}).position.row == 240);
+    CHECK(result.chart->measures.front().bgm_events.front().position.row == 240);
+    CHECK(result.chart->measures.front().bgm_events.front().end->row == 720);
+    CHECK(result.chart->bpms.front().position.row == 125);
+    CHECK(result.quantized_moves.size() == 3);
+}
+
+TEST_CASE("Typed quantize rejects a missing BGM or collapsed tail without partial notes",
+          "[unit][core][quantize][mixed-quantize]") {
+    auto chart = make_chart();
+    add_note(chart, object_id_t{20}, measure_id_t{1}, 250);
+    chart.bgm_source_lanes.push_back({.id = object_id_t{30}});
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{21},
+        .position = {measure_id_t{1}, 130}, .source_lane = object_id_t{30},
+        .end = local_position_t{measure_id_t{1}, 140}});
+    const auto collapsed = quantize_chart_exact(chart, {.divisions = 4,
+        .selection = quantize_selection_t{{object_id_t{20}}, {object_id_t{21}}}});
+    CHECK_FALSE(collapsed);
+    CHECK(has_code(collapsed.diagnostics, diagnostic_code_t::invalid_hold));
+    const auto missing = quantize_chart_exact(chart, {.divisions = 4,
+        .selection = quantize_selection_t{{object_id_t{20}}, {object_id_t{99}}}});
+    CHECK_FALSE(missing);
+    CHECK(has_code(missing.diagnostics, diagnostic_code_t::invalid_id));
+    CHECK(chart.measures.front().notes.front().position.row == 250);
+}

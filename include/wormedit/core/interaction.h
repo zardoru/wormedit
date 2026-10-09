@@ -1198,4 +1198,9 @@ auto clear_editor_double_click_state(editor_double_click_state_t& state) -> void
                                           const editor_ui_action_t& action)
     -> editor_interaction_result_t;
 
+// Canonical typed selection for Quantize preview and Apply. Existing BGM and note IDs
+// may coincide; unrelated selected object families do not participate.
+[[nodiscard]] auto editor_quantize_selection(const editor_interaction_state_t& state)
+    -> quantize_selection_t;
+
 } // namespace wormedit

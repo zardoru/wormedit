@@ -1199,6 +1199,7 @@ typedef struct WormUiComposeQuantizeReportRowView {
     bool head_halfway;
     bool tail_halfway;
     bool stationary_tail_annotation;
+    bool bgm;
 } WormUiComposeQuantizeReportRowView;
 
 typedef struct WormUiComposeQuantizeGhostView {

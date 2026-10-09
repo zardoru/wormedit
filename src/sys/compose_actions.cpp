@@ -3113,10 +3113,13 @@ auto dispatch_compose_area_with_quantize_report(
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE) {
         const auto chart = std::ranges::find(history.document.charts, state.chart,
                                              &chart_document_t::id);
-        const auto request = quantize_request_from_action(action, state.active_snap_denominator,
+        auto request = quantize_request_from_action(action, state.active_snap_denominator,
                                                           state.selected_notes);
-        if (chart != history.document.charts.end() && request)
-            report = preview_quantize_selection(*chart, state.selected_notes, *request);
+        if (chart != history.document.charts.end() && request) {
+            request->objects.clear();
+            request->selection = editor_quantize_selection(state);
+            report = preview_quantize_selection(*chart, request->selection->notes, *request);
+        }
     }
     const auto response = dispatch_compose_area_action(action, history, state, notifications);
     if (response && report && history.document.revision != revision) {

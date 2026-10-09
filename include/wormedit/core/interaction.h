@@ -673,6 +673,8 @@ struct editor_interaction_state_t {
     std::optional<std::size_t> selected_canvas_measure;
     std::vector<object_id_t> selected_notes;
     std::vector<editor_selection_object_t> selected_objects;
+    // Document revision the selection was last checked against (see prune_stale_selection).
+    std::optional<std::uint64_t> selection_checked_revision;
     // Edit snapping applies to every pointer-driven object class; while off, edits land on the
     // chart's finest row instead of the active grid (see effective_edit_snap_denominator).
     bool snap_enabled{true};
@@ -902,6 +904,13 @@ inline auto editor_cursor_screen_y_pixels(const editor_interaction_view_model_t&
 // after any viewport change. BMS virtual rows remain unmaterialized.
 [[nodiscard]] auto synchronize_editor_cursor_to_viewport(const chart_document_t& chart,
     const measure_index_t& index, editor_interaction_state_t& state) -> bool;
+
+// Drops selected notes, objects and retained spans that no longer exist in `chart`. Runs a
+// chart scan only when the document revision changed since the last check and something is
+// selected, so a steady frame costs nothing. Never mutates the document. Returns true if the
+// selection changed.
+auto prune_stale_selection(const chart_document_t& chart, std::uint64_t document_revision,
+                           editor_interaction_state_t& state) -> bool;
 
 [[nodiscard]] auto inspect_editor_interaction(const document_history_t& history,
                                               const editor_interaction_state_t& state)

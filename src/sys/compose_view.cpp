@@ -3572,6 +3572,8 @@ std::optional<wormedit::editor_interaction_view_model_t> inspect_compose_interac
                          : wormedit::editor_field_scroll_direction_t::up);
     if (geometry_changed && !editor_interaction_has_pending_gesture(*retained_state))
         (void)wormedit::synchronize_editor_cursor_to_viewport(input.chart, input.measures, *retained_state);
+    // The one place selection is reconciled with the document: once per revision change.
+    (void)wormedit::prune_stale_selection(input.chart, history.document.revision, *retained_state);
     auto inspected = wormedit::inspect_editor_interaction(history, *retained_state,
         {.chart = input.chart.id, .document_revision = history.document.revision,
          .index = &input.measures});

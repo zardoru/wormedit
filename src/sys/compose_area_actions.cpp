@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <ranges>
 #include <utility>
+#include <numeric>
+#include <wormedit/core/scroll_speed_editor.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/grid.h>
 #include <wormedit/core/sv_recipe.h>
@@ -105,6 +107,33 @@ std::string add_sv_recipe_over_area(area_action_context_t& context,
         return area_feedback(context, "SV recipe added over the selected area.",
                              notification_severity_t::success, notification_source_t::edit);
     return inserted.diagnostics.empty() ? area_rejection(context, "SV recipe rejected.")
+                                        : area_diagnostic(context, inserted.diagnostics.front());
+}
+
+// A new SPEEDS event at the area start. Its transition spans the area, measured in beats (four
+// per standard measure, exact), and its multiplier starts neutral so it can be edited afterwards.
+std::string add_speed_span_over_area(area_action_context_t& context,
+                                     const wormedit::chart_document_t& chart,
+                                     const wormedit::measure_index_t& measures) {
+    using namespace wormedit;
+    if (!context.state.retained_selection_range)
+        return area_rejection(context, "Select an area first.");
+    const auto span = *context.state.retained_selection_range;
+    const auto begin = absolute_row(measures, span.begin);
+    const auto end = absolute_row(measures, span.end);
+    if (!begin || !end || *begin >= *end || chart.divisions_per_standard_measure == 0)
+        return area_rejection(context, "The area must cover at least one row.");
+    const auto numerator = (*end - *begin) * 4;
+    const auto divisor = std::gcd(numerator, chart.divisions_per_standard_measure);
+    const rational_t beats{numerator / divisor, chart.divisions_per_standard_measure / divisor};
+    const auto inserted = apply_scroll_speed_edit(
+        context.history, context.history.document.revision,
+        insert_speed_event_action_t{.chart = chart.id, .position = span.begin,
+                                    .multiplier = {1, 1}, .transition_beats = beats});
+    if (inserted.applied)
+        return area_feedback(context, "SPEEDS span added over the selected area.",
+                             notification_severity_t::success, notification_source_t::edit);
+    return inserted.diagnostics.empty() ? area_rejection(context, "SPEEDS span rejected.")
                                         : area_diagnostic(context, inserted.diagnostics.front());
 }
 
@@ -224,7 +253,8 @@ std::optional<std::string> dispatch_compose_area_action(area_action_context_t& c
     if (kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_DELETE && kind != WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE)
+        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE &&
+        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN)
         return std::nullopt;
     const auto chart = std::ranges::find(context.history.document.charts, context.state.chart,
                                          &chart_document_t::id);
@@ -238,6 +268,8 @@ std::optional<std::string> dispatch_compose_area_action(area_action_context_t& c
         return quantize_compose_area_selection(context, *chart);
     if (kind == WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE)
         return add_sv_recipe_over_area(context, *chart);
+    if (kind == WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN)
+        return add_speed_span_over_area(context, *chart, *measures);
     if (kind == WORM_UI_COMPOSE_ACTION_AREA_DELETE)
         return delete_compose_area_contents(context, *measures);
     return resize_compose_area(context, *chart, *measures);
@@ -307,7 +339,8 @@ auto dispatch_compose_area_action(const WormUiWorkspaceAction& action,
         kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_DELETE && kind != WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE)
+        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE &&
+        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN)
         return std::nullopt;
     if (state.chart.value != action.compose_input_chart_id ||
         history.document.revision != action.compose_input_document_revision)

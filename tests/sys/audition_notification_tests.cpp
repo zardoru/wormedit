@@ -147,3 +147,21 @@ TEST_CASE("Deferred audition source failure retains existing notification and is
     expect_audition(!fixture.output.service());
     expect_audition(!fixture.audition_session.active());
 }
+TEST_CASE("Auditioning a silent note or BGM event is quietly consumed", "[audio][audition-notification]") {
+    audition_fixture_t fixture;
+    chart_document_t chart;
+    chart.id = chart_id_t{2};
+    measure_chunk_t measure{.id = measure_id_t{3}};
+    measure.notes = {{.id = object_id_t{4}, .position = {measure_id_t{3}, 0}}};
+    measure.bgm_events = {{.id = object_id_t{5}, .position = {measure_id_t{3}, 0}}};
+    chart.measures = {measure};
+    fixture.history.document.charts = {chart};
+    for (const auto& object : {editor_selection_object_t{editor_selection_object_kind_t::note, object_id_t{4}},
+                               editor_selection_object_t{editor_selection_object_kind_t::bgm_event, object_id_t{5}}}) {
+        fixture.cache.audition_request = editor_object_audition_request_t{
+            .document_revision = fixture.history.document.revision, .chart = chart.id, .object = object};
+        fixture.compose();
+        expect_audition(!fixture.cache.audition_request);
+    }
+    expect_audition(fixture.entries().empty());
+}

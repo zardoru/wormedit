@@ -61,6 +61,9 @@ void process_object_request(const editor_object_audition_request_t& request,
         const auto started = audition_output.start(prepared.prepared->clips);
         post_audition_started(notifications, static_cast<bool>(started), started.message,
             "Audio preview started.", "Audio preview could not start.");
+    } else if (!prepared.diagnostics.empty() &&
+               prepared.diagnostics.front().code == audio::audition_resolve_code_t::missing_resource) {
+        // A silent note or BGM event has nothing to play; clicking or placing it is not an error.
     } else if (!prepared.diagnostics.empty()) {
         notifications.post(audition_diagnostic_severity(prepared.diagnostics.front().severity),
             notification_source_t::audio, prepared.diagnostics.front().message);

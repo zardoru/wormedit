@@ -228,12 +228,14 @@ update_compose_pointer_navigation(WormUiWorkspaceAction* action,
 }
 
 void cancel_compose_navigation(WormUiWorkspaceAction* action) {
-    state.tab_navigation.cancel();
-    state.raw_tab_down = false;
-    state.pinch = {};
-    if (action && (state.navigation_key_active || state.pointer_navigation_active)) {
+    if (action && (state.tab_navigation_needs_cancel || state.tab_navigation.tab_down ||
+                   state.navigation_key_active || state.pointer_navigation_active)) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL);
     }
+    state.tab_navigation.cancel();
+    state.raw_tab_down = false;
+    state.tab_navigation_needs_cancel = false;
+    state.pinch = {};
     state.navigation_key_active = false;
     state.navigation_keycode = 0;
     state.pointer_navigation_active = false;

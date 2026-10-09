@@ -131,7 +131,7 @@ auto skip_playhead_for_navigation(wormedit::editor_navigation_action_t action,
                        action == editor_navigation_action_t::page_forward;
     const auto outcome = skip_playing_playhead(
         application, *found, state.active_snap_denominator,
-        paged ? playhead_skip_unit_t::measure : playhead_skip_unit_t::snap,
+        paged ? playhead_skip_unit_t::measure : playhead_skip_unit_t::beat,
         forward ? 1.0 : -1.0);
     return {.message = outcome.status,
             .severity = outcome.accepted ? notification_severity_t::hint
@@ -4012,6 +4012,31 @@ auto process_compose_input_result(const WormUiComposeInputAction& input,
     return {.handled = true, .status = std::move(status)};
 }
 
+auto dispatch_compose_input_with_travel(const WormUiComposeInputAction& input,
+                                       compose_input_context_t& context,
+                                       wormedit::editor_interaction_result_t& result,
+                                       std::string_view& accepted) -> compose_input_family_result_t {
+    auto& travel = context.scene_cache.navigation_travel;
+    const auto previous_scroll = context.state.viewport_scroll_pixels;
+    const auto measure_step = input.kind == WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP;
+    const auto dispatched = dispatch_compose_input_event(input, context, result, accepted);
+    if (is_preview_playing(context.application_state))
+        travel.cancel();
+    else if (measure_step && context.state.viewport_scroll_pixels != previous_scroll)
+        travel.begin(context.state, context.history.document.revision, previous_scroll);
+    return dispatched;
+}
+
+void finish_interrupted_compose_travel(const WormUiComposeInputAction& input,
+                                       compose_input_context_t& context) {
+    if (input.kind == WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP ||
+        input.kind == WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE ||
+        input.kind == WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION) return;
+    // This input was validated against this revision; its own edit may have advanced history.
+    context.scene_cache.navigation_travel.finish(
+        context.state, context.ui_action.compose_input_document_revision);
+}
+
 auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::string {
     using namespace wormedit;
     auto status = std::string{};
@@ -4028,9 +4053,10 @@ auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::stri
         editor_interaction_result_t result;
         std::string_view accepted = "Compose interaction applied.";
         const auto cursor = capture_cursor_pose(context.state);
-        const auto dispatched = dispatch_compose_input_event(input, context, result, accepted);
+        const auto dispatched = dispatch_compose_input_with_travel(input, context, result, accepted);
         if (pointer_placement_keeps_cursor(input, result))
             restore_pointer_placement_cursor(context, cursor, result);
+        finish_interrupted_compose_travel(input, context);
         auto step = process_compose_input_result(input, context, dispatched, result, accepted);
         if (!step.handled) continue;
         status = std::move(step.status);
@@ -4077,10 +4103,10 @@ void apply_compose_viewport_scroll(const wormedit::viewport_scroll_action_t& scr
     // Convert displacement to chart direction before routing it to the viewport or playhead.
     const auto chart_delta = compose_wheel_scroll_delta(scroll.delta_y_pixels, downscroll);
     if (is_preview_playing(context.application_state)) {
-        // Playback uses the same direction, skipping by the active snap.
+        // Playback uses the same direction, skipping by one quarter-note beat.
         const auto outcome = skip_playing_playhead(
             context.application_state, *context.input_chart,
-            context.state.active_snap_denominator, playhead_skip_unit_t::snap,
+            context.state.active_snap_denominator, playhead_skip_unit_t::beat,
             chart_delta > 0.0 ? 1.0 : -1.0);
         status = outcome.status;
         if (!(outcome.accepted && context.application_state.transport_seek_posts_feedback))
@@ -4245,12 +4271,14 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
         history.document.revision != ui_action.compose_input_document_revision ||
         !std::isfinite(ui_action.compose_input_viewport_width_pixels) ||
         ui_action.compose_input_viewport_width_pixels <= 0.0) {
+        scene_cache.navigation_travel.cancel();
         const auto message = "Compose input ignored because the chart or document revision changed.";
         post_input_feedback(notifications, notification_severity_t::warning,
                             notification_source_t::input, message);
         return message;
     }
     if (ui_action.compose_input_count > WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {
+        scene_cache.navigation_travel.cancel();
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         const auto message = "Compose input batch exceeded its capacity; the active gesture was canceled.";
         post_input_feedback(notifications, notification_severity_t::warning,
@@ -4258,6 +4286,7 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
         return message;
     }
     if (ui_action.compose_viewport_input_count > WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY) {
+        scene_cache.navigation_travel.cancel();
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         const auto message = "Compose viewport input exceeded its capacity; the active gesture was canceled.";
         post_input_feedback(notifications, notification_severity_t::warning,
@@ -4323,6 +4352,8 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
 
     status = dispatch_compose_viewport_batch(input_context, viewport_delta_seconds,
                                              std::move(status));
+    scene_cache.navigation_travel.advance(state, history.document.revision,
+        is_preview_playing(application_state), viewport_delta_seconds);
     reset_compose_autoscroll_if_idle(input_context);
     if (!status.empty()) {
         return status;

@@ -1,3 +1,4 @@
+#include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/nuklear/compose_inspector.h"
 #include "ui/nuklear/chrome.h"
@@ -710,8 +711,7 @@ static void draw_compose_grid_tick(const ComposePaintContext& paint,
                                    const WormUiComposeGridLineView& line, float y) {
     const auto& view = *paint.view;
     auto& field = paint_field(paint.context);
-    if (view.waveform_row_count != 0 && !view.waveform_timing_locked && line.chart_row != 0 &&
-        (line.kind == 1 || line.kind == 3)) {
+    if (view.waveform_row_count != 0 && !view.waveform_timing_locked && worm_ui_nuklear_beat_fit_line(line)) {
         const auto color = line.chart_row == view.beat_fit_chart_row && view.beat_fit_drag_active
                                ? wormedit::ui::field::color_t{255, 207, 104}
                                : wormedit::ui::field::color_t{165, 177, 195};

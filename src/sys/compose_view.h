@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sys/workspace_projection.h"
+#include "sys/compose_navigation_travel.h"
 #include "common/static_interval_index.h"
 #include "sys/compose_bgm_bar.h"
 #include "sys/compose_dead_spans.h"
@@ -122,6 +123,7 @@ struct compose_timing_payload_cache_t {
 };
 
 struct compose_scene_cache_t {
+    compose_navigation_travel_t navigation_travel;
     keysound_list_cache_t keysound_list_cache;
     mutable compose_timing_payload_cache_t timing_payload_cache;
     // Internal reference-projection bypass for correctness/performance probes.

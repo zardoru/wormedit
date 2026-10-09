@@ -84,6 +84,10 @@ auto worm_ui_nuklear_overview_capture_matches(
     const worm_ui_nuklear_overview_capture_t& capture, const WormUiComposeView& view,
     double left, double width, bool available, bool window_focused) -> bool;
 
+inline auto worm_ui_nuklear_beat_fit_line(const WormUiComposeGridLineView& line) noexcept -> bool {
+    return line.chart_row != 0 && line.kind >= 1 && line.kind <= 3;
+}
+
 // A canvas-owned Tab chord has its own cadence; ordinary navigation is unchanged.
 struct worm_ui_nuklear_tab_navigation_t {
     bool tab_down{};
@@ -91,15 +95,15 @@ struct worm_ui_nuklear_tab_navigation_t {
     std::optional<WormUiComposeNavigationAction> direction{};
     std::uint64_t next_repeat_ms{};
 
-    void schedule(std::uint64_t now) noexcept {
+    void schedule(std::uint64_t now, std::uint64_t delay = 200) noexcept {
         constexpr auto maximum = std::numeric_limits<std::uint64_t>::max();
-        next_repeat_ms = now > maximum - 200 ? maximum : now + 200;
+        next_repeat_ms = now > maximum - delay ? maximum : now + delay;
     }
     auto press_tab(std::uint64_t now) noexcept
         -> std::optional<WormUiComposeNavigationAction> {
         if (tab_down) return std::nullopt;
         tab_down = true;
-        if (direction) schedule(now);
+        if (direction) schedule(now, 350);
         return direction;
     }
     auto press_direction(WormUiComposeNavigationAction action,
@@ -109,7 +113,7 @@ struct worm_ui_nuklear_tab_navigation_t {
         direction = action;
         direction_scancode = scancode;
         if (!tab_down) return std::nullopt;
-        schedule(now);
+        schedule(now, 350);
         return direction;
     }
     void release_direction(std::uint32_t scancode) noexcept {
@@ -428,6 +432,8 @@ struct worm_ui_nuklear_compose_state_t {
     std::array<worm_ui_nuklear_lane_hold_t, 64> lane_holds{};
     std::size_t lane_hold_count{};
     worm_ui_nuklear_tab_navigation_t tab_navigation{};
+    // Keep cancellation pending after key release until ownership changes notify the dispatcher.
+    bool tab_navigation_needs_cancel{};
     bool raw_tab_down{};
     bool navigation_key_active{};
     std::uint32_t navigation_keycode{};

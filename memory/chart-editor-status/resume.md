@@ -1,5 +1,7 @@
 # Status: resume checklist
 
+Completed 2026-10-09: [T-504–T-506 navigation polish](../../docs/chart-editor-plan/tasks/navigation-polish.md). Group-beat rail handles now draw and fit, ordinary playback arrows/wheel skip quarter-note beats independently of snap, and Tab measure navigation has brief zoom-independent travel plus a 350 ms initial repeat pause (then 200 ms repeats). Logical cursor/ranges remain immediate; interruption, history-changing edits, stale geometry, focus loss after release and OS repeat debt are covered. Normal build, **3,080/3,080 full tests**, **304/304 dedicated event-harness cases**, **13/13 focused checks** and affected-file complexity checks pass. Isolated native Xvfb confirms restored handles and intermediate/settled travel; fixture hash unchanged. Evidence: `/tmp/navigation-*.log`, `/tmp/navigation-visual/`. This batch is complete; implementation, tests and completion documentation are committed together. Brain scratchpad/status are synchronized and all three observations are checked off.
+
 [Back to the chart editor status index](../chart-editor-status.md).
 
 ## Immediate work

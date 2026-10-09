@@ -2226,9 +2226,20 @@ void refresh_sound_selection_context(const WormUiWorkspaceAction& action,
         sound_context.sound_selection_dock.push_back(wormedit::resource_id_t{sound_dock.selected_resource_ids[i]});
 }
 
+auto has_fresh_shortcut_key(const WormUiWorkspaceAction& action) -> bool {
+    const auto count = std::min(action.shortcut_event_count, std::size(action.shortcut_events));
+    for (std::size_t index = 0; index < count; ++index)
+        if (!action.shortcut_events[index].repeat) return true;
+    return false;
+}
+
 template <typename Context>
 auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& action,
                                   double viewport_delta_seconds) -> bool {
+    // Complete a prior measure move before a new keyboard command can edit its destination.
+    if (has_fresh_shortcut_key(action) && context.compose_interaction_state_ref)
+        context.compose_scene_cache_ref.navigation_travel.finish(
+            *context.compose_interaction_state_ref, context.history_ref.document.revision);
     bool preserves_editor_gesture{};
     const bool shortcut_handled =
         action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
@@ -2247,6 +2258,9 @@ auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& actio
         context.audio_offset_drag_ref.reset();
         context.audio_offset_drag_tab_ref.reset();
         context.compose_scene_cache_ref.clear_beat_fit_capture();
+        if (context.compose_interaction_state_ref)
+            context.compose_scene_cache_ref.navigation_travel.finish(
+                *context.compose_interaction_state_ref, context.history_ref.document.revision);
         context.compose_scene_cache_ref.offset_fit_drag.reset();
     }
     if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
@@ -2282,6 +2296,9 @@ auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& actio
     if (context.workspace_ref.active_tab != wormedit::workspace_tab_t::compose) {
         context.compose_viewport_input_ref.escape();
         context.compose_scene_cache_ref.viewport_autoscroll_active = false;
+        if (context.compose_interaction_state_ref)
+            context.compose_scene_cache_ref.navigation_travel.finish(
+                *context.compose_interaction_state_ref, context.history_ref.document.revision);
     }
     if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
         context.compose_interaction_state_ref &&

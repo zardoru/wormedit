@@ -2,6 +2,7 @@
 #include "ui/nuklear/compose_state.h"
 #include <catch2/catch_test_macros.hpp>
 #include <array>
+#include <catch2/generators/catch_generators.hpp>
 
 namespace {
 void verify_fit_event(bool value) { REQUIRE(value); }
@@ -77,4 +78,32 @@ TEST_CASE("Fit drag switches literal Ctrl Alt onset mode without pointer motion"
     const auto* end = find_fit_input(released.get(), WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE);
     verify_fit_event(end); verify_fit_event(end->beat_fit_onset_snap_held);
 
+}
+
+TEST_CASE("Group beat rail handles start fitting with the same guards as other beats",
+          "[frontend-state][event-harness][beat-fit]") {
+    const auto kind = GENERATE(0, 1, 2, 3);
+    const auto locked = GENERATE(false, true);
+    nuklear_event_harness_t h{1280, 900};
+    verify_fit_event(h.ready());
+    auto& v = h.view().compose;
+    WormUiComposeWaveformRowView wave{};
+    WormUiComposeGridLineView beat{};
+    beat.chart_row = 480; beat.kind = kind; beat.y_pixels = 120;
+    v.waveform_rows = &wave; v.waveform_row_count = 1;
+    v.grid_lines = &beat; v.grid_line_count = 1;
+    v.selected_audio_asset_id = 6; v.waveform_overview_sample_rate = 44100;
+    v.waveform_timing_locked = locked;
+    (void)h.frame();
+    WormUiTestingRect rect{};
+    verify_fit_event(worm_ui_frontend_compose_viewport_for_testing(&rect));
+    const auto x = rect.x + static_cast<float>(32 * rect.width / v.viewport_width_pixels);
+    const auto y = rect.y + static_cast<float>(120 * rect.height / v.viewport_height_pixels);
+    const std::array press{fit_motion(x,y), fit_button(x,y,true)};
+    const auto begun = h.frame(press);
+    const auto* fit = find_fit_input(begun.get(), WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN);
+    verify_fit_event((fit != nullptr) == (kind != 0 && !locked));
+    if (fit) verify_fit_event(fit->object_id == 480);
+    beat.chart_row = 0;
+    verify_fit_event(!worm_ui_nuklear_beat_fit_line(beat));
 }

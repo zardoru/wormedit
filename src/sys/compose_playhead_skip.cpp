@@ -74,6 +74,14 @@ auto playhead_skip_target_row(const measure_index_t& measures, double playhead_r
         if (step <= 0.0) return std::nullopt;
         return clamp_row(snap_target(playhead_row, amount, step), measures);
     }
+    case playhead_skip_unit_t::beat: {
+        if (divisions_per_measure == 0) return std::nullopt;
+        auto target = snap_target(playhead_row, amount,
+                                  static_cast<double>(divisions_per_measure) / 4.0);
+        if (amount >= 0.5) target = std::max(target, std::floor(playhead_row) + 1.0);
+        if (amount <= -0.5) target = std::min(target, std::ceil(playhead_row) - 1.0);
+        return clamp_row(target, measures);
+    }
     case playhead_skip_unit_t::measure:
         return clamp_row(measure_target(measures, playhead_row, amount), measures);
     case playhead_skip_unit_t::rows:

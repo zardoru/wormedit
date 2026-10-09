@@ -103,3 +103,21 @@ TEST_CASE("repeated playing skips within 300 ms continue from the last target",
     notch(1.0);
     CHECK(seeks == std::vector<std::uint64_t>{quarter, quarter});
 }
+
+namespace {
+void check_beat_skip(bool value) { CHECK(value); }
+}
+
+TEST_CASE("beat skips ignore editing snap including unsupported denominators", "[sys][playhead-skip]") {
+    for (const auto snap : {0u, 4u, 7u, 16u, 192u}) {
+        check_beat_skip(playhead_skip_target_row(two_measures(), 240, playhead_skip_unit_t::beat, 1, 960, snap) == 480);
+        check_beat_skip(playhead_skip_target_row(two_measures(), 300, playhead_skip_unit_t::beat, -1, 960, snap) == 240);
+        check_beat_skip(playhead_skip_target_row(two_measures(), 950, playhead_skip_unit_t::beat, 1, 960, snap) == 960);
+    }
+    check_beat_skip(playhead_skip_target_row(two_measures(), 1900, playhead_skip_unit_t::beat, 1, 960, 16) == 1919);
+    check_beat_skip(playhead_skip_target_row(two_measures(), 0, playhead_skip_unit_t::beat, -1, 960, 16) == 0);
+    check_beat_skip(!playhead_skip_target_row(two_measures(), 0, playhead_skip_unit_t::beat, 1, 0, 16));
+    check_beat_skip(playhead_skip_target_row(two_measures(), 0, playhead_skip_unit_t::beat, 1, 5, 16) == 1);
+    check_beat_skip(playhead_skip_target_row(two_measures(), 1, playhead_skip_unit_t::beat, 1, 5, 16) == 2);
+    check_beat_skip(playhead_skip_target_row(two_measures(), 1, playhead_skip_unit_t::beat, -1, 1, 16) == 0);
+}

@@ -993,16 +993,16 @@ TEST_CASE("SDL Compose wheel unit normalization rejects nonfinite input",
     expect_inline((zero->delta_x==0 && zero->delta_y==0 && zero->coarse_steps));
 }
 
-TEST_CASE("Tab chord emits one page immediately and every 200 milliseconds", "[frontend][tab-repeat]") {
+TEST_CASE("Tab chord pauses 350 milliseconds then repeats every 200 milliseconds", "[frontend][tab-repeat]") {
     worm_ui_nuklear_tab_navigation_t held;
     const auto page = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
     expect_inline(!held.press_tab(100));
     expect_inline(held.press_direction(page, 82, 120) == page);
     expect_inline(!held.press_direction(page, 82, 130));
-    expect_inline(!held.advance(319, true));
-    expect_inline(held.advance(320, true) == page);
-    expect_inline(!held.advance(519, true));
-    expect_inline(held.advance(520, true) == page);
+    expect_inline(!held.advance(469, true));
+    expect_inline(held.advance(470, true) == page);
+    expect_inline(!held.advance(669, true));
+    expect_inline(held.advance(670, true) == page);
     expect_inline(held.advance(5'000, true) == page);
     expect_inline(!held.advance(5'000, true));
     held.release_direction(81);
@@ -1034,8 +1034,8 @@ TEST_CASE("Tab chord direction changes restart cadence without stale pulses", "[
     expect_inline(held.press_direction(forward, 82, 0) == forward);
     expect_inline(held.press_direction(backward, 81, 199) == backward);
     held.release_direction(82);
-    expect_inline(!held.advance(398, true));
-    expect_inline(held.advance(399, true) == backward);
+    expect_inline(!held.advance(548, true));
+    expect_inline(held.advance(549, true) == backward);
     held.cancel();
     expect_inline(!held.press_tab(std::numeric_limits<std::uint64_t>::max() - 1));
     expect_inline(held.press_direction(forward, 82,

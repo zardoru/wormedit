@@ -181,6 +181,7 @@ static void append_tab_navigation_step(WormUiWorkspaceAction* action,
     state.pointer_navigation_active = false;
     append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP, 0.0, 0.0, 0, false,
                          WORM_UI_COMPOSE_SELECTION_REPLACE, navigation);
+    state.tab_navigation_needs_cancel = !state.action_overflowed;
     if (!state.action_overflowed && state.space_range_hold_active)
         state.space_range_hold_moved = true;
 }

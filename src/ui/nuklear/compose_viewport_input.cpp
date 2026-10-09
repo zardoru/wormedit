@@ -267,7 +267,7 @@ static std::uint64_t nearest_beat_fit_row(const ComposeBeatFitInput& input) {
     auto nearest_distance = 6.0 * view.viewport_height_pixels / input.viewport.h;
     for (std::size_t index = 0; index < view.grid_line_count; ++index) {
         const auto& line = view.grid_lines[index];
-        if (line.chart_row == 0 || (line.kind != 1 && line.kind != 3)) {
+        if (!worm_ui_nuklear_beat_fit_line(line)) {
             continue;
         }
         const auto distance = std::abs(line.y_pixels - input.pointer_started_y);

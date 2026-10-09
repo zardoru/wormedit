@@ -1531,3 +1531,134 @@ TEST_CASE("Snap badge refuses active gestures and paste previews", "[unit][sys][
         check_action(fixture.history.undo.empty());
     }
 }
+
+TEST_CASE("Playing Compose navigation uses beats while stopped editing retains its snap",
+          "[compose-action-notifications][playhead-skip]") {
+    bga_input_fixture_t f;
+    f.state.active_snap_denominator = 16;
+    f.state.supported_snap_denominators = {4, 16};
+    f.application.preview_playhead_absolute_row = 240;
+    f.application.transport_preview_playing = [] { return true; };
+    std::uint64_t sought{};
+    f.application.transport_seek = [&](std::uint64_t frame) { sought = frame; return std::string{}; };
+    auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0);
+    action.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD;
+    (void)f.dispatch_input(action);
+    check_action(f.application.preview_playhead_absolute_row == 480);
+    check_action(sought > 0);
+    check_action((f.state.cursor == local_position_t{measure_id_t{1}, 0}));
+    check_action(f.state.active_snap_denominator == 16);
+    f.application.transport_preview_playing = [] { return false; };
+    f.navigation.cancel();
+    (void)f.dispatch_input(action);
+    check_action((f.state.cursor == local_position_t{measure_id_t{1}, 60}));
+    f.check_unchanged(1);
+}
+
+TEST_CASE("Tab measure navigation moves cursor immediately and scrolls over several frames",
+          "[compose-action-notifications][navigation-travel]") {
+    bga_input_fixture_t f;
+    auto& chart = f.history.document.charts.front();
+    chart.measures.push_back({.id = measure_id_t{2}});
+    f.state.pixels_per_standard_measure = 600;
+    f.state.viewport_scroll_pixels = -100;
+    auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP, 0);
+    action.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+    (void)f.dispatch_input(action);
+    check_action((f.state.cursor == local_position_t{measure_id_t{2}, 0}));
+    check_action(f.cache.navigation_travel.target.has_value());
+    const auto target = *f.cache.navigation_travel.target;
+    check_action(f.state.viewport_scroll_pixels == -100);
+    action.compose_input_count = 0;
+    (void)dispatch_compose_input_action(action, f.history, f.workspace, f.state, f.viewport,
+        f.navigation, f.application, f.cache, 0.02, &f.sink);
+    check_action(f.state.viewport_scroll_pixels > -100 && f.state.viewport_scroll_pixels < target);
+    (void)dispatch_compose_input_action(action, f.history, f.workspace, f.state, f.viewport,
+        f.navigation, f.application, f.cache, 0.1, &f.sink);
+    check_action(f.state.viewport_scroll_pixels == target);
+    check_action(!f.cache.navigation_travel.target);
+    f.check_unchanged(1);
+}
+
+TEST_CASE("Measure travel cancels on external scroll zoom revision chart and playback changes",
+          "[compose-action-notifications][navigation-travel]") {
+    const auto interrupt = GENERATE(0, 1, 2, 3, 4, 5);
+    editor_interaction_state_t state;
+    state.chart = chart_id_t{1}; state.pixels_per_standard_measure = 128;
+    state.viewport_scroll_pixels = 128;
+    compose_navigation_travel_t travel;
+    travel.begin(state, 1, 0);
+    if (interrupt == 0) state.viewport_scroll_pixels = 7;
+    if (interrupt == 1) state.pixels_per_standard_measure = 256;
+    if (interrupt == 2) state.chart = chart_id_t{2};
+    if (interrupt == 5) place_cursor_at(state, {measure_id_t{1}, 240});
+    const auto previous = state.viewport_scroll_pixels;
+    travel.advance(state, interrupt == 3 ? 2 : 1, interrupt == 4, 0.02);
+    check_action(!travel.target);
+    check_action(state.viewport_scroll_pixels == previous);
+}
+
+TEST_CASE("Playback wheel skips one beat in chart direction independently of snap",
+          "[compose-action-notifications][playhead-skip]") {
+    const auto forward = GENERATE(false, true);
+    const auto downscroll = GENERATE(false, true);
+    bga_input_fixture_t f;
+    f.state.active_snap_denominator = 16;
+    f.application.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
+    f.application.preview_playhead_absolute_row = 480;
+    f.application.transport_preview_playing = [] { return true; };
+    f.application.transport_seek = [](std::uint64_t) { return std::string{}; };
+    auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0);
+    action.compose_input_count = 0;
+    action.compose_viewport_input_count = 1;
+    action.compose_viewport_inputs[0] = {
+        .kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
+        .delta_y = (forward != downscroll) ? 1.0 : -1.0,
+        .cursor_x_pixels = 200, .cursor_y_pixels = 200};
+    (void)f.dispatch_input(action);
+    check_action(f.application.preview_playhead_absolute_row == (forward ? 720 : 240));
+    check_action(f.state.active_snap_denominator == 16);
+    f.check_unchanged(1);
+}
+
+TEST_CASE("Interrupted Tab travel settles at the chosen cursor without changing history",
+          "[compose-action-notifications][navigation-travel]") {
+    const auto interrupt = GENERATE(WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL,
+                                    WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
+    bga_input_fixture_t f;
+    f.history.document.charts.front().measures.push_back({.id = measure_id_t{2}});
+    f.state.pixels_per_standard_measure = 600;
+    f.state.viewport_scroll_pixels = -100;
+    auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP, 0);
+    action.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+    (void)f.dispatch_input(action);
+    require_action(f.cache.navigation_travel.target.has_value());
+    const auto destination = *f.cache.navigation_travel.target;
+    action.compose_inputs[0].kind = interrupt;
+    (void)f.dispatch_input(action);
+    check_action(!f.cache.navigation_travel.target);
+    check_action(f.state.viewport_scroll_pixels == destination);
+    check_action((f.state.cursor == local_position_t{measure_id_t{2}, 0}));
+    f.check_unchanged(1);
+}
+
+TEST_CASE("An edit during Tab travel finishes at the chosen cursor after advancing history",
+          "[compose-action-notifications][navigation-travel]") {
+    bga_input_fixture_t f;
+    f.history.document.charts.front().measures.push_back({.id = measure_id_t{2}});
+    f.state.pixels_per_standard_measure = 600;
+    f.state.viewport_scroll_pixels = -100;
+    auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP, 0);
+    action.compose_inputs[0].navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+    (void)f.dispatch_input(action);
+    require_action(f.cache.navigation_travel.target.has_value());
+    const auto destination = *f.cache.navigation_travel.target;
+    action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_DELETE_SELECTION;
+    (void)f.dispatch_input(action);
+    check_action(f.history.document.revision == 2);
+    check_action(f.history.undo.size() == 1);
+    check_action(f.history.document.charts.front().bga_events.empty());
+    check_action(!f.cache.navigation_travel.target);
+    check_action(f.state.viewport_scroll_pixels == destination);
+    check_action((f.state.cursor == local_position_t{measure_id_t{2}, 0}));
+}

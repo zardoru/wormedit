@@ -4977,3 +4977,43 @@ TEST_CASE("waveform strips leave out Stop and Delay bands",
     CHECK(none[0].bottom == 400);
     CHECK(compose_waveform_strips(0, 400, {{-5, 450}}).empty());
 }
+
+TEST_CASE("Tab measure chord routes one immediate step suppresses OS repeat and retires on focus loss",
+          "[frontend-state][event-harness][tab-repeat]") {
+    const auto reverse_order = GENERATE(false, true);
+    const auto release_first = GENERATE(false, true);
+    nuklear_event_harness_t h{1280, 900};
+    expect_lane_key(h.ready());
+    (void)h.frame();
+    const auto tab = key_event(SDL_EVENT_KEY_DOWN, SDLK_TAB, SDL_SCANCODE_TAB);
+    const auto arrow = key_event(SDL_EVENT_KEY_DOWN, SDLK_RIGHT, SDL_SCANCODE_RIGHT);
+    const auto first = reverse_order ? arrow : tab;
+    const auto second = reverse_order ? tab : arrow;
+    (void)h.frame(std::span{&first, 1});
+    const auto step = h.frame(std::span{&second, 1});
+    std::size_t pages{};
+    for (std::size_t i = 0; i < step.get().compose_input_count; ++i) {
+        const auto& input = step.get().compose_inputs[i];
+        if (input.kind == WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP) {
+            expect_lane_key(input.navigation_action == WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD);
+            ++pages;
+        }
+    }
+    expect_lane_key(pages == 1);
+    const auto repeat = key_event(SDL_EVENT_KEY_DOWN, SDLK_RIGHT, SDL_SCANCODE_RIGHT, true);
+    const auto repeated = h.frame(std::span{&repeat, 1});
+    for (std::size_t i = 0; i < repeated.get().compose_input_count; ++i)
+        expect_lane_key(repeated.get().compose_inputs[i].kind != WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP);
+    if (release_first) {
+        const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_TAB, SDL_SCANCODE_TAB);
+        (void)h.frame(std::span{&release, 1});
+    }
+    SDL_Event focus{}; focus.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+    const auto lost = h.frame(std::span{&focus, 1});
+    bool canceled{};
+    for (std::size_t i = 0; i < lost.get().compose_input_count; ++i)
+        canceled = canceled || lost.get().compose_inputs[i].kind == WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL;
+    expect_lane_key(canceled);
+    expect_lane_key(!worm_ui_nuklear_compose_state().tab_navigation.direction);
+    expect_lane_key(!worm_ui_nuklear_compose_state().tab_navigation.tab_down);
+}

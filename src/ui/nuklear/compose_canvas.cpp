@@ -468,6 +468,16 @@ static void field_text_outlined(const ComposePaintContext& paint, struct nk_rect
     field_text(paint, bounds, text, length, font, nk_rgba(0, 0, 0, 0), foreground, layer);
 }
 
+// Stem lane resizing moves lane and event geometry without changing the revision or any other
+// key field, so the retained tiles must be keyed by the visible lane widths too.
+static auto compose_bgm_lane_width_digest(const WormUiComposeView& view) -> std::uint64_t {
+    std::uint64_t digest = 1469598103934665603ULL;
+    for (const auto& lane : std::span(view.bgm_lanes, view.bgm_lane_count)) {
+        digest = (digest ^ std::bit_cast<std::uint64_t>(lane.width_pixels)) * 1099511628211ULL;
+        digest = (digest ^ std::bit_cast<std::uint64_t>(lane.bounds.left)) * 1099511628211ULL;
+    }
+    return digest;
+}
 static auto compose_tile_request(const ComposePaintContext& paint, unsigned pass, bool scrolling)
     -> wormedit::ui::field::tile_request_t {
     const auto& view=*paint.view;
@@ -500,7 +510,8 @@ static auto compose_tile_request(const ComposePaintContext& paint, unsigned pass
         std::bit_cast<std::uint32_t>(paint.viewport.x),std::bit_cast<std::uint32_t>(paint.viewport.y),
         std::bit_cast<std::uint32_t>(paint.viewport.w),std::bit_cast<std::uint32_t>(paint.viewport.h),
         view.timing_lane_visibility_mask,view.downscroll,
-        reinterpret_cast<std::uintptr_t>(paint.context->style.font)};
+        reinterpret_cast<std::uintptr_t>(paint.context->style.font) ^
+            (compose_bgm_lane_width_digest(view) * 0x9E3779B97F4A7C15ULL)};
     return request;
 }
 template<class T>
@@ -2681,6 +2692,21 @@ static void draw_compose_bga(const ComposePaintContext& paint) {
     draw_compose_bga_move_preview(paint);
 }
 
+// Highlights the right edge of the stem lane that the pointer would resize.
+static void draw_compose_stem_resize_edge(const ComposePaintContext& paint) {
+    const auto hovered = worm_ui_nuklear_compose_state().stem_lane_resize_hover_lane;
+    if (!hovered) return;
+    for (const auto& lane : std::span(paint.view->bgm_lanes, paint.view->bgm_lane_count)) {
+        if (lane.source_lane_id != hovered || !lane.stem ||
+            lane.resize_edge_pixels > lane.bounds.right + 1e-6) continue;
+        const auto rect = compose_screen_rect(&lane.bounds, paint.view, paint.viewport);
+        const auto scale = paint.viewport.w / static_cast<float>(paint.view->viewport_width_pixels);
+        const auto x = paint.viewport.x + static_cast<float>(lane.resize_edge_pixels) * scale;
+        field_line(paint, x, rect.y, x, rect.y + rect.h, 2.0f,
+                   wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::accent), 4);
+    }
+}
+
 static ComposeHoveredBgm draw_compose_audio_markers(const ComposePaintContext& paint,
                                                    bool draw_events=true) {
     ComposeHoveredBgm hovered{};
@@ -2698,6 +2724,7 @@ static ComposeHoveredBgm draw_compose_audio_markers(const ComposePaintContext& p
     }
     draw_compose_bmson_marker_drafts(paint);
     draw_compose_bmson_move_preview(paint);
+    draw_compose_stem_resize_edge(paint);
     if (const auto* filename = draw_compose_bgm_lane_labels(paint)) {
         hovered = {};
         wormedit::ui::nuklear::tooltip::text(paint.context, filename);

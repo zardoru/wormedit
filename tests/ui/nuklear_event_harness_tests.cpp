@@ -4263,3 +4263,132 @@ TEST_CASE("Draw on a BMSON packed column with no usable sound does nothing",
                                 WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN})
             expect_draw(count_inputs(*frames, kind) == 0);
 }
+
+namespace {
+
+struct stem_edge_fixture_t {
+    nuklear_event_harness_t harness{1280, 900};
+    WormUiComposeBgmLaneView lane{};
+    float left{}, top{}, edge_x{};
+
+    stem_edge_fixture_t() {
+        REQUIRE(harness.ready());
+        auto& state = worm_ui_nuklear_compose_state();
+        state.inspector_visible = state.sounds_panel_visible = state.layers_panel_visible = false;
+        state.bga_panel_visible = false;
+        state.draw_source_kind = 0;
+        state.draw_source_id = 0;
+        harness.view().project_id = 123;
+        auto& view = harness.view().compose;
+        view.visible = true;
+        view.scene_available = true;
+        view.bmson_tools_available = true;
+        view.project_id = 123;
+        view.chart_id = 7;
+        view.document_revision = 11;
+        (void)harness.frame();
+        const auto viewport = compose_canvas_viewport_for_testing();
+        REQUIRE(viewport.has_value());
+        left = viewport->x;
+        top = viewport->y;
+        view.viewport_width_pixels = viewport->width;
+        view.viewport_height_pixels = viewport->height;
+        edge_x = viewport->width * 0.6f + 36;
+        lane = {.bounds = {edge_x - 36, 0, edge_x, viewport->height}, .source_lane_id = 44,
+                .stem = true, .width_pixels = 36, .resize_edge_pixels = edge_x};
+        view.bgm_lanes = &lane;
+        view.bgm_lane_count = 1;
+        (void)harness.frame();
+    }
+    [[nodiscard]] auto point(float x, float y) const -> std::pair<float, float> {
+        return {left + x, top + y};
+    }
+    [[nodiscard]] auto width() const { return worm_ui_frontend_compose_bgm_lane_width(123, 7, 44); }
+    void sync_lane() {
+        lane.width_pixels = width();
+        lane.bounds.right = lane.bounds.left + lane.width_pixels;
+        lane.resize_edge_pixels = lane.bounds.right;
+        edge_x = static_cast<float>(lane.resize_edge_pixels);
+    }
+    void hover(float x, float y) {
+        const auto p = point(x, y);
+        const auto move = motion_event(p.first, p.second);
+        (void)harness.frame(std::span{&move, 1});
+    }
+    auto press(float x, float y) {
+        const auto p = point(x, y);
+        const std::array events{motion_event(p.first, p.second), button_event(true, p.first, p.second)};
+        return harness.frame(events);
+    }
+    void drag_to(float x, float y) {
+        const auto p = point(x, y);
+        const auto move = motion_event(p.first, p.second);
+        (void)harness.frame(std::span{&move, 1});
+    }
+    void release(float x, float y) {
+        const auto p = point(x, y);
+        const std::array events{motion_event(p.first, p.second), button_event(false, p.first, p.second)};
+        (void)harness.frame(events);
+        sync_lane();
+    }
+};
+
+} // namespace
+
+TEST_CASE("Stem lane edge resizes from any height with a hover highlight",
+          "[frontend-state][event-harness][bmson-stem][resize]") {
+    stem_edge_fixture_t f;
+    auto& state = worm_ui_nuklear_compose_state();
+    for (const float y : {6.0f, 300.0f, 560.0f}) {
+        f.hover(f.edge_x - 40, y);
+        expect_draw(state.stem_lane_resize_hover_lane == 0);
+        f.hover(f.edge_x, y);
+        expect_draw(state.stem_lane_resize_hover_lane == 44 && state.stem_lane_resize_cursor_requested);
+        (void)f.press(f.edge_x, y);
+        f.drag_to(f.edge_x + 60, y);
+        expect_draw(state.stem_lane_resize.has_value() && state.stem_lane_resize_hover_lane == 44);
+        expect_draw(std::abs(f.width() - 96.0) < 1.0);
+        f.release(f.edge_x + 60, y);
+        expect_draw(!state.stem_lane_resize.has_value());
+        const auto resized = f.width();
+        (void)f.press(f.edge_x, y);
+        f.drag_to(f.edge_x - 1000, y);
+        expect_draw(f.width() == 36.0);
+        f.release(f.edge_x - 1000, y);
+        expect_draw(resized > 36.0);
+    }
+    f.hover(f.edge_x - 100, 300);
+    expect_draw(state.stem_lane_resize_hover_lane == 0);
+}
+
+TEST_CASE("Stem lane edge band leaves stem point presses inside the lane alone",
+          "[frontend-state][event-harness][bmson-stem][resize]") {
+    stem_edge_fixture_t f;
+    auto& state = worm_ui_nuklear_compose_state();
+    f.harness.view().compose.note_paint_mode_active = true;
+    (void)f.harness.frame();
+    const auto from = f.point(f.edge_x - 12, 300);
+    const std::array down{motion_event(from.first, from.second), button_event(true, from.first, from.second)};
+    const std::array up{motion_event(from.first, from.second), button_event(false, from.first, from.second)};
+    const std::vector<workspace_action_snapshot_t> frames{f.harness.frame(down), f.harness.frame(up)};
+    expect_draw(!state.stem_lane_resize.has_value());
+    expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE) == 1);
+    expect_draw(f.width() == 36.0);
+}
+
+TEST_CASE("Stem lane edge double click resets the width at any height",
+          "[frontend-state][event-harness][bmson-stem][resize]") {
+    stem_edge_fixture_t f;
+    (void)f.press(f.edge_x, 300);
+    f.drag_to(f.edge_x + 80, 300);
+    f.release(f.edge_x + 80, 300);
+    expect_draw(f.width() > 100.0);
+    const auto p = f.point(f.edge_x, 420);
+    auto down = button_event(true, p.first, p.second);
+    auto up = button_event(false, p.first, p.second);
+    down.button.clicks = 2;
+    up.button.clicks = 2;
+    const std::array events{motion_event(p.first, p.second), down, up};
+    (void)f.harness.frame(events);
+    expect_draw(f.width() == 36.0);
+}

@@ -420,6 +420,7 @@ void worm_ui_nuklear_cancel_stem_lane_resize(worm_ui_nuklear_compose_state_t& st
     }
     state.stem_lane_resize.reset();
     state.stem_lane_resize_cursor_requested = false;
+    state.stem_lane_resize_hover_lane = 0;
 }
 void worm_ui_nuklear_cancel_stale_stem_lane_resize(worm_ui_nuklear_compose_state_t& state,
     const WormUiComposeView& view, bool window_focused) {

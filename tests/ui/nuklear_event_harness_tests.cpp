@@ -403,11 +403,11 @@ TEST_CASE("Headless frontend new-project wizard cancel closes and permits reopen
     static_cast<void>(harness.frame());
     REQUIRE(worm_ui_frontend_request_new_project());
     static_cast<void>(harness.frame());
+    static_cast<void>(harness.frame());  // The dialog fits its content on its second frame.
 
-    // The wizard is centered at (230,258), 500x204. Its last row begins at y=366;
-    // the button centers are in the two 242px columns at y=406.
-    constexpr float button_y = 406.0f;
-    const auto cancel_actions = click_at(harness, 350.0f, button_y);
+    const auto cancel = harness.drawn_text_center("Cancel");
+    REQUIRE(cancel);
+    const auto cancel_actions = click_at(harness, cancel->first, cancel->second);
     CHECK(cancel_actions[0].get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
     CHECK(worm_ui_frontend_request_new_project());
 }
@@ -419,8 +419,11 @@ TEST_CASE("Headless frontend new-project wizard creates the default 7K layout",
     static_cast<void>(harness.frame());
     REQUIRE(worm_ui_frontend_request_new_project());
     static_cast<void>(harness.frame());
+    static_cast<void>(harness.frame());  // The dialog fits its content on its second frame.
 
-    const auto create_actions = click_at(harness, 610.0f, 406.0f);
+    const auto create = harness.drawn_text_center("Create project");
+    REQUIRE(create);
+    const auto create_actions = click_at(harness, create->first, create->second);
     CHECK(create_actions[0].get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
     CHECK(create_actions[0].get().new_project_layout_index == 3);
 }

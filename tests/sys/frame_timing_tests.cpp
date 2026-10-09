@@ -6133,9 +6133,10 @@ TEST_CASE("Mixed quantize projects BGM hold ghosts and refreshes a BGM-only sele
     chart.measures.front().notes.resize(1);
     chart.measures.front().notes.front().position.row = 130;
     const auto id = chart.measures.front().notes.front().id;
-    chart.bgm_source_lanes.push_back({.id = object_id_t{90001}, .source_order = 0});
+    for (std::uint64_t i = 0; i < 50; ++i)
+        chart.bgm_source_lanes.push_back({.id = object_id_t{100000 + i}, .source_order = i});
     chart.measures.front().bgm_events.push_back({.id = object_id_t{90002}, .position = {measure_id_t{1}, 130},
-        .source_lane = object_id_t{90001}, .end = local_position_t{measure_id_t{1}, 610}});
+        .source_lane = object_id_t{100000}, .end = local_position_t{measure_id_t{1}, 610}});
     compose_test_fixture_t fixture{std::move(song)};
     fixture.project();
     fixture.interaction->selected_notes = {id};
@@ -6154,6 +6155,18 @@ TEST_CASE("Mixed quantize projects BGM hold ghosts and refreshes a BGM-only sele
     expect_compose_test(view.quantize_preview_row_count == 1 && view.quantize_preview_rows[0].bgm);
     expect_compose_test(view.quantize_ghost_count == 1 && view.quantize_ghosts[0].has_tail);
     expect_compose_test(view.quantize_ghosts[0].before_head.left >= view.playable_field_right_pixels);
+    const auto chart_id = fixture.history.document.charts.front().id.value;
+    fixture.application.bgm_horizontal_scroll_pixels[chart_id] = 12.0;
+    fixture.project();
+    const auto& clipped = fixture.flattened.view.compose;
+    expect_compose_test(clipped.quantize_ghost_count == 1 &&
+        clipped.quantize_ghosts[0].before_head.left == clipped.playable_field_right_pixels);
+    expect_compose_test(clipped.quantize_ghosts[0].before_head.right - clipped.quantize_ghosts[0].before_head.left == 24.0);
+    fixture.application.bgm_horizontal_scroll_pixels[chart_id] = 36.0;
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);
+    fixture.application.bgm_horizontal_scroll_pixels[chart_id] = 0.0;
+    fixture.project();
     expect_compose_test(fixture.history.undo.empty());
     dispatch_t437_quantize_settings(fixture, quantization_tie_t::earlier,
         quantization_hold_t::both_endpoints, 4, quantization_space_t::standard_measure, true);

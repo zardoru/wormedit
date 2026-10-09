@@ -818,7 +818,7 @@ TEST_CASE("Compose area quantize records the applied report rows", "[compose-act
     fixture.state.selected_notes = {object_id_t{10}};
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE);
     action.compose_quantize_divisions = 4;
-    require_action(fixture.dispatch(action) == "Selected notes quantized.");
+    require_action(fixture.dispatch(action) == "Selected objects quantized.");
     require_action(fixture.application.quantize_applied_report.has_value());
     check_action(fixture.application.quantize_applied_report->rows.size() == 1);
     check_action(fixture.application.quantize_applied_report->total_rows == 1);

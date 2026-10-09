@@ -3172,7 +3172,11 @@ auto bgm_quantize_ghost(const WormUiComposeQuantizeReportRowView& report,
     auto left = request.bgm_pane_left_pixels - request.bgm_horizontal_scroll_pixels;
     for (std::size_t i = 0; i < lane_index; ++i)
         left += wormedit::editor_bgm_lane_width_pixels(chart, request, i);
-    const auto right = left + wormedit::editor_bgm_lane_width_pixels(chart, request, lane_index);
+    const auto pane_right = request.bgm_pane_left_pixels + request.bgm_pane_width_pixels;
+    const auto unclipped_right = left + wormedit::editor_bgm_lane_width_pixels(chart, request, lane_index);
+    if (unclipped_right <= request.bgm_pane_left_pixels || left >= pane_right) return std::nullopt;
+    left = std::max(left, request.bgm_pane_left_pixels);
+    const auto right = std::min(unclipped_right, pane_right);
     const quantize_lane_geometry_t bounds{left, right, wormedit::lane_glyph_t::bar};
     const auto direction = downscroll ? wormedit::editor_field_scroll_direction_t::down
                                       : wormedit::editor_field_scroll_direction_t::up;

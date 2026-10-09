@@ -1086,7 +1086,7 @@ TEST_CASE("Compose area actions reject stale sources and extreme rows atomically
 TEST_CASE("Compose area quantization changes selected notes only", "[unit][sys][commands]") {
     AreaFixture fixture;
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
-    CHECK(fixture.dispatch() == "Selected notes quantized.");
+    CHECK(fixture.dispatch() == "Selected objects quantized.");
     const auto& chart = fixture.history.document.charts.front();
     CHECK(chart.measures.front().notes[0].position.row == 240);
     CHECK(chart.measures.front().notes[1].position.row == 480);
@@ -1195,7 +1195,7 @@ TEST_CASE("Compose area quantization rejects ambiguous identities without edits"
     const auto revision = fixture.history.document.revision;
     const auto position = chart.measures.front().notes.front().position;
     fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
-    CHECK(fixture.dispatch().find("identities overlap") != std::string::npos);
+    CHECK(fixture.dispatch().find("reuses an object ID") != std::string::npos);
     CHECK(fixture.history.document.revision == revision);
     CHECK(chart.measures.front().notes.front().position == position);
     CHECK(chart.bpms.back().id == wormedit::object_id_t{1});

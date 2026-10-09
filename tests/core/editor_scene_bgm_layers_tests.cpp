@@ -301,3 +301,52 @@ TEST_CASE("BGM paint rejects a stale gesture after a document edit",
     CHECK(history.document.charts.front().measures.front().bgm_events[0].semantic_layers ==
           std::vector{layer_id_t{7}});
 }
+
+TEST_CASE("BGM hold tails remain visible with offscreen heads through the bounded index",
+          "[unit][core][editor-scene][bgm][t423-tail]") {
+    auto chart = layered_bgm_chart();
+    auto& events = chart.measures.front().bgm_events;
+    events = {{.id = object_id_t{20}, .position = {measure_id_t{1}, 0},
+               .source_lane = object_id_t{30}, .end = local_position_t{measure_id_t{1}, 900}}};
+    const auto index = scene_index(chart);
+    auto view = scene_view();
+    view.viewport_scroll_pixels = 100;
+    view.viewport_height_pixels = 64;
+    view.selected_objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{20}}};
+    editor_field_scene_request_t request{
+        .field_width_pixels = 192, .bgm_pane_left_pixels = 192, .bgm_pane_width_pixels = 36};
+    const auto result = make_editor_field_scene(chart, index, view, request);
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    require_layer_brush(result);
+    require_layer_brush(result.scene->bgm_events.size() == 1);
+    const auto& geometry = result.scene->bgm_events.front();
+    CHECK(geometry.has_tail);
+    CHECK(geometry.selected);
+    CHECK(geometry.head_bounds.bottom < 0);
+    CHECK(geometry.bounds.bottom > view.viewport_height_pixels);
+}
+
+TEST_CASE("BGM interval queries skip large populations of expired heads",
+          "[unit][core][editor-scene][bgm][t423-tail]") {
+    auto chart = layered_bgm_chart();
+    chart.divisions_per_standard_measure = 100000;
+    auto& events = chart.measures.front().bgm_events;
+    events.clear();
+    for (std::uint64_t row = 0; row < 50000; ++row)
+        events.push_back({.id = object_id_t{row + 100}, .position = {measure_id_t{1}, row},
+                          .source_lane = object_id_t{30}});
+    events.front().end = local_position_t{measure_id_t{1}, 99000};
+    const auto index = scene_index(chart);
+    auto view = scene_view();
+    view.pixels_per_standard_measure = 1000;
+    view.viewport_scroll_pixels = 900;
+    view.viewport_height_pixels = 64;
+    editor_field_scene_request_t request{
+        .field_width_pixels = 192, .bgm_pane_left_pixels = 192, .bgm_pane_width_pixels = 36};
+    request.maximum_composition_operations = 512;
+    const auto result = make_editor_field_scene(chart, index, view, request);
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    require_layer_brush(result);
+    require_layer_brush(result.scene->bgm_events.size() == 1);
+    CHECK(result.scene->bgm_events.front().event == object_id_t{100});
+}

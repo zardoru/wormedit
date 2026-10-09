@@ -3,6 +3,7 @@
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/sound_slice.h>
 #include <wormedit/formats/bmson.h>
+#include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -306,8 +307,247 @@ auto ambiguous_empty_stem_binding_rejects() -> bool {
            !result && history.document.revision == revision && history.undo.empty();
 }
 
-void expect_bmson_core(bool condition) {
-    REQUIRE(condition);
+template <typename T>
+void expect_bmson_core(const T& condition) {
+    REQUIRE(static_cast<bool>(condition));
+}
+
+auto same_sound_slices(const wormedit::sound_slice_result_t& left,
+                       const wormedit::sound_slice_result_t& right) -> bool {
+    if (!left || !right || left.slices.size() != right.slices.size()) return false;
+    for (std::size_t index = 0; index < left.slices.size(); ++index) {
+        const auto& a = left.slices[index];
+        const auto& b = right.slices[index];
+        if (a.absolute_row != b.absolute_row || a.source_begin_frame != b.source_begin_frame ||
+            a.source_end_frame != b.source_end_frame || a.restart != b.restart ||
+            a.events != b.events) return false;
+    }
+    return true;
+}
+
+auto layered_bmson_tap_roundtrip_is_stable() -> bool {
+    auto song = fixture();
+    auto& chart = song.charts.front();
+    chart.semantic_layers.push_back({.id = wormedit::layer_id_t{7010}, .name = "Tap layer"});
+    const auto marker_measure = std::ranges::find_if(chart.measures,
+        [](const auto& item) { return !item.bgm_events.empty(); });
+    if (marker_measure == chart.measures.end()) return false;
+    auto& marker = marker_measure->bgm_events.front();
+    if (!marker.sound_channel_event) return false;
+    marker.semantic_layers = {wormedit::layer_id_t{7010}};
+    const auto marker_id = marker.id;
+    const auto source_id = *marker.sound_channel_event;
+    const auto lane = chart.lane_layouts.front().layout.lanes.front().id;
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto chart_id = history.document.charts.front().id;
+    if (!wormedit::assign_bmson_sound_event(history, history.document.revision, chart_id,
+                                             marker_id, lane)) return false;
+    const auto note_measure = std::ranges::find_if(history.document.charts.front().measures,
+        [marker_id](const auto& item) {
+            return std::ranges::any_of(item.notes,
+                [marker_id](const auto& note) { return note.id == marker_id; });
+        });
+    if (note_measure == history.document.charts.front().measures.end()) return false;
+    const auto note = std::ranges::find(note_measure->notes, marker_id, &wormedit::note_t::id);
+    if (note == note_measure->notes.end() || note->kind != wormedit::note_kind_t::tap ||
+        note->semantic_layers != std::vector{wormedit::layer_id_t{7010}} ||
+        note->sound_channel_event != source_id) return false;
+    const auto revision = history.document.revision;
+    const auto stable = wormedit::write_native_project(history.document);
+    if (!stable.bytes || wormedit::assign_bmson_sound_event(history, revision, chart_id,
+        marker_id, lane).applied || history.document.revision != revision) return false;
+    const auto unchanged = wormedit::write_native_project(history.document);
+    if (!unchanged.bytes || *unchanged.bytes != *stable.bytes) return false;
+    if (!wormedit::assign_bmson_sound_event(history, revision, chart_id, marker_id,
+                                             std::nullopt)) return false;
+    const auto restored = std::ranges::find_if(history.document.charts.front().measures,
+        [marker_id](const auto& item) {
+            return std::ranges::any_of(item.bgm_events,
+                [marker_id](const auto& event) { return event.id == marker_id; });
+        });
+    if (restored == history.document.charts.front().measures.end()) return false;
+    const auto bgm = std::ranges::find(restored->bgm_events, marker_id,
+                                       &wormedit::bgm_event_t::id);
+    if (bgm == restored->bgm_events.end() || bgm->semantic_layers !=
+        std::vector{wormedit::layer_id_t{7010}} || !wormedit::undo_document_command(history) ||
+        !wormedit::redo_document_command(history)) return false;
+    const auto redone = std::ranges::find_if(history.document.charts.front().measures,
+        [marker_id](const auto& item) {
+            return std::ranges::any_of(item.bgm_events,
+                [marker_id](const auto& event) { return event.id == marker_id; });
+        });
+    return redone != history.document.charts.front().measures.end() &&
+        std::ranges::find(redone->bgm_events, marker_id, &wormedit::bgm_event_t::id)->semantic_layers ==
+            std::vector{wormedit::layer_id_t{7010}};
+}
+
+auto assignment_rejects_mismatched_hold_end() -> bool {
+    auto song = fixture();
+    auto& chart = song.charts.front();
+    auto measure = std::ranges::find_if(chart.measures,
+        [](const auto& item) { return !item.bgm_events.empty(); });
+    if (measure == chart.measures.end()) return false;
+    auto& marker = measure->bgm_events.front();
+    if (!marker.sound_channel_event) return false;
+    const auto source_id = *marker.sound_channel_event;
+    const auto source_channel = std::ranges::find_if(chart.sound_channels, [&](const auto& item) {
+        return std::ranges::any_of(item.events,
+            [source_id](const auto& event) { return event.id == source_id; });
+    });
+    if (source_channel == chart.sound_channels.end()) return false;
+    const auto source = std::ranges::find(source_channel->events, source_id,
+                                           &wormedit::sound_channel_event_t::id);
+    if (source == source_channel->events.end()) return false;
+    source->end = wormedit::local_position_t{marker.position.measure, marker.position.row + 120};
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto revision = history.document.revision;
+    const auto result = wormedit::assign_bmson_sound_event(history, revision,
+        history.document.charts.front().id, marker.id,
+        history.document.charts.front().lane_layouts.front().layout.lanes.front().id);
+    return !result && history.document.revision == revision && history.undo.empty();
+}
+
+auto assignment_rejects_nonplain_note(int metadata_kind) -> bool {
+    auto song = fixture();
+    auto& chart = song.charts.front();
+    auto measure = std::ranges::find_if(chart.measures,
+        [](const auto& item) { return !item.notes.empty(); });
+    if (measure == chart.measures.end()) return false;
+    auto note = std::ranges::find_if(measure->notes,
+        [](const auto& item) { return item.sound_channel_event.has_value(); });
+    if (note == measure->notes.end()) return false;
+    const auto id = note->id;
+    if (metadata_kind == 0) note->label = "unsupported label";
+    else if (metadata_kind == 1) note->branch = wormedit::branch_id_t{7011};
+    else note->kind = wormedit::note_kind_t::fake;
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto revision = history.document.revision;
+    const auto result = wormedit::assign_bmson_sound_event(history, revision,
+        history.document.charts.front().id, id,
+        history.document.charts.front().lane_layouts.front().layout.lanes.back().id);
+    return !result && history.document.revision == revision && history.undo.empty();
+}
+
+auto assignment_rejects_stale_revision() -> bool {
+    auto history = wormedit::make_document_history(fixture());
+    const auto& chart = history.document.charts.front();
+    const auto measure = std::ranges::find_if(chart.measures,
+        [](const auto& item) { return !item.bgm_events.empty(); });
+    if (measure == chart.measures.end()) return false;
+    const auto revision = history.document.revision;
+    const auto result = wormedit::assign_bmson_sound_event(history, revision + 1, chart.id,
+        measure->bgm_events.front().id, chart.lane_layouts.front().layout.lanes.front().id);
+    return !result && history.document.revision == revision && history.undo.empty();
+}
+
+auto assignment_rejects_hold_layout_role(wormedit::lane_role_t role, bool at_transition,
+                                         bool lane_missing = false) -> bool {
+    auto song = fixture();
+    auto& chart = song.charts.front();
+    const auto measure = std::ranges::find_if(chart.measures,
+        [](const auto& item) { return !item.bgm_events.empty(); });
+    if (measure == chart.measures.end()) return false;
+    auto& marker = measure->bgm_events.front();
+    if (!marker.sound_channel_event) return false;
+    const auto lane = chart.lane_layouts.front().layout.lanes.front().id;
+    marker.end = wormedit::local_position_t{marker.position.measure, marker.position.row + 120};
+    auto channel = std::ranges::find_if(chart.sound_channels, [&](const auto& item) {
+        return std::ranges::any_of(item.events, [&](const auto& event) {
+            return event.id == *marker.sound_channel_event;
+        });
+    });
+    if (channel == chart.sound_channels.end()) return false;
+    const auto source = std::ranges::find(channel->events, *marker.sound_channel_event,
+        &wormedit::sound_channel_event_t::id);
+    if (source == channel->events.end()) return false;
+    source->end = marker.end;
+    auto segment = chart.lane_layouts.front();
+    segment.id = wormedit::object_id_t{7012};
+    segment.position.measure = marker.position.measure;
+    segment.position.row = marker.position.row + (at_transition ? 60 : 120);
+    const auto changed = std::ranges::find(segment.layout.lanes, lane,
+                                            &wormedit::lane_definition_t::id);
+    if (changed == segment.layout.lanes.end()) return false;
+    if (lane_missing) segment.layout.lanes.erase(changed);
+    else changed->role = role;
+    chart.lane_layouts.push_back(std::move(segment));
+    if (at_transition) {
+        auto restored_layout = chart.lane_layouts.front();
+        restored_layout.id = wormedit::object_id_t{7014};
+        restored_layout.position = *marker.end;
+        chart.lane_layouts.push_back(std::move(restored_layout));
+    }
+    std::ranges::sort(chart.lane_layouts, [](const auto& left, const auto& right) {
+        return left.position.measure == right.position.measure
+            ? left.position.row < right.position.row
+            : left.position.measure.value < right.position.measure.value;
+    });
+    if (!wormedit::validate_document(song).empty()) return false;
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto revision = history.document.revision;
+    const auto before = wormedit::write_native_project(history.document);
+    if (!before.bytes) return false;
+    const auto result = wormedit::assign_bmson_sound_event(history, revision,
+        history.document.charts.front().id, marker.id, lane);
+    const auto after = wormedit::write_native_project(history.document);
+    return !result && !result.diagnostics.empty() &&
+        result.diagnostics.front().code == wormedit::diagnostic_code_t::unknown_lane &&
+        history.document.revision == revision && history.undo.empty() && after.bytes &&
+        *after.bytes == *before.bytes;
+}
+
+auto tap_assignment_rejects_hold_span(int tail_offset) -> bool {
+    auto song = fixture();
+    auto& chart = song.charts.front();
+    const auto measure = std::ranges::find_if(chart.measures,
+        [](const auto& item) { return !item.bgm_events.empty(); });
+    if (measure == chart.measures.end()) return false;
+    const auto marker = measure->bgm_events.front();
+    const auto lane = chart.lane_layouts.front().layout.lanes.front().id;
+    const auto begin = marker.position.row - 60;
+    measure->notes.push_back({.id = wormedit::object_id_t{7013},
+        .position = {marker.position.measure, begin}, .lane = lane,
+        .kind = wormedit::note_kind_t::hold,
+        .end = wormedit::local_position_t{marker.position.measure,
+                                          marker.position.row + tail_offset}});
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto revision = history.document.revision;
+    const auto result = wormedit::assign_bmson_sound_event(history, revision,
+        history.document.charts.front().id, marker.id, lane);
+    return !result && !result.diagnostics.empty() &&
+        result.diagnostics.front().code == wormedit::diagnostic_code_t::collision &&
+        history.document.revision == revision && history.undo.empty();
+}
+
+auto assignment_rejects_invalid_hold_end(int shape) -> bool {
+    auto song = fixture();
+    auto& chart = song.charts.front();
+    const auto measure = std::ranges::find_if(chart.measures,
+        [](const auto& item) { return !item.bgm_events.empty(); });
+    if (measure == chart.measures.end()) return false;
+    auto& marker = measure->bgm_events.front();
+    if (!marker.sound_channel_event) return false;
+    if (shape == 0) marker.end = marker.position;
+    else if (shape == 1)
+        marker.end = wormedit::local_position_t{marker.position.measure,
+                                                marker.position.row - 1};
+    else marker.end = wormedit::local_position_t{chart.measures.back().id, 999'999};
+    const auto source_id = *marker.sound_channel_event;
+    const auto channel = std::ranges::find_if(chart.sound_channels, [&](const auto& item) {
+        return std::ranges::any_of(item.events,
+            [source_id](const auto& event) { return event.id == source_id; });
+    });
+    if (channel == chart.sound_channels.end()) return false;
+    const auto source = std::ranges::find(channel->events, source_id,
+        &wormedit::sound_channel_event_t::id);
+    if (source == channel->events.end()) return false;
+    source->end = marker.end;
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto revision = history.document.revision;
+    const auto result = wormedit::assign_bmson_sound_event(history, revision,
+        history.document.charts.front().id, marker.id,
+        history.document.charts.front().lane_layouts.front().layout.lanes.front().id);
+    return !result && history.document.revision == revision && history.undo.empty();
 }
 
 } // namespace
@@ -365,6 +605,369 @@ TEST_CASE("BMSON linked sound can move between BGM and a playable lane",
     CHECK(std::ranges::find(history.document.charts.front().measures[measure_index].notes, bgm.id,
                             &wormedit::note_t::id) !=
           history.document.charts.front().measures[measure_index].notes.end());
+}
+
+TEST_CASE("BMSON linked taps retain semantic layers across undo, redo and no-op assignment",
+          "[unit][core][bmson][assignment][layers]") {
+    expect_bmson_core(layered_bmson_tap_roundtrip_is_stable());
+}
+
+TEST_CASE("BMSON linked assignment rejects stale and unsupported metadata atomically",
+          "[unit][core][bmson][assignment][validation]") {
+    expect_bmson_core(assignment_rejects_mismatched_hold_end());
+    expect_bmson_core(assignment_rejects_nonplain_note(0));
+    expect_bmson_core(assignment_rejects_nonplain_note(1));
+    expect_bmson_core(assignment_rejects_nonplain_note(2));
+    expect_bmson_core(assignment_rejects_stale_revision());
+}
+
+TEST_CASE("BMSON holds require editable lanes through every inclusive layout band",
+          "[unit][core][bmson][assignment][layout]") {
+    using role = wormedit::lane_role_t;
+    expect_bmson_core(assignment_rejects_hold_layout_role(role::autoplay, false));
+    expect_bmson_core(assignment_rejects_hold_layout_role(role::invisible, true));
+    expect_bmson_core(assignment_rejects_hold_layout_role(role::mine, false));
+    expect_bmson_core(assignment_rejects_hold_layout_role(role::scratch, true, true));
+}
+
+TEST_CASE("BMSON taps remain blocked inside and at the tail of existing holds",
+          "[unit][core][bmson][assignment][collision]") {
+    expect_bmson_core(tap_assignment_rejects_hold_span(60));
+    expect_bmson_core(tap_assignment_rejects_hold_span(0));
+}
+
+TEST_CASE("BMSON linked holds reject zero, reversed and out-of-chart ends",
+          "[unit][core][bmson][assignment][hold]") {
+    expect_bmson_core(assignment_rejects_invalid_hold_end(0));
+    expect_bmson_core(assignment_rejects_invalid_hold_end(1));
+    expect_bmson_core(assignment_rejects_invalid_hold_end(2));
+}
+
+TEST_CASE("BMSON linked hold keeps its end and semantic layers through lane assignment",
+          "[unit][core][bmson][assignment][hold]") {
+    auto song = fixture();
+    song.audio_assets.front().stream = {48'000, 2, 200'000, true};
+    auto& chart = song.charts.front();
+    auto measure = std::ranges::find_if(chart.measures,
+        [](const auto& item) { return !item.bgm_events.empty(); });
+    expect_bmson_core(measure != chart.measures.end());
+    auto& bgm = measure->bgm_events.front();
+    expect_bmson_core(bgm.sound_channel_event);
+    chart.semantic_layers.push_back({.id = wormedit::layer_id_t{7001}, .name = "Hold layer"});
+    const auto source_id = *bgm.sound_channel_event;
+    auto source_channel = std::ranges::find_if(chart.sound_channels, [&](const auto& item) {
+        return std::ranges::any_of(item.events,
+            [&](const auto& value) { return value.id == source_id; });
+    });
+    expect_bmson_core(source_channel != chart.sound_channels.end());
+    const auto channel_id = source_channel->id;
+    const auto source_clip = source_channel->source_clip;
+    const auto source = std::ranges::find(source_channel->events, source_id,
+                                           &wormedit::sound_channel_event_t::id);
+    expect_bmson_core(source != source_channel->events.end());
+    const auto source_before = *source;
+    const auto end = wormedit::local_position_t{bgm.position.measure, bgm.position.row + 120};
+    bgm.end = end;
+    bgm.semantic_layers = {wormedit::layer_id_t{7001}};
+    source->end = end;
+    const auto before_slices = wormedit::derive_sound_channel_slices(
+        chart, *source_channel, 48'000, 200'000);
+    const auto event = bgm;
+    const auto lane = chart.lane_layouts.front().layout.lanes.front().id;
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto chart_id = history.document.charts.front().id;
+    expect_bmson_core(wormedit::assign_bmson_sound_event(history, history.document.revision, chart_id,
+                                               event.id, lane));
+    const auto& playable_chart = history.document.charts.front();
+    const auto note = std::ranges::find_if(playable_chart.measures, [&](const auto& item) {
+        return std::ranges::any_of(item.notes, [&](const auto& value) { return value.id == event.id; });
+    });
+    expect_bmson_core(note != playable_chart.measures.end());
+    const auto hold = std::ranges::find(note->notes, event.id, &wormedit::note_t::id);
+    expect_bmson_core(hold != note->notes.end());
+    expect_bmson_core(hold->kind == wormedit::note_kind_t::hold);
+    expect_bmson_core(hold->end == event.end);
+    expect_bmson_core(hold->semantic_layers == event.semantic_layers);
+    const auto changed_channel = std::ranges::find_if(playable_chart.sound_channels,
+        [&](const auto& item) { return item.id == channel_id; });
+    expect_bmson_core(changed_channel != playable_chart.sound_channels.end());
+    expect_bmson_core(changed_channel->source_clip.id == source_clip.id);
+    expect_bmson_core(changed_channel->source_clip.source == source_clip.source);
+    expect_bmson_core(changed_channel->source_clip.begin_frame == source_clip.begin_frame);
+    expect_bmson_core(changed_channel->source_clip.end_frame == source_clip.end_frame);
+    const auto after_slices = wormedit::derive_sound_channel_slices(
+        playable_chart, *changed_channel, 48'000, 200'000);
+    expect_bmson_core(same_sound_slices(before_slices, after_slices));
+    const auto changed_source = std::ranges::find(changed_channel->events, source_id,
+        &wormedit::sound_channel_event_t::id);
+    expect_bmson_core(changed_source != changed_channel->events.end());
+    expect_bmson_core(changed_source->end == event.end);
+    expect_bmson_core(changed_source->continuation == source_before.continuation);
+    expect_bmson_core(changed_source->provenance.family == source_before.provenance.family &&
+        changed_source->provenance.profile == source_before.provenance.profile &&
+        changed_source->provenance.source_field == source_before.provenance.source_field &&
+        changed_source->provenance.source_spelling == source_before.provenance.source_spelling &&
+        changed_source->provenance.source_order == source_before.provenance.source_order);
+    expect_bmson_core(wormedit::assign_bmson_sound_event(history, history.document.revision, chart_id,
+                                               event.id, std::nullopt));
+    const auto restored = std::ranges::find_if(history.document.charts.front().measures,
+        [&](const auto& item) {
+            return std::ranges::any_of(item.bgm_events,
+                [&](const auto& value) { return value.id == event.id; });
+        });
+    expect_bmson_core(restored != history.document.charts.front().measures.end());
+    const auto marker = std::ranges::find(restored->bgm_events, event.id,
+                                          &wormedit::bgm_event_t::id);
+    expect_bmson_core(marker != restored->bgm_events.end());
+    expect_bmson_core(marker->end == event.end);
+    expect_bmson_core(marker->semantic_layers == event.semantic_layers);
+    expect_bmson_core(wormedit::undo_document_command(history));
+    const auto undone = std::ranges::find_if(history.document.charts.front().measures,
+        [&](const auto& item) {
+            return std::ranges::any_of(item.notes,
+                [&](const auto& value) { return value.id == event.id; });
+        });
+    expect_bmson_core(undone != history.document.charts.front().measures.end());
+    expect_bmson_core(std::ranges::find(undone->notes, event.id, &wormedit::note_t::id)->end == event.end);
+    expect_bmson_core(wormedit::redo_document_command(history));
+    const auto redone = std::ranges::find_if(history.document.charts.front().measures,
+        [&](const auto& item) {
+            return std::ranges::any_of(item.bgm_events,
+                [&](const auto& value) { return value.id == event.id; });
+        });
+    expect_bmson_core(redone != history.document.charts.front().measures.end());
+    const auto redone_marker = std::ranges::find(redone->bgm_events, event.id,
+        &wormedit::bgm_event_t::id);
+    expect_bmson_core(redone_marker != redone->bgm_events.end());
+    expect_bmson_core(redone_marker->end == event.end);
+    expect_bmson_core(redone_marker->semantic_layers == event.semantic_layers);
+}
+
+TEST_CASE("BMSON marker moves translate linked hold ends across measures",
+          "[unit][core][bmson][marker][hold]") {
+    auto song = fixture();
+    auto& chart = song.charts.front();
+    expect_bmson_core(chart.measures.size() >= 2);
+    auto measure = std::ranges::find_if(chart.measures,
+        [](const auto& item) { return !item.bgm_events.empty(); });
+    expect_bmson_core(measure != chart.measures.end());
+    const auto original = measure->bgm_events.front();
+    expect_bmson_core(original.sound_channel_event);
+    const auto measure_offset = static_cast<std::size_t>(measure - chart.measures.begin());
+    expect_bmson_core(measure_offset + 1 < chart.measures.size());
+    auto channel = std::ranges::find_if(chart.sound_channels, [&](const auto& item) {
+        return std::ranges::any_of(item.events,
+            [&](const auto& source) { return source.id == *original.sound_channel_event; });
+    });
+    expect_bmson_core(channel != chart.sound_channels.end());
+    auto source = std::ranges::find(channel->events, *original.sound_channel_event,
+                                     &wormedit::sound_channel_event_t::id);
+    expect_bmson_core(source != channel->events.end());
+    const auto original_end = wormedit::local_position_t{
+        original.position.measure, original.position.row + 120};
+    measure->bgm_events.front().end = original_end;
+    source->end = original_end;
+    const auto channel_id = channel->id;
+    const auto chart_id = chart.id;
+    const auto next_measure = chart.measures[measure_offset + 1].id;
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto destination = wormedit::local_position_t{next_measure, 120};
+    expect_bmson_core(wormedit::move_bmson_bgm_marker(history, history.document.revision, chart_id,
+                                            original.id, destination));
+    const auto& moved_chart = history.document.charts.front();
+    const auto moved_marker_measure = std::ranges::find_if(moved_chart.measures,
+        [&](const auto& item) {
+            return std::ranges::any_of(item.bgm_events,
+                [&](const auto& value) { return value.id == original.id; });
+        });
+    expect_bmson_core(moved_marker_measure != moved_chart.measures.end());
+    const auto moved = std::ranges::find(moved_marker_measure->bgm_events, original.id,
+                                          &wormedit::bgm_event_t::id);
+    expect_bmson_core(moved != moved_marker_measure->bgm_events.end());
+    expect_bmson_core(moved->position == destination);
+    expect_bmson_core(moved->end == (wormedit::local_position_t{next_measure, 240}));
+    const auto translated_end = moved->end;
+    const auto moved_channel = std::ranges::find_if(moved_chart.sound_channels,
+        [&](const auto& item) { return item.id == channel_id; });
+    expect_bmson_core(moved_channel != moved_chart.sound_channels.end());
+    const auto moved_source = std::ranges::find(moved_channel->events,
+        *original.sound_channel_event, &wormedit::sound_channel_event_t::id);
+    expect_bmson_core(moved_source != moved_channel->events.end());
+    expect_bmson_core(moved_source->position == destination);
+    expect_bmson_core(moved_source->end == moved->end);
+    const auto moved_revision = history.document.revision;
+    const auto tail_overflow = wormedit::local_position_t{moved_chart.measures.back().id, 900};
+    const auto built_index = wormedit::build_measure_index(moved_chart);
+    expect_bmson_core(std::holds_alternative<wormedit::measure_index_t>(built_index));
+    const auto& index = std::get<wormedit::measure_index_t>(built_index);
+    const auto tail_head_row = wormedit::absolute_row(index, tail_overflow);
+    const auto moved_head_row = wormedit::absolute_row(index, moved->position);
+    const auto moved_end_row = wormedit::absolute_row(index, *moved->end);
+    expect_bmson_core(tail_head_row && moved_head_row && moved_end_row);
+    const auto hold_length = *moved_end_row - *moved_head_row;
+    expect_bmson_core(*tail_head_row < index.total_rows &&
+                      index.total_rows - *tail_head_row < hold_length);
+    const auto unchanged = wormedit::write_native_project(history.document);
+    expect_bmson_core(unchanged.bytes.has_value());
+    const auto rejected_tail = wormedit::move_bmson_bgm_marker(
+        history, moved_revision, chart_id, original.id, tail_overflow);
+    expect_bmson_core(!rejected_tail && !rejected_tail.diagnostics.empty() &&
+        rejected_tail.diagnostics.front().code == wormedit::diagnostic_code_t::row_out_of_range);
+    expect_bmson_core(history.document.revision == moved_revision);
+    expect_bmson_core(history.undo.size() == 1);
+    const auto after_reject = wormedit::write_native_project(history.document);
+    expect_bmson_core(after_reject.bytes && *after_reject.bytes == *unchanged.bytes);
+    expect_bmson_core(wormedit::move_bmson_bgm_marker(history, moved_revision, chart_id, original.id,
+                                            original.position));
+    const auto reversed = std::ranges::find_if(history.document.charts.front().measures,
+        [&](const auto& item) {
+            return std::ranges::any_of(item.bgm_events,
+                [&](const auto& value) { return value.id == original.id; });
+        });
+    expect_bmson_core(reversed != history.document.charts.front().measures.end());
+    expect_bmson_core(std::ranges::find(reversed->bgm_events, original.id,
+          &wormedit::bgm_event_t::id)->end == original_end);
+    expect_bmson_core(wormedit::undo_document_command(history));
+    const auto restored = std::ranges::find_if(history.document.charts.front().measures,
+        [&](const auto& item) {
+            return std::ranges::any_of(item.bgm_events,
+                [&](const auto& value) { return value.id == original.id; });
+        });
+    expect_bmson_core(restored != history.document.charts.front().measures.end());
+    expect_bmson_core(std::ranges::find(restored->bgm_events, original.id,
+          &wormedit::bgm_event_t::id)->end == translated_end);
+    expect_bmson_core(wormedit::redo_document_command(history));
+    const auto redone = std::ranges::find_if(history.document.charts.front().measures,
+        [&](const auto& item) {
+            return std::ranges::any_of(item.bgm_events,
+                [&](const auto& value) { return value.id == original.id; });
+        });
+    expect_bmson_core(redone != history.document.charts.front().measures.end());
+    expect_bmson_core(std::ranges::find(redone->bgm_events, original.id,
+          &wormedit::bgm_event_t::id)->end == original_end);
+}
+
+TEST_CASE("BMSON linked hold lane changes update the note in place",
+          "[unit][core][bmson][assignment][hold]") {
+    auto song = fixture();
+    auto& chart = song.charts.front();
+    auto measure = std::ranges::find_if(chart.measures,
+        [](const auto& item) { return !item.notes.empty(); });
+    expect_bmson_core(measure != chart.measures.end());
+    auto note = std::ranges::find_if(measure->notes,
+        [](const auto& item) { return item.sound_channel_event.has_value(); });
+    expect_bmson_core(note != measure->notes.end());
+    chart.semantic_layers.push_back({.id = wormedit::layer_id_t{7002}, .name = "Hold layer"});
+    const auto original = note->id;
+    const auto source_id = *note->sound_channel_event;
+    const auto original_lane = note->lane;
+    note->kind = wormedit::note_kind_t::hold;
+    note->end = wormedit::local_position_t{note->position.measure, note->position.row + 120};
+    note->semantic_layers = {wormedit::layer_id_t{7002}};
+    auto source_channel = std::ranges::find_if(chart.sound_channels, [&](const auto& item) {
+        return std::ranges::any_of(item.events,
+            [&](const auto& event) { return event.id == source_id; });
+    });
+    expect_bmson_core(source_channel != chart.sound_channels.end());
+    auto source = std::ranges::find(source_channel->events, source_id,
+                                     &wormedit::sound_channel_event_t::id);
+    expect_bmson_core(source != source_channel->events.end());
+    source->end = note->end;
+    const auto note_row = note->position.row;
+    const auto finish_row = note->end->row;
+    auto target = std::ranges::find_if(chart.lane_layouts.front().layout.lanes,
+        [&](const auto& candidate) {
+            return candidate.id != original_lane &&
+                candidate.role != wormedit::lane_role_t::autoplay &&
+                candidate.role != wormedit::lane_role_t::invisible &&
+                candidate.role != wormedit::lane_role_t::mine && std::ranges::none_of(chart.measures,
+                [&](const auto& item) {
+                    return std::ranges::any_of(item.notes, [&](const auto& other) {
+                        return other.id != original && other.lane == candidate.id &&
+                               other.position.measure == note->position.measure &&
+                               other.position.row <= finish_row &&
+                               (!other.end || other.end->row >= note_row);
+                    });
+                });
+        });
+    expect_bmson_core(target != chart.lane_layouts.front().layout.lanes.end());
+    const auto target_lane = target->id;
+    const auto expected_end = note->end;
+    const auto expected_layers = note->semantic_layers;
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto chart_id = history.document.charts.front().id;
+    expect_bmson_core(wormedit::assign_bmson_sound_event(history, history.document.revision, chart_id,
+                                               original, target_lane));
+    const auto& result_chart = history.document.charts.front();
+    const auto result = std::ranges::find_if(result_chart.measures, [&](const auto& item) {
+        return std::ranges::any_of(item.notes,
+            [original](const auto& value) { return value.id == original; });
+    });
+    expect_bmson_core(result != result_chart.measures.end());
+    const auto moved = std::ranges::find(result->notes, original, &wormedit::note_t::id);
+    expect_bmson_core(moved != result->notes.end());
+    expect_bmson_core(moved->lane == target_lane);
+    expect_bmson_core(moved->kind == wormedit::note_kind_t::hold);
+    expect_bmson_core(moved->end == expected_end);
+    expect_bmson_core(moved->semantic_layers == expected_layers);
+    expect_bmson_core(moved->sound_channel_event == source_id);
+    expect_bmson_core(std::ranges::count_if(result->notes,
+          [original](const auto& value) { return value.id == original; }) == 1);
+    const auto result_source = std::ranges::find_if(result_chart.sound_channels,
+        [&](const auto& item) {
+            return std::ranges::any_of(item.events,
+                [source_id](const auto& event) { return event.id == source_id; });
+        });
+    expect_bmson_core(result_source != result_chart.sound_channels.end());
+    const auto source_event = std::ranges::find(result_source->events, source_id,
+        &wormedit::sound_channel_event_t::id);
+    expect_bmson_core(source_event != result_source->events.end());
+    expect_bmson_core(source_event->lane == target_lane);
+    expect_bmson_core(source_event->end == expected_end);
+}
+
+TEST_CASE("BMSON hold assignment rejects collisions throughout its inclusive span",
+          "[unit][core][bmson][assignment][hold]") {
+    auto song = fixture();
+    auto& chart = song.charts.front();
+    auto measure = std::ranges::find_if(chart.measures,
+        [](const auto& item) { return !item.bgm_events.empty(); });
+    expect_bmson_core(measure != chart.measures.end());
+    auto& marker = measure->bgm_events.front();
+    expect_bmson_core(marker.sound_channel_event);
+    marker.end = wormedit::local_position_t{marker.position.measure, marker.position.row + 120};
+    auto channel = std::ranges::find_if(chart.sound_channels, [&](const auto& item) {
+        return std::ranges::any_of(item.events,
+            [&](const auto& event) { return event.id == *marker.sound_channel_event; });
+    });
+    expect_bmson_core(channel != chart.sound_channels.end());
+    auto source = std::ranges::find(channel->events, *marker.sound_channel_event,
+                                     &wormedit::sound_channel_event_t::id);
+    expect_bmson_core(source != channel->events.end());
+    source->end = marker.end;
+    const auto lane = chart.lane_layouts.front().layout.lanes.front().id;
+    measure->notes.push_back({.id = wormedit::object_id_t{7003},
+        .position = {marker.position.measure, marker.position.row + 60}, .lane = lane});
+    const auto marker_id = marker.id;
+    const auto position = marker.position;
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto revision = history.document.revision;
+    const auto result = wormedit::assign_bmson_sound_event(history, revision,
+        history.document.charts.front().id, marker_id, lane);
+    expect_bmson_core(!(result));
+    expect_bmson_core(!(result.diagnostics.empty()));
+    expect_bmson_core(result.diagnostics.front().code == wormedit::diagnostic_code_t::collision);
+    expect_bmson_core(history.document.revision == revision);
+    expect_bmson_core(history.undo.empty());
+    const auto& unchanged = history.document.charts.front();
+    const auto remaining = std::ranges::find_if(unchanged.measures,
+        [marker_id](const auto& item) {
+            return std::ranges::any_of(item.bgm_events,
+                [marker_id](const auto& event) { return event.id == marker_id; });
+        });
+    expect_bmson_core(remaining != unchanged.measures.end());
+    expect_bmson_core(std::ranges::find(remaining->bgm_events, marker_id,
+        &wormedit::bgm_event_t::id)->position == position);
 }
 
 TEST_CASE("BMSON assignment rejects occupied lanes without changing the document",
@@ -873,6 +1476,7 @@ TEST_CASE("Packed BMSON one-shot creates, reuses, and atomically links an unstem
     expect_bmson_core(packed_reuse_preserves_clip(packed_song()));
 }
 
+
 TEST_CASE("Packed BMSON insertion rejects stem resources and collisions without mutation",
           "[unit][core][bmson][packed]") {
     expect_bmson_core(packed_rejections_are_atomic());
@@ -1013,4 +1617,28 @@ TEST_CASE("Packed BMSON stroke rejects stem lanes and stale input atomically",
     const std::vector<wormedit::local_position_t> capped(50'001, f.cells.front());
     CHECK_FALSE(wormedit::apply_bmson_packed_stroke(f.history, revision, f.chart, f.lane,
                                                     f.resource, capped).diagnostics.empty());
+}
+
+TEST_CASE("Packed BMSON single-click channel exports and reparses without duplicate events",
+          "[unit][core][bmson][packed][t486]") {
+    auto history = wormedit::make_document_history(packed_song());
+    const auto chart = history.document.charts.front().id;
+    const auto lane = history.document.charts.front().bgm_source_lanes.back().id;
+    const auto resource = history.document.resources.back().id;
+    const auto before = total_channel_events(history.document.charts.front());
+    expect_bmson_core(wormedit::insert_bmson_packed_one_shot(history,
+        history.document.revision, chart, lane, resource,
+        first_measure_position(history.document, 90)));
+    const auto written = wormedit::write_bmson(history.document);
+    INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));
+    expect_bmson_core(written.json);
+    const auto reparsed = wormedit::parse_bmson_bytes(
+        std::as_bytes(std::span{written.json->data(), written.json->size()}));
+    expect_bmson_core(reparsed.song);
+    CHECK(total_channel_events(reparsed.song->charts.front()) == before + 1);
+    CHECK(reparsed.song->charts.front().sound_channels.back().events.front().position.row == 90);
+    expect_bmson_core(wormedit::undo_document_command(history));
+    CHECK(total_channel_events(history.document.charts.front()) == before);
+    expect_bmson_core(wormedit::redo_document_command(history));
+    expect_bmson_core(wormedit::write_bmson(history.document).json);
 }

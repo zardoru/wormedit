@@ -13,6 +13,8 @@ struct command_name_t {
 };
 
 constexpr command_name_t command_names[]{
+    {"edit.move_to_bgm", application_command_kind_t::edit_move_to_bgm},
+    {"edit.move_next_to_bgm", application_command_kind_t::edit_move_next_to_bgm},
     {"document.new_project", application_command_kind_t::document_new_project},
     {"document.save_project", application_command_kind_t::document_save_project},
     {"document.new_chart", application_command_kind_t::document_new_chart},

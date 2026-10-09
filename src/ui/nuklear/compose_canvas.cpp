@@ -145,6 +145,10 @@ struct static_paint_storage_t {
             auto value=source[index];
             if constexpr (requires { value.bounds; }) {
                 value.bounds.top+=offset; value.bounds.bottom+=offset;
+                if constexpr (std::is_same_v<T, WormUiComposeBgmEventView>) {
+                    value.head_top_pixels += static_cast<float>(offset);
+                    value.head_bottom_pixels += static_cast<float>(offset);
+                }
             } else if constexpr (requires { value.y_pixels; }) value.y_pixels+=offset;
             else value.marker_y_pixels+=offset;
             target.push_back(value);
@@ -1368,6 +1372,15 @@ static void draw_compose_stem_piece(const ComposePaintContext& paint, const Worm
 
 // The tile of the note or BGM marker that starts a slice, if it is on screen (it may be a note
 // in the field).
+static auto compose_bgm_head_bounds(const WormUiComposeBgmEventView& event) -> WormUiComposeRect {
+    auto bounds = event.bounds;
+    if (event.has_tail) {
+        bounds.top = event.head_top_pixels;
+        bounds.bottom = event.head_bottom_pixels;
+    }
+    return bounds;
+}
+
 static auto compose_stem_point_tile(const ComposePaintContext& paint, uint64_t object_id, bool playable)
     -> std::optional<std::pair<struct nk_rect, bool>> {
     const auto& view = *paint.view;
@@ -1381,8 +1394,10 @@ static auto compose_stem_point_tile(const ComposePaintContext& paint, uint64_t o
     }
     for (size_t index = 0; index < view.bgm_event_count; ++index) {
         const auto& event = view.bgm_events[index];
-        if (event.event_id == object_id)
-            return std::pair{compose_screen_rect(&event.bounds, &view, paint.viewport), event.selected};
+        if (event.event_id == object_id) {
+            const auto head = compose_bgm_head_bounds(event);
+            return std::pair{compose_screen_rect(&head, &view, paint.viewport), event.selected};
+        }
     }
     return std::nullopt;
 }
@@ -2453,10 +2468,12 @@ struct ComposeHoveredBgm {
 static void draw_compose_bgm_event(const ComposePaintContext& paint,
                                   const WormUiComposeBgmEventView& event,
                                   ComposeHoveredBgm& hovered) {
-    const auto rect = compose_screen_rect(&event.bounds, paint.view, paint.viewport);
-    if (rect.w <= 0.0f || rect.h <= 0.0f) {
-        return;
+    auto head = event.bounds;
+    if (event.has_tail) {
+        head.top = event.head_top_pixels;
+        head.bottom = event.head_bottom_pixels;
     }
+    const auto rect = compose_screen_rect(&head, paint.view, paint.viewport);
     auto fill = event.has_sound ? nk_rgb(177, 116, 207) : nk_rgb(102, 88, 113);
     if (worm_ui_nuklear_compose_state().color_view ==
         worm_ui_nuklear_compose_color_view_t::layer) {
@@ -2466,6 +2483,15 @@ static void draw_compose_bgm_event(const ComposePaintContext& paint,
             : wormedit::ui::theme::compose(
                   wormedit::ui::theme::ComposeColor::semantic_layer_none);
     }
+    if (event.has_tail) {
+        auto body = compose_screen_rect(&event.bounds, paint.view, paint.viewport);
+        const auto inset = body.w * 0.325f;
+        body.x += inset;
+        body.w -= inset * 2.0f;
+        field_rect(paint, body, 0.0f, fill, 3);
+        if (event.selected) field_stroke_rect(paint, body, 0.0f, 1.0f, nk_rgb(248, 224, 255), 3);
+    }
+    if (rect.w <= 0.0f || rect.h <= 0.0f) return;
     field_rect(paint, rect, 1.5f, fill, 3);
     field_stroke_rect(paint, rect, 1.5f, event.selected ? 2.0f : 1.0f,
                    event.selected ? nk_rgb(248, 224, 255) : nk_rgb(50, 35, 58), 3);
@@ -2718,8 +2744,9 @@ static ComposeHoveredBgm draw_compose_audio_markers(const ComposePaintContext& p
     // Hover details are independent of the retained visual pass.
     for (size_t index=0; index<paint.view->bgm_event_count; ++index) {
         const auto& event=paint.view->bgm_events[index];
+        const auto head = compose_bgm_head_bounds(event);
         if (event.sound_detail && nk_input_is_mouse_hovering_rect(&paint.context->input,
-            compose_screen_rect(&event.bounds,paint.view,paint.viewport)))
+            compose_screen_rect(&head,paint.view,paint.viewport)))
             hovered={event.sound_detail,event.bmson_restart,event.bmson_slice};
     }
     draw_compose_bmson_marker_drafts(paint);

@@ -6,7 +6,7 @@ namespace wormedit::ui {
 
 enum class workspace_menu_action_t {
     none, new_project, open, save, save_as, close, options, quit,
-    copy, cut, paste, reset_view, frame_timing, tap_timing, timing_settings,
+    copy, cut, paste, move_to_bgm, reset_view, frame_timing, tap_timing, timing_settings,
     notifications, preview, external_preferences, external_start, external_here, external_stop
 };
 

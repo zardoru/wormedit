@@ -279,6 +279,7 @@ struct scene_bgm_index_context_t {
 auto append_scene_bgm_event(const measure_chunk_t& measure, const bgm_event_t& event,
                             scene_bgm_index_context_t& context) -> void {
     const auto row = absolute_row(context.index.measures, event.position);
+    const auto end = event.end ? absolute_row(context.index.measures, *event.end) : row;
     if (!event.id) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                                             "field-scene BGM event has invalid source geometry",
@@ -292,7 +293,8 @@ auto append_scene_bgm_event(const measure_chunk_t& measure, const bgm_event_t& e
         return;
     }
     if (!event.source_lane || !context.bgm_source_lanes.contains(event.source_lane.value) || !row ||
-        event.position.measure != measure.id) {
+        event.position.measure != measure.id || !end || *end < *row ||
+        (event.end && *end == *row)) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                                             "field-scene BGM event has invalid source geometry",
                                             event.id));
@@ -306,6 +308,7 @@ auto append_scene_bgm_event(const measure_chunk_t& measure, const bgm_event_t& e
         {.event = event.id,
          .source_lane = event.source_lane,
          .row = *row,
+         .end_row = *end,
          .sound = event.sound,
          .bmson_restart = event.sound_channel_event ? [&]() -> std::optional<bool> {
              const auto found =
@@ -319,6 +322,17 @@ auto append_scene_bgm_event(const measure_chunk_t& measure, const bgm_event_t& e
                                ? std::nullopt
                                : std::optional{semantic_color->second},
          .semantic_layers = event.semantic_layers});
+}
+
+auto build_bgm_end_tree(editor_field_scene_index_t& index) -> void {
+    while (index.bgm_tree_leaf_base < index.bgm_events.size())
+        index.bgm_tree_leaf_base *= 2;
+    index.bgm_tree_max_end.assign(index.bgm_tree_leaf_base * 2, 0);
+    for (std::size_t event = 0; event < index.bgm_events.size(); ++event)
+        index.bgm_tree_max_end[index.bgm_tree_leaf_base + event] = index.bgm_events[event].end_row;
+    for (auto node = index.bgm_tree_leaf_base; node-- > 1;)
+        index.bgm_tree_max_end[node] = std::max(index.bgm_tree_max_end[node * 2],
+                                              index.bgm_tree_max_end[node * 2 + 1]);
 }
 
 auto visible_semantic_layer_colors(const chart_document_t& chart)
@@ -470,6 +484,7 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
         return std::tie(left.row, left.source_lane.value, left.event.value) <
                std::tie(right.row, right.source_lane.value, right.event.value);
     });
+    build_bgm_end_tree(index);
     index.note_indices_by_id.reserve(index.notes.size());
     for (std::size_t note = 0; note < index.notes.size(); ++note) {
         if (!index.note_indices_by_id.emplace(index.notes[note].note.value, note).second) {
@@ -507,7 +522,11 @@ auto valid_scene_index(const chart_document_t& chart, const editor_field_scene_i
            index.note_tree_leaf_base != 0 && index.note_tree_leaf_base >= index.notes.size() &&
            index.note_tree_leaf_base <= std::numeric_limits<std::size_t>::max() / 2 &&
            index.note_tree_max_end.size() == index.note_tree_leaf_base * 2 &&
-           index.note_indices_by_id.size() == index.notes.size();
+           index.note_indices_by_id.size() == index.notes.size() &&
+           index.bgm_tree_leaf_base >= index.bgm_events.size() &&
+           index.bgm_tree_leaf_base != 0 &&
+           index.bgm_tree_leaf_base <= std::numeric_limits<std::size_t>::max() / 2 &&
+           index.bgm_tree_max_end.size() == index.bgm_tree_leaf_base * 2;
 }
 
 auto valid_scene_request_geometry(const editor_field_scene_request_t& request,
@@ -1973,58 +1992,67 @@ auto append_visible_bgm_lanes(scene_geometry_context_t& context, Operate&& opera
     return true;
 }
 
+template <typename Consume, typename YForRow>
+auto append_bgm_geometry(scene_geometry_context_t& context,
+                          const editor_field_scene_bgm_source_t& event,
+                          const visible_bgm_lanes_t& lanes,
+                          const std::unordered_set<std::uint64_t>& selected,
+                          Consume&& consume, YForRow&& y_for_row) -> bool {
+    if (!bgm_event_visible_in_scene(event, context.request)) return true;
+    const auto lane = lanes.find(event.source_lane.value);
+    if (lane == lanes.end()) return true;
+    const auto [top, bottom] = endpoint_vertical_bounds(
+        y_for_row(event.row), context.request.note_head_height_pixels, lane_glyph_t::bar,
+        context.request.scroll_direction);
+    const editor_field_rect_t head{lane->second.left, top, lane->second.right, bottom};
+    auto bounds = head;
+    const auto has_tail = event.end_row > event.row;
+    if (has_tail) {
+        const auto tail_y = y_for_row(event.end_row);
+        bounds.top = std::min(bounds.top, tail_y);
+        bounds.bottom = std::max(bounds.bottom, tail_y);
+    }
+    if (!rect_intersects_viewport(bounds, context.view.viewport_height_pixels)) return true;
+    if (!consume()) return false;
+    context.scene.bgm_events.push_back(
+        {.event = event.event, .source_lane = event.source_lane, .sound = event.sound,
+         .bmson_restart = event.bmson_restart, .selected = selected.contains(event.event.value),
+         .bounds = bounds, .head_bounds = head, .has_tail = has_tail,
+         .semantic_color = event.semantic_color});
+    return true;
+}
+
 template <typename Operate, typename Consume, typename YForRow>
 auto append_visible_bgm_events(scene_geometry_context_t& context, const visible_bgm_lanes_t& lanes,
                                Operate&& operate, Consume&& consume, YForRow&& y_for_row) -> bool {
-    std::unordered_set<std::uint64_t> selected_events;
-    selected_events.reserve(context.view.selected_objects.size());
-    for (const auto& object : context.view.selected_objects) {
-        if (object.kind == editor_selection_object_kind_t::bgm_event) {
-            selected_events.insert(object.id.value);
+    std::unordered_set<std::uint64_t> selected;
+    for (const auto& object : context.view.selected_objects)
+        if (object.kind == editor_selection_object_kind_t::bgm_event) selected.insert(object.id.value);
+    const auto& index = context.index;
+    const auto after = std::ranges::upper_bound(
+        index.bgm_events, context.query_high,
+        [](long double row, std::uint64_t begin) { return row < static_cast<long double>(begin); },
+        &editor_field_scene_bgm_source_t::row);
+    const auto count = static_cast<std::size_t>(std::distance(index.bgm_events.begin(), after));
+    bool failed{};
+    const auto visit = [&](auto&& self, std::size_t node, std::size_t first, std::size_t last) -> void {
+        if (failed || first >= count ||
+            static_cast<long double>(index.bgm_tree_max_end[node]) < context.query_low) return;
+        if (!operate()) { failed = true; return; }
+        if (last - first == 1) {
+            failed = !append_bgm_geometry(context, index.bgm_events[first], lanes, selected,
+                                          consume, y_for_row);
+            return;
         }
-    }
-    const auto first_row = static_cast<std::uint64_t>(std::ceil(context.query_low));
-    const auto last_row = static_cast<std::uint64_t>(std::floor(context.query_high));
-    const auto first = std::ranges::lower_bound(context.index.bgm_events, first_row, {},
-                                                &editor_field_scene_bgm_source_t::row);
-    const auto after = std::ranges::upper_bound(first, context.index.bgm_events.end(), last_row, {},
-                                                &editor_field_scene_bgm_source_t::row);
-    for (auto event = first; event != after; ++event) {
-        if (!bgm_event_visible_in_scene(*event, context.request)) continue;
-        if (!operate()) {
-            context.diagnostics.push_back(
-                error(diagnostic_code_t::invalid_resolution,
-                      "field-scene BGM events exceed the configured operation cap"));
-            return false;
-        }
-        const auto lane = lanes.find(event->source_lane.value);
-        if (lane == lanes.end()) {
-            continue;
-        }
-        const auto y = y_for_row(event->row);
-        const auto [top, bottom] =
-            endpoint_vertical_bounds(y, context.request.note_head_height_pixels, lane_glyph_t::bar,
-                                     context.request.scroll_direction);
-        const editor_field_rect_t bounds{lane->second.left, top, lane->second.right, bottom};
-        if (!rect_intersects_viewport(bounds, context.view.viewport_height_pixels)) {
-            continue;
-        }
-        if (!consume()) {
-            context.diagnostics.push_back(
-                error(diagnostic_code_t::invalid_resolution,
-                      "field-scene BGM events exceed the configured primitive cap"));
-            return false;
-        }
-        context.scene.bgm_events.push_back(
-            {.event = event->event,
-             .source_lane = event->source_lane,
-             .sound = event->sound,
-             .bmson_restart = event->bmson_restart,
-             .selected = selected_events.contains(event->event.value),
-             .bounds = bounds,
-             .semantic_color = event->semantic_color});
-    }
-    return true;
+        const auto middle = first + (last - first) / 2;
+        self(self, node * 2, first, middle);
+        self(self, node * 2 + 1, middle, last);
+    };
+    if (count != 0) visit(visit, 1, 0, index.bgm_tree_leaf_base);
+    if (failed) context.diagnostics.push_back(error(
+        diagnostic_code_t::invalid_resolution,
+        "field-scene BGM events exceed the configured primitive or operation cap"));
+    return !failed;
 }
 
 template <typename Operate, typename Consume, typename YForRow>
@@ -2536,6 +2564,8 @@ void project_window_rects(const std::vector<Geometry>& source, std::vector<Geome
     for (const auto& value : source) {
         auto translated = value;
         translated.bounds = translated_window_rect(value.bounds, shift);
+        if constexpr (std::is_same_v<Geometry, editor_field_bgm_event_geometry_t>)
+            translated.head_bounds = translated_window_rect(value.head_bounds, shift);
         if (rect_intersects_viewport(translated.bounds, height))
             target.push_back(std::move(translated));
     }

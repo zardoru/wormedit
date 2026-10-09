@@ -269,6 +269,37 @@ auto transport_command(command_context_t& context) -> std::optional<command_resu
     return std::nullopt;
 }
 
+auto note_to_bgm_command(command_context_t& context) -> std::optional<command_result_t> {
+    const auto kind = context.command.kind;
+    if (kind != command_kind_t::edit_move_to_bgm && kind != command_kind_t::edit_move_next_to_bgm)
+        return std::nullopt;
+    auto* state = context.compose();
+    const auto found = std::ranges::find(context.history.document.charts,
+                                         state ? state->chart : chart_id_t{}, &chart_document_t::id);
+    const auto* chart = found == context.history.document.charts.end() ? nullptr : &*found;
+    if (!state || !chart || chart->source_family != format_family_t::bms ||
+        editor_interaction_has_pending_gesture(*state) || context.application_state.paste_session ||
+        !wormedit::ui::compose_notes_editable(compose_mode_of(context.application_state)))
+        return reject_application_command(context.sink, "Move to BGM requires selected notes on an editable BMS chart.",
+                                          notification_severity_t::hint, notification_source_t::edit);
+    const auto moved = move_selected_notes_to_bgm(context.history, *state, std::nullopt, false, true,
+                                                 kind == command_kind_t::edit_move_next_to_bgm);
+    if (!moved.handled)
+        return reject_application_command(context.sink, "Select playable notes before moving them to BGM.",
+                                          notification_severity_t::hint, notification_source_t::edit);
+    if (!moved.command.applied) {
+        const auto message = moved.command.diagnostics.empty() ? "The notes could not be moved to BGM."
+                                                               : moved.command.diagnostics.front().message;
+        return reject_application_command(context.sink, message, notification_severity_t::warning,
+                                          notification_source_t::edit);
+    }
+    const auto rebound = context.rebind();
+    if (!rebound.accepted) return rebound;
+    post_command_message(context.sink, notification_severity_t::hint, notification_source_t::edit,
+                         "Selected notes moved to BGM.");
+    return command_result_t{.accepted = true};
+}
+
 auto clipboard_commands(command_context_t& context) -> std::optional<command_result_t> {
     const auto kind = context.command.kind;
     if (kind == command_kind_t::edit_paste) {
@@ -845,6 +876,7 @@ auto invoke_application_command(
     if (auto result = note_kind_command(context)) return *result;
     if (auto result = transport_command(context)) return *result;
     if (auto result = external_player_command(context)) return *result;
+    if (auto result = note_to_bgm_command(context)) return *result;
     if (auto result = edit_commands(context)) return *result;
     if (auto result = selection_commands(context)) return *result;
     if (auto result = navigation_commands(context)) return *result;

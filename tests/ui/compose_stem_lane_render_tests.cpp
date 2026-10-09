@@ -144,3 +144,41 @@ TEST_CASE("Stem headers draw UTF8 safe ellipsis while narrow and packed labels r
     check_stem_header_golden(36, true, "BGM ");
     check_stem_header_golden(96, false, "BGM 1");
 }
+
+namespace {
+void check_bgm_tail_with_offscreen_head(bool selected) {
+    field_submission_fixture_t fixture;
+    expect_field(fixture.context != nullptr);
+    WormUiComposeBgmLaneView lane{.bounds = {80, 0, 120, 128}, .source_lane_id = 44};
+    WormUiComposeBgmEventView event{.bounds = {80, -100, 120, 110}, .event_id = 50,
+        .source_lane_id = 44, .sound_id = 1, .has_sound = true, .selected = selected,
+        .has_tail = true, .sound_label = "offscreen head", .head_top_pixels = -100,
+        .head_bottom_pixels = -90};
+    WormUiComposeView view{};
+    view.scene_available = true;
+    view.viewport_width_pixels = view.viewport_height_pixels = 128;
+    view.playable_field_left_pixels = 42;
+    view.playable_field_right_pixels = 80;
+    view.bgm_lanes = &lane;
+    view.bgm_lane_count = 1;
+    view.bgm_events = &event;
+    view.bgm_event_count = 1;
+    nk_input_begin(fixture.context);
+    nk_input_end(fixture.context);
+    expect_field(nk_begin(fixture.context, "BGM tail", nk_rect(0, 0, 128, 128), NK_WINDOW_NO_SCROLLBAR));
+    draw_compose_scene_canvas(fixture.context, &view, nk_window_get_canvas(fixture.context), nk_rect(0, 0, 128, 128));
+    nk_end(fixture.context);
+    const auto& field = wormedit::ui::nuklear::compose_field(fixture.context);
+    const auto body = std::ranges::any_of(field.vertices(), [](const auto& vertex) {
+        return vertex.position.x >= 93 && vertex.position.x <= 107 && vertex.position.y >= 100 &&
+               std::abs(vertex.color.r - 177.0f / 255.0f) < .001f &&
+               std::abs(vertex.color.g - 116.0f / 255.0f) < .001f;
+    });
+    expect_field(body);
+}
+}
+TEST_CASE("BGM tail painter clips the body independently from an offscreen head",
+          "[ui][field][compose][t423-tail][isolated-software-render]") {
+    check_bgm_tail_with_offscreen_head(false);
+    check_bgm_tail_with_offscreen_head(true);
+}

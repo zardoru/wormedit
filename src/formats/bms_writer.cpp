@@ -1255,6 +1255,17 @@ void validate_retained_pause(const pause_event_t& pause, const chart_document_t&
              "$.charts[].pauses");
 }
 
+void warn_bgm_hold_tails(const chart_document_t& chart,
+                          std::vector<bms_write_diagnostic_t>& diagnostics) {
+    for (std::size_t measure = 0; measure < chart.measures.size(); ++measure)
+        for (const auto& event : chart.measures[measure].bgm_events)
+            if (event.end)
+                warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
+                     "BMS BGM channel retains only the head; hold tail is omitted",
+                     "$.charts[].measures[" + std::to_string(measure) +
+                         "].bgm_events[" + std::to_string(event.id.value) + "].end");
+}
+
 void validate_unsupported_chart_features(const chart_document_t& chart,
                                          bool flattening_active_projection,
                                          const branch_tree_analysis_t& tree,
@@ -1271,6 +1282,7 @@ void validate_unsupported_chart_features(const chart_document_t& chart,
         fail(bms_write_diagnostic_code_t::unsupported_feature,
              "chart contains timing or media features outside the normalized writer slice",
              "$.charts[]");
+    warn_bgm_hold_tails(chart, diagnostics);
     if (!chart.bookmarks.empty())
         warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
              "BMS has no supported bookmark representation; bookmarks are omitted",
@@ -1455,6 +1467,7 @@ struct branch_event_edit_state_t {
     std::map<std::size_t, branch_channel_edit_t> channel_edits;
     std::map<std::pair<std::size_t, std::size_t>, std::string> slot_claims;
     std::map<std::size_t, std::string> timing_declaration_edits;
+    std::map<std::size_t, std::vector<std::string>> converted_bgm_lines;
 };
 
 auto claim_retained_channel_slot(branch_event_edit_state_t& state,
@@ -2203,15 +2216,70 @@ struct bgm_export_context_t {
     const std::map<std::uint64_t, std::string>& audio_ids;
     const std::set<std::uint64_t>& branch_resource_ids;
     std::map<std::pair<std::size_t, std::uint64_t>, channel_line_t>& lines;
+    const bms_write_options_t& options;
 };
 
 auto exported_bgm_audio_id(const bgm_export_context_t& context, resource_id_t resource,
                            std::string_view path) -> std::string;
 
+auto encode_bms_channel_line(const channel_line_t& line,
+                             const bms_write_options_t& options) -> std::string;
+
+void clear_converted_branch_slot(const source_provenance_t& provenance,
+                                 const channel_slot_field_t& field,
+                                 bgm_export_context_t& context, std::string_view path) {
+    const auto* source = claim_retained_channel_slot(context.branch_edits, provenance, field, path);
+    apply_branch_channel_slot_edit(context.branch_edits, provenance.source_order, *source,
+                                   field.slot, field.slot, "00", path);
+}
+
+void export_converted_branch_bgm(const bgm_event_t& event, bgm_export_context_t& context,
+                                  std::string_view path) {
+    if (const auto hold = parse_long_note_source_field(event.provenance.source_field)) {
+        const auto separator = event.provenance.source_spelling.find('\n');
+        if (!event.end || separator == std::string::npos)
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "converted branch hold must retain both source endpoints", std::string(path));
+        auto start = event.provenance;
+        start.source_spelling = event.provenance.source_spelling.substr(0, separator);
+        clear_converted_branch_slot(start,
+            {hold->start_channel, hold->start_slot, hold->start_object_id}, context, path);
+        auto end = event.provenance;
+        end.source_order = hold->end_source_order;
+        end.source_spelling = event.provenance.source_spelling.substr(separator + 1);
+        clear_converted_branch_slot(end,
+            {hold->end_channel, hold->end_slot, hold->end_object_id}, context,
+            std::string(path) + ".end");
+    } else {
+        const auto field = parse_channel_slot_field(event.provenance.source_field);
+        if (!field || field->channel == "01" || field->channel.size() != 2 ||
+            (field->channel.front() != '1' && field->channel.front() != '2'))
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "converted branch BGM has no retained playable source", std::string(path));
+        clear_converted_branch_slot(event.provenance, *field, context, path);
+    }
+    const auto measure = std::ranges::find(context.index.entries, event.position.measure,
+                                           &measure_index_entry_t::id);
+    if (measure == context.index.entries.end())
+        fail(bms_write_diagnostic_code_t::invalid_geometry,
+             "converted branch BGM has an unknown measure", std::string(path));
+    const auto [numerator, denominator] = fraction_at(context.index, event.position, std::string(path));
+    const auto id = event.sound ? exported_bgm_audio_id(context, *event.sound, path) : "00";
+    channel_line_t line{.measure = static_cast<std::size_t>(measure - context.index.entries.begin()),
+                        .channel = "01", .notes = {}};
+    line.notes.push_back({numerator, denominator, id, std::string(path)});
+    context.branch_edits.converted_bgm_lines[event.provenance.source_order].push_back(
+        encode_bms_channel_line(line, context.options));
+}
+
 void export_branch_bgm_event(const bgm_event_t& event, bgm_export_context_t& context,
                              std::string_view path) {
     const auto field = parse_channel_slot_field(event.provenance.source_field);
-    if (!field || field->channel != "01" || event.structural_slot != field->slot)
+    if (!field || field->channel != "01") {
+        export_converted_branch_bgm(event, context, path);
+        return;
+    }
+    if (event.structural_slot != field->slot)
         fail(bms_write_diagnostic_code_t::branch_provenance,
              "branch BGM event does not identify its retained source slot", std::string(path));
     const auto* source = claim_retained_channel_slot(context.branch_edits, event.provenance,
@@ -3084,6 +3152,9 @@ auto emit_preserved_branch_lines(const branch_tree_analysis_t& tree,
                  "$.charts[].bms_control_tree");
         if (context.channel_edits.contains(order)) {
             append_branch_channel_patch(order, line, context, branch_edits);
+            if (const auto added = branch_edits.converted_bgm_lines.find(order);
+                added != branch_edits.converted_bgm_lines.end())
+                context.output.insert(context.output.end(), added->second.begin(), added->second.end());
             continue;
         }
         const auto has_edit = context.metadata_edits.contains(order) ||
@@ -3187,7 +3258,7 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     const auto& index = std::get<measure_index_t>(measure_index_result);
 
     branch_event_edit_state_t branch_edits{chart, branch_tree, active_branch_orders,
-                                           branch_source_bytes, index, {}, {}, {}};
+                                           branch_source_bytes, index, {}, {}, {}, {}};
     auto& branch_channel_edits = branch_edits.channel_edits;
     auto& branch_timing_declaration_edits = branch_edits.timing_declaration_edits;
     apply_branch_bpm_edits(chart, branch_edits);
@@ -3208,7 +3279,7 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
                                        lane_channels.visible, long_note_channels, audio_ids,
                                        branch_resource_ids, channel_lines, hold_endpoints};
     bgm_export_context_t bgm_context{chart, branch_tree, index, branch_edits, audio_ids,
-                                     branch_resource_ids, bgm_lines};
+                                     branch_resource_ids, bgm_lines, options};
     export_chart_notes_and_bgm(chart, branch_tree, note_context, bgm_context);
 
     validate_hold_endpoints(hold_endpoints);

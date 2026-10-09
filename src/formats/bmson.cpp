@@ -1299,7 +1299,8 @@ struct bmson_materialization_t {
                                                   .sound = context.channel_resource,
                                                   .sound_channel_event = sound_event_id,
                                                   .structural_slot = 0,
-                                                  .provenance = provenance(note.path, note.spelling, note.order)});
+                                                  .provenance = provenance(note.path, note.spelling, note.order),
+                                                  .end = end});
                 }
     }
 };

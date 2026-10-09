@@ -1495,6 +1495,7 @@ static void refresh_workspace_menu_model(const WormUiWorkspaceView& view) {
     append_file_menu(view, blocked);
     g_workspace_menu.push_back({"Edit", "Copy", MenuAction::copy, "edit.copy", edit && view.compose.clipboard_copy_available});
     g_workspace_menu.push_back({"Edit", "Cut", MenuAction::cut, "edit.cut", edit && view.compose.clipboard_copy_available});
+    g_workspace_menu.push_back({"Edit", "Move Selection to BGM", MenuAction::move_to_bgm, "edit.move_to_bgm", edit && view.compose.move_to_bgm_available});
     g_workspace_menu.push_back({"Edit", "Paste", MenuAction::paste, "edit.paste", edit && view.compose.clipboard_paste_available});
     if (view.compose.visible)
         g_workspace_menu.push_back({"View", "Reset editor view", MenuAction::reset_view, nullptr, !blocked});
@@ -1529,6 +1530,9 @@ static void apply_workspace_menu_action(MenuAction chosen, const WormUiWorkspace
     case MenuAction::copy: action.clipboard = WORM_UI_CLIPBOARD_COPY; break;
     case MenuAction::cut: action.clipboard = WORM_UI_CLIPBOARD_CUT; break;
     case MenuAction::paste: action.clipboard = WORM_UI_CLIPBOARD_PASTE; break;
+    case MenuAction::move_to_bgm:
+        std::snprintf(action.menu_command_id, sizeof(action.menu_command_id), "%s", "edit.move_to_bgm");
+        break;
     case MenuAction::reset_view: action.compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW; break;
     case MenuAction::frame_timing: g_frame_timing_visible = !g_frame_timing_visible; break;
     case MenuAction::tap_timing: action.tap_timing.toggle = true; break;
@@ -1622,9 +1626,17 @@ static void end_menu() {
     wormedit::ui::chrome::menu_surface_end(g_context, g_menu_saved_background);
 }
 
+static bool bgm_menu_disabled_tooltip(const wormedit::ui::workspace_menu_item_t& item) {
+    if (item.action == MenuAction::move_to_bgm && !item.enabled &&
+        nk_input_is_mouse_hovering_rect(&g_context->input, nk_widget_bounds(g_context)))
+        return true;
+    return false;
+}
+
 static void render_workspace_menu(const char* title, float rows, float width,
                                   const WormUiWorkspaceView& view, WormUiWorkspaceAction& action) {
     if (!begin_menu(title, rows, width, std::strcmp(title, "Preview") == 0 && view.project_loaded ? 10.0f : 0.0f)) return;
+    bool bgm_tooltip{};
     for (const auto& item : g_workspace_menu) {
         if (std::strcmp(item.menu, title) != 0) continue;
         if (item.action == MenuAction::none) { wormedit::ui::chrome::menu_separator(g_context); continue; }
@@ -1632,10 +1644,13 @@ static void render_workspace_menu(const char* title, float rows, float width,
         if (!item.enabled) nk_widget_disable_begin(g_context);
         const bool chosen = nk_menu_item_label(g_context, item.title, NK_TEXT_LEFT) != 0;
         if (!item.enabled) nk_widget_disable_end(g_context);
+        bgm_tooltip = bgm_tooltip || bgm_menu_disabled_tooltip(item);
         if (chosen && item.enabled && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
             apply_workspace_menu_action(item.action, view, action);
     }
     end_menu();
+    if (bgm_tooltip) wormedit::ui::nuklear::tooltip::text(g_context,
+        "Requires selected playable notes on an editable BMS chart");
 }
 
 static void close_unavailable_inline_offset(const WormUiWorkspaceView& view) {
@@ -1693,7 +1708,7 @@ static void render_title_bar(const WormUiWorkspaceView* view,
     if (custom_controls) wormedit::ui::chrome::IconButton::layout_columns(g_context, 3);
     nk_layout_row_template_end(g_context);
     render_workspace_menu("File", view->project_loaded ? 7.0f : 4.0f, 250.0f, *view, *action);
-    render_workspace_menu("Edit", 3.0f, 210.0f, *view, *action);
+    render_workspace_menu("Edit", 4.0f, 250.0f, *view, *action);
     render_workspace_menu("View", view->compose.visible ? 5.0f : 4.0f, 210.0f, *view, *action);
     render_workspace_menu("Preview", view->project_loaded ? 5.0f : 1.0f, 250.0f, *view, *action);
     render_title_label(*view);

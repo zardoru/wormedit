@@ -779,9 +779,11 @@ struct channel_builder_t {
         const auto& resource = resource_for_id(song, *event.sound, "$.sound_channels");
         const auto target = ensure_channel(resource, "$.sound_channels", event.source_lane);
         if (reconcile_projection(channels[target], event.sound_channel_event, event.provenance,
-                                 false, event.position, std::nullopt, lane_id_t{})) return;
+                                 false, event.position, event.end, lane_id_t{})) return;
         channels[target].notes.push_back({0, pulse(event.position, "$.sound_channels[].notes[].y"),
-                                          0, false, event.provenance});
+                                          event.end ? pulse_length(event.position, *event.end,
+                                              "$.sound_channels[].notes[].l") : 0U,
+                                          false, event.provenance});
     }
 
     void append_semantic_events() {

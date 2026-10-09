@@ -767,6 +767,89 @@ TEST_CASE("BGM events move into a playfield lane keeping their row",
     CHECK_FALSE(move_bgm_events_to_lane(blocked, revision, chart_id_t{1}, clash, lane_id_t{99}).applied);
 }
 
+namespace {
+
+auto overlapping_linked_hold_batch_is_atomic() -> bool {
+    std::ifstream input(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" /
+                            "published-vox-slicing.bmson", std::ios::binary);
+    const std::string bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
+    REQUIRE(parsed.song);
+    auto song = *parsed.song;
+    auto& chart = song.charts.front();
+    const auto lane = std::ranges::find_if(chart.lane_layouts.front().layout.lanes,
+        [&](const auto& candidate) {
+            return candidate.role != lane_role_t::autoplay &&
+                candidate.role != lane_role_t::invisible && candidate.role != lane_role_t::mine &&
+                std::ranges::none_of(chart.measures, [&](const auto& measure) {
+                return std::ranges::any_of(measure.notes, [&](const auto& note) {
+                    const auto begin = note.position.row;
+                    const auto end = note.end ? note.end->row : begin;
+                    return note.lane == candidate.id && note.position.measure ==
+                           chart.measures.front().id && begin <= 720 && end >= 120;
+                });
+            });
+        });
+    REQUIRE(lane != chart.lane_layouts.front().layout.lanes.end());
+    const auto lane_id = lane->id;
+    const auto source_lane = chart.bgm_source_lanes.front().id;
+    const auto source_channel = chart.sound_channels.front().id;
+    const auto exemplar = chart.sound_channels.front().events.front();
+    const auto linked_resource = std::ranges::find(song.resources,
+        chart.sound_channels.front().source_clip.source, &resource_entry_t::asset);
+    require_move(linked_resource != song.resources.end());
+    const std::array ids{object_id_t{900'101}, object_id_t{900'102}};
+    const std::array source_ids{object_id_t{900'201}, object_id_t{900'202}};
+    const std::array positions{local_position_t{chart.measures.front().id, 120},
+                               local_position_t{chart.measures.front().id, 180}};
+    const std::array ends{local_position_t{chart.measures.front().id, 600},
+                          local_position_t{chart.measures.front().id, 720}};
+    for (std::size_t index = 0; index < ids.size(); ++index) {
+        chart.sound_channels.front().events.push_back({.id = source_ids[index], .position = positions[index],
+            .end = ends[index], .lane = {}, .continuation = false, .playable = false,
+            .provenance = exemplar.provenance});
+        chart.measures.front().bgm_events.push_back({.id = ids[index], .position = positions[index],
+            .source_lane = source_lane, .sound = linked_resource->id,
+            .sound_channel_event = source_ids[index], .end = ends[index]});
+    }
+    const auto chart_id = chart.id;
+    const auto channel_id = source_channel;
+    auto history = make_document_history(std::move(song));
+    require_move(validate_document(history.document).empty());
+    for (const auto id : ids) {
+        auto single_history = make_document_history(history.document);
+        const std::array one_event{id};
+        const auto single = move_bgm_events_to_lane(single_history,
+            single_history.document.revision, chart_id, one_event, lane_id);
+        require_move(single.applied);
+    }
+    const auto before = write_native_project(history.document);
+    require_move(before.bytes.has_value());
+    const auto revision = history.document.revision;
+    const auto result = move_bgm_events_to_lane(history, revision, chart_id, ids, lane_id);
+    check_move(!result.applied && !result.diagnostics.empty() &&
+               result.diagnostics.front().code == diagnostic_code_t::collision);
+    check_move(history.document.revision == revision);
+    check_move(history.undo.empty());
+    const auto after = write_native_project(history.document);
+    require_move(after.bytes.has_value());
+    check_move(*after.bytes == *before.bytes);
+    const auto& retained = history.document.charts.front();
+    check_move(retained.sound_channels.front().id == channel_id);
+    check_move(std::ranges::all_of(ids, [&](const auto id) {
+        return std::ranges::any_of(retained.measures.front().bgm_events,
+            [&](const auto& event) { return event.id == id && event.end.has_value(); });
+    }));
+    return true;
+}
+
+} // namespace
+
+TEST_CASE("overlapping linked BMSON hold batch leaves the live document unchanged",
+          "[unit][core][note-to-bgm][bgm-to-lane][bmson][hold]") {
+    require_move(overlapping_linked_hold_batch_is_atomic());
+}
+
 TEST_CASE("Shift lane assignment moves mixed selected objects one at a time in document order",
           "[unit][core][note-to-bgm][bgm-to-lane][successive]") {
     auto song = plain_song();

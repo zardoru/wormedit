@@ -57,6 +57,7 @@ enum class shortcut_key_t : std::uint16_t {
     escape = 0x29,
     backspace = 0x2a,
     space = 0x2c,
+    backquote = 0x35,
     f1 = 0x3a,
     f2 = 0x3b,
     f3 = 0x3c,

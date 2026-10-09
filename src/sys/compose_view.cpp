@@ -1119,6 +1119,7 @@ void project_compose_bgm_events(flattened_workspace_t& flattened,
              .bmson_slice = event.bmson_restart.has_value(),
              .bmson_restart = event.bmson_restart.value_or(false),
              .selected = event.selected,
+             .has_tail = event.has_tail,
              .sound_label = sound == flattened.compose.sound_labels.end()
                                 ? (event.sound ? "?" : "") : sound->second.first.c_str(),
              .sound_detail = sound == flattened.compose.sound_labels.end()
@@ -1132,7 +1133,9 @@ void project_compose_bgm_events(flattened_workspace_t& flattened,
              .semantic_blue = static_cast<std::uint8_t>(
                  event.semantic_color ? event.semantic_color->blue : 0),
              .semantic_alpha = static_cast<std::uint8_t>(
-                 event.semantic_color ? event.semantic_color->alpha : 0)}, view.truncated);
+                 event.semantic_color ? event.semantic_color->alpha : 0),
+             .head_top_pixels = static_cast<float>(convert_rect(event.head_bounds).top),
+             .head_bottom_pixels = static_cast<float>(convert_rect(event.head_bounds).bottom)}, view.truncated);
     }
     view.truncated = view.truncated || event_count != events.size();
 }
@@ -1455,6 +1458,7 @@ bool initialize_compose_view_state(
     view.bga_revealed_lane_mask = retained_state ? retained_state->bga_revealed_lane_mask : 0;
     view.playable_field_left_pixels = compose_measure_rail_width_pixels;
     view.playable_field_right_pixels = view.viewport_width_pixels;
+    view.move_to_bgm_available = false;
     view.bms_measure_labels = false;
     view.bmson_tools_available = false;
     view.compose_measure_count = 0;
@@ -4102,6 +4106,8 @@ auto extract_scalar_objects(compose_scene_cache_t& cache,
     };
     const auto bgm = [&](auto& record, std::size_t index) {
         record.selected = retained.bgm_events[index].selected;
+        record.head_top_pixels += static_cast<float>(shift);
+        record.head_bottom_pixels += static_cast<float>(shift);
         return record.bounds.bottom >= 0 && record.bounds.top <= height;
     };
     const auto bga = [&](auto& record, std::size_t index) {
@@ -4251,6 +4257,10 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     const auto& timing_stage = input.timing_stage;
     const auto downscroll = input.downscroll;
     flattened.compose.interaction_view = interaction_view;
+    view.move_to_bgm_available = chart.source_family == wormedit::format_family_t::bms &&
+        !editor_interaction_has_pending_gesture(*retained_state) && !application_state.paste_session &&
+        (!retained_state->selected_notes.empty() || std::ranges::any_of(retained_state->selected_objects,
+            [](const auto& object) { return object.kind == editor_selection_object_kind_t::note; }));
     view.bms_measure_labels = chart.source_family == wormedit::format_family_t::bms;
     view.bmson_tools_available = chart.source_family == wormedit::format_family_t::bmson;
     populate_lane_profile_choices(view, chart, interaction_view.cursor);

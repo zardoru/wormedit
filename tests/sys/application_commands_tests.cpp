@@ -2038,3 +2038,27 @@ TEST_CASE("Click audition command flips the preference through the program save 
     fs::remove_all(dir);
 }
 #endif
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Move to BGM application commands gate formats and retain rejection selection",
+          "[unit][sys][application_commands][t424]") {
+    using namespace wormedit;
+    TimingInsertFixture fixture;
+    auto& chart = fixture.fixture.history.document.charts.front();
+    fixture.compose_state->selected_notes = {object_id_t{3}, object_id_t{1}, object_id_t{2}};
+    const auto original_selection = fixture.compose_state->selected_notes;
+    const auto revision = fixture.fixture.history.document.revision;
+    check_layer_command(!fixture.invoke(application_command_kind_t::edit_move_to_bgm).accepted);
+    check_layer_command(fixture.fixture.history.document.revision == revision);
+    check_layer_command(fixture.compose_state->selected_notes == original_selection);
+    chart.source_family = format_family_t::bms;
+    const auto moved = fixture.invoke(application_command_kind_t::edit_move_next_to_bgm);
+    require_layer_command(moved.accepted);
+    check_layer_command(fixture.compose_state->selected_notes == std::vector{object_id_t{3}, object_id_t{2}});
+    check_layer_command(fixture.compose_state->selected_objects.empty());
+    check_layer_command(fixture.fixture.history.undo.size() == 1);
+    check_layer_command(fixture.fixture.history.document.charts.front().measures.front().bgm_events.front().id == object_id_t{1});
+    check_layer_command(undo_document_command(fixture.fixture.history));
+}
+
+#endif

@@ -76,20 +76,21 @@ auto first_selected_lane_object(const chart_document_t& chart,
 } // namespace
 
 auto move_selected_notes_to_bgm(document_history_t& history, editor_interaction_state_t& state,
-                                std::optional<object_id_t> lane, bool only_stem_taps, bool keep_selected)
+                                std::optional<object_id_t> lane, bool only_stem_taps, bool keep_selected,
+                                bool successive)
     -> note_to_bgm_outcome_t {
     const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     if (chart == history.document.charts.end()) return {};
-    // A note can be in the selection lists, in the object list, or in both.
-    std::vector<object_id_t> candidates = state.selected_notes;
-    for (const auto& object : state.selected_objects)
-        if (object.kind == editor_selection_object_kind_t::note) candidates.push_back(object.id);
-    std::ranges::sort(candidates, {}, &object_id_t::value);
-    candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+    const auto candidates = collect_selected_note_ids(state);
     std::vector<object_id_t> moving;
     for (const auto id : candidates)
         if (qualifies(*chart, id, only_stem_taps)) moving.push_back(id);
     if (moving.empty()) return {};
+    if (successive) {
+        const auto first = first_selected_lane_object(*chart, moving, {});
+        if (!first) return {};
+        moving = {first->id};
+    }
     note_to_bgm_outcome_t outcome{.handled = true};
     outcome.command = move_notes_to_bgm(history, history.document.revision, chart->id, moving, lane);
     if (!outcome.command.applied) return outcome;
@@ -98,7 +99,7 @@ auto move_selected_notes_to_bgm(document_history_t& history, editor_interaction_
     std::erase_if(state.selected_objects, [&](const auto& object) {
         return object.kind == editor_selection_object_kind_t::note && is_moved(object.id);
     });
-    if (keep_selected)
+    if (keep_selected && !successive)
         for (const auto id : moving)
             state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, id});
     outcome.selection_exhausted = state.selected_notes.empty() && state.selected_objects.empty();

@@ -3640,10 +3640,10 @@ auto input_result_severity(const WormUiComposeInputAction& input,
 auto move_selected_notes_to_bgm_input(compose_input_context_t& context,
                                       wormedit::editor_interaction_result_t& result,
                                       std::string_view& accepted, std::optional<wormedit::object_id_t> lane,
-                                      bool only_stem_taps, bool keep_selected) -> bool {
+                                      bool only_stem_taps, bool keep_selected, bool successive = false) -> bool {
     if (!context.input_is_current()) return false;
     const auto outcome = wormedit::sys::move_selected_notes_to_bgm(
-        context.history, context.state, lane, only_stem_taps, keep_selected);
+        context.history, context.state, lane, only_stem_taps, keep_selected, successive);
     if (!outcome.handled) return false;
     result.accepted = outcome.command.applied;
     result.document_changed = outcome.command.applied;
@@ -3681,7 +3681,7 @@ auto dispatch_note_to_bgm_input(const WormUiComposeInputAction& input, compose_i
     }
     if (input.kind != WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM) return std::nullopt;
     const auto lane = input.lane_id != 0 ? std::optional<object_id_t>{object_id_t{input.lane_id}} : std::nullopt;
-    if (!move_selected_notes_to_bgm_input(context, result, accepted, lane, false, true))
+    if (!move_selected_notes_to_bgm_input(context, result, accepted, lane, false, true, input.successive))
         return compose_input_family_result_t{"Select playable notes before moving them to the BGM area."};
     return compose_input_family_result_t::continue_with_result();
 }

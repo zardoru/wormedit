@@ -28,6 +28,7 @@ struct editor_field_scene_bgm_source_t {
     object_id_t event;
     object_id_t source_lane;
     std::uint64_t row{};
+    std::uint64_t end_row{};
     std::optional<resource_id_t> sound;
     std::optional<bool> bmson_restart;
     std::optional<color_rgba_t> semantic_color;
@@ -75,6 +76,8 @@ struct editor_field_scene_index_t {
     // BGM events use a separate source-lane stack, but share this exact
     // revision-bound row index with the playable field.
     std::vector<editor_field_scene_bgm_source_t> bgm_events;
+    std::size_t bgm_tree_leaf_base{1};
+    std::vector<std::uint64_t> bgm_tree_max_end;
     std::vector<editor_field_scene_bga_source_t> bga_events;
     std::unordered_map<std::uint64_t, std::size_t> note_indices_by_id;
     std::size_t note_tree_leaf_base{1};
@@ -173,6 +176,8 @@ struct editor_field_bgm_event_geometry_t {
     std::optional<bool> bmson_restart;
     bool selected{};
     editor_field_rect_t bounds;
+    editor_field_rect_t head_bounds;
+    bool has_tail{};
     std::optional<color_rgba_t> semantic_color;
 };
 

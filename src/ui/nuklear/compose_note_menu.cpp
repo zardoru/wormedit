@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <limits>
 
 namespace {
@@ -164,11 +165,32 @@ void render_expanded(nk_context* context, const WormUiComposeView& view,
     nk_layout_row_end(context);
 }
 
+bool bgm_tooltip_pending{};
+
+void render_bgm_action(nk_context* context, const WormUiComposeView& view,
+                        WormUiWorkspaceAction& action) {
+    nk_layout_row_dynamic(context, row_height, 1);
+    if (!view.move_to_bgm_available) nk_widget_disable_begin(context);
+    char bgm_label[96]{};
+    std::snprintf(bgm_label, sizeof(bgm_label), "Move to BGM%s%s", view.move_to_bgm_shortcut[0] ? "  " : "",
+                  view.move_to_bgm_shortcut);
+    if (nk_button_label(context, bgm_label) && view.move_to_bgm_available) {
+        std::snprintf(action.menu_command_id, sizeof(action.menu_command_id), "%s", "edit.move_to_bgm");
+        chrome::context_menu_close(menu.popup);
+    }
+    if (!view.move_to_bgm_available) {
+        nk_widget_disable_end(context);
+        if (nk_input_is_mouse_hovering_rect(&context->input, nk_widget_bounds(context)))
+            bgm_tooltip_pending = true;
+    }
+}
+
 void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceAction& action) {
+    bgm_tooltip_pending = false;
     if (chrome::popup_panel(context) || !menu.popup.open) return;
     const auto size = menu.submenu
         ? nk_vec2(392, 422)
-        : nk_vec2(root_width + 2 * chrome::menu_padding, chrome::context_menu_height(3));
+        : nk_vec2(root_width + 2 * chrome::menu_padding, chrome::context_menu_height(4));
     if (!chrome::context_menu_begin(menu.popup, context, stamp(view), size)) {
         if (!menu.popup.open) finish_close(view, action);
         return;
@@ -188,11 +210,14 @@ void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceA
             chrome::context_menu_close(menu.popup);
         }
         if (!can_replace) nk_widget_disable_end(context);
+        render_bgm_action(context, view, action);
         nk_layout_row_dynamic(context, row_height, 1);
         nk_label(context, "Shift + lane key moves one, then deselects", NK_TEXT_LEFT);
 
     }
     chrome::context_menu_end(menu.popup, context);
+    if (bgm_tooltip_pending)
+        wormedit::ui::nuklear::tooltip::text(context, "Requires selected playable notes on an editable BMS chart");
 }
 
 void open_at_pointer(nk_context* context, const WormUiComposeView& view,

@@ -341,6 +341,29 @@ TEST_CASE("BMSON pulse geometry, bar lines, timing and mixed sound slices are ma
     }));
 }
 
+TEST_CASE("BMSON non-playable x-zero hold projects its exact semantic end",
+          "[unit][format][bmson][hold]") {
+    const auto parsed = parse_text(R"({"version":"1.0.0","info":{"init_bpm":120},
+      "lines":[{"y":960}],
+      "sound_channels":[{"name":"stem.wav","notes":[{"x":0,"y":900,"l":180}]}]})");
+    require_bmson_condition(parsed.song);
+    const auto& chart = parsed.song->charts.front();
+    require_bmson_condition(chart.sound_channels.size() == 1);
+    require_bmson_condition(chart.sound_channels.front().events.size() == 1);
+    require_bmson_condition(chart.measures.front().bgm_events.size() == 1);
+    require_bmson_condition(chart.sound_channels.front().events.front().end.has_value());
+    require_bmson_condition(chart.measures.front().bgm_events.front().end.has_value());
+    check_bmson_condition(chart.measures.front().bgm_events.front().end ==
+          chart.sound_channels.front().events.front().end);
+    const auto& marker = chart.measures.front().bgm_events.front();
+    check_bmson_condition(marker.end->measure != marker.position.measure);
+    const auto end_row = absolute(chart, *marker.end);
+    const auto head_row = absolute(chart, marker.position);
+    require_bmson_condition(end_row);
+    require_bmson_condition(head_row);
+    check_bmson_condition(*end_row > *head_row);
+}
+
 TEST_CASE("BMSON published slicing derives exact shared source-frame ranges",
           "[unit][format][bmson][slicing]") {
     const auto parsed = fixture("published-vox-slicing.bmson");

@@ -1096,7 +1096,7 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
         ~cleanup_t() { std::error_code error; std::filesystem::remove_all(path, error); }
     } cleanup{directory};
     std::filesystem::create_directories(directory);
-    const std::string text = R"({"version":"1.0.0","info":{"title":"Editor slices","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[{"name":"stem.wav","notes":[{"x":1,"y":0,"c":false},{"x":1,"y":240,"c":true},{"x":0,"y":480,"c":false}]}]})";
+    const std::string text = R"({"version":"1.0.0","info":{"title":"Editor slices","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[{"name":"stem.wav","notes":[{"x":1,"y":0,"c":false},{"x":1,"y":240,"c":true},{"x":0,"y":480,"l":120,"c":false}]}]})";
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
     require_action(parsed.song.has_value());
     require_action_false(parsed.has_errors());
@@ -1134,6 +1134,7 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
     check_action(std::ranges::any_of(notifications, [&](const auto& entry) {
         return entry.severity == notification_severity_t::warning && entry.message == *completed &&
                entry.detail.find("layer") != std::string::npos &&
+               entry.detail.find("hold tail") != std::string::npos &&
                entry.detail.find("Chart ") != std::string::npos;
     }));
     std::size_t charts{}, sounds{};

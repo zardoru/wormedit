@@ -2,10 +2,14 @@
 #include <wormedit/formats/bms_writer.h>
 
 #include <wormedit/core/timing.h>
+#include <wormedit/core/note_to_bgm.h>
+#include <wormedit/formats/native_project.h>
+#include <wormedit/formats/conversion.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/resource_assignment.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <array>
@@ -2706,4 +2710,84 @@ TEST_CASE("BMS warns when a measure has more BGM lines than BMSE allows",
         return diagnostic.severity == wormedit::diagnostic_severity_t::warning &&
                diagnostic.message.find("128 BGM lines") != std::string::npos;
     }));
+}
+
+namespace {
+template <typename T> void require_bgm_export(const T& value) {
+    REQUIRE(static_cast<bool>(value));
+}
+
+auto conversion_chart_object_counts(const wormedit::chart_document_t& chart)
+    -> std::pair<std::size_t, std::size_t> {
+    std::pair<std::size_t, std::size_t> counts;
+    for (const auto& measure : chart.measures) {
+        counts.first += measure.notes.size();
+        counts.second += measure.bgm_events.size();
+    }
+    return counts;
+}
+} // namespace
+
+TEST_CASE("Converted BMS taps and holds export in their original conditional scope",
+          "[unit][format][bms][writer][t423-codec]") {
+    const bool hold = GENERATE(false, true);
+    const bool conditional = GENERATE(false, true);
+    std::string source = "#PLAYER 1\n#BPM 120\n#WAV01 kick.wav\n";
+    if (conditional) source += "#RANDOM 2\n#IF 1\n";
+    source += hold ? "#00051:0100\n#00151:0001\n" : "#00011:01\n";
+    if (conditional) source += "#ELSE\n#00012:01\n#ENDIF\n#ENDRANDOM\n";
+    wormedit::bms_parse_options_t options;
+    options.lane_profile_id = "bme-7k-outside-scratch";
+    if (conditional) options.branch_choices = {{line_order(source, "#RANDOM 2"), 1}};
+    auto imported = parse(source, options);
+    require_bgm_export(imported.song);
+    auto history = wormedit::make_document_history(*imported.song);
+    const auto chart = history.document.charts.front().id;
+    const std::array ids{history.document.charts.front().measures.front().notes.front().id};
+    require_bgm_export(wormedit::move_notes_to_bgm(history, history.document.revision,
+                                                 chart, ids, std::nullopt));
+    const auto native = wormedit::write_native_project(history.document);
+    require_bgm_export(native.bytes);
+    const auto written = wormedit::write_bms(history.document);
+    INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));
+    require_bgm_export(written.bytes);
+    CHECK(std::ranges::any_of(written.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.message.find("hold tail") != std::string::npos;
+    }) == hold);
+    if (conditional) options.branch_choices = {{line_order(*written.bytes, "#RANDOM 2"), 1}};
+    const auto reparsed = parse(*written.bytes, options);
+    require_bgm_export(reparsed.song);
+    CHECK(conversion_chart_object_counts(reparsed.song->charts.front()) ==
+          std::pair<std::size_t, std::size_t>{0, 1});
+    CHECK(wormedit::write_native_project(history.document).bytes == native.bytes);
+    if (conditional) {
+        options.branch_choices.front().selected_value = 2;
+        const auto inactive = parse(*written.bytes, options);
+        require_bgm_export(inactive.song);
+        CHECK(conversion_chart_object_counts(inactive.song->charts.front()) ==
+              std::pair<std::size_t, std::size_t>{1, 0});
+    }
+}
+
+TEST_CASE("BGM hold export loss respects strict and warning conversion policies",
+          "[unit][format][bms][writer][t423-codec]") {
+    auto imported = parse("#PLAYER 1\n#BPM 120\n#WAV01 kick.wav\n#00051:0101\n",
+                          {.lane_profile_id = "bme-7k-outside-scratch"});
+    require_bgm_export(imported.song);
+    auto history = wormedit::make_document_history(*imported.song);
+    const auto chart = history.document.charts.front().id;
+    const std::array ids{history.document.charts.front().measures.front().notes.front().id};
+    require_bgm_export(wormedit::move_notes_to_bgm(history, history.document.revision,
+                                                 chart, ids, std::nullopt));
+    wormedit::conversion_request_t request;
+    request.target = wormedit::format_family_t::bms;
+    request.chart = chart;
+    const auto strict = wormedit::convert_document(history.document, request);
+    CHECK(strict.has_errors());
+    CHECK(strict.outputs.empty());
+    request.loss_policy = wormedit::loss_policy_t::warn;
+    const auto warning = wormedit::convert_document(history.document, request);
+    CHECK_FALSE(warning.has_errors());
+    CHECK(warning.outputs.size() == 1);
+    CHECK_FALSE(warning.diagnostics.empty());
 }

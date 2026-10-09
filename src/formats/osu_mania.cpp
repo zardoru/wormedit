@@ -3180,6 +3180,10 @@ void append_osu_bgm_events(
     account_t&& account_event, fail_t&& fail, warn_t&& warn) {
     for (const auto& measure : chart.measures) {
         for (const auto& event : measure.bgm_events) {
+            if (event.end)
+                warn(osu_mania_write_diagnostic_code_t::lossy_transform,
+                     "osu! Sample event retains only the BGM head; hold tail is omitted",
+                     "bgm_events[].end");
             if (event.sound) {
                 const auto [layer, volume] = retained_sample_event_fields(retained, event.id.value);
                 append_osu_sample_event(output, serial, measures, song, event.position,

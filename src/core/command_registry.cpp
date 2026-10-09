@@ -801,6 +801,13 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
                 command_focus_scope_t::tab, {chord(shortcut_key_t::x, primary())}, true, compose);
     add_builtin(registry, invoker, "edit.paste", "Paste", command_category_t::edit,
                 command_focus_scope_t::tab, {chord(shortcut_key_t::v, primary())}, false, compose);
+    add_builtin(registry, invoker, "edit.move_to_bgm", "Move Selection to BGM",
+                command_category_t::edit, command_focus_scope_t::tab,
+                {chord(shortcut_key_t::backquote)}, true, compose);
+    add_builtin(registry, invoker, "edit.move_next_to_bgm", "Move Next Selected Note to BGM",
+                command_category_t::edit, command_focus_scope_t::tab,
+                {chord(shortcut_key_t::backquote, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::shift))},
+                true, compose);
     add_builtin(registry, invoker, "edit.delete", "Delete", command_category_t::edit,
                 command_focus_scope_t::tab,
                 {chord(shortcut_key_t::delete_key), chord(shortcut_key_t::backspace)}, true,

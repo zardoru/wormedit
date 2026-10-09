@@ -2084,3 +2084,19 @@ TEST_CASE("osu SpecialStyle 12K and 16K survive native and osu roundtrips",
         }
     }
 }
+
+TEST_CASE("osu Sample export reports the omitted BGM hold tail and retains the head",
+          "[unit][format][osu-mania][writer][t423-codec]") {
+    auto imported = parse_inline("osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n[Events]\nSample,500,0,\"kick.wav\",100\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n");
+    REQUIRE(imported.song);
+    auto& chart = imported.song->charts.front();
+    auto& event = chart.measures.front().bgm_events.front();
+    event.end = wormedit::local_position_t{event.position.measure, event.position.row + 120};
+    const auto written = write_inline(*imported.song);
+    REQUIRE(written.text);
+    CHECK(written.text->find("Sample,500,") != std::string::npos);
+    CHECK(std::ranges::any_of(written.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::lossy_transform &&
+               diagnostic.message.find("hold tail") != std::string::npos;
+    }));
+}

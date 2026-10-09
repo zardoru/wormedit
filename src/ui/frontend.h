@@ -723,6 +723,7 @@ typedef struct WormUiComposeBgmEventView {
     bool bmson_slice;
     bool bmson_restart;
     bool selected;
+    bool has_tail;
     const char* sound_label;
     const char* sound_detail;
     bool semantic_color_visible;
@@ -730,6 +731,8 @@ typedef struct WormUiComposeBgmEventView {
     uint8_t semantic_green;
     uint8_t semantic_blue;
     uint8_t semantic_alpha;
+    float head_top_pixels;
+    float head_bottom_pixels;
 } WormUiComposeBgmEventView;
 
 typedef struct WormUiComposeBgmDraftView {
@@ -1287,6 +1290,8 @@ typedef struct WormUiComposeView {
     bool semantic_layer_paint_mode_active;
     bool semantic_layer_gesture_active;
     size_t selected_note_count;
+    bool move_to_bgm_available;
+    char move_to_bgm_shortcut[64];
     // Grids the chart can snap to (the Quantize chips outside it are quantize-only).
     uint64_t supported_snap_denominators[32];
     size_t supported_snap_denominator_count;

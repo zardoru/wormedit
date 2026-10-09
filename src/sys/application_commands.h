@@ -29,6 +29,8 @@ enum class application_command_kind_t {
     edit_copy,
     edit_cut,
     edit_paste,
+    edit_move_to_bgm,
+    edit_move_next_to_bgm,
     edit_note_kind,
     edit_tool_select,
     edit_tool_draw,

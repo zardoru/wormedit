@@ -1577,6 +1577,24 @@ void refresh_semantic_membership_commands(wormedit::command_registry_t& registry
     (void)update_command_state(registry, command_id_t{"semantic_layer.toggle"}, can_apply && target_valid, std::nullopt);
 }
 
+auto bgm_move_enabled(const wormedit::chart_document_t* chart,
+                       const std::optional<wormedit::editor_interaction_state_t>& state,
+                       bool ready, bool pending, const application_command_state_t& application) -> bool {
+    if (!ready || pending || !chart || chart->source_family != wormedit::format_family_t::bms ||
+        application.paste_session || !wormedit::ui::compose_notes_editable(compose_mode_of(application)))
+        return false;
+    return !state->selected_notes.empty() || std::ranges::any_of(state->selected_objects, [](const auto& object) {
+        return object.kind == wormedit::editor_selection_object_kind_t::note;
+    });
+}
+
+void attach_bgm_shortcut(WormUiComposeView& view, const wormedit::command_registry_t& registry) {
+    const auto* command = wormedit::find_command(registry, {"edit.move_to_bgm"});
+    const auto shortcut = command && !command->current_shortcuts.empty()
+        ? wormedit::sys::shortcut_chord_text(command->current_shortcuts.front()) : std::string{};
+    std::snprintf(view.move_to_bgm_shortcut, sizeof(view.move_to_bgm_shortcut), "%s", shortcut.c_str());
+}
+
 void refresh_application_command_states(
     wormedit::command_registry_t& registry, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
@@ -1610,6 +1628,9 @@ void refresh_application_command_states(
     set("history.undo", !history.undo.empty());
     set("history.redo", !history.redo.empty());
     set("edit.delete", compose_ready);
+    const bool can_move_bgm = bgm_move_enabled(chart, compose_state, compose_ready, pending, application_state);
+    set("edit.move_to_bgm", can_move_bgm);
+    set("edit.move_next_to_bgm", can_move_bgm);
     const bool clipboard_selection = has_clipboard_selection(compose_ready, pending, compose_state,
                                                           application_state.kiai_selected_head);
     set("edit.copy", clipboard_selection);
@@ -4357,6 +4378,7 @@ int main(int argc, char** argv) {
             flattened.view.notifications = notification_view;
             flattened.view.options = wormedit::sys::options_view(options_runtime);
             attach_shortcut_rows(flattened.view.options, options_runtime, shortcut_editor, command_registry);
+            attach_bgm_shortcut(flattened.view.compose, command_registry);
             flattened.view.timing_settings_visible = application_command_state.timing_settings_visible;
             flattened.view.metronome_volume = application_command_state.metronome_volume;
             flattened.view.metronome_count_in = application_command_state.metronome_count_in;

@@ -2,6 +2,7 @@
 #include <wormedit/core/measure.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/sound_slice.h>
+#include <wormedit/core/snap.h>
 
 #include <algorithm>
 #include <charconv>
@@ -179,6 +180,32 @@ auto set_bmson_sound_channel_restart(document_history_t& history,
         restart ? "Set BMSON sound-channel restart" : "Set BMSON sound-channel continuation");
 }
 
+namespace {
+
+auto translate_hold_end(const measure_index_t& index, local_position_t start,
+                        std::optional<local_position_t> end, local_position_t target,
+                        std::uint64_t revision)
+    -> std::variant<std::optional<local_position_t>, document_command_result_t> {
+    if (!end) return std::optional<local_position_t>{};
+    const auto start_row = absolute_row(index, start);
+    const auto end_row = absolute_row(index, *end);
+    const auto target_row = absolute_row(index, target);
+    if (!start_row || !end_row || !target_row || *end_row <= *start_row)
+        return rejected(revision, diagnostic_code_t::row_out_of_range,
+                        "BMSON marker hold has invalid span geometry");
+    const auto length = *end_row - *start_row;
+    if (length > std::numeric_limits<std::uint64_t>::max() - *target_row)
+        return rejected(revision, diagnostic_code_t::row_out_of_range,
+                        "BMSON marker hold exceeds exact chart geometry");
+    const auto translated = position_at_absolute_row(index, *target_row + length);
+    if (!translated)
+        return rejected(revision, diagnostic_code_t::row_out_of_range,
+                        "BMSON marker hold cannot be translated within chart geometry");
+    return translated;
+}
+
+} // namespace
+
 auto move_bmson_bgm_marker(document_history_t& history, std::uint64_t expected_revision,
                            chart_id_t chart, object_id_t bgm_event, local_position_t target)
     -> document_command_result_t {
@@ -231,6 +258,13 @@ auto move_bmson_bgm_marker(document_history_t& history, std::uint64_t expected_r
         return rejected(history.document.revision, diagnostic_code_t::invalid_id,
                         "BGM marker and retained source event disagree");
     }
+    const auto translated = translate_hold_end(std::get<measure_index_t>(measures),
+        semantic->position, semantic->end, target, history.document.revision);
+    if (const auto* failure = std::get_if<document_command_result_t>(&translated)) return *failure;
+    const auto translated_end = std::get<std::optional<local_position_t>>(translated);
+    if (source->end != semantic->end)
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BGM marker and retained source hold ends disagree");
     if (std::ranges::any_of(channel->events, [&](const auto& event) {
             return event.id != source->id && event.position == target;
         })) {
@@ -243,6 +277,7 @@ auto move_bmson_bgm_marker(document_history_t& history, std::uint64_t expected_r
     const auto channel_offset = static_cast<std::size_t>(channel - found_chart->sound_channels.begin());
     const auto source_offset = static_cast<std::size_t>(source - channel->events.begin());
     changed_chart.sound_channels[channel_offset].events[source_offset].position = target;
+    changed_chart.sound_channels[channel_offset].events[source_offset].end = translated_end;
     for (auto& measure : changed_chart.measures) {
         std::erase_if(measure.bgm_events, [bgm_event](const auto& event) {
             return event.id == bgm_event;
@@ -256,6 +291,7 @@ auto move_bmson_bgm_marker(document_history_t& history, std::uint64_t expected_r
     }
     auto moved = *semantic;
     moved.position = target;
+    moved.end = translated_end;
     destination->bgm_events.push_back(std::move(moved));
     const auto asset = std::ranges::find(proposed.audio_assets,
         changed_chart.sound_channels[channel_offset].source_clip.source,
@@ -649,10 +685,64 @@ auto find_semantic_event(const chart_document_t& chart, object_id_t id)
 
 auto valid_semantic_event(const semantic_event_refs_t& refs) -> bool {
     return !((refs.note == nullptr) == (refs.bgm == nullptr)) &&
-        (!refs.note || (refs.note->kind == note_kind_t::tap && !refs.note->end &&
+        (!refs.note || (((refs.note->kind == note_kind_t::tap && !refs.note->end) ||
+                         (refs.note->kind == note_kind_t::hold && refs.note->end)) &&
                         !refs.note->label && !refs.note->branch &&
-                        refs.note->semantic_layers.empty() && refs.note->sound_channel_event)) &&
+                        refs.note->sound_channel_event)) &&
         (!refs.bgm || (!refs.bgm->branch && refs.bgm->sound_channel_event));
+}
+
+auto assignment_span_end(const measure_index_t& index, std::uint64_t begin,
+                         std::optional<local_position_t> end, std::uint64_t revision)
+    -> std::variant<std::uint64_t, document_command_result_t> {
+    if (!end) return begin;
+    const auto finish = absolute_row(index, *end);
+    if (!finish || *finish <= begin)
+        return rejected(revision, diagnostic_code_t::row_out_of_range,
+                        "BMSON linked hold requires a positive in-chart span");
+    return *finish;
+}
+
+auto assignment_lane_occupancy(const chart_document_t& chart, const measure_index_t& index,
+                               const semantic_event_refs_t& refs, lane_id_t lane,
+                               std::uint64_t begin, std::uint64_t finish, bool hold,
+                               std::uint64_t revision)
+    -> std::optional<document_command_result_t> {
+    const auto id = refs.note ? refs.note->id : refs.bgm->id;
+    for (const auto& measure : chart.measures) {
+        for (const auto& other : measure.notes) {
+            if (other.id == id || other.lane != lane) continue;
+            const auto other_begin = absolute_row(index, other.position);
+            const auto other_end = other.end ? absolute_row(index, *other.end) : other_begin;
+            if (!other_begin || !other_end || *other_end < *other_begin)
+                return rejected(revision, diagnostic_code_t::row_out_of_range,
+                                "Existing note has invalid BMSON lane geometry");
+            const auto overlaps = hold
+                ? *other_begin <= finish && begin <= *other_end
+                : *other_begin <= begin && begin <= *other_end;
+            if (overlaps)
+                return rejected(revision, diagnostic_code_t::collision,
+                                "Another note occupies the target BMSON playable lane");
+        }
+    }
+    return std::nullopt;
+}
+
+auto assignment_lane_covers_hold(const chart_document_t& chart, const measure_index_t& index,
+                                 lane_id_t lane, std::uint64_t begin, std::uint64_t finish,
+                                 std::uint64_t revision)
+    -> std::optional<document_command_result_t> {
+    for (const auto& segment : chart.lane_layouts) {
+        const auto transition = absolute_row(index, segment.position);
+        if (transition && begin < *transition && *transition <= finish &&
+            !editable_lane_at(chart, index, lane, *transition))
+            return rejected(revision, diagnostic_code_t::unknown_lane,
+                            "Target lane is unavailable within the BMSON hold span");
+    }
+    if (!editable_lane_at(chart, index, lane, finish))
+        return rejected(revision, diagnostic_code_t::unknown_lane,
+                        "Target lane is unavailable at the BMSON hold end");
+    return std::nullopt;
 }
 
 auto target_assignment_lane(const chart_document_t& chart, const measure_index_t& index,
@@ -668,17 +758,16 @@ auto target_assignment_lane(const chart_document_t& chart, const measure_index_t
     if (!editable_lane_at(chart, index, *lane, *row))
         return rejected(revision, diagnostic_code_t::unknown_lane,
                         "Target playable lane is unavailable at the BMSON marker");
-    for (const auto& measure : chart.measures) {
-        for (const auto& other : measure.notes) {
-            if (other.id == (refs.note ? refs.note->id : refs.bgm->id) || other.lane != *lane)
-                continue;
-            const auto begin = absolute_row(index, other.position);
-            const auto end = other.end ? absolute_row(index, *other.end) : begin;
-            if (begin && end && *begin <= *row && *row <= *end)
-                return rejected(revision, diagnostic_code_t::collision,
-                                "Another note occupies the target BMSON playable lane");
-        }
-    }
+    const auto semantic_end = refs.note ? refs.note->end : refs.bgm->end;
+    const auto end = assignment_span_end(index, *row, semantic_end, revision);
+    if (const auto* failure = std::get_if<document_command_result_t>(&end)) return *failure;
+    const auto finish = std::get<std::uint64_t>(end);
+    if (auto failure = assignment_lane_occupancy(chart, index, refs, *lane, *row, finish,
+                                                  semantic_end.has_value(), revision))
+        return *failure;
+    if (semantic_end)
+        if (auto failure = assignment_lane_covers_hold(chart, index, *lane, *row, finish, revision))
+            return *failure;
     return std::nullopt;
 }
 
@@ -695,7 +784,9 @@ auto find_linked_sound_source(const chart_document_t& chart, object_id_t source_
                         "BMSON sound assignment source event is unavailable");
     const auto source = std::ranges::find(channel->events, source_id,
                                            &sound_channel_event_t::id);
-    if (source == channel->events.end() || source->position != position || source->end ||
+    const auto semantic_end = refs.note ? refs.note->end : refs.bgm->end;
+    if (source == channel->events.end() || source->position != position ||
+        source->end != semantic_end ||
         source->playable != (refs.note != nullptr) ||
         (refs.note && source->lane != refs.note->lane) || (refs.bgm && source->lane))
         return rejected(revision, diagnostic_code_t::invalid_id,
@@ -745,9 +836,19 @@ auto update_semantic_assignment(chart_document_t& chart, measure_chunk_t& measur
     -> std::optional<document_command_result_t> {
     const auto position = refs.note ? refs.note->position : refs.bgm->position;
     if (lane) {
+        if (refs.note) {
+            const auto existing = std::ranges::find(measure.notes, semantic_id, &note_t::id);
+            if (existing == measure.notes.end())
+                return rejected(revision, diagnostic_code_t::invalid_id,
+                                "Linked BMSON note disappeared during lane assignment");
+            existing->lane = *lane;
+            return std::nullopt;
+        }
         measure.notes.push_back({.id = refs.bgm->id, .position = position, .lane = *lane,
-            .kind = note_kind_t::tap, .end = std::nullopt, .sound = refs.bgm->sound,
-            .sound_channel_event = source_id, .provenance = refs.bgm->provenance});
+            .kind = refs.bgm->end ? note_kind_t::hold : note_kind_t::tap,
+            .end = refs.bgm->end, .sound = refs.bgm->sound,
+            .sound_channel_event = source_id, .semantic_layers = refs.bgm->semantic_layers,
+            .provenance = refs.bgm->provenance});
         std::erase_if(measure.bgm_events,
                       [semantic_id](const auto& item) { return item.id == semantic_id; });
         return std::nullopt;
@@ -758,7 +859,8 @@ auto update_semantic_assignment(chart_document_t& chart, measure_chunk_t& measur
     measure.bgm_events.push_back({.id = refs.note->id, .position = position,
         .source_lane = source_lane, .sound = refs.note->sound,
         .sound_channel_event = source_id, .structural_slot = 0,
-        .provenance = refs.note->provenance});
+        .provenance = refs.note->provenance, .semantic_layers = refs.note->semantic_layers,
+        .end = refs.note->end});
     std::erase_if(measure.notes,
                   [semantic_id](const auto& item) { return item.id == semantic_id; });
     return std::nullopt;
@@ -788,7 +890,16 @@ auto assign_bmson_sound_event(document_history_t& history, std::uint64_t expecte
     const auto refs = find_semantic_event(*found_chart, semantic_event);
     if (!valid_semantic_event(refs))
         return rejected(revision, diagnostic_code_t::invalid_id,
-                        "BMSON sound assignment requires one linked tap or BGM marker");
+                        "BMSON sound assignment requires one supported linked event");
+    const auto semantic_position = refs.note ? refs.note->position : refs.bgm->position;
+    const auto semantic_end = refs.note ? refs.note->end : refs.bgm->end;
+    if (semantic_end) {
+        const auto begin = absolute_row(index, semantic_position);
+        const auto finish = absolute_row(index, *semantic_end);
+        if (!begin || !finish || *finish <= *begin)
+            return rejected(revision, diagnostic_code_t::row_out_of_range,
+                            "BMSON linked hold requires a positive in-chart span");
+    }
     if ((refs.note && playable_lane && refs.note->lane == *playable_lane) ||
         (refs.bgm && !playable_lane))
         return {.applied = false, .revision = revision, .diagnostics = {}};
@@ -1253,6 +1364,12 @@ auto insert_bmson_stem_point(document_history_t& history, std::uint64_t expected
     return commit_document_command(history, std::move(proposed), "Insert BMSON stem point");
 }
 
+namespace {
+auto append_packed_sound_channel(song_document_t& document, chart_document_t& chart,
+                                  resource_id_t resource, std::uint64_t& largest)
+    -> source_provenance_t;
+} // namespace
+
 auto insert_bmson_packed_one_shot(document_history_t& history,
                                   std::uint64_t expected_revision, chart_id_t chart_id,
                                   object_id_t source_lane_id, resource_id_t resource_id,
@@ -1312,11 +1429,9 @@ auto insert_bmson_packed_one_shot(document_history_t& history,
         return rejected(history.document.revision, diagnostic_code_t::invalid_id,
                         "BMSON chart object ID space is exhausted");
     sound_channel_t* destination{};
+    source_provenance_t provenance;
     if (channel == original_chart->sound_channels.end()) {
-        const clip_id_t clip_id{++largest};
-        changed.sound_channels.push_back({.id = object_id_t{++largest}, .name = resource->name,
-            .source_clip = {.id = clip_id, .source = asset->id, .begin_frame = 0,
-                            .end_frame = asset->stream.frame_count}, .events = {}});
+        provenance = append_packed_sound_channel(proposed, changed, resource_id, largest);
         destination = &changed.sound_channels.back();
     } else {
         const auto offset = static_cast<std::size_t>(channel - original_chart->sound_channels.begin());
@@ -1326,7 +1441,7 @@ auto insert_bmson_packed_one_shot(document_history_t& history,
     const object_id_t semantic{++largest};
     destination->events.push_back({.id = source_event, .position = target,
         .end = std::nullopt, .lane = {}, .continuation = false, .playable = false,
-        .provenance = {}});
+        .provenance = provenance});
     if (auto failure = add_bgm_projection(changed, target, source_event, resource_id,
                                           source_lane_id, semantic,
                                           history.document.revision)) return *failure;
@@ -1485,6 +1600,19 @@ auto packed_channel_source_index(resource_entry_t& resource, const song_document
     return next;
 }
 
+auto append_packed_sound_channel(song_document_t& document, chart_document_t& chart,
+                                  resource_id_t resource, std::uint64_t& largest)
+    -> source_provenance_t {
+    auto& owner = *std::ranges::find(document.resources, resource, &resource_entry_t::id);
+    const auto source_index = packed_channel_source_index(owner, document);
+    const clip_id_t clip_id{++largest};
+    chart.sound_channels.push_back({.id = object_id_t{++largest}, .name = owner.name,
+        .source_clip = {.id = clip_id, .source = owner.asset, .begin_frame = 0,
+                        .end_frame = std::nullopt}, .events = {}});
+    return {.family = format_family_t::bmson,
+            .source_field = "$.sound_channels[" + std::to_string(source_index) + "]"};
+}
+
 auto commit_packed_stroke_draw(document_history_t& history, const packed_stroke_context_t& context,
                                object_id_t lane_id, const resource_entry_t& resource)
     -> document_command_result_t {
@@ -1505,15 +1633,7 @@ auto commit_packed_stroke_draw(document_history_t& history, const packed_stroke_
                         "BMSON chart object ID space is exhausted");
     source_provenance_t provenance;
     if (!channel) {
-        auto& owner = *std::ranges::find(proposed.resources, resource.id, &resource_entry_t::id);
-        provenance = {.family = format_family_t::bmson,
-                      .source_field = "$.sound_channels[" +
-                          std::to_string(packed_channel_source_index(owner, history.document)) + "]"};
-        const auto asset = std::ranges::find(proposed.audio_assets, resource.asset, &audio_asset_t::id);
-        const clip_id_t clip_id{++largest};
-        changed.sound_channels.push_back({.id = object_id_t{++largest}, .name = resource.name,
-            .source_clip = {.id = clip_id, .source = asset->id, .begin_frame = 0,
-                            .end_frame = std::nullopt}, .events = {}});
+        provenance = append_packed_sound_channel(proposed, changed, resource.id, largest);
     }
     auto& destination = channel ? *std::ranges::find(changed.sound_channels, *channel_id,
                                                       &sound_channel_t::id)

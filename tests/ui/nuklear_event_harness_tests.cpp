@@ -4412,3 +4412,71 @@ TEST_CASE("Quantize chips outside the chart's snap list explain they are quantiz
     INFO(harness.drawn_text());
     check_no_tooltip_text(harness, "Quantize only");
 }
+
+namespace {
+auto t424_song() -> wormedit::song_document_t {
+    auto song = t422_song();
+    song.charts.front().source_family = wormedit::format_family_t::bms;
+    return song;
+}
+
+auto t424_registry(t422_fixture_t& fixture) -> wormedit::command_registry_t {
+    return wormedit::make_default_editor_command_registry([&](const auto& invocation) {
+        WormUiWorkspaceAction action{};
+        action.compose_input_count = 1;
+        action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_NOTE_MOVE_TO_BGM,
+            .successive = invocation.command.value == "edit.move_next_to_bgm"};
+        action.compose_input_project_id = fixture.history.document.id.value;
+        action.compose_input_chart_id = 1;
+        action.compose_input_document_revision = fixture.history.document.revision;
+        action.compose_input_viewport_width_pixels = fixture.harness.view().compose.viewport_width_pixels;
+        const auto status = fixture.dispatch_action(action);
+        UNSCOPED_INFO(status);
+        return wormedit::command_invocation_result_t{.accepted = status == "Notes moved to the BGM area."};
+    });
+}
+}
+
+TEST_CASE("Backquote moves all selected BMS notes and Shift Backquote consumes chart order",
+          "[frontend-state][event-harness][t424]") {
+    t422_fixture_t fixture{t424_song()};
+    auto registry = t424_registry(fixture);
+    const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_GRAVE, SDL_SCANCODE_GRAVE);
+    const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_GRAVE, SDL_SCANCODE_GRAVE);
+    for (const auto expected : {101ULL, 102ULL, 103ULL}) {
+        const auto snapshot = fixture.harness.frame(std::span{&press, 1}, SDL_KMOD_SHIFT);
+        const auto routed = route_harness_shortcut(snapshot.get(), registry);
+        expect_t422(routed.status == wormedit::command_dispatch_status_t::invoked);
+        expect_t422(t422_note(fixture.history, expected) == nullptr);
+        fixture.project();
+        (void)fixture.harness.frame(std::span{&release, 1});
+    }
+    expect_t422(fixture.interaction->selected_notes.empty());
+    expect_t422(fixture.interaction->selected_objects.empty());
+    expect_t422(fixture.history.undo.size() == 3);
+    for (int index = 0; index < 3; ++index)
+        expect_t422(wormedit::undo_document_command(fixture.history));
+    fixture.interaction->selected_notes = {wormedit::object_id_t{103}, wormedit::object_id_t{101}, wormedit::object_id_t{102}};
+    fixture.interaction->selected_objects.clear();
+    fixture.project();
+    const auto all = fixture.harness.frame(std::span{&press, 1});
+    expect_t422(route_harness_shortcut(all.get(), registry).status == wormedit::command_dispatch_status_t::invoked);
+    expect_t422(fixture.interaction->selected_objects.size() == 3);
+    expect_t422(fixture.history.undo.size() == 1);
+    expect_t422(wormedit::undo_document_command(fixture.history));
+}
+
+TEST_CASE("Note menu exposes the BGM action with its projected shortcut and disabled gate",
+          "[frontend-state][event-harness][t424]") {
+    note_menu_fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    view.move_to_bgm_available = true;
+    std::snprintf(view.move_to_bgm_shortcut, sizeof(view.move_to_bgm_shortcut), "`");
+    (void)right_click_at(fixture.harness, 300, 300);
+    const auto center = fixture.harness.drawn_text_center("Move to BGM  `");
+    REQUIRE(center);
+    const auto clicked = click_at(fixture.harness, center->first, center->second);
+    CHECK(std::ranges::any_of(clicked, [](const auto& frame) {
+        return std::string_view{frame.get().menu_command_id} == "edit.move_to_bgm";
+    }));
+}

@@ -748,3 +748,14 @@ TEST_CASE("structured shortcut conflicts name the same pairs as the diagnostic",
     REQUIRE(diagnostics.size() == 1);
     CHECK(diagnostics.front().message == "shortcut conflict between 'test.first' and 'test.second'");
 }
+
+TEST_CASE("BGM pseudo-lane shortcuts are remappable conflict-checked Compose commands",
+          "[unit][core][command_registry][t424]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    auto registry = make_default_editor_command_registry(make_invoker(calls));
+    CHECK(diagnose_shortcut_conflicts(registry).empty());
+    const auto result = dispatch_shortcut(registry, {.chord = {.key = shortcut_key_t::backquote}},
+                                          focus_for_compose(), shortcut_primary_modifier_t::control);
+    CHECK(result.command == command_id_t{"edit.move_to_bgm"});
+    CHECK(result.status == command_dispatch_status_t::invoked);
+}

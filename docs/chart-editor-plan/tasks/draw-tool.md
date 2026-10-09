@@ -124,7 +124,7 @@ it. There is no toggle.
 
 ## T-486 Export BMSON channels created by single-click packed placement
 
-- **Status:** ready
+- **Status:** done
 - **Found by:** T-484 (2026-10-08). `insert_bmson_packed_one_shot` in `src/core/bmson_sound_channel_editor.cpp` creates a packed sound channel with `end_frame` set and without the `sound_channel` resource identity and `$.sound_channels[N]` event provenance the BMSON writer needs to pair and export the channel, so a chart containing such a channel fails to export. Draw strokes since T-484 use `apply_bmson_packed_stroke`, which creates channels correctly.
 - **Outcome:** a BMSON chart with a channel created by single-click packed placement exports and reparses with the same events, like a stroke-created channel.
 - **Read first:** `src/core/bmson_sound_channel_editor.cpp` (`insert_bmson_packed_one_shot`, `apply_bmson_packed_stroke`), `src/formats/bmson_writer.cpp` (channel pairing).
@@ -137,5 +137,6 @@ it. There is no toggle.
 - **Reject/failure behavior:** unchanged.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'bmson|^core\.'`.
 - **Out of scope:** stem lanes.
+- **Completion (2026-10-09):** shared channel creation gives single-click and stroke placement the same full source clip, channel identity and event provenance. The export/reparse regression failed before the fix and passes with Undo/Redo and no duplicate events. Caller audit retains the API: `src/sys/compose_input.cpp` still uses it for resource placement, and `tests/ui/bga_lane_event_harness_tests.cpp` covers it. Normal main build and all 2,926 tests pass, including the complete core/BMSON checks. See [batch evidence](../../../memory/coordination/oct9-bgm-conversion-batch.md).
 - **Coordination:** run after the T-423 02d edits to this file are integrated.
 

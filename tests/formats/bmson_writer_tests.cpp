@@ -1,10 +1,12 @@
 #include <wormedit/formats/bmson.h>
 #include <wormedit/core/metadata_editor.h>
+#include <wormedit/core/note_to_bgm.h>
 #include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -555,4 +557,70 @@ TEST_CASE("BMSON export bakes recipes before reporting unsupported regular scrol
     const auto written = wormedit::write_bmson(song);
     CHECK_FALSE(written.json.has_value());
     CHECK(has_write_error(written, wormedit::bmson_write_diagnostic_code_t::unsupported_feature));
+}
+
+namespace {
+template <typename T> void require_bgm_tail(const T& value) { REQUIRE(static_cast<bool>(value)); }
+void check_bgm_tail(bool value) { CHECK(value); }
+}
+
+TEST_CASE("BMSON writer preserves retained and authored BGM hold tails",
+          "[unit][core][bmson][t423-codec]") {
+    auto parsed = parse_text(R"({"version":"1.0.0","info":{"init_bpm":120,
+        "mode_hint":"beat-7k","resolution":240},"sound_channels":[{"name":"hold.wav",
+        "notes":[{"x":1,"y":0,"l":120,"c":false},
+                 {"x":0,"y":300,"l":900,"c":false}]}]})");
+    require_bgm_tail(parsed.song);
+    auto& chart = parsed.song->charts.front();
+    SECTION("retained channel") {}
+    SECTION("authored semantic events") {
+        clear_retained_channels(chart);
+        for (auto& measure : chart.measures) {
+            for (auto& note : measure.notes) note.sound_channel_event.reset();
+            for (auto& bgm : measure.bgm_events) bgm.sound_channel_event.reset();
+        }
+    }
+    const auto written = wormedit::write_bmson(*parsed.song);
+    INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));
+    require_bgm_tail(written.json);
+    const auto reparsed = parse_text(*written.json);
+    require_bgm_tail(reparsed.song);
+    const auto& output = reparsed.song->charts.front();
+    const auto measure = std::ranges::find_if(output.measures,
+        [](const auto& value) { return !value.bgm_events.empty(); });
+    require_bgm_tail(measure != output.measures.end());
+    const auto& bgm = measure->bgm_events.front();
+    require_bgm_tail(bgm.end);
+    check_bgm_tail(absolute(output, bgm.position) == 300);
+    check_bgm_tail(absolute(output, *bgm.end) == 1200);
+    check_bgm_tail(note_signature(*reparsed.song) == note_signature(*parsed.song));
+}
+
+TEST_CASE("BMSON converted playable hold roundtrips as BGM with the same source end",
+          "[unit][core][bmson][t423-codec]") {
+    auto parsed = parse_text(R"({"version":"1.0.0","info":{"init_bpm":120,
+        "mode_hint":"beat-7k","resolution":240},"sound_channels":[{"name":"hold.wav",
+        "notes":[{"x":1,"y":300,"l":900,"c":false}]}]})");
+    require_bgm_tail(parsed.song);
+    auto history = wormedit::make_document_history(*parsed.song);
+    const auto& original = history.document.charts.front();
+    const auto at = std::ranges::find_if(original.measures,
+        [](const auto& value) { return !value.notes.empty(); });
+    require_bgm_tail(at != original.measures.end());
+    const std::array ids{at->notes.front().id};
+    require_bgm_tail(wormedit::move_notes_to_bgm(history, history.document.revision,
+                                         original.id, ids, std::nullopt));
+    const auto written = wormedit::write_bmson(history.document);
+    INFO((written.diagnostics.empty() ? "no diagnostic" : written.diagnostics.front().message));
+    require_bgm_tail(written.json);
+    const auto reparsed = parse_text(*written.json);
+    require_bgm_tail(reparsed.song);
+    const auto& chart = reparsed.song->charts.front();
+    const auto measure = std::ranges::find_if(chart.measures,
+        [](const auto& value) { return !value.bgm_events.empty(); });
+    require_bgm_tail(measure != chart.measures.end());
+    require_bgm_tail(measure->bgm_events.front().end);
+    check_bgm_tail(absolute(chart, *measure->bgm_events.front().end) == 1200);
+    check_bgm_tail(chart.sound_channels.front().events.size() == 1);
+    check_bgm_tail(!chart.sound_channels.front().events.front().playable);
 }

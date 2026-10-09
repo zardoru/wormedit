@@ -922,8 +922,8 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
 
     add_builtin(registry, invoker, "timing.toggle_lock", "Toggle Timing Lock",
                 command_category_t::timing, command_focus_scope_t::tab,
-                {chord(shortcut_key_t::l, modified(shortcut_modifier_t::shift))}, true,
-                workspace_tab_t::timing, false);
+                {chord(shortcut_key_t::t, modified(shortcut_modifier_t::shift))}, true,
+                workspace_tab_t::compose, false);
     add_builtin(registry, invoker, "timing.insert_bpm", "Insert BPM Change",
                 command_category_t::timing, command_focus_scope_t::tab, {}, true,
                 workspace_tab_t::compose);

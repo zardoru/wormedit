@@ -964,6 +964,7 @@ void report_compose_bgm_hover(struct nk_context* context, const WormUiComposeVie
         view->hover_timing_sample_rate != view->waveform_overview_sample_rate) {
         return;
     }
+    if (!wormedit::ui::nuklear::tooltip::hovered(context, geometry.bounds)) return;
     wormedit::ui::chrome::timing_tooltip(context, view->hover_timing_label, instructions);
 }
 
@@ -1462,7 +1463,8 @@ static auto compose_dock_layout(nk_context* context, const WormUiComposeView* vi
                    context->style.window.spacing.y);
     const auto sounds_requested = state.sounds_panel_visible && view->keysounds_available &&
         wormedit::ui::compose_notes_editable(compose_mode_of(*view));
-    const auto compact_sounds_layout = sounds_requested && compose_body_bounds.w < 1100.0f;
+    state.compact_dock_layout = compose_body_bounds.w < 1100.0f;
+    const auto compact_sounds_layout = sounds_requested && state.compact_dock_layout;
     const auto inspector_drawn = state.inspector_visible && !compact_sounds_layout &&
         compose_body_bounds.w >= 540.0f &&
         wormedit::ui::compose_inspector_available(compose_mode_of(*view));

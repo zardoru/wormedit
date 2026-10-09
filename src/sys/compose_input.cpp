@@ -7,6 +7,7 @@
 #include "sys/compose_scroll_geometry.h"
 #include "sys/compose_timing_delete.h"
 
+#include <wormedit/core/dead_span_rules.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/span_manipulation.h>
 #include <wormedit/audio/decoder.h>
@@ -3612,6 +3613,24 @@ auto dispatch_note_to_bgm_input(const WormUiComposeInputAction& input, compose_i
     return compose_input_family_result_t::continue_with_result();
 }
 
+// A lane key at a cursor inside a Warp would place a playable head in skipped rows. Holds that
+// started earlier may still end there, and a key on a selection only reassigns lanes.
+auto lane_key_places_inside_warp(const WormUiComposeInputAction& input,
+                                 const compose_input_context_t& context) -> bool {
+    const auto& state = context.state;
+    const auto press = input.kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS;
+    if ((!press && input.kind != WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE) ||
+        !context.scene_cache.dead_spans || !context.input_chart || state.virtual_bms_cursor_row)
+        return false;
+    const auto selected = !state.selected_notes.empty() || !state.selected_objects.empty();
+    const auto pending = state.pending_hold || !state.additional_keyboard_holds.empty();
+    if (press ? selected : pending) return false;
+    const auto built = wormedit::build_measure_index(*context.input_chart);
+    const auto* index = std::get_if<wormedit::measure_index_t>(&built);
+    const auto row = index ? wormedit::absolute_row(*index, state.cursor) : std::nullopt;
+    return row && wormedit::head_blocked_by_warp(*context.input_chart, *index, *row, state.armed_note_kind);
+}
+
 auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
                                      compose_input_context_t& context,
                                      wormedit::editor_interaction_result_t& result,
@@ -3620,6 +3639,9 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
         !wormedit::ui::compose_notes_editable(compose_mode_of(context.application_state)))
         return compose_input_family_result_t::continue_batch(
             "Note editing is unavailable in Timing focus.");
+    if (lane_key_places_inside_warp(input, context))
+        return compose_input_family_result_t::stop_with_feedback("Notes cannot be placed inside a Warp.",
+            wormedit::notification_severity_t::warning, wormedit::notification_source_t::input);
     if (const auto to_bgm = dispatch_note_to_bgm_input(input, context, result, accepted))
         return *to_bgm;
     if (input.kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION &&

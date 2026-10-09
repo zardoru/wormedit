@@ -2,6 +2,7 @@
 #include "sys/frame_timing.h"
 #include "sys/compose_view.h"
 #include "sys/recipe_form.h"
+#include <wormedit/core/dead_span_rules.h>
 #include <wormedit/core/sv_recipe.h>
 #include "ui/nuklear/arrow_glyph.h"
 #include "sys/compose_area_actions.h"
@@ -89,6 +90,23 @@ auto paste_anchor(application_command_state_t::paste_session_t& session,
     return cursor;
 }
 
+// Pasted playable heads obey the same Warp rule as placed ones; fakes, mines and tails may land.
+void block_paste_heads_in_warps(const wormedit::chart_document_t& chart,
+                                wormedit::chart_paste_proposal_t& proposal) {
+    if (!proposal.valid || chart.warps.empty()) return;
+    const auto indexed = wormedit::build_measure_index(chart);
+    const auto* index = std::get_if<wormedit::measure_index_t>(&indexed);
+    if (!index) return;
+    for (const auto& object : proposal.objects) {
+        const auto* note = std::get_if<wormedit::note_t>(&object);
+        const auto row = note ? wormedit::absolute_row(*index, note->position) : std::nullopt;
+        if (!row || !wormedit::head_blocked_by_warp(chart, *index, *row, note->kind)) continue;
+        proposal.valid = false;
+        proposal.error = "Playable note heads cannot sit inside a warp.";
+        return;
+    }
+}
+
 auto paste_geometry(const wormedit::chart_document_t& source,
                     const wormedit::chart_paste_proposal_t& proposal) -> wormedit::chart_document_t {
     wormedit::chart_document_t chart;
@@ -137,6 +155,7 @@ auto update_compose_paste(application_command_state_t& application_state,
     session->anchor_available = true;
     session->proposal = wormedit::propose_chart_paste(document, chart, session->clipboard,
                                                     anchor, document.revision);
+    block_paste_heads_in_warps(*source, session->proposal);
     session->geometry = paste_geometry(*source, session->proposal);
     const auto indexed = wormedit::build_editor_field_scene_index(session->geometry, document.revision);
     const auto* index = std::get_if<wormedit::editor_field_scene_index_t>(&indexed);

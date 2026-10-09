@@ -7,6 +7,7 @@
 #include <wormedit/core/notifications.h>
 
 #include <array>
+#include <bit>
 #include <optional>
 #include <vector>
 
@@ -444,4 +445,172 @@ TEST_CASE("Delete dispatcher commits stem conversion and ordinary deletion as on
     check_mixed_input(f.history.undo.size() == 1);
     REQUIRE(undo_document_command(f.history));
     check_mixed_input(f.history.document.charts.front().measures.front().notes.size() == 2);
+}
+
+namespace {
+// One Stop at row 480 and a Warp over rows [720, 840) in a one-lane chart with a single note.
+struct dead_span_fixture_t : compose_notification_fixture_t {
+    std::uint64_t before_revision{};
+    std::size_t before_notes{};
+
+    dead_span_fixture_t() {
+        auto& chart = history.document.charts.front();
+        chart.pauses = {{.id = object_id_t{20}, .position = {measure_id_t{1}, 480},
+                         .kind = pause_kind_t::stop, .duration = {2, 1},
+                         .source_unit = pause_unit_t::seconds}};
+        chart.warps = {{.id = object_id_t{21}, .span = {{measure_id_t{1}, 720}, {measure_id_t{1}, 840}}}};
+        REQUIRE(validate_document(history.document).empty());
+        history = make_document_history(history.document);
+        const auto measures = build_measure_index(history.document.charts.front());
+        REQUIRE(std::holds_alternative<measure_index_t>(measures));
+        const auto timing = build_timing_index(history.document.charts.front());
+        REQUIRE(timing);
+        cache.dead_spans = project_dead_spans(history.document.charts.front(),
+            std::get<measure_index_t>(measures), *timing.index, 64);
+        state.viewport_height_pixels = 400;
+        state.pixels_per_standard_measure = 480;
+        state.viewport_scroll_pixels = 0;
+        before_revision = history.document.revision;
+        before_notes = history.document.charts.front().measures.front().notes.size();
+    }
+    // Screen y at the middle of the Stop band.
+    auto stop_band_y() const -> double {
+        const auto& chart = history.document.charts.front();
+        const auto bands = project_dead_span_bands(*cache.dead_spans,
+            state.pixels_per_standard_measure / 960.0, state.viewport_scroll_pixels,
+            state.viewport_height_pixels,
+            compose_field_downscroll(chart, application.editor_preferences),
+            dead_span_pause_band_pixels);
+        for (const auto& band : bands)
+            if (band.kind == dead_span_kind_t::stop) return (band.top + band.bottom) / 2.0;
+        FAIL("no stop band");
+        return 0;
+    }
+    // An x inside the single playable lane, whatever the timing lanes reserve on the left.
+    auto lane_x() const -> double {
+        const auto layout = compose_horizontal_layout(
+            800, 1, false, 0, std::popcount(effective_compose_timing_lane_mask(application)));
+        return layout.field_left_pixels + layout.playable_field_width_pixels / 2.0;
+    }
+    auto run(std::initializer_list<WormUiComposeInputAction> inputs) -> std::string {
+        WormUiWorkspaceAction action{};
+        action.compose_input_chart_id = state.chart.value;
+        action.compose_input_document_revision = history.document.revision;
+        action.compose_input_viewport_width_pixels = 800;
+        for (const auto& input : inputs) action.compose_inputs[action.compose_input_count++] = input;
+        return dispatch_compose_input_action(action, history, workspace, state, viewport,
+            navigation, application, cache, 0, &sink);
+    }
+    void check_document_unchanged() {
+        CHECK(history.document.revision == before_revision);
+        CHECK(history.undo.empty());
+        CHECK(history.document.charts.front().measures.front().notes.size() == before_notes);
+    }
+};
+} // namespace
+
+TEST_CASE("pasting with the pointer inside a Stop band is rejected and changes nothing",
+          "[unit][sys][compose-notification][dead-span]") {
+    dead_span_fixture_t fixture;
+    fixture.state.selected_notes = {object_id_t{1}};
+    auto copied = copy_chart_selection(fixture.history.document, fixture.state,
+                                       fixture.history.document.revision);
+    REQUIRE(copied);
+    fixture.application.chart_clipboard = std::move(copied.clipboard);
+    std::string status;
+    REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
+    const auto y = fixture.stop_band_y();
+    (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_UPDATE, .x_pixels = fixture.lane_x(), .y_pixels = y},
+                       {.kind = WORM_UI_COMPOSE_INPUT_PASTE_COMMIT}});
+    fixture.check_document_unchanged();
+    CHECK(fixture.history.document.charts.front().measures.front().notes.size() == 1);
+}
+
+TEST_CASE("dropping a dragged note into a Stop band is rejected and changes nothing",
+          "[unit][sys][compose-notification][dead-span]") {
+    dead_span_fixture_t fixture;
+    fixture.state.selected_notes = {object_id_t{1}};
+    fixture.state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{1}}};
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                   begin_note_move_gesture_action_t{object_id_t{1}}));
+    const auto y = fixture.stop_band_y();
+    (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, .x_pixels = fixture.lane_x(), .y_pixels = y},
+                       {.kind = WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, .x_pixels = fixture.lane_x(), .y_pixels = y}});
+    fixture.check_document_unchanged();
+    CHECK(fixture.history.document.charts.front().measures.front().notes.front().position ==
+          local_position_t{measure_id_t{1}, 120});
+}
+
+TEST_CASE("a lane key at a cursor inside a Warp places nothing",
+          "[unit][sys][compose-notification][dead-span]") {
+    dead_span_fixture_t fixture;
+    fixture.state.selected_notes.clear();
+    fixture.state.selected_objects.clear();
+    fixture.state.cursor = {measure_id_t{1}, 780};
+    (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = 1},
+                       {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = 1}});
+    fixture.check_document_unchanged();
+}
+
+namespace {
+// A pointer 120 px away from the Stop band on its earlier-row side (row 240, free of dead spans).
+auto free_row_y(const dead_span_fixture_t& fixture) -> double {
+    const auto downscroll = compose_field_downscroll(fixture.history.document.charts.front(),
+                                                    fixture.application.editor_preferences);
+    return fixture.stop_band_y() + (downscroll ? 120.0 : -120.0);
+}
+} // namespace
+
+TEST_CASE("the same paste and drag succeed away from the Stop band",
+          "[unit][sys][compose-notification][dead-span]") {
+    SECTION("paste") {
+        dead_span_fixture_t fixture;
+        fixture.state.selected_notes = {object_id_t{1}};
+        auto copied = copy_chart_selection(fixture.history.document, fixture.state,
+                                           fixture.history.document.revision);
+        REQUIRE(copied);
+        fixture.application.chart_clipboard = std::move(copied.clipboard);
+        std::string status;
+        REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
+        (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_UPDATE, .x_pixels = fixture.lane_x(), .y_pixels = free_row_y(fixture)},
+                           {.kind = WORM_UI_COMPOSE_INPUT_PASTE_COMMIT}});
+        CHECK(fixture.history.document.charts.front().measures.front().notes.size() == 2);
+    }
+    SECTION("drag") {
+        dead_span_fixture_t fixture;
+        fixture.state.selected_notes = {object_id_t{1}};
+        fixture.state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{1}}};
+        REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                       begin_note_move_gesture_action_t{object_id_t{1}}));
+        const auto y = free_row_y(fixture);
+        (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, .x_pixels = fixture.lane_x(), .y_pixels = y},
+                           {.kind = WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, .x_pixels = fixture.lane_x(), .y_pixels = y}});
+        CHECK(fixture.history.document.revision != fixture.before_revision);
+    }
+}
+
+TEST_CASE("a lane key at a cursor just before the Warp places a note",
+          "[unit][sys][compose-notification][dead-span]") {
+    dead_span_fixture_t fixture;
+    fixture.state.selected_notes.clear();
+    fixture.state.selected_objects.clear();
+    fixture.state.cursor = {measure_id_t{1}, 600};
+    (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, .lane_id = 1},
+                       {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, .lane_id = 1}});
+    CHECK(fixture.history.document.charts.front().measures.front().notes.size() == 2);
+}
+
+TEST_CASE("pasting a note at a cursor inside a Warp is rejected and changes nothing",
+          "[unit][sys][compose-notification][dead-span]") {
+    dead_span_fixture_t fixture;
+    fixture.state.selected_notes = {object_id_t{1}};
+    auto copied = copy_chart_selection(fixture.history.document, fixture.state,
+                                       fixture.history.document.revision);
+    REQUIRE(copied);
+    fixture.application.chart_clipboard = std::move(copied.clipboard);
+    fixture.state.cursor = {measure_id_t{1}, 780};
+    std::string status;
+    REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
+    (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_COMMIT}});
+    fixture.check_document_unchanged();
 }

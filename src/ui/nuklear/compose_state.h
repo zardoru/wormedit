@@ -472,6 +472,13 @@ struct worm_ui_nuklear_compose_state_t {
     // Keysound listbox (compose_sounds_panel.cpp).
     bool sounds_panel_visible{true};
     bool layers_panel_visible{};
+    bool compact_dock_layout{};
+    // Deferred shortcut creation uses the same action as the dock's Add button.
+    struct layer_creation_request_t {
+        std::uint64_t project{}, chart{}, revision{};
+    };
+    std::optional<layer_creation_request_t> layer_creation_request;
+    std::size_t layers_panel_total_count{};
     std::uint64_t layers_panel_chart_id{};
     std::uint64_t layers_panel_project_id{};
     bool sounds_layers_open{};

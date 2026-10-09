@@ -4870,3 +4870,19 @@ TEST_CASE("Chart row button tooltip stays hidden under a covering Tap timing win
     hover_overview_label(harness, *open);
     CHECK_FALSE(harness.drawn_text_center("Open in Compose").has_value());
 }
+
+#include "ui/nuklear/compose_waveform_gaps.h"
+
+TEST_CASE("waveform strips leave out Stop and Delay bands",
+          "[unit][frontend-state][compose-waveform-gap]") {
+    // Bands out of order, one overlapping the next, one outside the viewport.
+    const auto strips = compose_waveform_strips(0, 400, {{250, 264}, {100, 114}, {110, 120}, {500, 514}});
+    REQUIRE(strips.size() == 3);
+    CHECK(strips[0].top == 0);   CHECK(strips[0].bottom == 100);
+    CHECK(strips[1].top == 120); CHECK(strips[1].bottom == 250);
+    CHECK(strips[2].top == 264); CHECK(strips[2].bottom == 400);
+    const auto none = compose_waveform_strips(0, 400, {});
+    REQUIRE(none.size() == 1);
+    CHECK(none[0].bottom == 400);
+    CHECK(compose_waveform_strips(0, 400, {{-5, 450}}).empty());
+}

@@ -145,6 +145,30 @@ void populate_metadata_channel_map_preview(flattened_workspace_t& flattened,
                                          !metadata.channel_map_lanes_truncated;
 }
 
+void populate_metadata_chart_choices(flattened_workspace_t& flattened,
+                                     const wormedit::document_history_t& history) {
+    auto& metadata = flattened.view.metadata;
+    constexpr std::size_t batch_limit = WORM_UI_METADATA_BATCH_CHART_CAPACITY;
+    const auto total = history.document.charts.size();
+    const auto count = std::min(total, batch_limit);
+    metadata.chart_choices_truncated = total > batch_limit;
+    auto* arena = flattened.arena();
+    auto choices = arena ? arena_array<WormUiMetadataChartChoice>(*arena, count)
+                         : frame_span<WormUiMetadataChartChoice>{};
+    for (std::size_t index = 0; index < count && choices.capacity() == count; ++index) {
+        const auto& chart = history.document.charts[index];
+        const auto* name = metadata_frame_text(flattened, chart.metadata.name);
+        if (!name) {
+            metadata.chart_choices_truncated = true;
+            break;
+        }
+        (void)choices.push_back({.chart_id = chart.id.value, .name = name});
+    }
+    if (choices.capacity() != count) metadata.chart_choices_truncated = true;
+    metadata.chart_choices = choices.data();
+    metadata.chart_choice_count = choices.size();
+}
+
 void populate_metadata_output_groups(flattened_workspace_t& flattened,
                                      const wormedit::document_history_t& history,
                                      const wormedit::workspace_controller_t& workspace) {
@@ -217,6 +241,7 @@ void populate_metadata_view_projection(
     populate_metadata_output_groups(flattened, history, workspace);
     populate_metadata_channel_map_lanes(flattened, history);
     populate_metadata_channel_map_preview(flattened, metadata_drop);
+    populate_metadata_chart_choices(flattened, history);
 
     metadata.search_tags = metadata.search_tags_editable
                                ? flattened.metadata.search_tag.data()

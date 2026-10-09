@@ -124,7 +124,7 @@ Verified 2026-10-03: fourteen core regression cases cover confirmed drops and un
 
 ## T-128 Apply one metadata edit to several difficulties
 
-- **Status:** ready
+- **Status:** done
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Implementation notes (2026-10-01):** the core batch command already exists as `apply_batch_chart_metadata_edit` in `metadata_editor.h` (added with T-260); only the Metadata multi-select UI (step 2) is open.
 - **Outcome:** Metadata offers a multi-select of difficulties; applying author or rating edits writes all selected charts in one command.
@@ -135,6 +135,9 @@ Verified 2026-10-03: fourteen core regression cases cover confirmed drops and un
 - **Reject/failure behavior:** any invalid chart rejects all.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`.
 - **Out of scope:** format fields.
+- **Supporting scope (coordinator, 2026-10-08):** `src/ui/nuklear/metadata_difficulty_section.cpp` and `tests/sys/metadata_notification_tests.cpp`.
+- **Result (2026-10-08):** Metadata's Difficulty section now lists a checkbox per difficulty (selection in `metadata_state.h`, reset with the metadata state, pruned of vanished ids) with Apply Mapper / Apply Rating buttons that send `WORM_UI_METADATA_EDIT_BATCH_CHART`; `dispatch_batch_chart_edit` writes them through `apply_batch_chart_metadata_edit` as one undo step. The view carries up to 256 chart choices (`WormUiMetadataChartChoice`). New test in `metadata_notification_tests.cpp` (two charts, one undo step, stale revision rejects). Full suite 2838/2838, event-harness 253/253.
+
 
 ## T-129 Add typed per-format metadata forms
 

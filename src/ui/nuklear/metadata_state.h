@@ -41,6 +41,9 @@ struct worm_ui_nuklear_metadata_state_t {
     std::uint64_t channel_map_buffer_revision{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t channel_map_buffer_segment{};
     bool channel_map_buffers_valid{};
+    // Metadata multi-select of difficulties; reset with the rest of the state.
+    std::vector<std::uint64_t> batch_selected_charts;
+    std::vector<std::uint64_t> batch_action_chart_ids;
     std::vector<std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1>> search_tags;
     std::vector<const char*> search_tag_pointers;
     std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1> new_search_tag{};

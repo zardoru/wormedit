@@ -5297,3 +5297,63 @@ TEST_CASE("Review sound import dialog has Cancel and Confirm with Enter and no h
         CHECK(action.get().compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT);
     }
 }
+
+namespace {
+
+struct project_modal_fixture_t {
+    nuklear_event_harness_t harness{1280, 900};
+    explicit project_modal_fixture_t(const char* audio_path) {
+        REQUIRE(harness.ready());
+        harness.view().pending_new_project_audio_path = audio_path;
+        (void)harness.frame();
+        (void)harness.frame();
+        (void)harness.frame();
+    }
+    auto click_button(const char* label) {
+        const auto center = harness.drawn_text_center(label);
+        REQUIRE(center);
+        return click_at(harness, center->first, center->second);
+    }
+    static auto kind_of(const std::vector<workspace_action_snapshot_t>& frames) -> WormUiWorkspaceActionKind {
+        for (const auto& frame : frames)
+            if (frame.get().kind != WORM_UI_WORKSPACE_ACTION_NONE) return frame.get().kind;
+        return WORM_UI_WORKSPACE_ACTION_NONE;
+    }
+};
+
+} // namespace
+
+TEST_CASE("Create project dialog keeps its actions and drops the repeated prompt",
+          "[frontend-state][event-harness][dialog][project-modal]") {
+    {
+        project_modal_fixture_t f{"/music/song.ogg"};
+        const auto& text = f.harness.drawn_text();
+        CHECK(text.find("Import audio as a new project?") != std::string::npos);
+        CHECK(text.find("/music/song.ogg") != std::string::npos);
+        CHECK(text.find("Choose the initial chart layout") == std::string::npos);
+        const auto frames = f.click_button("Create project");
+        CHECK(project_modal_fixture_t::kind_of(frames) == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
+        for (const auto& frame : frames)
+            if (frame.get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT) {
+                CHECK(std::string(frame.get().project_path) == "/music/song.ogg");
+                CHECK(frame.get().new_project_layout_index == 0);
+            }
+    }
+    {
+        project_modal_fixture_t f{"/music/song.ogg"};
+        CHECK(project_modal_fixture_t::kind_of(f.click_button("Cancel")) ==
+              WORM_UI_WORKSPACE_ACTION_CANCEL_AUDIO_PROJECT);
+    }
+    {
+        project_modal_fixture_t f{"/music/song.ogg"};
+        const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+        CHECK(project_modal_fixture_t::kind_of({f.harness.frame(std::span{&escape, 1})}) ==
+              WORM_UI_WORKSPACE_ACTION_CANCEL_AUDIO_PROJECT);
+    }
+    {
+        project_modal_fixture_t f{"/music/song.ogg"};
+        const auto enter = key_event(SDL_EVENT_KEY_DOWN, SDLK_RETURN, SDL_SCANCODE_RETURN);
+        CHECK(project_modal_fixture_t::kind_of({f.harness.frame(std::span{&enter, 1})}) ==
+              WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
+    }
+}

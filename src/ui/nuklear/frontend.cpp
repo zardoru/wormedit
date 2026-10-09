@@ -2559,52 +2559,46 @@ static bool begin_project_modal(const char* title, struct nk_rect bounds) {
                     NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_NO_SCROLLBAR);
 }
 
+static wormedit::ui::chrome::Dialog g_project_modal_dialog;
+
 static void render_new_project_wizard(WormUiWorkspaceAction& action, int width, int height) {
     if (!g_new_project_wizard.open) return;
+    namespace chrome = wormedit::ui::chrome;
     constexpr std::array<const char*, 8> layout_labels{
         "4K", "5K", "6K", "7K", "8K", "9K", "10K", "14K"};
-    const float popup_width = std::min(500.0f, std::max(280.0f, width - 24.0f));
-    const float popup_height = g_new_project_wizard.audio ? 266.0f : 204.0f;
-    const auto bounds = nk_rect((width - popup_width) * 0.5f,
-                                (height - popup_height) * 0.5f,
-                                popup_width, popup_height);
-    if (!begin_project_modal("Create project", bounds)) {
-        nk_end(g_context);
-        return;
-    }
-    nk_layout_row_dynamic(g_context, 28, 1);
-    nk_label(g_context, g_new_project_wizard.audio ? "Import audio as a new project?"
-                                                  : "Create a new project", NK_TEXT_LEFT);
-    if (g_new_project_wizard.audio) {
-        nk_layout_row_dynamic(g_context, 52, 1);
-        nk_label_wrap(g_context, g_new_project_wizard.audio_path.c_str());
-    }
-    nk_layout_row_dynamic(g_context, 24, 1);
-    nk_label(g_context, "Choose the initial chart layout", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(g_context, 30, 1);
-    const auto selected = wormedit::ui::chrome::safe_combo(g_context, layout_labels.data(),
-                                   static_cast<int>(layout_labels.size()),
-                                   g_new_project_wizard.layout_index, 25,
-                                   nk_vec2(180.0f, 225.0f));
-    if (selected >= 0 && selected < static_cast<int>(layout_labels.size()))
-        g_new_project_wizard.layout_index = static_cast<std::uint8_t>(selected);
+    auto& dialog = g_project_modal_dialog;
     const bool audio_path_too_long = g_new_project_wizard.audio &&
                                      g_new_project_wizard.audio_path.size() >=
                                          sizeof(action.project_path);
-    if (audio_path_too_long) {
-        nk_layout_row_dynamic(g_context, 20, 1);
-        nk_label(g_context, "Audio path is too long to import.", NK_TEXT_LEFT);
+    if (chrome::dialog_begin(dialog, g_context, "Create project",
+            g_new_project_wizard.audio ? "Import audio as a new project?" : "Create a new project",
+            {.modal = true, .width = 500.0f,
+             .area = nk_vec2(static_cast<float>(width), static_cast<float>(height))})) {
+        if (g_new_project_wizard.audio)
+            chrome::dialog_text(dialog, g_context, g_new_project_wizard.audio_path.c_str(),
+                                chrome::color(chrome::UiColor::text_muted));
+        nk_layout_row_dynamic(g_context, 15, 1);
+        nk_label_colored(g_context, "Chart layout", NK_TEXT_LEFT, chrome::color(chrome::UiColor::text_muted));
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::control_default, 1);
+        const auto selected = chrome::safe_combo(g_context, layout_labels.data(),
+                                       static_cast<int>(layout_labels.size()),
+                                       g_new_project_wizard.layout_index, 25,
+                                       nk_vec2(180.0f, 225.0f));
+        if (selected >= 0 && selected < static_cast<int>(layout_labels.size()))
+            g_new_project_wizard.layout_index = static_cast<std::uint8_t>(selected);
+        if (audio_path_too_long)
+            chrome::dialog_text(dialog, g_context, "Audio path is too long to import.",
+                                chrome::color(chrome::UiColor::conflict));
+        chrome::dialog_footer_begin(dialog, g_context, 2, false, 120.0f);
+        if (chrome::dialog_button(dialog, g_context, "Cancel", chrome::DialogButtonRole::secondary))
+            cancel_new_project_wizard(action);
+        if (chrome::dialog_button(dialog, g_context, "Create project", chrome::DialogButtonRole::primary,
+                                  !audio_path_too_long))
+            confirm_new_project_wizard(action);
     }
-    nk_layout_row_dynamic(g_context, 34, 2);
-    if (nk_button_label(g_context, "Cancel")) {
+    // Escape cancels like the Cancel button (the dialog may already have closed itself).
+    if (chrome::dialog_end(dialog, g_context) == chrome::DialogResult::cancel && g_new_project_wizard.open)
         cancel_new_project_wizard(action);
-    }
-    if (audio_path_too_long) nk_widget_disable_begin(g_context);
-    if (nk_button_label(g_context, "Create project") && !audio_path_too_long) {
-        confirm_new_project_wizard(action);
-    }
-    if (audio_path_too_long) nk_widget_disable_end(g_context);
-    nk_end(g_context);
 }
 
 static void cancel_bms_encoding_dialog(WormUiWorkspaceAction& action) {

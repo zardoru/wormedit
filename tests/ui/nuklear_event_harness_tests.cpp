@@ -2214,6 +2214,7 @@ void stage_grouped_import(nuklear_event_harness_t& harness) {
     const auto& view = harness.view();
     REQUIRE(worm_ui_frontend_stage_sound_import(view.project_id, view.selected_chart_id,
         view.document_revision, items.data(), items.size(), nullptr, 0, true, ""));
+    (void)harness.frame();  // A dialog fits its content on its second frame.
 }
 
 void check_retained_import_after_failure() {
@@ -2250,8 +2251,10 @@ TEST_CASE("Sound group name field replaces selected text from captured keyboard 
     REQUIRE(worm_ui_nuklear_pending_sound_import().groups.size() == 1);
     CHECK(worm_ui_nuklear_pending_sound_import().groups.front().name == "kick");
 
-    // The centered 720x680 review window places its group-name field near this point.
-    (void)click_at(harness, 550.0F, 350.0F);
+    // The group-name field shows the group name; click into it.
+    const auto name_field = harness.drawn_text_center("kick");
+    REQUIRE(name_field);
+    (void)click_at(harness, name_field->first, name_field->second);
     const auto select_all = key_event(SDL_EVENT_KEY_DOWN, SDLK_A, SDL_SCANCODE_A);
     (void)harness.frame(std::span{&select_all, 1}, SDL_KMOD_CTRL);
     const auto release_a = key_event(SDL_EVENT_KEY_UP, SDLK_A, SDL_SCANCODE_A);
@@ -3221,6 +3224,7 @@ void section_review_submits_fixed_kind(std::uint8_t kind, bool stale = false) {
         view.selected_chart_id, view.document_revision, &item, 1, nullptr, 0, false, ""));
     if (stale) ++view.document_revision;
     (void)harness.frame();
+    (void)harness.frame();  // A dialog fits its content on its second frame.
     section_import_check(worm_ui_nuklear_pending_sound_import().fixed_kind == kind);
     section_import_check(harness.drawn_text().find(kind == 1 ? "Stem" : "Keysound") != std::string::npos);
     const auto confirm = harness.drawn_text_center("Confirm import");
@@ -5264,5 +5268,32 @@ TEST_CASE("External player preferences dialog keeps every action",
         REQUIRE(selected);
         CHECK(selected->kind == WORM_UI_EXTERNAL_PLAYER_SELECT);
         CHECK(selected->selected == 1);
+    }
+}
+
+TEST_CASE("Review sound import dialog has Cancel and Confirm with Enter and no help sentence",
+          "[frontend-state][event-harness][sound-import][dialog]") {
+    {
+        nuklear_event_harness_t harness{1280, 900};
+        REQUIRE(harness.ready());
+        (void)harness.frame();
+        stage_grouped_import(harness);
+        (void)harness.frame();
+        CHECK(harness.drawn_text().find("Review sound import") != std::string::npos);
+        CHECK(harness.drawn_text().find("Review names, kinds") == std::string::npos);
+        const auto cancel = harness.drawn_text_center("Cancel");
+        REQUIRE(cancel);
+        (void)click_at(harness, cancel->first, cancel->second);
+        CHECK_FALSE(worm_ui_nuklear_sound_import_active());
+    }
+    {
+        nuklear_event_harness_t harness{1280, 900};
+        REQUIRE(harness.ready());
+        (void)harness.frame();
+        stage_grouped_import(harness);
+        (void)harness.frame();
+        const auto enter = key_event(SDL_EVENT_KEY_DOWN, SDLK_RETURN, SDL_SCANCODE_RETURN);
+        const auto action = harness.frame(std::span{&enter, 1});
+        CHECK(action.get().compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT);
     }
 }

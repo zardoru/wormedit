@@ -1,5 +1,6 @@
 #include "ui/nuklear/sound_import_dialog.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/dialog.h"
 
 #include <algorithm>
 #include <array>
@@ -256,32 +257,31 @@ auto worm_ui_nuklear_render_sound_import_dialog(nk_context* context,
     -> worm_ui_sound_import_dialog_action_t {
     if (!context || state.phase == worm_ui_sound_import_phase_t::closed)
         return worm_ui_sound_import_dialog_action_t::none;
-    const auto width = static_cast<float>(std::clamp(window_width - 32, 1, 720));
-    const auto height = static_cast<float>(std::clamp(window_height - 32, 1, 680));
-    const auto bounds = nk_rect((static_cast<float>(window_width) - width) / 2.0F,
-                                (static_cast<float>(window_height) - height) / 2.0F,
-                                width, height);
-    if (!nk_begin(context, "Review sound import", bounds,
-                   NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE))
-        return worm_ui_sound_import_dialog_action_t::none;
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_label(context, "Review names, kinds, and suggested groups before importing.", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, std::max(140.0F, height - 190.0F), 1);
-    if (nk_group_begin(context, "Sound import review body", NK_WINDOW_BORDER)) {
-        render_import_items(context, state);
-        render_group_rows(context, state);
-        nk_group_end(context);
-    }
-    if (!state.message.empty()) {
-        nk_layout_row_dynamic(context, 20, 1);
-        nk_label_colored(context, state.message.c_str(), NK_TEXT_LEFT, nk_rgb(226, 166, 64));
-    }
-    nk_layout_row_dynamic(context, 30, 2);
+    namespace chrome = wormedit::ui::chrome;
+    static chrome::Dialog dialog;
     auto result = worm_ui_sound_import_dialog_action_t::none;
-    if (nk_button_label(context, "Cancel")) result = worm_ui_sound_import_dialog_action_t::cancel;
-    if (nk_button_label(context, "Confirm import"))
-        result = worm_ui_sound_import_dialog_action_t::confirm;
-    nk_end(context);
+    // The review body scrolls inside a fixed-height group; the dialog fits around it.
+    constexpr float body_height = 400.0F;
+    if (chrome::dialog_begin(dialog, context, "Review sound import", "Review sound import",
+                             {.modal = true, .width = 720.0F,
+                              .area = nk_vec2(static_cast<float>(window_width),
+                                              static_cast<float>(window_height))})) {
+        nk_layout_row_dynamic(context, body_height, 1);
+        if (nk_group_begin(context, "Sound import review body", NK_WINDOW_BORDER)) {
+            render_import_items(context, state);
+            render_group_rows(context, state);
+            nk_group_end(context);
+        }
+        if (!state.message.empty())
+            chrome::dialog_text(dialog, context, state.message.c_str(), chrome::color(chrome::UiColor::conflict));
+        chrome::dialog_footer_begin(dialog, context, 2, false, 120.0F);
+        if (chrome::dialog_button(dialog, context, "Cancel", chrome::DialogButtonRole::secondary))
+            result = worm_ui_sound_import_dialog_action_t::cancel;
+        if (chrome::dialog_button(dialog, context, "Confirm import", chrome::DialogButtonRole::primary))
+            result = worm_ui_sound_import_dialog_action_t::confirm;
+    }
+    if (chrome::dialog_end(dialog, context) == chrome::DialogResult::cancel)
+        result = worm_ui_sound_import_dialog_action_t::cancel;
     return result;
 }
 

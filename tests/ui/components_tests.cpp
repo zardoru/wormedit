@@ -333,3 +333,19 @@ TEST_CASE("components gallery draws inside the render target", "[components]") {
     for (const auto& scissor : summary.scissors)
         verify_inside(scissor, nk_rect(0, 0, static_cast<float>(width), static_cast<float>(height)));
 }
+
+TEST_CASE("components gallery stock widgets draw inside a full-size target", "[components]") {
+    fixture_t fixture;
+    // Tall enough for the stock widgets section below the existing controls.
+    const int width = 1280;
+    const int height = 720;
+    wormedit::ui::nuklear::tooltip::set_viewport(
+        nk_rect(0, 0, static_cast<float>(width), static_cast<float>(height)));
+    wormedit::ui::gallery::state_t state;
+    fixture.input({});
+    wormedit::ui::gallery::render(&fixture.context, state, width, height);
+    const auto summary = summarize(fixture.context);
+    CHECK_FALSE(summary.fills.empty());
+    for (const auto& scissor : summary.scissors)
+        verify_inside(scissor, nk_rect(0, 0, static_cast<float>(width), static_cast<float>(height)));
+}

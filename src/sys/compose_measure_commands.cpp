@@ -55,6 +55,16 @@ auto remove_measure(document_history_t& history, editor_interaction_state_t& sta
     return "Measure removed.";
 }
 
+// The removed measure took its notes, selected objects and retained spans with it; keeping
+// them would make the next field scene reject the view (selection larger than the chart).
+void clear_selection_after_removal(editor_interaction_state_t& state) {
+    state.selected_notes.clear();
+    state.selected_objects.clear();
+    state.retained_selection_range.reset();
+    state.retained_canvas_selection_range.reset();
+    state.selected_canvas_measure.reset();
+}
+
 auto remove_measure_with_contents(document_history_t& history, editor_interaction_state_t& state,
                                   const chart_document_t& chart, std::size_t cursor_index,
                                   notification_severity_t* severity) -> std::string {
@@ -67,6 +77,7 @@ auto remove_measure_with_contents(document_history_t& history, editor_interactio
         remove_measure_with_contents_action_t{.chart = chart.id, .measure = chart.measures[cursor_index].id});
     if (!result) return rejection(result, "The measure could not be removed.", severity);
     place_cursor_at(state, target);
+    clear_selection_after_removal(state);
     set_feedback_severity(severity, notification_severity_t::success);
     return "Measure removed with its contents.";
 }

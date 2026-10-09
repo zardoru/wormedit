@@ -201,3 +201,14 @@ TEST_CASE("Delete only redirects BMSON stem taps", "[sys][note-to-bgm]") {
     CHECK_FALSE(outcome.handled);
     CHECK(fixture.measures()[0].notes.size() == 1);
 }
+
+TEST_CASE("confirmed removal drops deleted notes from the selection so the field scene stays valid",
+          "[sys][measure-commands]") {
+    fixture_t fixture({measure_id_t{3}, 0});
+    fixture.state.selected_notes = {object_id_t{40}};
+    CHECK(apply_cursor_measure_command(fixture.history, fixture.state,
+                                       cursor_measure_command_t::remove_with_contents) ==
+          "Measure removed with its contents.");
+    CHECK(fixture.state.selected_notes.empty());
+    CHECK(fixture.state.cursor.measure == measure_id_t{4});
+}

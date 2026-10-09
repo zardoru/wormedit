@@ -519,3 +519,47 @@ TEST_CASE("moving a bar line changes only the two neighboring measures",
     CHECK_FALSE(uneven.applied);
     CHECK(has_code(uneven, diagnostic_code_t::invalid_measure));
 }
+
+TEST_CASE("removing the first measure keeps layout, BPM and a validating document",
+          "[core][measure-editor][removal]") {
+    auto song = measure_song();
+    auto& chart = song.charts.front();
+    chart.bms_measure_length_projections.clear();
+    chart.measures[0].notes.push_back({.id = object_id_t{31},
+                                       .position = {measure_id_t{10}, 480},
+                                       .lane = lane_id_t{20}});
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    REQUIRE(apply_measure_edit(
+        history, history.document.revision,
+        remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{10}}));
+    CHECK(validate_document(history.document).empty());
+    const auto& edited = history.document.charts.front();
+    CHECK(edited.lane_layouts.front().position == local_position_t{measure_id_t{11}, 0});
+    CHECK(edited.bpms.front().position == local_position_t{measure_id_t{11}, 0});
+    const auto index = build_measure_index(edited);
+    REQUIRE(std::holds_alternative<measure_index_t>(index));
+    const auto timing = build_timing_index(edited, {.allow_bounded_clock = true});
+    CHECK(timing.index.has_value());
+}
+
+TEST_CASE("an empty leading measure that anchors BPM and layout cannot be deleted as empty",
+          "[core][measure-editor][removal]") {
+    auto song = measure_song();
+    auto& chart = song.charts.front();
+    chart.bms_measure_length_projections.clear();
+    chart.bpms.front().provenance.source_order = 0;
+    chart.bms_bpm_projections.push_back({.event = object_id_t{22}, .source_order = 0,
+                                         .imported_position = {measure_id_t{10}, 0},
+                                         .imported_beats_per_minute = {120, 1}});
+    REQUIRE(validate_document(song).empty());
+    const auto& base = song.charts.front();
+    CHECK(measure_holds_positioned_objects(base, measure_id_t{10}));
+    CHECK_FALSE(measure_holds_positioned_objects(base, measure_id_t{11}));
+    CHECK_FALSE(propose_measure_removal(base, measure_id_t{10}));
+    auto history = make_document_history(std::move(song));
+    const auto plain = apply_measure_edit(history, history.document.revision,
+                                          delete_measure_action_t{chart_id_t{2}, measure_id_t{10}});
+    CHECK_FALSE(plain);
+    CHECK(history.document.charts.front().measures.size() == 3);
+}

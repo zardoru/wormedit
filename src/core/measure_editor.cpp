@@ -97,8 +97,8 @@ enum class free_position_kind_t { hold_end, other };
 
 // Visits every positioned object that is stored outside the per-measure note and
 // BGM buckets, plus the hold ends of the bucketed notes.
-template <typename Visit>
-void for_each_free_position(chart_document_t& chart, Visit&& visit) {
+template <typename Chart, typename Visit>
+void for_each_free_position(Chart& chart, Visit&& visit) {
     for (auto& measure : chart.measures) {
         for (auto& note : measure.notes) {
             if (note.end) visit(*note.end, free_position_kind_t::hold_end);
@@ -645,6 +645,18 @@ auto apply_measure_action(measure_edit_context_t& context,
 }
 
 } // namespace
+
+auto measure_holds_positioned_objects(const chart_document_t& chart, measure_id_t measure) -> bool {
+    if (std::ranges::any_of(chart.lane_layouts, [&](const auto& segment) {
+            return segment.position.measure == measure;
+        }))
+        return true;
+    bool found = false;
+    for_each_free_position(chart, [&](const local_position_t& position, free_position_kind_t) {
+        found = found || position.measure == measure;
+    });
+    return found;
+}
 
 auto propose_measure_removal(const chart_document_t& chart, measure_id_t measure)
     -> measure_removal_proposal_t {

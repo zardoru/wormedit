@@ -56,8 +56,19 @@ void render_menu(nk_context* context, const WormUiComposeView& view,
     menu_entry(context, "Create section",
                reason_unless(view.beat_section_selection_span_available, materialize),
                WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION, action);
-    menu_entry(context, "Loop playback", "Range looping is not available yet",
-               WORM_UI_COMPOSE_ACTION_NONE, action);
+    const bool can_loop = view.transport_loop_selection_available && !view.area_range_virtual &&
+        view.area_range_begin_row < view.area_range_end_row;
+    if (chrome::context_menu_item(menu, context, "Loop playback",
+            reason_unless(can_loop, view.area_range_virtual ? materialize :
+                          "Selection looping requires audio output and a nonempty area"))) {
+        action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_LOOP_SELECTION;
+        action.transport_loop_chart_id = view.chart_id;
+        action.transport_loop_document_revision = view.document_revision;
+        action.transport_loop_begin_row = view.area_range_begin_row;
+        action.transport_loop_end_row = view.area_range_end_row;
+        action.transport_loop_enabled = true;
+        consumed = true;
+    }
     menu_entry(context, "Delete contents",
                reason_unless(view.area_delete_supported,
                              view.area_range_virtual ? materialize

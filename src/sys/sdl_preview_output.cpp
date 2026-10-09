@@ -712,7 +712,12 @@ void sdl_preview_output_t::render_requested(SDL_AudioStream* stream,
             return;
         }
         remaining = remaining > rendered_bytes ? remaining - rendered_bytes : 0;
-        if (output_drained_.load(std::memory_order_acquire)) {
+        // A finite loop iteration also ends the SDL converter input. Without
+        // flushing, reduced-rate resampling retains lookahead and never drains.
+        const bool loop_boundary = loop_enabled_.load(std::memory_order_acquire) &&
+            rendered_source_frame_.load(std::memory_order_acquire) >=
+                loop_end_frame_.load(std::memory_order_relaxed);
+        if (output_drained_.load(std::memory_order_acquire) || loop_boundary) {
             static_cast<void>(SDL_FlushAudioStream(stream));
             break;
         }

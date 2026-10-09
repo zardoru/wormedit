@@ -2062,3 +2062,44 @@ TEST_CASE("Move to BGM application commands gate formats and retain rejection se
 }
 
 #endif
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Loop selection command passes committed source rows without editing the chart", "[sys][application_commands][loop-selection]") {
+    TimingInsertFixture fixture;
+    unsigned calls{};
+    fixture.application_state.transport_set_loop_selection = [&](wormedit::chart_id_t chart,
+        std::uint64_t revision, std::uint64_t begin, std::uint64_t end, bool enabled) {
+        ++calls;
+        check_bookmark_callback(chart == wormedit::chart_id_t{7});
+        check_bookmark_callback(revision == 9);
+        check_bookmark_callback(begin == 121 && end == 480 && enabled);
+        return true;
+    };
+    require_bookmark_callback(fixture.invoke(application_command_kind_t::transport_loop_selection).accepted);
+    check_bookmark_callback(calls == 1);
+    check_bookmark_callback(fixture.fixture.history.undo.empty());
+    check_bookmark_callback(fixture.fixture.history.document.revision == 9);
+}
+
+TEST_CASE("Loop selection command rejects missing invalid and unavailable areas", "[sys][application_commands][loop-selection]") {
+    TimingInsertFixture fixture;
+    unsigned calls{};
+    fixture.application_state.transport_set_loop_selection = [&](auto, auto, auto, auto, bool) {
+        ++calls;
+        return false;
+    };
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::transport_loop_selection).accepted);
+    check_bookmark_callback(calls == 1);
+    fixture.compose_state->retained_selection_range.reset();
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::transport_loop_selection).accepted);
+    check_bookmark_callback(calls == 1);
+    fixture.compose_state->retained_selection_range = wormedit::position_span_t{
+        {wormedit::measure_id_t{1}, 480}, {wormedit::measure_id_t{1}, 121}};
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::transport_loop_selection).accepted);
+    check_bookmark_callback(calls == 1);
+    fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::transport_loop_selection).accepted);
+    fixture.application_state.transport_set_loop_selection = {};
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::transport_loop_selection).accepted);
+}
+#endif

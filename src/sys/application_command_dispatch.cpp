@@ -216,6 +216,31 @@ auto metronome_command(command_context_t& context) -> std::optional<command_resu
     return command_result_t{.accepted = true};
 }
 
+auto loop_selection_command(command_context_t& context) -> std::optional<command_result_t> {
+    using namespace wormedit;
+    if (context.command.kind != command_kind_t::transport_loop_selection) return std::nullopt;
+    const auto* state = context.compose();
+    const auto chart = std::ranges::find(context.history.document.charts,
+        state ? state->chart : chart_id_t{}, &chart_document_t::id);
+    if (!state || chart == context.history.document.charts.end() ||
+        !state->retained_selection_range || editor_interaction_has_pending_gesture(*state) ||
+        context.application_state.paste_session || !context.application_state.transport_set_loop_selection)
+        return reject_application_command(context.sink, "Select a committed area to loop playback.",
+            notification_severity_t::warning, notification_source_t::audio);
+    const auto indexed = build_measure_index(*chart);
+    const auto* measures = std::get_if<measure_index_t>(&indexed);
+    const auto begin = measures ? absolute_row(*measures, state->retained_selection_range->begin) : std::nullopt;
+    const auto end = measures ? absolute_row(*measures, state->retained_selection_range->end) : std::nullopt;
+    if (!begin || !end || *begin >= *end ||
+        !context.application_state.transport_set_loop_selection(state->chart,
+            context.history.document.revision, *begin, *end, true))
+        return reject_application_command(context.sink, "Loop selection is unavailable or expired.",
+            notification_severity_t::warning, notification_source_t::audio);
+    post_command_message(context.sink, notification_severity_t::success,
+        notification_source_t::audio, "Loop selection enabled.");
+    return command_result_t{.accepted = true};
+}
+
 auto transport_command(command_context_t& context) -> std::optional<command_result_t> {
     if (const auto result = metronome_command(context)) return result;
     const auto kind = context.command.kind;
@@ -894,6 +919,7 @@ auto invoke_application_command(
     if (auto result = history_command(context)) return *result;
     if (auto result = select_tool_command(context)) return *result;
     if (auto result = note_kind_command(context)) return *result;
+    if (auto result = loop_selection_command(context)) return *result;
     if (auto result = transport_command(context)) return *result;
     if (auto result = external_player_command(context)) return *result;
     if (auto result = note_to_bgm_command(context)) return *result;

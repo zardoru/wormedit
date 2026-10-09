@@ -759,3 +759,25 @@ TEST_CASE("BGM pseudo-lane shortcuts are remappable conflict-checked Compose com
     CHECK(result.command == command_id_t{"edit.move_to_bgm"});
     CHECK(result.status == command_dispatch_status_t::invoked);
 }
+
+TEST_CASE("Shift Space loops the Compose selection and retains transport focus gates", "[unit][commands][loop-selection]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    auto focus = focus_for_compose();
+    shortcut_event_t event{.chord = {.key = shortcut_key_t::space,
+        .modifiers = static_cast<shortcut_modifiers_t>(shortcut_modifier_t::shift)}};
+    CHECK(dispatch_shortcut(registry, event, focus, shortcut_primary_modifier_t::control).command ==
+          command_id_t{"transport.loop_selection"});
+    event.auto_repeat = true;
+    CHECK(dispatch_shortcut(registry, event, focus, shortcut_primary_modifier_t::control).status ==
+          command_dispatch_status_t::repeat_suppressed);
+    event.auto_repeat = false;
+    focus.text_entry_active = true;
+    CHECK(dispatch_shortcut(registry, event, focus, shortcut_primary_modifier_t::control).status ==
+          command_dispatch_status_t::focus_consumed);
+    focus.text_entry_active = false;
+    focus.active_tab = workspace_tab_t::metadata;
+    CHECK(dispatch_shortcut(registry, event, focus, shortcut_primary_modifier_t::control).status ==
+          command_dispatch_status_t::no_match);
+    CHECK(calls->size() == 1);
+}

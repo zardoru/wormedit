@@ -4720,3 +4720,51 @@ TEST_CASE("Mixed move conflict status describes the whole selection", "[frontend
     (void)fixture.harness.frame();
     expect_lane_key(fixture.harness.drawn_text().find("Selected objects cannot move here") != std::string::npos);
 }
+
+TEST_CASE("Area menu loops a committed selection and rejects virtual or unavailable audio", "[frontend-state][event-harness][loop-selection]") {
+    const bool virtual_range = GENERATE(false, true);
+    const bool output_available = GENERATE(false, true);
+    note_menu_fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    view.area_range_available = true;
+    view.area_rows_per_measure = 960;
+    view.area_canvas_rows = 9600;
+    view.area_range_begin_row = 0;
+    view.area_range_end_row = 9600;
+    view.area_range_virtual = virtual_range;
+    view.transport_loop_selection_available = output_available;
+    (void)fixture.harness.frame();
+    (void)right_click_at(fixture.harness, 900, 400);
+    (void)fixture.harness.frame();
+    const auto center = fixture.harness.drawn_text_center("Loop playback");
+    REQUIRE(center.has_value());
+    bool emitted{};
+    for (const auto& snapshot : click_at(fixture.harness, center->first, center->second)) {
+        const auto& action = snapshot.get();
+        if (action.kind != WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_LOOP_SELECTION) continue;
+        emitted = true;
+        check_layer_menu(action.transport_loop_enabled);
+        check_layer_menu(action.transport_loop_chart_id == view.chart_id);
+        check_layer_menu(action.transport_loop_document_revision == view.document_revision);
+        check_layer_menu(action.transport_loop_begin_row == 0 && action.transport_loop_end_row == 9600);
+        check_layer_menu(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    }
+    check_layer_menu(emitted == (output_available && !virtual_range));
+}
+
+TEST_CASE("Real Shift Space events route to the selection loop command", "[frontend-state][event-harness][loop-selection]") {
+    nuklear_event_harness_t harness;
+    REQUIRE(harness.ready());
+    unsigned calls{};
+    const auto registry = wormedit::make_default_editor_command_registry([&](const auto& context) {
+        ++calls;
+        check_layer_menu(context.command == wormedit::command_id_t{"transport.loop_selection"});
+        return wormedit::command_invocation_result_t{.accepted = true};
+    });
+    (void)harness.frame();
+    const std::array keys{key_event(SDL_EVENT_KEY_DOWN, SDLK_SPACE, SDL_SCANCODE_SPACE)};
+    const auto action = harness.frame(keys, SDL_KMOD_SHIFT);
+    check_layer_menu(action.get().compose_input_count == 0);
+    check_layer_menu(route_harness_shortcut(action.get(), registry).status == wormedit::command_dispatch_status_t::invoked);
+    check_layer_menu(calls == 1);
+}

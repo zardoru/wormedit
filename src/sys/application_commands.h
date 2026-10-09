@@ -18,6 +18,7 @@ enum class application_command_kind_t {
     transport_play_stop,
     transport_play_pause,
     transport_play_from_start,
+    transport_loop_selection,
     transport_stop,
     transport_toggle_metronome,
     transport_external_play_start,

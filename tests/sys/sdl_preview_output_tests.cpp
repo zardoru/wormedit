@@ -329,7 +329,8 @@ TEST_CASE("SDL dummy audio renders a resumed BMSON slice within ten milliseconds
     CHECK(sdl_bmson_seek_renders_pcm());
 }
 
-auto exercise_sdl_loop_restart() -> bool {
+auto exercise_sdl_loop_restart(std::size_t rate_index = wormedit::audio::playback_rates.size() - 1,
+                               bool keep_pitch = false) -> bool {
     using namespace wormedit;
     using namespace wormedit::audio;
     constexpr std::uint64_t loop_begin = 1'024;
@@ -346,6 +347,7 @@ auto exercise_sdl_loop_restart() -> bool {
     preview_session_t session{sources, transport, bridge};
     sys::sdl_preview_output_t output{session};
     if (!output.open()) return false;
+    if (!output.set_playback_rate(playback_rates[rate_index]) || !output.set_keep_pitch(keep_pitch)) return false;
     preview_schedule_t schedule{.sample_rate = output_sample_rate};
     schedule.music = preview_schedule_t::music_event_t{
         .resource = resource_id_t{1}, .frame_count = loop_end};
@@ -991,6 +993,20 @@ TEST_CASE("SDL loop restarts at the source tail on control service and Stop clea
     REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
     const preview_audio_subsystem_t audio_subsystem;
     CHECK(exercise_sdl_loop_restart());
+}
+
+TEST_CASE("SDL selection loops restart at every rate with either pitch mode",
+          "[integration][audio][sdl][preview][loop][loop-rates]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_FREQUENCY, "44100"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    for (bool keep_pitch : {false, true}) {
+        for (std::size_t rate = 0; rate < wormedit::audio::playback_rates.size(); ++rate) {
+            CAPTURE(keep_pitch, rate);
+            CHECK(exercise_sdl_loop_restart(rate, keep_pitch));
+        }
+    }
 }
 
 TEST_CASE("SDL loop can be disabled at a pending boundary and continue the chart",

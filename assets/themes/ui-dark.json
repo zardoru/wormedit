@@ -37,6 +37,7 @@
     "accent": "$lime.300",
     "status": "$neutral.400",
     "conflict": "$coral.400",
-    "separator": "$neutral.800"
+    "separator": "$neutral.800",
+    "popup": "$neutral.900"
   }
 }

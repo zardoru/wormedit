@@ -452,6 +452,9 @@ inline void apply_dropdown_theme(nk_context* context) {
     style.menu_button.border = 0.0f;
     style.menu_button.border_color = nk_rgba(0, 0, 0, 0);
     style.menu_button.rounding = metrics::radius_control;
+    style.menu_button.text_normal = color(UiColor::text);
+    style.menu_button.text_hover = color(UiColor::text_bright);
+    style.menu_button.text_active = color(UiColor::text_bright);
     style.selectable.normal = nk_style_item_color(nk_rgba(0, 0, 0, 0));
     style.selectable.hover = hover;
     style.selectable.pressed = active;
@@ -549,6 +552,58 @@ inline void apply_scrollbar_theme(nk_context* context) {
     }
 }
 
+// Stock checkboxes and option buttons: the same surface and border as the fields, with the
+// selected mark in the accent. Spacing and sizes stay as Nuklear set them.
+inline void apply_toggle_theme(nk_context* context) {
+    auto& style = context->style;
+    const auto surface = nk_style_item_color(color(UiColor::surface));
+    const auto hover = nk_style_item_color(color(UiColor::surface_hover));
+    const auto active = nk_style_item_color(color(UiColor::surface_active));
+    for (auto* toggle : {&style.checkbox, &style.option}) {
+        toggle->normal = surface;
+        toggle->hover = hover;
+        toggle->active = active;
+        toggle->border_color = color(UiColor::border);
+        toggle->border = 1.0f;
+        toggle->cursor_normal = nk_style_item_color(color(UiColor::selected));
+        toggle->cursor_hover = nk_style_item_color(color(UiColor::selected));
+        toggle->text_normal = color(UiColor::text);
+        toggle->text_hover = color(UiColor::text_bright);
+        toggle->text_active = color(UiColor::text_bright);
+    }
+}
+
+// Tooltips take the border used by menus, so hints read as part of the same surface family.
+inline void apply_tooltip_theme(nk_context* context) {
+    context->style.window.tooltip_border_color = color(UiColor::border_hover);
+    context->style.window.tooltip_border = 1.0f;
+}
+
+// Tree headers and tab rows: flat on the panel, with the same hover and active fills as the
+// menus. Node and tab buttons are the chevrons that open and close the section.
+inline void apply_header_theme(nk_context* context) {
+    auto& style = context->style;
+    const auto clear = nk_style_item_color(nk_rgba(0, 0, 0, 0));
+    const auto hover = nk_style_item_color(color(UiColor::surface_hover));
+    const auto active = nk_style_item_color(color(UiColor::surface_active));
+    style.tab.background = clear;
+    style.tab.border_color = color(UiColor::border);
+    style.tab.text = color(UiColor::text);
+    style.tab.rounding = metrics::radius_control;
+    for (auto* button : {&style.tab.tab_maximize_button, &style.tab.tab_minimize_button,
+                         &style.tab.node_maximize_button, &style.tab.node_minimize_button}) {
+        button->normal = clear;
+        button->hover = hover;
+        button->active = active;
+        button->border_color = nk_rgba(0, 0, 0, 0);
+        button->border = 0.0f;
+        button->text_normal = color(UiColor::text_muted);
+        button->text_hover = color(UiColor::text_bright);
+        button->text_active = color(UiColor::text_bright);
+        button->rounding = metrics::radius_control;
+    }
+}
+
 inline void apply_theme(nk_context* context) {
     nk_style_default(context);
     context->style.window.background = color(UiColor::background);
@@ -568,6 +623,9 @@ inline void apply_theme(nk_context* context) {
     apply_dropdown_theme(context);
     apply_field_theme(context);
     apply_scrollbar_theme(context);
+    apply_toggle_theme(context);
+    apply_tooltip_theme(context);
+    apply_header_theme(context);
 }
 
 } // namespace wormedit::ui::chrome

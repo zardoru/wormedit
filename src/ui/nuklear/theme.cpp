@@ -21,7 +21,7 @@ namespace {
 constexpr std::array<std::string_view, static_cast<size_t>(UiColor::count)> ui_names{
     "background",    "surface", "surface_hover", "surface_active", "border",
     "border_hover",  "text",    "text_bright",   "text_muted",     "selected",
-    "selected_text", "accent",  "status",        "conflict",      "separator"};
+    "selected_text", "accent",  "status",        "conflict",      "separator",     "popup"};
 constexpr std::array<std::string_view, static_cast<size_t>(ComposeColor::count)> compose_names{
     "viewport",
     "rail",

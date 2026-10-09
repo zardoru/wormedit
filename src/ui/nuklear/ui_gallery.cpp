@@ -137,6 +137,15 @@ void stock_widgets(nk_context* context) {
     if (nk_option_label(context, "First", option_selected == 0)) option_selected = 0;
     if (nk_option_label(context, "Second", option_selected == 1)) option_selected = 1;
     nk_layout_row_end(context);
+    section_row(context, "Tooltip", metrics::control_default, 1, widths);
+    chrome::Button{"Hover me", ButtonKind::secondary, "Stock tooltip: hover, not covered"}.render(context);
+    nk_layout_row_end(context);
+    nk_layout_row_dynamic(context, metrics::control_default, 1);
+    if (nk_tree_push(context, NK_TREE_NODE, "Tree header", NK_MAXIMIZED)) {
+        nk_layout_row_dynamic(context, metrics::control_default, 1);
+        nk_label(context, "Tree node content", NK_TEXT_LEFT);
+        nk_tree_pop(context);
+    }
 }
 
 void level_one_menu(nk_context* context, int width, int height) {
@@ -150,6 +159,10 @@ void level_one_menu(nk_context* context, int width, int height) {
                  context->style.font, nk_rgba(0, 0, 0, 0), chrome::color(UiColor::text));
     nk_draw_text(canvas, nk_rect(bounds.x + 12.0f, bounds.y + 34.0f, 160.0f, 15.0f), "elevation 1", 11,
                  context->style.font, nk_rgba(0, 0, 0, 0), metrics::text_faint);
+    // Menus separate their groups with the separator role, the same rule menu_separator() draws.
+    const auto rule_y = bounds.y + 58.0f;
+    nk_stroke_line(canvas, bounds.x + 8.0f, rule_y, bounds.x + bounds.w - 8.0f, rule_y, 1.0f,
+                   chrome::color(UiColor::separator));
 }
 
 void level_two_dialog(nk_context* context, int width, int height) {

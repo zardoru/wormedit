@@ -1,3 +1,4 @@
+#include <wormedit/core/bmson_lane_mode.h>
 #include "sys/workspace_projection.h"
 #include <cstdarg>
 #include <cstdio>
@@ -1203,6 +1204,24 @@ void populate_storyboard_tab(const workspace_projection_context_t& projection, c
                 append("Storyboard documents: " + std::to_string(tab.storyboard_count));
 
 }
+void populate_sound_lane_modes(const workspace_projection_context_t& projection) {
+    using namespace wormedit;
+    const auto chart = std::ranges::find(projection.document.charts, chart_id_t{projection.result.view.selected_chart_id},
+                                         &chart_document_t::id);
+    if (chart == projection.document.charts.end() || chart->source_family != format_family_t::bmson) return;
+    const auto bindings = bmson_lane_mode_resource_bindings(projection.document, chart->id);
+    for (auto& row : projection.result.audio.sound_row) {
+        const auto binding = std::ranges::find(bindings, resource_id_t{row.resource_id},
+                                               &bmson_channel_resource_binding_t::resource);
+        if (binding == bindings.end() || binding->ambiguous || !binding->channel) continue;
+        row.bmson_channel_id = binding->channel->value;
+        const auto channel = std::ranges::find(chart->sound_channels, *binding->channel, &sound_channel_t::id);
+        if (channel != chart->sound_channels.end())
+            row.bmson_channel_continues = std::ranges::any_of(channel->events,
+                [](const auto& event) { return event.continuation; });
+    }
+}
+
 void populate_sound_rows(const workspace_projection_context_t& projection) {
     auto& result = projection.result;
     auto& audio = result.view.audio_slices;
@@ -1238,6 +1257,7 @@ void populate_sound_rows(const workspace_projection_context_t& projection) {
         view.missing = row.missing;
         (void)result.audio.sound_row.push_back(view);
     }
+    populate_sound_lane_modes(projection);
     audio.sound_rows = result.audio.sound_row.data();
     audio.sound_row_count = result.audio.sound_row.size();
 }

@@ -1,3 +1,4 @@
+#include "ui/nuklear/bmson_lane_mode_ui.h"
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/tooltip.h"
@@ -12,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <limits>
+#include <span>
 
 namespace {
 namespace chrome = wormedit::ui::chrome;
@@ -22,7 +24,8 @@ constexpr float root_width = 320;
 struct NoteMenu {
     chrome::ContextMenu popup{.title = "Note actions"};
     bool submenu{}, consumed{}, request_close{};
-    std::uint64_t note{};
+    std::uint64_t note{}, channel{}, resource{};
+    bool stem{}, continues{}, bgm{};
 } menu;
 
 auto stamp(const WormUiComposeView& view) -> chrome::PopupContextStamp {
@@ -64,6 +67,7 @@ std::uint64_t note_at(const WormUiComposeView& view, double x, double y) {
 // The popup has closed without an assignment; tell the application.
 void finish_close(const WormUiComposeView& view, WormUiWorkspaceAction& action) {
     menu.consumed = true;
+    if (menu.bgm) return;
     menu.request_close = !raise(view, action, WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU);
 }
 
@@ -198,6 +202,48 @@ void render_sound_selection(nk_context* context, WormUiWorkspaceAction& action) 
     }
 }
 
+void render_channel_menu(nk_context* context, const WormUiComposeView& view,
+                         WormUiWorkspaceAction& action) {
+    if (chrome::popup_panel(context) || !menu.popup.open) return;
+    if (!chrome::context_menu_begin(menu.popup, context, stamp(view),
+            nk_vec2(340, chrome::context_menu_height(1)))) return;
+    const auto label = menu.stem ? "Pack into columns" : "Make stem";
+    if (chrome::context_menu_item(menu.popup, context, label, nullptr)) {
+        request_bmson_lane_mode(action, view.project_id, view.chart_id, view.document_revision,
+            menu.channel, !menu.stem, menu.continues, false, menu.resource);
+        menu.consumed = true;
+    }
+    chrome::context_menu_end(menu.popup, context);
+}
+
+bool channel_at(const WormUiComposeView& view, double x, double y) {
+    for (const auto& lane : std::span(view.bgm_lanes, view.bgm_lane_count)) {
+        if (x < lane.bounds.left || x > lane.bounds.right) continue;
+        if (y <= 18 && lane.stem && lane.bmson_channel_id) {
+            menu.bgm = true;
+            menu.resource = 0;
+            menu.channel = lane.bmson_channel_id;
+            menu.stem = true;
+            menu.continues = lane.bmson_channel_continues;
+            return true;
+        }
+        if (lane.stem) return false;
+    }
+    for (const auto& event : std::span(view.bgm_events, view.bgm_event_count)) {
+        const auto& rect = event.bounds;
+        if (!event.proposal_ghost && event.bmson_slice && event.has_sound && x >= rect.left && x <= rect.right &&
+            y >= rect.top && y <= rect.bottom) {
+            menu.bgm = true;
+            menu.channel = 0;
+            menu.resource = event.sound_id;
+            menu.stem = false;
+            menu.continues = false;
+            return true;
+        }
+    }
+    return false;
+}
+
 void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceAction& action) {
     bgm_tooltip_pending = false;
     if (chrome::popup_panel(context) || !menu.popup.open) return;
@@ -243,6 +289,14 @@ void open_at_pointer(nk_context* context, const WormUiComposeView& view,
         wormedit::ui::chrome::popup_panel(context)) return;
     const auto x = (mouse.x - viewport.x) * view.viewport_width_pixels / viewport.w;
     const auto y = (mouse.y - viewport.y) * view.viewport_height_pixels / viewport.h;
+    menu.bgm = false;
+    menu.channel = 0;
+    if (channel_at(view, x, y)) {
+        chrome::context_menu_open(menu.popup, mouse, stamp(view));
+        menu.consumed = true;
+        menu.submenu = false;
+        return;
+    }
     const auto note = note_at(view, x, y);
     if (!note) return;
     menu.note = note;
@@ -253,19 +307,20 @@ void open_at_pointer(nk_context* context, const WormUiComposeView& view,
 }
 } // namespace
 
-bool compose_note_menu_open() { return menu.popup.open; }
-bool compose_note_menu_consumed() { return menu.consumed || menu.popup.release_pending; }
+bool compose_note_menu_open() { return menu.popup.open || bmson_lane_mode_confirmation_owns_input(); }
+bool compose_note_menu_consumed() { return menu.consumed || menu.popup.release_pending || bmson_lane_mode_confirmation_owns_input(); }
 void begin_compose_note_menu_frame() {
     menu.consumed = chrome::context_menu_owns_input(menu.popup) || menu.popup.close_pending;
 }
-void reset_compose_note_menu() { menu = {}; }
+void reset_compose_note_menu() { menu = {}; reset_bmson_lane_mode_confirmation(); }
 
 void prepare_compose_note_menu(const WormUiComposeView* view, bool active, bool focused,
                                WormUiWorkspaceAction* action) {
+    if (!active && bmson_lane_mode_confirmation_owns_input()) reset_bmson_lane_mode_confirmation();
     if (menu.popup.open &&
         (!active || !focused || !view || !view->visible || view->input_occluded || !current(*view))) {
         chrome::context_menu_close(menu.popup);
-        menu.request_close = true;
+        menu.request_close = !menu.bgm;
         menu.consumed = true;
     }
     if (menu.request_close && active && view && action &&
@@ -280,8 +335,16 @@ void process_compose_note_menu(nk_context* context, const WormUiComposeView& vie
                                WormUiWorkspaceAction& action, struct nk_rect viewport,
                                double input_right, bool focused) {
     (void)chrome::context_menu_update(menu.popup, context);
-    if (!view.scene_available || !focused || view.input_occluded) return;
+    if (!view.scene_available || !focused || view.input_occluded) {
+        render_bmson_lane_mode_confirmation(context, action, view.project_id, view.chart_id,
+                                            view.document_revision, false);
+        return;
+    }
     if (!menu.popup.open && !menu.consumed && !view.paste_active && !view.semantic_layer_gesture_active)
         open_at_pointer(context, view, action, viewport, input_right);
-    render(context, view, action);
+    if (menu.bgm) render_channel_menu(context, view, action);
+    else render(context, view, action);
+    if (!menu.popup.open)
+        render_bmson_lane_mode_confirmation(context, action, view.project_id, view.chart_id,
+                                            view.document_revision, focused);
 }

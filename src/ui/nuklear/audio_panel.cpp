@@ -1,3 +1,4 @@
+#include "ui/nuklear/bmson_lane_mode_ui.h"
 #include "ui/nuklear/audio_panel.h"
 #include "ui/nuklear/audio_state.h"
 #include "ui/nuklear/chrome.h"
@@ -524,6 +525,12 @@ void render_sound_properties_column(struct nk_context* context, const WormUiAudi
     }
     nk_label(context, selected->name ? selected->name : "(unnamed)", NK_TEXT_LEFT);
     nk_labelf(context, NK_TEXT_LEFT, "Kind: %s", sound_kind_name(selected->kind));
+    if (selected->bmson_channel_id && view.has_chart && !view.timing_locked) {
+        const bool stem = selected->kind == 1;
+        if (nk_button_label(context, stem ? "Kind: Keysound (pack into columns)" : "Kind: Stem (make stem)"))
+            request_bmson_lane_mode(action, view.usage_song_id, view.chart_id, view.document_revision,
+                selected->bmson_channel_id, !stem, selected->bmson_channel_continues, true);
+    }
     nk_labelf(context, NK_TEXT_LEFT, "Used %u time(s)", selected->use_count);
     if (selected->sample_rate != 0) {
         nk_labelf(context, NK_TEXT_LEFT, "%.2f s · %u Hz",
@@ -614,6 +621,8 @@ void worm_ui_nuklear_render_audio_slices(struct nk_context* context,
         if (nk_button_label(context, "Add sounds…"))
             action->sound_import_pick_requested = true;
         render_sound_columns(context, *view, *action);
+        render_bmson_lane_mode_confirmation(context, *action, view->usage_song_id, view->chart_id,
+            view->document_revision, window_focused, true);
         return;
     }
     if (show_asset_catalog) {

@@ -56,6 +56,7 @@ add_executable(wormedit_core_tests
     core/bms_branch_editor_tests.cpp
     core/bmson_sound_channel_editor_tests.cpp
     core/note_to_bgm_tests.cpp
+    core/bmson_lane_mode_tests.cpp
     core/bmson_slice_reset_tests.cpp
     core/bpm_editor_tests.cpp
     core/bga_preview_tests.cpp
@@ -549,6 +550,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/dock_select_all_event_harness_tests.cpp
         ui/note_label_inline_event_harness_tests.cpp
         ui/bmson_tab_event_harness_tests.cpp
+        ui/bmson_lane_mode_event_harness_tests.cpp
         ui/quantize_report_event_harness_tests.cpp
         ui/keep_pitch_event_harness_tests.cpp
         ui/markers_event_harness_tests.cpp

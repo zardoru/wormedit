@@ -1,3 +1,4 @@
+#include <wormedit/core/bmson_lane_mode.h>
 #include "sys/application_command_dispatch.h"
 #include "sys/frame_timing.h"
 #include "sys/application_defaults.h"
@@ -6176,4 +6177,35 @@ TEST_CASE("Mixed quantize projects BGM hold ghosts and refreshes a BGM-only sele
                         fixture.application.quantize_applied_report->rows.front().bgm);
     expect_compose_test(fixture.history.document.charts.front().measures.front().notes.front().position.row == 130);
     expect_compose_test(fixture.history.document.charts.front().measures.front().bgm_events.front().position.row == 240);
+}
+
+TEST_CASE("BMSON lane_mode projects current channel ownership in Compose and Sounds",
+          "[sys][bmson][lane_mode]") {
+    compose_test_fixture_t fixture(t463_shared_asset_song());
+    fixture.history.document.resources[1].missing = true;
+    fixture.history.document.charts.front().sound_channels[1].events.front().continuation = true;
+    t475_project(fixture);
+    const auto& compose = fixture.flattened.view.compose;
+    const auto lanes = std::span(compose.bgm_lanes, compose.bgm_lane_count);
+    const auto lane = std::ranges::find(lanes, uint64_t{601}, &WormUiComposeBgmLaneView::source_lane_id);
+    t475_require(lane != lanes.end());
+    t475_check(lane->bmson_channel_id == 301 && lane->bmson_channel_continues);
+    const auto builds = fixture.cache.draw_stem_sources.build_count;
+    t475_project(fixture);
+    t475_check(fixture.cache.draw_stem_sources.build_count == builds);
+    t475_require(set_bmson_channel_lane_mode(fixture.history, fixture.history.document.revision,
+        chart_id_t{1}, object_id_t{302}, bmson_channel_lane_mode_t::stem));
+    fixture.binding.workspace->active_tab = workspace_tab_t::audio_slices;
+    t475_require(rebind_workspace(*fixture.binding.workspace, fixture.history));
+    const auto model = make_workspace_view(*fixture.binding.workspace, fixture.history.document);
+    t475_require(model.view.has_value());
+    fixture.flattened = flatten_workspace(*model.view, fixture.history.document, "", {}, false, {});
+    const auto& audio = fixture.flattened.view.audio_slices;
+    const auto rows = std::span(audio.sound_rows, audio.sound_row_count);
+    const auto offline = std::ranges::find(rows, uint64_t{101}, &WormUiSoundRowView::resource_id);
+    t475_require(offline != rows.end());
+    t475_check(offline->bmson_channel_id == 301 && offline->bmson_channel_continues);
+    const auto changed = std::ranges::find(rows, uint64_t{102}, &WormUiSoundRowView::resource_id);
+    t475_require(changed != rows.end());
+    t475_check(changed->bmson_channel_id == 302 && changed->kind == 1);
 }

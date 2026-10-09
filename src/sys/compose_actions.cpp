@@ -1,3 +1,4 @@
+#include <wormedit/core/bmson_lane_mode.h>
 #include "sys/compose_actions.h"
 #include "sys/compose_bookmark_commands.h"
 #include "sys/bookmark_rename_commands.h"
@@ -1443,8 +1444,44 @@ std::optional<std::string> delete_bmson_selected_marker(compose_action_context_t
     return compose_action_success(context, "BMSON BGM marker deleted.");
 }
 
+auto lane_mode_channel(const compose_action_context_t& context) -> wormedit::object_id_t {
+    if (context.action.compose_resource_id) {
+        const auto bindings = wormedit::bmson_lane_mode_resource_bindings(context.history.document, context.state.chart);
+        const auto binding = std::ranges::find(bindings, wormedit::resource_id_t{context.action.compose_resource_id},
+            &wormedit::bmson_channel_resource_binding_t::resource);
+        if (binding != bindings.end() && !binding->ambiguous && binding->channel) return *binding->channel;
+        return {};
+    }
+    return wormedit::object_id_t{context.action.compose_bmson_channel_id};
+}
+
+std::optional<std::string> change_bmson_lane_mode(compose_action_context_t& context) {
+    using namespace wormedit;
+    if (context.action.compose_input_project_id != context.history.document.id.value)
+        return compose_action_warning(context, "Channel lane action is stale; reopen it in the active project.");
+    if (editor_interaction_has_pending_gesture(context.state))
+        return compose_action_warning(context, "Finish or cancel the active Compose gesture before changing channel lanes.");
+    const auto kind = context.action.compose_action;
+    const auto result = set_bmson_channel_lane_mode(context.history,
+        context.action.compose_input_document_revision, context.state.chart,
+        lane_mode_channel(context),
+        kind == WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM ? bmson_channel_lane_mode_t::stem
+                                                     : bmson_channel_lane_mode_t::packed,
+        kind == WORM_UI_COMPOSE_ACTION_RESTART_AND_PACK_BMSON_CHANNEL);
+    if (!result.diagnostics.empty()) return publish_compose_diagnostic(context, result.diagnostics.front());
+    if (!result.applied) return compose_action_info(context, "Channel already uses that lane mode.");
+    const auto rebound = rebind_workspace(context.workspace, context.history);
+    if (!rebound) return compose_mutation_rebind_failure(context, rebound,
+        "BMSON channel lane mode changed.", "Channel changed, but workspace rebinding failed.", notification_source_t::edit);
+    return compose_action_success(context, "BMSON channel lane mode changed.");
+}
+
 std::optional<std::string> dispatch_compose_bmson_action(compose_action_context_t& context) {
     switch (context.action.compose_action) {
+    case WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM:
+    case WORM_UI_COMPOSE_ACTION_PACK_BMSON_CHANNEL:
+    case WORM_UI_COMPOSE_ACTION_RESTART_AND_PACK_BMSON_CHANNEL:
+        return change_bmson_lane_mode(context);
     case WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART:
     case WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE:
         return set_bmson_selection_restart(context);
@@ -3155,7 +3192,10 @@ auto dispatch_compose_remaining_action(compose_action_context_t& context)
 auto resource_path_tab_action(const WormUiWorkspaceAction& action,
                               wormedit::workspace_tab_t tab) -> bool {
     if (tab == wormedit::workspace_tab_t::audio_slices)
-        return action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
+        return action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT ||
+            action.compose_action == WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM ||
+            action.compose_action == WORM_UI_COMPOSE_ACTION_PACK_BMSON_CHANNEL ||
+            action.compose_action == WORM_UI_COMPOSE_ACTION_RESTART_AND_PACK_BMSON_CHANNEL;
     return tab == wormedit::workspace_tab_t::metadata &&
         (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET ||
          action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT ||

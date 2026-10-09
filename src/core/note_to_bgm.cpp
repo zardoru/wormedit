@@ -264,8 +264,8 @@ auto allocate_candidates(const chart_document_t& chart, std::vector<candidate_t>
 auto plan_allocation(const chart_document_t& chart, std::span<const resource_entry_t> resources,
                      std::span<const object_id_t> ids, std::optional<object_id_t> manual_lane,
                      note_to_bgm_policy_t policy) -> note_to_bgm_plan_t {
-    if (ids.empty() || ids.size() > 4096)
-        return plan_error(diagnostic_code_t::invalid_id, "note move to BGM needs 1 to 4096 notes");
+    if (ids.empty() || ids.size() > 1'000'000)
+        return plan_error(diagnostic_code_t::invalid_id, "note move to BGM needs 1 to 1000000 notes");
     const auto built = build_measure_index(chart);
     if (!std::holds_alternative<measure_index_t>(built))
         return plan_error(diagnostic_code_t::invalid_measure, "BGM allocation requires valid measure geometry");

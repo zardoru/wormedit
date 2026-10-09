@@ -53,6 +53,7 @@ add_library(wormedit_core
     src/core/autosave_loop.cpp
     src/core/bms_branch_editor.cpp
     src/core/bms_branch_projection.cpp
+    src/core/bmson_lane_mode.cpp
     src/core/bmson_sound_channel_editor.cpp
     src/core/sound_selection.cpp
     src/core/note_to_bgm.cpp
@@ -360,6 +361,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/components.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/ui_gallery.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio_panel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/bmson_lane_mode_ui.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/external_player_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/options_window.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/shortcuts_panel.cpp"

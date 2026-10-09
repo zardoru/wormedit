@@ -1399,3 +1399,34 @@ TEST_CASE("Quantize grid and editing snap are one shared grid",
     check_action(fixture.history.document.revision == revision);
     check_action(fixture.history.undo.empty());
 }
+
+TEST_CASE("BMSON lane_mode dispatcher shares channel and sound targets with atomic refusal",
+          "[unit][sys][bmson][lane_mode]") {
+    const bool sounds_tab = GENERATE(false, true);
+    action_notification_fixture_t fixture;
+    const std::string text = R"({"version":"1.0.0","info":{"title":"Modes","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[{"name":"stem.wav","notes":[{"x":0,"y":0,"c":false},{"x":0,"y":240,"c":true}]}]})";
+    const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
+    require_action(parsed.song.has_value());
+    fixture.history = make_document_history(*parsed.song);
+    fixture.workspace = *make_workspace_controller(fixture.history).workspace;
+    fixture.workspace.active_tab = sounds_tab ? workspace_tab_t::audio_slices : workspace_tab_t::compose;
+    fixture.state.chart = fixture.history.document.charts.front().id;
+    fixture.state.cursor = {fixture.history.document.charts.front().measures.front().id, 0};
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_PACK_BMSON_CHANNEL);
+    action.compose_bmson_channel_id = fixture.history.document.charts.front().sound_channels.front().id.value;
+    const auto revision = fixture.history.document.revision;
+    check_action(fixture.dispatch(action) == "continuation points need a stem lane");
+    check_action(fixture.history.document.revision == revision && fixture.history.undo.empty());
+    action.compose_action = WORM_UI_COMPOSE_ACTION_RESTART_AND_PACK_BMSON_CHANNEL;
+    require_action(fixture.dispatch(action) == "BMSON channel lane mode changed.");
+    check_action(fixture.history.undo.size() == 1);
+    action = fixture.action(WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM);
+    action.compose_resource_id = fixture.history.document.resources.front().id.value;
+    require_action(fixture.dispatch(action) == "BMSON channel lane mode changed.");
+    check_action(fixture.history.undo.size() == 2);
+    check_action(fixture.history.document.resources.front().sound_kind == sound_kind_t::stem);
+    check_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.resources.front().sound_kind == sound_kind_t::keysound);
+    check_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.charts.front().sound_channels.front().events.back().continuation);
+}

@@ -133,6 +133,7 @@ struct compose_scene_cache_t {
         const void* document{};
         const void* chart{};
         std::uint64_t revision{}, build_count{};
+        std::unordered_map<std::uint64_t, bool> channel_continues;
         std::unordered_map<std::uint64_t, std::size_t> resource_lanes;
         std::unordered_map<std::uint64_t, std::size_t> explicit_stem_resources;
         std::unordered_map<std::uint64_t, std::size_t> resource_indices;

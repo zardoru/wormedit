@@ -400,6 +400,8 @@ typedef struct WormUiSoundRowView {
     uint64_t duration_frames;
     uint32_t sample_rate;
     bool missing;
+    uint64_t bmson_channel_id;
+    bool bmson_channel_continues;
 } WormUiSoundRowView;
 
 typedef struct WormUiSoundUsageRowView {
@@ -712,6 +714,8 @@ typedef struct WormUiComposeBgmLaneView {
     double width_pixels;
     double resize_edge_pixels;
     const char* filename;
+    uint64_t bmson_channel_id;
+    bool bmson_channel_continues;
 } WormUiComposeBgmLaneView;
 
 typedef struct WormUiComposeBgmEventView {
@@ -2347,6 +2351,9 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER,
     WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE,
     WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_NOTE_TO_BGM,
+    WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM,
+    WORM_UI_COMPOSE_ACTION_PACK_BMSON_CHANNEL,
+    WORM_UI_COMPOSE_ACTION_RESTART_AND_PACK_BMSON_CHANNEL,
     WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE,
     /* Keysound listbox actions. The sound list is compose_sound_resource_ids. */
     WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES,
@@ -2839,6 +2846,7 @@ typedef struct WormUiWorkspaceAction {
     const WormUiSoundImportGroup* sound_import_groups;
     size_t sound_import_group_count;
     uint16_t compose_sound_slot;
+    uint64_t compose_bmson_channel_id;
     bool compose_sound_slot_confirmed;
     size_t compose_output_group_index;
     bool compose_export_overwrite;

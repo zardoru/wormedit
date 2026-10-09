@@ -1157,7 +1157,23 @@ auto compose_stem_filename(const compose_scene_projection_context_t& projection,
     return arena_string(*projection.flattened.arena(),
         {reinterpret_cast<const char*>(name.data()), name.size()});
 }
-void project_compose_bgm(const compose_scene_projection_context_t& projection) {
+void project_compose_bgm_lane_modes(const compose_scene_projection_context_t& projection,
+                                    const compose_scene_cache_t& cache) {
+    using namespace wormedit;
+    const auto& chart = projection.chart;
+    if (chart.source_family != format_family_t::bmson) return;
+    for (auto& lane : projection.flattened.compose.bgm.lane) {
+        const auto source = std::ranges::find(chart.bgm_source_lanes, object_id_t{lane.source_lane_id},
+                                             &bgm_source_lane_t::id);
+        if (source == chart.bgm_source_lanes.end() || !source->stem_channel) continue;
+        lane.bmson_channel_id = source->stem_channel->value;
+        const auto continues = cache.draw_stem_sources.channel_continues.find(lane.bmson_channel_id);
+        lane.bmson_channel_continues = continues != cache.draw_stem_sources.channel_continues.end() && continues->second;
+    }
+}
+
+void project_compose_bgm(const compose_scene_projection_context_t& projection,
+                         const compose_scene_cache_t& cache) {
     auto& flattened = projection.flattened;
     const auto& scene = projection.scene;
     auto& view = projection.view;
@@ -1185,6 +1201,7 @@ void project_compose_bgm(const compose_scene_projection_context_t& projection) {
                                                           compose_stem_filename(projection, *source)}, view.truncated);
     }
     project_compose_bgm_events(flattened, scene.bgm_events, view, convert_rect);
+    project_compose_bgm_lane_modes(projection, cache);
     view.truncated = view.truncated || bgm_lane_count != bgm_lanes.size();
 }
 
@@ -3989,7 +4006,7 @@ void refresh_compose_static_source(const compose_scene_projection_context_t& pro
         projection.pixels_per_row, projection.downscroll, false};
     populate_compose_sound_labels(expanded);
     project_compose_layout_and_notes(expanded);
-    project_compose_bgm(expanded);
+    project_compose_bgm(expanded, cache);
     project_compose_bga(expanded);
     populate_compose_timing_markers(*storage, projection.history.document, projection.chart, cache, cache.scene_window.view,
         retained, projection.downscroll, projection.pixels_per_row, canvas_rows, nullptr);
@@ -4268,7 +4285,7 @@ auto project_reused_scalar_scene(const compose_final_projection_context_t& input
                                                             : input.chart.divisions_per_standard_measure};
     // Metadata contains no grid/objects; their immutable scalar records are extracted below.
     project_compose_layout_and_notes(projection);
-    project_compose_bgm(projection);
+    project_compose_bgm(projection, cache);
     project_compose_bga(projection);
     if (!extract_scalar_objects(cache, metadata, flattened, input.interaction_view, shift,
                                 view.viewport_height_pixels) ||
@@ -4468,7 +4485,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
                        : chart.divisions_per_standard_measure};
     populate_compose_sound_labels(projection);
     project_compose_layout_and_notes(projection);
-    project_compose_bgm(projection);
+    project_compose_bgm(projection, cache);
     project_compose_bga(projection);
     project_compose_marker_previews(projection);
     publish_compose_scene(projection);
@@ -4871,6 +4888,10 @@ void prepare_draw_stem_sources(compose_scene_cache_t& cache,
         const auto& lane = chart.bgm_source_lanes[index];
         if (lane.stem_channel) channel_lanes.emplace(lane.stem_channel->value, index);
     }
+    for (const auto& channel : chart.sound_channels)
+        if (channel_lanes.contains(channel.id.value))
+            sources.channel_continues.emplace(channel.id.value, std::ranges::any_of(channel.events,
+                [](const auto& event) { return event.continuation; }));
     for (const auto& binding : wormedit::bmson_channel_resource_bindings(document, chart.id)) {
         if (!binding.channel || binding.ambiguous) continue;
         const auto lane = channel_lanes.find(binding.channel->value);

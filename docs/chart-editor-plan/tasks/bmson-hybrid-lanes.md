@@ -105,19 +105,23 @@ Sequencing: the Draw tool ([T-412](draw-tool.md)) lands before T-463, and the ve
 
 ## T-461 Make stem and Pack: convert a channel between its stem lane and packed columns
 
-- **Status:** blocked-on T-458, T-453
+- **Status:** done (2026-10-09; normal build, 3017/3017 CTest and 280/280 event-harness cases pass)
 - **Outcome:** the BGM lane header menu offers "Pack into columns" on a stem lane. A packed event's context menu offers "Make stem", which gathers its channel's events into a new stem lane. Changing a sound's kind in Sounds properties runs the same command. Each is one undo step.
 - **Read first:** T-453's approved verb table, the T-423 allocator, `src/sys/compose_note_to_bgm.cpp`, `src/ui/nuklear/compose_note_menu.cpp`.
-- **Files owned:** a new `src/core/bmson_lane_mode.cpp` and `include/wormedit/core/bmson_lane_mode.h`, `src/sys/compose_input.cpp` (or the T-455 shared dispatcher), `src/ui/nuklear/compose_note_menu.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp` (kind change), `src/ui/frontend.h`, `CMakeLists.txt`, core and event-harness tests, this card.
+- **Files owned:** `src/core/bmson_lane_mode.cpp`, `include/wormedit/core/bmson_lane_mode.h`, `src/core/note_to_bgm.cpp`, `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/sys/compose_view.h`, `src/sys/workspace_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_note_menu.cpp`, `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/bmson_lane_mode_ui.h`, `src/ui/nuklear/bmson_lane_mode_ui.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `tests/core/bmson_lane_mode_tests.cpp`, `tests/ui/bmson_lane_mode_event_harness_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `memory/chart-editor-status/resume.md`, this card.
+- **Supporting ownership (2026-10-09):** coordinator approves the supporting paths listed above for shared action dispatch, actual Sounds properties ownership, revision-cached channel capability projection, confirmed conversion UI, manifests, status and production regression coverage. The pure T-423 allocator accepts whole channels up to the existing document bound; interactive commands retain their 4096 selection bound. Offline audio and uniquely bound empty channels remain convertible; ambiguous resource reuse rejects.
 - **Steps:**
   1. Core command `set_bmson_channel_lane_mode(channel, stem | packed)`. Make stem creates the lane and moves the channel's BGM events into it. Pack runs the allocator and removes the lane. Each sets the resource's `sound_kind`.
   2. Pack is refused for a channel that has continuation points, with the reason "continuation points need a stem lane"; offer "Convert continue points to restarts and pack" as a separate confirmed step.
   3. Add the menu items and the kind change in Sounds properties.
   4. Test round trips: Make stem then Pack is equal to the input, and refusal is atomic.
-- **Invariants:** the exported channels are byte-identical after each command.
+- **Invariants:** normal Make stem and Pack leave exported channels byte-identical. The explicitly confirmed continuation-to-restart conversion intentionally changes continuation flags; one Undo restores the source events, lanes and resource kind.
 - **Reject/failure behavior:** an allocator rejection changes nothing.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'lane_mode|bmson'`; `ctest --test-dir build -L event-harness`.
+- **Evidence (2026-10-09):** normal application build passes. Required focused gate: `100% tests passed out of 13` (`/tmp/t461-bmson-final.log`); required event gate: `100% tests passed out of 280` (`/tmp/t461-events.log`). Full suite: `100% tests passed out of 3017`, 194.29 seconds (`/tmp/t461-full.log`). Coverage includes native/export round trips, Undo/Redo, continuation refusal/confirmation, stale revisions, offline audio, empty/playable-only channels, ambiguous bindings, atomic allocator rejection, 4097-event packing, both context menus and actual Sounds/Compose projection. Configured clang-tidy adds no new/increased complexity findings; existing findings remain. Header continuation capability is revision-cached and skips packed channels.
 - **Out of scope:** BMS charts.
+
+
 
 ## T-462 Add stems and keysounds from their own Sounds dock sections
 

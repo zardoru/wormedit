@@ -46,8 +46,7 @@ static auto stem_lane_resize_edge(const ComposePointerEventContext& input, doubl
     -> const WormUiComposeBgmLaneView* {
     const auto& view = *input.view;
     const auto tolerance = 4.0 * view.viewport_width_pixels / input.viewport.w;
-    const auto header_height = 18.0 * view.viewport_height_pixels / input.viewport.h;
-    if (y < 0 || y >= header_height) return nullptr;
+    if (y < 0 || y >= view.viewport_height_pixels) return nullptr;
     for (const auto& lane : std::span(view.bgm_lanes, view.bgm_lane_count)) {
         if (!lane.stem || lane.resize_edge_pixels > lane.bounds.right + 1e-6 ||
             lane.resize_edge_pixels < lane.bounds.left || x < lane.bounds.left ||
@@ -68,6 +67,7 @@ static auto update_stem_lane_resize(const ComposePointerEventContext& input) -> 
         return true;
     }
     state.stem_lane_resize_cursor_requested = true;
+    state.stem_lane_resize_hover_lane = lane;
     worm_ui_nuklear_set_stem_lane_width(state, project, chart, lane,
         resize.anchor_width + input.pointer_x - resize.anchor_x);
     if (input.left_released) worm_ui_nuklear_cancel_stem_lane_resize(state, false);
@@ -85,6 +85,7 @@ static auto reset_stem_lane_from_double_click(const ComposePointerEventContext& 
             worm_ui_nuklear_set_stem_lane_width(state, input.view->project_id,
                 input.view->chart_id, lane->source_lane_id, 36);
             state.stem_lane_resize_cursor_requested = true;
+            state.stem_lane_resize_hover_lane = lane->source_lane_id;
             return true;
         }
     }
@@ -93,13 +94,17 @@ static auto reset_stem_lane_from_double_click(const ComposePointerEventContext& 
 auto process_stem_lane_resize(const ComposePointerEventContext& input,
     const worm_ui_nuklear_pointer_click_t* double_clicks, std::size_t double_click_count,
     bool other_pointer_captured) -> bool {
+    state.stem_lane_resize_hover_lane = 0;
     if (update_stem_lane_resize(input)) return true;
     const auto& view = *input.view;
     if (other_pointer_captured || !input.window_focused || view.input_occluded ||
         !view.scene_available || !view.bmson_tools_available) return false;
     if (reset_stem_lane_from_double_click(input, double_clicks, double_click_count)) return true;
     const auto* hovered = stem_lane_resize_edge(input, input.pointer_x, input.pointer_y);
-    if (hovered && input.pointer_inside) state.stem_lane_resize_cursor_requested = true;
+    if (hovered && input.pointer_inside) {
+        state.stem_lane_resize_cursor_requested = true;
+        state.stem_lane_resize_hover_lane = hovered->source_lane_id;
+    }
     if (!input.pointer_started_in_view || !input.left_down) return false;
     const auto* lane = stem_lane_resize_edge(input, input.pointer_started_x, input.pointer_started_y);
     if (!lane) return false;

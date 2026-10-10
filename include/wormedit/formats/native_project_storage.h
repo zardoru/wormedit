@@ -204,6 +204,14 @@ struct native_project_recovery_scan_result_t {
     native_project_recovery_metadata_t metadata, native_project_storage_options_t options = {})
     -> native_project_storage_result_t;
 
+// Publishes small caller-owned bytes (for example a session crash marker) through the same
+// temporary, flush, reopen, and rename path. The reopened file must equal `bytes` exactly; an
+// existing destination is replaced.
+[[nodiscard]] auto publish_native_bytes_atomic(const std::filesystem::path& destination,
+                                               std::string_view bytes,
+                                               native_project_storage_options_t options = {})
+    -> native_project_storage_result_t;
+
 // Decode and validate an envelope independently of filesystem scanning. The
 // payload checksum, native schema, project ID, and revision must all agree.
 [[nodiscard]] auto parse_native_project_recovery_snapshot(std::string_view bytes,

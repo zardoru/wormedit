@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <wormedit/core/document.h>
 #include <wormedit/core/notifications.h>
 #include <string>
 
@@ -21,5 +22,15 @@ struct platform_recovery_directory_result_t {
 // headless recovery scanner only receives caller-owned paths.
 [[nodiscard]] auto prepare_platform_recovery_directory(
     std::optional<notification_sink_t> notifications = {}) -> platform_recovery_directory_result_t;
+
+// The crash marker lives in the recovery directory; the scanner ignores it as a candidate.
+[[nodiscard]] auto crash_marker_path(const std::filesystem::path& recovery_directory)
+    -> std::filesystem::path;
+// Atomically records this process ID and the project it opened. Returns an empty string on
+// success, otherwise a message for a status warning; a marker failure never stops startup.
+[[nodiscard]] auto write_crash_marker(const std::filesystem::path& marker, song_id_t project_id)
+    -> std::string;
+// Removes the marker on clean shutdown. A missing marker is not an error.
+void remove_crash_marker(const std::filesystem::path& marker) noexcept;
 
 } // namespace wormedit

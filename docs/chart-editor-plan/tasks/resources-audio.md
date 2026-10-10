@@ -184,3 +184,21 @@ stale-plan check (rule 9) first.
 - **Out of scope:** resident samples themselves (T-267), GPU texture pools.
 
 - **T-271 verification evidence (2026-09-30):** integrated application build passed; `ctest --test-dir build --output-on-failure -R 'arena|storyboard|^core\.'` reported `100% tests passed out of 801` (14.22 s). Configured clang-tidy passed for the arena implementation and tests. The old and new preview implementations matched bitwise across 98 frame results (easing, loops, arena limits); canonical output SHA-256 `d8d2a58bbc3c7532f90dbb3cedbfc325e0f798a859882bed23bafa75119d611e`. Forced allocation failures return typed errors; append stale accounting excludes alignment padding. Shared chunk ownership adds one control-block allocation when a chunk is created.
+
+## T-489 Mark missing audio on open, and relink sounds without needing lanes
+
+- **Status:** ready
+- **Found by:** T-104 (2026-10-10).
+- **Outcome:** a project opened with an audio file absent on disk marks that resource `missing` immediately, and relinking a sound (including a T-104 fallback pick) works on any chart, including one without editable lanes.
+- **Audit:** in the real app, `resource_entry_t::missing` stayed false for files that were already absent when the project opened, so T-104's projection checks the disk itself. `WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK` is dropped on lane-less charts with "no editable lanes", although relinking a resource does not depend on lanes.
+- **Read first:** `src/sys/project_open.cpp` (resource missing flags after open), `src/sys/audio_source_registration.cpp`, `src/sys/compose_actions.cpp` (`relink_sound_fallback` and the lane gate before it), `src/sys/sound_list_projection.cpp`.
+- **Files owned:** `src/sys/project_open.cpp`, `src/sys/audio_source_registration.cpp`, `src/sys/compose_actions.cpp`, `src/sys/sound_list_projection.cpp`, `tests/sys/project_open_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/sound_list_projection_tests.cpp`, this card.
+- **Steps:**
+  1. Write a failing test: open a project whose audio file is absent and assert `missing` is set.
+  2. Set `missing` from the existing source-registration result instead of a separate disk check, and let the T-104 projection use the flag again.
+  3. Write a failing test: relink a fallback on a lane-less chart. Then move the relink action ahead of the lane gate, or exempt it.
+- **Invariants:** a present file stays `missing == false`. Relinking stays one undo step, and stale revisions still reject.
+- **Reject/failure behavior:** unchanged.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'project_open|sound_list|^core\.'`; full suite.
+- **Out of scope:** BMS audio fallback rules (T-104).
+

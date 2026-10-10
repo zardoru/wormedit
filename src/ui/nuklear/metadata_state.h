@@ -41,6 +41,11 @@ struct worm_ui_nuklear_metadata_state_t {
     std::uint64_t channel_map_buffer_revision{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t channel_map_buffer_segment{};
     bool channel_map_buffers_valid{};
+    // Key-count selector: the chosen family index, kept per chart and reset when it changes.
+    std::vector<const char*> lane_profile_labels;
+    std::uint64_t lane_profile_chart{};
+    std::size_t lane_profile_selected{};
+    bool lane_profile_valid{};
     // Metadata multi-select of difficulties; reset with the rest of the state.
     std::vector<std::uint64_t> batch_selected_charts;
     std::vector<std::uint64_t> batch_action_chart_ids;

@@ -278,6 +278,13 @@ typedef struct WormUiMetadataChannelMapLaneView {
     const char* channels[4];
 } WormUiMetadataChannelMapLaneView;
 
+// One key-count profile offered for the chart's family. Custom is listed disabled with its reason.
+typedef struct WormUiMetadataLaneProfileChoice {
+    const char* label;
+    bool enabled;
+    const char* reason;
+} WormUiMetadataLaneProfileChoice;
+
 // One difficulty offered by the Metadata multi-select; name is valid for the frame.
 typedef struct WormUiMetadataChartChoice {
     uint64_t chart_id;
@@ -383,6 +390,17 @@ typedef struct WormUiMetadataView {
     size_t channel_map_preview_conflict_count;
     const char* channel_map_preview_message;
     bool channel_map_apply_enabled;
+    // Key-count selector: the chart's family profiles, then Custom. current is the chart's own index.
+    const WormUiMetadataLaneProfileChoice* lane_profile_choices;
+    size_t lane_profile_choice_count;
+    size_t lane_profile_current;
+    bool lane_profile_preview_present;
+    bool lane_profile_preview_valid;
+    size_t lane_profile_mapped_note_count;
+    size_t lane_profile_dropped_note_count;
+    size_t lane_profile_collision_count;
+    const char* lane_profile_preview_message;
+    bool lane_profile_apply_enabled;
     const WormUiMetadataChartChoice* chart_choices;
     size_t chart_choice_count;
     bool chart_choices_truncated;
@@ -2681,6 +2699,9 @@ typedef enum WormUiMetadataEditKind {
     // metadata_chart_author; the rating is metadata_has_chart_rating plus the numerator/denominator
     // texts (no rating clears it).
     WORM_UI_METADATA_EDIT_BATCH_CHART,
+    // Key-count preview and apply: the index names a choice in the chart's family list.
+    WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE,
+    WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE,
 } WormUiMetadataEditKind;
 
 typedef enum WormUiClipboardAction {
@@ -2813,6 +2834,7 @@ typedef struct WormUiWorkspaceAction {
     size_t metadata_batch_chart_count;
     bool metadata_batch_edit_author;
     bool metadata_batch_edit_rating;
+    size_t metadata_lane_profile_index;
     WormUiComposeActionKind compose_action;
     uint64_t compose_area_begin_row;
     uint64_t compose_area_end_row;

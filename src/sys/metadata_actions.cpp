@@ -6,10 +6,12 @@
 #include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/channel_map_editor.h>
 #include <wormedit/core/command.h>
+#include <wormedit/core/lane_migration.h>
 #include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/core/workspace.h>
 
+#include <algorithm>
 #include <charconv>
 #include <cstring>
 #include <optional>
@@ -271,6 +273,72 @@ auto dispatch_channel_map_apply(document_history_t& history, workspace_controlle
     return feedback;
 }
 
+auto lane_profile_chart(const song_document_t& song, std::uint64_t id) -> const chart_document_t* {
+    const auto found = std::ranges::find(song.charts, id, [](const chart_document_t& chart) {
+        return chart.id.value;
+    });
+    return found == song.charts.end() ? nullptr : &*found;
+}
+
+// Previews the chosen family profile as a sealed proposal. The index must name a family choice:
+// Custom and stale indices never reach the core.
+auto dispatch_lane_profile_preview(const WormUiWorkspaceAction& action, const document_history_t& history,
+                                   metadata_drop_state_t& metadata_drop) -> metadata_edit_feedback_t {
+    const auto* chart = lane_profile_chart(history.document, action.metadata_chart_id);
+    if (!chart) return {notification_severity_t::warning, "Choose a chart before previewing its key count."};
+    const auto targets = lane_profile_family_targets(*chart);
+    if (action.metadata_lane_profile_index >= targets.size())
+        return {notification_severity_t::warning,
+                "Choose a built-in key-count profile of this chart's family to preview."};
+    auto proposal = propose_lane_migration(history.document, action.metadata_document_revision,
+                                           chart->id, targets[action.metadata_lane_profile_index]);
+    if (proposal.issue != lane_migration_issue_t::none) {
+        metadata_drop.clear_lane_profile_preview();
+        return {notification_severity_t::error, proposal.message};
+    }
+    const auto message = "Key-count preview: " + std::to_string(proposal.mapped_note_count) + " notes map, " +
+                         std::to_string(proposal.dropped_notes.size()) + " dropped, " +
+                         std::to_string(proposal.collision_count) + " collisions.";
+    metadata_drop.lane_profile_preview = std::move(proposal);
+    return {notification_severity_t::info, message};
+}
+
+// Apply consumes the sealed preview. The button press is the confirmation for any dropped notes.
+auto dispatch_lane_profile_apply(document_history_t& history, workspace_controller_t& workspace,
+                                 metadata_drop_state_t& metadata_drop) -> metadata_edit_feedback_t {
+    if (!metadata_drop.lane_profile_preview)
+        return {notification_severity_t::warning, "Preview the key-count change before applying it."};
+    const auto proposal = std::move(*metadata_drop.lane_profile_preview);
+    metadata_drop.clear_lane_profile_preview();
+    auto result = apply_lane_migration(history, proposal, true);
+    if (!result) return {notification_severity_t::error, result.message};
+    auto feedback = publish_metadata_edit(std::move(result.command), workspace, history);
+    if (feedback.severity == notification_severity_t::success)
+        feedback.message = "Key-count profile changed.";
+    return feedback;
+}
+
+auto lane_profile_family_targets_impl(const chart_document_t& chart) -> std::vector<lane_input_profile_t> {
+    std::vector<lane_input_profile_t> targets;
+    if (chart.lane_layouts.empty()) return targets;
+    const auto& current_id = chart.lane_layouts.front().layout.profile_id;
+    const auto catalog = built_in_bms_lane_profiles();
+    const auto current = std::ranges::find_if(catalog, [&](const bms_lane_profile_descriptor_t& item) {
+        return item.profile.layout.profile_id == current_id;
+    });
+    if (current != catalog.end()) {
+        for (const auto& item : catalog)
+            if (item.family == current->family) targets.push_back(item.profile);
+        return targets;
+    }
+    // osu!mania charts: the 1-18 key factory is the family's supported counts.
+    for (std::uint32_t keys = 1; keys <= 18; ++keys) {
+        auto profile = make_osu_mania_profile(keys);
+        if (profile) targets.push_back(*profile);
+    }
+    return targets;
+}
+
 auto dispatch_metadata_edit(const WormUiWorkspaceAction& action, document_history_t& history,
                             workspace_controller_t& workspace, bool timing_locked,
                             metadata_drop_state_t& metadata_drop) -> metadata_edit_feedback_t {
@@ -298,6 +366,10 @@ auto dispatch_metadata_edit(const WormUiWorkspaceAction& action, document_histor
         return dispatch_channel_map_preview(action, history, metadata_drop);
     case WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP:
         return dispatch_channel_map_apply(history, workspace, metadata_drop);
+    case WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE:
+        return dispatch_lane_profile_preview(action, history, metadata_drop);
+    case WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE:
+        return dispatch_lane_profile_apply(history, workspace, metadata_drop);
     case WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD:
     case WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD:
     case WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD:
@@ -309,6 +381,10 @@ auto dispatch_metadata_edit(const WormUiWorkspaceAction& action, document_histor
 }
 
 } // namespace
+
+auto lane_profile_family_targets(const chart_document_t& chart) -> std::vector<lane_input_profile_t> {
+    return lane_profile_family_targets_impl(chart);
+}
 
 auto dispatch_metadata_action(
     const WormUiWorkspaceAction& action, document_history_t& history,

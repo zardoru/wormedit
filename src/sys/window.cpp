@@ -1,4 +1,5 @@
 #include "wormedit/window.h"
+#include "ui/workspace_menu.h"
 #include "sys/frame_timing.h"
 
 #include <SDL3/SDL_error.h>
@@ -31,7 +32,7 @@ SDL_HitTestResult SDLCALL window_hit_test(SDL_Window* window, const SDL_Point* p
     }
     // Drag only the bare title bar: the menu buttons on the left and the window
     // controls on the right must receive their own clicks.
-    constexpr int menu_end = 288;
+    constexpr int menu_end = wormedit::ui::workspace_menu_drag_begin;
     constexpr int controls_width = 130;
     if (point->y >= 6 && point->y < 34 && point->x >= menu_end &&
         point->x < width - controls_width)

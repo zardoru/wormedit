@@ -1,3 +1,4 @@
+#include "sys/menu_command_projection.h"
 #include "nuklear_event_harness.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -162,13 +163,17 @@ TEST_CASE("Notification badge and View menu open history through their actual co
     REQUIRE(badge.has_value());
     check_history_opens_on_click(*badge);
 
+    wormedit::sys::project_menu_commands(wormedit::make_default_editor_command_registry({}), harness.view());
     const auto view_menu = click_text(harness, "View");
     REQUIRE(view_menu.has_value());
     static_cast<void>(harness.frame()); // Render the opened native menu before selecting an item.
     REQUIRE(harness.drawn_text().find("Notifications") != std::string::npos);
     const auto menu_item = click_text(harness, "Notifications");
     REQUIRE(menu_item.has_value());
-    check_history_opens_on_click(*menu_item);
+    const auto count = std::ranges::count_if(*menu_item, [](const auto& frame) {
+        return std::string_view{frame.get().menu_command_id} == "view.notifications";
+    });
+    CHECK(count == 1);
 }
 
 TEST_CASE("An already open Notification window does not claim blank Compose clicks",

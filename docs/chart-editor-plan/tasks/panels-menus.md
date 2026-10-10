@@ -50,14 +50,17 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-226 Move the menus to a conventional left menu bar
 
-- **Status:** ready (T-225 completed 2026-10-09; audit current implementation before starting)
+- **Status:** done (2026-10-09; shared six-menu bar and registry routing verified)
 - **Outcome:** the title bar reads, left to right: app icon, menus (File, Edit, View, Chart, Playback, Help), then the project title (with `*` when dirty), then the window buttons; tab navigation leaves the menu (tabs are already visible).
-- **Read first:** `src/ui/nuklear/frontend.cpp` (`render_title_bar`, `render_project_menu`, `render_view_menu`), `src/core/command_registry.cpp` (command ids).
-- **Files owned:** `src/ui/nuklear/frontend.cpp`, new `src/ui/nuklear/menu_bar.cpp/.h`, `src/ui/frontend.h`, `CMakeLists.txt`.
+- **Read first:** `src/ui/nuklear/frontend.cpp` (`render_title_bar`), `src/ui/nuklear/menu_bar.cpp`, `src/core/command_registry.cpp` (command ids).
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, new `src/ui/nuklear/menu_bar.cpp/.h`, `src/ui/frontend.h`, `CMakeLists.txt`, `src/ui/workspace_menu.h`, `src/sys/macos_menu.mm`, `src/sys/window.cpp`, `tests/ui/popup_menu_event_harness_tests.cpp`, `tests/ui/menu_bar_event_harness_tests.cpp`, `tests/ui/notification_hit_region_event_harness_tests.cpp`, `tests/CMakeLists.txt`.
+- **Ownership extension (coordinator, 2026-10-09):** shared menu definitions and existing macOS consumer must follow the same menu groups; the SDL title-bar drag exclusion shares the new menu widths so Playback/Help remain clickable; production event-harness coverage verifies routing, dismissal, and preserved actions. Verification exposed retained area-menu capture across frontend reinitialization; the existing area reset now runs at frontend startup alongside the global-menu reset. Stale audit: the left bar exists, but Chart/Playback/Help and several registry actions are missing.
 - **Steps:**
   1. Move menu rendering into `menu_bar.cpp`; layout: static columns for each menu label, then a dynamic title column, then window buttons.
   2. Menu contents: **File** New project, Open…, Save, Save as…, Close, Quit. **Edit** Undo, Redo, Delete, Select all, Invert selection, Clear selection. **View** player preview, Reset editor view, panels (T-228), Notifications (T-220 when present). **Chart** New chart (T-52), timing lock, insert BPM/SV (T-50). **Playback** Play/Pause, Play from start, Stop, external player (T-214 when present). **Help** About (version and git hash already in the view).
   3. Items that dispatch registry commands go through the same invocation path as shortcuts.
+- **Result (2026-10-09):** the existing left bar was completed rather than duplicated: Lucide app icon, File/Edit/View/Chart/Playback/Help, project title/dirty marker and window controls. Editing, chart and transport rows dispatch registry IDs through the keyboard invocation path; existing tool windows, clipboard, BGM/same-sound and external-player actions remain reachable. About uses the generated version and current build hash. The existing macOS adapter consumes the same groups; native macOS runtime verification remains unavailable on Linux. Real SDL verification found the old four-menu drag exclusion intercepting Playback/Help; the window hit-test now derives its boundary from shared title widths. Startup also resets retained area-menu capture, fixing the combined frontend-harness shortcut leak.
+- **Verification (2026-10-09):** normal build ended `[100%] Built target wormedit`; full `ctest --test-dir build --output-on-failure` ended `100% tests passed out of 3116` (225.02 s). The combined frontend binary ended `All tests passed (5143 assertions in 362 test cases)`. Affected-source clang-tidy has no new/increased complexity violations; pre-existing warnings remain. Standard isolated Compose smoke and all six native popup/title-switch/About captures inspected, plus 800×560 minimum-window capture. Logs `/tmp/t226-build-window-final.log`, `/tmp/t226-all-final.log`, `/tmp/t226-events-verified.log`, `/tmp/t226-tidy-*.log`, `/tmp/t226-window-tidy.log`; screenshots `/tmp/t226-verified-*.png`, `/tmp/t226-switch-*.png`. Brain scratchpad/status synchronized. Uncommitted.
 - **Invariants:** every action reachable today stays reachable.
 - **Reject/failure behavior:** disabled commands render disabled, as in the registry.
 - **Verify:** standard build/test; smoke PNG with the File menu open.
@@ -65,11 +68,14 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-227 Show shortcuts, checks, and disabled state in menu items
 
-- **Status:** blocked-on T-226
+- **Status:** done (2026-10-09; live shortcut, checked and disabled rows verified)
 - **Outcome:** a `chrome::menu_item(label, shortcut_text, checked, enabled)` helper draws label left, shortcut right in muted text, an optional check mark, and the disabled style; all menus use it; shortcut text comes from the registry's current chords (so remapping in T-59 updates menus).
 - **Read first:** `src/ui/nuklear/chrome.h`, `include/wormedit/core/command_registry.h` (command state, chords), `src/ui/nuklear/menu_bar.cpp`.
-- **Files owned:** `src/ui/nuklear/chrome.h`, `src/ui/nuklear/menu_bar.cpp`, `src/ui/frontend.h`, `src/sys/main.cpp` (project chord text into the view only).
+- **Files owned:** `src/ui/nuklear/chrome.h`, `src/ui/nuklear/menu_bar.cpp`, `src/ui/frontend.h`, `src/sys/main.cpp` (project command state/chord text and share menu dispatch), new `src/sys/menu_command_projection.cpp/.h`, `tests/ui/menu_bar_event_harness_tests.cpp`, `tests/CMakeLists.txt`, `CMakeLists.txt`.
+- **Ownership extension (coordinator, 2026-10-09):** a testable projection unit copies bounded registry state and current shortcuts; build wiring and production event tests verify remaps, disabled items, and checked states. Stale audit: macOS has shortcuts/checks, but in-window rows currently only draw labels.
 - **Steps:** 1. Project `{id, label, chord_text, enabled, checked}` for menu commands into a bounded view array. 2. Helper + use everywhere.
+- **Result (2026-10-09):** a bounded, pointer-free command view carries current registry labels, shortcuts, enabled and checked state. One themed menu-row helper reserves a check gutter, right-aligns muted shortcut text and dims all row content when disabled. Unbound commands leave the shortcut column empty; remaps update on the next frame. Primary resolves to Ctrl or ⌘; Command is included in the native font range. Local panel/tool checks follow their actual visibility. Existing native menu duplicate-key retirement now resolves Primary per platform, and in-window command selections use that shared dispatch too.
+- **Verification (2026-10-09):** the T-226 build, 3,116/3,116 full tests, 362/362 combined frontend cases, native visual checks and complexity gates also cover this card. Added production-event cases verify one invocation per click, remaps/unbinding/platform labels, disabled commands, missing projections, checked model state, all six title switches and About dismissal; existing popup and notification menu tests now assert registry dispatch. Evidence paths are recorded under T-226. Uncommitted.
 - **Invariants:** platform primary modifier shown as Ctrl or ⌘ per platform.
 - **Reject/failure behavior:** commands without a chord show no shortcut text.
 - **Verify:** standard build/test; smoke PNG.

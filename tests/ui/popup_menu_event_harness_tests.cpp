@@ -1,6 +1,7 @@
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_state.h"
+#include "sys/menu_command_projection.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -155,6 +156,7 @@ TEST_CASE("Global menus dismiss on Escape and right outside click and switch by 
     require_popup(harness.ready());
     auto& view = harness.view();
     view.compose.clipboard_copy_available = true;
+    wormedit::sys::project_menu_commands(wormedit::make_default_editor_command_registry({}), view);
     (void)harness.frame();
 
     const auto file_title = harness.drawn_text_center("File");
@@ -172,10 +174,10 @@ TEST_CASE("Global menus dismiss on Escape and right outside click and switch by 
     const auto copy = harness.drawn_text_center("Copy");
     require_popup(copy.has_value());
     const auto selected = click(harness, copy->first, copy->second);
-    check_popup(selected.front().get().clipboard == WORM_UI_CLIPBOARD_COPY ||
-                selected.back().get().clipboard == WORM_UI_CLIPBOARD_COPY);
-    check_popup(!(selected.front().get().clipboard == WORM_UI_CLIPBOARD_COPY &&
-                  selected.back().get().clipboard == WORM_UI_CLIPBOARD_COPY));
+    check_popup(std::string_view{selected.front().get().menu_command_id} == "edit.copy" ||
+                std::string_view{selected.back().get().menu_command_id} == "edit.copy");
+    check_popup(!(std::string_view{selected.front().get().menu_command_id} == "edit.copy" &&
+                  std::string_view{selected.back().get().menu_command_id} == "edit.copy"));
 
     const auto escape_event = escape();
     const auto escaped = harness.frame(std::span{&escape_event, 1});

@@ -2219,7 +2219,18 @@ typedef struct WormUiCompareView {
     uint64_t diagnostic_chart_id;
 } WormUiCompareView;
 
+enum { WORM_UI_MENU_COMMAND_CAPACITY = 64 };
+typedef struct WormUiMenuCommandView {
+    char id[96];
+    char label[128];
+    char shortcut[96];
+    bool enabled;
+    bool checked;
+} WormUiMenuCommandView;
+
 typedef struct WormUiWorkspaceView {
+    size_t menu_command_count;
+    WormUiMenuCommandView menu_commands[WORM_UI_MENU_COMMAND_CAPACITY];
     WormUiNotificationView notifications;
     WormUiOptionsView options;
     WormUiCloseConfirmationView close_confirmation;

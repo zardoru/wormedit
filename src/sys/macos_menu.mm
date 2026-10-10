@@ -136,7 +136,7 @@ void refresh_macos_menu(const ui::workspace_menu_t& model) {
     if (!macos_menu_active()) return;
     @try {
         for (NSMenuItem* parent in main_menu.itemArray) {
-            if (![@[@"File", @"Edit", @"View", @"Preview"] containsObject:parent.title]) continue;
+            if (![@[@"File", @"Edit", @"View", @"Chart", @"Playback", @"Help", @"Preview"] containsObject:parent.title]) continue;
             for (NSMenuItem* item in parent.submenu.itemArray) item.hidden = YES;
         }
         NSMenu* current_menu = nil;

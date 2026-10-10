@@ -45,6 +45,7 @@
 #include "sys/preferences_runtime.h"
 #include "sys/options_runtime.h"
 #include "sys/shortcut_rows.h"
+#include "sys/menu_command_projection.h"
 #include <set>
 #include "sys/notification_history_runtime.h"
 #include <SDL3/SDL_clipboard.h>
@@ -1779,7 +1780,7 @@ void post_shortcut_rejection(wormedit::notification_sink_t& notifications,
                            wormedit::notification_source_t::input, result.diagnostics.front().message);
 }
 
-void consume_native_menu_shortcut(WormUiWorkspaceAction& action,
+void consume_menu_shortcut(WormUiWorkspaceAction& action,
                                   const wormedit::command_registry_t& registry) {
     const auto* command = wormedit::find_command(registry, {action.menu_command_id});
     if (!command || command->current_shortcuts.empty()) return;
@@ -1788,7 +1789,11 @@ void consume_native_menu_shortcut(WormUiWorkspaceAction& action,
     const auto primary = static_cast<wormedit::shortcut_modifiers_t>(wormedit::shortcut_modifier_t::primary);
     if (modifiers & primary) {
         modifiers &= ~primary;
+#if defined(__APPLE__)
         modifiers |= WORM_UI_SHORTCUT_MODIFIER_META;
+#else
+        modifiers |= WORM_UI_SHORTCUT_MODIFIER_CONTROL;
+#endif
     }
     std::size_t retained = 0;
     for (std::size_t i = 0; i < action.shortcut_event_count; ++i) {
@@ -1799,7 +1804,7 @@ void consume_native_menu_shortcut(WormUiWorkspaceAction& action,
     action.shortcut_event_count = retained;
 }
 
-void dispatch_native_menu_command(WormUiWorkspaceAction& action,
+void dispatch_menu_command(WormUiWorkspaceAction& action,
                                   wormedit::command_registry_t& registry,
                                   wormedit::document_history_t& history,
                                   wormedit::workspace_controller_t& workspace,
@@ -1809,7 +1814,7 @@ void dispatch_native_menu_command(WormUiWorkspaceAction& action,
     if (!action.menu_command_id[0]) return;
     // SDL forwards key events before AppKit invokes key equivalents. Retire that
     // same chord so a menu shortcut cannot run the registry command twice.
-    consume_native_menu_shortcut(action, registry);
+    consume_menu_shortcut(action, registry);
     refresh_application_command_states(registry, history, workspace, compose, application);
     const auto result = wormedit::invoke_command(registry, {action.menu_command_id},
                                                 application_command_focus(action, workspace));
@@ -4480,13 +4485,14 @@ int main(int argc, char** argv) {
             flattened.rebind_view_pointers();
             project_bga_dock(bga_dock_runtime, history, workspace, asset_base, flattened.view.compose);
             const auto frame_nuklear_previous = wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::nuklear);
-#if defined(WORMEDIT_HAS_MACOS_MENU)
             refresh_application_command_states(command_registry, history, workspace, compose_interaction_state, application_command_state);
+            wormedit::sys::project_menu_commands(command_registry, flattened.view);
+#if defined(WORMEDIT_HAS_MACOS_MENU)
             wormedit::sys::refresh_macos_menu_shortcuts(command_registry);
 #endif
             auto action = worm_ui_frontend_compose(&flattened.view);
             refresh_sound_selection_context(action, application_command_state);
-            dispatch_native_menu_command(action, command_registry, history, workspace,
+            dispatch_menu_command(action, command_registry, history, workspace,
                 compose_interaction_state, application_command_state, notification_sink);
             retain_compose_hover_timing(compose_scene_cache, flattened.view, action);
             retain_compose_bgm_window_capture(application_command_state, flattened.view, action);

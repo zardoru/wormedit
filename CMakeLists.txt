@@ -398,6 +398,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_resources.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_state.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/frontend.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/menu_bar.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/sdl_backend.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/field/field_renderer.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/field/field_tile_cache.cpp"
@@ -508,6 +509,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/preferences_runtime.cpp
         src/sys/options_runtime.cpp
         src/sys/shortcut_rows.cpp
+        src/sys/menu_command_projection.cpp
         src/sys/notification_history_runtime.cpp
         src/sys/project_view.cpp
         src/sys/tap_timing_runtime.cpp

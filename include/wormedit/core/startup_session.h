@@ -13,6 +13,8 @@ struct native_project_startup_request_t {
     std::vector<std::filesystem::path> recovery_entries;
     std::vector<std::filesystem::path> recovery_directories;
     native_project_recovery_scan_options_t scan_options{};
+    // Crash marker left by the previous run; empty disables the check.
+    std::filesystem::path crash_marker_path;
 };
 
 struct native_project_startup_result_t {
@@ -21,6 +23,10 @@ struct native_project_startup_result_t {
     bool loaded_primary{};
     std::optional<native_project_document_version_t> primary_version;
     native_project_recovery_scan_result_t recovery_scan;
+    // True when the crash marker existed before this run wrote its own.
+    bool previous_run_crashed{};
+    // True when a `.bak` was created from the validated primary after a crash.
+    bool created_backup_from_primary{};
 };
 
 // Scans the caller-selected project and recovery artifacts once. A valid

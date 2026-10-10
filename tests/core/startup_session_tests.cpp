@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -104,4 +105,78 @@ TEST_CASE("startup discovers an untitled recovery from a caller-owned platform d
     CHECK(
         result.recovery_scan.candidates[*result.recovery_scan.preferred_recovery_candidate].path ==
         backup);
+}
+
+namespace {
+auto write_marker(const std::filesystem::path& marker) -> void {
+    REQUIRE(wormedit::publish_native_bytes_atomic(marker, "pid=424242\nproject_id=7\n").published);
+}
+} // namespace
+
+TEST_CASE("startup without a crash marker reports no previous crash and creates no backup",
+          "[unit][core][startup-session][recovery]") {
+    temporary_directory_t directory;
+    const auto primary = directory.path / "chart.wormedit";
+    const auto marker = directory.path / "session.wormedit-crash-marker";
+    REQUIRE(wormedit::publish_native_project_atomic(primary, song(7, 3)).published);
+
+    const auto result = wormedit::prepare_native_project_startup(
+        song(1, 1), {.primary_path = primary, .crash_marker_path = marker});
+    REQUIRE(result.loaded_primary);
+    CHECK_FALSE(result.previous_run_crashed);
+    CHECK_FALSE(result.created_backup_from_primary);
+    CHECK_FALSE(std::filesystem::exists(wormedit::native_project_adjacent_backup_path(primary)));
+}
+
+TEST_CASE("a stale crash marker creates a backup from the validated primary",
+          "[unit][core][startup-session][recovery]") {
+    temporary_directory_t directory;
+    const auto primary = directory.path / "chart.wormedit";
+    const auto marker = directory.path / "session.wormedit-crash-marker";
+    const auto backup = wormedit::native_project_adjacent_backup_path(primary);
+    REQUIRE(wormedit::publish_native_project_atomic(primary, song(7, 3)).published);
+    write_marker(marker);
+
+    const auto result = wormedit::prepare_native_project_startup(
+        song(1, 1), {.primary_path = primary, .crash_marker_path = marker});
+    REQUIRE(result.loaded_primary);
+    CHECK(result.previous_run_crashed);
+    CHECK(result.created_backup_from_primary);
+    REQUIRE(std::filesystem::exists(backup));
+    const auto scanned = wormedit::scan_native_project_recovery_candidates({.primary_path = primary});
+    const auto recovered = std::ranges::find_if(scanned.candidates, [](const auto& item) {
+        return item.kind == wormedit::native_project_recovery_candidate_kind_t::adjacent_backup;
+    });
+    REQUIRE(recovered != scanned.candidates.end());
+    CHECK(recovered->status == wormedit::native_project_recovery_candidate_status_t::valid);
+    REQUIRE(recovered->version);
+    CHECK(recovered->version->revision == 3);
+}
+
+TEST_CASE("a crash marker never overwrites a newer recovery backup",
+          "[unit][core][startup-session][recovery]") {
+    temporary_directory_t directory;
+    const auto primary = directory.path / "chart.wormedit";
+    const auto marker = directory.path / "session.wormedit-crash-marker";
+    const auto backup = wormedit::native_project_adjacent_backup_path(primary);
+    REQUIRE(wormedit::publish_native_project_atomic(primary, song(7, 3)).published);
+    REQUIRE(wormedit::publish_native_project_recovery_atomic(
+                backup, song(7, 5), {.intended_project_path = primary, .last_explicit_save_revision = 3})
+                .published);
+    const auto before = std::filesystem::file_size(backup);
+    write_marker(marker);
+
+    const auto result = wormedit::prepare_native_project_startup(
+        song(1, 1), {.primary_path = primary, .crash_marker_path = marker});
+    REQUIRE(result.loaded_primary);
+    CHECK(result.previous_run_crashed);
+    CHECK_FALSE(result.created_backup_from_primary);
+    CHECK(std::filesystem::file_size(backup) == before);
+    const auto scanned = wormedit::scan_native_project_recovery_candidates({.primary_path = primary});
+    const auto kept = std::ranges::find_if(scanned.candidates, [](const auto& item) {
+        return item.kind == wormedit::native_project_recovery_candidate_kind_t::adjacent_backup;
+    });
+    REQUIRE(kept != scanned.candidates.end());
+    REQUIRE(kept->version);
+    CHECK(kept->version->revision == 5);
 }

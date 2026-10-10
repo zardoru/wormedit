@@ -3958,15 +3958,26 @@ int main(int argc, char** argv) {
     const auto requested_primary_path = arguments.requested_primary_path;
 
     const auto platform_recovery = wormedit::prepare_platform_recovery_directory(notification_sink);
+    std::filesystem::path crash_marker;
     if (platform_recovery) {
         startup_request.recovery_directories.push_back(platform_recovery.path);
+        crash_marker = wormedit::crash_marker_path(platform_recovery.path);
+        startup_request.crash_marker_path = crash_marker;
     }
     auto startup = wormedit::prepare_native_project_startup(
         wormedit::sys::empty_session_document(new_session_project_id()),
         std::move(startup_request));
+    if (!crash_marker.empty()) {
+        if (const auto marker_error = wormedit::write_crash_marker(crash_marker, startup.document.id);
+            !marker_error.empty())
+            notification_sink.post(wormedit::notification_severity_t::warning,
+                                   wormedit::notification_source_t::recovery, marker_error);
+    }
 
-    if (!wormedit::sys::initialize_application_runtime(runtime))
+    if (!wormedit::sys::initialize_application_runtime(runtime)) {
+        if (!crash_marker.empty()) wormedit::remove_crash_marker(crash_marker);
         return 1;
+    }
     wormedit::sys::frontend_notification_sink_t frontend_notifications{notification_sink};
     auto& window = runtime.window;
 
@@ -4556,5 +4567,6 @@ int main(int argc, char** argv) {
 #endif
     external_player_runtime.player.cleanup();
     wormedit::sys::shutdown_application_runtime(runtime);
+    if (!crash_marker.empty()) wormedit::remove_crash_marker(crash_marker);
     return 0;
 }

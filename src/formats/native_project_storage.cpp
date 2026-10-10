@@ -1288,6 +1288,7 @@ auto inspect_caller_recovery_directory(const std::filesystem::path& directory,
         if (type_error || status.type() != std::filesystem::file_type::regular) continue;
         const auto filename = path_to_utf8(iterator->path().filename());
         if (filename.find(".wormedit-quarantine-") != std::string::npos) continue;
+        if (filename.find(".wormedit-crash-marker") != std::string::npos) continue;
         const auto kind = filename.find(".wormedit-tmp-") != std::string::npos
                               ? native_project_recovery_candidate_kind_t::stale_recovery_temporary
                               : native_project_recovery_candidate_kind_t::caller_supplied_entry;
@@ -2176,6 +2177,20 @@ auto publish_native_project_atomic(const std::filesystem::path& destination,
         [expected, limits = options.codec_limits](std::string_view reopened, auto& diagnostics,
                                                   const auto& path) {
             return validate_native_payload(reopened, expected, limits, diagnostics, path);
+        });
+}
+
+auto publish_native_bytes_atomic(const std::filesystem::path& destination, std::string_view bytes,
+                                native_project_storage_options_t options)
+    -> native_project_storage_result_t {
+    const std::string expected{bytes};
+    return publish_prevalidated_bytes(
+        destination, bytes, options,
+        [expected](std::string_view reopened, auto& diagnostics, const auto& path) {
+            if (reopened == expected) return true;
+            add_diagnostic(diagnostics, native_project_storage_diagnostic_code_t::validation_failure,
+                           "reopened bytes do not match the bytes that were written", path);
+            return false;
         });
 }
 

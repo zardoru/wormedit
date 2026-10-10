@@ -30,7 +30,7 @@ void render_kind_choice(nk_context* context, worm_ui_sound_import_item_t& item) 
     if (nk_combo_item_label(context, "Sound", NK_TEXT_LEFT)) item.kind = WORM_UI_SOUND_IMPORT_KEYSOUND;
     if (nk_combo_item_label(context, "Stem", NK_TEXT_LEFT)) item.kind = WORM_UI_SOUND_IMPORT_STEM;
     if (nk_combo_item_label(context, "Sample", NK_TEXT_LEFT)) item.kind = WORM_UI_SOUND_IMPORT_SAMPLE;
-    nk_combo_end(context);
+    wormedit::ui::chrome::safe_combo_end(context);
 }
 
 void render_import_items(nk_context* context, worm_ui_sound_import_state_t& state) {
@@ -81,7 +81,7 @@ void render_member_move(nk_context* context, worm_ui_sound_import_state_t& state
         if (nk_combo_item_label(context, state.groups[index].name.c_str(), NK_TEXT_LEFT))
             worm_ui_nuklear_sound_import_move_member(state, member, index);
     }
-    nk_combo_end(context);
+    wormedit::ui::chrome::safe_combo_end(context);
 }
 
 auto member_matches(const worm_ui_sound_import_item_t& item,
@@ -143,7 +143,7 @@ void render_group_candidate(nk_context* context, worm_ui_keysound_group_review_t
     for (std::size_t index = 0; index < state.groups.size(); ++index)
         if (nk_combo_item_label(context, state.groups[index].name.c_str(), NK_TEXT_LEFT))
             worm_ui_keysound_group_review_move(state, candidate.id, index);
-    nk_combo_end(context);
+    wormedit::ui::chrome::safe_combo_end(context);
 }
 
 void render_group_candidates(nk_context* context,
@@ -320,7 +320,7 @@ void render_manual_group_contents(nk_context* context, const WormUiComposeView& 
     for (std::size_t index = 0; index < view.compose_sound_group_count; ++index)
         if (nk_combo_item_label(context, view.compose_sound_groups[index].name, NK_TEXT_LEFT))
             state.target_group_id = view.compose_sound_groups[index].group_id;
-    nk_combo_end(context);
+    wormedit::ui::chrome::safe_combo_end(context);
 }
 
 auto manual_assignment(const worm_ui_keysound_group_review_t& state)

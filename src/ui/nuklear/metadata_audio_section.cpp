@@ -587,7 +587,7 @@ static auto render_output_group_combo(const MetadataPanel& panel)
             selected = &group;
             state.selected_output_group_index = group.document_index;
         }
-        nk_combo_end(panel.context);
+        wormedit::ui::chrome::safe_combo_end(panel.context);
     }
     nk_layout_row_end(panel.context);
     return selected;

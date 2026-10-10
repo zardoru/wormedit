@@ -1725,10 +1725,11 @@ static bool begin_menu_sized(const char* title, float width, float height) {
     return true;
 }
 
-// `rows` rows of 25 px plus `extra` px for separators and the like.
+// Token-sized rows plus `extra` for separators and the like.
 static bool begin_menu(const char* title, float rows, float width = 210.0f, float extra = 0.0f) {
     return begin_menu_sized(title, width,
-                            rows * 25.0f + (rows - 1.0f) * 4.0f +
+                            rows * wormedit::ui::metrics::menu_item_height +
+                                (rows - 1.0f) * g_context->style.window.spacing.y +
                                 2.0f * wormedit::ui::chrome::menu_padding + extra);
 }
 
@@ -1746,13 +1747,14 @@ static bool bgm_menu_disabled_tooltip(const wormedit::ui::workspace_menu_item_t&
 
 static void render_workspace_menu(const char* title, float rows, float width,
                                   const WormUiWorkspaceView& view, WormUiWorkspaceAction& action) {
-    if (!begin_menu(title, rows, width, std::strcmp(title, "Preview") == 0 && view.project_loaded ? 10.0f : 0.0f)) return;
+    if (!begin_menu(title, rows, width, std::strcmp(title, "Preview") == 0 && view.project_loaded
+            ? wormedit::ui::metrics::menu_separator_height + g_context->style.window.spacing.y : 0.0f)) return;
     bool bgm_tooltip{};
     bool sound_tooltip{};
     for (const auto& item : g_workspace_menu) {
         if (std::strcmp(item.menu, title) != 0) continue;
         if (item.action == MenuAction::none) { wormedit::ui::chrome::menu_separator(g_context); continue; }
-        nk_layout_row_dynamic(g_context, 25, 1);
+        nk_layout_row_dynamic(g_context, wormedit::ui::metrics::menu_item_height, 1);
         if (!item.enabled) nk_widget_disable_begin(g_context);
         const bool chosen = nk_menu_item_label(g_context, item.title, NK_TEXT_LEFT) != 0;
         if (!item.enabled) nk_widget_disable_end(g_context);

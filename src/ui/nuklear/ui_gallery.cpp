@@ -102,50 +102,110 @@ void selection_bar(nk_context* context, state_t& state) {
     if (clicked >= 0) ++state.selection_actions_clicks;
 }
 
-// Stock Nuklear widgets, drawn with the same tokens as the wormedit controls above. Their values
-// live here so the gallery stays a self-contained environment without a new state type.
-void stock_widgets(nk_context* context) {
-    static int combo_selected = 0;
-    static nk_bool selectable_on = nk_false;
-    static int property_value = 12;
-    static float slider_value = 0.4f;
-    static char edit_text[64] = "Editable text";
-    static int edit_length = 13;
-    static nk_bool checkbox_on = nk_true;
-    static int option_selected = 0;
-    const float widths[] = {240, 240};
-    section_row(context, "Combo", metrics::control_default, 1, widths);
-    static const char* const combo_items[] = {"Alpha", "Beta", "Gamma"};
-    combo_selected = chrome::safe_combo(context, combo_items, 3, combo_selected, 25, nk_vec2(240, 120));
-    nk_layout_row_end(context);
-    section_row(context, "Selectable", metrics::control_default, 1, widths);
-    nk_selectable_label(context, "Selectable row", NK_TEXT_LEFT, &selectable_on);
-    nk_layout_row_end(context);
-    section_row(context, "Property", metrics::control_default, 1, widths);
-    nk_property_int(context, "Count", 0, &property_value, 99, 1, 1);
-    nk_layout_row_end(context);
-    section_row(context, "Edit", metrics::control_default, 1, widths);
-    nk_edit_string(context, NK_EDIT_FIELD, edit_text, &edit_length, sizeof(edit_text), nk_filter_default);
-    nk_layout_row_end(context);
-    section_row(context, "Slider", metrics::control_default, 1, widths);
-    nk_slider_float(context, 0.0f, &slider_value, 1.0f, 0.01f);
-    nk_layout_row_end(context);
-    section_row(context, "Checkbox", metrics::control_default, 1, widths);
-    nk_checkbox_label(context, "Stock checkbox", &checkbox_on);
-    nk_layout_row_end(context);
-    section_row(context, "Option", metrics::control_default, 2, widths);
-    if (nk_option_label(context, "First", option_selected == 0)) option_selected = 0;
-    if (nk_option_label(context, "Second", option_selected == 1)) option_selected = 1;
-    nk_layout_row_end(context);
-    section_row(context, "Tooltip", metrics::control_default, 1, widths);
-    chrome::Button{"Hover me", ButtonKind::secondary, "Stock tooltip: hover, not covered"}.render(context);
-    nk_layout_row_end(context);
-    nk_layout_row_dynamic(context, metrics::control_default, 1);
-    if (nk_tree_push(context, NK_TREE_NODE, "Tree header", NK_MAXIMIZED)) {
-        nk_layout_row_dynamic(context, metrics::control_default, 1);
-        nk_label(context, "Tree node content", NK_TEXT_LEFT);
-        nk_tree_pop(context);
+// The preview columns show the real themed ramps without synthesizing input or
+// mutating persistent widget focus. Normal remains interactive; disabled uses Nuklear's guard.
+void preview_colors(nk_style& style, bool active) {
+    const auto surface = [active](auto& control) {
+        control.normal = active ? control.active : control.hover;
+    };
+    surface(style.combo);
+    surface(style.property);
+    surface(style.edit);
+    surface(style.slider);
+    surface(style.progress);
+    surface(style.checkbox);
+    surface(style.option);
+    surface(style.scrollv);
+    style.combo.label_normal = active ? style.combo.label_active : style.combo.label_hover;
+    style.property.label_normal = active ? style.property.label_active : style.property.label_hover;
+    style.property.edit = style.edit;
+    style.edit.text_normal = active ? style.edit.text_active : style.edit.text_hover;
+    style.slider.cursor_normal = active ? style.slider.cursor_active : style.slider.cursor_hover;
+    style.scrollv.cursor_normal = active ? style.scrollv.cursor_active : style.scrollv.cursor_hover;
+    style.selectable.normal = active ? style.selectable.pressed : style.selectable.hover;
+    style.selectable.text_normal = active ? style.selectable.text_pressed : style.selectable.text_hover;
+    style.tab.background = active ? style.combo.active : style.combo.hover;
+    style.contextual_button.normal = active ? style.contextual_button.active : style.contextual_button.hover;
+    style.contextual_button.text_normal = active ? style.contextual_button.text_active : style.contextual_button.text_hover;
+}
+
+void stock_widget(nk_context* context, int kind, int column) {
+    static int choices[4]{};
+    static nk_bool selected[4]{};
+    static int values[4]{12, 12, 12, 12};
+    static float sliders[4]{0.4f, 0.4f, 0.4f, 0.4f};
+    static nk_size progress[4]{40, 40, 40, 40};
+    static nk_uint scroll[4]{}, scroll_x[4]{};
+    static const char* const scroll_names[]{"scroll-normal", "scroll-hover", "scroll-active", "scroll-disabled"};
+    static const char* const tree_names[]{"tree-normal", "tree-hover", "tree-active", "tree-disabled"};
+    static char edits[4][64]{"Editable text", "Editable text", "Editable text", "Editable text"};
+    static int lengths[4]{13, 13, 13, 13};
+    static nk_bool checks[4]{nk_true, nk_true, nk_true, nk_true};
+    static const char* const items[]{"Alpha", "Beta", "Gamma"};
+    switch (kind) {
+    case 0:
+        choices[column] = chrome::safe_combo(context, items, 3, choices[column],
+            static_cast<int>(metrics::menu_item_height), nk_vec2(nk_widget_width(context), 120));
+        break;
+    case 1: nk_selectable_label(context, "Selectable row", NK_TEXT_LEFT, &selected[column]); break;
+    case 2: nk_property_int(context, "Count", 0, &values[column], 99, 1, 1); break;
+    case 3: nk_edit_string(context, NK_EDIT_FIELD, edits[column], &lengths[column], 64, nk_filter_default); break;
+    case 4: nk_slider_float(context, 0.0f, &sliders[column], 1.0f, 0.01f); break;
+    case 5: nk_progress(context, &progress[column], 100, NK_MODIFIABLE); break;
+    case 6: nk_checkbox_label(context, "Stock checkbox", &checks[column]); break;
+    case 7: nk_option_label(context, "Stock option", nk_true); break;
+    case 8:
+        if (nk_group_scrolled_offset_begin(context, &scroll_x[column], &scroll[column], scroll_names[column], 0)) {
+            nk_layout_row_dynamic(context, metrics::control_default, 1);
+            for (int row = 0; row < 3; ++row) nk_label(context, "Scroll content", NK_TEXT_LEFT);
+            nk_group_scrolled_end(context);
+        }
+        break;
+    case 9:
+        if (nk_group_begin(context, tree_names[column], NK_WINDOW_NO_SCROLLBAR)) {
+            if (nk_tree_push_id(context, NK_TREE_NODE, "Tree header", NK_MINIMIZED, column))
+                nk_tree_pop(context);
+            nk_group_end(context);
+        }
+        break;
+    case 10: nk_button_label_styled(context, &context->style.contextual_button, "Menu item"); break;
     }
+}
+
+void stock_row(nk_context* context, const char* label, int kind) {
+    nk_layout_row_begin(context, NK_DYNAMIC, kind == 8 ? metrics::control_primary * 2.0f
+                                                     : metrics::control_default, 5);
+    nk_layout_row_push(context, 0.12f);
+    row_label(context, label);
+    for (int column = 0; column < 4; ++column) {
+        nk_layout_row_push(context, 0.22f);
+        const auto saved = context->style;
+        if (column == 1 || column == 2) preview_colors(context->style, column == 2);
+        if (column == 3) nk_widget_disable_begin(context);
+        stock_widget(context, kind, column);
+        if (column == 3) nk_widget_disable_end(context);
+        context->style = saved;
+    }
+    nk_layout_row_end(context);
+}
+
+void stock_widgets(nk_context* context) {
+    static const char* const states[]{"Normal", "Hover colors", "Active colors", "Disabled"};
+    static const char* const widgets[]{"Combo", "Selectable", "Property", "Edit", "Slider",
+        "Progress", "Checkbox", "Option", "Scrollbar", "Tree", "Menu item"};
+    nk_layout_row_begin(context, NK_DYNAMIC, metrics::control_default, 5);
+    nk_layout_row_push(context, 0.12f);
+    row_label(context, "Stock");
+    for (const auto* label : states) {
+        nk_layout_row_push(context, 0.22f);
+        row_label(context, label);
+    }
+    nk_layout_row_end(context);
+    for (int kind = 0; kind < static_cast<int>(std::size(widgets)); ++kind)
+        stock_row(context, widgets[kind], kind);
+    nk_layout_row_dynamic(context, metrics::control_default, 1);
+    chrome::Button{"Hover for tooltip", ButtonKind::secondary,
+                    "Tooltip uses the same font and popup border"}.render(context);
 }
 
 void level_one_menu(nk_context* context, int width, int height) {
@@ -194,8 +254,8 @@ void render(nk_context* context, state_t& state, int width, int height) {
     if (!context || width <= 0 || height <= 0) return;
     if (nk_begin(context, "UI gallery",
                  nk_rect(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)),
-                 NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
-        nk_layout_row_dynamic(context, 28.0f, 1);
+                 NK_WINDOW_BACKGROUND)) {
+        nk_layout_row_dynamic(context, metrics::control_default, 1);
         note(context, "Controls: heights 24 / 28 / 32, radius 4 control, 12 chip, 6 bar, 8 surface, gaps 4 / 8 / 16");
         buttons(context);
         icons(context);
@@ -203,7 +263,7 @@ void render(nk_context* context, state_t& state, int width, int height) {
         chips(context, state);
         checkboxes(context, state);
         selection_bar(context, state);
-        nk_layout_row_dynamic(context, 28.0f, 1);
+        nk_layout_row_dynamic(context, metrics::control_default, 1);
         note(context, "Lime accent = a mode or toggle is on. Blue = the chosen value, selection or primary action.");
         note(context, "Stock widgets: Nuklear's own controls with the same heights, radii and state colors");
         stock_widgets(context);

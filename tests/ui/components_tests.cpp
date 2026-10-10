@@ -338,7 +338,7 @@ TEST_CASE("components gallery stock widgets draw inside a full-size target", "[c
     fixture_t fixture;
     // Tall enough for the stock widgets section below the existing controls.
     const int width = 1280;
-    const int height = 720;
+    const int height = 1024;
     wormedit::ui::nuklear::tooltip::set_viewport(
         nk_rect(0, 0, static_cast<float>(width), static_cast<float>(height)));
     wormedit::ui::gallery::state_t state;

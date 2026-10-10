@@ -118,7 +118,7 @@ void bga_lane_picker(nk_context* context, WormUiWorkspaceAction& action) {
     for (size_t index = 0; index < labels.size(); ++index)
         if (nk_combo_item_label(context, labels[index], NK_TEXT_LEFT))
             reveal_bga_lane(action, static_cast<std::uint8_t>(kinds[index]));
-    nk_combo_end(context);
+    wormedit::ui::chrome::safe_combo_end(context);
 }
 
 void toolbar(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear_compose_state_t& state,

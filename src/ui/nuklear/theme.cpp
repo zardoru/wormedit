@@ -73,7 +73,7 @@ std::array<nk_color, ui_names.size()> ui_colors{
     nk_rgb(18, 19, 26),    nk_rgb(30, 31, 40),    nk_rgb(44, 46, 60),    nk_rgb(58, 60, 75),
     nk_rgb(58, 60, 75),    nk_rgb(134, 180, 255), nk_rgb(206, 210, 223), nk_rgb(245, 246, 250),
     nk_rgb(173, 179, 197), nk_rgb(20, 92, 227),   nk_rgb(255, 255, 255), nk_rgb(201, 211, 94),
-    nk_rgb(30, 31, 40),    nk_rgb(248, 116, 89)};
+    nk_rgb(139, 146, 169), nk_rgb(248, 116, 89), nk_rgb(44, 46, 60), nk_rgb(30, 31, 40)};
 std::array<nk_color, compose_names.size()> compose_colors{
     nk_rgb(22, 25, 33),          nk_rgb(18, 21, 29),          nk_rgb(58, 67, 83),
     nk_rgb(190, 196, 207),       nk_rgb(22, 31, 42),          nk_rgb(148, 153, 163),

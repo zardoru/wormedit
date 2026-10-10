@@ -974,7 +974,7 @@ auto close_filter_popup_if_requested(const SoundsPanel& panel, bool group_popup,
     auto* context = panel.context;
     if (!filter_popup_dismiss_requested(context, was_open)) return false;
     nk_combo_close(context);
-    nk_combo_end(context);
+    wormedit::ui::chrome::safe_combo_end(context);
     if (group_popup) state.keysound_filter_group_popup_open = false;
     else state.keysound_layer_filter_popup_open = false;
     state.keysound_filter_popup_open = state.keysound_filter_group_popup_open ||
@@ -1068,7 +1068,7 @@ void render_group_filter_choices(const SoundsPanel& panel) {
     if (began) {
         if (close_filter_popup_if_requested(panel, true, was_open)) return;
         render_group_filter_items(panel);
-        nk_combo_end(context);
+        wormedit::ui::chrome::safe_combo_end(context);
     }
     state.keysound_filter_popup_open = state.keysound_filter_group_popup_open ||
                                       state.keysound_layer_filter_popup_open;
@@ -1099,13 +1099,13 @@ void render_layer_filter_choice(const SoundsPanel& panel) {
         if (close_filter_popup_if_requested(panel, false, was_open)) return;
         if (render_layer_filter_items(panel)) {
             nk_combo_close(context);
-            nk_combo_end(context);
+            wormedit::ui::chrome::safe_combo_end(context);
             state.keysound_layer_filter_popup_open = false;
             state.keysound_filter_popup_open = state.keysound_filter_group_popup_open;
             wormedit::ui::chrome::popup_arm_release(state.keysound_filter_release_pending);
             return;
         }
-        nk_combo_end(context);
+        wormedit::ui::chrome::safe_combo_end(context);
     }
     state.keysound_filter_popup_open = state.keysound_filter_group_popup_open ||
                                       state.keysound_layer_filter_popup_open;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ui/nuklear/popup_lifecycle.h"
+#include "ui/nuklear/ui_metrics.h"
 #include "wormedit/nuklear_config.h"
 
 namespace wormedit::ui::chrome {
@@ -22,7 +23,7 @@ struct ContextMenu {
     MenuSurface saved_surface{};
 };
 
-inline constexpr float context_menu_row_height = 25.0f;
+inline constexpr float context_menu_row_height = metrics::menu_item_height;
 inline constexpr float context_menu_width = 220.0f;
 
 // Popup height for `rows` items plus `extra` px, with the menubar menus' padding.

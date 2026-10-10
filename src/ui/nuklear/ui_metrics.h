@@ -20,6 +20,10 @@ inline constexpr float gap_small = 4.0f;
 inline constexpr float gap_medium = 8.0f;
 inline constexpr float gap_large = 16.0f;
 
+// Menu rows and separators share the control and gap scale.
+inline constexpr float menu_item_height = control_compact;
+inline constexpr float menu_separator_height = gap_medium;
+
 // Font sizes. The editor's font is rasterised once, so these name the sizes that cards
 // may request instead of scattering literals.
 inline constexpr float font_small = 12.0f;

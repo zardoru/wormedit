@@ -437,13 +437,17 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     )
 
     add_executable(wormedit_nuklear_popup_combo_tests
-        ui/nuklear_popup_combo_tests.cpp)
+        ui/nuklear_popup_combo_tests.cpp
+        ../src/ui/nuklear/components.cpp
+        ../src/ui/nuklear/theme.cpp
+        ../src/ui/nuklear/arrow_glyph.cpp
+        ../src/ui/nuklear/tooltip.cpp)
     target_include_directories(wormedit_nuklear_popup_combo_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
     target_compile_definitions(wormedit_nuklear_popup_combo_tests PRIVATE
         WORMEDIT_SOURCE_ROOT="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}")
     target_link_libraries(wormedit_nuklear_popup_combo_tests PRIVATE
-        wormedit::ui_frontend Catch2::Catch2WithMain)
+        wormedit::core wormedit::ui_frontend nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
     catch_discover_tests(wormedit_nuklear_popup_combo_tests
         TEST_PREFIX "frontend-state."
         PROPERTIES LABELS "unit;frontend;architecture"
@@ -635,6 +639,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     endif()
 
     add_executable(wormedit_frame_timing_tests
+        ../src/ui/nuklear/components.cpp
         sys/bga_lane_projection_tests.cpp
         sys/compose_hover_timing_tests.cpp
         ../src/sys/compose_hover_timing.cpp

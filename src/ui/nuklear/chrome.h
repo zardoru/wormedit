@@ -78,31 +78,6 @@ inline auto popup_panel(const nk_context* context) -> bool {
            (static_cast<nk_flags>(context->current->layout->type) & NK_PANEL_SET_POPUP) != 0;
 }
 
-inline auto safe_combo(nk_context* context, const char* const* items, int count,
-                       int selected, int item_height, struct nk_vec2 size) -> int {
-    if (!context || !context->current || !context->current->layout || !items || count <= 0)
-        return selected;
-    if (!popup_panel(context))
-        return nk_combo(context, items, count, selected, item_height, size);
-    selected = std::clamp(selected, 0, count - 1);
-    for (int index = 0; index < count; ++index) {
-        nk_layout_row_dynamic(context, static_cast<float>(item_height), 1);
-        if (nk_select_label(context, items[index], NK_TEXT_LEFT, selected == index))
-            selected = index;
-    }
-    return selected;
-}
-
-inline auto safe_combo_begin_label(nk_context* context, const char* label,
-                                   struct nk_vec2 size) -> nk_bool {
-    if (!context || !context->current || !context->current->layout) return nk_false;
-    if (popup_panel(context)) {
-        nk_label(context, label, NK_TEXT_LEFT);
-        return nk_false;
-    }
-    return nk_combo_begin_label(context, label, size);
-}
-
 // Equal label/control shares keep property rows usable in narrow side panels.
 inline constexpr float property_label_ratio = 0.5f;
 
@@ -363,6 +338,64 @@ inline void menu_surface_end(nk_context* context, MenuSurface saved) {
     context->style.window.fixed_background = saved.fixed_background;
 }
 
+// Keep both the popup body and its end-of-panel padding transparent while the
+// shared rounded popup surface supplies the fill. Every successful begin pairs with end.
+inline auto safe_combo_begin_label(nk_context* context, const char* label,
+                                   struct nk_vec2 size) -> nk_bool {
+    if (!context || !context->current || !context->current->layout) return nk_false;
+    if (popup_panel(context)) {
+        nk_label(context, label, NK_TEXT_LEFT);
+        return nk_false;
+    }
+    auto& window = context->style.window;
+    if (!nk_style_push_color(context, &window.background, nk_rgba(0, 0, 0, 0))) return nk_false;
+    if (!nk_style_push_style_item(context, &window.fixed_background,
+                                  nk_style_item_color(nk_rgba(0, 0, 0, 0)))) {
+        nk_style_pop_color(context);
+        return nk_false;
+    }
+    if (nk_combo_begin_label(context, label, size)) {
+        menu_panel(context);
+        return nk_true;
+    }
+    nk_style_pop_style_item(context);
+    nk_style_pop_color(context);
+    return nk_false;
+}
+
+inline void safe_combo_end(nk_context* context) {
+    nk_combo_end(context);
+    nk_style_pop_style_item(context);
+    nk_style_pop_color(context);
+}
+
+inline auto safe_combo(nk_context* context, const char* const* items, int count,
+                       int selected, int item_height, struct nk_vec2 size) -> int {
+    if (!context || !context->current || !context->current->layout || !items || count <= 0)
+        return selected;
+    selected = std::clamp(selected, 0, count - 1);
+    const auto height = item_height <= metrics::control_compact
+        ? metrics::control_compact : metrics::control_default;
+    if (popup_panel(context)) {
+        for (int index = 0; index < count; ++index) {
+            nk_layout_row_dynamic(context, height, 1);
+            if (nk_select_label(context, items[index], NK_TEXT_LEFT, selected == index))
+                selected = index;
+        }
+        return selected;
+    }
+    const auto& window = context->style.window;
+    size.y = std::min(size.y, count * (height + window.spacing.y) +
+                      2.0f * (window.spacing.y + window.combo_padding.y));
+    if (safe_combo_begin_label(context, items[selected], size)) {
+        nk_layout_row_dynamic(context, height, 1);
+        for (int index = 0; index < count; ++index)
+            if (nk_combo_item_label(context, items[index], NK_TEXT_LEFT)) selected = index;
+        safe_combo_end(context);
+    }
+    return selected;
+}
+
 // Top-level windows (dialogs, floating tools) that cast a shadow over the workspace. The
 // window's own fill is transparent and paint_surface() draws the shadow, fill and border.
 // Always pass the result to surface_window_end(), which also calls nk_end().
@@ -392,13 +425,13 @@ inline void surface_window_end(nk_context* context, const SurfaceWindow& surface
     context->style.window.fixed_background = surface.saved.fixed_background;
 }
 
-// A thin rule between menu groups; six pixels tall in the menu's row flow.
+// A thin rule between menu groups, with the same token gap as the menu padding.
 inline void menu_separator(nk_context* context) {
-    nk_layout_row_dynamic(context, 6, 1);
+    nk_layout_row_dynamic(context, metrics::menu_separator_height, 1);
     struct nk_rect bounds{};
     if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
     const auto y = bounds.y + bounds.h * 0.5f;
-    nk_stroke_line(nk_window_get_canvas(context), bounds.x + 4.0f, y, bounds.x + bounds.w - 4.0f, y,
+    nk_stroke_line(nk_window_get_canvas(context), bounds.x + metrics::gap_small, y, bounds.x + bounds.w - metrics::gap_small, y,
                    1.0f, color(UiColor::separator));
 }
 
@@ -413,7 +446,8 @@ inline void apply_dropdown_theme(nk_context* context) {
     style.window.contextual_border_color = color(UiColor::border_hover);
     style.window.menu_border_color = color(UiColor::border_hover);
     style.window.popup_border_color = color(UiColor::border_hover);
-    style.window.combo_border = style.window.contextual_border = 1.0f;
+    style.window.contextual_border = 1.0f;
+    style.window.combo_border = 0.0f; // safe_combo paints the rounded popup border.
     style.window.popup_border = 1.0f;
     style.window.popup_padding = style.window.combo_padding = nk_vec2(metrics::gap_small, metrics::gap_small);
     style.window.contextual_padding = nk_vec2(metrics::gap_small, metrics::gap_small);
@@ -467,7 +501,7 @@ inline void apply_dropdown_theme(nk_context* context) {
     style.selectable.text_normal_active = color(UiColor::selected_text);
     style.selectable.text_hover_active = color(UiColor::selected_text);
     style.selectable.text_pressed_active = color(UiColor::selected_text);
-    style.selectable.rounding = 3.0f;
+    style.selectable.rounding = metrics::radius_control;
 }
 
 // Edit fields, property boxes, sliders and progress bars share one control surface, border and
@@ -606,6 +640,7 @@ inline void apply_header_theme(nk_context* context) {
 
 inline void apply_theme(nk_context* context) {
     nk_style_default(context);
+    context->style.window.spacing = nk_vec2(metrics::gap_small, metrics::gap_small);
     context->style.window.background = color(UiColor::background);
     context->style.window.fixed_background = nk_style_item_color(color(UiColor::background));
     context->style.window.group_border_color = color(UiColor::border);

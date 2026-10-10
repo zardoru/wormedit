@@ -48,7 +48,7 @@ auto begin_menu_popup(ContextMenu& menu, nk_context* context) -> bool {
 } // namespace
 
 auto context_menu_height(float rows, float extra) -> float {
-    return rows * context_menu_row_height + std::max(0.0f, rows - 1.0f) * 4.0f +
+    return rows * context_menu_row_height + std::max(0.0f, rows - 1.0f) * metrics::gap_small +
            2.0f * menu_padding + extra;
 }
 

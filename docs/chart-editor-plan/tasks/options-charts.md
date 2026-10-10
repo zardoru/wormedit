@@ -97,7 +97,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-257 Fill the Display page
 
-- **Status:** blocked-on T-225
+- **Status:** ready (T-225 completed 2026-10-09; audit current implementation before starting)
 - **Outcome:** theme choice from the bundled themes directory (replacing the `WORMEDIT_THEME_DIR` environment variable, which stays as an override), UI scale (auto, 100–200 %), frame-timing overlay toggle, reduced motion (no playhead smoothing), and waveform colors from theme roles.
 - **Read first:** `src/ui/nuklear/theme.cpp` (`load`), `assets/themes/`, `src/ui/nuklear/frontend.cpp` (font and scale setup), `src/sys/frame_timing.cpp`.
 - **Files owned:** `src/ui/nuklear/options_window.cpp`, `src/ui/nuklear/theme.cpp/.h`, `src/ui/nuklear/frontend.cpp` (scale and font rebuild only), `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `tests/core/preferences_tests.cpp`.

@@ -89,7 +89,7 @@ auto begin_export_group_popup(const ResourcePanel& panel, const char* label) -> 
     if (was_open && !wormedit::ui::chrome::popup_context_matches(captured, current)) {
         if (began) {
             nk_combo_close(context);
-            nk_combo_end(context);
+            wormedit::ui::chrome::safe_combo_end(context);
         }
         state.resource_export_group_popup_open = false;
         wormedit::ui::chrome::popup_arm_release(state.resource_export_group_release_pending);
@@ -115,7 +115,7 @@ auto dismiss_export_group_popup(const ResourcePanel& panel, bool was_open) -> bo
     if (!wormedit::ui::chrome::popup_dismiss_requested(
             context, nk_window_get_bounds(context), was_open)) return false;
     nk_combo_close(context);
-    nk_combo_end(context);
+    wormedit::ui::chrome::safe_combo_end(context);
     state.resource_export_group_popup_open = false;
     wormedit::ui::chrome::popup_arm_release(state.resource_export_group_release_pending);
     return true;
@@ -179,7 +179,7 @@ auto render_export_group(const ResourcePanel& panel)
             if (dismiss_export_group_popup(panel, was_open)) return export_group;
             render_export_group_choices(panel, export_group);
             render_export_group_popup_controls(panel, *export_group);
-            nk_combo_end(context);
+            wormedit::ui::chrome::safe_combo_end(context);
         }
         nk_layout_row_dynamic(context, 17, 1);
         nk_label(context, export_group->relative_output_path, NK_TEXT_LEFT);

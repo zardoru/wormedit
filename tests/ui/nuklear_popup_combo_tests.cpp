@@ -25,6 +25,7 @@ struct combo_context_t {
         font.height = 14;
         font.width = [](nk_handle, float, const char*, int count) { return count * 7.0f; };
         expect_combo(nk_init_default(&context, &font));
+        wormedit::ui::chrome::apply_theme(&context);
     }
     ~combo_context_t() { nk_free(&context); }
 };
@@ -76,7 +77,7 @@ auto ordinary_combo_frame(nk_context& context) -> bool {
 
 auto unguarded_dropdown_files() -> std::vector<std::string> {
     const auto directory = std::filesystem::path(WORMEDIT_SOURCE_ROOT) / "src/ui/nuklear";
-    const std::regex direct_call(R"(\bnk_(?:combo(?:_begin(?:_[A-Za-z0-9]+)?|_string|_separator|_callback)?|combobox(?:_[A-Za-z0-9]+)?)\s*\()");
+    const std::regex direct_call(R"(\bnk_(?:combo(?:_begin(?:_[A-Za-z0-9]+)?|_end|_string|_separator|_callback)?|combobox(?:_[A-Za-z0-9]+)?)\s*\()");
     std::vector<std::string> unexpected;
     for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
         const auto path = entry.path();
@@ -212,4 +213,74 @@ TEST_CASE("Dismissed inline popup releases its parent input lock",
     CHECK(parent->popup.active == 0);
     nk_end(&context);
     CHECK((parent->flags & NK_WINDOW_ROM) == 0);
+}
+
+namespace {
+auto themed_combo_frame(nk_context& context, int selected, bool disabled = false) -> int {
+    const auto background = context.style.window.background;
+    const auto fixed = context.style.window.fixed_background;
+    const auto* font = context.style.font;
+    expect_combo(nk_begin(&context, "Themed combo", nk_rect(0, 0, 400, 400), NK_WINDOW_NO_SCROLLBAR));
+    nk_layout_row_dynamic(&context, wormedit::ui::metrics::control_default, 1);
+    const char* choices[]{"First", "Second", "Third"};
+    if (disabled) nk_widget_disable_begin(&context);
+    selected = wormedit::ui::chrome::safe_combo(&context, choices, 3, selected, 25, nk_vec2(200, 150));
+    if (disabled) nk_widget_disable_end(&context);
+    nk_end(&context);
+    expect_combo(std::memcmp(&background, &context.style.window.background, sizeof(background)) == 0);
+    expect_combo(std::memcmp(&fixed, &context.style.window.fixed_background, sizeof(fixed)) == 0);
+    expect_combo(context.style.font == font);
+    return selected;
+}
+
+auto has_popup_fill(nk_context& context) -> bool {
+    const auto popup = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::popup);
+    const nk_command* command;
+    nk_foreach(command, &context) {
+        if (command->type != NK_COMMAND_RECT_FILLED) continue;
+        const auto* rect = reinterpret_cast<const nk_command_rect_filled*>(command);
+        if (rect->rounding == wormedit::ui::metrics::radius_surface &&
+            std::memcmp(&rect->color, &popup, sizeof(popup)) == 0) return true;
+    }
+    return false;
+}
+}
+
+TEST_CASE("Themed combo paints the popup role restores style and selects a value",
+          "[unit][frontend][popup-combo][components]") {
+    combo_context_t fixture;
+    auto& context = fixture.context;
+    input_frame(context, nk_vec2(0, 0), false);
+    auto selected = themed_combo_frame(context, 0);
+    const auto header = text_position(context, "First");
+    nk_clear(&context);
+    input_frame(context, header, true);
+    selected = themed_combo_frame(context, selected);
+    nk_clear(&context);
+    input_frame(context, header, false);
+    selected = themed_combo_frame(context, selected);
+    expect_combo(has_popup_fill(context));
+    const auto third = text_position(context, "Third");
+    nk_clear(&context);
+    input_frame(context, third, true);
+    selected = themed_combo_frame(context, selected);
+    nk_clear(&context);
+    input_frame(context, third, false);
+    selected = themed_combo_frame(context, selected);
+    expect_combo(selected == 2);
+}
+
+TEST_CASE("Disabled themed combo cannot open a dropdown", "[unit][frontend][popup-combo][components]") {
+    combo_context_t fixture;
+    auto& context = fixture.context;
+    input_frame(context, nk_vec2(0, 0), false);
+    expect_combo(themed_combo_frame(context, 0, true) == 0);
+    const auto header = text_position(context, "First");
+    nk_clear(&context);
+    input_frame(context, header, true);
+    expect_combo(themed_combo_frame(context, 0, true) == 0);
+    nk_clear(&context);
+    input_frame(context, header, false);
+    expect_combo(themed_combo_frame(context, 0, true) == 0);
+    expect_combo(!has_popup_fill(context));
 }

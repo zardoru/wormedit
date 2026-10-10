@@ -749,7 +749,7 @@ void render_format_target_selector(const MetadataPanel& panel) {
         if (nk_combo_item_label(context, "Song", NK_TEXT_LEFT)) state.format_add_chart_scoped = false;
         if (metadata.has_chart && nk_combo_item_label(context, "Chart", NK_TEXT_LEFT))
             state.format_add_chart_scoped = true;
-        nk_combo_end(context);
+        wormedit::ui::chrome::safe_combo_end(context);
     }
     nk_layout_row_push(context, 0.5f);
     const auto family_label = metadata_format_family_name(state.format_add_family);
@@ -760,7 +760,7 @@ void render_format_target_selector(const MetadataPanel& panel) {
         for (std::uint8_t family = 0; family < 7; ++family)
             if (nk_combo_item_label(context, names[family], NK_TEXT_LEFT))
                 state.format_add_family = family;
-        nk_combo_end(context);
+        wormedit::ui::chrome::safe_combo_end(context);
     }
     nk_layout_row_push(context, 0.3f);
     const WormUiMetadataFormatTargetView* target = nullptr;

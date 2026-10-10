@@ -50,6 +50,7 @@
 #include "sys/notification_history_runtime.h"
 #include <SDL3/SDL_clipboard.h>
 #include "sys/project_view.h"
+#include "sys/chart_import_session.h"
 #include <wormedit/core/snap.h>
 #include <wormedit/core/chart_editor.h>
 #include "sys/tap_timing_runtime.h"
@@ -1481,6 +1482,41 @@ auto open_project_chart(wormedit::document_history_t& history,
     if (!opened) return opened.diagnostics.empty() ? "Compose could not be opened." : opened.diagnostics.front().message;
     interaction.reset();
     return {};
+}
+
+// Project tab "Import chart…": begin, read a chart file, tick difficulties, import or cancel.
+// Reading and planning never change the document; Import commits one undoable command.
+bool dispatch_chart_import_action(wormedit::sys::chart_import_session_t& session,
+    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+    wormedit::workspace_controller_t& workspace, const std::filesystem::path& asset_base,
+    wormedit::notification_sink_t& notifications, bool loaded) {
+    using namespace wormedit;
+    const auto& request = action.chart_import;
+    const bool picked = action.kind == WORM_UI_WORKSPACE_ACTION_IMPORT_CHART_FILE;
+    if (!loaded || (request.kind == WORM_UI_CHART_IMPORT_NONE && !picked)) return false;
+    if (request.kind == WORM_UI_CHART_IMPORT_BEGIN) sys::chart_import_begin(session);
+    else if (request.kind == WORM_UI_CHART_IMPORT_CANCEL) sys::chart_import_cancel(session);
+    else if (request.kind == WORM_UI_CHART_IMPORT_LOAD || picked) {
+        sys::chart_import_begin(session);
+        sys::chart_import_load(session, std::filesystem::path{std::string{action.project_path}},
+                               history.document, asset_base);
+    } else if (request.kind == WORM_UI_CHART_IMPORT_TOGGLE) {
+        sys::chart_import_toggle(session, chart_id_t{request.chart_id}, history.document, asset_base);
+    } else if (request.kind == WORM_UI_CHART_IMPORT_CONFIRM) {
+        const auto imported = sys::chart_import_confirm(session, history, request.document_revision, asset_base);
+        if (imported.command.applied) {
+            notifications.post(notification_severity_t::success, notification_source_t::document,
+                               imported.charts.size() == 1 ? "Chart imported." : "Charts imported.");
+            const auto rebound = rebind_workspace(workspace, history);
+            if (!rebound)
+                notifications.post(notification_severity_t::error, notification_source_t::document,
+                                   rebound.diagnostics.empty() ? "Charts imported, but workspace rebinding failed."
+                                                               : rebound.diagnostics.front().message);
+        } else {
+            notifications.post(notification_severity_t::warning, notification_source_t::document, session.error);
+        }
+    }
+    return true;
 }
 
 bool dispatch_project_chart_action(wormedit::sys::project_chart_runtime_t& runtime,
@@ -4126,6 +4162,7 @@ int main(int argc, char** argv) {
     application_command_state.compose_bgm_lane_width = worm_ui_frontend_compose_bgm_lane_width;
     external_player_runtime_t external_player_runtime;
     wormedit::sys::project_chart_runtime_t project_chart_runtime;
+    wormedit::sys::chart_import_session_t chart_import;
     wormedit::sys::options_runtime_t options_runtime;
     shortcut_editor_runtime_t shortcut_editor;
     pending_close_t pending_close;
@@ -4482,6 +4519,7 @@ int main(int argc, char** argv) {
             flattened.view.timing_settings_visible = application_command_state.timing_settings_visible;
             flattened.view.metronome_volume = application_command_state.metronome_volume;
             flattened.view.metronome_count_in = application_command_state.metronome_count_in;
+            flattened.view.chart_import = wormedit::sys::chart_import_view(chart_import, history.document.revision);
             flattened.view.close_confirmation = close_confirmation_view(pending_close,
                 native_project_loaded && !active_project_path.empty());
             project_external_player_view(external_player_runtime, flattened.view);
@@ -4534,7 +4572,9 @@ int main(int argc, char** argv) {
                     compose_frame_action_context, action, compose_viewport_delta_seconds);
                 const bool external_handled =
                     dispatch_external_player_action(external_player_runtime, action.external_player,
-                                                    application_command_state, notification_sink);
+                                                    application_command_state, notification_sink) ||
+                    dispatch_chart_import_action(chart_import, action, history, workspace, asset_base,
+                                                 notification_sink, session_loaded);
                 const auto previous_selected_chart = workspace.selected_chart;
                 const bool project_handled = dispatch_project_chart_action(project_chart_runtime, action.project_chart,
                     history, workspace, compose_interaction_state, application_command_state, notification_sink,

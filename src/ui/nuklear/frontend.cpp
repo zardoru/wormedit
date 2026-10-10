@@ -27,6 +27,7 @@
 #include "ui/nuklear/compose_input_panel.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/dialog.h"
+#include "ui/nuklear/chart_import_dialog.h"
 #include "ui/nuklear/popup_lifecycle.h"
 #include "ui/nuklear/compose_recipe_menu.h"
 #include "ui/nuklear/content_margin.h"
@@ -315,7 +316,7 @@ static void start_project_file_dialog(WormUiWorkspaceActionKind kind) {
     static constexpr SDL_DialogFileFilter save_filters[] = {
         {"wormedit project", "wormedit"},
     };
-    if (kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE)
+    if (kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE || kind == WORM_UI_WORKSPACE_ACTION_IMPORT_CHART_FILE)
         SDL_ShowOpenFileDialog(project_file_dialog_callback, token.release(), g_window,
                                open_filters, SDL_arraysize(open_filters), nullptr, false);
     else
@@ -2442,7 +2443,8 @@ static void confirm_new_project_wizard(WormUiWorkspaceAction& action) {
 }
 
 static bool project_modal_active(const WormUiWorkspaceView& view) {
-    return (g_help_dialog != HelpDialog::none) || view.close_confirmation.visible || g_new_project_wizard.open ||
+    return (g_help_dialog != HelpDialog::none) || view.close_confirmation.visible || view.chart_import.visible ||
+           g_new_project_wizard.open ||
            worm_ui_nuklear_sound_import_active() ||
            worm_ui_nuklear_compose_state().keysound_slot_batch.open ||
            worm_ui_nuklear_compose_state().keysound_group_review.open ||
@@ -2790,6 +2792,10 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
 
 static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
     render_close_confirmation(frame.view.close_confirmation, frame.action, frame.width, frame.height);
+    if (frame.view.project_loaded &&
+        worm_ui_nuklear_render_chart_import_dialog(g_context, frame.view.chart_import, frame.action,
+                                                   frame.width, frame.height))
+        start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_IMPORT_CHART_FILE);
     if (!project_modal_active(frame.view))
         worm_ui_nuklear_render_options_window(g_context, &frame.view.options, &frame.action.options);
     if (project_modal_active(frame.view)) return;

@@ -1,0 +1,103 @@
+#include "ui/nuklear/chart_import_dialog.h"
+
+#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/dialog.h"
+
+#include <array>
+#include <cstring>
+#include <string>
+
+namespace {
+
+namespace chrome = wormedit::ui::chrome;
+
+struct path_field_t {
+    std::array<char, WORM_UI_PROJECT_PATH_CAPACITY> text{};
+    std::string seen;  // The view path the field was last reset from.
+};
+
+auto path_field() -> path_field_t& {
+    static path_field_t field;
+    return field;
+}
+
+void emit(WormUiWorkspaceAction& action, WormUiChartImportActionKind kind, std::uint64_t chart = 0,
+          std::uint64_t revision = 0) {
+    if (action.chart_import.kind != WORM_UI_CHART_IMPORT_NONE) return;
+    action.chart_import = {.kind = kind, .chart_id = chart, .document_revision = revision};
+}
+
+// Resets the text field when the session shows a different path (a picked or retried file).
+void sync_path_field(const WormUiChartImportView& view) {
+    auto& field = path_field();
+    const std::string path = view.path ? view.path : "";
+    if (path == field.seen) return;
+    field.seen = path;
+    std::snprintf(field.text.data(), field.text.size(), "%s", path.c_str());
+}
+
+auto render_path_row(nk_context* context, WormUiWorkspaceAction& action) -> bool {
+    auto& field = path_field();
+    constexpr float row = wormedit::ui::metrics::control_default;
+    nk_layout_row_template_begin(context, row);
+    nk_layout_row_template_push_variable(context, 120.0f);
+    nk_layout_row_template_push_static(context, 96.0f);
+    nk_layout_row_template_push_static(context, 64.0f);
+    nk_layout_row_template_end(context);
+    chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, field.text.data(),
+                                       static_cast<int>(field.text.size()), nk_filter_default);
+    const bool browse = chrome::Button{"Browse…", chrome::ButtonKind::secondary,
+                                       "Pick a chart file with the system dialog"}.render(context);
+    if (chrome::Button{"Read", chrome::ButtonKind::secondary, "Read the chart file at this path",
+                       field.text[0] != '\0'}.render(context)) {
+        emit(action, WORM_UI_CHART_IMPORT_LOAD);
+        std::snprintf(action.project_path, sizeof(action.project_path), "%s", field.text.data());
+    }
+    return browse;
+}
+
+void render_difficulties(nk_context* context, const WormUiChartImportView& view,
+                         WormUiWorkspaceAction& action) {
+    for (std::size_t index = 0; index < view.row_count; ++index) {
+        const auto& row = view.rows[index];
+        nk_layout_row_dynamic(context, wormedit::ui::metrics::control_default, 1);
+        nk_bool selected = row.selected ? nk_true : nk_false;
+        if (nk_checkbox_label(context, row.label, &selected))
+            emit(action, WORM_UI_CHART_IMPORT_TOGGLE, row.chart_id);
+    }
+}
+
+} // namespace
+
+auto worm_ui_nuklear_render_chart_import_dialog(struct nk_context* context,
+    const WormUiChartImportView& view, WormUiWorkspaceAction& action, int window_width,
+    int window_height) -> bool {
+    if (!context || !view.visible) return false;
+    static chrome::Dialog dialog;
+    bool browse = false;
+    sync_path_field(view);
+    if (chrome::dialog_begin(dialog, context, "Import chart", "Import chart",
+            {.modal = true, .width = 640.0f,
+             .area = nk_vec2(static_cast<float>(window_width), static_cast<float>(window_height)),
+             .enter_confirms = false})) {
+        browse = render_path_row(context, action);
+        if (view.error && view.error[0])
+            chrome::dialog_text(dialog, context, view.error, chrome::color(chrome::UiColor::conflict));
+        if (view.row_count == 0 && !(view.error && view.error[0]))
+            chrome::dialog_text(dialog, context, "Pick or type a chart file to list its difficulties.",
+                                chrome::color(chrome::UiColor::text_muted));
+        render_difficulties(context, view, action);
+        if (view.summary && view.summary[0])
+            chrome::dialog_text(dialog, context, view.summary, chrome::color(chrome::UiColor::text_bright));
+        for (std::size_t index = 0; index < view.note_count; ++index)
+            chrome::dialog_text(dialog, context, view.notes[index], chrome::color(chrome::UiColor::text_muted));
+        chrome::dialog_footer_begin(dialog, context, 2);
+        if (chrome::dialog_button(dialog, context, "Cancel", chrome::DialogButtonRole::secondary))
+            emit(action, WORM_UI_CHART_IMPORT_CANCEL);
+        if (chrome::dialog_button(dialog, context, "Import", chrome::DialogButtonRole::primary, view.can_import))
+            emit(action, WORM_UI_CHART_IMPORT_CONFIRM, 0, view.document_revision);
+    }
+    if (chrome::dialog_end(dialog, context) == chrome::DialogResult::cancel)
+        emit(action, WORM_UI_CHART_IMPORT_CANCEL);
+    return browse;
+}

@@ -5418,3 +5418,124 @@ TEST_CASE("BMS text encoding dialog keeps its actions and drops the repeated pro
         CHECK(harness.frame(std::span{&escape, 1}).get().kind == WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING);
     }
 }
+
+namespace {
+
+struct chart_import_fixture_t {
+    nuklear_event_harness_t harness{1280, 900};
+    std::array<WormUiChartImportRowView, 2> rows{{
+        {.chart_id = 31, .label = "Hard · StepMania · 412 notes", .selected = false},
+        {.chart_id = 32, .label = "Easy · StepMania · 120 notes", .selected = true}}};
+    explicit chart_import_fixture_t(bool can_import = true, const char* error = "") {
+        REQUIRE(harness.ready());
+        auto& view = harness.view().chart_import;
+        view.visible = true;
+        view.path = "/charts/song.sm";
+        view.error = error;
+        view.rows = rows.data();
+        view.row_count = rows.size();
+        view.summary = "1 sounds reused · 2 added · 1 missing";
+        view.notes[0] = "Missing file: hat.wav";
+        view.notes[1] = "Easy: starts at 120 BPM, the song's chart starts at 150";
+        view.note_count = 2;
+        view.can_import = can_import;
+        view.document_revision = 7;
+        (void)harness.frame();
+        (void)harness.frame();
+        (void)harness.frame();
+    }
+    static auto action_of(const std::vector<workspace_action_snapshot_t>& frames)
+        -> const WormUiChartImportAction* {
+        for (const auto& frame : frames)
+            if (frame.get().chart_import.kind != WORM_UI_CHART_IMPORT_NONE) return &frame.get().chart_import;
+        return nullptr;
+    }
+    auto click_label(const char* label) {
+        const auto center = harness.drawn_text_center(label);
+        REQUIRE(center);
+        return click_at(harness, center->first, center->second);
+    }
+};
+
+} // namespace
+
+TEST_CASE("Import chart dialog shows the difficulties, resource summary and timing notes",
+          "[frontend-state][event-harness][dialog][chart-import]") {
+    chart_import_fixture_t f;
+    const auto& text = f.harness.drawn_text();
+    CHECK(text.find("Import chart") != std::string::npos);
+    CHECK(text.find("Hard · StepMania · 412 notes") != std::string::npos);
+    CHECK(text.find("1 sounds reused · 2 added · 1 missing") != std::string::npos);
+    CHECK(text.find("Missing file: hat.wav") != std::string::npos);
+    CHECK(text.find("starts at 120 BPM") != std::string::npos);
+    CHECK(text.find("/charts/song.sm") != std::string::npos);
+}
+
+TEST_CASE("Import chart dialog emits toggle, read, import and cancel actions",
+          "[frontend-state][event-harness][dialog][chart-import]") {
+    {
+        chart_import_fixture_t f;
+        const auto* toggled = chart_import_fixture_t::action_of(f.click_label("Hard · StepMania · 412 notes"));
+        REQUIRE(toggled);
+        CHECK(toggled->kind == WORM_UI_CHART_IMPORT_TOGGLE);
+        CHECK(toggled->chart_id == 31);
+    }
+    {
+        chart_import_fixture_t f;
+        const auto frames = f.click_label("Read");
+        const auto* read = chart_import_fixture_t::action_of(frames);
+        REQUIRE(read);
+        CHECK(read->kind == WORM_UI_CHART_IMPORT_LOAD);
+        for (const auto& frame : frames)
+            if (frame.get().chart_import.kind == WORM_UI_CHART_IMPORT_LOAD)
+                CHECK(std::string(frame.get().project_path) == "/charts/song.sm");
+    }
+    {
+        chart_import_fixture_t f;
+        const auto* imported = chart_import_fixture_t::action_of(f.click_label("Import"));
+        REQUIRE(imported);
+        CHECK(imported->kind == WORM_UI_CHART_IMPORT_CONFIRM);
+        CHECK(imported->document_revision == 7);
+    }
+    {
+        chart_import_fixture_t f;
+        const auto* canceled = chart_import_fixture_t::action_of(f.click_label("Cancel"));
+        REQUIRE(canceled);
+        CHECK(canceled->kind == WORM_UI_CHART_IMPORT_CANCEL);
+    }
+    {
+        chart_import_fixture_t f;
+        const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+        const auto* canceled = chart_import_fixture_t::action_of({f.harness.frame(std::span{&escape, 1})});
+        REQUIRE(canceled);
+        CHECK(canceled->kind == WORM_UI_CHART_IMPORT_CANCEL);
+    }
+}
+
+TEST_CASE("Import chart dialog cannot import until a difficulty is ticked and shows read errors",
+          "[frontend-state][event-harness][dialog][chart-import]") {
+    chart_import_fixture_t f{false, "The file contains no charts."};
+    CHECK(f.harness.drawn_text().find("The file contains no charts.") != std::string::npos);
+    CHECK(chart_import_fixture_t::action_of(f.click_label("Import")) == nullptr);
+}
+
+TEST_CASE("Project tab Import chart button starts the import dialog",
+          "[frontend-state][event-harness][chart-import]") {
+    WormUiProjectChartRow row{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
+        .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
+    nuklear_event_harness_t harness{1280, 720};
+    REQUIRE(harness.ready());
+    harness.view().setup.visible = true;
+    harness.view().setup.stepmania_policy_status = "Ready";
+    harness.view().setup.stepmania_policy_valid = true;
+    harness.view().setup.charts = &row;
+    harness.view().setup.chart_row_count = 1;
+    harness.view().setup.chart_count = 1;
+    (void)harness.frame();
+    const auto button = harness.drawn_text_center("Import chart…");
+    REQUIRE(button);
+    bool began = false;
+    for (const auto& frame : click_at(harness, button->first, button->second))
+        began |= frame.get().chart_import.kind == WORM_UI_CHART_IMPORT_BEGIN;
+    CHECK(began);
+}

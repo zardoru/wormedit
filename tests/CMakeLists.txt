@@ -50,6 +50,7 @@ add_executable(wormedit_core_tests
     ../src/sys/recovery_notification_feedback.cpp
     sys/recovery_notification_tests.cpp
     ../src/sys/project_open.cpp
+    ../src/sys/chart_import_session.cpp
     ../src/sys/project_save_paths.cpp
     core/audio_offset_editor_tests.cpp
     core/audio_fixture_inventory_tests.cpp
@@ -114,6 +115,7 @@ add_executable(wormedit_core_tests
     core/marker_navigation_tests.cpp
     core/metadata_editor_tests.cpp
     core/chart_editor_tests.cpp
+    core/chart_import_tests.cpp
     core/lane_layout_editor_tests.cpp
     core/measure_editor_tests.cpp
     core/measure_tests.cpp

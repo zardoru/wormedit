@@ -185,7 +185,7 @@ stale-plan check (rule 9) first.
 
 - **T-271 verification evidence (2026-09-30):** integrated application build passed; `ctest --test-dir build --output-on-failure -R 'arena|storyboard|^core\.'` reported `100% tests passed out of 801` (14.22 s). Configured clang-tidy passed for the arena implementation and tests. The old and new preview implementations matched bitwise across 98 frame results (easing, loops, arena limits); canonical output SHA-256 `d8d2a58bbc3c7532f90dbb3cedbfc325e0f798a859882bed23bafa75119d611e`. Forced allocation failures return typed errors; append stale accounting excludes alignment padding. Shared chunk ownership adds one control-block allocation when a chunk is created.
 
-## T-489 Mark missing audio on open, and relink sounds without needing lanes
+## T-514 Mark missing audio on open, and relink sounds without needing lanes
 
 - **Status:** ready
 - **Found by:** T-104 (2026-10-10).

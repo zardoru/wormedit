@@ -2068,6 +2068,9 @@ auto apply_resource_asset_relink(document_history_t& history, std::uint64_t expe
         const auto index = static_cast<std::size_t>(audio -
                                                     history.document.audio_assets.begin());
         proposed.audio_assets[index].source_path = path;
+        // The user pointed the asset at a file they chose, so its sounds are no longer missing.
+        for (auto& resource : proposed.resources)
+            if (resource.asset == action.asset) resource.missing = false;
     } else {
         const auto index = static_cast<std::size_t>(visual -
                                                     history.document.visual_assets.begin());

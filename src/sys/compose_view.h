@@ -618,6 +618,11 @@ auto toggle_compose_audio_offset_lock(const WormUiWorkspaceAction& action,
     std::optional<wormedit::audio_offset_drag_t>& drag,
     std::optional<wormedit::workspace_tab_t>& drag_tab) -> std::string;
 
+// Projects the audio fallback outcome of missing sounds into the compose view (arena-backed).
+void populate_compose_keysound_fallbacks(flattened_workspace_t& flattened,
+                                         const wormedit::document_history_t& history,
+                                         const std::filesystem::path& asset_base);
+
 void populate_compose_view(flattened_workspace_t& flattened,
                            wormedit::document_history_t& history,
                            const wormedit::workspace_controller_t& workspace,

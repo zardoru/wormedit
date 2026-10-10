@@ -663,3 +663,39 @@ auto project_sound_slots(const song_document_t& document, const sound_slot_reque
 }
 
 } // namespace wormedit::sys
+
+namespace wormedit::sys {
+
+namespace {
+struct fallback_cache_t {
+    std::uint64_t song{};
+    std::uint64_t revision{};
+    std::filesystem::path base;
+    std::vector<keysound_fallback_t> entries;
+    bool valid{};
+};
+} // namespace
+
+auto project_keysound_fallbacks(const song_document_t& document,
+                                const std::filesystem::path& asset_base, std::size_t limit)
+    -> std::vector<keysound_fallback_t> {
+    static thread_local fallback_cache_t cache;
+    if (!cache.valid || cache.song != document.id.value || cache.revision != document.revision ||
+        cache.base != asset_base) {
+        cache = {document.id.value, document.revision, asset_base, {}, true};
+        audio_directory_cache_t listings;
+        for (const auto& resource : document.resources) {
+            const auto* asset = find_audio_asset(document, resource.asset);
+            if (!asset) continue;
+            auto result = resolve_audio_fallback(asset->source_path, asset_base, &listings);
+            if (result.outcome == audio_fallback_outcome_t::fallback ||
+                result.outcome == audio_fallback_outcome_t::ambiguous)
+                cache.entries.push_back({resource.id, std::move(result)});
+        }
+    }
+    auto entries = cache.entries;
+    if (entries.size() > limit) entries.resize(limit);
+    return entries;
+}
+
+} // namespace wormedit::sys

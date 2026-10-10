@@ -227,6 +227,7 @@ auto project_application_frame(application_frame_projection_context_t context)
                           compose_window_height,
                           context.compose_interaction_state, context.application_command_state,
                           context.timing_edit.stage_view(), {}, &context.bga_move_preview);
+    populate_compose_keysound_fallbacks(flattened, context.history, context.asset_base);
     }
     context.compose_scene_cache.waveform_overview_total_frames = 0;
     context.compose_scene_cache.waveform_overview_sample_rate = 0;

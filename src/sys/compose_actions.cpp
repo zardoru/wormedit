@@ -72,6 +72,8 @@
 #include <variant>
 #include <vector>
 
+#include "sys/audio_fallback.h"
+
 namespace wormedit::sys {
 
 namespace {
@@ -1243,6 +1245,34 @@ std::optional<std::string> create_resource_from_asset(compose_action_context_t& 
         : "Resource created from the selected audio asset.", notification_source_t::import_);
 }
 
+// Points a missing sound at one of its fallback candidates through the shared relink command; the
+// authored token and every reference stay as they are.
+std::string relink_sound_fallback(compose_action_context_t& context) {
+    using namespace wormedit;
+    const auto& action = context.action;
+    if (action.compose_input_document_revision != context.history.document.revision)
+        return compose_action_warning(context, "The sound list changed; choose the file again.");
+    const auto& document = context.history.document;
+    const auto resource = std::ranges::find(document.resources, resource_id_t{action.compose_resource_id},
+                                            &resource_entry_t::id);
+    const auto asset = resource == document.resources.end()
+        ? document.audio_assets.end()
+        : std::ranges::find(document.audio_assets, resource->asset, &audio_asset_t::id);
+    if (asset == document.audio_assets.end())
+        return compose_action_warning(context, "That sound is no longer in the project.");
+    const auto fallback = resolve_audio_fallback(asset->source_path, context.asset_base);
+    if (action.compose_fallback_candidate >= fallback.candidates.size())
+        return compose_action_warning(context, "That file is no longer available.");
+    const auto& chosen = fallback.candidates[action.compose_fallback_candidate];
+    const auto relinked = apply_resource_asset_relink(
+        context.history, document.revision, {.asset = asset->id, .source_path = chosen});
+    if (relinked.applied)
+        return compose_action_success(context, "Sound relinked to " + chosen.generic_string() + ".",
+                                      notification_source_t::edit);
+    return compose_action_warning(context, relinked.diagnostics.empty()
+        ? "The sound could not be relinked." : relinked.diagnostics.front().message);
+}
+
 std::optional<std::string> dispatch_compose_resource_action(compose_action_context_t& context) {
     switch (context.action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_SELECT_RESOURCE_USES: return select_resource_uses(context);
@@ -1264,6 +1294,8 @@ std::optional<std::string> dispatch_compose_resource_action(compose_action_conte
             return compose_action_warning(context, "Finish or cancel the active Compose gesture before editing BGA.");
         return dispatch_compose_bga_action(context.action, context.history, context.workspace,
                                            context.state.chart, context.notifications);
+    case WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK:
+        return relink_sound_fallback(context);
     case WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES:
     case WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT:
     case WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS:

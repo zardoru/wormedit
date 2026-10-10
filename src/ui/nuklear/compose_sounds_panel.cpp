@@ -1318,9 +1318,30 @@ void draw_row(const SoundsPanel& panel, struct nk_rect bounds, const WormUiCompo
     }
 }
 
+auto find_fallback(const WormUiComposeView& view, std::uint64_t resource)
+    -> const WormUiKeysoundFallbackView* {
+    for (std::size_t index = 0; index < view.keysound_fallback_count; ++index)
+        if (view.keysound_fallbacks[index].resource_id == resource) return &view.keysound_fallbacks[index];
+    return nullptr;
+}
+
+// "File missing. Found nearby: x.ogg" or the ambiguous list; the context menu relinks.
+auto fallback_text(const WormUiComposeView& view, const WormUiComposeKeysoundRowView& row)
+    -> std::string {
+    const auto* fallback = find_fallback(view, row.resource_id);
+    if (!fallback) return {};
+    std::string text = fallback->outcome == 1 ? "Found nearby: " : "Several files match, right-click to choose: ";
+    for (std::size_t index = 0; index < fallback->candidate_count; ++index) {
+        if (index) text += ", ";
+        text += fallback->candidates[index];
+    }
+    return text + ". ";
+}
+
 auto layer_tooltip(const SoundsPanel& panel, const WormUiComposeKeysoundRowView& row)
     -> std::string {
     std::string text = row.missing ? "File missing. " : "";
+    text += fallback_text(*panel.view, row);
     std::string layers;
     for (std::size_t bit = 0; bit < panel.view->keysound_layer_count; ++bit) {
         if (((row.layer_mask >> bit) & 1U) == 0) continue;
@@ -1465,10 +1486,24 @@ void render_sound_group_context_menu(const SoundsPanel& panel) {
     }
     const chrome::PopupContextStamp current{panel.view->project_id, panel.view->chart_id,
                                             panel.view->document_revision, menu.stamp.object_id};
+    const auto* menu_row = find_row(*panel.view, menu.stamp.object_id);
+    const auto* fallback = menu_row ? find_fallback(*panel.view, menu_row->resource_id) : nullptr;
+    const std::size_t candidates = fallback ? fallback->candidate_count : 0;
     if (!chrome::context_menu_begin(menu, context, current,
                                     nk_vec2(chrome::context_menu_width,
-                                            chrome::context_menu_height(4))))
+                                            chrome::context_menu_height(4 + candidates))))
         return;
+    for (std::size_t index = 0; fallback && index < fallback->candidate_count; ++index) {
+        const auto label = std::string{"Use "} + fallback->candidates[index];
+        if (!chrome::context_menu_item(menu, context, label.c_str())) continue;
+        auto& action = *panel.action;
+        if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) break;
+        action.compose_action = WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK;
+        action.compose_resource_id = menu.stamp.object_id;
+        action.compose_fallback_candidate = static_cast<std::uint32_t>(index);
+        action.compose_input_chart_id = panel.view->chart_id;
+        action.compose_input_document_revision = panel.view->document_revision;
+    }
     if (chrome::context_menu_item(menu, context, "Select same sound (whole chart)")) {
         append_compose_input(panel.action, WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_CHART,
             0, 0, 0, false, WORM_UI_COMPOSE_SELECTION_ADD);

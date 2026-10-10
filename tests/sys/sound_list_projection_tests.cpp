@@ -682,3 +682,47 @@ TEST_CASE("Go to sound follows dock eligibility and searches WAV IDs", "[sound-p
     check_sound_projection(bmson.total == 3);
     check_sound_projection(project_sound_picker(cache, song, chart, "a7").rows.empty());
 }
+
+#include <filesystem>
+#include <fstream>
+
+namespace {
+struct fallback_project_t {
+    std::filesystem::path base = std::filesystem::temp_directory_path() / "wormedit-fallback-projection";
+    fallback_project_t() {
+        std::error_code error;
+        std::filesystem::remove_all(base, error);
+        std::filesystem::create_directories(base);
+        for (const char* name : {"exact.wav", "single.ogg", "pair.ogg", "pair.flac"})
+            std::ofstream(base / name) << "x";
+    }
+    ~fallback_project_t() {
+        std::error_code error;
+        std::filesystem::remove_all(base, error);
+    }
+};
+} // namespace
+
+TEST_CASE("fallback projection lists only missing sounds with one or several candidates",
+          "[unit][sys][sound-list][audio-fallback]") {
+    const fallback_project_t project;
+    song_document_t song;
+    song.id = song_id_t{9};
+    song.revision = 3;
+    const char* paths[]{"exact.wav", "single.wav", "pair.wav", "none.wav"};
+    for (std::uint64_t index = 0; index < 4; ++index) {
+        song.audio_assets.push_back({.id = asset_id_t{index + 1}, .source_path = paths[index]});
+        song.resources.push_back({.id = resource_id_t{index + 10}, .name = paths[index],
+                                  .asset = asset_id_t{index + 1}});
+    }
+    const auto found = project_keysound_fallbacks(song, project.base, 32);
+    REQUIRE(found.size() == 2);
+    CHECK(found[0].resource == resource_id_t{11});
+    CHECK(found[0].result.outcome == audio_fallback_outcome_t::fallback);
+    CHECK(found[0].result.chosen == std::filesystem::path{"single.ogg"});
+    CHECK(found[1].resource == resource_id_t{12});
+    CHECK(found[1].result.outcome == audio_fallback_outcome_t::ambiguous);
+    CHECK(found[1].result.candidates.size() == 2);
+    CHECK(song.audio_assets[1].source_path == std::filesystem::path{"single.wav"});
+    CHECK(project_keysound_fallbacks(song, project.base, 1).size() == 1);
+}

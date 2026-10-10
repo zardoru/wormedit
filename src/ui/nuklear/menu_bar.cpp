@@ -56,6 +56,7 @@ void append_playback(workspace_menu_t& menu, bool enabled) {
     menu.push_back({"Playback", "Play from start", Action::play_start, "transport.play_from_start", enabled});
     menu.push_back({"Playback", "Stop", Action::stop, "transport.stop", enabled});
     menu.push_back({"Playback", "Metronome", Action::metronome, "transport.toggle_metronome", enabled});
+    menu.push_back({"Playback", "", Action::none, nullptr, false});
     menu.push_back({"Playback", "External player preferences...", Action::external_preferences, nullptr, enabled});
     menu.push_back({"Playback", "External play from start", Action::external_start, "transport.external_play_start", enabled});
     menu.push_back({"Playback", "External play from here", Action::external_here, "transport.external_play_here", enabled});
@@ -98,7 +99,8 @@ auto menu_size(nk_context* context, const workspace_menu_t& model, const char* t
     float height = 2.0f * chrome::menu_padding;
     for (const auto& item : model) {
         if (std::strcmp(item.menu, title) != 0) continue;
-        height += metrics::menu_item_height + context->style.window.spacing.y;
+        height += (item.action == Action::none ? metrics::menu_separator_height : metrics::menu_item_height) +
+                  context->style.window.spacing.y;
         const auto* font = context->style.font;
         const auto text_width = [&](const char* text) {
             return text ? font->width(font->userdata, font->height, text, static_cast<int>(std::strlen(text))) : 0.0f;
@@ -118,6 +120,7 @@ auto build_workspace_menu(const WormUiWorkspaceView& view, bool blocked, bool te
     append_view(menu, view, !blocked, frame_timing);
     append_chart(menu, !blocked && !text_owner);
     append_playback(menu, !blocked && !text_owner);
+    menu.push_back({"Help", "Shortcut cheat sheet", Action::shortcuts, nullptr, !blocked});
     menu.push_back({"Help", "About WormEdit", Action::about, nullptr, !blocked});
     apply_command_rows(menu, view);
     if (text_owner) for (auto& entry : menu) if (entry.command_id) entry.enabled = false;
@@ -143,6 +146,10 @@ auto render_workspace_menu(nk_context* context, const workspace_menu_t& model,
     const char* tooltip = nullptr;
     for (const auto& item : model) {
         if (std::strcmp(item.menu, title) != 0) continue;
+        if (item.action == Action::none) {
+            chrome::menu_separator(context);
+            continue;
+        }
         nk_layout_row_dynamic(context, metrics::menu_item_height, 1);
         const auto row_bounds = nk_widget_bounds(context);
         if (chrome::menu_item(context, item.title, item.shortcut, item.checked, item.enabled)) chosen = item.action;

@@ -324,6 +324,8 @@ static bool process_compose_escape(const auto& key_event,
 static void process_compose_lane_key(const auto& key_event, const WormUiComposeView* view,
                                     WormUiWorkspaceAction* action) {
     if (!wormedit::ui::compose_notes_editable(compose_mode_of(*view))) return;
+    if (!view->note_paint_mode_active && view->selected_note_count == 0 &&
+        view->selected_bgm_event_count == 0) return;
     for (size_t binding_index = 0; binding_index < view->lane_key_binding_count;
          ++binding_index) {
         const auto& binding = view->lane_key_bindings[binding_index];

@@ -3950,10 +3950,24 @@ auto dispatch_bga_draw_input(const WormUiComposeInputAction& input,
     return compose_input_family_result_t::continue_with_result();
 }
 
+auto select_lane_key_without_selection(const WormUiComposeInputAction& input,
+                                      const compose_input_context_t& context) -> bool {
+    if (input.kind != WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS ||
+        context.application_state.note_paint_mode_active) return false;
+    const auto& state = context.state;
+    return state.selected_notes.empty() &&
+        std::ranges::none_of(state.selected_objects, [](const auto& object) {
+            return object.kind == wormedit::editor_selection_object_kind_t::note ||
+                   object.kind == wormedit::editor_selection_object_kind_t::bgm_event;
+        });
+}
+
 auto dispatch_compose_input_event(const WormUiComposeInputAction& input,
                                   compose_input_context_t& context,
                                   wormedit::editor_interaction_result_t& result,
                                   std::string_view& accepted) -> compose_input_family_result_t {
+    if (select_lane_key_without_selection(input, context))
+        return compose_input_family_result_t::continue_batch({});
     if (const auto draw = dispatch_bga_draw_input(input, context, result, accepted)) return *draw;
     if (input.kind == WORM_UI_COMPOSE_INPUT_DRAW_SOURCE) {
         if (input.resource_role > 2 || (input.resource_role == 0 && input.resource_id != 0))

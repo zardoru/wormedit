@@ -104,7 +104,7 @@ void expect_lane_key(bool value, std::source_location source = std::source_locat
     REQUIRE(value);
 }
 
-void check_number_key_placement(bool paint_mode) {
+void check_number_key_placement(bool paint_mode, int selection = 0) {
     nuklear_event_harness_t harness;
     expect_lane_key(harness.ready());
     constexpr std::array<SDL_Scancode, 10> keys{SDL_SCANCODE_1, SDL_SCANCODE_2,
@@ -117,11 +117,20 @@ void check_number_key_placement(bool paint_mode) {
     view.lane_key_bindings = bindings.data();
     view.lane_key_binding_count = bindings.size();
     view.note_paint_mode_active = paint_mode;
+    view.selected_note_count = selection == 1 ? 1 : 0;
+    view.selected_bgm_event_count = selection == 2 ? 1 : 0;
     (void)harness.frame();
     for (std::size_t index = 0; index < keys.size(); ++index) {
         INFO("paint mode " << paint_mode << ", lane " << index + 1);
         const auto press = key_event(SDL_EVENT_KEY_DOWN, index == 9 ? SDLK_0 : SDLK_1 + index, keys[index]);
         const auto down = harness.frame(std::span{&press, 1});
+        if (!paint_mode && selection == 0) {
+            expect_lane_key(down.get().compose_input_count == 0);
+            expect_lane_key(!worm_ui_nuklear_compose_state().lane_hold_active);
+            const auto release = key_event(SDL_EVENT_KEY_UP, press.key.key, keys[index]);
+            expect_lane_key(harness.frame(std::span{&release, 1}).get().compose_input_count == 0);
+            continue;
+        }
         expect_lane_key(down.get().compose_input_count == 1);
         expect_lane_key(down.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
         expect_lane_key(down.get().compose_inputs[0].lane_id == index + 1);
@@ -207,10 +216,12 @@ auto delete_shortcut_has_compose_context(const WormUiWorkspaceAction& action) ->
 
 } // namespace
 
-TEST_CASE("Headless 10K number keys complete placement with Select and Tap tools",
+TEST_CASE("Headless 10K lane keys create only with Draw and preserve Select reassignment",
           "[frontend-state][event-harness][lane-keys][regression]") {
     check_number_key_placement(false);
     check_number_key_placement(true);
+    check_number_key_placement(false, 1);
+    check_number_key_placement(false, 2);
 }
 
 TEST_CASE("Sound layer popup buttons dispatch keep and overwrite choices",
@@ -2378,6 +2389,7 @@ TEST_CASE("Lane keys carry the clicked Sounds dock source and leave selected not
     nuklear_event_harness_t harness{1600, 900};
     require_lane_key_sound(harness.ready());
     auto& view = harness.view().compose;
+    view.note_paint_mode_active = true;
     const std::array<WormUiComposeKeysoundRowView, 2> rows{{
         {.resource_id = 1400, .slot = "01", .name = "kick.wav"},
         {.resource_id = 1500, .slot = "02", .name = "kick2.wav"}}};

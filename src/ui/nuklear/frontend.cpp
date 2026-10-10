@@ -78,7 +78,8 @@ class RenderSubphaseScope {
 
 using wormedit::ui::lucide::Glyph;
 static bool g_menu_popup_open{};
-static bool g_about_open{};
+enum class HelpDialog { none, about, shortcuts };
+static HelpDialog g_help_dialog{};
 static wormedit::ui::chrome::Dialog g_about_dialog;
 static bool g_menu_popup_release_pending{};
 
@@ -487,7 +488,7 @@ static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_la
     if (!action) {
         return;
     }
-    action->shortcut_event_count = g_about_open || g_new_project_wizard.open || !g_bms_encoding_path_seen.empty()
+    action->shortcut_event_count = (g_help_dialog != HelpDialog::none) || g_new_project_wizard.open || !g_bms_encoding_path_seen.empty()
                                        ? 0 : g_shortcut_event_count;
     for (size_t index = 0; index < g_shortcut_event_count; ++index) {
         action->shortcut_events[index] = g_shortcut_events[index];
@@ -609,7 +610,7 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
     reset_compose_area_menu();
     g_menu_popup_open = false;
     g_menu_popup_release_pending = false;
-    g_about_open = false;
+    g_help_dialog = HelpDialog::none;
     g_about_dialog = {};
 
     static struct nk_user_font test_font{
@@ -1328,7 +1329,7 @@ static bool capture_compose_modal_key(const SDL_KeyboardEvent& event) {
 }
 
 static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
-        if (g_about_open) {
+        if ((g_help_dialog != HelpDialog::none)) {
             forward_modal_key(event);
             return true;
         }
@@ -1619,7 +1620,14 @@ static void apply_workspace_menu_action(MenuAction chosen,
     case MenuAction::timing_settings: action.timing_settings.toggle = true; break;
     case MenuAction::preview: action.kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW; break;
     case MenuAction::external_preferences: action.external_player.kind = WORM_UI_EXTERNAL_PLAYER_OPEN; break;
-    case MenuAction::about: g_about_open = true; break;
+    case MenuAction::about:
+        g_help_dialog = HelpDialog::about;
+        g_about_dialog = {};
+        break;
+    case MenuAction::shortcuts:
+        g_help_dialog = HelpDialog::shortcuts;
+        g_about_dialog = {};
+        break;
     default: break; // Registry-backed entries returned above.
     }
 }
@@ -2434,27 +2442,82 @@ static void confirm_new_project_wizard(WormUiWorkspaceAction& action) {
 }
 
 static bool project_modal_active(const WormUiWorkspaceView& view) {
-    return g_about_open || view.close_confirmation.visible || g_new_project_wizard.open ||
+    return (g_help_dialog != HelpDialog::none) || view.close_confirmation.visible || g_new_project_wizard.open ||
            worm_ui_nuklear_sound_import_active() ||
            worm_ui_nuklear_compose_state().keysound_slot_batch.open ||
            worm_ui_nuklear_compose_state().keysound_group_review.open ||
            (view.pending_bms_encoding_path && view.pending_bms_encoding_path[0]);
 }
 
-static void render_about(const WormUiWorkspaceView& view) {
-    if (!g_about_open) return;
+static void render_about_body(const WormUiWorkspaceView& view) {
     namespace chrome = wormedit::ui::chrome;
-    if (chrome::dialog_begin(g_about_dialog, g_context, "About WormEdit", "About WormEdit")) {
-        chrome::dialog_text(g_about_dialog, g_context, "WormEdit " WORMEDIT_VERSION, chrome::color(chrome::UiColor::text));
-        char build[160]{};
-        std::snprintf(build, sizeof(build), "Build %s", view.git_hash ? view.git_hash : "unknown");
-        chrome::dialog_text(g_about_dialog, g_context, build, chrome::color(chrome::UiColor::text_muted));
+    const auto text = chrome::color(chrome::UiColor::text);
+    const auto muted = chrome::color(chrome::UiColor::text_muted);
+    chrome::dialog_text(g_about_dialog, g_context, "WormEdit " WORMEDIT_VERSION, text);
+    char build[160]{};
+    std::snprintf(build, sizeof(build), "Build %s", view.git_hash ? view.git_hash : "unknown");
+    chrome::dialog_text(g_about_dialog, g_context, build, muted);
+    chrome::dialog_text(g_about_dialog, g_context, "Created and directed by zardoru.", text);
+    chrome::dialog_text(g_about_dialog, g_context,
+        "Developed with heavy AI assistance from Claude and Codex. Most code, tests and documentation "
+        "are written by AI agents, guided and reviewed by the author.", muted);
+    chrome::dialog_text(g_about_dialog, g_context,
+        "Public domain (The Unlicense). Dependencies retain their own licenses.", muted);
+    nk_layout_row_dynamic(g_context, chrome::dialog_button_height, 1);
+    if (nk_button_label(g_context, "github.com/zardoru/wormedit"))
+        (void)SDL_OpenURL("https://github.com/zardoru/wormedit");
+}
+
+static void render_shortcut_sheet(const WormUiWorkspaceView& view) {
+    namespace chrome = wormedit::ui::chrome;
+    constexpr std::array rows{
+        std::pair{"edit.tool_select", "Select tool"},
+        std::pair{"edit.tool_draw", "Draw tool"},
+        std::pair{"edit.tool_layer", "Layer brush"},
+        std::pair{"view.open_layers", "Show Layers"},
+        std::pair{"semantic_layer.create", "Create layer"},
+        std::pair{"view.toggle_sounds", "Toggle Sounds"},
+        std::pair{"navigation.go_to_sound", "Go to sound"},
+        std::pair{"timing.toggle_lock", "Timing lock"},
+        std::pair{"measures.split_at_cursor", "Split measure at cursor"},
+        std::pair{"transport.loop_selection", "Loop selected range"}};
+    const auto count = std::min(view.menu_command_count, std::size(view.menu_commands));
+    const auto* end = view.menu_commands + count;
+    for (const auto& [id, label] : rows) {
+        const auto* command = std::find_if(view.menu_commands, end, [id](const auto& row) {
+            return std::strcmp(row.id, id) == 0;
+        });
+        const char* shortcut = command == end ? "Unavailable" :
+            (command->shortcut[0] ? command->shortcut : "Unbound");
+        const float columns[]{0.58f, 0.42f};
+        nk_layout_row(g_context, NK_DYNAMIC, wormedit::ui::metrics::menu_item_height, 2, columns);
+        nk_label(g_context, label, NK_TEXT_LEFT);
+        nk_label_colored(g_context, shortcut, NK_TEXT_RIGHT, chrome::color(chrome::UiColor::text_muted));
+    }
+    chrome::dialog_text(g_about_dialog, g_context, "Current bindings; change them in Shortcuts.",
+        chrome::color(chrome::UiColor::text_muted));
+    chrome::dialog_text(g_about_dialog, g_context,
+        "Tab: next measure. Tab + Up/Down: measure navigation. Page Up/Down: one measure, "
+        "at least 2 beats; Tab doubles it. Shift extends the range.", chrome::color(chrome::UiColor::text));
+    chrome::dialog_text(g_about_dialog, g_context,
+        "Lane keys: move selected notes/BGM. Shift moves one and deselects. "
+        "Draw: press/release for a tap; move the cursor while held for a hold.", chrome::color(chrome::UiColor::text));
+}
+
+static void render_about(const WormUiWorkspaceView& view) {
+    if (g_help_dialog == HelpDialog::none) return;
+    namespace chrome = wormedit::ui::chrome;
+    const bool shortcuts = g_help_dialog == HelpDialog::shortcuts;
+    const auto* title = shortcuts ? "Shortcut cheat sheet" : "About WormEdit";
+    if (chrome::dialog_begin(g_about_dialog, g_context, title, title, {.width = 560.0f})) {
+        if (shortcuts) render_shortcut_sheet(view);
+        else render_about_body(view);
         chrome::dialog_footer_begin(g_about_dialog, g_context, 1);
         chrome::dialog_button(g_about_dialog, g_context, "Close", chrome::DialogButtonRole::primary);
     }
     const auto result = chrome::dialog_end(g_about_dialog, g_context);
     if (result == chrome::DialogResult::primary || result == chrome::DialogResult::cancel)
-        g_about_open = false;
+        g_help_dialog = HelpDialog::none;
 }
 
 static nk_flags workspace_window_flags(const WormUiWorkspaceView& view) {

@@ -544,6 +544,7 @@ TEST_CASE("dropping a dragged note into a Stop band is rejected and changes noth
 TEST_CASE("a lane key at a cursor inside a Warp places nothing",
           "[unit][sys][compose-notification][dead-span]") {
     dead_span_fixture_t fixture;
+    fixture.application.note_paint_mode_active = true;
     fixture.state.selected_notes.clear();
     fixture.state.selected_objects.clear();
     fixture.state.cursor = {measure_id_t{1}, 780};
@@ -592,6 +593,7 @@ TEST_CASE("the same paste and drag succeed away from the Stop band",
 TEST_CASE("a lane key at a cursor just before the Warp places a note",
           "[unit][sys][compose-notification][dead-span]") {
     dead_span_fixture_t fixture;
+    fixture.application.note_paint_mode_active = true;
     fixture.state.selected_notes.clear();
     fixture.state.selected_objects.clear();
     fixture.state.cursor = {measure_id_t{1}, 600};

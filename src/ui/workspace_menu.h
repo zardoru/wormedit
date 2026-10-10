@@ -11,7 +11,7 @@ enum class workspace_menu_action_t {
     notifications, preview, external_preferences, external_start, external_here, external_stop,
     undo, redo, delete_selection, select_all, invert_selection, clear_selection,
     new_chart, timing_lock, insert_bpm, insert_sv, play_stop, play_pause, play_start, stop, metronome,
-    sounds, layers, about
+    sounds, layers, about, shortcuts
 };
 
 struct workspace_menu_item_t {
@@ -37,7 +37,7 @@ inline constexpr int workspace_menu_drag_begin = [] {
 
 inline constexpr std::array workspace_menu_titles{"File", "Edit", "View", "Chart", "Playback", "Help"};
 
-// The bounded projection includes only commands exposed by the shared menu model.
+// Commands exposed by the shared menu model and Help shortcut sheet.
 inline constexpr std::array workspace_menu_command_ids{
     "document.new_project", "document.save_project", "workspace.options",
     "history.undo", "history.redo", "edit.copy", "edit.cut", "edit.paste", "edit.delete",
@@ -46,7 +46,10 @@ inline constexpr std::array workspace_menu_command_ids{
     "timing.tap_assistant", "document.new_chart", "timing.toggle_lock", "timing.insert_bpm",
     "timing.insert_sv", "transport.play_stop", "transport.play_pause", "transport.play_from_start",
     "transport.stop", "transport.toggle_metronome", "transport.external_play_start",
-    "transport.external_play_here", "transport.external_stop"};
+    "transport.external_play_here", "transport.external_stop",
+    "navigation.go_to_sound", "semantic_layer.create", "transport.loop_selection",
+    "markers.add_bookmark", "measures.split_at_cursor", "edit.tool_select", "edit.tool_draw",
+    "edit.tool_layer"};
 
 using workspace_menu_t = std::vector<workspace_menu_item_t>;
 

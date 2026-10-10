@@ -136,6 +136,13 @@ TEST_CASE("Menu groups preserve existing actions and block missing or modal comm
         Action::preview, Action::external_preferences, Action::external_start, Action::external_here,
         Action::external_stop, Action::about}) check_menu(item(model, action).title != nullptr);
     check_menu(item(model, Action::frame_timing).checked);
+    const auto separator = std::ranges::find(model, Action::none, &ui::workspace_menu_item_t::action);
+    require_menu(separator != model.end());
+    require_menu(separator != model.begin());
+    require_menu(separator + 1 != model.end());
+    check_menu((separator - 1)->action == Action::metronome);
+    check_menu((separator + 1)->action == Action::external_preferences);
+    check_menu(!separator->enabled);
     const auto blocked = ui::build_workspace_menu(harness.view(), true, false, false);
     check_menu(std::ranges::none_of(blocked, &ui::workspace_menu_item_t::enabled));
     const auto text_owner = ui::build_workspace_menu(harness.view(), false, true, false);
@@ -159,6 +166,10 @@ TEST_CASE("About shows the build and releases modal input on Escape",
     (void)harness.frame();
     check_menu(harness.drawn_text().find("WormEdit " WORMEDIT_VERSION) != std::string::npos);
     check_menu(harness.drawn_text().find("Build test") != std::string::npos);
+    check_menu(harness.drawn_text().find("zardoru") != std::string::npos);
+    check_menu(harness.drawn_text().find("github.com/zardoru/wormedit") != std::string::npos);
+    check_menu(harness.drawn_text().find("Claude and Codex") != std::string::npos);
+    check_menu(harness.drawn_text().find("The Unlicense") != std::string::npos);
     SDL_Event escape{};
     escape.type = SDL_EVENT_KEY_DOWN;
     escape.key.key = SDLK_ESCAPE;
@@ -187,4 +198,59 @@ TEST_CASE("All six menu titles switch without dispatching the covered menu",
         (void)harness.frame();
         check_menu(harness.drawn_text_center(labels[i]).has_value());
     }
+}
+
+TEST_CASE("Help shortcut sheet follows remaps and releases modal lane input on Escape",
+          "[frontend-state][event-harness][menu-bar][shortcut-sheet]") {
+    using namespace wormedit;
+    nuklear_event_harness_t harness{800, 560};
+    require_menu(harness.ready());
+    auto registry = make_default_editor_command_registry({});
+    (void)remap_command(registry, {"view.open_layers"},
+        {{shortcut_key_t::u, shortcut_modifier_t::primary | shortcut_modifier_t::shift}});
+    (void)remap_command(registry, {"view.toggle_sounds"}, {});
+    sys::project_menu_commands(registry, harness.view(), shortcut_primary_modifier_t::meta);
+    const WormUiComposeLaneKeyBinding binding{.scancode = SDL_SCANCODE_1, .lane_id = 1};
+    harness.view().compose.lane_key_bindings = &binding;
+    harness.view().compose.lane_key_binding_count = 1;
+    harness.view().compose.note_paint_mode_active = true;
+    (void)harness.frame();
+    (void)click_menu(harness, "Help");
+    (void)harness.frame();
+    (void)click_menu(harness, "Shortcut cheat sheet");
+    (void)harness.frame();
+    (void)harness.frame();
+    const auto text = harness.drawn_text();
+    check_menu(text.find("Show Layers") != std::string::npos);
+    check_menu(text.find("Shift+⌘+U") != std::string::npos);
+    check_menu(text.find("Unbound") != std::string::npos);
+    check_menu(text.find("Timing lock") != std::string::npos);
+    SDL_Event key{};
+    key.type = SDL_EVENT_KEY_DOWN;
+    key.key.key = SDLK_1;
+    key.key.scancode = SDL_SCANCODE_1;
+    key.key.down = true;
+    const auto blocked = harness.frame(std::span{&key, 1});
+    check_menu(blocked.get().compose_input_count == 0);
+    check_menu(blocked.get().shortcut_event_count == 0);
+    key.type = SDL_EVENT_KEY_UP;
+    key.key.down = false;
+    (void)harness.frame(std::span{&key, 1});
+    key.type = SDL_EVENT_KEY_DOWN;
+    key.key.down = true;
+    key.key.key = SDLK_ESCAPE;
+    key.key.scancode = SDL_SCANCODE_ESCAPE;
+    check_menu(harness.frame(std::span{&key, 1}).get().compose_input_count == 0);
+    key.type = SDL_EVENT_KEY_UP;
+    key.key.down = false;
+    (void)harness.frame(std::span{&key, 1});
+    (void)harness.frame();
+    check_menu(harness.drawn_text().find("Show Layers") == std::string::npos);
+    key.type = SDL_EVENT_KEY_DOWN;
+    key.key.down = true;
+    key.key.key = SDLK_1;
+    key.key.scancode = SDL_SCANCODE_1;
+    const auto resumed = harness.frame(std::span{&key, 1});
+    check_menu(resumed.get().compose_input_count == 1);
+    check_menu(resumed.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
 }

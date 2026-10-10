@@ -4524,7 +4524,7 @@ void check_armed_layer_placement(int mode, bool no_layer) {
     fixture.binding.workspace->selected_chart = fixture.history.document.charts.front().id;
     fixture.application.semantic_layer_target = no_layer ? std::nullopt : std::optional{layer_id_t{7}};
     fixture.application.semantic_layer_target_none = no_layer;
-    fixture.application.note_paint_mode_active = mode == 0;
+    fixture.application.note_paint_mode_active = mode == 0 || mode == 1;
     fixture.project();
     const auto sound = fixture.history.document.resources.front().id;
     auto action = paint_stroke_inputs(fixture, sound.value);
@@ -4758,6 +4758,7 @@ struct lane_key_callback_fixture_t {
     editor_navigation_input_controller_t navigation;
     lane_key_callback_fixture_t() {
         placed_resource_notifications.clear();
+        compose.application.note_paint_mode_active = true;
         compose.project();
         compose.interaction->active_snap_denominator = 4;
     }
@@ -6208,4 +6209,31 @@ TEST_CASE("BMSON lane_mode projects current channel ownership in Compose and Sou
     const auto changed = std::ranges::find(rows, uint64_t{102}, &WormUiSoundRowView::resource_id);
     t475_require(changed != rows.end());
     t475_check(changed->bmson_channel_id == 302 && changed->kind == 1);
+}
+
+TEST_CASE("Select lane keys cannot start notes at authored or virtual cursor rows",
+          "[sys][compose-input][lane-keys][select-tool]") {
+    lane_key_callback_fixture_t f;
+    f.compose.application.note_paint_mode_active = false;
+    SECTION("authored cursor") {}
+    SECTION("virtual cursor") {
+        for (int step = 0; step < 8; ++step)
+            (void)f.dispatch(WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD);
+        expect_compose_test(f.compose.interaction->virtual_bms_cursor_row == 1920);
+    }
+    SECTION("non-note selection") {
+        f.compose.interaction->selected_objects = {
+            {editor_selection_object_kind_t::bpm_event, object_id_t{2}}};
+    }
+    const auto revision = f.compose.history.document.revision;
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
+    expect_compose_test(!f.compose.interaction->pending_hold);
+    expect_compose_test(!f.compose.interaction->pending_virtual_lane_key);
+    expect_compose_test(f.compose.interaction->additional_keyboard_holds.empty());
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD);
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE);
+    expect_compose_test(f.notes().empty());
+    expect_compose_test(f.compose.history.document.revision == revision);
+    expect_compose_test(f.compose.history.undo.empty());
+    expect_compose_test(placed_resource_notifications.empty());
 }

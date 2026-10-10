@@ -1,5 +1,7 @@
 #include "sys/metadata_view_projection.h"
 
+#include "sys/metadata_actions.h"
+
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/core/resource_assignment.h>
 
@@ -145,6 +147,55 @@ void populate_metadata_channel_map_preview(flattened_workspace_t& flattened,
                                          !metadata.channel_map_lanes_truncated;
 }
 
+constexpr const char* custom_lane_profile_reason =
+    "Custom layouts need the per-lane mapping editor, which is not available here yet.";
+
+// The chart's key-count family, then a disabled Custom entry. Labels live in the frame arena.
+void populate_metadata_lane_profile(flattened_workspace_t& flattened,
+                                    const wormedit::document_history_t& history,
+                                    const metadata_drop_state_t& metadata_drop) {
+    auto& metadata = flattened.view.metadata;
+    const auto chart = std::ranges::find_if(history.document.charts, [&](const auto& item) {
+        return item.id.value == metadata.chart_id;
+    });
+    if (chart == history.document.charts.end() || !metadata.has_chart) return;
+    const auto targets = lane_profile_family_targets(*chart);
+    if (targets.empty()) return;
+    const auto count = targets.size() + 1;
+    auto* arena = flattened.arena();
+    auto choices = arena ? arena_array<WormUiMetadataLaneProfileChoice>(*arena, count)
+                         : frame_span<WormUiMetadataLaneProfileChoice>{};
+    if (choices.capacity() != count) return;
+    const auto& current_id = chart->lane_layouts.front().layout.profile_id;
+    metadata.lane_profile_current = count - 1;
+    for (std::size_t index = 0; index < targets.size(); ++index) {
+        const auto& layout = targets[index].layout;
+        const auto* label = metadata_frame_text(flattened, layout.display_name.empty() ? layout.profile_id
+                                                                                      : layout.display_name);
+        if (!label) return;
+        if (layout.profile_id == current_id) metadata.lane_profile_current = index;
+        (void)choices.push_back({.label = label, .enabled = true, .reason = ""});
+    }
+    const auto* custom = metadata_frame_text(flattened, "Custom");
+    if (!custom) return;
+    (void)choices.push_back({.label = custom, .enabled = false, .reason = custom_lane_profile_reason});
+    metadata.lane_profile_choices = choices.data();
+    metadata.lane_profile_choice_count = choices.size();
+    if (!metadata_drop.lane_profile_preview) return;
+    const auto& preview = *metadata_drop.lane_profile_preview;
+    metadata.lane_profile_preview_present = true;
+    metadata.lane_profile_preview_valid = static_cast<bool>(preview);
+    metadata.lane_profile_mapped_note_count = preview.mapped_note_count;
+    metadata.lane_profile_dropped_note_count = preview.dropped_notes.size();
+    metadata.lane_profile_collision_count = preview.collision_count;
+    metadata.lane_profile_apply_enabled = static_cast<bool>(preview);
+    const auto message = "Key-count preview: " + std::to_string(preview.mapped_note_count) + " notes map, " +
+                         std::to_string(preview.dropped_notes.size()) + " dropped, " +
+                         std::to_string(preview.collision_count) + " collisions.";
+    const auto* text = metadata_frame_text(flattened, message);
+    metadata.lane_profile_preview_message = text ? text : "";
+}
+
 void populate_metadata_chart_choices(flattened_workspace_t& flattened,
                                      const wormedit::document_history_t& history) {
     auto& metadata = flattened.view.metadata;
@@ -241,6 +292,7 @@ void populate_metadata_view_projection(
     populate_metadata_output_groups(flattened, history, workspace);
     populate_metadata_channel_map_lanes(flattened, history);
     populate_metadata_channel_map_preview(flattened, metadata_drop);
+    populate_metadata_lane_profile(flattened, history, metadata_drop);
     populate_metadata_chart_choices(flattened, history);
 
     metadata.search_tags = metadata.search_tags_editable

@@ -426,3 +426,83 @@ TEST_CASE("typed per-format fields write the ordered field and out-of-range valu
         CHECK(fixture.history.document.revision > revision);
     }
 }
+
+namespace {
+auto lane_profile_index_for_other_profile(const metadata_notification_fixture_t& fixture) -> std::size_t {
+    const auto& chart = fixture.history.document.charts.front();
+    const auto targets = lane_profile_family_targets(chart);
+    const auto& current = chart.lane_layouts.front().layout.profile_id;
+    for (std::size_t index = 0; index < targets.size(); ++index)
+        if (targets[index].layout.profile_id != current) return index;
+    return targets.size();
+}
+
+auto lane_profile_preview_action(const metadata_notification_fixture_t& fixture, std::size_t index)
+    -> WormUiWorkspaceAction {
+    WormUiWorkspaceAction action{};
+    action.metadata_edit = WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE;
+    action.metadata_document_revision = fixture.history.document.revision;
+    action.metadata_chart_id = 2;
+    action.metadata_lane_profile_index = index;
+    return action;
+}
+}
+
+TEST_CASE("key-count preview then apply changes the family profile as one undoable command",
+          "[unit][sys][metadata-notification][lane-profile]") {
+    metadata_notification_fixture_t fixture;
+    use_bms_song(fixture);
+    const auto index = lane_profile_index_for_other_profile(fixture);
+    require_metadata_notification(index < lane_profile_family_targets(fixture.history.document.charts.front()).size());
+    const auto target = lane_profile_family_targets(fixture.history.document.charts.front())[index];
+    require_metadata_notification(fixture.dispatch(lane_profile_preview_action(fixture, index)).has_value());
+    require_metadata_notification(fixture.drop.lane_profile_preview.has_value());
+    require_metadata_notification(static_cast<bool>(*fixture.drop.lane_profile_preview));
+
+    WormUiWorkspaceAction apply{};
+    apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE;
+    apply.metadata_document_revision = fixture.history.document.revision;
+    apply.metadata_chart_id = 2;
+    const auto applied = fixture.dispatch(apply);
+    require_metadata_notification(applied == "Key-count profile changed.");
+    check_metadata_notification(fixture.history.document.charts.front().lane_layouts.front().layout.profile_id ==
+                                target.layout.profile_id);
+    check_metadata_notification(fixture.history.undo.size() == 1);
+    check_metadata_notification(!fixture.drop.lane_profile_preview.has_value());
+}
+
+TEST_CASE("stale key-count preview rejects apply without touching the document",
+          "[unit][sys][metadata-notification][lane-profile]") {
+    metadata_notification_fixture_t fixture;
+    use_bms_song(fixture);
+    const auto index = lane_profile_index_for_other_profile(fixture);
+    require_metadata_notification(index < lane_profile_family_targets(fixture.history.document.charts.front()).size());
+    const auto before = fixture.history.document.charts.front().lane_layouts.front().layout.profile_id;
+    require_metadata_notification(fixture.dispatch(lane_profile_preview_action(fixture, index)).has_value());
+
+    auto title = song_edit(fixture);
+    require_metadata_notification(fixture.dispatch(title) == "Metadata updated.");
+    const auto revision = fixture.history.document.revision;
+
+    WormUiWorkspaceAction apply{};
+    apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE;
+    apply.metadata_document_revision = revision;
+    apply.metadata_chart_id = 2;
+    const auto rejected = fixture.dispatch(apply);
+    require_metadata_notification(rejected.has_value());
+    check_metadata_notification(fixture.history.document.revision == revision);
+    check_metadata_notification(fixture.history.document.charts.front().lane_layouts.front().layout.profile_id == before);
+    check_metadata_notification(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("key-count preview refuses Custom and indices outside the chart's family",
+          "[unit][sys][metadata-notification][lane-profile]") {
+    metadata_notification_fixture_t fixture;
+    use_bms_song(fixture);
+    const auto targets = lane_profile_family_targets(fixture.history.document.charts.front());
+    require_metadata_notification(!targets.empty());
+    const auto refused = fixture.dispatch(lane_profile_preview_action(fixture, targets.size()));
+    require_metadata_notification(refused.has_value());
+    check_metadata_notification(!fixture.drop.lane_profile_preview.has_value());
+    check_metadata_notification(fixture.history.undo.empty());
+}

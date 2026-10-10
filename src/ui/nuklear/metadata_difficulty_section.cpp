@@ -215,6 +215,73 @@ static void set_channel_map_preview_action(WormUiWorkspaceAction* action,
     action->metadata_channel_map_texts = state.channel_map_text_pointers.data();
 }
 
+static void set_lane_profile_action(WormUiWorkspaceAction* action, const WormUiMetadataView& metadata,
+                                    WormUiMetadataEditKind kind, std::size_t index) {
+    if (!action || action->metadata_edit != WORM_UI_METADATA_EDIT_NONE) return;
+    action->metadata_edit = kind;
+    action->metadata_document_revision = metadata.document_revision;
+    action->metadata_chart_id = metadata.chart_id;
+    action->metadata_lane_profile_index = index;
+}
+
+// Key-count selector over the chart's family plus Custom. Preview and Apply go through the sealed
+// key-count proposal; Custom stays disabled with its reason.
+static void render_lane_profile_section(const MetadataPanel& panel) {
+    auto* context = panel.context;
+    const auto& metadata = *panel.metadata;
+    if (metadata.lane_profile_choice_count == 0) return;
+    if (!state.lane_profile_valid || state.lane_profile_chart != metadata.chart_id) {
+        state.lane_profile_chart = metadata.chart_id;
+        state.lane_profile_selected = metadata.lane_profile_current;
+        state.lane_profile_valid = true;
+    }
+    const auto count = metadata.lane_profile_choice_count;
+    state.lane_profile_labels.clear();
+    for (std::size_t index = 0; index < count; ++index)
+        state.lane_profile_labels.push_back(metadata.lane_profile_choices[index].label);
+    if (state.lane_profile_selected >= count) state.lane_profile_selected = metadata.lane_profile_current;
+    nk_layout_row_dynamic(context, 19, 1);
+    muted_label(context, "Key count (this chart's family)");
+    nk_layout_row_dynamic(context, 26, 1);
+    const auto chosen = wormedit::ui::chrome::safe_combo(context, state.lane_profile_labels.data(),
+                                                         static_cast<int>(count),
+                                                         static_cast<int>(state.lane_profile_selected), 24,
+                                                         nk_vec2(280, 160));
+    const auto chosen_index = static_cast<std::size_t>(chosen);
+    if (chosen_index < count && metadata.lane_profile_choices[chosen_index].enabled)
+        state.lane_profile_selected = chosen_index;
+    const auto& choice = metadata.lane_profile_choices[state.lane_profile_selected];
+    if (!choice.enabled && choice.reason) {
+        nk_layout_row_dynamic(context, 19, 1);
+        muted_label(context, choice.reason);
+    }
+    const auto editable = metadata.chart_fields_editable && choice.enabled;
+    nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
+    nk_layout_row_push(context, 0.5f);
+    if (!editable) nk_widget_disable_begin(context);
+    const auto preview = nk_button_label(context, "Preview key count") != 0 && editable;
+    if (!editable) nk_widget_disable_end(context);
+    nk_layout_row_push(context, 0.5f);
+    const auto apply_enabled = editable && metadata.lane_profile_apply_enabled;
+    if (!apply_enabled) nk_widget_disable_begin(context);
+    const auto apply = nk_button_label(context, "Apply key count") != 0 && apply_enabled;
+    if (!apply_enabled) nk_widget_disable_end(context);
+    nk_layout_row_end(context);
+    if (metadata.lane_profile_preview_present) {
+        nk_layout_row_dynamic(context, 19, 1);
+        const auto* message = metadata.lane_profile_preview_message ? metadata.lane_profile_preview_message : "";
+        if (metadata.lane_profile_apply_enabled)
+            nk_label(context, message, NK_TEXT_LEFT);
+        else
+            nk_label_colored(context, message, NK_TEXT_LEFT,
+                             wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::conflict));
+    }
+    if (preview) set_lane_profile_action(panel.action, metadata, WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE,
+                                         state.lane_profile_selected);
+    if (apply) set_lane_profile_action(panel.action, metadata, WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE,
+                                       state.lane_profile_selected);
+}
+
 // Lane table with Preview and Apply. Apply carries no payload: it applies the sealed preview.
 static void render_channel_map_section(const MetadataPanel& panel) {
     auto* context = panel.context;
@@ -387,6 +454,7 @@ void render_difficulty_section(const MetadataPanel& panel) {
     if (revert) reset_difficulty_draft(metadata);
     if (apply) set_metadata_chart_action(panel.action, &metadata, 0);
     render_batch_section(panel, editable);
+    render_lane_profile_section(panel);
     render_channel_map_section(panel);
     nk_tree_pop(context);
 }

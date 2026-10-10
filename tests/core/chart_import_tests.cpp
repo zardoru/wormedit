@@ -1,3 +1,5 @@
+#include "sys/chart_import_session.h"
+
 #include <wormedit/core/chart_import.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/stepmania.h>
@@ -186,4 +188,59 @@ TEST_CASE("Importing two difficulties gives each fresh unique identities",
     CHECK(history.undo.size() == 1);
     CHECK(validate_document(history.document).empty());
     CHECK(history.document.charts.back().metadata.name == "Second");
+}
+
+TEST_CASE("Chart import session reads a file through the opener, previews, and commits one command",
+          "[unit][core][chart-import][session]") {
+    scratch_t scratch;
+    scratch.write("project/kick.wav", "kick-bytes");
+    scratch.write("source/kick.wav", "kick-bytes");
+    scratch.write("source/snare.wav", "snare-bytes");
+    std::filesystem::copy_file(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "stepmania" / "keysounds.sm",
+                               scratch.root / "source" / "keysounds.sm");
+    auto history = make_document_history(parse_bms_text(target_bms));
+    const auto before = history.document;
+    sys::chart_import_session_t session;
+    sys::chart_import_begin(session);
+    CHECK(session.open);
+    sys::chart_import_load(session, scratch.root / "source" / "keysounds.sm", history.document,
+                           scratch.root / "project");
+    INFO(session.error);
+    REQUIRE(session.source.has_value());
+    REQUIRE(session.error.empty());
+    // One difficulty in the file: it is ticked for the user.
+    REQUIRE(session.selected.size() == 1);
+    auto view = sys::chart_import_view(session, history.document.revision);
+    CHECK(view.visible);
+    CHECK(view.can_import);
+    CHECK(view.row_count == 1);
+    CHECK(std::string(view.summary).find("reused") != std::string::npos);
+    CHECK(view.note_count >= 1);
+    sys::chart_import_toggle(session, session.source->charts.front().id, history.document, scratch.root / "project");
+    CHECK_FALSE(sys::chart_import_view(session, history.document.revision).can_import);
+    sys::chart_import_toggle(session, session.source->charts.front().id, history.document, scratch.root / "project");
+    const auto result = sys::chart_import_confirm(session, history, history.document.revision, scratch.root / "project");
+    REQUIRE(result.command.applied);
+    CHECK_FALSE(session.open);
+    CHECK(history.document.charts.size() == before.charts.size() + 1);
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("Chart import session reports unreadable files and keeps the project untouched",
+          "[unit][core][chart-import][session]") {
+    scratch_t scratch;
+    scratch.write("source/broken.sm", "not a chart");
+    auto history = make_document_history(parse_bms_text(target_bms));
+    const auto revision = history.document.revision;
+    sys::chart_import_session_t session;
+    sys::chart_import_begin(session);
+    sys::chart_import_load(session, scratch.root / "source" / "missing.sm", history.document, scratch.root / "project");
+    CHECK_FALSE(session.error.empty());
+    CHECK_FALSE(sys::chart_import_view(session, revision).can_import);
+    sys::chart_import_load(session, scratch.root / "source" / "readme.txt", history.document, scratch.root / "project");
+    CHECK_FALSE(session.error.empty());
+    const auto result = sys::chart_import_confirm(session, history, revision, scratch.root / "project");
+    CHECK_FALSE(result.command.applied);
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
 }

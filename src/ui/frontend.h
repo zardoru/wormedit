@@ -154,7 +154,46 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_COMPARE_SELECT_CHART,
     WORM_UI_WORKSPACE_ACTION_COMPARE_SCROLL,
     WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP,
+    /* The native picker returned a chart file for the chart import dialog (project_path). */
+    WORM_UI_WORKSPACE_ACTION_IMPORT_CHART_FILE,
 } WormUiWorkspaceActionKind;
+
+typedef enum WormUiChartImportActionKind {
+    WORM_UI_CHART_IMPORT_NONE = 0,
+    WORM_UI_CHART_IMPORT_BEGIN,    /* Open the dialog. */
+    WORM_UI_CHART_IMPORT_LOAD,     /* Read the chart file named by project_path. */
+    WORM_UI_CHART_IMPORT_TOGGLE,   /* Toggle one difficulty (chart_id). */
+    WORM_UI_CHART_IMPORT_CONFIRM,  /* Import the ticked difficulties (document_revision stamp). */
+    WORM_UI_CHART_IMPORT_CANCEL,
+} WormUiChartImportActionKind;
+
+typedef struct WormUiChartImportAction {
+    WormUiChartImportActionKind kind;
+    uint64_t chart_id;
+    uint64_t document_revision;
+} WormUiChartImportAction;
+
+typedef struct WormUiChartImportRowView {
+    uint64_t chart_id;
+    const char* label;   /* "Hard · 7 measures · 412 notes" */
+    bool selected;
+} WormUiChartImportRowView;
+
+#define WORM_UI_CHART_IMPORT_NOTE_CAPACITY 24
+
+typedef struct WormUiChartImportView {
+    bool visible;
+    const char* path;     /* Text the path field starts from. */
+    const char* error;    /* Empty when the file read fine. */
+    const WormUiChartImportRowView* rows;
+    size_t row_count;
+    const char* summary;  /* "1 reused, 2 added, 1 missing" or empty before a file is loaded. */
+    /* Missing files and timing differences, one line each, capped. */
+    const char* notes[WORM_UI_CHART_IMPORT_NOTE_CAPACITY];
+    size_t note_count;
+    bool can_import;
+    uint64_t document_revision;
+} WormUiChartImportView;
 
 typedef enum WormUiWorkspaceTab {
     WORM_UI_WORKSPACE_TAB_SETUP = 0,
@@ -2234,6 +2273,7 @@ typedef struct WormUiWorkspaceView {
     WormUiNotificationView notifications;
     WormUiOptionsView options;
     WormUiCloseConfirmationView close_confirmation;
+    WormUiChartImportView chart_import;
     WormUiTapTimingView tap_timing;
     bool timing_settings_visible;
     uint8_t metronome_volume;
@@ -2709,6 +2749,7 @@ typedef struct WormUiWorkspaceAction {
     WormUiCloseDecision close_decision;
     uint64_t close_project_id, close_revision;
     WormUiProjectChartAction project_chart;
+    WormUiChartImportAction chart_import;
     WormUiTapTimingAction tap_timing;
     WormUiTimingSettingsAction timing_settings;
     WormUiWorkspaceActionKind kind;

@@ -227,10 +227,14 @@ void render_project_charts(nk_context* context, const WormUiSetupView& view, Wor
     const auto shown_count = std::min<std::size_t>(view.chart_row_count, shown.size());
     for (std::size_t index = 0; index < shown_count; ++index) shown[index] = view.charts[index].chart_id;
 
-    constexpr float heading_ratios[]{0.85f, 0.15f};
-    nk_layout_row(context, NK_DYNAMIC, 28, 2, heading_ratios);
+    constexpr float heading_ratios[]{0.66f, 0.26f, 0.08f};
+    nk_layout_row(context, NK_DYNAMIC, 28, 3, heading_ratios);
     nk_labelf(context, NK_TEXT_LEFT, "%zu charts · %zu selected", view.chart_count,
               project_state.selection.count);
+    if (wormedit::ui::chrome::Button{"Import chart…", wormedit::ui::chrome::ButtonKind::secondary,
+                                     "Add difficulties from another chart file"}.render(context) &&
+        action.chart_import.kind == WORM_UI_CHART_IMPORT_NONE)
+        action.chart_import.kind = WORM_UI_CHART_IMPORT_BEGIN;
     if (wormedit::ui::chrome::Button{"+", wormedit::ui::chrome::ButtonKind::primary, "New chart"}.render(context))
         publish_chart_action(view, action, WORM_UI_PROJECT_CHART_NEW, 0);
     if (view.charts_truncated) {

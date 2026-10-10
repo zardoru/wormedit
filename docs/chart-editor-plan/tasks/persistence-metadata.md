@@ -31,7 +31,7 @@ was recently reorganized into collapsible sections; apply the stale-plan check
 
 ## T-121 Add the checksummed command journal
 
-- **Status:** blocked-on T-120
+- **Status:** ready (T-120 done 2026-10-10)
 - **Outcome:** between autosaves, each committed command appends a checksummed record (revision, command kind, serialized post-state delta or full-document hash) so recovery can report how many edits were lost.
 - **Read first:** `docs/references/recovery-design.md` (journal paragraphs), `include/wormedit/core/command.h`, `include/wormedit/core/autosave_loop.h`.
 - **Files owned:** new `include/wormedit/core/command_journal.h`, new `src/core/command_journal.cpp`, new `tests/core/command_journal_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.

@@ -2,6 +2,8 @@
 
 #include <memory>
 
+#include "sys/audio_fallback.h"
+
 #include <wormedit/core/document.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/natural_order.h>
@@ -80,6 +82,17 @@ struct sound_properties_t {
 // Invalid (valid == false) when the resource is unknown or not audio.
 [[nodiscard]] auto project_sound_properties(const song_document_t& document,
                                             resource_id_t resource) -> sound_properties_t;
+
+// The fallback outcome of each audio resource whose authored file is absent (up to `limit`,
+// document order). Exact files and resources with no candidate do not appear. Directory scans
+// are cached per document revision and asset base.
+struct keysound_fallback_t {
+    resource_id_t resource;
+    audio_fallback_t result;
+};
+[[nodiscard]] auto project_keysound_fallbacks(const song_document_t& document,
+                                              const std::filesystem::path& asset_base,
+                                              std::size_t limit) -> std::vector<keysound_fallback_t>;
 
 // Compose keysound dock: every placeable sample (an audio resource with the
 // sample role that is not a stem), in the requested order, with the layers the

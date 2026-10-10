@@ -5010,6 +5010,34 @@ void populate_draw_stem_sources(flattened_workspace_t& flattened, compose_scene_
     }
 }
 
+void populate_compose_keysound_fallbacks(flattened_workspace_t& flattened,
+                                         const wormedit::document_history_t& history,
+                                         const std::filesystem::path& asset_base) {
+    auto& view = flattened.view.compose;
+    view.keysound_fallbacks = nullptr;
+    view.keysound_fallback_count = 0;
+    auto* arena = flattened.arena();
+    if (!arena || asset_base.empty()) return;
+    const auto found = project_keysound_fallbacks(history.document, asset_base,
+                                                  WORM_UI_KEYSOUND_FALLBACK_CAPACITY);
+    if (found.empty()) return;
+    auto rows = arena_array<WormUiKeysoundFallbackView>(*arena, found.size());
+    for (const auto& entry : found) {
+        WormUiKeysoundFallbackView row{};
+        row.resource_id = entry.resource.value;
+        row.outcome = entry.result.outcome == audio_fallback_outcome_t::fallback ? 1 : 2;
+        for (const auto& candidate : entry.result.candidates) {
+            if (row.candidate_count == WORM_UI_KEYSOUND_FALLBACK_CANDIDATES) break;
+            const auto* text = arena_string(*arena, candidate.generic_string());
+            if (!text) break;
+            row.candidates[row.candidate_count++] = text;
+        }
+        if (row.candidate_count != 0) (void)rows.push_back(row);
+    }
+    view.keysound_fallbacks = rows.data();
+    view.keysound_fallback_count = rows.size();
+}
+
 void populate_compose_view(flattened_workspace_t& flattened,
                            wormedit::document_history_t& history,
                            const wormedit::workspace_controller_t& workspace,

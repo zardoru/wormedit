@@ -1093,6 +1093,17 @@ typedef struct WormUiComposeSoundGroupView {
     const char* name;
 } WormUiComposeSoundGroupView;
 
+#define WORM_UI_KEYSOUND_FALLBACK_CAPACITY 256
+#define WORM_UI_KEYSOUND_FALLBACK_CANDIDATES 6
+
+/* A missing sound's BMS audio fallback outcome (docs/references/bms-audio-fallback.md). */
+typedef struct WormUiKeysoundFallbackView {
+    uint64_t resource_id;
+    uint8_t outcome; /* 1 one fallback file was found, 2 several candidates need a choice */
+    size_t candidate_count;
+    const char* candidates[WORM_UI_KEYSOUND_FALLBACK_CANDIDATES]; /* project-relative paths */
+} WormUiKeysoundFallbackView;
+
 typedef struct WormUiComposeKeysoundRowView {
     uint64_t resource_id;
     /* BMS #WAV index such as "01", or an empty string. */
@@ -1539,6 +1550,8 @@ typedef struct WormUiComposeView {
     size_t keysound_count;
     const WormUiComposeKeysoundRowView* keysound_selected_rows;
     size_t keysound_selected_row_count;
+    const WormUiKeysoundFallbackView* keysound_fallbacks;
+    size_t keysound_fallback_count;
     const WormUiComposeKeysoundSelectionView* keysound_selection_rows;
     size_t keysound_selection_row_count;
     const WormUiComposeKeysoundDisplayRowView* keysound_display_rows;
@@ -2388,6 +2401,8 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_PACK_BMSON_CHANNEL,
     WORM_UI_COMPOSE_ACTION_RESTART_AND_PACK_BMSON_CHANNEL,
     WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE,
+    /* Relinks compose_resource_id's audio file to fallback candidate compose_fallback_candidate. */
+    WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK,
     /* Keysound listbox actions. The sound list is compose_sound_resource_ids. */
     WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES,
     WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT,
@@ -2859,6 +2874,7 @@ typedef struct WormUiWorkspaceAction {
     size_t compose_semantic_layer_first_row;
     size_t compose_semantic_layer_row_count;
     uint64_t compose_resource_id;
+    uint32_t compose_fallback_candidate;
     uint64_t compose_bmson_bgm_event_id;
     uint64_t compose_resource_asset_id;
     /* Frontend-owned staging; valid through immediate workspace-action dispatch. */

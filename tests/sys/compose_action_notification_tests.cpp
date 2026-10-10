@@ -1773,3 +1773,36 @@ TEST_CASE("Add SPEEDS span without an area changes nothing", "[compose-action-no
     require_action(entries.size() == 1);
     check_action(entries.front().severity == notification_severity_t::warning);
 }
+
+TEST_CASE("Relinking a missing sound to a fallback candidate is one undo step",
+          "[compose-action-notifications][audio-fallback]") {
+    action_notification_fixture_t fixture;
+    const auto base = std::filesystem::temp_directory_path() / "wormedit-fallback-relink";
+    std::error_code error;
+    std::filesystem::remove_all(base, error);
+    std::filesystem::create_directories(base);
+    std::ofstream(base / "snare.ogg") << "x";
+    std::ofstream(base / "snare.flac") << "x";
+    fixture.asset_base = base;
+    fixture.history.document.audio_assets = {{.id = asset_id_t{5}, .source_path = "snare.wav"}};
+    fixture.history.document.resources = {{.id = resource_id_t{6}, .name = "snare", .asset = asset_id_t{5},
+                                           .missing = true}};
+    fixture.history = make_document_history(fixture.history.document);
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK);
+    action.compose_resource_id = 6;
+    action.compose_fallback_candidate = 9;
+    const auto revision = fixture.history.document.revision;
+    (void)fixture.dispatch(action);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+
+    action.compose_fallback_candidate = 1;
+    check_action(fixture.dispatch(action) == "Sound relinked to snare.flac.");
+    check_action(fixture.history.document.audio_assets.front().source_path == std::filesystem::path{"snare.flac"});
+    check_action_false(fixture.history.document.resources.front().missing);
+    check_action(fixture.history.undo.size() == 1);
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.audio_assets.front().source_path == std::filesystem::path{"snare.wav"});
+    check_action(fixture.history.document.resources.front().missing);
+    std::filesystem::remove_all(base, error);
+}

@@ -65,7 +65,7 @@ stale-plan check (rule 9) first.
 
 ## T-104 Show BMS audio fallback candidates for missing files
 
-- **Status:** ready
+- **Status:** done (2026-10-10)
 - **Outcome:** a missing `#WAV` row shows which fallback file was chosen, or lists ambiguous candidates and lets the user pick one through the existing relink command.
 - **Read first:** `docs/references/bms-audio-fallback.md`, `src/sys/audio_source_registration.cpp`, `include/wormedit/core/resource_assignment.h` (`apply_resource_asset_relink`), `src/ui/nuklear/compose_resources.cpp`.
 - **Files owned:** `src/sys/audio_source_registration.cpp/.h`, `src/sys/compose_resource_presenter.cpp/.h`, `src/ui/nuklear/compose_resources.cpp`, `src/ui/frontend.h`, `tests/sys/audio_source_registration_tests.cpp`.
@@ -74,6 +74,8 @@ stale-plan check (rule 9) first.
 - **Reject/failure behavior:** corrupt exact files are shown as corrupt, not replaced.
 - **Verify:** standard build/test.
 - **Out of scope:** image fallback.
+- **Result (2026-10-10):** the retired inspector list is replaced by the Sounds dock. `resolve_audio_fallback` (`src/sys/audio_fallback.h`, header-only) follows `docs/references/bms-audio-fallback.md`: exact path, else same-directory same-stem `.wav/.ogg/.flac` files matched case-insensitively (one = fallback, several = ambiguous, none = missing; absolute and `..` paths are only checked exactly; directory listings cached per pass). `project_keysound_fallbacks` (`sound_list_projection`) lists audio resources whose authored file is absent and has candidates, cached per document revision and asset base (it does not rely on `resource.missing`, which was false for files absent at open). `populate_compose_keysound_fallbacks` projects them into `WormUiComposeView`; the row tooltip says "Found nearby: …" or "Several files match, right-click to choose: …", and the row's context menu gets "Use <file>" entries that send `WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK`, handled by `relink_sound_fallback` through `apply_resource_asset_relink` (one undo step; the authored #WAV token is untouched). Core change: an audio relink now clears `missing` on that asset's resources. Corrupt exact files are left to the decoder diagnostic. Tests: four resolver cases (exact, single, ambiguous, none/unsafe), the projection test, and the relink action test. Xvfb captures in `sweep/t104-*.png` (menu with "Use amb.ogg / Use amb.flac", and "Sound relinked to amb.ogg."). Full suite 3113/3113 after a clean rebuild of the frontend harness target (stale objects had caused spurious BMSON lane-mode failures).
+
 
 ## T-105 Audit BMSON slice collision and final-slice rules
 

@@ -83,6 +83,7 @@ add_library(wormedit_core
     src/core/metadata_editor.cpp
     src/core/natural_order.cpp
     src/core/chart_editor.cpp
+    src/core/chart_import.cpp
     src/core/measure.cpp
     src/core/lane_layout_editor.cpp
     src/core/measure_editor.cpp

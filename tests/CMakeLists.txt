@@ -114,6 +114,7 @@ add_executable(wormedit_core_tests
     core/marker_navigation_tests.cpp
     core/metadata_editor_tests.cpp
     core/chart_editor_tests.cpp
+    core/chart_import_tests.cpp
     core/lane_layout_editor_tests.cpp
     core/measure_editor_tests.cpp
     core/measure_tests.cpp

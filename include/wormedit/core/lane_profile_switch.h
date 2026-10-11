@@ -13,6 +13,10 @@ namespace wormedit {
 // count matches a named StepMania step type, its arrow layout. Never includes lane scratch roles.
 [[nodiscard]] auto lane_profile_choices(std::size_t lane_count) -> std::vector<lane_input_profile_t>;
 
+// Only all-key layouts can use the same-count key-profile switcher. Scratch and auxiliary
+// roles need an explicit layout edit, rather than being relabeled as ordinary keys.
+[[nodiscard]] auto lane_layout_supports_key_profiles(const lane_layout_t& layout) -> bool;
+
 // Built-in profiles offered when a chart has no playable layout yet.
 [[nodiscard]] auto lane_profile_choices() -> std::vector<lane_input_profile_t>;
 
@@ -21,7 +25,7 @@ namespace wormedit {
     -> const lane_layout_segment_t*;
 
 // Keeps the current lane IDs, order and stages and adopts the target's profile id, display name,
-// lane names, glyphs and key colors. Nullopt unless both layouts have the same lane count.
+// lane names, glyphs and key colors. Nullopt unless both layouts have the same lane count and corresponding lane roles.
 [[nodiscard]] auto retarget_lane_layout(const lane_layout_t& current, const lane_layout_t& target)
     -> std::optional<lane_layout_t>;
 

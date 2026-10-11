@@ -408,3 +408,54 @@ TEST_CASE("Native osu layouts repair old generic classes while retaining explici
     check_profile(custom.lanes[1].key_color == lane_key_color_t::generic);
     check_profile(custom.lanes.front().role == lane_role_t::playable);
 }
+
+TEST_CASE("Unknown seven-key profiles switch by compatible lanes with one undo and round trip",
+          "[core][lane-profile-switch][compatible-layout]") {
+    auto song = switch_song(7, "osu");
+    auto& original = song.charts.front().lane_layouts.front().layout;
+    original.profile_id = "created-7k";
+    original.display_name = "Created 7K";
+    const auto initial_bindings = song.charts.front().input_profile;
+    auto history = make_document_history(song);
+    const auto target = make_osu_mania_profile(7);
+    require_profile(target.has_value());
+    check_profile(lane_layout_supports_key_profiles(original));
+    require_profile(static_cast<bool>(apply_lane_profile_switch(history, 4, chart_id_t{2},
+        {measure_id_t{3}, 0}, target->layout)));
+    const auto& chart = history.document.charts.front();
+    check_profile(chart.lane_layouts.front().layout.profile_id == "osu-mania-7k");
+    check_profile(lane_identity_matches(chart.lane_layouts.front().layout, original));
+    check_profile(input_bindings_match(chart.input_profile, initial_bindings));
+    check_profile(chart.measures.front().notes.front().lane == lane_id_t{3});
+    check_profile(history.undo.size() == 1);
+    const auto bytes = write_native_project(history.document);
+    require_profile(bytes.bytes.has_value());
+    const auto loaded = parse_native_project(*bytes.bytes);
+    require_profile(loaded.song.has_value());
+    check_profile(loaded.song->charts.front().lane_layouts.front().layout.profile_id == "osu-mania-7k");
+    require_profile(static_cast<bool>(undo_document_command(history)));
+    check_profile(history.document.charts.front().lane_layouts.front().layout.profile_id == "created-7k");
+    check_profile(lane_identity_matches(history.document.charts.front().lane_layouts.front().layout, original));
+}
+
+TEST_CASE("Equal counts cannot relabel scratch or auxiliary lanes as ordinary keys",
+          "[core][lane-profile-switch][compatible-layout]") {
+    auto current = make_bms_7k_profile().layout;
+    const auto target = make_osu_mania_profile(static_cast<std::uint32_t>(current.lanes.size()));
+    require_profile(target.has_value());
+    check_profile(!lane_layout_supports_key_profiles(current));
+    check_profile(!retarget_lane_layout(current, target->layout));
+    check_profile(lane_layout_supports_key_profiles(make_bms_10k_scratchless_profile().layout));
+    auto song = switch_song(8, "osu");
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout = current;
+    chart.input_profile = make_bms_7k_profile().input;
+    chart.measures.front().notes.front().lane = current.lanes.front().id;
+    require_profile(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    const auto rejected = apply_lane_profile_switch(history, 4, chart_id_t{2},
+        {measure_id_t{3}, 0}, target->layout);
+    check_profile(!rejected.applied);
+    check_profile(history.document.revision == 4);
+    check_profile(history.undo.empty());
+}

@@ -336,7 +336,7 @@ TEST_CASE("Compose bookmark seek callback owns its feedback", "[compose-action-n
 
 TEST_CASE("Compose pending gesture rejects an edit without changing history", "[compose-action-notifications]") {
     action_notification_fixture_t fixture;
-    fixture.state.pending_hold = pending_hold_t{};
+    fixture.state.pending_hold.emplace();
     const auto revision = fixture.history.document.revision;
     check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER)) ==
           "Finish or cancel the active Compose gesture before adding a semantic layer.");
@@ -423,7 +423,7 @@ TEST_CASE("Compose lane profile picker retains the active gesture warning withou
           "[compose-action-notifications][lane-profile]") {
     action_notification_fixture_t fixture;
     fixture.history.document.charts.front().lane_layouts.clear();
-    fixture.state.pending_hold = pending_hold_t{};
+    fixture.state.pending_hold.emplace();
     const auto action = fixture.action(WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE);
     check_action(fixture.dispatch(action) ==
         "Finish or cancel the active Compose gesture before changing the lane profile.");
@@ -1964,4 +1964,65 @@ TEST_CASE("Sounds tab audition rejects a stale document before scheduling audio"
     REQUIRE(fixture.dispatch_workspace(action, interaction));
     CHECK_FALSE(fixture.application.pending_sound_audition.has_value());
     CHECK(fixture.history.undo.empty());
+}
+
+TEST_CASE("BGA visibility reveals an empty base lane on the first click without a document edit",
+          "[compose-action-notifications][bga][bga-visibility]") {
+    action_notification_fixture_t fixture;
+    const auto revision = fixture.history.document.revision;
+    check_action(editor_bga_visible_lane_mask(fixture.history.document.charts.front(), 0) == 0);
+    check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY)) ==
+        "BGA lane shown.");
+    check_action(fixture.state.bga_lane_visible);
+    check_action(fixture.state.bga_revealed_lane_mask == 1);
+    check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY)) ==
+        "BGA lane hidden.");
+    check_action(!fixture.state.bga_lane_visible);
+    check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY)) ==
+        "BGA lane shown.");
+    check_action(fixture.state.bga_revealed_lane_mask == 1);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+    check_action(fixture.history.document.charts.front().bga_events.empty());
+}
+
+TEST_CASE("BGA visibility preserves authored and revealed kinds and rejects pending gestures",
+          "[compose-action-notifications][bga][bga-visibility]") {
+    bga_input_fixture_t fixture;
+    const auto revision = fixture.history.document.revision;
+    const auto mask = fixture.state.bga_revealed_lane_mask;
+    check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY)) ==
+        "BGA lane hidden.");
+    check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY)) ==
+        "BGA lane shown.");
+    check_action(fixture.state.bga_revealed_lane_mask == mask);
+    fixture.state.pending_hold.emplace();
+    check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY)).find("Finish or cancel") != std::string::npos);
+    check_action(fixture.state.bga_lane_visible);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+    check_action(fixture.history.document.charts.front().bga_events.size() == 1);
+}
+
+TEST_CASE("Created seven-key layout dispatches a compatible profile without moving notes",
+          "[compose-action-notifications][lane-profile][compatible-layout]") {
+    action_notification_fixture_t fixture;
+    const auto profile = make_osu_mania_profile(7);
+    require_action(profile.has_value());
+    auto& chart = fixture.history.document.charts.front();
+    chart.lane_layouts.front().layout = profile->layout;
+    chart.lane_layouts.front().layout.profile_id = "created-7k";
+    chart.input_profile = profile->input;
+    chart.measures.front().notes = {{.id = object_id_t{30}, .position = {measure_id_t{1}, 240},
+                                    .lane = lane_id_t{3}}};
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE);
+    action.compose_lane_profile_index = 0;
+    check_action(fixture.dispatch(action) == "Lane profile set to 7K.");
+    const auto& updated = fixture.history.document.charts.front();
+    check_action(updated.lane_layouts.front().layout.profile_id == "osu-mania-7k");
+    check_action(updated.measures.front().notes.front().lane == lane_id_t{3});
+    check_action(updated.measures.front().notes.front().position.row == 240);
+    check_action(fixture.history.undo.size() == 1);
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.charts.front().lane_layouts.front().layout.profile_id == "created-7k");
 }

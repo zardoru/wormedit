@@ -310,6 +310,8 @@ std::optional<std::string> dispatch_compose_lane_profile(compose_action_context_
     if (!chart) return compose_action_warning(context,
         "The selected difficulty is no longer available.");
     const auto* segment = wormedit::active_lane_layout_segment(*chart, context.state.cursor);
+    if (segment && !wormedit::lane_layout_supports_key_profiles(segment->layout))
+        return compose_action_warning(context, "Key profiles require matching playable lanes without scratch or auxiliary roles.");
     const auto choices = segment
         ? wormedit::lane_profile_choices(segment->layout.lanes.size())
         : wormedit::lane_profile_choices();
@@ -3425,14 +3427,22 @@ auto invoke_compose_quantize_command(bool toggle_preview, wormedit::document_his
     return history.document.revision != revision;
 }
 
+auto toggle_compose_bga_visibility(compose_action_context_t& context) -> std::string {
+    if (editor_interaction_has_pending_gesture(context.state))
+        return compose_action_warning(context, "Finish or cancel the active Compose gesture before changing the BGA lane.");
+    const auto* chart = selected_chart(context.history, context.workspace);
+    if (!chart) return compose_action_warning(context, "Choose a chart before changing the BGA lane.");
+    const auto mask = wormedit::editor_bga_visible_lane_mask(*chart, context.state.bga_revealed_lane_mask);
+    const auto visible = context.state.bga_lane_visible && mask != 0;
+    context.state.bga_lane_visible = !visible;
+    if (!visible && mask == 0) context.state.bga_revealed_lane_mask |= 1U;
+    return compose_action_info(context, visible ? "BGA lane hidden." : "BGA lane shown.");
+}
+
 auto dispatch_compose_remaining_action(compose_action_context_t& context)
     -> std::optional<std::string> {
-    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY) {
-        if (editor_interaction_has_pending_gesture(context.state))
-            return compose_action_warning(context, "Finish or cancel the active Compose gesture before changing the BGA lane.");
-        context.state.bga_lane_visible = !context.state.bga_lane_visible;
-        return compose_action_info(context, context.state.bga_lane_visible ? "BGA lane shown." : "BGA lane hidden.");
-    }
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY)
+        return toggle_compose_bga_visibility(context);
     if (auto response = dispatch_compose_view_action_group(context)) return *response;
     if (auto response = dispatch_compose_resource_action(context)) return *response;
     if (auto response = dispatch_compose_bmson_action(context)) return *response;

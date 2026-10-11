@@ -1532,3 +1532,35 @@ TEST_CASE("Single ordinary BGM drag sends the destination source lane through re
     check_bga(found->object_id == 501 && found->lane_id == 45);
     check_bga(!any_input_of({released, released}, WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK));
 }
+
+TEST_CASE("Toolbar BGA visibility is actionable while no lane is projected",
+          "[frontend-state][event-harness][bga][bga-visibility]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    harness.view().compose.bga_lane_visible = false;
+    harness.view().compose.bga_lane_count = 0;
+    (void)harness.frame();
+    const auto actions = click(harness, 303.0f, 122.0f);
+    check_bga(actions.front().get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY);
+    check_bga(actions.front().get().compose_input_count == 0);
+    check_bga(actions.back().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+}
+
+TEST_CASE("Unrecognized key layout picker waits for a deliberate compatible profile choice",
+          "[frontend-state][event-harness][lane-profile][compatible-layout]") {
+    nuklear_event_harness_t harness{1600, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    view.chart_id = 7;
+    view.document_revision = 11;
+    view.lane_profile_choice_count = 1;
+    view.lane_profile_current = -1;
+    std::snprintf(view.lane_profile_names[0], sizeof(view.lane_profile_names[0]), "osu!mania 7K");
+    worm_ui_nuklear_compose_state().inspector_visible = true;
+    const auto placeholder = open_initial_profile_picker(harness);
+    REQUIRE(placeholder);
+    const auto selected = scroll_to_profile_and_select(harness, "osu!mania 7K",
+        placeholder->first, placeholder->second + 36.0f);
+    REQUIRE(selected);
+    check_profile_action(*selected, 0);
+}

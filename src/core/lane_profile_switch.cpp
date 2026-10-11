@@ -127,6 +127,13 @@ auto insert_initial_lane_profile(document_history_t& history, chart_id_t chart,
 
 } // namespace
 
+auto lane_layout_supports_key_profiles(const lane_layout_t& layout) -> bool {
+    return !layout.lanes.empty() && layout.lanes.size() <= 18 &&
+        std::ranges::all_of(layout.lanes, [](const auto& lane) {
+            return lane.role == lane_role_t::playable;
+        });
+}
+
 auto lane_profile_choices(std::size_t lane_count) -> std::vector<lane_input_profile_t> {
     std::vector<lane_input_profile_t> choices;
     if (const auto osu = make_osu_mania_profile(static_cast<std::uint32_t>(lane_count)))
@@ -200,6 +207,7 @@ auto retarget_lane_layout(const lane_layout_t& current, const lane_layout_t& tar
         const auto rank = static_cast<std::size_t>(std::ranges::find(
             ordered_current, lane.id, &lane_definition_t::id) - ordered_current.begin());
         const auto& source = ordered_target[rank];
+        if (lane.role != source.role) return std::nullopt;
         lane.name = source.name;
         lane.glyph = source.glyph;
         lane.key_color = source.key_color;
@@ -224,7 +232,7 @@ auto apply_lane_profile_switch(document_history_t& history, std::uint64_t expect
     if (!segment) return insert_initial_lane_profile(history, chart, target);
     auto layout = retarget_lane_layout(segment->layout, target);
     if (!layout) {
-        reject(result, "That profile has a different number of lanes.");
+        reject(result, "That profile has a different number of lanes or incompatible lane roles.");
         return result;
     }
     return apply_lane_layout_edit(history, expected_revision,

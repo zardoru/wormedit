@@ -4685,20 +4685,31 @@ TEST_CASE("Idle paint ghost follows hover without rebuilding the retained scene"
     CHECK_FALSE(fixture.flattened.view.compose.paint_ghost_visible);
 }
 
-TEST_CASE("Lane profile switcher hides itself for layouts it cannot represent",
-          "[sys][lane-profile-switch][regression]") {
-    // A BMS DP7 chart has 16 lanes, the same count as osu!mania 16K. The switcher only lists
-    // osu!mania/StepMania key modes, so it must not present DP7 as its first entry.
-    compose_test_fixture_t custom{compose_test_song()};
-    custom.project();
-    CHECK(custom.flattened.view.compose.lane_profile_choice_count == 0);
+TEST_CASE("Lane profile switcher uses key roles instead of recognizing the current profile ID",
+          "[sys][lane-profile-switch][compatible-layout]") {
+    auto scratch_song = compose_test_song();
+    scratch_song.charts.front().lane_layouts.front().layout = make_bms_7k_profile().layout;
+    scratch_song.charts.front().measures.front().notes.clear();
+    scratch_song.charts.front().input_profile = make_bms_7k_profile().input;
+    compose_test_fixture_t scratch{std::move(scratch_song)};
+    scratch.project();
+    expect_compose_test(scratch.flattened.view.compose.lane_profile_choice_count == 0);
 
     auto song = compose_test_song();
-    song.charts.front().lane_layouts.front().layout.profile_id = "osu-mania-1k";
-    compose_test_fixture_t mania{std::move(song)};
-    mania.project();
-    CHECK(mania.flattened.view.compose.lane_profile_choice_count >= 1);
-    CHECK(mania.flattened.view.compose.lane_profile_current == 0);
+    song.charts.front().lane_layouts.front().layout = make_osu_mania_profile(7)->layout;
+    song.charts.front().lane_layouts.front().layout.profile_id = "created-7k";
+    song.charts.front().input_profile = make_osu_mania_profile(7)->input;
+    song.charts.front().measures.front().notes.clear();
+    compose_test_fixture_t created{std::move(song)};
+    created.project();
+    const auto& view = created.flattened.view.compose;
+    expect_compose_test(view.lane_profile_choice_count == 1);
+    expect_compose_test(view.lane_profile_current == -1);
+    expect_compose_test(std::string_view(view.lane_profile_names[0]) == "osu!mania 7K");
+    const auto ids = std::span(view.lane_layout_profile_ids, view.lane_layout_profile_choice_count);
+    expect_compose_test(std::ranges::any_of(ids, [](const auto& id) {
+        return std::string_view(id) == "osu-mania-7k";
+    }));
 }
 
 TEST_CASE("BGM-only projection offers every initial profile with distinct SpecialStyle labels",

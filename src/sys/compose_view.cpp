@@ -302,6 +302,7 @@ static void populate_lane_profile_choices(WormUiComposeView& view, const wormedi
         view.lane_profile_choice_count = static_cast<std::uint8_t>(count);
         return;
     }
+    if (!wormedit::lane_layout_supports_key_profiles(segment->layout)) return;
     const auto& choices = cached_lane_profile_choices(segment->layout.lanes.size());
     const auto count = std::min<std::size_t>(choices.size(), WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY);
     for (std::size_t index = 0; index < count; ++index) {
@@ -312,9 +313,8 @@ static void populate_lane_profile_choices(WormUiComposeView& view, const wormedi
         if (layout.profile_id == segment->layout.profile_id)
             view.lane_profile_current = static_cast<std::int8_t>(index);
     }
-    // The switcher only covers osu!mania/StepMania key modes. A layout outside it (BMS DP7,
-    // custom maps) must not show as the first choice, where one click would convert it.
-    if (view.lane_profile_current < 0) return;
+    // An unrecognized all-key layout stays unselected until the user deliberately chooses
+    // an equal-count profile; its ID is not an eligibility requirement.
     view.lane_profile_choice_count = static_cast<std::uint8_t>(count);
 }
 
@@ -446,6 +446,35 @@ void populate_measure_removal(WormUiComposeView& view, const wormedit::song_docu
          wormedit::measure_holds_positioned_objects(chart, cursor.measure));
 }
 
+void append_lane_layout_profile_choice(WormUiComposeView& view,
+    const wormedit::lane_layout_t& layout, const wormedit::lane_layout_segment_t* active) {
+    const auto index = static_cast<std::size_t>(view.lane_layout_profile_choice_count);
+    for (std::size_t prior = 0; prior < index; ++prior)
+        if (std::string_view(view.lane_layout_profile_ids[prior]) == layout.profile_id) return;
+    if (index >= WORM_UI_COMPOSE_LAYOUT_PROFILE_CAPACITY) return;
+    const auto* prefix = layout.profile_id.starts_with("osu-mania-") ? "osu!mania "
+        : layout.profile_id.starts_with("stepmania:") ? "StepMania " : "";
+    std::snprintf(view.lane_layout_profile_names[index],
+        sizeof(view.lane_layout_profile_names[index]), "%s%s", prefix, layout.display_name.c_str());
+    std::snprintf(view.lane_layout_profile_ids[index], sizeof(view.lane_layout_profile_ids[index]),
+        "%s", layout.profile_id.c_str());
+    if (active && layout.profile_id == active->layout.profile_id)
+        view.lane_layout_profile_current = static_cast<std::int8_t>(index);
+    ++view.lane_layout_profile_choice_count;
+}
+
+void populate_lane_layout_profile_choices(WormUiComposeView& view,
+    const wormedit::chart_document_t& chart, const wormedit::lane_layout_segment_t* active) {
+    const auto mode = active ? compose_mode_family(active->layout) : wormedit::editor_mode_family_t::other;
+    for (const auto& profile : cached_lane_layout_profile_choices(chart.source_family, mode))
+        append_lane_layout_profile_choice(view, profile.layout, active);
+    if (active && wormedit::lane_layout_supports_key_profiles(active->layout)) {
+        for (const auto& profile : cached_lane_profile_choices(active->layout.lanes.size()))
+            append_lane_layout_profile_choice(view, profile.layout, active);
+    }
+    if (active) append_lane_layout_profile_choice(view, active->layout, active);
+}
+
 void populate_lane_layout_editor(WormUiComposeView& view, const wormedit::chart_document_t& chart,
                                  const wormedit::measure_index_t& measures,
                                  wormedit::local_position_t cursor, bool virtual_cursor,
@@ -481,25 +510,7 @@ void populate_lane_layout_editor(WormUiComposeView& view, const wormedit::chart_
     const auto* active = virtual_target
         ? (chart.lane_layouts.empty() ? nullptr : &chart.lane_layouts.front())
         : wormedit::active_lane_layout_segment(chart, cursor);
-    const auto mode = active ? compose_mode_family(active->layout) : wormedit::editor_mode_family_t::other;
-    const auto& choices = cached_lane_layout_profile_choices(chart.source_family, mode);
-    auto append_choice = [&](const wormedit::lane_layout_t& layout) {
-        const auto index = static_cast<std::size_t>(view.lane_layout_profile_choice_count);
-        if (index >= WORM_UI_COMPOSE_LAYOUT_PROFILE_CAPACITY) return;
-        std::snprintf(view.lane_layout_profile_names[index],
-                      sizeof(view.lane_layout_profile_names[index]), "%s",
-                      layout.display_name.c_str());
-        std::snprintf(view.lane_layout_profile_ids[index], sizeof(view.lane_layout_profile_ids[index]),
-                      "%s", layout.profile_id.c_str());
-        if (active && layout.profile_id == active->layout.profile_id)
-            view.lane_layout_profile_current = static_cast<std::int8_t>(index);
-        ++view.lane_layout_profile_choice_count;
-    };
-    for (const auto& profile : choices) append_choice(profile.layout);
-    if (active && std::ranges::none_of(choices, [&](const auto& profile) {
-            return profile.layout.profile_id == active->layout.profile_id;
-        }))
-        append_choice(active->layout);
+    populate_lane_layout_profile_choices(view, chart, active);
 }
 
 void populate_lane_layout_segments(flattened_workspace_t& flattened,

@@ -2136,3 +2136,70 @@ TEST_CASE("BGM draw stroke rejects a sound that cannot get a BMS ID when IDs are
         object_id_t{20}, resource_id_t{2}, target), diagnostic_code_t::invalid_id));
     check_bga_stroke(history.undo.empty() && bgm_stroke_events(history).size() == 1);
 }
+
+namespace {
+void check_sound_workflow(bool value) { CHECK(value); }
+void require_sound_workflow(bool value) { REQUIRE(value); }
+}
+
+TEST_CASE("Shared resource usage matches protected deletion across charts and retained aliases",
+          "[core][resources][sound-workflow]") {
+    auto song = deletion_reference_song();
+    song.resources.push_back({.id = resource_id_t{6}, .name = "Alias",
+                              .asset = asset_id_t{1}, .roles = {resource_role_t::sample}});
+    const auto counts = count_resource_references(song);
+    for (const auto [id, expected] : std::array<std::pair<std::uint64_t, std::uint64_t>, 3>{{{1, 5}, {3, 3}, {6, 1}}}) {
+        const auto found = counts.find(id);
+        require_sound_workflow(found != counts.end());
+        check_sound_workflow(found->second == expected);
+        auto history = make_document_history(song);
+        const auto result = apply_resource_deletion(history, 4, resource_id_t{id});
+        require_sound_workflow(!result.diagnostics.empty());
+        check_sound_workflow(result.diagnostics.front().message ==
+            "resource is still referenced by " + std::to_string(expected) + " stored event(s)");
+        check_sound_workflow(history.undo.empty());
+    }
+    check_sound_workflow(!counts.contains(2));
+}
+
+TEST_CASE("Sound name and kind edit atomically preserve supplied tags and undo once",
+          "[core][resources][sound-workflow]") {
+    auto song = assignment_song();
+    song.resources[0].name = "Old";
+    song.resources[0].tags = {"Keep"};
+    auto history = make_document_history(song);
+    const set_resource_sound_metadata_action_t action{.resource = resource_id_t{1},
+        .kind = sound_kind_t::sample, .tags = {"Keep"}, .name = "  新 kick  "};
+    require_sound_workflow(static_cast<bool>(apply_resource_sound_metadata(history, 4, action)));
+    check_sound_workflow(history.document.resources[0].name == "新 kick");
+    check_sound_workflow(history.document.resources[0].sound_kind == sound_kind_t::sample);
+    check_sound_workflow(history.document.resources[0].tags == std::vector<std::string>{"Keep"});
+    check_sound_workflow(history.undo.size() == 1);
+    const auto no_op = apply_resource_sound_metadata(history, history.document.revision, action);
+    check_sound_workflow(!no_op.applied && no_op.diagnostics.empty());
+    check_sound_workflow(history.undo.size() == 1);
+    require_sound_workflow(static_cast<bool>(undo_document_command(history)));
+    check_sound_workflow(history.document.resources[0].name == "Old");
+    check_sound_workflow(history.document.resources[0].sound_kind == sound_kind_t::unspecified);
+    check_sound_workflow(history.document.resources[0].tags == std::vector<std::string>{"Keep"});
+}
+
+TEST_CASE("Invalid sound names and stale metadata reject every field without history",
+          "[core][resources][sound-workflow]") {
+    for (const auto& name : {std::string{}, std::string{" \t "}, std::string{"bad\nname"}, std::string(257, 'x')}) {
+        auto history = make_document_history(assignment_song());
+        const auto result = apply_resource_sound_metadata(history, 4,
+            {.resource = resource_id_t{1}, .kind = sound_kind_t::stem, .tags = {"New"}, .name = name});
+        check_sound_workflow(!result.applied && !result.diagnostics.empty());
+        check_sound_workflow(history.document.resources[0].name.empty());
+        check_sound_workflow(history.document.resources[0].sound_kind == sound_kind_t::unspecified);
+        check_sound_workflow(history.document.resources[0].tags.empty());
+        check_sound_workflow(history.document.revision == 4 && history.undo.empty());
+    }
+    auto history = make_document_history(assignment_song());
+    const auto stale = apply_resource_sound_metadata(history, 3,
+        {.resource = resource_id_t{1}, .name = "Changed"});
+    check_sound_workflow(!stale.applied && !stale.diagnostics.empty());
+    check_sound_workflow(history.document.resources[0].name.empty());
+    check_sound_workflow(history.undo.empty());
+}

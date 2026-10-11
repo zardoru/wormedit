@@ -168,11 +168,13 @@ auto motion_event(float x, float y) -> SDL_Event {
     return event;
 }
 
-auto click_at(nuklear_event_harness_t& harness, float x, float y)
+auto click_at(nuklear_event_harness_t& harness, float x, float y, bool twice = false)
     -> std::vector<workspace_action_snapshot_t> {
     std::array<event_step_t, 2> script{};
     script[0].events = {motion_event(x, y), button_event(true, x, y)};
     script[1].events = {motion_event(x, y), button_event(false, x, y)};
+    script[0].events[1].button.clicks = twice ? 2 : 1;
+    script[1].events[1].button.clicks = twice ? 2 : 1;
     return harness.run_script(script);
 }
 
@@ -1446,7 +1448,7 @@ TEST_CASE("Selecting a sound keeps note painting armed with that sound and prese
     (void)harness.frame();
     const auto kick_row = harness.drawn_text_center("kick.wav");
     REQUIRE(kick_row);
-    const auto actions = click_at(harness, kick_row->first, kick_row->second);
+    const auto actions = click_at(harness, kick_row->first, kick_row->second, true);
     CHECK_FALSE(std::ranges::any_of(actions, [](const auto& action) {
         return action.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
     }));
@@ -1479,7 +1481,9 @@ TEST_CASE("BGA dock reuses list selection and arms resources outside the drawer 
     check_bga_dock(harness.drawn_text().find("clip.png") != std::string::npos);
     check_bga_dock(harness.drawn_text().find("01  clip.png") == std::string::npos);
     INFO("BGA bounds " << state.bga_list_x << "," << state.bga_list_y << "," << state.bga_list_width << "," << state.bga_list_height);
-    (void)click_at(harness, state.bga_list_x + 70, state.bga_list_y + 194);
+    const auto clip = harness.drawn_text_center("clip.png");
+    REQUIRE(clip);
+    (void)click_at(harness, clip->first, clip->second, true);
     check_bga_dock(state.bga_selection.primary == 1400);
     check_bga_dock(state.armed_resource_id == 1400);
     check_bga_dock(state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::bga);
@@ -2175,8 +2179,9 @@ void expect_sound_sections(const nuklear_event_harness_t& harness) {
 }
 
 void select_and_filter_sound(nuklear_event_harness_t& harness) {
-    // The Add toolbar precedes the section header and two sound rows.
-    const auto selected = click_at(harness, 100, 263);
+    const auto snare = harness.drawn_text_center("Snare  ·  Keysound");
+    REQUIRE(snare);
+    const auto selected = click_at(harness, snare->first, snare->second);
     const auto action = std::ranges::find_if(selected, [](const auto& frame) {
         return frame.get().kind == WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET;
     });
@@ -2407,7 +2412,7 @@ TEST_CASE("Lane keys carry the clicked Sounds dock source and leave selected not
     (void)harness.frame();
     const auto row = harness.drawn_text_center("kick.wav");
     require_lane_key_sound(row);
-    (void)click_at(harness, row->first, row->second);
+    (void)click_at(harness, row->first, row->second, true);
     require_lane_key_sound(state.armed_resource_id == 1400);
     require_lane_key_sound(state.armed_from_sounds_dock);
     // Return the pointer to the field so the dock does not own keyboard input.
@@ -3346,7 +3351,7 @@ TEST_CASE("Sound dock row sets the Draw source without activating a brush",
     (void)harness.frame();
     const auto row = harness.drawn_text_center("kick.wav");
     REQUIRE(row.has_value());
-    const auto selected = click_at(harness, row->first, row->second);
+    const auto selected = click_at(harness, row->first, row->second, true);
     expect_draw(has_draw_source_payload(selected, 1, 1400));
     expect_draw(state.draw_source_kind == 1 && state.draw_source_id == 1400);
     expect_draw(!view.note_paint_mode_active);
@@ -3364,13 +3369,17 @@ TEST_CASE("BGA dock row carries its source payload without enabling resource pla
     view.bga_rows = rows.data();
     view.bga_row_count = view.bga_total_matching = rows.size();
     view.bga_matching_ids = ids.data();
+    view.bga_advance_ids = ids.data();
+    view.bga_advance_count = ids.size();
     view.bga_search = "";
     (void)harness.frame();
     auto& state = worm_ui_nuklear_compose_state();
     state.bga_panel_visible = true;
     (void)harness.frame();
     REQUIRE(state.bga_list_valid);
-    const auto selected = click_at(harness, state.bga_list_x + 70, state.bga_list_y + 194);
+    const auto clip = harness.drawn_text_center("clip.png");
+    REQUIRE(clip);
+    const auto selected = click_at(harness, clip->first, clip->second, true);
     expect_draw(has_draw_source_payload(selected, 2, 1400));
     expect_draw(!view.note_paint_mode_active);
     expect_draw(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);

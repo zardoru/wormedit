@@ -1922,3 +1922,35 @@ TEST_CASE("Wheel inversion leaves modifier zoom unchanged", "[compose-action-not
     check_action(f.state.pixels_per_standard_measure < zoom);
     f.check_unchanged(1);
 }
+
+TEST_CASE("Sounds tab audition reaches the shared resource dispatcher without a Compose interaction",
+          "[sys][sound-audition]") {
+    action_notification_fixture_t fixture;
+    fixture.workspace.active_tab = workspace_tab_t::audio_slices;
+    fixture.history.document.audio_assets = {{.id = asset_id_t{10}, .source_path = "voice.wav"}};
+    fixture.history.document.resources = {{.id = resource_id_t{20}, .name = "Voice",
+        .asset = asset_id_t{10}, .roles = {resource_role_t::sample}}};
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
+    action.compose_resource_id = 20;
+    std::optional<editor_interaction_state_t> interaction;
+    REQUIRE(fixture.dispatch_workspace(action, interaction));
+    CHECK(fixture.application.pending_sound_audition == resource_id_t{20});
+    CHECK_FALSE(interaction.has_value());
+    CHECK(fixture.history.undo.empty());
+}
+
+TEST_CASE("Sounds tab audition rejects a stale document before scheduling audio",
+          "[sys][sound-audition]") {
+    action_notification_fixture_t fixture;
+    fixture.workspace.active_tab = workspace_tab_t::audio_slices;
+    fixture.history.document.audio_assets = {{.id = asset_id_t{10}, .source_path = "voice.wav"}};
+    fixture.history.document.resources = {{.id = resource_id_t{20}, .asset = asset_id_t{10},
+        .roles = {resource_role_t::sample}}};
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
+    action.compose_resource_id = 20;
+    ++action.compose_input_document_revision;
+    std::optional<editor_interaction_state_t> interaction;
+    REQUIRE(fixture.dispatch_workspace(action, interaction));
+    CHECK_FALSE(fixture.application.pending_sound_audition.has_value());
+    CHECK(fixture.history.undo.empty());
+}

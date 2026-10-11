@@ -203,9 +203,11 @@ auto project_application_frame(application_frame_projection_context_t context)
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     {
         frame_phase_scope_t audio_waveforms(frame_phase_t::workspace_audio_waveforms);
+        WormUiAudioWaveformViewportRequest viewport_request{};
+        worm_ui_frontend_audio_waveform_viewport_request(&viewport_request);
         populate_audio_waveform_views(flattened, context.waveform_runtime.waveform_analysis().get(),
                                       context.waveform_runtime.waveform_job().busy(),
-                                      compose_window_width);
+                                      compose_window_width, &viewport_request);
     }
 #endif
     {

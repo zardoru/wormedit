@@ -730,3 +730,60 @@ TEST_CASE("fallback projection lists only missing sounds with one or several can
     require_sound_projection(refreshed.size() == 1);
     check_sound_projection(refreshed.front().resource == resource_id_t{12});
 }
+
+TEST_CASE("Sounds use and path filters precede virtual windows and retain hidden selections",
+          "[sys][sounds][sound-workflow]") {
+    auto song = catalog();
+    song.resources.push_back({.id = resource_id_t{5}, .name = "Alias kick", .asset = asset_id_t{2},
+                              .roles = {resource_role_t::sample}, .missing = true});
+    song.resources.push_back({.id = resource_id_t{6}, .name = "Unused", .asset = asset_id_t{1},
+                              .roles = {resource_role_t::sample}});
+    song.charts.push_back({.sound_channels = {{.source_clip = {.source = asset_id_t{2}},
+                                             .events = {{}}}}});
+    const std::array<std::uint64_t, 1> selected{6};
+    keysound_list_cache_t cache;
+    keysound_list_request_t request{.search = "ASSETS/2-KICK", .use_filter = resource_use_filter_t::used,
+        .selected_resource_ids = selected, .include_selected_metadata = true,
+        .first_row = 2, .row_limit = 1};
+    const auto& used = project_keysound_list_cached(cache, song, &song.charts[0], request);
+    require_sound_projection(used.rows.size() == 1);
+    check_sound_projection(used.rows[0].resource == resource_id_t{2});
+    check_sound_projection(used.rows[0].use_count == 3);
+    check_sound_projection(used.rows[0].source_path == "assets/2-kick.wav");
+    require_sound_projection(used.selected_rows.size() == 1);
+    check_sound_projection(used.selected_rows[0].resource == resource_id_t{6});
+    check_sound_projection(used.all_resources.size() == 3);
+    request.search = {};
+    request.first_row = 1;
+    request.use_filter = resource_use_filter_t::unused;
+    const auto& unused = project_keysound_list_cached(cache, song, &song.charts[0], request);
+    require_sound_projection(unused.rows.size() == 1);
+    check_sound_projection(unused.rows[0].resource == resource_id_t{6});
+    check_sound_projection(cache.projection_build_count() == 2);
+    request.use_filter = resource_use_filter_t::missing;
+    const auto& missing = project_keysound_list_cached(cache, song, &song.charts[0], request);
+    require_sound_projection(missing.rows.size() == 1);
+    check_sound_projection(missing.rows[0].resource == resource_id_t{5});
+    check_sound_projection(missing.rows[0].use_count == 1);
+    check_sound_projection(cache.projection_build_count() == 3);
+}
+
+TEST_CASE("BMS slots filter exact retained uses and full path before the row window",
+          "[sys][sounds][sound-workflow]") {
+    auto song = catalog();
+    song.resources[1].target_identities = {{format_family_t::bms, "ZZ", "WAV"}};
+    song.charts[0].sound_channels = {{.source_clip = {.source = asset_id_t{2}}, .events = {{}, {}}}};
+    const auto used = project_sound_slots(song, {.search = "ASSETS/2-KICK", .selected_slot = 1295,
+        .row_limit = 1, .use_filter = resource_use_filter_t::used});
+    require_sound_projection(used.rows.size() == 1);
+    check_sound_projection(used.total_matching == 1);
+    check_sound_projection(used.rows[0].number == 1295);
+    check_sound_projection(used.rows[0].use_count == 4);
+    check_sound_projection(used.rows[0].source_path == "assets/2-kick.wav");
+    check_sound_projection(used.selected_row == 0);
+    const auto unused = project_sound_slots(song, {.selected_slot = 1295,
+        .use_filter = resource_use_filter_t::unused});
+    check_sound_projection(unused.total_matching == 1294);
+    check_sound_projection(unused.selected_row == SIZE_MAX);
+    check_sound_projection(bms_identifier_capacity(song, "WAV").used == 1);
+}

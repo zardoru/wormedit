@@ -38,6 +38,7 @@ struct bga_dock_runtime_t::state_t {
     bga_list_t list;
     std::vector<WormUiComposeBgaRowView> rows;
     std::vector<std::uint64_t> ids;
+    std::vector<std::uint64_t> all_ids;
     std::vector<std::uint64_t> advance_ids;
     std::string search;
     song_id_t project;
@@ -98,15 +99,17 @@ void bga_dock_runtime_t::project(const song_document_t& document, const std::fil
     state.list = project_bga_list(document, {state.search, request.first_row,
         std::min<std::size_t>(64, request.row_limit),
         request.sort_by_id ? dock_sort_t::bms_id : dock_sort_t::natural_name,
-        request.ids_available});
+        request.ids_available, static_cast<resource_use_filter_t>(request.use_filter)});
     state.update_images(document, base);
-    state.ids.clear(); state.advance_ids.clear(); state.rows.clear();
+    state.ids.clear(); state.all_ids.clear(); state.advance_ids.clear(); state.rows.clear();
     for (const auto id : state.list.matching_ids) state.ids.push_back(id.value);
+    for (const auto id : state.list.all_resource_ids) state.all_ids.push_back(id.value);
     for (const auto id : state.list.advance_ids) state.advance_ids.push_back(id.value);
     for (const auto& source : state.list.rows) {
         WormUiComposeBgaRowView row{.resource_id = source.resource.value,
             .slot = source.slot.c_str(), .name = source.name.c_str(), .use_count = source.use_count,
-            .missing = source.missing, .video = source.video};
+            .missing = source.missing, .video = source.video,
+            .source_path = source.source_path.c_str()};
         const auto image = state.thumbnails.find(source.resource.value);
         if (image != state.thumbnails.end()) {
             row.image_content_id = image->second.content;
@@ -119,6 +122,8 @@ void bga_dock_runtime_t::project(const song_document_t& document, const std::fil
     view.bga_rows = state.rows.data(); view.bga_row_count = state.rows.size();
     view.bga_first_row = state.list.first_row; view.bga_total_matching = state.list.total_matching;
     view.bga_matching_ids = state.ids.data();
+    view.bga_all_resource_ids = state.all_ids.data();
+    view.bga_all_resource_count = state.all_ids.size();
     view.bga_advance_ids = state.advance_ids.data();
     view.bga_advance_count = state.advance_ids.size();
     view.bga_ids_available = request.ids_available;

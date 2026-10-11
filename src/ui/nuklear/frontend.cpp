@@ -799,6 +799,11 @@ WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_i
     return worm_ui_nuklear_metadata_drop_target(x, y);
 }
 
+void worm_ui_frontend_audio_waveform_viewport_request(WormUiAudioWaveformViewportRequest* request) {
+    if (!request) return;
+    worm_ui_nuklear_audio_waveform_viewport_request(*request);
+}
+
 void worm_ui_frontend_bga_dock_request(WormUiBgaDockRequest* request) {
     if (!request) return;
     const auto& state = worm_ui_nuklear_compose_state();
@@ -808,6 +813,7 @@ void worm_ui_frontend_bga_dock_request(WormUiBgaDockRequest* request) {
     request->first_row = state.bga_first_row;
     request->row_limit = state.bga_row_limit;
     request->sort_by_id = state.bga_sort_by_id;
+    request->use_filter = state.bga_use_filter;
 }
 
 void worm_ui_frontend_bookmark_chooser_request(WormUiBookmarkChooserRequest* request) {
@@ -834,6 +840,7 @@ void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request) 
     request->row_limit = state.keysound_slots_row_limit;
     std::copy(state.keysound_filters.search.begin(), state.keysound_filters.search.end(),
               request->automatic_search);
+    request->use_filter = state.keysound_filters.use_filter;
     request->group_filter_active = state.keysound_filters.group_filter_active;
     request->group_filter_ids = state.keysound_filters.group_ids.data();
     request->group_filter_count = state.keysound_filters.group_ids.size();
@@ -919,6 +926,14 @@ bool worm_ui_frontend_sound_list_contains(uint32_t window_id, float x, float y) 
         !std::isfinite(y))
         return false;
     const auto& audio = worm_ui_nuklear_audio_state();
+    if (g_context_tab == WORM_UI_WORKSPACE_TAB_AUDIO_SLICES) {
+        return !g_notification_modal && !project_dialog_active() &&
+            !worm_ui_nuklear_sound_import_active() && !g_menu_popup_open &&
+            !g_menu_popup_release_pending && audio.import_drop_valid &&
+            x >= audio.import_drop_x && y >= audio.import_drop_y &&
+            x < audio.import_drop_x + audio.import_drop_width &&
+            y < audio.import_drop_y + audio.import_drop_height;
+    }
     return worm_ui_nuklear_sound_list_contains(x, y) ||
         (audio.sound_list_valid && x >= audio.sound_list_x && y >= audio.sound_list_y &&
          x < audio.sound_list_x + audio.sound_list_width &&
@@ -1396,6 +1411,19 @@ static bool capture_context_menu_key(const SDL_KeyboardEvent& event) {
     return true;
 }
 
+static bool capture_audio_list_key(const SDL_KeyboardEvent& event) {
+    if (!frontend_event_window_matches(event.windowID) || !g_window_focused ||
+        g_context_tab != WORM_UI_WORKSPACE_TAB_AUDIO_SLICES ||
+        g_notification_modal || project_dialog_active() || command_menu_dialog_blocked() ||
+        nuklear_text_entry_active() || g_ime_composition_active ||
+        (event.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI | SDL_KMOD_SHIFT))) return false;
+    const auto direction = event.key == SDLK_UP ? -1 : event.key == SDLK_DOWN ? 1 : 0;
+    const auto audition = event.key == SDLK_SPACE;
+    if (!direction && !audition) return false;
+    if (!event.down) return g_audio.sound_list_focused;
+    return worm_ui_nuklear_audio_list_key_command(direction, audition && !event.repeat);
+}
+
 static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
         if (frontend_event_window_matches(event.windowID) &&
             capture_command_menu_key(g_context, event, g_ime_composition_active)) return true;
@@ -1428,6 +1456,7 @@ static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
             }
             return true;
         }
+        if (capture_audio_list_key(event)) return true;
         if (capture_sound_slot_key(event)) return true;
         if (capture_inline_offset_key(event)) return true;
         if (capture_tap_timing_key(event)) return true;
@@ -2350,6 +2379,12 @@ static void retire_bookmark_editors(const WormUiWorkspaceView& view, WormUiWorks
         nk_rect(0, 0, 0, 0), false);
 }
 
+static bool audio_content_interactive(const WormUiWorkspaceView& view) {
+    return g_window_focused && !view.options.visible && !options_owns_content_input(view) &&
+        !project_modal_active(view) && !project_dialog_active() && !g_notification_modal &&
+        !g_menu_popup_open;
+}
+
 static void render_workspace_content(const WormUiWorkspaceView& view,
                                      WormUiWorkspaceAction& action) {
     const bool metadata_interactive = g_window_focused && view.metadata.visible &&
@@ -2388,7 +2423,7 @@ static void render_workspace_content(const WormUiWorkspaceView& view,
             g_shortcut_event_count);
     } else if (view.audio_slices.visible) {
         worm_ui_nuklear_render_audio_slices(g_context, &view.audio_slices, &action, true,
-                                            g_window_focused);
+                                            audio_content_interactive(view));
     } else if (view.compare.visible) {
         worm_ui_nuklear_render_compare_panel(g_context, &view.compare, &action);
     } else {
@@ -3064,6 +3099,14 @@ static void remember_context_menu_scope(const WormUiWorkspaceView* view) {
         !view->options.visible && !project_modal_active(*view) &&
         !g_menu_popup_open && !g_menu_popup_release_pending;
     if (changed || !g_context_invocation_allowed) chrome::context_menu_close_active_keyboard();
+    if (changed || !view || !view->audio_slices.visible) {
+        g_audio.sound_list_focused = false;
+        g_audio.sound_list_valid = false;
+        g_audio.import_drop_valid = false;
+        g_audio.list_move_pending = 0;
+        g_audio.list_audition_pending = false;
+        g_audio.waveform_pan_active = false;
+    }
     g_context_project = project;
     g_context_chart = chart;
     g_context_tab = tab;

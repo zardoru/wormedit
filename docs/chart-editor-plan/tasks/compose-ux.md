@@ -119,10 +119,13 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-206 Redesign the inspector's resource list
 
-- **Status:** ready
+- **Status:** done
+- **Final verification:** normal/Release builds, 3,321/3,321 full CTest checks and 445 production event cases (6,173 assertions) pass; affected default clang-tidy, documentation and whitespace checks pass. Evidence: `/tmp/sounds-complete-{build,release,ctest,events}.log`.
+- **Completion (2026-10-11):** The live Sounds/Images docks use compact ID/Name/Uses/State tables with separated gutters, bounded scrolling and row actions. Single click selects; double click arms on release. Missing rows cannot arm. Sound audition, protected deletion and existing stem drag/drop share the production paths.
+- **Coordinator scope (2026-10-11):** T-228 is landed; implement directly in `compose_sounds_panel.cpp`/`compose_bga_panel.cpp` with associated state helpers/tests. Extend live row/request contracts, `sound_list_projection.cpp/.h`, workspace projection, shared resource counts and relevant tests; new `tests/ui/live_resource_table_event_harness_tests.cpp` registered in `tests/CMakeLists.txt`. Root owns shared frontend/sys wiring; workers own distinct UI and projection paths.
 - **Outcome:** the Samples/BGM/BGA list becomes a compact table with columns ID (BMS index or slot), Name, Uses, State (ok/missing/unused), plus a per-row audition button; single click selects, double click arms, the filter field from T-103 sits in the header, and the list keeps a fixed height with its own scroll instead of stretching the inspector.
 - **Read first:** `src/ui/nuklear/compose_resources.cpp`, `src/sys/compose_resource_presenter.cpp`, `docs/chart-editor-plan/document-model.md` (resource list paragraph).
-- **Files owned:** `src/ui/nuklear/compose_resources.cpp/.h`, `src/sys/compose_resource_presenter.cpp/.h`, `src/ui/frontend.h`, `tests/core/compose_resource_presenter_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_resources.cpp/.h`, `src/sys/compose_resource_presenter.cpp/.h`, `src/ui/frontend.h`, `tests/core/compose_resource_presenter_tests.cpp`. Supporting ownership (2026-10-11): live Sounds/Images panel/state paths approved above, `tests/ui/live_resource_table_event_harness_tests.cpp`, existing inspector/advance/stem event fixtures updated to double-click and rendered text truncation, and `tests/CMakeLists.txt`.
 - **Steps:** 1. Project uses count and state per row (shared with T-101). 2. Table layout with `nk_layout_row` fixed column ratios and a `nk_group` scroll area of about 12 rows. 3. Audition button calls the existing audition request path.
 - **Invariants:** armed-resource behavior unchanged.
 - **Reject/failure behavior:** missing rows show the missing state and cannot be armed.

@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <unordered_map>
 
 namespace wormedit {
 
@@ -138,16 +139,27 @@ struct set_resource_sound_metadata_action_t {
     resource_id_t resource;
     sound_kind_t kind{sound_kind_t::unspecified};
     std::vector<std::string> tags;
+    std::optional<std::string> name;
 };
 
-// Sets the user-facing sound kind and tags of one resource in one history
+// Sets sound kind/tags and optional name of one resource in one history
 // step. Tags are trimmed and de-duplicated ignoring ASCII case, keeping the
 // first spelling; more than maximum_sound_tags or over-long, empty-after-trim
-// or control-character tags reject the command. A no-op creates no history entry.
+// or control-character tags reject the command. A supplied name is trimmed,
+// nonempty, at most 256 bytes and contains no control characters; nullopt leaves
+// the name unchanged. All fields validate atomically. A no-op creates no history entry.
 [[nodiscard]] auto apply_resource_sound_metadata(document_history_t& history,
                                                  std::uint64_t expected_revision,
                                                  const set_resource_sound_metadata_action_t& action)
     -> document_command_result_t;
+
+using resource_reference_counts_t = std::unordered_map<std::uint64_t, std::uint64_t>;
+
+// Exact protected-deletion counts across all charts. Direct note/BGM/BGA IDs
+// count separately from retained channel events, which protect every asset alias.
+// Unreferenced resources may be absent from the map and have count zero.
+[[nodiscard]] auto count_resource_references(const song_document_t& document)
+    -> resource_reference_counts_t;
 
 // Removes one catalog entry only when it has no references. Notes, BGM and
 // BGA events count direct resource-ID references. Retained sound-channel events

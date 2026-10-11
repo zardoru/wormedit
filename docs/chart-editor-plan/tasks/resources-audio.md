@@ -25,9 +25,12 @@ stale-plan check (rule 9) first.
 
 ## T-101 Add Delete to the resource catalog
 
-- **Status:** ready
+- **Status:** done
+- **Final verification:** normal/Release builds, 3,321/3,321 full CTest checks and 445 production event cases (6,173 assertions) pass; affected default clang-tidy, documentation and whitespace checks pass. Evidence: `/tmp/sounds-complete-{build,release,ctest,events}.log`.
+- **Completion (2026-10-11):** Protected per-row Delete is live in Sounds/Images. A shared 64-bit cross-chart reference map counts direct note/BGM/BGA references and retained sound-channel asset aliases; the same map drives deletion, counts and filters. Used rows reject deletion, successful deletion prunes selection/arming, hidden rows retain identity. Core, projection, state and production event regressions cover the contract.
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** No catalog Delete/count UI exists. The actual catalog-to-C-view copy is `append_compose_resource` in unowned `src/sys/workspace_projection.cpp`; the owned presenter and frontend contract cannot project a new count without that owner. Use counts must match T-100 across charts and retained sound-channel asset aliases. Armed clearing can remain in owned `compose_resources.cpp` after a successful catalog refresh.
+- **Coordinator scope/audit (2026-10-11):** protected batch deletion already exists in live docks/core; finish per-row disabled states and exact usage tooltip rather than duplicate deletion. Supporting ownership: `include/wormedit/core/resource_assignment.h`, `src/core/resource_assignment.cpp`, `tests/core/resource_assignment_tests.cpp`, `src/sys/sound_list_projection.cpp/.h`, `tests/sys/sound_list_projection_tests.cpp`, live Sounds/Images docks and their state/tests. Share exact cross-chart/retained-alias usage counts with deletion and T-103/T-206.
 - **Outcome:** each Compose catalog row has a Delete button, enabled only for unreferenced resources; referenced rows show their use count in the tooltip.
 - **Read first:** `src/ui/nuklear/compose_resources.cpp`, `src/sys/compose_resource_presenter.cpp`, `src/sys/compose_actions.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_resources.cpp`, `src/sys/compose_resource_presenter.cpp/.h`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `tests/core/compose_resource_presenter_tests.cpp`. User-approved supporting scope (2026-10-03): `src/sys/workspace_projection.cpp`.
@@ -39,7 +42,7 @@ stale-plan check (rule 9) first.
 
 ## T-102 Navigate to a resource's uses
 
-- **Status:** blocked-on T-101
+- **Status:** ready
 - **Outcome:** a "Find uses" button on a catalog row selects every note/BGM/BGA event using it and moves the cursor to the first; Next/Previous cycle through them.
 - **Read first:** `src/sys/compose_resource_presenter.cpp`, `include/wormedit/core/interaction.h` (typed selection), `src/sys/compose_actions.cpp`.
 - **Files owned:** `src/sys/compose_actions.cpp`, `src/sys/compose_resource_presenter.cpp/.h`, `src/ui/nuklear/compose_resources.cpp`, `src/ui/frontend.h`.
@@ -51,12 +54,15 @@ stale-plan check (rule 9) first.
 
 ## T-103 Filter the catalog by use state and name
 
-- **Status:** ready
+- **Status:** done
+- **Final verification:** normal/Release builds, 3,321/3,321 full CTest checks and 445 production event cases (6,173 assertions) pass; affected default clang-tidy, documentation and whitespace checks pass. Evidence: `/tmp/sounds-complete-{build,release,ctest,events}.log`.
+- **Completion (2026-10-11):** Live Sounds/Images headers provide All/Used/Unused/Missing and case-insensitive name/full-path/BMS-ID matching before virtual windowing. Existing group/layer filters, complete slot identities and hidden selected/armed resources are preserved.
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** Search state and name/source-filename matching already exist, but catalog rows expose no usage signal/count and only the source basename. The requested use-state and path filters need unowned `src/ui/frontend.h`, `src/sys/compose_resource_presenter.cpp`, and the actual catalog-to-C-view copy in `src/sys/workspace_projection.cpp`.
+- **Coordinator scope (2026-10-11):** extend live Sounds/Images docks (`compose_sounds_panel.cpp`, `compose_bga_panel.cpp`, `keysound_list_state.cpp/.h`, `compose_state.h`) and their state/event tests; `sound_list_projection.cpp/.h` and tests filter before virtual windows. `frontend.cpp` exports filter requests. Existing inspector resource list is retired; preserve group/layer filters and armed resource identity.
 - **Outcome:** the catalog has a text filter (case-insensitive substring on name/path/BMS ID) and a Used/Unused/Missing/All selector in addition to the existing role tabs.
 - **Read first:** `src/ui/nuklear/compose_resources.cpp` (`filter_role`, `filter_name`), `src/sys/compose_resource_presenter.cpp`, `docs/chart-editor-plan/document-model.md` (resource list paragraph).
-- **Files owned:** `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `tests/ui/nuklear_compose_state_tests.cpp`. User-approved supporting scope (2026-10-03): `src/ui/frontend.h`, `src/sys/compose_resource_presenter.cpp`, `src/sys/workspace_projection.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `tests/ui/nuklear_compose_state_tests.cpp`. User-approved supporting scope (2026-10-03): `src/ui/frontend.h`, `src/sys/compose_resource_presenter.cpp`, `src/sys/workspace_projection.cpp`. Supporting ownership (2026-10-11): `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/keysound_list_state.cpp/.h`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/sound_list_projection.cpp/.h`, `src/sys/bga_list_projection.cpp/.h`, `src/sys/bga_dock_runtime.cpp`, associated projection/state/event tests.
 - **Steps:** 0. Scope extension approved by the user (2026-10-03). 1. Add filter text and use-state to frontend state. 2. Apply both when iterating rows. 3. State tests for the filter predicate.
 - **Invariants:** armed resource stays armed even when filtered out.
 - **Reject/failure behavior:** none.

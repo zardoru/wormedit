@@ -3414,7 +3414,8 @@ auto dispatch_compose_remaining_action(compose_action_context_t& context)
 auto resource_path_tab_action(const WormUiWorkspaceAction& action,
                               wormedit::workspace_tab_t tab) -> bool {
     if (tab == wormedit::workspace_tab_t::audio_slices)
-        return action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT ||
+        return action.compose_action == WORM_UI_COMPOSE_ACTION_AUDITION_SOUND ||
+            action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT ||
             action.compose_action == WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM ||
             action.compose_action == WORM_UI_COMPOSE_ACTION_PACK_BMSON_CHANNEL ||
             action.compose_action == WORM_UI_COMPOSE_ACTION_RESTART_AND_PACK_BMSON_CHANNEL;

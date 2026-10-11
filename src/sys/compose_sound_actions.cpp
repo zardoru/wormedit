@@ -707,6 +707,41 @@ auto prepare_sound_slot_batch(const song_document_t& document, chart_id_t chart,
     return prepared;
 }
 
+auto dispatch_sound_properties_action(const WormUiWorkspaceAction& action,
+    document_history_t& history, workspace_controller_t& workspace,
+    std::optional<notification_sink_t> notifications) -> bool {
+    if (!action.sound_properties_apply) return false;
+    const auto publish = [&](sound_feedback_t feedback) {
+        static_cast<void>(publish_sound_feedback(notifications, notification_source_t::edit,
+                                                std::move(feedback)));
+    };
+    if (workspace.active_tab != workspace_tab_t::audio_slices || !workspace.selected_chart ||
+        action.sound_properties_project_id != history.document.id.value ||
+        action.sound_properties_chart_id != workspace.selected_chart->value ||
+        action.sound_properties_document_revision != history.document.revision) {
+        publish({notification_severity_t::warning,
+                 "Sound properties ignored because the project, chart or revision changed."});
+        return true;
+    }
+    const auto resource = std::ranges::find(history.document.resources,
+        resource_id_t{action.sound_properties_resource_id}, &resource_entry_t::id);
+    const auto name_end = std::find(std::begin(action.sound_properties_name),
+                                   std::end(action.sound_properties_name), '\0');
+    if (resource == history.document.resources.end() || name_end == std::end(action.sound_properties_name)) {
+        publish({notification_severity_t::warning, "The sound properties draft is invalid."});
+        return true;
+    }
+    const auto applied = apply_resource_sound_metadata(history,
+        action.sound_properties_document_revision,
+        {.resource = resource->id,
+         .kind = static_cast<sound_kind_t>(action.sound_properties_kind),
+         .tags = resource->tags,
+         .name = std::string(std::begin(action.sound_properties_name), name_end)});
+    publish(finish_sound_edit(workspace, history, applied, "Sound properties updated.",
+                             "Sound properties are unchanged."));
+    return true;
+}
+
 auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action,
                                    document_history_t& history, workspace_controller_t& workspace,
                                    chart_id_t chart, application_command_state_t& application_state,

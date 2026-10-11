@@ -60,6 +60,11 @@ struct prepared_sound_slot_batch_t {
                                          std::span<const std::string> paths,
                                          std::optional<notification_sink_t> notifications = {}) -> std::string;
 
+// Applies the Sounds properties draft atomically while retaining tags and bindings.
+[[nodiscard]] auto dispatch_sound_properties_action(const WormUiWorkspaceAction& action,
+    document_history_t& history, workspace_controller_t& workspace,
+    std::optional<notification_sink_t> notifications = {}) -> bool;
+
 // Keysound listbox actions. Returns nullopt for any other action. The status
 // message is always non-empty on success or failure.
 [[nodiscard]] auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action,

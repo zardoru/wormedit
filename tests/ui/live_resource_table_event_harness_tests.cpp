@@ -1,0 +1,192 @@
+#include "nuklear_event_harness.h"
+#include "ui/nuklear/compose_state.h"
+#include <catch2/catch_test_macros.hpp>
+#include <algorithm>
+#include <array>
+#include <span>
+#include <source_location>
+#include <string_view>
+
+namespace {
+template <typename T>
+void check_resource_table(const T& value,
+    std::source_location where = std::source_location::current()) {
+    INFO("resource table assertion at " << where.line());
+    CHECK(static_cast<bool>(value));
+}
+template <typename T>
+void check_no_resource_table(const T& value,
+    std::source_location where = std::source_location::current()) {
+    INFO("resource table assertion at " << where.line());
+    CHECK_FALSE(static_cast<bool>(value));
+}
+template <typename T>
+void require_resource_table(const T& value,
+    std::source_location where = std::source_location::current()) {
+    INFO("resource table assertion at " << where.line());
+    REQUIRE(static_cast<bool>(value));
+}
+auto button_event(bool down, float x, float y, bool twice = false) -> SDL_Event {
+    SDL_Event event{};
+    event.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+    event.button.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+    event.button.button = SDL_BUTTON_LEFT;
+    event.button.down = down;
+    event.button.clicks = twice ? 2 : 1;
+    event.button.x = x; event.button.y = y;
+    return event;
+}
+auto click(nuklear_event_harness_t& harness, float x, float y, bool twice = false)
+    -> std::array<workspace_action_snapshot_t, 2> {
+    SDL_Event motion{};
+    motion.type = SDL_EVENT_MOUSE_MOTION;
+    motion.motion.type = SDL_EVENT_MOUSE_MOTION;
+    motion.motion.x = x; motion.motion.y = y;
+    const auto down = std::array{motion, button_event(true, x, y, twice)};
+    const auto up = std::array{motion, button_event(false, x, y, twice)};
+    return {harness.frame(down), harness.frame(up)};
+}
+auto click_text(nuklear_event_harness_t& harness, std::string_view text, bool twice = false)
+    -> std::array<workspace_action_snapshot_t, 2> {
+    const auto point = harness.drawn_text_center(text);
+    require_resource_table(point);
+    return click(harness, point->first, point->second, twice);
+}
+auto has_action(const std::array<workspace_action_snapshot_t, 2>& actions, WormUiComposeActionKind kind) -> bool {
+    return std::ranges::any_of(actions, [&](const auto& action) { return action.get().compose_action == kind; });
+}
+auto action_point(const nuklear_event_harness_t& harness, std::string_view state, int cell)
+    -> std::pair<float, float> {
+    const auto rows = harness.drawn_text_bounds();
+    const auto found = std::ranges::find_if(rows, [&](const auto& row) { return std::string_view{row.text} == state; });
+    require_resource_table(found != rows.end());
+    return {found->x + found->width + 4 + 11 + static_cast<float>(cell * 26), found->y + found->height * 0.5f};
+}
+void show_dock(nuklear_event_harness_t& harness, bool images) {
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.inspector_visible = false; state.layers_panel_visible = false;
+    state.sounds_panel_visible = !images; state.bga_panel_visible = images;
+    state.sounds_preview_on_click = false;
+    (void)harness.frame();
+}
+struct sound_fixture_t {
+    nuklear_event_harness_t harness{1280, 900};
+    std::array<WormUiComposeKeysoundRowView, 3> rows{{
+        {.resource_id = 11, .slot = "0A", .name = "Used.wav", .use_count = 4, .source_path = "drums/Used.wav"},
+        {.resource_id = 12, .slot = "0B", .name = "Free.wav", .use_count = 0, .source_path = "other/Free.wav"},
+        {.resource_id = 13, .slot = "0C", .name = "Lost.wav", .missing = true, .use_count = 1, .source_path = "drums/Lost.wav"}}};
+    sound_fixture_t() {
+        require_resource_table(harness.ready());
+        auto& view = harness.view().compose;
+        view.keysounds = rows.data(); view.keysound_count = view.keysound_total_count = rows.size();
+        view.keysounds_available = view.keysound_ids_available = true;
+        show_dock(harness, false);
+    }
+};
+struct image_fixture_t {
+    nuklear_event_harness_t harness{1280, 900};
+    std::array<std::uint64_t, 3> ids{21, 22, 23};
+    std::array<WormUiComposeBgaRowView, 3> rows{{
+        {.resource_id = 21, .slot = "01", .name = "Used.png", .use_count = 3, .source_path = "bg/Used.png"},
+        {.resource_id = 22, .slot = "02", .name = "Free.png", .use_count = 0, .source_path = "bg/Free.png"},
+        {.resource_id = 23, .slot = "03", .name = "Lost.png", .use_count = 0, .missing = true, .source_path = "bg/Lost.png"}}};
+    image_fixture_t() {
+        require_resource_table(harness.ready());
+        auto& view = harness.view().compose;
+        view.bga_rows = rows.data(); view.bga_row_count = rows.size();
+        view.bga_matching_ids = ids.data(); view.bga_total_matching = ids.size(); view.bga_search = "";
+        view.bga_all_resource_ids = ids.data(); view.bga_all_resource_count = ids.size();
+        view.bga_advance_ids = ids.data(); view.bga_advance_count = 2;
+        show_dock(harness, true);
+    }
+};
+}
+
+TEST_CASE("Live Sounds table separates selection from arming and keeps filtered sources", "[event-harness][resource-table]") {
+    sound_fixture_t fixture;
+    auto& state = worm_ui_nuklear_compose_state();
+    (void)click_text(fixture.harness, "Used.wav");
+    check_resource_table(state.keysound_selection.primary == 11);
+    check_resource_table(state.armed_resource_id == 0);
+    (void)click_text(fixture.harness, "Used.wav", true);
+    check_resource_table(state.armed_resource_id == 11);
+    (void)click_text(fixture.harness, "Lost.wav", true);
+    check_resource_table(state.keysound_selection.primary == 13);
+    check_resource_table(state.armed_resource_id == 11);
+    (void)click_text(fixture.harness, "Unused");
+    check_resource_table(state.keysound_filters.use_filter == 2);
+    (void)fixture.harness.frame();
+    check_no_resource_table(fixture.harness.drawn_text_center("Used.wav"));
+    check_resource_table(fixture.harness.drawn_text_center("Free.wav"));
+    check_resource_table(state.armed_resource_id == 11);
+    WormUiKeysoundDockRequest request{};
+    worm_ui_frontend_keysound_dock_request(&request);
+    check_resource_table(request.use_filter == 2);
+}
+
+TEST_CASE("Sound row audition and protected deletion use the standard actions", "[event-harness][resource-table]") {
+    sound_fixture_t fixture;
+    auto point = action_point(fixture.harness, "ok", 0);
+    check_resource_table(has_action(click(fixture.harness, point.first, point.second), WORM_UI_COMPOSE_ACTION_AUDITION_SOUND));
+    check_resource_table(worm_ui_nuklear_compose_state().armed_resource_id == 0);
+    point = action_point(fixture.harness, "ok", 1);
+    check_no_resource_table(has_action(click(fixture.harness, point.first, point.second), WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS));
+    point = action_point(fixture.harness, "unused", 1);
+    const auto actions = click(fixture.harness, point.first, point.second);
+    require_resource_table(has_action(actions, WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS));
+    for (const auto& snapshot : actions) {
+        const auto& action = snapshot.get();
+        if (action.compose_action != WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS) continue;
+        require_resource_table(action.compose_sound_resource_count == 1);
+        check_resource_table(action.compose_sound_resource_ids[0] == 12);
+        check_resource_table(action.compose_input_project_id == fixture.harness.view().compose.project_id);
+        check_resource_table(action.compose_input_document_revision == fixture.harness.view().compose.document_revision);
+    }
+}
+
+TEST_CASE("Images table preserves hidden selection and disarms actual removed resources", "[event-harness][resource-table]") {
+    image_fixture_t fixture;
+    auto& state = worm_ui_nuklear_compose_state();
+    (void)click_text(fixture.harness, "Used.png");
+    check_resource_table(state.bga_selection.primary == 21);
+    check_resource_table(state.armed_resource_id == 0);
+    (void)click_text(fixture.harness, "Used.png", true);
+    check_resource_table(state.armed_resource_id == 21);
+    (void)click_text(fixture.harness, "Lost.png", true);
+    check_resource_table(state.armed_resource_id == 21);
+    (void)click_text(fixture.harness, "Used.png");
+    (void)click_text(fixture.harness, "Unused");
+    auto& view = fixture.harness.view().compose;
+    view.bga_rows = fixture.rows.data() + 1; view.bga_row_count = 2;
+    view.bga_matching_ids = fixture.ids.data() + 1; view.bga_total_matching = 2;
+    (void)fixture.harness.frame();
+    check_resource_table(state.bga_selection.primary == 21);
+    check_resource_table(state.armed_resource_id == 21);
+    WormUiBgaDockRequest request{};
+    worm_ui_frontend_bga_dock_request(&request);
+    check_resource_table(request.use_filter == 2);
+    ++view.document_revision;
+    view.bga_all_resource_ids = fixture.ids.data() + 1; view.bga_all_resource_count = 2;
+    (void)fixture.harness.frame();
+    check_resource_table(state.armed_resource_id == 0);
+    check_resource_table(state.draw_source_id == 0);
+}
+
+TEST_CASE("Images row deletion protects references and stamps the unused resource", "[event-harness][resource-table]") {
+    image_fixture_t fixture;
+    auto point = action_point(fixture.harness, "ok", 0);
+    check_no_resource_table(has_action(click(fixture.harness, point.first, point.second), WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS));
+    point = action_point(fixture.harness, "unused", 0);
+    const auto actions = click(fixture.harness, point.first, point.second);
+    require_resource_table(has_action(actions, WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS));
+    for (const auto& snapshot : actions) {
+        const auto& action = snapshot.get();
+        if (action.compose_action != WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS) continue;
+        require_resource_table(action.compose_sound_resource_count == 1);
+        check_resource_table(action.compose_sound_resource_ids[0] == 22);
+        check_resource_table(action.compose_input_project_id == fixture.harness.view().compose.project_id);
+        check_resource_table(action.compose_input_chart_id == fixture.harness.view().compose.chart_id);
+        check_resource_table(action.compose_input_document_revision == fixture.harness.view().compose.document_revision);
+    }
+}

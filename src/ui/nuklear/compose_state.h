@@ -589,6 +589,7 @@ struct worm_ui_nuklear_compose_state_t {
     std::vector<std::uint64_t> measures_staged_ids;
     worm_ui_keysound_selection_t bga_selection;
     std::array<char, 64> bga_search{};
+    std::uint8_t bga_use_filter{};
     std::size_t bga_first_row{}, bga_row_limit{32};
     bool bga_sort_by_id{};
     bool bga_renumber_confirmation_open{};
@@ -596,7 +597,7 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t bga_renumber_project{}, bga_renumber_chart{};
     std::uint64_t bga_renumber_revision{};
     std::vector<std::uint64_t> bga_renumber_resources;
-    std::uint64_t bga_project_id{}, bga_chart_id{};
+    std::uint64_t bga_project_id{}, bga_chart_id{}, bga_revision{};
     bool bga_auto_increment_on_place{};
     bool armed_from_bga_dock{};
     bool bga_reveal_primary{};

@@ -27,6 +27,8 @@ struct compose_resource_entry_t {
     std::string target_index;
     std::string name;
     std::string source_name;
+    std::string source_path;
+    std::uint64_t use_count{};
 };
 
 struct compose_resource_catalog_t {

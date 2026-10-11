@@ -26,6 +26,7 @@ struct worm_ui_keysound_selection_t {
 
 struct worm_ui_keysound_filter_state_t {
     std::array<char, 64> search{};
+    std::uint8_t use_filter{}; // 0 All, 1 Used, 2 Unused, 3 Missing.
     bool group_filter_active{};
     bool include_ungrouped{true};
     std::vector<std::uint64_t> group_ids;
@@ -98,7 +99,10 @@ enum class worm_ui_keysound_layer_state_t : std::uint8_t { none, some, all };
 // Case-insensitive substring match of the BMS slot or the name. An empty
 // query matches everything.
 [[nodiscard]] auto worm_ui_keysound_matches(std::string_view slot, std::string_view name,
-                                            std::string_view query) -> bool;
+                                            std::string_view query, std::string_view source_path = {}) -> bool;
+
+[[nodiscard]] auto worm_ui_resource_use_matches(std::uint64_t uses, bool missing,
+                                                std::uint8_t filter) -> bool;
 
 [[nodiscard]] auto worm_ui_keysound_is_selected(const worm_ui_keysound_selection_t& selection,
                                                 std::uint64_t id) -> bool;

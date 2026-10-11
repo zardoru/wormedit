@@ -287,23 +287,18 @@ auto has_role(const resource_entry_t& resource, resource_role_t role) -> bool {
     return std::ranges::find(resource.roles, role) != resource.roles.end();
 }
 
-auto count_resource_references(const song_document_t& song, resource_id_t resource_id,
-                               asset_id_t asset_id) -> std::size_t {
-    std::size_t count{};
-    for (const auto& chart : song.charts) {
-        for (const auto& measure : chart.measures) {
-            count += static_cast<std::size_t>(std::ranges::count(
-                measure.notes, resource_id, &note_t::sound));
-            count += static_cast<std::size_t>(std::ranges::count(
-                measure.bgm_events, resource_id, &bgm_event_t::sound));
-        }
-        count += static_cast<std::size_t>(std::ranges::count(
-            chart.bga_events, resource_id, &bga_event_t::resource));
-        for (const auto& channel : chart.sound_channels) {
-            if (channel.source_clip.source == asset_id) count += channel.events.size();
-        }
+void append_chart_reference_counts(const chart_document_t& chart,
+                                   resource_reference_counts_t& counts,
+                                   resource_reference_counts_t& retained) {
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes)
+            if (note.sound) ++counts[note.sound->value];
+        for (const auto& event : measure.bgm_events)
+            if (event.sound) ++counts[event.sound->value];
     }
-    return count;
+    for (const auto& event : chart.bga_events) ++counts[event.resource.value];
+    for (const auto& channel : chart.sound_channels)
+        retained[channel.source_clip.source.value] += channel.events.size();
 }
 
 auto next_chart_object_id(const chart_document_t& chart) -> std::optional<object_id_t> {
@@ -2091,6 +2086,17 @@ auto ascii_fold(std::string text) -> std::string {
     return text;
 }
 
+auto normalized_resource_name(std::string_view name) -> std::optional<std::string> {
+    const auto first = name.find_first_not_of(" \t\r\n");
+    const auto last = name.find_last_not_of(" \t\r\n");
+    if (first == std::string_view::npos) return std::nullopt;
+    name = name.substr(first, last - first + 1);
+    if (name.size() > 256 || std::ranges::any_of(name, [](unsigned char c) {
+            return c < 32 || c == 127;
+        })) return std::nullopt;
+    return std::string{name};
+}
+
 auto normalized_sound_tag(std::string_view tag) -> std::optional<std::string> {
     const auto is_space = [](char c) { return c == ' ' || c == '\t'; };
     while (!tag.empty() && is_space(tag.front())) tag.remove_prefix(1);
@@ -2131,6 +2137,16 @@ auto remove_empty_sound_groups(song_document_t& document) -> void {
 
 } // namespace
 
+auto count_resource_references(const song_document_t& document) -> resource_reference_counts_t {
+    resource_reference_counts_t counts, retained;
+    for (const auto& chart : document.charts) append_chart_reference_counts(chart, counts, retained);
+    for (const auto& resource : document.resources) {
+        const auto found = retained.find(resource.asset.value);
+        if (found != retained.end()) counts[resource.id.value] += found->second;
+    }
+    return counts;
+}
+
 auto apply_resource_sound_metadata(document_history_t& history, std::uint64_t expected_revision,
                                    const set_resource_sound_metadata_action_t& action)
     -> document_command_result_t {
@@ -2150,21 +2166,29 @@ auto apply_resource_sound_metadata(document_history_t& history, std::uint64_t ex
         reject(result, diagnostic_code_t::invalid_id, "resource sound kind is not recognized");
         return result;
     }
+    const auto name = action.name ? normalized_resource_name(*action.name)
+                                  : std::optional<std::string>{resource->name};
+    if (!name) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "resource name must be 1-256 bytes without control characters");
+        return result;
+    }
     auto tags = normalized_sound_tags(action.tags);
     if (!tags) {
         reject(result, diagnostic_code_t::invalid_id,
                "resource sound tags must be 1-64 bytes without control characters, at most 32");
         return result;
     }
-    if (resource->sound_kind == action.kind && resource->tags == *tags) {
+    if (resource->name == *name && resource->sound_kind == action.kind && resource->tags == *tags) {
         return result;
     }
     auto proposed = history.document;
     auto& target = proposed.resources[static_cast<std::size_t>(
         resource - history.document.resources.begin())];
+    target.name = *name;
     target.sound_kind = action.kind;
     target.tags = std::move(*tags);
-    return commit_document_command(history, std::move(proposed), "Edit sound kind and tags");
+    return commit_document_command(history, std::move(proposed), "Edit sound metadata");
 }
 
 auto apply_resource_deletions(document_history_t& history, std::uint64_t expected_revision,
@@ -2180,6 +2204,7 @@ auto apply_resource_deletions(document_history_t& history, std::uint64_t expecte
                "resource deletion needs a bounded nonempty selection");
         return result;
     }
+    const auto reference_counts = count_resource_references(history.document);
     std::unordered_set<std::uint64_t> doomed;
     for (const auto resource_id : resources) {
         const auto resource = std::ranges::find(history.document.resources, resource_id,
@@ -2194,8 +2219,8 @@ auto apply_resource_deletions(document_history_t& history, std::uint64_t expecte
                    "resource deletion lists a catalog resource twice");
             return result;
         }
-        const auto reference_count = count_resource_references(
-            history.document, resource_id, resource->asset);
+        const auto found_count = reference_counts.find(resource_id.value);
+        const auto reference_count = found_count == reference_counts.end() ? 0 : found_count->second;
         if (reference_count != 0) {
             const auto subject = resources.size() == 1
                 ? std::string{"resource"} : "resource '" + resource->name + "'";

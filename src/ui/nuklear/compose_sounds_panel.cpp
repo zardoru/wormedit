@@ -141,6 +141,7 @@ auto bms_slot_label(std::uint16_t number) -> std::string {
 auto raise(const SoundsPanel& panel, WormUiComposeActionKind kind) -> bool {
     if (panel.action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
     panel.action->compose_action = kind;
+    panel.action->compose_input_project_id = panel.view->project_id;
     panel.action->compose_input_chart_id = panel.view->chart_id;
     panel.action->compose_input_document_revision = panel.view->document_revision;
     return true;
@@ -381,6 +382,9 @@ void sync_with_document(const SoundsPanel& panel) {
             state.keysound_all_ids.push_back(view.keysounds[index].resource_id);
     }
     worm_ui_keysound_prune(state.keysound_selection, state.keysound_all_ids);
+    if (state.armed_from_sounds_dock &&
+        std::ranges::find(state.keysound_all_ids, state.armed_resource_id) == state.keysound_all_ids.end())
+        worm_ui_nuklear_pick_draw_source(state, *panel.action, 0, 0);
 }
 
 void reset_sound_slots(worm_ui_nuklear_compose_state_t& state, std::uint64_t project,
@@ -459,7 +463,8 @@ void collect_shown_and_masks(const SoundsPanel& panel) {
         const std::string_view query{state.keysound_search.data()};
         for (std::size_t index = 0; index < view.keysound_count; ++index) {
             const auto& row = view.keysounds[index];
-            if (worm_ui_keysound_matches(row.slot, row.name, query)) {
+            if (worm_ui_keysound_matches(row.slot, row.name, query, row.source_path ? row.source_path : "") &&
+                worm_ui_resource_use_matches(row.use_count, row.missing, state.keysound_filters.use_filter)) {
                 state.keysound_shown.push_back(row.resource_id);
                 state.keysound_advance_rows.push_back({row.resource_id, row.missing});
             }
@@ -862,7 +867,7 @@ void render_sound_slot_row(const SoundsPanel& panel, std::size_t index) {
                  nk_rgba(0, 0, 0, 0), color(UiColor::text));
     if (slot.resource_id) {
         char uses[32];
-        std::snprintf(uses, sizeof(uses), "%u", slot.use_count);
+        std::snprintf(uses, sizeof(uses), "%llu", static_cast<unsigned long long>(slot.use_count));
         nk_draw_text(canvas, nk_rect(bounds.x + bounds.w - 34, bounds.y + 4, 30, bounds.h - 8),
                      uses, static_cast<int>(std::strlen(uses)), context->style.font,
                      nk_rgba(0, 0, 0, 0), color(UiColor::text_muted));
@@ -1117,11 +1122,12 @@ void clear_sound_filters(const SoundsPanel& panel) {
     nk_layout_row_dynamic(context, 23, 1);
     const auto clear_enabled = filters.group_filter_active ||
         filters.layer_filter_kind != WORM_UI_KEYSOUND_LAYER_FILTER_ANY ||
-        panel.state->keysound_search[0] != '\0';
+        panel.state->keysound_search[0] != '\0' || filters.use_filter != 0;
     if (!clear_enabled) nk_widget_disable_begin(context);
     if (nk_button_label(context, "Clear filters") && clear_enabled) {
         panel.state->keysound_search.fill(0);
         filters.search.fill(0);
+        filters.use_filter = 0;
         filters.group_filter_active = false;
         filters.group_ids.clear();
         filters.include_ungrouped = true;
@@ -1130,6 +1136,24 @@ void clear_sound_filters(const SoundsPanel& panel) {
         reset_automatic_window(panel);
     }
     if (!clear_enabled) nk_widget_disable_end(context);
+}
+
+void render_use_filter(const SoundsPanel& panel) {
+    auto* context = panel.context;
+    auto& state = *panel.state;
+    constexpr std::array labels{"All", "Used", "Unused", "Missing"};
+    const bool blocked = state.keysound_filter_popup_open || state.keysound_filter_release_pending ||
+        state.keysound_renumber_confirmation_open || state.keysound_renumber_release_pending ||
+        state.keysound_slot_confirmation_open || state.keysound_slot_release_pending || panel.view->input_occluded;
+    if (blocked) nk_widget_disable_begin(context);
+    nk_layout_row_dynamic(context, 24, 4);
+    for (std::size_t index = 0; index < labels.size(); ++index) {
+        if (!wormedit::ui::chrome::mode_button(context, labels[index], nullptr,
+                                               state.keysound_filters.use_filter == index)) continue;
+        state.keysound_filters.use_filter = static_cast<std::uint8_t>(index);
+        reset_automatic_window(panel);
+    }
+    if (blocked) nk_widget_disable_end(context);
 }
 
 void render_group_filter(const SoundsPanel& panel) {
@@ -1300,12 +1324,19 @@ void draw_row(const SoundsPanel& panel, struct nk_rect bounds, const WormUiCompo
                  slot_len, context->style.font, clear, color(UiColor::text_muted));
     const auto chips = static_cast<float>(
         std::min<int>(std::popcount(row.layer_mask), 3)) * (chip_size + 2.0f);
-    const auto name_width = bounds.w - slot_width - 12.0f - chips;
-    nk_draw_text(canvas, nk_rect(bounds.x + 6 + slot_width, bounds.y + 3, std::max(name_width, 8.0f),
+    const auto name_width = bounds.w - slot_width - 110.0f - chips;
+    nk_draw_text(canvas, nk_rect(bounds.x + 12 + slot_width, bounds.y + 3, std::max(name_width, 8.0f),
                                  bounds.h - 6),
                  row.name, static_cast<int>(std::strlen(row.name)), context->style.font, clear,
                  text_color);
-    float chip_x = bounds.x + bounds.w - chips - 2.0f;
+    char uses[24];
+    std::snprintf(uses, sizeof(uses), "%llu", static_cast<unsigned long long>(row.use_count));
+    nk_draw_text(canvas, nk_rect(bounds.x + bounds.w - 86, bounds.y + 3, 32, bounds.h - 6),
+                 uses, static_cast<int>(std::strlen(uses)), context->style.font, clear, text_color);
+    const auto* status = row.missing ? "missing" : row.use_count ? "ok" : "unused";
+    nk_draw_text(canvas, nk_rect(bounds.x + bounds.w - 48, bounds.y + 3, 48, bounds.h - 6),
+                 status, static_cast<int>(std::strlen(status)), context->style.font, clear, text_color);
+    float chip_x = bounds.x + bounds.w - 94.0f - chips;
     int drawn = 0;
     for (std::size_t bit = 0; bit < panel.view->keysound_layer_count && drawn < 3; ++bit) {
         if (((row.layer_mask >> bit) & 1U) == 0) continue;
@@ -1340,7 +1371,9 @@ auto fallback_text(const WormUiComposeView& view, const WormUiComposeKeysoundRow
 
 auto layer_tooltip(const SoundsPanel& panel, const WormUiComposeKeysoundRowView& row)
     -> std::string {
-    std::string text = row.missing ? "File missing. " : "";
+    std::string text = row.source_path ? row.source_path : "";
+    text += "\n" + std::to_string(row.use_count) + " stored references. ";
+    text += row.missing ? "File missing; cannot arm or audition. " : "Double-click to arm. ";
     text += fallback_text(*panel.view, row);
     std::string layers;
     for (std::size_t bit = 0; bit < panel.view->keysound_layer_count; ++bit) {
@@ -1360,14 +1393,16 @@ void click_row(const SoundsPanel& panel, std::size_t shown_index, std::uint64_t 
     worm_ui_keysound_click(state.keysound_selection, state.keysound_shown, shown_index, ctrl,
                            shift);
     const auto* primary = find_row(*panel.view, state.keysound_selection.primary);
-    state.armed_resource_id = primary && !primary->missing ? primary->resource_id : 0;
+    if (state.sounds_preview_on_click && !ctrl && !shift && primary && !primary->missing &&
+        raise(panel, WORM_UI_COMPOSE_ACTION_AUDITION_SOUND))
+        panel.action->compose_resource_id = id;
+    const bool double_click = nk_input_is_mouse_released(&panel.context->input, NK_BUTTON_DOUBLE);
+    if (!double_click || !primary || primary->missing) return;
+    state.armed_resource_id = primary->resource_id;
     state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
     state.armed_from_sounds_dock = true;
     state.armed_from_bga_dock = false;
     worm_ui_nuklear_pick_draw_source(state, *panel.action, 1, state.keysound_selection.primary);
-    if (state.sounds_preview_on_click && !ctrl && !shift && id == state.armed_resource_id &&
-        raise(panel, WORM_UI_COMPOSE_ACTION_AUDITION_SOUND))
-        panel.action->compose_resource_id = id;
 }
 
 bool keysound_row_input_available(const SoundsPanel& panel) {
@@ -1375,15 +1410,38 @@ bool keysound_row_input_available(const SoundsPanel& panel) {
         !wormedit::ui::chrome::context_menu_owns_input(panel.state->keysound_group_menu) &&
         !panel.state->keysound_filter_popup_open && !panel.state->keysound_filter_release_pending &&
         !panel.state->keysound_renumber_confirmation_open && !panel.state->keysound_renumber_release_pending &&
-        !panel.state->keysound_slot_confirmation_open && !panel.state->keysound_slot_release_pending;
+        !panel.state->keysound_slot_confirmation_open && !panel.state->keysound_slot_release_pending &&
+        !panel.state->keysound_group_review.open && !panel.state->sound_layer_confirmation_open;
+}
+
+void render_row_actions(const SoundsPanel& panel, const WormUiComposeKeysoundRowView& row) {
+    auto* context = panel.context;
+    const bool available = keysound_row_input_available(panel);
+    nk_layout_row_push(context, 22);
+    if (toolbar_button(context, available && !row.missing,
+            IconButton{Glyph::play, available ? "Audition this sound" : nullptr}) &&
+        raise(panel, WORM_UI_COMPOSE_ACTION_AUDITION_SOUND))
+        panel.action->compose_resource_id = row.resource_id;
+    nk_layout_row_push(context, 22);
+    const auto tip = row.use_count == 0 ? std::string{"Delete unused resource; keep its file"}
+        : "Cannot delete: " + std::to_string(row.use_count) + " stored references";
+    if (toolbar_button(context, available && row.use_count == 0,
+            DrawnIconButton{icons::trash, available ? tip.c_str() : nullptr}) &&
+        raise(panel, WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS)) {
+        panel.state->keysound_staged_ids = {row.resource_id};
+        panel.action->compose_sound_resource_ids = panel.state->keysound_staged_ids.data();
+        panel.action->compose_sound_resource_count = 1;
+    }
 }
 
 void render_row(const SoundsPanel& panel, std::size_t shown_index) {
     auto* context = panel.context;
     const auto id = panel.state->keysound_shown[shown_index];
     const auto* row = find_row(*panel.view, id);
-    nk_layout_row_dynamic(context, row_height, 1);
-    if (!row) return;
+    if (!row) { nk_layout_row_dynamic(context, row_height, 1); nk_spacing(context, 1); return; }
+    const auto width = nk_window_get_content_region(context).w;
+    nk_layout_row_begin(context, NK_STATIC, row_height, 3);
+    nk_layout_row_push(context, std::max(32.0f, width - 44.0f - 2 * context->style.window.spacing.x));
     const auto hovered = nk_widget_is_hovered(context);
     const auto clicked = nk_widget_is_mouse_clicked(context, NK_BUTTON_LEFT) &&
                          keysound_row_input_available(panel);
@@ -1391,7 +1449,7 @@ void render_row(const SoundsPanel& panel, std::size_t shown_index) {
     if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
     draw_row(panel, bounds, *row, worm_ui_keysound_is_selected(panel.state->keysound_selection, id),
              hovered);
-    if (hovered) {
+    if (hovered && keysound_row_input_available(panel)) {
         const auto tip = layer_tooltip(panel, *row);
         if (!tip.empty()) wormedit::ui::nuklear::tooltip::text(context, tip);
     }
@@ -1424,6 +1482,8 @@ void render_row(const SoundsPanel& panel, std::size_t shown_index) {
             {panel.view->project_id, panel.view->chart_id, panel.view->document_revision, id}, keyboard_open);
         wormedit::ui::chrome::popup_arm_release(state.keysound_group_menu.release_pending);
     }
+    render_row_actions(panel, *row);
+    nk_layout_row_end(context);
 }
 
 void render_list_hint(const SoundsPanel& panel) {
@@ -1590,8 +1650,26 @@ void reveal_sound_primary(const SoundsPanel& panel) {
     }
 }
 
+void render_resource_header(nk_context* context) {
+    nk_layout_row_dynamic(context, row_height, 1);
+    struct nk_rect bounds{};
+    if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
+    auto* canvas = nk_window_get_canvas(context);
+    nk_fill_rect(canvas, bounds, 0, color(UiColor::surface_hover));
+    constexpr std::array labels{"ID", "Name", "Uses", "State"};
+    const auto body_width = bounds.w - 44 - 2 * context->style.window.spacing.x;
+    const std::array offsets{6.0f, 42.0f, body_width - 86, body_width - 48};
+    const std::array widths{30.0f, std::max(24.0f, body_width - 134), 32.0f, 48.0f};
+    for (std::size_t index = 0; index < labels.size(); ++index)
+        nk_draw_text(canvas, nk_rect(bounds.x + offsets[index], bounds.y + 3, widths[index], bounds.h - 6),
+            labels[index], static_cast<int>(std::strlen(labels[index])), context->style.font,
+            nk_rgba(0, 0, 0, 0), color(UiColor::text_muted));
+}
+
 void render_list(const SoundsPanel& panel, float height) {
     auto* context = panel.context;
+    render_resource_header(context);
+    height = std::max(40.0f, height - row_height - context->style.window.spacing.y);
     // Before rows: they open the group menu, and the opening press must survive to its first begin.
     (void)wormedit::ui::chrome::context_menu_update(panel.state->keysound_group_menu, context);
     const auto automatic_sections = !panel.state->keysound_slots_mode &&
@@ -1666,6 +1744,7 @@ void render_sound_panel_controls(const SoundsPanel& panel) {
         render_sound_slot_search(panel);
     else {
         render_search(panel);
+        render_use_filter(panel);
         render_group_filter(panel);
     }
 }

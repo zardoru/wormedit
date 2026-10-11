@@ -3417,6 +3417,38 @@ void dispatch_audio_offset_lock_feedback(Context& context, const WormUiWorkspace
         wormedit::notification_source_t::edit, feedback);
 }
 
+auto dispatch_audio_sound_audition(const WormUiWorkspaceAction& action,
+    wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
+    wormedit::sys::application_command_state_t& application,
+    wormedit::notification_sink_t& notifications) -> bool {
+    if (workspace.active_tab != wormedit::workspace_tab_t::audio_slices ||
+        action.compose_action != WORM_UI_COMPOSE_ACTION_AUDITION_SOUND) return false;
+    if (!workspace.selected_chart || action.compose_input_project_id != history.document.id.value ||
+        action.compose_input_chart_id != workspace.selected_chart->value ||
+        action.compose_input_document_revision != history.document.revision) {
+        notifications.post(wormedit::notification_severity_t::warning,
+            wormedit::notification_source_t::input, "Sound audition ignored because its target changed.");
+        return true;
+    }
+    if (action.kind == WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET ||
+        action.kind == WORM_UI_WORKSPACE_ACTION_SELECT_SOUND_RESOURCE)
+        static_cast<void>(dispatch_workspace_selection_action(action, history, workspace, notifications));
+    static_cast<void>(wormedit::sys::dispatch_compose_sound_action(action, history, workspace,
+        *workspace.selected_chart, application, notifications));
+    return true;
+}
+
+auto dispatch_reviewed_sound_edit(const WormUiWorkspaceAction& action,
+    wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
+    wormedit::sys::application_command_state_t& application,
+    const std::optional<wormedit::editor_interaction_state_t>& interaction,
+    wormedit::notification_sink_t& notifications) -> bool {
+    return dispatch_audio_sound_audition(action, history, workspace, application, notifications) ||
+        wormedit::sys::dispatch_sound_properties_action(action, history, workspace, notifications) ||
+        dispatch_reviewed_sound_slot_batch(action, history, workspace, application, interaction, notifications) ||
+        dispatch_reviewed_sound_import(action, history, workspace, application, interaction, notifications);
+}
+
 template <typename Context>
 void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceAction& action,
                                      bool shortcut_handled,
@@ -3452,12 +3484,9 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
             // by the same input frame, preventing duplicate mutations.
         } else if (dispatch_clipboard_menu(context, action)) {
             // Clipboard menu actions use the same typed registry as shortcuts.
-        } else if (dispatch_reviewed_sound_slot_batch(action, history, workspace,
+        } else if (dispatch_reviewed_sound_edit(action, history, workspace,
                        application_command_state, compose_interaction_state, context.notification_sink_ref)) {
-            // Exact-slot review commits one complete batch.
-        } else if (dispatch_reviewed_sound_import(action, history, workspace,
-                       application_command_state, compose_interaction_state, context.notification_sink_ref)) {
-            // Import review is shared by Compose and the Sounds screen.
+            // Properties and reviewed imports share a revision-checked sound edit boundary.
         } else if (action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK) {
             dispatch_audio_offset_lock_feedback(context, action);
         } else if (action.audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) {

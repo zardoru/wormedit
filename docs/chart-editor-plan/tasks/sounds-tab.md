@@ -94,26 +94,23 @@ later covering more bmhelper functions.
 
 ## T-329 Redraw the Sounds tab: listbox, waveform column, properties column
 
-- **Status:** partial (the tab is still in a poor state, user assessment 2026-10-07; first slice landed 2026-10-03, never looked at in the real window)
+- **Status:** done
+- **Final verification:** normal/Release builds, 3,321/3,321 full CTest checks and 445 production event cases (6,173 assertions) pass; affected default clang-tidy, documentation and whitespace checks pass. Evidence: `/tmp/sounds-complete-{build,release,ctest,events}.log`.
+- **Completion (2026-10-11):** The live Audio/Slices workspace has adaptive three-column layout with side margins, a virtual searchable list, Up/Down selection and Space/double-click audition. The shared waveform viewport supports pointer-anchored wheel zoom, Fit/+/- and left-drag pan; Shift-drag retains offset editing. Name/kind changes are staged with Apply/Revert and one revision-checked Undo, preserving tags. The clipped content area reuses existing import review. Modal/input guards and resize/context cancellation prevent click-through and stale gestures. Native authenticated TCP Xvfb captures verify 1280/1600 layouts, audition, zoom, pan and saved rename; narrow 800 px production tests cover gesture hints.
 - **Done so far (2026-10-03):** `WormUiSoundRowView` rows in `frontend.h` (cap 512), filled from `project_sound_list` in `workspace_projection.cpp`, and a three-column layout (searchable list, waveform, read-only properties) with side margins in `audio_panel.cpp`. At the time it was compiled only as a syntax check against Nuklear master, plus the headless suite (1225/1225).
-- **Remaining:**
-  1. Take an isolated Xvfb capture of the current tab (`scripts/smoke-compose-virtual-x.sh /tmp/out.png audio`) and record on this card what is broken or ugly.
-  2. Listbox keyboard model: Up/Down selection, double click or Space audition.
-  3. Waveform wheel zoom about the pointer and drag pan, with the viewport projected from sys (T-327); keep the offset drag.
-  4. Editable property fields, and dropping files onto the tab to open the T-326 import dialog.
-  5. Lay the columns out with the T-436 tokens and components.
+- **Native audit (2026-10-11):** `/tmp/sounds-native-before.png` confirms the live three-column tab renders, but its fixed-height columns leave excess empty space, the waveform only adjusts offset, the list lacks keyboard audition and properties remain read-only. The old smoke script has no audio mode; isolated authenticated TCP Xvfb capture used instead. Coordinator supporting scope: `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/waveform_view_projection.cpp/.h`, `src/sys/application_frame_projection.cpp`, `src/sys/main.cpp`, `src/sys/compose_actions.cpp`, core resource sound-metadata name support and focused production event/sys tests. Existing import review/drop machinery is audited and reused; tags/slicer remain excluded.
 - **Outcome:** the tab shows a searchable listbox (click, Up/Down, double click or Space audition), a central zoomable waveform (wheel zoom about the pointer, drag pan, offset drag kept), and a right column with properties and side margins; dropping files opens the T-326 dialog.
 - **Read first:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/theme.cpp`, `src/ui/nuklear/metadata_panel.cpp` (margin pattern), `src/ui/nuklear/compose_resources.cpp`.
-- **Files owned:** `src/ui/nuklear/audio_panel.cpp/.h`, `src/ui/nuklear/audio_state.cpp/.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/audio_panel.cpp/.h`, `src/ui/nuklear/audio_state.cpp/.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`. Supporting ownership (2026-10-11): `src/ui/frontend.h`, `src/sys/waveform_view_projection.cpp/.h`, `src/sys/application_frame_projection.cpp`, `src/sys/compose_sound_actions.cpp/.h`, `src/sys/compose_actions.cpp`, `include/wormedit/core/resource_assignment.h`, `src/core/resource_assignment.cpp`, `tests/core/resource_assignment_tests.cpp`, `tests/sys/sound_properties_actions_tests.cpp`, `tests/sys/audio_waveform_projection_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/ui/audio_sounds_workflow_event_harness_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/CMakeLists.txt`, `scripts/smoke-compose-virtual-x.sh`.
 - **Steps:** 1. Three-column layout with theme tokens. 2. Listbox with keyboard model. 3. Waveform with the T-327 viewport. 4. Property fields and the import dialog. 5. Action wiring through the standard pattern.
-- **Invariants:** Nuklear code is not compiled in the cloud; state logic stays in the tested state files.
+- **Invariants:** The production Nuklear frontend is built and exercised by event tests; state logic remains separately tested.
 - **Reject/failure behavior:** a missing file shows a row marker, not an empty crash.
 - **Verify:** headless tests, then on the user's SDL3 build `scripts/smoke-compose-virtual-x.sh /tmp/out.png audio` and open the PNG.
 - **Out of scope:** slicer controls (T-332), tag editing (T-330).
 
 ## T-330 Edit and filter sound tags
 
-- **Status:** blocked-on T-329
+- **Status:** ready
 - **Outcome:** the properties column edits tags as chips plus a text field, and the list filters by tag.
 - **Read first:** `src/ui/nuklear/audio_panel.cpp`, `include/wormedit/core/resource_assignment.h`.
 - **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/sys/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`.
@@ -151,7 +148,7 @@ later covering more bmhelper functions.
 
 ## T-332 Add the slicer controls to the Sounds tab
 
-- **Status:** blocked-on T-329, T-334
+- **Status:** ready
 - **Outcome:** with a sound selected the user enters BPM, division and offset, sees the cut lines on the zoomable waveform, and "Slice" creates the resulting sounds in one bulk import (T-325) as keysounds.
 - **Read first:** `src/ui/nuklear/audio_panel.cpp`, `include/wormedit/core/audio_slicer.h`, `include/wormedit/core/sound_import.h`.
 - **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/sys/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`.

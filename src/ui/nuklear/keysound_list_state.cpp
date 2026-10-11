@@ -42,8 +42,18 @@ void select_span(worm_ui_keysound_selection_t& selection, std::span<const std::u
 } // namespace
 
 auto worm_ui_keysound_matches(std::string_view slot, std::string_view name,
-                              std::string_view query) -> bool {
-    return query.empty() || contains_folded(slot, query) || contains_folded(name, query);
+                              std::string_view query, std::string_view source_path) -> bool {
+    return query.empty() || contains_folded(slot, query) || contains_folded(name, query) ||
+           contains_folded(source_path, query);
+}
+
+auto worm_ui_resource_use_matches(std::uint64_t uses, bool missing, std::uint8_t filter) -> bool {
+    switch (filter) {
+    case 1: return uses != 0;
+    case 2: return uses == 0;
+    case 3: return missing;
+    default: return true;
+    }
 }
 
 auto worm_ui_keysound_is_selected(const worm_ui_keysound_selection_t& selection,

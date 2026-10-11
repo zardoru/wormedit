@@ -70,21 +70,21 @@ auto motion(float x, float y) -> SDL_Event {
     event.motion.y = y;
     return event;
 }
-auto button(bool down, float x, float y) -> SDL_Event {
+auto button(bool down, float x, float y, bool twice = false) -> SDL_Event {
     SDL_Event event{};
     event.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
     event.button.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
     event.button.button = SDL_BUTTON_LEFT;
     event.button.down = down;
-    event.button.clicks = 1;
+    event.button.clicks = twice ? 2 : 1;
     event.button.x = x;
     event.button.y = y;
     return event;
 }
-auto click(nuklear_event_harness_t& harness, float x, float y)
+auto click(nuklear_event_harness_t& harness, float x, float y, bool twice = false)
     -> std::vector<workspace_action_snapshot_t> {
-    const std::array down{motion(x, y), button(true, x, y)};
-    const std::array up{motion(x, y), button(false, x, y)};
+    const std::array down{motion(x, y), button(true, x, y, twice)};
+    const std::array up{motion(x, y), button(false, x, y, twice)};
     const auto pressed = harness.frame(down);
     const auto released = harness.frame(up);
     return {pressed, released};
@@ -176,10 +176,10 @@ TEST_CASE("BGA dock auto advance follows eligible filtered order after placement
     view.bga_advance_count = filtered_eligible.size();
     (void)harness.frame();
 
-    // Picking a row selects the Draw source; Draw stays an independent toolbar tool.
-    const auto row_center = harness.drawn_text_center("01  zeta.png  · 0");
+    // Double-clicking a row selects the Draw source; Draw stays an independent toolbar tool.
+    const auto row_center = harness.drawn_text_center("zeta.png");
     REQUIRE(row_center);
-    click(harness, row_center->first, row_center->second);
+    click(harness, row_center->first, row_center->second, true);
     require_bga_row_armed(state);
     require_bga_draw_source(state);
     view.note_paint_mode_active = true;

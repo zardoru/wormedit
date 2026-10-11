@@ -19,19 +19,35 @@ auto fold(std::string_view text) -> std::string {
     return result;
 }
 
-auto use_counts(const song_document_t& document) -> std::unordered_map<std::uint64_t, std::uint32_t> {
-    std::unordered_map<std::uint64_t, std::uint32_t> counts;
-    for (const auto& chart : document.charts) {
-        for (const auto& measure : chart.measures) {
-            for (const auto& note : measure.notes) {
-                if (note.sound) ++counts[note.sound->value];
-            }
-            for (const auto& event : measure.bgm_events) {
-                if (event.sound) ++counts[event.sound->value];
-            }
-        }
+struct sound_resource_metadata_t {
+    resource_reference_counts_t counts;
+    std::unordered_map<std::uint64_t, std::string> paths;
+    auto uses(resource_id_t id) const -> std::uint64_t {
+        const auto found = counts.find(id.value);
+        return found == counts.end() ? 0 : found->second;
     }
-    return counts;
+    auto path(asset_id_t id) const -> std::string_view {
+        const auto found = paths.find(id.value);
+        return found == paths.end() ? std::string_view{} : found->second;
+    }
+};
+auto sound_resource_metadata(const song_document_t& document) -> sound_resource_metadata_t {
+    sound_resource_metadata_t result{.counts = count_resource_references(document)};
+    for (const auto& asset : document.audio_assets)
+        result.paths.emplace(asset.id.value, asset.source_path.generic_string());
+    return result;
+}
+void append_keysound_metadata(keysound_list_t& list, const song_document_t& document,
+                               const sound_resource_metadata_t& metadata) {
+    std::unordered_map<std::uint64_t, asset_id_t> assets;
+    for (const auto& resource : document.resources) assets.emplace(resource.id.value, resource.asset);
+    const auto append = [&](keysound_row_t& row) {
+        row.use_count = metadata.uses(row.resource);
+        const auto asset = assets.find(row.resource.value);
+        if (asset != assets.end()) row.source_path = metadata.path(asset->second);
+    };
+    for (auto& row : list.rows) append(row);
+    for (auto& row : list.selected_rows) append(row);
 }
 
 auto find_audio_asset(const song_document_t& document, asset_id_t asset) -> const audio_asset_t* {
@@ -78,7 +94,7 @@ auto project_sound_list(const song_document_t& document, const sound_list_reques
     sound_list_t list;
     const auto search = fold(request.search);
     const auto tag = fold(request.tag);
-    const auto counts = use_counts(document);
+    const auto counts = count_resource_references(document);
     std::vector<const resource_entry_t*> matched;
     for (const auto& resource : document.resources) {
         const auto* asset = find_audio_asset(document, resource.asset);
@@ -120,7 +136,7 @@ auto project_sound_properties(const song_document_t& document, resource_id_t res
     if (!resource_id || resource == document.resources.end()) return {};
     const auto* asset = find_audio_asset(document, resource->asset);
     if (!asset) return {};
-    const auto counts = use_counts(document);
+    const auto counts = count_resource_references(document);
     const auto count = counts.find(resource->id.value);
     return {.valid = true,
             .resource = resource->id,
@@ -324,6 +340,7 @@ auto project_keysound_list_legacy_impl(const song_document_t& document,
              .sound_group_id = resource.sound_group ? resource.sound_group->value : 0});
     }
     if (chart) populate_note_conflicts(*chart, list);
+    append_keysound_metadata(list, document, sound_resource_metadata(document));
     return list;
 }
 } // namespace
@@ -401,14 +418,18 @@ auto collect_keysound_resources(const song_document_t& document,
                                 std::vector<keysound_section_projection_t>& sections,
                                 const std::unordered_map<std::uint64_t, std::size_t>& indices,
                                 std::size_t ungrouped_index,
-                                const std::unordered_set<std::uint64_t>* audio_asset_ids)
+                                const std::unordered_set<std::uint64_t>* audio_asset_ids,
+                                const sound_resource_metadata_t& metadata)
     -> std::unordered_map<std::uint64_t, const resource_entry_t*> {
     std::unordered_map<std::uint64_t, const resource_entry_t*> resources;
     for (const auto& resource : document.resources) {
         if (!is_listed_sound(document, chart, resource, audio_asset_ids)) continue;
         list.all_resources.push_back(resource.id);
         resources.emplace(resource.id.value, &resource);
-        if (!keysound_matches_request(resource, chart, request, search)) continue;
+        if (!matches_resource_use(request.use_filter, metadata.uses(resource.id), resource.missing)) continue;
+        const auto row_search = fold(std::string{metadata.path(resource.asset)}).find(search) !=
+            std::string::npos ? std::string_view{} : search;
+        if (!keysound_matches_request(resource, chart, request, row_search)) continue;
         const auto group_id = resource.sound_group ? resource.sound_group->value : 0;
         const auto found = indices.find(group_id);
         if (group_id == 0) {
@@ -487,8 +508,9 @@ auto project_keysound_list_request_impl(const song_document_t& document,
     std::unordered_map<std::uint64_t, std::size_t> section_indices;
     std::size_t ungrouped_index{};
     auto sections = make_keysound_sections(document, request, section_indices, ungrouped_index);
+    const auto metadata = sound_resource_metadata(document);
     const auto resources_by_id = collect_keysound_resources(document, chart, request,
-        fold(request.search), list, sections, section_indices, ungrouped_index, audio_asset_ids);
+        fold(request.search), list, sections, section_indices, ungrouped_index, audio_asset_ids, metadata);
     list.total = list.all_resources.size();
     sort_keysound_sections(sections, request.ids_available ? request.sort
                                                           : dock_sort_t::natural_name);
@@ -499,6 +521,7 @@ auto project_keysound_list_request_impl(const song_document_t& document,
         append_section_projection(list, section, first, last,
                                   request.primary_resource_id, chart);
     append_selected_keysounds(list, chart, request, resources_by_id);
+    append_keysound_metadata(list, document, metadata);
     list.display_first_row = std::min(first, list.display_total);
     list.display_truncated = list.display_first_row != 0 ||
                              list.display_rows.size() < list.display_total;
@@ -525,7 +548,7 @@ auto projection_identity(const song_document_t& document, const chart_document_t
 
 auto same_request(const keysound_list_cache_t::request_key_t& key,
                   const keysound_list_request_t& request) -> bool {
-    return key.search == request.search &&
+    return key.search == request.search && key.use_filter == request.use_filter &&
         std::ranges::equal(key.selected_resource_ids, request.selected_resource_ids) &&
         key.include_selected_metadata == request.include_selected_metadata &&
         std::ranges::equal(key.group_ids, request.group_ids) &&
@@ -545,6 +568,7 @@ auto copy_request_key(const keysound_list_cache_t::identity_t& identity,
                       const keysound_list_request_t& request)
     -> keysound_list_cache_t::request_key_t {
     return {.identity = identity, .search = std::string{request.search},
+        .use_filter = request.use_filter,
         .selected_resource_ids = std::vector<std::uint64_t>(request.selected_resource_ids.begin(),
                                                             request.selected_resource_ids.end()),
         .include_selected_metadata = request.include_selected_metadata,
@@ -623,6 +647,17 @@ auto slot_number(const target_resource_identity_t& id) -> std::size_t {
 auto slot_identifier(std::size_t number) -> std::string {
     return {slot_digits[number / 36], slot_digits[number % 36]};
 }
+auto sound_slot_matches(const resource_entry_t* resource, std::size_t number,
+                        const sound_resource_metadata_t& metadata,
+                        resource_use_filter_t filter, std::string_view query) -> bool {
+    const auto uses = resource ? metadata.uses(resource->id) : 0;
+    if (!matches_resource_use(filter, uses, resource && resource->missing)) return false;
+    const auto path = resource ? metadata.path(resource->asset) : std::string_view{};
+    const auto name = resource ? resource->name : "(empty)";
+    return fold(slot_identifier(number)).find(query) != std::string::npos ||
+        fold(name).find(query) != std::string::npos ||
+        fold(path).find(query) != std::string::npos;
+}
 } // namespace
 
 auto project_sound_slots(const song_document_t& document, const sound_slot_request_t& request)
@@ -631,14 +666,13 @@ auto project_sound_slots(const song_document_t& document, const sound_slot_reque
     for (const auto& resource : document.resources)
         for (const auto& identity : resource.target_identities)
             if (const auto number = slot_number(identity); number != 0) owners[number] = &resource;
-    const auto counts = use_counts(document);
+    const auto metadata = sound_resource_metadata(document);
     const auto query = fold(request.search);
     std::vector<std::size_t> matching;
     for (std::size_t number = 1; number < owners.size(); ++number) {
         const auto* resource = owners[number];
-        const auto name = resource ? resource->name : "(empty)";
-        if (query.empty() || fold(slot_identifier(number)).find(query) != std::string::npos ||
-            fold(name).find(query) != std::string::npos) matching.push_back(number);
+        if (sound_slot_matches(resource, number, metadata, request.use_filter, query))
+            matching.push_back(number);
     }
     sound_slot_list_t list;
     list.total_matching = matching.size();
@@ -651,13 +685,14 @@ auto project_sound_slots(const song_document_t& document, const sound_slot_reque
     for (std::size_t index = 0; index < count; ++index) {
         const auto number = matching[list.first_row + index];
         const auto* resource = owners[number];
-        const auto uses = resource ? counts.find(resource->id.value) : counts.end();
+        const auto uses = resource ? metadata.uses(resource->id) : 0;
         list.rows.push_back({.number = static_cast<std::uint16_t>(number),
             .identifier = slot_identifier(number), .resource = resource ? resource->id : resource_id_t{},
             .name = resource ? resource->name : "(empty)",
-            .use_count = uses == counts.end() ? 0U : uses->second,
+            .use_count = uses,
             .missing = resource && resource->missing,
-            .placeable = resource && is_placeable_keysound(document, *resource)});
+            .placeable = resource && is_placeable_keysound(document, *resource),
+            .source_path = resource ? std::string{metadata.path(resource->asset)} : std::string{}});
     }
     return list;
 }

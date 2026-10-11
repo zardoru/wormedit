@@ -656,7 +656,8 @@ auto append_compose_resource(flattened_workspace_t& result, frame_arena_t& arena
     const auto* target = arena_string(arena, resource.target_index);
     const auto* name = arena_string(arena, resource.name);
     const auto* source = arena_string(arena, resource.source_name);
-    if (!target || !name || !source) return false;
+    const auto* path = arena_string(arena, resource.source_path);
+    if (!target || !name || !source || !path) return false;
     std::uint8_t roles{};
     roles |= resource.sample ? WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE : 0;
     roles |= resource.bgm ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGM : 0;
@@ -666,7 +667,8 @@ auto append_compose_resource(flattened_workspace_t& result, frame_arena_t& arena
         .roles = roles, .audio_asset = resource.audio_asset,
         .selected_audio_asset = resource.selected_audio_asset,
         .image_asset = resource.image_asset, .selected_visual_asset = resource.selected_visual_asset,
-        .missing = resource.missing, .target_index = target, .name = name, .source_name = source});
+        .missing = resource.missing, .target_index = target, .name = name, .source_name = source,
+        .source_path = path, .use_count = resource.use_count});
 }
 void populate_compose_resources(const workspace_projection_context_t& projection) {
     auto& result = projection.result;
@@ -699,7 +701,8 @@ auto append_keysound_row(flattened_workspace_t& result, frame_arena_t& arena,
                          const wormedit::sys::keysound_row_t& row) -> bool {
     const auto* slot = arena_string(arena, row.slot);
     const auto* name = arena_string(arena, row.name);
-    if (!slot || !name)
+    const auto* path = arena_string(arena, row.source_path);
+    if (!slot || !name || !path)
         return false;
     return result.compose.keysound.row.push_back(
         {.resource_id = row.resource.value,
@@ -708,18 +711,21 @@ auto append_keysound_row(flattened_workspace_t& result, frame_arena_t& arena,
          .missing = row.missing,
          .layer_mask = row.layer_mask,
          .note_layer_conflict_mask = row.note_layer_conflict_mask,
-         .sound_group_id = row.sound_group_id});
+         .sound_group_id = row.sound_group_id,
+         .use_count = row.use_count, .source_path = path});
 }
 
 auto append_keysound_selected_row(flattened_workspace_t& result, frame_arena_t& arena,
                                   const wormedit::sys::keysound_row_t& row) -> bool {
     const auto* slot = arena_string(arena, row.slot);
     const auto* name = arena_string(arena, row.name);
-    if (!slot || !name) return false;
+    const auto* path = arena_string(arena, row.source_path);
+    if (!slot || !name || !path) return false;
     return result.compose.keysound.selected_row.push_back({.resource_id = row.resource.value,
         .slot = slot, .name = name, .missing = row.missing, .layer_mask = row.layer_mask,
         .note_layer_conflict_mask = row.note_layer_conflict_mask,
-        .sound_group_id = row.sound_group_id});
+        .sound_group_id = row.sound_group_id,
+         .use_count = row.use_count, .source_path = path});
 }
 
 auto append_keysound_selection_row(flattened_workspace_t& result, frame_arena_t& arena,
@@ -781,6 +787,7 @@ auto project_compose_keysounds(const workspace_projection_context_t& projection,
         layer_filter = wormedit::sys::keysound_layer_filter_kind_t::specific;
     const keysound_list_request_t projected_request{
             .search = bounded_text(request.automatic_search, sizeof(request.automatic_search)),
+            .use_filter = static_cast<resource_use_filter_t>(request.use_filter),
             .selected_resource_ids = request_span(request.selected_resource_ids,
                                                    request.selected_resource_count),
             .include_selected_metadata = request.include_selected_metadata,
@@ -860,7 +867,8 @@ void populate_compose_sound_slots(const workspace_projection_context_t& projecti
         {.search = std::string{std::begin(request.search),
              std::find(std::begin(request.search), std::end(request.search), '\0')},
          .selected_slot = request.selected_slot,
-         .first_row = request.first_row, .row_limit = request.row_limit});
+         .first_row = request.first_row, .row_limit = request.row_limit,
+         .use_filter = static_cast<resource_use_filter_t>(request.use_filter)});
     view.sound_slot_selected_number = request.selected_slot;
     view.sound_slot_selected_row = list.selected_row;
     view.sound_slot_first_row = list.first_row;
@@ -871,9 +879,10 @@ void populate_compose_sound_slots(const workspace_projection_context_t& projecti
     for (const auto& row : list.rows) {
         const auto* slot = arena_string(arena, row.identifier);
         const auto* name = arena_string(arena, row.name);
-        if (!slot || !name || !rows.push_back({.number = row.number, .slot = slot,
+        const auto* path = arena_string(arena, row.source_path);
+        if (!slot || !name || !path || !rows.push_back({.number = row.number, .slot = slot,
             .resource_id = row.resource.value, .name = name, .use_count = row.use_count,
-            .missing = row.missing, .placeable = row.placeable})) break;
+            .missing = row.missing, .placeable = row.placeable, .source_path = path})) break;
     }
     view.sound_slots = rows.data();
     view.sound_slot_count = rows.size();

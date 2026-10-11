@@ -1,4 +1,5 @@
 #include "sys/waveform_view_projection.h"
+#include <wormedit/audio/waveform_viewport.h>
 #include "sys/bmson_waveform_projection.h"
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -401,7 +402,7 @@ void populate_bgm_bar(flattened_workspace_t& flattened, compose_scene_cache_t& c
 void populate_audio_waveform_views(
     flattened_workspace_t& flattened,
     const wormedit::audio::waveform_analysis_result_t* analysis, bool analysis_pending,
-    int window_width) {
+    int window_width, const WormUiAudioWaveformViewportRequest* viewport_request) {
     if (!flattened.view.audio_slices.visible && !flattened.view.metadata.visible)
         return;
 
@@ -416,11 +417,22 @@ void populate_audio_waveform_views(
     const auto pixel_width =
         std::min(static_cast<std::size_t>(available_width),
                  static_cast<std::size_t>(WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY));
-    const auto projection = wormedit::audio::project_waveform(
-        waveform, {.begin_frame = 0,
-                   .end_frame = waveform.total_frames,
-                   .pixel_width = pixel_width,
-                   .maximum_columns = WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY});
+    auto viewport = wormedit::audio::fit_waveform_viewport(
+        waveform.total_frames, static_cast<std::uint32_t>(pixel_width));
+    if (audio.visible && viewport_request && viewport_request->valid &&
+        viewport_request->asset_id == audio.selected_asset_id &&
+        viewport_request->total_frames == waveform.total_frames &&
+        viewport_request->pixel_width > 0 &&
+        viewport_request->pixel_width <= WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY &&
+        std::isfinite(viewport_request->frames_per_pixel) &&
+        viewport_request->frames_per_pixel > 0) {
+        viewport = wormedit::audio::clamp_waveform_viewport({
+            .total_frames = waveform.total_frames,
+            .begin_frame = viewport_request->begin_frame,
+            .frames_per_pixel = viewport_request->frames_per_pixel,
+            .pixel_width = viewport_request->pixel_width});
+    }
+    const auto projection = wormedit::audio::project_waveform_viewport(waveform, viewport);
     if (!projection)
         return;
 
@@ -435,6 +447,8 @@ void populate_audio_waveform_views(
     }
     audio.waveform_available = true;
     audio.total_frames = waveform.total_frames;
+    audio.waveform_begin_frame = viewport.begin_frame;
+    audio.waveform_end_frame = wormedit::audio::waveform_viewport_end_frame(viewport);
     audio.sample_rate = waveform.sample_rate;
     audio.waveform_columns = flattened.audio.waveform.data();
     audio.waveform_column_count = flattened.audio.waveform.size();

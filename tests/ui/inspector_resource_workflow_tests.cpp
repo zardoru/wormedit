@@ -46,11 +46,13 @@ auto mouse_wheel(float x, float y, float delta) -> SDL_Event {
     return event;
 }
 
-auto click_at(nuklear_event_harness_t& harness, float x, float y)
+auto click_at(nuklear_event_harness_t& harness, float x, float y, bool twice = false)
     -> std::vector<workspace_action_snapshot_t> {
-    const std::array<event_step_t, 2> script{{
+    std::array<event_step_t, 2> script{{
         {{mouse_motion(x, y), mouse_button(true, x, y)}, SDL_KMOD_NONE},
         {{mouse_motion(x, y), mouse_button(false, x, y)}, SDL_KMOD_NONE}}};
+    script[0].events[1].button.clicks = twice ? 2 : 1;
+    script[1].events[1].button.clicks = twice ? 2 : 1;
     return harness.run_script(script);
 }
 
@@ -103,7 +105,7 @@ auto sample_workflow_uses_sounds(nuklear_event_harness_t& harness) -> bool {
     if (!state.sound_list_valid) return false;
     const auto sound_row = harness.drawn_text_center("kick.wav");
     if (!sound_row) return false;
-    (void)click_at(harness, sound_row->first, sound_row->second);
+    (void)click_at(harness, sound_row->first, sound_row->second, true);
     if (state.keysound_selection.primary != 40 || state.armed_resource_id != 40 ||
         !state.armed_from_sounds_dock ||
         // The inspector's resource list is retired, so its Disarm is gone. ("Assign selected" is

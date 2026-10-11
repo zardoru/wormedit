@@ -21,6 +21,15 @@
 namespace wormedit::sys {
 
 enum class dock_sort_t : std::uint8_t { natural_name, bms_id };
+enum class resource_use_filter_t : std::uint8_t { all, used, unused, missing };
+[[nodiscard]] inline auto matches_resource_use(resource_use_filter_t filter, std::uint64_t uses, bool missing) -> bool {
+    switch (filter) {
+    case resource_use_filter_t::used: return uses != 0;
+    case resource_use_filter_t::unused: return uses == 0;
+    case resource_use_filter_t::missing: return missing;
+    default: return true;
+    }
+}
 
 // Sounds tab data: the audio catalog as a searchable, windowed list plus the
 // properties of one selected sound. Pure projection of the document.
@@ -34,7 +43,7 @@ struct sound_list_row_t {
     std::string tags_text;
     std::uint64_t duration_frames{};
     std::uint32_t sample_rate{};
-    std::uint32_t use_count{};
+    std::uint64_t use_count{};
     bool missing{};
 };
 
@@ -75,7 +84,7 @@ struct sound_properties_t {
     std::uint64_t duration_frames{};
     std::uint32_t sample_rate{};
     std::uint32_t channels{};
-    std::uint32_t use_count{};
+    std::uint64_t use_count{};
     bool missing{};
 };
 
@@ -113,6 +122,8 @@ struct keysound_row_t {
     std::string slot;
     std::string name;
     bool missing{};
+    std::uint64_t use_count{};
+    std::string source_path;
     // Bit i is set when the sound's default layers include keysound_list_t::layers[i].
     std::uint64_t layer_mask{};
     std::uint64_t note_layer_conflict_mask{};
@@ -191,6 +202,7 @@ enum class keysound_layer_filter_kind_t : std::uint8_t { any, no_layer, specific
 
 struct keysound_list_request_t {
     std::string_view search;
+    resource_use_filter_t use_filter{resource_use_filter_t::all};
     std::span<const std::uint64_t> selected_resource_ids;
     bool include_selected_metadata{};
     std::span<const std::uint64_t> group_ids;
@@ -243,6 +255,7 @@ public:
     struct request_key_t {
         identity_t identity;
         std::string search;
+        resource_use_filter_t use_filter{resource_use_filter_t::all};
         std::vector<std::uint64_t> selected_resource_ids;
         bool include_selected_metadata{};
         std::vector<std::uint64_t> group_ids;
@@ -300,15 +313,17 @@ struct sound_slot_request_t {
     std::uint16_t selected_slot{};
     std::size_t first_row{};
     std::size_t row_limit{64};
+    resource_use_filter_t use_filter{resource_use_filter_t::all};
 };
 struct sound_slot_row_t {
     std::uint16_t number{};
     std::string identifier;
     resource_id_t resource;
     std::string name;
-    std::uint32_t use_count{};
+    std::uint64_t use_count{};
     bool missing{};
     bool placeable{};
+    std::string source_path;
 };
 struct sound_slot_list_t {
     std::vector<sound_slot_row_t> rows;

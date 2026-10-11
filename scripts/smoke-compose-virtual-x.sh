@@ -8,8 +8,9 @@ root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 app="$root_dir/build/wormedit"
 output=${1:-/tmp/wormedit-compose-smoke.png}
 mode=${2:-compose}
-if [[ $mode != landing && $mode != wizard && $mode != compose && $mode != timing && $mode != gallery ]]; then
-    echo "Usage: $0 [capture.png] [landing|wizard|compose|timing|gallery]" >&2
+project=${3:-}
+if [[ $mode != landing && $mode != wizard && $mode != compose && $mode != timing && $mode != audio && $mode != gallery ]]; then
+    echo "Usage: $0 [capture.png] [landing|wizard|compose|timing|audio|gallery] [project.wormedit]" >&2
     exit 1
 fi
 temp_dir=$(mktemp -d /tmp/wormedit-compose-smoke.XXXXXX)
@@ -78,7 +79,9 @@ export SDL_AUDIODRIVER=dummy
 export XDG_CONFIG_HOME="$temp_dir/config"
 export XDG_DATA_HOME="$temp_dir/data"
 if [[ $mode == gallery ]]; then export WORMEDIT_UI_GALLERY=1; fi
-"$app" >"$temp_dir/wormedit.log" 2>&1 &
+app_args=()
+if [[ -n $project ]]; then app_args+=("$project"); fi
+"$app" "${app_args[@]}" >"$temp_dir/wormedit.log" 2>&1 &
 app_pid=$!
 window_id=
 for attempt in {1..50}; do
@@ -99,6 +102,8 @@ if [[ -z $window_id ]]; then
     exit 1
 fi
 xdotool windowfocus --sync "$window_id"
+# SDL creates the window before fonts and the initial project finish loading.
+sleep 4
 
 geometry=$(xdotool getwindowgeometry --shell "$window_id")
 if [[ ! $geometry =~ WIDTH=([0-9]+) ]]; then
@@ -112,20 +117,28 @@ if [[ ! $geometry =~ HEIGHT=([0-9]+) ]]; then
 fi
 window_height=${BASH_REMATCH[1]}
 click_at() {
-    xdotool mousemove --window "$window_id" "$1" "$2" mousedown 1
-    sleep 0.12
+    xdotool mousemove --window "$window_id" "$1" "$2"
+    sleep 0.25
+    xdotool mousedown 1
+    sleep 0.6
     xdotool mouseup 1
-    sleep 0.2
+    sleep 0.8
 }
-if [[ $mode != landing && $mode != gallery ]]; then
+if [[ -z $project && $mode != landing && $mode != gallery ]]; then
     # The initial window has no chart. Create the standard template first.
     click_at "$((window_width / 2))" 150
 fi
-if [[ $mode != landing && $mode != wizard && $mode != gallery ]]; then
+if [[ -z $project && $mode != landing && $mode != wizard && $mode != gallery ]]; then
     # The centered, 204-pixel wizard puts Create 46 pixels below the window midpoint.
     click_at "$((window_width / 2 + 160))" "$((window_height / 2 + 46))"
     # Compose is the third of six equal-width tabs (the Timing screen is retired).
     click_at "$((window_width * 5 / 12))" 55
+fi
+if [[ -n $project ]]; then
+    sleep 1
+fi
+if [[ $mode == audio ]]; then
+    click_at "$((window_width * 9 / 12))" 55
 fi
 if [[ $mode == timing ]]; then
     # Timing focus is a Compose mode, reached through the workspace.open_timing shortcut.

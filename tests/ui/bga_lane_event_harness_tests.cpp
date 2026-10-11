@@ -1195,7 +1195,7 @@ struct dock_stem_fixture_t {
         return canvas_point(harness, x[lane_index], 300.0);
     }
 
-    auto source_point() const { return harness.drawn_text_center("Dock stem sample"); }
+    auto source_point() const { return drawn_text_center_with_prefix(harness, "Dock stem"); }
 };
 
 auto stem_input(const workspace_action_snapshot_t& action) -> const WormUiComposeInputAction* {

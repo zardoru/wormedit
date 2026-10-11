@@ -110,3 +110,28 @@ TEST_CASE("BGA search matches names and BMP IDs and clamps its window", "[sys][b
     check_bga(outside.first_row == 1200);
     check_bga(outside.rows.empty());
 }
+
+TEST_CASE("Images use and full-path filters precede windows while membership remains complete",
+          "[sys][bga][sound-workflow]") {
+    auto document = images();
+    document.visual_assets[101].source_path = "nested/Visual/scene.png";
+    document.charts.push_back({.bga_events = {{.resource = resource_id_t{102}}}});
+    const auto used = project_bga_list(document, {.search = "NESTED/VISUAL", .row_limit = 1,
+        .use_filter = resource_use_filter_t::used});
+    require_bga(used.rows.size() == 1);
+    check_bga(used.rows[0].resource == resource_id_t{102});
+    check_bga(used.rows[0].use_count == 3);
+    check_bga(used.rows[0].source_path == "nested/Visual/scene.png");
+    check_bga(used.all_resource_ids.size() == document.resources.size());
+    check_bga(used.matching_ids.size() == 1);
+    const auto missing = project_bga_list(document, {.row_limit = 1,
+        .use_filter = resource_use_filter_t::missing});
+    require_bga(missing.rows.size() == 1);
+    check_bga(missing.rows[0].resource == resource_id_t{101});
+    check_bga(missing.all_resource_ids.size() == document.resources.size());
+    const auto unused = project_bga_list(document, {.first_row = 100, .row_limit = 2,
+        .use_filter = resource_use_filter_t::unused});
+    check_bga(unused.total_matching == document.resources.size() - 1);
+    check_bga(unused.rows.size() == 2);
+    check_bga(unused.bms_capacity.used == bms_identifier_capacity(document, "BMP").used);
+}

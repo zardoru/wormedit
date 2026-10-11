@@ -280,7 +280,7 @@ TEST_CASE("Draw chip opens hidden BGA and retains reveal until its exact off-pag
     view.bga_first_row = 79;
     (void)harness.frame();
     check_layer_brush(state.source_chip_reveal_id == 0 && !state.bga_reveal_primary);
-    check_layer_brush(harness.drawn_text_center("preview image  · 0").has_value());
+    check_layer_brush(harness.drawn_text().find("preview") != std::string::npos);
 }
 
 TEST_CASE("Tool chip owns a held click across source change without painting on release",

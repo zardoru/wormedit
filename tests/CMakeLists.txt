@@ -585,6 +585,8 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/bga_advance_workflow_tests.cpp
         ui/bga_lane_event_harness_tests.cpp
         ui/playback_status_event_harness_tests.cpp
+        ui/live_resource_table_event_harness_tests.cpp
+        ui/audio_sounds_workflow_event_harness_tests.cpp
         ui/inspector_resource_workflow_tests.cpp
         ../src/sys/bookmark_chooser_projection.cpp
         ../src/sys/compose_area_actions.cpp
@@ -718,6 +720,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/preferences_runtime.cpp
             ../src/sys/platform_shortcut_profile.cpp
             sys/manual_sound_group_command_tests.cpp
+            sys/sound_properties_actions_tests.cpp
+            sys/audio_waveform_projection_tests.cpp
             ../src/sys/compose_sound_actions.cpp
             ../src/sys/application_command_dispatch.cpp
             ../src/sys/transport_player_actions.cpp

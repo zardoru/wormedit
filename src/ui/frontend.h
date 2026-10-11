@@ -456,7 +456,7 @@ typedef struct WormUiSoundRowView {
     const char* source_path;
     // 0 unspecified, 1 stem, 2 keysound, 3 sample (sound_kind_t, effective kind).
     int kind;
-    uint32_t use_count;
+    uint64_t use_count;
     uint64_t duration_frames;
     uint32_t sample_rate;
     bool missing;
@@ -479,6 +479,15 @@ typedef struct WormUiSoundUsageRowView {
     const char* chart_label;
     const char* position_label;
 } WormUiSoundUsageRowView;
+
+typedef struct WormUiAudioWaveformViewportRequest {
+    uint64_t asset_id;
+    uint64_t total_frames;
+    uint64_t begin_frame;
+    double frames_per_pixel;
+    uint32_t pixel_width;
+    bool valid;
+} WormUiAudioWaveformViewportRequest;
 
 typedef struct WormUiAudioSlicesView {
     const WormUiSoundRowView* sound_rows;
@@ -505,6 +514,8 @@ typedef struct WormUiAudioSlicesView {
     bool analysis_pending;
     bool waveform_available;
     uint64_t total_frames;
+    uint64_t waveform_begin_frame;
+    uint64_t waveform_end_frame;
     uint32_t sample_rate;
     const WormUiAudioWaveformColumnView* waveform_columns;
     size_t waveform_column_count;
@@ -1059,6 +1070,8 @@ typedef struct WormUiComposeResourceView {
     const char* target_index;
     const char* name;
     const char* source_name;
+    const char* source_path;
+    uint64_t use_count;
 } WormUiComposeResourceView;
 
 /* One row of the Compose keysound listbox: a placeable sample of the catalog. */
@@ -1066,9 +1079,10 @@ typedef struct WormUiComposeBgaRowView {
     uint64_t resource_id;
     const char* slot;
     const char* name;
-    uint32_t use_count;
+    uint64_t use_count;
     bool missing;
     bool video;
+    const char* source_path;
     uint64_t image_content_id;
     uint32_t image_width, image_height;
     const uint8_t* rgba_pixels;
@@ -1081,6 +1095,7 @@ typedef struct WormUiBgaDockRequest {
     char search[64];
     size_t first_row, row_limit;
     bool sort_by_id;
+    uint8_t use_filter; /* 0 all, 1 used, 2 unused, 3 missing */
 } WormUiBgaDockRequest;
 
 typedef struct WormUiSoundPickerRowView {
@@ -1119,6 +1134,7 @@ typedef struct WormUiKeysoundDockRequest {
     size_t automatic_first_row, automatic_row_limit;
     uint64_t primary_resource_id;
     size_t filter_layer_first_row, filter_layer_row_limit;
+    uint8_t use_filter; /* 0 all, 1 used, 2 unused, 3 missing */
 } WormUiKeysoundDockRequest;
 
 typedef struct WormUiBookmarkChooserRequest {
@@ -1179,6 +1195,8 @@ typedef struct WormUiComposeKeysoundRowView {
     uint64_t sound_group_id;
     uint64_t stem_source_lane_id;
     const char* stem_lane_name;
+    uint64_t use_count;
+    const char* source_path;
 } WormUiComposeKeysoundRowView;
 
 typedef enum WormUiComposeKeysoundDisplayRowKind {
@@ -1227,8 +1245,9 @@ typedef struct WormUiComposeSoundSlotRowView {
     const char* slot;
     uint64_t resource_id;
     const char* name;
-    uint32_t use_count;
+    uint64_t use_count;
     bool missing, placeable;
+    const char* source_path;
 } WormUiComposeSoundSlotRowView;
 
 typedef struct WormUiComposeKeysoundLayerView {
@@ -1535,6 +1554,8 @@ typedef struct WormUiComposeView {
     size_t bga_ids_used, bga_ids_total, bga_largest_free_run;
     bool bga_ids_available;
     const uint64_t* bga_matching_ids;
+    const uint64_t* bga_all_resource_ids;
+    size_t bga_all_resource_count;
     const uint64_t* bga_advance_ids;
     size_t bga_advance_count;
     const char* bga_search;
@@ -3000,6 +3021,13 @@ typedef struct WormUiWorkspaceAction {
     const uint64_t* compose_measure_ids;
     size_t compose_measure_id_count;
     uint32_t compose_second_meter_numerator, compose_second_meter_denominator;
+    bool sound_properties_apply;
+    uint64_t sound_properties_project_id;
+    uint64_t sound_properties_chart_id;
+    uint64_t sound_properties_resource_id;
+    uint64_t sound_properties_document_revision;
+    char sound_properties_name[257];
+    uint8_t sound_properties_kind;
     bool sound_import_pick_requested;
     /* 0 generic import, 1 Stems section, 2 Keysounds section. */
     uint8_t sound_import_kind;
@@ -3195,6 +3223,7 @@ void worm_ui_frame_render_phase_end(uint32_t previous);
 
 void worm_ui_frontend_bga_dock_request(WormUiBgaDockRequest* request);
 void worm_ui_frontend_sound_usage_request(WormUiSoundUsageRequest* request);
+void worm_ui_frontend_audio_waveform_viewport_request(WormUiAudioWaveformViewportRequest* request);
 void worm_ui_frontend_select_sound_usage_source(uint64_t project_id, uint64_t resource_id,
                                               uint64_t channel_id, uint64_t clip_id);
 void worm_ui_frontend_bga_move_preview(uint64_t* chart_id, uint64_t* document_revision,

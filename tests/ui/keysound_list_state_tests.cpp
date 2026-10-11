@@ -4,8 +4,14 @@
 
 #include <array>
 #include <vector>
+#include <source_location>
 
 namespace {
+void check_resource_filter(bool value,
+    std::source_location where = std::source_location::current()) {
+    INFO("resource filter assertion at " << where.line());
+    CHECK(value);
+}
 
 const std::array<std::uint64_t, 6> shown{10, 20, 30, 40, 50, 60};
 
@@ -112,4 +118,19 @@ TEST_CASE("Keysound advance follows filtered order skips missing rows and stops"
     CHECK(next_visible_keysound(rows, 20) == 0);
     CHECK(next_visible_keysound(rows, 99) == 0);
     CHECK(next_visible_keysound({}, 40) == 0);
+}
+
+TEST_CASE("resource use filters distinguish missing from unused", "[unit][frontend][keysounds][resource-table]") {
+    check_resource_filter(worm_ui_resource_use_matches(0, false, 0));
+    check_resource_filter(worm_ui_resource_use_matches(7, true, 0));
+    check_resource_filter(worm_ui_resource_use_matches(7, false, 1));
+    check_resource_filter(worm_ui_resource_use_matches(7, true, 1));
+    check_resource_filter(!worm_ui_resource_use_matches(0, true, 1));
+    check_resource_filter(worm_ui_resource_use_matches(0, false, 2));
+    check_resource_filter(worm_ui_resource_use_matches(0, true, 2));
+    check_resource_filter(!worm_ui_resource_use_matches(7, true, 2));
+    check_resource_filter(worm_ui_resource_use_matches(7, true, 3));
+    check_resource_filter(!worm_ui_resource_use_matches(0, false, 3));
+    check_resource_filter(worm_ui_keysound_matches("0A", "Display name", "SAMPLES/DRUMS", "samples/drums/kick.wav"));
+    check_resource_filter(!worm_ui_keysound_matches("0A", "Display name", "bass", "samples/drums/kick.wav"));
 }

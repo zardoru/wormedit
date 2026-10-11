@@ -143,3 +143,27 @@ TEST_CASE("Compose resource uses retain typed chart object identities",
           editor_selection_object_t{editor_selection_object_kind_t::bga_event, object_id_t{40}});
     CHECK(sys::find_compose_resource_uses(chart, resource_id_t{99}).empty());
 }
+
+namespace { void check_resource_metadata(bool value) { CHECK(value); } }
+TEST_CASE("Catalog projects exact cross-chart uses retained aliases and full authored paths",
+          "[frontend][compose][resources][sound-workflow]") {
+    song_document_t song;
+    song.audio_assets = {{.id = asset_id_t{1}, .source_path = "nested/Drums/kick.wav"}};
+    song.visual_assets = {{.id = asset_id_t{2}, .source_path = "nested/Images/background.png"}};
+    song.resources = {{.id = resource_id_t{1}, .asset = asset_id_t{1}, .roles = {resource_role_t::sample}},
+                      {.id = resource_id_t{2}, .asset = asset_id_t{1}, .roles = {resource_role_t::sample}},
+                      {.id = resource_id_t{3}, .asset = asset_id_t{2}, .roles = {resource_role_t::bga}}};
+    song.charts.resize(2);
+    song.charts[0].measures = {{.notes = {{.sound = resource_id_t{1}}}}};
+    song.charts[1].measures = {{.bgm_events = {{.sound = resource_id_t{1}}}}};
+    song.charts[1].sound_channels = {{.source_clip = {.source = asset_id_t{1}}, .events = {{}, {}}}};
+    song.charts[1].bga_events = {{.resource = resource_id_t{3}}};
+    const auto catalog = sys::make_compose_resource_catalog(song, {}, 3);
+    check_resource_metadata(catalog.entries.size() == 3);
+    check_resource_metadata(catalog.entries[0].use_count == 4);
+    check_resource_metadata(catalog.entries[1].use_count == 2);
+    check_resource_metadata(catalog.entries[2].use_count == 1);
+    check_resource_metadata(catalog.entries[0].source_name == "kick.wav");
+    check_resource_metadata(catalog.entries[0].source_path == "nested/Drums/kick.wav");
+    check_resource_metadata(catalog.entries[2].source_path == "nested/Images/background.png");
+}

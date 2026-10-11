@@ -623,7 +623,7 @@ void audition_created_note(bool enabled, const wormedit::document_history_t& his
 }
 
 auto dispatch_compose_lane_key_press(const WormUiComposeInputAction&, wormedit::document_history_t&,
-                                     wormedit::editor_interaction_state_t&,
+                                     wormedit::editor_interaction_state_t&, application_command_state_t&, compose_scene_cache_t&,
                                      wormedit::editor_interaction_result_t&, std::string_view&)
     -> compose_input_family_result_t;
 auto dispatch_compose_lane_key_release(const WormUiComposeInputAction&,
@@ -638,7 +638,8 @@ auto dispatch_compose_keyboard_input(
     wormedit::workspace_controller_t& workspace, wormedit::editor_interaction_state_t& state,
     wormedit::editor_navigation_input_controller_t& navigation_input,
     application_command_state_t& application, wormedit::editor_interaction_result_t& result,
-    std::string_view& accepted, const wormedit::notification_sink_t* notifications)
+    std::string_view& accepted, const wormedit::notification_sink_t* notifications,
+    compose_scene_cache_t& scene_cache)
     -> compose_input_family_result_t {
     switch (input.kind) {
     case WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND:
@@ -657,7 +658,11 @@ auto dispatch_compose_keyboard_input(
     case WORM_UI_COMPOSE_INPUT_DELETE_SELECTION:
         return dispatch_compose_cursor_input(input, history, state, result, accepted);
     case WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS:
-        return dispatch_compose_lane_key_press(input, history, state, result, accepted);
+    {
+        auto pressed = dispatch_compose_lane_key_press(input, history, state, application, scene_cache, result, accepted);
+        audition_created_note(application.editor_preferences.audition_on_click, history, state, result);
+        return pressed;
+    }
     case WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE:
     {
         auto released = dispatch_compose_lane_key_release(input, history, workspace, state, result,
@@ -759,9 +764,36 @@ void advance_sound_after_paint_commit(const wormedit::editor_interaction_result_
     worm_ui_frontend_resource_placed(sound->value, 0);
 }
 
+auto retained_bmson_source_geometry(const wormedit::document_history_t& history,
+    const compose_scene_cache_t& cache, const wormedit::chart_document_t& chart,
+    wormedit::asset_id_t asset) -> std::optional<wormedit::bmson_source_geometry_t> {
+    const auto& index = cache.stem_index;
+    if (cache.scene_document_identity != &history.document || cache.scene_chart_identity != &chart ||
+        !index.built || index.document != history.document.id || index.chart != chart.id ||
+        index.revision != history.document.revision) return std::nullopt;
+    const auto binding = std::ranges::find(index.bindings, asset,
+        &wormedit::audio::decoded_source_binding_t::asset);
+    if (binding == index.bindings.end() || !binding->source_sample_rate || !binding->source_frame_count)
+        return std::nullopt;
+    return wormedit::bmson_source_geometry_t{asset, binding->source_sample_rate, *binding->source_frame_count};
+}
+
+auto keyboard_stem_geometry(const wormedit::document_history_t& history,
+    const wormedit::editor_interaction_state_t& state, const compose_scene_cache_t& cache,
+    std::optional<wormedit::resource_id_t> sound) -> std::optional<wormedit::bmson_source_geometry_t> {
+    using namespace wormedit;
+    if (!sound) return std::nullopt;
+    const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+    const auto resource = std::ranges::find(history.document.resources, *sound, &resource_entry_t::id);
+    if (chart == history.document.charts.end() || resource == history.document.resources.end())
+        return std::nullopt;
+    return retained_bmson_source_geometry(history, cache, *chart, resource->asset);
+}
+
 auto dispatch_compose_lane_key_press(const WormUiComposeInputAction& input,
                                      wormedit::document_history_t& history,
                                      wormedit::editor_interaction_state_t& state,
+                                     application_command_state_t& application, compose_scene_cache_t& cache,
                                      wormedit::editor_interaction_result_t& result,
                                      std::string_view& accepted) -> compose_input_family_result_t {
     using namespace wormedit;
@@ -780,8 +812,11 @@ auto dispatch_compose_lane_key_press(const WormUiComposeInputAction& input,
     } else {
         result = dispatch_editor_action(
             history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{input.lane_id},
-                                                               note_paint_sound(input)});
-        accepted = "Lane hold started; move the edit cursor and release the key to finish.";
+                                                               note_paint_sound(input),
+                application.editor_preferences.move_collision_policy == move_collision_policy_t::displace_to_bgm,
+                keyboard_stem_geometry(history, state, cache, note_paint_sound(input))});
+        advance_sound_after_paint_commit(result, note_paint_sound(input), result.created_note.has_value());
+        accepted = result.document_changed ? "Lane-key note updated." : "Lane hold started; move the edit cursor and release the key to finish.";
     }
     return compose_input_family_result_t::continue_with_result();
 }
@@ -825,12 +860,12 @@ auto dispatch_compose_lane_key_release(const WormUiComposeInputAction& input,
         }
         if (*end_row == pending.canvas_row) {
             result = dispatch_editor_action(
-                history, state, place_virtual_bms_tap_action_t{pending.canvas_row, pending.lane});
+                history, state, place_virtual_bms_tap_action_t{pending.canvas_row, pending.lane, pending.sound});
             accepted = "Virtual BMS tap placed from the lane key.";
         } else {
             result = dispatch_editor_action(
                 history, state,
-                place_virtual_bms_hold_action_t{pending.canvas_row, *end_row, pending.lane});
+                place_virtual_bms_hold_action_t{pending.canvas_row, *end_row, pending.lane, pending.sound});
             accepted = "Virtual BMS hold placed from the lane key.";
         }
     } else if ((state.pending_hold.has_value() &&
@@ -1039,18 +1074,7 @@ auto toggle_bmson_restart(const WormUiComposeInputAction& input, bmson_compose_c
 auto retained_bmson_source_geometry(const bmson_compose_context_t& context,
     const wormedit::chart_document_t& chart, wormedit::asset_id_t asset)
     -> std::optional<wormedit::bmson_source_geometry_t> {
-    const auto& cache = context.scene_cache;
-    const auto& index = cache.stem_index;
-    if (cache.scene_document_identity != &context.history.document ||
-        cache.scene_chart_identity != &chart || !index.built ||
-        index.document != context.history.document.id || index.chart != chart.id ||
-        index.revision != context.history.document.revision) return std::nullopt;
-    const auto binding = std::ranges::find(index.bindings, asset,
-        &wormedit::audio::decoded_source_binding_t::asset);
-    if (binding == index.bindings.end() || !binding->source_sample_rate ||
-        !binding->source_frame_count) return std::nullopt;
-    return wormedit::bmson_source_geometry_t{asset, binding->source_sample_rate,
-                                            *binding->source_frame_count};
+    return retained_bmson_source_geometry(context.history, context.scene_cache, chart, asset);
 }
 
 auto bmson_stem_drop_matches(const wormedit::song_document_t& document,
@@ -3698,7 +3722,7 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
     const auto keyboard =
         dispatch_compose_keyboard_input(input, context.history, context.workspace, context.state,
                                         context.navigation_input, context.application_state,
-                                        result, accepted, context.notifications);
+                                        result, accepted, context.notifications, context.scene_cache);
     if (keyboard.handled)
         return keyboard;
     const auto position = [&context](const auto& chart, const auto& view, double y) {

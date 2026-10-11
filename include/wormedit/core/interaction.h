@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/lane_presentation.h>
 
@@ -140,6 +141,8 @@ enum class hold_gesture_source_t {
 struct begin_lane_key_hold_gesture_action_t {
     lane_id_t lane;
     std::optional<resource_id_t> sound;
+    bool displace_to_bgm{};
+    std::optional<bmson_source_geometry_t> source_geometry;
 };
 
 struct release_lane_key_hold_gesture_action_t {

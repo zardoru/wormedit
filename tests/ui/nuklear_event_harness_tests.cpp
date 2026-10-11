@@ -2416,6 +2416,8 @@ TEST_CASE("Lane keys carry the clicked Sounds dock source and leave selected not
     (void)click_at(harness, row->first, row->second, true);
     require_lane_key_sound(state.armed_resource_id == 1400);
     require_lane_key_sound(state.armed_from_sounds_dock);
+    (void)harness.frame();
+    require_lane_key_sound(harness.drawn_text().find("armed") != std::string::npos);
     // Return the pointer to the field so the dock does not own keyboard input.
     const auto motion = motion_event(300, 400);
     (void)harness.frame(std::span{&motion, 1});

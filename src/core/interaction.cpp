@@ -13,6 +13,7 @@
 #include <wormedit/core/virtual_canvas.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -3590,50 +3591,156 @@ struct hold_gesture_context_t {
     std::function<editor_interaction_result_t(const editor_ui_action_t&)> dispatch_action;
 };
 
-auto remove_note_for_keyboard_hold(hold_gesture_context_t& context, lane_id_t lane,
-                                   local_position_t position)
-    -> std::optional<editor_interaction_result_t> {
+auto keyboard_entry_editable(const chart_document_t& chart, const note_t& note) -> bool {
+    return !note.branch && std::ranges::all_of(note.semantic_layers, [&](layer_id_t id) {
+        const auto layer = std::ranges::find(chart.semantic_layers, id, &semantic_layer_t::id);
+        return layer != chart.semantic_layers.end() && layer->visible && !layer->locked;
+    });
+}
+
+auto keyboard_entry_occupant(const chart_document_t& chart, const measure_index_t& index,
+    lane_id_t lane, local_position_t target) -> std::variant<const note_t*, diagnostic_list_t> {
+    const note_t* found{};
+    const auto row = absolute_row(index, target);
+    for (const auto& measure : chart.measures)
+        for (const auto& note : measure.notes) {
+            if (note.lane != lane) continue;
+            const auto begin = absolute_row(index, note.position);
+            const auto end = note.end ? absolute_row(index, *note.end) : begin;
+            if (!row || !begin || !end || *row < *begin || *row > *end) continue;
+            if (note.position != target || found)
+                return diagnostic_list_t{error(diagnostic_code_t::collision,
+                    "Lane-key entry overlaps a hold body or multiple note heads", note.id)};
+            found = &note;
+        }
+    if (found && !keyboard_entry_editable(chart, *found))
+        return diagnostic_list_t{error(diagnostic_code_t::collision,
+            "Lane-key entry cannot change a hidden, locked or conditional note", found->id)};
+    return found;
+}
+
+auto keyboard_entry_stem(const song_document_t& document, const chart_document_t& chart,
+    std::optional<resource_id_t> sound) -> std::variant<std::optional<object_id_t>, diagnostic_list_t> {
+    if (!sound) return std::optional<object_id_t>{};
+    if (!is_paint_sample_resource(document, *sound))
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
+            "paint sound is not an existing sample resource")};
+    if (chart.source_family != format_family_t::bmson) return std::optional<object_id_t>{};
+    const auto bindings = bmson_channel_resource_bindings(document, chart.id);
+    const auto binding = std::ranges::find(bindings, *sound, &bmson_channel_resource_binding_t::resource);
+    if (binding != bindings.end() && binding->ambiguous)
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
+            "The armed BMSON sound has ambiguous source channels")};
+    if (binding != bindings.end() && binding->channel &&
+        std::ranges::any_of(chart.bgm_source_lanes, [&](const auto& lane) {
+            return lane.stem_channel == binding->channel;
+        })) return binding->channel;
+    const auto resource = std::ranges::find(document.resources, *sound, &resource_entry_t::id);
+    if (resource->sound_kind == sound_kind_t::stem)
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
+            "The armed BMSON stem has no linked source channel")};
+    return std::optional<object_id_t>{};
+}
+
+struct prepared_keyboard_entry_t {
+    song_document_t document;
+    std::optional<object_id_t> created;
+};
+
+auto stage_keyboard_occupant(document_history_t& scratch, editor_interaction_state_t state,
+    const note_t& occupant, bool to_bgm) -> diagnostic_list_t {
+    if (to_bgm) {
+        const std::array ids{occupant.id};
+        const auto moved = move_notes_to_bgm(scratch, scratch.document.revision, state.chart,
+                                            ids, std::nullopt);
+        return moved.diagnostics;
+    }
+    state.pending_hold.reset();
+    state.additional_keyboard_holds.clear();
+    state.selected_notes = {occupant.id};
+    state.selected_objects.clear();
+    const auto removed = dispatch_editor_action(scratch, state, delete_editor_selection_action_t{});
+    return removed.diagnostics;
+}
+
+auto place_keyboard_entry(document_history_t& scratch, editor_interaction_state_t state,
+    lane_id_t lane, local_position_t target, resource_id_t sound,
+    std::optional<object_id_t> stem, std::optional<bmson_source_geometry_t> geometry)
+    -> std::variant<object_id_t, diagnostic_list_t> {
+    state.pending_hold.reset(); state.additional_keyboard_holds.clear();
+    state.selected_notes.clear(); state.selected_objects.clear();
+    place_cursor_at(state, target); state.active_lane = lane;
+    if (!stem) {
+        const auto placed = dispatch_editor_action(scratch, state, place_tap_action_t{target, sound});
+        if (!placed) return placed.diagnostics;
+        if (placed.created_note) return *placed.created_note;
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
+            "Choose a non-hold note kind to replace an occupied head")};
+    }
+    const auto inserted = insert_bmson_playable_stem_point(scratch, scratch.document.revision,
+        state.chart, *stem, target, lane, geometry);
+    if (!inserted) return inserted.diagnostics;
+    const auto* chart = find_chart(scratch.document, state.chart);
+    for (const auto& measure : chart->measures)
+        for (const auto& note : measure.notes)
+            if (note.position == target && note.lane == lane) return note.id;
+    return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
+        "The linked stem note was not published")};
+}
+
+auto stage_keyboard_entry(const hold_gesture_context_t& context, lane_id_t lane,
+    local_position_t target, const note_t* occupant, std::optional<resource_id_t> sound,
+    bool displace, std::optional<object_id_t> stem, std::optional<bmson_source_geometry_t> geometry)
+    -> std::variant<prepared_keyboard_entry_t, diagnostic_list_t> {
+    auto scratch = make_document_history(context.history.document);
+    const bool same = occupant && sound && occupant->sound == sound;
+    if (occupant) {
+        const auto failure = stage_keyboard_occupant(scratch, context.state, *occupant, same || (sound && displace));
+        if (!failure.empty()) return failure;
+    }
+    std::optional<object_id_t> created;
+    if (sound && !same) {
+        const auto placed = place_keyboard_entry(scratch, context.state, lane, target, *sound, stem, geometry);
+        if (const auto* failure = std::get_if<diagnostic_list_t>(&placed)) return *failure;
+        created = std::get<object_id_t>(placed);
+    }
+    return prepared_keyboard_entry_t{std::move(scratch.document), created};
+}
+
+auto apply_keyboard_entry(hold_gesture_context_t& context, lane_id_t lane,
+    local_position_t position, std::optional<resource_id_t> sound, bool displace,
+    std::optional<bmson_source_geometry_t> geometry) -> std::optional<editor_interaction_result_t> {
     auto& state = context.state;
-    const auto snapped = snapped_position(context.chart, context.index, position,
-                                          edit_snap_denominator(context.chart, state));
-    if (!snapped || !find_active_lane(context.chart, context.index, *snapped, lane))
-        return std::nullopt;
-    const auto plan = plan_hold_placement(context.chart, context.index, lane, *snapped, *snapped,
-        note_kind_t::hold, false, hold_overlap_policy_t::remove_sound);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
-        return diagnostic_result(context.history, state, *diagnostics);
-    const auto& placement = std::get<hold_placement_plan_t>(plan);
-    if (placement.removals.empty())
-        return std::nullopt;
-    if (placement.removals.size() != 1)
-        return diagnostic_result(
-            context.history, state,
-            {error(diagnostic_code_t::collision,
-                   "lane-key removal is ambiguous across multiple notes")});
-    auto proposed = context.history.document;
-    auto* chart = find_chart(proposed, state.chart);
-    erase_notes(*chart, placement.removals);
-    auto command = commit_document_command(context.history, std::move(proposed), "Remove note");
-    if (!command)
-        return diagnostic_result(context.history, state, std::move(command.diagnostics));
-    place_cursor_at(state, *snapped);
-    state.active_lane = lane;
-    const auto view = make_view(context.history, state);
-    return editor_interaction_result_t{
-        .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
-        .document_changed = true,
-        .view = std::holds_alternative<editor_interaction_view_model_t>(view)
-                    ? std::optional{std::get<editor_interaction_view_model_t>(view)}
-                    : std::nullopt,
-        .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
-                           ? std::get<diagnostic_list_t>(view)
-                           : diagnostic_list_t{},
-    };
+    const auto target = snapped_position(context.chart, context.index, position,
+                                         edit_snap_denominator(context.chart, state));
+    if (!target || !find_active_lane(context.chart, context.index, *target, lane)) return std::nullopt;
+    const auto occupied = keyboard_entry_occupant(context.chart, context.index, lane, *target);
+    if (const auto* failure = std::get_if<diagnostic_list_t>(&occupied))
+        return diagnostic_result(context.history, state, *failure);
+    const auto resolved = keyboard_entry_stem(context.history.document, context.chart, sound);
+    if (const auto* failure = std::get_if<diagnostic_list_t>(&resolved))
+        return diagnostic_result(context.history, state, *failure);
+    const auto* occupant = std::get<const note_t*>(occupied);
+    const auto stem = std::get<std::optional<object_id_t>>(resolved);
+    if (!occupant && !stem) return std::nullopt;
+    auto staged = stage_keyboard_entry(context, lane, *target, occupant, sound, displace, stem, geometry);
+    if (const auto* failure = std::get_if<diagnostic_list_t>(&staged))
+        return diagnostic_result(context.history, state, *failure);
+    auto prepared = std::get<prepared_keyboard_entry_t>(std::move(staged));
+    const auto command = commit_document_command(context.history, std::move(prepared.document),
+                                                 "Enter note from lane key");
+    if (!command) return diagnostic_result(context.history, state, command.diagnostics);
+    place_cursor_at(state, *target); state.active_lane = lane;
+    auto result = interaction_view_result(context.history, state, true);
+    result.created_note = prepared.created;
+    return result;
 }
 
 auto begin_hold_gesture(hold_gesture_context_t& context, lane_id_t lane,
                         local_position_t position, hold_gesture_source_t source,
-                        std::optional<resource_id_t> sound = std::nullopt)
+                        std::optional<resource_id_t> sound = std::nullopt,
+                        bool displace = false,
+                        std::optional<bmson_source_geometry_t> geometry = {})
     -> editor_interaction_result_t {
     auto& state = context.state;
     if (state.pending_hold || state.pending_note_duration_gesture || state.pending_note_move_gesture)
@@ -3641,7 +3748,7 @@ auto begin_hold_gesture(hold_gesture_context_t& context, lane_id_t lane,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "another editor gesture is already active")});
     if (source == hold_gesture_source_t::keyboard_lane)
-        if (auto removed = remove_note_for_keyboard_hold(context, lane, position))
+        if (auto removed = apply_keyboard_entry(context, lane, position, sound, displace, geometry))
             return std::move(*removed);
     if (sound && !is_paint_sample_resource(context.history.document, *sound))
         return diagnostic_result(context.history, state,
@@ -3958,7 +4065,8 @@ auto refresh_keyboard_hold_revisions(hold_gesture_context_t& context) -> void {
 }
 
 auto begin_lane_key_hold_gesture(hold_gesture_context_t& context, lane_id_t lane,
-                                  std::optional<resource_id_t> sound)
+                                  std::optional<resource_id_t> sound, bool displace,
+                                  std::optional<bmson_source_geometry_t> geometry)
     -> editor_interaction_result_t {
     auto& state = context.state;
     const auto before = state;
@@ -3996,7 +4104,7 @@ auto begin_lane_key_hold_gesture(hold_gesture_context_t& context, lane_id_t lane
                 .view = std::get<editor_interaction_view_model_t>(std::move(view))};
     }
     auto result = begin_hold_gesture(context, lane, state.cursor,
-                                     hold_gesture_source_t::keyboard_lane, sound);
+                                     hold_gesture_source_t::keyboard_lane, sound, displace, geometry);
     if (!result) {
         state = before;
     } else if (result.document_changed) {
@@ -5729,7 +5837,8 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
     };
 
     const auto handle_begin_lane_key_hold_gesture = [&](const begin_lane_key_hold_gesture_action_t& typed_action) {
-        return begin_lane_key_hold_gesture(hold_gestures, typed_action.lane, typed_action.sound);
+        return begin_lane_key_hold_gesture(hold_gestures, typed_action.lane, typed_action.sound,
+                                           typed_action.displace_to_bgm, typed_action.source_geometry);
     };
 
     const auto handle_release_lane_key_hold_gesture = [&](const release_lane_key_hold_gesture_action_t& typed_action) {

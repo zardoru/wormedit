@@ -36,6 +36,19 @@ void pause_preview(audio::preview_session_t& preview_session,
     preview_state.pause_at(frame);
 }
 
+auto object_sound(const song_document_t& song, chart_id_t chart_id, object_id_t id)
+    -> std::optional<resource_id_t> {
+    const auto chart = std::ranges::find(song.charts, chart_id, &chart_document_t::id);
+    if (chart == song.charts.end()) return std::nullopt;
+    for (const auto& measure : chart->measures) {
+        const auto note = std::ranges::find(measure.notes, id, &note_t::id);
+        if (note != measure.notes.end()) return note->sound;
+        const auto event = std::ranges::find(measure.bgm_events, id, &bgm_event_t::id);
+        if (event != measure.bgm_events.end()) return event->sound;
+    }
+    return std::nullopt;
+}
+
 void process_object_request(const editor_object_audition_request_t& request,
                             document_history_t& history,
                             audio::decoded_source_registry_t& audition_sources,
@@ -53,10 +66,17 @@ void process_object_request(const editor_object_audition_request_t& request,
     }
 
     audition_sources.await_pending();
-    const auto prepared = object_audition.prepare(
+    auto prepared = object_audition.prepare(
         history.document, {request.document_revision, request.chart, request.object.id},
         audition_sources.bindings());
     if (prepared) {
+        if (!audio::bound_stem_audition(history.document,
+                object_sound(history.document, request.chart, request.object.id),
+                audition_sources.bindings(), prepared.prepared->clips)) {
+            notifications.post(notification_severity_t::warning, notification_source_t::audio,
+                               "The stem preview has invalid decoded source geometry.");
+            return;
+        }
         pause_preview(preview_session, preview_output, preview_state);
         const auto started = audition_output.start(prepared.prepared->clips);
         post_audition_started(notifications, static_cast<bool>(started), started.message,
@@ -128,9 +148,14 @@ void process_sound_audition_request(
         notifications.post(notification_severity_t::warning, notification_source_t::audio, "That sound's audio is not loaded yet.");
         return;
     }
-    pause_preview(preview_session, preview_output, preview_state);
-    const std::vector<audio::audition_clip_t> clips{
+    std::vector<audio::audition_clip_t> clips{
         {binding->source, 0, binding->output_frame_count, 1.0F}};
+    if (!audio::bound_stem_audition(history.document, resource_id, bindings, clips)) {
+        notifications.post(notification_severity_t::warning, notification_source_t::audio,
+                           "The stem preview has invalid decoded source geometry.");
+        return;
+    }
+    pause_preview(preview_session, preview_output, preview_state);
     const auto started = audition_output.start(clips);
     post_audition_started(notifications, static_cast<bool>(started), started.message,
         "Audio preview started.", "Audio preview could not start.");

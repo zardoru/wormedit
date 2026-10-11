@@ -4,6 +4,12 @@
 
 namespace wormedit::audio {
 
+// Click previews of stem resources are capped in output-frame space. Shorter
+// clips and their source offsets remain unchanged; deliberate transport is separate.
+[[nodiscard]] auto bound_stem_audition(const song_document_t& song,
+    std::optional<resource_id_t> resource, std::span<const audition_source_binding_t> bindings,
+    std::span<audition_clip_t> clips) -> bool;
+
 struct object_audition_request_t {
     std::uint64_t document_revision{};
     chart_id_t chart;

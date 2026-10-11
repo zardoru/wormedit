@@ -1310,10 +1310,15 @@ void draw_row(const SoundsPanel& panel, struct nk_rect bounds, const WormUiCompo
               bool selected, bool hovered) {
     auto* context = panel.context;
     auto* canvas = nk_window_get_canvas(context);
-    const auto armed = panel.state->armed_resource_id == row.resource_id;
+    const auto armed = panel.state->armed_from_sounds_dock && !row.missing &&
+                       panel.state->armed_resource_id == row.resource_id;
     if (selected) nk_fill_rect(canvas, bounds, 3.0f, color(UiColor::selected));
     else if (hovered) nk_fill_rect(canvas, bounds, 3.0f, color(UiColor::surface_hover));
-    if (armed) nk_stroke_rect(canvas, bounds, 3.0f, 1.0f, color(UiColor::accent));
+    if (armed) {
+        nk_stroke_rect(canvas, bounds, 3.0f, 2.0f, color(UiColor::accent));
+        nk_fill_rect(canvas, nk_rect(bounds.x, bounds.y + 3, 3, bounds.h - 6), 1,
+                     color(UiColor::accent));
+    }
     const auto text_color = row.missing ? color(UiColor::text_muted)
                             : selected  ? color(UiColor::selected_text) : color(UiColor::text);
     const auto clear = nk_rgba(0, 0, 0, 0);
@@ -1333,7 +1338,7 @@ void draw_row(const SoundsPanel& panel, struct nk_rect bounds, const WormUiCompo
     std::snprintf(uses, sizeof(uses), "%llu", static_cast<unsigned long long>(row.use_count));
     nk_draw_text(canvas, nk_rect(bounds.x + bounds.w - 86, bounds.y + 3, 32, bounds.h - 6),
                  uses, static_cast<int>(std::strlen(uses)), context->style.font, clear, text_color);
-    const auto* status = row.missing ? "missing" : row.use_count ? "ok" : "unused";
+    const auto* status = row.missing ? "missing" : armed ? "armed" : row.use_count ? "ok" : "unused";
     nk_draw_text(canvas, nk_rect(bounds.x + bounds.w - 48, bounds.y + 3, 48, bounds.h - 6),
                  status, static_cast<int>(std::strlen(status)), context->style.font, clear, text_color);
     float chip_x = bounds.x + bounds.w - 94.0f - chips;

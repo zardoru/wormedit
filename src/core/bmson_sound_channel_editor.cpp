@@ -1374,6 +1374,95 @@ auto insert_bmson_stem_point(document_history_t& history, std::uint64_t expected
 }
 
 namespace {
+auto copy_playable_stem_pulse(document_history_t& history, chart_id_t chart_id,
+    object_id_t channel_id, const sound_channel_event_t& source, const note_t& original,
+    lane_id_t lane) -> document_command_result_t {
+    auto proposed = history.document;
+    auto& chart = *std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
+    const auto built = build_measure_index(chart);
+    if (std::holds_alternative<diagnostic_list_t>(built)) return rejected(history.document.revision, diagnostic_code_t::invalid_measure,
+                                "BMSON chord requires valid measure geometry");
+    const auto& index = std::get<measure_index_t>(built);
+    const std::array markers{bmson_sound_marker_insertion_t{source.position, !source.continuation, lane}};
+    const auto occupied = occupied_marker_lanes(chart, index, markers, history.document.revision);
+    if (const auto* failure = std::get_if<document_command_result_t>(&occupied)) return *failure;
+    if (const auto failure = validate_marker_targets(chart, index, sound_channel_t{}, markers,
+        std::get<lane_intervals_t>(occupied), history.document.revision)) return *failure;
+    auto largest = chart_object_stats(chart).largest;
+    if (largest > std::numeric_limits<std::uint64_t>::max() - 2)
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id, "BMSON chord IDs exhausted");
+    auto copied_source = source;
+    copied_source.id = object_id_t{++largest}; copied_source.lane = lane;
+    auto copied_note = original;
+    copied_note.id = object_id_t{++largest}; copied_note.lane = lane;
+    copied_note.sound_channel_event = copied_source.id;
+    copied_source.provenance = {}; copied_note.provenance = {};
+    auto& channel = *std::ranges::find(chart.sound_channels, channel_id, &sound_channel_t::id);
+    channel.events.push_back(std::move(copied_source));
+    const auto destination = std::ranges::find(chart.measures, original.position.measure, &measure_chunk_t::id);
+    destination->notes.push_back(std::move(copied_note));
+    if (const auto failure = validate_channel_slices(proposed, chart, channel, history.document.revision))
+        return *failure;
+    return commit_document_command(history, std::move(proposed), "Place BMSON stem chord");
+}
+
+auto reuse_playable_stem_pulse(document_history_t& history, chart_id_t chart_id,
+    object_id_t channel_id, local_position_t target, lane_id_t lane)
+    -> std::optional<document_command_result_t> {
+    const auto chart = std::ranges::find(history.document.charts, chart_id, &chart_document_t::id);
+    if (chart == history.document.charts.end()) return std::nullopt;
+    const auto channel = std::ranges::find(chart->sound_channels, channel_id, &sound_channel_t::id);
+    if (channel == chart->sound_channels.end()) return std::nullopt;
+    const auto source = std::ranges::find(channel->events, target, &sound_channel_event_t::position);
+    if (source == channel->events.end()) return std::nullopt;
+    const auto source_id = source->id;
+    for (const auto& measure : chart->measures) {
+        const auto bgm = std::ranges::find(measure.bgm_events, std::optional{source_id},
+                                         &bgm_event_t::sound_channel_event);
+        if (bgm != measure.bgm_events.end())
+            return assign_bmson_sound_event(history, history.document.revision, chart_id, bgm->id, lane);
+    }
+    for (const auto& measure : chart->measures) {
+        const auto note = std::ranges::find(measure.notes, std::optional{source_id},
+                                          &note_t::sound_channel_event);
+        if (note != measure.notes.end())
+            return copy_playable_stem_pulse(history, chart_id, channel_id, *source, *note, lane);
+    }
+    return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                    "BMSON stem pulse has no semantic projection");
+}
+}
+
+auto insert_bmson_playable_stem_point(document_history_t& history,
+    std::uint64_t expected_revision, chart_id_t chart_id, object_id_t channel_id,
+    local_position_t target, lane_id_t lane, std::optional<bmson_source_geometry_t> geometry)
+    -> document_command_result_t {
+    if (history.document.revision != expected_revision)
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BMSON stem entry expired after the document changed");
+    if (const auto reused = reuse_playable_stem_pulse(history, chart_id, channel_id, target, lane))
+        return *reused;
+    auto scratch = make_document_history(history.document);
+    const auto inserted = insert_bmson_stem_point(scratch, scratch.document.revision,
+        chart_id, channel_id, target, false, geometry);
+    if (!inserted) return inserted;
+    const auto& chart = *std::ranges::find(scratch.document.charts, chart_id, &chart_document_t::id);
+    const auto& channel = *std::ranges::find(chart.sound_channels, channel_id, &sound_channel_t::id);
+    const auto source = std::ranges::find(channel.events, target, &sound_channel_event_t::position);
+    for (const auto& measure : chart.measures)
+        for (const auto& event : measure.bgm_events) {
+            if (event.sound_channel_event != source->id) continue;
+            const auto assigned = assign_bmson_sound_event(scratch, scratch.document.revision,
+                chart_id, event.id, lane);
+            if (!assigned) return assigned;
+            return commit_document_command(history, std::move(scratch.document),
+                                           "Place linked BMSON stem note");
+        }
+    return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                    "BMSON stem entry could not find its linked projection");
+}
+
+namespace {
 auto append_packed_sound_channel(song_document_t& document, chart_document_t& chart,
                                   resource_id_t resource, std::uint64_t& largest)
     -> source_provenance_t;

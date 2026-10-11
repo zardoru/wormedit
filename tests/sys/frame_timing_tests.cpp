@@ -4870,8 +4870,8 @@ TEST_CASE("Lane-key dispatcher does not advance for rejection silent notes delet
         (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
         (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE);
         placed_resource_notifications.clear();
-        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 1, 8);
-        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 1, 8);
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 1, 0);
+        (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 1, 0);
         expect_compose_test(f.notes().empty());
         expect_compose_test(f.compose.history.undo.size() == 2);
         (void)f.dispatch(WORM_UI_COMPOSE_INPUT_UNDO);
@@ -6492,4 +6492,66 @@ TEST_CASE("Timing payloads retain five significant digits in compact numeric lab
         if (marker.lane == WORM_UI_TIMING_LANE_SPEED) expect_compose_test(std::string(marker.short_label) == "2.3456");
     }
     expect_compose_test(view.timing_marker_count == 3);
+}
+
+TEST_CASE("Lane-key dispatcher replaces or moves same sound to BGM with correct placement callbacks",
+          "[sys][compose][lane-entry]") {
+    const auto same = GENERATE(false, true);
+    const auto displace = GENERATE(false, true);
+    lane_key_callback_fixture_t f;
+    f.compose.application.editor_preferences.move_collision_policy = displace
+        ? move_collision_policy_t::displace_to_bgm : move_collision_policy_t::reject;
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE);
+    placed_resource_notifications.clear();
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 1, same ? 7 : 8);
+    (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 1, same ? 7 : 8);
+    expect_compose_test(f.notes().size() == (same ? 0 : 1));
+    expect_compose_test(placed_resource_notifications == (same ? std::vector<uint64_t>{}
+                                                              : std::vector<uint64_t>{8}));
+    std::size_t bgm{};
+    for (const auto& measure : f.compose.history.document.charts.front().measures) bgm += measure.bgm_events.size();
+    expect_compose_test(bgm == (same || displace ? 1 : 0));
+    expect_compose_test(f.compose.history.undo.size() == 2);
+}
+
+TEST_CASE("Lane-key dispatcher uses revision-bound decoded geometry for linked BMSON entry",
+          "[sys][compose][lane-entry]") {
+    auto song = lane_key_callback_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bmson;
+    const auto resource = std::ranges::find(song.resources, resource_id_t{7}, &resource_entry_t::id);
+    resource->roles = {resource_role_t::sample, resource_role_t::bgm};
+    resource->sound_kind = sound_kind_t::stem;
+    const auto asset = resource->asset;
+    chart.sound_channels = {{.id = object_id_t{71000}, .source_clip = {clip_id_t{71000}, asset},
+        .events = {{.id = object_id_t{73000}, .position = {measure_id_t{1}, 0}, .playable = false}}}};
+    chart.bgm_source_lanes = {{.id = object_id_t{74000}, .stem_channel = object_id_t{71000}}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{75000}, .position = {measure_id_t{1}, 0},
+        .source_lane = object_id_t{74000}, .sound = resource_id_t{7}, .sound_channel_event = object_id_t{73000}}};
+    compose_test_fixture_t f{std::move(song)};
+    f.application.note_paint_mode_active = true;
+    f.project();
+    f.interaction->cursor = {measure_id_t{1}, 240};
+    f.cache.stem_index.built = true;
+    f.cache.stem_index.document = f.history.document.id;
+    f.cache.stem_index.chart = f.history.document.charts.front().id;
+    f.cache.stem_index.revision = f.history.document.revision;
+    f.cache.stem_index.bindings = {{.asset = asset, .source_sample_rate = 48000,
+                                    .source_frame_count = 480000}};
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    auto action = cursor_placement_action(f);
+    action.compose_input_project_id = f.history.document.id.value;
+    action.compose_input_count = 1;
+    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS,
+                               .lane_id = 1, .resource_id = 7};
+    const auto status = dispatch_compose_input_action(action, f.history, *f.binding.workspace,
+        *f.interaction, viewport, navigation, f.application, f.cache, 0);
+    INFO(status);
+    expect_compose_test(f.history.undo.size() == 1);
+    const auto& changed = f.history.document.charts.front();
+    expect_compose_test(changed.sound_channels.front().events.back().playable);
+    expect_compose_test(changed.sound_channels.front().events.back().continuation);
+    expect_compose_test(changed.measures.front().notes.back().sound_channel_event.has_value());
 }

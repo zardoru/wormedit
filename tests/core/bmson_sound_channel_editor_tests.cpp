@@ -1,4 +1,6 @@
 #include <wormedit/core/bmson_sound_channel_editor.h>
+#include <wormedit/core/interaction.h>
+#include <catch2/generators/catch_generators.hpp>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/sound_slice.h>
@@ -1704,4 +1706,82 @@ TEST_CASE("BMSON razor capacity counts tiny measure heads and retains the hard m
     const auto stationary = wormedit::interpolate_bmson_razor_path(chart, begin, begin, 4, 0);
     REQUIRE(stationary);
     check_local_razor(stationary.positions.empty());
+}
+
+TEST_CASE("BMSON keyboard stem entry shares span classification and same sound BGM toggle",
+          "[unit][core][bmson][lane-entry]") {
+    const auto row = GENERATE(100U, 300U, 400U);
+    auto song = fixture();
+    for (auto& resource : song.resources) resource.missing = false;
+    const auto chart_id = song.charts.front().id;
+    const auto asset = song.charts.front().sound_channels.front().source_clip.source;
+    const auto resource = std::ranges::find_if(song.resources, [&](const auto& item) {
+        return item.asset == asset;
+    })->id;
+    auto history = wormedit::make_document_history(std::move(song));
+    wormedit::editor_interaction_state_t state;
+    state.chart = chart_id;
+    state.active_lane = history.document.charts.front().lane_layouts.front().layout.lanes[1].id;
+    state.cursor = first_measure_position(history.document, row);
+    state.supported_snap_denominators = {192};
+    state.active_snap_denominator = 192;
+    const wormedit::bmson_source_geometry_t geometry{asset, 48'000, row == 400 ? 10'000U : 480'000U};
+    const auto entered = wormedit::dispatch_editor_action(history, state,
+        wormedit::begin_lane_key_hold_gesture_action_t{state.active_lane, resource, false, geometry});
+    INFO((entered.diagnostics.empty() ? "No entry diagnostic" : entered.diagnostics.front().message));
+    expect_bmson_core(static_cast<bool>(entered));
+    if (!entered) return;
+    expect_bmson_core(entered.created_note.has_value());
+    expect_bmson_core(history.undo.size() == 1);
+    const auto& source = history.document.charts.front().sound_channels.front().events.back();
+    expect_bmson_core(source.playable);
+    expect_bmson_core(source.continuation == (row == 300));
+    const auto source_id = source.id;
+    const auto toggled = wormedit::dispatch_editor_action(history, state,
+        wormedit::begin_lane_key_hold_gesture_action_t{state.active_lane, resource, false, geometry});
+    expect_bmson_core(static_cast<bool>(toggled));
+    const auto& events = history.document.charts.front().sound_channels.front().events;
+    const auto found = std::ranges::find(events, source_id, &wormedit::sound_channel_event_t::id);
+    expect_bmson_core(found != events.end());
+    expect_bmson_core(!found->playable);
+    expect_bmson_core(found->continuation == (row == 300));
+    expect_bmson_core(history.undo.size() == 2);
+    expect_bmson_core(wormedit::validate_document(history.document).empty());
+    expect_bmson_core(static_cast<bool>(wormedit::undo_document_command(history)));
+    expect_bmson_core(history.document.charts.front().sound_channels.front().events.back().playable);
+}
+
+TEST_CASE("BMSON stem keys reuse autoplay pulses and preserve same-pulse chords",
+          "[unit][core][bmson][lane-entry]") {
+    auto song = fixture();
+    for (auto& resource : song.resources) resource.missing = false;
+    const auto chart = song.charts.front().id;
+    const auto channel = song.charts.front().sound_channels.front().id;
+    const auto asset = song.charts.front().sound_channels.front().source_clip.source;
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto position = first_measure_position(history.document, 300);
+    const auto& lanes = history.document.charts.front().lane_layouts.front().layout.lanes;
+    const auto first_lane = lanes[1].id;
+    const auto second_lane = lanes[2].id;
+    const wormedit::bmson_source_geometry_t geometry{asset, 48000, 480000};
+    require_t463_applied(wormedit::insert_bmson_playable_stem_point(history, history.document.revision,
+        chart, channel, position, first_lane, geometry));
+    require_t463_applied(wormedit::insert_bmson_playable_stem_point(history, history.document.revision,
+        chart, channel, position, second_lane, geometry));
+    const auto& changed = history.document.charts.front();
+    const auto count = std::ranges::count_if(changed.measures.front().notes, [&](const auto& note) {
+        return note.position == position;
+    });
+    expect_bmson_core(count == 2);
+    expect_bmson_core(wormedit::validate_document(history.document).empty());
+    expect_bmson_core(history.undo.size() == 2);
+    const auto written = wormedit::write_bmson(history.document);
+    expect_bmson_core(written.json.has_value());
+    if (!written.json) return;
+    const auto reparsed = wormedit::parse_bmson_bytes(
+        std::as_bytes(std::span{written.json->data(), written.json->size()}));
+    expect_bmson_core(reparsed.song.has_value());
+    if (!reparsed.song) return;
+    expect_bmson_core(std::ranges::count_if(reparsed.song->charts.front().measures.front().notes,
+        [&](const auto& note) { return note.position == position; }) == 2);
 }

@@ -62,6 +62,13 @@ struct bmson_channel_resource_binding_t {
     object_id_t channel, local_position_t target, bool prefer_restart,
     std::optional<bmson_source_geometry_t> geometry = {}) -> document_command_result_t;
 
+// Classifies a stem point through the shared span path and assigns its linked
+// semantic event to a playable lane in one atomic history entry.
+[[nodiscard]] auto insert_bmson_playable_stem_point(
+    document_history_t& history, std::uint64_t expected_revision, chart_id_t chart,
+    object_id_t channel, local_position_t target, lane_id_t lane,
+    std::optional<bmson_source_geometry_t> geometry = {}) -> document_command_result_t;
+
 // Inserts an unlinked packed one-shot in the selected source lane, reusing a
 // non-stem channel for the asset or creating a full-source channel on demand.
 [[nodiscard]] auto insert_bmson_packed_one_shot(

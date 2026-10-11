@@ -42,6 +42,10 @@ auto first_note_id(const wormedit::chart_document_t& chart) -> wormedit::object_
     return {};
 }
 
+void require_stem_preview(bool condition) { REQUIRE(condition); }
+void expect_stem_preview(bool condition) { CHECK(condition); }
+void reject_stem_preview(bool condition) { CHECK_FALSE(condition); }
+
 } // namespace
 
 TEST_CASE("object audition prepares before replacing transport and rejects stale requests",
@@ -107,4 +111,43 @@ TEST_CASE("object audition forwards exact BGM clips and Stop through the bridge"
     CHECK(started.prepared->clips.front().frame_count == 111'800);
     CHECK(controller.stop().scheduled_voices == 1);
     CHECK_FALSE(bridge.session_token().has_value());
+}
+
+TEST_CASE("Stem click audition bounds decoded frames without changing offsets or shorter clips",
+          "[unit][audio][object-audition][stem-preview]") {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    song_document_t song;
+    song.resources = {{.id = resource_id_t{1}, .asset = asset_id_t{1}, .sound_kind = sound_kind_t::stem}};
+    auto source = binding(asset_id_t{1});
+    const std::array sources{source};
+    std::vector<audition_clip_t> clips{{source.source, 1000, 199000, 1.0F},
+                                      {source.source, 500, 1500, 0.5F}};
+    require_stem_preview(bound_stem_audition(song, resource_id_t{1}, sources, clips));
+    expect_stem_preview(clips[0].source_start_frame == 1000);
+    expect_stem_preview(clips[0].frame_count == 2ULL * source.output_sample_rate);
+    expect_stem_preview(clips[1].source_start_frame == 500);
+    expect_stem_preview(clips[1].frame_count == 1500);
+    expect_stem_preview(clips[1].gain == 0.5F);
+    song.resources.front().sound_kind = sound_kind_t::keysound;
+    clips[0].frame_count = 200000;
+    require_stem_preview(bound_stem_audition(song, resource_id_t{1}, sources, clips));
+    expect_stem_preview(clips[0].frame_count == 200000);
+}
+
+TEST_CASE("Stem click audition rejects missing or zero-rate decoded sources",
+          "[unit][audio][object-audition][stem-preview]") {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    song_document_t song;
+    song.resources = {{.id = resource_id_t{1}, .sound_kind = sound_kind_t::stem}};
+    auto source = binding(asset_id_t{1});
+    std::array sources{source};
+    std::array clips{audition_clip_t{source.source, 100, 199900, 1.0F}};
+    reject_stem_preview(bound_stem_audition(song, resource_id_t{1}, {}, clips));
+    sources[0].output_sample_rate = 0;
+    reject_stem_preview(bound_stem_audition(song, resource_id_t{1}, sources, clips));
+    sources[0].output_sample_rate = 8000;
+    require_stem_preview(bound_stem_audition(song, resource_id_t{1}, sources, clips));
+    expect_stem_preview(clips[0].frame_count == 16000);
 }

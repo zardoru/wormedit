@@ -5363,25 +5363,21 @@ TEST_CASE("lane-key interaction honors explicit palette layers and kind over sou
     check_lane_sound(note->semantic_layers.empty());
 }
 
-TEST_CASE("lane-key interaction removal ignores a stale armed sound and reports no placement",
+TEST_CASE("lane-key interaction rejects a stale armed replacement without removing the note",
           "[unit][core][interaction][lane-key-sound]") {
-    const auto sound = GENERATE(std::optional<resource_id_t>{}, std::optional{resource_id_t{7}});
     auto history = make_document_history(make_paint_sound_song());
     auto state = make_state(history);
     require_lane_sound(dispatch_editor_action(history, state,
-        begin_lane_key_hold_gesture_action_t{lane_id_t{1}, sound}));
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}}));
     require_lane_sound(dispatch_editor_action(history, state,
         release_lane_key_hold_gesture_action_t{lane_id_t{1}}));
-    const auto removed = dispatch_editor_action(history, state,
+    const auto revision = history.document.revision;
+    const auto rejected = dispatch_editor_action(history, state,
         begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{999}});
-    require_lane_sound(removed);
-    check_lane_sound(removed.document_changed);
-    check_lane_sound_false(removed.created_note);
-    check_lane_sound(note_count(history) == 0);
-    const auto release = dispatch_editor_action(history, state,
-        release_lane_key_hold_gesture_action_t{lane_id_t{1}});
-    check_lane_sound_false(release.document_changed);
-    check_lane_sound_false(release.created_note);
+    check_lane_sound_false(rejected);
+    check_lane_sound(history.document.revision == revision);
+    check_lane_sound(history.undo.size() == 1);
+    check_lane_sound(note_count(history) == 1);
 }
 
 TEST_CASE("lane-key interaction cancels a sound hold after a resource deletion",
@@ -6967,4 +6963,40 @@ TEST_CASE("Virtual taps and holds reset snap phase after shortened authored meas
           "[core][interaction][virtual-canvas][measure-local-snap]") {
     check_virtual_measure_fill(false);
     check_virtual_measure_fill(true);
+}
+
+TEST_CASE("lane-key same sound toggles to BGM and different sound replaces atomically",
+          "[unit][core][interaction][lane-entry]") {
+    const auto same = GENERATE(false, true);
+    const auto displace = GENERATE(false, true);
+    auto song = make_paint_sound_song();
+    auto other = song.resources.front();
+    other = *std::ranges::find(song.resources, resource_id_t{7}, &resource_entry_t::id);
+    other.id = resource_id_t{9};
+    song.resources.push_back(other);
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    require_lane_sound(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}}));
+    const auto first = dispatch_editor_action(history, state,
+        release_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    require_lane_sound(first.created_note);
+    const auto original = *first.created_note;
+    const auto entered = dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{same ? 7U : 9U}, displace});
+    require_lane_sound(entered);
+    check_lane_sound(entered.document_changed);
+    check_lane_sound(history.undo.size() == 2);
+    check_lane_sound(note_count(history) == (same ? 0 : 1));
+    const auto& bgm = history.document.charts.front().measures.front().bgm_events;
+    check_lane_sound(bgm.size() == (same || displace ? 1 : 0));
+    if (!bgm.empty()) check_lane_sound(bgm.front().sound == resource_id_t{7});
+    if (!same) {
+        require_lane_sound(entered.created_note);
+        check_lane_sound(find_note(history, *entered.created_note)->sound == resource_id_t{9});
+    }
+    require_lane_sound(undo_document_command(history));
+    require_lane_sound(find_note(history, original));
+    check_lane_sound(find_note(history, original)->sound == resource_id_t{7});
+    check_lane_sound(history.document.charts.front().measures.front().bgm_events.empty());
 }

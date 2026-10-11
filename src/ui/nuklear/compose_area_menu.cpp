@@ -140,7 +140,7 @@ void render_menu(nk_context* context, const WormUiComposeView& view,
         return;
     }
     if (!chrome::context_menu_begin(menu, context, menu_stamp(view),
-                                    nk_vec2(320.0f, chrome::context_menu_height(sound_layers ? 14 : 7)))) {
+                                    nk_vec2(320.0f, chrome::context_menu_height(sound_layers ? 14 : 8)))) {
         retire_sound_layer_window(action);
         consumed = true;
         return;
@@ -180,6 +180,9 @@ void render_menu(nk_context* context, const WormUiComposeView& view,
                WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE, action);
     menu_entry(context, "Add SPEEDS span", reason_unless(!view.area_range_virtual, materialize),
                WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN, action);
+    menu_entry(context, "Find fitting snap",
+               reason_unless(view.selected_note_count + view.selected_bgm_event_count != 0, "Select notes or BGM first"),
+               WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP, action);
     chrome::context_menu_end(menu, context);
 }
 

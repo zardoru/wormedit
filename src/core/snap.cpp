@@ -4,8 +4,21 @@
 #include <cmath>
 #include <iterator>
 #include <limits>
+#include <numeric>
 
 namespace wormedit {
+
+auto fitting_snap_denominator(const chart_document_t& chart, const measure_index_t& index,
+                               std::span<const local_position_t> positions)
+    -> std::optional<std::uint64_t> {
+    if (positions.empty() || !chart.divisions_per_standard_measure) return std::nullopt;
+    auto divisor = chart.divisions_per_standard_measure;
+    for (const auto position : positions) {
+        if (!absolute_row(index, position)) return std::nullopt;
+        divisor = std::gcd(divisor, position.row);
+    }
+    return chart.divisions_per_standard_measure / divisor;
+}
 
 auto effective_edit_snap_denominator(const chart_document_t& chart, std::uint64_t grid_denominator,
                                      bool snap_enabled) noexcept -> std::uint64_t {

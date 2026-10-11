@@ -4,12 +4,19 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 
 namespace wormedit {
 
 // The one place pointer and cursor positions are rounded onto the edit grid. Every object class
 // (notes, holds, timing markers, areas, resources, BGM, recipes) goes through these helpers, so
 // turning snapping off affects them all at once.
+
+// Smallest denominator containing every supplied position on the measure-local grid.
+// Includes hold ends supplied by the caller. Rejects empty or invalid positions.
+[[nodiscard]] auto fitting_snap_denominator(const chart_document_t& chart,
+    const measure_index_t& index, std::span<const local_position_t> positions)
+    -> std::optional<std::uint64_t>;
 
 // The denominator edits should snap to: the user's grid while snapping is on, or the chart's
 // finest division (one row) while it is off. Zero when the chart has no usable divisions.

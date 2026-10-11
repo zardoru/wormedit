@@ -520,10 +520,11 @@ void render_quantize_grid(const ComposeInspectorContext& i) {
     const auto& v = *i.view;
     auto* c = i.context;
     constexpr const char* grids[]{"1/4", "1/8",  "1/16", "1/32", "1/64",
-                                  "1/6", "1/12", "1/24", "1/48", "1/96"};
-    constexpr std::uint64_t values[]{4, 8, 16, 32, 64, 6, 12, 24, 48, 96};
+                                  "1/6", "1/12", "1/24", "1/48", "1/96",
+                                  "1/5", "1/10", "1/20", "1/40", "1/80"};
+    constexpr std::uint64_t values[]{4, 8, 16, 32, 64, 6, 12, 24, 48, 96, 5, 10, 20, 40, 80};
     auto selected = -1;
-    for (int x = 0; x < 10; ++x)
+    for (int x = 0; x < 15; ++x)
         if (values[x] == v.quantize_divisions)
             selected = x;
     nk_layout_row_dynamic(c, 18, 1);
@@ -531,8 +532,8 @@ void render_quantize_grid(const ComposeInspectorContext& i) {
     nk_label(c, "Grid", NK_TEXT_LEFT);
     // The chip rows start one row spacing below the label.
     grid_bounds.y += grid_bounds.h + c->style.window.spacing.y;
-    const auto grid = wormedit::ui::chrome::ChipGrid{grids, 10, selected, 5}.render(c);
-    quantize_grid_tooltip(c, v, grid_bounds, values, grids, 10, 5);
+    const auto grid = wormedit::ui::chrome::ChipGrid{grids, 15, selected, 5}.render(c);
+    quantize_grid_tooltip(c, v, grid_bounds, values, grids, 15, 5);
     if (grid.chosen >= 0) {
         quantize_grid_invalid = quantize_grid_editing = false;
         set_quantize_action(i, WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS, values[grid.chosen],

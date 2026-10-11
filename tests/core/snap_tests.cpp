@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <source_location>
+#include <array>
 
 using namespace wormedit;
 
@@ -135,4 +136,19 @@ TEST_CASE("measure grid neighbors support fractional beats and reject invalid ge
     check_measure_snap(!adjacent_measure_grid_row(index, -1, 1, 5, 7, true));
     check_measure_snap(!adjacent_measure_grid_row(index, 7, 1, 5, 7, true));
     check_measure_snap(!adjacent_measure_grid_row(index, 2, 1, 0, 7, true));
+}
+
+TEST_CASE("Fitting snap uses local measure phase and exact common divisions", "[unit][core][snap][fitting]") {
+    auto chart = snap_chart();
+    chart.measures.front().definition = {{1, 2}, std::nullopt};
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const std::array points{local_position_t{measure_id_t{3}, 192}, local_position_t{measure_id_t{4}, 384}};
+    CHECK(fitting_snap_denominator(chart, index, points) == 5);
+    const std::array mixed{points[0], local_position_t{measure_id_t{4}, 48}};
+    CHECK(fitting_snap_denominator(chart, index, mixed) == 20);
+    const std::array odd{local_position_t{measure_id_t{4}, 7}};
+    CHECK(fitting_snap_denominator(chart, index, odd) == 960);
+    CHECK_FALSE(fitting_snap_denominator(chart, index, {}));
+    const std::array invalid{local_position_t{measure_id_t{4}, 960}};
+    CHECK_FALSE(fitting_snap_denominator(chart, index, invalid));
 }

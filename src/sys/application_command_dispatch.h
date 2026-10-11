@@ -16,6 +16,9 @@
 namespace wormedit::sys {
 struct notification_history_runtime_t;
 
+// Clear chart-specific state while retaining application services and user settings.
+void reset_application_project_edit_state(application_command_state_t& state);
+
 auto invoke_notification_history_command(application_command_t command, bool auto_repeat,
     notification_history_runtime_t& runtime, notification_center_t& center)
     -> std::optional<wormedit::command_invocation_result_t>;

@@ -2076,3 +2076,45 @@ TEST_CASE("Unavailable and rejected layer assist callbacks leave the current sel
     check_action(f.application.layer_assist_layers.empty());
     check_action(f.history.document.revision==1 && f.history.undo.empty());
 }
+
+TEST_CASE("Find fitting snap includes hold ends and BGM and changes only session grid", "[unit][compose-actions][fitting-snap]") {
+    action_notification_fixture_t f;
+    auto& chart=f.history.document.charts.front();
+    chart.measures.front().notes={{.id=object_id_t{7},.position={measure_id_t{1},192},.lane=lane_id_t{1},
+        .kind=note_kind_t::hold,.end=local_position_t{measure_id_t{1},384}}};
+    f.state.selected_notes={object_id_t{7}};
+    auto action=f.action(WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP);
+    (void)f.dispatch(action);
+    check_action(f.state.active_snap_denominator==5);
+    check_action(f.application.quantize_editor->request.divisions==5);
+    chart.bgm_source_lanes={{.id=object_id_t{9}}};
+    chart.measures.front().bgm_events={{.id=object_id_t{10},.position={measure_id_t{1},48},.source_lane=object_id_t{9}}};
+    f.state.selected_objects={{editor_selection_object_kind_t::bgm_event,object_id_t{10}}};
+    (void)f.dispatch(action);
+    check_action(f.state.active_snap_denominator==20);
+    check_action(f.application.requested_snap_denominators.at(1)==20);
+    check_action(f.history.document.revision==1 && f.history.undo.empty());
+    check_action(chart.measures.front().notes.front().position.row==192);
+}
+
+TEST_CASE("Find fitting snap rejects empty stale and gesturing selection", "[unit][compose-actions][fitting-snap]") {
+    action_notification_fixture_t f;
+    auto action=f.action(WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP);
+    (void)f.dispatch(action);
+    check_action(f.state.active_snap_denominator==4);
+    f.history.document.charts.front().measures.front().notes={{.id=object_id_t{7},
+        .position={measure_id_t{1},192},.lane=lane_id_t{1}}};
+    f.state.selected_notes={object_id_t{7}};
+    action.compose_input_document_revision=0;
+    (void)f.dispatch(action);
+    check_action(f.state.active_snap_denominator==4);
+    action.compose_input_document_revision=1;
+    action.compose_input_project_id=99;
+    (void)f.dispatch(action);
+    check_action(f.state.active_snap_denominator==4);
+    action.compose_input_project_id=f.history.document.id.value;
+    f.state.pending_hold.emplace();
+    (void)f.dispatch(action);
+    check_action(f.state.supported_snap_denominators==std::vector<std::uint64_t>{4});
+    check_action(f.history.undo.empty());
+}

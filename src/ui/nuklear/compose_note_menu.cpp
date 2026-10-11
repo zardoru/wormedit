@@ -40,6 +40,7 @@ bool raise(const WormUiComposeView& view, WormUiWorkspaceAction& action,
            WormUiComposeActionKind kind, std::uint64_t layer = 0) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
     action.compose_action = kind;
+    action.compose_input_project_id = view.project_id;
     action.compose_input_chart_id = view.chart_id;
     action.compose_input_document_revision = view.document_revision;
     action.compose_note_context_id = menu.note;
@@ -257,7 +258,7 @@ void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceA
     if (chrome::popup_panel(context) || !menu.popup.open) return;
     const auto size = menu.submenu
         ? nk_vec2(392, 422)
-        : nk_vec2(root_width + 2 * chrome::menu_padding, chrome::context_menu_height(6));
+        : nk_vec2(root_width + 2 * chrome::menu_padding, chrome::context_menu_height(7));
     if (!chrome::context_menu_begin(menu.popup, context, stamp(view), size)) {
         if (!menu.popup.open) finish_close(view, action);
         return;
@@ -281,6 +282,11 @@ void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceA
             action.compose_resource_id = source.draw_source_id;
             chrome::context_menu_close(menu.popup);
         }
+        nk_layout_row_dynamic(context, row_height, 1);
+        if (chrome::context_menu_button(context, "Find fitting snap",
+                view.selected_note_count + view.selected_bgm_event_count ? nullptr : "Select notes or BGM first") &&
+            raise(view, action, WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP))
+            chrome::context_menu_close(menu.popup);
         render_bgm_action(context, view, action);
         render_sound_selection(context, action);
         nk_layout_row_dynamic(context, row_height, 1);

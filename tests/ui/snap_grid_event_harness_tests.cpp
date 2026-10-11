@@ -109,3 +109,22 @@ TEST_CASE("Snap popup cancels on Escape outside click stale context focus loss a
         check_grid(!worm_ui_nuklear_compose_state().snap_grid_menu.open);
     }
 }
+
+TEST_CASE("Snap popup offers fifth grids and a stamped selection fitting action", "[frontend-state][event-harness][fitting-snap]") {
+    nuklear_event_harness_t h{1280,900};
+    prepare(h);
+    auto& view=h.view().compose;
+    view.selected_note_count=2;
+    view.supported_snap_denominators[1]=5;
+    (void)h.frame();
+    check_grid(h.drawn_text_center("1/5").has_value());
+    const auto target=h.drawn_text_center("Find fitting snap");
+    require_grid(target.has_value());
+    const auto picked=mouse(h,target->first,target->second,true);
+    check_grid(picked.get().compose_action==WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP);
+    check_grid(picked.get().compose_input_chart_id==1);
+    check_grid(picked.get().compose_input_document_revision==1);
+    check_grid(picked.get().compose_input_count==0);
+    (void)mouse(h,target->first,target->second,false);
+    check_grid(!worm_ui_nuklear_compose_state().snap_grid_menu.open);
+}

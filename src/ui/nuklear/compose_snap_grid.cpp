@@ -35,7 +35,7 @@ void render_grid_popup(nk_context* context, const WormUiComposeView& view,
     auto& menu = state.snap_grid_menu;
     const auto count = static_cast<int>(std::min<std::size_t>(view.supported_snap_denominator_count, 32));
     if (!available || count == 0) context_menu_close(menu, context);
-    const auto height = context_menu_height(static_cast<float>((count + 3) / 4 + 2));
+    const auto height = context_menu_height(static_cast<float>((count + 3) / 4 + 3));
     if (!context_menu_begin(menu, context, stamp(view), nk_vec2(280, height))) return;
     std::array<std::array<char, 24>, 32> storage{};
     std::array<const char*, 32> labels{};
@@ -51,6 +51,13 @@ void render_grid_popup(nk_context* context, const WormUiComposeView& view,
     if (chosen >= 0) emit_snap(context, view, action, view.supported_snap_denominators[chosen]);
     else if (nk_input_is_key_pressed(&context->input, NK_KEY_ENTER))
         emit_snap(context, view, action, view.supported_snap_denominators[state.snap_grid_choice]);
+    nk_layout_row_dynamic(context, 22, 1);
+    if (Button{"Find fitting snap", ButtonKind::secondary, nullptr,
+               view.selected_note_count + view.selected_bgm_event_count != 0}.render(context)) {
+        emit_snap(context, view, action, 0);
+        if (action.compose_action == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP)
+            action.compose_action = WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP;
+    }
     nk_layout_row_dynamic(context, 20, 1);
     nk_label(context, "Arrows · Enter · Esc", NK_TEXT_LEFT);
     context_menu_end(menu, context);

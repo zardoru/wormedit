@@ -6097,3 +6097,20 @@ TEST_CASE("Quantize preview control emits a revision checked toggle without Appl
     expect_draw(toggled.get().compose_input_chart_id == 419);
     expect_draw(toggled.get().compose_input_document_revision == 7);
 }
+
+TEST_CASE("Stem lane resize retains width while projected geometry updates on every held frame", "[frontend-state][event-harness][bmson-stem][resize]") {
+    stem_edge_fixture_t f;
+    const auto start=f.edge_x;
+    (void)f.press(start,300);
+    for (const auto distance : {20.0f,40.0f,80.0f}) {
+        f.drag_to(start+distance,300);
+        f.sync_lane();
+        (void)f.harness.frame();
+        expect_draw(std::abs(f.width()-(36+distance))<1);
+        expect_draw(worm_ui_nuklear_compose_state().stem_lane_resize.has_value());
+    }
+    f.release(start+80,300);
+    for (int i=0;i<3;++i) { f.sync_lane(); (void)f.harness.frame(); }
+    expect_draw(std::abs(f.width()-116)<1);
+    expect_draw(!worm_ui_nuklear_compose_state().stem_lane_resize.has_value());
+}

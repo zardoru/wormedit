@@ -32,6 +32,24 @@
 #include <vector>
 
 namespace wormedit::sys {
+void reset_application_project_edit_state(application_command_state_t& current) {
+    application_command_state_t next;
+    static_cast<application_command_services_t&>(next) =
+        std::move(static_cast<application_command_services_t&>(current));
+    next.editor_preferences = current.editor_preferences;
+    next.transport_rate_index = current.transport_rate_index;
+    next.transport_keep_pitch = current.transport_keep_pitch;
+    next.transport_keep_pitch_available = current.transport_keep_pitch_available;
+    next.minimap_click_moves_paused_playhead = current.minimap_click_moves_paused_playhead;
+    next.transport_seek_posts_feedback = current.transport_seek_posts_feedback;
+    next.transport_metronome_enabled = current.transport_metronome_enabled;
+    next.transport_metronome_available = current.transport_metronome_available;
+    next.timing_settings_visible = current.timing_settings_visible;
+    next.metronome_volume = current.metronome_volume;
+    next.metronome_count_in = current.metronome_count_in;
+    current = std::move(next);
+}
+
 namespace {
 
 void remember_snap_denominator(application_command_state_t& state, wormedit::chart_id_t chart,

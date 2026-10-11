@@ -19,6 +19,8 @@
 #include "wormedit/audio.h"
 
 #include <wormedit/core/audio_offset_editor.h>
+#include <wormedit/core/snap.h>
+#include <unordered_set>
 #include <wormedit/core/bgm_columns.h>
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/bpm_editor.h>
@@ -3355,8 +3357,7 @@ auto rename_quantize_preset(compose_action_context_t& context) -> std::string {
     return compose_action_success(context, "Quantization preset renamed.");
 }
 
-auto set_edit_snap_from_badge(compose_action_context_t& context) -> std::string {
-    const auto divisions = context.action.compose_snap_denominator;
+auto set_edit_snap_from_badge(compose_action_context_t& context, std::uint64_t divisions) -> std::string {
     if (editor_interaction_has_pending_gesture(context.state) ||
         context.application_state.paste_session)
         return compose_action_warning(context, "Finish or cancel the active Compose gesture before changing snapping.");
@@ -3373,6 +3374,54 @@ auto set_edit_snap_from_badge(compose_action_context_t& context) -> std::string 
     return compose_action_info(context, "Editing grid: 1/" + std::to_string(divisions) + ".");
 }
 
+auto selected_snap_positions(const chart_document_t& chart, const editor_interaction_state_t& state)
+    -> std::vector<local_position_t> {
+    const std::unordered_set<std::uint64_t> notes = [&] {
+        std::unordered_set<std::uint64_t> ids;
+        for (const auto id : state.selected_notes) ids.insert(id.value);
+        return ids;
+    }();
+    std::unordered_set<std::uint64_t> bgm;
+    for (const auto id : selected_compose_bgm_events(state)) bgm.insert(id.value);
+    std::vector<local_position_t> positions;
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            if (!notes.contains(note.id.value)) continue;
+            positions.push_back(note.position);
+            if (note.end) positions.push_back(*note.end);
+        }
+        for (const auto& event : measure.bgm_events)
+            if (bgm.contains(event.id.value)) positions.push_back(event.position);
+    }
+    return positions;
+}
+
+auto find_selection_snap(compose_action_context_t& context) -> std::string {
+    if (context.action.compose_input_project_id != context.history.document.id.value)
+        return compose_action_warning(context, "Fitting snap request belongs to a different project.");
+    if (editor_interaction_has_pending_gesture(context.state) || context.application_state.paste_session)
+        return compose_action_warning(context, "Finish or cancel the active Compose gesture before changing snapping.");
+    const auto* chart = selected_chart(context.history, context.workspace);
+    if (!chart) return compose_action_warning(context, "Select a chart first.");
+    const auto positions = selected_snap_positions(*chart, context.state);
+    const auto geometry = build_measure_index(*chart);
+    if (!std::holds_alternative<measure_index_t>(geometry))
+        return compose_action_warning(context, "This chart has invalid measure geometry.");
+    const auto fitting = fitting_snap_denominator(*chart, std::get<measure_index_t>(geometry), positions);
+    if (!fitting) return compose_action_warning(context, "Select notes or BGM events to find a fitting snap.");
+    auto divisions = *fitting;
+    // Downbeats/thirds use familiar quarter/triplet grids when those contain every point.
+    if (divisions < 4 && chart->divisions_per_standard_measure % (divisions * 4) == 0)
+        divisions *= 4;
+    auto previous = context.state.supported_snap_denominators;
+    if (std::ranges::find(previous, divisions) == previous.end())
+        context.state.supported_snap_denominators.push_back(divisions);
+    const auto result = set_edit_snap_from_badge(context, divisions);
+    if (context.state.active_snap_denominator != divisions)
+        context.state.supported_snap_denominators = std::move(previous);
+    return result;
+}
+
 auto dispatch_quantize_preset_action(compose_action_context_t& context)
     -> std::optional<std::string> {
     using namespace wormedit;
@@ -3382,7 +3431,9 @@ auto dispatch_quantize_preset_action(compose_action_context_t& context)
         return compose_action_info(context, context.application_state.quantize_editor->preview_enabled
             ? "Quantize preview enabled." : "Quantize preview disabled.");
     }
-    if (kind == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP) return set_edit_snap_from_badge(context);
+    if (kind == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP)
+        return set_edit_snap_from_badge(context, context.action.compose_snap_denominator);
+    if (kind == WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP) return find_selection_snap(context);
     if (kind == WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS)
         return apply_quantize_settings_from_action(context);
     if (kind == WORM_UI_COMPOSE_ACTION_SELECT_QUANTIZE_PRESET)

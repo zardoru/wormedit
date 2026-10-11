@@ -2553,45 +2553,6 @@ void validate_minimap_start_frame(application_command_state_t& application,
         compose_state ? &*compose_state : nullptr);
 }
 
-void reset_project_edit_state(application_command_state_t& current) {
-    application_command_state_t next;
-    next.editor_preferences = current.editor_preferences;
-    next.transport_rate_index = current.transport_rate_index;
-    next.transport_keep_pitch = current.transport_keep_pitch;
-    next.transport_keep_pitch_available = current.transport_keep_pitch_available;
-    next.transport_set_playback_rate = std::move(current.transport_set_playback_rate);
-    next.transport_set_keep_pitch = std::move(current.transport_set_keep_pitch);
-    next.transport_active = std::move(current.transport_active);
-    next.transport_inline_active = std::move(current.transport_inline_active);
-    next.transport_preview_playing = std::move(current.transport_preview_playing);
-    next.transport_preview_paused = std::move(current.transport_preview_paused);
-    next.transport_preview_end_frame = std::move(current.transport_preview_end_frame);
-    next.minimap_click_moves_paused_playhead = current.minimap_click_moves_paused_playhead;
-    next.open_bookmark_chooser = std::move(current.open_bookmark_chooser);
-    next.open_sound_picker = std::move(current.open_sound_picker);
-    next.compose_dock_command = std::move(current.compose_dock_command);
-    next.transport_play_pause = std::move(current.transport_play_pause);
-    next.transport_play_from_start = std::move(current.transport_play_from_start);
-    next.transport_seek = std::move(current.transport_seek);
-    next.transport_seek_posts_feedback = current.transport_seek_posts_feedback;
-    next.transport_audio_milliseconds = std::move(current.transport_audio_milliseconds);
-    next.transport_seek_audio_milliseconds = std::move(current.transport_seek_audio_milliseconds);
-    next.transport_stop = std::move(current.transport_stop);
-    next.transport_set_loop_selection = std::move(current.transport_set_loop_selection);
-    next.transport_loop_selection_active = std::move(current.transport_loop_selection_active);
-    next.transport_metronome_enabled = current.transport_metronome_enabled;
-    next.transport_metronome_available = current.transport_metronome_available;
-    next.transport_set_metronome = std::move(current.transport_set_metronome);
-    next.transport_set_layer_assist = std::move(current.transport_set_layer_assist);
-    next.timing_settings_visible = current.timing_settings_visible;
-    next.metronome_volume = current.metronome_volume;
-    next.metronome_count_in = current.metronome_count_in;
-    next.transport_set_metronome_volume = std::move(current.transport_set_metronome_volume);
-    next.transport_set_metronome_count_in = std::move(current.transport_set_metronome_count_in);
-    next.external_player = std::move(current.external_player);
-    next.transport_cancel_restore = std::move(current.transport_cancel_restore);
-    current = std::move(next);
-}
 
 template <typename Context>
 void post_project_feedback(Context& context, wormedit::notification_severity_t severity,
@@ -2619,7 +2580,7 @@ void reset_project_runtime_state(Context& context) {
     context.compose_viewport_input_ref.escape();
     context.compose_navigation_input_ref.cancel();
     context.metadata_drop_ref.clear_paths();
-    reset_project_edit_state(context.application_command_state_ref);
+    wormedit::sys::reset_application_project_edit_state(context.application_command_state_ref);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     post_audio_inventory_feedback(
         wormedit::sys::reconcile_audition_sources(context.audition_reconciliation_ref, true),

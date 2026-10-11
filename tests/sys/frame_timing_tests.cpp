@@ -6301,3 +6301,42 @@ TEST_CASE("Quantize ghost preview defaults off and toggles without editing the c
     expect_compose_test(!fixture.flattened.view.compose.quantize_preview_enabled);
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);
 }
+
+TEST_CASE("Default chart snap choices include exact fifth grids while filtering incompatible resolution", "[unit][frame-timing][fitting-snap]") {
+    using namespace wormedit;
+    const auto common=filter_snap_denominators(960,wormedit::sys::chart_snap_preferences,4);
+    REQUIRE(common);
+    for (const auto fifth : {5U,10U,20U,40U,80U})
+        CHECK(std::ranges::find(common.supported_denominators,fifth)!=common.supported_denominators.end());
+    const auto coarse=filter_snap_denominators(192,wormedit::sys::chart_snap_preferences,4);
+    REQUIRE(coarse);
+    CHECK(std::ranges::find(coarse.supported_denominators,5)==coarse.supported_denominators.end());
+}
+
+TEST_CASE("Project replacement preserves the live BMSON width service while clearing chart session state", "[unit][frame-timing][bmson-resize]") {
+    wormedit::sys::application_command_state_t state;
+    std::uint64_t requested_project{}, requested_chart{}, requested_lane{};
+    state.compose_bgm_lane_width=[&](auto project,auto chart,auto lane) {
+        requested_project=project;requested_chart=chart;requested_lane=lane;return 116.0;
+    };
+    state.compose_left_dock_pixels=[] { return 240; };
+    state.transport_preserve_bookmark_revision=[](auto,auto,auto) { return true; };
+    const auto now=std::chrono::steady_clock::now();
+    state.bookmark_clock=[=] { return now; };
+    state.layer_assist_chart=wormedit::chart_id_t{7};
+    state.layer_assist_layers={wormedit::layer_id_t{3}};
+    wormedit::sys::reset_application_project_edit_state(state);
+    expect_compose_test(static_cast<bool>(state.compose_bgm_lane_width));
+    expect_compose_test(state.compose_bgm_lane_width(123,7,44)==116.0);
+    expect_compose_test(requested_project==123);
+    expect_compose_test(requested_chart==7);
+    expect_compose_test(requested_lane==44);
+    expect_compose_test(static_cast<bool>(state.compose_left_dock_pixels));
+    expect_compose_test(static_cast<bool>(state.transport_preserve_bookmark_revision));
+    expect_compose_test(static_cast<bool>(state.bookmark_clock));
+    expect_compose_test(state.compose_left_dock_pixels()==240);
+    expect_compose_test(state.transport_preserve_bookmark_revision(wormedit::chart_id_t{7},1,2));
+    expect_compose_test(state.bookmark_clock()==now);
+    expect_compose_test(!state.layer_assist_chart);
+    expect_compose_test(state.layer_assist_layers.empty());
+}

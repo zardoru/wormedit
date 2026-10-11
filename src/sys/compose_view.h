@@ -74,7 +74,7 @@ inline constexpr double compose_playable_lane_width_pixels{48.0};
 inline constexpr double compose_minimum_playable_field_width_pixels{160.0};
 inline constexpr double compose_maximum_playable_field_width_pixels{640.0};
 inline constexpr double compose_minimum_bgm_pane_width_pixels{96.0};
-inline constexpr std::array<std::uint64_t, 10> chart_snap_preferences{4, 8, 6, 12, 16, 24, 32, 48, 64, 96};
+inline constexpr std::array<std::uint64_t, 18> chart_snap_preferences{4, 5, 8, 6, 10, 12, 16, 20, 24, 32, 40, 48, 60, 64, 80, 96, 160, 320};
 
 
 struct bmson_draft_audition_request_t {
@@ -330,7 +330,43 @@ struct compose_scene_cache_t {
 
 enum class external_player_action_t;
 
-struct application_command_state_t {
+// Application-lifetime callbacks are one unit. Replacing a project resets chart state,
+// but moves this complete bundle so a newly added service cannot be silently dropped.
+struct application_command_services_t {
+    std::function<bool(wormedit::chart_id_t, std::span<const wormedit::layer_id_t>)> transport_set_layer_assist;
+    std::function<bool(wormedit::rational_t)> transport_set_playback_rate;
+    std::function<bool(bool)> transport_set_keep_pitch;
+    std::function<bool()> transport_active;
+    std::function<bool()> transport_inline_active;
+    std::function<bool()> transport_preview_playing;
+    std::function<bool()> transport_preview_paused;
+    std::function<std::optional<std::uint64_t>()> transport_preview_end_frame;
+    std::function<bool(wormedit::chart_id_t, std::uint64_t, std::uint64_t)>
+        transport_preserve_bookmark_revision;
+    std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_bookmark_chooser;
+    std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_sound_picker;
+    std::function<bool(WormUiComposeDockCommand, std::uint64_t, std::uint64_t, std::uint64_t)>
+        compose_dock_command;
+    std::function<int()> compose_left_dock_pixels;
+    std::function<double(std::uint64_t, std::uint64_t, std::uint64_t)> compose_bgm_lane_width;
+    std::function<std::string()> transport_play_pause;
+    std::function<std::string()> transport_play_from_start;
+    std::function<std::string(std::uint64_t)> transport_seek;
+    std::function<std::optional<std::int64_t>()> transport_audio_milliseconds;
+    std::function<std::string(std::int64_t)> transport_seek_audio_milliseconds;
+    std::function<void()> transport_stop;
+    std::function<bool(wormedit::chart_id_t, std::uint64_t, std::uint64_t,
+                       std::uint64_t, bool)> transport_set_loop_selection;
+    std::function<bool()> transport_loop_selection_active;
+    std::function<void(std::uint8_t)> transport_set_metronome_volume;
+    std::function<void(std::uint8_t)> transport_set_metronome_count_in;
+    std::function<void(bool)> transport_set_metronome;
+    std::function<std::string(external_player_action_t)> external_player;
+    std::function<std::string()> transport_cancel_restore;
+    std::function<std::chrono::steady_clock::time_point()> bookmark_clock;
+};
+
+struct application_command_state_t : application_command_services_t {
     // Fresh per-frame source context, stamped to prevent cross-chart/stale hover reuse.
     std::optional<wormedit::chart_id_t> sound_selection_chart;
     std::uint64_t sound_selection_revision{};
@@ -423,7 +459,6 @@ struct application_command_state_t {
     bool semantic_layer_target_none{};
     std::optional<wormedit::chart_id_t> layer_assist_chart;
     std::vector<wormedit::layer_id_t> layer_assist_layers;
-    std::function<bool(wormedit::chart_id_t, std::span<const wormedit::layer_id_t>)> transport_set_layer_assist;
     // Semantic-layer filters are an ephemeral per-chart Compose view setting.
     // Layer IDs are only unique within their chart, so never carry a filter to
     // another selected difficulty.
@@ -453,16 +488,6 @@ struct application_command_state_t {
     std::size_t transport_rate_index{8};
     bool transport_keep_pitch{};
     bool transport_keep_pitch_available{};
-    std::function<bool(wormedit::rational_t)> transport_set_playback_rate;
-    std::function<bool(bool)> transport_set_keep_pitch;
-    std::function<bool()> transport_active;
-    std::function<bool()> transport_inline_active;
-    std::function<bool()> transport_preview_playing;
-    std::function<bool()> transport_preview_paused;
-    std::function<std::optional<std::uint64_t>()> transport_preview_end_frame;
-    // Preserve a running chart preview across the one-revision beat-bookmark insertion.
-    std::function<bool(wormedit::chart_id_t, std::uint64_t, std::uint64_t)>
-        transport_preserve_bookmark_revision;
     bool minimap_click_moves_paused_playhead{};
     // Session-only window of the BGM bar; zoom and pan never touch the chart.
     bgm_bar_range_t bgm_bar_range;
@@ -478,35 +503,14 @@ struct application_command_state_t {
         double cursor_subrow{};
     };
     std::optional<minimap_start_frame_t> minimap_start_frame;
-    std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_bookmark_chooser;
-    std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_sound_picker;
-    std::function<bool(WormUiComposeDockCommand, std::uint64_t, std::uint64_t, std::uint64_t)>
-        compose_dock_command;
-    // Pixels the frontend's left dock takes from the Compose field; absent means none.
-    std::function<int()> compose_left_dock_pixels;
-    std::function<double(std::uint64_t, std::uint64_t, std::uint64_t)> compose_bgm_lane_width;
-    std::function<std::string()> transport_play_pause;
-    std::function<std::string()> transport_play_from_start;
-    std::function<std::string(std::uint64_t)> transport_seek;
     // Production seek callbacks publish typed outcomes themselves. Legacy or
     // test callbacks leave this false so their consumer can publish the result.
     bool transport_seek_posts_feedback{};
-    std::function<std::optional<std::int64_t>()> transport_audio_milliseconds;
-    std::function<std::string(std::int64_t)> transport_seek_audio_milliseconds;
-    std::function<void()> transport_stop;
-    std::function<bool(wormedit::chart_id_t, std::uint64_t, std::uint64_t,
-                       std::uint64_t, bool)> transport_set_loop_selection;
-    std::function<bool()> transport_loop_selection_active;
     bool transport_metronome_enabled{};
     bool transport_metronome_available{};
     bool timing_settings_visible{};
     std::uint8_t metronome_volume{100};
     std::uint8_t metronome_count_in{};
-    std::function<void(std::uint8_t)> transport_set_metronome_volume;
-    std::function<void(std::uint8_t)> transport_set_metronome_count_in;
-    std::function<void(bool)> transport_set_metronome;
-    std::function<std::string(external_player_action_t)> external_player;
-    std::function<std::string()> transport_cancel_restore;
     std::optional<double> preview_playhead_absolute_row;
     // The row a playing bookmark seek last targeted, so a quick repeat steps from it rather
     // than from a playhead the audio clock has not advanced to yet.
@@ -530,8 +534,6 @@ struct application_command_state_t {
         last_playing_bookmark_seek.reset();
         last_playhead_skip.reset();
     }
-    // Tests inject a clock; empty means steady_clock::now.
-    std::function<std::chrono::steady_clock::time_point()> bookmark_clock;
     // Wheel rows gathered during one input frame while playing; flushed as a single seek.
 };
 

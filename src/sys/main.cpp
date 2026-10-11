@@ -4580,7 +4580,7 @@ int main(int argc, char** argv) {
 
             wormedit::sys::rebind_workspace_after_edit(workspace, history, notification_sink, workspace_edit_feedback);
             model = wormedit::sys::build_workspace_frame_model(
-                compare_scene_cache, workspace, history.document);
+                compare_scene_cache, workspace, history.document, project_chart_runtime.session_generation);
         }
         timing_edit.cancel_if_stale(history, workspace, application_command_state);
         const auto notification_view = project_application_notifications(

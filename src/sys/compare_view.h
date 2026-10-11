@@ -12,6 +12,13 @@
 namespace wormedit::sys {
 
 struct compare_scene_cache_t {
+    std::uint64_t session_generation{};
+    void bind_project_session(std::uint64_t generation) {
+        if (session_generation == generation) return;
+        *this = {};
+        session_generation = generation;
+    }
+    wormedit::workspace_binding_validation_cache_t binding_validation;
     wormedit::workspace_bms_branch_outline_cache_t branch_outline;
     compose_scene_cache_t first_scene;
     compose_scene_cache_t second_scene;
@@ -42,7 +49,8 @@ void cache_compare_diagnostics(compare_scene_cache_t& cache,
                                const wormedit::song_document_t& document);
 [[nodiscard]] auto build_workspace_frame_model(
     compare_scene_cache_t& cache, const wormedit::workspace_controller_t& workspace,
-    const wormedit::song_document_t& document) -> wormedit::workspace_view_result_t;
+    const wormedit::song_document_t& document, std::uint64_t session_generation = 0)
+    -> wormedit::workspace_view_result_t;
 
 [[nodiscard]] inline auto choose_compare_chart_pair(
     std::span<const wormedit::chart_id_t> available,

@@ -7,6 +7,7 @@
 #include "sys/waveform_analysis_runtime.h"
 #include "sys/bmson_waveform_projection.h"
 #include "sys/compose_view.h"
+#include "sys/compare_view.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_input.h"
 #include "sys/compose_area_actions.h"
@@ -6339,4 +6340,20 @@ TEST_CASE("Project replacement preserves the live BMSON width service while clea
     expect_compose_test(state.bookmark_clock()==now);
     expect_compose_test(!state.layer_assist_chart);
     expect_compose_test(state.layer_assist_layers.empty());
+}
+
+TEST_CASE("Workspace frame cache clears when the same document is reopened", "[sys][frame-timing][T558]") {
+    wormedit::sys::compare_scene_cache_t cache;
+    cache.bind_project_session(7);
+    cache.binding_validation.valid = true;
+    cache.binding_validation.build_count = 1;
+    cache.branch_outline.valid = true;
+    cache.cached_diagnostics.push_back({});
+    cache.bind_project_session(7);
+    expect_compose_test(cache.binding_validation.valid);
+    cache.bind_project_session(8);
+    expect_compose_test(!cache.binding_validation.valid);
+    expect_compose_test(cache.binding_validation.build_count == 0);
+    expect_compose_test(!cache.branch_outline.valid && cache.cached_diagnostics.empty());
+    expect_compose_test(cache.session_generation == 8);
 }

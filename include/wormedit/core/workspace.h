@@ -245,6 +245,19 @@ struct workspace_bms_branch_outline_t {
     diagnostic_list_t diagnostics;
 };
 
+// Optional application-lifetime cache. Document mutations must advance revision,
+// as required by the workspace binding contract. Per-frame workspace guards
+// (focus, selected chart, comparisons and tab) are never cached.
+struct workspace_binding_validation_cache_t {
+    const song_document_t* document_identity{};
+    song_id_t song;
+    std::uint64_t revision{};
+    workspace_limits_t limits;
+    diagnostic_list_t diagnostics;
+    bool valid{};
+    std::size_t build_count{};
+};
+
 // One owned outline; branch choices and limits participate even between revisions.
 struct workspace_bms_branch_outline_cache_t {
     const void* document_identity{};
@@ -331,7 +344,8 @@ struct workspace_view_result_t {
 [[nodiscard]] auto make_workspace_view(const workspace_controller_t& workspace,
                                        const song_document_t& document, workspace_tab_t tab,
                                        const diagnostic_list_t* cached_diagnostics = nullptr,
-                                       workspace_bms_branch_outline_cache_t* branch_cache = nullptr)
+                                       workspace_bms_branch_outline_cache_t* branch_cache = nullptr,
+                                       workspace_binding_validation_cache_t* binding_cache = nullptr)
     -> workspace_view_result_t;
 
 } // namespace wormedit

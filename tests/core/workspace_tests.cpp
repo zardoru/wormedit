@@ -787,3 +787,84 @@ TEST_CASE("Workspace branch cache preserves ordinary statements and skips only a
           "[unit][core][workspace][workspace-cache]") {
     REQUIRE(branch_cache_preserves_plain_sidebar_and_skips_absent_tree());
 }
+
+namespace {
+auto cached_binding_view(const song_document_t& song, const workspace_controller_t& workspace,
+                         workspace_binding_validation_cache_t& cache) -> workspace_view_result_t {
+    return make_workspace_view(workspace, song, workspace.active_tab, nullptr, nullptr, &cache);
+}
+auto binding_cache_tracks_document_and_limits() -> bool {
+    auto song = workspace_song();
+    auto binding = make_workspace_controller(song);
+    if (!binding) return false;
+    auto& workspace = *binding.workspace;
+    workspace_binding_validation_cache_t cache;
+    for (unsigned frame = 0; frame < 240; ++frame) {
+        workspace.transport.position_frame = frame * 800;
+        if (!cached_binding_view(song, workspace, cache)) return false;
+    }
+    if (cache.build_count != 1) return false;
+    ++song.revision;
+    workspace.document_revision = song.revision;
+    if (!cached_binding_view(song, workspace, cache) || cache.build_count != 2) return false;
+    auto replacement = song;
+    if (!cached_binding_view(replacement, workspace, cache) || cache.build_count != 3) return false;
+    workspace.limits.maximum_audio_assets = 0;
+    const auto rejected = cached_binding_view(replacement, workspace, cache);
+    const auto reference = make_workspace_view(workspace, replacement);
+    return !rejected && !reference && cache.build_count == 4 &&
+        rejected.diagnostics.front().code == reference.diagnostics.front().code &&
+        rejected.diagnostics.front().message == reference.diagnostics.front().message;
+}
+auto binding_cache_keeps_dynamic_guards() -> bool {
+    auto song = workspace_song();
+    auto binding = make_workspace_controller(song);
+    if (!binding) return false;
+    auto& workspace = *binding.workspace;
+    workspace_binding_validation_cache_t cache;
+    if (!cached_binding_view(song, workspace, cache)) return false;
+    workspace.selected_chart = chart_id_t{999};
+    if (cached_binding_view(song, workspace, cache)) return false;
+    workspace.selected_chart = song.charts.front().id;
+    workspace.comparison_charts = {chart_id_t{999}};
+    if (cached_binding_view(song, workspace, cache)) return false;
+    workspace.comparison_charts.clear();
+    workspace.tab_focus[static_cast<std::size_t>(workspace.active_tab)].target = object_id_t{999};
+    if (cached_binding_view(song, workspace, cache)) return false;
+    workspace.tab_focus[static_cast<std::size_t>(workspace.active_tab)] = {};
+    workspace.active_tab = static_cast<workspace_tab_t>(999);
+    if (cached_binding_view(song, workspace, cache)) return false;
+    workspace.active_tab = workspace_tab_t::setup;
+    --workspace.document_revision;
+    return !cached_binding_view(song, workspace, cache) && cache.build_count == 1;
+}
+auto binding_cache_revalidates_invalid_id_edits() -> bool {
+    auto song = workspace_song();
+    auto binding = make_workspace_controller(song);
+    if (!binding) return false;
+    auto& workspace = *binding.workspace;
+    workspace_binding_validation_cache_t cache;
+    if (!cached_binding_view(song, workspace, cache)) return false;
+    song.audio_assets.push_back(song.audio_assets.front());
+    workspace.document_revision = ++song.revision;
+    const auto rejected = cached_binding_view(song, workspace, cache);
+    if (rejected || rejected.diagnostics.empty() || cache.build_count != 2) return false;
+    if (cached_binding_view(song, workspace, cache) || cache.build_count != 2) return false;
+    song.audio_assets.pop_back();
+    workspace.document_revision = ++song.revision;
+    return static_cast<bool>(cached_binding_view(song, workspace, cache)) && cache.build_count == 3;
+}
+} // namespace
+
+TEST_CASE("Workspace binding validation reuses immutable revisions and invalidates limits and identity",
+          "[workspace][cache][T558]") {
+    CHECK(binding_cache_tracks_document_and_limits());
+}
+TEST_CASE("Workspace binding validation cache keeps per-frame workspace guards live",
+          "[workspace][cache][T558]") {
+    CHECK(binding_cache_keeps_dynamic_guards());
+}
+TEST_CASE("Workspace binding validation cache revalidates invalid edits and repairs",
+          "[workspace][cache][T558]") {
+    CHECK(binding_cache_revalidates_invalid_id_edits());
+}

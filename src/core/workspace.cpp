@@ -131,6 +131,22 @@ auto validate_binding_bounds(const song_document_t& document, const workspace_li
     return diagnostics;
 }
 
+auto binding_diagnostics(const song_document_t& document, const workspace_limits_t& limits,
+                         workspace_binding_validation_cache_t* cache) -> diagnostic_list_t {
+    if (!cache) return validate_binding_bounds(document, limits);
+    if (!cache->valid || cache->document_identity != &document || cache->song != document.id ||
+        cache->revision != document.revision || cache->limits != limits) {
+        cache->diagnostics = validate_binding_bounds(document, limits);
+        cache->document_identity = &document;
+        cache->song = document.id;
+        cache->revision = document.revision;
+        cache->limits = limits;
+        cache->valid = true;
+        ++cache->build_count;
+    }
+    return cache->diagnostics;
+}
+
 auto find_chart(const song_document_t& document, chart_id_t id) -> const chart_document_t* {
     const auto found =
         std::ranges::find_if(document.charts, [id](const auto& chart) { return chart.id == id; });
@@ -1424,7 +1440,8 @@ auto make_workspace_view(const workspace_controller_t& workspace, const song_doc
 auto make_workspace_view(const workspace_controller_t& workspace, const song_document_t& document,
                          workspace_tab_t requested_tab,
                          const diagnostic_list_t* cached_diagnostics,
-                         workspace_bms_branch_outline_cache_t* branch_cache)
+                         workspace_bms_branch_outline_cache_t* branch_cache,
+                         workspace_binding_validation_cache_t* binding_cache)
     -> workspace_view_result_t {
     workspace_view_result_t result;
     if (document.id != workspace.song || document.revision != workspace.document_revision) {
@@ -1432,7 +1449,7 @@ auto make_workspace_view(const workspace_controller_t& workspace, const song_doc
                   "workspace view cannot be built from a stale or different document revision");
         return result;
     }
-    result.diagnostics = validate_binding_bounds(document, workspace.limits);
+    result.diagnostics = binding_diagnostics(document, workspace.limits, binding_cache);
     if (has_errors(result.diagnostics)) {
         return result;
     }

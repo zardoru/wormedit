@@ -202,6 +202,10 @@ void report_if_requested(const frame_timing_t& timer) {
     const auto frame = timer.summary();
     std::fprintf(output, "Last %zu frames: average %.6f ms, p99 %.6f ms\n", frame.count,
                  frame.average_ms, frame.p99_ms);
+    const auto frame_cpu = timer.cpu_summary();
+    if (frame_cpu.count != 0)
+        std::fprintf(output, "Frame CPU: average %.6f ms, p99 %.6f ms (%zu samples)\n",
+                     frame_cpu.average_ms, frame_cpu.p99_ms, frame_cpu.count);
     for (std::size_t i = 0; i < frame_phase_count; ++i) {
         const auto phase = frame_phase_display_order[i];
         const auto index = static_cast<std::size_t>(phase);

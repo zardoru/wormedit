@@ -550,10 +550,10 @@ void render_quantize_setting_fields(const ComposeInspectorContext& i) {
     const auto& v = *i.view;
     auto* c = i.context;
     render_quantize_grid(i);
-    constexpr const char* spaces[]{"Standard measure", "Authored"};
+    constexpr const char* spaces[]{"Standard", "Authored"};
     constexpr const char* st[]{"Snap on the standard-measure grid across the chart.",
                                "Divide each authored measure into this many equal parts."};
-    constexpr const char* ties[]{"Round earlier", "Round later", "Block apply"};
+    constexpr const char* ties[]{"Earlier", "Later", "Block"};
     constexpr const char* tt[]{
         "Round halfway objects to the earlier grid line.",
         "Round halfway objects to the later grid line.",
@@ -562,14 +562,17 @@ void render_quantize_setting_fields(const ComposeInspectorContext& i) {
     constexpr const char* ht[]{
         "Snap the head and leave the tail in place, changing the hold length.",
         "Snap both the hold head and its tail to the grid."};
+    wormedit::ui::chrome::section_separator(c);
     nk_layout_row_dynamic(c, 18, 1);
     nk_label(c, "Space", NK_TEXT_LEFT);
     const auto space = quantize_segments(c, spaces, 2, v.quantize_space, st);
+    wormedit::ui::chrome::section_separator(c);
     nk_layout_row_dynamic(c, 18, 1);
     nk_labelf(c, NK_TEXT_LEFT, "Halfway objects · %zu in selection",
               v.quantize_preview_halfway_notes);
     const auto tie =
         quantize_segments(c, ties, 3, v.quantize_tie, tt, v.quantize_preview_halfway_notes == 0);
+    wormedit::ui::chrome::section_separator(c);
     nk_layout_row_dynamic(c, 18, 1);
     nk_labelf(c, NK_TEXT_LEFT, "Hold tails · %zu %s in selection", v.quantize_preview_holds,
               v.quantize_preview_holds == 1 ? "hold" : "holds");
@@ -599,6 +602,7 @@ void render_quantize_preset_picker(const ComposeInspectorContext& i) {
     for (std::size_t x = 0; x < count; ++x)
         labels[x] = v.quantize_presets && v.quantize_presets[x].name ? v.quantize_presets[x].name
                                                                      : "(unnamed)";
+    wormedit::ui::chrome::section_separator(c);
     nk_layout_row_dynamic(c, 18, 1);
     const auto heading = nk_widget_bounds(c);
     nk_label(c, "Presets", NK_TEXT_LEFT);
@@ -842,10 +846,9 @@ void prepare_compose_quantize_input(nk_context* context, const WormUiComposeView
 
 void render_quantize_preview_toggle(const ComposeInspectorContext& inspector) {
     auto* context = inspector.context;
-    nk_layout_row_dynamic(context, 26, 1);
     nk_bool preview = inspector.view->quantize_preview_enabled;
     if (compose_quantize_owns_input()) nk_widget_disable_begin(context);
-    const auto changed = nk_checkbox_label(context, "Preview quantization", &preview);
+    const auto changed = nk_checkbox_label(context, "Preview", &preview);
     if (compose_quantize_owns_input()) nk_widget_disable_end(context);
     if (changed && !compose_quantize_owns_input() &&
         inspector.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
@@ -854,12 +857,42 @@ void render_quantize_preview_toggle(const ComposeInspectorContext& inspector) {
             inspector.view->quantize_tie, inspector.view->quantize_holds);
 }
 
+void render_quantize_action_row(const ComposeInspectorContext& inspector) {
+    auto* context = inspector.context;
+    const auto* view = inspector.view;
+    auto* action = inspector.action;
+    const auto popup_owns_input = compose_quantize_owns_input();
+    wormedit::ui::chrome::section_separator(context);
+    nk_layout_row_dynamic(context, 26, 2);
+    render_quantize_preview_toggle(inspector);
+    const auto enabled = view->scene_available && (view->selected_note_count + view->selected_bgm_event_count) != 0 &&
+                         view->quantize_preview_blocked == 0 && view->quantize_preview_moved != 0 &&
+                         !quantize_grid_editing && !quantize_grid_invalid && !popup_owns_input;
+    if (!enabled)
+        nk_widget_disable_begin(context);
+    const auto bounds = nk_widget_bounds(context);
+    const auto clicked = nk_button_label(context, view->quantize_q_bound ? "Quantize (Q)"
+                                                                         : "Quantize");
+    if (!enabled)
+        nk_widget_disable_end(context);
+    if (!enabled && !popup_owns_input && wormedit::ui::chrome::button_hovered(context, bounds))
+        wormedit::ui::nuklear::tooltip::text(
+            context, view->quantize_preview_blocked
+                         ? view->quantize_preview_message
+                         : "Select notes or BGM that would move and finish editing a valid grid.");
+    if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        set_quantize_action(inspector, WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE,
+                            view->quantize_divisions, view->quantize_space, view->quantize_tie,
+                            view->quantize_holds, view->quantize_selected_preset_valid,
+                            view->quantize_selected_preset_index);
+}
+
 void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
     const auto* view = inspector.view;
     auto* context = inspector.context;
-    auto* action = inspector.action;
     sync_quantize_grid_text(*view);
     const auto section_clip = nk_window_get_canvas(context)->clip;
+    if (!nk_tree_push(context, NK_TREE_TAB, "Quantize / Snap", NK_MAXIMIZED)) return;
     wormedit::ui::chrome::context_menu_retire(quantize_menu, context);
     if (!quantize_menu.open) {
         if (quantize_grid_editing || quantize_grid_invalid)
@@ -889,32 +922,11 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
     const auto popup_owns_input = compose_quantize_owns_input();
     if (popup_owns_input)
         nk_widget_disable_begin(context);
-    render_quantize_preview_toggle(inspector);
     render_quantize_setting_fields(inspector);
     render_quantize_preset_picker(inspector);
     if (popup_owns_input)
         nk_widget_disable_end(context);
-    const auto enabled = view->scene_available && (view->selected_note_count + view->selected_bgm_event_count) != 0 &&
-                         view->quantize_preview_blocked == 0 && view->quantize_preview_moved != 0 &&
-                         !quantize_grid_editing && !quantize_grid_invalid && !popup_owns_input;
-    if (!enabled)
-        nk_widget_disable_begin(context);
-    nk_layout_row_dynamic(context, 25, 1);
-    const auto bounds = nk_widget_bounds(context);
-    const auto clicked = nk_button_label(context, view->quantize_q_bound ? "Apply quantization (Q)"
-                                                                         : "Apply quantization");
-    if (!enabled)
-        nk_widget_disable_end(context);
-    if (!enabled && !popup_owns_input && wormedit::ui::chrome::button_hovered(context, bounds))
-        wormedit::ui::nuklear::tooltip::text(
-            context, view->quantize_preview_blocked
-                         ? view->quantize_preview_message
-                         : "Select notes or BGM that would move and finish editing a valid grid.");
-    if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        set_quantize_action(inspector, WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE,
-                            view->quantize_divisions, view->quantize_space, view->quantize_tie,
-                            view->quantize_holds, view->quantize_selected_preset_valid,
-                            view->quantize_selected_preset_index);
+    render_quantize_action_row(inspector);
     render_quantize_preset_actions(inspector);
     if (view->quantize_preview_enabled)
         render_quantize_report_rows(context, "Preview rows", 0, view->quantize_preview_rows,
@@ -930,4 +942,5 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
     const auto section_bounds = nk_widget_bounds(context);
     quantize_section_visible_this_frame |= quantize_bounds_intersect(
         header_bounds, section_bounds, section_clip);
+    nk_tree_pop(context);
 }

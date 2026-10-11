@@ -3873,11 +3873,11 @@ TEST_CASE("Quantize sets 1/16 Authored and Later in three clicks then applies",
     expect_draw(compose_quantize_ghosts_drawn_for_testing());
     check_quantize_settings(space.get(), 16, 1, 0);
     view.quantize_space = 1;
-    const auto later = click_quantize_label(harness, "Round later");
+    const auto later = click_quantize_label(harness, "Later");
     expect_draw(compose_quantize_ghosts_drawn_for_testing());
     check_quantize_settings(later.get(), 16, 1, 1);
     view.quantize_tie = 1;
-    const auto applied = click_quantize_label(harness, "Apply quantization");
+    const auto applied = click_quantize_label(harness, "Quantize");
     CHECK(applied.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE);
     CHECK(applied.get().compose_quantize_divisions == 16);
     CHECK(applied.get().compose_quantize_space == 1);
@@ -3923,12 +3923,12 @@ TEST_CASE("Quantize headings retain counts and only advertise an actual Q bindin
     (void)harness.frame();
     CHECK(harness.drawn_text().find("Halfway objects · 2 in selection") != std::string::npos);
     CHECK(harness.drawn_text().find("Hold tails · 1 hold in selection") != std::string::npos);
-    CHECK(harness.drawn_text().find("Apply quantization (Q)") == std::string::npos);
+    CHECK(harness.drawn_text().find("Quantize (Q)") == std::string::npos);
     harness.view().compose.quantize_q_bound = true;
     (void)harness.frame();
-    CHECK(harness.drawn_text().find("Apply quantization (Q)") != std::string::npos);
+    CHECK(harness.drawn_text().find("Quantize (Q)") != std::string::npos);
     harness.view().compose.quantize_preview_blocked = 1;
-    const auto applied = click_quantize_label(harness, "Apply quantization (Q)");
+    const auto applied = click_quantize_label(harness, "Quantize (Q)");
     CHECK(applied.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
@@ -4089,7 +4089,7 @@ TEST_CASE("Cancelling an invalid custom quantize draft restores current settings
     }
     (void)harness.frame();
     CHECK_FALSE(compose_quantize_owns_input());
-    const auto applied = click_quantize_label(harness, "Apply quantization");
+    const auto applied = click_quantize_label(harness, "Quantize");
     CHECK(applied.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE);
     CHECK(applied.get().compose_quantize_divisions == 4);
 }
@@ -6092,7 +6092,7 @@ TEST_CASE("Quantize preview control emits a revision checked toggle without Appl
     seed_quantize_controls(harness);
     (void)harness.frame();
     expect_draw(!harness.view().compose.quantize_preview_enabled);
-    const auto toggled = click_quantize_label(harness, "Preview quantization");
+    const auto toggled = click_quantize_label(harness, "Preview");
     expect_draw(toggled.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_QUANTIZE_PREVIEW);
     expect_draw(toggled.get().compose_input_chart_id == 419);
     expect_draw(toggled.get().compose_input_document_revision == 7);
@@ -6162,4 +6162,34 @@ TEST_CASE("Area pause conversion is disabled while locked or virtual and retires
     check_layer_menu(std::ranges::none_of(actions, [](const auto& snapshot) {
         return snapshot.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP;
     }));
+}
+
+TEST_CASE("Quantize inspector groups settings and keeps Preview beside Apply",
+          "[frontend-state][event-harness][quantize][T561]") {
+    nuklear_event_harness_t harness{1600, 900};
+    seed_quantize_controls(harness);
+    (void)harness.frame();
+    REQUIRE(harness.drawn_text_center("Quantize / Snap"));
+    const auto preview = harness.drawn_text_center("Preview");
+    const auto apply = harness.drawn_text_center("Quantize");
+    REQUIRE(preview);
+    REQUIRE(apply);
+    CHECK(std::abs(preview->second - apply->second) < 2);
+    CHECK(preview->first < apply->first);
+    const auto space = harness.drawn_text_center("Space");
+    const auto halfway = harness.drawn_text_center("Halfway objects · 2 in selection");
+    const auto tails = harness.drawn_text_center("Hold tails · 1 hold in selection");
+    const auto presets = harness.drawn_text_center("Presets");
+    REQUIRE(space);
+    REQUIRE(halfway);
+    REQUIRE(tails);
+    REQUIRE(presets);
+    CHECK(halfway->second - space->second > 50);
+    CHECK(tails->second - halfway->second > 50);
+    CHECK(presets->second - tails->second > 50);
+    (void)click_quantize_label(harness, "Quantize / Snap");
+    CHECK_FALSE(harness.drawn_text_center("Preview"));
+    CHECK_FALSE(compose_quantize_section_visible());
+    (void)click_quantize_label(harness, "Quantize / Snap");
+    CHECK(harness.drawn_text_center("Preview"));
 }

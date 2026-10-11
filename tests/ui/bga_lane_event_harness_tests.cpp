@@ -322,6 +322,10 @@ auto open_initial_profile_picker(nuklear_event_harness_t& harness)
     -> std::optional<std::pair<float, float>> {
     const auto initial = harness.frame();
     check_bga(initial.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    const auto section = harness.drawn_text_center("Quantize / Snap");
+    REQUIRE(section);
+    (void)click(harness, section->first, section->second);
+    (void)harness.frame();
     const auto placeholder = harness.drawn_text_center("Choose a lane profile...");
     if (!placeholder) return std::nullopt;
     (void)click(harness, placeholder->first, placeholder->second);
@@ -1581,6 +1585,10 @@ struct timing_controls_fixture_t {
         view.waveform_overview_visible_end_fraction = 1;
         view.audio_offset_editable = true;
         worm_ui_nuklear_compose_state().inspector_visible = true;
+        (void)harness.frame();
+        const auto section = harness.drawn_text_center("Quantize / Snap");
+        REQUIRE(section);
+        (void)click(harness, section->first, section->second);
         (void)harness.frame();
     }
     auto reveal(std::string_view text) -> std::pair<float, float> {

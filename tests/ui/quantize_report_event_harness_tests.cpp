@@ -85,7 +85,7 @@ TEST_CASE("a BGM-only selection enables quantize",
     view.quantize_preview_row_count = view.quantize_preview_total_rows = rows.size();
     (void)harness.frame();
     CHECK(harness.drawn_text().find("Quantize (1)") != std::string::npos);
-    const auto center = harness.drawn_text_center("Apply quantization");
+    const auto center = harness.drawn_text_center("Quantize");
     REQUIRE(center.has_value());
     SDL_Event down{};
     down.type = SDL_EVENT_MOUSE_BUTTON_DOWN;

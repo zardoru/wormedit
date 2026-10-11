@@ -102,12 +102,13 @@ auto stem_header_glyphs(const renderer_t& field) -> std::vector<SDL_Vertex> {
     }
     return result;
 }
-void check_stem_header_golden(double width, bool stem, const char* expected) {
+void check_stem_header_golden(double width, bool stem, const char* expected,
+                              const char* filename = "音楽1234567890123456789.ogg") {
     field_submission_fixture_t fixture;
     expect_field(fixture.context != nullptr);
     WormUiComposeBgmLaneView lane{.bounds = {32, 0, 32 + width, 128}, .source_lane_id = 44,
         .stem = stem, .width_pixels = width, .resize_edge_pixels = 32 + width,
-        .filename = "音楽1234567890123456789.ogg"};
+        .filename = filename};
     WormUiComposeView view{};
     view.scene_available = true;
     view.viewport_width_pixels = 128;
@@ -138,11 +139,13 @@ void check_stem_header_golden(double width, bool stem, const char* expected) {
     }
 }
 }
-TEST_CASE("Stem headers draw UTF8 safe ellipsis while narrow and packed labels retain BGM",
+TEST_CASE("Stem headers retain useful UTF8 filenames and compact BGM numbers",
           "[ui][field][compose][stem-lane-width][isolated-software-render]") {
     check_stem_header_golden(96, true, "音楽12345678…");
-    check_stem_header_golden(36, true, "BGM ");
-    check_stem_header_golden(96, false, "BGM 1");
+    check_stem_header_golden(36, true, "音楽1…");
+    check_stem_header_golden(96, false, "1");
+    check_stem_header_golden(36, false, "1");
+    check_stem_header_golden(36, true, "1", "");
 }
 
 namespace {

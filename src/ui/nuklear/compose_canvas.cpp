@@ -2602,12 +2602,12 @@ static auto draw_compose_bgm_lane_labels(const ComposePaintContext& paint) -> co
         if (rect.w < 18.0f || rect.h <= 0.0f) {
             continue;
         }
-        if (lane.stem && lane.width_pixels >= 96 && lane.filename && lane.filename[0]) {
+        if (lane.stem && lane.filename && lane.filename[0]) {
             draw_compose_stem_filename(paint, lane.filename, rect);
             continue;
         }
         char label[20]{};
-        const auto length = snprintf(label, sizeof(label), "BGM %zu", lane.source_order + 1);
+        const auto length = snprintf(label, sizeof(label), "%zu", lane.source_order + 1);
         if (length > 0) {
             const auto title = nk_rect(rect.x + 2.0f, paint.viewport.y + 2.0f,
                                        std::max(1.0f, rect.w - 4.0f), 14.0f);

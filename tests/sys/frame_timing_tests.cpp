@@ -6357,3 +6357,56 @@ TEST_CASE("Workspace frame cache clears when the same document is reopened", "[s
     expect_compose_test(!cache.branch_outline.valid && cache.cached_diagnostics.empty());
     expect_compose_test(cache.session_generation == 8);
 }
+
+
+namespace {
+auto range_pause_action(compose_test_fixture_t& fixture) -> WormUiWorkspaceAction {
+    WormUiWorkspaceAction action{};
+    action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP_RESIZE;
+    action.compose_input_project_id = fixture.history.document.id.value;
+    action.compose_input_chart_id = fixture.interaction->chart.value;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    return action;
+}
+auto dispatch_range_pause(compose_test_fixture_t& fixture, const WormUiWorkspaceAction& action) -> std::string {
+    notification_center_t center;
+    notification_sink_t sink{center};
+    task_scheduler_t scheduler{1, 1};
+    runtime::resource_copy_t resource_copy{sink};
+    runtime::output_group_export_t export_runtime{sink};
+    return dispatch_compose_view_action(action, fixture.history, *fixture.binding.workspace,
+        *fixture.interaction, fixture.flattened.view.compose.viewport_height_pixels,
+        fixture.application, {}, scheduler, resource_copy, export_runtime, false, sink);
+}
+auto range_pause_routing(unsigned guard) -> bool {
+    compose_test_fixture_t fixture;
+    fixture.project();
+    const auto measure = fixture.history.document.charts.front().measures.front().id;
+    fixture.interaction->retained_selection_range = position_span_t{{measure, 240}, {measure, 288}};
+    auto action = range_pause_action(fixture);
+    switch (guard) {
+    case 1: ++action.compose_input_project_id; break;
+    case 2: ++action.compose_input_chart_id; break;
+    case 3: ++action.compose_input_document_revision; break;
+    case 4: fixture.application.timing_locked = true; break;
+    case 5: fixture.interaction->pending_editor_area_selection.emplace(); break;
+    case 6: fixture.interaction->retained_selection_range.reset(); break;
+    case 7: fixture.application.paste_session = application_command_state_t::paste_session_t{}; break;
+    case 8: fixture.application.bga_draw_stroke = application_command_state_t::bga_draw_stroke_t{}; break;
+    case 9: fixture.application.bmson_razor_stroke = application_command_state_t::bmson_razor_stroke_t{}; break;
+    default: break;
+    }
+    const auto feedback = dispatch_range_pause(fixture, action);
+    const auto& chart = fixture.history.document.charts.front();
+    if (guard != 0)
+        return !feedback.empty() && chart.pauses.empty() && fixture.history.undo.empty();
+    return feedback == "Selected rows converted to Stop." && chart.pauses.size() == 1 &&
+        fixture.history.undo.size() == 1 && !fixture.interaction->retained_selection_range;
+}
+} // namespace
+TEST_CASE("Range pause conversion routes once and rejects stale or owned interactions", "[sys][range-pause][T560]") {
+    for (unsigned guard = 0; guard < 10; ++guard) {
+        CAPTURE(guard);
+        expect_compose_test(range_pause_routing(guard));
+    }
+}

@@ -374,6 +374,7 @@ struct rowed_bgm_t {
 struct rowed_free_t {
     local_position_t* position{};
     std::uint64_t row{};
+    bool exclusive_end{};
 };
 
 // Creates default measures at the end until the chart has `count` of them.
@@ -422,13 +423,20 @@ auto collect_free_rows(chart_document_t& chart, const measure_index_t& index,
     return ok;
 }
 
+auto place_free_position(const measure_index_t& index, const rowed_free_t& item)
+    -> std::optional<local_position_t> {
+    if (item.exclusive_end && item.row == index.total_rows && !index.entries.empty())
+        return local_position_t{index.entries.back().id, index.entries.back().row_capacity};
+    return position_at_absolute_row(index, item.row);
+}
+
 // Writes each lifted object back at the position its row now has.
 auto place_lifted_objects(chart_document_t& chart, const measure_index_t& after,
                           std::size_t first_measure, std::vector<rowed_note_t>& notes,
                           std::vector<rowed_bgm_t>& bgm, std::vector<rowed_free_t>& free_rows) -> bool {
     const auto place = [&](std::uint64_t row) { return position_at_absolute_row(after, row); };
     for (auto& item : free_rows) {
-        const auto position = place(item.row);
+        const auto position = place_free_position(after, item);
         if (!position) return false;
         *item.position = *position;
     }
@@ -550,6 +558,259 @@ void apply_measure_action(measure_edit_context_t& context, const split_measure_a
     }
     context.changed = true;
     context.label = "Split measure at cursor";
+}
+
+// A Stop follows events at its row; a Delay precedes them. The removed
+// interval is (begin,end] for Stop and [begin,end) for Delay, so an object
+// never silently changes sides of the pause when the two boundaries meet.
+struct pause_range_t {
+    std::uint64_t begin{}, end{};
+    pause_kind_t kind{};
+    auto contains(std::uint64_t row) const -> bool {
+        return kind == pause_kind_t::stop ? row > begin && row <= end
+                                         : row >= begin && row < end;
+    }
+    auto shifted(std::uint64_t row) const -> std::uint64_t {
+        return row >= end ? row - (end - begin) : row;
+    }
+};
+
+auto conversion_row(const measure_index_t& index, local_position_t position,
+                    bool exclusive_end = false) -> std::optional<std::uint64_t> {
+    if (exclusive_end && !index.entries.empty()) {
+        const auto& last = index.entries.back();
+        if (position.measure == last.id && position.row == last.row_capacity) return index.total_rows;
+    }
+    return absolute_row(index, position);
+}
+
+auto conversion_configuration(const chart_document_t& chart, const local_position_t* position) -> bool {
+    return std::ranges::any_of(chart.bpms, [position](const auto& event) { return &event.position == position; });
+}
+
+auto conversion_timing_blocked(const chart_document_t& chart, const measure_index_t& index,
+                               const pause_range_t& range) -> bool {
+    const auto closed = [&](local_position_t position) {
+        const auto row = absolute_row(index, position);
+        return !row || (*row >= range.begin && *row <= range.end);
+    };
+    const auto bpm = std::ranges::any_of(chart.bpms, [&](const auto& event) {
+        const auto row = absolute_row(index, event.position);
+        return !row || (*row > range.begin && *row <= range.end);
+    });
+    const auto warp = std::ranges::any_of(chart.warps, [&](const auto& event) {
+        const auto first = absolute_row(index, event.span.begin);
+        const auto last = absolute_row(index, event.span.end);
+        return !first || !last || (*first <= range.end && *last >= range.begin);
+    });
+    return bpm || warp || std::ranges::any_of(chart.pauses, [&](const auto& event) { return closed(event.position); });
+}
+
+auto conversion_points_clear(const chart_document_t& chart, const measure_index_t& index,
+                             const pause_range_t& range) -> bool {
+    bool clear = true;
+    const auto visit = [&](const local_position_t& position, free_position_kind_t) {
+        const auto row = absolute_row(index, position);
+        if (!row || (range.contains(*row) && !conversion_configuration(chart, &position))) clear = false;
+    };
+    for_each_free_position(chart, visit);
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) visit(note.position, free_position_kind_t::other);
+        for (const auto& bgm : measure.bgm_events) visit(bgm.position, free_position_kind_t::other);
+    }
+    for (const auto& layout : chart.lane_layouts) {
+        const auto row = absolute_row(index, layout.position);
+        if (!row || (*row > range.begin && *row < range.end)) clear = false;
+    }
+    for (const auto& recipe : chart.sv_recipes) {
+        const auto first = conversion_row(index, recipe.range.begin);
+        const auto last = conversion_row(index, recipe.range.end, true);
+        if (!first || !last || range.contains(*first) || range.contains(*last)) clear = false;
+    }
+    return clear;
+}
+
+auto conversion_beats(std::uint64_t rows, std::uint64_t resolution, std::uint64_t units = 4) -> std::optional<signed_rational_t> {
+    if (resolution == 0) return std::nullopt;
+    const auto divisor = std::gcd(rows, resolution);
+    auto numerator = rows / divisor;
+    auto denominator = resolution / divisor;
+    const auto four = units / std::gcd(denominator, units);
+    denominator /= units / four;
+    if (numerator > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) / four)
+        return std::nullopt;
+    numerator *= four;
+    return signed_rational_t{static_cast<std::int64_t>(numerator), denominator};
+}
+
+auto conversion_object_id(const chart_document_t& chart) -> std::optional<object_id_t> {
+    std::uint64_t maximum{};
+    const auto scan = [&](const auto& values) {
+        for (const auto& value : values) maximum = std::max(maximum, value.id.value);
+    };
+    scan(chart.lane_layouts); scan(chart.bgm_source_lanes); scan(chart.bpms); scan(chart.pauses);
+    scan(chart.warps); scan(chart.scrolls); scan(chart.speeds); scan(chart.kiai);
+    scan(chart.timing_anchors); scan(chart.bookmarks); scan(chart.sections); scan(chart.bga_events);
+    scan(chart.sound_channels);
+    for (const auto& channel : chart.sound_channels) scan(channel.events);
+    for (const auto& measure : chart.measures) { scan(measure.notes); scan(measure.bgm_events); }
+    if (maximum == std::numeric_limits<std::uint64_t>::max()) return std::nullopt;
+    return object_id_t{maximum + 1};
+}
+
+// Geometry and object movement use the same lift/place machinery as measure
+// resizing. Every later endpoint moves by the same absolute-row displacement.
+auto shorten_conversion_measures(chart_document_t& chart, const measure_index_t& before,
+                                 const pause_range_t& range) -> bool {
+    for (std::size_t at = before.entries.size(); at-- > 0;) {
+        const auto& entry = before.entries[at];
+        const auto first = std::max(range.begin, entry.absolute_begin_row);
+        const auto last = std::min(range.end, entry.absolute_begin_row + entry.row_capacity);
+        if (first >= last) continue;
+        const auto capacity = entry.row_capacity - (last - first);
+        if (capacity == 0) {
+            chart.measures.erase(chart.measures.begin() + static_cast<std::ptrdiff_t>(at));
+            shift_projections_for_delete(chart, at);
+        } else {
+            chart.measures[at].definition = definition_for_rows(capacity, chart.divisions_per_standard_measure);
+        }
+    }
+    return !chart.measures.empty();
+}
+
+auto collect_conversion_extras(chart_document_t& chart, const measure_index_t& before,
+                               std::vector<rowed_free_t>& positions) -> bool {
+    const auto add = [&](local_position_t& position, bool boundary = false) {
+        const auto row = conversion_row(before, position, boundary);
+        if (!row) return false;
+        positions.push_back({&position, *row, boundary});
+        return true;
+    };
+    for (auto& layout : chart.lane_layouts) if (!add(layout.position)) return false;
+    for (auto& recipe : chart.sv_recipes)
+        if (!add(recipe.range.begin) || !add(recipe.range.end, true)) return false;
+    return true;
+}
+
+auto conversion_times_match(const timing_index_t& before, const timing_index_t& after,
+                            std::span<const std::uint64_t> rows, const pause_range_t& range) -> bool {
+    for (const auto row : rows) {
+        if (row == range.begin && range.kind == pause_kind_t::delay) continue; // configuration only
+        const auto old_time = timing_at(before, row);
+        const auto new_time = timing_at(after, range.shifted(row));
+        if (!old_time || !new_time || old_time.seconds != new_time.seconds) return false;
+    }
+    return true;
+}
+
+auto conversion_transition_rows(rational_t beats, std::uint64_t resolution)
+    -> std::optional<std::uint64_t> {
+    auto first = beats.numerator, second = resolution, divisor = beats.denominator;
+    std::uint64_t four = 4;
+    if (divisor == 0 || second == 0) return std::nullopt;
+    const auto cancel = [](auto& numerator, auto& denominator) {
+        const auto gcd = std::gcd(numerator, denominator);
+        numerator /= gcd; denominator /= gcd;
+    };
+    cancel(first, divisor); cancel(first, four); cancel(second, divisor); cancel(second, four);
+    if (divisor != 1 || four != 1 || (second != 0 && first > std::numeric_limits<std::uint64_t>::max() / second))
+        return std::nullopt;
+    return first * second;
+}
+
+auto adjust_conversion_transitions(chart_document_t& chart, const measure_index_t& index,
+    const pause_range_t& range, std::vector<std::uint64_t>& timed_rows) -> bool {
+    for (auto& speed : chart.speeds) {
+        if (speed.transition_is_seconds || speed.transition_beats.numerator == 0) continue;
+        const auto start = absolute_row(index, speed.position);
+        const auto length = conversion_transition_rows(speed.transition_beats, chart.divisions_per_standard_measure);
+        if (!start || !length || *length > std::numeric_limits<std::uint64_t>::max() - *start) return false;
+        const auto end = *start + *length;
+        if (range.contains(end)) return false;
+        if (*start >= range.end || end < range.begin) continue;
+        const auto beats = conversion_beats(range.shifted(end) - range.shifted(*start),
+                                             chart.divisions_per_standard_measure);
+        if (!beats) return false;
+        speed.transition_beats = {static_cast<std::uint64_t>(beats->numerator), beats->denominator};
+        if (end <= index.total_rows) timed_rows.push_back(end);
+    }
+    return true;
+}
+
+auto convert_pause_geometry(chart_document_t& chart, const measure_index_t& before,
+                            const pause_range_t& range, bool resize, pause_event_t pause) -> bool {
+    const auto timing = build_timing_index(chart);
+    if (!timing) return false;
+    std::vector<rowed_note_t> notes;
+    std::vector<rowed_bgm_t> bgm;
+    std::vector<rowed_free_t> positions;
+    std::vector<std::uint64_t> rows;
+    if (!adjust_conversion_transitions(chart, before, range, rows)) return false;
+    if (!lift_bucketed_objects(chart, before, 0, notes, bgm) ||
+        !collect_free_rows(chart, before, positions) || !collect_conversion_extras(chart, before, positions)) return false;
+    const auto move = [&](auto& objects) {
+        for (auto& object : objects) {
+            rows.push_back(object.row);
+            object.row = range.shifted(object.row);
+            if (object.end_row) {
+                rows.push_back(*object.end_row);
+                object.end_row = range.shifted(*object.end_row);
+            }
+        }
+    };
+    move(notes); move(bgm);
+    for (auto& position : positions) { rows.push_back(position.row); position.row = range.shifted(position.row); }
+    if (resize && !shorten_conversion_measures(chart, before, range)) return false;
+    const auto built = build_measure_index(chart);
+    const auto* after = std::get_if<measure_index_t>(&built);
+    if (!after || !place_lifted_objects(chart, *after, 0, notes, bgm, positions)) return false;
+    const auto start = position_at_absolute_row(*after, range.begin);
+    if (!start) return false;
+    pause.position = *start;
+    chart.pauses.push_back(std::move(pause));
+    const auto new_timing = build_timing_index(chart);
+    return new_timing && conversion_times_match(*timing.index, *new_timing.index, rows, range);
+}
+
+void apply_measure_action(measure_edit_context_t& context, const convert_range_to_pause_action_t& edit) {
+    auto* chart = target_measure_chart(context, edit.chart);
+    if (!chart) return;
+    const auto built = build_measure_index(*chart);
+    const auto* before = std::get_if<measure_index_t>(&built);
+    const auto first = before ? absolute_row(*before, edit.range.begin) : std::nullopt;
+    const auto last = before ? conversion_row(*before, edit.range.end, true) : std::nullopt;
+    if (!first || !last || *first >= *last ||
+        (edit.kind != pause_kind_t::stop && edit.kind != pause_kind_t::delay)) {
+        reject(context.result, diagnostic_code_t::invalid_measure, "Select a nonempty authored row range.");
+        return;
+    }
+    const pause_range_t range{*first, *last, edit.kind};
+    if ((chart->bms_control_tree && has_conditional_measures(*chart->bms_control_tree)) ||
+        conversion_timing_blocked(*chart, *before, range)) {
+        reject(context.result, diagnostic_code_t::unsupported_feature,
+               "The range crosses BPM, pause, warp or retained BMS branch timing; choose an uninterrupted interval.");
+        return;
+    }
+    if (!conversion_points_clear(*chart, *before, range)) {
+        reject(context.result, diagnostic_code_t::invalid_measure,
+               edit.kind == pause_kind_t::stop
+                   ? "Stop conversion needs an empty interval after its start, including its end; use Delay for an object at the end."
+                   : "Delay conversion needs an empty interval including its start; use Stop for an object at the start.");
+        return;
+    }
+    const bool bms_ticks = chart->source_family == format_family_t::bms && edit.kind == pause_kind_t::stop;
+    const auto duration = conversion_beats(*last - *first, chart->divisions_per_standard_measure, bms_ticks ? 192 : 4);
+    const auto id = conversion_object_id(*chart);
+    if (!duration || !id || !convert_pause_geometry(*chart, *before, range, edit.resize_measures,
+            {.id = id.value_or(object_id_t{}), .kind = edit.kind,
+             .duration = duration.value_or(signed_rational_t{}),
+             .source_unit = bms_ticks ? pause_unit_t::bms_stop_ticks : pause_unit_t::beats})) {
+        reject(context.result, diagnostic_code_t::invalid_measure,
+               "The range cannot be converted without changing an object's song time or losing measure geometry.");
+        return;
+    }
+    context.changed = true;
+    context.label = edit.kind == pause_kind_t::stop ? "Convert range to Stop" : "Convert range to Delay";
 }
 
 auto apply_measure_action(measure_edit_context_t& context,

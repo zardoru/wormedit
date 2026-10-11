@@ -82,8 +82,19 @@ struct remove_measure_with_contents_action_t {
     measure_id_t measure;
 };
 
+// Replaces empty row travel with an exact beat-based pause, moving every later
+// object and endpoint earlier. Stop removes (begin,end]; Delay removes
+// [begin,end), matching the event's side of the pause. Optionally removes the
+// same rows from measure geometry; otherwise existing measure heads stay put.
+struct convert_range_to_pause_action_t {
+    chart_id_t chart;
+    position_span_t range;
+    pause_kind_t kind{pause_kind_t::stop};
+    bool resize_measures{};
+};
+
 using measure_edit_action_t =
-    std::variant<insert_measure_action_t, update_measure_definition_action_t,
+    std::variant<convert_range_to_pause_action_t, insert_measure_action_t, update_measure_definition_action_t,
                  update_measures_definition_action_t,
                  resize_measure_keep_rows_action_t, move_bar_line_action_t, materialize_measures_action_t, split_measure_action_t, delete_measure_action_t, remove_measure_with_contents_action_t>;
 

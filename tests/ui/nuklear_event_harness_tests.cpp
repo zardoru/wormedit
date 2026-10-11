@@ -6114,3 +6114,52 @@ TEST_CASE("Stem lane resize retains width while projected geometry updates on ev
     expect_draw(std::abs(f.width()-116)<1);
     expect_draw(!worm_ui_nuklear_compose_state().stem_lane_resize.has_value());
 }
+
+TEST_CASE("Area conversion menu offers both pause sides and explicit measure policies", "[frontend][event-harness][range-pause][T560]") {
+    const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP,
+        WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY,
+        WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP_RESIZE,
+        WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY_RESIZE);
+    note_menu_fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    view.area_range_available = true;
+    view.area_rows_per_measure = 960;
+    view.area_canvas_rows = 9600;
+    view.area_range_begin_row = 0;
+    view.area_range_end_row = 9600;
+    (void)fixture.harness.frame();
+    (void)right_click_at(fixture.harness, 900, 400);
+    (void)fixture.harness.frame();
+    const std::array labels{"Convert to Stop", "Convert to Delay", "Convert to Stop · shorten measures", "Convert to Delay · shorten measures"};
+    const auto target = fixture.harness.drawn_text_center(labels[kind - WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP]);
+    REQUIRE(target.has_value());
+    const auto clicked = click_at(fixture.harness, target->first, target->second);
+    const auto emitted = std::ranges::find_if(clicked, [kind](const auto& snapshot) { return snapshot.get().compose_action == kind; });
+    REQUIRE(emitted != clicked.end());
+    check_layer_menu(emitted->get().compose_input_project_id == view.project_id);
+    check_layer_menu(emitted->get().compose_input_chart_id == view.chart_id);
+    check_layer_menu(emitted->get().compose_input_document_revision == view.document_revision);
+}
+
+TEST_CASE("Area pause conversion is disabled while locked or virtual and retires stale menus", "[frontend-state][event-harness][range-pause][T560]") {
+    const auto guard = GENERATE(0, 1, 2);
+    note_menu_fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    view.area_range_available = true;
+    view.area_rows_per_measure = 960;
+    view.area_canvas_rows = 9600;
+    view.area_range_begin_row = 0;
+    view.area_range_end_row = 9600;
+    view.waveform_timing_locked = guard == 0;
+    view.area_range_virtual = guard == 1;
+    (void)fixture.harness.frame();
+    (void)right_click_at(fixture.harness, 900, 400);
+    (void)fixture.harness.frame();
+    const auto target = fixture.harness.drawn_text_center("Convert to Stop");
+    REQUIRE(target);
+    if (guard == 2) { ++view.document_revision; (void)fixture.harness.frame(); }
+    const auto actions = click_at(fixture.harness, target->first, target->second);
+    check_layer_menu(std::ranges::none_of(actions, [](const auto& snapshot) {
+        return snapshot.get().compose_action == WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP;
+    }));
+}

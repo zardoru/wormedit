@@ -1208,4 +1208,7 @@ auto clear_editor_double_click_state(editor_double_click_state_t& state) -> void
 [[nodiscard]] auto editor_quantize_selection(const editor_interaction_state_t& state)
     -> quantize_selection_t;
 
+// Shared ownership predicate for commands that require a completed canvas edit.
+[[nodiscard]] auto has_pending_editor_gesture(const editor_interaction_state_t& state) -> bool;
+
 } // namespace wormedit

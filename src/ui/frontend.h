@@ -2467,6 +2467,10 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE,
     /* Adds a SPEEDS event at the area start whose transition length is the area length in beats. */
     WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN,
+    WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP,
+    WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY,
+    WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP_RESIZE,
+    WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY_RESIZE,
     /* Sets the cursor measure's time signature from timing_meter_numerator_text and
        timing_meter_denominator_text. */
     WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER,

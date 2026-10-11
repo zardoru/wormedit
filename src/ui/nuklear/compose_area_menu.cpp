@@ -40,6 +40,9 @@ void menu_entry(nk_context* context, const char* title, const char* disabled_rea
                 WormUiComposeActionKind kind, WormUiWorkspaceAction& action) {
     if (chrome::context_menu_item(menu, context, title, disabled_reason)) {
         action.compose_action = kind;
+        action.compose_input_project_id = menu.stamp.project_id;
+        action.compose_input_chart_id = menu.stamp.chart_id;
+        action.compose_input_document_revision = menu.stamp.revision;
         consumed = true;
     }
 }
@@ -140,7 +143,7 @@ void render_menu(nk_context* context, const WormUiComposeView& view,
         return;
     }
     if (!chrome::context_menu_begin(menu, context, menu_stamp(view),
-                                    nk_vec2(320.0f, chrome::context_menu_height(sound_layers ? 14 : 8)))) {
+                                    nk_vec2(320.0f, chrome::context_menu_height(sound_layers ? 14 : 12)))) {
         retire_sound_layer_window(action);
         consumed = true;
         return;
@@ -183,6 +186,17 @@ void render_menu(nk_context* context, const WormUiComposeView& view,
     menu_entry(context, "Find fitting snap",
                reason_unless(view.selected_note_count + view.selected_bgm_event_count != 0, "Select notes or BGM first"),
                WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP, action);
+    const auto conversion_reason = view.waveform_timing_locked ? "Timing is locked"
+        : view.area_range_virtual ? materialize
+        : view.semantic_layer_gesture_active ? "Finish the current edit first" : nullptr;
+    menu_entry(context, "Convert to Stop", conversion_reason,
+               WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP, action);
+    menu_entry(context, "Convert to Delay", conversion_reason,
+               WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY, action);
+    menu_entry(context, "Convert to Stop · shorten measures", conversion_reason,
+               WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP_RESIZE, action);
+    menu_entry(context, "Convert to Delay · shorten measures", conversion_reason,
+               WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY_RESIZE, action);
     chrome::context_menu_end(menu, context);
 }
 

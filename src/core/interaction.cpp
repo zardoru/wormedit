@@ -6058,3 +6058,15 @@ auto prune_stale_selection(const chart_document_t& chart, std::uint64_t document
 }
 
 } // namespace wormedit
+
+namespace wormedit {
+auto has_pending_editor_gesture(const editor_interaction_state_t& state) -> bool {
+    return state.pending_hold.has_value() || state.pending_virtual_lane_key.has_value() ||
+           state.pending_note_duration_gesture.has_value() ||
+           state.pending_note_move_gesture.has_value() ||
+           state.pending_note_paint_gesture.has_value() ||
+           state.pending_semantic_layer_paint_gesture.has_value() ||
+           state.pending_editor_area_selection.has_value() ||
+           state.pending_space_range_selection.has_value();
+}
+} // namespace wormedit

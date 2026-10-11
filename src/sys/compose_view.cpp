@@ -803,13 +803,7 @@ auto compose_snap_preferences(const application_command_state_t& state, wormedit
 
 auto editor_interaction_has_pending_gesture(const wormedit::editor_interaction_state_t& state)
     -> bool {
-    return state.pending_hold.has_value() || state.pending_virtual_lane_key.has_value() ||
-           state.pending_note_duration_gesture.has_value() ||
-           state.pending_note_move_gesture.has_value() ||
-           state.pending_note_paint_gesture.has_value() ||
-           state.pending_semantic_layer_paint_gesture.has_value() ||
-           state.pending_editor_area_selection.has_value() ||
-           state.pending_space_range_selection.has_value();
+    return wormedit::has_pending_editor_gesture(state);
 }
 
 

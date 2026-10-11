@@ -2,6 +2,7 @@
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bms_writer.h>
 #include <wormedit/formats/bmson.h>
+#include <wormedit/formats/native_project.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/virtual_canvas.h>
 
@@ -9,6 +10,7 @@
 
 #include <algorithm>
 #include <ranges>
+#include <limits>
 
 using namespace wormedit;
 
@@ -661,4 +663,187 @@ TEST_CASE("Measure split preserves retained BMSON source heads and tails", "[cor
     const auto reloaded = parse_bmson_bytes(std::as_bytes(std::span{written.json->data(),written.json->size()}));
     REQUIRE(reloaded.song);
     check_audio_extent(validate_document(*reloaded.song).empty());
+}
+
+namespace {
+auto pause_conversion_song() -> song_document_t {
+    auto song = measure_song();
+    auto& chart = song.charts.front();
+    chart.measures.front().notes.push_back({.id = object_id_t{50},
+        .position = {measure_id_t{10}, 480}, .lane = lane_id_t{20}, .kind = note_kind_t::hold,
+        .end = local_position_t{measure_id_t{12}, 240}});
+    chart.bgm_source_lanes.push_back({.id = object_id_t{54}, .name = "BGM"});
+    chart.measures.back().bgm_events.push_back({.id = object_id_t{51},
+        .position = {measure_id_t{12}, 48}, .source_lane = object_id_t{54}});
+    chart.scrolls.push_back({.id = object_id_t{52}, .position = {measure_id_t{12}, 96}, .multiplier = {2, 1}});
+    chart.speeds.push_back({.id = object_id_t{53}, .position = {measure_id_t{10}, 720},
+        .multiplier = {2, 1}, .transition_beats = {6, 1}});
+    return song;
+}
+auto pause_conversion_preserves_times(bool resize, pause_kind_t kind) -> bool {
+    auto history = make_document_history(pause_conversion_song());
+    const auto original = history.document;
+    const auto old_timing = build_timing_index(original.charts.front());
+    const auto result = apply_measure_edit(history, history.document.revision,
+        convert_range_to_pause_action_t{chart_id_t{2}, {{measure_id_t{11}, 0}, {measure_id_t{11}, 48}}, kind, resize});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    if (!result.applied || history.undo.size() != 1 || !old_timing) return false;
+    const auto& chart = history.document.charts.front();
+    const auto after = build_timing_index(chart);
+    UNSCOPED_INFO("pause " << chart.pauses.front().duration.numerator << "/" << chart.pauses.front().duration.denominator);
+    if (!after || chart.pauses.size() != 1 || chart.pauses.front().duration != signed_rational_t{1, 5}) return false;
+    for (const auto row : {480U, 720U, 1920U, 1968U, 2016U, 2160U}) {
+        const auto old = timing_at(*old_timing.index, row);
+        const auto changed = timing_at(*after.index, row >= 1008 ? row - 48 : row);
+        if (!old || !changed || old.seconds != changed.seconds) return false;
+    }
+    const auto capacity = validate_measure(960, chart.measures[1].definition).row_capacity;
+    if (!capacity || *capacity != (resize ? 912 : 960)) return false;
+    UNSCOPED_INFO("transition " << chart.speeds.front().transition_beats.numerator << "/" << chart.speeds.front().transition_beats.denominator);
+    if (chart.speeds.front().transition_beats != rational_t{29, 5}) return false;
+    if (!undo_document_command(history)) return false;
+    auto restored = history.document;
+    restored.revision = original.revision;
+    return write_native_project(restored).bytes == write_native_project(original).bytes;
+}
+auto pause_conversion_boundaries() -> bool {
+    auto song = measure_song();
+    song.charts.front().measures[1].notes.push_back({.id = object_id_t{60},
+        .position = {measure_id_t{11}, 48}, .lane = lane_id_t{20}});
+    auto history = make_document_history(song);
+    const position_span_t range{{measure_id_t{11}, 0}, {measure_id_t{11}, 48}};
+    if (apply_measure_edit(history, history.document.revision,
+            convert_range_to_pause_action_t{chart_id_t{2}, range, pause_kind_t::stop}).applied) return false;
+    if (!history.undo.empty()) return false;
+    if (!apply_measure_edit(history, history.document.revision,
+            convert_range_to_pause_action_t{chart_id_t{2}, range, pause_kind_t::delay}).applied) return false;
+    const auto& chart = history.document.charts.front();
+    return chart.measures[1].notes.front().position.row == 0 && chart.pauses.front().kind == pause_kind_t::delay;
+}
+auto pause_conversion_bms_round_trip(bool resize) -> bool {
+    const std::string source_bytes = "#TITLE Convert\n#BPM 120\n#WAV01 kick.wav\n#00111:01\n#00211:01\n";
+    auto imported = parse_bms_bytes(std::as_bytes(std::span{source_bytes.data(), source_bytes.size()}), {.lane_profile_id = "bme-7k-outside-scratch"});
+    if (!imported.song) return false;
+    auto history = make_document_history(*imported.song);
+    const auto& source = history.document.charts.front();
+    const auto id = source.id;
+    const auto resolution = source.divisions_per_standard_measure;
+    const auto measure = source.measures.front().id;
+    const auto result = apply_measure_edit(history, history.document.revision,
+        convert_range_to_pause_action_t{id, {{measure, resolution / 4}, {measure, resolution / 2}}, pause_kind_t::stop, resize});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    if (!result.applied) return false;
+    const auto written = write_bms(history.document, {.branch_policy = bms_branch_policy_t::flatten_active});
+    for (const auto& diagnostic : written.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    if (!written.bytes) return false;
+    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{written.bytes->data(), written.bytes->size()}), {.lane_profile_id = "bme-7k-outside-scratch"});
+    if (!parsed.song) return false;
+    const auto timing = build_timing_index(parsed.song->charts.front());
+    if (!timing) return false;
+    const auto built = build_measure_index(parsed.song->charts.front());
+    const auto* measures = std::get_if<measure_index_t>(&built);
+    if (!measures) return false;
+    std::vector<signed_rational_t> times;
+    for (const auto& chunk : parsed.song->charts.front().measures)
+        for (const auto& note : chunk.notes) {
+            const auto row = absolute_row(*measures, note.position);
+            if (!row) return false;
+            const auto at = timing_at(*timing.index, *row);
+            if (!at) return false;
+            times.push_back(*at.seconds);
+        }
+    return times == std::vector<signed_rational_t>{{2, 1}, {4, 1}};
+}
+} // namespace
+
+TEST_CASE("Empty rows convert to beat-based Stop or Delay preserving times and one full Undo", "[core][range-pause][T560]") {
+    check_audio_extent(pause_conversion_preserves_times(false, pause_kind_t::stop));
+    check_audio_extent(pause_conversion_preserves_times(true, pause_kind_t::stop));
+    check_audio_extent(pause_conversion_preserves_times(false, pause_kind_t::delay));
+    check_audio_extent(pause_conversion_preserves_times(true, pause_kind_t::delay));
+}
+TEST_CASE("Range pause conversion respects the occupied side of a boundary", "[core][range-pause][T560]") {
+    check_audio_extent(pause_conversion_boundaries());
+}
+TEST_CASE("Range pause conversion survives explicit flattened BMS export and reimport", "[core][range-pause][T560]") {
+    check_audio_extent(pause_conversion_bms_round_trip(false));
+    check_audio_extent(pause_conversion_bms_round_trip(true));
+}
+
+namespace {
+auto pause_conversion_rejects_atomically(unsigned scenario) -> bool {
+    auto song = pause_conversion_song();
+    auto& chart = song.charts.front();
+    const local_position_t middle{measure_id_t{11}, 24};
+    switch (scenario) {
+    case 0: chart.measures[1].notes.push_back({.id = object_id_t{80}, .position = middle, .lane = lane_id_t{20}}); break;
+    case 1: chart.measures[1].bgm_events.push_back({.id = object_id_t{80}, .position = middle}); break;
+    case 2: chart.bpms.push_back({.id = object_id_t{80}, .position = middle, .beats_per_minute = {180, 1}}); break;
+    case 3: chart.pauses.push_back({.id = object_id_t{80}, .position = middle, .duration = {1, 2}}); break;
+    case 4: chart.warps.push_back({.id = object_id_t{80}, .span = {{measure_id_t{10}, 720}, {measure_id_t{11}, 240}}}); break;
+    case 5: chart.measures.front().notes.front().end = middle; break;
+    case 6: chart.speeds.front().transition_beats = {11, 10}; break; // row 984, inside the removed interval
+    case 7: chart.scrolls.front().id = object_id_t{std::numeric_limits<std::uint64_t>::max()}; break;
+    default: break; // stale revision
+    }
+    auto history = make_document_history(song);
+    const auto before = write_native_project(history.document).bytes;
+    const auto result = apply_measure_edit(history, history.document.revision + (scenario == 8 ? 1 : 0),
+        convert_range_to_pause_action_t{chart.id, {{measure_id_t{11}, 0}, {measure_id_t{11}, 48}}, pause_kind_t::stop, true});
+    return !result.applied && !result.diagnostics.empty() && history.undo.empty() &&
+        write_native_project(history.document).bytes == before;
+}
+auto pause_conversion_bmson_aliases() -> bool {
+    const std::string source_bytes = R"({"version":"1.0.0","info":{"title":"convert","mode_hint":"beat-7k","init_bpm":120,"resolution":240},"lines":[{"y":0},{"y":960},{"y":1920}],"sound_channels":[{"name":"kick.wav","notes":[{"x":1,"y":240,"l":480,"c":false},{"x":0,"y":840,"l":480,"c":false}]}]})";
+    const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{source_bytes.data(), source_bytes.size()}));
+    if (!parsed.song) return false;
+    auto history = make_document_history(*parsed.song);
+    const auto& source = history.document.charts.front();
+    const auto measure = source.measures.front().id;
+    const auto resolution = source.divisions_per_standard_measure;
+    const auto result = apply_measure_edit(history, history.document.revision,
+        convert_range_to_pause_action_t{source.id, {{measure, resolution / 20}, {measure, resolution / 10}}, pause_kind_t::stop, true});
+    if (!result.applied || !validate_document(history.document).empty()) return false;
+    const auto& chart = history.document.charts.front();
+    const auto built = build_measure_index(chart);
+    const auto* measures = std::get_if<measure_index_t>(&built);
+    if (!measures || chart.sound_channels.front().events.size() != 2) return false;
+    const auto& retained = chart.sound_channels.front().events.front();
+    const auto& note = chart.measures.front().notes.front();
+    return note.sound_channel_event == retained.id && note.position == retained.position && note.end == retained.end &&
+        absolute_row(*measures, note.position) == resolution / 5 &&
+        absolute_row(*measures, *note.end) == resolution * 7 / 10;
+}
+} // namespace
+
+TEST_CASE("Range pause conversion rejects unsafe intervals and stale edits without changing history", "[core][range-pause][T560]") {
+    for (unsigned scenario = 0; scenario < 9; ++scenario)
+        check_audio_extent(pause_conversion_rejects_atomically(scenario));
+}
+TEST_CASE("Range pause conversion keeps BMSON semantic and retained heads and tails coherent", "[core][range-pause][T560]") {
+    check_audio_extent(pause_conversion_bmson_aliases());
+}
+
+namespace {
+auto pause_conversion_whole_measure() -> bool {
+    auto history = make_document_history(pause_conversion_song());
+    const auto old = build_timing_index(history.document.charts.front());
+    const auto result = apply_measure_edit(history, history.document.revision,
+        convert_range_to_pause_action_t{chart_id_t{2}, {{measure_id_t{11}, 0}, {measure_id_t{12}, 0}}, pause_kind_t::delay, true});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    if (!result.applied || !old) return false;
+    const auto& chart = history.document.charts.front();
+    const auto after = build_timing_index(chart);
+    if (!after || chart.measures.size() != 2 || chart.measures.back().id != measure_id_t{12}) return false;
+    for (const auto row : {1920U, 1968U, 2016U, 2160U}) {
+        const auto before_time = timing_at(*old.index, row);
+        const auto after_time = timing_at(*after.index, row - 960);
+        if (!before_time || !after_time || before_time.seconds != after_time.seconds) return false;
+    }
+    return chart.pauses.front().position == local_position_t{measure_id_t{12}, 0} &&
+        chart.speeds.front().transition_beats == rational_t{2, 1};
+}
+} // namespace
+TEST_CASE("Range pause conversion can remove a whole measure without losing surviving IDs or endpoints", "[core][range-pause][T560]") {
+    check_audio_extent(pause_conversion_whole_measure());
 }

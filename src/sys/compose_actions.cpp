@@ -3465,7 +3465,15 @@ auto dispatch_compose_area_with_quantize_report(
             report = preview_quantize_selection(*chart, request->selection->notes, *request);
         }
     }
-    const auto response = dispatch_compose_area_action(action, history, state, notifications);
+    if (compose_area_pause_conversion(action.compose_action) &&
+        (application_state.paste_session || application_state.bga_draw_stroke || application_state.bmson_razor_stroke)) {
+        const auto message = application_state.paste_session ? "Finish the paste before converting the area."
+            : "Finish the current edit before converting the area.";
+        if (notifications) notifications->post_transient_hint(notification_source_t::edit, message);
+        return message;
+    }
+    const auto response = dispatch_compose_area_action(action, history, state, notifications,
+                                                       application_state.timing_locked);
     if (response && report && history.document.revision != revision) {
         application_state.quantize_applied_report =
             application_command_state_t::quantize_applied_report_t{

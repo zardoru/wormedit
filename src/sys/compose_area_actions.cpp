@@ -4,6 +4,7 @@
 #include <utility>
 #include <numeric>
 #include <wormedit/core/scroll_speed_editor.h>
+#include <wormedit/core/measure_editor.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/grid.h>
 #include <wormedit/core/sv_recipe.h>
@@ -16,6 +17,7 @@ struct area_action_context_t {
     wormedit::document_history_t& history;
     wormedit::editor_interaction_state_t& state;
     std::optional<wormedit::notification_sink_t> notifications;
+    bool timing_locked{};
 };
 auto area_feedback(area_action_context_t& context, std::string message,
                    wormedit::notification_severity_t severity,
@@ -241,6 +243,33 @@ std::string resize_compose_area(area_action_context_t& context,
         notification_severity_t::hint, notification_source_t::input);
 }
 
+std::string convert_compose_area_to_pause(area_action_context_t& context) {
+    using namespace wormedit;
+    if (context.timing_locked) return area_rejection(context, "Timing is locked.");
+    if (has_pending_editor_gesture(context.state))
+        return area_rejection(context, "Finish the current edit before converting the area.");
+    if (!context.state.retained_selection_range)
+        return area_rejection(context, "Select a nonempty authored row range first.");
+    const auto kind = context.action.compose_action;
+    const bool delay = kind == WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY ||
+                       kind == WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY_RESIZE;
+    const bool resize = kind == WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP_RESIZE ||
+                        kind == WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY_RESIZE;
+    const auto result = apply_measure_edit(context.history, context.history.document.revision,
+        convert_range_to_pause_action_t{context.state.chart, *context.state.retained_selection_range,
+                                        delay ? pause_kind_t::delay : pause_kind_t::stop, resize});
+    if (!result.applied)
+        return result.diagnostics.empty() ? area_rejection(context, "Area conversion rejected.")
+            : area_diagnostic(context, result.diagnostics.front());
+    const auto chart = std::ranges::find(context.history.document.charts, context.state.chart, &chart_document_t::id);
+    place_cursor_at(context.state, chart->pauses.back().position);
+    context.state.retained_selection_range.reset();
+    context.state.retained_canvas_selection_range.reset();
+    context.state.selected_canvas_measure.reset();
+    return area_feedback(context, delay ? "Selected rows converted to Delay." : "Selected rows converted to Stop.",
+                         notification_severity_t::success, notification_source_t::edit);
+}
+
 std::optional<std::string> dispatch_compose_area_action(area_action_context_t& context) {
     using namespace wormedit;
     const auto kind = context.action.compose_action;
@@ -254,7 +283,7 @@ std::optional<std::string> dispatch_compose_area_action(area_action_context_t& c
         kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_DELETE && kind != WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN)
+        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN && !compose_area_pause_conversion(kind))
         return std::nullopt;
     const auto chart = std::ranges::find(context.history.document.charts, context.state.chart,
                                          &chart_document_t::id);
@@ -264,6 +293,7 @@ std::optional<std::string> dispatch_compose_area_action(area_action_context_t& c
     const auto* measures = std::get_if<measure_index_t>(&built);
     if (!measures)
         return area_rejection(context, "The selected area has invalid measure geometry.");
+    if (compose_area_pause_conversion(kind)) return convert_compose_area_to_pause(context);
     if (kind == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE)
         return quantize_compose_area_selection(context, *chart);
     if (kind == WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE)
@@ -331,17 +361,19 @@ auto compose_area_delete_supported(wormedit::document_history_t& history,
 auto dispatch_compose_area_action(const WormUiWorkspaceAction& action,
                                   wormedit::document_history_t& history,
                                   wormedit::editor_interaction_state_t& state,
-                                  std::optional<wormedit::notification_sink_t> notifications)
+                                  std::optional<wormedit::notification_sink_t> notifications, bool timing_locked)
     -> std::optional<std::string> {
-    area_action_context_t context{action, history, state, notifications};
+    area_action_context_t context{action, history, state, notifications, timing_locked};
     const auto kind = action.compose_action;
     if (!action.compose_area_clear_requested && kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_DELETE && kind != WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE &&
         kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN)
+        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN && !compose_area_pause_conversion(kind))
         return std::nullopt;
+    if (compose_area_pause_conversion(kind) && history.document.id.value != action.compose_input_project_id)
+        return area_rejection(context, "Area conversion ignored because the project changed.");
     if (state.chart.value != action.compose_input_chart_id ||
         history.document.revision != action.compose_input_document_revision)
         return area_rejection(context, "Area action ignored because the chart or document revision changed.");

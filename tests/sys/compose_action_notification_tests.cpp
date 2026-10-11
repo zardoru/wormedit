@@ -14,6 +14,7 @@
 #include <wormedit/core/notifications.h>
 #include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/command.h>
+#include <wormedit/core/chart_editor.h>
 #include <wormedit/core/workspace.h>
 #include <chrono>
 #include <bit>
@@ -1106,6 +1107,7 @@ TEST_CASE("BMSON output export rejects missing stem before writing music or dest
 
 TEST_CASE("BMSON editor export publishes sliced audio and reports conversion losses",
           "[unit][sys][conversion][publication]") {
+    const bool other_selected_chart = GENERATE(false, true);
     const auto tab = GENERATE(workspace_tab_t::compose, workspace_tab_t::setup, workspace_tab_t::metadata);
     const auto target = GENERATE(format_family_t::osu_mania, format_family_t::bms);
     const auto named_output = GENERATE(false, true);
@@ -1123,6 +1125,12 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
     require_action(parsed.song.has_value());
     require_action_false(parsed.has_errors());
     fixture.history = make_document_history(*parsed.song);
+    if (other_selected_chart) {
+        const auto added = apply_new_chart_command(fixture.history, fixture.history.document.revision);
+        INFO((added.command.diagnostics.empty() ? "" : added.command.diagnostics.front().message));
+        require_action(static_cast<bool>(added));
+        fixture.history.undo.clear();
+    }
     auto& exported_chart = fixture.history.document.charts.front();
     exported_chart.semantic_layers = {{.id = layer_id_t{900}, .name = "Export layer"}};
     for (auto& measure : exported_chart.measures)
@@ -1136,8 +1144,9 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
     require_action(static_cast<bool>(workspace));
     fixture.workspace = *workspace.workspace;
     fixture.workspace.active_tab = tab;
-    fixture.workspace.selected_chart = fixture.history.document.charts.front().id;
-    fixture.state.chart = fixture.history.document.charts.front().id;
+    fixture.workspace.selected_chart = other_selected_chart ? fixture.history.document.charts.back().id
+        : fixture.history.document.charts.front().id;
+    fixture.state.chart = *fixture.workspace.selected_chart;
     fixture.state.cursor = {fixture.history.document.charts.front().measures.front().id, 0};
     fixture.state.active_lane = fixture.history.document.charts.front().lane_layouts.front().layout.lanes.front().id;
     fixture.asset_base = directory;

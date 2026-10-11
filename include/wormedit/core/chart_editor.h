@@ -35,4 +35,11 @@ struct duplicate_chart_result_t {
     std::uint64_t expected_revision, chart_id_t chart, std::optional<std::size_t> group)
     -> document_command_result_t;
 
+// nullopt creates a group; an index replaces it atomically. Empty membership is a draft.
+[[nodiscard]] auto apply_set_output_group_command(document_history_t& history,
+    std::uint64_t expected_revision, std::optional<std::size_t> index, output_group_t group)
+    -> document_command_result_t;
+[[nodiscard]] auto apply_delete_output_group_command(document_history_t& history,
+    std::uint64_t expected_revision, std::size_t index) -> document_command_result_t;
+
 } // namespace wormedit

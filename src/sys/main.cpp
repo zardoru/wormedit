@@ -1600,15 +1600,26 @@ bool dispatch_chart_import_action(wormedit::sys::chart_import_session_t& session
 }
 
 bool dispatch_project_chart_action(wormedit::sys::project_chart_runtime_t& runtime,
-    const WormUiProjectChartAction& action, wormedit::document_history_t& history,
+    const WormUiWorkspaceAction& frame_action, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace,
     std::optional<wormedit::editor_interaction_state_t>& interaction,
     application_command_state_t& application, wormedit::notification_sink_t& notifications,
-    bool handled, bool loaded) {
+    bool handled, bool loaded, wormedit::task_scheduler_t& scheduler) {
     if (handled) return true;
-    if (!loaded || action.kind == WORM_UI_PROJECT_CHART_NONE) return false;
+    const auto& action = frame_action.project_chart;
+    const auto& group = frame_action.project_output_group;
+    const bool group_action = group.kind != WORM_UI_PROJECT_OUTPUT_GROUP_NONE;
+    if (!loaded || (!group_action && action.kind == WORM_UI_PROJECT_CHART_NONE)) return false;
+    if (group_action && (application.paste_session ||
+        (interaction && editor_interaction_has_pending_gesture(*interaction)))) {
+        notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::document,
+            "Finish or cancel the editor gesture before changing output groups.");
+        return true;
+    }
     const auto previous_chart = workspace.selected_chart;
-    auto result = wormedit::sys::apply_project_chart_ui_action(runtime, history, action, workspace.selected_chart);
+    auto result = group_action
+        ? wormedit::sys::apply_project_output_group_ui_action(runtime, history, group, scheduler)
+        : wormedit::sys::apply_project_chart_ui_action(runtime, history, action, workspace.selected_chart);
     notifications.post(result.severity, wormedit::notification_source_t::document, result.status);
     if (result.applied) {
         const auto rebound = wormedit::rebind_workspace(workspace, history);
@@ -4677,6 +4688,7 @@ int main(int argc, char** argv) {
                 native_project_loaded && !active_project_path.empty());
             project_external_player_view(external_player_runtime, flattened.view);
             wormedit::sys::project_chart_view(project_chart_runtime, history.document, flattened.view.setup);
+            flattened.view.setup.selected_chart_id = flattened.view.selected_chart_id;
             project_tap_timing(tap_runtime, history.document, tap_clock, command_registry, flattened.view);
             publish_tap_assist();
             wormedit::sys::project_recent_files(program_preferences, flattened.view);
@@ -4731,9 +4743,9 @@ int main(int argc, char** argv) {
                     dispatch_chart_import_action(chart_import, action, history, workspace, asset_base,
                                                  notification_sink, session_loaded, program_preferences);
                 const auto previous_selected_chart = workspace.selected_chart;
-                const bool project_handled = dispatch_project_chart_action(project_chart_runtime, action.project_chart,
+                const bool project_handled = dispatch_project_chart_action(project_chart_runtime, action,
                     history, workspace, compose_interaction_state, application_command_state, notification_sink,
-                    shortcut_handled || external_handled, session_loaded);
+                    shortcut_handled || external_handled, session_loaded, resource_copy_scheduler);
                 remember_created_chart_snap(application_command_state, project_handled,
                     action.project_chart.kind, previous_selected_chart, workspace.selected_chart);
                 apply_compare_scroll_action(compare_scene_cache, action);

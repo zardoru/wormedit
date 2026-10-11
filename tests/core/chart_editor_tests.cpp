@@ -337,3 +337,81 @@ TEST_CASE("New chart templates the initial layout without copying later measure 
     expect_chart(chart.input_profile.bindings.size() == 4);
     expect_chart(validate_document(history.document).empty());
 }
+
+TEST_CASE("Output group CRUD is atomic and undoable without altering chart content", "[unit][output-groups]") {
+    auto history = make_document_history(chart_song());
+    history.document.output_groups.clear();
+    const auto before = write_native_project(history.document).bytes;
+    const auto initial_revision = history.document.revision;
+    output_group_t group{.name = "Release", .family = format_family_t::bmson,
+        .charts = {chart_id_t{2}}, .relative_output_path = "exports/chart.bmson"};
+    require_chart(apply_set_output_group_command(history, history.document.revision, std::nullopt, group).applied);
+    expect_chart(history.document.output_groups.size() == 1);
+    group.name = "Renamed";
+    group.family = format_family_t::stepmania;
+    group.relative_output_path = "release/song.ssc";
+    require_chart(apply_set_output_group_command(history, history.document.revision, 0, group).applied);
+    expect_chart(history.document.output_groups[0].name == "Renamed");
+    require_chart(undo_document_command(history));
+    expect_chart(history.document.output_groups[0].name == "Release");
+    require_chart(redo_document_command(history));
+    expect_chart(history.document.output_groups[0].relative_output_path == "release/song.ssc");
+    require_chart(apply_delete_output_group_command(history, history.document.revision, 0).applied);
+    expect_chart(history.document.output_groups.empty());
+    require_chart(undo_document_command(history));
+    expect_chart(history.document.output_groups[0].charts == group.charts);
+    auto unchanged = history.document;
+    unchanged.output_groups.clear();
+    unchanged.revision = initial_revision;
+    expect_chart(write_native_project(unchanged).bytes == before);
+}
+
+TEST_CASE("Output group edits reject unsafe paths stale contexts and invalid memberships atomically", "[unit][output-groups]") {
+    auto history = make_document_history(chart_song());
+    history.document.output_groups.clear();
+    const auto revision = history.document.revision;
+    output_group_t group{.name = "Release", .family = format_family_t::bmson,
+        .charts = {chart_id_t{2}}, .relative_output_path = "exports/chart.bmson"};
+    for (const auto* path : {"", "/tmp/chart.bmson", "../chart.bmson", "exports/../chart.bmson", "C:\\chart.bmson", "exports\\chart.bmson"}) {
+        group.relative_output_path = path;
+        expect_chart(!apply_set_output_group_command(history, revision, std::nullopt, group));
+    }
+    group.relative_output_path = "exports/chart.bmson";
+    group.charts = {chart_id_t{999}};
+    expect_chart(!apply_set_output_group_command(history, revision, std::nullopt, group));
+    group.charts = {chart_id_t{2}, chart_id_t{2}};
+    expect_chart(!apply_set_output_group_command(history, revision, std::nullopt, group));
+    group.charts = {chart_id_t{2}};
+    group.family = format_family_t::quaver;
+    expect_chart(!apply_set_output_group_command(history, revision, std::nullopt, group));
+    group.family = format_family_t::bmson;
+    expect_chart(!apply_set_output_group_command(history, revision + 1, std::nullopt, group));
+    expect_chart(!apply_set_output_group_command(history, revision, 99, group));
+    expect_chart(!apply_delete_output_group_command(history, revision, 0));
+    expect_chart(history.document.revision == revision);
+    expect_chart(history.undo.empty());
+    expect_chart(history.document.output_groups.empty());
+}
+
+TEST_CASE("Output groups permit drafts and multiple memberships with format-aware file cardinality", "[unit][output-groups]") {
+    auto history = make_document_history(chart_song());
+    history.document.output_groups.clear();
+    const auto duplicate = apply_duplicate_chart_command(history, history.document.revision, chart_id_t{2});
+    require_chart(static_cast<bool>(duplicate));
+    output_group_t group{.name = "Draft", .family = format_family_t::bmson,
+        .relative_output_path = "exports/charts"};
+    require_chart(apply_set_output_group_command(history, history.document.revision, std::nullopt, group).applied);
+    group.name = "Both charts";
+    group.charts = {chart_id_t{2}, *duplicate.chart};
+    group.relative_output_path = "exports/song.bmson";
+    expect_chart(!apply_set_output_group_command(history, history.document.revision, std::nullopt, group));
+    group.relative_output_path = "exports/charts";
+    require_chart(apply_set_output_group_command(history, history.document.revision, std::nullopt, group).applied);
+    expect_chart(history.document.output_groups[1].charts.size() == 2);
+    group.name = "Shared SSC";
+    group.family = format_family_t::stepmania;
+    group.relative_output_path = "exports/song.ssc";
+    require_chart(apply_set_output_group_command(history, history.document.revision, std::nullopt, group).applied);
+    expect_chart(history.document.output_groups[1].charts == history.document.output_groups[2].charts);
+    expect_chart(!apply_set_output_group_command(history, history.document.revision, std::nullopt, group));
+}

@@ -3238,7 +3238,10 @@ auto tool_chip(nk_context* context, const WormUiComposeView& view, struct nk_rec
     if (!font || available < 64 || field.h < 54 || (!view.note_paint_mode_active && !view.semantic_layer_paint_mode_active))
         return chip;
     chip.layer = view.semantic_layer_paint_mode_active;
-    chip.prefix = chip.layer ? "Layer · " : "Draw · ";
+    chip.prefix = chip.layer ? "Layer · "
+        : view.draw_source_kind == 1 && view.bmson_tools_available
+            ? (view.draw_source_is_stem ? "Draw stem · " : "Draw packed keysound · ")
+            : "Draw · ";
     chip.suffix = available < 360 || (!chip.layer && !view.draw_source_kind) ? ""
         : chip.layer ? " · Alt+drag removes" : " · right-drag erases";
     chip.warning = !chip.layer && view.draw_source_missing;

@@ -271,6 +271,37 @@ typedef struct WormUiProjectChartAction {
     bool insert_after;
 } WormUiProjectChartAction;
 
+typedef struct WormUiProjectOutputGroupView {
+    size_t document_index;
+    const char* name;
+    uint8_t family;
+    const char* path;
+    const uint64_t* chart_ids;
+    size_t chart_count;
+    const char* preview_status;
+} WormUiProjectOutputGroupView;
+
+typedef enum WormUiProjectOutputGroupActionKind {
+    WORM_UI_PROJECT_OUTPUT_GROUP_NONE = 0,
+    WORM_UI_PROJECT_OUTPUT_GROUP_CREATE,
+    WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE,
+    WORM_UI_PROJECT_OUTPUT_GROUP_DELETE,
+    WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
+} WormUiProjectOutputGroupActionKind;
+
+typedef struct WormUiProjectOutputGroupAction {
+    WormUiProjectOutputGroupActionKind kind;
+    uint64_t project_id;
+    uint64_t document_revision;
+    uint64_t session_generation;
+    size_t group_index;
+    const char* name;
+    const char* path;
+    uint8_t family;
+    size_t chart_count;
+    uint64_t chart_ids[WORM_UI_PROJECT_CHART_CAPACITY];
+} WormUiProjectOutputGroupAction;
+
 typedef struct WormUiSetupView {
     bool visible;
     uint64_t song_id;
@@ -279,6 +310,10 @@ typedef struct WormUiSetupView {
     const WormUiProjectChartRow* charts;
     size_t chart_row_count;
     bool charts_truncated;
+    const WormUiProjectOutputGroupView* output_groups;
+    size_t output_group_count;
+    bool output_groups_truncated;
+    uint64_t selected_chart_id;
     size_t chart_count;
     size_t audio_asset_count;
     size_t visual_asset_count;
@@ -2858,6 +2893,7 @@ typedef struct WormUiWorkspaceAction {
     WormUiCloseDecision close_decision;
     uint64_t close_project_id, close_revision;
     WormUiProjectChartAction project_chart;
+    WormUiProjectOutputGroupAction project_output_group;
     WormUiChartImportAction chart_import;
     WormUiTapTimingAction tap_timing;
     WormUiTimingSettingsAction timing_settings;

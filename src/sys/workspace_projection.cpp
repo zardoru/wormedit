@@ -624,8 +624,9 @@ void populate_compose_output_groups(const workspace_projection_context_t& projec
     auto& result = projection.result;
     auto& view = result.view.compose;
     const auto& groups = projection.document.output_groups;
+    const bool project = projection.source.active_tab == wormedit::workspace_tab_t::setup;
     const auto selected_count = std::ranges::count_if(groups, [&](const auto& group) {
-        return std::ranges::find(group.charts, chart) != group.charts.end();
+        return project || std::ranges::find(group.charts, chart) != group.charts.end();
     });
     const auto count = std::min(static_cast<std::size_t>(selected_count),
                                 std::size_t{WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY});
@@ -642,7 +643,7 @@ void populate_compose_output_groups(const workspace_projection_context_t& projec
     }
     if (!arena) return;
     for (std::size_t index = 0; index < groups.size(); ++index) {
-        if (std::ranges::find(groups[index].charts, chart) == groups[index].charts.end()) continue;
+        if (!project && std::ranges::find(groups[index].charts, chart) == groups[index].charts.end()) continue;
         if (view.output_group_count == count) break;
         if (!append_compose_output_group(result, *arena, groups[index], index)) {
             view.output_groups_truncated = true;

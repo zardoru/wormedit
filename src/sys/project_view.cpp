@@ -2,6 +2,7 @@
 
 #include <wormedit/core/timing.h>
 #include <wormedit/core/chart_editor.h>
+#include <wormedit/formats/conversion.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -195,8 +196,116 @@ void publish_row_error(project_chart_runtime_t& runtime, const WormUiProjectChar
 }
 } // namespace
 
+namespace {
+void poll_output_group_preview(project_chart_runtime_t& runtime, const song_document_t& doc) {
+    if (runtime.output_group_song != doc.id || runtime.output_group_revision != doc.revision) {
+        runtime.preview_graph.cancel();
+        runtime.preview_graph = {};
+        runtime.output_group_status.assign(doc.output_groups.size(), "Preview not run");
+        runtime.output_group_song = doc.id;
+        runtime.output_group_revision = doc.revision;
+    }
+    if (!runtime.preview_graph) return;
+    const auto result = runtime.preview_graph.result(runtime.preview_task);
+    if (!result) return;
+    const auto text = task_value_cast<std::string>(*result);
+    runtime.output_group_status[runtime.preview_index] = text ? *text :
+        (result->error ? result->error->message : "Preview failed.");
+    runtime.preview_graph = {};
+}
+void project_output_group_view(project_chart_runtime_t& runtime, const song_document_t& doc,
+    WormUiSetupView& view) {
+    poll_output_group_preview(runtime, doc);
+    if (!view.visible) return;
+    const auto count = std::min(doc.output_groups.size(), maximum_project_chart_rows);
+    runtime.output_group_charts.resize(count);
+    runtime.output_group_paths.resize(count);
+    runtime.output_groups.clear();
+    runtime.output_groups.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        const auto& group = doc.output_groups[i];
+        auto& charts = runtime.output_group_charts[i];
+        charts.clear();
+        for (const auto id : group.charts) charts.push_back(id.value);
+        runtime.output_group_paths[i] = group.relative_output_path.generic_string();
+        runtime.output_groups.push_back({i, group.name.c_str(), static_cast<uint8_t>(group.family),
+            runtime.output_group_paths[i].c_str(), charts.data(), charts.size(), runtime.output_group_status[i].c_str()});
+    }
+    view.output_groups = runtime.output_groups.data();
+    view.output_group_count = count;
+    view.output_groups_truncated = count != doc.output_groups.size();
+}
+auto output_preview(const song_document_t& doc, const output_group_t& group) -> std::string {
+    if (group.charts.empty()) return "Add at least one chart before exporting.";
+    conversion_request_t request;
+    request.target = group.family;
+    if (group.family != format_family_t::native_project) request.charts = group.charts;
+    request.loss_policy = loss_policy_t::warn;
+    if (group.family == format_family_t::stepmania)
+        request.stepmania = stepmania_export_policy_t{.file_profile =
+            group.relative_output_path.extension() == ".sm" ? stepmania_profile_t::sm : stepmania_profile_t::ssc};
+    const auto result = convert_document(doc, request);
+    const auto error = std::ranges::find(result.diagnostics, diagnostic_severity_t::error,
+        &conversion_diagnostic_t::severity);
+    if (error != result.diagnostics.end()) return "Cannot convert: " + error->message;
+    const auto losses = std::ranges::count(result.diagnostics, true, &conversion_diagnostic_t::loss);
+    return "Preview: " + std::to_string(result.outputs.size()) + " file(s), " +
+        std::to_string(losses) + " conversion warning(s).";
+}
+auto start_output_preview(project_chart_runtime_t& runtime, const song_document_t& doc,
+    size_t index, task_scheduler_t& scheduler) -> project_chart_ui_result_t {
+    poll_output_group_preview(runtime, doc);
+    if (runtime.preview_graph) return {.status = "Wait for the current conversion preview."};
+    task_graph_t graph{1};
+    const auto added = graph.add_task({}, [snapshot = doc, group = doc.output_groups[index]](
+        std::span<const task_result_t>, std::stop_token stop) {
+        if (stop.stop_requested()) return task_result_t::failure(task_error_code_t::cancelled, "Preview cancelled.");
+        return task_result_t::success(make_task_value<std::string>(
+            std::make_shared<const std::string>(output_preview(snapshot, group))));
+    });
+    if (!added) return {.status = added.error->message};
+    auto submitted = scheduler.submit(std::move(graph));
+    if (!submitted) return {.status = submitted.error->message};
+    runtime.preview_graph = std::move(submitted.graph);
+    runtime.preview_task = *added.id;
+    runtime.preview_index = index;
+    runtime.output_group_status[index] = "Preview running…";
+    return {.status = "Conversion preview started.", .severity = notification_severity_t::info};
+}
+} // namespace
+
+auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
+    document_history_t& history, const WormUiProjectOutputGroupAction& action,
+    task_scheduler_t& scheduler) -> project_chart_ui_result_t {
+    if (action.project_id != history.document.id.value || action.document_revision != history.document.revision ||
+        action.session_generation != runtime.session_generation)
+        return {.status = "Output group action belongs to a changed project or session."};
+    const bool create = action.kind == WORM_UI_PROJECT_OUTPUT_GROUP_CREATE;
+    if (!create && action.group_index >= history.document.output_groups.size())
+        return {.status = "Output group is no longer available."};
+    if (action.kind == WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW)
+        return start_output_preview(runtime, history.document, action.group_index, scheduler);
+    document_command_result_t result;
+    if (action.kind == WORM_UI_PROJECT_OUTPUT_GROUP_DELETE)
+        result = apply_delete_output_group_command(history, action.document_revision, action.group_index);
+    else {
+        if (action.kind != WORM_UI_PROJECT_OUTPUT_GROUP_CREATE && action.kind != WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE)
+            return {.status = "Output group action is invalid."};
+        if (!action.name || !action.path || action.chart_count > WORM_UI_PROJECT_CHART_CAPACITY)
+            return {.status = "Output group fields or membership are invalid."};
+        output_group_t group{.name = action.name, .family = static_cast<format_family_t>(action.family),
+            .relative_output_path = action.path};
+        for (size_t i = 0; i < action.chart_count; ++i) group.charts.push_back(chart_id_t{action.chart_ids[i]});
+        result = apply_set_output_group_command(history, action.document_revision,
+            create ? std::nullopt : std::optional{action.group_index}, std::move(group));
+    }
+    if (!result) return {.status = result.diagnostics.empty() ? "Output group was not changed." : result.diagnostics.front().message};
+    return {.status = "Output groups updated.", .applied = true, .severity = notification_severity_t::success};
+}
+
 void project_chart_view(project_chart_runtime_t& runtime, const song_document_t& document,
     WormUiSetupView& view) {
+    project_output_group_view(runtime, document, view);
     if (!view.visible) return;
     if (!runtime.cache.populated || runtime.cache.revision != document.revision)
         std::erase_if(runtime.row_errors, [&](const auto& error) {

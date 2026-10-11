@@ -63,7 +63,8 @@ struct bmson_channel_resource_binding_t {
     std::optional<bmson_source_geometry_t> geometry = {}) -> document_command_result_t;
 
 // Classifies a stem point through the shared span path and assigns its linked
-// semantic event to a playable lane in one atomic history entry.
+// semantic event to a playable lane in one atomic history entry. An existing
+// pulse is reassigned with its stable note/event identity rather than duplicated.
 [[nodiscard]] auto insert_bmson_playable_stem_point(
     document_history_t& history, std::uint64_t expected_revision, chart_id_t chart,
     object_id_t channel, local_position_t target, lane_id_t lane,

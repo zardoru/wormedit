@@ -5,6 +5,7 @@
 #include <wormedit/core/notifications.h>
 #include "ui/frontend.h"
 #include <map>
+#include <wormedit/core/task_graph.h>
 
 #include <cstdint>
 #include <string>
@@ -64,6 +65,16 @@ struct project_chart_runtime_t {
     project_chart_table_cache_t cache;
     std::vector<WormUiProjectChartRow> rows;
     std::map<std::uint64_t, std::string> row_errors;
+    std::vector<WormUiProjectOutputGroupView> output_groups;
+    std::vector<std::vector<uint64_t>> output_group_charts;
+    std::vector<std::string> output_group_status;
+    std::vector<std::string> output_group_paths;
+    song_id_t output_group_song;
+    uint64_t output_group_revision{};
+    task_graph_handle_t preview_graph;
+    task_id_t preview_task;
+    size_t preview_index{};
+
 };
 struct project_chart_ui_result_t {
     std::string status;
@@ -76,6 +87,10 @@ void project_chart_view(project_chart_runtime_t& runtime, const song_document_t&
 [[nodiscard]] auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,
     document_history_t& history, const WormUiProjectChartAction& action,
     std::optional<chart_id_t> active_chart = std::nullopt) -> project_chart_ui_result_t;
+
+[[nodiscard]] auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
+    document_history_t& history, const WormUiProjectOutputGroupAction& action,
+    task_scheduler_t& scheduler) -> project_chart_ui_result_t;
 
 [[nodiscard]] auto build_project_chart_table(const song_document_t& document) -> project_chart_table_t;
 // Caller-owned session generation distinguishes reopened documents with identical IDs/revisions.

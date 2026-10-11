@@ -218,3 +218,56 @@ TEST_CASE("Project grip reorder rejects stale or missing targets and leaves adja
     expect_project(!apply_project_chart_ui_action(runtime, history, action).applied);
     expect_project(chart_ids(history) == original && history.undo.empty());
 }
+
+TEST_CASE("Project output group actions project complete editable membership and reject foreign sessions", "[unit][project-view][output-groups]") {
+    auto history = make_document_history(project_song());
+    project_chart_runtime_t runtime;
+    task_scheduler_t scheduler{1, 1};
+    WormUiSetupView view{.visible = true};
+    project_chart_view(runtime, history.document, view);
+    require_project(view.output_group_count == 1);
+    expect_project(view.output_groups[0].chart_ids[0] == history.document.charts[0].id.value);
+    WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_CREATE,
+        .project_id = history.document.id.value, .document_revision = history.document.revision,
+        .session_generation = runtime.session_generation, .name = "BMSON", .path = "exports/chart.bmson", .family = 4,
+        .chart_count = 1};
+    action.chart_ids[0] = history.document.charts[0].id.value;
+    ++action.session_generation;
+    expect_project(!apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
+    --action.session_generation;
+    require_project(apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
+    project_chart_view(runtime, history.document, view);
+    require_project(view.output_group_count == 2);
+    expect_project(std::string_view{view.output_groups[1].path} == "exports/chart.bmson");
+    expect_project(view.output_groups[1].family == 4);
+    expect_project(!apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
+    action.document_revision = history.document.revision;
+    ++action.project_id;
+    expect_project(!apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
+}
+
+TEST_CASE("Project conversion preview runs through the worker service and retires on document changes", "[unit][project-view][output-groups]") {
+    auto history = make_document_history(project_song());
+    history.document.output_groups[0].family = format_family_t::native_project;
+    history.document.output_groups[0].relative_output_path = "exports/song.wormedit";
+    project_chart_runtime_t runtime;
+    task_scheduler_t scheduler{1, 1};
+    WormUiSetupView view{.visible = true};
+    project_chart_view(runtime, history.document, view);
+    WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
+        .project_id = history.document.id.value, .document_revision = history.document.revision,
+        .session_generation = runtime.session_generation};
+    const auto before = history.document.revision;
+    (void)apply_project_output_group_ui_action(runtime, history, action, scheduler);
+    require_project(static_cast<bool>(runtime.preview_graph));
+    require_project(runtime.preview_graph.wait());
+    project_chart_view(runtime, history.document, view);
+    expect_project(std::string_view{view.output_groups[0].preview_status}.starts_with("Preview: 1 file"));
+    expect_project(history.document.revision == before);
+    expect_project(history.undo.empty());
+    (void)apply_project_output_group_ui_action(runtime, history, action, scheduler);
+    ++history.document.revision;
+    project_chart_view(runtime, history.document, view);
+    expect_project(!runtime.preview_graph);
+    expect_project(std::string_view{view.output_groups[0].preview_status} == "Preview not run");
+}

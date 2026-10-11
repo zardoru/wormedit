@@ -6517,12 +6517,13 @@ TEST_CASE("Lane-key dispatcher replaces or moves same sound to BGM with correct 
 
 TEST_CASE("Lane-key dispatcher uses revision-bound decoded geometry for linked BMSON entry",
           "[sys][compose][lane-entry]") {
+    const bool converted = GENERATE(false, true);
     auto song = lane_key_callback_song();
     auto& chart = song.charts.front();
     chart.source_family = format_family_t::bmson;
     const auto resource = std::ranges::find(song.resources, resource_id_t{7}, &resource_entry_t::id);
     resource->roles = {resource_role_t::sample, resource_role_t::bgm};
-    resource->sound_kind = sound_kind_t::stem;
+    resource->sound_kind = converted ? sound_kind_t::keysound : sound_kind_t::stem;
     const auto asset = resource->asset;
     chart.sound_channels = {{.id = object_id_t{71000}, .source_clip = {clip_id_t{71000}, asset},
         .events = {{.id = object_id_t{73000}, .position = {measure_id_t{1}, 0}, .playable = false}}}};
@@ -6530,9 +6531,15 @@ TEST_CASE("Lane-key dispatcher uses revision-bound decoded geometry for linked B
     chart.measures.front().bgm_events = {{.id = object_id_t{75000}, .position = {measure_id_t{1}, 0},
         .source_lane = object_id_t{74000}, .sound = resource_id_t{7}, .sound_channel_event = object_id_t{73000}}};
     compose_test_fixture_t f{std::move(song)};
+    if (converted) {
+        const auto result = set_bmson_channel_lane_mode(f.history, f.history.document.revision,
+            chart_id_t{1}, object_id_t{71000}, bmson_channel_lane_mode_t::stem);
+        expect_compose_test(result.applied);
+        expect_compose_test(f.history.document.resources.front().sound_kind == sound_kind_t::stem);
+    }
     f.application.note_paint_mode_active = true;
     f.project();
-    f.interaction->cursor = {measure_id_t{1}, 240};
+    f.interaction->cursor = {measure_id_t{1}, 480};
     f.cache.stem_index.built = true;
     f.cache.stem_index.document = f.history.document.id;
     f.cache.stem_index.chart = f.history.document.charts.front().id;
@@ -6545,15 +6552,35 @@ TEST_CASE("Lane-key dispatcher uses revision-bound decoded geometry for linked B
     action.compose_input_project_id = f.history.document.id.value;
     action.compose_input_count = 1;
     action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS,
-                               .lane_id = 1, .resource_id = 7};
+                               .lane_id = 2, .resource_id = 7};
     const auto status = dispatch_compose_input_action(action, f.history, *f.binding.workspace,
         *f.interaction, viewport, navigation, f.application, f.cache, 0);
     INFO(status);
-    expect_compose_test(f.history.undo.size() == 1);
+    expect_compose_test(f.history.undo.size() == (converted ? 2 : 1));
     const auto& changed = f.history.document.charts.front();
     expect_compose_test(changed.sound_channels.front().events.back().playable);
     expect_compose_test(changed.sound_channels.front().events.back().continuation);
     expect_compose_test(changed.measures.front().notes.back().sound_channel_event.has_value());
+    expect_compose_test(changed.measures.front().notes.back().sound == resource_id_t{7});
+    expect_compose_test(changed.measures.front().notes.back().position.row == 480);
+    const auto original_id = changed.measures.front().notes.back().id;
+    const auto source_id = changed.measures.front().notes.back().sound_channel_event;
+    const auto source_count = changed.sound_channels.front().events.size();
+    action.compose_input_document_revision = f.history.document.revision;
+    action.compose_inputs[0].lane_id = 1;
+    (void)dispatch_compose_input_action(action, f.history, *f.binding.workspace,
+        *f.interaction, viewport, navigation, f.application, f.cache, 0);
+    const auto& moved_chart = f.history.document.charts.front();
+    expect_compose_test(moved_chart.measures.front().notes.size() == 1);
+    expect_compose_test(moved_chart.measures.front().notes.front().id == original_id);
+    expect_compose_test(moved_chart.measures.front().notes.front().lane == lane_id_t{1});
+    expect_compose_test(moved_chart.measures.front().notes.front().sound_channel_event == source_id);
+    expect_compose_test(moved_chart.sound_channels.front().events.size() == source_count);
+    expect_compose_test(moved_chart.sound_channels.front().events.back().continuation);
+    expect_compose_test(undo_document_command(f.history));
+    expect_compose_test(f.history.document.charts.front().measures.front().notes.front().lane == lane_id_t{2});
+    expect_compose_test(undo_document_command(f.history));
+    expect_compose_test(f.history.document.charts.front().sound_channels.front().events.size() == 1);
 }
 
 TEST_CASE("Song bar defaults hide BMSON and BMS while keeping manual overrides",

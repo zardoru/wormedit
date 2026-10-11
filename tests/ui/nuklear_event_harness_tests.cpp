@@ -2443,6 +2443,45 @@ TEST_CASE("Lane keys carry the clicked Sounds dock source and leave selected not
     (void)harness.frame(std::span{&release, 1});
 }
 
+TEST_CASE("Selecting a converted BMSON stem arms lane-key entry without a double click",
+          "[frontend-state][event-harness][lane-key-sound][converted-stem]") {
+    nuklear_event_harness_t harness{1600, 900};
+    require_lane_key_sound(harness.ready());
+    auto& view = harness.view().compose;
+    view.note_paint_mode_active = true;
+    const auto missing = GENERATE(false, true);
+    const auto modifiers = GENERATE(SDL_KMOD_NONE, SDL_KMOD_CTRL, SDL_KMOD_SHIFT);
+    const WormUiComposeKeysoundRowView row{.resource_id = 1400, .slot = "",
+        .name = "converted.wav", .missing = missing, .stem_source_lane_id = 71};
+    const WormUiComposeLaneKeyBinding binding{.scancode = SDL_SCANCODE_2, .lane_id = 2};
+    view.keysounds = &row;
+    view.keysound_count = view.keysound_total_count = 1;
+    view.keysounds_available = true;
+    view.lane_key_bindings = &binding;
+    view.lane_key_binding_count = 1;
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.sounds_panel_visible = true;
+    (void)harness.frame();
+    const auto center = harness.drawn_text_center("converted.wav");
+    require_lane_key_sound(center);
+    const std::array down{motion_event(center->first, center->second),
+                          button_event(true, center->first, center->second)};
+    (void)harness.frame(down, modifiers);
+    const auto up = button_event(false, center->first, center->second);
+    (void)harness.frame(std::span{&up, 1}, modifiers);
+    const bool armed = !missing && modifiers == SDL_KMOD_NONE;
+    expect_lane_key(state.armed_resource_id == (armed ? 1400 : 0));
+    expect_lane_key(state.armed_from_sounds_dock == armed);
+    const auto motion = motion_event(300, 400);
+    (void)harness.frame(std::span{&motion, 1});
+    const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
+    const auto action = harness.frame(std::span{&press, 1});
+    require_lane_key_sound(action.get().compose_input_count == 1);
+    expect_lane_key(action.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
+    expect_lane_key(action.get().compose_inputs[0].resource_id == (armed ? 1400 : 0));
+}
+
 namespace {
 using namespace wormedit;
 using namespace wormedit::sys;
@@ -6378,4 +6417,106 @@ TEST_CASE("Metadata wheel scroll leaves its embedded waveform zoom and audio off
     check_layer_menu(frame.get().metadata_edit == WORM_UI_METADATA_EDIT_NONE);
     (void)harness.frame();
     check_layer_menu(harness.drawn_text().find("Audio and export") != std::string::npos);
+}
+
+namespace {
+struct output_group_fixture_t {
+    nuklear_event_harness_t harness{1280, 1000};
+    std::array<WormUiProjectChartRow, 2> charts{{
+        {.chart_id = 10, .name = "First difficulty", .author = "Author", .rating = "Unset", .mode = "7K", .output_groups = "SSC", .length = "1 s", .diagnostic = ""},
+        {.chart_id = 11, .name = "Second difficulty", .author = "Author", .rating = "Unset", .mode = "7K", .output_groups = "Unassigned", .length = "1 s", .diagnostic = ""}}};
+    const uint64_t included{10};
+    WormUiProjectOutputGroupView group{.document_index = 3, .name = "SSC release", .family = 2,
+        .path = "exports/song.ssc", .chart_ids = &included, .chart_count = 1, .preview_status = "Preview not run"};
+    explicit output_group_fixture_t(bool existing) {
+        auto& view = harness.view();
+        view.active_tab = WORM_UI_WORKSPACE_TAB_SETUP;
+        view.compose.visible = false;
+        view.setup.visible = true;
+        view.setup.song_id = view.project_id;
+        view.setup.document_revision = view.document_revision;
+        view.setup.session_generation = 8;
+        view.setup.selected_chart_id = 10;
+        view.setup.charts = charts.data();
+        view.setup.chart_count = charts.size();
+        view.setup.chart_row_count = charts.size();
+        view.setup.output_groups = existing ? &group : nullptr;
+        view.setup.output_group_count = existing ? 1 : 0;
+        view.setup.stepmania_policy_status = "Ready";
+        (void)harness.frame();
+    }
+    auto click(const char* label) {
+        const auto point = harness.drawn_text_center(label);
+        require_project_access(point.has_value());
+        return click_at(harness, point->first, point->second);
+    }
+};
+}
+
+TEST_CASE("Project output groups remain visible when empty and create a stamped group with selected membership",
+          "[frontend-state][event-harness][output-groups]") {
+    output_group_fixture_t f{false};
+    require_project_access(f.harness.drawn_text().find("Output groups · 0") != std::string::npos);
+    require_project_access(f.harness.drawn_text_center("Export…").has_value());
+    (void)f.click("New group");
+    (void)f.harness.frame();
+    const auto frames = f.click("Save group");
+    const auto found = std::ranges::find_if(frames, [](const auto& frame) {
+        return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_CREATE;
+    });
+    require_project_access(found != frames.end());
+    const auto& action = found->get().project_output_group;
+    require_project_access(action.project_id == f.harness.view().project_id);
+    require_project_access(action.document_revision == f.harness.view().document_revision);
+    require_project_access(action.session_generation == 8);
+    require_project_access(std::string_view{action.name} == "New output group");
+    require_project_access(std::string_view{action.path} == "exports/chart.bmson");
+    require_project_access(action.family == 4 && action.chart_count == 1 && action.chart_ids[0] == 10);
+}
+
+TEST_CASE("Project output group editor updates checkbox membership and confirms deletion",
+          "[frontend-state][event-harness][output-groups]") {
+    output_group_fixture_t f{true};
+    (void)f.click("Edit");
+    (void)f.harness.frame();
+    (void)f.click("Second difficulty");
+    const auto saved = f.click("Save group");
+    const auto found = std::ranges::find_if(saved, [](const auto& frame) {
+        return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE;
+    });
+    require_project_access(found != saved.end());
+    const auto& action = found->get().project_output_group;
+    require_project_access(action.group_index == 3 && action.family == 2);
+    require_project_access(action.chart_count == 2 && action.chart_ids[0] == 10 && action.chart_ids[1] == 11);
+    const auto disabled = f.click("Delete group");
+    require_project_access(std::ranges::none_of(disabled, [](const auto& frame) {
+        return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_DELETE;
+    }));
+    (void)f.click("Confirm group deletion");
+    const auto deleted = f.click("Delete group");
+    require_project_access(std::ranges::any_of(deleted, [](const auto& frame) {
+        return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_DELETE &&
+            frame.get().project_output_group.group_index == 3;
+    }));
+}
+
+TEST_CASE("Project output group rows expose worker previews and the shared export action",
+          "[frontend-state][event-harness][output-groups]") {
+    output_group_fixture_t f{true};
+    const auto preview = f.click("Preview");
+    require_project_access(std::ranges::any_of(preview, [](const auto& frame) {
+        return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW &&
+            frame.get().project_output_group.group_index == 3;
+    }));
+    const auto exported = f.click("Export");
+    const auto found = std::ranges::find_if(exported, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
+    });
+    require_project_access(found != exported.end());
+    const auto& action = found->get();
+    require_project_access(action.compose_output_group_index == 3);
+    require_project_access(action.compose_input_project_id == f.harness.view().project_id);
+    require_project_access(action.compose_input_document_revision == f.harness.view().document_revision);
+    require_project_access(action.compose_input_chart_id == 10);
+    require_project_access(!action.compose_export_overwrite);
 }

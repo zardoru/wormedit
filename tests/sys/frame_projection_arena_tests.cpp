@@ -1407,3 +1407,14 @@ TEST_CASE("Go to sound frame searches beyond dock filters and owns moved display
     check_frame_storage(bounded.view.compose.sound_picker.ready);
     check_frame_storage(std::strlen(bounded.view.compose.sound_picker.query) == 95);
 }
+
+TEST_CASE("Project export catalog includes groups outside the selected Compose difficulty", "[sys][frame-arena][output-groups]") {
+    auto document = compose_output_group_document();
+    wormedit::workspace_view_t model;
+    model.active_tab = wormedit::workspace_tab_t::setup;
+    auto frame = flatten_workspace(model, document, "ready", {}, false, {}, nullptr);
+    REQUIRE(frame.view.compose.output_group_count == document.output_groups.size());
+    check_frame_storage(frame.view.compose.output_groups[0].document_index == 0);
+    check_frame_storage(frame.view.compose.output_groups[1].document_index == 1);
+    check_frame_storage(!frame.view.compose.output_groups_truncated);
+}

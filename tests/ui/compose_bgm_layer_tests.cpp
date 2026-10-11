@@ -2,6 +2,7 @@
 #include "ui/nuklear/compose_state.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <array>
 #include <source_location>
@@ -357,4 +358,19 @@ TEST_CASE("A short Compose viewport never exposes an invisible tool-chip hit tar
     (void)click_at(harness, 250, 170);
     check_no_layer_brush(worm_ui_nuklear_compose_state().tool_chip_pointer_active);
     check_no_layer_brush(worm_ui_nuklear_compose_state().sounds_panel_visible);
+}
+
+TEST_CASE("BMSON armed source chip distinguishes stems and packed keysounds",
+          "[unit][event-harness][tool-chip][stem-reassign]") {
+    const auto stem = GENERATE(false, true);
+    nuklear_event_harness_t harness{1280, 900};
+    require_layer_brush(harness.ready());
+    initialize_chip(harness, 1, 179, "voice.wav");
+    auto& view = harness.view().compose;
+    view.bmson_tools_available = true;
+    view.draw_source_is_stem = stem;
+    (void)harness.frame();
+    check_layer_brush(harness.drawn_text().find(stem ? "Draw stem" : "Draw packed keysound") != std::string::npos);
+    check_chip_inputs_empty(click_chip(harness, "voice.wav"));
+    check_layer_brush(worm_ui_nuklear_compose_state().sounds_panel_visible);
 }

@@ -1751,7 +1751,7 @@ TEST_CASE("BMSON keyboard stem entry shares span classification and same sound B
     expect_bmson_core(history.document.charts.front().sound_channels.front().events.back().playable);
 }
 
-TEST_CASE("BMSON stem keys reuse autoplay pulses and preserve same-pulse chords",
+TEST_CASE("BMSON stem entry reassigns a same-row pulse instead of creating a chord",
           "[unit][core][bmson][lane-entry]") {
     auto song = fixture();
     for (auto& resource : song.resources) resource.missing = false;
@@ -1766,13 +1766,22 @@ TEST_CASE("BMSON stem keys reuse autoplay pulses and preserve same-pulse chords"
     const wormedit::bmson_source_geometry_t geometry{asset, 48000, 480000};
     require_t463_applied(wormedit::insert_bmson_playable_stem_point(history, history.document.revision,
         chart, channel, position, first_lane, geometry));
+    const auto before = history.document;
+    const auto& first_chart = before.charts.front();
+    const auto original = *std::ranges::find(first_chart.measures.front().notes, position,
+                                            &wormedit::note_t::position);
     require_t463_applied(wormedit::insert_bmson_playable_stem_point(history, history.document.revision,
         chart, channel, position, second_lane, geometry));
     const auto& changed = history.document.charts.front();
     const auto count = std::ranges::count_if(changed.measures.front().notes, [&](const auto& note) {
         return note.position == position;
     });
-    expect_bmson_core(count == 2);
+    expect_bmson_core(count == 1);
+    const auto moved = std::ranges::find(changed.measures.front().notes, original.id, &wormedit::note_t::id);
+    expect_bmson_core(moved != changed.measures.front().notes.end());
+    expect_bmson_core(moved->lane == second_lane);
+    expect_bmson_core(moved->sound_channel_event == original.sound_channel_event);
+    expect_bmson_core(changed.sound_channels.front().events.size() == first_chart.sound_channels.front().events.size());
     expect_bmson_core(wormedit::validate_document(history.document).empty());
     expect_bmson_core(history.undo.size() == 2);
     const auto written = wormedit::write_bmson(history.document);
@@ -1783,5 +1792,53 @@ TEST_CASE("BMSON stem keys reuse autoplay pulses and preserve same-pulse chords"
     expect_bmson_core(reparsed.song.has_value());
     if (!reparsed.song) return;
     expect_bmson_core(std::ranges::count_if(reparsed.song->charts.front().measures.front().notes,
-        [&](const auto& note) { return note.position == position; }) == 2);
+        [&](const auto& note) { return note.position == position; }) == 1);
+    expect_bmson_core(static_cast<bool>(wormedit::undo_document_command(history)));
+    const auto& restored = history.document.charts.front().measures.front().notes;
+    const auto restored_note = std::ranges::find(restored, original.id, &wormedit::note_t::id);
+    expect_bmson_core(restored.size() == first_chart.measures.front().notes.size());
+    expect_bmson_core(restored_note != restored.end());
+    expect_bmson_core(restored_note->lane == first_lane);
+    expect_bmson_core(restored_note->sound_channel_event == original.sound_channel_event);
+}
+
+TEST_CASE("Pointer stem drawing shares same-row reassignment with lane keys",
+          "[unit][core][bmson][lane-entry][stem-reassign]") {
+    auto song = fixture();
+    for (auto& resource : song.resources) resource.missing = false;
+    const auto chart_id = song.charts.front().id;
+    const auto asset = song.charts.front().sound_channels.front().source_clip.source;
+    auto& stream = std::ranges::find(song.audio_assets, asset, &wormedit::audio_asset_t::id)->stream;
+    stream.sample_rate = 48000;
+    stream.frame_count = 480000;
+    const auto sound = std::ranges::find_if(song.resources, [asset](const auto& row) { return row.asset == asset; })->id;
+    auto history = wormedit::make_document_history(std::move(song));
+    wormedit::editor_interaction_state_t state;
+    state.chart = chart_id;
+    state.supported_snap_denominators = {192};
+    state.active_snap_denominator = 192;
+    const auto position = first_measure_position(history.document, 300);
+    const auto lanes = history.document.charts.front().lane_layouts.front().layout.lanes;
+    state.cursor = position;
+    state.active_lane = lanes[1].id;
+    for (const auto lane : {lanes[1].id, lanes[2].id}) {
+        const auto begin = wormedit::dispatch_editor_action(history, state,
+            wormedit::begin_note_paint_gesture_action_t{.lane = lane, .position = position,
+                .pointer_captured = true, .sound = sound, .intent = wormedit::note_paint_intent_t::draw});
+        INFO((begin.diagnostics.empty() ? "No begin diagnostic" : begin.diagnostics.front().message));
+        expect_bmson_core(static_cast<bool>(begin));
+        const auto end = wormedit::dispatch_editor_action(history, state,
+            wormedit::end_note_paint_gesture_action_t{lane, position, true});
+        INFO((end.diagnostics.empty() ? "No draw diagnostic" : end.diagnostics.front().message));
+        expect_bmson_core(static_cast<bool>(end));
+    }
+    const auto& chart = history.document.charts.front();
+    expect_bmson_core(std::ranges::count_if(chart.measures.front().notes,
+        [&](const auto& note) { return note.position == position; }) == 1);
+    const auto note = std::ranges::find(chart.measures.front().notes, position, &wormedit::note_t::position);
+    expect_bmson_core(note->lane == lanes[2].id);
+    expect_bmson_core(note->sound_channel_event.has_value());
+    expect_bmson_core(chart.sound_channels.front().events.back().continuation);
+    expect_bmson_core(history.undo.size() == 2);
+    expect_bmson_core(wormedit::validate_document(history.document).empty());
 }

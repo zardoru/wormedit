@@ -3332,16 +3332,77 @@ auto begin_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
     };
 }
 
+auto entry_stem_channel(const song_document_t& document, const chart_document_t& chart,
+    std::optional<resource_id_t> sound) -> std::variant<std::optional<object_id_t>, diagnostic_list_t> {
+    if (!sound) return std::optional<object_id_t>{};
+    if (!is_paint_sample_resource(document, *sound))
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
+            "paint sound is not an existing sample resource")};
+    if (chart.source_family != format_family_t::bmson) return std::optional<object_id_t>{};
+    const auto bindings = bmson_channel_resource_bindings(document, chart.id);
+    const auto binding = std::ranges::find(bindings, *sound, &bmson_channel_resource_binding_t::resource);
+    if (binding != bindings.end() && binding->ambiguous)
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
+            "The armed BMSON sound has ambiguous source channels")};
+    if (binding != bindings.end() && binding->channel &&
+        std::ranges::any_of(chart.bgm_source_lanes, [&](const auto& lane) {
+            return lane.stem_channel == binding->channel;
+        })) return binding->channel;
+    const auto resource = std::ranges::find(document.resources, *sound, &resource_entry_t::id);
+    if (resource->sound_kind == sound_kind_t::stem)
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
+            "The armed BMSON stem has no linked source channel")};
+    return std::optional<object_id_t>{};
+}
+
 struct prepared_note_paint_t {
     song_document_t document;
     std::vector<object_id_t> painted_notes;
 };
+
+auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart_id,
+    const note_paint_plan_t& plan, object_id_t channel,
+    const std::optional<std::vector<layer_id_t>>& armed_layers)
+    -> std::variant<prepared_note_paint_t, diagnostic_list_t> {
+    auto scratch = make_document_history(history.document);
+    if (!plan.removals.empty()) {
+        editor_interaction_state_t selection;
+        selection.chart = chart_id;
+        selection.selected_notes = plan.removals;
+        const auto removed = dispatch_editor_action(scratch, selection, delete_editor_selection_action_t{});
+        if (!removed) return removed.diagnostics;
+    }
+    std::vector<object_id_t> notes;
+    for (const auto& target : plan.additions) {
+        const auto placed = insert_bmson_playable_stem_point(scratch, scratch.document.revision,
+            chart_id, channel, target.position, target.lane);
+        if (!placed && !placed.diagnostics.empty()) return placed.diagnostics;
+        auto* chart = find_chart(scratch.document, chart_id);
+        for (auto& measure : chart->measures)
+            for (auto& note : measure.notes) {
+                if (note.position != target.position || note.lane != target.lane) continue;
+                if (!find_note(*find_chart(history.document, chart_id), note.id))
+                    note.semantic_layers = resolve_placement_layers(*chart, armed_layers, note.sound);
+                notes.push_back(note.id);
+            }
+    }
+    // A stroke may visit two lanes at one pulse; retain only its final assignment.
+    const auto* chart = find_chart(scratch.document, chart_id);
+    std::erase_if(notes, [&](const auto id) { return !find_note(*chart, id); });
+    std::ranges::sort(notes);
+    notes.erase(std::unique(notes.begin(), notes.end()), notes.end());
+    return prepared_note_paint_t{std::move(scratch.document), std::move(notes)};
+}
 
 auto prepare_note_paint_document(const document_history_t& history, chart_id_t chart_id,
                                 const note_paint_plan_t& plan, note_kind_t kind,
                                 std::optional<resource_id_t> sound,
                                 const std::optional<std::vector<layer_id_t>>& armed_layers)
     -> std::variant<prepared_note_paint_t, diagnostic_list_t> {
+    const auto stem = entry_stem_channel(history.document, *find_chart(history.document, chart_id), sound);
+    if (const auto* failure = std::get_if<diagnostic_list_t>(&stem)) return *failure;
+    if (const auto channel = std::get<std::optional<object_id_t>>(stem))
+        return prepare_stem_note_paint(history, chart_id, plan, *channel, armed_layers);
     const auto first_id = plan.additions.empty()
                               ? std::optional<object_id_t>{}
                               : next_object_id(*find_chart(history.document, chart_id));
@@ -3619,28 +3680,6 @@ auto keyboard_entry_occupant(const chart_document_t& chart, const measure_index_
     return found;
 }
 
-auto keyboard_entry_stem(const song_document_t& document, const chart_document_t& chart,
-    std::optional<resource_id_t> sound) -> std::variant<std::optional<object_id_t>, diagnostic_list_t> {
-    if (!sound) return std::optional<object_id_t>{};
-    if (!is_paint_sample_resource(document, *sound))
-        return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
-            "paint sound is not an existing sample resource")};
-    if (chart.source_family != format_family_t::bmson) return std::optional<object_id_t>{};
-    const auto bindings = bmson_channel_resource_bindings(document, chart.id);
-    const auto binding = std::ranges::find(bindings, *sound, &bmson_channel_resource_binding_t::resource);
-    if (binding != bindings.end() && binding->ambiguous)
-        return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
-            "The armed BMSON sound has ambiguous source channels")};
-    if (binding != bindings.end() && binding->channel &&
-        std::ranges::any_of(chart.bgm_source_lanes, [&](const auto& lane) {
-            return lane.stem_channel == binding->channel;
-        })) return binding->channel;
-    const auto resource = std::ranges::find(document.resources, *sound, &resource_entry_t::id);
-    if (resource->sound_kind == sound_kind_t::stem)
-        return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
-            "The armed BMSON stem has no linked source channel")};
-    return std::optional<object_id_t>{};
-}
 
 struct prepared_keyboard_entry_t {
     song_document_t document;
@@ -3717,7 +3756,7 @@ auto apply_keyboard_entry(hold_gesture_context_t& context, lane_id_t lane,
     const auto occupied = keyboard_entry_occupant(context.chart, context.index, lane, *target);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&occupied))
         return diagnostic_result(context.history, state, *failure);
-    const auto resolved = keyboard_entry_stem(context.history.document, context.chart, sound);
+    const auto resolved = entry_stem_channel(context.history.document, context.chart, sound);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&resolved))
         return diagnostic_result(context.history, state, *failure);
     const auto* occupant = std::get<const note_t*>(occupied);

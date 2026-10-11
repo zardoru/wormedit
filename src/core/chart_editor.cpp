@@ -278,4 +278,57 @@ auto apply_move_chart_group_command(document_history_t& history, std::uint64_t r
     return commit_document_command(history, std::move(proposed), "Move chart between output groups");
 }
 
+namespace {
+auto output_group_path_valid(const std::filesystem::path& path) -> bool {
+    if (path.empty() || path.is_absolute() || path.has_root_name() || path.has_root_directory() ||
+        path != path.lexically_normal()) return false;
+    for (const auto& part : path) {
+        const auto text = part.generic_string();
+        if (text.empty() || text == "." || text == ".." ||
+            text.find_first_of("\\:") != std::string::npos) return false;
+        if (std::ranges::any_of(text, [](unsigned char c) { return c < 32 || c == 127; })) return false;
+    }
+    return true;
+}
+auto output_group_error(const song_document_t& doc, std::optional<std::size_t> index,
+    const output_group_t& group) -> std::string {
+    if (index && *index >= doc.output_groups.size()) return "Output group is no longer available.";
+    if (group.name.empty() || group.name.find_first_not_of(" \t\r\n") == std::string::npos)
+        return "Output group needs a name.";
+    for (std::size_t i = 0; i < doc.output_groups.size(); ++i)
+        if (i != index && doc.output_groups[i].name == group.name) return "Output group name is already used.";
+    if (group.family < format_family_t::native_project || group.family > format_family_t::bmson) return "Output format is not supported.";
+    if (!output_group_path_valid(group.relative_output_path)) return "Output path must be a safe project-relative path.";
+    if (group.relative_output_path.has_extension() && group.charts.size() > 1 &&
+        group.family != format_family_t::stepmania && group.family != format_family_t::native_project)
+        return "Use an output directory for multiple chart files.";
+    std::vector<chart_id_t> seen;
+    for (const auto chart : group.charts) {
+        if (find_chart(doc, chart) == doc.charts.end()) return "Output group contains an unknown chart.";
+        if (std::ranges::find(seen, chart) != seen.end()) return "Output group repeats a chart.";
+        seen.push_back(chart);
+    }
+    return {};
+}
+} // namespace
+
+auto apply_set_output_group_command(document_history_t& history, std::uint64_t revision,
+    std::optional<std::size_t> index, output_group_t group) -> document_command_result_t {
+    if (history.document.revision != revision) return reject(history, "Output group revision is stale.");
+    if (const auto error = output_group_error(history.document, index, group); !error.empty())
+        return reject(history, error);
+    auto proposed = history.document;
+    if (index) proposed.output_groups[*index] = std::move(group);
+    else proposed.output_groups.push_back(std::move(group));
+    return commit_document_command(history, std::move(proposed), index ? "Edit output group" : "Create output group");
+}
+auto apply_delete_output_group_command(document_history_t& history, std::uint64_t revision,
+    std::size_t index) -> document_command_result_t {
+    if (history.document.revision != revision) return reject(history, "Output group revision is stale.");
+    if (index >= history.document.output_groups.size()) return reject(history, "Output group is no longer available.");
+    auto proposed = history.document;
+    proposed.output_groups.erase(proposed.output_groups.begin() + static_cast<std::ptrdiff_t>(index));
+    return commit_document_command(history, std::move(proposed), "Delete output group");
+}
+
 } // namespace wormedit

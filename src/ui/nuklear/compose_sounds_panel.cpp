@@ -1329,19 +1329,24 @@ void draw_row(const SoundsPanel& panel, struct nk_rect bounds, const WormUiCompo
                  slot_len, context->style.font, clear, color(UiColor::text_muted));
     const auto chips = static_cast<float>(
         std::min<int>(std::popcount(row.layer_mask), 3)) * (chip_size + 2.0f);
-    const auto name_width = bounds.w - slot_width - 110.0f - chips;
+    const bool typed_armed = armed && panel.view->bmson_tools_available;
+    const float status_width = typed_armed ? 90.0f : 48.0f;
+    const float status_extra = status_width - 48.0f;
+    const auto name_width = bounds.w - slot_width - 110.0f - chips - status_extra;
     nk_draw_text(canvas, nk_rect(bounds.x + 12 + slot_width, bounds.y + 3, std::max(name_width, 8.0f),
                                  bounds.h - 6),
                  row.name, static_cast<int>(std::strlen(row.name)), context->style.font, clear,
                  text_color);
     char uses[24];
     std::snprintf(uses, sizeof(uses), "%llu", static_cast<unsigned long long>(row.use_count));
-    nk_draw_text(canvas, nk_rect(bounds.x + bounds.w - 86, bounds.y + 3, 32, bounds.h - 6),
+    nk_draw_text(canvas, nk_rect(bounds.x + bounds.w - 86 - status_extra, bounds.y + 3, 32, bounds.h - 6),
                  uses, static_cast<int>(std::strlen(uses)), context->style.font, clear, text_color);
-    const auto* status = row.missing ? "missing" : armed ? "armed" : row.use_count ? "ok" : "unused";
-    nk_draw_text(canvas, nk_rect(bounds.x + bounds.w - 48, bounds.y + 3, 48, bounds.h - 6),
+    const auto* status = row.missing ? "missing"
+        : typed_armed ? (row.stem_source_lane_id ? "armed stem" : "armed note")
+        : armed ? "armed" : row.use_count ? "ok" : "unused";
+    nk_draw_text(canvas, nk_rect(bounds.x + bounds.w - status_width, bounds.y + 3, status_width, bounds.h - 6),
                  status, static_cast<int>(std::strlen(status)), context->style.font, clear, text_color);
-    float chip_x = bounds.x + bounds.w - 94.0f - chips;
+    float chip_x = bounds.x + bounds.w - 94.0f - chips - status_extra;
     int drawn = 0;
     for (std::size_t bit = 0; bit < panel.view->keysound_layer_count && drawn < 3; ++bit) {
         if (((row.layer_mask >> bit) & 1U) == 0) continue;
@@ -1378,7 +1383,11 @@ auto layer_tooltip(const SoundsPanel& panel, const WormUiComposeKeysoundRowView&
     -> std::string {
     std::string text = row.source_path ? row.source_path : "";
     text += "\n" + std::to_string(row.use_count) + " stored references. ";
-    text += row.missing ? "File missing; cannot arm or audition. " : "Double-click to arm. ";
+    text += row.missing ? "File missing; cannot arm or audition. "
+        : row.stem_source_lane_id ? "Click to arm this stem. " : "Double-click to arm. ";
+    if (panel.view->bmson_tools_available)
+        text += row.stem_source_lane_id ? "Stem: draws linked continuation/restart points. "
+                                       : "Packed keysound: draws notes using this sound. ";
     text += fallback_text(*panel.view, row);
     std::string layers;
     for (std::size_t bit = 0; bit < panel.view->keysound_layer_count; ++bit) {
@@ -1402,7 +1411,8 @@ void click_row(const SoundsPanel& panel, std::size_t shown_index, std::uint64_t 
         raise(panel, WORM_UI_COMPOSE_ACTION_AUDITION_SOUND))
         panel.action->compose_resource_id = id;
     const bool double_click = nk_input_is_mouse_released(&panel.context->input, NK_BUTTON_DOUBLE);
-    if (!double_click || !primary || primary->missing) return;
+    if (!primary || primary->missing || ctrl || shift) return;
+    if (!double_click && !primary->stem_source_lane_id) return;
     state.armed_resource_id = primary->resource_id;
     state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
     state.armed_from_sounds_dock = true;

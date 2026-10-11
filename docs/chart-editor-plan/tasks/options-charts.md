@@ -149,15 +149,21 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-261 Manage output groups in the Project tab
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** a second table lists output groups (name, family, output path, charts); the user can create, rename, delete a group, change its family and relative path, and assign charts with checkboxes; each group shows validation from the conversion service (for example "SM/SSC: several charts allowed", "BMS: one chart per file") and a Preview export button (T-110).
 - **Read first:** `include/wormedit/core/document.h` (`output_group_t`), `include/wormedit/formats/conversion.h`, `include/wormedit/formats/conversion_publication.h`, `src/sys/compose_actions.cpp` (export action).
-- **Files owned:** `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`, `tests/core/chart_editor_tests.cpp`, `src/ui/nuklear/setup_panel.cpp`, `src/sys/project_view.cpp`, `src/ui/frontend.h`.
+- **Files owned:** `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`, `tests/core/chart_editor_tests.cpp`, `src/ui/nuklear/setup_panel.cpp`, `src/sys/project_view.cpp`, `src/ui/frontend.h`; supporting scope approved by root: `src/sys/project_view.h`, `src/sys/main.cpp`, `src/sys/workspace_projection.cpp`, `src/sys/compose_actions.cpp`, `tests/sys/project_view_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/sys/frame_projection_arena_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `docs/chart-editor-plan/tasks/options-charts.md`, `memory/chart-editor-status/resume.md`.
 - **Steps:** 1. Core group commands (create/rename/delete/family/path/membership) with validation of paths (relative, no traversal). 2. Table UI. 3. Per-group validation text from a dry-run conversion (off the frame thread).
 - **Invariants:** existing published output manifests stay valid; renaming a group does not rename files on disk.
 - **Reject/failure behavior:** invalid paths or unsupported family/chart combinations reject with the reason.
-- **Verify:** standard build/test.
+- **Verify:** Core Undo/Redo and rejection cases; production event harness group CRUD, membership and Export; worker preview completion/stale retirement; normal/Release full CTest; affected default clang-tidy; isolated native Xvfb; documentation and whitespace checks.
 - **Out of scope:** the export flow itself (T-110/T-111).
+
+Completion, 2026-10-11: Project now has a dedicated **Output groups** section below Charts, including empty-state guidance, New group, name/format/path editing, membership checkboxes, confirmed deletion, worker-backed Preview and Export. The shared Export dialog's Project catalog includes every project group; direct row export uses the existing guarded conversion/publication service even when another difficulty is selected. Group commands are atomic, revision checked and undoable; unsafe paths, unsupported formats, invalid/duplicate memberships and foreign/stale session actions reject without edits. No group operation renames or deletes published files.
+
+Normal/Release builds and **3,407/3,407 full CTest checks in each** pass. Focused checks pass **54 assertions / 5 core/sys cases**, **31 assertions / 3 production event cases**, **348 assertions / 1 publication case** and **4 arena assertions**. Affected default clang-tidy has no new/increased complexity violations; a lexer crash during an overlapping source write was rerun successfully after the source was stable. Native authenticated isolated Xvfb verifies the visible section, create, exact name/path edits, Save/Undo/Redo, asynchronous preview, row Export into a private destination, and delete while retaining published files. The entire authored chart/timing/resource/asset content and original group remain unchanged. The older running user process still references the deleted morning executable; relaunching loads the new UI. The previous SDL timeout does not reproduce in either current full suite; no audio fix is claimed.
+
+Evidence: `/tmp/output-groups-{normal,release}-full.log`, `/tmp/output-groups-{core,events,arena,export,release-core,release-events,release-export}.log`, `/tmp/output-groups-{tidy,final-tests-tidy}.log`, `/tmp/output-groups-native-{project,create,created,preview,edit,exported,deleted}.png`. Preview is read-only conversion validation; filesystem/overwrite checks still run at publication. Scope remains bounded to the first 256 groups/charts in the Project UI; truncated chart catalogs disable existing-group editing to preserve hidden membership.
 
 ## T-262 Import a chart from another file into the current project
 

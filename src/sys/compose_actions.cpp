@@ -3670,8 +3670,11 @@ auto dispatch_project_export_action(
                            "Finish or cancel the active editor gesture before exporting.");
         return true;
     }
-    wormedit::editor_interaction_state_t state;
+    wormedit::editor_interaction_state_t state{};
     state.chart = chart->id;
+    const auto index = action.compose_output_group_index;
+    if (index < history.document.output_groups.size() && !history.document.output_groups[index].charts.empty())
+        state.chart = history.document.output_groups[index].charts.front();
     compose_action_context_t context{action, history, workspace, state, 0, application, base,
         scheduler, copies, exports, metadata_import_busy,
         wormedit::editor_field_scroll_direction_t::up, notifications};

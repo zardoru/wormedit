@@ -916,3 +916,18 @@ TEST_CASE("Command menu defaults to primary Shift P and respects text focus",
     CHECK(invoke_command(registry, {"workspace.command_menu"}, {.text_entry_active = true}).status ==
           command_dispatch_status_t::focus_consumed);
 }
+
+TEST_CASE("Quantize commands are searchable and preview shortcut respects text focus", "[core][command_registry][quantize-intent]") {
+    const auto calls = std::make_shared<std::vector<command_id_t>>();
+    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    CHECK(has_command(registry, "edit.toggle_quantize_preview"));
+    CHECK(has_command(registry, "edit.apply_quantize"));
+    const shortcut_event_t event{.chord = {.key = shortcut_key_t::q,
+        .modifiers = shortcut_modifier_t::control | shortcut_modifier_t::alt}};
+    auto focus = focus_for_compose();
+    CHECK(dispatch_shortcut(registry, event, focus, shortcut_primary_modifier_t::control).command ==
+          command_id_t{"edit.toggle_quantize_preview"});
+    focus.text_entry_active = true;
+    CHECK(dispatch_shortcut(registry, event, focus, shortcut_primary_modifier_t::control).status ==
+          command_dispatch_status_t::focus_consumed);
+}

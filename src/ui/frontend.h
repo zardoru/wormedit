@@ -1430,6 +1430,7 @@ typedef struct WormUiComposeView {
     size_t quantize_preview_colliding_objects;
     size_t quantize_preview_halfway_notes, quantize_preview_holds;
     bool quantize_q_bound;
+    bool quantize_preview_enabled;
     const WormUiComposeQuantizeReportRowView* quantize_preview_rows;
     size_t quantize_preview_row_count;
     size_t quantize_preview_total_rows;
@@ -2614,6 +2615,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE,
     WORM_UI_COMPOSE_ACTION_SELECT_QUANTIZE_PRESET,
     WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS,
+    WORM_UI_COMPOSE_ACTION_TOGGLE_QUANTIZE_PREVIEW,
     WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET,
     WORM_UI_COMPOSE_ACTION_DELETE_QUANTIZE_PRESET,
     WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU,

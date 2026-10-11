@@ -11,6 +11,11 @@
 
 namespace wormedit::sys {
 
+// Shared inspector/registry quantize path; preview is session state, Apply records the usual report.
+auto invoke_compose_quantize_command(bool toggle_preview, wormedit::document_history_t& history,
+    wormedit::editor_interaction_state_t& state, application_command_state_t& application,
+    std::optional<wormedit::notification_sink_t> notifications = {}) -> bool;
+
 auto dispatch_compose_view_action(
     const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace, wormedit::editor_interaction_state_t& state,

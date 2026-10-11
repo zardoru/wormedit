@@ -91,9 +91,11 @@ void render_rows(nk_context* context, const WormUiWorkspaceView& view,
     select_enabled(view, rows);
     if (state.activate && !rows.empty()) activate_command(view, rows[state.selected], action);
     state.activate = false;
-    nk_layout_row_dynamic(context, 20, 1);
-    if (rows.empty()) { nk_label(context, "No matching commands", NK_TEXT_LEFT); return; }
-    nk_label(context, "Up/Down to choose · Enter to run · Escape to cancel", NK_TEXT_LEFT);
+    if (rows.empty()) {
+        nk_layout_row_dynamic(context, 20, 1);
+        nk_label(context, "No matching commands", NK_TEXT_LEFT);
+        return;
+    }
     const auto page = static_cast<std::size_t>(std::clamp((height - 180) / 34, 1, 20));
     const auto first = state.selected / page * page;
     for (auto i = first; i < std::min(rows.size(), first + page); ++i) {
@@ -168,9 +170,11 @@ void render_command_menu(nk_context* context, const WormUiWorkspaceView& view,
         return;
     }
     using namespace wormedit::ui::chrome;
+    static constexpr const char* title_keys[]{"↑", "↓", "Enter", "Esc"};
     if (dialog_begin(state.dialog, context, window_id, "Command menu",
         {.width = 680, .area = nk_vec2(static_cast<float>(width), static_cast<float>(height)),
-         .enter_confirms = false})) {
+         .enter_confirms = false, .title_font = wormedit::ui::theme::display_font,
+         .title_keys = title_keys})) {
         render_query(context);
         render_rows(context, view, action, height);
         if (!state.open) nk_edit_unfocus(context);

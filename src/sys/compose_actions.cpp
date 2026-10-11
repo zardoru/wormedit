@@ -3348,6 +3348,11 @@ auto dispatch_quantize_preset_action(compose_action_context_t& context)
     -> std::optional<std::string> {
     using namespace wormedit;
     const auto kind = context.action.compose_action;
+    if (kind == WORM_UI_COMPOSE_ACTION_TOGGLE_QUANTIZE_PREVIEW) {
+        invoke_compose_quantize_command(true, context.history, context.state, context.application_state);
+        return compose_action_info(context, context.application_state.quantize_editor->preview_enabled
+            ? "Quantize preview enabled." : "Quantize preview disabled.");
+    }
     if (kind == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP) return set_edit_snap_from_badge(context);
     if (kind == WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS)
         return apply_quantize_settings_from_action(context);
@@ -3392,6 +3397,32 @@ auto dispatch_compose_area_with_quantize_report(
 }
 
 } // namespace
+
+auto invoke_compose_quantize_command(bool toggle_preview, wormedit::document_history_t& history,
+    wormedit::editor_interaction_state_t& state, application_command_state_t& application,
+    std::optional<wormedit::notification_sink_t> notifications) -> bool {
+    auto& editor = application.quantize_editor;
+    if (!editor || editor->song != history.document.id || editor->chart != state.chart)
+        editor = application_command_state_t::quantize_editor_t{
+            .song = history.document.id, .chart = state.chart,
+            .request = {.divisions = state.active_snap_denominator}};
+    if (toggle_preview) {
+        editor->preview_enabled = !editor->preview_enabled;
+        return true;
+    }
+    WormUiWorkspaceAction action{};
+    action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
+    action.compose_input_project_id = history.document.id.value;
+    action.compose_input_chart_id = state.chart.value;
+    action.compose_input_document_revision = history.document.revision;
+    action.compose_quantize_divisions = editor->request.divisions;
+    action.compose_quantize_space = static_cast<std::uint8_t>(editor->request.space);
+    action.compose_quantize_tie = static_cast<std::uint8_t>(editor->request.tie);
+    action.compose_quantize_holds = static_cast<std::uint8_t>(editor->request.holds);
+    const auto revision = history.document.revision;
+    dispatch_compose_area_with_quantize_report(action, history, state, application, notifications);
+    return history.document.revision != revision;
+}
 
 auto dispatch_compose_remaining_action(compose_action_context_t& context)
     -> std::optional<std::string> {

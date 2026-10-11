@@ -3761,7 +3761,7 @@ void check_quantize_ghost_visibility(nuklear_event_harness_t& harness,
     auto& inspector_state = worm_ui_nuklear_compose_state();
     inspector_state.inspector_visible = false;
     (void)harness.frame();
-    expect_draw(!compose_quantize_ghosts_drawn_for_testing());
+    expect_draw(compose_quantize_ghosts_drawn_for_testing());
     inspector_state.inspector_visible = true;
     (void)harness.frame();
     expect_draw(compose_quantize_ghosts_drawn_for_testing());
@@ -3790,11 +3790,14 @@ void check_quantize_ghost_scroll_clipping(nuklear_event_harness_t& harness) {
     (void)click_at(harness, measure->first, measure->second);
     REQUIRE(scroll_compose_inspector_to(harness, "1/16", quantize_label->first,
                                         quantize_label->second, 1.0f, 120));
-    for (int tick = 0; tick < 120 && compose_quantize_ghosts_drawn_for_testing(); ++tick)
+    for (int tick = 0; tick < 8; ++tick)
         wheel_compose_inspector(harness, quantize_label->first, quantize_label->second, -1.0f);
+    expect_draw(compose_quantize_ghosts_drawn_for_testing());
+    harness.view().compose.quantize_preview_enabled = false;
+    (void)harness.frame();
     expect_draw(!compose_quantize_ghosts_drawn_for_testing());
-    for (int tick = 0; tick < 120 && !compose_quantize_ghosts_drawn_for_testing(); ++tick)
-        wheel_compose_inspector(harness, quantize_label->first, quantize_label->second, 1.0f);
+    harness.view().compose.quantize_preview_enabled = true;
+    (void)harness.frame();
     expect_draw(compose_quantize_ghosts_drawn_for_testing());
 }
 
@@ -3861,6 +3864,7 @@ TEST_CASE("Quantize sets 1/16 Authored and Later in three clicks then applies",
     view.quantize_ghosts = ghosts;
     view.quantize_ghost_count = 1;
     view.quantize_ghosts_drawable = true;
+    view.quantize_preview_enabled = true;
     const auto grid = click_quantize_label(harness, "1/16");
     expect_draw(compose_quantize_ghosts_drawn_for_testing());
     check_quantize_settings(grid.get(), 16, 0, 0);
@@ -3901,6 +3905,7 @@ TEST_CASE("Quantize ghost overlay follows visible section, scroll clipping and c
     view.quantize_ghosts = &ghost;
     view.quantize_ghost_count = 1;
     view.quantize_ghosts_drawable = true;
+    view.quantize_preview_enabled = true;
     auto& timing = harness.view().timing;
     timing.stage_active = true;
     timing.stage_lane = WORM_UI_TIMING_LANE_BPM;
@@ -6076,4 +6081,15 @@ TEST_CASE("Lane-less Sounds fallback menu emits the complete captured session", 
     CHECK(action->get().compose_input_document_revision == 23);
     CHECK(action->get().compose_resource_id == 1400);
     CHECK(action->get().compose_fallback_candidate == 1);
+}
+
+TEST_CASE("Quantize preview control emits a revision checked toggle without Apply", "[frontend-state][event-harness][quantize-intent]") {
+    nuklear_event_harness_t harness{1600, 900};
+    seed_quantize_controls(harness);
+    (void)harness.frame();
+    expect_draw(!harness.view().compose.quantize_preview_enabled);
+    const auto toggled = click_quantize_label(harness, "Preview quantization");
+    expect_draw(toggled.get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_QUANTIZE_PREVIEW);
+    expect_draw(toggled.get().compose_input_chart_id == 419);
+    expect_draw(toggled.get().compose_input_document_revision == 7);
 }

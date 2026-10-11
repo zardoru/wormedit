@@ -1714,6 +1714,18 @@ void refresh_same_sound_command(wormedit::command_registry_t& registry,
     (void)wormedit::update_command_state(registry, {"selection.select_same_sound_chart"}, enabled, std::nullopt);
 }
 
+void refresh_quantize_commands(wormedit::command_registry_t& registry, bool ready, bool pending,
+    const std::optional<wormedit::editor_interaction_state_t>& state,
+    const wormedit::document_history_t& history, const application_command_state_t& application) {
+    const bool enabled = ready && !pending && !application.compose_timing_focus && !application.paste_session;
+    const bool checked = enabled && application.quantize_editor &&
+        application.quantize_editor->song == history.document.id &&
+        application.quantize_editor->chart == state->chart && application.quantize_editor->preview_enabled;
+    (void)wormedit::update_command_state(registry, {"edit.toggle_quantize_preview"}, enabled, checked);
+    const bool selected = enabled && (!state->selected_notes.empty() || !state->selected_objects.empty());
+    (void)wormedit::update_command_state(registry, {"edit.apply_quantize"}, selected, std::nullopt);
+}
+
 void refresh_compose_dock_commands(wormedit::command_registry_t& registry, bool compose_ready,
                                     bool pending, const application_command_state_t& application) {
     const bool enabled = compose_ready && !pending && !application.compose_timing_focus &&
@@ -1784,6 +1796,7 @@ void refresh_application_command_states(
     set("navigation.next_marker", marker_navigation_available);
     set("navigation.go_to_sound", sound_picker_command_available(compose_ready, pending));
     refresh_compose_dock_commands(registry, compose_ready, pending, application_state);
+    refresh_quantize_commands(registry, compose_ready, pending, compose_state, history, application_state);
     set("navigation.previous_bookmark", compose_ready);
     set("navigation.next_bookmark", compose_ready);
     set("markers.add_bookmark", compose_ready);

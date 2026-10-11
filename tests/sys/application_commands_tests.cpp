@@ -2302,3 +2302,49 @@ TEST_CASE("Minimap floor snap restarts at shortened measure heads", "[unit][sys]
     ++stale.total_rows;
     CHECK_FALSE(compose_minimap_target(1, 35001, 48000, 48000, *timing.index, stale, 4));
 }
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Quantize registry commands toggle session preview and preserve Apply Undo", "[sys][application_commands][quantize-intent]") {
+    TimingInsertFixture fixture;
+    auto& history = fixture.fixture.history;
+    auto& note = history.document.charts.front().measures.front().notes.front();
+    note.position.row = 130;
+    const auto before = note.position;
+    fixture.compose_state->selected_notes = {note.id};
+    const auto revision = history.document.revision;
+    require_bookmark_callback(fixture.invoke(application_command_kind_t::edit_toggle_quantize_preview).accepted);
+    check_bookmark_callback(fixture.application_state.quantize_editor->preview_enabled);
+    check_bookmark_callback(history.document.revision == revision && history.undo.empty());
+    require_bookmark_callback(fixture.invoke(application_command_kind_t::edit_toggle_quantize_preview).accepted);
+    check_bookmark_callback(!fixture.application_state.quantize_editor->preview_enabled);
+    fixture.application_state.quantize_editor->request.divisions = 4;
+    require_bookmark_callback(fixture.invoke(application_command_kind_t::edit_apply_quantize).accepted);
+    check_bookmark_callback(history.undo.size() == 1);
+    check_bookmark_callback(fixture.application_state.quantize_applied_report.has_value());
+    require_bookmark_callback(fixture.invoke(application_command_kind_t::history_undo).accepted);
+    check_bookmark_callback(history.document.charts.front().measures.front().notes.front().position == before);
+    fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::edit_toggle_quantize_preview).accepted);
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::edit_apply_quantize).accepted);
+}
+
+#endif
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Quantize command rejects collisions with preview off and rejects timing focus", "[sys][application_commands][quantize-intent]") {
+    TimingInsertFixture fixture;
+    auto& history = fixture.fixture.history;
+    auto& notes = history.document.charts.front().measures.front().notes;
+    notes[0].position.row = 130;
+    notes[1].position.row = 240;
+    const auto revision = history.document.revision;
+    fixture.compose_state->selected_notes = {notes[0].id};
+    fixture.compose_state->selected_objects = {{wormedit::editor_selection_object_kind_t::note, notes[0].id}};
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::edit_apply_quantize).accepted);
+    check_bookmark_callback(history.document.revision == revision && history.undo.empty());
+    check_bookmark_callback(!fixture.application_state.quantize_editor->preview_enabled);
+    fixture.application_state.compose_timing_focus = true;
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::edit_toggle_quantize_preview).accepted);
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::edit_apply_quantize).accepted);
+}
+#endif

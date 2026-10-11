@@ -90,7 +90,35 @@ void draw_backdrop(nk_context* context, const char* id, struct nk_vec2 area) {
     style.border = saved_border;
 }
 
-void draw_title_row(Dialog& dialog, nk_context* context, const char* title) {
+void draw_title_keys(nk_context* context, std::span<const char* const> keys) {
+    for (const auto* key : keys) {
+        nk_layout_row_push(context, 44.0f);
+        const auto bounds = nk_widget_bounds(context);
+        nk_fill_rect(nk_window_get_canvas(context), bounds, 4.0f, color(UiColor::surface));
+        nk_stroke_rect(nk_window_get_canvas(context), bounds, 4.0f, 1.0f, color(UiColor::border));
+        nk_label_colored(context, key, NK_TEXT_CENTERED, color(UiColor::text_muted));
+    }
+}
+
+void draw_title_with_keys(nk_context* context, const char* title, const DialogOptions& options) {
+    const auto width = nk_window_get_content_region(context).w;
+    const auto* font = width >= 500.0f ? options.title_font : nullptr;
+    const auto height = font ? font->height : close_row_height;
+    nk_layout_row_begin(context, NK_STATIC, height, static_cast<int>(options.title_keys.size() + 1));
+    nk_layout_row_push(context, std::max(1.0f, width -
+        static_cast<float>(options.title_keys.size()) * (44.0f + context->style.window.spacing.x)));
+    if (font) nk_style_push_font(context, font);
+    nk_label_colored(context, title, NK_TEXT_LEFT, color(UiColor::text_bright));
+    if (font) nk_style_pop_font(context);
+    draw_title_keys(context, options.title_keys);
+    nk_layout_row_end(context);
+}
+
+void draw_title_row(Dialog& dialog, nk_context* context, const char* title, const DialogOptions& options) {
+    if (!options.title_keys.empty() && !dialog.movable && !dialog.closable) {
+        draw_title_with_keys(context, title, options);
+        return;
+    }
     if (!dialog.closable && !dialog.movable) {
         nk_layout_row_dynamic(context, dialog_title_height, 1);
         nk_label_colored(context, title, NK_TEXT_LEFT, color(UiColor::text_bright));
@@ -162,7 +190,7 @@ auto dialog_begin(Dialog& dialog, nk_context* context, const char* id, const cha
     dialog.open = dialog.surface.open;
     if (!dialog.open) return false;
     dialog.bounds = nk_window_get_bounds(context);
-    draw_title_row(dialog, context, title);
+    draw_title_row(dialog, context, title, options);
     return true;
 }
 

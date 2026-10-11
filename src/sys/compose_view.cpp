@@ -3011,6 +3011,9 @@ static void populate_quantize_preview(compose_scene_cache_t& cache,
     view.quantize_space = static_cast<std::uint8_t>(request.space);
     view.quantize_tie = static_cast<std::uint8_t>(request.tie);
     view.quantize_holds = static_cast<std::uint8_t>(request.holds);
+    view.quantize_preview_enabled = application.quantize_editor &&
+        application.quantize_editor->song == document.id &&
+        application.quantize_editor->chart == chart.id && application.quantize_editor->preview_enabled;
     view.quantize_selected_preset_valid = application.quantize_editor &&
         application.quantize_editor->song == document.id &&
         application.quantize_editor->chart == chart.id &&
@@ -3281,7 +3284,7 @@ static void populate_quantize_ghost_geometry(compose_scene_cache_t& cache,
     view.quantize_ghosts = nullptr;
     view.quantize_ghost_count = 0;
     view.quantize_ghosts_drawable = false;
-    if (!cache.index || !view.scene_available ||
+    if (!view.quantize_preview_enabled || !cache.index || !view.scene_available ||
         cache.quantize_preview_row_views.empty()) return;
     auto quantize_request = active_quantize_request(application, document, chart,
                                                          state.active_snap_denominator);

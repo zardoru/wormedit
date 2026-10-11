@@ -260,6 +260,7 @@ void dispatch_t437_quantize_settings(compose_test_fixture_t& fixture,
     (void)dispatch_compose_view_action(action, fixture.history, *fixture.binding.workspace,
         *fixture.interaction, fixture.flattened.view.compose.viewport_height_pixels,
         fixture.application, {}, scheduler, resource_copy, export_runtime, false, sink);
+    fixture.application.quantize_editor->preview_enabled = true;
 }
 
 void check_t437_quantize_geometry(const WormUiComposeView& view,
@@ -409,7 +410,7 @@ TEST_CASE("Quantize ghost geometry projects promoted absolute rows into native l
         .chart = fixture.history.document.charts.front().id,
         .request = {.divisions = 7, .space = quantization_space_t::authored_measure,
                     .tie = quantization_tie_t::later, .holds = quantization_hold_t::start_only,
-                    .allow_resolution_promotion = true}};
+                    .allow_resolution_promotion = true}, .preview_enabled = true};
     fixture.project();
     const auto& view = fixture.flattened.view.compose;
     const auto row = std::ranges::find(std::span(view.quantize_preview_rows, view.quantize_preview_row_count),
@@ -556,7 +557,7 @@ TEST_CASE("Quantize ghosts retain collision visibility and hide blocked halfway 
         .song = fixture.history.document.id,
         .chart = fixture.history.document.charts.front().id,
         .request = {.divisions = 4, .tie = quantization_tie_t::earlier,
-                    .collisions = quantization_collision_t::reject}};
+                    .collisions = quantization_collision_t::reject}, .preview_enabled = true};
     fixture.project();
     const auto& collision = fixture.flattened.view.compose;
     expect_compose_test(collision.quantize_preview_blocked != 0);
@@ -6261,4 +6262,31 @@ TEST_CASE("Compose snap colors use measure-local grid and note endpoint phase",
     const auto endpoints = std::span(rendered->note_endpoints, rendered->note_endpoint_count);
     REQUIRE(endpoints.size() == 3);
     for (const auto& endpoint : endpoints) CHECK(endpoint.snap_class == 4);
+}
+
+TEST_CASE("Quantize ghost preview defaults off and toggles without editing the chart", "[sys][frame-timing][quantize-intent]") {
+    auto song = compose_test_song();
+    song.charts.front().measures.front().notes.resize(1);
+    song.charts.front().measures.front().notes.front().position.row = 130;
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.project();
+    fixture.interaction->selected_notes = {fixture.history.document.charts.front().measures.front().notes.front().id};
+    fixture.project();
+    const auto revision = fixture.history.document.revision;
+    expect_compose_test(!fixture.flattened.view.compose.quantize_preview_enabled);
+    expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);
+    expect_compose_test(invoke_compose_quantize_command(true, fixture.history, *fixture.interaction, fixture.application));
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.quantize_preview_enabled);
+    expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 1);
+    expect_compose_test(invoke_compose_quantize_command(true, fixture.history, *fixture.interaction, fixture.application));
+    fixture.project();
+    expect_compose_test(!fixture.flattened.view.compose.quantize_preview_enabled);
+    expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);
+    expect_compose_test(fixture.history.document.revision == revision && fixture.history.undo.empty());
+    fixture.application.quantize_editor->preview_enabled = true;
+    fixture.application.quantize_editor->chart = chart_id_t{999};
+    fixture.project();
+    expect_compose_test(!fixture.flattened.view.compose.quantize_preview_enabled);
+    expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);
 }

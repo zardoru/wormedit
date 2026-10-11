@@ -849,6 +849,11 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
     add_builtin(registry, invoker, "navigation.go_to_sound", "Go to sound",
                 command_category_t::navigation, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::k, primary())}, false, compose);
+    add_builtin(registry, invoker, "edit.toggle_quantize_preview", "Toggle Quantize Preview",
+                command_category_t::edit, command_focus_scope_t::tab,
+                {chord(shortcut_key_t::q, modified(shortcut_modifier_t::alt))}, true, compose);
+    add_builtin(registry, invoker, "edit.apply_quantize", "Apply Quantization",
+                command_category_t::edit, command_focus_scope_t::tab, {}, true, compose);
     // Dock visibility mutates session UI state; suppress held-key repeats.
     add_builtin(registry, invoker, "view.open_layers", "Open Layers",
                 command_category_t::workspace, command_focus_scope_t::tab,

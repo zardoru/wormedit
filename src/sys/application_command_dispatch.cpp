@@ -1,5 +1,6 @@
 #include "sys/application_command_dispatch.h"
 #include "sys/compose_note_to_bgm.h"
+#include "sys/compose_actions.h"
 #include "sys/compose_measure_commands.h"
 #include "sys/compose_semantic_layer_commands.h"
 
@@ -611,7 +612,27 @@ auto open_sound_picker_command(command_context_t& context) -> std::optional<comm
     return command_result_t{.accepted = true};
 }
 
+auto compose_quantize_command(command_context_t& context) -> std::optional<command_result_t> {
+    const auto kind = context.command.kind;
+    if (kind != command_kind_t::edit_toggle_quantize_preview &&
+        kind != command_kind_t::edit_apply_quantize) return std::nullopt;
+    auto* state = context.compose();
+    if (!state || context.application_state.compose_timing_focus ||
+        context.application_state.paste_session || editor_interaction_has_pending_gesture(*state))
+        return reject_application_command(context.sink, "Quantize requires an idle active Compose chart.",
+            notification_severity_t::warning, notification_source_t::input);
+    const auto toggle = kind == command_kind_t::edit_toggle_quantize_preview;
+    const auto accepted = invoke_compose_quantize_command(toggle, context.history, *state,
+                                                         context.application_state, context.sink);
+    if (toggle) context.sink.post_transient_hint(notification_source_t::edit,
+        context.application_state.quantize_editor->preview_enabled
+            ? "Quantize preview enabled." : "Quantize preview disabled.");
+    if (accepted && !toggle) return context.rebind();
+    return command_result_t{.accepted = accepted};
+}
+
 auto compose_auxiliary_command(command_context_t& context) -> std::optional<command_result_t> {
+    if (auto result = compose_quantize_command(context)) return result;
     if (auto result = open_sound_picker_command(context)) return result;
     WormUiComposeDockCommand dock;
     switch (context.command.kind) {

@@ -4,6 +4,7 @@
 #include <wormedit/core/command_registry.h>
 #include <catch2/catch_test_macros.hpp>
 #include <array>
+#include <cmath>
 #include <source_location>
 #include <string_view>
 
@@ -145,4 +146,16 @@ TEST_CASE("Command menu blocks IME activation and consumes held Enter after clos
     expect_menu(held.get().compose_input_count == 0);
     const auto up = key(SDLK_RETURN, SDL_SCANCODE_RETURN, false);
     expect_menu(fixture.harness.frame({&up, 1}).get().compose_input_count == 0);
+}
+
+TEST_CASE("Command palette keeps title and keycaps together above search", "[frontend-state][event-harness][command-menu]") {
+    fixture_t fixture;
+    fixture.open();
+    const auto title = fixture.harness.drawn_text_center("Command menu");
+    const auto enter = fixture.harness.drawn_text_center("Enter");
+    const auto escape = fixture.harness.drawn_text_center("Esc");
+    expect_menu(title.has_value() && enter.has_value() && escape.has_value());
+    expect_menu(enter->first > title->first && escape->first > enter->first);
+    expect_menu(std::abs(enter->second - title->second) < 12.0f);
+    expect_menu(fixture.harness.drawn_text().find("Up/Down to choose") == std::string::npos);
 }

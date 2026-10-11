@@ -831,6 +831,20 @@ void prepare_compose_quantize_input(nk_context* context, const WormUiComposeView
         wormedit::ui::chrome::context_menu_close(quantize_menu);
 }
 
+void render_quantize_preview_toggle(const ComposeInspectorContext& inspector) {
+    auto* context = inspector.context;
+    nk_layout_row_dynamic(context, 26, 1);
+    nk_bool preview = inspector.view->quantize_preview_enabled;
+    if (compose_quantize_owns_input()) nk_widget_disable_begin(context);
+    const auto changed = nk_checkbox_label(context, "Preview quantization", &preview);
+    if (compose_quantize_owns_input()) nk_widget_disable_end(context);
+    if (changed && !compose_quantize_owns_input() &&
+        inspector.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        set_quantize_action(inspector, WORM_UI_COMPOSE_ACTION_TOGGLE_QUANTIZE_PREVIEW,
+            inspector.view->quantize_divisions, inspector.view->quantize_space,
+            inspector.view->quantize_tie, inspector.view->quantize_holds);
+}
+
 void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
     const auto* view = inspector.view;
     auto* context = inspector.context;
@@ -866,6 +880,7 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
     const auto popup_owns_input = compose_quantize_owns_input();
     if (popup_owns_input)
         nk_widget_disable_begin(context);
+    render_quantize_preview_toggle(inspector);
     render_quantize_setting_fields(inspector);
     render_quantize_preset_picker(inspector);
     if (popup_owns_input)
@@ -892,7 +907,8 @@ void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
                             view->quantize_holds, view->quantize_selected_preset_valid,
                             view->quantize_selected_preset_index);
     render_quantize_preset_actions(inspector);
-    render_quantize_report_rows(context, "Preview rows", 0, view->quantize_preview_rows,
+    if (view->quantize_preview_enabled)
+        render_quantize_report_rows(context, "Preview rows", 0, view->quantize_preview_rows,
                                 view->quantize_preview_row_count, view->quantize_preview_total_rows,
                                 view->quantize_preview_rows_truncated);
     // Only after an apply that moved rows; an empty heading says nothing, and it opens expanded so

@@ -354,11 +354,11 @@ static auto draw_quantize_ghost_rows(const ComposePaintContext& paint,
 
 void draw_compose_quantize_ghosts_after_docks(nk_context* context,
                                               const WormUiComposeView* view,
-                                              bool section_visible) {
+                                              bool /*section_visible*/) {
     if (!quantize_overlay_viewport) return;
     const auto saved = *quantize_overlay_viewport;
     quantize_overlay_viewport.reset();
-    if (!context || !view || !section_visible || !view->quantize_ghosts_drawable ||
+    if (!context || !view || !view->quantize_preview_enabled || !view->quantize_ghosts_drawable ||
         !view->scene_available || !view->quantize_ghosts || view->quantize_ghost_count == 0)
         return;
     const auto viewport = nk_rect(saved.x, saved.y, saved.width, saved.height);

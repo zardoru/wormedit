@@ -4,6 +4,7 @@
 #include "wormedit/nuklear_config.h"
 
 #include <optional>
+#include <span>
 
 namespace wormedit::ui::chrome {
 
@@ -51,6 +52,8 @@ struct DialogOptions {
     float height{450.0f};
     struct nk_vec2 minimum_size{640.0f, 360.0f};
     bool movable{false}; // Opt-in tools only; alerts remain centered and immovable.
+    const nk_user_font* title_font{};
+    std::span<const char* const> title_keys{};
 };
 
 struct Dialog {

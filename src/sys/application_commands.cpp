@@ -54,6 +54,8 @@ constexpr command_name_t command_names[]{
     {"view.open_layers", application_command_kind_t::view_open_layers},
     {"semantic_layer.create", application_command_kind_t::semantic_layer_create},
     {"view.toggle_sounds", application_command_kind_t::view_toggle_sounds},
+    {"edit.toggle_quantize_preview", application_command_kind_t::edit_toggle_quantize_preview},
+    {"edit.apply_quantize", application_command_kind_t::edit_apply_quantize},
     {"markers.add_bookmark", application_command_kind_t::markers_add_bookmark},
     {"view.notifications", application_command_kind_t::view_notifications},
     {"workspace.command_menu", application_command_kind_t::workspace_command_menu},

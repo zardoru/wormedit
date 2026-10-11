@@ -348,6 +348,7 @@ struct application_command_state_t {
         wormedit::chart_id_t chart;
         wormedit::quantize_request_t request;
         std::optional<std::size_t> preset_index;
+        bool preview_enabled{};
     };
     std::optional<quantize_editor_t> quantize_editor;
     struct quantize_applied_report_t {

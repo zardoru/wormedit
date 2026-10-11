@@ -220,6 +220,11 @@ auto preview_session_t::loop_region() const -> std::optional<preview_loop_region
     return loop_region_;
 }
 
+auto preview_session_t::set_layer_tick_frames(std::span<const std::uint64_t> frames) -> bool {
+    const std::scoped_lock lock(mutex_);
+    return bridge_.set_layer_tick_frames(frames, timeline_frame_);
+}
+
 void preview_session_t::set_metronome_enabled(bool enabled) {
     const std::scoped_lock lock(mutex_);
     bridge_.set_metronome_enabled(enabled, timeline_frame_);

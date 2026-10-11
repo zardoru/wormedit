@@ -10,6 +10,7 @@
 #include <cmath>
 #include <limits>
 #include <span>
+#include <source_location>
 #include <string>
 #include <vector>
 
@@ -1714,4 +1715,62 @@ TEST_CASE("bounded factor ratio reduces before its rounded wide quotient",
     CHECK_FALSE(factor_product(std::array<std::uint64_t, 3>{
         std::numeric_limits<std::uint64_t>::max(),
         std::numeric_limits<std::uint64_t>::max(), 2}));
+}
+
+namespace {
+void check_layer_tick(bool value, std::source_location at = std::source_location::current()) {
+    INFO("Layer tick check at " << at.line());
+    CHECK(value);
+}
+void require_layer_tick(bool value, std::source_location at = std::source_location::current()) {
+    INFO("Layer tick requirement at " << at.line());
+    REQUIRE(value);
+}
+auto layer_tick_chart() -> chart_document_t {
+    auto chart = base_chart();
+    chart.semantic_layers = {{.id = layer_id_t{7}, .name = "Lead"},
+                             {.id = layer_id_t{9}, .name = "Rhythm"}};
+    constexpr std::array kinds{note_kind_t::tap, note_kind_t::hold, note_kind_t::roll,
+        note_kind_t::lift, note_kind_t::mine, note_kind_t::fake, note_kind_t::invisible};
+    for (std::size_t i = 0; i < kinds.size(); ++i) {
+        note_t note{.id = object_id_t{100+i}, .position = {measure_id_t{1}, (i % 4)*240},
+                    .lane = lane_id_t{1}, .kind = kinds[i], .semantic_layers = {layer_id_t{7}}};
+        if (kinds[i] == note_kind_t::hold || kinds[i] == note_kind_t::roll)
+            note.end = local_position_t{measure_id_t{2}, 0};
+        chart.measures.front().notes.push_back(std::move(note));
+    }
+    chart.measures.back().notes = {{.id = object_id_t{200}, .position = {measure_id_t{2}, 240},
+        .lane = lane_id_t{1}, .semantic_layers = {layer_id_t{7}, layer_id_t{9}}}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{201}, .position = {measure_id_t{1}, 480},
+        .source_lane = object_id_t{500}, .semantic_layers = {layer_id_t{9}}}};
+    return chart;
+}
+}
+TEST_CASE("Layer assist positions include soundless heads and BGM through shared exact timing",
+          "[unit][timing][layer-assist]") {
+    const auto chart = layer_tick_chart();
+    const auto timing = build_timing_index(chart);
+    require_layer_tick(static_cast<bool>(timing));
+    const auto ordinary = build_preview_schedule(chart, *timing.index, {.sample_rate = 48000});
+    require_layer_tick(static_cast<bool>(ordinary));
+    check_layer_tick(ordinary.schedule->layer_ticks.empty());
+    const auto ticks = build_preview_schedule(chart, *timing.index,
+        {.sample_rate = 48000, .count_in_pulses = 4, .include_layer_ticks = true});
+    require_layer_tick(static_cast<bool>(ticks));
+    require_layer_tick(ticks.schedule->layer_ticks.size() == 6);
+    check_layer_tick(ticks.schedule->playable.empty() && ticks.schedule->bgm.empty());
+    check_layer_tick(ticks.schedule->layer_ticks.front().sample_frame == 48000);
+    check_layer_tick(ticks.schedule->layer_ticks[4].sample_frame == 96000);
+    check_layer_tick(ticks.schedule->layer_ticks.back().sample_frame == 192000);
+    check_layer_tick(ticks.schedule->layer_ticks.back().layers.size() == 2);
+}
+TEST_CASE("Layer assist construction rejects its own bounded capacity without truncation",
+          "[unit][timing][layer-assist]") {
+    const auto chart = layer_tick_chart();
+    const auto timing = build_timing_index(chart);
+    require_layer_tick(static_cast<bool>(timing));
+    const auto ticks = build_preview_schedule(chart, *timing.index,
+        {.include_layer_ticks = true, .maximum_layer_tick_events = 2});
+    check_layer_tick(!ticks);
+    check_layer_tick(!ticks.schedule.has_value());
 }

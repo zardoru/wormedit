@@ -421,6 +421,9 @@ struct application_command_state_t {
     bool semantic_layer_solo_active{};
     std::optional<wormedit::layer_id_t> semantic_layer_target;
     bool semantic_layer_target_none{};
+    std::optional<wormedit::chart_id_t> layer_assist_chart;
+    std::vector<wormedit::layer_id_t> layer_assist_layers;
+    std::function<bool(wormedit::chart_id_t, std::span<const wormedit::layer_id_t>)> transport_set_layer_assist;
     // Semantic-layer filters are an ephemeral per-chart Compose view setting.
     // Layer IDs are only unique within their chart, so never carry a filter to
     // another selected difficulty.

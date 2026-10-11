@@ -31,6 +31,7 @@ struct LayersPanel {
 auto raise(const LayersPanel& panel, WormUiComposeActionKind kind, std::uint64_t id = 0) -> bool {
     if (panel.action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
     panel.action->compose_action = kind;
+    panel.action->compose_input_project_id = panel.view->project_id;
     panel.action->compose_input_chart_id = panel.view->chart_id;
     panel.action->compose_input_document_revision = panel.view->document_revision;
     panel.action->compose_semantic_layer_id = id;
@@ -348,11 +349,17 @@ void render_row(const LayersPanel& panel, const WormUiComposeSemanticLayerView& 
     nk_layout_row_template_push_dynamic(context);
     nk_layout_row_template_push_static(context, 24);
     nk_layout_row_template_push_static(context, 24);
+    nk_layout_row_template_push_static(context, 24);
     nk_layout_row_template_end(context);
     render_row_name(panel, layer, index);
     const auto row_input_blocked = !panel.view->scene_available || panel.view->input_occluded ||
                                    layer_menu_blocks_row_input(panel);
     if (row_input_blocked) nk_widget_disable_begin(context);
+    if (!panel.view->semantic_layer_assist_available) nk_widget_disable_begin(context);
+    if (IconButton{Glyph::audio_lines, layer.assist_tick_enabled ? "Disable layer assist ticks"
+                       : "Enable layer assist ticks", layer.assist_tick_enabled}.render(context))
+        (void)raise(panel, WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK, layer.layer_id);
+    if (!panel.view->semantic_layer_assist_available) nk_widget_disable_end(context);
     if (IconButton{layer.visible ? Glyph::eye : Glyph::eye_off,
                    layer.visible ? "Hide layer" : "Show layer"}.render(context))
         (void)raise(panel, WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, layer.layer_id);

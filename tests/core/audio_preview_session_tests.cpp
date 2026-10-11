@@ -666,3 +666,47 @@ TEST_CASE("Loop region presence is readable without the session mutex and clears
     CHECK_FALSE(fixture.session.has_loop_region());
     CHECK(fixture.session.has_loop_region() == fixture.session.loop_region().has_value());
 }
+
+TEST_CASE("Layer assist clicks are audible with metronome off and cancel queued travel without restarting music",
+          "[unit][audio][preview-session][layer-assist]") {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    const auto source = sources.register_generated_source({.source = {"generated:layer-tick", "v1"},
+        .interleaved_stereo = std::vector<float>(512*output_channel_count, 0.1F)});
+    require_session_condition(static_cast<bool>(source));
+    decoded_block_cache_t cache{preview_block_cache_limits()};
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    constexpr object_id_t music_id{std::numeric_limits<std::uint64_t>::max()};
+    schedule.music = preview_schedule_t::music_event_t{resource_id_t{1}, 0, 0, 512};
+    const preview_object_source_binding_t music{.object = music_id,
+        .voices = {{.source = source.binding->source, .frame_count = 512}}};
+    const preview_metronome_source_binding_t click{.accent = metronome_accent_t::regular,
+        .voice = {.source = source.binding->source, .frame_count = 8}};
+    session.set_metronome_enabled(false);
+    require_session_condition(session.set_layer_tick_frames(std::array<std::uint64_t, 2>{32,96}));
+    const auto started = start_primed(session, schedule, std::span{&music,1}, std::span{&click,1},
+                                      0, {.lookahead_frames = 128}, 512);
+    require_session_condition(static_cast<bool>(started));
+    std::vector<float> output(64*output_channel_count);
+    check_session_condition(session.render(output).status == preview_session_render_status_t::mixed);
+    check_session_condition(std::abs(output[30*output_channel_count] - 0.1F) < 0.00001F);
+    check_session_condition(std::abs(output[32*output_channel_count] - 0.2F) < 0.00001F);
+    check_session_condition(std::abs(output[40*output_channel_count] - 0.1F) < 0.00001F);
+    require_session_condition(session.set_layer_tick_frames({}));
+    check_session_condition(transport.is_current(*started.token));
+    check_session_condition(session.render(output).status == preview_session_render_status_t::mixed);
+    check_session_condition(std::ranges::all_of(output, [](float x) { return std::abs(x - 0.1F) < 0.00001F; }));
+    check_session_condition(session.timeline_frame() == 128);
+    require_session_condition(session.set_layer_tick_frames(std::array<std::uint64_t,2>{32,96}));
+    require_session_condition(static_cast<bool>(seek_primed(session, 32, {.lookahead_frames = 128})));
+    check_session_condition(session.render(output).status == preview_session_render_status_t::mixed);
+    check_session_condition(std::abs(output.front()-0.2F) < 0.00001F);
+    require_session_condition(session.set_metronome_volume(50));
+    require_session_condition(static_cast<bool>(seek_primed(session, 32, {.lookahead_frames = 128})));
+    check_session_condition(session.render(output).status == preview_session_render_status_t::mixed);
+    check_session_condition(std::abs(output.front()-0.15F) < 0.00001F);
+}

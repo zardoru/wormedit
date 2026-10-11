@@ -17,6 +17,7 @@ enum class queue_kind_t : std::uint8_t {
     resumed_bgm,
     metronome,
     assist,
+    layer_tick,
     music,
 };
 
@@ -46,6 +47,8 @@ struct preview_queue_cursor_t {
     std::uint64_t music_frame_count{};
     std::span<const preview_metronome_event_t> assist_clicks;
     std::size_t assist_index{};
+    std::span<const std::uint64_t> layer_ticks;
+    std::size_t layer_tick_index{};
 };
 
 auto next_candidate(const preview_queue_cursor_t& queues) -> std::optional<event_candidate_t> {
@@ -91,6 +94,9 @@ auto next_candidate(const preview_queue_cursor_t& queues) -> std::optional<event
         consider({.sample_frame = event.sample_frame, .queue = queue_kind_t::assist,
                   .accent = event.accent});
     }
+    if (queues.layer_tick_index < queues.layer_ticks.size())
+        consider({.sample_frame = queues.layer_ticks[queues.layer_tick_index],
+                  .queue = queue_kind_t::layer_tick});
     if (queues.music_pending)
         consider({.sample_frame = queues.music_timeline_frame,
                   .queue = queue_kind_t::music,
@@ -110,12 +116,14 @@ auto sources_for_candidate(const event_candidate_t& candidate,
                            const std::vector<preview_object_source_binding_t>& resumed_objects,
                            const std::vector<preview_metronome_source_binding_t>& metronome)
     -> candidate_sources_t {
-    if (candidate.queue == queue_kind_t::metronome || candidate.queue == queue_kind_t::assist) {
+    if (candidate.queue == queue_kind_t::metronome || candidate.queue == queue_kind_t::assist ||
+        candidate.queue == queue_kind_t::layer_tick) {
         const auto binding = std::ranges::lower_bound(metronome, candidate.accent, {},
                                                       &preview_metronome_source_binding_t::accent);
         if (binding != metronome.end() && binding->accent == candidate.accent) {
             return {std::span<const preview_voice_source_t>{&binding->voice, 1},
-                    voice_kind_t::click_preview};
+                    candidate.queue == queue_kind_t::layer_tick ? voice_kind_t::layer_assist
+                                                               : voice_kind_t::click_preview};
         }
         return {{}, voice_kind_t::click_preview};
     }
@@ -136,7 +144,7 @@ auto sources_for_candidate(const event_candidate_t& candidate,
 void advance_candidate(const event_candidate_t& candidate, preview_queue_head_t& playable,
                        preview_queue_head_t& bgm, preview_queue_head_t& resumed_playable,
                        preview_queue_head_t& resumed_bgm, preview_queue_head_t& metronome,
-                       bool& music_pending, std::size_t& assist_head) {
+                       bool& music_pending, std::size_t& assist_head, std::size_t& layer_tick_head) {
     switch (candidate.queue) {
     case queue_kind_t::playable: ++playable.index; break;
     case queue_kind_t::bgm: ++bgm.index;
@@ -148,6 +156,7 @@ void advance_candidate(const event_candidate_t& candidate, preview_queue_head_t&
         ++resumed_bgm.index; break;
     case queue_kind_t::metronome: ++metronome.index; break;
     case queue_kind_t::assist: ++assist_head; break;
+    case queue_kind_t::layer_tick: ++layer_tick_head; break;
     case queue_kind_t::music: music_pending = false; break;
     }
 }
@@ -416,6 +425,8 @@ auto preview_transport_bridge_t::begin_session(std::uint64_t seek_frame)
             }
         }
     }
+    layer_tick_head_ = static_cast<std::size_t>(std::ranges::lower_bound(layer_tick_frames_, seek_frame) -
+                                               layer_tick_frames_.begin());
     assist_grid_.reset();
     assist_count_ = assist_head_ = 0;
     last_assist_handed_frame_.reset();
@@ -463,6 +474,21 @@ void preview_transport_bridge_t::set_metronome_enabled(bool enabled, std::uint64
         seek_preview_queue(std::span<const preview_metronome_event_t>{schedule_->metronome},
                            metronome_head_, current_frame);
     }
+}
+
+auto preview_transport_bridge_t::set_layer_tick_frames(std::span<const std::uint64_t> frames,
+                                                        std::uint64_t current_frame) -> bool {
+    if (frames.size() > 200'000 || !std::ranges::is_sorted(frames) ||
+        std::ranges::adjacent_find(frames) != frames.end() ||
+        (!frames.empty() && frames.back() > std::numeric_limits<std::uint64_t>::max() - maximum_read_frames))
+        return false;
+    if (std::ranges::equal(frames, layer_tick_frames_)) return true;
+    std::vector<std::uint64_t> replacement(frames.begin(), frames.end());
+    transport_.clear_voices(voice_kind_t::layer_assist);
+    layer_tick_frames_ = std::move(replacement);
+    layer_tick_head_ = static_cast<std::size_t>(std::ranges::lower_bound(layer_tick_frames_, current_frame) -
+                                               layer_tick_frames_.begin());
+    return true;
 }
 
 auto preview_transport_bridge_t::set_metronome_volume(std::uint8_t volume_percent) noexcept -> bool {
@@ -540,7 +566,8 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
         const auto candidate = next_candidate(
             {playable, bgm, resumed_playable_, resumed_bgm_, clicks, playable_head_.index, bgm_head_.index, resumed_playable_head_.index, resumed_bgm_head_.index,
              metronome_head_.index, music_pending_, music_timeline_frame_, music_source_frame_,
-             music_frame_count_, std::span{assist_clicks_.data(), assist_count_}, assist_head_});
+             music_frame_count_, std::span{assist_clicks_.data(), assist_count_}, assist_head_,
+             layer_tick_frames_, layer_tick_head_});
         if (!candidate.has_value() || candidate->sample_frame >= exclusive_end_frame) {
             break;
         }
@@ -551,7 +578,7 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
         if (sources.empty()) {
             ++result.missing_sources;
             advance_candidate(*candidate, playable_head_, bgm_head_, resumed_playable_head_,
-                              resumed_bgm_head_, metronome_head_, music_pending_, assist_head_);
+                              resumed_bgm_head_, metronome_head_, music_pending_, assist_head_, layer_tick_head_);
             continue;
         }
         if (next_voice_id_ == 0 ||
@@ -584,7 +611,7 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
             music_pending_ = music_frame_count_ != 0;
         } else {
             advance_candidate(*candidate, playable_head_, bgm_head_, resumed_playable_head_,
-                              resumed_bgm_head_, metronome_head_, music_pending_, assist_head_);
+                              resumed_bgm_head_, metronome_head_, music_pending_, assist_head_, layer_tick_head_);
         }
         const auto last_voice_id = next_voice_id_ + sources.size() - 1;
         if (last_voice_id == std::numeric_limits<std::uint64_t>::max()) {
@@ -603,7 +630,7 @@ auto preview_transport_bridge_t::exhausted() const noexcept -> bool {
            resumed_playable_head_.index == resumed_playable_.size() &&
            resumed_bgm_head_.index == resumed_bgm_.size() &&
            metronome_head_.index == schedule_->metronome.size() && !music_pending_ &&
-           assist_head_ == assist_count_;
+           assist_head_ == assist_count_ && layer_tick_head_ == layer_tick_frames_.size();
 }
 
 } // namespace wormedit::audio

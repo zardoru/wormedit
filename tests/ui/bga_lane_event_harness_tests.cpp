@@ -1739,3 +1739,39 @@ TEST_CASE("Inspector BPM snap choice is shared with the timing-focus toolbar",
     check_bga(f.harness.drawn_text_center("0.5").has_value());
     check_bga(worm_ui_nuklear_compose_state().beat_fit_snap_step_index == 2);
 }
+
+TEST_CASE("Layers assist icon is independent of lock and sends one stamped session toggle",
+          "[frontend-state][event-harness][layer-assist]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& state = worm_ui_nuklear_compose_state();
+    state.inspector_visible = state.sounds_panel_visible = false;
+    state.layers_panel_visible = true;
+    WormUiComposeSemanticLayerView layer{.layer_id=7,.name="Lead",.red=255,
+        .assigned_note_count=3,.visible=true,.locked=true};
+    auto& view=harness.view().compose;
+    view.semantic_layers=&layer;
+    view.semantic_layer_count=view.semantic_layer_total_count=1;
+    view.semantic_layer_assist_available=true;
+    (void)harness.frame();
+    const auto row=harness.drawn_text_center("Lead");
+    REQUIRE(row);
+    const auto toggled=click(harness,1176,row->second);
+    check_bga(toggled.front().get().compose_action==WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK);
+    check_bga(toggled.front().get().compose_semantic_layer_id==7);
+    check_bga(toggled.front().get().compose_input_project_id==1);
+    check_bga(toggled.front().get().compose_input_chart_id==1);
+    check_bga(toggled.front().get().compose_input_document_revision==1);
+    check_bga(toggled.front().get().compose_input_count==0);
+    check_bga(toggled.back().get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
+    layer.assist_tick_enabled=true;
+    (void)harness.frame(std::array{mouse_motion(1176,row->second)});
+    check_bga(harness.drawn_text().find("Disable layer assist ticks")!=std::string::npos);
+    view.semantic_layer_assist_available=false;
+    (void)harness.frame();
+    check_bga(click(harness,1176,row->second).front().get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
+    view.semantic_layer_assist_available=true;
+    harness.view().close_confirmation.visible=true;
+    (void)harness.frame();
+    check_bga(click(harness,1176,row->second).front().get().compose_action==WORM_UI_COMPOSE_ACTION_NONE);
+}

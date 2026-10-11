@@ -110,7 +110,8 @@ auto mix_voice(transport_mix_context_t& context, const transport_voice_t& voice)
             .requested = static_cast<std::size_t>(std::min<std::uint64_t>(
                 overlap_end - timeline_frame, maximum_read_frames - offset_in_block)),
             .gain = voice.gain *
-                (voice.kind == voice_kind_t::click_preview ? context.click_preview_gain : 1.0F),
+                ((voice.kind == voice_kind_t::click_preview || voice.kind == voice_kind_t::layer_assist)
+                    ? context.click_preview_gain : 1.0F),
         };
         const auto available = mix_source_block(context, voice, block_index, window);
         if (available != window.requested) {
@@ -147,9 +148,13 @@ transport_t::transport_t(decoded_block_cache_t& block_cache, std::size_t maximum
 void transport_t::set_clicks_enabled(bool enabled) {
     clicks_enabled_.store(enabled, std::memory_order_release);
     if (enabled) return;
+    clear_voices(voice_kind_t::click_preview);
+}
+
+void transport_t::clear_voices(voice_kind_t kind) {
     const std::scoped_lock lock(mutex_);
     for (auto& entry : scheduled_voices_) {
-        if (entry.active && entry.voice.kind == voice_kind_t::click_preview) {
+        if (entry.active && entry.voice.kind == kind) {
             entry.active = false;
             --active_scheduled_voices_;
         }

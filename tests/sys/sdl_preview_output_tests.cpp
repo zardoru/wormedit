@@ -1603,3 +1603,18 @@ TEST_CASE("SDL keep-pitch unity render block remains exact and reduced-rate tran
     expect_pitch(t471_unity_render_block_is_exact_pcm(fixture));
     expect_pitch(t471_unity_transition_keeps_pitch_and_stop_resets_clocks(fixture));
 }
+
+TEST_CASE("Layer assist runtime filters stable memberships and deduplicates chords",
+          "[unit][audio][layer-assist]") {
+    using namespace wormedit;
+    sys::runtime::chart_preview_t preview;
+    preview.chart = chart_id_t{7};
+    preview.layer_assist_chart = chart_id_t{7};
+    preview.layer_assist_layers = {layer_id_t{11}, layer_id_t{12}};
+    preview.schedule = preview_schedule_t{};
+    preview.schedule->layer_ticks = {{20, {layer_id_t{11}}}, {10, {layer_id_t{11}, layer_id_t{12}}},
+                                     {10, {layer_id_t{12}}}, {30, {layer_id_t{99}}}};
+    CHECK(preview.layer_assist_frames() == std::vector<std::uint64_t>{10,20});
+    preview.layer_assist_chart = chart_id_t{8};
+    CHECK(preview.layer_assist_frames().empty());
+}

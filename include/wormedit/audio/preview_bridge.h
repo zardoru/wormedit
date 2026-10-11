@@ -105,6 +105,9 @@ class preview_transport_bridge_t {
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
     // Control-thread setter: re-enable from the current scheduling cursor, never missed beats.
     void set_metronome_enabled(bool enabled, std::uint64_t current_frame);
+    // Sorted unique source frames; independent of metronome/grid assist. Control thread only.
+    [[nodiscard]] auto set_layer_tick_frames(std::span<const std::uint64_t> frames,
+                                             std::uint64_t current_frame) -> bool;
     [[nodiscard]] auto set_metronome_volume(std::uint8_t volume_percent) noexcept -> bool;
     [[nodiscard]] auto metronome_volume() const noexcept -> std::uint8_t {
         return transport_.click_preview_volume();
@@ -151,6 +154,8 @@ class preview_transport_bridge_t {
     preview_queue_head_t metronome_head_;
     bool music_pending_{};
     std::atomic<bool> metronome_enabled_{true};
+    std::vector<std::uint64_t> layer_tick_frames_;
+    std::size_t layer_tick_head_{};
     bool assist_active_{};
     std::optional<preview_assist_click_grid_t> assist_grid_;
     std::array<preview_metronome_event_t, maximum_assist_clicks> assist_clicks_{};

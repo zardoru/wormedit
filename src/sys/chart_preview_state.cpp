@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <limits>
 #include <ranges>
+#include <unordered_set>
 
 namespace wormedit::sys::runtime {
 auto chart_preview_t::report(notification_severity_t severity, bool accepted, std::string message)
@@ -129,6 +130,33 @@ bool chart_preview_t::matches_selection(
            *workspace.selected_chart == *chart;
 }
 
+auto chart_preview_t::layer_assist_frames() const -> std::vector<std::uint64_t> {
+    std::vector<std::uint64_t> frames;
+    if (!schedule || chart != layer_assist_chart || layer_assist_layers.empty()) return frames;
+    std::unordered_set<std::uint64_t> selected;
+    for (const auto layer : layer_assist_layers) selected.insert(layer.value);
+    for (const auto& tick : schedule->layer_ticks)
+        if (std::ranges::any_of(tick.layers, [&](layer_id_t layer) {
+                return selected.contains(layer.value);
+            })) frames.push_back(tick.sample_frame);
+    std::ranges::sort(frames);
+    frames.erase(std::unique(frames.begin(), frames.end()), frames.end());
+    return frames;
+}
+
+auto chart_preview_t::set_layer_assist(chart_id_t selected, std::span<const layer_id_t> layers,
+                                      audio::preview_session_t& session) -> bool {
+    if (layer_assist_chart == selected && std::ranges::equal(layers, layer_assist_layers)) return true;
+    const auto previous_chart = layer_assist_chart;
+    auto previous_layers = layer_assist_layers;
+    layer_assist_chart = selected;
+    layer_assist_layers.assign(layers.begin(), layers.end());
+    if (session.set_layer_tick_frames(layer_assist_frames())) return true;
+    layer_assist_chart = previous_chart;
+    layer_assist_layers = std::move(previous_layers);
+    return false;
+}
+
 auto chart_preview_t::compile_if_needed(
     const chart_document_t& selected_chart, const song_document_t& document,
     const audio::decoded_source_registry_t& sources,
@@ -155,7 +183,7 @@ auto chart_preview_t::compile_if_needed(
     auto built_schedule = build_preview_schedule(
         selected_chart, *built_timing.index,
         {.sample_rate = audio::output_sample_rate,
-         .include_metronome = true, .count_in_pulses = *count_in});
+         .include_metronome = true, .count_in_pulses = *count_in, .include_layer_ticks = true});
     if (!built_schedule)
         return preview_diagnostic_feedback(*this, built_schedule.diagnostics, "Chart preview could not be compiled.");
     auto resolved = audio::resolve_preview_bindings(
@@ -252,7 +280,7 @@ auto chart_preview_t::play_pause(
     const chart_document_t* selected_chart, const song_document_t& document,
     const audio::decoded_source_registry_t& sources,
     const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings,
-    sdl_audition_output_t& audition_output, audio::preview_session_t&,
+    sdl_audition_output_t& audition_output, audio::preview_session_t& preview_session,
     sdl_preview_output_t& preview_output, std::optional<local_position_t> start_cursor,
     bool from_beginning, std::optional<std::uint64_t> exact_start_frame,
     double start_cursor_subrow) -> std::string {
@@ -285,6 +313,7 @@ auto chart_preview_t::play_pause(
     }
 
     static_cast<void>(audition_output.stop());
+    (void)preview_session.set_layer_tick_frames(layer_assist_frames());
     const auto started = preview_output.start(*schedule, bindings, metronome_bindings,
                                               resume_frame, end_frame);
     if (!started)

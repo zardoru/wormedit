@@ -108,6 +108,7 @@ class preview_session_t {
     }
 
     void set_metronome_enabled(bool enabled);
+    [[nodiscard]] auto set_layer_tick_frames(std::span<const std::uint64_t> frames) -> bool;
     [[nodiscard]] auto metronome_enabled() const -> bool;
     [[nodiscard]] auto set_metronome_volume(std::uint8_t volume_percent) noexcept -> bool;
     [[nodiscard]] auto metronome_volume() const noexcept -> std::uint8_t {

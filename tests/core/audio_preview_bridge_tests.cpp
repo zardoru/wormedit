@@ -640,3 +640,37 @@ TEST_CASE("preview bridge assist excludes music EOF and cannot extend completed 
     const auto voices = transport.snapshot_active_voices(*started.token);
     require_metronome(voices.voices.size() == 1 && voices.voices.front().timeline_start_frame == 0);
 }
+
+TEST_CASE("Layer assist queue toggles independently and seeks without replacing other voices",
+          "[unit][audio][preview-bridge][layer-assist]") {
+    decoded_block_cache_t cache;
+    transport_t transport{cache, 16};
+    preview_transport_bridge_t bridge{transport};
+    auto chart = schedule();
+    chart.playable = {audio_event(0, 1)};
+    chart.metronome = {{.sample_frame = 10}};
+    const auto key = binding();
+    const auto click = click_binding(metronome_accent_t::regular);
+    require_audio_condition(bridge.set_layer_tick_frames(std::array<std::uint64_t, 2>{10, 20}, 0));
+    bridge.set_metronome_enabled(false, 0);
+    const auto started = bridge.start(chart, std::span{&key, 1}, std::span{&click, 1});
+    require_audio_condition(static_cast<bool>(started));
+    check_audio_condition(bridge.materialize_until(64).scheduled_events == 3);
+    auto active = transport.snapshot_active_voices(*started.token);
+    require_audio_condition(static_cast<bool>(active));
+    check_audio_condition(active.voices.size() == 3);
+    require_audio_condition(bridge.set_layer_tick_frames({}, 0));
+    active = transport.snapshot_active_voices(*started.token);
+    check_audio_condition(active.voices.size() == 1);
+    check_audio_condition(transport.is_current(*started.token));
+    require_audio_condition(bridge.set_layer_tick_frames(std::array<std::uint64_t, 2>{10, 20}, 15));
+    check_audio_condition(bridge.materialize_until(64, 15).scheduled_events == 1);
+    check_audio_condition(!bridge.set_layer_tick_frames(std::array<std::uint64_t, 2>{20, 10}, 15));
+    check_audio_condition(!bridge.set_layer_tick_frames(std::array<std::uint64_t, 2>{20, 20}, 15));
+    const auto sought = bridge.seek(10);
+    require_audio_condition(static_cast<bool>(sought));
+    check_audio_condition(bridge.materialize_until(64, 10).scheduled_events == 3);
+    active = transport.snapshot_active_voices(*sought.token);
+    check_audio_condition(std::ranges::count(active.voices, voice_kind_t::layer_assist,
+                                            &transport_voice_t::kind) == 2);
+}

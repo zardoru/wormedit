@@ -157,6 +157,7 @@ TEST_CASE("transport Stop clears every voice class and silences the next callbac
         wormedit::audio::voice_kind_t::bgm,
         wormedit::audio::voice_kind_t::playable_note,
         wormedit::audio::voice_kind_t::click_preview,
+        wormedit::audio::voice_kind_t::layer_assist,
     };
     for (std::size_t index = 0; index < kinds.size(); ++index) {
         REQUIRE(transport.schedule_voice(*token,
@@ -169,11 +170,11 @@ TEST_CASE("transport Stop clears every voice class and silences the next callbac
                                          }) == wormedit::audio::voice_schedule_status_t::scheduled);
     }
     std::vector<float> before_stop(512U * wormedit::audio::output_channel_count);
-    CHECK(transport.mix(*token, 0, before_stop).voices_mixed == 4);
+    CHECK(transport.mix(*token, 0, before_stop).voices_mixed == kinds.size());
     CHECK_FALSE(all_zero(before_stop));
 
     const auto stopped = transport.stop();
-    CHECK(stopped.scheduled_voices == 4);
+    CHECK(stopped.scheduled_voices == kinds.size());
     for (const auto count : stopped.voices_by_kind) {
         CHECK(count == 1);
     }

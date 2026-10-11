@@ -1679,8 +1679,14 @@ void populate_semantic_layer_target_state(WormUiComposeView& view,
                          application_state.excluded_semantic_layer_filters.end());
 }
 
+auto layer_assist_enabled(const application_command_state_t& app, wormedit::chart_id_t chart,
+                          wormedit::layer_id_t layer) -> bool {
+    return app.layer_assist_chart == chart &&
+           std::ranges::find(app.layer_assist_layers, layer) != app.layer_assist_layers.end();
+}
+
 auto append_semantic_layer_row(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
-                               const wormedit::semantic_layer_t& layer, bool selected) -> bool {
+                               const wormedit::semantic_layer_t& layer, bool selected, bool assist_tick) -> bool {
     auto* arena = flattened.arena();
     const auto* name = arena ? arena_string(*arena, layer.name) : nullptr;
     if (!name) return false;
@@ -1696,6 +1702,7 @@ auto append_semantic_layer_row(flattened_workspace_t& flattened, compose_scene_c
             .locked = layer.locked,
             .selected = selected,
             .assigned_bgm_count = cache.semantic_layer_bgm_membership_counts[layer.id.value],
+            .assist_tick_enabled = assist_tick,
     });
 }
 
@@ -1763,6 +1770,8 @@ bool populate_semantic_layer_palette(
         application_state.semantic_layer_palette_chart = chart.id;
         application_state.semantic_layer_first_row = 0;
     }
+    view.semantic_layer_assist_available = application_state.transport_metronome_available &&
+                                           static_cast<bool>(application_state.transport_set_layer_assist);
     view.semantic_layer_target_none = application_state.semantic_layer_target_none;
     view.semantic_layer_unassigned_note_count = cache.semantic_layer_membership_counts[0];
     view.semantic_layer_unassigned_bgm_count =
@@ -1792,6 +1801,7 @@ bool populate_semantic_layer_palette(
             .assigned_note_count = cache.semantic_layer_membership_counts[target->id.value],
             .visible = target->visible, .locked = target->locked, .selected = true,
             .assigned_bgm_count = cache.semantic_layer_bgm_membership_counts[target->id.value],
+            .assist_tick_enabled = layer_assist_enabled(application_state, chart.id, target->id),
         };
         populate_semantic_layer_target_state(view, application_state, *target, true);
     }
@@ -1805,7 +1815,8 @@ bool populate_semantic_layer_palette(
     for (const auto layer_index : palette->layer_indices) {
         const auto& layer = chart.semantic_layers[layer_index];
         const auto selected = application_state.semantic_layer_target == layer.id;
-        if (!append_semantic_layer_row(flattened, cache, layer, selected)) {
+        if (!append_semantic_layer_row(flattened, cache, layer, selected,
+                layer_assist_enabled(application_state, chart.id, layer.id))) {
             view.semantic_layers_truncated = true;
             break;
         }

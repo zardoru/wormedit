@@ -1034,6 +1034,17 @@ void configure_transport_seek_commands(auto& state, auto& history, auto& workspa
     };
 }
 
+void sync_layer_assist_selection(const auto& state, const auto& workspace,
+                                 auto& preview_state, auto& preview_session) {
+    if (state.layer_assist_chart == workspace.selected_chart) {
+        (void)preview_state.set_layer_assist(workspace.selected_chart.value_or(wormedit::chart_id_t{}),
+                                            state.layer_assist_layers, preview_session);
+    } else {
+        (void)preview_state.set_layer_assist(workspace.selected_chart.value_or(wormedit::chart_id_t{}),
+                                            {}, preview_session);
+    }
+}
+
 void configure_transport_commands(auto& state, auto& history, auto& workspace,
                                  auto& compose_interaction_state, auto& compose_scene_cache,
                                  auto& inline_preview_cursor,
@@ -1041,6 +1052,9 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
                                  auto& audition_sources, auto& preview_metronome_bindings,
                                  auto& audition_output, auto& preview_output, auto& notifications) {
     state.transport_metronome_available = preview_output.available() && !preview_metronome_bindings.empty();
+    state.transport_set_layer_assist = [&](wormedit::chart_id_t chart, std::span<const wormedit::layer_id_t> layers) {
+        return workspace.selected_chart == chart && preview_state.set_layer_assist(chart, layers, preview_session);
+    };
     state.transport_set_metronome = [&](bool enabled) { preview_session.set_metronome_enabled(enabled); };
     preview_session.set_metronome_enabled(state.transport_metronome_enabled);
     state.transport_set_metronome_volume = [&](std::uint8_t volume) {
@@ -2568,6 +2582,7 @@ void reset_project_edit_state(application_command_state_t& current) {
     next.transport_metronome_enabled = current.transport_metronome_enabled;
     next.transport_metronome_available = current.transport_metronome_available;
     next.transport_set_metronome = std::move(current.transport_set_metronome);
+    next.transport_set_layer_assist = std::move(current.transport_set_layer_assist);
     next.timing_settings_visible = current.timing_settings_visible;
     next.metronome_volume = current.metronome_volume;
     next.metronome_count_in = current.metronome_count_in;
@@ -4563,6 +4578,7 @@ int main(int argc, char** argv) {
         if (const auto loading = resident_loader.drain_progress()) {
             notification_sink.post(*loading);
         }
+        sync_layer_assist_selection(application_command_state, workspace, preview_state, preview_session);
         wormedit::sys::service_audio_transport_frame(
             history.document, workspace, preview_state, preview_session,
             audition_output, preview_output,

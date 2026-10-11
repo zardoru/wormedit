@@ -2738,6 +2738,40 @@ auto append_preview_events(preview_event_context_t& context) -> bool {
     return true;
 }
 
+auto append_layer_tick(preview_event_context_t& context, local_position_t position,
+                       object_id_t object, const std::vector<layer_id_t>& layers) -> bool {
+    if (layers.empty()) return true;
+    if (context.schedule.layer_ticks.size() >= context.options.maximum_layer_tick_events) {
+        context.diagnostics.push_back(error(timing_error_code_t::capacity_exceeded,
+            "layer assist tick queue exceeds its configured cap", object));
+        return false;
+    }
+    const auto frame = position_frame(context.timing, context.rows.row_for(position),
+                                      context.options, context.diagnostics, object);
+    if (frame) context.schedule.layer_ticks.push_back({*frame, layers});
+    return true;
+}
+
+auto append_layer_ticks(preview_event_context_t& context) -> bool {
+    if (!context.options.include_layer_ticks) return true;
+    for (const auto& measure : context.chart.measures) {
+        for (const auto& note : measure.notes) {
+            const bool head = note.kind == note_kind_t::tap || note.kind == note_kind_t::hold ||
+                              note.kind == note_kind_t::roll || note.kind == note_kind_t::lift;
+            if (head && !append_layer_tick(context, note.position, note.id, note.semantic_layers))
+                return false;
+        }
+        for (const auto& event : measure.bgm_events)
+            if (!append_layer_tick(context, event.position, event.id, event.semantic_layers))
+                return false;
+    }
+    return true;
+}
+
+auto append_all_preview_events(preview_event_context_t& context) -> bool {
+    return append_preview_events(context) && append_layer_ticks(context);
+}
+
 auto metronome_accent_for(std::uint64_t pulse, bool compound) -> metronome_accent_t {
     return pulse == 0                   ? metronome_accent_t::measure
            : compound && pulse % 3 == 0 ? metronome_accent_t::group
@@ -3042,7 +3076,7 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
 
     auto event_context = preview_event_context_t{
         chart, timing, options, input_counts, row_lookup, schedule, result.diagnostics};
-    if (!append_preview_events(event_context)) {
+    if (!append_all_preview_events(event_context)) {
         return result;
     }
 

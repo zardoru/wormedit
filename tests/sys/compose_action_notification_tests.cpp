@@ -2026,3 +2026,53 @@ TEST_CASE("Created seven-key layout dispatches a compatible profile without movi
     require_action(undo_document_command(fixture.history));
     check_action(fixture.history.document.charts.front().lane_layouts.front().layout.profile_id == "created-7k");
 }
+
+TEST_CASE("Layer assist toggles are chart stamped session changes without document or Undo edits",
+          "[unit][compose-actions][layer-assist]") {
+    action_notification_fixture_t f;
+    f.history.document.charts.front().semantic_layers = {{.id=layer_id_t{7},.name="Ticks",.locked=true}};
+    f.application.transport_metronome_available = true;
+    std::vector<layer_id_t> configured;
+    f.application.transport_set_layer_assist = [&](chart_id_t chart, std::span<const layer_id_t> layers) {
+        check_action(chart == chart_id_t{1});
+        configured.assign(layers.begin(),layers.end());
+        return true;
+    };
+    auto action = f.action(WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK);
+    action.compose_semantic_layer_id=7;
+    (void)f.dispatch(action);
+    check_action(configured == std::vector<layer_id_t>{layer_id_t{7}});
+    check_action(f.application.layer_assist_layers == configured);
+    check_action(f.history.document.revision == 1 && f.history.undo.empty());
+    (void)f.dispatch(action);
+    check_action(configured.empty() && f.application.layer_assist_layers.empty());
+    action.compose_input_document_revision=0;
+    (void)f.dispatch(action);
+    check_action(configured.empty());
+    action.compose_input_document_revision=1;
+    action.compose_input_project_id=99;
+    const auto wrong_project = f.dispatch(action);
+    INFO(wrong_project);
+    INFO("project IDs " << action.compose_input_project_id << " / " << f.history.document.id.value);
+    check_action(wrong_project.find("different project") != std::string::npos);
+    check_action(configured.empty());
+    action.compose_input_project_id=f.history.document.id.value;
+    action.compose_semantic_layer_id=99;
+    (void)f.dispatch(action);
+    check_action(configured.empty());
+}
+
+TEST_CASE("Unavailable and rejected layer assist callbacks leave the current selection untouched",
+          "[unit][compose-actions][layer-assist]") {
+    action_notification_fixture_t f;
+    f.history.document.charts.front().semantic_layers = {{.id=layer_id_t{7},.name="Ticks"}};
+    auto action=f.action(WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK);
+    action.compose_semantic_layer_id=7;
+    (void)f.dispatch(action);
+    check_action(f.application.layer_assist_layers.empty());
+    f.application.transport_metronome_available=true;
+    f.application.transport_set_layer_assist=[](chart_id_t,std::span<const layer_id_t>){return false;};
+    (void)f.dispatch(action);
+    check_action(f.application.layer_assist_layers.empty());
+    check_action(f.history.document.revision==1 && f.history.undo.empty());
+}

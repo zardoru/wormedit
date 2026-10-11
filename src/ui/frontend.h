@@ -863,6 +863,7 @@ typedef struct WormUiComposeSemanticLayerView {
     bool locked;
     bool selected;
     size_t assigned_bgm_count;
+    bool assist_tick_enabled;
 } WormUiComposeSemanticLayerView;
 
 typedef struct WormUiComposeBookmarkView {
@@ -1493,6 +1494,7 @@ typedef struct WormUiComposeView {
     const WormUiComposeAudioSectionView* audio_sections;
     size_t audio_section_count;
     bool audio_sections_truncated;
+    bool semantic_layer_assist_available;
     const WormUiComposeSemanticLayerView* semantic_layers;
     size_t semantic_layer_count;
     size_t semantic_layer_total_count;
@@ -2598,6 +2600,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP,
     WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_DOWN,
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY,
+    WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK,
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER,
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER,
     WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE,

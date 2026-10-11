@@ -2744,8 +2744,34 @@ std::optional<std::string> edit_semantic_layer_membership(compose_action_context
         "Semantic-layer membership changed, but workspace rebinding failed.");
 }
 
+auto toggle_layer_assist_tick(compose_action_context_t& context) -> std::string {
+    if (context.action.compose_input_project_id != context.history.document.id.value)
+        return compose_action_warning(context, "Layer assist tick request belongs to a different project.");
+    if (editor_interaction_has_pending_gesture(context.state))
+        return compose_action_warning(context, "Finish or cancel the active Compose gesture before changing assist ticks.");
+    auto& app = context.application_state;
+    const auto* chart = selected_chart(context.history, context.workspace);
+    const auto id = layer_id_t{context.action.compose_semantic_layer_id};
+    if (!chart || !catalog_semantic_layer_by_id(*chart, id))
+        return compose_action_warning(context, "The selected semantic layer is no longer available.");
+    if (!app.transport_metronome_available || !app.transport_set_layer_assist)
+        return compose_action_warning(context, "Layer assist ticks need an available audio preview.");
+    auto layers = app.layer_assist_chart == chart->id ? app.layer_assist_layers : std::vector<layer_id_t>{};
+    const auto existing = std::ranges::find(layers, id);
+    const bool enabled = existing == layers.end();
+    if (enabled) layers.push_back(id);
+    else layers.erase(existing);
+    if (!app.transport_set_layer_assist(chart->id, layers))
+        return compose_action_warning(context, "Layer assist ticks could not be updated.");
+    app.layer_assist_chart = chart->id;
+    app.layer_assist_layers = std::move(layers);
+    return compose_action_info(context, enabled ? "Layer assist ticks enabled." : "Layer assist ticks disabled.");
+}
+
 std::optional<std::string> dispatch_compose_semantic_layer_state_action(
     compose_action_context_t& context) {
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK)
+        return toggle_layer_assist_tick(context);
     switch (context.action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY:
         return toggle_semantic_layer_visibility_or_lock(context, false);

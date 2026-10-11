@@ -35,6 +35,11 @@ struct chart_preview_t {
     std::uint64_t end_frame{};
     std::size_t skipped_unavailable_audio_objects{};
     bool paused{};
+    std::optional<chart_id_t> layer_assist_chart;
+    std::vector<layer_id_t> layer_assist_layers;
+    [[nodiscard]] auto layer_assist_frames() const -> std::vector<std::uint64_t>;
+    [[nodiscard]] auto set_layer_assist(chart_id_t selected, std::span<const layer_id_t> layers,
+                                        audio::preview_session_t& session) -> bool;
     std::uint8_t count_in_measures{};
     std::uint8_t compiled_count_in_measures{};
     const sdl_preview_output_t* output_observer{};

@@ -19,6 +19,7 @@ enum class voice_kind_t : std::uint8_t {
     bgm,
     playable_note,
     click_preview,
+    layer_assist,
     count,
 };
 
@@ -93,6 +94,8 @@ class transport_t {
 
     // Disabling retires pending clicks and silences the next callback; other voices survive.
     void set_clicks_enabled(bool enabled);
+    // Control thread: retire one preview family without restarting the transport.
+    void clear_voices(voice_kind_t kind);
     [[nodiscard]] auto set_click_preview_volume(std::uint8_t volume_percent) noexcept -> bool;
     [[nodiscard]] auto click_preview_volume() const noexcept -> std::uint8_t {
         return click_volume_percent_.load(std::memory_order_acquire);

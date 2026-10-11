@@ -433,6 +433,11 @@ struct preview_discontinuity_event_t {
     auto operator==(const preview_discontinuity_event_t&) const -> bool = default;
 };
 
+struct preview_layer_tick_t {
+    std::uint64_t sample_frame{};
+    std::vector<layer_id_t> layers;
+};
+
 struct preview_schedule_t {
     std::uint32_t sample_rate{};
     timing_discontinuity_profile_t discontinuity_profile{
@@ -449,6 +454,7 @@ struct preview_schedule_t {
         std::uint64_t frame_count{};
     };
     std::optional<music_event_t> music;
+    std::vector<preview_layer_tick_t> layer_ticks;
 };
 
 [[nodiscard]] auto make_preview_music_event(resource_id_t resource,
@@ -472,6 +478,8 @@ struct preview_schedule_options_t {
     // They use the row-zero BPM and meter, and are included only when their
     // exact audio time maps to a nonnegative sample frame.
     std::uint32_t count_in_pulses{};
+    bool include_layer_ticks{};
+    std::size_t maximum_layer_tick_events{200'000};
 };
 
 struct preview_schedule_result_t {

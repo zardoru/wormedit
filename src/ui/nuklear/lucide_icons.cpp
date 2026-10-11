@@ -55,6 +55,11 @@ void shutdown() {
     }
 }
 
+auto texture(Glyph glyph) -> SDL_Texture* {
+    const auto index = static_cast<std::size_t>(glyph);
+    return index < textures.size() ? textures[index] : nullptr;
+}
+
 void draw(nk_context* context, struct nk_rect button, Glyph glyph, struct nk_color tint) {
     if (!context) return;
     const auto index = static_cast<std::size_t>(glyph);

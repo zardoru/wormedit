@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_panel.h"
+#include "ui/compose_timing_geometry.h"
 #include "ui/nuklear/theme.h"
 #include "sys/compose_scroll_geometry.h"
 #include "ui/nuklear/bms_branch_panel.h"
@@ -689,30 +690,7 @@ auto compose_timing_target(const WormUiComposeView& view, double screen_y)
                               view.timing_document_end_fraction, view.downscroll};
 }
 
-// Timing lane under a horizontal pixel position, honoring the lane mask in force.
-static auto compose_timing_lane_at_x(const WormUiComposeView& view, double x,
-                                     double field_left) -> std::optional<WormUiTimingLaneKind> {
-    const auto visible_lane_count =
-        static_cast<std::size_t>(std::popcount(view.timing_lane_visibility_mask));
-    if (visible_lane_count == 0) return std::nullopt;
-    const auto lane_width = (field_left - compose_measure_rail_width) /
-                            static_cast<double>(visible_lane_count);
-    if (lane_width <= 0.0) return std::nullopt;
-    const auto visible_slot = std::min(
-        static_cast<std::size_t>((x - compose_measure_rail_width) / lane_width),
-        visible_lane_count - 1);
-    std::size_t slot = 0;
-    for (std::size_t candidate = 0; candidate < WORM_UI_TIMING_LANE_COUNT; ++candidate) {
-        if ((view.timing_lane_visibility_mask & (1U << candidate)) == 0) continue;
-        if (slot++ == visible_slot) return static_cast<WormUiTimingLaneKind>(candidate);
-    }
-    return std::nullopt;
-}
-
-static auto compose_timing_right(const WormUiComposeView& view) -> double {
-    return view.bga_lane_visible ? view.bga_lane_bounds.left
-                                 : view.playable_field_left_pixels;
-}
+using wormedit::ui::compose_timing_right;
 
 static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& input,
                                                double click_x, double click_y) {
@@ -724,7 +702,7 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
         click_x >= timing_right ||
         action.timing_stage_action != WORM_UI_TIMING_STAGE_NONE)
         return false;
-    const auto clicked_lane = compose_timing_lane_at_x(view, click_x, timing_right);
+    const auto clicked_lane = wormedit::ui::compose_timing_lane_at(view, click_x);
     if (!clicked_lane) return false;
     const auto clicked_timing_lane_ordinal = static_cast<std::size_t>(*clicked_lane);
     const auto* clicked_marker = compose_timing_marker_at(view, click_x, click_y);
@@ -861,8 +839,7 @@ static auto begin_timing_quick_insert(const ComposePointerEventContext& input) -
     const auto wanted = ctrl ? WORM_UI_TIMING_LANE_BPM : WORM_UI_TIMING_LANE_ANCHOR;
     const auto allowed = ctrl ? wormedit::ui::compose_ctrl_click_inserts_matching_bpm(mode)
                               : wormedit::ui::compose_alt_click_inserts_anchor(mode);
-    const auto lane = compose_timing_lane_at_x(view, input.pointer_started_x,
-                                               compose_timing_right(view));
+    const auto lane = wormedit::ui::compose_timing_lane_at(view, input.pointer_started_x);
     if (!allowed || !lane || *lane != wanted || !timing.initial_bpm_editable ||
         timing.stage_active || input.action->timing_stage_action != WORM_UI_TIMING_STAGE_NONE)
         return false;

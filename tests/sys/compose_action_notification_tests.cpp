@@ -16,6 +16,7 @@
 #include <wormedit/core/command.h>
 #include <wormedit/core/workspace.h>
 #include <chrono>
+#include <bit>
 #include <fstream>
 #include <thread>
 #include <source_location>
@@ -922,7 +923,13 @@ auto note_draw_input(bga_input_fixture_t& fixture, WormUiComposeInputKind kind, 
     value.compose_inputs[0].resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE;
     value.compose_inputs[0].resource_id = 0;
     value.compose_inputs[0].paint_intent = intent;
-    value.compose_inputs[0].x_pixels = 400;
+    const auto& chart = fixture.history.document.charts.front();
+    const auto layout = compose_horizontal_layout(value.compose_input_viewport_width_pixels,
+        maximum_layout_lane_count(chart), !chart.bgm_source_lanes.empty(),
+        fixture.state.bga_lane_visible ? std::popcount(editor_bga_visible_lane_mask(
+            chart, fixture.state.bga_revealed_lane_mask)) : 0,
+        effective_compose_timing_lane_mask(fixture.application));
+    value.compose_inputs[0].x_pixels = layout.field_left_pixels + layout.playable_field_width_pixels * .5;
     return value;
 }
 void add_draw_test_note(bga_input_fixture_t& fixture) {

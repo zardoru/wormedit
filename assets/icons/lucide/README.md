@@ -15,3 +15,7 @@ the subset; the app does not need an SVG renderer at runtime. This script needs
 nudges and beat-fit BPM snapping. `metronome` is the transport metronome toggle.
 
 `music-2` is the transport Keep pitch toggle.
+
+Compose timing headers use `metronome`, `waves-horizontal`, `gauge`, `pause`, `hourglass`,
+`fast-forward`, `flame` and `anchor` for BPM, SV, SPEEDS, Stop, Delay, Warp,
+Kiai and Anchor. The added sources use the same pinned Lucide commit above.

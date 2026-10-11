@@ -1,5 +1,6 @@
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_canvas.h"
+#include "ui/compose_timing_geometry.h"
 #include "ui/nuklear/compose_inspector.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/compose_waveform_gaps.h"
@@ -965,24 +966,7 @@ struct ComposeTimingLaneLayout {
 static auto compose_timing_marker_document_rect(const WormUiComposeView& view,
                                                 const WormUiTimingMarkerView& marker)
     -> WormUiComposeRect {
-    const auto marker_lane_ordinal = static_cast<unsigned>(marker.lane);
-    if (marker_lane_ordinal >= WORM_UI_TIMING_LANE_COUNT) return {};
-    const auto bit = static_cast<std::uint8_t>(1U << marker_lane_ordinal);
-    const auto visible_count = std::popcount(view.timing_lane_visibility_mask);
-    if (visible_count == 0 || (view.timing_lane_visibility_mask & bit) == 0) return {};
-    const auto preceding = static_cast<std::uint8_t>(view.timing_lane_visibility_mask & (bit - 1));
-    const auto visible_marker_lane_slot = std::popcount(preceding);
-    const auto timing_right = view.bga_lane_visible ? view.bga_lane_bounds.left
-                                                    : view.playable_field_left_pixels;
-    const auto width = (timing_right - compose_measure_rail_width) / visible_count;
-    const auto inner_left = compose_measure_rail_width + width * visible_marker_lane_slot + 2.0;
-    const auto inner_width = std::max(0.0, width - 4.0);
-    const auto left = inner_left + inner_width * marker.marker_left_fraction;
-    const auto right = inner_left + inner_width * marker.marker_right_fraction;
-    constexpr double height = 16.0;
-    const auto top = std::clamp(marker.marker_y_pixels - height * 0.5, 0.0,
-                                std::max(0.0, view.viewport_height_pixels - height));
-    return {left, top, std::max(left + 1.0, right), top + height};
+    return wormedit::ui::compose_timing_marker_bounds(view, marker);
 }
 
 static auto compose_timing_marker_screen_rect(const ComposePaintContext& paint,
@@ -1010,7 +994,8 @@ auto compose_timing_marker_at(const WormUiComposeView& view, double x, double y)
     for (size_t index = 0; index < view.timing_marker_count; ++index) {
         const auto& marker = view.timing_markers[index];
         const auto bounds = compose_timing_marker_document_rect(view, marker);
-        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom)
+        if (bounds.right > bounds.left && bounds.bottom > bounds.top &&
+            x >= bounds.left && x < bounds.right && y >= bounds.top && y <= bounds.bottom)
             hit = &marker;
     }
     return hit;
@@ -1021,39 +1006,71 @@ static void compose_timing_lane_layout(const ComposePaintContext& paint, Compose
         const auto colors = wormedit::ui::theme::compose_timing_color(index);
         layout.colors[index] = colors.label.value_or(colors.note);
     }
-    const auto timing_left = paint.rail.x + paint.rail.w;
-    const auto timing_width = std::max(0.0f, layout.field_left - timing_left);
-    const auto visible_count = static_cast<std::size_t>(
-        std::popcount(paint.view->timing_lane_visibility_mask));
-    const auto lane_width = visible_count == 0 ? 0.0f : timing_width / visible_count;
-    std::size_t visible_lane = 0;
     for (size_t index = 0; index < layout.lanes.size(); ++index) {
-        if ((paint.view->timing_lane_visibility_mask & (1U << index)) == 0) {
-            continue;
-        }
-        auto& lane = layout.lanes[index];
-        lane = nk_rect(timing_left + lane_width * static_cast<float>(visible_lane++),
-                       paint.viewport.y, lane_width, paint.viewport.h);
+        const auto extent = wormedit::ui::compose_timing_lane_extent(
+            *paint.view, static_cast<WormUiTimingLaneKind>(index));
+        if (!extent) continue;
+        const WormUiComposeRect bounds{extent->first, 0, extent->second,
+                                       paint.view->viewport_height_pixels};
+        layout.lanes[index] = compose_screen_rect(&bounds, paint.view, paint.viewport);
     }
 }
+
+constexpr std::array<const char*, WORM_UI_TIMING_LANE_COUNT> timing_lane_captions{
+    "BPM", "SV", "SPD", "STP", "DLY", "WRP", "KIA", "ANC"};
+constexpr std::array<const char*, WORM_UI_TIMING_LANE_COUNT> timing_lane_descriptions{
+    "BPM · tempo", "SV · scroll multiplier", "SPEEDS · speed transitions", "Stop · pause after notes",
+    "Delay · pause before notes", "Warp · skip chart rows", "Kiai · highlight sections",
+    "Anchor · timing references"};
+constexpr std::array<wormedit::ui::lucide::Glyph, WORM_UI_TIMING_LANE_COUNT> timing_lane_icons{
+    wormedit::ui::lucide::Glyph::metronome, wormedit::ui::lucide::Glyph::waves_horizontal,
+    wormedit::ui::lucide::Glyph::gauge, wormedit::ui::lucide::Glyph::pause,
+    wormedit::ui::lucide::Glyph::hourglass, wormedit::ui::lucide::Glyph::fast_forward,
+    wormedit::ui::lucide::Glyph::flame, wormedit::ui::lucide::Glyph::anchor};
+
+static void draw_compose_timing_header(const ComposePaintContext& paint, std::size_t index,
+                                        struct nk_rect lane, nk_color tint) {
+    if (lane.w < 17.0f) return;
+    const auto* caption = timing_lane_captions[index];
+    const auto* font = paint.context->style.font;
+    const auto length = static_cast<int>(strlen(caption));
+    const auto caption_width = font->width(font->userdata, font->height, caption, length);
+    auto* texture = wormedit::ui::lucide::texture(timing_lane_icons[index]);
+    const bool label_fits = lane.w >= caption_width + 26;
+    if (texture) {
+        const auto x = label_fits ? lane.x + 2 : lane.x + (lane.w - 16) * .5f;
+        paint_field(paint.context).image(0, {x, paint.viewport.y + 2, 16, 16}, texture, field_color(tint));
+    }
+    if (!texture || label_fits) {
+        const auto offset = texture ? 22.0f : 2.0f;
+        const auto title = nk_rect(lane.x + offset, paint.viewport.y + 2,
+                                   std::max(1.0f, lane.w - offset - 2), 14);
+        field_text(paint, title, caption, length, font, compose(ComposeColor::timing_title_bg), tint);
+    }
+}
+
 static void draw_compose_timing_lanes(const ComposePaintContext& paint,
                                       ComposeTimingLaneLayout& layout) {
-    constexpr std::array<const char*, WORM_UI_TIMING_LANE_COUNT> labels{
-        "BPM", "SV", "SPD", "STP", "DLY", "WRP", "KIA", "ANC"};
-    for (size_t index=0; index<layout.lanes.size(); ++index) {
-        const auto& lane=layout.lanes[index];
-        if (lane.w<=0) continue;
-        const auto lane_width=lane.w;
-        field_rect(paint, lane, 0.0f,
-                     wormedit::ui::theme::compose_timing_color(index).lane);
-        field_line(paint, lane.x, paint.viewport.y, lane.x,
-                       paint.viewport.y + paint.viewport.h, 1.0f,
-                       wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::grid));
-        if (lane_width >= 17.0f) {
-            const auto title = nk_rect(lane.x + 2.0f, paint.viewport.y + 2.0f,
-                                       std::max(1.0f, lane_width - 4.0f), 14.0f);
-            field_text(paint, title, labels[index], static_cast<int>(strlen(labels[index])),
-                         paint.context->style.font, compose(ComposeColor::timing_title_bg), layout.colors[index]);
+    for (size_t index = 0; index < layout.lanes.size(); ++index) {
+        const auto& lane = layout.lanes[index];
+        if (lane.w <= 0) continue;
+        field_rect(paint, lane, 0, wormedit::ui::theme::compose_timing_color(index).lane);
+        field_line(paint, lane.x, paint.viewport.y, lane.x, paint.viewport.y + paint.viewport.h,
+                   1, compose(ComposeColor::grid));
+        draw_compose_timing_header(paint, index, lane, layout.colors[index]);
+    }
+}
+
+static void draw_compose_timing_header_tooltip(const ComposePaintContext& paint,
+                                               const ComposeTimingLaneLayout& layout) {
+    if (paint.view->input_occluded) return;
+    for (size_t index = 0; index < layout.lanes.size(); ++index) {
+        const auto& lane = layout.lanes[index];
+        if (lane.w <= 0) continue;
+        if (wormedit::ui::nuklear::tooltip::hovered(paint.context,
+                nk_rect(lane.x, paint.viewport.y, lane.w, 20))) {
+            wormedit::ui::nuklear::tooltip::text(paint.context, timing_lane_descriptions[index]);
+            return;
         }
     }
 }
@@ -1129,6 +1146,7 @@ static void draw_compose_scene_background(const ComposePaintContext& paint,
                    compose(ComposeColor::band_top));
     compose_timing_lane_layout(paint,layout);
     draw_compose_cached_pass(paint,1,false,false,[&](const ComposePaintContext& cached) { draw_compose_timing_lanes(cached,layout); });
+    draw_compose_timing_header_tooltip(paint, layout);
     // The original bodies keep their order. Titles stay live inside their
     // own lane margins, disjoint from the subsequent BGM background bodies.
     draw_compose_cached_pass(paint,2,true,false,[&](const ComposePaintContext& cached) {
@@ -1737,10 +1755,8 @@ static void draw_compose_timing_markers(const ComposePaintContext& paint,
         if (!marker.short_label || !marker.short_label[0]) continue;
         const auto* font = paint.context->style.font;
         const auto length = static_cast<int>(strlen(marker.short_label));
-        const auto text_width = font->width(font->userdata, font->height, marker.short_label,
-                                            length);
         const auto text_bounds = nk_rect(bounds.x + 2.0f, bounds.y + (bounds.h - font->height) * 0.5f,
-                                         std::max(bounds.w - 4.0f, text_width + 2.0f), font->height);
+                                         std::max(0.0f, bounds.w - 4.0f), font->height);
         field_text(paint, text_bounds, marker.short_label, length, font,
                      nk_rgba(18, 22, 31, 0), layout.colors[marker_lane_ordinal], 4);
     }
@@ -1795,17 +1811,7 @@ static void draw_compose_unbound_lane_keys_hint(const ComposePaintContext& paint
 // hidden. Same slot arithmetic as the marker rectangles.
 auto compose_timing_lane_inner_extent(const WormUiComposeView& view, WormUiTimingLaneKind lane)
     -> std::optional<std::pair<double, double>> {
-    const auto ordinal = static_cast<unsigned>(lane);
-    const auto bit = static_cast<std::uint8_t>(1U << ordinal);
-    const auto visible_count = std::popcount(view.timing_lane_visibility_mask);
-    if (ordinal >= WORM_UI_TIMING_LANE_COUNT || visible_count == 0 ||
-        (view.timing_lane_visibility_mask & bit) == 0) return std::nullopt;
-    const auto slot = std::popcount(static_cast<std::uint8_t>(view.timing_lane_visibility_mask & (bit - 1)));
-    const auto timing_right = view.bga_lane_visible ? view.bga_lane_bounds.left
-                                                    : view.playable_field_left_pixels;
-    const auto width = (timing_right - compose_measure_rail_width) / visible_count;
-    const auto left = compose_measure_rail_width + width * slot + 2.0;
-    return std::pair{left, left + std::max(0.0, width - 4.0)};
+    return wormedit::ui::compose_timing_inner_extent(view, lane);
 }
 
 // While an edge or a new area is dragged, the area it would become follows the pointer.
@@ -3152,7 +3158,7 @@ void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* vie
                      wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::viewport),
                      wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::label));
     } else {
-        const auto rail_width = static_cast<float>(42.0 * viewport.w / view->viewport_width_pixels);
+        const auto rail_width = static_cast<float>(compose_measure_rail_width * viewport.w / view->viewport_width_pixels);
         const auto rail = nk_rect(viewport.x, viewport.y, rail_width, viewport.h);
         const auto field_left =
             viewport.x + static_cast<float>(view->playable_field_left_pixels) * viewport.w /

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ui/compose_mode.h"
+#include "ui/compose_timing_geometry.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/panel_input.h"
 #include "wormedit/nuklear_config.h"
@@ -8,7 +9,7 @@
 #include <optional>
 
 static auto& state = worm_ui_nuklear_compose_state();
-static constexpr double compose_measure_rail_width = 42.0;
+using wormedit::ui::compose_measure_rail_width;
 
 [[nodiscard]] inline auto compose_mode_of(const WormUiComposeView& view)
     -> wormedit::ui::compose_mode_t {

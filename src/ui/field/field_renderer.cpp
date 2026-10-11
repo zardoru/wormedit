@@ -670,6 +670,13 @@ void renderer_t::account_tile_source(std::size_t bytes) {
 auto renderer_t::tile_work() const noexcept -> tile_work_t {
     return tiles_ ? tiles_->work() : tile_work_t{};
 }
+void renderer_t::image(layer_t layer, SDL_FRect bounds, SDL_Texture* texture, color_t tint) {
+    if (!texture || bounds.w <= 0 || bounds.h <= 0) return;
+    const std::array<SDL_FPoint, 4> points{{{bounds.x, bounds.y}, {bounds.x + bounds.w, bounds.y},
+        {bounds.x + bounds.w, bounds.y + bounds.h}, {bounds.x, bounds.y + bounds.h}}};
+    quad(layer, points, tint, texture, {0, 0}, {1, 1});
+}
+
 void renderer_t::cached_quad(layer_t layer, SDL_FRect bounds, SDL_Texture* texture,
                               SDL_FPoint uv_min, SDL_FPoint uv_max) {
     const std::array<SDL_FPoint,4> points{{{bounds.x,bounds.y}, {bounds.x+bounds.w,bounds.y},

@@ -14,6 +14,7 @@
 #include "sys/compose_scroll_geometry.h"
 #include "sys/stem_waveform_window.h"
 #include "ui/compose_mode.h"
+#include "ui/compose_timing_geometry.h"
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/bpm_editor.h>
@@ -66,8 +67,7 @@ struct compose_bga_move_preview_input_t {
     const dead_span_projection_t* dead_spans = nullptr)
     -> std::optional<wormedit::editor_hit_target_t>;
 
-inline constexpr double compose_measure_rail_width_pixels{42.0};
-inline constexpr double compose_timing_lane_width_pixels{24.0};
+inline constexpr double compose_measure_rail_width_pixels{wormedit::ui::compose_measure_rail_width};
 inline constexpr std::size_t compose_timing_lane_count{8};
 inline constexpr double compose_bgm_lane_width_pixels{36.0};
 inline constexpr double compose_playable_lane_width_pixels{48.0};
@@ -594,7 +594,7 @@ auto compose_project_y(long double row, double pixels_per_row, double scroll,
                        double viewport_height, bool downscroll) -> double;
 auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_count,
                                bool has_bgm_lanes, std::size_t bga_lane_count,
-                               std::size_t visible_timing_lane_count)
+                               std::uint8_t timing_lane_mask)
     -> compose_horizontal_layout_t;
 auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::size_t;
 auto compose_lane_is_editable(const wormedit::lane_definition_t& lane) -> bool;

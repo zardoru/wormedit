@@ -6193,3 +6193,80 @@ TEST_CASE("Quantize inspector groups settings and keeps Preview beside Apply",
     (void)click_quantize_label(harness, "Quantize / Snap");
     CHECK(harness.drawn_text_center("Preview"));
 }
+
+TEST_CASE("Timing marker double clicks use the drawn per-kind partition with or without BGA",
+          "[frontend-state][event-harness][timing-geometry][T563]") {
+    const auto ordinal = GENERATE(0, 1, 2, 3, 4, 5, 7);
+    const auto all_lanes = GENERATE(true, false);
+    const auto with_bga = GENERATE(true, false);
+    nuklear_event_harness_t harness{1600, 900};
+    auto& view = harness.view().compose;
+    view.timing_lane_visibility_mask = all_lanes ? 0xff : static_cast<std::uint8_t>(1U << ordinal);
+    view.viewport_width_pixels = 900;
+    view.viewport_height_pixels = 600;
+    const auto right = 42 + wormedit::ui::compose_timing_width(view.timing_lane_visibility_mask);
+    view.playable_field_left_pixels = right + (with_bga ? 48 : 0);
+    view.playable_field_right_pixels = 850;
+    view.bga_lane_visible = with_bga;
+    view.bga_lane_bounds = {right, 0, right + 48, 600};
+    const auto lane = static_cast<WormUiTimingLaneKind>(ordinal);
+    WormUiTimingMarkerView marker{.object_id = 991, .marker_y_pixels = 200,
+        .marker_left_fraction = 0, .marker_right_fraction = 1, .lane = lane, .short_label = "123.45"};
+    view.timing_markers = &marker;
+    view.timing_marker_count = 1;
+    auto& state = worm_ui_nuklear_compose_state();
+    state.inspector_visible = state.layers_panel_visible = state.sounds_panel_visible = false;
+    (void)harness.frame();
+    const auto viewport = compose_canvas_viewport_for_testing();
+    REQUIRE(viewport);
+    const auto extent = wormedit::ui::compose_timing_lane_extent(view, lane);
+    REQUIRE(extent);
+    const auto x = viewport->x + static_cast<float>((extent->first + extent->second) * .5 /
+                                                    view.viewport_width_pixels) * viewport->width;
+    const auto y = viewport->y + 200.0f / 600 * viewport->height;
+    auto down = button_event(true, x, y), up = button_event(false, x, y);
+    down.button.clicks = up.button.clicks = 2;
+    const auto action = harness.frame(std::array{motion_event(x, y), down, up});
+    expect_draw(action.get().timing_stage_action == WORM_UI_TIMING_STAGE_BEGIN);
+    expect_draw(action.get().timing_lane == lane);
+    expect_draw(action.get().timing_object_id == 991);
+    expect_draw(action.get().timing_chart_id == harness.view().timing.chart_id);
+    expect_draw(action.get().timing_document_revision == harness.view().timing.document_revision);
+    view.timing_lane_visibility_mask = 0;
+    expect_draw(!(compose_timing_marker_at(view, 0, 0)));
+    expect_draw(!(compose_timing_marker_at(view, (extent->first + extent->second) * .5, 200)));
+}
+
+TEST_CASE("Staged timing drags begin inside the timing lane and reject neighboring BGA",
+          "[frontend-state][event-harness][timing-geometry][T563]") {
+    const bool bga_press = GENERATE(false, true);
+    nuklear_event_harness_t harness{1600, 900};
+    auto& view = harness.view().compose;
+    view.viewport_width_pixels = 900;
+    view.viewport_height_pixels = 600;
+    view.timing_lane_visibility_mask = 3;
+    view.bga_lane_visible = true;
+    view.bga_lane_bounds = {170, 0, 218, 600};
+    view.playable_field_left_pixels = 218;
+    view.playable_field_right_pixels = 800;
+    view.timing_stage_active = true;
+    view.timing_stage_lane = WORM_UI_TIMING_LANE_SCROLL;
+    view.timing_stage_y_pixels = 200;
+    auto& timing = harness.view().timing;
+    timing.stage_active = true;
+    timing.stage_lane = WORM_UI_TIMING_LANE_SCROLL;
+    timing.stage_existing_object_id = 991;
+    auto& state = worm_ui_nuklear_compose_state();
+    state.inspector_visible = state.layers_panel_visible = state.sounds_panel_visible = false;
+    (void)harness.frame();
+    const auto viewport = compose_canvas_viewport_for_testing();
+    REQUIRE(viewport);
+    const auto x = viewport->x + (bga_press ? 194.0f : 138.0f) / 900 * viewport->width;
+    const auto y = viewport->y + 200.0f / 600 * viewport->height;
+    (void)harness.frame(std::array{motion_event(x, y), button_event(true, x, y)});
+    expect_draw(state.timing_stage_drag_active == !bga_press);
+    const auto action = harness.frame(std::array{motion_event(x, y + 20)});
+    expect_draw(action.get().timing_stage_action == (bga_press ? WORM_UI_TIMING_STAGE_NONE
+                                                        : WORM_UI_TIMING_STAGE_MOVE));
+    if (!bga_press) expect_draw(action.get().timing_object_id == 991);
+}

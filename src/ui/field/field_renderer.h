@@ -138,6 +138,7 @@ class renderer_t {
     // Cache compositing stays at the caller's original pass insertion point.
     void cached_quad(layer_t layer, SDL_FRect bounds, SDL_Texture* texture,
                      SDL_FPoint uv_min, SDL_FPoint uv_max);
+    void image(layer_t layer, SDL_FRect bounds, SDL_Texture* texture, color_t tint);
     void rect(layer_t layer, SDL_FRect bounds, color_t color);
     void hline(layer_t layer, float x0, float x1, float y, float width, color_t color);
     void vline(layer_t layer, float x, float y0, float y1, float width, color_t color);

@@ -38,6 +38,7 @@
 
 #include "ui/nuklear/compose_input_internal.h"
 #include "ui/nuklear/compose_timing_input.h"
+#include "ui/compose_timing_geometry.h"
 
 static constexpr double span_edge_tolerance_pixels = 6.0;
 static constexpr double kiai_drag_threshold_pixels = 4.0;
@@ -71,19 +72,10 @@ static void start_timing_stage_drag(const ComposePointerEventContext& input) {
         input.shortcut_event_count != 0 ||
         (input.pointer_modifiers & input.any_pointer_modifier) != 0)
         return;
-    const auto staged_timing_lane_ordinal = static_cast<std::size_t>(view.timing_stage_lane);
-    const auto lane_bit = static_cast<std::uint8_t>(1U << staged_timing_lane_ordinal);
-    const auto visible_lane_count =
-        static_cast<std::size_t>(std::popcount(view.timing_lane_visibility_mask));
-    if ((view.timing_lane_visibility_mask & lane_bit) == 0 || visible_lane_count == 0) return;
-    const auto lane_width = (input.note_field_left - 42.0) /
-                            static_cast<double>(visible_lane_count);
-    const auto preceding_mask =
-        static_cast<std::uint8_t>(view.timing_lane_visibility_mask & (lane_bit - 1U));
-    const auto visible_slot = static_cast<std::size_t>(std::popcount(preceding_mask));
-    const auto lane_left = 42.0 + lane_width * visible_slot;
+    const auto extent = wormedit::ui::compose_timing_lane_extent(view, view.timing_stage_lane);
+    if (!extent) return;
     const auto y_tolerance = 8.0 * view.viewport_height_pixels / input.viewport.h;
-    if (input.pointer_started_x >= lane_left && input.pointer_started_x < lane_left + lane_width &&
+    if (input.pointer_started_x >= extent->first && input.pointer_started_x < extent->second &&
         std::abs(input.pointer_started_y - view.timing_stage_y_pixels) <= y_tolerance)
         state.timing_stage_drag_active = true;
 }

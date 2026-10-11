@@ -5,6 +5,7 @@
 #include <cstdint>
 
 struct SDL_Renderer;
+struct SDL_Texture;
 
 namespace wormedit::ui::lucide {
 
@@ -16,11 +17,14 @@ enum class Glyph : std::uint8_t {
     lock, lock_open, eye_off, music_2,
     chevron_up, chevron_down,
     grip_vertical,
+    waves_horizontal, gauge, hourglass, fast_forward, flame, anchor,
     count
 };
 
 auto initialize(SDL_Renderer* renderer) -> bool;
 void shutdown();
+// Borrowed for the field renderer; valid until shutdown.
+auto texture(Glyph glyph) -> SDL_Texture*;
 void draw(nk_context* context, struct nk_rect button, Glyph glyph, struct nk_color tint);
 
 } // namespace wormedit::ui::lucide

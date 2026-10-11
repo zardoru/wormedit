@@ -489,7 +489,7 @@ struct dead_span_fixture_t : compose_notification_fixture_t {
     // An x inside the single playable lane, whatever the timing lanes reserve on the left.
     auto lane_x() const -> double {
         const auto layout = compose_horizontal_layout(
-            800, 1, false, 0, std::popcount(effective_compose_timing_lane_mask(application)));
+            800, 1, false, 0, effective_compose_timing_lane_mask(application));
         return layout.field_left_pixels + layout.playable_field_width_pixels / 2.0;
     }
     auto run(std::initializer_list<WormUiComposeInputAction> inputs) -> std::string {

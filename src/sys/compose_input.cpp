@@ -4367,7 +4367,7 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
         input_chart == history.document.charts.end() ? 0 : maximum_layout_lane_count(*input_chart),
         bgm_lane_count != 0, state.bga_lane_visible && input_chart != history.document.charts.end()
             ? std::popcount(editor_bga_visible_lane_mask(*input_chart, state.bga_revealed_lane_mask)) : 0,
-        std::popcount(effective_compose_timing_lane_mask(application_state)));
+        effective_compose_timing_lane_mask(application_state));
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
     const auto bgm_pane_left_pixels = horizontal_layout.bgm_pane_left_pixels;
     const auto field_left_pixels = horizontal_layout.field_left_pixels;

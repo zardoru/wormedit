@@ -624,11 +624,11 @@ auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::
 
 auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_count,
                                bool has_bgm_lanes, std::size_t bga_lane_count,
-                               std::size_t visible_timing_lane_count)
+                               std::uint8_t timing_lane_mask)
     -> compose_horizontal_layout_t {
     constexpr double bga_pane_width = 48.0;
     const auto desired_timing_right = compose_measure_rail_width_pixels +
-        compose_timing_lane_width_pixels * visible_timing_lane_count;
+        wormedit::ui::compose_timing_width(timing_lane_mask);
     const auto reserved_bga = bga_pane_width * std::min<std::size_t>(bga_lane_count, 4);
     const auto bga_left = std::clamp(
         viewport_width_pixels - compose_minimum_playable_field_width_pixels - reserved_bga,
@@ -2040,14 +2040,9 @@ auto compose_timing_short_number(wormedit::signed_rational_t value) -> std::stri
     const auto number = static_cast<double>(value.numerator) /
                         static_cast<double>(value.denominator);
     const auto formatted = std::to_chars(buffer.data(), buffer.data() + buffer.size(), number,
-                                         std::chars_format::fixed, 2);
+                                         std::chars_format::general, 5);
     if (formatted.ec != std::errc{}) return "?";
-    std::string result(buffer.data(), formatted.ptr);
-    if (result.find('.') != std::string::npos) {
-        while (result.back() == '0') result.pop_back();
-        if (result.back() == '.') result.pop_back();
-    }
-    return result == "-0" ? "0" : result;
+    return std::string(buffer.data(), formatted.ptr);
 }
 
 auto compose_timing_exact_number(wormedit::signed_rational_t value) -> std::string {
@@ -4444,8 +4439,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
                                   interaction_view.bga_lane_visible ? std::popcount(
                                       wormedit::editor_bga_visible_lane_mask(chart,
                                           interaction_view.bga_revealed_lane_mask)) : 0,
-                                  std::popcount(
-                                      effective_compose_timing_lane_mask(application_state)));
+                                  effective_compose_timing_lane_mask(application_state));
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
     const auto bga_pane_width = horizontal_layout.bga_pane_width_pixels;
     const auto playable_field_width = horizontal_layout.playable_field_width_pixels;
@@ -4580,28 +4574,14 @@ auto area_timing_kind(WormUiTimingLaneKind lane)
 
 void append_area_timing_geometry(wormedit::editor_area_geometry_snapshot_t& snapshot,
                                 const WormUiComposeView& view, bool downscroll) {
-    const auto count = std::popcount(view.timing_lane_visibility_mask);
-    if (count == 0) return;
-    const auto timing_right = view.bga_lane_visible ? view.bga_lane_bounds.left
-                                                     : view.playable_field_left_pixels;
-    const auto width = (timing_right - 42.0) / count;
     for (std::size_t i = 0; i < view.timing_marker_count; ++i) {
         const auto& marker = view.timing_markers[i];
         const auto kind = area_timing_kind(marker.lane);
         if (!kind || marker.object_id == 0) continue;
-        const auto bit = static_cast<std::uint8_t>(1U << static_cast<unsigned>(marker.lane));
-        if ((view.timing_lane_visibility_mask & bit) == 0) continue;
-        const auto slot = std::popcount(static_cast<std::uint8_t>(
-            view.timing_lane_visibility_mask & (bit - 1)));
-        const auto inner_left = 42.0 + width * slot + 2.0;
-        const auto inner_width = std::max(0.0, width - 4.0);
-        const auto left = inner_left + inner_width * marker.marker_left_fraction;
-        const auto right = std::max(left + 1.0,
-            inner_left + inner_width * marker.marker_right_fraction);
-        const auto top = std::clamp(marker.marker_y_pixels - 8.0, 0.0,
-                                    std::max(0.0, view.viewport_height_pixels - 16.0));
+        const auto bounds = wormedit::ui::compose_timing_marker_bounds(view, marker);
+        if (bounds.right <= bounds.left) continue;
         append_area_object_geometry(snapshot, {*kind, wormedit::object_id_t{marker.object_id}},
-                                     {left, top, right, top + 16.0}, view, downscroll);
+                                     bounds, view, downscroll);
     }
 }
 

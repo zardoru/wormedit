@@ -1931,8 +1931,8 @@ TEST_CASE("configured playing anchor preserves paused comfort scrolling", "[fram
 namespace {
 auto compose_full_layout_is_ordered() -> bool {
     using namespace wormedit::sys;
-    const auto full = compose_horizontal_layout(900, 5, true, true, 8);
-    return full.bga_pane_left_pixels == 234.0 && full.bga_pane_width_pixels == 48.0 &&
+    const auto full = compose_horizontal_layout(900, 5, true, true, 0xff);
+    return full.bga_pane_left_pixels == 426.0 && full.bga_pane_width_pixels == 48.0 &&
            full.field_left_pixels == full.bga_pane_left_pixels + full.bga_pane_width_pixels &&
            full.bgm_pane_left_pixels ==
                full.field_left_pixels + full.playable_field_width_pixels &&
@@ -1942,7 +1942,7 @@ auto compose_full_layout_is_ordered() -> bool {
 auto compose_narrow_layout_is_ordered() -> bool {
     using namespace wormedit::sys;
     const auto hidden_timing = compose_horizontal_layout(900, 5, true, true, 0);
-    const auto narrow = compose_horizontal_layout(280, 5, true, true, 8);
+    const auto narrow = compose_horizontal_layout(280, 5, true, true, 0xff);
     return hidden_timing.bga_pane_left_pixels == compose_measure_rail_width_pixels &&
            hidden_timing.field_left_pixels == 90.0 &&
            narrow.bga_pane_left_pixels >= compose_measure_rail_width_pixels &&
@@ -1956,12 +1956,12 @@ auto compose_narrow_layout_is_ordered() -> bool {
 
 auto compose_hidden_lane_layout_is_ordered() -> bool {
     using namespace wormedit::sys;
-    const auto no_bga = compose_horizontal_layout(900, 5, true, false, 8);
-    const auto no_bgm = compose_horizontal_layout(900, 5, false, true, 8);
+    const auto no_bga = compose_horizontal_layout(900, 5, true, false, 0xff);
+    const auto no_bgm = compose_horizontal_layout(900, 5, false, true, 0xff);
     return no_bga.bga_pane_width_pixels == 0.0 &&
            no_bga.field_left_pixels == no_bga.bga_pane_left_pixels &&
-           no_bga.field_left_pixels == 234.0 && no_bgm.bga_pane_left_pixels == 234.0 &&
-           no_bgm.field_left_pixels == 282.0 &&
+           no_bga.field_left_pixels == 426.0 && no_bgm.bga_pane_left_pixels == 426.0 &&
+           no_bgm.field_left_pixels == 474.0 &&
            no_bgm.playable_field_width_pixels == 240.0 &&
            no_bgm.bgm_pane_width_pixels == 0.0;
 }
@@ -6409,4 +6409,87 @@ TEST_CASE("Range pause conversion routes once and rejects stale or owned interac
         CAPTURE(guard);
         expect_compose_test(range_pause_routing(guard));
     }
+}
+
+TEST_CASE("Timing geometry keeps numeric widths and compact boolean lanes",
+          "[sys][horizontal-layout][timing-geometry][T563]") {
+    using namespace wormedit::ui;
+    WormUiComposeView view{};
+    view.viewport_height_pixels = 600;
+    view.timing_lane_visibility_mask = 0xff;
+    view.playable_field_left_pixels = 426;
+    const auto bpm = compose_timing_lane_extent(view, WORM_UI_TIMING_LANE_BPM);
+    const auto sv = compose_timing_lane_extent(view, WORM_UI_TIMING_LANE_SCROLL);
+    const auto stop = compose_timing_lane_extent(view, WORM_UI_TIMING_LANE_STOP);
+    const auto kiai = compose_timing_lane_extent(view, WORM_UI_TIMING_LANE_KIAI);
+    const auto anchor = compose_timing_lane_extent(view, WORM_UI_TIMING_LANE_ANCHOR);
+    REQUIRE(bpm); REQUIRE(sv); REQUIRE(stop); REQUIRE(kiai); REQUIRE(anchor);
+    expect_compose_test(bpm->first == 42); expect_compose_test(bpm->second - bpm->first == 64);
+    expect_compose_test(sv->first == 106); expect_compose_test(sv->second - sv->first == 64);
+    expect_compose_test(stop->second - stop->first == 48);
+    expect_compose_test(kiai->second - kiai->first == 24);
+    expect_compose_test(anchor->second - anchor->first == 24);
+    expect_compose_test(anchor->second == 426);
+    expect_compose_test(!(compose_timing_lane_at(view, 426)));
+    expect_compose_test(!(compose_timing_lane_at(view, 41)));
+    expect_compose_test(!(compose_timing_lane_extent(view, WORM_UI_TIMING_LANE_COUNT)));
+    expect_compose_test(!(compose_timing_lane_extent(view, static_cast<WormUiTimingLaneKind>(-1))));
+}
+
+namespace {
+void verify_timing_partition(std::uint8_t mask, double right) {
+    using namespace wormedit::ui;
+    WormUiComposeView view{};
+    view.timing_lane_visibility_mask = mask;
+    view.playable_field_left_pixels = right + 48;
+    view.bga_lane_visible = true;
+    view.bga_lane_bounds.left = right;
+    view.viewport_height_pixels = 600;
+    double previous = 42;
+    for (unsigned ordinal = 0; ordinal < WORM_UI_TIMING_LANE_COUNT; ++ordinal) {
+        const auto lane = static_cast<WormUiTimingLaneKind>(ordinal);
+        const auto extent = compose_timing_lane_extent(view, lane);
+        if (!(mask & (1U << ordinal))) { expect_compose_test(!(extent)); continue; }
+        REQUIRE(extent);
+        expect_compose_test(std::abs(extent->first - previous) < 1e-9);
+        expect_compose_test(compose_timing_lane_at(view, (extent->first + extent->second) * .5) == lane);
+        expect_compose_test(compose_timing_lane_at(view, extent->first) == lane);
+        const WormUiTimingMarkerView marker{.marker_y_pixels = 200,
+            .marker_left_fraction = 0, .marker_right_fraction = 1, .lane = lane};
+        const auto bounds = compose_timing_marker_bounds(view, marker);
+        expect_compose_test(bounds.left >= extent->first);
+        expect_compose_test(bounds.right <= extent->second);
+        expect_compose_test(bounds.bottom - bounds.top == 16);
+        previous = extent->second;
+    }
+    if (mask) expect_compose_test(std::abs(previous - right) < 1e-9);
+    expect_compose_test(!(compose_timing_lane_at(view, right)));
+    expect_compose_test(!(compose_timing_lane_at(view, right + 24)));
+}
+}
+TEST_CASE("Every timing lane mask partitions normal and compressed geometry without BGA hits",
+          "[sys][horizontal-layout][timing-geometry][T563]") {
+    for (unsigned mask = 0; mask <= 255; ++mask)
+        for (const auto right : {72.0, 234.0, 426.0})
+            verify_timing_partition(static_cast<std::uint8_t>(mask), right);
+}
+
+TEST_CASE("Timing payloads retain five significant digits in compact numeric labels",
+          "[sys][timing-geometry][T563]") {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    chart.bpms.front().beats_per_minute = {12345, 100};
+    chart.scrolls = {{.id = object_id_t{90001}, .position = {measure_id_t{1}, 240},
+                      .multiplier = {12345, 10000}}};
+    chart.speeds = {{.id = object_id_t{90002}, .position = {measure_id_t{1}, 480},
+                     .multiplier = {23456, 10000}}};
+    compose_test_fixture_t fixture(song);
+    fixture.project();
+    const auto& view = fixture.flattened.view.compose;
+    for (const auto& marker : std::span(view.timing_markers, view.timing_marker_count)) {
+        if (marker.lane == WORM_UI_TIMING_LANE_BPM) expect_compose_test(std::string(marker.short_label) == "123.45");
+        if (marker.lane == WORM_UI_TIMING_LANE_SCROLL) expect_compose_test(std::string(marker.short_label) == "1.2345");
+        if (marker.lane == WORM_UI_TIMING_LANE_SPEED) expect_compose_test(std::string(marker.short_label) == "2.3456");
+    }
+    expect_compose_test(view.timing_marker_count == 3);
 }

@@ -140,3 +140,42 @@ TEST_CASE("Tap timing invalid snapshots clear estimates", "[sys][tap-timing]") {
     CHECK_FALSE(runtime.state().source_available);
     CHECK(runtime.tap(clock.observed_ns, clock) == tap_timing_result_t::unavailable);
 }
+
+namespace { void expect_pulse(bool condition) { REQUIRE(condition); } }
+
+TEST_CASE("Tap ring pulses accepted segments for exactly 120ms and clears on Reset or stop", "[sys][tap-timing]") {
+    tap_timing_runtime_t runtime;
+    runtime.set_visible(true);
+    auto clock = tap_clock(2'000'000'000, 88'200, 0);
+    expect_pulse(runtime.tap(clock.observed_ns, clock) == tap_timing_result_t::accepted);
+    expect_pulse(runtime.state().tap_flash);
+    expect_pulse(runtime.state().tap_segment == 0);
+    clock.observed_ns += 119'999'999;
+    expect_pulse(runtime.observe(clock));
+    expect_pulse(runtime.state().tap_flash);
+    ++clock.observed_ns;
+    expect_pulse(runtime.observe(clock));
+    expect_pulse(!runtime.state().tap_flash);
+    clock = tap_clock(2'500'000'000, 110'250, 0);
+    expect_pulse(runtime.tap(clock.observed_ns, clock) == tap_timing_result_t::accepted);
+    expect_pulse(runtime.state().tap_segment == 1);
+    expect_pulse(runtime.state().tap_flash);
+    runtime.reset();
+    expect_pulse(!runtime.state().tap_flash);
+    clock = tap_clock(3'000'000'000, 132'300, 0);
+    expect_pulse(runtime.tap(clock.observed_ns, clock) == tap_timing_result_t::accepted);
+    expect_pulse(runtime.state().tap_segment == 0);
+    clock.playing = false;
+    expect_pulse(runtime.observe(clock));
+    expect_pulse(!runtime.state().tap_flash);
+}
+
+TEST_CASE("Tap ring advances after its rolling estimate buffer fills", "[sys][tap-timing]") {
+    tap_timing_runtime_t runtime;
+    runtime.set_visible(true);
+    for (std::uint64_t i = 0; i < 18; ++i) {
+        const auto clock = tap_clock(2'000'000'000 + i * 500'000'000, 88'200 + i * 22'050, 0);
+        expect_pulse(runtime.tap(clock.observed_ns, clock) == tap_timing_result_t::accepted);
+        expect_pulse(runtime.state().tap_segment == i % 4);
+    }
+}

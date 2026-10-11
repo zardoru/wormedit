@@ -629,11 +629,17 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
         ? nk_sdl_init_headless(nk_sdl_allocator(), &test_font)
         : nk_sdl_init(window, renderer, nk_sdl_allocator());
     if (!context) return false;
+    if (headless) {
+        static nk_user_font display_font = test_font;
+        display_font.height = 28;
+        wormedit::ui::theme::display_font = &display_font;
+    }
     if (!headless) {
         const auto font_directory = SDL_GetBasePath()
             ? std::filesystem::path{SDL_GetBasePath()} / "assets/fonts"
             : std::filesystem::path{"assets/fonts"};
         g_editor_font.initialize(context, font_directory);
+        wormedit::ui::theme::display_font = g_editor_font.display_handle();
         const auto theme_directory = SDL_GetBasePath()
                                          ? std::filesystem::path{SDL_GetBasePath()} / "assets/themes"
                                          : std::filesystem::path{"assets/themes"};
@@ -731,6 +737,7 @@ void worm_ui_frontend_shutdown(void) {
     worm_ui_nuklear_shutdown_player_preview();
     wormedit::ui::lucide::shutdown();
     nk_sdl_shutdown(g_context);
+    wormedit::ui::theme::display_font = nullptr;
     g_editor_font.reset();
     g_window = NULL;
     g_renderer = NULL;
@@ -1893,7 +1900,7 @@ static bool status_minimap_available(const WormUiComposeView& view) {
     const bool has_audio = view.has_bgm_events || view.bgm_bar_row_count != 0 ||
                            view.waveform_overview_row_count != 0;
     return view.visible && view.scene_available && has_audio &&
-           worm_ui_nuklear_compose_view_valid(&view);
+           worm_ui_nuklear_compose_overview_valid(&view);
 }
 
 static void render_minimap_preferences(const WormUiWorkspaceView& view,
@@ -1950,6 +1957,32 @@ static void render_status_minimap(const WormUiWorkspaceView& view,
     worm_ui_nuklear_render_compose_bgm_bar(g_context, &view.compose, action, bounds, focused);
     if (available && g_window_focused && !g_new_project_wizard.open && !project_dialog_active())
         render_minimap_preferences(view, action, bounds);
+}
+
+static void render_elided_status_label(std::string_view text, nk_flags alignment,
+                                       struct nk_color color) {
+    const auto width = nk_widget_bounds(g_context).w;
+    const auto* font = g_context->style.font;
+    const auto measure = [&](std::string_view value) {
+        return font->width(font->userdata, font->height, value.data(), static_cast<int>(value.size()));
+    };
+    std::string label{text};
+    if (font && measure(text) > width) {
+        constexpr std::string_view ellipsis = "…";
+        std::vector<std::size_t> boundaries{0};
+        for (std::size_t index = 1; index <= text.size(); ++index)
+            if (index == text.size() || (static_cast<unsigned char>(text[index]) & 0xc0) != 0x80)
+                boundaries.push_back(index);
+        std::size_t first = 0, last = boundaries.size();
+        const auto available = width - measure(ellipsis);
+        while (first + 1 < last) {
+            const auto middle = first + (last - first) / 2;
+            if (measure(text.substr(0, boundaries[middle])) <= available) first = middle;
+            else last = middle;
+        }
+        label = available < 0 ? "" : std::string{text.substr(0, boundaries[first])} + std::string{ellipsis};
+    }
+    nk_label_colored(g_context, label.c_str(), alignment, color);
 }
 
 static auto workspace_status_line(const WormUiWorkspaceView& view) -> std::string {
@@ -2052,30 +2085,8 @@ static bool snap_badge_available(const WormUiWorkspaceView& view) {
         (!compose_popup_owns_input() || own);
 }
 
-static void render_status_bar(const WormUiWorkspaceView* view,
-                              WormUiWorkspaceAction* action) {
-    const bool snap_label_visible = view->compose.visible && view->compose.area_snap_denominator != 0;
-    // Zoom readout, moved here from the Compose toolbar; hidden when the window is too narrow.
-    const bool zoom_label_visible = view->compose.visible && snap_label_visible &&
-        std::isfinite(view->compose.pixels_per_standard_measure) &&
-        nk_window_get_bounds(g_context).w >= 900.0f;
-    nk_layout_row_template_begin(g_context, 30);
-    wormedit::ui::chrome::IconButton::layout_columns(g_context, 4);
-    // Rate stepper: chevrons hug the value, with a gutter on both sides.
-    nk_layout_row_template_push_static(g_context, 10);
-    wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);
-    nk_layout_row_template_push_static(g_context, 40);
-    wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);
-    nk_layout_row_template_push_static(g_context, 10);
-    wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);  // Keep pitch.
-    if (snap_label_visible) nk_layout_row_template_push_static(g_context, 64);
-    if (zoom_label_visible) nk_layout_row_template_push_static(g_context, 116);
-    nk_layout_row_template_push_dynamic(g_context);
-    if (notification_badge_visible(view->notifications))
-        nk_layout_row_template_push_static(g_context, 180);
-    nk_layout_row_template_push_static(g_context, 80);
-    nk_layout_row_template_push_dynamic(g_context);
-    nk_layout_row_template_end(g_context);
+static void render_status_transport_buttons(const WormUiWorkspaceView* view,
+                                            WormUiWorkspaceAction* action) {
     if (!view->transport_available) nk_widget_disable_begin(g_context);
     const char* play_hint = view->transport_playing ? "Pause playback"
                             : view->transport_paused ? "Resume playback"
@@ -2100,6 +2111,34 @@ static void render_status_bar(const WormUiWorkspaceView* view,
         action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
         action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
     render_metronome_toggle(*view, *action);
+}
+
+static void render_status_bar(const WormUiWorkspaceView* view,
+                              WormUiWorkspaceAction* action) {
+    const bool snap_label_visible = view->compose.visible && view->compose.area_snap_denominator != 0;
+    // Zoom readout, moved here from the Compose toolbar; hidden when the window is too narrow.
+    const bool zoom_label_visible = view->compose.visible && snap_label_visible &&
+        std::isfinite(view->compose.pixels_per_standard_measure) &&
+        nk_window_get_bounds(g_context).w >= 900.0f;
+    nk_layout_row_template_begin(g_context, 30);
+    wormedit::ui::chrome::IconButton::layout_columns(g_context, 4);
+    // Rate stepper: chevrons hug the value, with a gutter on both sides.
+    nk_layout_row_template_push_static(g_context, 10);
+    wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);
+    nk_layout_row_template_push_static(g_context, 40);
+    wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);
+    nk_layout_row_template_push_static(g_context, 10);
+    wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);  // Keep pitch.
+    if (snap_label_visible) nk_layout_row_template_push_static(g_context, 64);
+    if (zoom_label_visible) nk_layout_row_template_push_static(g_context, 116);
+    nk_layout_row_template_push_dynamic(g_context);
+    nk_layout_row_template_push_static(g_context,
+        std::clamp((nk_window_get_bounds(g_context).w - 700.0f) * 0.5f, 40.0f, 180.0f));
+    nk_layout_row_template_push_static(g_context, 80);
+    nk_layout_row_template_push_static(g_context,
+        std::clamp(nk_window_get_bounds(g_context).w * 0.2f, 80.0f, 240.0f));
+    nk_layout_row_template_end(g_context);
+    render_status_transport_buttons(view, action);
     render_transport_rate(*view, action);
     if (snap_label_visible)
         render_compose_snap_badge(g_context, view->compose, *action, snap_badge_available(*view));
@@ -2107,17 +2146,17 @@ static void render_status_bar(const WormUiWorkspaceView* view,
         nk_labelf(g_context, NK_TEXT_CENTERED, "%.0f px/measure",
                   view->compose.pixels_per_standard_measure);
     const auto status = workspace_status_line(*view);
-    nk_label_colored(g_context, status.c_str(), NK_TEXT_LEFT,
-                      notification_status_color(view->notifications));
+    render_elided_status_label(status, NK_TEXT_LEFT, notification_status_color(view->notifications));
     if (notification_badge_visible(view->notifications))
         render_notification_badge(view->notifications, *action);
+    else nk_spacing(g_context, 1);
     const auto sample_rate = view->transport_sample_rate == 0 ? 1U : view->transport_sample_rate;
     const auto seconds = view->transport_frame / sample_rate;
     nk_labelf(g_context, NK_TEXT_RIGHT, "%llu:%02llu",
               static_cast<unsigned long long>(seconds / 60),
               static_cast<unsigned long long>(seconds % 60));
-    nk_labelf(g_context, NK_TEXT_RIGHT, "%s · %s", view->artist,
-              view->selected_difficulty);
+    const auto details = std::string{view->artist} + " · " + view->selected_difficulty;
+    render_elided_status_label(details, NK_TEXT_RIGHT, g_context->style.text.color);
 }
 
 static auto workspace_content_flags(bool compose_visible, bool form_screen) -> nk_flags {
@@ -2962,6 +3001,29 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
     render_project_modals(frame);
 }
 
+static void render_tap_timing_tool(const WorkspaceRenderContext& frame) {
+    auto tap = frame.view.tap_timing;
+    const auto& compose = worm_ui_nuklear_compose_state();
+    tap.input_blocked = frame.view.options.visible || g_notification_modal ||
+        command_menu_owns_input() || g_new_project_wizard.open || g_help_dialog != HelpDialog::none ||
+        compose_popup_owns_input() || compose.inline_timing_open || compose.inline_offset_open ||
+        compose.go_to_measure_open || compose.bookmark_rename.active || compose.bookmark_rename.release_pending ||
+        notification_document_gesture_active();
+    for (std::size_t index = 0; index < g_shortcut_event_count; ++index) {
+        const auto& key = g_shortcut_events[index];
+        if (key.hid_usage == SDL_SCANCODE_ESCAPE && key.modifiers == 0) tap.close_key_pressed = true;
+    }
+    worm_ui_nuklear_render_tap_timing_panel(g_context, tap, frame.action.tap_timing);
+    if (!frame.action.tap_timing.close) return;
+    std::size_t count = 0;
+    for (std::size_t index = 0; index < g_shortcut_event_count; ++index) {
+        const auto& key = g_shortcut_events[index];
+        if (key.hid_usage == SDL_SCANCODE_ESCAPE && key.modifiers == 0) continue;
+        g_shortcut_events[count++] = key;
+    }
+    g_shortcut_event_count = count;
+}
+
 static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
     worm_ui_nuklear_render_setup_dialogs(g_context, frame.view.setup, frame.action);
     render_close_confirmation(frame.view.close_confirmation, frame.action, frame.width, frame.height);
@@ -2978,11 +3040,11 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
     if (!frame.view.project_loaded) {
         worm_ui_nuklear_render_external_player_panel(g_context, &frame.view.external_player,
                                                      &frame.action.external_player);
-        worm_ui_nuklear_render_tap_timing_panel(g_context, frame.view.tap_timing, frame.action.tap_timing);
+        render_tap_timing_tool(frame);
         return;
     }
     render_frame_timing_overlay(frame.width, frame.height);
-    worm_ui_nuklear_render_tap_timing_panel(g_context, frame.view.tap_timing, frame.action.tap_timing);
+    render_tap_timing_tool(frame);
     worm_ui_nuklear_render_timing_settings_panel(g_context, frame.view, frame.action);
     worm_ui_nuklear_render_external_player_panel(g_context, &frame.view.external_player,
                                                  &frame.action.external_player);

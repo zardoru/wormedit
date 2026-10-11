@@ -12,6 +12,9 @@
 
 namespace wormedit::ui::theme {
 
+// Stable 28 px numeric readout handle, refreshed with the editor atlas.
+inline const nk_user_font* display_font{};
+
 enum class UiColor {
     background,
     surface,

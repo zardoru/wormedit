@@ -2369,7 +2369,11 @@ auto has_fresh_shortcut_key(const WormUiWorkspaceAction& action) -> bool {
 
 template <typename Context>
 auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& action,
-                                  double viewport_delta_seconds) -> bool {
+                                  double viewport_delta_seconds,
+                                  const std::optional<wormedit::document_command_result_t>& tap_applied) -> bool {
+    // Apply consumed this frame's document snapshot. Never replay its shortcuts,
+    // pointer input or navigation against the newly committed timing revision.
+    if (tap_applied && tap_applied->applied) return true;
     // Complete a prior measure move before a new keyboard command can edit its destination.
     if (has_fresh_shortcut_key(action) && context.compose_interaction_state_ref)
         context.compose_scene_cache_ref.navigation_travel.finish(
@@ -3731,7 +3735,16 @@ auto dispatch_tap_panel_action(wormedit::sys::tap_timing_runtime_t& runtime,
     return std::nullopt;
 }
 
+auto tap_music_available(const wormedit::song_document_t& document, const WormUiWorkspaceView& view) -> bool {
+    if (view.tap_timing.source_available || view.metadata.selected_music_asset_id != 0) return true;
+    return std::ranges::any_of(document.resources, [&](const auto& resource) {
+        return std::ranges::find(resource.roles, wormedit::resource_role_t::music) != resource.roles.end() &&
+            std::ranges::find(document.audio_assets, resource.asset, &wormedit::audio_asset_t::id) != document.audio_assets.end();
+    });
+}
+
 void project_tap_timing(wormedit::sys::tap_timing_runtime_t& runtime,
+                        const wormedit::song_document_t& document,
                         const std::function<wormedit::sys::tap_timing_clock_t()>& read_clock,
                         wormedit::command_registry_t& registry, WormUiWorkspaceView& view) {
     const auto clock = runtime.visible() ? read_clock() : wormedit::sys::tap_timing_clock_t{};
@@ -3746,6 +3759,10 @@ void project_tap_timing(wormedit::sys::tap_timing_runtime_t& runtime,
     target.beats_per_measure = state.beats_per_measure;
     target.active_segment = state.active_segment;
     target.downbeat_flash = state.downbeat_flash;
+    target.tap_flash = state.tap_flash;
+    target.tap_segment = state.tap_segment;
+    target.timing_locked = state.timing_locked;
+    target.music_available = state.visible && tap_music_available(document, view);
     target.tap_count = state.tap_count;
     target.tap_capacity = state.tap_capacity;
     target.status = state.status;
@@ -4632,7 +4649,7 @@ int main(int argc, char** argv) {
                 native_project_loaded && !active_project_path.empty());
             project_external_player_view(external_player_runtime, flattened.view);
             wormedit::sys::project_chart_view(project_chart_runtime, history.document, flattened.view.setup);
-            project_tap_timing(tap_runtime, tap_clock, command_registry, flattened.view);
+            project_tap_timing(tap_runtime, history.document, tap_clock, command_registry, flattened.view);
             publish_tap_assist();
             wormedit::sys::project_recent_files(program_preferences, flattened.view);
             flattened.view.project_loaded = session_loaded;
@@ -4679,7 +4696,7 @@ int main(int argc, char** argv) {
                 consume_shortcut_capture(shortcut_editor, action, command_registry, program_preferences,
                     notification_sink);
                 const bool shortcut_handled = process_compose_frame_action(
-                    compose_frame_action_context, action, compose_viewport_delta_seconds);
+                    compose_frame_action_context, action, compose_viewport_delta_seconds, tap_applied);
                 const bool external_handled =
                     dispatch_external_player_action(external_player_runtime, action.external_player,
                                                     application_command_state, notification_sink) ||

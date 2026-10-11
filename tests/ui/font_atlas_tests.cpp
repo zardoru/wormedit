@@ -141,3 +141,26 @@ TEST_CASE("Missing CJK bundle retains usable Latin fallback", "[font][cjk]") {
     CHECK(fixture.font.glyph_count() == 0);
     CHECK(fixture.font.glyph(0x65e5)->codepoint == '?');
 }
+
+namespace { void expect_display(bool condition) { REQUIRE(condition); } }
+
+TEST_CASE("Numeric display font keeps its 28px stable handle through atlas rebakes", "[font-atlas][tap-timing]") {
+    font_fixture_t fixture;
+    const auto* stable = fixture.font.display_handle();
+    expect_display(stable);
+    expect_display(stable->height == 28);
+    expect_display(stable->width(stable->userdata, stable->height, "174.02", 6) > 60);
+    fixture.font.observe("日本語");
+    fixture.font.refresh(fixture.context);
+    expect_display(fixture.font.display_handle() == stable);
+    expect_display(stable->height == 28);
+    expect_display(stable->texture.ptr == fixture.font.handle()->texture.ptr);
+    nk_user_font_glyph glyph{};
+    stable->query(stable->userdata, stable->height, &glyph, '4', 0);
+    expect_display(glyph.width > 0);
+    expect_display(glyph.height > 15);
+    const auto* baked = static_cast<const nk_font*>(stable->userdata.ptr);
+    expect_display(nk_font_find_glyph(baked, '4')->codepoint == '4');
+    expect_display(nk_font_find_glyph(baked, '1')->codepoint == '1');
+    expect_display(nk_font_find_glyph(baked, 0x2014)->codepoint == 0x2014);
+}

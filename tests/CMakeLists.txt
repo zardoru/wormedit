@@ -552,6 +552,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         sys/global_drop_notification_tests.cpp
         ../src/sys/metadata_drop_state.cpp
         ui/timing_settings_tests.cpp
+        ui/tap_timing_panel_event_harness_tests.cpp
         ui/compose_beat_fit_tests.cpp
         ui/compose_measure_resize_tests.cpp
         ui/sound_source_copy_event_harness_tests.cpp
@@ -583,6 +584,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/sound_drop_transaction.cpp
         ui/bga_advance_workflow_tests.cpp
         ui/bga_lane_event_harness_tests.cpp
+        ui/playback_status_event_harness_tests.cpp
         ui/inspector_resource_workflow_tests.cpp
         ../src/sys/bookmark_chooser_projection.cpp
         ../src/sys/compose_area_actions.cpp

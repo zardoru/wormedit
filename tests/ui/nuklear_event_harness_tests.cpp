@@ -4900,6 +4900,23 @@ void hover_overview_label(nuklear_event_harness_t& harness, std::pair<float, flo
     (void)harness.run_script(script);
 }
 
+void cover_with_tap_tool(nuklear_event_harness_t& harness, std::pair<float, float> point,
+                         float width, float height) {
+    WormUiTestingRect tap{};
+    REQUIRE(worm_ui_frontend_window_bounds_for_testing("Tap timing", &tap));
+    const auto title_x = tap.x + 60;
+    const auto title_y = tap.y + 30;
+    const auto destination_x = std::clamp(point.first - 150.0f, 0.0f, width - tap.width) + 60;
+    const auto destination_y = std::clamp(point.second - 100.0f, 0.0f, height - tap.height) + 30;
+    std::array<event_step_t, 3> drag{};
+    drag[0].events = {motion_event(title_x, title_y), button_event(true, title_x, title_y)};
+    drag[1].events = {motion_event(destination_x, destination_y)};
+    drag[2].events = {motion_event(destination_x, destination_y),
+                      button_event(false, destination_x, destination_y)};
+    (void)harness.run_script(drag);
+    (void)harness.frame();
+}
+
 constexpr char overview_tooltip[] = "Audio is unavailable for this chart overview.";
 }
 
@@ -4921,6 +4938,7 @@ TEST_CASE("Overview tooltip stays hidden under a covering Tap timing window", "[
     (void)harness.frame();
     const auto label = harness.drawn_text_center("Overview unavailable");
     REQUIRE(label);
+    cover_with_tap_tool(harness, *label, 1280, 720);
     WormUiTestingRect tap{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Tap timing", &tap));
     // The label must lie inside the covering window for this case to test coverage.
@@ -4975,15 +4993,8 @@ TEST_CASE("Chart row button tooltip stays hidden under a covering Tap timing win
     REQUIRE(open);
     WormUiTestingRect tap{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Tap timing", &tap));
-    // Position the movable tool over the current last-column action instead of relying on the old strip geometry.
-    const float title_x = tap.x + 50.0f;
-    const float title_y = tap.y + 10.0f;
-    std::array<event_step_t, 3> drag{};
-    drag[0].events = {motion_event(title_x, title_y), button_event(true, title_x, title_y)};
-    drag[1].events = {motion_event(open->first - 150.0f, title_y)};
-    drag[2].events = {motion_event(open->first - 150.0f, title_y),
-                      button_event(false, open->first - 150.0f, title_y)};
-    (void)harness.run_script(drag);
+    // Move the compact shared dialog by its header over the current action.
+    cover_with_tap_tool(harness, *open, 800, 720);
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Tap timing", &tap));
     const bool inside_x = open->first >= tap.x && open->first <= tap.x + tap.width;
     const bool inside_y = open->second >= tap.y && open->second <= tap.y + tap.height;

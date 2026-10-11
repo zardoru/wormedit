@@ -41,6 +41,8 @@
 #include <optional>
 #include <ranges>
 #include <string>
+#include <string_view>
+#include <vector>
 
 void worm_ui_nuklear_reset_compose_panel() {
     reset_compose_quantize_popup();
@@ -388,14 +390,6 @@ static bool compose_geometry_waveform_elements_valid(const WormUiComposeView* vi
                 return 0;
         }
     }
-    for (size_t index = 0; index < view->waveform_overview_row_count; ++index) {
-        const auto& row = view->waveform_overview_rows[index];
-        if (!std::isfinite(row.audio_fraction) || row.audio_fraction < 0.0 ||
-            row.audio_fraction > 1.0 || !std::isfinite(row.absolute_peak) ||
-            row.absolute_peak < 0.0f || row.absolute_peak > 1.0f) {
-            return 0;
-        }
-    }
 
     return true;
 }
@@ -638,52 +632,94 @@ static bool compose_scene_arrays_present(const WormUiComposeView* view) {
            (view->channel_waveform_row_count == 0 ||
             (view->channel_waveform_rows && view->channel_waveform_source_lane_id != 0 &&
              view->bgm_lane_count != 0)) &&
-           (view->waveform_overview_row_count == 0 || view->waveform_overview_rows) &&
            (view->semantic_layer_count == 0 || view->semantic_layers) &&
            (view->lane_key_binding_count == 0 || view->lane_key_bindings) &&
            (view->branch_choice_count == 0 || view->branch_choices) &&
            (view->branch_row_count == 0 || view->branch_rows);
 }
 
+static bool compose_validation_check(bool accepted, const char* reason) {
+#ifndef NDEBUG
+    static std::vector<std::string_view> reported;
+    if (!accepted && std::ranges::find(reported, reason) == reported.end()) {
+        reported.emplace_back(reason);
+        std::fprintf(stderr, "Compose view validation: %s\n", reason);
+    }
+#else
+    (void)reason;
+#endif
+    return accepted;
+}
+
+static bool overview_rows_valid(const WormUiComposeWaveformOverviewRowView* rows,
+                                std::size_t count, std::size_t capacity) {
+    if (count > capacity || (count != 0 && !rows)) return false;
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& row = rows[index];
+        if (!std::isfinite(row.audio_fraction) || row.audio_fraction < 0 || row.audio_fraction > 1 ||
+            !std::isfinite(row.absolute_peak) || row.absolute_peak < 0 || row.absolute_peak > 1)
+            return false;
+    }
+    return true;
+}
+
+const char* worm_ui_nuklear_compose_overview_error(const WormUiComposeView* view) {
+    if (!view) return "missing overview view";
+    if (!compose_waveform_overview_valid(view)) return "overview timing metadata";
+    if (!overview_rows_valid(view->waveform_overview_rows, view->waveform_overview_row_count,
+                             WORM_UI_COMPOSE_WAVEFORM_OVERVIEW_CAPACITY))
+        return "overview row data";
+    if (!compose_bgm_bar_valid(view)) return "overview window/markers";
+    if (!overview_rows_valid(view->bgm_bar_rows, view->bgm_bar_row_count,
+                             WORM_UI_COMPOSE_BGM_BAR_ROW_CAPACITY))
+        return "overview bar row data";
+    return nullptr;
+}
+
+int worm_ui_nuklear_compose_overview_valid(const WormUiComposeView* view) {
+    const auto* error = worm_ui_nuklear_compose_overview_error(view);
+    return compose_validation_check(error == nullptr, error ? error : "overview");
+}
+
 int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
-    return worm_ui_nuklear_note_layer_window_valid(view) && view->band_count <= WORM_UI_COMPOSE_BAND_CAPACITY &&
-           (view->selected_bmson_bgm_event_id == 0 || view->selected_object_count == 1) &&
-           (view->selected_bmson_note_event_id == 0 || view->selected_note_count == 1) &&
-           ((view->selected_bmson_bgm_event_id == 0) ==
-            (view->selected_bmson_source_lane_id == 0)) &&
-           view->staged_bmson_marker_count <= 256 &&
-           (view->staged_bmson_marker_count == 0 ||
+    return compose_validation_check(view, "view") &&
+           compose_validation_check(worm_ui_nuklear_note_layer_window_valid(view), "worm_ui_nuklear_note_layer_window_valid(view)") &&
+           compose_validation_check(view->band_count <= WORM_UI_COMPOSE_BAND_CAPACITY, "view->band_count <= WORM_UI_COMPOSE_BAND_CAPACITY") &&
+           compose_validation_check((view->selected_bmson_bgm_event_id == 0 || view->selected_object_count == 1), "(view->selected_bmson_bgm_event_id == 0 || view->selected_object_count == 1)") &&
+           compose_validation_check((view->selected_bmson_note_event_id == 0 || view->selected_note_count == 1), "(view->selected_bmson_note_event_id == 0 || view->selected_note_count == 1)") &&
+           compose_validation_check(((view->selected_bmson_bgm_event_id == 0) ==
+            (view->selected_bmson_source_lane_id == 0)), "((view->selected_bmson_bgm_event_id == 0) == (view->selected_bmson_source_lane_id == 0))") &&
+           compose_validation_check(view->staged_bmson_marker_count <= 256, "view->staged_bmson_marker_count <= 256") &&
+           compose_validation_check((view->staged_bmson_marker_count == 0 ||
             (view->staged_bmson_marker_playable_lanes != nullptr &&
-             view->staged_bmson_marker_restarts != nullptr)) &&
-           view->bmson_marker_draft_count <= view->staged_bmson_marker_count &&
-           (view->bmson_marker_draft_count == 0 || view->bmson_marker_drafts != nullptr) &&
-           view->lane_count <= WORM_UI_COMPOSE_LANE_CAPACITY &&
-           view->grid_line_count <= WORM_UI_COMPOSE_GRID_CAPACITY &&
-           view->proposed_grid_line_count <= WORM_UI_COMPOSE_GRID_CAPACITY &&
-           view->timing_preview_rect_count <= WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY &&
-           view->timing_preview_marker_count <= WORM_UI_TIMING_MARKER_CAPACITY &&
-           (view->proposed_grid_line_count == 0 || view->waveform_offset_drag_active ||
-            view->beat_fit_drag_active) &&
-           ((view->timing_preview_rect_count == 0 && view->timing_preview_marker_count == 0) ||
-            view->waveform_offset_drag_active || view->beat_fit_drag_active) &&
-           compose_beat_fit_valid(view) &&
-           view->timing_marker_count <= WORM_UI_TIMING_MARKER_CAPACITY &&
-           view->difference_count <= WORM_UI_COMPOSE_DIFFERENCE_CAPACITY &&
-           view->hold_body_count <= WORM_UI_COMPOSE_HOLD_CAPACITY &&
-           view->note_endpoint_count <= WORM_UI_COMPOSE_NOTE_CAPACITY &&
-           view->bgm_lane_count <= WORM_UI_COMPOSE_BGM_LANE_CAPACITY &&
-           view->bgm_event_count <= WORM_UI_COMPOSE_BGM_EVENT_CAPACITY &&
-           view->waveform_row_count <= WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY &&
-           view->channel_waveform_row_count <= WORM_UI_COMPOSE_CHANNEL_WAVEFORM_ROW_CAPACITY &&
-           view->waveform_overview_row_count <= WORM_UI_COMPOSE_WAVEFORM_OVERVIEW_CAPACITY &&
-           compose_waveform_overview_valid(view) &&
-           compose_bgm_bar_valid(view) &&
-           view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY &&
-           view->lane_key_binding_count <= WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY &&
-           view->branch_row_count <= WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY &&
-           view->branch_choice_count <= WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY &&
-           view->branch_diagnostic_count <= WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY &&
-           compose_scene_arrays_present(view) && compose_geometry_valid(view);
+             view->staged_bmson_marker_restarts != nullptr)), "(view->staged_bmson_marker_count == 0 || (view->staged_bmson_marker_playable_lanes != nullptr && view->staged_bmson_marker_restarts != nullptr))") &&
+           compose_validation_check(view->bmson_marker_draft_count <= view->staged_bmson_marker_count, "view->bmson_marker_draft_count <= view->staged_bmson_marker_count") &&
+           compose_validation_check((view->bmson_marker_draft_count == 0 || view->bmson_marker_drafts != nullptr), "(view->bmson_marker_draft_count == 0 || view->bmson_marker_drafts != nullptr)") &&
+           compose_validation_check(view->lane_count <= WORM_UI_COMPOSE_LANE_CAPACITY, "view->lane_count <= WORM_UI_COMPOSE_LANE_CAPACITY") &&
+           compose_validation_check(view->grid_line_count <= WORM_UI_COMPOSE_GRID_CAPACITY, "view->grid_line_count <= WORM_UI_COMPOSE_GRID_CAPACITY") &&
+           compose_validation_check(view->proposed_grid_line_count <= WORM_UI_COMPOSE_GRID_CAPACITY, "view->proposed_grid_line_count <= WORM_UI_COMPOSE_GRID_CAPACITY") &&
+           compose_validation_check(view->timing_preview_rect_count <= WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY, "view->timing_preview_rect_count <= WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY") &&
+           compose_validation_check(view->timing_preview_marker_count <= WORM_UI_TIMING_MARKER_CAPACITY, "view->timing_preview_marker_count <= WORM_UI_TIMING_MARKER_CAPACITY") &&
+           compose_validation_check((view->proposed_grid_line_count == 0 || view->waveform_offset_drag_active ||
+            view->beat_fit_drag_active), "(view->proposed_grid_line_count == 0 || view->waveform_offset_drag_active || view->beat_fit_drag_active)") &&
+           compose_validation_check(((view->timing_preview_rect_count == 0 && view->timing_preview_marker_count == 0) ||
+            view->waveform_offset_drag_active || view->beat_fit_drag_active), "((view->timing_preview_rect_count == 0 && view->timing_preview_marker_count == 0) || view->waveform_offset_drag_active || view->beat_fit_drag_active)") &&
+           compose_validation_check(compose_beat_fit_valid(view), "compose_beat_fit_valid(view)") &&
+           compose_validation_check(view->timing_marker_count <= WORM_UI_TIMING_MARKER_CAPACITY, "view->timing_marker_count <= WORM_UI_TIMING_MARKER_CAPACITY") &&
+           compose_validation_check(view->difference_count <= WORM_UI_COMPOSE_DIFFERENCE_CAPACITY, "view->difference_count <= WORM_UI_COMPOSE_DIFFERENCE_CAPACITY") &&
+           compose_validation_check(view->hold_body_count <= WORM_UI_COMPOSE_HOLD_CAPACITY, "view->hold_body_count <= WORM_UI_COMPOSE_HOLD_CAPACITY") &&
+           compose_validation_check(view->note_endpoint_count <= WORM_UI_COMPOSE_NOTE_CAPACITY, "view->note_endpoint_count <= WORM_UI_COMPOSE_NOTE_CAPACITY") &&
+           compose_validation_check(view->bgm_lane_count <= WORM_UI_COMPOSE_BGM_LANE_CAPACITY, "view->bgm_lane_count <= WORM_UI_COMPOSE_BGM_LANE_CAPACITY") &&
+           compose_validation_check(view->bgm_event_count <= WORM_UI_COMPOSE_BGM_EVENT_CAPACITY, "view->bgm_event_count <= WORM_UI_COMPOSE_BGM_EVENT_CAPACITY") &&
+           compose_validation_check(view->waveform_row_count <= WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY, "view->waveform_row_count <= WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY") &&
+           compose_validation_check(view->channel_waveform_row_count <= WORM_UI_COMPOSE_CHANNEL_WAVEFORM_ROW_CAPACITY, "view->channel_waveform_row_count <= WORM_UI_COMPOSE_CHANNEL_WAVEFORM_ROW_CAPACITY") &&
+           compose_validation_check(view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY, "view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_WINDOW_CAPACITY") &&
+           compose_validation_check(view->lane_key_binding_count <= WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY, "view->lane_key_binding_count <= WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY") &&
+           compose_validation_check(view->branch_row_count <= WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY, "view->branch_row_count <= WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY") &&
+           compose_validation_check(view->branch_choice_count <= WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY, "view->branch_choice_count <= WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY") &&
+           compose_validation_check(view->branch_diagnostic_count <= WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY, "view->branch_diagnostic_count <= WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY") &&
+           compose_validation_check(compose_scene_arrays_present(view), "compose_scene_arrays_present(view)") &&
+           compose_validation_check(compose_geometry_valid(view), "compose_geometry_valid(view)");
 }
 
 static void render_compose_waveform_overview(const ComposeOverviewContext& overview) {
@@ -743,9 +779,10 @@ void worm_ui_nuklear_render_compose_minimap(
     struct nk_context* context, const WormUiComposeView* view,
     WormUiWorkspaceAction* action, struct nk_rect bounds, bool window_focused) {
     if (!context || !view || !action) return;
-    action->minimap_visible_begin_fraction = view->waveform_overview_visible_begin_fraction;
-    action->minimap_visible_end_fraction = view->waveform_overview_visible_end_fraction;
-    const bool available = view->visible && worm_ui_nuklear_compose_view_valid(view) &&
+    const bool overview_valid = worm_ui_nuklear_compose_overview_valid(view);
+    action->minimap_visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
+    action->minimap_visible_end_fraction = overview_valid ? view->waveform_overview_visible_end_fraction : 0;
+    const bool available = view->visible && overview_valid &&
         view->scene_available && view->waveform_overview_row_count != 0 &&
         bounds.w > 1.0f && bounds.h > 1.0f;
     auto* canvas = nk_window_get_canvas(context);
@@ -974,9 +1011,10 @@ void worm_ui_nuklear_render_compose_bgm_bar(
     struct nk_context* context, const WormUiComposeView* view,
     WormUiWorkspaceAction* action, struct nk_rect bounds, bool window_focused) {
     if (!context || !view || !action) return;
-    action->minimap_visible_begin_fraction = view->waveform_overview_visible_begin_fraction;
-    action->minimap_visible_end_fraction = view->waveform_overview_visible_end_fraction;
-    const bool available = view->visible && worm_ui_nuklear_compose_view_valid(view) &&
+    const bool overview_valid = worm_ui_nuklear_compose_overview_valid(view);
+    action->minimap_visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
+    action->minimap_visible_end_fraction = overview_valid ? view->waveform_overview_visible_end_fraction : 0;
+    const bool available = view->visible && overview_valid &&
         view->scene_available && view->bgm_bar_row_count != 0 && bounds.w > 1.0f && bounds.h > 1.0f;
     auto* canvas = nk_window_get_canvas(context);
     const auto capture_valid = state.waveform_overview_drag_active &&

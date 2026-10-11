@@ -43,6 +43,9 @@ struct tap_timing_state_t {
     std::uint16_t beats_per_measure{4};
     std::uint16_t active_segment{};
     bool downbeat_flash{};
+    bool tap_flash{};
+    std::uint16_t tap_segment{};
+    bool timing_locked{};
     std::uint64_t tap_count{};
     std::uint64_t tap_capacity{16};
     std::optional<tap_tempo_estimate_t> estimate;
@@ -84,6 +87,9 @@ class tap_timing_runtime_t {
     tap_tempo_estimator_t estimator_;
     std::uint64_t valid_begin_ns_{};
     const char* status_{};
+    std::optional<std::uint64_t> last_tap_ns_;
+    std::uint16_t tap_segment_{};
+    bool timing_locked_{};
     tap_bpm_choice_t choice_{tap_bpm_choice_t::raw};
     std::optional<tap_timing_apply_proposal_t> proposal_;
     std::optional<tap_timing_clock_t> proposal_clock_;

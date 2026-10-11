@@ -10,6 +10,9 @@ struct nk_context;
 struct nk_rect;
 
 [[nodiscard]] int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view);
+// Overview publication failures must not invalidate the editable chart scene.
+[[nodiscard]] int worm_ui_nuklear_compose_overview_valid(const WormUiComposeView* view);
+[[nodiscard]] const char* worm_ui_nuklear_compose_overview_error(const WormUiComposeView* view);
 
 void worm_ui_nuklear_reset_compose_panel();
 

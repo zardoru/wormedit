@@ -92,6 +92,7 @@ void editor_font_t::initialize(nk_context* context, const std::filesystem::path&
 void editor_font_t::reset() {
     baked_ = nullptr;
     handle_ = {};
+    display_handle_ = {};
     directory_.clear();
     fallback_data_.clear();
     coverage_.clear();
@@ -170,7 +171,13 @@ void editor_font_t::rebuild(nk_context* context) {
         nk_font_atlas_add_from_memory(atlas, fallback_data_.data(), fallback_data_.size(),
                                       handle_.height, &config);
     }
+    auto display_config = nk_font_config(28.0f);
+    static constexpr nk_rune display_ranges[]{0x20, 0xff, 0x2014, 0x2014, 0};
+    display_config.range = display_ranges;
+    auto* display = nk_font_atlas_add_from_file(atlas, latin_path.c_str(), 28.0f, &display_config);
+    if (!display) display = nk_font_atlas_add_default(atlas, 28.0f, &display_config);
     nk_sdl_font_stash_end(context);
+    display_handle_ = display->handle;
     glyphs_.clear();
     for (nk_rune index = 0; index < baked_->info.glyph_count; ++index)
         glyphs_.emplace(baked_->glyphs[index].codepoint, &baked_->glyphs[index]);

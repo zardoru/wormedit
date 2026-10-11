@@ -78,6 +78,7 @@ void tap_timing_runtime_t::bind(const tap_timing_clock_t& clock, bool changed) {
     estimator_ = tap_tempo_estimator_t{{clock.sample_rate, clock.beats_per_measure}};
     valid_begin_ns_ = changed ? std::max(clock.epoch_begin_ns, clock.observed_ns) : clock.epoch_begin_ns;
     status_ = nullptr;
+    last_tap_ns_.reset();
 }
 auto tap_timing_runtime_t::observe_clock(const tap_timing_clock_t& clock) -> bool {
     if (clock_ && clock.observed_ns < clock_->observed_ns) return false;
@@ -86,6 +87,7 @@ auto tap_timing_runtime_t::observe_clock(const tap_timing_clock_t& clock) -> boo
     if (!clock_ || changed) bind(clock, changed);
     if (!clock.playing || !clock.source_frame || !clock_configuration_valid(clock)) {
         estimator_.reset();
+        last_tap_ns_.reset();
         valid_begin_ns_ = clock.observed_ns;
     }
     clock_ = clock;
@@ -102,6 +104,7 @@ void tap_timing_runtime_t::reset() {
     estimator_.reset();
     valid_begin_ns_ = clock_ ? clock_->observed_ns : 0;
     status_ = nullptr;
+    last_tap_ns_.reset();
 }
 auto tap_timing_runtime_t::tap(std::uint64_t event_ns, const tap_timing_clock_t& clock)
     -> tap_timing_result_t {
@@ -126,6 +129,9 @@ auto tap_timing_runtime_t::tap(std::uint64_t event_ns, const tap_timing_clock_t&
         return tap_timing_result_t::ignored;
     }
     status_ = nullptr;
+    last_tap_ns_ = event_ns;
+    tap_segment_ = estimator_.tap_count() == 1 ? 0 :
+        static_cast<std::uint16_t>((tap_segment_ + 1) % clock.beats_per_measure);
     return tap_timing_result_t::accepted;
 }
 auto tap_timing_runtime_t::state() const -> tap_timing_state_t {
@@ -134,8 +140,12 @@ auto tap_timing_runtime_t::state() const -> tap_timing_state_t {
     result.estimate = estimator_.estimate();
     result.tap_count = estimator_.tap_count();
     result.status = status_;
+    result.timing_locked = timing_locked_;
+    result.tap_segment = tap_segment_;
     if (!clock_) return result;
     result.playing = clock_->playing;
+    result.tap_flash = last_tap_ns_ && clock_->playing &&
+        clock_->observed_ns >= *last_tap_ns_ && clock_->observed_ns - *last_tap_ns_ < 120'000'000;
     result.source_available = clock_->source_frame.has_value() && clock_configuration_valid(*clock_);
     result.beats_per_measure = clock_configuration_valid(*clock_) ? clock_->beats_per_measure : 4;
     result.tap_capacity = 4 * result.beats_per_measure;
@@ -151,6 +161,7 @@ void tap_timing_runtime_t::set_bpm_choice(tap_bpm_choice_t choice) {
 }
 
 void tap_timing_runtime_t::prepare_apply(const song_document_t& document, bool timing_locked) {
+    timing_locked_ = timing_locked;
     const auto estimate = estimator_.estimate();
     if (!visible_ || !clock_ || !clock_->playing || !clock_->source_frame || !estimate ||
         clock_->revision != document.revision || timing_locked) {

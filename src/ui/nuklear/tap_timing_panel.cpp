@@ -1,94 +1,152 @@
 #include "ui/nuklear/tap_timing_panel.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/dialog.h"
 #include "ui/nuklear/theme.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 #include <numbers>
 
 namespace {
-void draw_tap_circle(nk_context* context, const WormUiTapTimingView& view) {
-    nk_layout_row_dynamic(context, 140, 1);
-    struct nk_rect bounds{};
-    (void)nk_widget(&bounds, context);
-    auto* canvas = nk_window_get_canvas(context);
-    const auto center_x = bounds.x + bounds.w * 0.5f;
-    const auto center_y = bounds.y + bounds.h * 0.5f;
-    constexpr float radius = 58;
+namespace chrome = wormedit::ui::chrome;
+namespace theme = wormedit::ui::theme;
+void text(nk_command_buffer* canvas, struct nk_rect bounds, const char* label,
+          const nk_user_font* font, nk_color tint) {
+    nk_draw_text(canvas, bounds, label, static_cast<int>(std::strlen(label)), font,
+                 theme::ui(theme::UiColor::surface), tint);
+}
+void draw_ring(nk_command_buffer* canvas, struct nk_rect bounds, const WormUiTapTimingView& view) {
+    const auto center_x = bounds.x + 48;
+    const auto center_y = bounds.y + 48;
     const auto count = std::clamp<unsigned>(view.beats_per_measure, 1, 32);
     const auto angle = 2.0f * std::numbers::pi_v<float> / count;
     for (unsigned index = 0; index < count; ++index) {
-        auto role = wormedit::ui::theme::UiColor::surface_hover;
+        auto role = theme::UiColor::surface_hover;
         if (view.playing && view.estimate_available && index == view.active_segment)
-            role = view.downbeat_flash ? wormedit::ui::theme::UiColor::selected
-                                       : wormedit::ui::theme::UiColor::accent;
+            role = view.downbeat_flash ? theme::UiColor::selected : theme::UiColor::accent;
+        if (view.tap_flash && index == view.tap_segment) role = theme::UiColor::selected;
         const auto begin = std::fmod(index * angle + std::numbers::pi_v<float> * 1.5f + 0.03f,
                                      2.0f * std::numbers::pi_v<float>);
-        nk_fill_arc(canvas, center_x, center_y, radius, begin, begin + angle - 0.06f,
-                    wormedit::ui::theme::ui(role));
+        nk_fill_arc(canvas, center_x, center_y, 46, begin, begin + angle - 0.06f, theme::ui(role));
     }
-    nk_fill_circle(canvas, nk_rect(center_x - 32, center_y - 32, 64, 64),
-        wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::surface));
+    nk_fill_circle(canvas, nk_rect(center_x - 28, center_y - 28, 56, 56),
+                    theme::ui(theme::UiColor::surface));
 }
-void draw_tap_estimate(nk_context* context, const WormUiTapTimingView& view) {
-    nk_layout_row_dynamic(context, 24, 1);
-    nk_labelf(context, NK_TEXT_LEFT, "Taps %llu/%llu", static_cast<unsigned long long>(view.tap_count),
-              static_cast<unsigned long long>(view.tap_capacity));
-    if (!view.estimate_available) {
-        nk_label(context, "Four taps are needed for an estimate.", NK_TEXT_LEFT);
-        return;
-    }
-    nk_labelf(context, NK_TEXT_LEFT, "BPM %.3f  |  %.3f ms per beat", view.bpm, view.ms_per_beat);
-    nk_labelf(context, NK_TEXT_LEFT, "Offset %.3f ms  |  Deviation %.3f ms", view.offset_ms, view.deviation_ms);
-    nk_labelf(context, NK_TEXT_LEFT, "%s  |  Confidence %.0f%%", view.stable ? "Stable" : "Keep tapping",
-              view.confidence * 100);
+void draw_readout(nk_context* context, const WormUiTapTimingView& view) {
+    nk_layout_row_dynamic(context, 96, 1);
+    struct nk_rect bounds{};
+    (void)nk_widget(&bounds, context);
+    auto* canvas = nk_window_get_canvas(context);
+    draw_ring(canvas, bounds, view);
+    const auto x = bounds.x + 120;
+    const auto width = std::max(1.0f, bounds.w - 120);
+    auto* display = theme::display_font ? theme::display_font : context->style.font;
+    char value[48]{};
+    if (view.estimate_available && view.tap_count >= 4) std::snprintf(value, sizeof(value), "%.2f", view.bpm);
+    else std::snprintf(value, sizeof(value), "—");
+    text(canvas, nk_rect(x, bounds.y + 12, width, 34), value, display, theme::ui(theme::UiColor::text_bright));
+    const auto value_width = display->width(display->userdata, display->height, value,
+                                          static_cast<int>(std::strlen(value)));
+    text(canvas, nk_rect(x + value_width + 8, bounds.y + 25, 38, 20), "BPM",
+         context->style.font, theme::ui(theme::UiColor::text_muted));
+    if (!view.estimate_available || view.tap_count < 4) return;
+    char detail[96]{};
+    std::snprintf(detail, sizeof(detail), "±%.1f ms · %s", view.deviation_ms, view.stable ? "stable" : "keep tapping");
+    text(canvas, nk_rect(x, bounds.y + 50, width, 20), detail, context->style.font,
+         theme::ui(view.stable ? theme::UiColor::accent : theme::UiColor::text_muted));
+    std::snprintf(detail, sizeof(detail), "beat 0 at %.1f ms", view.offset_ms);
+    text(canvas, nk_rect(x, bounds.y + 73, width, 20), detail, context->style.font,
+         theme::ui(theme::UiColor::text_muted));
 }
-void draw_tap_apply(nk_context* context, const WormUiTapTimingView& view,
-                    WormUiTapTimingAction& action) {
-    static const char* choices[] = {"Raw BPM", "Nearest 1 BPM", "Nearest 0.5 BPM"};
-    nk_layout_row_dynamic(context, 28, 1);
-    const auto selected = wormedit::ui::chrome::safe_combo(
-        context, choices, 3, view.bpm_choice, 24, nk_vec2(210, 120));
+void draw_progress(nk_context* context, const WormUiTapTimingView& view) {
+    nk_layout_row_dynamic(context, 18, 1);
+    struct nk_rect bounds{};
+    (void)nk_widget(&bounds, context);
+    auto* canvas = nk_window_get_canvas(context);
+    const auto count = std::clamp<std::uint64_t>(view.tap_capacity, 1, 128);
+    const auto width = std::max(1.0f, bounds.w - 106);
+    const auto step = width / static_cast<float>(count);
+    for (std::uint64_t i = 0; i < count; ++i)
+        nk_fill_rect(canvas, nk_rect(bounds.x + static_cast<float>(i) * step, bounds.y + 5,
+                     std::max(1.0f, step - 3), 8), 2,
+                     theme::ui(i < view.tap_count ? theme::UiColor::selected : theme::UiColor::surface_hover));
+    char label[48]{};
+    std::snprintf(label, sizeof(label), "%llu / %llu taps",
+                  static_cast<unsigned long long>(view.tap_count),
+                  static_cast<unsigned long long>(view.tap_capacity));
+    text(canvas, nk_rect(bounds.x + width + 8, bounds.y, 100, 18), label,
+         context->style.font, theme::ui(theme::UiColor::text_muted));
+}
+auto hint(const WormUiTapTimingView& view) -> const char* {
+    if (view.status && view.status[0]) return view.status;
+    if (!view.music_available) return "Add a music track to tap";
+    if (!view.playing) return "Start playback to tap";
+    if (!view.estimate_available || view.tap_count < 4) return "Play the song and tap T or Space on the beat";
+    return "Tap T or Space on the beat";
+}
+auto apply_reason(const WormUiTapTimingView& view) -> const char* {
+    if (view.timing_locked) return "Unlock timing to apply the estimate.";
+    if (!view.music_available) return "Add a music track to tap.";
+    if (!view.playing) return "Start playback and tap on the beat.";
+    if (!view.estimate_available || view.tap_count < 4) return "At least four taps are needed for an estimate.";
+    if (!view.stable) return "Keep tapping until the estimate is stable.";
+    return "The estimate is not available for this chart.";
+}
+void draw_rounding(nk_context* context, const WormUiTapTimingView& view, WormUiTapTimingAction& action) {
+    static const char* choices[]{"Raw", "1", "0.5"};
+    nk_layout_row_template_begin(context, 28);
+    nk_layout_row_template_push_static(context, 72);
+    nk_layout_row_template_push_static(context, 168);
+    nk_layout_row_template_push_dynamic(context);
+    nk_layout_row_template_end(context);
+    nk_label_colored(context, "Round to", NK_TEXT_LEFT, theme::ui(theme::UiColor::text_muted));
+    const auto selected = chrome::Segmented{choices, 3, std::clamp<int>(view.bpm_choice, 0, 2)}.render(context);
     if (selected != view.bpm_choice) {
         action.choose_bpm = true;
-        action.bpm_choice = static_cast<uint8_t>(selected);
+        action.bpm_choice = static_cast<std::uint8_t>(selected);
     }
-    nk_layout_row_dynamic(context, 22, 1);
-    nk_label(context, "First tap assigns the estimated downbeat.", NK_TEXT_LEFT);
-    nk_label(context, "Later BPM changes keep their musical positions.", NK_TEXT_LEFT);
-    if (view.apply_available)
-        nk_labelf(context, NK_TEXT_LEFT, "Apply %.3f BPM, beat zero %.3f ms",
-                  view.proposed_bpm, view.proposed_offset_ms);
-    else nk_label(context, "Apply needs stable taps and unlocked timing.", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 28, 1);
-    const auto disabled = !view.apply_available || action.choose_bpm;
-    if (disabled) nk_widget_disable_begin(context);
-    if (nk_button_label(context, "Apply")) {
+    struct nk_rect unused{};
+    (void)nk_widget(&unused, context);
+}
+void draw_footer(nk_context* context, const WormUiTapTimingView& view, WormUiTapTimingAction& action) {
+    chrome::section_separator(context);
+    nk_layout_row_template_begin(context, 28);
+    nk_layout_row_template_push_static(context, 72);
+    nk_layout_row_template_push_dynamic(context);
+    nk_layout_row_template_push_static(context, 152);
+    nk_layout_row_template_end(context);
+    if (chrome::Button{"Reset", chrome::ButtonKind::ghost, "Clear the tap estimate"}.render(context)) action.reset = true;
+    nk_spacing(context, 1);
+    char label[64]{}, tooltip[320]{};
+    char bpm[32]{};
+    std::snprintf(bpm, sizeof(bpm), "%.2f", view.proposed_bpm);
+    auto length = std::strlen(bpm);
+    while (length && bpm[length - 1] == '0') bpm[--length] = '\0';
+    if (length && bpm[length - 1] == '.') bpm[length - 1] = '\0';
+    std::snprintf(label, sizeof(label), view.apply_available ? "Apply %s BPM" : "Apply BPM", bpm);
+    std::snprintf(tooltip, sizeof(tooltip), "%s%sFirst tap sets the downbeat; later BPM changes keep their musical positions.",
+                  view.apply_available ? "" : apply_reason(view), view.apply_available ? "" : "\n");
+    if (chrome::Button{label, chrome::ButtonKind::primary, tooltip,
+                       view.apply_available && !action.choose_bpm}.render(context)) {
         action.apply = true;
         action.apply_revision = view.apply_revision;
     }
-    if (disabled) nk_widget_disable_end(context);
 }
 } // namespace
 
 void worm_ui_nuklear_render_tap_timing_panel(nk_context* context,
     const WormUiTapTimingView& view, WormUiTapTimingAction& action) {
     if (!context || !view.visible) return;
-    if (nk_window_is_closed(context, "Tap timing") || nk_window_is_hidden(context, "Tap timing"))
-        nk_window_show(context, "Tap timing", NK_SHOWN);
-    if (nk_begin(context, "Tap timing", nk_rect(300, 110, 470, 530),
-        NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_MOVABLE | NK_WINDOW_CLOSABLE)) {
-        draw_tap_circle(context, view);
-        nk_layout_row_dynamic(context, 24, 1);
-        if (!view.playing) nk_label(context, "Play the song, then tap on the beat", NK_TEXT_LEFT);
-        else if (!view.source_available) nk_label(context, "The preview needs a music track for tapping.", NK_TEXT_LEFT);
-        else nk_label(context, "Tap T, or Space while this panel is focused.", NK_TEXT_LEFT);
-        draw_tap_estimate(context, view);
-        draw_tap_apply(context, view, action);
-        if (view.status) nk_label(context, view.status, NK_TEXT_LEFT);
-        nk_layout_row_dynamic(context, 28, 1);
-        if (wormedit::ui::chrome::mode_button(context, "Reset", "Clear the tap estimate", false))
-            action.reset = true;
+    static chrome::Dialog dialog;
+    if (chrome::dialog_begin(dialog, context, "Tap timing", "Tap tempo",
+        {.modal = false, .closable = true, .width = 420, .escape_cancels = !view.input_blocked && view.close_key_pressed, .no_input = view.input_blocked,
+         .enter_confirms = false, .movable = true})) {
+        draw_readout(context, view);
+        draw_progress(context, view);
+        chrome::dialog_text(dialog, context, hint(view), theme::ui(theme::UiColor::text));
+        draw_rounding(context, view, action);
+        draw_footer(context, view, action);
     }
-    nk_end(context);
-    if (nk_window_is_closed(context, "Tap timing") || nk_window_is_hidden(context, "Tap timing")) action.close = true;
+    if (chrome::dialog_end(dialog, context) == chrome::DialogResult::cancel) action.close = true;
 }

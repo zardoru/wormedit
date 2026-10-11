@@ -2075,6 +2075,12 @@ typedef struct WormUiTapTimingView {
     double proposed_bpm;
     double proposed_offset_ms;
     const char* status;
+    bool tap_flash;
+    uint16_t tap_segment;
+    bool timing_locked;
+    bool music_available;
+    bool input_blocked;
+    bool close_key_pressed;
 } WormUiTapTimingView;
 
 typedef struct WormUiTapTimingAction {

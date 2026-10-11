@@ -318,6 +318,19 @@ void render_chart_row(nk_context* context, const WormUiSetupView& view,
     begin_table_row(context, 30, ratios);
     const auto row_bounds = table_row_bounds(context, widths);
     const bool selected = worm_ui_nuklear_project_chart_selected(project_state.selection, row.chart_id);
+    if (nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT) &&
+        nk_input_is_mouse_hovering_rect(&context->input, row_bounds)) {
+        project_state.menu_chart = row.chart_id;
+        wormedit::ui::chrome::context_menu_focus(wormedit::ui::chrome::KeyboardContextTarget::charts, row.chart_id);
+    }
+    const bool keyboard_open = (project_state.menu_chart == row.chart_id ||
+        (!project_state.menu_chart && selected)) &&
+        wormedit::ui::chrome::context_menu_take_open_request(wormedit::ui::chrome::KeyboardContextTarget::charts);
+    if (keyboard_open) {
+        project_state.menu_chart = row.chart_id;
+        wormedit::ui::chrome::context_menu_open(project_state.row_menu,
+            nk_vec2(row_bounds.x, row_bounds.y + row_bounds.h), chart_stamp(view, row.chart_id), true);
+    }
     paint_table_row(context, row_bounds, false, selected);
     render_chart_grip(context, view, row.chart_id);
     if (wormedit::ui::chrome::Checkbox{"", selected ? wormedit::ui::chrome::CheckState::on : wormedit::ui::chrome::CheckState::off,

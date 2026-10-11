@@ -468,6 +468,7 @@ void open_quantize_popup(const ComposeInspectorContext& i, QuantizePopup kind) {
     }
     wormedit::ui::chrome::context_menu_open(quantize_menu, i.context->input.mouse.pos,
                                             quantize_stamp(*i.view));
+    quantize_menu.shared_keyboard_navigation = kind == QuantizePopup::preset;
 }
 auto quantize_segments(nk_context* c, const char* const* labels, int count, int selected,
                        const char* const* tips, bool dim = false) -> int {
@@ -689,6 +690,7 @@ void render_quantize_preset_actions(const ComposeInspectorContext& i) {
         if (wormedit::ui::chrome::context_menu_button(c, "Rename")) {
             quantize_rename = true;
             quantize_popup = QuantizePopup::name;
+            quantize_menu.shared_keyboard_navigation = false;
             std::snprintf(quantize_preset_name.data(), quantize_preset_name.size(), "%s",
                           v.quantize_presets[quantize_menu_preset].name);
         }

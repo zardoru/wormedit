@@ -81,7 +81,7 @@ void draw_layer_swatch(nk_context* context, const WormUiComposeSemanticLayerView
 
 bool render_layer_submenu_button(nk_context* context) {
     const auto bounds = nk_widget_bounds(context);
-    const auto clicked = chrome::context_menu_button(context, "Layer");
+    const auto clicked = chrome::context_menu_button(context, "Layer", nullptr, true);
     const auto x = bounds.x + bounds.w - 12;
     const auto y = bounds.y + bounds.h * 0.5f;
     const auto tint = context->style.contextual_button.text_normal;
@@ -128,6 +128,7 @@ void render_layer_row(nk_context* context, const WormUiComposeView& view,
         index - view.note_menu_layer_first_row >= view.note_menu_layer_count) {
         nk_layout_row_dynamic(context, row_height, 1);
         nk_label(context, "Loading layers…", NK_TEXT_LEFT);
+        chrome::context_menu_placeholder(menu.popup);
         return;
     }
     render_layer(context, view, action, view.note_menu_layers[index - view.note_menu_layer_first_row]);
@@ -135,10 +136,18 @@ void render_layer_row(nk_context* context, const WormUiComposeView& view,
 
 void render_submenu(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceAction& action) {
     if (view.note_menu_layer_total_count > 100'000) return;
+    chrome::context_menu_set_row_count(menu.popup, view.note_menu_layer_total_count + 1);
+    chrome::context_menu_set_row_enabled(menu.popup, 0, true);
+    for (std::size_t index = 0; index < view.note_menu_layer_count; ++index)
+        chrome::context_menu_set_row_enabled(menu.popup, view.note_menu_layer_first_row + index + 1,
+            !layer_disabled_reason(view, view.note_menu_layers[index]));
+    chrome::context_menu_scroll_to_selected(menu.popup, context, "Note layer rows", row_height,
+                                            nk_widget_bounds(context).h);
     nk_list_view list{};
     const auto count = static_cast<int>(view.note_menu_layer_total_count + 1);
     if (!nk_list_view_begin(context, &list, "Note layer rows", NK_WINDOW_BORDER,
                             static_cast<int>(row_height), count)) return;
+    chrome::context_menu_set_row_cursor(menu.popup, list.begin);
     for (int offset = list.begin; offset < list.end; ++offset)
         render_layer_row(context, view, action, static_cast<std::size_t>(offset));
     const auto first = list.begin > 0 ? static_cast<std::size_t>(list.begin - 1) : 0;
@@ -161,7 +170,7 @@ void render_expanded(nk_context* context, const WormUiComposeView& view,
     nk_layout_row_push(context, primary_width);
     if (nk_group_begin(context, "Note menu primary", NK_WINDOW_NO_SCROLLBAR)) {
         nk_layout_row_dynamic(context, row_height, 1);
-        (void)render_layer_submenu_button(context);
+        nk_label(context, "Layer", NK_TEXT_LEFT);
         nk_group_end(context);
     }
     nk_layout_row_push(context,
@@ -175,16 +184,15 @@ bool bgm_tooltip_pending{};
 void render_bgm_action(nk_context* context, const WormUiComposeView& view,
                         WormUiWorkspaceAction& action) {
     nk_layout_row_dynamic(context, row_height, 1);
-    if (!view.move_to_bgm_available) nk_widget_disable_begin(context);
     char bgm_label[96]{};
     std::snprintf(bgm_label, sizeof(bgm_label), "Move to BGM%s%s", view.move_to_bgm_shortcut[0] ? "  " : "",
                   view.move_to_bgm_shortcut);
-    if (nk_button_label(context, bgm_label) && view.move_to_bgm_available) {
+    if (chrome::context_menu_button(context, bgm_label,
+            view.move_to_bgm_available ? nullptr : "Requires selected playable notes on an editable BMS chart")) {
         std::snprintf(action.menu_command_id, sizeof(action.menu_command_id), "%s", "edit.move_to_bgm");
         chrome::context_menu_close(menu.popup);
     }
     if (!view.move_to_bgm_available) {
-        nk_widget_disable_end(context);
         if (wormedit::ui::nuklear::tooltip::hovered(context, nk_widget_bounds(context)))
             bgm_tooltip_pending = true;
     }
@@ -193,7 +201,7 @@ void render_bgm_action(nk_context* context, const WormUiComposeView& view,
 void render_sound_selection(nk_context* context, WormUiWorkspaceAction& action) {
     for (const bool visible : {true, false}) {
         nk_layout_row_dynamic(context, row_height, 1);
-        if (nk_button_label(context, visible ? "Select same sound (visible)" : "Select same sound (whole chart)")) {
+        if (chrome::context_menu_button(context, visible ? "Select same sound (visible)" : "Select same sound (whole chart)")) {
             append_compose_input(&action, visible ? WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE :
                 WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_CHART, 0, 0, 0, false,
                 WORM_UI_COMPOSE_SELECTION_ADD, WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, menu.note);
@@ -254,21 +262,25 @@ void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceA
         if (!menu.popup.open) finish_close(view, action);
         return;
     }
+    if (menu.submenu && chrome::context_menu_take_back(menu.popup)) {
+        menu.submenu = false;
+        chrome::context_menu_reset_navigation(menu.popup);
+    }
     if (menu.submenu) {
         render_expanded(context, view, action);
     } else {
         nk_layout_row_dynamic(context, row_height, 1);
         menu.submenu = render_layer_submenu_button(context);
+        if (menu.submenu) chrome::context_menu_reset_navigation(menu.popup);
         nk_layout_row_dynamic(context, row_height, 1);
         const auto& source = worm_ui_nuklear_compose_state();
         const auto can_replace = source.draw_source_kind == 1 && source.draw_source_id != 0;
-        if (!can_replace) nk_widget_disable_begin(context);
-        if (nk_button_label(context, "Replace sound with current source") && can_replace &&
+        if (chrome::context_menu_button(context, "Replace sound with current source",
+                can_replace ? nullptr : "Choose a sound source first") &&
             raise(view, action, WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION)) {
             action.compose_resource_id = source.draw_source_id;
             chrome::context_menu_close(menu.popup);
         }
-        if (!can_replace) nk_widget_disable_end(context);
         render_bgm_action(context, view, action);
         render_sound_selection(context, action);
         nk_layout_row_dynamic(context, row_height, 1);
@@ -278,6 +290,25 @@ void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceA
     chrome::context_menu_end(menu.popup, context);
     if (bgm_tooltip_pending)
         wormedit::ui::nuklear::tooltip::text(context, "Requires selected playable notes on an editable BMS chart");
+}
+
+void open_from_keyboard(const WormUiComposeView& view, WormUiWorkspaceAction& action,
+                        struct nk_rect viewport) {
+    if (view.area_range_available ||
+        !chrome::context_menu_take_open_request(chrome::KeyboardContextTarget::compose)) return;
+    menu.note = view.keyboard_context_note_id ? view.keyboard_context_note_id
+        : view.selected_note_count ? view.selected_note_label_note_id : 0;
+    for (const auto& note : std::span(view.note_endpoints, view.note_endpoint_count))
+        if (!menu.note && note.selected && !note.proposal_ghost) menu.note = note.note_id;
+    for (const auto& hold : std::span(view.hold_bodies, view.hold_body_count))
+        if (!menu.note && hold.selected && !hold.proposal_ghost) menu.note = hold.note_id;
+    if (!menu.note) return;
+    menu.bgm = menu.submenu = false;
+    menu.channel = 0;
+    if (!raise(view, action, WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU)) return;
+    chrome::context_menu_open(menu.popup,
+        nk_vec2(viewport.x + viewport.w * 0.5f, viewport.y + viewport.h * 0.5f), stamp(view), true);
+    menu.consumed = true;
 }
 
 void open_at_pointer(nk_context* context, const WormUiComposeView& view,
@@ -317,6 +348,7 @@ void reset_compose_note_menu() { menu = {}; reset_bmson_lane_mode_confirmation()
 void prepare_compose_note_menu(const WormUiComposeView* view, bool active, bool focused,
                                WormUiWorkspaceAction* action) {
     if (!active && bmson_lane_mode_confirmation_owns_input()) reset_bmson_lane_mode_confirmation();
+    if (!menu.popup.open && menu.popup.close_pending && !menu.bgm) menu.request_close = true;
     if (menu.popup.open &&
         (!active || !focused || !view || !view->visible || view->input_occluded || !current(*view))) {
         chrome::context_menu_close(menu.popup);
@@ -340,8 +372,10 @@ void process_compose_note_menu(nk_context* context, const WormUiComposeView& vie
                                             view.document_revision, false);
         return;
     }
-    if (!menu.popup.open && !menu.consumed && !view.paste_active && !view.semantic_layer_gesture_active)
-        open_at_pointer(context, view, action, viewport, input_right);
+    if (!menu.popup.open && !menu.consumed && !view.paste_active && !view.semantic_layer_gesture_active) {
+        open_from_keyboard(view, action, viewport);
+        if (!menu.popup.open) open_at_pointer(context, view, action, viewport, input_right);
+    }
     if (menu.bgm) render_channel_menu(context, view, action);
     else render(context, view, action);
     if (!menu.popup.open)

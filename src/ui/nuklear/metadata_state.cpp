@@ -1,5 +1,6 @@
 #include "ui/nuklear/metadata_state.h"
 
+#include <algorithm>
 #include <cctype>
 #include <mutex>
 #include <string_view>
@@ -304,4 +305,38 @@ void worm_ui_nuklear_reset_metadata_state() {
         dialog.result.reset();
     }
     worm_ui_nuklear_metadata_state() = {};
+}
+
+void worm_ui_nuklear_cancel_metadata_tag_drag() {
+    worm_ui_nuklear_metadata_state().tag_drag = {};
+}
+
+auto worm_ui_nuklear_begin_metadata_tag_drag(std::size_t index, float x, float y) -> bool {
+    auto& value = worm_ui_nuklear_metadata_state();
+    if (!value.tag_buffers_valid || index >= value.search_tags.size()) return false;
+    value.tag_drag = {.source = index, .insertion = std::nullopt, .start_x = x, .start_y = y};
+    return true;
+}
+
+void worm_ui_nuklear_target_metadata_tag_drag(std::size_t index, bool after) {
+    auto& value = worm_ui_nuklear_metadata_state();
+    if (!value.tag_drag.source || index >= value.search_tags.size()) return;
+    value.tag_drag.insertion = index + (after ? 1U : 0U);
+}
+
+auto worm_ui_nuklear_finish_metadata_tag_drag() -> bool {
+    auto& value = worm_ui_nuklear_metadata_state();
+    const auto drag = value.tag_drag;
+    value.tag_drag = {};
+    if (!drag.source || !drag.insertion || !drag.moved ||
+        *drag.source >= value.search_tags.size() || *drag.insertion > value.search_tags.size())
+        return false;
+    const auto source = *drag.source;
+    const auto target = *drag.insertion > source ? *drag.insertion - 1 : *drag.insertion;
+    if (source == target) return false;
+    auto begin = value.search_tags.begin();
+    if (target < source) std::rotate(begin + target, begin + source, begin + source + 1);
+    else std::rotate(begin + source, begin + source + 1, begin + target + 1);
+    value.search_tag_pointers.clear();
+    return true;
 }

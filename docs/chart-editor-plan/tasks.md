@@ -25,6 +25,10 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Per-layout skin preferences](tasks/layout-skin-preferences.md)
 - [Semantic layout identity and osu classes](tasks/semantic-layout-identity.md)
 - [Measure-local snapping and navigation](tasks/measure-local-snapping.md)
+- [Selected sounds to semantic layers](tasks/selected-sound-layers.md)
+- [Keyboard context menus](tasks/keyboard-context-menus.md)
+- [Metadata tag drag grips](tasks/tag-grips.md)
+- [BGA Layer 2 and Poor lane discoverability](tasks/bga-lane-discoverability.md)
 
 - [Select input and Help scratchpad](tasks/scratchpad-help.md)
 
@@ -90,7 +94,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Bookmark rename harness gesture alignment](tasks/bookmark-rename-harness.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-536.
+every number above T-540.
 
 ## Rules for whoever executes a card
 

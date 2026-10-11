@@ -1088,6 +1088,23 @@ auto paint_sound_layer_notes(chart_document_t& chart,
 }
 } // namespace
 
+namespace {
+auto paint_unassigned_sound_layer_bgm(chart_document_t& chart,
+    const sound_layer_membership_action_t& action) -> bool {
+    std::unordered_set<std::uint64_t> sounds;
+    for (const auto resource : action.resources) sounds.insert(resource.value);
+    bool changed{};
+    for (auto& measure : chart.measures) {
+        for (auto& event : measure.bgm_events) {
+            if (!event.sound || !sounds.contains(event.sound->value) || !event.semantic_layers.empty()) continue;
+            event.semantic_layers = {action.layer};
+            changed = true;
+        }
+    }
+    return changed;
+}
+} // namespace
+
 auto apply_sound_layer_membership(document_history_t& history, std::uint64_t expected_revision,
                                   const sound_layer_membership_action_t& action)
     -> document_command_result_t {
@@ -1122,9 +1139,72 @@ auto apply_sound_layer_membership(document_history_t& history, std::uint64_t exp
         if (!painted) return result;
         changed = changed || *painted;
     }
+    if (action.member && action.assign_unlayered_bgm)
+        changed = paint_unassigned_sound_layer_bgm(*chart, action) || changed;
     if (!changed) return result;
     return commit_document_command(history, std::move(proposed),
                                    action.member ? "Add layer to sounds" : "Remove layer from sounds");
+}
+
+namespace {
+auto selected_sound_resources(chart_document_t& chart,
+    const add_selected_sounds_to_semantic_layer_action_t& action,
+    const semantic_layer_edit_limits_t& limits, document_command_result_t& result)
+    -> std::optional<std::vector<resource_id_t>> {
+    if (action.notes.size() > limits.maximum_note_selection ||
+        action.bgm_events.size() > limits.maximum_note_selection - action.notes.size()) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "selected sounds exceed the configured object selection cap");
+        return std::nullopt;
+    }
+    auto index = build_chart_note_index(chart, limits.maximum_chart_objects,
+                                       action.notes.size() + action.bgm_events.size(), result);
+    if (!index) return std::nullopt;
+    std::unordered_set<std::uint64_t> selected;
+    std::unordered_set<std::uint64_t> sounds;
+    std::vector<resource_id_t> resources;
+    const auto append = [&](object_id_t id, bool bgm) {
+        if (!selected.insert(id.value).second) {
+            reject(result, diagnostic_code_t::duplicate_id, "selected sounds contain a repeated object ID");
+            return false;
+        }
+        std::optional<resource_id_t> sound;
+        if (bgm) {
+            const auto* event = unique_bgm_event(*index, id, result);
+            if (!event) return false;
+            sound = event->sound;
+        } else {
+            const auto* note = unique_note(*index, id, result);
+            if (!note) return false;
+            sound = note->sound;
+        }
+        if (sound && sounds.insert(sound->value).second) resources.push_back(*sound);
+        return true;
+    };
+    for (const auto id : action.notes) if (!append(id, false)) return std::nullopt;
+    for (const auto id : action.bgm_events) if (!append(id, true)) return std::nullopt;
+    return resources;
+}
+} // namespace
+
+auto add_selected_sounds_to_semantic_layer(document_history_t& history,
+    std::uint64_t expected_revision, const add_selected_sounds_to_semantic_layer_action_t& action,
+    semantic_layer_edit_limits_t limits) -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id, "selected sound layers document revision is stale");
+        return result;
+    }
+    const auto chart = std::ranges::find(history.document.charts, action.chart, &chart_document_t::id);
+    if (!action.chart || chart == history.document.charts.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "selected sound layers refer to an unknown chart");
+        return result;
+    }
+    const auto resources = selected_sound_resources(*chart, action, limits, result);
+    if (!resources || resources->empty()) return result;
+    return apply_sound_layer_membership(history, expected_revision,
+        {.chart = action.chart, .resources = *resources, .layer = action.layer,
+         .member = true, .overwrite_note_layers = false, .assign_unlayered_bgm = true});
 }
 
 } // namespace wormedit

@@ -1385,6 +1385,7 @@ typedef struct WormUiComposeView {
     bool semantic_layer_paint_mode_active;
     bool semantic_layer_gesture_active;
     size_t selected_note_count;
+    uint64_t keyboard_context_note_id; // First selected note, including offscreen multi-selection.
     bool same_sound_selection_available;
     bool move_to_bgm_available;
     char move_to_bgm_shortcut[64];
@@ -2585,6 +2586,8 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER,
     WORM_UI_COMPOSE_ACTION_RENAME_QUANTIZE_PRESET,
     WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION,
+    WORM_UI_COMPOSE_ACTION_OPEN_SELECTED_SOUND_LAYER_MENU,
+    WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER,
 } WormUiComposeActionKind;
 
 typedef enum WormUiComposeInputKind {

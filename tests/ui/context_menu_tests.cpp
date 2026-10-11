@@ -31,6 +31,8 @@ struct menu_fixture_t {
     chrome::PopupContextStamp stamp{1, 2, 3, 4};
     struct nk_rect popup{}, rows{};
     bool parent_clicked{}, enabled_clicked{}, disabled_clicked{}, drawn{};
+    bool navigation_items{};
+    int activated_row{-1};
     std::map<std::string, nk_color> text_colors;
 
     menu_fixture_t() {
@@ -38,7 +40,7 @@ struct menu_fixture_t {
         font.width = glyph_width;
         REQUIRE(nk_init_default(&context, &font));
     }
-    ~menu_fixture_t() { nk_free(&context); }
+    ~menu_fixture_t() { chrome::context_menu_reset(menu); chrome::context_menu_cancel_keyboard(); nk_free(&context); }
     menu_fixture_t(const menu_fixture_t&) = delete;
     auto operator=(const menu_fixture_t&) -> menu_fixture_t& = delete;
 
@@ -81,8 +83,13 @@ struct menu_fixture_t {
     void draw_items() {
         popup = nk_window_get_bounds(&context);
         rows = nk_window_get_content_region(&context);
-        enabled_clicked = chrome::context_menu_item(menu, &context, "Enabled") || enabled_clicked;
-        disabled_clicked =
+        if (navigation_items) {
+            for (int row = 0; row < 4; ++row)
+                if (chrome::context_menu_item(menu, &context, row == 1 ? "First" : row == 3 ? "Last" : "Disabled",
+                                              row % 2 == 0 ? "Not now" : nullptr)) activated_row = row;
+        }
+        if (!navigation_items) enabled_clicked = chrome::context_menu_item(menu, &context, "Enabled") || enabled_clicked;
+        if (!navigation_items) disabled_clicked =
             chrome::context_menu_item(menu, &context, "Disabled", "Not now") || disabled_clicked;
         drawn = true;
     }
@@ -94,7 +101,7 @@ struct menu_fixture_t {
             if (open_now) chrome::context_menu_open(menu, in.mouse, stamp);
             if (!chrome::context_menu_begin(menu, &context, current,
                                             nk_vec2(chrome::context_menu_width,
-                                                    chrome::context_menu_height(2))))
+                                                    chrome::context_menu_height(navigation_items ? 4 : 2))))
                 return;
             draw_items();
             chrome::context_menu_end(menu, &context);
@@ -224,4 +231,97 @@ TEST_CASE("Context menu closed from a nested group finishes at the menu end",
     fixture.menu_frame({.mouse = nk_vec2(20, 15)});
     fixture.menu_frame({.mouse = nk_vec2(20, 15), .left = 1});
     verify_menu(fixture.parent_clicked);
+}
+
+namespace {
+void menu_key(menu_fixture_t& fixture, chrome::ContextMenuKey key, bool repeat = false) {
+    const auto token = static_cast<std::uint32_t>(key) + 10;
+    verify_menu(chrome::context_menu_capture_key(key, token, true, repeat));
+    fixture.menu_frame({.mouse = {100, 100}});
+    verify_menu(chrome::context_menu_capture_key(key, token, false, false));
+}
+}
+
+TEST_CASE("Context keyboard navigation skips disabled rows and activates once",
+          "[frontend-state][context-menu][keyboard-context]") {
+    menu_fixture_t fixture;
+    fixture.navigation_items = true;
+    fixture.menu_frame({.mouse = {100, 100}}, true);
+    menu_key(fixture, chrome::ContextMenuKey::down);
+    verify_menu(fixture.menu.selected_row == 1);
+    menu_key(fixture, chrome::ContextMenuKey::down);
+    verify_menu(fixture.menu.selected_row == 3);
+    menu_key(fixture, chrome::ContextMenuKey::home);
+    verify_menu(fixture.menu.selected_row == 1);
+    menu_key(fixture, chrome::ContextMenuKey::end);
+    verify_menu(fixture.menu.selected_row == 3);
+    menu_key(fixture, chrome::ContextMenuKey::up);
+    verify_menu(fixture.menu.selected_row == 1);
+    const auto token = 100U;
+    verify_menu(chrome::context_menu_capture_key(chrome::ContextMenuKey::activate, token, true, false));
+    fixture.menu_frame({.mouse = {100, 100}});
+    verify_menu(!fixture.menu.open && fixture.activated_row == 1);
+    verify_menu(chrome::context_menu_capture_key(chrome::ContextMenuKey::activate, token, true, true));
+    verify_menu(chrome::context_menu_capture_key(chrome::ContextMenuKey::activate, token, false, false));
+    verify_menu(!chrome::context_menu_capture_key(chrome::ContextMenuKey::down, 101, true, false));
+}
+
+TEST_CASE("Context keyboard Escape and stale stamps retire without activation",
+          "[frontend-state][context-menu][keyboard-context]") {
+    menu_fixture_t fixture;
+    fixture.menu_frame({.mouse = {100, 100}}, true);
+    menu_key(fixture, chrome::ContextMenuKey::escape);
+    verify_menu(!fixture.menu.open && !fixture.enabled_clicked);
+    fixture.menu_frame({.mouse = {100, 100}}, true);
+    verify_menu(chrome::context_menu_capture_key(chrome::ContextMenuKey::down, 1, true, false));
+    verify_menu(chrome::context_menu_capture_key(chrome::ContextMenuKey::activate, 2, true, false));
+    fixture.menu_frame({.mouse = {100, 100}}, false, {1, 2, 99, 4});
+    verify_menu(!fixture.menu.open && !fixture.enabled_clicked);
+    chrome::context_menu_cancel_keyboard();
+    verify_menu(!chrome::context_menu_keyboard_owned());
+}
+
+TEST_CASE("Context keyboard focus uses absolute virtual rows across pages",
+          "[frontend-state][context-menu][keyboard-context]") {
+    menu_fixture_t fixture;
+    fixture.menu_frame({.mouse = {100, 100}}, true);
+    chrome::context_menu_set_row_count(fixture.menu, 200);
+    chrome::context_menu_set_row_enabled(fixture.menu, 199, false);
+    chrome::context_menu_set_row_enabled(fixture.menu, 198, true);
+    verify_menu(chrome::context_menu_capture_key(chrome::ContextMenuKey::end, 1, true, false));
+    verify_menu(fixture.menu.selected_row == 198);
+    fixture.frame({.mouse = {100, 100}}, [&] {
+        verify_menu(chrome::context_menu_begin(fixture.menu, &fixture.context, fixture.stamp,
+            nk_vec2(220, chrome::context_menu_height(2))));
+        chrome::context_menu_set_row_cursor(fixture.menu, 198);
+        (void)chrome::context_menu_item(fixture.menu, &fixture.context, "Last enabled");
+        (void)chrome::context_menu_item(fixture.menu, &fixture.context, "Locked", "Not now");
+        chrome::context_menu_end(fixture.menu, &fixture.context);
+    });
+    verify_menu(fixture.menu.selected_row == 198);
+    verify_menu(chrome::context_menu_capture_key(chrome::ContextMenuKey::activate, 2, true, false));
+    fixture.frame({.mouse = {100, 100}}, [&] {
+        verify_menu(chrome::context_menu_begin(fixture.menu, &fixture.context, fixture.stamp,
+            nk_vec2(220, chrome::context_menu_height(1))));
+        chrome::context_menu_set_row_cursor(fixture.menu, 198);
+        verify_menu(chrome::context_menu_item(fixture.menu, &fixture.context, "Last enabled"));
+        chrome::context_menu_end(fixture.menu, &fixture.context);
+    });
+    verify_menu(!fixture.menu.open);
+}
+
+TEST_CASE("Specialized popup keys bypass action navigation while prior releases stay captured",
+          "[frontend-state][context-menu][keyboard-context]") {
+    menu_fixture_t fixture;
+    fixture.menu_frame({.mouse = {100, 100}}, true);
+    verify_menu(chrome::context_menu_capture_key(chrome::ContextMenuKey::activate, 2, true, false));
+    fixture.menu.shared_keyboard_navigation = false;
+    verify_menu(chrome::context_menu_keyboard_owned());
+    verify_menu(chrome::context_menu_capture_key(chrome::ContextMenuKey::activate, 2, false, false));
+    verify_menu(!chrome::context_menu_keyboard_owned());
+    verify_menu(!chrome::context_menu_capture_key(chrome::ContextMenuKey::down, 3, true, false));
+    verify_menu(!chrome::context_menu_capture_key(chrome::ContextMenuKey::none, 4, true, false));
+    verify_menu(!chrome::context_menu_capture_key(chrome::ContextMenuKey::down, 3, false, false));
+    chrome::context_menu_close_active_keyboard();
+    verify_menu(!fixture.menu.open);
 }

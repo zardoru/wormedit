@@ -2,10 +2,12 @@
 
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/theme.h"
+#include "ui/nuklear/tooltip.h"
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <utility>
@@ -54,6 +56,7 @@ static void set_metadata_song_action(WormUiWorkspaceAction* action,
 }
 
 void reset_song_draft(const WormUiMetadataView& metadata) {
+    worm_ui_nuklear_cancel_metadata_tag_drag();
     (void)copy_metadata_text(state.title.data(), state.title.size(), metadata.title,
                              metadata.title_bytes);
     (void)copy_metadata_text(state.artist.data(), state.artist.size(), metadata.artist,
@@ -68,48 +71,88 @@ void reset_song_draft(const WormUiMetadataView& metadata) {
     state.new_search_tag.fill('\0');
 }
 
+auto render_tag_grip(nk_context* context, std::size_t index, bool editable) -> struct nk_rect {
+    struct nk_rect bounds{};
+    const auto widget = nk_widget(&bounds, context);
+    using namespace wormedit::ui;
+    lucide::draw(context, bounds, lucide::Glyph::grip_vertical,
+        chrome::color(state.tag_drag.source == index ? chrome::UiColor::accent
+                                                     : chrome::UiColor::text_muted));
+    const bool hovered = nk_input_is_mouse_hovering_rect(&context->input, bounds);
+    if (hovered) nuklear::tooltip::text(context, "Drag to reorder tag");
+    if (editable && widget == NK_WIDGET_VALID && hovered &&
+        nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT)) {
+        const auto mouse = context->input.mouse.pos;
+        (void)worm_ui_nuklear_begin_metadata_tag_drag(index, mouse.x, mouse.y);
+    }
+    return bounds;
+}
+
+void preview_tag_drop(nk_context* context, std::size_t index, struct nk_rect bounds) {
+    if (!state.tag_drag.source || !state.tag_drag.moved ||
+        !nk_input_is_mouse_hovering_rect(&context->input, context->current->buffer.clip) ||
+        !nk_input_is_mouse_hovering_rect(&context->input, bounds)) return;
+    const bool after = context->input.mouse.pos.y >= bounds.y + bounds.h * 0.5f;
+    worm_ui_nuklear_target_metadata_tag_drag(index, after);
+    const auto slot = *state.tag_drag.insertion;
+    if (slot == *state.tag_drag.source || slot == *state.tag_drag.source + 1) return;
+    const auto y = after ? bounds.y + bounds.h : bounds.y;
+    nk_stroke_line(nk_window_get_canvas(context), bounds.x, y, bounds.x + bounds.w, y, 2.0f,
+        wormedit::ui::chrome::color(wormedit::ui::chrome::UiColor::accent));
+}
+
+void prepare_tag_drag(nk_context* context, bool editable) {
+    if (!editable || nk_input_is_key_pressed(&context->input, NK_KEY_TEXT_RESET_MODE))
+        worm_ui_nuklear_cancel_metadata_tag_drag();
+    if (!state.tag_drag.source) return;
+    state.tag_drag.insertion.reset();
+    const auto mouse = context->input.mouse.pos;
+    state.tag_drag.moved = state.tag_drag.moved ||
+        std::hypot(mouse.x - state.tag_drag.start_x, mouse.y - state.tag_drag.start_y) >= 3.0f;
+}
+
+void finish_tag_drag(nk_context* context) {
+    if (!state.tag_drag.source || context->input.mouse.buttons[NK_BUTTON_LEFT].down) return;
+    if (nk_input_is_mouse_released(&context->input, NK_BUTTON_LEFT))
+        (void)worm_ui_nuklear_finish_metadata_tag_drag();
+    else worm_ui_nuklear_cancel_metadata_tag_drag();
+}
+
 // Returns true when the row erased its tag; the caller must stop iterating.
 auto render_metadata_tag_row(nk_context* context, std::size_t index, bool editable) -> bool {
-    char remove_label[32];
-    (void)snprintf(remove_label, sizeof(remove_label), "Remove %zu", index + 1);
-    nk_layout_row_begin(context, NK_DYNAMIC, 25, 5);
-    nk_layout_row_push(context, 0.28f);
+    nk_layout_row_template_begin(context, 25);
+    nk_layout_row_template_push_static(context, 24);
+    nk_layout_row_template_push_static(context, 30);
+    nk_layout_row_template_push_dynamic(context);
+    nk_layout_row_template_push_static(context, 26);
+    nk_layout_row_template_end(context);
+    auto row = render_tag_grip(context, index, editable);
     nk_labelf(context, NK_TEXT_LEFT, "%zu", index + 1);
-    nk_layout_row_push(context, 0.41f);
     if (!editable) nk_widget_disable_begin(context);
-    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.search_tags[index].data(),
-                                         state.search_tags[index].size(), nk_filter_default);
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD,
+        state.search_tags[index].data(), state.search_tags[index].size(), nk_filter_default);
+    const auto remove_bounds = nk_widget_bounds(context);
+    char remove_label[48];
+    (void)snprintf(remove_label, sizeof(remove_label), "Remove tag %zu", index + 1);
+    const auto remove = wormedit::ui::chrome::IconButton{
+        wormedit::ui::lucide::Glyph::x, remove_label}.render(context);
     if (!editable) nk_widget_disable_end(context);
-    nk_layout_row_push(context, 0.07f);
-    const auto can_up = editable && index != 0;
-    if (!can_up) nk_widget_disable_begin(context);
-    const auto up = nk_button_label(context, "Up");
-    if (!can_up) nk_widget_disable_end(context);
-    nk_layout_row_push(context, 0.08f);
-    const auto can_down = editable && index + 1 < state.search_tags.size();
-    if (!can_down) nk_widget_disable_begin(context);
-    const auto down = nk_button_label(context, "Down");
-    if (!can_down) nk_widget_disable_end(context);
-    nk_layout_row_push(context, 0.16f);
-    if (!editable) nk_widget_disable_begin(context);
-    const auto remove = nk_button_label(context, remove_label);
-    if (!editable) nk_widget_disable_end(context);
-    nk_layout_row_end(context);
-    if (up && can_up) std::swap(state.search_tags[index], state.search_tags[index - 1]);
-    else if (down && can_down) std::swap(state.search_tags[index], state.search_tags[index + 1]);
-    else if (remove && editable) {
-        state.search_tags.erase(state.search_tags.begin() + static_cast<std::ptrdiff_t>(index));
-        return true;
-    }
-    return false;
+    row.w = remove_bounds.x + remove_bounds.w - row.x;
+    preview_tag_drop(context, index, row);
+    if (!remove || !editable) return false;
+    worm_ui_nuklear_cancel_metadata_tag_drag();
+    state.search_tags.erase(state.search_tags.begin() + static_cast<std::ptrdiff_t>(index));
+    state.search_tag_pointers.clear();
+    return true;
 }
 
 void render_metadata_tag_editor(const MetadataPanel& panel) {
     auto* context = panel.context;
     const auto& metadata = *panel.metadata;
-    const auto editable = metadata.song_fields_editable && state.song_buffers_valid &&
-                          state.tag_buffers_valid;
-    if (!state.tag_buffers_valid || !metadata.song_fields_editable) {
+    const auto editable = panel.window_focused && metadata.song_fields_editable &&
+                          metadata.search_tags_editable && state.song_buffers_valid && state.tag_buffers_valid;
+    prepare_tag_drag(context, editable);
+    if (!state.tag_buffers_valid || !metadata.song_fields_editable || !metadata.search_tags_editable) {
         muted_label(context, "Tags are read-only because the song metadata exceeds an edit cap.");
         return;
     }
@@ -119,6 +162,7 @@ void render_metadata_tag_editor(const MetadataPanel& panel) {
         if (render_metadata_tag_row(context, index, editable))
             break;
     }
+    finish_tag_drag(context);
     if (state.search_tags.size() > worm_ui_nuklear_metadata_state_t::visible_tag_count)
         muted_label(context, "Some search tags are hidden by the row limit.");
     nk_layout_row_begin(context, NK_DYNAMIC, 25, 3);
@@ -136,6 +180,7 @@ void render_metadata_tag_editor(const MetadataPanel& panel) {
     const auto add = nk_button_label(context, "Add tag");
     if (!can_add) nk_widget_disable_end(context);
     if (add && can_add) {
+        worm_ui_nuklear_cancel_metadata_tag_drag();
         state.search_tags.push_back(state.new_search_tag);
         state.new_search_tag.fill('\0');
     }
@@ -147,7 +192,10 @@ void render_metadata_tag_editor(const MetadataPanel& panel) {
 void render_song_section(const MetadataPanel& panel) {
     auto* context = panel.context;
     const auto& metadata = *panel.metadata;
-    if (!metadata_tree_push(context, NK_TREE_TAB, "Song", NK_MAXIMIZED, 1532)) return;
+    if (!metadata_tree_push(context, NK_TREE_TAB, "Song", NK_MAXIMIZED, 1532)) {
+        worm_ui_nuklear_cancel_metadata_tag_drag();
+        return;
+    }
     const auto editable = metadata.song_fields_editable && state.song_buffers_valid;
     metadata_input_row(context, "Title", state.title.data(), state.title.size(), editable);
     metadata_input_row(context, "Artist", state.artist.data(), state.artist.size(), editable);

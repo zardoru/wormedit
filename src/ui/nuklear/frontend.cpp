@@ -89,6 +89,9 @@ static wormedit::ui::nuklear::editor_font_t g_editor_font;
 
 static bool g_frame_timing_visible;
 static bool g_compose_area_shortcuts_active;
+static bool g_context_invocation_allowed;
+static std::uint64_t g_context_project{}, g_context_chart{};
+static WormUiWorkspaceTab g_context_tab{WORM_UI_WORKSPACE_TAB_METADATA};
 static bool g_save_project_requested;
 static uint64_t g_save_project_request_id;
 // Layout-independent Compose hotkeys read from typed text: [ ] { } change the
@@ -694,6 +697,8 @@ bool worm_ui_frontend_init_headless(int width, int height) {
 }
 
 void worm_ui_frontend_shutdown(void) {
+    wormedit::ui::chrome::context_menu_cancel_keyboard();
+    g_context_invocation_allowed = false;
     shutdown_stem_resize_cursor();
 #if defined(WORMEDIT_HAS_MACOS_MENU)
     wormedit::sys::shutdown_macos_menu();
@@ -1326,7 +1331,56 @@ static bool capture_compose_modal_key(const SDL_KeyboardEvent& event) {
     return capture_bga_stack_key(event) || capture_keysound_group_review_key(event);
 }
 
+static auto context_key(SDL_Keycode key) -> wormedit::ui::chrome::ContextMenuKey {
+    using Key = wormedit::ui::chrome::ContextMenuKey;
+    switch (key) {
+    case SDLK_UP: return Key::up;
+    case SDLK_DOWN: return Key::down;
+    case SDLK_HOME: return Key::home;
+    case SDLK_END: return Key::end;
+    case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: return Key::activate;
+    case SDLK_ESCAPE: return Key::escape;
+    case SDLK_LEFT: return Key::left;
+    case SDLK_RIGHT: return Key::right;
+    default: return Key::none;
+    }
+}
+
+static bool context_invocation_blocked() {
+    const auto& compose = worm_ui_nuklear_compose_state();
+    return !g_context_invocation_allowed || !g_window_focused || nuklear_text_entry_active() || g_ime_composition_active ||
+        g_notification_modal || g_new_project_wizard.open || project_dialog_active() ||
+        g_help_dialog != HelpDialog::none || compose_popup_owns_input() ||
+        compose.inline_timing_open || compose.inline_offset_open || compose.go_to_measure_open ||
+        notification_editor_gesture_active();
+}
+
+static bool capture_context_menu_key(const SDL_KeyboardEvent& event) {
+    namespace chrome = wormedit::ui::chrome;
+    if (!frontend_event_window_matches(event.windowID) || !g_window_focused) return false;
+    const auto down = event.type == SDL_EVENT_KEY_DOWN;
+    if (chrome::context_menu_capture_key(context_key(event.key), event.scancode, down, event.repeat))
+        return true;
+    const auto modifiers = event.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI | SDL_KMOD_SHIFT);
+    const bool invocation = (event.key == SDLK_APPLICATION && modifiers == 0) ||
+                            (event.key == SDLK_F10 && (modifiers & SDL_KMOD_SHIFT) != 0 &&
+                             (modifiers & ~SDL_KMOD_SHIFT) == 0);
+    if (!invocation) return false;
+    if (!down || event.repeat || context_invocation_blocked()) return true;
+    auto target = chrome::KeyboardContextTarget::charts;
+    if (g_compose_area_shortcuts_active) {
+        target = chrome::context_menu_focused_target();
+        if (worm_ui_nuklear_compose_state().keyboard_focus ||
+            (target != chrome::KeyboardContextTarget::sounds && target != chrome::KeyboardContextTarget::layers))
+            target = chrome::KeyboardContextTarget::compose;
+    }
+    chrome::context_menu_request_open(target);
+    (void)chrome::context_menu_capture_key(chrome::ContextMenuKey::none, event.scancode, true, false);
+    return true;
+}
+
 static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
+        if (capture_context_menu_key(event)) return true;
         if ((g_help_dialog != HelpDialog::none)) {
             forward_modal_key(event);
             return true;
@@ -1423,6 +1477,14 @@ static void track_compose_draw_pointer(const SDL_Event& event) {
     }
 }
 
+static bool handle_frontend_text_input(const SDL_Event& event) {
+    g_ime_composition_active = false;
+    if (wormedit::ui::chrome::context_menu_keyboard_owned()) return true;
+    queue_compose_text_hotkeys(event.text.text);
+    auto copy = event;
+    return nk_sdl_handle_event(g_context, &copy) != 0;
+}
+
 static bool handle_workspace_frontend_event(const SDL_Event* event) {
     if (!g_context || !event) {
         return false;
@@ -1431,6 +1493,7 @@ static bool handle_workspace_frontend_event(const SDL_Event* event) {
     if (queue_compose_pinch_event(*event)) return true;
     if (event->type == SDL_EVENT_WINDOW_FOCUS_LOST) {
         g_window_focused = false;
+        wormedit::ui::chrome::context_menu_cancel_keyboard();
         g_tap_key_captured = false;
         g_tap_space_captured = false;
         g_audio.offset_cancel_pending = true;
@@ -1440,6 +1503,7 @@ static bool handle_workspace_frontend_event(const SDL_Event* event) {
         worm_ui_nuklear_compose_handle_focus_lost();
         worm_ui_nuklear_cancel_setup_drag();
         worm_ui_nuklear_cancel_options_drag();
+        worm_ui_nuklear_cancel_metadata_tag_drag();
         apply_stem_resize_cursor(false);
         g_ime_composition_active = false;
     } else if (event->type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
@@ -1456,8 +1520,7 @@ static bool handle_workspace_frontend_event(const SDL_Event* event) {
         }
     } else if (event->type == SDL_EVENT_TEXT_INPUT &&
                frontend_event_window_matches(event->text.windowID)) {
-        g_ime_composition_active = false;
-        queue_compose_text_hotkeys(event->text.text);
+        return handle_frontend_text_input(*event);
     } else if (event->type == SDL_EVENT_MOUSE_WHEEL) {
         queue_compose_wheel_event(&event->wheel);
     } else if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.down &&
@@ -2233,6 +2296,10 @@ static void retire_bookmark_editors(const WormUiWorkspaceView& view, WormUiWorks
 
 static void render_workspace_content(const WormUiWorkspaceView& view,
                                      WormUiWorkspaceAction& action) {
+    const bool metadata_interactive = g_window_focused && view.metadata.visible &&
+        !options_owns_content_input(view) && !project_modal_active(view) &&
+        !project_dialog_active() && !g_notification_modal && !g_menu_popup_open;
+    if (!metadata_interactive) worm_ui_nuklear_cancel_metadata_tag_drag();
     prepare_workspace_content_scroll(g_context, view.compose.visible);
     // Metadata is a form; the Project chart table uses the available width.
     const bool padded = view.metadata.visible;
@@ -2255,7 +2322,7 @@ static void render_workspace_content(const WormUiWorkspaceView& view,
         (void)render_recovery_panel(view, action);
     } else if (view.metadata.visible) {
         worm_ui_nuklear_render_metadata_panel(g_context, &view.metadata, &action,
-                                              g_window_focused);
+                                              metadata_interactive);
     } else if (view.compose.visible) {
         auto compose = view.compose;
         compose.input_occluded = options_owns_content_input(view);
@@ -2906,6 +2973,23 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
                                           &frame.action, frame.width, frame.height);
 }
 
+static void remember_context_menu_scope(const WormUiWorkspaceView* view) {
+    namespace chrome = wormedit::ui::chrome;
+    const auto project = view ? view->project_id : 0;
+    const auto chart = view ? view->compose.chart_id : 0;
+    const auto tab = view ? view->active_tab : WORM_UI_WORKSPACE_TAB_METADATA;
+    const bool changed = project != g_context_project || chart != g_context_chart || tab != g_context_tab;
+    const bool content = view && ((tab == WORM_UI_WORKSPACE_TAB_SETUP && view->setup.visible) ||
+        (tab == WORM_UI_WORKSPACE_TAB_COMPOSE && view->compose.visible && !view->compose.input_occluded));
+    g_context_invocation_allowed = content && view->project_loaded && g_window_focused &&
+        !view->options.visible && !project_modal_active(*view) &&
+        !g_menu_popup_open && !g_menu_popup_release_pending;
+    if (changed || !g_context_invocation_allowed) chrome::context_menu_close_active_keyboard();
+    g_context_project = project;
+    g_context_chart = chart;
+    g_context_tab = tab;
+}
+
 static void remember_notification_frame(const WormUiWorkspaceView* view) {
     g_notification_view = view ? view->notifications : WormUiNotificationView{};
     g_notification_project_modal = view && project_modal_active(*view);
@@ -2981,12 +3065,16 @@ static void consume_pending_save_request(const WormUiWorkspaceView* view, WormUi
 }
 
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
+    struct RequestFrame {
+        ~RequestFrame() { wormedit::ui::chrome::context_menu_finish_frame(); }
+    } request_frame;
     MenuPointerCapture menu_pointer_capture{g_context};
     wormedit::ui::nuklear::tooltip::set_viewport(nk_rect(0.0F, 0.0F, 0.0F, 0.0F));
     reset_compose_canvas_viewport_for_testing();
     worm_ui_nuklear_sync_setup_popups(g_context, view ? &view->setup : nullptr);
     if (view && !view->project_loaded) worm_ui_nuklear_reset_sound_import();
     remember_notification_frame(view);
+    remember_context_menu_scope(view);
     worm_ui_nuklear_begin_image_quad_frame();
     WormUiWorkspaceAction action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_NONE;

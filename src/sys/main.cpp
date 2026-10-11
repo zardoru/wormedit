@@ -2401,6 +2401,7 @@ auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& actio
         context.application_command_state_ref.pending_sound_audition, context.notification_sink_ref);
 #endif
     if (context.workspace_ref.active_tab != wormedit::workspace_tab_t::compose) {
+        context.application_command_state_ref.note_layer_menu_row_count = 0;
         context.compose_viewport_input_ref.escape();
         context.compose_scene_cache_ref.viewport_autoscroll_active = false;
         if (context.compose_interaction_state_ref)

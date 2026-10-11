@@ -2190,6 +2190,29 @@ std::optional<std::string> assign_compose_layer_target(compose_action_context_t&
                                                 : "Semantic-layer membership updated.");
 }
 
+std::optional<std::string> add_selected_compose_sounds_to_layer(compose_action_context_t& context) {
+    if (editor_interaction_has_pending_gesture(context.state))
+        return compose_action_warning(context, "Finish or cancel the active gesture before assigning sound layers.");
+    auto& app = context.application_state;
+    if (context.action.compose_input_project_id != context.history.document.id.value ||
+        app.note_layer_menu_chart != context.state.chart ||
+        app.note_layer_menu_revision != context.action.compose_input_document_revision)
+        return compose_action_warning(context, "The selected sound layer menu is stale.");
+    app.note_layer_menu_row_count = 0;
+    const auto applied = apply_compose_selected_sound_layer_assignment(context.history,
+        context.state, context.action.compose_input_document_revision,
+        layer_id_t{context.action.compose_semantic_layer_id});
+    if (!applied.applied) {
+        if (!applied.diagnostics.empty()) return publish_compose_diagnostic(context, applied.diagnostics.front());
+        return compose_action_info(context, "Selected sound layers were unchanged; silent objects are ignored.",
+                                   notification_source_t::edit);
+    }
+    const auto rebound = rebind_workspace(context.workspace, context.history);
+    if (!rebound) return compose_mutation_rebind_failure(context, rebound,
+        "Selected sounds added to the layer.", "Sound layers changed, but workspace rebinding failed.");
+    return compose_action_success(context, "Selected sounds added to the layer; unassigned matching objects inherited it.");
+}
+
 std::optional<std::string> dispatch_compose_note_menu_action(compose_action_context_t& context) {
     using namespace wormedit;
     const auto& action = context.action;
@@ -2207,6 +2230,18 @@ std::optional<std::string> dispatch_compose_note_menu_action(compose_action_cont
         app.note_layer_menu_row_count = WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY;
         return "";
     }
+    case WORM_UI_COMPOSE_ACTION_OPEN_SELECTED_SOUND_LAYER_MENU:
+        if (action.compose_input_project_id != context.history.document.id.value ||
+            editor_interaction_has_pending_gesture(context.state) ||
+            action.compose_input_document_revision != context.history.document.revision)
+            return compose_action_warning(context, "The selection changed or a Compose gesture is active.");
+        app.note_layer_menu_chart = context.state.chart;
+        app.note_layer_menu_revision = context.history.document.revision;
+        app.note_layer_menu_first_row = 0;
+        app.note_layer_menu_row_count = WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY;
+        return "";
+    case WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER:
+        return add_selected_compose_sounds_to_layer(context);
     case WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW:
         if (app.note_layer_menu_chart != context.state.chart ||
             app.note_layer_menu_revision != context.history.document.revision) return "";
@@ -2215,6 +2250,9 @@ std::optional<std::string> dispatch_compose_note_menu_action(compose_action_cont
             action.compose_semantic_layer_row_count, 1, WORM_UI_COMPOSE_NOTE_LAYER_WINDOW_CAPACITY);
         return "";
     case WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU:
+        if ((action.compose_input_project_id && action.compose_input_project_id != context.history.document.id.value) ||
+            app.note_layer_menu_chart.value != action.compose_input_chart_id ||
+            app.note_layer_menu_revision != action.compose_input_document_revision) return "";
         app.note_layer_menu_row_count = 0;
         return "";
     case WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER:

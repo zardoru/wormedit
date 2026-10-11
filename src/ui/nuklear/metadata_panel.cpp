@@ -94,6 +94,7 @@ static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
     if (!metadata) {
         return;
     }
+    worm_ui_nuklear_cancel_metadata_tag_drag();
     state.buffer_revision = metadata->document_revision;
     state.buffer_has_chart = metadata->has_chart;
     state.buffer_chart_id = metadata->has_chart ? metadata->chart_id : 0;
@@ -204,7 +205,11 @@ void render_footer_buttons(nk_context* context, bool revert_enabled, bool apply_
 void worm_ui_nuklear_render_metadata_panel(struct nk_context* context,
                                            const WormUiMetadataView* metadata,
                                            WormUiWorkspaceAction* action, bool window_focused) {
-    if (!context || !metadata || !action || !metadata->visible) return;
+    if (!context || !metadata || !action || !metadata->visible) {
+        worm_ui_nuklear_cancel_metadata_tag_drag();
+        return;
+    }
+    if (!window_focused) worm_ui_nuklear_cancel_metadata_tag_drag();
     if (metadata_buffer_key_changed(metadata)) initialize_metadata_buffers(metadata);
     const MetadataPanel panel{context, metadata, action, window_focused};
     render_song_section(panel);

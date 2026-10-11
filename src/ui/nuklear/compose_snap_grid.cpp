@@ -73,6 +73,7 @@ void render_compose_snap_badge(nk_context* context, const WormUiComposeView& vie
             if (view.supported_snap_denominators[index] == view.area_snap_denominator)
                 state.snap_grid_choice = static_cast<int>(index);
         context_menu_open(menu, nk_vec2(bounds.x, bounds.y), stamp(view));
+        menu.shared_keyboard_navigation = false;
     }
     render_grid_popup(context, view, action, available);
 }

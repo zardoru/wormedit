@@ -1521,6 +1521,7 @@ bool initialize_compose_view_state(
     view.timing_lane_visibility_mask = effective_compose_timing_lane_mask(application_state);
     view.timing_focus = application_state.compose_timing_focus;
     view.selected_note_count = 0;
+    view.keyboard_context_note_id = 0;
     view.move_conflict_count = 0;
     view.selected_bgm_event_count = 0;
     view.selected_assigned_resource_id = 0;
@@ -2834,6 +2835,8 @@ void populate_compose_selection_preview(
                                    ? retained_state->pending_note_move_gesture->conflicting_notes : 0;
     view.move_to_bgm_count = converted_bgm_preview_count(*retained_state);
     view.selected_note_count = retained_state->selected_notes.size();
+    view.keyboard_context_note_id = retained_state->selected_notes.empty() ? 0
+        : retained_state->selected_notes.front().value;
     view.selected_object_count = retained_state->selected_objects.size();
 }
 

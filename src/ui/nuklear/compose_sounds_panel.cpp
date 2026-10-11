@@ -1354,6 +1354,8 @@ auto layer_tooltip(const SoundsPanel& panel, const WormUiComposeKeysoundRowView&
 
 void click_row(const SoundsPanel& panel, std::size_t shown_index, std::uint64_t id) {
     auto& state = *panel.state;
+    state.keyboard_focus = false;
+    wormedit::ui::chrome::context_menu_focus(wormedit::ui::chrome::KeyboardContextTarget::sounds, id);
     const auto [ctrl, shift] = modifier_state();
     worm_ui_keysound_click(state.keysound_selection, state.keysound_shown, shown_index, ctrl,
                            shift);
@@ -1403,10 +1405,13 @@ void render_row(const SoundsPanel& panel, std::size_t shown_index) {
             view.project_id, view.chart_id, view.document_revision, row->stem_source_lane_id,
             row->resource_id, 0, 0, true, false, true};
     }
+    const bool keyboard_open = id == panel.state->keysound_selection.primary &&
+        keysound_row_input_available(panel) &&
+        wormedit::ui::chrome::context_menu_take_open_request(wormedit::ui::chrome::KeyboardContextTarget::sounds);
+    const bool pointer_open = nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) &&
+        nk_input_has_mouse_click_in_rect(&context->input, NK_BUTTON_RIGHT, bounds);
     if (!wormedit::ui::chrome::context_menu_owns_input(panel.state->keysound_group_menu) &&
-        !panel.view->input_occluded &&
-        nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) &&
-        nk_input_has_mouse_click_in_rect(&context->input, NK_BUTTON_RIGHT, bounds)) {
+        !panel.view->input_occluded && (keyboard_open || pointer_open)) {
         auto& state = *panel.state;
         if (!worm_ui_keysound_is_selected(state.keysound_selection, id)) {
             worm_ui_keysound_clear(state.keysound_selection);
@@ -1415,8 +1420,8 @@ void render_row(const SoundsPanel& panel, std::size_t shown_index) {
             state.keysound_selection.primary = id;
         }
         wormedit::ui::chrome::context_menu_open(
-            state.keysound_group_menu, context->input.mouse.pos,
-            {panel.view->project_id, panel.view->chart_id, panel.view->document_revision, id});
+            state.keysound_group_menu, keyboard_open ? nk_vec2(bounds.x, bounds.y + bounds.h) : context->input.mouse.pos,
+            {panel.view->project_id, panel.view->chart_id, panel.view->document_revision, id}, keyboard_open);
         wormedit::ui::chrome::popup_arm_release(state.keysound_group_menu.release_pending);
     }
 }

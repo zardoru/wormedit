@@ -101,6 +101,13 @@ struct worm_ui_nuklear_metadata_state_t {
     } project_drop_rectangle, export_drop_rectangle, output_path_drop_rectangle;
     std::size_t export_drop_group_index{};
     std::size_t output_path_drop_group_index{};
+    struct tag_drag_t {
+        std::optional<std::size_t> source;
+        std::optional<std::size_t> insertion;
+        float start_x{};
+        float start_y{};
+        bool moved{};
+    } tag_drag;
 };
 
 [[nodiscard]] auto worm_ui_nuklear_metadata_state() noexcept -> worm_ui_nuklear_metadata_state_t&;
@@ -145,3 +152,9 @@ void worm_ui_nuklear_metadata_file_dialog_complete(std::uint64_t generation, std
 [[nodiscard]] auto worm_ui_nuklear_metadata_file_dialog_take()
     -> std::optional<worm_ui_nuklear_metadata_file_dialog_result_t>;
 [[nodiscard]] auto worm_ui_nuklear_metadata_file_dialog_open() -> bool;
+
+// Draft-only insertion: a slot is before that index, or after the final tag.
+[[nodiscard]] auto worm_ui_nuklear_begin_metadata_tag_drag(std::size_t index, float x, float y) -> bool;
+void worm_ui_nuklear_target_metadata_tag_drag(std::size_t index, bool after);
+[[nodiscard]] auto worm_ui_nuklear_finish_metadata_tag_drag() -> bool;
+void worm_ui_nuklear_cancel_metadata_tag_drag();

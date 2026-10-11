@@ -49,6 +49,13 @@ inline auto apply_compose_layer_assignment(document_history_t& history,
     return result;
 }
 
+inline auto apply_compose_selected_sound_layer_assignment(document_history_t& history,
+    const editor_interaction_state_t& state, std::uint64_t revision, layer_id_t target)
+    -> document_command_result_t {
+    return add_selected_sounds_to_semantic_layer(history, revision,
+        {state.chart, target, state.selected_notes, selected_compose_bgm_events(state)});
+}
+
 inline auto begin_compose_layer_paint(document_history_t& history,
     editor_interaction_state_t& state, bool target_none, layer_id_t target,
     object_id_t note, bool captured, std::optional<object_id_t> bgm_event = std::nullopt,

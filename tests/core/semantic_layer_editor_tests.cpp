@@ -777,3 +777,113 @@ TEST_CASE("replacement membership batch checks a shared layer catalog once",
     for (const auto& note : history.document.charts.front().measures.front().notes)
         check_membership(static_cast<bool>(note.semantic_layers == std::vector{layer_id_t{1099}}));
 }
+
+namespace {
+auto selected_sound_layer_song() -> song_document_t {
+    auto song = semantic_layer_bgm_song();
+    song.audio_assets.push_back({.id = asset_id_t{50}, .source_path = "sample.wav"});
+    song.resources.push_back({.id = resource_id_t{51}, .asset = asset_id_t{50},
+                              .roles = {resource_role_t::sample, resource_role_t::bgm}});
+    song.resources.push_back({.id = resource_id_t{52}, .asset = asset_id_t{50},
+                              .roles = {resource_role_t::sample}});
+    auto& chart = song.charts.front();
+    chart.semantic_layers.push_back({.id = layer_id_t{8}, .name = "Percussion"});
+    chart.sound_layer_defaults.push_back({resource_id_t{51}, {layer_id_t{7}}});
+    auto& measure = chart.measures.front();
+    for (auto& note : measure.notes) note.sound = resource_id_t{51};
+    measure.bgm_events.front().sound = resource_id_t{51};
+    measure.bgm_events.push_back({.id = object_id_t{24}, .position = {measure.id, 600},
+        .source_lane = object_id_t{33}, .sound = resource_id_t{51}, .semantic_layers = {layer_id_t{7}}});
+    measure.notes.push_back({.id = object_id_t{25}, .position = {measure.id, 720},
+                             .lane = lane_id_t{1}, .sound = resource_id_t{52}});
+    measure.notes.push_back({.id = object_id_t{26}, .position = {measure.id, 840},
+                             .lane = lane_id_t{1}});
+    REQUIRE(validate_document(song).empty());
+    return song;
+}
+void check_selected_sounds(bool value) { CHECK(value); }
+}
+
+TEST_CASE("Selected sound layers propagate chart-wide while preserving explicit memberships",
+          "[unit][core][semantic-layer][selected-sound-layers]") {
+    auto history = make_document_history(selected_sound_layer_song());
+    const auto original = write_native_project(history.document);
+    REQUIRE(original.bytes);
+    const auto applied = add_selected_sounds_to_semantic_layer(history, 4,
+        {chart_id_t{2}, layer_id_t{8}, {object_id_t{20}, object_id_t{26}}, {object_id_t{23}}});
+    REQUIRE(applied);
+    auto& chart = history.document.charts.front();
+    check_selected_sounds(chart.sound_layer_defaults.size() == 1);
+    check_selected_sounds(chart.sound_layer_defaults.front().layers == std::vector{layer_id_t{7}, layer_id_t{8}});
+    check_selected_sounds(note_by_id(chart, object_id_t{20}).semantic_layers == std::vector{layer_id_t{7}});
+    check_selected_sounds(note_by_id(chart, object_id_t{21}).semantic_layers == std::vector{layer_id_t{7}, layer_id_t{8}});
+    check_selected_sounds(chart.measures.front().bgm_events[0].semantic_layers == std::vector{layer_id_t{8}});
+    check_selected_sounds(chart.measures.front().bgm_events[1].semantic_layers == std::vector{layer_id_t{7}});
+    check_selected_sounds(note_by_id(chart, object_id_t{25}).semantic_layers.empty());
+    check_selected_sounds(note_by_id(chart, object_id_t{26}).semantic_layers.empty());
+    check_selected_sounds(sound_default_layers_for_placement(chart, resource_id_t{51}) ==
+                          std::vector{layer_id_t{7}, layer_id_t{8}});
+    check_selected_sounds(validate_document(history.document).empty());
+    check_selected_sounds(history.undo.size() == 1);
+    const auto written = write_native_project(history.document);
+    REQUIRE(written.bytes);
+    const auto round_trip = parse_native_project(*written.bytes);
+    REQUIRE(round_trip.song);
+    check_selected_sounds(round_trip.song->charts.front().sound_layer_defaults.front().layers ==
+                          std::vector{layer_id_t{7}, layer_id_t{8}});
+    REQUIRE(undo_document_command(history));
+    const auto undone = write_native_project(history.document);
+    REQUIRE(undone.bytes);
+    // Undo changes the document revision; compare the restored content directly.
+    check_selected_sounds(history.document.charts.front().sound_layer_defaults.front().layers ==
+                          std::vector{layer_id_t{7}});
+    check_selected_sounds(note_by_id(history.document.charts.front(), object_id_t{21}).semantic_layers.empty());
+    check_selected_sounds(history.document.charts.front().measures.front().bgm_events.front().semantic_layers.empty());
+}
+
+TEST_CASE("Selected sound layer edits reject stale invalid locked and oversized selections atomically",
+          "[unit][core][semantic-layer][selected-sound-layers]") {
+    auto history = make_document_history(selected_sound_layer_song());
+    const add_selected_sounds_to_semantic_layer_action_t action{
+        chart_id_t{2}, layer_id_t{8}, {object_id_t{20}}, {}};
+    check_selected_sounds(!add_selected_sounds_to_semantic_layer(history, 3, action));
+    auto invalid = action;
+    invalid.notes = {object_id_t{999}};
+    check_selected_sounds(!add_selected_sounds_to_semantic_layer(history, 4, invalid));
+    invalid.notes = {object_id_t{23}}; // A BGM ID is not a note ID.
+    check_selected_sounds(!add_selected_sounds_to_semantic_layer(history, 4, invalid));
+    invalid.notes = {object_id_t{20}, object_id_t{20}};
+    check_selected_sounds(!add_selected_sounds_to_semantic_layer(history, 4, invalid));
+    semantic_layer_edit_limits_t limits;
+    limits.maximum_note_selection = 0;
+    check_selected_sounds(!add_selected_sounds_to_semantic_layer(history, 4, action, limits));
+    history.document.charts.front().semantic_layers.back().locked = true;
+    check_selected_sounds(!add_selected_sounds_to_semantic_layer(history, 4, action));
+    history.document.charts.front().semantic_layers.back().locked = false;
+    note_by_id(history.document.charts.front(), object_id_t{20}).sound = resource_id_t{999};
+    const auto missing_sound = add_selected_sounds_to_semantic_layer(history, 4, action);
+    check_selected_sounds(!missing_sound && has_code(missing_sound, diagnostic_code_t::invalid_id));
+    check_selected_sounds(history.document.revision == 4);
+    check_selected_sounds(history.undo.empty());
+    check_selected_sounds(history.document.charts.front().sound_layer_defaults.front().layers ==
+                          std::vector{layer_id_t{7}});
+}
+
+TEST_CASE("Selected sound layers deduplicate resources support BGM-only and ignore silent objects",
+          "[unit][core][semantic-layer][selected-sound-layers]") {
+    auto history = make_document_history(selected_sound_layer_song());
+    const auto silent = add_selected_sounds_to_semantic_layer(history, 4,
+        {chart_id_t{2}, layer_id_t{8}, {object_id_t{26}}, {}});
+    check_selected_sounds(!silent.applied && silent.diagnostics.empty());
+    check_selected_sounds(history.undo.empty());
+    const auto bgm = add_selected_sounds_to_semantic_layer(history, 4,
+        {chart_id_t{2}, layer_id_t{8}, {}, {object_id_t{23}, object_id_t{24}}});
+    REQUIRE(bgm);
+    check_selected_sounds(history.document.charts.front().sound_layer_defaults.size() == 1);
+    const auto revision = history.document.revision;
+    const auto repeated = add_selected_sounds_to_semantic_layer(history, revision,
+        {chart_id_t{2}, layer_id_t{8}, {object_id_t{20}, object_id_t{21}}, {object_id_t{23}}});
+    check_selected_sounds(!repeated.applied && repeated.diagnostics.empty());
+    check_selected_sounds(history.document.revision == revision);
+    check_selected_sounds(history.undo.size() == 1);
+}

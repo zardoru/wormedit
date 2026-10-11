@@ -167,3 +167,39 @@ TEST_CASE("Metadata rational formatting preserves the exact numerator and denomi
     CHECK(worm_ui_nuklear_format_metadata_rational({150, 100}) == "1.50");
     CHECK(worm_ui_nuklear_format_metadata_rational({2, 4}) == "2/4");
 }
+
+TEST_CASE("Tag grip insertion moves draft strings without losing duplicate or hidden tags",
+          "[unit][frontend-state][metadata][tag-grips]") {
+    worm_ui_nuklear_reset_metadata_state();
+    auto& state = worm_ui_nuklear_metadata_state();
+    state.tag_buffers_valid = true;
+    state.search_tags.resize(66);
+    state.search_tags[0][0] = 'a';
+    state.search_tags[1][0] = 'b';
+    state.search_tags[65][0] = 'z';
+    REQUIRE(worm_ui_nuklear_begin_metadata_tag_drag(0, 10, 10));
+    state.tag_drag.moved = true;
+    worm_ui_nuklear_target_metadata_tag_drag(2, true);
+    REQUIRE(worm_ui_nuklear_finish_metadata_tag_drag());
+    CHECK(state.search_tags[0][0] == 'b');
+    CHECK(state.search_tags[2][0] == 'a');
+    CHECK(state.search_tags[65][0] == 'z');
+    CHECK(state.search_tags.size() == 66);
+}
+
+TEST_CASE("Tag grips cancel or reject stale and stationary draft drops",
+          "[unit][frontend-state][metadata][tag-grips]") {
+    worm_ui_nuklear_reset_metadata_state();
+    auto& state = worm_ui_nuklear_metadata_state();
+    state.tag_buffers_valid = true;
+    state.search_tags.resize(3);
+    REQUIRE(worm_ui_nuklear_begin_metadata_tag_drag(2, 10, 10));
+    worm_ui_nuklear_target_metadata_tag_drag(0, false);
+    CHECK_FALSE(worm_ui_nuklear_finish_metadata_tag_drag());
+    REQUIRE(worm_ui_nuklear_begin_metadata_tag_drag(2, 10, 10));
+    state.tag_drag.moved = true;
+    worm_ui_nuklear_target_metadata_tag_drag(0, false);
+    worm_ui_nuklear_cancel_metadata_tag_drag();
+    CHECK_FALSE(worm_ui_nuklear_finish_metadata_tag_drag());
+    CHECK_FALSE(worm_ui_nuklear_begin_metadata_tag_drag(3, 10, 10));
+}

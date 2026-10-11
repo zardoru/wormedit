@@ -167,6 +167,8 @@ struct sound_layer_membership_action_t {
     bool member{true};
     // Adding also tags existing notes. Preserve assigned layers unless requested.
     bool overwrite_note_layers{};
+    // Optional chart-wide fill for unassigned BGM; BGM supports one layer only.
+    bool assign_unlayered_bgm{};
 };
 
 // Adds or removes one layer from the defaults of a group of sounds while the
@@ -178,6 +180,21 @@ struct sound_layer_membership_action_t {
                                                 std::uint64_t expected_revision,
                                                 const sound_layer_membership_action_t& action)
     -> document_command_result_t;
+
+struct add_selected_sounds_to_semantic_layer_action_t {
+    chart_id_t chart;
+    layer_id_t layer;
+    std::vector<object_id_t> notes;
+    std::vector<object_id_t> bgm_events;
+};
+
+// Deduplicates the sounds of selected notes/BGM, adds the target to their defaults,
+// and fills matching unassigned notes/BGM across this chart in one Undo step.
+// Explicit memberships are retained. Silent selected objects are ignored; an all-
+// silent selection is a no-op. Invalid or repeated selected IDs reject the batch.
+[[nodiscard]] auto add_selected_sounds_to_semantic_layer(document_history_t& history,
+    std::uint64_t expected_revision, const add_selected_sounds_to_semantic_layer_action_t& action,
+    semantic_layer_edit_limits_t limits = {}) -> document_command_result_t;
 
 // Layers a sound brings to a freshly placed note: its defaults that still exist
 // on the chart and are unlocked, in the stored order.

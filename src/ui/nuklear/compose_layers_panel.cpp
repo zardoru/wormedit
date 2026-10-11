@@ -118,14 +118,17 @@ void open_layer_menu(const LayersPanel& panel, const WormUiComposeSemanticLayerV
     if (layer.layer_id == 0 || layer_menu_blocks_row_input(panel) ||
         panel.view->input_occluded || !panel.view->scene_available ||
         wormedit::ui::chrome::popup_panel(context)) return;
-    if (!nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) ||
-        !nk_input_is_mouse_hovering_rect(&context->input, bounds)) return;
+    const bool keyboard_open = layer.layer_id == wormedit::ui::chrome::context_menu_focused_object() &&
+        wormedit::ui::chrome::context_menu_take_open_request(wormedit::ui::chrome::KeyboardContextTarget::layers);
+    const bool pointer_open = nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) &&
+        nk_input_is_mouse_hovering_rect(&context->input, bounds);
+    if (!keyboard_open && !pointer_open) return;
     if (!raise(panel, WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER, layer.layer_id)) return;
     auto& state = *panel.state;
     wormedit::ui::chrome::context_menu_open(
-        state.layers_menu, context->input.mouse.pos,
+        state.layers_menu, keyboard_open ? nk_vec2(bounds.x, bounds.y + bounds.h) : context->input.mouse.pos,
         {panel.view->project_id, panel.view->chart_id, panel.view->document_revision,
-         layer.layer_id});
+         layer.layer_id}, keyboard_open);
     state.layers_menu_input_consumed = true;
     state.layers_menu_layer = layer;
     state.layers_menu_layer_name = layer.name;
@@ -321,6 +324,10 @@ void render_row_name(const LayersPanel& panel, const WormUiComposeSemanticLayerV
                          !panel.view->input_occluded && !layer_menu_blocks_row_input(panel);
     struct nk_rect bounds{};
     if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
+    if (clicked) {
+        panel.state->keyboard_focus = false;
+        wormedit::ui::chrome::context_menu_focus(wormedit::ui::chrome::KeyboardContextTarget::layers, layer.layer_id);
+    }
     open_layer_menu(panel, layer, index, bounds);
     auto* canvas = nk_window_get_canvas(context);
     if (layer.selected) nk_fill_rect(canvas, bounds, 3.0f, color(UiColor::selected));

@@ -65,6 +65,7 @@ void validate_editor(options_runtime_t& r) {
         "Scroll direction must be Profile default, Up, or Down.");
 }
 void validate_display(options_runtime_t& r) {
+    diagnose(r, WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY, r.draft.display.field_waveform_opacity_percent <= 100, "Field waveform opacity must be between 0 and 100 percent.");
     diagnose(r, WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY, r.draft.display.snap_grid_opacity_percent <= 100, "Grid opacity must be between 0 and 100 percent.");
     diagnose(r, WORM_UI_OPTIONS_FIELD_FIELD_SCHEME, valid_text(r.draft.display.field_scheme), "Field scheme name is too long or contains a null character.");
     diagnose(r, WORM_UI_OPTIONS_FIELD_THEME, valid_text(r.draft.display.theme), "Theme path is too long or contains a null character.");
@@ -131,6 +132,7 @@ auto edit_editor(program_preferences_t& p, const WormUiOptionsAction& a) -> bool
     case WORM_UI_OPTIONS_FIELD_NOTE_PALETTE: p.editor.note_kind_palette_visible = a.boolean; return true;
     case WORM_UI_OPTIONS_FIELD_LANE_LEGEND: p.editor.lane_key_legend_visible = a.boolean; return true;
     case WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK: p.editor.audition_on_click = a.boolean; return true;
+    case WORM_UI_OPTIONS_FIELD_INVERT_SCROLL_WHEEL: p.editor.invert_scroll_wheel = a.boolean; return true;
     case WORM_UI_OPTIONS_FIELD_MINIMAP_CLICK: p.minimap.click_moves_paused_playhead = a.boolean; return true;
     default: return false;
     }
@@ -151,6 +153,8 @@ auto edit_display(program_preferences_t& p, const WormUiOptionsAction& a) -> boo
     case WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID: p.display.snap_colored_grid = a.boolean; return true;
     case WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY:
         p.display.snap_grid_opacity_percent = static_cast<std::uint32_t>(std::min<std::uint64_t>(100, a.integer)); return true;
+    case WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY:
+        p.display.field_waveform_opacity_percent = static_cast<std::uint32_t>(std::min<std::uint64_t>(100, a.integer)); return true;
     case WORM_UI_OPTIONS_FIELD_THEME: p.display.theme = a.text; return true;
     case WORM_UI_OPTIONS_FIELD_SCALE: p.display.ui_scale_percent = static_cast<std::uint32_t>(a.integer); return true;
     case WORM_UI_OPTIONS_FIELD_LAYOUT: p.layout.dock_layout = a.text; return true;
@@ -259,10 +263,12 @@ auto options_view(options_runtime_t& r) -> WormUiOptionsView {
         .move_collision_policy = static_cast<std::uint32_t>(p.editor.move_collision_policy),
         .note_kind_palette_visible = p.editor.note_kind_palette_visible, .lane_key_legend_visible = p.editor.lane_key_legend_visible,
         .audition_on_click = p.editor.audition_on_click,
+        .invert_scroll_wheel = p.editor.invert_scroll_wheel,
         .confirm_unsaved_close = p.general.confirm_unsaved_close, .keep_pitch = p.audio.keep_pitch,
         .frame_timing_overlay = p.display.frame_timing_overlay,
         .snap_colored_grid = p.display.snap_colored_grid,
         .snap_grid_opacity_percent = p.display.snap_grid_opacity_percent,
+        .field_waveform_opacity_percent = p.display.field_waveform_opacity_percent,
         .minimap_click_moves_paused_playhead = p.minimap.click_moves_paused_playhead,
         .keysound_budget_mib = p.audio.keysound_budget_mib,
         .rate_numerator = p.audio.playback_rate.numerator, .rate_denominator = p.audio.playback_rate.denominator,

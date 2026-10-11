@@ -1,0 +1,132 @@
+{
+  "version": 2,
+  "name": "osu!mania \u00b7 10K (yellow centers)",
+  "description": "Ten playable lanes: white/blue/white/blue/yellow, yellow/blue/white/blue/white. Other lane counts inherit Wormedit.",
+  "key_count": 10,
+  "keys": {
+    "1p": {
+      "1": {
+        "note": "#e2e8f0",
+        "note_border": "#334155",
+        "lane": "#12131aa0",
+        "lane_alternate": "#12131aa0",
+        "hold_body": "#e2e8f099",
+        "lane_label": "#f0f4fa"
+      },
+      "2": {
+        "note": "#3b82f6",
+        "note_border": "#1e40af",
+        "lane": "#172554a0",
+        "lane_alternate": "#172554a0",
+        "hold_body": "#3b82f699",
+        "lane_label": "#f0f4fa"
+      },
+      "3": {
+        "note": "#e2e8f0",
+        "note_border": "#334155",
+        "lane": "#12131aa0",
+        "lane_alternate": "#12131aa0",
+        "hold_body": "#e2e8f099",
+        "lane_label": "#f0f4fa"
+      },
+      "4": {
+        "note": "#3b82f6",
+        "note_border": "#1e40af",
+        "lane": "#172554a0",
+        "lane_alternate": "#172554a0",
+        "hold_body": "#3b82f699",
+        "lane_label": "#f0f4fa"
+      },
+      "5": {
+        "note": "#facc15",
+        "note_border": "#a16207",
+        "lane": "#422006a0",
+        "lane_alternate": "#422006a0",
+        "hold_body": "#facc1599",
+        "lane_label": "#f0f4fa"
+      },
+      "6": {
+        "note": "#facc15",
+        "note_border": "#a16207",
+        "lane": "#422006a0",
+        "lane_alternate": "#422006a0",
+        "hold_body": "#facc1599",
+        "lane_label": "#f0f4fa"
+      },
+      "7": {
+        "note": "#3b82f6",
+        "note_border": "#1e40af",
+        "lane": "#172554a0",
+        "lane_alternate": "#172554a0",
+        "hold_body": "#3b82f699",
+        "lane_label": "#f0f4fa"
+      },
+      "8": {
+        "note": "#e2e8f0",
+        "note_border": "#334155",
+        "lane": "#12131aa0",
+        "lane_alternate": "#12131aa0",
+        "hold_body": "#e2e8f099",
+        "lane_label": "#f0f4fa"
+      },
+      "9": {
+        "note": "#3b82f6",
+        "note_border": "#1e40af",
+        "lane": "#172554a0",
+        "lane_alternate": "#172554a0",
+        "hold_body": "#3b82f699",
+        "lane_label": "#f0f4fa"
+      },
+      "10": {
+        "note": "#e2e8f0",
+        "note_border": "#334155",
+        "lane": "#12131aa0",
+        "lane_alternate": "#12131aa0",
+        "hold_body": "#e2e8f099",
+        "lane_label": "#f0f4fa"
+      }
+    },
+    "2p": {
+      "1": {
+        "note": "#facc15",
+        "note_border": "#a16207",
+        "lane": "#422006a0",
+        "lane_alternate": "#422006a0",
+        "hold_body": "#facc1599",
+        "lane_label": "#f0f4fa"
+      },
+      "2": {
+        "note": "#3b82f6",
+        "note_border": "#1e40af",
+        "lane": "#172554a0",
+        "lane_alternate": "#172554a0",
+        "hold_body": "#3b82f699",
+        "lane_label": "#f0f4fa"
+      },
+      "3": {
+        "note": "#e2e8f0",
+        "note_border": "#334155",
+        "lane": "#12131aa0",
+        "lane_alternate": "#12131aa0",
+        "hold_body": "#e2e8f099",
+        "lane_label": "#f0f4fa"
+      },
+      "4": {
+        "note": "#3b82f6",
+        "note_border": "#1e40af",
+        "lane": "#172554a0",
+        "lane_alternate": "#172554a0",
+        "hold_body": "#3b82f699",
+        "lane_label": "#f0f4fa"
+      },
+      "5": {
+        "note": "#e2e8f0",
+        "note_border": "#334155",
+        "lane": "#12131aa0",
+        "lane_alternate": "#12131aa0",
+        "hold_body": "#e2e8f099",
+        "lane_label": "#f0f4fa"
+      }
+    }
+  }
+}

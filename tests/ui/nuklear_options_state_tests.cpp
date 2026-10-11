@@ -397,3 +397,47 @@ TEST_CASE("Grid opacity draft Apply Revert Defaults and wide values stay bounded
     expect_options(options_view(runtime).snap_grid_opacity_percent == 35);
     expect_options(program.preferences.display.snap_grid_opacity_percent == 60);
 }
+
+TEST_CASE("Field waveform opacity previews as a draft and supports Apply Revert Defaults", "[options][feedback]") {
+    temporary_preferences_t file;
+    program_preferences_runtime_t program{.path = file.directory / "preferences.json"};
+    options_runtime_t runtime;
+    open_options(runtime, program.preferences);
+    select(runtime, program, WORM_UI_OPTIONS_DISPLAY);
+    auto edit = action(runtime, WORM_UI_OPTIONS_EDIT_FIELD, WORM_UI_OPTIONS_DISPLAY);
+    edit.field = WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY;
+    edit.integer = 40;
+    expect_options(!apply_options_action(runtime, program, edit));
+    expect_options(options_view(runtime).field_waveform_opacity_percent == 40);
+    expect_options(program.preferences.display.field_waveform_opacity_percent == 75);
+    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(load_program_preferences(program.path).contents.preferences.display.field_waveform_opacity_percent == 40);
+    edit.revision = runtime.revision;
+    edit.integer = std::numeric_limits<std::uint64_t>::max();
+    expect_options(!apply_options_action(runtime, program, edit));
+    expect_options(options_view(runtime).field_waveform_opacity_percent == 100);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT)));
+    expect_options(options_view(runtime).field_waveform_opacity_percent == 40);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS)));
+    expect_options(options_view(runtime).field_waveform_opacity_percent == 75);
+}
+
+TEST_CASE("Wheel inversion stays an Editor draft until applied", "[options][feedback]") {
+    temporary_preferences_t file;
+    program_preferences_runtime_t program{.path = file.directory / "preferences.json"};
+    options_runtime_t runtime;
+    open_options(runtime, program.preferences);
+    select(runtime, program, WORM_UI_OPTIONS_EDITOR);
+    auto edit = action(runtime, WORM_UI_OPTIONS_EDIT_FIELD, WORM_UI_OPTIONS_EDITOR);
+    edit.field = WORM_UI_OPTIONS_FIELD_INVERT_SCROLL_WHEEL;
+    edit.boolean = true;
+    expect_options(!apply_options_action(runtime, program, edit));
+    expect_options(options_view(runtime).invert_scroll_wheel);
+    expect_options(!program.preferences.editor.invert_scroll_wheel);
+    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(load_program_preferences(program.path).contents.preferences.editor.invert_scroll_wheel);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS)));
+    expect_options(!options_view(runtime).invert_scroll_wheel);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT)));
+    expect_options(options_view(runtime).invert_scroll_wheel);
+}

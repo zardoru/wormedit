@@ -1211,8 +1211,8 @@ static void draw_compose_waveform_samples(const ComposePaintContext& paint,
         for (size_t channel = 0; channel < 2; ++channel) {
             if (!std::isfinite(before.samples[channel]) || !std::isfinite(after.samples[channel]))
                 continue;
-            const auto color = channel == 0 ? nk_rgba(114, 222, 239, 190)
-                                            : nk_rgba(238, 160, 114, 190);
+            const auto color = channel == 0 ? wormedit::ui::theme::field_waveform_color(nk_rgba(114, 222, 239, 190))
+                                            : wormedit::ui::theme::field_waveform_color(nk_rgba(238, 160, 114, 190));
             field_line(paint,
                 center + std::clamp(before.samples[channel], -1.0f, 1.0f) * half_width,
                 compose_projected_y(paint, before.y_pixels),
@@ -1236,20 +1236,20 @@ static void draw_compose_waveform(const ComposePaintContext& paint) {
         return;
     }
     if (draw_compose_envelope_texture(paint, view.waveform_rows, view.waveform_row_count,
-            center, half_width, 0, nk_rgba(57, 137, 167, 96), nk_rgba(114, 222, 239, 142), false))
+            center, half_width, 0, wormedit::ui::theme::field_waveform_color(nk_rgba(57, 137, 167, 96)), wormedit::ui::theme::field_waveform_color(nk_rgba(114, 222, 239, 142)), false))
         return;
     for (size_t index = 0; index < view.waveform_row_count; ++index) {
         const auto& row = view.waveform_rows[index];
         if (!finite_envelope_row(row)) continue;
         const auto y = compose_projected_y(paint, row.y_pixels);
         field_line(paint, center - row.rms[0] * half_width, y, center, y, 2.0f,
-                       nk_rgba(57, 137, 167, 96), 6);
+                       wormedit::ui::theme::field_waveform_color(nk_rgba(57, 137, 167, 96)), 6);
         field_line(paint, center, y, center + row.rms[1] * half_width, y, 2.0f,
-                       nk_rgba(57, 137, 167, 96), 6);
+                       wormedit::ui::theme::field_waveform_color(nk_rgba(57, 137, 167, 96)), 6);
         field_line(paint, center - row.absolute_peak[0] * half_width, y, center, y,
-                       1.0f, nk_rgba(114, 222, 239, 142), 6);
+                       1.0f, wormedit::ui::theme::field_waveform_color(nk_rgba(114, 222, 239, 142)), 6);
         field_line(paint, center, y, center + row.absolute_peak[1] * half_width, y,
-                       1.0f, nk_rgba(114, 222, 239, 142), 6);
+                       1.0f, wormedit::ui::theme::field_waveform_color(nk_rgba(114, 222, 239, 142)), 6);
     }
 }
 
@@ -1300,16 +1300,16 @@ static void draw_compose_channel_waveform(const ComposePaintContext& paint) {
     const auto half_width = rect.w * 0.43f;
     if (draw_compose_envelope_texture(paint, view.channel_waveform_rows,
             view.channel_waveform_row_count, center, half_width, 1,
-            nk_rgba(87, 157, 196, 126), nk_rgba(146, 230, 251, 224), true)) return;
+            wormedit::ui::theme::field_waveform_color(nk_rgba(87, 157, 196, 126)), wormedit::ui::theme::field_waveform_color(nk_rgba(146, 230, 251, 224)), true)) return;
     for (size_t index = 0; index < view.channel_waveform_row_count; ++index) {
         const auto& row = view.channel_waveform_rows[index];
         if (!finite_envelope_row(row)) continue;
         const auto y = compose_projected_y(paint, row.y_pixels);
         field_line(paint, center - row.rms[0] * half_width, y,
-                       center + row.rms[1] * half_width, y, 2.0f, nk_rgba(87, 157, 196, 126), 6);
+                       center + row.rms[1] * half_width, y, 2.0f, wormedit::ui::theme::field_waveform_color(nk_rgba(87, 157, 196, 126)), 6);
         field_line(paint, center - row.absolute_peak[0] * half_width, y,
                        center + row.absolute_peak[1] * half_width, y, 1.0f,
-                       nk_rgba(146, 230, 251, 224), 6);
+                       wormedit::ui::theme::field_waveform_color(nk_rgba(146, 230, 251, 224)), 6);
     }
 }
 
@@ -1344,7 +1344,7 @@ static void draw_compose_stem_piece(const ComposePaintContext& paint, const Worm
     if (!rect) return;
     if (stem.pending || stem.row_count == 0) {
         field_rect(paint, compose_pending_piece_rect(paint, stem, *rect), 0.0f,
-            nk_rgba(146, 230, 251, stem.pending ? 22 : 0), 6);
+            wormedit::ui::theme::field_waveform_color(nk_rgba(146, 230, 251, stem.pending ? 22 : 0)), 6);
         return;
     }
     const auto lanes = std::span(paint.view->bgm_lanes, paint.view->bgm_lane_count);
@@ -1355,7 +1355,7 @@ static void draw_compose_stem_piece(const ComposePaintContext& paint, const Worm
     const auto center = waveform_rect.x + waveform_rect.w * 0.5f;
     const auto half_width = waveform_rect.w * 0.43f;
     if (draw_compose_envelope_texture(paint, stem.rows, stem.row_count, center, half_width,
-            0, nk_rgba(87, 157, 196, 96), nk_rgba(146, 230, 251, 190), true,
+            0, wormedit::ui::theme::field_waveform_color(nk_rgba(87, 157, 196, 96)), wormedit::ui::theme::field_waveform_color(nk_rgba(146, 230, 251, 190)), true,
             stem.source_lane_id, wormedit::ui::field::waveform_piece_key_t{
                 static_cast<wormedit::ui::field::waveform_piece_kind_t>(stem.piece_kind), stem.stem_key})) return;
     for (size_t row_index = 0; row_index < stem.row_count; ++row_index) {
@@ -1363,7 +1363,7 @@ static void draw_compose_stem_piece(const ComposePaintContext& paint, const Worm
         if (!finite_envelope_row(row)) continue;
         const auto y = compose_projected_y(paint, row.y_pixels);
         field_line(paint, center - row.absolute_peak[0] * half_width, y,
-                   center + row.absolute_peak[1] * half_width, y, 1.0f, nk_rgba(146, 230, 251, 190), 6);
+                   center + row.absolute_peak[1] * half_width, y, 1.0f, wormedit::ui::theme::field_waveform_color(nk_rgba(146, 230, 251, 190)), 6);
     }
 }
 

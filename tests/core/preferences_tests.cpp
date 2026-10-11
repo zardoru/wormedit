@@ -337,3 +337,24 @@ TEST_CASE("Snap grid opacity defaults mild and rejects invalid saved values", "[
     values.display.snap_grid_opacity_percent = 101;
     expect_preference(!serialize_program_preferences(values));
 }
+
+TEST_CASE("Feedback scroll inversion and waveform opacity persist with safe defaults", "[preferences][feedback]") {
+    const auto defaults = parse_program_preferences("{}").preferences;
+    expect_preference(!defaults.editor.invert_scroll_wheel);
+    expect_preference(defaults.display.field_waveform_opacity_percent == 75);
+    auto values = defaults;
+    values.editor.invert_scroll_wheel = true;
+    values.editor.scroll_directions[0] = 2;
+    values.display.field_waveform_opacity_percent = 0;
+    const auto bytes = serialize_program_preferences(values);
+    require_preference(bytes.has_value());
+    const auto parsed = parse_program_preferences(*bytes);
+    expect_preference(parsed.parsed);
+    expect_preference(parsed.preferences == values);
+    const auto invalid = parse_program_preferences(R"({"display":{"field_waveform_opacity_percent":101},"editor":{"invert_scroll_wheel":123}})");
+    expect_preference(invalid.preferences.display.field_waveform_opacity_percent == 75);
+    expect_preference(!invalid.preferences.editor.invert_scroll_wheel);
+    expect_preference(!invalid.warnings.empty());
+    values.display.field_waveform_opacity_percent = 101;
+    expect_preference(!serialize_program_preferences(values));
+}

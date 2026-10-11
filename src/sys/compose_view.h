@@ -464,7 +464,7 @@ struct application_command_state_t {
     // Temporary pan wins over field centering only for its stamped chart/asset/visible span.
     std::optional<bgm_bar_pan_override_t> bgm_bar_pan_override;
     std::optional<bgm_bar_window_capture_t> bgm_bar_window_capture;
-    bool bgm_bar_hidden{};
+    std::optional<bool> bgm_bar_hidden;
     struct minimap_start_frame_t {
         wormedit::chart_id_t chart;
         std::uint64_t revision{};

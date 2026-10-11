@@ -1121,6 +1121,7 @@ typedef struct WormUiKeysoundDockRequest {
 typedef struct WormUiBookmarkChooserRequest {
     size_t first_row, row_limit;
     bool open;
+    char query[256];
 } WormUiBookmarkChooserRequest;
 
 typedef struct WormUiBookmarkChooserRowView {
@@ -1137,6 +1138,7 @@ typedef struct WormUiBookmarkChooserView {
     const WormUiBookmarkChooserRowView* rows;
     size_t row_count, total_count, first_row;
     bool truncated;
+    const char* query;
 } WormUiBookmarkChooserView;
 
 enum {
@@ -2113,7 +2115,8 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_NOTE_PALETTE, WORM_UI_OPTIONS_FIELD_LANE_LEGEND,
     WORM_UI_OPTIONS_FIELD_AREA_ALPHA, WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK,
     WORM_UI_OPTIONS_FIELD_MOVE_COLLISION_POLICY, WORM_UI_OPTIONS_FIELD_FIELD_SCHEME,
-    WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID, WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY
+    WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID, WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY,
+    WORM_UI_OPTIONS_FIELD_INVERT_SCROLL_WHEEL, WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY
 } WormUiOptionsField;
 typedef struct WormUiOptionsDiagnostic {
     WormUiOptionsField field;
@@ -2138,9 +2141,11 @@ typedef struct WormUiOptionsView {
     uint32_t move_collision_policy;
     bool note_kind_palette_visible, lane_key_legend_visible;
     bool audition_on_click;
+    bool invert_scroll_wheel;
     bool confirm_unsaved_close, keep_pitch, frame_timing_overlay;
     bool snap_colored_grid;
     uint32_t snap_grid_opacity_percent;
+    uint32_t field_waveform_opacity_percent;
     bool minimap_click_moves_paused_playhead;
     uint32_t keysound_budget_mib;
     uint64_t rate_numerator, rate_denominator;
@@ -2561,6 +2566,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU,
     WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER,
     WORM_UI_COMPOSE_ACTION_RENAME_QUANTIZE_PRESET,
+    WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION,
 } WormUiComposeActionKind;
 
 typedef enum WormUiComposeInputKind {
@@ -3030,6 +3036,7 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer);
 bool worm_ui_frontend_select_field_scheme(const char* id);
 void worm_ui_frontend_set_snap_colored_grid(bool enabled);
 void worm_ui_frontend_set_snap_grid_opacity(uint32_t percent);
+void worm_ui_frontend_set_field_waveform_opacity(uint32_t percent);
 // Initialize the same event/action frontend without a window or renderer for integration tests.
 bool worm_ui_frontend_init_headless(int width, int height);
 // Actual in-window chrome height; headless initialization keeps the fallback layout.

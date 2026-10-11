@@ -93,111 +93,111 @@ std::array<nk_color, compose_names.size()> compose_colors{
 auto builtin_key_colors() -> std::array<key_color_t, key_names.size()> {
     std::array<key_color_t, key_names.size()> colors{};
     colors[0] = {false,
-                 nk_rgba(33, 40, 53, 255),
+                 nk_rgba(33, 40, 53, 160),
                  nk_rgba(133, 182, 222, 255),
                  nk_rgba(58, 90, 120, 255),
                  nk_rgba(133, 182, 222, 153),
-                 nk_rgba(33, 40, 53, 255),
+                 nk_rgba(37, 44, 57, 160),
                  nk_rgba(240, 244, 250, 255),
                  {},
                  {},
                  {}};
     colors[1] = {true,
-                 nk_rgba(18, 19, 26, 255),
+                 nk_rgba(44, 48, 58, 160),
                  nk_rgba(226, 232, 240, 255),
                  nk_rgba(51, 65, 85, 255),
                  nk_rgba(226, 232, 240, 153),
-                 nk_rgba(18, 19, 26, 255),
+                 nk_rgba(48, 52, 62, 160),
                  nk_rgba(240, 244, 250, 255),
                  {},
                  {},
                  {}};
     colors[2] = {true,
-                 nk_rgba(23, 37, 84, 255),
+                 nk_rgba(30, 37, 50, 160),
                  nk_rgba(59, 130, 246, 255),
                  nk_rgba(30, 64, 175, 255),
                  nk_rgba(59, 130, 246, 153),
-                 nk_rgba(23, 37, 84, 255),
+                 nk_rgba(34, 41, 54, 160),
                  nk_rgba(240, 244, 250, 255),
                  {},
                  {},
                  {}};
     colors[3] = {true,
-                 nk_rgba(69, 10, 10, 255),
+                 nk_rgba(48, 34, 40, 160),
                  nk_rgba(248, 113, 113, 255),
                  nk_rgba(185, 28, 28, 255),
                  nk_rgba(248, 113, 113, 153),
-                 nk_rgba(69, 10, 10, 255),
+                 nk_rgba(52, 38, 44, 160),
                  nk_rgba(240, 244, 250, 255),
                  {},
                  {},
                  {}};
     colors[4] = {true,
-                 nk_rgba(8, 51, 68, 255),
+                 nk_rgba(30, 43, 47, 160),
                  nk_rgba(34, 211, 238, 255),
                  nk_rgba(14, 116, 144, 255),
                  nk_rgba(34, 211, 238, 153),
-                 nk_rgba(8, 51, 68, 255),
+                 nk_rgba(34, 47, 51, 160),
                  nk_rgba(240, 244, 250, 255),
                  {},
                  {},
                  {}};
     colors[5] = {true,
-                 nk_rgba(69, 26, 3, 255),
+                 nk_rgba(47, 41, 32, 160),
                  nk_rgba(251, 191, 36, 255),
                  nk_rgba(180, 83, 9, 255),
                  nk_rgba(251, 191, 36, 153),
-                 nk_rgba(69, 26, 3, 255),
+                 nk_rgba(51, 45, 36, 160),
                  nk_rgba(240, 244, 250, 255),
                  {},
                  {},
                  {}};
     colors[6] = {true,
-                 nk_rgba(18, 19, 26, 255),
+                 nk_rgba(44, 48, 58, 160),
                  nk_rgba(233, 235, 242, 255),
                  nk_rgba(51, 65, 85, 255),
                  nk_rgba(233, 235, 242, 153),
-                 nk_rgba(18, 19, 26, 255),
+                 nk_rgba(48, 52, 62, 160),
                  nk_rgba(240, 244, 250, 255),
                  {},
                  {},
                  {}};
     colors[7] = {true,
-                 nk_rgba(66, 32, 6, 255),
+                 nk_rgba(47, 44, 31, 160),
                  nk_rgba(250, 204, 21, 255),
                  nk_rgba(161, 98, 7, 255),
                  nk_rgba(250, 204, 21, 153),
-                 nk_rgba(66, 32, 6, 255),
+                 nk_rgba(51, 48, 35, 160),
                  nk_rgba(240, 244, 250, 255),
                  {},
                  {},
                  {}};
     colors[8] = {true,
-                 nk_rgba(5, 46, 22, 255),
+                 nk_rgba(29, 45, 36, 160),
                  nk_rgba(74, 222, 128, 255),
                  nk_rgba(21, 128, 61, 255),
                  nk_rgba(74, 222, 128, 153),
-                 nk_rgba(5, 46, 22, 255),
+                 nk_rgba(33, 49, 40, 160),
                  nk_rgba(240, 244, 250, 255),
                  {},
                  {},
                  {}};
     colors[9] = {true,
-                 nk_rgba(23, 37, 84, 255),
+                 nk_rgba(30, 39, 55, 160),
                  nk_rgba(96, 165, 250, 255),
                  nk_rgba(29, 78, 216, 255),
                  nk_rgba(96, 165, 250, 153),
-                 nk_rgba(23, 37, 84, 255),
+                 nk_rgba(34, 43, 59, 160),
                  nk_rgba(240, 244, 250, 255),
                  {},
                  {},
                  {}};
     colors[10] = {true,
-                  nk_rgba(69, 10, 10, 255),
+                  nk_rgba(48, 34, 40, 160),
                   nk_rgba(248, 113, 113, 255),
                   nk_rgba(185, 28, 28, 255),
                   nk_rgba(248, 113, 113, 153),
-                  nk_rgba(69, 10, 10, 255),
+                  nk_rgba(52, 38, 44, 160),
                   nk_rgba(240, 244, 250, 255),
                   {},
                   {},
@@ -214,6 +214,7 @@ struct field_palette_t {
     decltype(key_colors) keys = key_colors;
     decltype(note_accents) accents = note_accents;
     std::map<std::string, nlohmann::json> positions;
+    std::optional<std::size_t> key_count;
     nlohmann::json document;
     key_color_t bgm{true,
                     nk_rgb(38, 34, 47),
@@ -240,6 +241,7 @@ std::set<std::string> warned_ids;
 std::uint64_t generation{};
 bool colored_grid{true};
 std::uint32_t grid_opacity_percent{35};
+std::uint32_t waveform_opacity_percent{75};
 constexpr std::array<std::string_view, 8> timing_names{"bpm",   "scroll", "speed", "stop",
                                                        "delay", "warp",   "kiai",  "anchor"};
 
@@ -399,6 +401,10 @@ void validate_scheme(const nlohmann::json& document) {
     if (!document.is_object() || document.value("version", 0) != 2 || !document.contains("name") ||
         !document["name"].is_string() || document["name"].get<std::string>().empty())
         throw std::runtime_error("expected schema version 2 and a name");
+    if (document.contains("key_count") &&
+        (!document["key_count"].is_number_unsigned() ||
+         document["key_count"].get<std::size_t>() == 0))
+        throw std::runtime_error("expected positive playable key_count");
     for (const auto* section : {"roles", "key_colors", "keys", "bgm", "timing"}) {
         if (!document.contains(section))
             continue;
@@ -428,6 +434,9 @@ auto parse_palette(const nlohmann::json& document, field_palette_t base) -> fiel
     base.keys = key_colors;
     base.accents = note_accents;
     base.document = document;
+    base.key_count = document.contains("key_count")
+                         ? std::optional{document["key_count"].get<std::size_t>()}
+                         : std::nullopt;
     read_key_entry(document, document.value("bgm", nlohmann::json{}), base.bgm);
     const auto timing = document.value("timing", nlohmann::json::object());
     for (std::size_t i = 0; i < timing_names.size(); ++i)
@@ -535,7 +544,10 @@ void bind_field_layout(std::span<const field_lane_t> lanes) {
         return;
     bound_layout.assign(lanes.begin(), lanes.end());
     layout_colors.clear();
-    if (active.positions.empty())
+    if (active.positions.empty() ||
+        (active.key_count && std::ranges::count_if(lanes, [](const auto& lane) {
+             return lane.role == 0;
+         }) != static_cast<std::ptrdiff_t>(*active.key_count)))
         return;
     std::map<std::uint32_t, field_lane_t> ordered;
     for (const auto& lane : lanes)
@@ -544,7 +556,8 @@ void bind_field_layout(std::span<const field_lane_t> lanes) {
     for (const auto& [order, lane] : ordered) {
         const bool scratch = lane.role == 1 || lane.key_color == 3;
         const auto position = scratch ? "scratch" : std::to_string(++positions[lane.stage]);
-        const auto key = std::to_string(lane.stage + 1) + "p/" + position;
+        const auto player = lane.stage == 2 ? 2 : 1;
+        const auto key = std::to_string(player) + "p/" + position;
         const auto found = active.positions.find(key);
         if (found == active.positions.end())
             continue;
@@ -579,6 +592,16 @@ void set_snap_grid_opacity(std::uint32_t percent) {
     if (grid_opacity_percent == percent) return;
     grid_opacity_percent = percent;
     ++generation;
+}
+void set_field_waveform_opacity(std::uint32_t percent) {
+    percent = std::min(percent, std::uint32_t{100});
+    if (waveform_opacity_percent == percent) return;
+    waveform_opacity_percent = percent;
+    ++generation;
+}
+auto field_waveform_color(nk_color color) -> nk_color {
+    color.a = static_cast<nk_byte>((static_cast<std::uint32_t>(color.a) * waveform_opacity_percent + 50) / 100);
+    return color;
 }
 auto compose_grid_line_style(std::uint8_t kind, std::uint8_t emphasis, std::uint8_t snap_class)
     -> grid_line_style_t {

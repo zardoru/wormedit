@@ -78,6 +78,8 @@ void editor_page(nk_context* context, const WormUiOptionsView* view, WormUiOptio
     edit_integer(context, *view, *action, "Default snap denominator", WORM_UI_OPTIONS_FIELD_SNAP, view->default_snap, 1, 1920);
     move_collision_policy(context, *view, *action);
     scroll_directions(context, *view, *action);
+    edit_toggle(context, *view, *action, "Invert field scroll wheel",
+        WORM_UI_OPTIONS_FIELD_INVERT_SCROLL_WHEEL, view->invert_scroll_wheel);
     edit_integer(context, *view, *action, "Following anchor (%)", WORM_UI_OPTIONS_FIELD_ANCHOR, view->playhead_anchor_percent, 0, 100);
     edit_toggle(context, *view, *action, "Show note-kind palette", WORM_UI_OPTIONS_FIELD_NOTE_PALETTE, view->note_kind_palette_visible);
     edit_toggle(context, *view, *action, "Show lane legend", WORM_UI_OPTIONS_FIELD_LANE_LEGEND, view->lane_key_legend_visible);
@@ -120,11 +122,20 @@ void grid_opacity_slider(nk_context* context, const WormUiOptionsView& view, Wor
     action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
         .field = WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY, .integer = static_cast<std::uint64_t>(percent)};
 }
+void field_waveform_opacity_slider(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action) {
+    nk_layout_row_dynamic(context, 28, 2);
+    nk_labelf(context, NK_TEXT_LEFT, "Field waveform opacity · %u%%", view.field_waveform_opacity_percent);
+    int percent = static_cast<int>(view.field_waveform_opacity_percent);
+    if (!nk_slider_int(context, 0, &percent, 100, 1) || action.kind != WORM_UI_OPTIONS_NONE) return;
+    action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
+        .field = WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY, .integer = static_cast<std::uint64_t>(percent)};
+}
 void appearance_page(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
     field_scheme_picker(context, view, action);
     edit_toggle(context, *view, *action, "Snap-colored grid",
         WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID, view->snap_colored_grid);
     grid_opacity_slider(context, *view, *action);
+    field_waveform_opacity_slider(context, *view, *action);
     nk_layout_row_dynamic(context, 38, 1);
     nk_label_wrap(context, "Opacity previews immediately; Apply saves it. Turn off snap colors to use the field theme's original grid.");
 }

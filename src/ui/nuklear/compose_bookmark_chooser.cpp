@@ -1,6 +1,8 @@
 #include "ui/nuklear/compose_bookmark_chooser.h"
 
 #include "wormedit/nuklear_config.h"
+#include "ui/nuklear/chrome.h"
+#include <cstring>
 
 #include <algorithm>
 #include <cstdio>
@@ -103,7 +105,7 @@ void render_rows(nk_context* context, const WormUiBookmarkChooserView& view,
                  WormUiWorkspaceAction& action, bookmark_chooser_state_t& state) {
     if (view.total_count == 0) {
         nk_layout_row_dynamic(context, 30, 1);
-        nk_label(context, "No bookmarks in this chart.", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
+        nk_label(context, state.query[0] ? "No matching bookmarks." : "No bookmarks in this chart.", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
         return;
     }
     if (!view.rows || view.row_count == 0 || view.first_row != state.first_row) {
@@ -129,6 +131,22 @@ void render_rows(nk_context* context, const WormUiBookmarkChooserView& view,
     render_page_controls(context, view, state);
 }
 
+auto render_search(nk_context* context, const WormUiBookmarkChooserView& view,
+                   bookmark_chooser_state_t& state) -> bool {
+    nk_layout_row_dynamic(context, 28, 1);
+    const auto previous_query = state.query;
+    (void)wormedit::ui::chrome::autofocus_text_field(context, NK_EDIT_FIELD,
+        state.query.data(), static_cast<int>(state.query.size()), nk_filter_default,
+        state.focus_pending);
+    if (state.query != previous_query) {
+        state.first_row = 0;
+        state.selected_row = 0;
+        state.status.fill('\0');
+    }
+    return !view.query ? state.query[0] == '\0'
+        : std::strcmp(view.query, state.query.data()) == 0;
+}
+
 } // namespace
 
 void worm_ui_nuklear_bookmark_chooser_open(bookmark_chooser_state_t& state,
@@ -146,6 +164,8 @@ void worm_ui_nuklear_bookmark_chooser_open(bookmark_chooser_state_t& state,
     state.selected_row = 0;
     state.selected_bookmark_id = 0;
     state.status.fill('\0');
+    state.query.fill('\0');
+    state.focus_pending = true;
 }
 
 void worm_ui_nuklear_bookmark_chooser_cancel(nk_context* context,
@@ -208,7 +228,8 @@ auto worm_ui_nuklear_render_compose_bookmark_chooser(
         state->selected_bookmark_id = 0;
         set_status(*state, "Bookmarks changed. Choose an entry again.");
     }
-    handle_keyboard(context, view, *action, *state);
+    const bool results_current = render_search(context, view, *state);
+    if (results_current) handle_keyboard(context, view, *action, *state);
     if (!state->open || state->close_pending) {
         nk_popup_close(context);
         nk_popup_end(context);
@@ -216,13 +237,17 @@ auto worm_ui_nuklear_render_compose_bookmark_chooser(
         return true;
     }
     nk_layout_row_dynamic(context, 26, 1);
-    nk_label(context, "Select a bookmark by position and name", NK_TEXT_ALIGN_LEFT |
+    nk_label(context, "Select a bookmark by position and name · ↑/↓ choose · Enter jumps", NK_TEXT_ALIGN_LEFT |
              NK_TEXT_ALIGN_MIDDLE);
     if (state->status[0]) {
         nk_layout_row_dynamic(context, 22, 1);
         nk_label(context, state->status.data(), NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
     }
-    render_rows(context, view, *action, *state);
+    if (results_current) render_rows(context, view, *action, *state);
+    else {
+        nk_layout_row_dynamic(context, 30, 1);
+        nk_label(context, "Searching…", NK_TEXT_LEFT);
+    }
     if (state->close_pending) {
         nk_popup_close(context);
         state->close_pending = false;

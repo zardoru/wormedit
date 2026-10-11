@@ -6,6 +6,7 @@
 #include "ui/nuklear/compose_inspector.h"
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/nuklear/theme.h"
+#include "ui/nuklear/setup_panel.h"
 #include "ui/nuklear/sound_import_runtime.h"
 #include "sys/compose_input.h"
 #include "sys/compose_sound_selection.h"
@@ -757,7 +758,7 @@ TEST_CASE("Compose toolbar color views change frontend state without document ac
     // 24 px toolbar icons: navigation, separator, six tools, separator, views.
     constexpr std::array views{View::snap, View::layer, View::normal};
     // The BGA lane visibility and Y-lock icons add two 27 px cells before the color group.
-    constexpr std::array positions{369.0f, 396.0f, 342.0f};
+    constexpr std::array positions{396.0f, 423.0f, 369.0f};
     for (std::size_t index = 0; index < views.size(); ++index) {
         const auto clicks = click_at(harness, positions[index], 122.0f);
         CHECK(worm_ui_nuklear_compose_state().color_view == views[index]);
@@ -1021,7 +1022,7 @@ TEST_CASE("Layer row menu releases its popup after a stale revision or hidden pa
     check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu.open);
     check_layer_menu(!worm_ui_nuklear_compose_state().layers_menu.close_pending);
     (void)fixture.harness.frame();
-    (void)click_at(fixture.harness, 369, 122);
+    (void)click_at(fixture.harness, 396, 122);
     check_layer_menu(worm_ui_nuklear_compose_state().color_view ==
                      worm_ui_nuklear_compose_color_view_t::snap);
 }
@@ -1308,7 +1309,7 @@ TEST_CASE("Note menu retires chart and project changes without a lingering popup
     (void)fixture.harness.frame();
     check_layer_menu(!compose_note_menu_open());
     (void)fixture.harness.frame();
-    (void)click_at(fixture.harness, 369, 122);
+    (void)click_at(fixture.harness, 396, 122);
     check_layer_menu(worm_ui_nuklear_compose_state().color_view ==
                      worm_ui_nuklear_compose_color_view_t::snap);
 }
@@ -3451,7 +3452,7 @@ TEST_CASE("Draw rejects Timing focus and cancels a stroke on focus, tab, or occl
     REQUIRE(timing.ready());
     timing.view().compose.timing_focus = true;
     (void)timing.frame();
-    hover_at(timing, 136, 120);
+    hover_at(timing, 163, 120);
     INFO(timing.drawn_text());
     expect_draw(timing.drawn_text().find("Draw unavailable:") != std::string::npos);
     const auto timed_click = click_at(timing, 300, 400);
@@ -4958,13 +4959,13 @@ TEST_CASE("Chart row button tooltip shows when no window covers it", "[tooltip][
 TEST_CASE("Chart row button tooltip stays hidden under a covering Tap timing window", "[tooltip][event-harness][components]") {
     WormUiProjectChartRow row{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
         .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
-    nuklear_event_harness_t harness{1280, 720};
+    nuklear_event_harness_t harness{800, 720};
     configure_project_row(harness, &row);
     (void)harness.frame();
     // Clicking empty workspace makes the workspace the active window before Tap timing opens.
     std::array<event_step_t, 2> click{};
-    click[0].events = {motion_event(1200.0f, 400.0f), button_event(true, 1200.0f, 400.0f)};
-    click[1].events = {motion_event(1200.0f, 400.0f), button_event(false, 1200.0f, 400.0f)};
+    click[0].events = {motion_event(790.0f, 400.0f), button_event(true, 790.0f, 400.0f)};
+    click[1].events = {motion_event(790.0f, 400.0f), button_event(false, 790.0f, 400.0f)};
     (void)harness.run_script(click);
     harness.view().tap_timing.visible = true;
     (void)harness.frame();
@@ -4972,6 +4973,16 @@ TEST_CASE("Chart row button tooltip stays hidden under a covering Tap timing win
     const auto open = harness.drawn_text_center("Open");
     REQUIRE(open);
     WormUiTestingRect tap{};
+    REQUIRE(worm_ui_frontend_window_bounds_for_testing("Tap timing", &tap));
+    // Position the movable tool over the current last-column action instead of relying on the old strip geometry.
+    const float title_x = tap.x + 50.0f;
+    const float title_y = tap.y + 10.0f;
+    std::array<event_step_t, 3> drag{};
+    drag[0].events = {motion_event(title_x, title_y), button_event(true, title_x, title_y)};
+    drag[1].events = {motion_event(open->first - 150.0f, title_y)};
+    drag[2].events = {motion_event(open->first - 150.0f, title_y),
+                      button_event(false, open->first - 150.0f, title_y)};
+    (void)harness.run_script(drag);
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Tap timing", &tap));
     const bool inside_x = open->first >= tap.x && open->first <= tap.x + tap.width;
     const bool inside_y = open->second >= tap.y && open->second <= tap.y + tap.height;
@@ -5538,4 +5549,98 @@ TEST_CASE("Project tab Import chart button starts the import dialog",
     for (const auto& frame : click_at(harness, button->first, button->second))
         began |= frame.get().chart_import.kind == WORM_UI_CHART_IMPORT_BEGIN;
     CHECK(began);
+}
+
+TEST_CASE("Project charts use compact row menus and a cancellable delete dialog",
+          "[frontend-state][event-harness][project-charts]") {
+    WormUiProjectChartRow row{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
+        .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
+    nuklear_event_harness_t harness{1280, 720};
+    REQUIRE(harness.ready());
+    configure_project_row(harness, &row);
+    (void)harness.frame();
+    CHECK_FALSE(harness.drawn_text_center("Apply to selected charts"));
+    CHECK_FALSE(harness.drawn_text_center("Duplicate"));
+    const auto more = harness.drawn_text_center("⋯");
+    REQUIRE(more);
+    for (const auto& frame : click_at(harness, more->first, more->second))
+        CHECK(frame.get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
+    (void)harness.frame();
+    const auto erase = harness.drawn_text_center("Delete…");
+    REQUIRE(erase);
+    for (const auto& frame : click_at(harness, erase->first, erase->second))
+        CHECK(frame.get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
+    (void)harness.frame();
+    CHECK(harness.drawn_text_center("Delete chart?"));
+    CHECK_FALSE(worm_ui_frontend_request_new_project());
+    CHECK_FALSE(worm_ui_frontend_request_save_project(harness.view().project_id));
+    const auto save = key_event(SDL_EVENT_KEY_DOWN, SDLK_S, SDL_SCANCODE_S);
+    CHECK(harness.frame(std::span{&save, 1}, SDL_KMOD_CTRL).get().shortcut_event_count == 0);
+    const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_S, SDL_SCANCODE_S);
+    (void)harness.frame(std::span{&release, 1});
+    const auto cancel = harness.drawn_text_center("Cancel");
+    REQUIRE(cancel);
+    for (const auto& frame : click_at(harness, cancel->first, cancel->second))
+        CHECK(frame.get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
+    (void)harness.frame();
+    CHECK_FALSE(harness.drawn_text_center("Delete chart?"));
+}
+
+TEST_CASE("Project selection exposes metadata controls below compact chart rows",
+          "[frontend-state][event-harness][project-charts]") {
+    WormUiProjectChartRow row{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
+        .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
+    nuklear_event_harness_t harness{1280, 720};
+    REQUIRE(harness.ready());
+    configure_project_row(harness, &row);
+    (void)harness.frame();
+    CHECK_FALSE(harness.drawn_text_center("Set author…"));
+    const auto name = harness.drawn_text_center("Chart");
+    REQUIRE(name);
+    (void)click_at(harness, name->first, name->second);
+    (void)harness.frame();
+    const auto author = harness.drawn_text_center("Set author…");
+    REQUIRE(author);
+    (void)click_at(harness, author->first, author->second);
+    (void)harness.frame();
+    const auto apply = harness.drawn_text_center("Apply author");
+    REQUIRE(apply);
+    bool applied = false;
+    for (const auto& frame : click_at(harness, apply->first, apply->second)) {
+        if (frame.get().project_chart.kind != WORM_UI_PROJECT_CHART_BATCH_METADATA) continue;
+        applied = true;
+        CHECK(frame.get().project_chart.edit_author);
+        CHECK_FALSE(frame.get().project_chart.edit_rating);
+        CHECK(frame.get().project_chart.selected_count == 1);
+        CHECK(frame.get().project_chart.selected_chart_ids[0] == 10);
+    }
+    CHECK(applied);
+}
+
+TEST_CASE("Project chart popups expire when the tab or project session changes",
+          "[frontend-state][event-harness][project-charts]") {
+    WormUiProjectChartRow row{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
+        .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
+    nuklear_event_harness_t harness{1280, 720};
+    REQUIRE(harness.ready());
+    configure_project_row(harness, &row);
+    (void)harness.frame();
+    const auto more = harness.drawn_text_center("⋯");
+    REQUIRE(more);
+    (void)click_at(harness, more->first, more->second);
+    (void)harness.frame();
+    REQUIRE(worm_ui_nuklear_setup_popup_owns_input());
+    harness.view().setup.visible = false;
+    (void)harness.frame();
+    CHECK_FALSE(worm_ui_nuklear_setup_popup_owns_input());
+    harness.view().setup.visible = true;
+    (void)harness.frame();
+    const auto again = harness.drawn_text_center("⋯");
+    REQUIRE(again);
+    (void)click_at(harness, again->first, again->second);
+    (void)harness.frame();
+    REQUIRE(worm_ui_nuklear_setup_popup_owns_input());
+    ++harness.view().setup.session_generation;
+    (void)harness.frame();
+    CHECK_FALSE(worm_ui_nuklear_setup_popup_owns_input());
 }

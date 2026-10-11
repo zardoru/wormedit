@@ -1293,6 +1293,7 @@ void persist_session_preferences(wormedit::sys::program_preferences_runtime_t& r
     const bool minimap_changed = candidate.minimap.click_moves_paused_playhead !=
                                 state.minimap_click_moves_paused_playhead;
     candidate.minimap.click_moves_paused_playhead = state.minimap_click_moves_paused_playhead;
+    candidate.editor.scroll_directions = state.editor_preferences.scroll_directions;
     if (state.transport_keep_pitch_available && state.transport_set_playback_rate)
         candidate.audio.playback_rate = wormedit::audio::playback_rates[
             std::min(state.transport_rate_index, wormedit::audio::playback_rates.size() - 1)];
@@ -1316,6 +1317,9 @@ void dispatch_options_frame_action(wormedit::sys::options_runtime_t& options,
     worm_ui_frontend_set_snap_grid_opacity(options.visible
         ? options.draft.display.snap_grid_opacity_percent
         : program.preferences.display.snap_grid_opacity_percent);
+    worm_ui_frontend_set_field_waveform_opacity(options.visible
+        ? options.draft.display.field_waveform_opacity_percent
+        : program.preferences.display.field_waveform_opacity_percent);
     if (options.notification) notifications.post(*options.notification);
     if (!accepted) return;
     if (options.category == WORM_UI_OPTIONS_GENERAL)
@@ -4171,6 +4175,7 @@ int main(int argc, char** argv) {
     worm_ui_frontend_select_field_scheme(program_preferences.preferences.display.field_scheme.c_str());
     worm_ui_frontend_set_snap_colored_grid(program_preferences.preferences.display.snap_colored_grid);
     worm_ui_frontend_set_snap_grid_opacity(program_preferences.preferences.display.snap_grid_opacity_percent);
+    worm_ui_frontend_set_field_waveform_opacity(program_preferences.preferences.display.field_waveform_opacity_percent);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     resident_loader.set_budget_bytes(static_cast<std::size_t>(program_preferences.preferences.audio.keysound_budget_mib) * 1024ULL * 1024ULL);
 #endif

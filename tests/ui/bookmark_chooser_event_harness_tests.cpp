@@ -213,3 +213,33 @@ TEST_CASE("bookmark chooser requests the next page without hiding later bookmark
     CHECK(text_contains(harness.drawn_text(), "13-13 of 13"));
     CHECK(text_contains(harness.drawn_text(), "#112"));
 }
+
+TEST_CASE("bookmark chooser auto focused search requests matches and guards stale Enter",
+          "[frontend-state][event-harness][bookmark-chooser]") {
+    nuklear_event_harness_t harness{1280, 800};
+    REQUIRE(harness.ready());
+    std::array<WormUiBookmarkChooserRowView, 2> rows{};
+    prepare_view(harness, rows);
+    open_chooser(harness);
+    SDL_Event text{};
+    text.type = SDL_EVENT_TEXT_INPUT;
+    text.text.type = SDL_EVENT_TEXT_INPUT;
+    text.text.text = "bridge";
+    (void)harness.frame(std::span{&text, 1});
+    WormUiBookmarkChooserRequest request{};
+    worm_ui_frontend_bookmark_chooser_request(&request);
+    CHECK(std::string_view{request.query} == "bridge");
+    CHECK(request.first_row == 0);
+    CHECK(text_contains(harness.drawn_text(), "Searching…"));
+    const auto enter = key_event(SDLK_RETURN, SDL_SCANCODE_RETURN, SDL_KMOD_NONE);
+    CHECK(harness.frame(std::span{&enter, 1}).get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    const auto release = key_release_event(SDLK_RETURN, SDL_SCANCODE_RETURN);
+    (void)harness.frame(std::span{&release, 1});
+    auto& view = harness.view().compose.bookmark_chooser;
+    view.query = "bridge";
+    view.rows = rows.data() + 1;
+    view.row_count = view.total_count = 1;
+    (void)harness.frame();
+    const auto chosen = harness.frame(std::span{&enter, 1});
+    check_selected_action(chosen, 81, 7, 11);
+}

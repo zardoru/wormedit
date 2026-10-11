@@ -46,6 +46,7 @@
 #include "ui/nuklear/compare_panel.h"
 
 #include "ui/nuklear/sdl_backend.h"
+#include "ui/nuklear/font_atlas.h"
 
 #include <wormedit/formats/bms.h>
 
@@ -84,7 +85,7 @@ static HelpDialog g_help_dialog{};
 static wormedit::ui::chrome::Dialog g_about_dialog;
 static bool g_menu_popup_release_pending{};
 
-static constexpr nk_rune editor_font_glyph_ranges[]{0x0020, 0x00FF, 0x2026, 0x2026, 0x2318, 0x2318, 0};
+static wormedit::ui::nuklear::editor_font_t g_editor_font;
 
 static bool g_frame_timing_visible;
 static bool g_compose_area_shortcuts_active;
@@ -235,7 +236,7 @@ static void reset_project_dialog() {
 
 static bool project_dialog_active() {
     std::lock_guard lock{g_project_dialog.mutex};
-    return g_project_dialog.active;
+    return g_project_dialog.active || worm_ui_nuklear_setup_popup_owns_input();
 }
 
 static bool nuklear_text_entry_active(void);
@@ -418,6 +419,7 @@ static void queue_shortcut_key_event(const SDL_KeyboardEvent* event, bool tap_ca
         return;
     }
 
+    if (worm_ui_nuklear_setup_popup_owns_input()) return;
     if (!tap_capture && select_all_in_hovered_dock_list(*event)) return;
 
     if (!tap_capture && compose_area_consumes_shortcut({g_compose_area_shortcuts_active, g_window_focused,
@@ -489,7 +491,7 @@ static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_la
     if (!action) {
         return;
     }
-    action->shortcut_event_count = (g_help_dialog != HelpDialog::none) || g_new_project_wizard.open || !g_bms_encoding_path_seen.empty()
+    action->shortcut_event_count = (g_help_dialog != HelpDialog::none) || g_new_project_wizard.open || !g_bms_encoding_path_seen.empty() || worm_ui_nuklear_setup_popup_owns_input()
                                        ? 0 : g_shortcut_event_count;
     for (size_t index = 0; index < g_shortcut_event_count; ++index) {
         action->shortcut_events[index] = g_shortcut_events[index];
@@ -624,23 +626,16 @@ static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
         : nk_sdl_init(window, renderer, nk_sdl_allocator());
     if (!context) return false;
     if (!headless) {
-        struct nk_font_atlas* atlas = nk_sdl_font_stash_begin(context);
-        struct nk_font* editor_font = nullptr;
-        if (atlas && SDL_GetBasePath()) {
-            const auto font_path = std::filesystem::path{SDL_GetBasePath()} /
-                                   "assets/fonts/AdwaitaMono-Regular.ttf";
-            auto font_config = nk_font_config(15.0f);
-            font_config.range = editor_font_glyph_ranges;
-            editor_font = nk_font_atlas_add_from_file(atlas, font_path.string().c_str(), 15.0f,
-                                                      &font_config);
-        }
-        nk_sdl_font_stash_end(context);
+        const auto font_directory = SDL_GetBasePath()
+            ? std::filesystem::path{SDL_GetBasePath()} / "assets/fonts"
+            : std::filesystem::path{"assets/fonts"};
+        g_editor_font.initialize(context, font_directory);
         const auto theme_directory = SDL_GetBasePath()
                                          ? std::filesystem::path{SDL_GetBasePath()} / "assets/themes"
                                          : std::filesystem::path{"assets/themes"};
         wormedit::ui::theme::load(theme_directory);
         wormedit::ui::chrome::apply_theme(context);
-        if (editor_font) nk_style_set_font(context, &editor_font->handle);
+        nk_style_set_font(context, g_editor_font.handle());
         if (!wormedit::ui::lucide::initialize(renderer)) {
             nk_sdl_shutdown(context);
             return false;
@@ -729,6 +724,7 @@ void worm_ui_frontend_shutdown(void) {
     worm_ui_nuklear_shutdown_player_preview();
     wormedit::ui::lucide::shutdown();
     nk_sdl_shutdown(g_context);
+    g_editor_font.reset();
     g_window = NULL;
     g_renderer = NULL;
     g_context = NULL;
@@ -803,7 +799,8 @@ void worm_ui_frontend_bga_dock_request(WormUiBgaDockRequest* request) {
 void worm_ui_frontend_bookmark_chooser_request(WormUiBookmarkChooserRequest* request) {
     if (!request) return;
     const auto& chooser = worm_ui_nuklear_compose_state().bookmark_chooser;
-    *request = {chooser.first_row, chooser.row_limit, chooser.open};
+    *request = {chooser.first_row, chooser.row_limit, chooser.open, {}};
+    std::copy(chooser.query.begin(), chooser.query.end(), request->query);
 }
 
 double worm_ui_frontend_compose_bgm_lane_width(uint64_t project, uint64_t chart, uint64_t lane) {
@@ -1541,6 +1538,7 @@ static void render_workspace_error(WormUiWorkspaceAction* action, int width, int
     if (nk_begin(g_context, "wormedit-workspace", nk_rect(0, 0, (float)width, (float)height),
                  NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND | (input_blocked ? NK_WINDOW_NO_INPUT : 0))) {
         nk_layout_row_dynamic(g_context, 30, 1);
+        worm_ui_nuklear_retire_setup_popups(g_context);
         wormedit::ui::chrome::context_menu_retire(worm_ui_nuklear_compose_state().snap_grid_menu, g_context);
         nk_label(g_context, "The editor could not display this workspace frame.", NK_TEXT_LEFT);
         nk_layout_row_dynamic(g_context, 72, 1);
@@ -2194,8 +2192,8 @@ static void retire_bookmark_editors(const WormUiWorkspaceView& view, WormUiWorks
 static void render_workspace_content(const WormUiWorkspaceView& view,
                                      WormUiWorkspaceAction& action) {
     prepare_workspace_content_scroll(g_context, view.compose.visible);
-    // Form screens stretch rows across the window; a centered column keeps label and control close.
-    const bool padded = view.metadata.visible || view.setup.visible;
+    // Metadata is a form; the Project chart table uses the available width.
+    const bool padded = view.metadata.visible;
     if (padded) {
         const auto padding = g_context->style.window.group_padding;
         nk_style_push_vec2(g_context, &g_context->style.window.group_padding,
@@ -2641,6 +2639,7 @@ static void render_empty_project_window(const WorkspaceRenderContext& frame) {
     if (nk_begin(g_context, "wormedit-workspace",
                  nk_rect(0, 0, static_cast<float>(frame.width), static_cast<float>(frame.height)),
                  workspace_window_flags(frame.view))) {
+        worm_ui_nuklear_retire_setup_popups(g_context);
         wormedit::ui::chrome::context_menu_retire(worm_ui_nuklear_compose_state().snap_grid_menu, g_context);
         worm_ui_nuklear_dismiss_layer_popup(g_context);
         dismiss_compose_note_popup(g_context);
@@ -2767,6 +2766,7 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
     if (nk_begin(g_context, "wormedit-workspace",
                  nk_rect(0, 0, static_cast<float>(frame.width), static_cast<float>(frame.height)),
                  workspace_window_flags(frame.view))) {
+        worm_ui_nuklear_retire_setup_popups(g_context);
         wormedit::ui::chrome::context_menu_retire(worm_ui_nuklear_compose_state().snap_grid_menu, g_context);
         worm_ui_nuklear_dismiss_layer_popup(g_context);
         dismiss_compose_note_popup(g_context);
@@ -2791,6 +2791,7 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
 }
 
 static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
+    worm_ui_nuklear_render_setup_dialogs(g_context, frame.view.setup, frame.action);
     render_close_confirmation(frame.view.close_confirmation, frame.action, frame.width, frame.height);
     if (frame.view.project_loaded &&
         worm_ui_nuklear_render_chart_import_dialog(g_context, frame.view.chart_import, frame.action,
@@ -2891,6 +2892,7 @@ static void consume_pending_save_request(const WormUiWorkspaceView* view, WormUi
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
     wormedit::ui::nuklear::tooltip::set_viewport(nk_rect(0.0F, 0.0F, 0.0F, 0.0F));
     reset_compose_canvas_viewport_for_testing();
+    worm_ui_nuklear_sync_setup_popups(g_context, view ? &view->setup : nullptr);
     if (view && !view->project_loaded) worm_ui_nuklear_reset_sound_import();
     remember_notification_frame(view);
     worm_ui_nuklear_begin_image_quad_frame();
@@ -3094,6 +3096,8 @@ void worm_ui_frontend_render(int window_width, int window_height) {
         }
         SDL_SetRenderDrawColor(g_renderer, 18, 20, 26, 255);
         SDL_RenderClear(g_renderer);
+        g_editor_font.refresh(g_context,
+            g_notification_context_initialized ? &g_notification_context : nullptr);
         wormedit::ui::nuklear::render_sdl_backend(g_context, NK_ANTI_ALIASING_ON,
             g_notification_context_initialized ? &g_notification_context : nullptr);
     }
@@ -3105,6 +3109,10 @@ void worm_ui_frontend_set_snap_colored_grid(bool enabled) {
 
 void worm_ui_frontend_set_snap_grid_opacity(uint32_t percent) {
     wormedit::ui::theme::set_snap_grid_opacity(percent);
+}
+
+void worm_ui_frontend_set_field_waveform_opacity(uint32_t percent) {
+    wormedit::ui::theme::set_field_waveform_opacity(percent);
 }
 
 bool worm_ui_frontend_select_field_scheme(const char* id) {

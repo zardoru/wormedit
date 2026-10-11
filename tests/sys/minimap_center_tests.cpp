@@ -1,4 +1,5 @@
 #include "sys/waveform_view_projection.h"
+#include "sys/compose_input.h"
 
 #include <wormedit/core/timing.h>
 
@@ -213,4 +214,53 @@ TEST_CASE("active minimap drag freezes projected rows and rejects stale capture 
         .sample_rate = fixture.analysis.waveform->sample_rate};
     require_minimap(fixture.project());
     check_minimap(!fixture.window_capture.has_value());
+}
+
+TEST_CASE("song bar uses a BMS default and preserves explicit session choices across formats",
+          "[frame-timing][minimap-center][song-bar]") {
+    auto chart = minimap_chart();
+    chart.source_family = format_family_t::bms;
+    auto history = make_document_history(song_document_t{.id = song_id_t{1}, .charts = {chart}});
+    auto binding = make_workspace_controller(history);
+    REQUIRE(binding.workspace);
+    binding.workspace->selected_chart = chart.id;
+    binding.workspace->active_tab = workspace_tab_t::compose;
+    compose_scene_cache_t cache;
+    cache.bgm_bar_audio_seen = true;
+    application_command_state_t application;
+    std::optional<editor_interaction_state_t> interaction;
+    flattened_workspace_t flattened;
+    const auto project = [&] {
+        flattened = {};
+        flattened.view.compose.visible = true;
+        populate_compose_view(flattened, history, *binding.workspace, cache, 1280, 800,
+                              interaction, application, nullptr);
+        REQUIRE(flattened.view.compose.scene_available);
+        CHECK(flattened.view.compose.bgm_bar_available);
+        return flattened.view.compose.bgm_bar_reserved;
+    };
+    CHECK_FALSE(project());
+    history.document.charts.front().source_family = format_family_t::osu_mania;
+    CHECK(project());
+    history.document.charts.front().source_family = format_family_t::bms;
+    REQUIRE_FALSE(project());
+    REQUIRE(interaction);
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    const auto toggle = [&](bool currently_visible) {
+        WormUiWorkspaceAction action{};
+        action.compose_input_count = 1;
+        action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE;
+        action.compose_inputs[0].overview_primary = currently_visible;
+        (void)dispatch_compose_input_action(action, history, *binding.workspace, *interaction,
+            viewport, navigation, application, cache, 0.0);
+    };
+    toggle(false);
+    CHECK(project());
+    CHECK(project());
+    toggle(true);
+    CHECK_FALSE(project());
+    history.document.charts.front().source_family = format_family_t::osu_mania;
+    CHECK_FALSE(project());
+    CHECK(history.undo.empty());
 }

@@ -1602,8 +1602,10 @@ TEST_CASE("Playback wheel skips one beat in chart direction independently of sna
           "[compose-action-notifications][playhead-skip]") {
     const auto forward = GENERATE(false, true);
     const auto downscroll = GENERATE(false, true);
+    const auto inverted = GENERATE(false, true);
     bga_input_fixture_t f;
     f.state.active_snap_denominator = 16;
+    f.application.editor_preferences.invert_scroll_wheel = inverted;
     f.application.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
     f.application.preview_playhead_absolute_row = 480;
     f.application.transport_preview_playing = [] { return true; };
@@ -1613,7 +1615,7 @@ TEST_CASE("Playback wheel skips one beat in chart direction independently of sna
     action.compose_viewport_input_count = 1;
     action.compose_viewport_inputs[0] = {
         .kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
-        .delta_y = (forward != downscroll) ? 1.0 : -1.0,
+        .delta_y = ((forward != downscroll) != inverted) ? 1.0 : -1.0,
         .cursor_x_pixels = 200, .cursor_y_pixels = 200};
     (void)f.dispatch_input(action);
     check_action(f.application.preview_playhead_absolute_row == (forward ? 720 : 240));
@@ -1805,4 +1807,72 @@ TEST_CASE("Relinking a missing sound to a fallback candidate is one undo step",
     check_action(fixture.history.document.audio_assets.front().source_path == std::filesystem::path{"snare.wav"});
     check_action(fixture.history.document.resources.front().missing);
     std::filesystem::remove_all(base, error);
+}
+
+TEST_CASE("Scroll direction toolbar changes only its family and preserves authored state", "[compose-action-notifications][feedback]") {
+    action_notification_fixture_t f;
+    const auto family = static_cast<std::size_t>(compose_mode_family(f.history.document.charts.front().lane_layouts.front().layout));
+    const bool original = compose_field_downscroll(f.history.document.charts.front(), f.application.editor_preferences);
+    const auto cursor = f.state.cursor;
+    const auto zoom = f.state.pixels_per_standard_measure;
+    const auto revision = f.history.document.revision;
+    (void)f.dispatch(f.action(WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION));
+    check_action(compose_field_downscroll(f.history.document.charts.front(), f.application.editor_preferences) != original);
+    check_action(f.state.scroll_direction == (original ? editor_field_scroll_direction_t::up : editor_field_scroll_direction_t::down));
+    check_action(f.application.editor_preferences.scroll_directions[family] == (original ? 1 : 2));
+    check_action(f.state.cursor == cursor);
+    check_action(f.state.pixels_per_standard_measure == zoom);
+    check_action(f.history.document.revision == revision);
+    check_action(f.history.undo.empty());
+    auto stale = f.action(WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION);
+    stale.compose_input_document_revision += 1;
+    (void)f.dispatch(stale);
+    check_action(compose_field_downscroll(f.history.document.charts.front(), f.application.editor_preferences) != original);
+    (void)f.dispatch(f.action(WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION));
+    check_action(compose_field_downscroll(f.history.document.charts.front(), f.application.editor_preferences) == original);
+}
+
+TEST_CASE("Direction switching rejects an unfinished hold without changing preferences", "[compose-action-notifications][feedback]") {
+    action_notification_fixture_t f;
+    f.state.pending_hold = pending_hold_t{};
+    const auto preferences = f.application.editor_preferences;
+    (void)f.dispatch(f.action(WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION));
+    check_action(f.application.editor_preferences == preferences);
+    check_action(f.state.pending_hold.has_value());
+    check_action(f.history.document.revision == 1);
+    check_action(f.history.undo.empty());
+}
+
+TEST_CASE("Field wheel inversion reverses stopped coarse and smooth movement", "[compose-action-notifications][feedback]") {
+    const auto downscroll = GENERATE(false, true);
+    const auto inverted = GENERATE(false, true);
+    const auto kind = GENERATE(WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL, WORM_UI_COMPOSE_VIEWPORT_INPUT_SMOOTH_WHEEL);
+    bga_input_fixture_t f;
+    f.application.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
+    f.application.editor_preferences.invert_scroll_wheel = inverted;
+    f.state.viewport_scroll_pixels = 600;
+    auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0);
+    action.compose_input_count = 0;
+    action.compose_viewport_input_count = 1;
+    action.compose_viewport_inputs[0] = {.kind = kind, .delta_y = 1.0,
+        .cursor_x_pixels = 200, .cursor_y_pixels = 200};
+    (void)f.dispatch_input(action);
+    check_action(f.state.viewport_scroll_pixels != 600);
+    check_action((f.state.viewport_scroll_pixels > 600) == (inverted == downscroll));
+    f.check_unchanged(1);
+}
+
+TEST_CASE("Wheel inversion leaves modifier zoom unchanged", "[compose-action-notifications][feedback]") {
+    const auto inverted = GENERATE(false, true);
+    bga_input_fixture_t f;
+    f.application.editor_preferences.invert_scroll_wheel = inverted;
+    const auto zoom = f.state.pixels_per_standard_measure;
+    auto action = f.input(WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0);
+    action.compose_input_count = 0;
+    action.compose_viewport_input_count = 1;
+    action.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL,
+        .zoom_modifier = true, .delta_y = 1.0, .cursor_x_pixels = 200, .cursor_y_pixels = 200};
+    (void)f.dispatch_input(action);
+    check_action(f.state.pixels_per_standard_measure < zoom);
+    f.check_unchanged(1);
 }

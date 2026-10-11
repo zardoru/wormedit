@@ -36,6 +36,7 @@ struct editor_preferences_t {
     bool note_kind_palette_visible{true};
     bool lane_key_legend_visible{true};
     bool audition_on_click{true};
+    bool invert_scroll_wheel{};
     std::uint32_t area_band_alpha{48};
     auto operator==(const editor_preferences_t&) const -> bool = default;
 };
@@ -52,6 +53,7 @@ struct display_preferences_t {
     std::string field_scheme{"wormedit"};
     bool snap_colored_grid{true};
     std::uint32_t snap_grid_opacity_percent{35};
+    std::uint32_t field_waveform_opacity_percent{75};
     auto operator==(const display_preferences_t&) const -> bool = default;
 };
 struct external_player_definition_t {

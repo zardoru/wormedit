@@ -70,6 +70,7 @@ static void render_compose_bgm_bar_toggle(const ComposeToolbarContext& toolbar) 
     auto& input = action->compose_inputs[action->compose_input_count++];
     input = {};
     input.kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE;
+    input.overview_primary = view->bgm_bar_reserved;
 }
 
 static void render_loop_selection_button(const ComposeToolbarContext& toolbar) {
@@ -96,6 +97,18 @@ static void render_loop_selection_button(const ComposeToolbarContext& toolbar) {
     }
 }
 
+static void render_scroll_direction_toggle(const ComposeToolbarContext& toolbar) {
+    const auto& view = *toolbar.view;
+    if (!view.scene_available) nk_widget_disable_begin(toolbar.context);
+    const auto glyph = view.downscroll ? Glyph::chevron_down : Glyph::chevron_up;
+    const bool clicked = wormedit::ui::chrome::IconButton{glyph,
+        view.downscroll ? "Downscroll · switch to upscroll" : "Upscroll · switch to downscroll",
+        view.downscroll}.render(toolbar.context);
+    if (!view.scene_available) nk_widget_disable_end(toolbar.context);
+    if (clicked && view.scene_available && toolbar.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION;
+}
+
 static void render_navigation_group(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
     auto* action = toolbar.action;
@@ -109,6 +122,7 @@ static void render_navigation_group(const ComposeToolbarContext& toolbar) {
     if (wormedit::ui::chrome::IconButton{Glyph::rotate_ccw, "Reset view"}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW;
+    render_scroll_direction_toggle(toolbar);
 }
 
 static void render_layer_tool(const ComposeToolbarContext& toolbar, bool paint_disabled) {
@@ -505,7 +519,7 @@ static auto dock_toggles_at_end(nk_context* context) -> bool {
 static void layout_compose_toolbar(nk_context* context, int panel_icons) {
     const auto width = nk_window_get_bounds(context).w;
     nk_layout_row_template_begin(context, 27);
-    layout_toolbar_icons(context, 3); // Navigation.
+    layout_toolbar_icons(context, 4); // Navigation.
     wormedit::ui::chrome::layout_separator(context);
     layout_toolbar_icons(context, 8); // Tools.
     wormedit::ui::chrome::layout_separator(context);

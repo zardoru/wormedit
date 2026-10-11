@@ -4262,7 +4262,9 @@ auto dispatch_compose_viewport_batch(compose_input_context_t& context,
                              ? viewport_wheel_kind_t::coarse_steps
                              : viewport_wheel_kind_t::smooth_pixels,
                  .delta_x = input.delta_x,
-                 .delta_y = input.delta_y,
+                 .delta_y = !bgm_pane && !input.zoom_modifier &&
+                            context.application_state.editor_preferences.invert_scroll_wheel
+                     ? -input.delta_y : input.delta_y,
                  .zoom_modifier = input.zoom_modifier,
                  .cursor_x_pixels = input.cursor_x_pixels,
                  .cursor_y_pixels = input.cursor_y_pixels}),
@@ -4298,7 +4300,7 @@ auto consume_minimap_preferences(WormUiWorkspaceAction& action,
             application.minimap_click_moves_paused_playhead = input.overview_primary;
             changed = true;
         } else if (input.kind == WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE) {
-            application.bgm_bar_hidden = !application.bgm_bar_hidden;
+            application.bgm_bar_hidden = input.overview_primary;
         } else action.compose_inputs[kept++] = input;
     }
     action.compose_input_count = kept;

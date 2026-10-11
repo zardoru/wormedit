@@ -95,3 +95,25 @@ TEST_CASE("bookmark chooser rejects invalid paging and missing charts",
     CHECK_FALSE(project_bookmark_chooser(document, chart_id_t{2}, 0, 0));
     CHECK_FALSE(project_bookmark_chooser(document, chart_id_t{99}, 0, 8));
 }
+
+TEST_CASE("bookmark chooser searches every bookmark before paging with case insensitive labels",
+          "[unit][sys][bookmark-chooser]") {
+    auto document = chooser_document();
+    auto& bookmarks = document.charts.front().bookmarks;
+    for (std::uint64_t id = 200; id < 280; ++id)
+        bookmarks.push_back({.id = object_id_t{id}, .label = id == 279 ? "Final Bridge 東京" : "other",
+            .anchor = marker_anchor_t::beat,
+            .position = local_position_t{measure_id_t{12}, id}});
+    const auto bridge = project_bookmark_chooser(document, chart_id_t{2}, 0, 12, "BRIDGE");
+    REQUIRE(bridge.rows.size() == 1);
+    CHECK(bridge.total_count == 1);
+    CHECK(bridge.rows.front().bookmark_id == object_id_t{279});
+    const auto cjk = project_bookmark_chooser(document, chart_id_t{2}, 0, 12, "東京");
+    REQUIRE(cjk.rows.size() == 1);
+    CHECK(cjk.rows.front().bookmark_id == object_id_t{279});
+    const auto position = project_bookmark_chooser(document, chart_id_t{2}, 0, 12, "Measure 001");
+    CHECK(position.total_count == 2);
+    const auto missing = project_bookmark_chooser(document, chart_id_t{2}, 0, 12, "not present");
+    CHECK(missing.total_count == 0);
+    CHECK(missing.rows.empty());
+}

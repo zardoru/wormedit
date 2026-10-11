@@ -1182,11 +1182,12 @@ void populate_bookmark_chooser(const workspace_projection_context_t& projection,
     const auto& request = projection.bookmark_chooser_request;
     if (!request.open) return;
     const auto page = project_bookmark_chooser(projection.document, chart, request.first_row,
-                                               std::clamp(request.row_limit, std::size_t{1}, std::size_t{64}));
+                                               std::clamp(request.row_limit, std::size_t{1}, std::size_t{64}), request.query);
     view.total_count = page.total_count;
     view.first_row = page.first_row;
     auto* arena = result.arena();
     if (!arena) { view.truncated = true; return; }
+    view.query = arena_string(*arena, request.query);
     result.compose.bookmark_chooser_row = arena_array<WormUiBookmarkChooserRowView>(*arena, page.rows.size());
     for (const auto& row : page.rows) {
         WormUiBookmarkChooserRowView item{};

@@ -20,6 +20,8 @@ struct bookmark_chooser_state_t {
     std::size_t selected_row{};
     std::uint64_t selected_bookmark_id{};
     std::array<char, 96> status{};
+    std::array<char, 256> query{};
+    bool focus_pending{};
 };
 
 void worm_ui_nuklear_bookmark_chooser_open(bookmark_chooser_state_t& state,

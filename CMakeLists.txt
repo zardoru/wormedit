@@ -375,6 +375,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/audio_state.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/bms_branch_panel.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/arrow_glyph.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/font_atlas.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bookmark_label.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bookmark_chooser.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_sound_picker.cpp"
@@ -531,6 +532,10 @@ if(WORMEDIT_BUILD_APP)
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/assets/fonts")
     configure_file("${CMAKE_SOURCE_DIR}/assets/fonts/AdwaitaMono-Regular.ttf"
                    "${CMAKE_BINARY_DIR}/assets/fonts/AdwaitaMono-Regular.ttf" COPYONLY)
+    foreach(font_asset NotoSansCJKjp-Regular.otf NotoSansCJK-LICENSE README.md)
+        configure_file("${CMAKE_SOURCE_DIR}/assets/fonts/${font_asset}"
+                       "${CMAKE_BINARY_DIR}/assets/fonts/${font_asset}" COPYONLY)
+    endforeach()
     configure_file("${CMAKE_SOURCE_DIR}/assets/fonts/LICENSE"
                    "${CMAKE_BINARY_DIR}/assets/fonts/LICENSE" COPYONLY)
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/assets/themes")
@@ -585,6 +590,7 @@ if(WORMEDIT_BUILD_APP)
         install(FILES "$<TARGET_FILE:SDL3::SDL3>" DESTINATION "${WORMEDIT_INSTALL_BINDIR}")
     endif()
     install(FILES assets/fonts/AdwaitaMono-Regular.ttf assets/fonts/LICENSE
+        assets/fonts/NotoSansCJKjp-Regular.otf assets/fonts/NotoSansCJK-LICENSE assets/fonts/README.md
         DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/fonts")
     install(FILES assets/themes/ui-dark.json DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/themes")
     install(DIRECTORY assets/themes/field DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/themes"

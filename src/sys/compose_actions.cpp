@@ -516,6 +516,33 @@ std::string select_compose_tool(compose_action_context_t& context) {
     return compose_action_info(context, "Compose tool selected.");
 }
 
+auto toggle_compose_scroll_direction(compose_action_context_t& context) -> std::string {
+    using namespace wormedit;
+    if (editor_interaction_has_pending_gesture(context.state) || context.application_state.bga_draw_stroke)
+        return compose_action_warning(context, "Finish or cancel the active gesture before changing scroll direction.");
+    const auto chart = std::ranges::find(context.history.document.charts, context.state.chart, &chart_document_t::id);
+    if (chart == context.history.document.charts.end())
+        return compose_action_warning(context, "The selected difficulty is no longer available.");
+    const auto family = chart->lane_layouts.empty() ? editor_mode_family_t::other
+        : compose_mode_family(chart->lane_layouts.front().layout);
+    const bool down = !compose_field_downscroll(*chart, context.application_state.editor_preferences);
+    context.application_state.editor_preferences.scroll_directions[static_cast<std::size_t>(family)] = down ? 2 : 1;
+    configure_cursor_viewport(context.state, context.viewport_height, down
+        ? editor_field_scroll_direction_t::down : editor_field_scroll_direction_t::up);
+    return compose_action_info(context, down ? "Downscroll enabled for this mode family." : "Upscroll enabled for this mode family.");
+}
+
+auto reset_compose_view(compose_action_context_t& context) -> std::string {
+    using namespace wormedit;
+    const auto factor = default_pixels_per_standard_measure / context.state.pixels_per_standard_measure;
+    auto result = dispatch_editor_action(context.history, context.state,
+        adjust_editor_zoom_action_t{.factor = factor, .anchor_screen_y_pixels = std::nullopt});
+    if (result)
+        result = dispatch_editor_action(context.history, context.state,
+            scroll_editor_view_action_t{-context.state.viewport_scroll_pixels});
+    return compose_interaction_feedback(context, result, "Compose field view reset.");
+}
+
 std::optional<std::string> dispatch_compose_view_action_group(compose_action_context_t& context) {
     using namespace wormedit;
     auto& action = context.action;
@@ -527,6 +554,8 @@ std::optional<std::string> dispatch_compose_view_action_group(compose_action_con
     editor_interaction_result_t result;
     std::string status;
     switch (action.compose_action) {
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION:
+        return toggle_compose_scroll_direction(context);
     case WORM_UI_COMPOSE_ACTION_ZOOM_IN:
         result = dispatch_editor_action(
             history, state,
@@ -554,18 +583,8 @@ std::optional<std::string> dispatch_compose_view_action_group(compose_action_con
         status = direction < 0.0 ? "Compose field scrolled up." : "Compose field scrolled down.";
         break;
     }
-    case WORM_UI_COMPOSE_ACTION_RESET_VIEW: {
-        const auto factor = default_pixels_per_standard_measure / state.pixels_per_standard_measure;
-        result = dispatch_editor_action(
-            history, state,
-            adjust_editor_zoom_action_t{.factor = factor, .anchor_screen_y_pixels = std::nullopt});
-        if (result) {
-            result = dispatch_editor_action(
-                history, state, scroll_editor_view_action_t{-state.viewport_scroll_pixels});
-        }
-        status = "Compose field view reset.";
-        break;
-    }
+    case WORM_UI_COMPOSE_ACTION_RESET_VIEW:
+        return reset_compose_view(context);
     case WORM_UI_COMPOSE_ACTION_SELECT_TOOL:
     case WORM_UI_COMPOSE_ACTION_DRAW_TOOL:
     case WORM_UI_COMPOSE_ACTION_LAYER_TOOL:
@@ -3415,7 +3434,7 @@ auto dispatch_compose_view_action(
                                                      &chart_document_t::id);
     const auto scroll_direction =
         selected_chart_it != history.document.charts.end() &&
-                compose_field_downscroll(*selected_chart_it)
+                compose_field_downscroll(*selected_chart_it, application_state.editor_preferences)
             ? editor_field_scroll_direction_t::down
             : editor_field_scroll_direction_t::up;
     editor_interaction_result_t result;

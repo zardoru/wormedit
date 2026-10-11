@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cctype>
 #include <iterator>
 #include <limits>
 #include <tuple>
@@ -104,10 +105,17 @@ auto ordered_before(const ordered_row_t& left, const ordered_row_t& right) -> bo
     return left.row.bookmark_id < right.row.bookmark_id;
 }
 
+auto matches_query(std::string_view label, std::string_view query) -> bool {
+    return std::search(label.begin(), label.end(), query.begin(), query.end(),
+        [](unsigned char left, unsigned char right) {
+            return std::tolower(left) == std::tolower(right);
+        }) != label.end();
+}
+
 } // namespace
 
 auto project_bookmark_chooser(const song_document_t& document, chart_id_t chart_id,
-                              std::size_t first_row, std::size_t row_limit)
+                              std::size_t first_row, std::size_t row_limit, std::string_view query)
     -> bookmark_chooser_projection_t {
     bookmark_chooser_projection_t result{.chart = chart_id,
                                          .document_revision = document.revision,
@@ -132,8 +140,11 @@ auto project_bookmark_chooser(const song_document_t& document, chart_id_t chart_
     const auto* timing = timing_build.index ? &*timing_build.index : nullptr;
     std::vector<ordered_row_t> ordered;
     ordered.reserve(chart->bookmarks.size());
-    for (const auto& bookmark : chart->bookmarks)
-        ordered.push_back(make_row(bookmark, measures, timing));
+    for (const auto& bookmark : chart->bookmarks) {
+        auto row = make_row(bookmark, measures, timing);
+        if (query.empty() || matches_query(row.row.display_label, query))
+            ordered.push_back(std::move(row));
+    }
     std::ranges::sort(ordered, ordered_before);
     result.total_count = ordered.size();
     if (first_row >= ordered.size()) return result;

@@ -231,6 +231,10 @@ endforeach()
 set(task_card_index "${WORMEDIT_SOURCE_ROOT}/docs/chart-editor-plan/tasks.md")
 file(READ "${task_card_index}" task_card_index_text)
 set(task_card_files
+    docs/chart-editor-plan/tasks/feedback-cjk.md
+    docs/chart-editor-plan/tasks/feedback-skins.md
+    docs/chart-editor-plan/tasks/feedback-navigation.md
+    docs/chart-editor-plan/tasks/feedback-library.md
     docs/chart-editor-plan/tasks/compose-split.md
     docs/chart-editor-plan/tasks/compose-features.md
     docs/chart-editor-plan/tasks/interop-evidence.md

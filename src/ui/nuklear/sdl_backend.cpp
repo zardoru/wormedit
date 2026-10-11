@@ -861,6 +861,7 @@ NK_API struct nk_font_atlas* nk_sdl_font_stash_begin(struct nk_context* ctx) {
     NK_ASSERT(ctx);
     sdl = (struct nk_sdl*)ctx->userdata.ptr;
     NK_ASSERT(sdl);
+    if (sdl->atlas.font_num > 0) nk_font_atlas_clear(&sdl->atlas);
     nk_font_atlas_init(&sdl->atlas, &sdl->allocator);
     nk_font_atlas_begin(&sdl->atlas);
     return &sdl->atlas;

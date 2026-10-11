@@ -538,6 +538,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/compose_stem_lane_render_tests.cpp
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
+        ui/font_atlas_tests.cpp
         ui/nuklear_tooltip_tests.cpp
         ui/context_menu_tests.cpp
         ui/dialog_tests.cpp
@@ -606,6 +607,8 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
     target_include_directories(wormedit_frontend_event_harness_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/include" "${CMAKE_SOURCE_DIR}/src"
         "${CMAKE_SOURCE_DIR}/src/vendor" "${CMAKE_BINARY_DIR}/generated")
+    target_compile_definitions(wormedit_frontend_event_harness_tests PRIVATE
+        WORMEDIT_SOURCE_ROOT="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}")
     target_link_libraries(wormedit_frontend_event_harness_tests PRIVATE
         wormedit::core wormedit::ui_frontend SDL3::SDL3 otoworm::otoworm
         nlohmann_json::nlohmann_json Catch2::Catch2WithMain)

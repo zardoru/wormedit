@@ -1458,7 +1458,8 @@ void publish_compose_scene(const compose_scene_projection_context_t& projection)
 }
 bool initialize_compose_view_state(
     flattened_workspace_t& flattened, compose_scene_cache_t& cache, int window_width,
-    int window_height, const std::optional<wormedit::editor_interaction_state_t>& retained_state,
+    int window_height, bool default_bgm_bar_hidden,
+    const std::optional<wormedit::editor_interaction_state_t>& retained_state,
     const application_command_state_t& application_state) {
     auto& view = flattened.view.compose;
     if (!view.visible) {
@@ -1471,7 +1472,7 @@ bool initialize_compose_view_state(
     }
     view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
     view.bgm_bar_available = cache.bgm_bar_audio_seen;
-    view.bgm_bar_reserved = cache.bgm_bar_audio_seen && !application_state.bgm_bar_hidden;
+    view.bgm_bar_reserved = cache.bgm_bar_audio_seen && !application_state.bgm_bar_hidden.value_or(default_bgm_bar_hidden);
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
     view.bga_lane_visible = !retained_state || retained_state->bga_lane_visible;
     view.bga_revealed_lane_mask = retained_state ? retained_state->bga_revealed_lane_mask : 0;
@@ -5038,6 +5039,13 @@ void populate_compose_keysound_fallbacks(flattened_workspace_t& flattened,
     view.keysound_fallback_count = rows.size();
 }
 
+auto default_song_bar_hidden(const wormedit::song_document_t& document,
+                             std::optional<wormedit::chart_id_t> chart) -> bool {
+    if (!chart) return false;
+    const auto selected = std::ranges::find(document.charts, *chart, &wormedit::chart_document_t::id);
+    return selected != document.charts.end() && selected->source_family == wormedit::format_family_t::bms;
+}
+
 void populate_compose_view(flattened_workspace_t& flattened,
                            wormedit::document_history_t& history,
                            const wormedit::workspace_controller_t& workspace,
@@ -5053,6 +5061,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
         application_state.bms_branch_statement_feedback.reset();
     cache.area_object_geometry.reset();
     if (!initialize_compose_view_state(flattened, cache, window_width, window_height,
+                                       default_song_bar_hidden(history.document, workspace.selected_chart),
                                        retained_state, application_state)) {
         return;
     }

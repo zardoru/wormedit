@@ -1219,7 +1219,7 @@ TEST_CASE("Compose key colors map each lane key to its note, lane, and hold colo
     expect_inline(colors.has_color == (key != 0));
     expect_inline(colors.note.a == 255);
     expect_inline(colors.note_border.a == 255);
-    expect_inline(colors.lane.a == 255);
+    expect_inline(colors.lane.a == 160);
     expect_inline(colors.hold_body.a < 255);
     expect_inline(colors.note.r != colors.lane.r || colors.note.g != colors.lane.g ||
                   colors.note.b != colors.lane.b);

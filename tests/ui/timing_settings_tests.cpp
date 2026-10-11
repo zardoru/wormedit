@@ -193,6 +193,18 @@ TEST_CASE("Timing Settings opens from the menu and timing inspector without edit
     CHECK(menu.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     harness.view().compose.timing_focus = false;
     (void)harness.frame();
+    for (int step = 0; step < 12 && !harness.drawn_text_center("Timing Settings..."); ++step) {
+        SDL_Event motion{};
+        motion.type = SDL_EVENT_MOUSE_MOTION;
+        motion.motion.x = 1150;
+        motion.motion.y = 700;
+        SDL_Event wheel{};
+        wheel.type = SDL_EVENT_MOUSE_WHEEL;
+        wheel.wheel.y = -2;
+        wheel.wheel.mouse_x = 1150;
+        wheel.wheel.mouse_y = 700;
+        (void)harness.frame(std::array{motion, wheel});
+    }
     const auto inspector = click_text(harness, "Timing Settings...");
     CHECK(inspector.get().timing_settings.toggle);
     CHECK(inspector.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);

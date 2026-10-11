@@ -354,6 +354,11 @@ static void request_toolbar_offset_nudge(WormUiWorkspaceAction* action,
 }
 
 static void render_offset_value(nk_context* context, const WormUiComposeView& view) {
+    if (!(view.waveform_offset_drag_active ? view.waveform_proposed_audio_offset_denominator
+                                          : view.waveform_audio_offset_denominator)) {
+        nk_label(context, "Unavailable", NK_TEXT_CENTERED);
+        return;
+    }
     nk_labelf(context, NK_TEXT_CENTERED, "%+.3f s%s",
         static_cast<double>(view.waveform_offset_drag_active
             ? view.waveform_proposed_audio_offset_numerator : view.waveform_audio_offset_numerator) /
@@ -362,13 +367,14 @@ static void render_offset_value(nk_context* context, const WormUiComposeView& vi
         (view.waveform_timing_locked || view.audio_offset_locked) ? " · locked" : view.waveform_offset_drag_active ? " · preview" : "");
 }
 
-static void render_inline_offset(const ComposeToolbarContext& toolbar) {
+static void render_inline_offset(const ComposeToolbarContext& toolbar, bool in_inspector) {
     auto* context = toolbar.context;
     const auto& view = *toolbar.view;
     const auto bounds = nk_widget_bounds(context);
-    if (!state.inline_offset_open && nk_input_is_mouse_click_in_rect(&context->input, NK_BUTTON_DOUBLE, bounds))
-        (void)worm_ui_nuklear_begin_inline_offset(state, view);
-    if (!state.inline_offset_open) {
+    if (!state.inline_offset_open && nk_input_is_mouse_click_in_rect(&context->input, NK_BUTTON_DOUBLE, bounds) &&
+        worm_ui_nuklear_begin_inline_offset(state, view))
+        state.inline_offset_in_inspector = in_inspector;
+    if (!state.inline_offset_open || state.inline_offset_in_inspector != in_inspector) {
         render_offset_value(context, view);
         return;
     }
@@ -389,7 +395,8 @@ static void render_inline_offset(const ComposeToolbarContext& toolbar) {
         wormedit::ui::nuklear::tooltip::text(context, state.inline_offset_error.data());
 }
 
-static void render_compose_audio_offset(const ComposeToolbarContext& toolbar, bool show_offset) {
+static void render_compose_audio_offset(const ComposeToolbarContext& toolbar, bool show_offset,
+                                         bool in_inspector = false) {
     auto* context = toolbar.context;
     const auto& view = *toolbar.view;
     const bool disabled = view.waveform_timing_locked || view.audio_offset_locked || view.waveform_offset_drag_active ||
@@ -401,7 +408,7 @@ static void render_compose_audio_offset(const ComposeToolbarContext& toolbar, bo
     if (wormedit::ui::chrome::IconButton{Glyph::chevron_left, "Nudge audio offset -1 frame"}.render(context))
         request_toolbar_offset_nudge(toolbar.action, &view, -1);
     if (disabled) nk_widget_disable_end(context);
-    if (show_offset) render_inline_offset(toolbar);
+    if (show_offset) render_inline_offset(toolbar, in_inspector);
     if (disabled) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::IconButton{Glyph::chevron_right, "Nudge audio offset +1 frame"}.render(context))
         request_toolbar_offset_nudge(toolbar.action, &view, 1);
@@ -453,6 +460,27 @@ static void render_compose_offset_toolbar(const ComposeToolbarContext& toolbar) 
     const bool show_offset = nk_window_get_bounds(toolbar.context).w >= 900.0f;
     render_offset_padlock(toolbar);
     render_compose_audio_offset(toolbar, show_offset);
+}
+
+void render_compose_inspector_timing_controls(const ComposeToolbarContext& toolbar) {
+    auto* context = toolbar.context;
+    nk_layout_row_dynamic(context, 18, 1);
+    nk_label(context, "Audio offset · seconds", NK_TEXT_LEFT);
+    nk_layout_row_template_begin(context, 27);
+    wormedit::ui::chrome::IconButton::layout_columns(context, 1, 24.0f);
+    nk_layout_row_template_push_dynamic(context);
+    nk_layout_row_template_end(context);
+    render_offset_padlock(toolbar);
+    render_inline_offset(toolbar, true);
+    nk_layout_row_dynamic(context, 27, 4);
+    render_compose_audio_offset(toolbar, false, true);
+    nk_layout_row_template_begin(context, 27);
+    nk_layout_row_template_push_dynamic(context);
+    wormedit::ui::chrome::IconButton::layout_columns(context, 1, 24.0f);
+    nk_layout_row_template_push_static(context, 75.0f);
+    nk_layout_row_template_end(context);
+    nk_label(context, "BPM snap", NK_TEXT_LEFT);
+    render_compose_snap_controls(context);
 }
 
 namespace {
@@ -516,7 +544,7 @@ static auto dock_toggles_at_end(nk_context* context) -> bool {
 }
 
 // `panel_icons` is the dock toggle count; the BMS branch toggle exists only for charts with branches.
-static void layout_compose_toolbar(nk_context* context, int panel_icons) {
+static void layout_compose_toolbar(nk_context* context, int panel_icons, bool timing_focus) {
     const auto width = nk_window_get_bounds(context).w;
     nk_layout_row_template_begin(context, 27);
     layout_toolbar_icons(context, 4); // Navigation.
@@ -529,13 +557,15 @@ static void layout_compose_toolbar(nk_context* context, int panel_icons) {
         layout_toolbar_icons(context, panel_icons); // Panels.
         wormedit::ui::chrome::layout_separator(context);
     }
-    layout_toolbar_icons(context, 3); // Audio lock, backward nudges.
-    if (width >= 900.0f) nk_layout_row_template_push_static(context, 104);
-    layout_toolbar_icons(context, 2); // Forward nudges.
-    wormedit::ui::chrome::layout_separator(context);
-    layout_toolbar_icons(context, 1); // BPM snap.
-    nk_layout_row_template_push_static(context, 60);
-    wormedit::ui::chrome::layout_separator(context);
+    if (timing_focus) {
+        layout_toolbar_icons(context, 3); // Audio lock, backward nudges.
+        if (width >= 900.0f) nk_layout_row_template_push_static(context, 104);
+        layout_toolbar_icons(context, 2); // Forward nudges.
+        wormedit::ui::chrome::layout_separator(context);
+        layout_toolbar_icons(context, 1); // BPM snap.
+        nk_layout_row_template_push_static(context, 60);
+        wormedit::ui::chrome::layout_separator(context);
+    }
     layout_toolbar_icons(context, 1); // BGM scroll back.
     nk_layout_row_template_push_dynamic(context);
     layout_toolbar_icons(context, 1); // BGM scroll forward.
@@ -567,7 +597,8 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     const auto spacing = context->style.window.spacing;
     const bool spacing_pushed = nk_style_push_vec2(context, &context->style.window.spacing,
                                                   nk_vec2(3.0f, spacing.y)) != 0;
-    layout_compose_toolbar(context, 6 + (worm_ui_nuklear_bms_branch_panel_visible(toolbar.view) ? 1 : 0));
+    layout_compose_toolbar(context, 6 + (worm_ui_nuklear_bms_branch_panel_visible(toolbar.view) ? 1 : 0),
+                           toolbar.view->timing_focus);
     render_navigation_group(toolbar);
     wormedit::ui::chrome::toolbar_separator(context);
     render_tool_group(toolbar);
@@ -578,10 +609,12 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
         render_panel_group(toolbar);
         wormedit::ui::chrome::toolbar_separator(context);
     }
-    render_compose_offset_toolbar(toolbar);
-    wormedit::ui::chrome::toolbar_separator(context);
-    render_compose_snap_controls(context);
-    wormedit::ui::chrome::toolbar_separator(context);
+    if (toolbar.view->timing_focus) {
+        render_compose_offset_toolbar(toolbar);
+        wormedit::ui::chrome::toolbar_separator(context);
+        render_compose_snap_controls(context);
+        wormedit::ui::chrome::toolbar_separator(context);
+    }
     render_compose_bgm_scroll_controls(toolbar);
     if (dock_toggles_at_end(context)) {
         wormedit::ui::chrome::toolbar_separator(context);

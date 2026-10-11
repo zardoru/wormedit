@@ -1493,6 +1493,17 @@ struct ComposeDockLayout {
     float side_width;
 };
 
+static void close_hidden_offset_editor(nk_context* context, bool inspector_drawn,
+                                       bool timing_focus) {
+    if (!state.inline_offset_open) return;
+    const bool visible = state.inline_offset_in_inspector ? inspector_drawn
+        : timing_focus && nk_window_get_bounds(context).w >= 900.0f;
+    if (!visible) {
+        worm_ui_nuklear_cancel_inline_offset(state);
+        nk_edit_unfocus(context);
+    }
+}
+
 static auto compose_dock_layout(nk_context* context, const WormUiComposeView* view)
     -> ComposeDockLayout {
     const auto compose_body_bounds = nk_window_get_content_region(context);
@@ -1632,6 +1643,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                          double_click_count, shortcut_event_count};
 
     const auto dock_layout = compose_dock_layout(context, view);
+    close_hidden_offset_editor(context, dock_layout.inspector_drawn, view->timing_focus);
     prepare_compose_quantize_input(context, *view, dock_layout.inspector_drawn, window_focused);
     const auto [compose_body_bounds, compose_body_height, inspector_drawn, inspector_width, layers_drawn, layers_width, sounds_drawn, sounds_width, bga_drawn, bga_width, measures_drawn, measures_width, branch_drawn, branch_width, side_width] = dock_layout;
     state.sound_list_valid = false;

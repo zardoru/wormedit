@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_inspector.h"
+#include "ui/nuklear/compose_toolbar.h"
 #include "ui/nuklear/meter_state.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/ui_metrics.h"
@@ -150,17 +151,24 @@ static void render_lane_layout_editor(const ComposeInspectorContext& inspector) 
 void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
     render_lane_layout_editor(inspector);
     render_lane_profile_section(inspector);
-    const auto& timing = *inspector.timing_view;
-    nk_layout_row_dynamic(inspector.context, 18, 1);
-    nk_labelf(inspector.context, NK_TEXT_LEFT, "%zu measures · %zu BPM · %zu stop/delay",
-              timing.measure_count, timing.bpm_count, timing.pause_count);
-    nk_layout_row_dynamic(inspector.context, 18, 1);
-    nk_labelf(inspector.context, NK_TEXT_LEFT, "%zu warp · %zu SPEEDS · %zu anchors",
-              timing.warp_count, timing.speed_total_count, timing.anchor_count);
-    render_initial_bpm_control(inspector);
-    nk_layout_row_dynamic(inspector.context, 28, 1);
-    if (nk_button_label(inspector.context, "Timing Settings..."))
-        inspector.action->timing_settings.toggle = true;
+    if (nk_tree_push(inspector.context, NK_TREE_TAB, "Timing", NK_MAXIMIZED)) {
+        const auto& timing = *inspector.timing_view;
+        nk_layout_row_dynamic(inspector.context, 18, 1);
+        nk_labelf(inspector.context, NK_TEXT_LEFT, "%zu measures · %zu BPM · %zu stop/delay",
+                  timing.measure_count, timing.bpm_count, timing.pause_count);
+        nk_layout_row_dynamic(inspector.context, 18, 1);
+        nk_labelf(inspector.context, NK_TEXT_LEFT, "%zu warp · %zu SPEEDS · %zu anchors",
+                  timing.warp_count, timing.speed_total_count, timing.anchor_count);
+        render_initial_bpm_control(inspector);
+        render_compose_inspector_timing_controls({inspector.context, inspector.view, inspector.action});
+        nk_layout_row_dynamic(inspector.context, 28, 1);
+        if (nk_button_label(inspector.context, "Timing Settings..."))
+            inspector.action->timing_settings.toggle = true;
+        nk_tree_pop(inspector.context);
+    } else if (state.inline_offset_open && state.inline_offset_in_inspector) {
+        worm_ui_nuklear_cancel_inline_offset(state);
+        nk_edit_unfocus(inspector.context);
+    }
     if (!state.inline_timing_open && inspector.timing_view->stage_active &&
         inspector.action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE &&
         nk_tree_push(inspector.context, NK_TREE_TAB, "Timing event", NK_MAXIMIZED)) {

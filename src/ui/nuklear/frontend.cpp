@@ -1806,6 +1806,8 @@ static void close_unavailable_inline_offset(const WormUiWorkspaceView& view) {
     const bool available = g_window_focused && view.project_loaded &&
         view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && view.compose.visible &&
         view.compose.audio_offset_editable && !view.options.visible && !project_modal_active(view) &&
+        (compose.inline_offset_in_inspector ? compose.inspector_visible && !view.compose.timing_focus
+                                            : view.compose.timing_focus) &&
         compose.inline_offset_chart_id == view.compose.chart_id &&
         compose.inline_offset_revision == view.compose.document_revision;
     if (!available || compose.inline_offset_cancel_pending) {

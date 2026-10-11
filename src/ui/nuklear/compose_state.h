@@ -332,6 +332,7 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t timing_marker_chart_id{};
     std::uint64_t timing_marker_revision{};
     bool inline_offset_open{};
+    bool inline_offset_in_inspector{};
     bool inline_offset_focus_pending{};
     bool inline_offset_cancel_pending{};
     bool inline_offset_input_consumed{};

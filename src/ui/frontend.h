@@ -3237,7 +3237,8 @@ bool worm_ui_frontend_open_sound_picker(uint64_t project_id, uint64_t chart_id, 
 typedef enum WormUiComposeDockCommand {
     WORM_UI_COMPOSE_DOCK_OPEN_LAYERS,
     WORM_UI_COMPOSE_DOCK_CREATE_LAYER,
-    WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS
+    WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS,
+    WORM_UI_COMPOSE_DOCK_OPEN_EXPORT
 } WormUiComposeDockCommand;
 bool worm_ui_frontend_compose_dock_command(WormUiComposeDockCommand command,
     uint64_t project_id, uint64_t chart_id, uint64_t revision);

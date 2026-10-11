@@ -51,6 +51,7 @@ enum class application_command_kind_t {
     navigation_go_to_sound,
     view_open_layers,
     semantic_layer_create,
+    document_export_output_group,
     view_toggle_sounds,
     edit_toggle_quantize_preview,
     edit_apply_quantize,

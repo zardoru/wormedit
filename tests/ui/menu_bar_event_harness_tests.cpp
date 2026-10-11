@@ -435,3 +435,7 @@ TEST_CASE("File recent history scrolls within a small window and opens the last 
     require_menu(opened != frames.end());
     check_menu(std::string_view{opened->get().project_path} == paths.back());
 }
+
+TEST_CASE("File Export dispatches the shared command", "[frontend-state][event-harness][menu-bar]") {
+    check_dispatch("File", "Export…", "document.export_output_group");
+}

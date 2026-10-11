@@ -637,6 +637,7 @@ auto compose_auxiliary_command(command_context_t& context) -> std::optional<comm
     WormUiComposeDockCommand dock;
     switch (context.command.kind) {
     case command_kind_t::view_open_layers: dock = WORM_UI_COMPOSE_DOCK_OPEN_LAYERS; break;
+    case command_kind_t::document_export_output_group: dock = WORM_UI_COMPOSE_DOCK_OPEN_EXPORT; break;
     case command_kind_t::semantic_layer_create: dock = WORM_UI_COMPOSE_DOCK_CREATE_LAYER; break;
     case command_kind_t::view_toggle_sounds: dock = WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS; break;
     default: return std::nullopt;

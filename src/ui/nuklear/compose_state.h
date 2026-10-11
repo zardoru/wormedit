@@ -7,6 +7,7 @@
 #include "ui/nuklear/compose_bookmark_rename.h"
 #include "ui/nuklear/context_menu.h"
 #include "ui/nuklear/sound_slot_batch.h"
+#include "ui/nuklear/dialog.h"
 
 #include <array>
 #include <cstddef>
@@ -372,11 +373,12 @@ struct worm_ui_nuklear_compose_state_t {
     float note_label_anchor_x{};
     float note_label_anchor_y{};
     bool go_to_measure_open{};
-    std::uint64_t resource_export_group_project_id{};
-    std::uint64_t resource_export_group_chart_id{};
-    std::uint64_t resource_export_group_revision{};
-    bool resource_export_group_popup_open{};
-    bool resource_export_group_release_pending{};
+    std::uint64_t export_dialog_project_id{};
+    std::uint64_t export_dialog_chart_id{};
+    std::uint64_t export_dialog_revision{};
+    bool export_dialog_open{};
+    wormedit::ui::chrome::Dialog export_dialog{};
+    bool compose_dialog_release_pending{};
     bool go_to_measure_cancel_pending{};
     bool go_to_measure_focus_pending{};
     std::uint64_t go_to_measure_chart_id{};
@@ -499,6 +501,10 @@ struct worm_ui_nuklear_compose_state_t {
         std::uint64_t project{}, chart{}, revision{};
     };
     std::optional<layer_creation_request_t> layer_creation_request;
+    std::optional<layer_creation_request_t> layer_creation_context;
+    wormedit::ui::chrome::Dialog layer_creation_dialog{};
+    std::array<char, WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY> layer_creation_name{};
+    bool layer_creation_focus_pending{};
     std::size_t layers_panel_total_count{};
     std::uint64_t layers_panel_chart_id{};
     std::uint64_t layers_panel_project_id{};

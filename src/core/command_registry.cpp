@@ -858,6 +858,8 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
     add_builtin(registry, invoker, "view.open_layers", "Open Layers",
                 command_category_t::workspace, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::l, primary())}, true, compose);
+    add_builtin(registry, invoker, "document.export_output_group", "Export Output Group…",
+                command_category_t::document, command_focus_scope_t::tab, {}, true, compose);
     add_builtin(registry, invoker, "semantic_layer.create", "Create Layer",
                 command_category_t::semantic_layer, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::l, modified(shortcut_modifier_t::shift))}, true, compose);

@@ -277,7 +277,7 @@ void worm_ui_nuklear_render_options_window(nk_context* context, const WormUiOpti
     namespace chrome = wormedit::ui::chrome;
     auto& dialog = options_dialog;
     if (chrome::dialog_begin(dialog, context, "Options", "Options",
-        {.modal = false, .closable = true, .width = 800, .escape_cancels = true,
+        {.modal = true, .closable = true, .width = 800, .escape_cancels = true,
          .enter_confirms = false, .resizable = true, .height = 500, .minimum_size = {640, 400}, .movable = true})) {
         const auto content = nk_window_get_content_region(context);
         const auto footer_height = chrome::dialog_button_height + chrome::dialog_spacing +

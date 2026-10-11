@@ -21,6 +21,7 @@
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_snap_grid.h"
 #include "ui/nuklear/sound_import_runtime.h"
 #include "ui/nuklear/compose_bga_panel.h"
@@ -393,6 +394,7 @@ static bool frontend_window_size(int* width, int* height) {
 
 static bool nuklear_text_entry_active(void);
 static bool project_modal_active(const WormUiWorkspaceView& view);
+static bool external_project_modal_active(const WormUiWorkspaceView& view);
 static bool notification_history_focused();
 
 // Ctrl+A with the pointer over the Sounds or BGA dock list selects the rows shown there instead
@@ -1019,7 +1021,8 @@ static bool compose_popup_owns_input() {
            wormedit::ui::chrome::context_menu_owns_input(compose.snap_grid_menu) ||
            compose_area_menu_open() || compose_area_menu_consumed() ||
            compose_recipe_menu_open() || compose_recipe_menu_consumed() ||
-           compose.resource_export_group_popup_open || compose.resource_export_group_release_pending ||
+           compose.export_dialog_open || compose.compose_dialog_release_pending ||
+           compose.layer_creation_context.has_value() ||
            wormedit::ui::chrome::context_menu_owns_input(compose.layers_menu) || compose.keysound_slot_confirmation_open ||
            compose.keysound_slot_batch.open || compose.keysound_group_review.open ||
            wormedit::ui::chrome::context_menu_owns_input(compose.keysound_group_menu) ||
@@ -1083,6 +1086,13 @@ bool worm_ui_frontend_compose_dock_command(WormUiComposeDockCommand command,
         if (command == WORM_UI_COMPOSE_DOCK_CREATE_LAYER)
             compose.layer_creation_request = {project_id, chart_id, revision};
         return true;
+    case WORM_UI_COMPOSE_DOCK_OPEN_EXPORT:
+        compose.export_dialog_open = true;
+        compose.export_dialog_project_id = project_id;
+        compose.export_dialog_chart_id = chart_id;
+        compose.export_dialog_revision = revision;
+        compose.export_dialog = {};
+        return true;
     case WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS:
         compose.sounds_panel_visible = !compose.sounds_panel_visible;
         if (compose.sounds_panel_visible && compose.compact_dock_layout)
@@ -1099,18 +1109,13 @@ static void consume_layer_creation_request(const WormUiWorkspaceView& view,
     const auto request = std::exchange(compose.layer_creation_request, std::nullopt);
     if (!request || !compose_dock_input_available() || !view.project_loaded || view.options.visible ||
         view.compose.timing_focus || view.active_tab != WORM_UI_WORKSPACE_TAB_COMPOSE ||
-        !view.compose.visible || !view.compose.scene_available || project_modal_active(view) ||
+        !view.compose.visible || !view.compose.scene_available || external_project_modal_active(view) ||
         view.compose.input_occluded || request->project != view.compose.project_id ||
         request->chart != view.compose.chart_id || request->revision != view.compose.document_revision ||
         action.kind != WORM_UI_WORKSPACE_ACTION_NONE || action.compose_input_count != 0 ||
         (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE &&
          action.compose_action != WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW)) return;
-    // A newly opened list can request a projection window in the same frame.
-    // Creation takes priority; the list retries its read-only window request next frame.
-    action.compose_action = WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER;
-    action.compose_input_project_id = request->project;
-    action.compose_input_chart_id = request->chart;
-    action.compose_input_document_revision = request->revision;
+    worm_ui_nuklear_open_layer_creation(view.compose, compose);
 }
 
 static bool notification_owns_pointer(float x, float y) {
@@ -1351,6 +1356,12 @@ static bool capture_snap_grid_key(const SDL_KeyboardEvent& event) {
 
 static bool capture_compose_modal_key(const SDL_KeyboardEvent& event) {
     const auto& compose = worm_ui_nuklear_compose_state();
+    if (compose.layer_creation_context || compose.export_dialog_open) {
+        if (g_ime_composition_active && event.down &&
+            (event.key == SDLK_RETURN || event.key == SDLK_KP_ENTER)) return true;
+        forward_modal_key(event);
+        return true;
+    }
     if (capture_snap_grid_key(event) || capture_sound_picker_key(event) || capture_bookmark_editor_key(event)) return true;
     const bool escape_menu = g_menu_popup_open || g_menu_popup_release_pending ||
         compose.keysound_filter_popup_open || compose.keysound_filter_release_pending;
@@ -2693,13 +2704,19 @@ static void confirm_new_project_wizard(WormUiWorkspaceAction& action) {
     g_new_project_wizard.open = false;
 }
 
-static bool project_modal_active(const WormUiWorkspaceView& view) {
+static bool external_project_modal_active(const WormUiWorkspaceView& view) {
     return (g_help_dialog != HelpDialog::none) || view.close_confirmation.visible || view.chart_import.visible ||
            g_new_project_wizard.open ||
            worm_ui_nuklear_sound_import_active() ||
            worm_ui_nuklear_compose_state().keysound_slot_batch.open ||
            worm_ui_nuklear_compose_state().keysound_group_review.open ||
            (view.pending_bms_encoding_path && view.pending_bms_encoding_path[0]);
+}
+
+static bool project_modal_active(const WormUiWorkspaceView& view) {
+    const auto& state = worm_ui_nuklear_compose_state();
+    return external_project_modal_active(view) || state.export_dialog_open ||
+        state.layer_creation_context.has_value();
 }
 
 static void render_about_body(const WormUiWorkspaceView& view) {
@@ -3163,9 +3180,11 @@ static void render_notification_frame(const WormUiNotificationView& view,
 static void retire_unavailable_layer_actions(const WormUiWorkspaceView& view) {
     if (view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && g_window_focused &&
         view.project_loaded && view.compose.visible && !view.compose.input_occluded &&
-        !view.options.visible && !project_modal_active(view)) return;
+        !view.options.visible && !external_project_modal_active(view)) return;
     auto& state = worm_ui_nuklear_compose_state();
     state.layer_creation_request.reset();
+    state.layer_creation_context.reset();
+    state.export_dialog_open = false;
     wormedit::ui::chrome::context_menu_abandon(state.snap_grid_menu);
     wormedit::ui::chrome::context_menu_abandon(state.layers_menu);
     abandon_compose_quantize_popup();
@@ -3218,6 +3237,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         expose_shortcut_input(&action);
         return action;
     }
+    (void)wormedit::ui::chrome::popup_update_release_pending(
+        g_context, worm_ui_nuklear_compose_state().compose_dialog_release_pending);
     service_native_menu(*view, action);
     retire_unavailable_layer_actions(*view);
     g_tap_timing_visible = view->tap_timing.visible && !project_modal_active(*view);
@@ -3293,6 +3314,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     if (action.sound_import_pick_requested && !g_headless)
         worm_ui_nuklear_sound_import_pick(g_window, *view, action.sound_import_kind);
     consume_layer_creation_request(*view, action);
+    worm_ui_nuklear_render_compose_dialogs(g_context, view->compose, action,
+        worm_ui_nuklear_compose_state());
     worm_ui_nuklear_consume_sound_picker(*view, action);
     worm_ui_nuklear_render_pending_sound_import(g_context, *view, action, width, height);
     worm_ui_nuklear_render_sound_slot_batch(g_context,

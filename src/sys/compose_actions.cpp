@@ -2366,8 +2366,9 @@ std::optional<std::string> add_semantic_layer(compose_action_context_t& context)
             "Finish or cancel the active Compose gesture before adding a semantic layer.");
     const auto* chart = selected_chart(context.history, context.workspace);
     if (!chart) return compose_action_warning(context, "Choose a chart before adding a semantic layer.");
-    std::string name = "Layer";
-    for (std::size_t suffix = 2; std::ranges::any_of(
+    std::string name = context.action.compose_semantic_layer_name;
+    if (name.empty()) name = "Layer";
+    for (std::size_t suffix = 2; !context.action.compose_semantic_layer_name[0] && std::ranges::any_of(
              chart->semantic_layers, [&](const auto& item) { return item.name == name; }); ++suffix)
         name = "Layer " + std::to_string(suffix);
     constexpr std::array<semantic_layer_rgba_t, 6> colors{{

@@ -11,7 +11,7 @@ enum class workspace_menu_action_t {
     notifications, preview, external_preferences, external_start, external_here, external_stop,
     undo, redo, delete_selection, select_all, invert_selection, clear_selection,
     new_chart, timing_lock, insert_bpm, insert_sv, play_stop, play_pause, play_start, stop, metronome,
-    sounds, layers, about, shortcuts,
+    sounds, layers, about, shortcuts, export_output_group,
     recent_first = 1000, recent_last = 1099
 };
 
@@ -41,7 +41,7 @@ inline constexpr std::array workspace_menu_titles{"File", "Edit", "View", "Chart
 
 // Commands exposed by the shared menu model and Help shortcut sheet.
 inline constexpr std::array workspace_menu_command_ids{
-    "document.new_project", "document.save_project", "workspace.options",
+    "document.new_project", "document.save_project", "document.export_output_group", "workspace.options",
     "history.undo", "history.redo", "edit.copy", "edit.cut", "edit.paste", "edit.delete",
     "edit.move_to_bgm", "selection.select_all", "selection.invert", "selection.clear",
     "selection.select_same_sound_chart", "view.notifications", "view.toggle_sounds", "view.open_layers",

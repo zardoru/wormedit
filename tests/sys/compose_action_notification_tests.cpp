@@ -241,6 +241,17 @@ TEST_CASE("Compose dispatcher posts a semantic edit once and preserves undo", "[
     check_action(fixture.history.document.charts.front().semantic_layers.empty());
 }
 
+TEST_CASE("Compose layer creation accepts a supplied name in the atomic undo action", "[compose-action-notifications]") {
+    action_notification_fixture_t fixture;
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
+    std::snprintf(action.compose_semantic_layer_name, sizeof(action.compose_semantic_layer_name), "Chorus");
+    require_action(fixture.dispatch(action) == "Semantic layer added.");
+    require_action(fixture.history.document.charts.front().semantic_layers.size() == 1);
+    check_action(fixture.history.document.charts.front().semantic_layers.front().name == "Chorus");
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.charts.front().semantic_layers.empty());
+}
+
 TEST_CASE("Compose dispatcher rejects stale actions without changing history", "[compose-action-notifications]") {
     action_notification_fixture_t fixture;
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);

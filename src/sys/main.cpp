@@ -1730,7 +1730,7 @@ void refresh_compose_dock_commands(wormedit::command_registry_t& registry, bool 
                                     bool pending, const application_command_state_t& application) {
     const bool enabled = compose_ready && !pending && !application.compose_timing_focus &&
                          !application.paste_session;
-    for (const auto id : {"view.open_layers", "semantic_layer.create", "view.toggle_sounds"})
+    for (const auto id : {"view.open_layers", "semantic_layer.create", "view.toggle_sounds", "document.export_output_group"})
         (void)wormedit::update_command_state(registry, {id}, enabled, std::nullopt);
 }
 

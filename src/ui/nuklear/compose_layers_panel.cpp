@@ -301,7 +301,8 @@ void render_header(const LayersPanel& panel) {
     if (!panel.view->scene_available) nk_widget_disable_begin(context);
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::plus, "Add layer"}
             .render(context) && panel.view->scene_available)
-        (void)raise(panel, WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
+        panel.state->layer_creation_request = {
+            panel.view->project_id, panel.view->chart_id, panel.view->document_revision};
     if (!panel.view->scene_available) nk_widget_disable_end(context);
     nk_layout_row_end(context);
 }

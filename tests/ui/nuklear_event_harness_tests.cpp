@@ -5847,6 +5847,10 @@ TEST_CASE("Options custom grippy header moves the tool and preserves its close a
     (void)harness.frame();
     WormUiTestingRect before{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &before));
+    WormUiTestingRect backdrop{};
+    REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options##dialog-backdrop", &backdrop));
+    expect_lane_key(backdrop.x == 0 && backdrop.y == 0);
+    expect_lane_key(backdrop.width == 1600 && backdrop.height == 1000);
     drag_options_header(harness, 80, 45);
     WormUiTestingRect after{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &after));

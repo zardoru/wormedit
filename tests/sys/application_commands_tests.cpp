@@ -59,6 +59,8 @@ TEST_CASE("application command IDs parse into typed commands", "[unit][sys][comm
 }
 
 TEST_CASE("Dock command IDs parse into typed commands", "[unit][sys][commands][dock-shortcuts]") {
+    CHECK(parse_application_command("document.export_output_group") ==
+          application_command_t{.kind = application_command_kind_t::document_export_output_group});
     CHECK(parse_application_command("view.open_layers") ==
           application_command_t{.kind = application_command_kind_t::view_open_layers});
     CHECK(parse_application_command("semantic_layer.create") ==
@@ -1881,7 +1883,7 @@ TEST_CASE("Dock commands use the active Compose context without editing history"
     fixture.application_state.compose_dock_command = [&](WormUiComposeDockCommand dock,
         std::uint64_t project, std::uint64_t chart, std::uint64_t expected_revision) {
         ++calls;
-        check_bookmark_callback(dock <= WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS);
+        check_bookmark_callback(dock <= WORM_UI_COMPOSE_DOCK_OPEN_EXPORT);
         check_bookmark_callback(project == fixture.fixture.history.document.id.value);
         check_bookmark_callback(chart == fixture.compose_state->chart.value);
         check_bookmark_callback(expected_revision == revision);
@@ -1889,7 +1891,8 @@ TEST_CASE("Dock commands use the active Compose context without editing history"
     };
     for (const auto kind : {application_command_kind_t::view_open_layers,
                             application_command_kind_t::semantic_layer_create,
-                            application_command_kind_t::view_toggle_sounds}) {
+                            application_command_kind_t::view_toggle_sounds,
+                            application_command_kind_t::document_export_output_group}) {
         require_bookmark_callback(fixture.invoke(kind).accepted);
         fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
         check_bookmark_callback(!fixture.invoke(kind).accepted);
@@ -1901,7 +1904,7 @@ TEST_CASE("Dock commands use the active Compose context without editing history"
         check_bookmark_callback(!fixture.invoke(kind).accepted);
         fixture.application_state.compose_timing_focus = false;
     }
-    check_bookmark_callback(calls == 3);
+    check_bookmark_callback(calls == 4);
     check_bookmark_callback(fixture.fixture.history.document.revision == revision);
     check_bookmark_callback(fixture.fixture.history.undo.size() == undo_size);
 }
@@ -1911,7 +1914,8 @@ TEST_CASE("Dock commands reject absent and unavailable callbacks",
     TimingInsertFixture fixture;
     for (const auto kind : {application_command_kind_t::view_open_layers,
                             application_command_kind_t::semantic_layer_create,
-                            application_command_kind_t::view_toggle_sounds}) {
+                            application_command_kind_t::view_toggle_sounds,
+                            application_command_kind_t::document_export_output_group}) {
         fixture.application_state.compose_dock_command = {};
         check_bookmark_callback(!fixture.invoke(kind).accepted);
         fixture.application_state.compose_dock_command = [](auto, auto, auto, auto) { return false; };

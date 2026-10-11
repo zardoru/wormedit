@@ -5,6 +5,9 @@
 #include "wormedit/nuklear_config.h"
 
 #include <array>
+#include <algorithm>
+#include <string>
+#include <string_view>
 #include <cstdio>
 
 namespace {
@@ -71,143 +74,160 @@ auto find_export_group(const WormUiComposeView& view,
     return &view.output_groups[0];
 }
 
-auto begin_export_group_popup(const ResourcePanel& panel, const char* label) -> bool {
-    auto* context = panel.context;
-    auto& state = *panel.state;
-    const auto was_open = state.resource_export_group_popup_open;
-    (void)wormedit::ui::chrome::popup_update_release_pending(
-        context, state.resource_export_group_release_pending);
-    const auto current = wormedit::ui::chrome::PopupContextStamp{
-        panel.view->project_id, panel.view->chart_id, panel.view->document_revision, 0};
-    const auto captured = wormedit::ui::chrome::PopupContextStamp{
-        state.resource_export_group_project_id, state.resource_export_group_chart_id,
-        state.resource_export_group_revision, 0};
-    const auto began = (!state.resource_export_group_release_pending || was_open) &&
-        wormedit::ui::chrome::safe_combo_begin_label(
-            context, label, nk_vec2(nk_widget_width(context), 220.0f));
-    state.resource_export_group_popup_open = began;
-    if (was_open && !wormedit::ui::chrome::popup_context_matches(captured, current)) {
-        if (began) {
-            nk_combo_close(context);
-            wormedit::ui::chrome::safe_combo_end(context);
-        }
-        state.resource_export_group_popup_open = false;
-        wormedit::ui::chrome::popup_arm_release(state.resource_export_group_release_pending);
-        return false;
-    }
-    if (began && !was_open) {
-        state.resource_export_group_project_id = current.project_id;
-        state.resource_export_group_chart_id = current.chart_id;
-        state.resource_export_group_revision = current.revision;
-    }
-    if (!began && was_open &&
-        (nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT) ||
-         nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) ||
-         nk_input_is_mouse_released(&context->input, NK_BUTTON_LEFT) ||
-         nk_input_is_mouse_released(&context->input, NK_BUTTON_RIGHT)))
-        wormedit::ui::chrome::popup_arm_release(state.resource_export_group_release_pending);
-    return began;
-}
-
-auto dismiss_export_group_popup(const ResourcePanel& panel, bool was_open) -> bool {
-    auto* context = panel.context;
-    auto& state = *panel.state;
-    if (!wormedit::ui::chrome::popup_dismiss_requested(
-            context, nk_window_get_bounds(context), was_open)) return false;
-    nk_combo_close(context);
-    wormedit::ui::chrome::safe_combo_end(context);
-    state.resource_export_group_popup_open = false;
-    wormedit::ui::chrome::popup_arm_release(state.resource_export_group_release_pending);
-    return true;
-}
-
-void render_export_group_choices(const ResourcePanel& panel,
-                                 const WormUiComposeOutputGroupView*& selected) {
-    auto* context = panel.context;
-    auto& state = *panel.state;
-    nk_layout_row_dynamic(context, 22, 1);
+void render_export_group_choices(const ResourcePanel& panel) {
+    nk_layout_row_dynamic(panel.context, 26, 1);
     for (std::size_t index = 0; index < panel.view->output_group_count; ++index) {
         const auto& candidate = panel.view->output_groups[index];
-        if (!nk_combo_item_label(context,
+        int selected = panel.state->export_group_document_index == candidate.document_index;
+        if (nk_selectable_label(panel.context,
                 candidate.name[0] ? candidate.name : candidate.relative_output_path,
-                NK_TEXT_LEFT)) continue;
-        state.export_group_document_index = candidate.document_index;
-        selected = &candidate;
-        wormedit::ui::chrome::popup_arm_release(state.resource_export_group_release_pending);
+                NK_TEXT_LEFT, &selected))
+            panel.state->export_group_document_index = candidate.document_index;
     }
 }
 
-void render_export_group_popup_controls(const ResourcePanel& panel,
-                                        const WormUiComposeOutputGroupView& selected) {
-    auto* context = panel.context;
+void stamp_action(const WormUiComposeView& view, WormUiWorkspaceAction& action) {
+    action.compose_input_project_id = view.project_id;
+    action.compose_input_chart_id = view.chart_id;
+    action.compose_input_document_revision = view.document_revision;
+}
+
+auto action_available(const WormUiWorkspaceAction& action) -> bool {
+    return action.kind == WORM_UI_WORKSPACE_ACTION_NONE && action.compose_input_count == 0 &&
+        (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE ||
+         action.compose_action == WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW);
+}
+
+void close_export(worm_ui_nuklear_compose_state_t& state) {
+    state.export_dialog_open = false;
+    wormedit::ui::chrome::popup_arm_release(state.compose_dialog_release_pending);
+}
+
+void render_export_dialog(const ResourcePanel& panel) {
+    namespace chrome = wormedit::ui::chrome;
     auto& state = *panel.state;
-    auto* action = panel.action;
-    int overwrite = state.export_overwrite ? 1 : 0;
-    nk_layout_row_dynamic(context, 20, 1);
-    if (nk_checkbox_label(context, "Replace existing chart files", &overwrite))
-        wormedit::ui::chrome::popup_arm_release(state.resource_export_group_release_pending);
-    state.export_overwrite = overwrite != 0;
-    nk_layout_row_dynamic(context, 24, 1);
-    if (!nk_button_label(context, "Export selected group") ||
-        action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
-    action->compose_output_group_index = selected.document_index;
-    action->compose_export_overwrite = state.export_overwrite;
-    action->compose_action = WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
-    state.resource_export_group_popup_open = false;
-    wormedit::ui::chrome::popup_arm_release(state.resource_export_group_release_pending);
-    nk_combo_close(context);
+    auto& dialog = state.export_dialog;
+    const auto& view = *panel.view;
+    if (!state.export_dialog_open) return;
+    const auto captured = chrome::PopupContextStamp{state.export_dialog_project_id,
+        state.export_dialog_chart_id, state.export_dialog_revision, 0};
+    if (!chrome::popup_context_matches(captured,
+            {view.project_id, view.chart_id, view.document_revision, 0})) {
+        close_export(state);
+        return;
+    }
+    if (chrome::dialog_begin(dialog, panel.context, "Export output group", "Export", {.width = 560})) {
+        nk_layout_row_dynamic(panel.context, 20, 1);
+        nk_label(panel.context, "Output group", NK_TEXT_LEFT);
+        // A scrollable list keeps long catalogs from pushing the footer offscreen.
+        if (view.output_group_count != 0) {
+            const auto list_height = std::min({156.0f,
+                34.0f * static_cast<float>(view.output_group_count) + 8.0f,
+                std::max(26.0f, wormedit::ui::nuklear::tooltip::viewport().h - 230.0f)});
+            nk_layout_row_dynamic(panel.context, list_height, 1);
+            if (nk_group_begin(panel.context, "Export groups", 0)) {
+                render_export_group_choices(panel);
+                nk_group_end(panel.context);
+            }
+        }
+        const auto* selected = find_export_group(view, state);
+        chrome::dialog_text(dialog, panel.context,
+            selected ? selected->relative_output_path : "No output group for this chart",
+            chrome::color(chrome::UiColor::text_muted));
+        int overwrite = state.export_overwrite;
+        nk_layout_row_dynamic(panel.context, 24, 1);
+        nk_checkbox_label(panel.context, "Replace existing chart files", &overwrite);
+        state.export_overwrite = overwrite != 0;
+        chrome::dialog_footer_begin(dialog, panel.context, 2, false, 140);
+        if (chrome::dialog_button(dialog, panel.context, "Cancel", chrome::DialogButtonRole::secondary))
+            close_export(state);
+        if (chrome::dialog_button(dialog, panel.context, "Export group", chrome::DialogButtonRole::primary,
+                                 selected && action_available(*panel.action))) {
+            stamp_action(view, *panel.action);
+            panel.action->compose_action = WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
+            panel.action->compose_output_group_index = selected->document_index;
+            panel.action->compose_export_overwrite = state.export_overwrite;
+            close_export(state);
+        }
+    }
+    if (chrome::dialog_end(dialog, panel.context) == chrome::DialogResult::cancel) close_export(state);
 }
 
-auto render_export_group(const ResourcePanel& panel)
-    -> const WormUiComposeOutputGroupView* {
-    auto* context = panel.context;
+void render_layer_creation(const ResourcePanel& panel) {
+    namespace chrome = wormedit::ui::chrome;
+    auto& state = *panel.state;
+    if (!state.layer_creation_context) return;
+    const auto& captured = *state.layer_creation_context;
     const auto& view = *panel.view;
-    auto* state = panel.state;
-    auto* action = panel.action;
-    auto* export_group = find_export_group(view, *state);
-    nk_layout_row_dynamic(context, 22, 1);
-    if (!export_group) {
-        nk_label(context, "No output group for this chart", NK_TEXT_LEFT);
-    } else {
-        std::array<char, 180> label{};
-        std::snprintf(label.data(), label.size(), "Export: %s",
-                      export_group->name[0] ? export_group->name
-                                            : export_group->relative_output_path);
-        const auto was_open = state->resource_export_group_popup_open;
-        const auto began = begin_export_group_popup(panel, label.data());
-        if (began) {
-            if (dismiss_export_group_popup(panel, was_open)) return export_group;
-            render_export_group_choices(panel, export_group);
-            render_export_group_popup_controls(panel, *export_group);
-            wormedit::ui::chrome::safe_combo_end(context);
+    if (captured.project != view.project_id || captured.chart != view.chart_id ||
+        captured.revision != view.document_revision) {
+        state.layer_creation_context.reset();
+        return;
+    }
+    auto& dialog = state.layer_creation_dialog;
+    if (chrome::dialog_begin(dialog, panel.context, "Create layer", "Create layer", {.width = 420})) {
+        nk_layout_row_dynamic(panel.context, 20, 1);
+        nk_label(panel.context, "Name", NK_TEXT_LEFT);
+        nk_layout_row_dynamic(panel.context, 28, 1);
+        chrome::autofocus_text_field(panel.context, NK_EDIT_FIELD | NK_EDIT_AUTO_SELECT,
+            state.layer_creation_name.data(), static_cast<int>(state.layer_creation_name.size()),
+            nk_filter_default, state.layer_creation_focus_pending);
+        const auto valid = std::string_view(state.layer_creation_name.data()).find_first_not_of(" \t\r\n") !=
+            std::string_view::npos;
+        chrome::dialog_footer_begin(dialog, panel.context, 2);
+        if (chrome::dialog_button(dialog, panel.context, "Cancel", chrome::DialogButtonRole::secondary))
+            state.layer_creation_context.reset();
+        if (chrome::dialog_button(dialog, panel.context, "Create", chrome::DialogButtonRole::primary,
+                                 valid && action_available(*panel.action))) {
+            stamp_action(view, *panel.action);
+            panel.action->compose_action = WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER;
+            std::snprintf(panel.action->compose_semantic_layer_name,
+                sizeof(panel.action->compose_semantic_layer_name), "%s", state.layer_creation_name.data());
+            state.layer_creation_context.reset();
         }
-        nk_layout_row_dynamic(context, 17, 1);
-        nk_label(context, export_group->relative_output_path, NK_TEXT_LEFT);
     }
-    if (view.output_groups_truncated) {
-        nk_layout_row_dynamic(context, 17, 1);
-        nk_label(context, "Additional output groups are hidden by the view cap.", NK_TEXT_LEFT);
-    }
-    return export_group;
+    if (chrome::dialog_end(dialog, panel.context) == chrome::DialogResult::cancel)
+        state.layer_creation_context.reset();
+    if (!state.layer_creation_context)
+        chrome::popup_arm_release(state.compose_dialog_release_pending);
 }
 
 } // namespace
 
-// The inspector no longer lists resources: sounds, BGA and BMSON tools live in their docks, music is
-// linked in Metadata, and copies are made there. What stays is the arming that follows the selected
-// object, and the output-group export, which has no other home yet.
-void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
-                                              const WormUiComposeView* view,
-                                              WormUiWorkspaceAction* action,
-                                              worm_ui_nuklear_compose_state_t* state) {
-    if (!context || !view || !action || !state) {
-        return;
-    }
-    ResourcePanel panel{context, view, action, state};
+void worm_ui_nuklear_open_export_dialog(const WormUiComposeView& view,
+    worm_ui_nuklear_compose_state_t& state) {
+    state.export_dialog_open = true;
+    state.export_dialog_project_id = view.project_id;
+    state.export_dialog_chart_id = view.chart_id;
+    state.export_dialog_revision = view.document_revision;
+    state.export_dialog = {};
+    (void)find_export_group(view, state);
+}
+
+void worm_ui_nuklear_open_layer_creation(const WormUiComposeView& view,
+    worm_ui_nuklear_compose_state_t& state) {
+    state.layer_creation_context = {view.project_id, view.chart_id, view.document_revision};
+    state.layer_creation_dialog = {};
+    state.layer_creation_focus_pending = true;
+    std::string name = "Layer";
+    for (std::size_t suffix = 2; std::ranges::any_of(
+            std::span{view.semantic_layers, view.semantic_layer_count},
+            [&](const auto& layer) { return name == layer.name; }); ++suffix)
+        name = "Layer " + std::to_string(suffix);
+    std::snprintf(state.layer_creation_name.data(), state.layer_creation_name.size(), "%s", name.c_str());
+}
+
+void worm_ui_nuklear_render_compose_dialogs(nk_context* context, const WormUiComposeView& view,
+    WormUiWorkspaceAction& action, worm_ui_nuklear_compose_state_t& state) {
+    ResourcePanel panel{context, &view, &action, &state};
+    render_export_dialog(panel);
+    render_layer_creation(panel);
+}
+
+void worm_ui_nuklear_render_compose_resources(nk_context* context, const WormUiComposeView* view,
+    WormUiWorkspaceAction* action, worm_ui_nuklear_compose_state_t* state) {
+    if (!context || !view || !action || !state) return;
     update_selection_state(*view, *state);
-    if (!nk_tree_push(context, NK_TREE_TAB, "Export", NK_MAXIMIZED)) {
-        return;
-    }
-    (void)render_export_group(panel);
-    nk_tree_pop(context);
+    nk_layout_row_dynamic(context, 28, 1);
+    if (nk_button_label(context, "Export…")) worm_ui_nuklear_open_export_dialog(*view, *state);
 }

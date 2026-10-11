@@ -2218,3 +2218,72 @@ TEST_CASE("field scene skips selected IDs that no longer exist instead of reject
     REQUIRE(result);
     CHECK(result.scene->visible_end_row > result.scene->visible_begin_row);
 }
+
+namespace {
+auto scratch_geometry_chart(const wormedit::lane_input_profile_t& profile)
+    -> wormedit::chart_document_t {
+    auto chart = scene_chart();
+    chart.lane_layouts.resize(1);
+    chart.lane_layouts.front().layout = profile.layout;
+    chart.input_profile = profile.input;
+    for (auto& measure : chart.measures) measure.notes.clear();
+    return chart;
+}
+auto scratch_geometry_view(const wormedit::chart_document_t& chart,
+                           wormedit::editor_scratch_presentation_t sides)
+    -> wormedit::editor_interaction_view_model_t {
+    auto current = view();
+    current.scratch_on_right = sides;
+    current.active_lane = chart.lane_layouts.front().layout.lanes.front().id;
+    current.selected_notes.clear();
+    current.selected_objects.clear();
+    return current;
+}
+auto scratch_geometry_index(const wormedit::chart_document_t& chart)
+    -> wormedit::editor_field_scene_index_t {
+    auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    return std::get<wormedit::editor_field_scene_index_t>(std::move(built));
+}
+void check_scratch_lane(const wormedit::editor_field_scene_t& scene, std::size_t slot,
+                        wormedit::stage_group_t stage) {
+    REQUIRE(scene.lanes.size() > slot);
+    CHECK(scene.lanes[slot].role == wormedit::lane_role_t::scratch);
+    CHECK(scene.lanes[slot].stage == stage);
+}
+}
+
+TEST_CASE("Scratch presentation previews SP7 from the right without changing authored lanes",
+          "[unit][core][editor-scene][scratch-presentation]") {
+    const auto profile = wormedit::make_bms_7k_profile();
+    auto chart = scratch_geometry_chart(profile);
+    CHECK(wormedit::editor_presented_column(profile.layout, wormedit::lane_id_t{9999}, {}) == -1);
+    const wormedit::editor_scratch_presentation_t sides{true, std::nullopt};
+    const auto current = scratch_geometry_view(chart, sides);
+    const auto index = scratch_geometry_index(chart);
+    const auto result = wormedit::make_editor_field_scene(chart, index, current,
+        {.field_width_pixels = 800, .scratch_on_right = sides});
+    REQUIRE(result);
+    check_scratch_lane(*result.scene, 7, wormedit::stage_group_t::left);
+    CHECK(result.scene->lanes.front().role == wormedit::lane_role_t::playable);
+    CHECK(chart.lane_layouts.front().layout.lanes.front().id == profile.layout.lanes.front().id);
+    CHECK(chart.lane_layouts.front().layout.lanes.front().display_order == profile.layout.lanes.front().display_order);
+}
+
+TEST_CASE("Scratch presentation moves both DP5 scratches to each side's left and invalidates scene cache",
+          "[unit][core][editor-scene][scratch-presentation]") {
+    auto chart = scratch_geometry_chart(wormedit::make_bms_10k_standard_profile());
+    const auto index = scratch_geometry_index(chart);
+    auto current = scratch_geometry_view(chart, {});
+    wormedit::editor_field_scene_request_t request{.field_width_pixels = 1212};
+    wormedit::editor_field_scene_window_t window;
+    REQUIRE(wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window));
+    const auto rebuilds = window.rebuild_count;
+    current.scratch_on_right = request.scratch_on_right = {false, false};
+    CHECK_FALSE(wormedit::can_reuse_editor_field_scene_window(chart, index, current, request, window));
+    const auto result = wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window);
+    REQUIRE(result);
+    check_scratch_lane(*result.scene, 0, wormedit::stage_group_t::left);
+    check_scratch_lane(*result.scene, 6, wormedit::stage_group_t::right);
+    CHECK(window.rebuild_count == rebuilds + 1);
+}

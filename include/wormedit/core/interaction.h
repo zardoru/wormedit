@@ -2,6 +2,7 @@
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/snap.h>
+#include <wormedit/core/lane_presentation.h>
 
 #include <compare>
 #include <cmath>
@@ -674,6 +675,7 @@ struct pending_editor_area_selection_t {
 struct editor_interaction_state_t {
     chart_id_t chart;
     lane_id_t active_lane;
+    editor_scratch_presentation_t scratch_on_right;
     note_kind_t armed_note_kind{note_kind_t::tap};
     // An explicit palette target overrides sound defaults; an empty vector means No layer.
     std::optional<std::vector<layer_id_t>> armed_note_layers;
@@ -738,6 +740,7 @@ struct editor_interaction_state_t {
 struct editor_interaction_view_model_t {
     chart_id_t chart;
     lane_id_t active_lane;
+    editor_scratch_presentation_t scratch_on_right;
     std::string active_lane_name;
     local_position_t cursor;
     std::optional<std::uint64_t> virtual_bms_cursor_row;

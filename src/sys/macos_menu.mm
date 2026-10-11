@@ -60,6 +60,7 @@ NSMenu* submenu(NSString* title) {
 void update_item(NSMenuItem* item, const wormedit::ui::workspace_menu_item_t& model) {
     if (model.action == action_t::none) { item.hidden = NO; return; }
     item.title = menu_text(model.title);
+    item.toolTip = model.recent_path ? menu_text(model.recent_path) : nil;
     item.enabled = model.enabled;
     item.state = model.checked ? NSControlStateValueOn : NSControlStateValueOff;
     item.hidden = NO;

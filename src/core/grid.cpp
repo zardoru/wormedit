@@ -271,17 +271,6 @@ auto add_candidate(std::vector<editor_grid_line_t>& lines, const measure_index_e
     return true;
 }
 
-auto locate_measure(const measure_index_t& index, std::uint64_t absolute_row)
-    -> const measure_index_entry_t* {
-    const auto after = std::ranges::upper_bound(index.entries, absolute_row, {},
-                                                &measure_index_entry_t::absolute_begin_row);
-    if (after == index.entries.begin()) {
-        return nullptr;
-    }
-    const auto& entry = *std::prev(after);
-    return absolute_row - entry.absolute_begin_row < entry.row_capacity ? &entry : nullptr;
-}
-
 auto spacing_pixels(const exact_chart_row_t& earlier, const exact_chart_row_t& later,
                     double pixels_per_standard_measure, std::uint64_t divisions) -> long double {
     const auto rows = static_cast<long double>(later.whole_rows - earlier.whole_rows) +
@@ -477,6 +466,33 @@ auto append_authored_groups(editor_grid_build_context_t& context,
     return append_group_boundaries(context, entry, boundaries, denominator);
 }
 
+auto append_measure_snap_candidates(editor_grid_build_context_t& context,
+                                    const measure_index_entry_t& entry) -> bool {
+    if (!context.request.active_snap_denominator ||
+        context.request.pixels_per_standard_measure /
+                static_cast<double>(*context.request.active_snap_denominator) <
+            context.request.density.minimum_active_snap_spacing_pixels)
+        return true;
+    const auto step = context.divisions / *context.request.active_snap_denominator;
+    const auto begin = context.candidate_begin > entry.absolute_begin_row
+        ? context.candidate_begin - entry.absolute_begin_row : 0;
+    auto multiple = begin / step + (begin % step != 0);
+    // The measure candidate already supplies offset zero.
+    multiple = std::max(multiple, std::uint64_t{1});
+    if (multiple > maximum / step) return true;
+    auto offset = multiple * step;
+    while (offset < entry.row_capacity &&
+           offset < context.candidate_end - entry.absolute_begin_row) {
+        if (!add_candidate(context.candidates, entry, {.whole = offset},
+                           editor_grid_line_kind_t::active_snap,
+                           context.request.maximum_line_count, context.result.diagnostics))
+            return false;
+        if (step > maximum - offset) break;
+        offset += step;
+    }
+    return true;
+}
+
 auto append_authored_measure_candidates(editor_grid_build_context_t& context) -> bool {
     for (const auto& measure : context.chart.measures) {
         const auto entry = std::ranges::find(context.measure_index.entries, measure.id,
@@ -492,7 +508,8 @@ auto append_authored_measure_candidates(editor_grid_build_context_t& context) ->
             ? static_cast<std::uint64_t>(measure.definition.meter->numerator - 1U)
             : last_interior_beat(context.divisions, denominator, entry->row_capacity);
         if (!append_authored_beats(context, *entry, denominator, last_beat) ||
-            !append_authored_groups(context, measure, *entry, denominator, last_beat))
+            !append_authored_groups(context, measure, *entry, denominator, last_beat) ||
+            !append_measure_snap_candidates(context, *entry))
             return false;
     }
     return true;
@@ -502,7 +519,8 @@ auto append_virtual_measure_candidates(editor_grid_build_context_t& context,
                                        const virtual_canvas_measure_t& measure) -> bool {
     const measure_index_entry_t entry{.id = {}, .absolute_begin_row = measure.begin_row,
                                       .row_capacity = measure.row_capacity};
-    if (!add_candidate(context.candidates, entry, {}, editor_grid_line_kind_t::measure,
+    if (!append_measure_snap_candidates(context, entry) ||
+        !add_candidate(context.candidates, entry, {}, editor_grid_line_kind_t::measure,
                        context.request.maximum_line_count, context.result.diagnostics))
         return false;
     const auto beat_spacing = context.request.pixels_per_standard_measure / 4.0;
@@ -555,44 +573,6 @@ auto append_virtual_tail_candidates(editor_grid_build_context_t& context) -> boo
             break;
         if (!append_virtual_measure_candidates(context, *measure))
             return false;
-    }
-    return true;
-}
-
-auto append_active_snap_candidates(editor_grid_build_context_t& context) -> bool {
-    if (!context.request.active_snap_denominator ||
-        context.request.pixels_per_standard_measure /
-                static_cast<double>(*context.request.active_snap_denominator) <
-            context.request.density.minimum_active_snap_spacing_pixels)
-        return true;
-    const auto step = context.divisions / *context.request.active_snap_denominator;
-    auto multiple = context.candidate_begin / step;
-    if (context.candidate_begin % step != 0)
-        ++multiple;
-    if (multiple > maximum / step)
-        return true;
-    auto row = multiple * step;
-    while (row < context.candidate_end) {
-        auto* entry = locate_measure(context.measure_index, row);
-        std::optional<measure_index_entry_t> virtual_entry;
-        if (!entry && context.virtual_canvas) {
-            const auto measure = context.virtual_canvas->measure_containing(row);
-            if (measure && !measure->authored) {
-                virtual_entry = measure_index_entry_t{.id = {},
-                    .absolute_begin_row = measure->begin_row,
-                    .row_capacity = measure->row_capacity};
-                entry = &*virtual_entry;
-            }
-        }
-        if (entry && !add_candidate(context.candidates, *entry,
-                                    {.whole = row - entry->absolute_begin_row},
-                                    editor_grid_line_kind_t::active_snap,
-                                    context.request.maximum_line_count,
-                                    context.result.diagnostics))
-            return false;
-        if (step > maximum - row)
-            break;
-        row += step;
     }
     return true;
 }
@@ -721,8 +701,7 @@ auto make_editor_grid_lines(const chart_document_t& chart, const editor_grid_req
     context.candidates.reserve(std::min(request.maximum_line_count, std::size_t{4096}));
     if (!append_measure_candidates(context) ||
         !append_authored_measure_candidates(context) ||
-        !append_virtual_tail_candidates(context) ||
-        !append_active_snap_candidates(context))
+        !append_virtual_tail_candidates(context))
         return result;
     thin_grid_candidates(context);
     return result;

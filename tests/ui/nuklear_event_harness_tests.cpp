@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <cmath>
 #include <source_location>
 #include <stdexcept>
 #include <string>
@@ -4807,7 +4808,7 @@ TEST_CASE("Appearance field colors picker emits the selected scheme as a typed d
     harness.view().options={.visible=true,.revision=92,.category=WORM_UI_OPTIONS_DISPLAY,
         .field_scheme="wormedit",.theme="",.dock_layout="",.shortcut_profile_path="",.status=""};
     (void)harness.frame();
-    REQUIRE(harness.drawn_text_center("Field colors"));
+    REQUIRE(harness.drawn_text_center("Default field skin"));
     const auto picker=harness.drawn_text_center("Wormedit");
     REQUIRE(picker);
     (void)click_at(harness,picker->first,picker->second);
@@ -5643,4 +5644,370 @@ TEST_CASE("Project chart popups expire when the tab or project session changes",
     ++harness.view().setup.session_generation;
     (void)harness.frame();
     CHECK_FALSE(worm_ui_nuklear_setup_popup_owns_input());
+}
+
+TEST_CASE("Appearance scratch dropdown emits a typed independent stage override", "[options][scratch-presentation][event-harness]") {
+    nuklear_event_harness_t harness{1280, 900};
+    harness.view().options = {.visible = true, .revision = 93, .category = WORM_UI_OPTIONS_DISPLAY,
+        .p1_scratch_position = 1, .p2_scratch_position = 0,
+        .field_scheme = "wormedit", .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
+    (void)harness.frame();
+    REQUIRE(harness.drawn_text_center("Single / P1 scratch position"));
+    REQUIRE(harness.drawn_text_center("P2 scratch position"));
+    const auto picker = harness.drawn_text_center("Chart layout");
+    REQUIRE(picker);
+    (void)click_at(harness, picker->first, picker->second);
+    const auto choice = harness.drawn_text_center("Right");
+    REQUIRE(choice);
+    const auto clicks = click_at(harness, choice->first, choice->second);
+    const auto edited = std::ranges::find_if(clicks, [](const auto& frame) {
+        return frame.get().options.kind == WORM_UI_OPTIONS_EDIT_FIELD;
+    });
+    REQUIRE(edited != clicks.end());
+    expect_lane_key(edited->get().options.field == WORM_UI_OPTIONS_FIELD_P1_SCRATCH_POSITION);
+    expect_lane_key(edited->get().options.integer == 3);
+    expect_lane_key(edited->get().options.revision == 93);
+}
+
+TEST_CASE("Options expands its settings and anchors actions when resized",
+          "[options][dialog][resize][event-harness]") {
+    nuklear_event_harness_t harness{1600, 1000};
+    harness.view().options = {.visible = true, .revision = 94, .category = WORM_UI_OPTIONS_EDITOR,
+        .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
+    (void)harness.frame();
+    (void)harness.frame();
+    WormUiTestingRect before{};
+    REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &before));
+    const auto close = harness.drawn_text_center("Close");
+    REQUIRE(close);
+    CHECK_FALSE(harness.drawn_text_center("Minimap click moves paused playhead"));
+    const auto x = before.x + before.width - 5;
+    const auto y = before.y + before.height - 5;
+    SDL_Event motion{};
+    motion.type = SDL_EVENT_MOUSE_MOTION;
+    motion.motion.x = x;
+    motion.motion.y = y;
+    SDL_Event button{};
+    button.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+    button.button.button = SDL_BUTTON_LEFT;
+    button.button.down = true;
+    button.button.x = x;
+    button.button.y = y;
+    (void)harness.frame(std::array{motion, button});
+    motion.motion.x += 240;
+    motion.motion.y += 200;
+    motion.motion.state = SDL_BUTTON_LMASK;
+    (void)harness.frame(std::array{motion});
+    button.type = SDL_EVENT_MOUSE_BUTTON_UP;
+    button.button.down = false;
+    button.button.x = motion.motion.x;
+    button.button.y = motion.motion.y;
+    (void)harness.frame(std::array{button});
+    (void)harness.frame();
+    WormUiTestingRect after{};
+    REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &after));
+    const auto moved_close = harness.drawn_text_center("Close");
+    REQUIRE(moved_close);
+    expect_lane_key(after.width > before.width + 200);
+    expect_lane_key(after.height > before.height + 150);
+    expect_lane_key(std::abs((moved_close->second - close->second) - (after.height - before.height)) < 2);
+    expect_lane_key(std::abs(after.y + after.height - moved_close->second - 30) < 3);
+    expect_lane_key(harness.drawn_text_center("Minimap click moves paused playhead").has_value());
+}
+
+namespace {
+struct chart_reorder_fixture_t {
+    WormUiProjectChartRow rows[3]{
+        {.chart_id = 10, .name = "First chart", .author = "Author", .rating = "Unset", .mode = "7K",
+         .output_groups = "Unassigned", .length = "2 s", .diagnostic = ""},
+        {.chart_id = 20, .name = "Second chart", .author = "Author", .rating = "Unset", .mode = "7K",
+         .output_groups = "Unassigned", .length = "2 s", .diagnostic = ""},
+        {.chart_id = 30, .name = "Third chart", .author = "Author", .rating = "Unset", .mode = "7K",
+         .output_groups = "Unassigned", .length = "2 s", .diagnostic = ""}};
+    nuklear_event_harness_t harness{1280, 900};
+    chart_reorder_fixture_t() {
+        configure_project_row(harness, rows);
+        auto& view = harness.view().setup;
+        view.song_id = 42;
+        view.session_generation = 17;
+        view.document_revision = 53;
+        view.chart_row_count = 3;
+        view.chart_count = 3;
+        (void)harness.frame();
+    }
+    auto name_bounds(const char* name) -> WormUiTestingDrawnText {
+        const auto texts = harness.drawn_text_bounds();
+        const auto found = std::ranges::find_if(texts, [name](const auto& text) {
+            return std::string_view{text.text} == name;
+        });
+        REQUIRE(found != texts.end());
+        return *found;
+    }
+    auto press_grip() -> std::pair<float, float> {
+        const auto name = name_bounds("First chart");
+        // The grip precedes the26px checkbox and the name cell with their row spacing.
+        const float x = name.x - 44.0f;
+        const float y = name.y + name.height * 0.5f;
+        const std::array events{motion_event(x, y), button_event(true, x, y)};
+        CHECK(harness.frame(events).get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
+        return {x, y};
+    }
+    auto release_at(float x, float y) -> workspace_action_snapshot_t {
+        const auto moved = motion_event(x, y);
+        CHECK(harness.frame(std::span{&moved, 1}).get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
+        const auto released = button_event(false, x, y);
+        return harness.frame(std::span{&released, 1});
+    }
+};
+}
+
+TEST_CASE("Project charts with empty imported names remain selectable",
+          "[event-harness][project-charts][chart-reorder]") {
+    chart_reorder_fixture_t fixture;
+    fixture.rows[1].name = "";
+    (void)fixture.harness.frame();
+    const auto center = fixture.harness.drawn_text_center("Untitled chart");
+    REQUIRE(center);
+    (void)click_at(fixture.harness, center->first, center->second);
+    (void)fixture.harness.frame();
+    expect_lane_key(fixture.harness.drawn_text_center("Set author…").has_value());
+}
+
+TEST_CASE("Project visible grip drops relative to a stable chart row", "[event-harness][project-charts][chart-reorder]") {
+    chart_reorder_fixture_t f;
+    const auto third = f.name_bounds("Third chart");
+    const auto start = f.press_grip();
+    const auto released = f.release_at(start.first, third.y + third.height * 0.5f + 7.0f);
+    const auto& action = released.get().project_chart;
+    CHECK(action.kind == WORM_UI_PROJECT_CHART_REORDER);
+    CHECK((action.chart_id == 10 && action.target_chart_id == 30 && action.insert_after));
+    CHECK((action.document_revision == 53 && action.session_generation == 17));
+    CHECK(f.harness.frame().get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
+}
+
+TEST_CASE("Project chart drag cancels on Escape outside release and stale revision", "[event-harness][project-charts][chart-reorder]") {
+    for (int cancellation = 0; cancellation < 3; ++cancellation) {
+        chart_reorder_fixture_t f;
+        const auto third = f.name_bounds("Third chart");
+        const auto start = f.press_grip();
+        if (cancellation == 0) {
+            const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
+            (void)f.harness.frame(std::span{&escape, 1});
+        }
+        if (cancellation == 1) ++f.harness.view().setup.document_revision;
+        const auto y = cancellation == 2 ? 880.0f : third.y + third.height * 0.5f + 7.0f;
+        CHECK(f.release_at(start.first, y).get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
+    }
+}
+
+namespace {
+void drag_options_header(nuklear_event_harness_t& harness, float dx, float dy) {
+    const auto title = harness.drawn_text_center("Options");
+    REQUIRE(title);
+    const auto [x, y] = *title;
+    (void)harness.frame(std::array{motion_event(x, y), button_event(true, x, y)});
+    (void)harness.frame(std::array{motion_event(x + dx, y + dy)});
+    (void)harness.frame(std::array{button_event(false, x + dx, y + dy)});
+    (void)harness.frame();
+}
+}
+
+TEST_CASE("Options custom grippy header moves the tool and preserves its close action",
+          "[options][dialog][options-drag][event-harness]") {
+    nuklear_event_harness_t harness{1600, 1000};
+    harness.view().options = {.visible = true, .revision = 94, .category = WORM_UI_OPTIONS_EDITOR,
+        .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
+    (void)harness.frame();
+    (void)harness.frame();
+    WormUiTestingRect before{};
+    REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &before));
+    drag_options_header(harness, 80, 45);
+    WormUiTestingRect after{};
+    REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &after));
+    expect_lane_key(std::abs(after.x - before.x - 80) < 1);
+    expect_lane_key(std::abs(after.y - before.y - 45) < 1);
+    expect_lane_key(after.width == before.width && after.height == before.height);
+    const auto close = harness.drawn_text_center("Close");
+    REQUIRE(close);
+    bool closed = false;
+    for (const auto& frame : click_at(harness, close->first, close->second))
+        closed = closed || frame.get().options.kind == WORM_UI_OPTIONS_CLOSE;
+    expect_lane_key(closed);
+}
+
+TEST_CASE("Options header movement cancels on focus loss and while hidden",
+          "[options][dialog][options-drag][event-harness]") {
+    for (const auto lose_focus : {true, false}) {
+        nuklear_event_harness_t harness{1600, 1000};
+        harness.view().options = {.visible = true, .revision = 94, .category = WORM_UI_OPTIONS_EDITOR,
+            .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
+        (void)harness.frame();
+        (void)harness.frame();
+        const auto title = harness.drawn_text_center("Options");
+        REQUIRE(title);
+        const auto [x, y] = *title;
+        (void)harness.frame(std::array{motion_event(x, y), button_event(true, x, y)});
+        WormUiTestingRect before{};
+        REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &before));
+        if (lose_focus) {
+            SDL_Event lost{};
+            lost.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+            (void)harness.frame(std::span{&lost, 1});
+            SDL_Event gained{};
+            gained.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+            (void)harness.frame(std::span{&gained, 1});
+        } else {
+            harness.view().options.visible = false;
+            (void)harness.frame();
+            harness.view().options.visible = true;
+        }
+        (void)harness.frame(std::array{motion_event(x + 80, y + 45)});
+        WormUiTestingRect after{};
+        REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &after));
+        expect_lane_key(after.x == before.x && after.y == before.y);
+        (void)harness.frame(std::array{button_event(false, x + 80, y + 45)});
+    }
+}
+
+namespace {
+auto skin_test_lanes(const wormedit::lane_layout_t& layout) -> std::vector<WormUiComposeLaneView> {
+    std::vector<WormUiComposeLaneView> result;
+    for (const auto& lane : layout.lanes)
+        result.push_back({.lane_id = lane.id.value, .display_order = lane.display_order,
+            .role = static_cast<std::uint8_t>(lane.role), .stage = static_cast<std::uint8_t>(lane.stage),
+            .key_color = static_cast<std::uint8_t>(lane.key_color)});
+    return result;
+}
+void click_skin_label(nuklear_event_harness_t& harness, const char* text) {
+    const auto center = harness.drawn_text_center(text);
+    REQUIRE(center);
+    (void)click_at(harness, center->first, center->second);
+    (void)harness.frame();
+}
+void expect_skin_choice(nuklear_event_harness_t& harness, const char* label, const char* id) {
+    const auto center = harness.drawn_text_center(label);
+    REQUIRE(center);
+    bool chosen = false;
+    for (const auto& frame : click_at(harness, center->first, center->second)) {
+        const auto& action = frame.get().options;
+        if (action.kind != WORM_UI_OPTIONS_EDIT_FIELD) continue;
+        chosen = true;
+        expect_lane_key(action.field == WORM_UI_OPTIONS_FIELD_LAYOUT_FIELD_SCHEME);
+        expect_lane_key(action.revision == 97);
+        expect_lane_key(std::string_view(action.text) == id);
+    }
+    expect_lane_key(chosen);
+}
+}
+
+TEST_CASE("Appearance chooses a layout skin and can restore default inheritance",
+          "[layout-skins][options][event-harness]") {
+    wormedit::ui::theme::load(std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() / "assets/themes");
+    nuklear_event_harness_t harness{1600, 1000};
+    const auto lanes = skin_test_lanes(wormedit::make_bms_10k_standard_profile().layout);
+    harness.view().options = {.visible = true, .revision = 97, .category = WORM_UI_OPTIONS_DISPLAY,
+        .field_scheme = "wormedit", .current_field_layout_key = "bms-dp5",
+        .current_field_layout_name = "BMS DP5 / 10K", .current_layout_field_scheme = "",
+        .current_field_layout_lanes = lanes.data(), .current_field_layout_lane_count = lanes.size(),
+        .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
+    (void)harness.frame();
+    (void)harness.frame();
+    click_skin_label(harness, "Use default");
+    expect_lane_key(harness.drawn_text().find("MyO2 4K") == std::string::npos);
+    expect_skin_choice(harness, "iBMSC · BMSE", "ibmsc-bmse");
+    harness.view().options.current_layout_field_scheme = "ibmsc-bmse";
+    (void)harness.frame();
+    click_skin_label(harness, "iBMSC · BMSE");
+    expect_skin_choice(harness, "Use default", "");
+}
+
+TEST_CASE("Frontend skin bridge resolves compatibility without repeated cache invalidation",
+          "[layout-skins][event-harness]") {
+    wormedit::ui::theme::load(std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() / "assets/themes");
+    nuklear_event_harness_t harness{1280, 900};
+    const auto profile = wormedit::make_osu_mania_profile(4);
+    REQUIRE(profile);
+    auto lanes = skin_test_lanes(profile->layout);
+    REQUIRE(worm_ui_frontend_configure_field_scheme("ibmsc-myo2-4k", "ibmsc-bmse", lanes.data(), lanes.size()));
+    const auto generation = wormedit::ui::theme::field_generation();
+    expect_lane_key(wormedit::ui::theme::field_scheme_id() == "ibmsc-myo2-4k");
+    REQUIRE(worm_ui_frontend_configure_field_scheme("ibmsc-myo2-4k", "ibmsc-bmse", lanes.data(), lanes.size()));
+    expect_lane_key(wormedit::ui::theme::field_generation() == generation);
+    lanes[0].key_color = static_cast<std::uint8_t>(wormedit::lane_key_color_t::pms_red);
+    expect_lane_key(!worm_ui_frontend_configure_field_scheme("ibmsc-myo2-4k", "ibmsc-bmse", lanes.data(), lanes.size()));
+    expect_lane_key(wormedit::ui::theme::field_scheme_id() == "ibmsc-bmse");
+    expect_lane_key(!worm_ui_frontend_configure_field_scheme("missing", "ibmsc-myo2-4k", lanes.data(), lanes.size()));
+    expect_lane_key(wormedit::ui::theme::field_scheme_id() == "wormedit");
+    const auto dp5 = skin_test_lanes(wormedit::make_bms_10k_standard_profile().layout);
+    REQUIRE(worm_ui_frontend_configure_field_scheme("ibmsc-bmse", "wormedit", dp5.data(), dp5.size()));
+    expect_lane_key(worm_ui_frontend_field_scratch_side(2) == 0);
+    const auto dp7 = skin_test_lanes(wormedit::make_bms_14k_profile().layout);
+    REQUIRE(worm_ui_frontend_configure_field_scheme("ibmsc-bmse", "wormedit", dp7.data(), dp7.size()));
+    expect_lane_key(worm_ui_frontend_field_scratch_side(2) == -1);
+    (void)worm_ui_frontend_configure_field_scheme("wormedit", "wormedit", nullptr, 0);
+}
+
+namespace {
+auto measure_navigation_song() -> song_document_t {
+    auto song = t422_song();
+    auto& chart = song.charts.front();
+    for (auto& measure : chart.measures) {
+        measure.notes.clear();
+        measure.definition.length = {1, 16};
+        measure.definition.meter.reset();
+    }
+    chart.measures.push_back({.id = measure_id_t{3},
+                             .definition = {{1, 1}, meter_t{4, 4}}});
+    return song;
+}
+
+void measure_navigation_key(t422_fixture_t& fixture, bool forward) {
+    const bool visual_up = forward == fixture.harness.view().compose.downscroll;
+    const auto key = visual_up ? SDLK_UP : SDLK_DOWN;
+    const auto scan = visual_up ? SDL_SCANCODE_UP : SDL_SCANCODE_DOWN;
+    const auto press = key_event(SDL_EVENT_KEY_DOWN, key, scan);
+    const auto action = fixture.harness.frame(std::span{&press, 1});
+    expect_t422(action.get().compose_input_count == 1);
+    expect_t422(action.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS);
+    INFO(fixture.dispatch(action));
+    const auto release = key_event(SDL_EVENT_KEY_UP, key, scan);
+    (void)fixture.dispatch(fixture.harness.frame(std::span{&release, 1}));
+    fixture.project();
+}
+
+void measure_navigation_wheel(t422_fixture_t& fixture, bool forward) {
+    SDL_Event wheel{};
+    wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.y = forward == fixture.harness.view().compose.downscroll ? 1.0f : -1.0f;
+    wheel.wheel.mouse_x = 480;
+    wheel.wheel.mouse_y = 400;
+    const auto action = fixture.harness.frame(std::span{&wheel, 1}, SDL_KMOD_ALT);
+    expect_t422(action.get().compose_input_count == 1);
+    INFO(fixture.dispatch(action));
+    const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_LALT, SDL_SCANCODE_LALT);
+    (void)fixture.harness.frame(std::span{&release, 1});
+    fixture.project();
+}
+}
+
+TEST_CASE("Production keyboard and Alt wheel stay on each shortened measure grid",
+          "[measure-local-snap][event-harness]") {
+    t422_fixture_t fixture{measure_navigation_song()};
+    fixture.interaction->selected_notes.clear();
+    fixture.interaction->selected_objects.clear();
+    fixture.interaction->active_snap_denominator = 4;
+    fixture.project();
+    const auto revision = fixture.history.document.revision;
+    measure_navigation_key(fixture, true);
+    expect_t422(fixture.interaction->cursor == local_position_t{measure_id_t{2}, 0});
+    measure_navigation_key(fixture, true);
+    expect_t422(fixture.interaction->cursor == local_position_t{measure_id_t{3}, 0});
+    measure_navigation_wheel(fixture, true);
+    expect_t422(fixture.interaction->cursor == local_position_t{measure_id_t{3}, 240});
+    measure_navigation_wheel(fixture, false);
+    expect_t422(fixture.interaction->cursor == local_position_t{measure_id_t{3}, 0});
+    measure_navigation_key(fixture, false);
+    expect_t422(fixture.interaction->cursor == local_position_t{measure_id_t{2}, 0});
+    expect_t422(fixture.history.document.revision == revision);
+    expect_t422(fixture.history.undo.empty());
 }

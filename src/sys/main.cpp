@@ -82,6 +82,7 @@
 #include <wormedit/core/grid.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/marker_editor.h>
 #include <wormedit/core/marker_navigation.h>
 #include <wormedit/core/measure_editor.h>
@@ -351,12 +352,8 @@ auto timing_position_from_fraction(const wormedit::chart_document_t& chart, doub
     const auto raw_row = static_cast<std::uint64_t>(raw_row_value);
     const auto usable_denominator =
         step == chart.divisions_per_standard_measure ? std::uint64_t{1} : active_denominator;
-    auto snapped_row =
-        wormedit::snap_absolute_row(chart, raw_row, usable_denominator).value_or(raw_row);
-    const auto last_valid_row = measures->total_rows - 1;
-    if (snapped_row > last_valid_row) {
-        snapped_row = last_valid_row - last_valid_row % step;
-    }
+    const auto snapped_row = wormedit::snap_canvas_row(chart, *measures, raw_row,
+        usable_denominator, measures->total_rows).value_or(raw_row);
     return timing_position_at_row(*measures, snapped_row);
 }
 
@@ -1309,6 +1306,53 @@ void persist_session_preferences(wormedit::sys::program_preferences_runtime_t& r
                            "Minimap paused-click preference saved.");
 }
 
+void update_scratch_presentation(const wormedit::display_preferences_t& display,
+                                 application_command_state_t& state) {
+    std::array<std::optional<bool>, 2> skin_defaults;
+    for (std::uint8_t index = 0; index < skin_defaults.size(); ++index) {
+        const auto side = worm_ui_frontend_field_scratch_side(index + 1);
+        if (side >= 0) skin_defaults[index] = side != 0;
+    }
+    state.scratch_on_right = wormedit::sys::resolve_scratch_positions(display, skin_defaults);
+}
+
+auto active_field_skin_layout(const wormedit::song_document_t& document,
+    const wormedit::workspace_controller_t& workspace,
+    const std::optional<wormedit::editor_interaction_state_t>& interaction)
+    -> const wormedit::lane_layout_t* {
+    if (!workspace.selected_chart) return nullptr;
+    const auto chart = std::ranges::find(document.charts, *workspace.selected_chart,
+        &wormedit::chart_document_t::id);
+    if (chart == document.charts.end() || chart->lane_layouts.empty()) return nullptr;
+    if (interaction && interaction->chart == chart->id) {
+        if (const auto* segment = wormedit::active_lane_layout_segment(*chart, interaction->cursor))
+            return &segment->layout;
+    }
+    return &chart->lane_layouts.front().layout;
+}
+
+auto configure_field_skin(const wormedit::lane_layout_t* layout,
+    wormedit::sys::options_runtime_t& options, const wormedit::display_preferences_t& saved,
+    application_command_state_t& state) -> std::vector<WormUiComposeLaneView> {
+    const auto key = layout ? wormedit::field_skin_layout_key(*layout) : std::string{};
+    wormedit::sys::set_options_field_layout(options, key, layout ? layout->display_name : "");
+    const auto& display = options.visible ? options.draft.display : saved;
+    std::vector<WormUiComposeLaneView> lanes;
+    if (layout) {
+        lanes.reserve(layout->lanes.size());
+        for (const auto& lane : layout->lanes)
+            lanes.push_back({.lane_id = lane.id.value, .display_order = lane.display_order,
+                .role = static_cast<std::uint8_t>(lane.role), .stage = static_cast<std::uint8_t>(lane.stage),
+                .glyph = static_cast<std::uint8_t>(lane.glyph), .key_color = static_cast<std::uint8_t>(lane.key_color)});
+    }
+    const auto requested = wormedit::resolve_field_scheme(display, key);
+    // Preferences own their strings through the immediate frontend call.
+    worm_ui_frontend_configure_field_scheme(std::string(requested).c_str(), display.field_scheme.c_str(),
+        lanes.data(), lanes.size());
+    update_scratch_presentation(display, state);
+    return lanes;
+}
+
 void dispatch_options_frame_action(wormedit::sys::options_runtime_t& options,
     wormedit::sys::program_preferences_runtime_t& program, const WormUiOptionsAction& action,
     external_player_runtime_t& players, application_command_state_t& state,
@@ -1320,6 +1364,8 @@ void dispatch_options_frame_action(wormedit::sys::options_runtime_t& options,
     worm_ui_frontend_set_field_waveform_opacity(options.visible
         ? options.draft.display.field_waveform_opacity_percent
         : program.preferences.display.field_waveform_opacity_percent);
+    update_scratch_presentation(options.visible ? options.draft.display
+        : program.preferences.display, state);
     if (options.notification) notifications.post(*options.notification);
     if (!accepted) return;
     if (options.category == WORM_UI_OPTIONS_GENERAL)
@@ -1334,7 +1380,6 @@ void dispatch_options_frame_action(wormedit::sys::options_runtime_t& options,
     }
     if (options.category == WORM_UI_OPTIONS_AUDIO) initialize_preferred_transport(program.preferences, state);
     if (options.category == WORM_UI_OPTIONS_DISPLAY) {
-        worm_ui_frontend_select_field_scheme(program.preferences.display.field_scheme.c_str());
         worm_ui_frontend_set_snap_colored_grid(program.preferences.display.snap_colored_grid);
     }
 }
@@ -1488,12 +1533,27 @@ auto open_project_chart(wormedit::document_history_t& history,
     return {};
 }
 
+void remember_project_file(wormedit::sys::program_preferences_runtime_t& preferences,
+                           const std::filesystem::path& path, wormedit::notification_sink_t& notifications) {
+    const auto warning = wormedit::sys::remember_recent_file(preferences, path);
+    if (!warning.empty()) notifications.post(wormedit::notification_severity_t::warning,
+                                            wormedit::notification_source_t::system, warning);
+}
+
+void remember_startup_file(wormedit::sys::program_preferences_runtime_t& preferences,
+                          bool loaded, const std::filesystem::path& path) {
+    if (!loaded) return;
+    const auto warning = wormedit::sys::remember_recent_file(preferences, path);
+    if (!warning.empty()) preferences.warnings.push_back(warning);
+}
+
 // Project tab "Import chart…": begin, read a chart file, tick difficulties, import or cancel.
 // Reading and planning never change the document; Import commits one undoable command.
 bool dispatch_chart_import_action(wormedit::sys::chart_import_session_t& session,
     const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace, const std::filesystem::path& asset_base,
-    wormedit::notification_sink_t& notifications, bool loaded) {
+    wormedit::notification_sink_t& notifications, bool loaded,
+    wormedit::sys::program_preferences_runtime_t& preferences) {
     using namespace wormedit;
     const auto& request = action.chart_import;
     const bool picked = action.kind == WORM_UI_WORKSPACE_ACTION_IMPORT_CHART_FILE;
@@ -1507,8 +1567,10 @@ bool dispatch_chart_import_action(wormedit::sys::chart_import_session_t& session
     } else if (request.kind == WORM_UI_CHART_IMPORT_TOGGLE) {
         sys::chart_import_toggle(session, chart_id_t{request.chart_id}, history.document, asset_base);
     } else if (request.kind == WORM_UI_CHART_IMPORT_CONFIRM) {
+        const auto source_path = session.path_text;
         const auto imported = sys::chart_import_confirm(session, history, request.document_revision, asset_base);
         if (imported.command.applied) {
+            remember_project_file(preferences, source_path, notifications);
             notifications.post(notification_severity_t::success, notification_source_t::document,
                                imported.charts.size() == 1 ? "Chart imported." : "Charts imported.");
             const auto rebound = rebind_workspace(workspace, history);
@@ -2625,6 +2687,7 @@ auto save_project_session(Context& context, const WormUiWorkspaceAction& action)
     context.autosave_loop_ref.mark_explicit_save(version);
     context.scanned_primary_version_ref = version;
     context.active_project_path_ref = destination;
+    remember_project_file(context.program_preferences_ref, destination, context.notification_sink_ref);
     context.native_project_loaded_ref = true;
     context.asset_base_ref = destination_base;
     context.external_player_runtime_ref.source_path.clear();
@@ -2835,6 +2898,7 @@ void open_project_session(Context& context, const WormUiWorkspaceAction& action)
                                 opened.native_project,
                                 opened.native_project ? opened.source_path : std::filesystem::path{},
                                 opened.asset_base)) {
+        remember_project_file(context.program_preferences_ref, opened.source_path, context.notification_sink_ref);
         context.external_player_runtime_ref.source_path = opened.native_project ? std::filesystem::path{} : opened.source_path;
         post_project_feedback(context, wormedit::notification_severity_t::success,
             opened.native_project ? wormedit::notification_source_t::document : wormedit::notification_source_t::import_,
@@ -4171,8 +4235,10 @@ int main(int argc, char** argv) {
     shortcut_editor_runtime_t shortcut_editor;
     pending_close_t pending_close;
     auto program_preferences = wormedit::sys::load_program_preferences_runtime();
+    remember_startup_file(program_preferences, startup.loaded_primary, requested_primary_path);
     initialize_program_preferences(program_preferences, external_player_runtime, application_command_state, notification_sink);
     worm_ui_frontend_select_field_scheme(program_preferences.preferences.display.field_scheme.c_str());
+    update_scratch_presentation(program_preferences.preferences.display, application_command_state);
     worm_ui_frontend_set_snap_colored_grid(program_preferences.preferences.display.snap_colored_grid);
     worm_ui_frontend_set_snap_grid_opacity(program_preferences.preferences.display.snap_grid_opacity_percent);
     worm_ui_frontend_set_field_waveform_opacity(program_preferences.preferences.display.field_waveform_opacity_percent);
@@ -4273,6 +4339,7 @@ int main(int argc, char** argv) {
 #endif
     };
     struct workspace_frame_action_context_t {
+        decltype(program_preferences)& program_preferences_ref;
         decltype(running)& running_ref;
         decltype(notification_sink)& notification_sink_ref;
         decltype(close_feedback)& close_feedback_ref;
@@ -4312,6 +4379,7 @@ int main(int argc, char** argv) {
 #endif
     };
     workspace_frame_action_context_t workspace_frame_action_context{
+        program_preferences,
         running,
         notification_sink,
         close_feedback,
@@ -4419,6 +4487,9 @@ int main(int argc, char** argv) {
 #endif
 
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::workspace);
+        const auto field_skin_lanes = configure_field_skin(
+            active_field_skin_layout(history.document, workspace, compose_interaction_state),
+            options_runtime, program_preferences.preferences.display, application_command_state);
         wormedit::workspace_view_result_t model;
         {
             wormedit::sys::frame_phase_scope_t preparation(
@@ -4519,6 +4590,8 @@ int main(int argc, char** argv) {
             flattened.view.transport_keep_pitch_available = application_command_state.transport_keep_pitch_available;
             flattened.view.notifications = notification_view;
             flattened.view.options = wormedit::sys::options_view(options_runtime);
+            flattened.view.options.current_field_layout_lanes = field_skin_lanes.data();
+            flattened.view.options.current_field_layout_lane_count = field_skin_lanes.size();
             attach_shortcut_rows(flattened.view.options, options_runtime, shortcut_editor, command_registry);
             attach_bgm_shortcut(flattened.view.compose, command_registry);
             flattened.view.timing_settings_visible = application_command_state.timing_settings_visible;
@@ -4531,6 +4604,7 @@ int main(int argc, char** argv) {
             wormedit::sys::project_chart_view(project_chart_runtime, history.document, flattened.view.setup);
             project_tap_timing(tap_runtime, tap_clock, command_registry, flattened.view);
             publish_tap_assist();
+            wormedit::sys::project_recent_files(program_preferences, flattened.view);
             flattened.view.project_loaded = session_loaded;
             flattened.view.project_has_native_path = native_project_loaded;
             flattened.view.pending_new_project_audio_path = pending_audio_project_path.c_str();
@@ -4579,7 +4653,7 @@ int main(int argc, char** argv) {
                     dispatch_external_player_action(external_player_runtime, action.external_player,
                                                     application_command_state, notification_sink) ||
                     dispatch_chart_import_action(chart_import, action, history, workspace, asset_base,
-                                                 notification_sink, session_loaded);
+                                                 notification_sink, session_loaded, program_preferences);
                 const auto previous_selected_chart = workspace.selected_chart;
                 const bool project_handled = dispatch_project_chart_action(project_chart_runtime, action.project_chart,
                     history, workspace, compose_interaction_state, application_command_state, notification_sink,

@@ -1209,7 +1209,8 @@ auto apply_virtual_bms_resource_placement(
     auto snapped_row = action.canvas_row;
     if (action.snap_denominator != 0) {
         const auto rounded =
-            snap_absolute_row(*source_chart, snapped_row, action.snap_denominator);
+            snap_canvas_row(*source_chart, canvas.authored_index, snapped_row,
+                            action.snap_denominator, canvas.total_rows);
         if (!rounded) {
             reject(result, diagnostic_code_t::row_out_of_range,
                    "virtual snap row is invalid or overflows");
@@ -1295,7 +1296,8 @@ auto apply_virtual_bms_bgm_event_move(
     auto snapped_row = action.canvas_row;
     if (action.snap_denominator != 0) {
         const auto rounded =
-            snap_absolute_row(*source_chart, snapped_row, action.snap_denominator);
+            snap_canvas_row(*source_chart, canvas.authored_index, snapped_row,
+                            action.snap_denominator, canvas.total_rows);
         if (!rounded) {
             reject(result, diagnostic_code_t::row_out_of_range,
                    "virtual snap row is invalid or overflows");
@@ -1372,7 +1374,8 @@ auto apply_virtual_bms_bga_event_move(
     }
     auto snapped_row = action.canvas_row;
     if (action.snap_denominator != 0) {
-        const auto rounded = snap_absolute_row(*source_chart, snapped_row, action.snap_denominator);
+        const auto rounded = snap_canvas_row(*source_chart, canvas.authored_index, snapped_row,
+                            action.snap_denominator, canvas.total_rows);
         if (!rounded) {
             reject(result, diagnostic_code_t::row_out_of_range, "virtual BGA snap row is invalid");
             return result;

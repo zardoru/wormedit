@@ -51,31 +51,13 @@ auto effective_layout(const chart_document_t& chart, const measure_index_t& inde
 }
 
 auto transition_lane(const chart_document_t& chart, const measure_index_t& index,
-                     local_position_t from, local_position_t to, lane_id_t current)
+                     local_position_t from, local_position_t to, lane_id_t current,
+                     const editor_scratch_presentation_t& sides)
     -> std::optional<lane_id_t> {
-    const auto* source_layout = effective_layout(chart, index, from);
-    const auto* target_layout = effective_layout(chart, index, to);
-    if (!source_layout || !target_layout) return std::nullopt;
-    const auto source = std::ranges::find(source_layout->lanes, current, &lane_definition_t::id);
-    if (source == source_layout->lanes.end()) return std::nullopt;
-    const auto exact = std::ranges::find_if(target_layout->lanes, [&](const auto& lane) {
-        return editable_lane(lane) && lane.display_order == source->display_order &&
-               lane.role == source->role;
-    });
-    if (exact != target_layout->lanes.end()) return exact->id;
-    const auto column = std::ranges::find_if(target_layout->lanes, [&](const auto& lane) {
-        return editable_lane(lane) && lane.display_order == source->display_order;
-    });
-    if (column != target_layout->lanes.end()) return column->id;
-    const auto role = std::ranges::find_if(target_layout->lanes, [&](const auto& lane) {
-        return editable_lane(lane) && lane.role == source->role;
-    });
-    if (role != target_layout->lanes.end()) return role->id;
-    const lane_definition_t* first{};
-    for (const auto& lane : target_layout->lanes)
-        if (editable_lane(lane) && (!first || lane.display_order < first->display_order))
-            first = &lane;
-    return first ? std::optional{first->id} : std::nullopt;
+    const auto* source = effective_layout(chart, index, from);
+    const auto* target = effective_layout(chart, index, to);
+    return source && target ? editor_lane_across_presented_layouts(*source, *target, current, sides)
+                            : std::nullopt;
 }
 
 auto normalized_position_span(const measure_index_t& index, local_position_t first,
@@ -148,7 +130,7 @@ static auto apply_cursor_navigation_target(cursor_navigation_context_t& context,
     auto view = make_view(context.history, proposed);
     if (target && std::holds_alternative<diagnostic_list_t>(view)) {
         const auto replacement = transition_lane(context.chart, context.index, state.cursor,
-                                                 *target, state.active_lane);
+                                                 *target, state.active_lane, state.scratch_on_right);
         if (replacement) {
             proposed.active_lane = *replacement;
             view = make_view(context.history, proposed);
@@ -161,25 +143,12 @@ static auto apply_cursor_navigation_target(cursor_navigation_context_t& context,
             .view = std::get<editor_interaction_view_model_t>(std::move(view))};
 }
 
-static auto next_cursor_snap_row(const cursor_navigation_context_t& context,
-                                 interaction_direction_t direction, std::uint64_t step,
-                                 std::uint64_t canvas_rows) -> std::optional<std::uint64_t> {
-    const auto row = static_cast<long double>(context.absolute) + context.state.cursor_subrow;
-    const auto position = row / static_cast<long double>(step);
-    const auto target = (direction == interaction_direction_t::forward
-        ? std::floor(position) + 1.0L : std::ceil(position) - 1.0L) * step;
-    if (!std::isfinite(target) || target < 0.0L || target >= canvas_rows) return std::nullopt;
-    return static_cast<std::uint64_t>(target);
-}
-
 auto move_edit_cursor(cursor_navigation_context_t& context,
                       const move_edit_cursor_action_t& action) -> editor_interaction_result_t {
     if (action.direction != interaction_direction_t::backward &&
         action.direction != interaction_direction_t::forward)
         return diagnostic_result(context.history, context.state,
             {error(diagnostic_code_t::invalid_id, "unknown cursor direction")});
-    const auto step = context.chart.divisions_per_standard_measure /
-                      context.state.active_snap_denominator;
     auto canvas_rows = context.index.total_rows;
     if (chart_has_virtual_tail(context.chart)) {
         const auto canvas = build_virtual_canvas(context.chart);
@@ -188,7 +157,10 @@ auto move_edit_cursor(cursor_navigation_context_t& context,
                                                std::get<diagnostic_list_t>(canvas));
         canvas_rows = value->total_rows;
     }
-    const auto next_row = next_cursor_snap_row(context, action.direction, step, canvas_rows);
+    const auto next_row = adjacent_snap_canvas_row(context.chart, context.index,
+        static_cast<long double>(context.absolute) + context.state.cursor_subrow,
+        context.state.active_snap_denominator, canvas_rows,
+        action.direction == interaction_direction_t::forward);
     if (!next_row)
         return diagnostic_result(context.history, context.state,
             {error(diagnostic_code_t::row_out_of_range,
@@ -310,7 +282,7 @@ auto jump_edit_cursor(cursor_navigation_context_t& context,
     auto view = make_view(context.history, proposed);
     if (std::holds_alternative<diagnostic_list_t>(view)) {
         const auto replacement = transition_lane(context.chart, context.index, state.cursor,
-                                                 action.position, state.active_lane);
+                                                 action.position, state.active_lane, state.scratch_on_right);
         if (replacement) {
             proposed.active_lane = *replacement;
             view = make_view(context.history, proposed);
@@ -369,7 +341,7 @@ auto select_bms_canvas_measure(cursor_navigation_context_t& context,
         const auto target = measure->authored ? proposed.cursor : local_position_t{
             context.index.entries.back().id, context.index.entries.back().row_capacity - 1};
         const auto replacement = transition_lane(chart, context.index, state.cursor, target,
-                                                 state.active_lane);
+                                                 state.active_lane, state.scratch_on_right);
         if (replacement) {
             proposed.active_lane = *replacement;
             view = make_view(context.history, proposed);
@@ -406,14 +378,14 @@ auto synchronize_editor_cursor_to_viewport(const chart_document_t& chart,
         static_cast<long double>(chart.divisions_per_standard_measure) / state.pixels_per_standard_measure;
     if (!std::isfinite(raw)) return false;
     const auto bounded = std::clamp(raw, 0.0L, static_cast<long double>(*rows - 1));
-    const auto step = chart.divisions_per_standard_measure / state.active_snap_denominator;
-    auto row = static_cast<std::uint64_t>(std::floor(bounded / step)) * step;
-    if (step < *rows - row && bounded - row > static_cast<long double>(step) / 2) row += step;
+    const auto snapped = snap_canvas_row(chart, index, bounded, state.active_snap_denominator, *rows);
+    if (!snapped) return false;
+    const auto row = *snapped;
     const auto position = position_at_absolute_row(index, row);
     const auto from = state.cursor;
     place_cursor_on_canvas_row(state, position, row, static_cast<double>(bounded - row));
     if (position) {
-        const auto lane = interaction_detail::transition_lane(chart, index, from, *position, state.active_lane);
+        const auto lane = interaction_detail::transition_lane(chart, index, from, *position, state.active_lane, state.scratch_on_right);
         if (lane) state.active_lane = *lane;
     }
     return true;

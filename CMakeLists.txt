@@ -67,6 +67,7 @@ add_library(wormedit_core
     src/core/sound_group_proposal.cpp
     src/core/editor_navigation_input.cpp
     src/core/editor_scene.cpp
+    src/core/lane_presentation.cpp
     src/core/bms_profile_detection.cpp
     src/core/bga_preview.cpp
     src/core/bmson_layer_defaults.cpp

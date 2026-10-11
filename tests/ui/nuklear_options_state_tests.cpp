@@ -1,6 +1,7 @@
 #include "sys/options_runtime.h"
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <algorithm>
 #include <iterator>
@@ -440,4 +441,232 @@ TEST_CASE("Wheel inversion stays an Editor draft until applied", "[options][feed
     expect_options(!options_view(runtime).invert_scroll_wheel);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT)));
     expect_options(options_view(runtime).invert_scroll_wheel);
+}
+
+TEST_CASE("Scratch presentation precedence preserves chart layout and independent overrides", "[options][scratch-presentation]") {
+    display_preferences_t preferences;
+    const std::array<std::optional<bool>, 2> skin{false, true};
+    expect_options(resolve_scratch_positions(preferences, skin) == skin);
+    preferences.scratch_positions = {1, 2};
+    const auto mixed = resolve_scratch_positions(preferences, skin);
+    expect_options(!mixed[0].has_value());
+    expect_options(mixed[1] == false);
+    preferences.scratch_positions = {3, 1};
+    const auto single_right = resolve_scratch_positions(preferences, skin);
+    expect_options(single_right[0] == true);
+    expect_options(!single_right[1].has_value());
+    preferences.scratch_positions = {0, 0};
+    expect_options(resolve_scratch_positions(preferences, {}) == std::array<std::optional<bool>, 2>{});
+    preferences.scratch_positions = {4, std::numeric_limits<std::uint32_t>::max()};
+    expect_options(resolve_scratch_positions(preferences, skin) == std::array<std::optional<bool>, 2>{});
+}
+
+TEST_CASE("Appearance scratch edits preview independently and Apply persists the accepted values", "[options][scratch-presentation]") {
+    temporary_preferences_t file;
+    program_preferences_runtime_t program{.path = file.directory / "preferences.json"};
+    options_runtime_t runtime;
+    open_options(runtime, program.preferences);
+    select(runtime, program, WORM_UI_OPTIONS_DISPLAY);
+    auto edit = action(runtime, WORM_UI_OPTIONS_EDIT_FIELD, WORM_UI_OPTIONS_DISPLAY);
+    edit.field = WORM_UI_OPTIONS_FIELD_P1_SCRATCH_POSITION;
+    edit.integer = 3;
+    expect_options(!apply_options_action(runtime, program, edit));
+    auto view = options_view(runtime);
+    expect_options(view.p1_scratch_position == 3 && view.p2_scratch_position == 0);
+    expect_options(program.preferences.display.scratch_positions[0] == 0);
+    edit.revision = runtime.revision;
+    edit.field = WORM_UI_OPTIONS_FIELD_P2_SCRATCH_POSITION;
+    edit.integer = 1;
+    expect_options(!apply_options_action(runtime, program, edit));
+    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(program.preferences.display.scratch_positions == std::array<std::uint32_t, 2>{3, 1});
+    expect_options(load_program_preferences(program.path).contents.preferences.display.scratch_positions ==
+                   program.preferences.display.scratch_positions);
+    edit.revision = runtime.revision;
+    edit.integer = std::numeric_limits<std::uint64_t>::max();
+    expect_options(!apply_options_action(runtime, program, edit));
+    expect_options(!options_view(runtime).can_apply);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(program.preferences.display.scratch_positions[1] == 1);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT)));
+    expect_options(options_view(runtime).p2_scratch_position == 1);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS)));
+    view = options_view(runtime);
+    expect_options(view.p1_scratch_position == 0 && view.p2_scratch_position == 0);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_CLOSE)));
+    expect_options(!runtime.visible);
+    expect_options(program.preferences.display.scratch_positions == std::array<std::uint32_t, 2>{3, 1});
+}
+
+namespace {
+void require_recent(bool value) { REQUIRE(value); }
+}
+
+TEST_CASE("Recent files persist normalized successful paths newest first", "[options][recent-files]") {
+    temporary_preferences_t file;
+    program_preferences_runtime_t runtime{.path = file.directory / "preferences.json"};
+    const auto chart = file.directory / "music" / "chart.bms";
+    const auto project = file.directory / "project.wormedit";
+    require_recent(remember_recent_file(runtime, chart).empty());
+    require_recent(remember_recent_file(runtime, project).empty());
+    require_recent(remember_recent_file(runtime, file.directory / "." / "music" / "chart.bms").empty());
+    require_recent(runtime.recent_files.size() == 2);
+    expect_options(runtime.recent_files[0].label == "chart.bms");
+    program_preferences_runtime_t reloaded{.path = runtime.path};
+    load_recent_files(reloaded);
+    require_recent(reloaded.recent_files.size() == 2);
+    expect_options(reloaded.recent_files[0].path == runtime.recent_files[0].path);
+    expect_options(reloaded.recent_files[1].path == runtime.recent_files[1].path);
+    expect_options(reloaded.warnings.empty());
+    reloaded.preferences.general.recent_files_count = 1;
+    WormUiWorkspaceView view{};
+    project_recent_files(reloaded, view);
+    require_recent(view.recent_file_count == 1);
+    expect_options(std::string_view{view.recent_files[0].path} == runtime.recent_files[0].path);
+    reloaded.preferences.general.recent_files_count = 100;
+    project_recent_files(reloaded, view);
+    expect_options(view.recent_file_count == 2);
+}
+
+TEST_CASE("Recent files cap history and retain missing entries for normal open diagnostics", "[options][recent-files]") {
+    temporary_preferences_t file;
+    program_preferences_runtime_t runtime{.path = file.directory / "preferences.json"};
+    for (unsigned index = 0; index < 103; ++index)
+        require_recent(remember_recent_file(runtime, file.directory / (std::to_string(index) + ".bms")).empty());
+    require_recent(runtime.recent_files.size() == 100);
+    expect_options(runtime.recent_files.front().label == "102.bms");
+    expect_options(runtime.recent_files.back().label == "3.bms");
+    const auto previous = runtime.recent_files.front().path;
+    expect_options(!(remember_recent_file(runtime, {}).empty()));
+    expect_options(runtime.recent_files.front().path == previous);
+    load_recent_files(runtime);
+    expect_options(runtime.recent_files.size() == 100);
+    expect_options(runtime.recent_files.front().path == previous);
+}
+
+TEST_CASE("Corrupt recent files do not prevent preference startup", "[options][recent-files]") {
+    temporary_preferences_t file;
+    program_preferences_runtime_t runtime{.path = file.directory / "preferences.json"};
+    require_recent(static_cast<bool>(save_file_atomic(file.directory / "recent-files.json", "{broken", maximum_preferences_bytes)));
+    load_recent_files(runtime);
+    expect_options(runtime.recent_files.empty());
+    expect_options(!(runtime.warnings.empty()));
+}
+
+namespace {
+auto layout_skin_action(const options_runtime_t& runtime, const char* scheme) -> WormUiOptionsAction {
+    auto result = action(runtime, WORM_UI_OPTIONS_EDIT_FIELD, WORM_UI_OPTIONS_DISPLAY);
+    result.field = WORM_UI_OPTIONS_FIELD_LAYOUT_FIELD_SCHEME;
+    std::snprintf(result.text, sizeof(result.text), "%s", scheme);
+    return result;
+}
+}
+
+TEST_CASE("Options layout skin overrides apply revert and inherit without changing default", "[options][layout-skins]") {
+    temporary_preferences_t file;
+    program_preferences_runtime_t program{.path = file.directory / "preferences.json"};
+    program.preferences.display.field_scheme = "classic";
+    options_runtime_t runtime;
+    set_options_field_layout(runtime, "beat-7k", "Beat 7 keys");
+    open_options(runtime, program.preferences);
+    select(runtime, program, WORM_UI_OPTIONS_DISPLAY);
+    expect_options(!apply_options_action(runtime, program, layout_skin_action(runtime, "bmse")));
+    expect_options(program.preferences.display.field_scheme_overrides.empty());
+    expect_options(resolve_field_scheme(runtime.draft.display, "beat-7k") == "bmse");
+    const auto view = options_view(runtime);
+    expect_options(std::string_view{view.current_field_layout_key} == "beat-7k");
+    expect_options(std::string_view{view.current_field_layout_name} == "Beat 7 keys");
+    expect_options(std::string_view{view.current_layout_field_scheme} == "bmse");
+    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(program.preferences.display.field_scheme == "classic");
+    expect_options(load_program_preferences(program.path).contents.preferences.display.field_scheme_overrides.at("beat-7k") == "bmse");
+    (void)apply_options_action(runtime, program, layout_skin_action(runtime, ""));
+    expect_options(runtime.draft.display.field_scheme_overrides.empty());
+    expect_options(std::string_view{options_view(runtime).current_layout_field_scheme}.empty());
+    (void)apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT));
+    expect_options(resolve_field_scheme(runtime.draft.display, "beat-7k") == "bmse");
+    (void)apply_options_action(runtime, program, layout_skin_action(runtime, ""));
+    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(resolve_field_scheme(program.preferences.display, "beat-7k") == "classic");
+    (void)apply_options_action(runtime, program, layout_skin_action(runtime, "bmse"));
+    (void)apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS));
+    expect_options(runtime.draft.display.field_scheme_overrides.empty());
+    expect_options(runtime.draft.display.field_scheme == "wormedit");
+}
+
+TEST_CASE("Options layout changes reject stale choices and retain other draft overrides", "[options][layout-skins]") {
+    program_preferences_runtime_t program;
+    options_runtime_t runtime;
+    set_options_field_layout(runtime, "beat-7k", "Beat 7 keys");
+    open_options(runtime, program.preferences);
+    select(runtime, program, WORM_UI_OPTIONS_DISPLAY);
+    (void)apply_options_action(runtime, program, layout_skin_action(runtime, "bmse"));
+    const auto stale = layout_skin_action(runtime, "classic");
+    set_options_field_layout(runtime, "pump-single", "Pump single");
+    expect_options(runtime.revision != stale.revision);
+    (void)apply_options_action(runtime, program, stale);
+    expect_options(runtime.draft.display.field_scheme_overrides.size() == 1);
+    expect_options(runtime.draft.display.field_scheme_overrides.at("beat-7k") == "bmse");
+    expect_options(std::string_view{options_view(runtime).current_layout_field_scheme}.empty());
+    (void)apply_options_action(runtime, program, layout_skin_action(runtime, "custom-unknown"));
+    expect_options(resolve_field_scheme(runtime.draft.display, "pump-single") == "custom-unknown");
+    const auto revision = runtime.revision;
+    set_options_field_layout(runtime, "pump-single", "Updated label");
+    expect_options(runtime.revision == revision);
+    set_options_field_layout(runtime, "", "");
+    const auto before = runtime.draft;
+    (void)apply_options_action(runtime, program, layout_skin_action(runtime, "bmse"));
+    expect_options(runtime.draft == before);
+}
+
+TEST_CASE("Options rejects overflow and unterminated layout skin edits without polluting drafts", "[options][layout-skins]") {
+    program_preferences_runtime_t program;
+    for (unsigned index = 0; index < maximum_field_scheme_overrides; ++index)
+        program.preferences.display.field_scheme_overrides.emplace(std::to_string(index), "classic");
+    options_runtime_t runtime;
+    set_options_field_layout(runtime, "overflow", "Overflow");
+    open_options(runtime, program.preferences);
+    select(runtime, program, WORM_UI_OPTIONS_DISPLAY);
+    const auto before = runtime.draft;
+    const auto revision = runtime.revision;
+    (void)apply_options_action(runtime, program, layout_skin_action(runtime, "bmse"));
+    expect_options(runtime.draft == before && runtime.revision == revision);
+    auto bad_text = layout_skin_action(runtime, "bmse");
+    std::fill(std::begin(bad_text.text), std::end(bad_text.text), 'x');
+    (void)apply_options_action(runtime, program, bad_text);
+    expect_options(runtime.draft == before && runtime.revision == revision);
+    set_options_field_layout(runtime, "0", "Existing layout");
+    (void)apply_options_action(runtime, program, layout_skin_action(runtime, "bmse"));
+    expect_options(runtime.draft.display.field_scheme_overrides.size() == maximum_field_scheme_overrides);
+    expect_options(runtime.draft.display.field_scheme_overrides.at("0") == "bmse");
+    set_options_field_layout(runtime, std::string(maximum_preference_string_bytes + 1, 'k'), "Invalid key");
+    expect_options(runtime.current_field_layout_key.empty());
+}
+
+TEST_CASE("Options layout skin validation and category isolation preserve accepted preferences", "[options][layout-skins]") {
+    temporary_preferences_t file;
+    program_preferences_runtime_t program{.path = file.directory / "preferences.json"};
+    options_runtime_t runtime;
+    set_options_field_layout(runtime, "beat-7k", "Beat 7 keys");
+    open_options(runtime, program.preferences);
+    select(runtime, program, WORM_UI_OPTIONS_DISPLAY);
+    auto invalid = runtime.draft;
+    invalid.display.field_scheme_overrides.emplace("beat-7k", std::string(maximum_preference_string_bytes + 1, 'x'));
+    expect_options(edit_options_draft(runtime, runtime.revision, invalid));
+    expect_options(!options_view(runtime).can_apply);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(program.preferences.display.field_scheme_overrides.empty());
+    (void)apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT));
+    expect_options(options_view(runtime).can_apply);
+    (void)apply_options_action(runtime, program, layout_skin_action(runtime, "bmse"));
+    select(runtime, program, WORM_UI_OPTIONS_GENERAL);
+    auto general = runtime.draft;
+    general.general.recent_files_count = 20;
+    expect_options(edit_options_draft(runtime, runtime.revision, general));
+    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(program.preferences.display.field_scheme_overrides.empty());
+    select(runtime, program, WORM_UI_OPTIONS_DISPLAY);
+    expect_options(resolve_field_scheme(runtime.draft.display, "beat-7k") == "bmse");
+    expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    expect_options(resolve_field_scheme(program.preferences.display, "beat-7k") == "bmse");
 }

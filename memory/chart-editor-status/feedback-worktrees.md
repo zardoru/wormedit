@@ -14,3 +14,17 @@ Every open Brain scratchpad feedback item is user feedback and high priority. Us
 Coordinator owns shared task index, status, integration, conflict resolution and final build/full-suite verification. Workers own their dedicated card files and approved implementation files. Shared frontend/theme/toolbar edits are limited to agreed separate regions and integrated by the coordinator. The user authorized committing the completed, verified batch. The manual link remains dependent on finishing the manual.
 
 Batch verification is complete: normal build, 3,162/3,162 CTest checks and 375/375 frontend event cases pass. All ten cards are done and committed together. The muted default palette also incorporates the user’s follow-up that saturated backgrounds were too harsh. Stable Codex slot names above remain reserved for subsequent batches.
+
+Follow-up user feedback: stable slot `wormedit-codex-glaurung` is now active on branch `fix/menu-input-capture` for T-525. T-516 stage-local lane-number correction is integrated by the coordinator in main. The earlier completion paragraph records the initial batch checkpoint; these newly reported regressions are being repaired separately.
+
+T-526 uses stable `wormedit-codex-ruth` on `fix/skin-scratch-geometry` and `wormedit-codex-smaug` on `fix/skin-scratch-preferences`. Only presentation changes: authored layouts and channels stay intact. Workers submit frozen patches; coordinator performs the combined build and verification in the main checkout.
+
+Follow-up T-516/T-525/T-526 is complete and uncommitted. Combined normal/release builds, all 3,175 checks (one SDL timeout passed on isolated retry), 379 frontend event cases and native scratch placement/Options checks are verified. Workers submitted frozen patches; no worker commits were made.
+
+Verified uncommitted follow-up T-528–T-532: Codex Glaurung handled recents/startup, Smaug handled dropdown surfaces and bundled skin lane mappings, Ruth handled chart grips/reorder and opt-in Options header dragging. All patches integrated into main; these Codex names remain distinct from Claude dragon-class slots. Full CTest 3,195/3,195 and 391 production event cases pass.
+
+Verified uncommitted semantic-skin follow-up T-533–T-535: Codex Smaug owned semantic palettes and imported schemes; Glaurung owned bounded per-layout preferences and Options runtime; Ruth owned canonical layout identity/classes, saved generic-class migration and BMSON stage geometry. Coordinator integrated current-layout UI/runtime, blank imported chart-name safety, cards, Brain and final verification. Stable Codex slots remain distinct from Claude dragon classes. Full CTest 3,219/3,219 and 394 production event cases pass.
+
+T-536 measure-local grid/navigation feedback is verified and uncommitted. Codex Ruth handled shared core snapping/cursor and BMSON razor paths; Smaug handled grid/projection phase; Glaurung handled playback/follow/bookmark/minimap; coordinator handled edit/resource/paint/SV/timing integration and real frontend/native checks. Full CTest 3,240/3,240 and 395 event cases pass. Stable Codex slots remain distinct from Claude worktrees.
+
+Commit checkpoint (2026-10-11): the verified T-516/T-525–T-536 follow-ups recorded above are committed together in this revision. Prior uncommitted labels describe their earlier verification checkpoints.

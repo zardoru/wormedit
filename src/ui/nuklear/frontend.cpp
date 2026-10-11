@@ -1438,6 +1438,8 @@ static bool handle_workspace_frontend_event(const SDL_Event* event) {
         g_shortcut_event_count = 0;
         g_double_click_count = 0;
         worm_ui_nuklear_compose_handle_focus_lost();
+        worm_ui_nuklear_cancel_setup_drag();
+        worm_ui_nuklear_cancel_options_drag();
         apply_stem_resize_cursor(false);
         g_ime_composition_active = false;
     } else if (event->type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
@@ -1605,6 +1607,11 @@ static void apply_workspace_menu_action(MenuAction chosen,
                                          WormUiWorkspaceAction& action) {
     const auto found = std::ranges::find(g_workspace_menu, chosen, &wormedit::ui::workspace_menu_item_t::action);
     if (found == g_workspace_menu.end() || !found->enabled) return;
+    if (found->recent_path) {
+        action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
+        std::snprintf(action.project_path, sizeof(action.project_path), "%s", found->recent_path);
+        return;
+    }
     if (found->command_id) {
         std::snprintf(action.menu_command_id, sizeof(action.menu_command_id), "%s", found->command_id);
         return;
@@ -1696,6 +1703,39 @@ static void render_title_label(const WormUiWorkspaceView& view) {
     nk_push_scissor(canvas, previous_clip);
 }
 
+// Menus render before the workspace and auxiliary windows. Closing a Nuklear
+// popup unlocks its parent immediately, so retain its pointer ownership through
+// every later widget in this frame, then restore input for the next input cycle.
+struct MenuPointerCapture;
+static MenuPointerCapture* g_menu_pointer_capture{};
+
+struct MenuPointerCapture {
+    nk_context* context{};
+    struct nk_mouse original{};
+    bool captured{};
+
+    explicit MenuPointerCapture(nk_context* current) : context(current) {
+        g_menu_pointer_capture = this;
+    }
+    void capture() {
+        if (!context || captured) return;
+        original = context->input.mouse;
+        captured = true;
+        for (auto& button : context->input.mouse.buttons) button = {};
+        context->input.mouse.delta = {};
+        context->input.mouse.scroll_delta = {};
+    }
+    ~MenuPointerCapture() {
+        if (captured) {
+            std::copy(std::begin(original.buttons), std::end(original.buttons),
+                      std::begin(context->input.mouse.buttons));
+            context->input.mouse.delta = original.delta;
+            context->input.mouse.scroll_delta = original.scroll_delta;
+        }
+        g_menu_pointer_capture = nullptr;
+    }
+};
+
 static void render_menu_titles(WormUiWorkspaceAction& action) {
     for (const auto* title : wormedit::ui::workspace_menu_titles) {
         const auto chosen = wormedit::ui::render_workspace_menu(g_context, g_workspace_menu,
@@ -1743,6 +1783,8 @@ static void render_title_bar(const WormUiWorkspaceView* view,
     }
     nk_menubar_end(g_context);
     if (menu_was_open && !g_menu_popup_open) g_menu_popup_release_pending = true;
+    if (g_menu_pointer_capture && (g_menu_popup_open || g_menu_popup_release_pending))
+        g_menu_pointer_capture->capture();
 }
 
 static void render_workspace_tabs(const WormUiWorkspaceView* view,
@@ -2395,31 +2437,77 @@ static void render_transport_seek_control(const WormUiWorkspaceView& view,
     else render_bgm_bar_placeholder();
 }
 
-static void render_empty_project_content(const WormUiWorkspaceView& view,
-                                         WormUiWorkspaceAction& action, float height) {
-    nk_layout_row_dynamic(g_context, height, 1);
-    if (!nk_group_begin(g_context, "empty-project-content", NK_WINDOW_BORDER)) return;
-    nk_layout_row_dynamic(g_context, 48, 1);
-    nk_label(g_context, "No project loaded", NK_TEXT_CENTERED);
-    nk_layout_row_dynamic(g_context, 28, 1);
-    nk_label(g_context, "Create a project or open an existing chart to begin.", NK_TEXT_CENTERED);
+static void render_recent_project_list(const WormUiWorkspaceView& view,
+                                       WormUiWorkspaceAction& action, float height) {
+    const auto count = std::min(view.recent_file_count, std::size(view.recent_files));
+    if (!count) return;
+    nk_layout_row_dynamic(g_context, 30, 1);
+    nk_label(g_context, "Recent projects and charts", NK_TEXT_LEFT);
+    const auto area = nk_window_get_content_region(g_context);
+    const float remaining = area.y + area.h - nk_widget_position(g_context).y - 12.0f;
+    nk_layout_row_dynamic(g_context, std::max(48.0f, std::min(height, remaining)), 1);
+    if (!nk_group_begin(g_context, "recent-projects-list", NK_WINDOW_BORDER)) return;
+    const bool blocked = project_dialog_active() || project_modal_active(view);
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& entry = view.recent_files[index];
+        nk_layout_row_dynamic(g_context, 34, 1);
+        const auto bounds = nk_widget_bounds(g_context);
+        if (blocked) nk_widget_disable_begin(g_context);
+        const bool chosen = nk_button_label(g_context, entry.label);
+        if (blocked) nk_widget_disable_end(g_context);
+        if (chosen && !blocked && action.kind == WORM_UI_WORKSPACE_ACTION_NONE) {
+            action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
+            std::snprintf(action.project_path, sizeof(action.project_path), "%s", entry.path);
+        }
+        if (wormedit::ui::nuklear::tooltip::hovered(g_context, bounds))
+            wormedit::ui::nuklear::tooltip::text(g_context, entry.path);
+    }
+    nk_group_end(g_context);
+}
+
+static void render_startup_buttons(WormUiWorkspaceAction& action) {
     nk_layout_row_dynamic(g_context, 42, 1);
     const bool dialog_busy = project_dialog_active();
     if (dialog_busy) nk_widget_disable_begin(g_context);
     if (nk_button_label(g_context, "New project") &&
         !dialog_busy && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
         request_manual_new_project();
-    if (dialog_busy) nk_widget_disable_end(g_context);
-    if (dialog_busy) nk_widget_disable_begin(g_context);
     if (nk_button_label(g_context, dialog_busy ? "Choosing file..." : "Open chart or project...") &&
         !dialog_busy && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
         start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_OPEN_FILE);
     if (dialog_busy) nk_widget_disable_end(g_context);
-    if (!g_project_dialog_error.empty()) {
-        nk_layout_row_dynamic(g_context, 38, 1);
-        nk_label_wrap(g_context, g_project_dialog_error.c_str());
+}
+
+static void render_empty_project_content(const WormUiWorkspaceView& view,
+                                         WormUiWorkspaceAction& action, float height) {
+    nk_layout_row_dynamic(g_context, height, 1);
+    if (!nk_group_begin(g_context, "empty-project-content", NK_WINDOW_NO_SCROLLBAR)) return;
+    const auto area = nk_window_get_content_region(g_context);
+    const float width = std::min(560.0f, std::max(1.0f, area.w - 32.0f));
+    const float margin = std::max(0.0f, (area.w - width) * 0.5f);
+    nk_layout_row_begin(g_context, NK_STATIC, std::max(1.0f, height - 24.0f), 3);
+    nk_layout_row_push(g_context, margin);
+    nk_spacing(g_context, 1);
+    nk_layout_row_push(g_context, width);
+    if (nk_group_begin(g_context, "startup-column", 0)) {
+        nk_layout_row_dynamic(g_context, 20, 1);
+        nk_spacing(g_context, 1);
+        nk_layout_row_dynamic(g_context, 48, 1);
+        nk_label(g_context, "No project loaded", NK_TEXT_CENTERED);
+        nk_layout_row_dynamic(g_context, 28, 1);
+        nk_label(g_context, "Create a project or open an existing chart to begin.", NK_TEXT_CENTERED);
+        render_startup_buttons(action);
+        if (!g_project_dialog_error.empty()) {
+            nk_layout_row_dynamic(g_context, 38, 1);
+            nk_label_wrap(g_context, g_project_dialog_error.c_str());
+        }
+        render_notification_landing_status(view, action);
+        render_recent_project_list(view, action, std::min(360.0f, height - 280.0f));
+        nk_group_end(g_context);
     }
-    render_notification_landing_status(view, action);
+    nk_layout_row_push(g_context, margin);
+    nk_spacing(g_context, 1);
+    nk_layout_row_end(g_context);
     nk_group_end(g_context);
 }
 
@@ -2799,7 +2887,10 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
         start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_IMPORT_CHART_FILE);
     if (!project_modal_active(frame.view))
         worm_ui_nuklear_render_options_window(g_context, &frame.view.options, &frame.action.options);
-    if (project_modal_active(frame.view)) return;
+    if (project_modal_active(frame.view)) {
+        worm_ui_nuklear_cancel_options_drag();
+        return;
+    }
     if (!frame.view.project_loaded) {
         worm_ui_nuklear_render_external_player_panel(g_context, &frame.view.external_player,
                                                      &frame.action.external_player);
@@ -2890,6 +2981,7 @@ static void consume_pending_save_request(const WormUiWorkspaceView* view, WormUi
 }
 
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
+    MenuPointerCapture menu_pointer_capture{g_context};
     wormedit::ui::nuklear::tooltip::set_viewport(nk_rect(0.0F, 0.0F, 0.0F, 0.0F));
     reset_compose_canvas_viewport_for_testing();
     worm_ui_nuklear_sync_setup_popups(g_context, view ? &view->setup : nullptr);
@@ -3113,6 +3205,29 @@ void worm_ui_frontend_set_snap_grid_opacity(uint32_t percent) {
 
 void worm_ui_frontend_set_field_waveform_opacity(uint32_t percent) {
     wormedit::ui::theme::set_field_waveform_opacity(percent);
+}
+
+static auto& configured_field_lanes() {
+    static std::vector<wormedit::ui::theme::field_lane_t> lanes;
+    return lanes;
+}
+
+bool worm_ui_frontend_configure_field_scheme(const char* requested, const char* fallback,
+    const WormUiComposeLaneView* lanes, size_t count) {
+    auto& configured = configured_field_lanes();
+    configured.clear();
+    if (lanes) {
+        configured.reserve(count);
+        for (const auto& lane : std::span(lanes, count))
+            configured.push_back({lane.display_order, lane.stage, lane.key_color, lane.role, lane.lane_id});
+    }
+    return wormedit::ui::theme::select_field_scheme_for_layout(requested ? requested : "",
+        fallback ? fallback : "", configured);
+}
+
+int worm_ui_frontend_field_scratch_side(uint8_t stage) {
+    const auto side = wormedit::ui::theme::field_scratch_side(stage, configured_field_lanes());
+    return side ? static_cast<int>(*side) : -1;
 }
 
 bool worm_ui_frontend_select_field_scheme(const char* id) {

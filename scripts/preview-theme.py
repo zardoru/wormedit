@@ -95,9 +95,25 @@ def validate_field(document):
             resolve_color(document, value)
         else:
             raise ValueError("expected a field color")
-    for section in ("roles", "key_colors", "keys", "bgm", "timing", "note_accents"):
+    for section in ("roles", "key_colors", "lane_classes", "bgm", "timing", "note_accents"):
         if section in document:
             walk(document[section])
+    classes = {"white", "blue", "green", "yellow", "red"}
+    if "keys" in document or "key_count" in document:
+        raise ValueError("ungated positional keys are unsupported")
+    if set(document.get("lane_classes", {})) - classes:
+        raise ValueError("unknown semantic lane class")
+    if "rotate_dp5" in document and not isinstance(document["rotate_dp5"], bool):
+        raise ValueError("rotate_dp5 must be boolean")
+    if "numbered_layout" in document:
+        numbered = document["numbered_layout"]
+        stages, colors = numbered["stages"], numbered["colors"]
+        if not isinstance(stages, list) or not 1 <= len(stages) <= 2 or len(colors) != len(stages):
+            raise ValueError("numbered_layout requires matching stages and colors")
+        for names, entries in zip(stages, colors):
+            if not names or len(names) != len(entries) or any(name not in classes for name in names):
+                raise ValueError("numbered_layout requires matching semantic classes")
+        walk(colors)
     if "note_accents" in document and len(document["note_accents"]) != 8:
         raise ValueError("expected eight note accents")
 
@@ -119,10 +135,14 @@ def field_entries(document, default):
     for kind, values in default["key_colors"].items():
         entries["key-color/" + kind] = {**generic, **resolved(default, values),
             **resolved(document, document.get("key_colors", {}).get(kind, {}))}
-    for player, positions in document.get("keys", {}).items():
-        for position, values in positions.items():
-            fallback = entries["key-color/scratch" if position == "scratch" else "key-color/generic"]
-            entries[f"{player}/{position}"] = {**fallback, **resolved(document, values)}
+    for name, values in default["lane_classes"].items():
+        entries["class/" + name] = {**generic, **resolved(default, values),
+            **resolved(document, document.get("lane_classes", {}).get(name, {}))}
+    numbered = document.get("numbered_layout", {})
+    for stage, (names, colors) in enumerate(zip(numbered.get("stages", []), numbered.get("colors", []))):
+        for position, (name, values) in enumerate(zip(names, colors)):
+            entries[f"numbered-stage-{stage + 1}/{position + 1} ({name})"] = {
+                **entries["class/" + name], **resolved(document, values)}
     entries["BGM"] = {**generic, **resolved(default, default["bgm"]), **resolved(document, document.get("bgm", {}))}
     for kind, values in document.get("timing", {}).items():
         entries["timing/" + kind] = {**generic, **resolved(document, values)}

@@ -8,7 +8,7 @@
     "unknown_columns": [
       "Mes"
     ],
-    "fallback": "Missing roles, key positions and timing kinds inherit Wormedit. Fonts and widths are not imported."
+    "fallback": "Semantic lane classes inherit missing colors from Wormedit; numbered colors apply only to their exact supported stage/class layout. Fonts and widths are not imported."
   },
   "roles": {
     "viewport": "#434343ff",
@@ -38,177 +38,11 @@
     "hold_hover": "#ffffffff",
     "arrow_selection": "#00ffffff"
   },
-  "keys": {
-    "1p": {
-      "1": {
-        "lane": "#bf404014",
-        "lane_alternate": "#bf404014",
-        "note": "#f5595980",
-        "hold_body": "#e6686880",
-        "long_note": "#e6686880",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      },
-      "2": {
-        "lane": "#80808028",
-        "lane_alternate": "#80808028",
-        "note": "#aaaaaa80",
-        "hold_body": "#c0c0c080",
-        "long_note": "#c0c0c080",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      },
-      "3": {
-        "lane": "#3d3dc215",
-        "lane_alternate": "#3d3dc215",
-        "note": "#6289ff80",
-        "hold_body": "#7291ef80",
-        "long_note": "#7291ef80",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      },
-      "4": {
-        "lane": "#80808028",
-        "lane_alternate": "#80808028",
-        "note": "#aaaaaa80",
-        "hold_body": "#c0c0c080",
-        "long_note": "#c0c0c080",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      },
-      "5": {
-        "lane": "#3d3dc215",
-        "lane_alternate": "#3d3dc215",
-        "note": "#6289ff80",
-        "hold_body": "#7291ef80",
-        "long_note": "#7291ef80",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      },
-      "6": {
-        "lane": "#80808028",
-        "lane_alternate": "#80808028",
-        "note": "#aaaaaa80",
-        "hold_body": "#c0c0c080",
-        "long_note": "#c0c0c080",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      },
-      "7": {
-        "lane": "#3d3dc215",
-        "lane_alternate": "#3d3dc215",
-        "note": "#6289ff80",
-        "hold_body": "#7291ef80",
-        "long_note": "#7291ef80",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      },
-      "scratch": {
-        "lane": "#80808028",
-        "lane_alternate": "#80808028",
-        "note": "#aaaaaa80",
-        "hold_body": "#c0c0c080",
-        "long_note": "#c0c0c080",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      }
-    },
-    "2p": {
-      "1": {
-        "lane": "#80808028",
-        "lane_alternate": "#80808028",
-        "note": "#aaaaaa80",
-        "hold_body": "#c0c0c080",
-        "long_note": "#c0c0c080",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      },
-      "2": {
-        "lane": "#3d3dc215",
-        "lane_alternate": "#3d3dc215",
-        "note": "#6289ff80",
-        "hold_body": "#7291ef80",
-        "long_note": "#7291ef80",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      },
-      "3": {
-        "lane": "#80808028",
-        "lane_alternate": "#80808028",
-        "note": "#aaaaaa80",
-        "hold_body": "#c0c0c080",
-        "long_note": "#c0c0c080",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      },
-      "4": {
-        "lane": "#3d3dc215",
-        "lane_alternate": "#3d3dc215",
-        "note": "#6289ff80",
-        "hold_body": "#7291ef80",
-        "long_note": "#7291ef80",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      },
-      "5": {
-        "lane": "#80808028",
-        "lane_alternate": "#80808028",
-        "note": "#aaaaaa80",
-        "hold_body": "#c0c0c080",
-        "long_note": "#c0c0c080",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      },
-      "6": {
-        "lane": "#3d3dc215",
-        "lane_alternate": "#3d3dc215",
-        "note": "#6289ff80",
-        "hold_body": "#7291ef80",
-        "long_note": "#7291ef80",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      },
-      "7": {
-        "lane": "#80808028",
-        "lane_alternate": "#80808028",
-        "note": "#aaaaaa80",
-        "hold_body": "#c0c0c080",
-        "long_note": "#c0c0c080",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      },
-      "scratch": {
-        "lane": "#bf404014",
-        "lane_alternate": "#bf404014",
-        "note": "#f5595980",
-        "hold_body": "#e6686880",
-        "long_note": "#e6686880",
-        "label": "#000000ff",
-        "long_label": "#000000ff",
-        "lane_label": "#00ff00ff"
-      }
-    }
-  },
   "timing": {
     "scroll": {
       "lane": "#c2c23d15",
       "lane_alternate": "#c2c23d15",
-      "note": "#f5f55980",
+      "note": "#f5f559ff",
       "hold_body": "#00000000",
       "long_note": "#00000000",
       "label": "#000000ff",
@@ -218,7 +52,7 @@
     "bpm": {
       "lane": "#c2c23d15",
       "lane_alternate": "#c2c23d15",
-      "note": "#f5f55980",
+      "note": "#f5f559ff",
       "hold_body": "#00000000",
       "long_note": "#00000000",
       "label": "#000000ff",
@@ -228,7 +62,7 @@
     "stop": {
       "lane": "#c2c23d15",
       "lane_alternate": "#c2c23d15",
-      "note": "#f5f55980",
+      "note": "#f5f559ff",
       "hold_body": "#00000000",
       "long_note": "#00000000",
       "label": "#000000ff",
@@ -239,11 +73,43 @@
   "bgm": {
     "lane": "#ce4b3114",
     "lane_alternate": "#ce4b3114",
-    "note": "#e1808080",
-    "hold_body": "#dc858580",
-    "long_note": "#dc858580",
+    "note": "#e18080ff",
+    "hold_body": "#dc8585ff",
+    "long_note": "#dc8585ff",
     "label": "#000000ff",
     "long_label": "#000000ff",
     "lane_label": "#00ff00ff"
+  },
+  "lane_classes": {
+    "white": {
+      "lane": "#80808028",
+      "lane_alternate": "#80808028",
+      "note": "#aaaaaaff",
+      "hold_body": "#c0c0c0ff",
+      "long_note": "#c0c0c0ff",
+      "label": "#000000ff",
+      "long_label": "#000000ff",
+      "lane_label": "#00ff00ff"
+    },
+    "blue": {
+      "lane": "#3d3dc215",
+      "lane_alternate": "#3d3dc215",
+      "note": "#6289ffff",
+      "hold_body": "#7291efff",
+      "long_note": "#7291efff",
+      "label": "#000000ff",
+      "long_label": "#000000ff",
+      "lane_label": "#00ff00ff"
+    },
+    "red": {
+      "lane": "#bf404014",
+      "lane_alternate": "#bf404014",
+      "note": "#f55959ff",
+      "hold_body": "#e66868ff",
+      "long_note": "#e66868ff",
+      "label": "#000000ff",
+      "long_label": "#000000ff",
+      "lane_label": "#00ff00ff"
+    }
   }
 }

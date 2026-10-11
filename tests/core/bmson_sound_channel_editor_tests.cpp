@@ -1642,3 +1642,66 @@ TEST_CASE("Packed BMSON single-click channel exports and reparses without duplic
     expect_bmson_core(wormedit::redo_document_command(history));
     expect_bmson_core(wormedit::write_bmson(history.document).json);
 }
+
+namespace {
+auto fractional_razor_chart() -> wormedit::chart_document_t {
+    return {.id = wormedit::chart_id_t{1},
+            .source_family = wormedit::format_family_t::bmson,
+            .divisions_per_standard_measure = 960,
+            .measures = {
+                {.id = wormedit::measure_id_t{1}, .definition = {.length = {3, 10}}},
+                {.id = wormedit::measure_id_t{2}, .definition = {.length = {1, 16}}},
+                {.id = wormedit::measure_id_t{3}, .definition = {.length = {1, 16}}},
+                {.id = wormedit::measure_id_t{4}},
+            }};
+}
+void check_local_razor(bool value) { CHECK(value); }
+}
+
+TEST_CASE("BMSON razor interpolation visits measure-local grids and shortened heads",
+          "[unit][core][bmson][razor][measure-local-snap]") {
+    const auto chart = fractional_razor_chart();
+    const wormedit::local_position_t begin{chart.measures[0].id, 240};
+    const wormedit::local_position_t end{chart.measures[3].id, 240};
+    const auto forward = wormedit::interpolate_bmson_razor_path(chart, begin, end, 4, 4);
+    REQUIRE(forward);
+    check_local_razor(forward.positions == std::vector<wormedit::local_position_t>{
+        {chart.measures[1].id, 0}, {chart.measures[2].id, 0},
+        {chart.measures[3].id, 0}, end});
+    const auto backward = wormedit::interpolate_bmson_razor_path(chart, end, begin, 4, 4);
+    REQUIRE(backward);
+    check_local_razor(backward.positions == std::vector<wormedit::local_position_t>{
+        {chart.measures[3].id, 0}, {chart.measures[2].id, 0},
+        {chart.measures[1].id, 0}, begin});
+    const auto limited = wormedit::interpolate_bmson_razor_path(chart, begin, end, 4, 3);
+    check_local_razor(!limited);
+    check_local_razor(limited.positions.empty());
+    check_local_razor(!wormedit::interpolate_bmson_razor_path(
+        chart, {chart.measures[1].id, 1}, end, 4));
+    const auto fine = wormedit::interpolate_bmson_razor_path(
+        chart, {chart.measures[1].id, 1}, {chart.measures[1].id, 4}, 0);
+    REQUIRE(fine);
+    check_local_razor(fine.positions == std::vector<wormedit::local_position_t>{
+        {chart.measures[1].id, 2}, {chart.measures[1].id, 3}, {chart.measures[1].id, 4}});
+}
+
+TEST_CASE("BMSON razor capacity counts tiny measure heads and retains the hard marker limit",
+          "[unit][core][bmson][razor][measure-local-snap]") {
+    auto chart = fractional_razor_chart();
+    chart.measures.clear();
+    for (std::uint64_t id = 1; id <= 258; ++id)
+        chart.measures.push_back({.id = wormedit::measure_id_t{id},
+                                  .definition = {.length = {1, 16}}});
+    const wormedit::local_position_t begin{chart.measures.front().id, 0};
+    const auto exact = wormedit::interpolate_bmson_razor_path(
+        chart, begin, {chart.measures[256].id, 0}, 4, 999);
+    REQUIRE(exact);
+    check_local_razor(exact.positions.size() == 256);
+    const auto overflow = wormedit::interpolate_bmson_razor_path(
+        chart, begin, {chart.measures[257].id, 0}, 4, 999);
+    check_local_razor(!overflow);
+    check_local_razor(overflow.positions.empty());
+    const auto stationary = wormedit::interpolate_bmson_razor_path(chart, begin, begin, 4, 0);
+    REQUIRE(stationary);
+    check_local_razor(stationary.positions.empty());
+}

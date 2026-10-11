@@ -161,15 +161,7 @@ struct note_area_query_t {
         if (!layout) return false;
         auto cached = lane_bounds.find(layout);
         if (cached == lane_bounds.end()) {
-            std::vector<const lane_definition_t*> editable;
-            editable.reserve(layout->lanes.size());
-            for (const auto& candidate : layout->lanes)
-                if (editable_lane(candidate)) editable.push_back(&candidate);
-            std::ranges::sort(editable, [split_stage = layout->split_stage](const auto* a, const auto* b) {
-                if (split_stage && a->stage != b->stage) return a->stage < b->stage;
-                if (a->display_order != b->display_order) return a->display_order < b->display_order;
-                return a->id.value < b->id.value;
-            });
+            const auto editable = editor_presented_lanes(*layout, view.scratch_on_right);
             std::unordered_map<std::uint64_t, lane_bounds_t> columns;
             columns.reserve(editable.size());
             const auto width = bounds.field_right - bounds.field_left;

@@ -1189,8 +1189,9 @@ auto proposal_lane_bounds(const proposal_render_context_t& render, const visible
     const auto gutter = split > 0 && split < columns ? request.split_stage_gutter_pixels : 0.0;
     const auto width = (request.field_width_pixels - gutter) / static_cast<double>(columns);
     const auto column =
-        layout
-            ? proposal_physical_column(
+        layout && editor_scratch_presentation_active(*layout, request.scratch_on_right)
+            ? static_cast<double>(*proposal.display_column)
+            : layout ? proposal_physical_column(
                   *layout, *proposal.display_column,
                   proposal_target_stage(*layout, proposal, proposal_source_stage(render, proposal)))
             : static_cast<double>(*proposal.display_column);
@@ -1722,19 +1723,7 @@ auto append_visible_layout_band(scene_geometry_context_t& context,
                                 std::uint64_t source_end, Consume&& consume, YForRow&& y_for_row,
                                 std::vector<visible_band_t>& visible_bands) -> bool {
     const auto& request = context.request;
-    std::vector<const lane_definition_t*> lanes;
-    for (const auto& lane : source.layout.lanes) {
-        if (editable_lane(lane)) {
-            lanes.push_back(&lane);
-        }
-    }
-    std::ranges::sort(
-        lanes, [split_stage = source.layout.split_stage](const auto* left, const auto* right) {
-            if (split_stage && left->stage != right->stage)
-                return left->stage < right->stage;
-            return std::tie(left->display_order, left->id.value) <
-                   std::tie(right->display_order, right->id.value);
-        });
+    const auto lanes = editor_presented_lanes(source.layout, request.scratch_on_right);
     if (lanes.empty() && !context.view.pending_note_move_gesture) {
         return true;
     }
@@ -2527,7 +2516,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
 
 namespace {
 auto window_request_scalars(const editor_field_scene_request_t& request) {
-    return std::tuple{request.field_left_pixels, request.field_width_pixels,
+    return std::tuple{request.field_left_pixels, request.field_width_pixels, request.scratch_on_right,
         request.split_stage_gutter_pixels, request.note_head_height_pixels,
         request.scroll_direction, request.comparison_difference_height_pixels,
         request.hold_body_width_ratio, request.bgm_pane_left_pixels,

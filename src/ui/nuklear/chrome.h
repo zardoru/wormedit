@@ -124,7 +124,7 @@ inline void button_feedback(nk_context* context, struct nk_rect bounds, bool sel
 // A menu row reserves the same check gutter even when unchecked. Shortcut text is
 // a separate right-aligned draw, so labels and remapped chords keep their alignment.
 inline auto menu_item(nk_context* context, const char* label, const char* shortcut_text,
-                      bool checked, bool enabled) -> bool {
+                      bool checked, bool enabled, bool close_popup = true) -> bool {
     const auto bounds = nk_widget_bounds(context);
     if (!enabled) nk_widget_disable_begin(context);
     auto style = context->style.menu_button;
@@ -150,7 +150,7 @@ inline auto menu_item(nk_context* context, const char* label, const char* shortc
                      shortcut_text, length, font, nk_rgba(0, 0, 0, 0), tint);
     }
     if (!enabled) nk_widget_disable_end(context);
-    if (chosen && enabled) nk_popup_close(context);
+    if (chosen && enabled && close_popup) nk_popup_close(context);
     return chosen && enabled;
 }
 
@@ -336,7 +336,7 @@ inline constexpr float menu_radius = metrics::radius_surface;
 
 // Region a surface's shadow may paint: its reach around `bounds`, clamped to `limit`.
 // Backends reject scissors that reach outside the render target, so top-level windows pass the
-// app viewport (tooltip::viewport()) and popups pass their parent window.
+// app viewport (tooltip::viewport()), including popups that extend beyond their host.
 auto surface_shadow_clip(struct nk_rect bounds, int elevation, struct nk_rect limit)
     -> struct nk_rect;
 
@@ -346,10 +346,13 @@ void paint_surface(struct nk_command_buffer* canvas, struct nk_rect bounds, int 
                    struct nk_rect limit);
 
 // Call right after a successful nk_menu_begin_*: paints the menu as a rounded panel with a soft
-// drop shadow. Popups keep the parent window as their clamp, as Nuklear clips them there.
+// drop shadow. Popup content has an independent clip and may extend beyond a short
+// toolbar or header host; its surface must use the render target, not that host.
 inline void menu_panel(nk_context* context) {
     auto* popup = context->current;
-    paint_surface(&popup->buffer, popup->bounds, 1, popup->parent->bounds);
+    const auto& viewport = nuklear::tooltip::viewport();
+    paint_surface(&popup->buffer, popup->bounds, 1,
+                  viewport.w > 0.0f && viewport.h > 0.0f ? viewport : popup->bounds);
 }
 
 // Menubar menus and context menus share this surface: menu_panel() plus transparent

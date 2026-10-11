@@ -160,3 +160,61 @@ TEST_CASE("Project New allows an empty document fallback and rejects a missing a
     expect_project(!rejected.command.applied && !rejected.command.diagnostics.empty());
     expect_project(empty.document.charts.size() == 1 && empty.document.revision == before);
 }
+
+namespace {
+auto reorder_history() -> document_history_t {
+    auto history = make_document_history(project_song());
+    const auto first = history.document.charts.front().id;
+    require_project(static_cast<bool>(apply_duplicate_chart_command(history, history.document.revision, first)));
+    require_project(static_cast<bool>(apply_duplicate_chart_command(history, history.document.revision, first)));
+    history.undo.clear();
+    return history;
+}
+auto chart_ids(const document_history_t& history) -> std::vector<chart_id_t> {
+    std::vector<chart_id_t> ids;
+    for (const auto& chart : history.document.charts) ids.push_back(chart.id);
+    return ids;
+}
+}
+
+TEST_CASE("Project grip reorder resolves stable destination and creates one atomic Undo", "[project-view][chart-reorder]") {
+    auto history = reorder_history();
+    const auto original = chart_ids(history);
+    project_chart_runtime_t runtime;
+    const auto result = apply_project_chart_ui_action(runtime, history,
+        {.kind = WORM_UI_PROJECT_CHART_REORDER, .document_revision = history.document.revision,
+         .session_generation = runtime.session_generation, .chart_id = original[0].value,
+         .target_chart_id = original[2].value, .insert_after = true});
+    require_project(result.applied);
+    expect_project((chart_ids(history) == std::vector{original[1], original[2], original[0]}));
+    expect_project(history.undo.size() == 1);
+    require_project(static_cast<bool>(undo_document_command(history)));
+    expect_project(chart_ids(history) == original);
+    const auto moved_back = apply_project_chart_ui_action(runtime, history,
+        {.kind = WORM_UI_PROJECT_CHART_REORDER, .document_revision = history.document.revision,
+         .session_generation = runtime.session_generation, .chart_id = original[2].value,
+         .target_chart_id = original[0].value, .insert_after = false});
+    require_project(moved_back.applied);
+    expect_project((chart_ids(history) == std::vector{original[2], original[0], original[1]}));
+}
+
+TEST_CASE("Project grip reorder rejects stale or missing targets and leaves adjacent drops unchanged", "[project-view][chart-reorder]") {
+    auto history = reorder_history();
+    const auto original = chart_ids(history);
+    project_chart_runtime_t runtime;
+    WormUiProjectChartAction action{.kind = WORM_UI_PROJECT_CHART_REORDER,
+        .document_revision = history.document.revision, .session_generation = runtime.session_generation,
+        .chart_id = original[0].value, .target_chart_id = original[1].value};
+    expect_project(!apply_project_chart_ui_action(runtime, history, action).applied);
+    expect_project(history.undo.empty());
+    action.insert_after = true;
+    --action.document_revision;
+    expect_project(!apply_project_chart_ui_action(runtime, history, action).applied);
+    action.document_revision = history.document.revision;
+    ++action.session_generation;
+    expect_project(!apply_project_chart_ui_action(runtime, history, action).applied);
+    action.session_generation = runtime.session_generation;
+    action.target_chart_id = 99999;
+    expect_project(!apply_project_chart_ui_action(runtime, history, action).applied);
+    expect_project(chart_ids(history) == original && history.undo.empty());
+}

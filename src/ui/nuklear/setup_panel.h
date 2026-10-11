@@ -14,3 +14,6 @@ void worm_ui_nuklear_sync_setup_popups(nk_context* context, const WormUiSetupVie
 void worm_ui_nuklear_retire_setup_popups(nk_context* context);
 void worm_ui_nuklear_render_setup_dialogs(nk_context* context, const WormUiSetupView& view,
                                          WormUiWorkspaceAction& action);
+
+// Abandon an in-progress row drag on native focus loss.
+void worm_ui_nuklear_cancel_setup_drag();

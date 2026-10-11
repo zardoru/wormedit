@@ -66,6 +66,9 @@ void check_dispatch(std::string_view menu, std::string_view label, std::string_v
         const auto& action = frame.get();
         if (!action.menu_command_id[0]) continue;
         check_menu(std::string_view{action.menu_command_id} == command);
+        check_menu(action.kind == WORM_UI_WORKSPACE_ACTION_NONE);
+        check_menu(action.compose_input_count == 0);
+        check_menu(action.project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
         check_menu(action.clipboard == WORM_UI_CLIPBOARD_NONE);
         check_menu(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
         const auto dispatched = wormedit::invoke_command(registry, {action.menu_command_id},
@@ -79,6 +82,7 @@ void check_dispatch(std::string_view menu, std::string_view label, std::string_v
 
 TEST_CASE("Menu commands use one registry invocation across editing chart and playback",
           "[frontend-state][event-harness][menu-bar]") {
+    SECTION("New project") { check_dispatch("File", "New project", "document.new_project"); }
     SECTION("Undo") { check_dispatch("Edit", "Undo", "history.undo"); }
     SECTION("Redo") { check_dispatch("Edit", "Redo", "history.redo"); }
     SECTION("Delete") { check_dispatch("Edit", "Delete", "edit.delete"); }
@@ -253,4 +257,181 @@ TEST_CASE("Help shortcut sheet follows remaps and releases modal lane input on E
     const auto resumed = harness.frame(std::span{&key, 1});
     check_menu(resumed.get().compose_input_count == 1);
     check_menu(resumed.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
+}
+
+namespace {
+auto menu_pointer(nuklear_event_harness_t& harness, float x, float y, int edge)
+    -> workspace_action_snapshot_t {
+    SDL_Event motion{};
+    motion.type = SDL_EVENT_MOUSE_MOTION;
+    motion.motion.x = x;
+    motion.motion.y = y;
+    SDL_Event button{};
+    button.type = edge > 0 ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+    button.button.button = SDL_BUTTON_LEFT;
+    button.button.down = edge > 0;
+    button.button.x = x;
+    button.button.y = y;
+    const std::array events{motion, button};
+    return harness.frame(events);
+}
+}
+
+TEST_CASE("Menu dismissal captures the held pointer and release above a Project chart row",
+          "[frontend-state][event-harness][menu-bar][menu-capture]") {
+    nuklear_event_harness_t harness{1280, 900};
+    require_menu(harness.ready());
+    WormUiProjectChartRow row{.chart_id = 10, .name = "Covered difficulty", .author = "Author",
+        .rating = "Unset", .mode = "7K", .output_groups = "Unassigned", .length = "2 s", .diagnostic = ""};
+    auto& view = harness.view();
+    view.compose.visible = false;
+    view.active_tab = WORM_UI_WORKSPACE_TAB_SETUP;
+    view.setup = {.visible = true, .song_id = 1, .document_revision = 1, .session_generation = 1,
+        .charts = &row, .chart_row_count = 1, .chart_count = 1,
+        .stepmania_policy_valid = true, .stepmania_policy_status = "Ready"};
+    (void)harness.frame();
+    const auto target = harness.drawn_text_center(row.name);
+    require_menu(target.has_value());
+    (void)click_menu(harness, "Help");
+    (void)harness.frame();
+    const auto press = menu_pointer(harness, target->first, target->second, 1);
+    check_menu(press.get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
+    check_menu(harness.frame().get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
+    const auto release = menu_pointer(harness, target->first, target->second, 0);
+    check_menu(release.get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
+    (void)harness.frame();
+    check_menu(harness.drawn_text().find("1 selected") == std::string::npos);
+    (void)click_menu(harness, row.name);
+    (void)harness.frame();
+    check_menu(harness.drawn_text().find("1 selected") != std::string::npos);
+}
+
+TEST_CASE("Menu dismissal cannot activate the landing New project button",
+          "[frontend-state][event-harness][menu-bar][menu-capture]") {
+    nuklear_event_harness_t harness{1280, 900};
+    require_menu(harness.ready());
+    harness.view().project_loaded = false;
+    harness.view().compose.visible = false;
+    (void)harness.frame();
+    const auto target = harness.drawn_text_center("New project");
+    require_menu(target.has_value());
+    (void)click_menu(harness, "Help");
+    (void)harness.frame();
+    (void)menu_pointer(harness, target->first, target->second, 1);
+    (void)harness.frame();
+    (void)menu_pointer(harness, target->first, target->second, 0);
+    (void)harness.frame();
+    check_menu(harness.drawn_text().find("Create a new project") == std::string::npos);
+    (void)click_menu(harness, "New project");
+    (void)harness.frame();
+    check_menu(harness.drawn_text().find("Create a new project") != std::string::npos);
+}
+
+TEST_CASE("Menu selection and its release cannot switch the covered Compose workspace tab",
+          "[frontend-state][event-harness][menu-bar][menu-capture]") {
+    nuklear_event_harness_t harness{1280, 900};
+    require_menu(harness.ready());
+    wormedit::sys::project_menu_commands(wormedit::make_default_editor_command_registry({}), harness.view());
+    (void)harness.frame();
+    (void)click_menu(harness, "File");
+    (void)harness.frame();
+    const auto target = harness.drawn_text_center("New project");
+    require_menu(target.has_value());
+    int invocations = 0;
+    for (const auto& frame : click_menu(harness, "New project")) {
+        invocations += std::string_view{frame.get().menu_command_id} == "document.new_project";
+        check_menu(frame.get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
+        check_menu(frame.get().compose_input_count == 0);
+    }
+    check_menu(invocations == 1);
+    (void)harness.frame();
+    const auto project = harness.drawn_text_center("Project");
+    require_menu(project.has_value());
+    bool switched = false;
+    for (const auto& frame : click_menu(harness, "Project"))
+        switched |= frame.get().kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB;
+    check_menu(switched);
+}
+
+TEST_CASE("Recent menu and startup entries dispatch guarded normal file opens",
+          "[frontend-state][event-harness][menu-bar][recent-files]") {
+    nuklear_event_harness_t harness{1280, 900};
+    require_menu(harness.ready());
+    auto& view = harness.view();
+    view.recent_file_count = 2;
+    view.recent_files[0] = {"chart.bms", "/tmp/music/chart.bms"};
+    view.recent_files[1] = {"project.wormedit", "/tmp/project.wormedit"};
+    SECTION("File menu") {
+        (void)harness.frame();
+        (void)click_menu(harness, "File");
+        (void)harness.frame();
+        const auto frames = click_menu(harness, "chart.bms");
+        const auto opened = std::ranges::find_if(frames, [](const auto& frame) {
+            return frame.get().kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
+        });
+        require_menu(opened != frames.end());
+        check_menu(std::string_view{opened->get().project_path} == "/tmp/music/chart.bms");
+        check_menu(opened->get().compose_input_count == 0);
+        check_menu(opened->get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
+        (void)harness.frame();
+        check_menu(!harness.drawn_text_center("chart.bms").has_value());
+    }
+    SECTION("Startup bounded controls and recent list") {
+        view.project_loaded = false;
+        view.compose.visible = false;
+        (void)harness.frame();
+        const auto button = harness.drawn_text_center("New project");
+        require_menu(button.has_value());
+        check_menu(button->first > 400 && button->first < 900);
+        const auto frames = click_menu(harness, "project.wormedit");
+        const auto opened = std::ranges::find_if(frames, [](const auto& frame) {
+            return frame.get().kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
+        });
+        require_menu(opened != frames.end());
+        check_menu(std::string_view{opened->get().project_path} == "/tmp/project.wormedit");
+    }
+    SECTION("Modal ownership disables recent entries") {
+        view.options.visible = true;
+        const auto model = wormedit::ui::build_workspace_menu(view, true, false, false);
+        check_menu(!item(model, wormedit::ui::workspace_menu_action_t::recent_first).enabled);
+    }
+}
+
+TEST_CASE("File recent history scrolls within a small window and opens the last entry",
+          "[frontend-state][event-harness][menu-bar][recent-files]") {
+    nuklear_event_harness_t harness{800, 500};
+    require_menu(harness.ready());
+    std::array<std::string, 100> labels;
+    std::array<std::string, 100> paths;
+    harness.view().recent_file_count = labels.size();
+    for (std::size_t index = 0; index < labels.size(); ++index) {
+        labels[index] = "recent-" + std::to_string(index) + ".wormedit";
+        paths[index] = "/tmp/" + labels[index];
+        harness.view().recent_files[index] = {labels[index].c_str(), paths[index].c_str()};
+    }
+    (void)harness.frame();
+    (void)click_menu(harness, "File");
+    (void)harness.frame();
+    const auto first = harness.drawn_text_center(labels.front());
+    require_menu(first.has_value());
+    check_menu(!harness.drawn_text_center(labels.back()).has_value());
+    SDL_Event motion{};
+    motion.type = SDL_EVENT_MOUSE_MOTION;
+    motion.motion.x = first->first;
+    motion.motion.y = first->second;
+    SDL_Event wheel{};
+    wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.y = -1000;
+    const std::array events{motion, wheel};
+    (void)harness.frame(events);
+    (void)harness.frame();
+    const auto last = harness.drawn_text_center(labels.back());
+    require_menu(last.has_value());
+    check_menu(last->second > 0 && last->second < 500);
+    const auto frames = click_menu(harness, labels.back());
+    const auto opened = std::ranges::find_if(frames, [](const auto& frame) {
+        return frame.get().kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
+    });
+    require_menu(opened != frames.end());
+    check_menu(std::string_view{opened->get().project_path} == paths.back());
 }

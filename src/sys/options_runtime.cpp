@@ -65,6 +65,10 @@ void validate_editor(options_runtime_t& r) {
         "Scroll direction must be Profile default, Up, or Down.");
 }
 void validate_display(options_runtime_t& r) {
+    diagnose(r, WORM_UI_OPTIONS_FIELD_LAYOUT_FIELD_SCHEME, valid_field_scheme_overrides(r.draft.display),
+        "Layout skin overrides must contain at most 128 nonempty layout and skin names of at most 4096 bytes.");
+    diagnose(r, WORM_UI_OPTIONS_FIELD_P1_SCRATCH_POSITION, r.draft.display.scratch_positions[0] <= 3, "Choose Skin default, Chart layout, Left, or Right for Single / P1 scratch.");
+    diagnose(r, WORM_UI_OPTIONS_FIELD_P2_SCRATCH_POSITION, r.draft.display.scratch_positions[1] <= 3, "Choose Skin default, Chart layout, Left, or Right for P2 scratch.");
     diagnose(r, WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY, r.draft.display.field_waveform_opacity_percent <= 100, "Field waveform opacity must be between 0 and 100 percent.");
     diagnose(r, WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY, r.draft.display.snap_grid_opacity_percent <= 100, "Grid opacity must be between 0 and 100 percent.");
     diagnose(r, WORM_UI_OPTIONS_FIELD_FIELD_SCHEME, valid_text(r.draft.display.field_scheme), "Field scheme name is too long or contains a null character.");
@@ -147,9 +151,23 @@ auto edit_audio(program_preferences_t& p, const WormUiOptionsAction& a) -> bool 
     default: return false;
     }
 }
-auto edit_display(program_preferences_t& p, const WormUiOptionsAction& a) -> bool {
+auto edit_layout_field_scheme(program_preferences_t& p, const WormUiOptionsAction& action,
+                              std::string_view layout_key) -> bool {
+    if (layout_key.empty() || layout_key.size() > maximum_preference_string_bytes ||
+        layout_key.find('\0') != std::string_view::npos) return false;
+    auto& overrides = p.display.field_scheme_overrides;
+    if (!action.text[0]) overrides.erase(std::string{layout_key});
+    else overrides.insert_or_assign(std::string{layout_key}, action.text);
+    return valid_field_scheme_overrides(p.display);
+}
+
+auto edit_display(program_preferences_t& p, const WormUiOptionsAction& a,
+                  std::string_view layout_key) -> bool {
     switch (a.field) {
+    case WORM_UI_OPTIONS_FIELD_P1_SCRATCH_POSITION: p.display.scratch_positions[0] = static_cast<std::uint32_t>(std::min<std::uint64_t>(4, a.integer)); return true;
+    case WORM_UI_OPTIONS_FIELD_P2_SCRATCH_POSITION: p.display.scratch_positions[1] = static_cast<std::uint32_t>(std::min<std::uint64_t>(4, a.integer)); return true;
     case WORM_UI_OPTIONS_FIELD_FIELD_SCHEME: p.display.field_scheme = a.text; return true;
+    case WORM_UI_OPTIONS_FIELD_LAYOUT_FIELD_SCHEME: return edit_layout_field_scheme(p, a, layout_key);
     case WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID: p.display.snap_colored_grid = a.boolean; return true;
     case WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY:
         p.display.snap_grid_opacity_percent = static_cast<std::uint32_t>(std::min<std::uint64_t>(100, a.integer)); return true;
@@ -206,7 +224,7 @@ auto edit_field(options_runtime_t& r, const WormUiOptionsAction& action) -> bool
     case WORM_UI_OPTIONS_GENERAL: edited = edit_general(candidate, action); break;
     case WORM_UI_OPTIONS_EDITOR: edited = edit_editor(candidate, action); break;
     case WORM_UI_OPTIONS_AUDIO: edited = edit_audio(candidate, action); break;
-    case WORM_UI_OPTIONS_DISPLAY: edited = edit_display(candidate, action); break;
+    case WORM_UI_OPTIONS_DISPLAY: edited = edit_display(candidate, action, r.current_field_layout_key); break;
     case WORM_UI_OPTIONS_INPUT:
         if (action.field != WORM_UI_OPTIONS_FIELD_SHORTCUT_PATH) return false;
         candidate.general.shortcut_profile_path = action.text; edited = true; break;
@@ -224,6 +242,13 @@ auto toggle_audition_on_click(program_preferences_runtime_t& program, bool& enab
     enabled = program.preferences.editor.audition_on_click;
     return error;
 }
+void set_options_field_layout(options_runtime_t& r, std::string_view key, std::string_view name) {
+    if (key.size() > maximum_preference_string_bytes || key.find('\0') != std::string_view::npos) key = {};
+    if (name.size() > maximum_preference_string_bytes || name.find('\0') != std::string_view::npos) name = {};
+    if (key != r.current_field_layout_key && r.visible) ++r.revision;
+    r.current_field_layout_key = key;
+    r.current_field_layout_name = name;
+}
 void open_options(options_runtime_t& r, const program_preferences_t& preferences) {
     if (r.visible) return;
     r.visible = true;
@@ -232,6 +257,20 @@ void open_options(options_runtime_t& r, const program_preferences_t& preferences
     r.status.clear();
     ++r.revision;
     validate_draft(r);
+}
+auto resolve_scratch_positions(const display_preferences_t& preferences,
+    const std::array<std::optional<bool>, 2>& skin_defaults)
+    -> std::array<std::optional<bool>, 2> {
+    std::array<std::optional<bool>, 2> resolved{};
+    for (std::size_t index = 0; index < resolved.size(); ++index) {
+        switch (preferences.scratch_positions[index]) {
+        case 0: resolved[index] = skin_defaults[index]; break;
+        case 2: resolved[index] = false; break;
+        case 3: resolved[index] = true; break;
+        default: break; // Chart layout or an invalid override preserves authored placement.
+        }
+    }
+    return resolved;
 }
 auto edit_options_draft(options_runtime_t& r, std::uint64_t revision,
     const program_preferences_t& candidate) -> bool {
@@ -272,7 +311,13 @@ auto options_view(options_runtime_t& r) -> WormUiOptionsView {
         .minimap_click_moves_paused_playhead = p.minimap.click_moves_paused_playhead,
         .keysound_budget_mib = p.audio.keysound_budget_mib,
         .rate_numerator = p.audio.playback_rate.numerator, .rate_denominator = p.audio.playback_rate.denominator,
-        .field_scheme = p.display.field_scheme.c_str(), .theme = p.display.theme.c_str(), .dock_layout = p.layout.dock_layout.c_str(),
+        .p1_scratch_position = p.display.scratch_positions[0], .p2_scratch_position = p.display.scratch_positions[1],
+        .field_scheme = p.display.field_scheme.c_str(),
+        .current_field_layout_key = r.current_field_layout_key.c_str(),
+        .current_field_layout_name = r.current_field_layout_name.c_str(),
+        .current_layout_field_scheme = p.display.field_scheme_overrides.contains(r.current_field_layout_key)
+            ? p.display.field_scheme_overrides.at(r.current_field_layout_key).c_str() : "",
+        .theme = p.display.theme.c_str(), .dock_layout = p.layout.dock_layout.c_str(),
         .shortcut_profile_path = p.general.shortcut_profile_path.c_str(), .players = r.player_views.data(),
         .player_count = r.player_views.size(), .selected_player = p.players.selected,
         .diagnostics = r.diagnostic_views.data(), .diagnostic_count = r.diagnostic_views.size(), .status = r.status.c_str()};

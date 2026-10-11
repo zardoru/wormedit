@@ -1,5 +1,6 @@
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/editor_scene.h>
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/virtual_canvas.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
@@ -6751,4 +6752,219 @@ TEST_CASE("cursor paging minimum crosses tiny measures and clamps at canvas ends
     check_page_navigation((state.cursor == local_position_t{measure_id_t{1}, 0}));
     check_page_navigation(history.undo.empty());
     check_page_navigation(history.document.revision == 1);
+}
+
+namespace {
+void check_scratch_pick(const document_history_t& history, const editor_interaction_state_t& state,
+                        lane_id_t scratch) {
+    const auto& chart = history.document.charts.front();
+    const auto inspected = inspect_editor_interaction(history, state);
+    REQUIRE(std::holds_alternative<editor_interaction_view_model_t>(inspected));
+    const auto& viewed = std::get<editor_interaction_view_model_t>(inspected);
+    const auto indexed = build_editor_hit_test_index(chart, history.document.revision);
+    REQUIRE(std::holds_alternative<editor_hit_test_index_t>(indexed));
+    const auto y = editor_position_y_pixels(chart, viewed, {measure_id_t{1}, 240});
+    REQUIRE(y);
+    const auto hit = hit_test_editor(chart, std::get<editor_hit_test_index_t>(indexed), viewed,
+        {.x_pixels = 750, .y_pixels = *y, .field_width_pixels = 800});
+    REQUIRE(hit);
+    CHECK(hit->lane == scratch);
+    CHECK(hit->note == object_id_t{101});
+}
+void check_scratch_move_commit(document_history_t& history) {
+    CHECK(find_note(history, object_id_t{101})->lane == lane_id_t{1});
+    CHECK(find_note(history, object_id_t{102})->lane == lane_id_t{3});
+    REQUIRE(undo_document_command(history));
+    CHECK(find_note(history, object_id_t{101})->lane == lane_id_t{2});
+    CHECK(find_note(history, object_id_t{102})->lane == lane_id_t{1});
+}
+void check_scratch_move_preview(const editor_interaction_result_t& result) {
+    REQUIRE(result);
+    REQUIRE(result.view->pending_note_move_gesture);
+    const auto& moved = result.view->pending_note_move_gesture->preview;
+    REQUIRE(moved.size() == 2);
+    CHECK(moved[0].lane == lane_id_t{1});
+    CHECK(moved[1].lane == lane_id_t{3});
+}
+}
+
+TEST_CASE("Scratch presentation picking follows SP7 right view without changing chart channels or Undo",
+          "[unit][core][interaction][scratch-presentation]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    const auto profile = make_bms_7k_profile();
+    chart.lane_layouts.front().layout = profile.layout;
+    chart.input_profile = profile.input;
+    const auto scratch = std::ranges::find(profile.layout.lanes, lane_role_t::scratch,
+                                           &lane_definition_t::role)->id;
+    chart.measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = scratch}};
+    auto history = make_document_history(std::move(song));
+    const auto before = write_native_project(history.document);
+    REQUIRE(before.bytes);
+    constexpr std::array snaps{std::uint64_t{4}};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, profile.layout.lanes.front().id,
+        {measure_id_t{1}, 0}, snaps, 4);
+    REQUIRE(setup);
+    auto state = *setup.state;
+    state.viewport_height_pixels = 600;
+    state.scratch_on_right = {true, std::nullopt};
+    check_scratch_pick(history, state, scratch);
+    CHECK(write_native_project(history.document).bytes == before.bytes);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Scratch presentation selected drag translates adjacent visual columns atomically",
+          "[unit][core][interaction][gesture][scratch-presentation]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout.lanes[1].display_order = 1;
+    chart.lane_layouts.front().layout.lanes.push_back(
+        {.id = lane_id_t{3}, .name = "Key 3", .display_order = 2});
+    chart.measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{2}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}}};
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    state.scratch_on_right = {false, std::nullopt};
+    state.selected_notes = {object_id_t{101}, object_id_t{102}};
+    REQUIRE(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
+    check_scratch_move_preview(dispatch_editor_action(history, state,
+        update_note_move_gesture_action_t{{measure_id_t{2}, 0}, lane_id_t{1}}));
+    CHECK(history.undo.empty());
+    REQUIRE(dispatch_editor_action(history, state,
+        release_note_move_gesture_action_t{{measure_id_t{2}, 0}, lane_id_t{1}}));
+    check_scratch_move_commit(history);
+}
+
+namespace {
+auto fractional_cursor_song() -> song_document_t {
+    auto song = make_song();
+    song.charts.front().measures = {
+        {.id = measure_id_t{1}, .definition = {.length = {3, 10}}},
+        {.id = measure_id_t{2}, .definition = {.length = {1, 16}}},
+        {.id = measure_id_t{3}, .definition = {.length = {1, 16}}},
+        {.id = measure_id_t{4}},
+    };
+    return song;
+}
+
+void check_fractional_cursor(bool value,
+    std::source_location source = std::source_location::current()) {
+    INFO("fractional cursor assertion line " << source.line());
+    CHECK(value);
+}
+}
+
+TEST_CASE("cursor navigation visits tiny measure heads without skipping or retaining global phase",
+          "[unit][core][interaction][measure-local-snap]") {
+    auto history = make_document_history(fractional_cursor_song());
+    const auto initial_revision = history.document.revision;
+    constexpr std::array snaps{std::uint64_t{4}};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+        {measure_id_t{1}, 240}, snaps, 4, 600.0);
+    REQUIRE(setup);
+    auto state = *setup.state;
+    const std::array expected{
+        local_position_t{measure_id_t{2}, 0}, local_position_t{measure_id_t{3}, 0},
+        local_position_t{measure_id_t{4}, 0}, local_position_t{measure_id_t{4}, 240}};
+    for (const auto target : expected) {
+        const auto moved = dispatch_editor_action(history, state,
+            move_edit_cursor_action_t{interaction_direction_t::forward});
+        check_fractional_cursor(moved.accepted);
+        check_fractional_cursor(state.cursor == target);
+    }
+    for (const auto target : {local_position_t{measure_id_t{4}, 0},
+                              local_position_t{measure_id_t{3}, 0},
+                              local_position_t{measure_id_t{2}, 0},
+                              local_position_t{measure_id_t{1}, 240}}) {
+        const auto moved = dispatch_editor_action(history, state,
+            move_edit_cursor_action_t{interaction_direction_t::backward});
+        check_fractional_cursor(moved.accepted);
+        check_fractional_cursor(state.cursor == target);
+    }
+    check_fractional_cursor(history.document.revision == initial_revision);
+    check_fractional_cursor(history.undo.empty());
+}
+
+TEST_CASE("fixed cursor snapping preserves fractional position across shortened measure origins",
+          "[unit][core][interaction][measure-local-snap]") {
+    auto history = make_document_history(fractional_cursor_song());
+    constexpr std::array snaps{std::uint64_t{4}};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+        {measure_id_t{1}, 0}, snaps, 4, 600.0);
+    REQUIRE(setup);
+    auto state = *setup.state;
+    const auto& chart = history.document.charts.front();
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    state.pixels_per_standard_measure = 960.0;
+    state.fixed_cursor_screen_y_pixels = 100.0;
+    state.viewport_scroll_pixels = 258.0; // Raw row 358: ten rows after the third head.
+    REQUIRE(synchronize_editor_cursor_to_viewport(chart, index, state));
+    check_fractional_cursor(state.cursor == local_position_t{measure_id_t{3}, 0});
+    check_fractional_cursor(state.cursor_subrow == Catch::Approx(10.0));
+    const auto moved = dispatch_editor_action(history, state,
+        move_edit_cursor_action_t{interaction_direction_t::backward});
+    REQUIRE(moved);
+    check_fractional_cursor(state.cursor == local_position_t{measure_id_t{3}, 0});
+    check_fractional_cursor(state.cursor_subrow == 0.0);
+}
+namespace {
+auto tiny_measure_paint_song() -> song_document_t {
+    auto song = make_song();
+    song.charts.front().measures = {
+        {.id = measure_id_t{1}, .definition = {{1, 16}, std::nullopt}},
+        {.id = measure_id_t{2}, .definition = {{1, 16}, std::nullopt}},
+        {.id = measure_id_t{3}}};
+    return song;
+}
+auto tiny_measure_paint_state(document_history_t& history) -> editor_interaction_state_t {
+    constexpr std::array snaps{std::uint64_t{4}};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+        {measure_id_t{1}, 0}, snaps, 4, 192.0);
+    require_note_kind_condition(setup);
+    return *setup.state;
+}
+void check_virtual_measure_fill(bool hold) {
+    auto song = tiny_measure_paint_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    auto state = tiny_measure_paint_state(history);
+    if (hold) require_note_kind_condition(dispatch_editor_action(history, state,
+        place_virtual_bms_hold_action_t{1210, 1690, lane_id_t{1}}));
+    else require_note_kind_condition(dispatch_editor_action(history, state,
+        place_virtual_bms_tap_action_t{1210, lane_id_t{1}}));
+    const auto& measure = history.document.charts.front().measures.back();
+    require_note_kind_condition(measure.notes.size() == 1);
+    check_note_kind_condition(measure.notes.front().position.row == 240);
+    if (hold) check_note_kind_condition(measure.notes.front().end->row == 720);
+    check_note_kind_condition(history.undo.size() == 1);
+    require_note_kind_condition(undo_document_command(history));
+    check_note_kind_condition(history.document.charts.front().measures.size() == 3);
+}
+}
+
+TEST_CASE("Paint crosses tiny measure heads on the same local grid as navigation",
+          "[core][interaction][paint][measure-local-snap]") {
+    auto history = make_document_history(tiny_measure_paint_song());
+    auto state = tiny_measure_paint_state(history);
+    require_note_kind_condition(dispatch_editor_action(history, state,
+        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
+    require_note_kind_condition(dispatch_editor_action(history, state,
+        end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{3}, 480}, true}));
+    const auto& measures = history.document.charts.front().measures;
+    require_note_kind_condition(measures[0].notes.size() == 1 && measures[1].notes.size() == 1);
+    require_note_kind_condition(measures[2].notes.size() == 3);
+    check_note_kind_condition(measures[2].notes[0].position.row == 0);
+    check_note_kind_condition(measures[2].notes[1].position.row == 240);
+    check_note_kind_condition(measures[2].notes[2].position.row == 480);
+    check_note_kind_condition(history.undo.size() == 1);
+    require_note_kind_condition(undo_document_command(history));
+    check_note_kind_condition(note_count(history) == 0);
+}
+
+TEST_CASE("Virtual taps and holds reset snap phase after shortened authored measures",
+          "[core][interaction][virtual-canvas][measure-local-snap]") {
+    check_virtual_measure_fill(false);
+    check_virtual_measure_fill(true);
 }

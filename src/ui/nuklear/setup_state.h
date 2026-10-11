@@ -43,3 +43,21 @@ void worm_ui_nuklear_toggle_all_project_charts(project_chart_selection_t& state,
     std::span<const std::uint64_t> shown);
 [[nodiscard]] project_selection_summary_t worm_ui_nuklear_project_selection_summary(
     const project_chart_selection_t& state, std::span<const std::uint64_t> shown);
+
+struct project_chart_drag_t {
+    std::uint64_t song{};
+    std::uint64_t session_generation{};
+    std::uint64_t revision{};
+    std::uint64_t source{};
+    std::uint64_t target{};
+    bool after{};
+};
+
+// Drag state carries stable row IDs and the document/session in which it started.
+bool worm_ui_nuklear_begin_chart_drag(project_chart_drag_t& state, const WormUiSetupView& view,
+    std::uint64_t source);
+void worm_ui_nuklear_reconcile_chart_drag(project_chart_drag_t& state, const WormUiSetupView& view);
+void worm_ui_nuklear_target_chart_drag(project_chart_drag_t& state, const WormUiSetupView& view,
+    std::uint64_t target, bool after);
+[[nodiscard]] auto worm_ui_nuklear_finish_chart_drag(project_chart_drag_t& state,
+    const WormUiSetupView& view) -> WormUiProjectChartAction;

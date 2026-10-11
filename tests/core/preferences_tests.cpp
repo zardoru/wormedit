@@ -358,3 +358,100 @@ TEST_CASE("Feedback scroll inversion and waveform opacity persist with safe defa
     values.display.field_waveform_opacity_percent = 101;
     expect_preference(!serialize_program_preferences(values));
 }
+
+TEST_CASE("Scratch presentation overrides persist independently with safe defaults", "[preferences][scratch-presentation]") {
+    const auto defaults = parse_program_preferences("{}").preferences;
+    expect_preference(defaults.display.scratch_positions == std::array<std::uint32_t, 2>{0, 0});
+    for (std::uint32_t first = 0; first < 4; ++first) {
+        auto value = defaults;
+        value.display.scratch_positions = {first, 3 - first};
+        const auto bytes = serialize_program_preferences(value);
+        require_preference(bytes.has_value());
+        expect_preference(parse_program_preferences(*bytes).preferences == value);
+    }
+    for (const auto invalid : {R"({"display":{"scratch_positions":[4,2]}})",
+                               R"({"display":{"scratch_positions":[-1,2]}})",
+                               R"({"display":{"scratch_positions":["right",2]}})"}) {
+        const auto parsed = parse_program_preferences(invalid);
+        expect_preference(!parsed.warnings.empty());
+        expect_preference(parsed.preferences.display.scratch_positions == std::array<std::uint32_t, 2>{0, 2});
+    }
+    const auto bad_shape = parse_program_preferences(R"({"display":{"scratch_positions":[3]}})");
+    expect_preference(!bad_shape.warnings.empty());
+    expect_preference(bad_shape.preferences.display.scratch_positions == defaults.display.scratch_positions);
+    auto invalid = defaults;
+    invalid.display.scratch_positions[1] = 4;
+    expect_preference(!serialize_program_preferences(invalid));
+}
+
+TEST_CASE("Field skins resolve explicit layout preferences and global fallback", "[core][preferences][layout-skins]") {
+    display_preferences_t display;
+    expect_preference(resolve_field_scheme(display, "beat-7k") == "wormedit");
+    display.field_scheme = "classic";
+    display.field_scheme_overrides = {{"beat-7k", "bmse"}, {"pump-single", "missing-custom-skin"}};
+    expect_preference(resolve_field_scheme(display, "beat-7k") == "bmse");
+    expect_preference(resolve_field_scheme(display, "dance-single") == "classic");
+    expect_preference(resolve_field_scheme(display, "") == "classic");
+    expect_preference(resolve_field_scheme(display, "pump-single") == "missing-custom-skin");
+    display.field_scheme_overrides.erase("beat-7k");
+    expect_preference(resolve_field_scheme(display, "beat-7k") == "classic");
+    display.field_scheme.clear();
+    expect_preference(resolve_field_scheme(display, "beat-7k") == "wormedit");
+}
+
+TEST_CASE("Layout skins persist while legacy global preferences keep their meaning", "[core][preferences][layout-skins]") {
+    const auto legacy = parse_program_preferences(R"({"display":{"field_scheme":"bmse"}})");
+    expect_preference(legacy.parsed && legacy.warnings.empty());
+    expect_preference(legacy.preferences.display.field_scheme_overrides.empty());
+    expect_preference(resolve_field_scheme(legacy.preferences.display, "beat-5k") == "bmse");
+    auto preferences = legacy.preferences;
+    preferences.display.field_scheme_overrides = {{"beat-7k", "classic"}, {"layout-音楽", "custom-skin"}};
+    const auto bytes = serialize_program_preferences(preferences);
+    require_preference(bytes.has_value());
+    const auto parsed = parse_program_preferences(*bytes);
+    expect_preference(parsed.parsed && parsed.warnings.empty());
+    expect_preference(parsed.preferences == preferences);
+    preferences_test_directory_t directory;
+    expect_preference(static_cast<bool>(save_program_preferences_atomic(directory.path / "preferences.json", preferences)));
+    expect_preference(load_program_preferences(directory.path / "preferences.json").contents.preferences == preferences);
+}
+
+TEST_CASE("Layout skin parser sanitizes invalid entries and bounds map size", "[core][preferences][layout-skins]") {
+    const auto parsed = parse_program_preferences(R"({"display":{"field_scheme":"bmse","field_scheme_overrides":{"beat-7k":"classic","":"bmse","beat-5k":"","bad-type":3,"nul\u0000key":"classic","bad-value":"bad\u0000value"}}})");
+    expect_preference(parsed.parsed && !parsed.warnings.empty());
+    expect_preference(parsed.preferences.display.field_scheme == "bmse");
+    expect_preference(parsed.preferences.display.field_scheme_overrides.size() == 1);
+    expect_preference(resolve_field_scheme(parsed.preferences.display, "beat-7k") == "classic");
+    std::string bytes = R"({"display":{"field_scheme":"classic","field_scheme_overrides":{)";
+    for (unsigned index = 0; index < 129; ++index) {
+        if (index) bytes += ',';
+        bytes += '"' + std::to_string(index) + "\":\"bmse\"";
+    }
+    bytes += "}}}";
+    const auto overflow = parse_program_preferences(bytes);
+    expect_preference(overflow.parsed && !overflow.warnings.empty());
+    expect_preference(overflow.preferences.display.field_scheme_overrides.empty());
+    expect_preference(overflow.preferences.display.field_scheme == "classic");
+}
+
+TEST_CASE("Typed layout skins reject oversized strings and overflowing maps", "[core][preferences][layout-skins]") {
+    auto preferences = default_program_preferences();
+    auto& overrides = preferences.display.field_scheme_overrides;
+    for (unsigned index = 0; index < maximum_field_scheme_overrides; ++index)
+        overrides.emplace(std::to_string(index), "classic");
+    expect_preference(serialize_program_preferences(preferences).has_value());
+    overrides.emplace("overflow", "bmse");
+    expect_preference(!serialize_program_preferences(preferences));
+    overrides.clear();
+    overrides.emplace(std::string(maximum_preference_string_bytes + 1, 'k'), "classic");
+    expect_preference(!serialize_program_preferences(preferences));
+    overrides.clear();
+    overrides.emplace("beat-7k", std::string(maximum_preference_string_bytes + 1, 's'));
+    expect_preference(!serialize_program_preferences(preferences));
+    overrides = {{"beat-7k", ""}};
+    expect_preference(!serialize_program_preferences(preferences));
+    overrides = {{"", "classic"}};
+    expect_preference(!serialize_program_preferences(preferences));
+    overrides = {{std::string(maximum_preference_string_bytes, 'k'), std::string(maximum_preference_string_bytes, 's')}};
+    expect_preference(serialize_program_preferences(preferences).has_value());
+}

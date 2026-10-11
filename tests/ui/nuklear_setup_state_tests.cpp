@@ -153,3 +153,40 @@ TEST_CASE("Selection anchor is dropped when its chart leaves the table", "[unit]
     CHECK(state.anchor == 0);
     CHECK(state.count == 0);
 }
+
+TEST_CASE("Project chart drag retains stable destination IDs and captured guards", "[frontend][setup][chart-reorder]") {
+    WormUiProjectChartRow rows[]{{.chart_id = 10}, {.chart_id = 20}, {.chart_id = 30}};
+    auto view = selection_view(rows, 3);
+    project_chart_drag_t drag;
+    expect_project_state(worm_ui_nuklear_begin_chart_drag(drag, view, 10));
+    worm_ui_nuklear_target_chart_drag(drag, view, 30, true);
+    const auto result = worm_ui_nuklear_finish_chart_drag(drag, view);
+    expect_project_state(result.kind == WORM_UI_PROJECT_CHART_REORDER);
+    expect_project_state(result.chart_id == 10 && result.target_chart_id == 30 && result.insert_after);
+    expect_project_state(result.document_revision == 4 && result.session_generation == 1);
+    expect_project_state(drag.source == 0);
+    expect_project_state(worm_ui_nuklear_begin_chart_drag(drag, view, 20));
+    worm_ui_nuklear_target_chart_drag(drag, view, 20, false);
+    expect_project_state(worm_ui_nuklear_finish_chart_drag(drag, view).kind == WORM_UI_PROJECT_CHART_NONE);
+    expect_project_state(worm_ui_nuklear_begin_chart_drag(drag, view, 20));
+    worm_ui_nuklear_target_chart_drag(drag, view, 999, false);
+    expect_project_state(worm_ui_nuklear_finish_chart_drag(drag, view).kind == WORM_UI_PROJECT_CHART_NONE);
+}
+
+TEST_CASE("Project chart drags cancel when their document session or visible rows expire", "[frontend][setup][chart-reorder]") {
+    WormUiProjectChartRow rows[]{{.chart_id = 10}, {.chart_id = 20}};
+    const auto original = selection_view(rows, 2);
+    for (int change = 0; change < 5; ++change) {
+        auto view = original;
+        project_chart_drag_t drag;
+        expect_project_state(worm_ui_nuklear_begin_chart_drag(drag, view, 10));
+        worm_ui_nuklear_target_chart_drag(drag, view, 20, false);
+        if (change == 0) ++view.document_revision;
+        if (change == 1) ++view.session_generation;
+        if (change == 2) view.visible = false;
+        if (change == 3) view.chart_row_count = 1;
+        if (change == 4) ++view.song_id;
+        expect_project_state(worm_ui_nuklear_finish_chart_drag(drag, view).kind == WORM_UI_PROJECT_CHART_NONE);
+        expect_project_state(drag.source == 0);
+    }
+}

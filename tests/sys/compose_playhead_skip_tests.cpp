@@ -141,3 +141,22 @@ TEST_CASE("page skips enforce two beats per step across tiny measures", "[sys][p
     CHECK(target(10, -2) == 0);
     CHECK(skip(100, playhead_skip_unit_t::page, 1) == 1060);
 }
+
+TEST_CASE("Playing snap and beat skips restart at shortened measure heads",
+          "[sys][playhead-skip]") {
+    measure_index_t index;
+    index.entries = {{.id = measure_id_t{1}, .absolute_begin_row = 0, .row_capacity = 320},
+                     {.id = measure_id_t{2}, .absolute_begin_row = 320, .row_capacity = 1},
+                     {.id = measure_id_t{3}, .absolute_begin_row = 321, .row_capacity = 960}};
+    index.total_rows = 1281;
+    for (const auto unit : {playhead_skip_unit_t::snap, playhead_skip_unit_t::beat}) {
+        check_beat_skip(playhead_skip_target_row(index, 240, unit, 1, 960, 4) == 320);
+        check_beat_skip(playhead_skip_target_row(index, 240, unit, 2, 960, 4) == 321);
+        check_beat_skip(playhead_skip_target_row(index, 240, unit, 3, 960, 4) == 561);
+        check_beat_skip(playhead_skip_target_row(index, 561, unit, -3, 960, 4) == 240);
+        check_beat_skip(playhead_skip_target_row(index, 330, unit, -1, 960, 4) == 321);
+        check_beat_skip(playhead_skip_target_row(index, 321, unit, -1, 960, 4) == 320);
+        check_beat_skip(playhead_skip_target_row(index, 330, unit, 1e30, 960, 4) == 1280);
+        check_beat_skip(playhead_skip_target_row(index, 330, unit, -1e30, 960, 4) == 0);
+    }
+}

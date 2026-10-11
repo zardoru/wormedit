@@ -17,11 +17,34 @@ namespace wormedit {
                                                    std::uint64_t grid_denominator,
                                                    bool snap_enabled) noexcept -> std::uint64_t;
 
-// Rounds an absolute row to the nearest multiple of one 1/denominator step; ties go to the
-// earlier row. Nullopt when the denominator is zero or does not divide the chart's divisions.
+// Rounds onto a measure-relative grid, including measure heads; ties go earlier.
+// Nullopt when the denominator is zero or does not divide the chart's divisions.
 [[nodiscard]] auto snap_absolute_row(const chart_document_t& chart, std::uint64_t absolute_row,
-                                     std::uint64_t denominator) noexcept
+                                     std::uint64_t denominator)
     -> std::optional<std::uint64_t>;
+
+// Indexed overload avoids rebuilding measure geometry. Like the compatibility overload,
+// it can round to the chart end or its arithmetic standard-measure tail.
+[[nodiscard]] auto snap_absolute_row(const chart_document_t& chart, const measure_index_t& index,
+                                     std::uint64_t absolute_row, std::uint64_t denominator) noexcept
+    -> std::optional<std::uint64_t>;
+
+// Nearest valid grid row in [0, canvas_rows), with ties going earlier. A shortened
+// measure's next head is a grid point even when its length is less than one step.
+[[nodiscard]] auto snap_canvas_row(const chart_document_t& chart, const measure_index_t& index,
+                                   long double absolute_row, std::uint64_t denominator,
+                                   std::uint64_t canvas_rows) noexcept
+    -> std::optional<std::uint64_t>;
+
+// Strict next/previous measure-local grid point. Fractional steps support playback
+// beats in low-resolution charts. The virtual tail starts at index.total_rows.
+[[nodiscard]] auto adjacent_measure_grid_row(const measure_index_t& index,
+    long double absolute_row, long double step, std::uint64_t standard_measure_rows,
+    std::uint64_t canvas_rows, bool forward) noexcept -> std::optional<long double>;
+
+[[nodiscard]] auto adjacent_snap_canvas_row(const chart_document_t& chart,
+    const measure_index_t& index, long double absolute_row, std::uint64_t denominator,
+    std::uint64_t canvas_rows, bool forward) noexcept -> std::optional<std::uint64_t>;
 
 // The position of an absolute row, or nullopt when it lies beyond the chart.
 [[nodiscard]] auto position_at_absolute_row(const measure_index_t& index, std::uint64_t absolute)

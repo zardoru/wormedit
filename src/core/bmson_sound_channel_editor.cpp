@@ -88,6 +88,29 @@ auto apply_bmson_restart_state(document_history_t& history,
 
 } // namespace
 
+namespace {
+auto razor_grid_positions(const chart_document_t& chart, const measure_index_t& index,
+    std::uint64_t first, std::uint64_t last, std::uint64_t denominator,
+    std::size_t maximum_positions) -> std::optional<std::vector<local_position_t>> {
+    if (snap_absolute_row(chart, index, first, denominator) != first ||
+        snap_absolute_row(chart, index, last, denominator) != last) return std::nullopt;
+    std::vector<local_position_t> positions;
+    positions.reserve(maximum_positions);
+    auto row = first;
+    while (row != last) {
+        if (positions.size() == maximum_positions) return std::nullopt;
+        const auto next = adjacent_snap_canvas_row(chart, index, row, denominator,
+                                                   index.total_rows, first < last);
+        if (!next || (first < last ? *next > last : *next < last)) return std::nullopt;
+        const auto position = position_at_absolute_row(index, *next);
+        if (!position) return std::nullopt;
+        positions.push_back(*position);
+        row = *next;
+    }
+    return positions;
+}
+} // namespace
+
 auto interpolate_bmson_razor_path(const chart_document_t& chart,
                                   local_position_t from, local_position_t to,
                                   std::uint64_t snap_denominator,
@@ -125,30 +148,16 @@ auto interpolate_bmson_razor_path(const chart_document_t& chart,
                     "BMSON razor path has an unsupported snap denominator");
         return result;
     }
-    const auto step = snap_denominator == 0
-        ? std::uint64_t{1}
-        : chart.divisions_per_standard_measure / snap_denominator;
-    if (step == 0 || *first % step != 0 || *last % step != 0 ||
-        (*first > *last ? *first - *last : *last - *first) / step > maximum_positions) {
+    const auto denominator = snap_denominator == 0
+        ? chart.divisions_per_standard_measure : snap_denominator;
+    auto positions = razor_grid_positions(chart, index, *first, *last, denominator,
+                                                maximum_positions);
+    if (!positions) {
         reject_path(diagnostic_code_t::invalid_resolution,
                     "BMSON razor path exceeds its grid or marker capacity");
         return result;
     }
-    const auto count = (*first > *last ? *first - *last : *last - *first) / step;
-    result.positions.reserve(static_cast<std::size_t>(count));
-    for (std::uint64_t offset = 1; offset <= count; ++offset) {
-        const auto row = *first < *last ? *first + offset * step : *first - offset * step;
-        const auto after = std::ranges::upper_bound(index.entries, row, {},
-                                                     &measure_index_entry_t::absolute_begin_row);
-        if (after == index.entries.begin()) {
-            reject_path(diagnostic_code_t::invalid_measure,
-                        "BMSON razor path cannot resolve a measure boundary");
-            result.positions.clear();
-            return result;
-        }
-        const auto entry = std::prev(after);
-        result.positions.push_back({entry->id, row - entry->absolute_begin_row});
-    }
+    result.positions = std::move(*positions);
     return result;
 }
 

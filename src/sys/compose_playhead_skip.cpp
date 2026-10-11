@@ -1,5 +1,7 @@
 #include "sys/compose_playhead_skip.h"
 
+#include <wormedit/core/snap.h>
+
 #include <algorithm>
 #include <cmath>
 #include <iterator>
@@ -8,23 +10,36 @@
 namespace wormedit::sys {
 namespace {
 
-constexpr double grid_epsilon = 1e-6;
-
-auto clamp_row(double row, const measure_index_t& measures) -> std::uint64_t {
-    const auto last = static_cast<double>(measures.total_rows - 1);
-    return static_cast<std::uint64_t>(std::clamp(std::floor(row + 0.5), 0.0, last));
+auto clamp_row(long double row, const measure_index_t& measures) -> std::uint64_t {
+    const auto last = static_cast<long double>(measures.total_rows - 1);
+    return static_cast<std::uint64_t>(std::clamp(std::floor(row + 0.5L), 0.0L, last));
 }
 
-auto snap_target(double playhead, double amount, double step) -> double {
-    const auto count = std::llround(amount);
-    if (count == 0) return playhead;
-    const auto position = playhead / step;
-    const auto on_grid = std::abs(position - std::round(position)) < grid_epsilon;
-    const auto nearest = std::round(position);
-    // Strictly past the playhead: from a grid row take a full step, else go to the next line.
-    const auto first = count > 0 ? (on_grid ? nearest + 1.0 : std::ceil(position))
-                                 : (on_grid ? nearest - 1.0 : std::floor(position));
-    return (first + static_cast<double>(count > 0 ? count - 1 : count + 1)) * step;
+// Advance within one measure arithmetically, visiting each crossed head once.
+auto snap_target(const measure_index_t& measures, double playhead, double amount,
+                 long double step, std::uint64_t standard_rows) -> long double {
+    auto remaining = std::abs(std::round(static_cast<long double>(amount)));
+    auto row = std::clamp(static_cast<long double>(playhead), 0.0L,
+                          static_cast<long double>(measures.total_rows - 1));
+    const bool forward = amount > 0;
+    while (remaining > 0) {
+        const auto next = adjacent_measure_grid_row(measures, row, step, standard_rows,
+                                                    measures.total_rows, forward);
+        if (!next) return forward ? static_cast<long double>(measures.total_rows - 1) : 0.0L;
+        row = *next;
+        --remaining;
+        const auto after = std::ranges::upper_bound(measures.entries, row, {},
+                                                    &measure_index_entry_t::absolute_begin_row);
+        if (after == measures.entries.begin()) continue;
+        const auto& measure = *std::prev(after);
+        const auto boundary = static_cast<long double>(measure.absolute_begin_row) +
+                              (forward ? measure.row_capacity : 0);
+        const auto available = std::floor(std::abs(boundary - row) / step);
+        const auto count = std::min(remaining, available);
+        row += (forward ? step : -step) * count;
+        remaining -= count;
+    }
+    return row;
 }
 
 auto measure_target(const measure_index_t& measures, double playhead, double amount) -> double {
@@ -72,14 +87,15 @@ auto playhead_skip_target_row(const measure_index_t& measures, double playhead_r
             return std::nullopt;
         const auto step = static_cast<double>(divisions_per_measure / snap_denominator);
         if (step <= 0.0) return std::nullopt;
-        return clamp_row(snap_target(playhead_row, amount, step), measures);
+        return clamp_row(snap_target(measures, playhead_row, amount, step, divisions_per_measure), measures);
     }
     case playhead_skip_unit_t::beat: {
         if (divisions_per_measure == 0) return std::nullopt;
-        auto target = snap_target(playhead_row, amount,
-                                  static_cast<double>(divisions_per_measure) / 4.0);
-        if (amount >= 0.5) target = std::max(target, std::floor(playhead_row) + 1.0);
-        if (amount <= -0.5) target = std::min(target, std::ceil(playhead_row) - 1.0);
+        auto target = snap_target(measures, playhead_row, amount,
+                                  static_cast<long double>(divisions_per_measure) / 4.0L,
+                                  divisions_per_measure);
+        if (amount >= 0.5) target = std::max(target, std::floor(static_cast<long double>(playhead_row)) + 1.0L);
+        if (amount <= -0.5) target = std::min(target, std::ceil(static_cast<long double>(playhead_row)) - 1.0L);
         return clamp_row(target, measures);
     }
     case playhead_skip_unit_t::measure:

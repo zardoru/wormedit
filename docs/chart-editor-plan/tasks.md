@@ -13,6 +13,18 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Priority user feedback: skins and 10K layouts](tasks/feedback-skins.md)
 - [Priority user feedback: navigation and waveform controls](tasks/feedback-navigation.md)
 - [Priority user feedback: bookmarks and song listing](tasks/feedback-library.md)
+- [Menu pointer capture](tasks/menu-input-capture.md)
+- [Skin scratch placement and user overrides](tasks/scratch-presentation.md)
+- [Options dialog resizing](tasks/options-dialog.md)
+- [Recent projects and startup layout](tasks/recent-projects.md)
+- [Opaque dropdown surfaces and shadows](tasks/dropdown-surfaces.md)
+- [Chart table header and grip reordering](tasks/chart-table-reorder.md)
+- [Bundled skin lane mapping](tasks/bundled-skin-lanes.md)
+- [Options dialog dragging](tasks/options-dialog-drag.md)
+- [Semantic skin palettes](tasks/semantic-skins.md)
+- [Per-layout skin preferences](tasks/layout-skin-preferences.md)
+- [Semantic layout identity and osu classes](tasks/semantic-layout-identity.md)
+- [Measure-local snapping and navigation](tasks/measure-local-snapping.md)
 
 - [Select input and Help scratchpad](tasks/scratchpad-help.md)
 
@@ -78,7 +90,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Bookmark rename harness gesture alignment](tasks/bookmark-rename-harness.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-524.
+every number above T-536.
 
 ## Rules for whoever executes a card
 

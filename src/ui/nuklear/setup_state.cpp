@@ -119,3 +119,44 @@ void worm_ui_nuklear_reconcile_project_selection(project_chart_selection_t& stat
     if (!exists(state.pending_delete) || state.pending_delete_revision != view.document_revision)
         state.pending_delete = 0;
 }
+
+namespace {
+bool chart_row_exists(const WormUiSetupView& view, std::uint64_t id) {
+    if (!id || !view.charts || view.chart_row_count > WORM_UI_PROJECT_CHART_CAPACITY) return false;
+    return std::any_of(view.charts, view.charts + view.chart_row_count,
+        [id](const auto& row) { return row.chart_id == id; });
+}
+}
+
+bool worm_ui_nuklear_begin_chart_drag(project_chart_drag_t& state, const WormUiSetupView& view,
+    std::uint64_t source) {
+    state = {};
+    if (!view.visible || !chart_row_exists(view, source)) return false;
+    state = {view.song_id, view.session_generation, view.document_revision, source};
+    return true;
+}
+
+void worm_ui_nuklear_reconcile_chart_drag(project_chart_drag_t& state, const WormUiSetupView& view) {
+    if (!view.visible || state.song != view.song_id || state.session_generation != view.session_generation ||
+        state.revision != view.document_revision || !chart_row_exists(view, state.source) ||
+        (state.target && !chart_row_exists(view, state.target))) state = {};
+}
+
+void worm_ui_nuklear_target_chart_drag(project_chart_drag_t& state, const WormUiSetupView& view,
+    std::uint64_t target, bool after) {
+    worm_ui_nuklear_reconcile_chart_drag(state, view);
+    state.target = state.source && chart_row_exists(view, target) ? target : 0;
+    state.after = after;
+}
+
+auto worm_ui_nuklear_finish_chart_drag(project_chart_drag_t& state, const WormUiSetupView& view)
+    -> WormUiProjectChartAction {
+    worm_ui_nuklear_reconcile_chart_drag(state, view);
+    WormUiProjectChartAction result{};
+    if (state.source && state.target && state.source != state.target)
+        result = {.kind = WORM_UI_PROJECT_CHART_REORDER, .document_revision = state.revision,
+            .session_generation = state.session_generation, .chart_id = state.source,
+            .target_chart_id = state.target, .insert_after = state.after};
+    state = {};
+    return result;
+}

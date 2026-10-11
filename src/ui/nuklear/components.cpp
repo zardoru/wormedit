@@ -104,8 +104,9 @@ void paint_surface(struct nk_command_buffer* canvas, struct nk_rect bounds, int 
     if (!canvas) return;
     const auto clip = canvas->clip;
     const auto shadow = metrics::elevation(elevation);
+    // Surface fill must not inherit a content inset, even without elevation.
+    nk_push_scissor(canvas, surface_shadow_clip(bounds, elevation, limit));
     if (shadow.steps > 0) {
-        nk_push_scissor(canvas, surface_shadow_clip(bounds, elevation, limit));
         for (int step = 1; step <= shadow.steps; ++step) {
             const auto grow = static_cast<float>(step);
             nk_fill_rect(canvas,

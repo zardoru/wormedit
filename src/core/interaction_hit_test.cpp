@@ -614,27 +614,13 @@ auto valid_hit_request(const chart_document_t& chart, const editor_hit_test_inde
            view.viewport_height_pixels > 0.0 && chart.divisions_per_standard_measure != 0;
 }
 
-auto hit_test_lanes(const lane_layout_t& layout) -> std::vector<const lane_definition_t*> {
-    std::vector<const lane_definition_t*> lanes;
-    lanes.reserve(layout.lanes.size());
-    for (const auto& lane : layout.lanes)
-        if (editable_lane(lane)) lanes.push_back(&lane);
-    std::ranges::sort(lanes, [split_stage = layout.split_stage](const auto* left, const auto* right) {
-        if (split_stage && left->stage != right->stage) return left->stage < right->stage;
-        if (left->display_order != right->display_order)
-            return left->display_order < right->display_order;
-        return left->id.value < right->id.value;
-    });
-    return lanes;
-}
-
 auto lane_at_pointer(const chart_document_t& chart, const editor_hit_test_index_t& index,
                      const editor_interaction_view_model_t& view,
                      const editor_hit_test_request_t& request, local_position_t position)
     -> std::optional<lane_id_t> {
     const auto* layout = effective_layout(chart, index.measures, position);
     if (!layout) return std::nullopt;
-    const auto lanes = hit_test_lanes(*layout);
+    const auto lanes = editor_presented_lanes(*layout, view.scratch_on_right);
     if (lanes.empty()) return std::nullopt;
     const auto lane_width = request.field_width_pixels / static_cast<double>(lanes.size());
     const auto offset = (request.x_pixels - request.field_left_pixels) / lane_width;

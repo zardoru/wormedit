@@ -372,7 +372,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     )
     target_include_directories(wormedit_options_state_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
     target_link_libraries(wormedit_options_state_tests PRIVATE
-        wormedit::core SDL3::SDL3 Catch2::Catch2WithMain)
+        wormedit::core SDL3::SDL3 nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
     catch_discover_tests(wormedit_options_state_tests
         TEST_PREFIX "frontend-state."
         PROPERTIES LABELS "unit;options"

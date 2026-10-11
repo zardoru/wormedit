@@ -79,8 +79,28 @@ auto project_chart_row(const song_document_t& document, const chart_document_t& 
 }
 } // namespace
 
+namespace {
+auto reorder_project_chart(document_history_t& history, const project_chart_command_t& action)
+    -> project_chart_command_result_t {
+    const auto& charts = history.document.charts;
+    const auto source = std::ranges::find(charts, action.chart, &chart_document_t::id);
+    const auto target = std::ranges::find(charts, action.target_chart, &chart_document_t::id);
+    if (action.expected_revision != history.document.revision || source == charts.end() || target == charts.end())
+        return {.command = {.revision = history.document.revision, .diagnostics = {{
+            .severity = diagnostic_severity_t::error, .code = diagnostic_code_t::invalid_id,
+            .message = "Chart reorder is stale or its source or destination no longer exists."}}}};
+    const auto source_index = static_cast<std::size_t>(source - charts.begin());
+    auto destination = static_cast<std::size_t>(target - charts.begin()) + (action.insert_after ? 1 : 0);
+    if (destination > source_index) --destination;
+    if (destination == source_index) return {.command = {.revision = history.document.revision}};
+    return {.command = apply_reorder_chart_command(history, action.expected_revision, action.chart, destination)};
+}
+} // namespace
+
 auto apply_project_chart_command(document_history_t& history,
     const project_chart_command_t& action) -> project_chart_command_result_t {
+    if (action.kind == project_chart_command_kind_t::reorder)
+        return reorder_project_chart(history, action);
     if (action.kind == project_chart_command_kind_t::create) {
         auto created = history.document.charts.empty()
             ? apply_new_chart_command(history, action.expected_revision)
@@ -142,6 +162,7 @@ auto ui_command_kind(WormUiProjectChartActionKind kind) -> std::optional<project
     case WORM_UI_PROJECT_CHART_DOWN: return project_chart_command_kind_t::move_down;
     case WORM_UI_PROJECT_CHART_OPEN: return project_chart_command_kind_t::open;
     case WORM_UI_PROJECT_CHART_BATCH_METADATA: return project_chart_command_kind_t::batch_metadata;
+    case WORM_UI_PROJECT_CHART_REORDER: return project_chart_command_kind_t::reorder;
     default: return std::nullopt;
     }
 }
@@ -208,7 +229,8 @@ auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,
     const auto kind = ui_command_kind(action.kind);
     if (!kind) return {.status = "Project chart action is invalid."};
     project_chart_command_t command{.kind = *kind, .expected_revision = action.document_revision,
-        .chart = chart_id_t{action.chart_id}};
+        .chart = chart_id_t{action.chart_id}, .target_chart = chart_id_t{action.target_chart_id},
+        .insert_after = action.insert_after};
     if (*kind == project_chart_command_kind_t::create && active_chart) command.chart = *active_chart;
     if (*kind == project_chart_command_kind_t::batch_metadata) {
         const auto metadata = ui_batch_metadata(action);

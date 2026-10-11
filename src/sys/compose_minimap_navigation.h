@@ -11,7 +11,7 @@ struct compose_minimap_target_t {
 };
 [[nodiscard]] auto compose_minimap_target(double fraction, std::uint64_t total_frames,
     std::uint32_t waveform_rate, std::uint32_t preview_rate, const timing_index_t& timing,
-    std::uint64_t snap_denominator, std::optional<std::uint64_t> compiled_end = {})
+    const measure_index_t& measures, std::uint64_t snap_denominator, std::optional<std::uint64_t> compiled_end = {})
     -> std::optional<compose_minimap_target_t>;
 [[nodiscard]] auto move_compose_minimap_cursor(document_history_t& history,
     editor_interaction_state_t& state, const measure_index_t& measures,

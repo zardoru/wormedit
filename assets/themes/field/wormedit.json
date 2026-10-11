@@ -104,30 +104,6 @@
       "lane_alternate": "#252c39a0",
       "lane_label": "#f0f4fa"
     },
-    "white": {
-      "note": "$slate.200",
-      "note_border": "$slate.700",
-      "lane": "#2c303aa0",
-      "hold_body": "#e2e8f099",
-      "lane_alternate": "#30343ea0",
-      "lane_label": "#f0f4fa"
-    },
-    "black": {
-      "note": "$blue.500",
-      "note_border": "$blue.800",
-      "lane": "#1e2532a0",
-      "hold_body": "#3b82f699",
-      "lane_alternate": "#222936a0",
-      "lane_label": "#f0f4fa"
-    },
-    "scratch": {
-      "note": "$red.400",
-      "note_border": "$red.700",
-      "lane": "#302228a0",
-      "hold_body": "#f8717199",
-      "lane_alternate": "#34262ca0",
-      "lane_label": "#f0f4fa"
-    },
     "foot_pedal": {
       "note": "$cyan.400",
       "note_border": "$cyan.700",
@@ -143,46 +119,6 @@
       "hold_body": "#fbbf2499",
       "lane_alternate": "#332d24a0",
       "lane_label": "#f0f4fa"
-    },
-    "pms_white": {
-      "note": "$neutral.100",
-      "note_border": "$slate.700",
-      "lane": "#2c303aa0",
-      "hold_body": "#e9ebf299",
-      "lane_alternate": "#30343ea0",
-      "lane_label": "#f0f4fa"
-    },
-    "pms_yellow": {
-      "note": "$yellow.400",
-      "note_border": "$yellow.700",
-      "lane": "#2f2c1fa0",
-      "hold_body": "#facc1599",
-      "lane_alternate": "#333023a0",
-      "lane_label": "#f0f4fa"
-    },
-    "pms_green": {
-      "note": "$green.400",
-      "note_border": "$green.700",
-      "lane": "#1d2d24a0",
-      "hold_body": "#4ade8099",
-      "lane_alternate": "#213128a0",
-      "lane_label": "#f0f4fa"
-    },
-    "pms_blue": {
-      "note": "$blue.400",
-      "note_border": "$blue.700",
-      "lane": "#1e2737a0",
-      "hold_body": "#60a5fa99",
-      "lane_alternate": "#222b3ba0",
-      "lane_label": "#f0f4fa"
-    },
-    "pms_red": {
-      "note": "$red.400",
-      "note_border": "$red.700",
-      "lane": "#302228a0",
-      "hold_body": "#f8717199",
-      "lane_alternate": "#34262ca0",
-      "lane_label": "#f0f4fa"
     }
   },
   "note_accents": [
@@ -195,7 +131,6 @@
     "#f474ae",
     "#82dbce"
   ],
-  "keys": {},
   "bgm": {
     "lane": "#26222f",
     "lane_alternate": "#2b2634",
@@ -203,5 +138,47 @@
     "hold_body": "#665871",
     "label": "#fff5ff"
   },
-  "timing": {}
+  "timing": {},
+  "lane_classes": {
+    "white": {
+      "note": "$slate.200",
+      "note_border": "$slate.700",
+      "lane": "#2c303aa0",
+      "hold_body": "#e2e8f099",
+      "lane_alternate": "#30343ea0",
+      "lane_label": "#f0f4fa"
+    },
+    "blue": {
+      "note": "$blue.500",
+      "note_border": "$blue.800",
+      "lane": "#1e2532a0",
+      "hold_body": "#3b82f699",
+      "lane_alternate": "#222936a0",
+      "lane_label": "#f0f4fa"
+    },
+    "green": {
+      "note": "$green.400",
+      "note_border": "$green.700",
+      "lane": "#1d2d24a0",
+      "hold_body": "#4ade8099",
+      "lane_alternate": "#213128a0",
+      "lane_label": "#f0f4fa"
+    },
+    "yellow": {
+      "note": "$yellow.400",
+      "note_border": "$yellow.700",
+      "lane": "#2f2c1fa0",
+      "hold_body": "#facc1599",
+      "lane_alternate": "#333023a0",
+      "lane_label": "#f0f4fa"
+    },
+    "red": {
+      "note": "$red.400",
+      "note_border": "$red.700",
+      "lane": "#302228a0",
+      "hold_body": "#f8717199",
+      "lane_alternate": "#34262ca0",
+      "lane_label": "#f0f4fa"
+    }
+  }
 }

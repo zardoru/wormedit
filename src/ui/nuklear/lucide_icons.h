@@ -15,6 +15,7 @@ enum class Glyph : std::uint8_t {
     audio_lines, layers, chevrons_left, chevrons_right, magnet, metronome,
     lock, lock_open, eye_off, music_2,
     chevron_up, chevron_down,
+    grip_vertical,
     count
 };
 

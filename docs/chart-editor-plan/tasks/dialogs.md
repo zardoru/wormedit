@@ -16,12 +16,12 @@ The causes, found while planning:
 
 ## Dialog design rules (apply to every card here)
 
-- **Surface:** `chrome::paint_surface` at elevation 2 (T-436): rounded corners of 8 px, a soft shadow that falls over the workspace, and a 1 px `border_hover` stroke. No Nuklear title bar, and no dragging.
+- **Surface:** `chrome::paint_surface` at elevation 2 (T-436): rounded corners of 8 px, a soft shadow that falls over the workspace, and a 1 px `border_hover` stroke. No Nuklear title bar. Alerts remain immovable; settings tools may opt into a grip and draggable header (T-532).
 - **Padding:** 16 px on every side, and 8 px between rows. No scrollbar gutter unless the body really scrolls.
 - **Header:** a 15 px title row (bold or `text_strong` color) with a ghost close icon at the right for non-modal tools. Confirmation dialogs have no close icon, and Escape cancels them.
 - **Body:** say a thing once, and put secondary explanations in tooltips. No wall of help sentences.
 - **Footer:** buttons are right-aligned and the same height (28 px). The primary action is rightmost, uses the accent fill, and Enter triggers it. A destructive action sits at the far left, separated by space. Escape triggers Cancel.
-- **Size:** the height fits the content, measured on the previous frame (two-pass). The dialog is centered in the window. Modal dialogs dim the window behind them with `rgba(0,0,0,0.35)`.
+- **Size:** the height fits the content, measured on the previous frame (two-pass). The dialog is centered in the window. Modal dialogs dim the window behind them with `rgba(0,0,0,0.35)`. Options is a settings-tool exception (T-527/T-532): it opts into retained resizing and header movement, expands its scrollable panes and anchors actions at the bottom. Existing confirmations keep content-fit sizing.
 
 ## T-407 Add a shared `chrome::Dialog` component
 

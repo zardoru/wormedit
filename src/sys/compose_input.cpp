@@ -2283,7 +2283,7 @@ auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input
     const auto end = context.application_state.transport_preview_end_frame
         ? context.application_state.transport_preview_end_frame() : std::nullopt;
     const auto target = compose_minimap_target(input.audio_fraction, cache.waveform_overview_total_frames,
-        cache.waveform_overview_sample_rate, audio::output_sample_rate, *cache.marker_timing_index,
+        cache.waveform_overview_sample_rate, audio::output_sample_rate, *cache.marker_timing_index, cache.index->measures,
         edit_snap_denominator(*context.input_chart, context.state), end);
     if (!target) return compose_input_family_result_t{"Waveform overview seek is unavailable."};
     const auto& application = context.application_state;
@@ -3799,17 +3799,21 @@ auto append_bga_draw_targets(application_command_state_t::bga_draw_stroke_t& str
     const wormedit::chart_document_t& chart, const wormedit::measure_index_t& index,
     const wormedit::editor_interaction_state_t& state, uint64_t row, uint8_t kind) -> bool {
     const auto denominator = wormedit::edit_snap_denominator(chart, state);
-    const auto step = denominator ? chart.divisions_per_standard_measure / denominator : 1;
-    if (!step) return false;
+    if (!denominator) return false;
     const auto [first, last] = std::minmax(stroke.last_row, row);
-    for (auto current = first;; current += step) {
+    auto current = first;
+    for (;;) {
         if (stroke.visited.emplace(current, kind).second) {
             if (stroke.targets.size() >= 50'000) return false;
             const auto position = wormedit::position_at_absolute_row(index, current);
             if (!position) return false;
             stroke.targets.push_back({*position, static_cast<wormedit::visual_event_kind_t>(kind)});
         }
-        if (last - current < step) break;
+        if (current == last) break;
+        const auto next = wormedit::adjacent_snap_canvas_row(chart, index, current,
+            denominator, index.total_rows, true);
+        if (!next || *next > last) return false;
+        current = *next;
     }
     stroke.last_row = row;
     return true;
@@ -4319,6 +4323,8 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
                                    const wormedit::notification_sink_t* notifications)
     -> std::string {
     using namespace wormedit;
+    if (!editor_interaction_has_pending_gesture(state))
+        state.scratch_on_right = application_state.scratch_on_right;
     scene_cache.audition_request.reset();
     scene_cache.draft_audition_request.reset();
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||

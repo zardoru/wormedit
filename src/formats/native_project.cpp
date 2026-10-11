@@ -259,10 +259,10 @@ void from_json(const json& value, lane_layout_t& layout) {
     const auto& lanes = value.at("lanes");
     const auto missing_color = std::ranges::any_of(
         lanes, [](const json& lane) { return !lane.contains("key_color"); });
-    // 10K osu!mania-style layouts gained their key colors after projects were already saved
-    // with every lane generic, so those are derived again on load.
-    const auto needs_10k_colors =
-        (layout.profile_id == "osu-mania-10k" || layout.profile_id == "bms-10k-scratchless") &&
+    // osu!mania layouts gained semantic key classes after projects were already saved
+    // with every lane generic. Derive those defaults again; retain explicit classes.
+    const auto needs_osu_colors =
+        (layout.profile_id.starts_with("osu-mania-") || layout.profile_id == "bms-10k-scratchless") &&
         std::ranges::all_of(layout.lanes, [](const lane_definition_t& lane) {
             return lane.key_color == lane_key_color_t::generic;
         });
@@ -272,7 +272,7 @@ void from_json(const json& value, lane_layout_t& layout) {
             return lane.key_color == lane_key_color_t::generic;
         });
     if (missing_color || needs_bmson_colors) repair_legacy_bmson_beat_order(layout);
-    if (missing_color || needs_10k_colors || needs_bmson_colors) {
+    if (missing_color || needs_osu_colors || needs_bmson_colors) {
         assign_lane_key_colors(layout);
     }
 }

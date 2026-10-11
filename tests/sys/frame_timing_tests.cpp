@@ -6237,3 +6237,28 @@ TEST_CASE("Select lane keys cannot start notes at authored or virtual cursor row
     expect_compose_test(f.compose.history.undo.empty());
     expect_compose_test(placed_resource_notifications.empty());
 }
+
+TEST_CASE("Compose snap colors use measure-local grid and note endpoint phase",
+          "[sys][compose-geometry][measure-local-grid]") {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    chart.measures = {
+        {.id = measure_id_t{1}, .definition = {{1, 16}, std::nullopt}},
+        {.id = measure_id_t{2}, .notes = {
+            {.id = object_id_t{30}, .position = {measure_id_t{2}, 240}, .lane = lane_id_t{1}},
+            {.id = object_id_t{31}, .position = {measure_id_t{2}, 480}, .lane = lane_id_t{1},
+             .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{2}, 720}},
+        }},
+    };
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.project();
+    const auto& view = fixture.flattened.view.compose;
+    const auto* rendered = view.static_scene ? view.static_scene : &view;
+    const auto grid = std::span(rendered->grid_lines, rendered->grid_line_count);
+    const auto beat = std::ranges::find(grid, 300, &WormUiComposeGridLineView::chart_row);
+    REQUIRE(beat != grid.end());
+    CHECK(beat->snap_class == 4);
+    const auto endpoints = std::span(rendered->note_endpoints, rendered->note_endpoint_count);
+    REQUIRE(endpoints.size() == 3);
+    for (const auto& endpoint : endpoints) CHECK(endpoint.snap_class == 4);
+}

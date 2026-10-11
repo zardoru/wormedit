@@ -42,12 +42,14 @@ struct project_chart_table_cache_t {
     bool populated{};
 };
 
-enum class project_chart_command_kind_t { create, duplicate, erase, move_up, move_down, open, batch_metadata };
+enum class project_chart_command_kind_t { create, duplicate, erase, move_up, move_down, open, batch_metadata, reorder };
 struct project_chart_command_t {
     project_chart_command_kind_t kind{project_chart_command_kind_t::open};
     std::uint64_t expected_revision{};
     chart_id_t chart; // create: active chart template; other actions: target row.
     batch_chart_metadata_action_t metadata;
+    chart_id_t target_chart;
+    bool insert_after{};
 };
 struct project_chart_command_result_t {
     document_command_result_t command;

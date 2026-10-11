@@ -2042,6 +2042,13 @@ void check_osu_split_layout(const wormedit::lane_layout_t& actual,
         CHECK(actual.lanes[index].key_color == expected.lanes[index].key_color);
     }
 }
+void check_ordinary_osu_class(wormedit::lane_key_color_t actual, std::uint32_t keys,
+                              std::uint32_t column) {
+    // Ordinary even-key osu layouts mirror their classes around the center.
+    const std::string_view classes = keys == 12 ? "wbwbwbbwbwbw" : "wbwbwbwbbwbwbwbw";
+    CHECK(actual == (classes[column] == 'w'
+        ? wormedit::lane_key_color_t::white : wormedit::lane_key_color_t::black));
+}
 } // namespace
 
 TEST_CASE("osu SpecialStyle 12K and 16K survive native and osu roundtrips",
@@ -2068,8 +2075,7 @@ TEST_CASE("osu SpecialStyle 12K and 16K survive native and osu roundtrips",
                 const auto spelling = std::to_string((2 * column + 1) * 512 / (2 * keys)) + ",192,";
                 CHECK(lane_for_source(chart, spelling) == layout.lanes[column].id);
                 CHECK(layout.lanes[column].role == lane_role_t::playable);
-                if (!special) CHECK(layout.lanes[column].key_color ==
-                    (column % 2 == 0 ? lane_key_color_t::white : lane_key_color_t::black));
+                if (!special) check_ordinary_osu_class(layout.lanes[column].key_color, keys, column);
             }
             auto reopened = native_reopen(*imported.song);
             check_osu_split_layout(reopened.charts.front().lane_layouts.front().layout, layout);

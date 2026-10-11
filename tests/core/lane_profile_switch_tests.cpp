@@ -1,4 +1,5 @@
 #include <wormedit/core/lane_profile_switch.h>
+#include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -354,4 +355,56 @@ TEST_CASE("switching between BMS scratchless and osu 10K follows visible split-s
     check_profile(visible_10k_colors(after_switch) == expected);
     check_profile(lane_identity_matches(after_switch, bms.layout));
     check_profile(input_bindings_match(chart.input_profile, bms.input));
+}
+
+TEST_CASE("StepMania chart switching to osu layout receives selected profile skin identity and key classes",
+          "[core][lane-profile-switch][field-skin-layout]") {
+    auto history = make_document_history(switch_song(5, "pump-single"));
+    auto& chart = history.document.charts.front();
+    chart.source_family = format_family_t::stepmania;
+    const auto note_lane = chart.measures.front().notes.front().lane;
+    const auto target = make_osu_mania_profile(5);
+    require_profile(target.has_value());
+    require_profile(static_cast<bool>(apply_lane_profile_switch(history, 4, chart_id_t{2},
+        {measure_id_t{3}, 0}, target->layout)));
+    const auto& switched = history.document.charts.front();
+    const auto& layout = switched.lane_layouts.front().layout;
+    check_profile(field_skin_layout_key(layout) == "osu-mania-5k");
+    check_profile(switched.source_family == format_family_t::stepmania);
+    check_profile(switched.measures.front().notes.front().lane == note_lane);
+    std::string classes;
+    for (const auto& lane : layout.lanes) classes += field_skin_key_class(lane.key_color).front();
+    check_profile(classes == "wbybw");
+    require_profile(static_cast<bool>(undo_document_command(history)));
+    check_profile(field_skin_layout_key(history.document.charts.front().lane_layouts.front().layout) ==
+                  "stepmania:pump-single");
+}
+
+namespace {
+auto generic_osu_roundtrip(bool explicit_class) -> song_document_t {
+    auto song = switch_song(4, "osu");
+    auto& layout = song.charts.front().lane_layouts.front().layout;
+    for (auto& lane : layout.lanes) lane.key_color = lane_key_color_t::generic;
+    if (explicit_class) layout.lanes.front().key_color = lane_key_color_t::pms_green;
+    const auto written = write_native_project(song);
+    require_profile(written.bytes.has_value());
+    const auto loaded = parse_native_project(*written.bytes);
+    require_profile(loaded.song.has_value());
+    return *loaded.song;
+}
+}
+
+TEST_CASE("Native osu layouts repair old generic classes while retaining explicit lane colors",
+          "[core][lane-profile-switch][field-skin-layout]") {
+    const auto repaired = generic_osu_roundtrip(false);
+    const auto& layout = repaired.charts.front().lane_layouts.front().layout;
+    std::string classes;
+    for (const auto& lane : layout.lanes) classes += field_skin_key_class(lane.key_color).front();
+    check_profile(classes == "wbbw");
+    check_profile(field_skin_layout_key(layout) == "osu-mania-4k");
+    const auto retained = generic_osu_roundtrip(true);
+    const auto& custom = retained.charts.front().lane_layouts.front().layout;
+    check_profile(custom.lanes.front().key_color == lane_key_color_t::pms_green);
+    check_profile(custom.lanes[1].key_color == lane_key_color_t::generic);
+    check_profile(custom.lanes.front().role == lane_role_t::playable);
 }

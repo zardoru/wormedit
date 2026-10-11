@@ -1,12 +1,12 @@
 {
   "version": 2,
-  "name": "iBMSC \u00b7 BMSE",
+  "name": "iBMSC · BMSE",
   "source": {
     "repository": "https://github.com/Shimi9999/pBMSC",
     "commit": "06aaf7438dbca3c8a0611bd13d134f6d1ce04a28",
     "file": "misc/Data/BMSE.Theme.xml",
     "unknown_columns": [],
-    "fallback": "Missing roles, key positions and timing kinds inherit Wormedit. Fonts and widths are not imported. 1P source columns are aligned to semantic scratch/key roles."
+    "fallback": "Semantic lane classes inherit missing colors from Wormedit; numbered colors apply only to their exact supported stage/class layout. Fonts and widths are not imported."
   },
   "roles": {
     "viewport": "#000000ff",
@@ -35,172 +35,6 @@
     "band_bottom": "#3c3c3cff",
     "hold_hover": "#00ff00ff",
     "arrow_selection": "#ff0000ff"
-  },
-  "keys": {
-    "1p": {
-      "1": {
-        "lane": "#202020ff",
-        "lane_alternate": "#202020ff",
-        "note": "#80808080",
-        "hold_body": "#80808080",
-        "long_note": "#80808080",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      },
-      "2": {
-        "lane": "#000028ff",
-        "lane_alternate": "#000028ff",
-        "note": "#0000ff80",
-        "hold_body": "#0000ff80",
-        "long_note": "#0000ff80",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      },
-      "3": {
-        "lane": "#202020ff",
-        "lane_alternate": "#202020ff",
-        "note": "#80808080",
-        "hold_body": "#80808080",
-        "long_note": "#80808080",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      },
-      "4": {
-        "lane": "#000028ff",
-        "lane_alternate": "#000028ff",
-        "note": "#0000ff80",
-        "hold_body": "#0000ff80",
-        "long_note": "#0000ff80",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      },
-      "5": {
-        "lane": "#202020ff",
-        "lane_alternate": "#202020ff",
-        "note": "#80808080",
-        "hold_body": "#80808080",
-        "long_note": "#80808080",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      },
-      "6": {
-        "lane": "#000028ff",
-        "lane_alternate": "#000028ff",
-        "note": "#0000ff80",
-        "hold_body": "#0000ff80",
-        "long_note": "#0000ff80",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      },
-      "7": {
-        "lane": "#202020ff",
-        "lane_alternate": "#202020ff",
-        "note": "#80808080",
-        "hold_body": "#90909080",
-        "long_note": "#90909080",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      },
-      "scratch": {
-        "lane": "#300000ff",
-        "lane_alternate": "#300000ff",
-        "note": "#80000080",
-        "hold_body": "#80000080",
-        "long_note": "#80000080",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      }
-    },
-    "2p": {
-      "1": {
-        "lane": "#202020ff",
-        "lane_alternate": "#202020ff",
-        "note": "#80808080",
-        "hold_body": "#80808080",
-        "long_note": "#80808080",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      },
-      "2": {
-        "lane": "#000028ff",
-        "lane_alternate": "#000028ff",
-        "note": "#0000ff80",
-        "hold_body": "#0000ff80",
-        "long_note": "#0000ff80",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      },
-      "3": {
-        "lane": "#202020ff",
-        "lane_alternate": "#202020ff",
-        "note": "#80808080",
-        "hold_body": "#80808080",
-        "long_note": "#80808080",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      },
-      "4": {
-        "lane": "#000028ff",
-        "lane_alternate": "#000028ff",
-        "note": "#0000ff80",
-        "hold_body": "#0000ff80",
-        "long_note": "#0000ff80",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      },
-      "5": {
-        "lane": "#202020ff",
-        "lane_alternate": "#202020ff",
-        "note": "#80808080",
-        "hold_body": "#80808080",
-        "long_note": "#80808080",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      },
-      "6": {
-        "lane": "#000028ff",
-        "lane_alternate": "#000028ff",
-        "note": "#0000ff80",
-        "hold_body": "#0000ff80",
-        "long_note": "#0000ff80",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      },
-      "7": {
-        "lane": "#202020ff",
-        "lane_alternate": "#202020ff",
-        "note": "#80808080",
-        "hold_body": "#80808080",
-        "long_note": "#80808080",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      },
-      "scratch": {
-        "lane": "#300000ff",
-        "lane_alternate": "#300000ff",
-        "note": "#80000080",
-        "hold_body": "#80000080",
-        "long_note": "#80000080",
-        "label": "#ffffffff",
-        "long_label": "#ffffffff",
-        "lane_label": "#00ff00ff"
-      }
-    }
   },
   "timing": {
     "scroll": {
@@ -237,11 +71,44 @@
   "bgm": {
     "lane": "#300000ff",
     "lane_alternate": "#300000ff",
-    "note": "#80000080",
-    "hold_body": "#80000080",
-    "long_note": "#80000080",
+    "note": "#800000ff",
+    "hold_body": "#800000ff",
+    "long_note": "#800000ff",
     "label": "#ffffffff",
     "long_label": "#ffffffff",
     "lane_label": "#00ff00ff"
-  }
+  },
+  "lane_classes": {
+    "white": {
+      "lane": "#202020ff",
+      "lane_alternate": "#202020ff",
+      "note": "#808080ff",
+      "hold_body": "#808080ff",
+      "long_note": "#808080ff",
+      "label": "#ffffffff",
+      "long_label": "#ffffffff",
+      "lane_label": "#00ff00ff"
+    },
+    "blue": {
+      "lane": "#000028ff",
+      "lane_alternate": "#000028ff",
+      "note": "#0000ffff",
+      "hold_body": "#0000ffff",
+      "long_note": "#0000ffff",
+      "label": "#ffffffff",
+      "long_label": "#ffffffff",
+      "lane_label": "#00ff00ff"
+    },
+    "red": {
+      "lane": "#300000ff",
+      "lane_alternate": "#300000ff",
+      "note": "#800000ff",
+      "hold_body": "#800000ff",
+      "long_note": "#800000ff",
+      "label": "#ffffffff",
+      "long_label": "#ffffffff",
+      "lane_label": "#00ff00ff"
+    }
+  },
+  "rotate_dp5": true
 }

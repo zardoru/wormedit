@@ -1,5 +1,6 @@
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/arrow_glyph.h"
+#include <wormedit/core/lane_profiles.h>
 
 #include <nlohmann/json.hpp>
 
@@ -202,6 +203,9 @@ auto builtin_key_colors() -> std::array<key_color_t, key_names.size()> {
                   {},
                   {},
                   {}};
+    colors[6] = colors[1];
+    colors[9] = colors[2];
+    colors[10] = colors[3];
     return colors;
 }
 std::array<key_color_t, key_names.size()> key_colors = builtin_key_colors();
@@ -213,8 +217,9 @@ struct field_palette_t {
     decltype(compose_colors) roles = compose_colors;
     decltype(key_colors) keys = key_colors;
     decltype(note_accents) accents = note_accents;
-    std::map<std::string, nlohmann::json> positions;
-    std::optional<std::size_t> key_count;
+    nlohmann::json numbered_layout;
+    bool rotate_dp5{};
+    std::array<std::optional<bool>, 2> scratch_sides{};
     nlohmann::json document;
     key_color_t bgm{true,
                     nk_rgb(38, 34, 47),
@@ -232,7 +237,7 @@ const auto builtin_keys = key_colors;
 const auto builtin_accents = note_accents;
 std::map<std::string, field_palette_t> palettes;
 std::vector<field_scheme_t> schemes;
-std::unordered_map<std::uint32_t, key_color_t> layout_colors;
+std::unordered_map<std::uint64_t, std::pair<std::uint8_t, key_color_t>> layout_colors;
 std::vector<field_lane_t> bound_layout;
 auto default_palette() -> field_palette_t;
 field_palette_t active = default_palette();
@@ -378,45 +383,116 @@ void validate_entries(const nlohmann::json& entries) {
         if (!entry.is_object())
             throw std::runtime_error("expected lane-role object");
 }
-void validate_positions(const nlohmann::json& players) {
-    for (const auto& [player, positions] : players.items()) {
-        if (player.size() < 2 || player.back() != 'p' ||
-            !std::all_of(player.begin(), player.end() - 1,
-                         [](char c) { return c >= '0' && c <= '9'; }))
-            throw std::runtime_error("invalid player/stage key");
-        if (!positions.is_object())
-            throw std::runtime_error("expected position-role object");
-        for (const auto& [position, entry] : positions.items()) {
-            if (position != "scratch" &&
-                (position.empty() || position.front() == '0' ||
-                 !std::all_of(position.begin(), position.end(),
-                              [](char c) { return c >= '0' && c <= '9'; })))
-                throw std::runtime_error("invalid key position");
-            if (!entry.is_object())
-                throw std::runtime_error("expected lane-role object");
-        }
+constexpr std::array<std::string_view, 5> class_names{"white", "blue", "green", "yellow", "red"};
+constexpr std::array<std::uint8_t, 5> class_keys{1, 2, 8, 7, 3};
+
+auto semantic_class(const field_lane_t& lane) -> std::string_view {
+    if (lane.role == 1) return "red";
+    return wormedit::field_skin_key_class(static_cast<wormedit::lane_key_color_t>(lane.key_color));
+}
+
+void read_lane_classes(const nlohmann::json& document) {
+    const auto entries = document.value("lane_classes", nlohmann::json::object());
+    for (std::size_t i = 0; i < class_names.size(); ++i)
+        read_key_entry(document, entries.value(std::string(class_names[i]), nlohmann::json{}),
+                       key_colors[class_keys[i]]);
+    key_colors[6] = key_colors[1];
+    key_colors[9] = key_colors[2];
+    key_colors[10] = key_colors[3];
+}
+
+void validate_lane_classes(const nlohmann::json& entries) {
+    if (!entries.is_object()) throw std::runtime_error("expected lane_classes object");
+    for (const auto& [name, entry] : entries.items()) {
+        if (std::ranges::find(class_names, name) == class_names.end() || !entry.is_object())
+            throw std::runtime_error("expected white/blue/green/yellow/red lane class objects");
     }
+}
+
+void validate_numbered_layout(const nlohmann::json& numbered) {
+    if (!numbered.is_object() || !numbered.contains("stages") || !numbered.contains("colors"))
+        throw std::runtime_error("numbered_layout requires stages and colors");
+    const auto& stages = numbered["stages"];
+    const auto& colors = numbered["colors"];
+    if (!stages.is_array() || stages.empty() || stages.size() > 2 ||
+        !colors.is_array() || colors.size() != stages.size())
+        throw std::runtime_error("numbered_layout expects one or two matching stages");
+    for (std::size_t stage = 0; stage < stages.size(); ++stage) {
+        if (!stages[stage].is_array() || stages[stage].empty() ||
+            !colors[stage].is_array() || colors[stage].size() != stages[stage].size())
+            throw std::runtime_error("numbered_layout stage colors must match its classes");
+        for (const auto& name : stages[stage])
+            if (!name.is_string() || std::ranges::find(class_names, name.get<std::string>()) == class_names.end())
+                throw std::runtime_error("numbered_layout expects semantic lane classes");
+        validate_entries(colors[stage]);
+    }
+}
+
+using numbered_stages_t = std::vector<std::vector<const field_lane_t*>>;
+auto numbered_stages(std::span<const field_lane_t> lanes) -> numbered_stages_t {
+    std::map<std::uint8_t, std::vector<const field_lane_t*>> groups;
+    for (const auto& lane : lanes) {
+        if (lane.role != 0 && lane.role != 1) continue;
+        if (lane.stage > 2) return {};
+        groups[lane.stage == 2 ? 1 : 0].push_back(&lane);
+    }
+    numbered_stages_t result;
+    for (auto& [stage, group] : groups) {
+        std::ranges::stable_sort(group, {}, [](const auto* lane) { return lane->display_order; });
+        result.push_back(std::move(group));
+    }
+    return result;
+}
+
+auto numbered_matches(const nlohmann::json& numbered, const numbered_stages_t& groups) -> bool {
+    if (numbered.is_null()) return true;
+    const auto& stages = numbered["stages"];
+    if (stages.size() != groups.size()) return false;
+    for (std::size_t stage = 0; stage < groups.size(); ++stage) {
+        if (stages[stage].size() != groups[stage].size()) return false;
+        for (std::size_t key = 0; key < groups[stage].size(); ++key)
+            if (stages[stage][key] != semantic_class(*groups[stage][key])) return false;
+    }
+    return true;
+}
+
+auto parse_scratch_sides(const nlohmann::json& document)
+    -> std::array<std::optional<bool>, 2> {
+    std::array<std::optional<bool>, 2> sides{};
+    if (!document.contains("scratch_placement")) return sides;
+    const auto& placements = document["scratch_placement"];
+    if (!placements.is_object())
+        throw std::runtime_error("expected scratch_placement object");
+    for (const auto& [player, side] : placements.items()) {
+        if (player != "1p" && player != "2p")
+            throw std::runtime_error("scratch placement expects 1p or 2p");
+        if (side != "left" && side != "right")
+            throw std::runtime_error("scratch placement expects left or right");
+        sides[player == "2p" ? 1 : 0] = side == "right";
+    }
+    return sides;
 }
 void validate_scheme(const nlohmann::json& document) {
     if (!document.is_object() || document.value("version", 0) != 2 || !document.contains("name") ||
         !document["name"].is_string() || document["name"].get<std::string>().empty())
         throw std::runtime_error("expected schema version 2 and a name");
-    if (document.contains("key_count") &&
-        (!document["key_count"].is_number_unsigned() ||
-         document["key_count"].get<std::size_t>() == 0))
-        throw std::runtime_error("expected positive playable key_count");
-    for (const auto* section : {"roles", "key_colors", "keys", "bgm", "timing"}) {
-        if (!document.contains(section))
-            continue;
-        if (!document[section].is_object())
-            throw std::runtime_error("expected color-role object");
+    (void)parse_scratch_sides(document);
+    if (document.contains("keys") || document.contains("key_count"))
+        throw std::runtime_error("ungated positional keys are unsupported; use lane_classes or numbered_layout");
+    if (document.contains("rotate_dp5") && !document["rotate_dp5"].is_boolean())
+        throw std::runtime_error("rotate_dp5 must be boolean");
+    for (const auto* section : {"roles", "key_colors", "lane_classes", "bgm", "timing"}) {
+        if (!document.contains(section)) continue;
+        if (!document[section].is_object()) throw std::runtime_error("expected color-role object");
         validate_colors(document, document[section]);
     }
     for (const auto* section : {"key_colors", "timing"})
-        if (document.contains(section))
-            validate_entries(document[section]);
-    if (document.contains("keys"))
-        validate_positions(document["keys"]);
+        if (document.contains(section)) validate_entries(document[section]);
+    if (document.contains("lane_classes")) validate_lane_classes(document["lane_classes"]);
+    if (document.contains("numbered_layout")) {
+        validate_numbered_layout(document["numbered_layout"]);
+        validate_colors(document, document["numbered_layout"]["colors"]);
+    }
     if (document.contains("note_accents")) {
         if (!document["note_accents"].is_array() || document["note_accents"].size() != 8)
             throw std::runtime_error("expected eight note accents");
@@ -429,26 +505,20 @@ auto parse_palette(const nlohmann::json& document, field_palette_t base) -> fiel
     note_accents = base.accents;
     read_roles(document, compose_names, compose_colors);
     read_key_colors(document);
+    read_lane_classes(document);
     read_note_accents(document);
     base.roles = compose_colors;
     base.keys = key_colors;
     base.accents = note_accents;
     base.document = document;
-    base.key_count = document.contains("key_count")
-                         ? std::optional{document["key_count"].get<std::size_t>()}
-                         : std::nullopt;
+    base.scratch_sides = parse_scratch_sides(document);
+    base.rotate_dp5 = document.value("rotate_dp5", false);
+    base.numbered_layout = document.value("numbered_layout", nlohmann::json{});
     read_key_entry(document, document.value("bgm", nlohmann::json{}), base.bgm);
     const auto timing = document.value("timing", nlohmann::json::object());
     for (std::size_t i = 0; i < timing_names.size(); ++i)
         read_key_entry(document, timing.value(std::string(timing_names[i]), nlohmann::json{}),
                        base.timing[i]);
-    const auto keys = document.value("keys", nlohmann::json::object());
-    for (const auto& [player, positions] : keys.items()) {
-        if (!positions.is_object())
-            throw std::runtime_error("expected position-role objects");
-        for (const auto& [position, entry] : positions.items())
-            base.positions[player + "/" + position] = entry;
-    }
     return base;
 }
 auto default_palette() -> field_palette_t {
@@ -522,6 +592,7 @@ void load(const std::filesystem::path& bundled_directory) {
                                : bundled_directory;
     read_roles(read_document(directory / "ui-dark.json"), ui_names, ui_colors);
     load_field_schemes(directory / "field");
+    active_id.clear();
     select_field_scheme("wormedit");
 }
 
@@ -531,10 +602,12 @@ auto ui(UiColor color) -> nk_color {
 auto compose(ComposeColor color) -> nk_color {
     return compose_colors[static_cast<size_t>(color)];
 }
-auto compose_key_color(std::uint8_t key_color, std::uint32_t display_lane_number) -> key_color_t {
-    const auto found = layout_colors.find(display_lane_number);
-    if (display_lane_number && found != layout_colors.end())
-        return found->second;
+auto compose_key_color(std::uint8_t key_color, std::uint64_t lane_id) -> key_color_t {
+    const auto found = layout_colors.find(lane_id);
+    if (lane_id && found != layout_colors.end() &&
+        wormedit::field_skin_key_class(static_cast<wormedit::lane_key_color_t>(key_color)) ==
+            wormedit::field_skin_key_class(static_cast<wormedit::lane_key_color_t>(found->second.first)))
+        return found->second.second;
     if (key_color >= key_colors.size())
         return key_colors[0];
     return key_colors[key_color];
@@ -544,28 +617,19 @@ void bind_field_layout(std::span<const field_lane_t> lanes) {
         return;
     bound_layout.assign(lanes.begin(), lanes.end());
     layout_colors.clear();
-    if (active.positions.empty() ||
-        (active.key_count && std::ranges::count_if(lanes, [](const auto& lane) {
-             return lane.role == 0;
-         }) != static_cast<std::ptrdiff_t>(*active.key_count)))
-        return;
-    std::map<std::uint32_t, field_lane_t> ordered;
-    for (const auto& lane : lanes)
-        ordered.emplace(lane.display_order, lane);
-    std::map<std::uint8_t, std::size_t> positions;
-    for (const auto& [order, lane] : ordered) {
-        const bool scratch = lane.role == 1 || lane.key_color == 3;
-        const auto position = scratch ? "scratch" : std::to_string(++positions[lane.stage]);
-        const auto player = lane.stage == 2 ? 2 : 1;
-        const auto key = std::to_string(player) + "p/" + position;
-        const auto found = active.positions.find(key);
-        if (found == active.positions.end())
-            continue;
-        auto color = key_colors[lane.key_color < key_colors.size() ? lane.key_color : 0];
-        read_key_entry(active.document, found->second, color);
-        layout_colors.emplace(order + 1, color);
+    if (active.numbered_layout.is_null()) return;
+    const auto groups = numbered_stages(lanes);
+    if (!numbered_matches(active.numbered_layout, groups)) return;
+    for (std::size_t stage = 0; stage < groups.size(); ++stage) {
+        for (std::size_t key = 0; key < groups[stage].size(); ++key) {
+            const auto& lane = *groups[stage][key];
+            auto color = key_colors[lane.key_color < key_colors.size() ? lane.key_color : 0];
+            read_key_entry(active.document, active.numbered_layout["colors"][stage][key], color);
+            layout_colors.insert_or_assign(lane.lane_id, std::pair{lane.key_color, color});
+        }
     }
 }
+
 auto compose_bgm_color() -> key_color_t {
     return active.bgm;
 }
@@ -577,6 +641,40 @@ auto field_schemes() -> const std::vector<field_scheme_t>& {
 }
 auto field_scheme_id() -> std::string_view {
     return active_id;
+}
+auto field_scheme_supports_layout(std::string_view id, std::span<const field_lane_t> lanes) -> bool {
+    const auto found = palettes.find(id.empty() ? std::string("wormedit") : std::string(id));
+    return found != palettes.end() && numbered_matches(found->second.numbered_layout, numbered_stages(lanes));
+}
+
+auto select_field_scheme_for_layout(std::string_view requested, std::string_view fallback,
+                                    std::span<const field_lane_t> lanes) -> bool {
+    const bool compatible = !requested.empty() && field_scheme_supports_layout(requested, lanes);
+    const auto selected = compatible ? requested : field_scheme_supports_layout(fallback, lanes)
+        ? fallback : std::string_view("wormedit");
+    select_field_scheme(selected);
+    bind_field_layout(lanes);
+    return compatible;
+}
+
+auto is_dp5(std::span<const field_lane_t> lanes) -> bool {
+    const auto groups = numbered_stages(lanes);
+    if (groups.size() != 2) return false;
+    for (const auto& group : groups) {
+        if (group.size() != 6 || std::ranges::count_if(group, [](const auto* lane) {
+                return lane->role == 1;
+            }) != 1) return false;
+    }
+    return true;
+}
+
+auto field_scratch_side(std::uint8_t stage, std::span<const field_lane_t> lanes) -> std::optional<bool> {
+    if (stage > 2) return std::nullopt;
+    if (active.rotate_dp5 && is_dp5(lanes)) return false;
+    return active.scratch_sides[stage == 2 ? 1 : 0];
+}
+auto field_scratch_side(std::uint8_t stage) -> std::optional<bool> {
+    return field_scratch_side(stage, {});
 }
 auto field_generation() -> std::uint64_t {
     return generation;
@@ -618,7 +716,7 @@ auto compose_grid_line_style(std::uint8_t kind, std::uint8_t emphasis, std::uint
 }
 
 auto field_uses_positions() -> bool {
-    return !active.positions.empty();
+    return !active.numbered_layout.is_null();
 }
 auto select_field_scheme(std::string_view id) -> bool {
     const auto requested = id.empty() ? std::string("wormedit") : std::string(id);
@@ -627,6 +725,7 @@ auto select_field_scheme(std::string_view id) -> bool {
     if (!valid && warned_ids.insert(requested).second)
         std::cerr << "wormedit: field scheme " << requested << " unavailable; using Wormedit\n";
     const auto selected = valid ? requested : std::string("wormedit");
+    if (active_id == selected) return valid;
     active = palettes.contains(selected) ? palettes.at(selected) : default_palette();
     active_id = selected;
     compose_colors = active.roles;

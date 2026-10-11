@@ -3,19 +3,47 @@
 `ui-dark.json` defines application chrome. The field picker never changes it.
 
 `field/wormedit.json` is the default Compose field scheme. All `field/*.json`
-files appear in Options → Appearance → Field colors. Apply switches the field
-immediately, invalidates retained tiles, and saves the scheme ID in program
-preferences. Revert and Restore defaults follow the standard Options draft flow.
-An unknown or malformed scheme falls back to Wormedit with one diagnostic.
+files appear in Options → Appearance → Default field skin. The current layout
+also has a skin picker; “Use default” inherits the global choice. Layout choices
+follow the selected lane profile, even when it differs from the imported format.
+Changes preview immediately and invalidate retained tiles; Apply saves them in
+program preferences. Close, Revert and Restore defaults follow the standard
+Options draft flow. Unknown or incompatible choices use the compatible default,
+then Wormedit.
 
 Schema version 2 requires `version: 2` and a nonempty `name`. Colors accept
 `#RRGGBB`, `#RRGGBBAA`, or `$scale.shade` references into the file’s `scales`.
 Missing color roles inherit Wormedit. `roles` covers canvas, grid, selection,
-hover, erase and conflict colors. `key_colors` supplies layout-key-kind fallbacks.
-`keys` supplies per-position overrides, for example
-`"1p": {"1": {"note": "#abcdef"}, "scratch": {"lane": "#450a0a"}}`.
-Each player/stage counts keys in display order excluding scratch. `2p` is the
-second stage. A layout with more positions uses the key-kind fallback.
+hover, erase and conflict colors. `lane_classes` supplies semantic `white`, `blue`,
+`green`, `yellow`, and `red` entries. White also colors pms_white, blue colors
+black/pms_blue, and red colors scratch/pms_red. Missing classes inherit Wormedit.
+`key_colors` remains available for generic, foot_pedal and free_zone colors.
+Colors follow each authored lane's class and ID on every layout, regardless of
+source file family, scratch side, stage count or visual ordering.
+
+A genuinely numbered palette must declare an exact compatibility guard:
+
+```json
+"numbered_layout": {
+  "stages": [["white", "blue", "blue", "white"]],
+  "colors": [[{"note":"#f274b3"}, {"note":"#7987ff"},
+              {"note":"#7987ff"}, {"note":"#f274b3"}]]
+}
+```
+
+This describes one stage with four playable lanes, in authored display order.
+Each color slot has an expected semantic class; matching lane count alone is
+insufficient. Auxiliary lanes do not consume slots. MyO2 4K uses this exception;
+its numbered colors are unavailable for other layouts. Legacy ungated `keys`
+and `key_count` files reject with a diagnostic instead of recoloring wrong lanes.
+Compatible layout overrides win, then the compatible configured default, then
+Wormedit. An unavailable override is retained in preferences for its layout.
+
+Optional `scratch_placement` suggests explicit display-only sides (`1p`/`2p`,
+`left`/`right`). `rotate_dp5: true` instead suggests both scratches on the left
+only for two stages with five playable keys and one scratch each. BMSE uses this
+DP5-only default; SP7 and DP7 preserve chart layout. Appearance overrides remain
+independent for Single/P1 and P2, preserving authored channels and notes.
 
 Lane entries accept `lane`, `lane_alternate`, `lane_label`, `note`, `note_border`,
 `hold_body`, `long_note`, `label`, and `long_label`. Missing label colors preserve

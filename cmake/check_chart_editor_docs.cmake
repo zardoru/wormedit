@@ -235,6 +235,18 @@ set(task_card_files
     docs/chart-editor-plan/tasks/feedback-skins.md
     docs/chart-editor-plan/tasks/feedback-navigation.md
     docs/chart-editor-plan/tasks/feedback-library.md
+    docs/chart-editor-plan/tasks/menu-input-capture.md
+    docs/chart-editor-plan/tasks/scratch-presentation.md
+    docs/chart-editor-plan/tasks/options-dialog.md
+    docs/chart-editor-plan/tasks/recent-projects.md
+    docs/chart-editor-plan/tasks/dropdown-surfaces.md
+    docs/chart-editor-plan/tasks/chart-table-reorder.md
+    docs/chart-editor-plan/tasks/bundled-skin-lanes.md
+    docs/chart-editor-plan/tasks/options-dialog-drag.md
+    docs/chart-editor-plan/tasks/semantic-skins.md
+    docs/chart-editor-plan/tasks/layout-skin-preferences.md
+    docs/chart-editor-plan/tasks/semantic-layout-identity.md
+    docs/chart-editor-plan/tasks/measure-local-snapping.md
     docs/chart-editor-plan/tasks/compose-split.md
     docs/chart-editor-plan/tasks/compose-features.md
     docs/chart-editor-plan/tasks/interop-evidence.md

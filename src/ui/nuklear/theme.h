@@ -93,14 +93,15 @@ struct key_color_t {
     nk_color lane_label;
     std::optional<nk_color> label{}, long_label{}, long_note{};
 };
-auto compose_key_color(std::uint8_t key_color, std::uint32_t display_lane_number = 0)
+auto compose_key_color(std::uint8_t key_color, std::uint64_t lane_id = 0)
     -> key_color_t;
 struct field_lane_t {
     std::uint32_t display_order{};
     std::uint8_t stage{}, key_color{}, role{};
+    std::uint64_t lane_id{};
     auto operator==(const field_lane_t&) const -> bool = default;
 };
-// Bind display positions once per frame. Scratch is separate and does not consume a key position.
+// Semantic colors use each object's class. Only compatible numbered exceptions bind by authored ID.
 void bind_field_layout(std::span<const field_lane_t> lanes);
 auto compose_bgm_color() -> key_color_t;
 auto compose_timing_color(std::size_t kind) -> key_color_t;
@@ -111,6 +112,15 @@ auto field_schemes() -> const std::vector<field_scheme_t>&;
 // Empty selects Wormedit; unknown IDs fall back with one diagnostic per ID.
 auto select_field_scheme(std::string_view id) -> bool;
 auto field_scheme_id() -> std::string_view;
+// Core stage values: none/left use 1P, right uses 2P; absent means chart layout.
+// false = visually left, true = visually right; authored lane identity never changes.
+auto field_scratch_side(std::uint8_t stage) -> std::optional<bool>;
+auto field_scratch_side(std::uint8_t stage, std::span<const field_lane_t> lanes) -> std::optional<bool>;
+// Semantic palettes support every layout; numbered palettes require matching stages/classes.
+auto field_scheme_supports_layout(std::string_view id, std::span<const field_lane_t> lanes) -> bool;
+// Empty request uses fallback; incompatible requests never rewrite persisted preferences.
+auto select_field_scheme_for_layout(std::string_view requested, std::string_view fallback,
+    std::span<const field_lane_t> lanes) -> bool;
 auto field_generation() -> std::uint64_t;
 void set_snap_colored_grid(bool enabled);
 void set_snap_grid_opacity(std::uint32_t percent);

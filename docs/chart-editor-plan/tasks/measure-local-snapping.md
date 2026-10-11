@@ -1,0 +1,17 @@
+# Measure-local snapping and navigation
+
+[Back to task cards](../tasks.md).
+
+## T-536 Anchor snap lines and movement at measure heads
+
+- **Status:** done (2026-10-11; verified priority user feedback; committed with integrated feedback batch)
+- **Outcome:** Snap lines, beat lines, note color phases, keyboard/Alt-scroll navigation and snapped edits agree on each measure's origin, including fractional BMS measures and virtual tails.
+- **Read first:** include/wormedit/core/snap.h, src/core/snap.cpp, src/core/grid.cpp, src/core/interaction_cursor.cpp, src/core/interaction.cpp, src/sys/compose_playhead_skip.cpp, src/sys/compose_view.cpp and relevant grid/snap/navigation tests. Reproduction: HeadBONKache SPA in the user-provided BMS directory.
+- **Files owned:** Codex Ruth: core snap API/implementation, interaction_cursor.cpp BMSON razor interpolation and focused core tests. Codex Smaug: grid.cpp/.h, compose_view.cpp snap-color phase projection and focused grid/projection tests. Codex Glaurung: compose_playhead_skip.cpp, compose_playhead_cursor.h, compose_bookmark_commands.cpp/.h, compose_minimap_navigation.cpp/.h, the compose_input.cpp minimap call site (coordinator-approved extension) and focused sys tests. Coordinator: interaction.cpp virtual/area/paint snapping, resource_assignment.cpp, sv_recipe.cpp, main.cpp timing-stage endpoint clamp, compose_input.cpp BGA brush traversal, integration/production event tests, this card, shared index/checker/status and Brain. Supporting scope extensions require coordinator agreement.
+- **Steps:** 1. Reproduce the actual SPA chart and audit origins. 2. Share indexed measure-local snapping/neighbor helpers. 3. Align grid, navigation, projections and placements. 4. Verify focused regressions, normal/release builds, full suite, production events, native actual-chart checks and complexity. 5. Reconcile status and Brain.
+- **Invariants:** Measure heads are grid anchors. Snap spacing remains the chosen fraction of a standard measure; shortened measures reset phase rather than compressing subdivisions. Authored beat/group semantics remain exact. All paths preserve authored notes, channels, timing and Undo unless the user explicitly edits them. Indexed hot paths retain bounded work.
+- **Reject/failure behavior:** Invalid grid resolutions, stale geometry and out-of-range positions reject or retain documented boundary clamps. Tiny measures cannot trap navigation or skip their measure heads. Virtual-tail phase starts at the authored tail boundary; unavailable edits remain guarded.
+- **Verify:** Actual HeadBONKache SPA import; shortened/non-grid-aligned measure boundaries, both navigation directions, multiple wheel detents, playing/fixed-cursor paths, snap-off, virtual edits and retained grid rendering. Affected-file clang-tidy; complete CTest and production event harness; normal/release builds; isolated authenticated Xvfb; documentation validation.
+- **Done so far:** Shared indexed helpers and all listed paths are integrated. Normal/release builds; 3,240/3,240 CTest checks; 395 production event cases / 5,701 assertions; focused core/sys/projection and actual imported-chart checks; native keyboard/Alt-scroll verification and affected clang-tidy pass. See resume checkpoint for evidence.
+- **Remaining:** None for this card.
+- **Out of scope:** Automatic commit, changes to the source BMS or unrelated skin/presentation features.

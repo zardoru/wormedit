@@ -84,7 +84,7 @@ auto snapped_position(const chart_document_t& chart, const measure_index_t& inde
     if (*absolute == index.total_rows) {
         return position_at_row(index, index.total_rows, true);
     }
-    const auto rounded = snap_absolute_row(chart, *absolute, denominator);
+    const auto rounded = snap_absolute_row(chart, index, *absolute, denominator);
     if (!rounded) {
         return std::nullopt;
     }

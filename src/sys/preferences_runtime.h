@@ -2,14 +2,27 @@
 
 #include <wormedit/core/preferences.h>
 
+#include "ui/frontend.h"
+
 namespace wormedit::sys {
+
+struct recent_file_t {
+    std::string path;
+    std::string label;
+};
 
 struct program_preferences_runtime_t {
     program_preferences_t preferences;
     std::filesystem::path path;
     std::vector<std::string> warnings;
     bool migrated{};
+    std::vector<recent_file_t> recent_files;
 };
+
+void load_recent_files(program_preferences_runtime_t& runtime);
+[[nodiscard]] auto remember_recent_file(program_preferences_runtime_t& runtime,
+    const std::filesystem::path& path) -> std::string;
+void project_recent_files(const program_preferences_runtime_t& runtime, WormUiWorkspaceView& view);
 
 [[nodiscard]] auto load_program_preferences_runtime() -> program_preferences_runtime_t;
 // Validation failure keeps previous values. Publication failure keeps accepted new values.

@@ -371,6 +371,7 @@ struct application_command_state_t {
     };
     std::optional<paste_session_t> paste_session;
     wormedit::editor_preferences_t editor_preferences;
+    wormedit::editor_scratch_presentation_t scratch_on_right;
     struct bmson_marker_draft_t {
         wormedit::chart_id_t chart;
         std::uint64_t revision{};

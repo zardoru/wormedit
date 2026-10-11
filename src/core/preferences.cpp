@@ -154,11 +154,50 @@ void read_editor_audio(preference_reader_t& reader, const json_t& root) {
     }
 }
 
+void read_scratch_positions(preference_reader_t& reader, const json_t& display) {
+    const auto found = display.find("scratch_positions");
+    if (found == display.end()) return;
+    if (!found->is_array() || found->size() != 2) {
+        reader.warn("scratch_positions must contain Single/P1 and P2 settings; defaults retained.");
+        return;
+    }
+    for (std::size_t index = 0; index < 2; ++index) {
+        const auto& side = (*found)[index];
+        if (!side.is_number_unsigned() || side.get<std::uint64_t>() > 3) {
+            reader.warn("scratch position must be Skin default, Chart layout, Left, or Right; default retained.");
+            continue;
+        }
+        reader.result.preferences.display.scratch_positions[index] = side.get<std::uint32_t>();
+    }
+}
+void read_field_scheme_overrides(preference_reader_t& reader, const json_t& display) {
+    const auto found = display.find("field_scheme_overrides");
+    if (found == display.end()) return;
+    if (!found->is_object() || found->size() > maximum_field_scheme_overrides) {
+        reader.warn("field_scheme_overrides must be an object with at most 128 layouts; ignored.");
+        return;
+    }
+    auto& overrides = reader.result.preferences.display.field_scheme_overrides;
+    for (const auto& [key, value] : found->items()) {
+        if (key.empty() || !valid_string(key) || !value.is_string()) {
+            reader.warn("Invalid layout skin override ignored.");
+            continue;
+        }
+        const auto& scheme = value.get_ref<const std::string&>();
+        if (scheme.empty() || !valid_string(scheme)) {
+            reader.warn("Invalid or inherited layout skin override ignored.");
+            continue;
+        }
+        overrides.emplace(key, scheme);
+    }
+}
 void read_display_minimap_layout(preference_reader_t& reader, const json_t& root) {
     auto& values = reader.result.preferences;
     const auto& display = reader.section(root, "display");
-    reader.check_keys(display, {"field_scheme", "theme", "ui_scale_percent", "frame_timing_overlay", "snap_colored_grid", "snap_grid_opacity_percent", "field_waveform_opacity_percent"});
+    reader.check_keys(display, {"scratch_positions", "field_scheme", "field_scheme_overrides", "theme", "ui_scale_percent", "frame_timing_overlay", "snap_colored_grid", "snap_grid_opacity_percent", "field_waveform_opacity_percent"});
     reader.string(display, "field_scheme", values.display.field_scheme);
+    read_field_scheme_overrides(reader, display);
+    read_scratch_positions(reader, display);
     reader.string(display, "theme", values.display.theme);
     reader.integer(display, "ui_scale_percent", values.display.ui_scale_percent, 0, 200);
     reader.boolean(display, "frame_timing_overlay", values.display.frame_timing_overlay);
@@ -213,7 +252,8 @@ auto valid_preferences(const program_preferences_t& value) -> bool {
         valid_string(value.general.shortcut_profile_path) && !value.general.shortcut_profile_path.empty() &&
         valid_editor(value.editor) &&
         supported_rate(value.audio.playback_rate) && value.audio.keysound_budget_mib >= 256 &&
-        value.audio.keysound_budget_mib <= 8192 && valid_string(value.display.theme) && valid_string(value.display.field_scheme) &&
+        value.audio.keysound_budget_mib <= 8192 && valid_string(value.display.theme) && valid_string(value.display.field_scheme) && valid_field_scheme_overrides(value.display) &&
+        std::ranges::all_of(value.display.scratch_positions, [](auto side) { return side <= 3; }) &&
         value.display.snap_grid_opacity_percent <= 100 && value.display.field_waveform_opacity_percent <= 100 &&
         (value.display.ui_scale_percent == 0 ||
             (value.display.ui_scale_percent >= 100 && value.display.ui_scale_percent <= 200)) &&
@@ -234,7 +274,7 @@ auto preferences_json(const program_preferences_t& value) -> json_t {
         {"audio", {{"playback_rate", {{"numerator", value.audio.playback_rate.numerator},
             {"denominator", value.audio.playback_rate.denominator}}}, {"keep_pitch", value.audio.keep_pitch},
             {"keysound_budget_mib", value.audio.keysound_budget_mib}}},
-        {"display", {{"field_scheme", value.display.field_scheme}, {"theme", value.display.theme}, {"ui_scale_percent", value.display.ui_scale_percent},
+        {"display", {{"scratch_positions", value.display.scratch_positions}, {"field_scheme", value.display.field_scheme}, {"field_scheme_overrides", value.display.field_scheme_overrides}, {"theme", value.display.theme}, {"ui_scale_percent", value.display.ui_scale_percent},
             {"frame_timing_overlay", value.display.frame_timing_overlay},
             {"snap_colored_grid", value.display.snap_colored_grid},
             {"snap_grid_opacity_percent", value.display.snap_grid_opacity_percent},
@@ -251,6 +291,22 @@ auto default_external_player_preferences() -> external_player_preferences_t {
         {"uBMplay", "", "-P -N0 \"<filename>\"", "-P -N<measure> \"<filename>\"", "-S"},
         {"o2play", "", "-P -N0 \"<filename>\"", "-P -N<measure> \"<filename>\"", "-S"}}};
 }
+auto resolve_field_scheme(const display_preferences_t& display, std::string_view layout_key)
+    -> std::string_view {
+    const auto found = display.field_scheme_overrides.find(layout_key);
+    if (!layout_key.empty() && found != display.field_scheme_overrides.end() && !found->second.empty())
+        return found->second;
+    return display.field_scheme.empty() ? std::string_view{"wormedit"} : std::string_view{display.field_scheme};
+}
+
+auto valid_field_scheme_overrides(const display_preferences_t& display) -> bool {
+    if (display.field_scheme_overrides.size() > maximum_field_scheme_overrides) return false;
+    return std::ranges::all_of(display.field_scheme_overrides, [](const auto& entry) {
+        return !entry.first.empty() && valid_string(entry.first) &&
+               !entry.second.empty() && valid_string(entry.second);
+    });
+}
+
 auto default_program_preferences() -> program_preferences_t { return {}; }
 auto valid_external_player_preferences(const external_player_preferences_t& value) -> bool {
     if (value.players.empty() || value.players.size() > maximum_external_players || value.selected >= value.players.size())

@@ -11,7 +11,8 @@ enum class workspace_menu_action_t {
     notifications, preview, external_preferences, external_start, external_here, external_stop,
     undo, redo, delete_selection, select_all, invert_selection, clear_selection,
     new_chart, timing_lock, insert_bpm, insert_sv, play_stop, play_pause, play_start, stop, metronome,
-    sounds, layers, about, shortcuts
+    sounds, layers, about, shortcuts,
+    recent_first = 1000, recent_last = 1099
 };
 
 struct workspace_menu_item_t {
@@ -22,6 +23,7 @@ struct workspace_menu_item_t {
     bool enabled{true};
     bool checked{};
     const char* shortcut{};
+    const char* recent_path{};
 };
 
 inline constexpr std::array workspace_menu_title_widths{56.0f, 56.0f, 56.0f, 60.0f, 90.0f, 56.0f};

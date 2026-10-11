@@ -251,6 +251,7 @@ typedef enum WormUiProjectChartActionKind {
     WORM_UI_PROJECT_CHART_DOWN,
     WORM_UI_PROJECT_CHART_OPEN,
     WORM_UI_PROJECT_CHART_BATCH_METADATA,
+    WORM_UI_PROJECT_CHART_REORDER,
 } WormUiProjectChartActionKind;
 
 typedef struct WormUiProjectChartAction {
@@ -266,6 +267,8 @@ typedef struct WormUiProjectChartAction {
     bool unset_rating;
     const char* rating_numerator;
     const char* rating_denominator;
+    uint64_t target_chart_id; // Reorder relative to this stable row ID.
+    bool insert_after;
 } WormUiProjectChartAction;
 
 typedef struct WormUiSetupView {
@@ -2116,7 +2119,9 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_AREA_ALPHA, WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK,
     WORM_UI_OPTIONS_FIELD_MOVE_COLLISION_POLICY, WORM_UI_OPTIONS_FIELD_FIELD_SCHEME,
     WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID, WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY,
-    WORM_UI_OPTIONS_FIELD_INVERT_SCROLL_WHEEL, WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY
+    WORM_UI_OPTIONS_FIELD_INVERT_SCROLL_WHEEL, WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY,
+    WORM_UI_OPTIONS_FIELD_P1_SCRATCH_POSITION, WORM_UI_OPTIONS_FIELD_P2_SCRATCH_POSITION,
+    WORM_UI_OPTIONS_FIELD_LAYOUT_FIELD_SCHEME
 } WormUiOptionsField;
 typedef struct WormUiOptionsDiagnostic {
     WormUiOptionsField field;
@@ -2149,7 +2154,13 @@ typedef struct WormUiOptionsView {
     bool minimap_click_moves_paused_playhead;
     uint32_t keysound_budget_mib;
     uint64_t rate_numerator, rate_denominator;
-    const char* field_scheme;
+    uint32_t p1_scratch_position, p2_scratch_position;
+    const char* field_scheme; // Default skin for layouts without an override.
+    const char* current_field_layout_key;
+    const char* current_field_layout_name;
+    const char* current_layout_field_scheme; // Empty inherits the default.
+    const WormUiComposeLaneView* current_field_layout_lanes;
+    size_t current_field_layout_lane_count;
     const char* theme;
     const char* dock_layout;
     const char* shortcut_profile_path;
@@ -2303,7 +2314,14 @@ typedef struct WormUiMenuCommandView {
     bool checked;
 } WormUiMenuCommandView;
 
+typedef struct WormUiRecentFileView {
+    const char* label;
+    const char* path;
+} WormUiRecentFileView;
+
 typedef struct WormUiWorkspaceView {
+    size_t recent_file_count;
+    WormUiRecentFileView recent_files[100];
     size_t menu_command_count;
     WormUiMenuCommandView menu_commands[WORM_UI_MENU_COMMAND_CAPACITY];
     WormUiNotificationView notifications;
@@ -3034,6 +3052,11 @@ typedef struct WormUiWorkspaceAction {
 bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer);
 // Select a loaded field palette; empty or unknown IDs use Wormedit. Chrome is unaffected.
 bool worm_ui_frontend_select_field_scheme(const char* id);
+// Resolve a layout override, the default, then Wormedit against semantic compatibility.
+bool worm_ui_frontend_configure_field_scheme(const char* requested, const char* fallback,
+    const WormUiComposeLaneView* lanes, size_t count);
+// Core stage none/left/right; -1 uses chart layout, 0 left, 1 right.
+int worm_ui_frontend_field_scratch_side(uint8_t stage);
 void worm_ui_frontend_set_snap_colored_grid(bool enabled);
 void worm_ui_frontend_set_snap_grid_opacity(uint32_t percent);
 void worm_ui_frontend_set_field_waveform_opacity(uint32_t percent);

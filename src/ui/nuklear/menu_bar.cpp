@@ -15,6 +15,12 @@ void append_file(workspace_menu_t& menu, const WormUiWorkspaceView& view, bool b
     menu.push_back({"File", "Close project", Action::close, nullptr, !blocked && view.project_loaded});
     menu.push_back({"File", "Options...", Action::options, "workspace.options", !blocked});
     menu.push_back({"File", "Quit", Action::quit, nullptr, !blocked});
+    if (view.recent_file_count) menu.push_back({"File", "", Action::none, nullptr, false});
+    for (std::size_t index = 0; index < std::min(view.recent_file_count, std::size(view.recent_files)); ++index) {
+        const auto& entry = view.recent_files[index];
+        menu.push_back({"File", entry.label, static_cast<Action>(static_cast<int>(Action::recent_first) + index),
+                        nullptr, !blocked, false, nullptr, entry.path});
+    }
 }
 
 void append_edit(workspace_menu_t& menu, bool enabled) {
@@ -107,7 +113,32 @@ auto menu_size(nk_context* context, const workspace_menu_t& model, const char* t
         };
         width = std::max(width, text_width(item.title) + text_width(item.shortcut) + 64.0f);
     }
-    return nk_vec2(width, height - context->style.window.spacing.y);
+    const auto parent = nk_window_get_content_region(context);
+    return nk_vec2(std::min(width, parent.w),
+                   std::min(height - context->style.window.spacing.y, std::max(80.0f, parent.h - 40.0f)));
+}
+auto render_menu_entries(nk_context* context, const workspace_menu_t& model,
+                         const char* title, bool scrollable, bool& release_pending,
+                         const char*& tooltip) -> Action {
+    auto chosen = Action::none;
+    for (const auto& item : model) {
+        if (std::strcmp(item.menu, title) != 0) continue;
+        if (item.action == Action::none) {
+            chrome::menu_separator(context);
+            continue;
+        }
+        nk_layout_row_dynamic(context, metrics::menu_item_height, 1);
+        const auto row_bounds = nk_widget_bounds(context);
+        if (chrome::menu_item(context, item.title, item.shortcut, item.checked, item.enabled, !scrollable)) {
+            chosen = item.action;
+            release_pending = true;
+        }
+        if (item.recent_path && nuklear::tooltip::hovered(context, row_bounds)) tooltip = item.recent_path;
+        if (item.enabled || !nuklear::tooltip::hovered(context, row_bounds)) continue;
+        if (item.action == Action::move_to_bgm) tooltip = "Requires selected playable notes on an editable BMS chart";
+        if (item.action == Action::select_same_sound) tooltip = "Hover a note or select a sound first";
+    }
+    return chosen;
 }
 } // namespace
 
@@ -142,21 +173,18 @@ auto render_workspace_menu(nk_context* context, const workspace_menu_t& model,
     }
     popup_open = true;
     const auto saved = chrome::menu_surface_begin(context);
-    auto chosen = Action::none;
-    const char* tooltip = nullptr;
-    for (const auto& item : model) {
-        if (std::strcmp(item.menu, title) != 0) continue;
-        if (item.action == Action::none) {
-            chrome::menu_separator(context);
-            continue;
-        }
-        nk_layout_row_dynamic(context, metrics::menu_item_height, 1);
-        const auto row_bounds = nk_widget_bounds(context);
-        if (chrome::menu_item(context, item.title, item.shortcut, item.checked, item.enabled)) chosen = item.action;
-        if (item.enabled || !nuklear::tooltip::hovered(context, row_bounds)) continue;
-        if (item.action == Action::move_to_bgm) tooltip = "Requires selected playable notes on an editable BMS chart";
-        if (item.action == Action::select_same_sound) tooltip = "Hover a note or select a sound first";
+    const bool scrollable = std::strcmp(title, "File") == 0 &&
+        std::ranges::any_of(model, [](const auto& item) { return item.recent_path != nullptr; });
+    bool group_open = false;
+    if (scrollable) {
+        nk_layout_row_dynamic(context, std::max(40.0f, size.y - 12.0f), 1);
+        group_open = nk_group_begin(context, "file-menu-entries", 0);
     }
+    const char* tooltip = nullptr;
+    const auto chosen = (!scrollable || group_open)
+        ? render_menu_entries(context, model, title, scrollable, release_pending, tooltip) : Action::none;
+    if (group_open) nk_group_end(context);
+    if (scrollable && chosen != Action::none) nk_popup_close(context);
     nk_menu_end(context);
     chrome::menu_surface_end(context, saved);
     if (tooltip) nuklear::tooltip::text(context, tooltip);

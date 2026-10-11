@@ -19,9 +19,16 @@ struct options_runtime_t {
     std::vector<WormUiOptionsDiagnostic> diagnostic_views;
     std::vector<WormUiExternalPlayerDefinitionView> player_views;
     std::string status;
+    std::string current_field_layout_key;
+    std::string current_field_layout_name;
     // One producer result per action; projection must never repost this value.
     std::optional<notification_post_t> notification;
 };
+// Resolves presentation only: null preserves the authored chart side.
+[[nodiscard]] auto resolve_scratch_positions(const display_preferences_t&,
+    const std::array<std::optional<bool>, 2>& skin_defaults)
+    -> std::array<std::optional<bool>, 2>;
+void set_options_field_layout(options_runtime_t&, std::string_view key, std::string_view name);
 void open_options(options_runtime_t&, const program_preferences_t&);
 // Later registered pages submit typed candidates; only the active category is copied.
 [[nodiscard]] auto edit_options_draft(options_runtime_t&, std::uint64_t revision,

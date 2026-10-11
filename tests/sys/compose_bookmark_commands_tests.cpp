@@ -1,6 +1,7 @@
 #include "sys/compose_bookmark_commands.h"
 #include "sys/application_commands.h"
 #include "sys/compose_playhead_skip.h"
+#include "sys/compose_playhead_cursor.h"
 
 #include <wormedit/audio/decoder.h>
 
@@ -65,13 +66,16 @@ struct fixture_t {
 
 TEST_CASE("nearest snap row picks the closest row and ties go earlier",
           "[unit][sys][bookmark-commands]") {
+    const auto chart = bookmark_song().charts.front();
+    auto index = std::get<measure_index_t>(build_measure_index(chart));
     // A quarter-note snap of a 960-division measure is 240 rows.
-    CHECK(nearest_snap_row(100.0, 960, 4, 1920) == std::optional<std::uint64_t>{0});
-    CHECK(nearest_snap_row(130.0, 960, 4, 1920) == std::optional<std::uint64_t>{240});
-    CHECK(nearest_snap_row(120.0, 960, 4, 1920) == std::optional<std::uint64_t>{0});
-    CHECK(nearest_snap_row(5000.0, 960, 4, 1920) == std::optional<std::uint64_t>{1680});
-    CHECK_FALSE(nearest_snap_row(10.0, 960, 7, 1920));
-    CHECK_FALSE(nearest_snap_row(10.0, 960, 4, 0));
+    CHECK(nearest_snap_row(chart, index, 100.0, 4) == std::optional<std::uint64_t>{0});
+    CHECK(nearest_snap_row(chart, index, 130.0, 4) == std::optional<std::uint64_t>{240});
+    CHECK(nearest_snap_row(chart, index, 120.0, 4) == std::optional<std::uint64_t>{0});
+    CHECK(nearest_snap_row(chart, index, 5000.0, 4) == std::optional<std::uint64_t>{1680});
+    CHECK_FALSE(nearest_snap_row(chart, index, 10.0, 7));
+    index.total_rows = 0;
+    CHECK_FALSE(nearest_snap_row(chart, index, 10.0, 4));
 }
 
 TEST_CASE("Go To Bookmark shortcut maps to its application command",
@@ -424,4 +428,36 @@ TEST_CASE("bookmark steps and wheel skips do not continue each other's sequences
     mixed.now += std::chrono::milliseconds{50};
     REQUIRE(mixed.previous_bookmark(1500.0));             // Not stepping past the old record.
     CHECK(mixed.seeks.back() == 6 * quarter_frames);
+}
+
+TEST_CASE("Playing bookmarks and following cursor use the current measure grid",
+          "[unit][sys][bookmark-commands]") {
+    fixture_t fixture{{measure_id_t{3}, 0}};
+    auto& chart = fixture.history.document.charts.front();
+    chart.measures.front().definition.length = {1, 3};
+    chart.measures.front().definition.meter.reset();
+    chart.sections.clear();
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    CHECK(nearest_snap_row(chart, index, 300, 4) == 320);
+    CHECK(nearest_snap_row(chart, index, 440, 4) == 320);
+    CHECK(nearest_snap_row(chart, index, 441, 4) == 560);
+    fixture.application.transport_preview_playing = [] { return true; };
+    fixture.application.preview_playhead_absolute_row = 441;
+    const auto added = add_beat_bookmark_here(fixture.history, fixture.state, fixture.application);
+    REQUIRE(added.accepted);
+    CHECK(fixture.history.document.charts.front().bookmarks.back().position ==
+          local_position_t{measure_id_t{4}, 240});
+}
+
+TEST_CASE("Following playhead cursor floors on the current measure grid",
+          "[unit][sys][bookmark-commands]") {
+    fixture_t fixture{{measure_id_t{3}, 0}};
+    auto& chart = fixture.history.document.charts.front();
+    chart.measures.front().definition.length = {1, 3};
+    chart.measures.front().definition.meter.reset();
+    chart.sections.clear();
+    REQUIRE(follow_compose_playhead(fixture.history, fixture.state, 550, true));
+    CHECK(fixture.state.cursor == local_position_t{measure_id_t{4}, 0});
+    REQUIRE(follow_compose_playhead(fixture.history, fixture.state, 560, true));
+    CHECK(fixture.state.cursor == local_position_t{measure_id_t{4}, 240});
 }

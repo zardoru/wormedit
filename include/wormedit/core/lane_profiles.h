@@ -84,10 +84,19 @@ make_bms_10k_foot_pedal_profile(scratch_placement_t left_scratch = scratch_place
 // provide unambiguous evidence.
 // Derives each lane's key color from the layout's profile id and lane roles:
 // BMS/BME keys alternate white/black per stage (scratch lanes excluded), PMS
-// nine-button stages use the button colors, generic piano banks follow note
-// names, and everything else stays generic. Pedal, free-zone and scratch roles
+// nine-button stages use the button colors, osu!mania uses symmetric key classes,
+// generic piano banks follow note names, and everything else stays generic. Pedal, free-zone and scratch roles
 // always map to their own class.
 void assign_lane_key_colors(lane_layout_t& layout);
+
+// Stable skin preference identity of the selected semantic layout. Scratch placement,
+// lane IDs, source channels and the chart's file format do not affect known SP/DP keys.
+// Unrecognized profile IDs remain distinct; an empty ID uses "custom".
+[[nodiscard]] auto field_skin_layout_key(const lane_layout_t& layout) -> std::string;
+// Common skin class names, independent of the original instrument's enum spelling.
+// A playable special/red column keeps its authored role; only its visual class is red.
+[[nodiscard]] auto field_skin_key_class(lane_key_color_t color) -> std::string_view;
+
 
 [[nodiscard]] auto make_bms_10k_scratchless_profile() -> lane_input_profile_t;
 

@@ -33,6 +33,7 @@ struct dialog_fixture_t {
     bool parent_clicked{};
     chrome::DialogResult result{chrome::DialogResult::none};
     bool modal{true};
+    bool movable{};
     bool with_primary{true};
     bool open{true};
     struct nk_vec2 area{800, 600};
@@ -59,7 +60,7 @@ struct dialog_fixture_t {
     }
 
     void draw_dialog() {
-        chrome::DialogOptions options{.modal = modal, .width = width, .area = area};
+        chrome::DialogOptions options{.modal = modal, .width = width, .area = area, .movable = movable};
         if (chrome::dialog_begin(dialog, &context, "Test dialog", "Discard changes?", options)) {
             nk_layout_row_dynamic(&context, 20, 1);
             body = nk_widget_bounds(&context);
@@ -179,7 +180,7 @@ TEST_CASE("Dialog cannot be dragged",
     dialog_fixture_t f;
     f.settle();
     const auto start = f.window;
-    const auto x = f.window.x + 40, y = f.window.y + 6;
+    const auto x = f.window.x + 40, y = f.window.y + chrome::dialog_padding + 6;
     f.frame({.mouse = {x, y}});
     f.frame({.mouse = {x, y}, .left = 1});
     f.frame({.mouse = {x + 120, y + 90}});
@@ -215,4 +216,25 @@ TEST_CASE("Dialog clamps to a small window with a 16 px margin",
     verify(f.dialog.bounds.x + f.dialog.bounds.w <= 300 - chrome::dialog_padding + 0.5f);
     verify(f.dialog.bounds.y >= chrome::dialog_padding - 0.5f);
     verify(f.dialog.bounds.y + f.dialog.bounds.h <= 150 - chrome::dialog_padding + 0.5f);
+}
+
+TEST_CASE("Dialog movement is opt-in retained independently of resizing and viewport clamped",
+          "[frontend-state][dialog][options-drag]") {
+    dialog_fixture_t f;
+    f.movable = true;
+    f.settle();
+    const auto start = f.window;
+    const auto handle = f.dialog.drag_handle;
+    const auto x = handle.x + 8, y = handle.y + 8;
+    f.frame({.mouse = {x, y}, .left = 1});
+    f.frame({.mouse = {x + 80, y + 45}});
+    f.frame({.mouse = {x + 80, y + 45}, .left = 0});
+    f.frame({});
+    verify(std::abs(f.window.x - start.x - 80) < 1);
+    verify(std::abs(f.window.y - start.y - 45) < 1);
+    verify(f.window.w == start.w && f.window.h == start.h);
+    f.area = {450, 300};
+    f.frame({});
+    verify(f.window.x >= 0 && f.window.y >= 0);
+    verify(f.window.x + f.window.w <= f.area.x && f.window.y + f.window.h <= f.area.y);
 }

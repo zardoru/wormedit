@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/grid.h>
+#include <wormedit/core/snap.h>
 #include <wormedit/core/interaction.h>
 
 #include <algorithm>
@@ -85,10 +86,16 @@ namespace wormedit::sys {
     const auto* index = geometry.index;
     if (!index || index->total_rows == 0) return false;
     const auto previous_scroll = state.viewport_scroll_pixels;
-    const auto step = chart->divisions_per_standard_measure / state.active_snap_denominator;
     const auto bounded_row = std::min(static_cast<long double>(absolute_row),
                                       static_cast<long double>(index->total_rows - 1));
-    const auto row = static_cast<std::uint64_t>(std::floor(bounded_row / step)) * step;
+    auto snapped = snap_canvas_row(*chart, *index, bounded_row,
+                                   state.active_snap_denominator, index->total_rows);
+    if (!snapped) return false;
+    if (*snapped > bounded_row)
+        snapped = adjacent_snap_canvas_row(*chart, *index, bounded_row,
+            state.active_snap_denominator, index->total_rows, false);
+    if (!snapped) return false;
+    const auto row = *snapped;
     const auto after = std::ranges::upper_bound(index->entries, row, {},
                                                 &measure_index_entry_t::absolute_begin_row);
     if (after == index->entries.begin()) return false;

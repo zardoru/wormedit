@@ -1,6 +1,7 @@
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/theme.h"
 #include <array>
+#include <wormedit/core/lane_profiles.h>
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
@@ -65,32 +66,24 @@ TEST_CASE("Field theme discovery loads all ten bundled schemes and preserves chr
     check_color(compose(ComposeColor::measure_line), nk_rgb(95, 107, 128));
     check_color(compose_key_color(1).note, nk_rgb(226, 232, 240));
 }
-TEST_CASE("Field theme positions separate scratch and player sides and inherit missing roles",
-          "[theme]") {
+TEST_CASE("Semantic palettes alias classes and follow each object class", "[theme][semantic-skins]") {
     theme_fixture_t fixture;
-    fixture.write(
-        "positions",
-        R"({"version":2,"name":"Positions","key_colors":{"white":{"lane_alternate":"#050607"}},"keys":{
-        "1p":{"1":{"note":"#01020304","long_note":"#09080706","label":"#102030"},"scratch":{"lane":"#404142"}},
-        "2p":{"1":{"note":"#aabbcc"}}},"timing":{"stop":{"label":"#223344"}}})");
+    fixture.write("classes", R"({"version":2,"name":"Classes","lane_classes":{
+      "white":{"note":"#01020304","long_note":"#09080706","label":"#102030"},
+      "red":{"lane":"#404142"}},"timing":{"stop":{"label":"#223344"}}})");
     load(fixture.directory);
-    REQUIRE(select_field_scheme("positions"));
-    const std::array lanes{field_lane_t{0, 0, 3, 1}, field_lane_t{1, 0, 1, 0},
-                           field_lane_t{2, 0, 2, 0}, field_lane_t{3, 2, 1, 0},
-                           field_lane_t{4, 2, 3, 1}};
+    REQUIRE(select_field_scheme("classes"));
+    const std::array lanes{field_lane_t{7, 2, 3, 1, 11}, field_lane_t{0, 0, 1, 0, 12},
+        field_lane_t{1, 0, 6, 0, 13}, field_lane_t{2, 2, 2, 0, 14}};
     bind_field_layout(lanes);
-    const auto first = compose_key_color(1, 2);
-    check_color(first.note, nk_rgba(1, 2, 3, 4));
-    check_color(first.hold_body, compose_key_color(1).hold_body);
-    check_color(first.lane_alternate, nk_rgb(5, 6, 7));
-    check_color(compose_key_color(3, 1).lane, nk_rgb(64, 65, 66));
-    check_color(compose_key_color(1, 4).note, nk_rgb(170, 187, 204));
-    check_color(compose_key_color(2, 3).lane, compose_key_color(2).lane);
-    REQUIRE(compose_timing_color(3).label);
-    check_color(*compose_timing_color(3).label, nk_rgb(34, 51, 68));
-    const WormUiComposeNoteView hold{.display_lane_number = 2, .key_color = 1, .kind = 1};
-    check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, hold),
-                nk_rgba(9, 8, 7, 6));
+    check_color(compose_key_color(1, 12).note, nk_rgba(1, 2, 3, 4));
+    check_color(compose_key_color(6, 13).note, compose_key_color(1, 12).note);
+    check_color(compose_key_color(3, 11).lane, nk_rgb(64, 65, 66));
+    check_color(compose_key_color(2, 14).note, compose_key_color(2).note);
+    const WormUiComposeNoteView hold{.lane_id = 12, .key_color = 1, .kind = 1};
+    check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, hold), nk_rgba(9, 8, 7, 6));
+    expect_theme(!field_uses_positions());
+    expect_theme(field_scheme_supports_layout("classes", lanes));
 }
 TEST_CASE("Field theme invalid files reject atomically and unknown selection warns once",
           "[theme]") {
@@ -120,16 +113,17 @@ TEST_CASE("Field theme invalid files reject atomically and unknown selection war
     expect_theme(field_scheme_id() == "wormedit");
     check_color(compose(ComposeColor::viewport), nk_rgb(22, 25, 33));
 }
-TEST_CASE("Field theme switching discards old position colors and binds scratch inside",
-          "[theme]") {
+TEST_CASE("Field theme switching discards semantic overrides and unchanged selection is stable", "[theme]") {
     theme_fixture_t fixture;
-    fixture.write("partial",
-                  R"({"version":2,"name":"Partial","keys":{"1p":{"1":{"note":"#123456"}}}})");
+    fixture.write("partial", R"({"version":2,"name":"Partial","lane_classes":{"white":{"note":"#123456"}}})");
     load(fixture.directory);
     REQUIRE(select_field_scheme("partial"));
-    const std::array lanes{field_lane_t{0, 0, 1, 0}, field_lane_t{1, 0, 2, 0},
-                           field_lane_t{2, 0, 3, 1}};
+    const std::array lanes{field_lane_t{0, 0, 1, 0, 1}, field_lane_t{1, 0, 2, 0, 2}};
     bind_field_layout(lanes);
+    check_color(compose_key_color(1, 1).note, nk_rgb(18, 52, 86));
+    const auto generation = field_generation();
+    REQUIRE(select_field_scheme("partial"));
+    expect_theme(field_generation() == generation);
     check_color(compose_key_color(1, 1).note, nk_rgb(18, 52, 86));
     REQUIRE(select_field_scheme("wormedit"));
     bind_field_layout(lanes);
@@ -179,24 +173,41 @@ TEST_CASE("Snap grid opacity spans zero to full and invalidates styles only on c
     set_snap_colored_grid(true);
 }
 
-TEST_CASE("BMSE scratch colors follow scratch roles on both sides and placements", "[theme]") {
+namespace {
+void check_bmse_profile(const wormedit::lane_input_profile_t& profile) {
+    std::vector<field_lane_t> lanes;
+    for (const auto& lane : profile.layout.lanes)
+        lanes.push_back({lane.display_order, static_cast<std::uint8_t>(lane.stage),
+            static_cast<std::uint8_t>(lane.key_color), static_cast<std::uint8_t>(lane.role), lane.id.value});
+    bind_field_layout(lanes);
+    for (const auto& lane : lanes) {
+        INFO("Lane " << lane.lane_id << " stage " << static_cast<int>(lane.stage));
+        const auto color = compose_key_color(lane.key_color, lane.lane_id);
+        if (lane.role != 0 && lane.role != 1) {
+            check_color(color.note, compose_key_color(lane.key_color).note);
+            continue;
+        }
+        const auto expected = lane.role == 1 ? nk_rgb(128, 0, 0)
+                              : lane.key_color == 2 ? nk_rgb(0, 0, 255)
+                                                    : nk_rgb(128, 128, 128);
+        check_color(color.note, expected);
+        const WormUiComposeNoteView note{.lane_id = lane.lane_id, .key_color = lane.key_color};
+        check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, note), expected);
+        const WormUiComposeHoldView hold{.lane_id = lane.lane_id, .key_color = lane.key_color};
+        check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, hold), expected);
+    }
+}
+}
+TEST_CASE("BMSE colors real BMS 10K stages with overlapping local lane numbers", "[theme]") {
     theme_fixture_t restore;
     load(source_themes());
     REQUIRE(select_field_scheme("ibmsc-bmse"));
-    const std::array outside{
-        field_lane_t{0, 1, 3, 1}, field_lane_t{1, 1, 1, 0}, field_lane_t{2, 1, 2, 0},
-        field_lane_t{3, 2, 1, 0}, field_lane_t{4, 2, 2, 0}, field_lane_t{5, 2, 3, 1}};
-    const std::array inside{
-        field_lane_t{0, 1, 1, 0}, field_lane_t{1, 1, 2, 0}, field_lane_t{2, 1, 3, 1},
-        field_lane_t{3, 2, 3, 1}, field_lane_t{4, 2, 1, 0}, field_lane_t{5, 2, 2, 0}};
-    for (const auto& lanes : {outside, inside}) {
-        bind_field_layout(lanes);
-        for (const auto& lane : lanes) {
-            const auto color = compose_key_color(lane.key_color, lane.display_order + 1);
-            const auto expected = lane.role == 1 ? nk_rgba(128, 0, 0, 128)
-                                  : lane.key_color == 2 ? nk_rgba(0, 0, 255, 128)
-                                                        : nk_rgba(128, 128, 128, 128);
-            check_color(color.note, expected);
+    using namespace wormedit;
+    for (const auto left : {scratch_placement_t::outside, scratch_placement_t::inside}) {
+        for (const auto right : {scratch_placement_t::outside, scratch_placement_t::inside}) {
+            check_bmse_profile(make_bms_10k_standard_profile(left, right));
+            check_bmse_profile(make_bms_10k_free_zone_profile(left, right));
+            check_bmse_profile(make_bms_10k_foot_pedal_profile(left, right));
         }
     }
 }
@@ -209,7 +220,7 @@ TEST_CASE("Wormedit lane fills are milder with matching missing-asset fallback",
         nk_rgba(33, 40, 53, 160), nk_rgba(44, 48, 58, 160), nk_rgba(30, 37, 50, 160),
         nk_rgba(48, 34, 40, 160), nk_rgba(30, 43, 47, 160), nk_rgba(47, 41, 32, 160),
         nk_rgba(44, 48, 58, 160), nk_rgba(47, 44, 31, 160), nk_rgba(29, 45, 36, 160),
-        nk_rgba(30, 39, 55, 160), nk_rgba(48, 34, 40, 160)};
+        nk_rgba(30, 37, 50, 160), nk_rgba(48, 34, 40, 160)};
     std::array<key_color_t, 11> bundled;
     for (std::uint8_t key = 0; key < bundled.size(); ++key) {
         bundled[key] = compose_key_color(key);
@@ -232,25 +243,19 @@ TEST_CASE("Wormedit lane fills are milder with matching missing-asset fallback",
     }
 }
 
-TEST_CASE("osu mania yellow center scheme colors only ten playable lanes", "[theme]") {
+TEST_CASE("osu mania skin colors semantic green and yellow lanes yellow at any count", "[theme][semantic-skins]") {
     theme_fixture_t restore;
     load(source_themes());
     REQUIRE(select_field_scheme("osu-mania"));
-    for (const bool split : {false, true}) {
-        std::array<field_lane_t, 10> lanes;
-        for (std::uint32_t index = 0; index < lanes.size(); ++index)
-            lanes[index] = {index, static_cast<std::uint8_t>(split && index >= 5 ? 2 : 1), 1, 0};
-        bind_field_layout(lanes);
-        for (const auto& lane : lanes) {
-            const auto index = lane.display_order;
-            const auto expected = index == 4 || index == 5 ? nk_rgb(250, 204, 21)
-                                  : index == 1 || index == 3 || index == 6 || index == 8
-                                      ? nk_rgb(59, 130, 246) : nk_rgb(226, 232, 240);
-            check_color(compose_key_color(1, index + 1).note, expected);
-        }
-        bind_field_layout(std::span(lanes).first(7));
-        check_color(compose_key_color(1, 5).note, compose_key_color(1).note);
-    }
+    const std::array lanes{field_lane_t{0, 0, 1, 0, 1}, field_lane_t{1, 0, 2, 0, 2},
+        field_lane_t{2, 0, 8, 0, 3}, field_lane_t{3, 0, 7, 0, 4}, field_lane_t{4, 0, 3, 1, 5}};
+    bind_field_layout(lanes);
+    check_color(compose_key_color(8, 3).note, nk_rgb(250, 204, 21));
+    check_color(compose_key_color(7, 4).note, nk_rgb(250, 204, 21));
+    check_color(compose_key_color(1, 1).note, nk_rgb(226, 232, 240));
+    check_color(compose_key_color(2, 2).note, nk_rgb(59, 130, 246));
+    expect_theme(field_scheme_supports_layout("osu-mania", lanes));
+    expect_theme(!field_uses_positions());
 }
 
 TEST_CASE("Waveform opacity scales alpha without changing colors and invalidates retained fields", "[theme][feedback]") {
@@ -266,4 +271,231 @@ TEST_CASE("Waveform opacity scales alpha without changing colors and invalidates
     set_field_waveform_opacity(100);
     expect_theme(field_generation() == unchanged);
     set_field_waveform_opacity(75);
+}
+
+TEST_CASE("Skins suggest scratch sides separately without changing field color identity", "[theme][scratch-presentation]") {
+    theme_fixture_t restore;
+    load(source_themes());
+    REQUIRE(select_field_scheme("wormedit"));
+    expect_theme(!field_scratch_side(0).has_value());
+    REQUIRE(select_field_scheme("ibmsc-bmse"));
+    expect_theme(!field_scratch_side(0).has_value());
+    expect_theme(!field_scratch_side(1).has_value());
+    expect_theme(!field_scratch_side(2).has_value());
+    expect_theme(!field_scratch_side(3).has_value());
+    REQUIRE(select_field_scheme("ibmsc-iidx"));
+    expect_theme(!field_scratch_side(1).has_value());
+    expect_theme(!field_scratch_side(2).has_value());
+}
+
+TEST_CASE("Skin scratch metadata validates atomically and supports independent sides", "[theme][scratch-presentation]") {
+    theme_fixture_t fixture;
+    fixture.write("right-left", R"({"version":2,"name":"Right Left","scratch_placement":{"1p":"right","2p":"left"}})");
+    fixture.write("bad-side", R"({"version":2,"name":"Bad Side","scratch_placement":{"1p":"outside"}})");
+    fixture.write("bad-player", R"({"version":2,"name":"Bad Player","scratch_placement":{"3p":"left"}})");
+    fixture.write("bad-shape", R"({"version":2,"name":"Bad Shape","scratch_placement":["left","right"]})");
+    diagnostic_capture_t diagnostics;
+    load(fixture.directory);
+    REQUIRE(field_schemes().size() == 2);
+    REQUIRE(select_field_scheme("right-left"));
+    expect_theme(field_scratch_side(1) == true);
+    expect_theme(field_scratch_side(2) == false);
+    expect_theme(!select_field_scheme("bad-side"));
+    expect_theme(field_scheme_id() == "wormedit");
+    expect_theme(!field_scratch_side(1).has_value());
+    expect_theme(diagnostics.output.str().find("bad-side.json") != std::string::npos);
+    expect_theme(diagnostics.output.str().find("bad-player.json") != std::string::npos);
+    expect_theme(diagnostics.output.str().find("bad-shape.json") != std::string::npos);
+}
+
+namespace {
+struct imported_lane_palette_t {
+    const char* id;
+    nk_color scratch;
+    nk_color white;
+    nk_color black;
+};
+
+void check_imported_stages(const wormedit::lane_input_profile_t& profile,
+                           const imported_lane_palette_t& expected) {
+    std::vector<field_lane_t> lanes;
+    for (const auto& lane : profile.layout.lanes)
+        lanes.push_back({lane.display_order, static_cast<std::uint8_t>(lane.stage),
+            static_cast<std::uint8_t>(lane.key_color), static_cast<std::uint8_t>(lane.role), lane.id.value});
+    // Presentation can enumerate lanes in a different order; lookup follows authored IDs.
+    std::ranges::reverse(lanes);
+    bind_field_layout(lanes);
+    std::array<int, 2> scratches{};
+    for (const auto& lane : lanes) {
+        if (lane.role != 0 && lane.role != 1) continue;
+        INFO(expected.id << " lane " << lane.lane_id << " stage " << static_cast<int>(lane.stage));
+        const auto color = compose_key_color(lane.key_color, lane.lane_id);
+        if (lane.role == 1) {
+            ++scratches[lane.stage == 2 ? 1 : 0];
+            check_color(color.note, expected.scratch);
+        } else if (expected.white.a != 0) {
+            const auto key = lane.key_color == 2 ? expected.black : expected.white;
+            // Check alpha as well: source hidden-note opacity must not dim normal notes.
+            check_color(color.note, key);
+        }
+        const WormUiComposeNoteView note{.lane_id = lane.lane_id, .key_color = lane.key_color};
+        check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, note), color.note);
+        const WormUiComposeHoldView hold{.lane_id = lane.lane_id, .key_color = lane.key_color};
+        check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, hold), color.hold_body);
+    }
+    expect_theme(scratches[0] == 1 && scratches[1] == 1);
+}
+}
+
+TEST_CASE("Every imported skin binds DP5 and DP7 scratches on both stages by role",
+          "[theme][bundled-lane-mapping]") {
+    theme_fixture_t restore;
+    load(source_themes());
+    const std::array palettes{
+        imported_lane_palette_t{"ibmsc-bmse", nk_rgb(128, 0, 0), nk_rgb(128, 128, 128), nk_rgb(0, 0, 255)},
+        imported_lane_palette_t{"ibmsc-bmsemdk", nk_rgb(255, 0, 0), nk_rgb(96, 96, 96), nk_rgb(0, 0, 255)},
+        imported_lane_palette_t{"ibmsc-bmsemdkp", nk_rgb(255, 0, 0), nk_rgb(96, 96, 96), nk_rgb(0, 0, 255)},
+        imported_lane_palette_t{"ibmsc-forme", nk_rgb(245, 89, 89), nk_rgb(170, 170, 170), nk_rgb(98, 137, 255)},
+        imported_lane_palette_t{"ibmsc-iidx", nk_rgb(245, 89, 89), nk_rgb(170, 170, 170), nk_rgb(98, 137, 255)},
+        imported_lane_palette_t{"ibmsc-pomu", nk_rgb(255, 0, 0), nk_rgb(128, 128, 128), nk_rgb(0, 0, 255)},
+        imported_lane_palette_t{"ibmsc-myo2-4k", nk_rgba(248, 113, 113, 255), {}, {}},
+        imported_lane_palette_t{"ibmsc-o2mania", nk_rgba(128, 128, 128, 255), {}, {}}};
+    using namespace wormedit;
+    for (const auto& palette : palettes) {
+        REQUIRE(select_field_scheme(palette.id));
+        for (const auto left : {scratch_placement_t::outside, scratch_placement_t::inside}) {
+            for (const auto right : {scratch_placement_t::outside, scratch_placement_t::inside}) {
+                check_imported_stages(make_bms_10k_standard_profile(left, right), palette);
+                check_imported_stages(make_bms_14k_profile(left, right), palette);
+            }
+        }
+    }
+}
+
+TEST_CASE("Imported hidden-note opacity never dims normal white notes or holds",
+          "[theme][semantic-skins][opacity]") {
+    theme_fixture_t restore;
+    load(source_themes());
+    for (const auto* id : {"ibmsc-bmse", "ibmsc-bmsemdk", "ibmsc-bmsemdkp",
+                           "ibmsc-forme", "ibmsc-iidx", "ibmsc-pomu"}) {
+        INFO(id);
+        REQUIRE(select_field_scheme(id));
+        for (const auto key : {std::uint8_t{1}, std::uint8_t{6}}) {
+            const WormUiComposeNoteView visible{.key_color = key};
+            auto hidden = visible;
+            hidden.kind = 3;
+            auto long_note = visible;
+            long_note.kind = 1;
+            const WormUiComposeHoldView hold{.key_color = key};
+            const auto normal = worm_ui_nuklear_compose_color_view_t::normal;
+            expect_theme(compose_note_base_fill(normal, visible).a == 255);
+            expect_theme(compose_note_base_fill(normal, long_note).a == 255);
+            expect_theme(compose_note_base_fill(normal, hold).a == 255);
+            expect_theme(compose_note_base_fill(normal, hidden).a == 153);
+        }
+    }
+}
+
+namespace {
+auto palette_lanes(const wormedit::lane_input_profile_t& profile) -> std::vector<field_lane_t> {
+    std::vector<field_lane_t> result;
+    for (const auto& lane : profile.layout.lanes)
+        result.push_back({lane.display_order, static_cast<std::uint8_t>(lane.stage),
+            static_cast<std::uint8_t>(lane.key_color), static_cast<std::uint8_t>(lane.role), lane.id.value});
+    return result;
+}
+}
+
+TEST_CASE("Numbered palette compatibility requires exact classes and stage count", "[theme][semantic-skins]") {
+    theme_fixture_t restore;
+    load(source_themes());
+    const std::array four{field_lane_t{0, 1, 1, 0, 1}, field_lane_t{1, 1, 2, 0, 2},
+        field_lane_t{2, 1, 2, 0, 3}, field_lane_t{3, 1, 1, 0, 4}};
+    expect_theme(field_scheme_supports_layout("ibmsc-myo2-4k", four));
+    auto wrong = four;
+    wrong[2].key_color = 1;
+    expect_theme(!field_scheme_supports_layout("ibmsc-myo2-4k", wrong));
+    wrong = four;
+    wrong[2].stage = wrong[3].stage = 2;
+    expect_theme(!field_scheme_supports_layout("ibmsc-myo2-4k", wrong));
+    wrong = four;
+    wrong[0].role = 1;
+    expect_theme(!field_scheme_supports_layout("ibmsc-myo2-4k", wrong));
+    expect_theme(!field_scheme_supports_layout("missing", four));
+    REQUIRE(select_field_scheme("ibmsc-myo2-4k"));
+    bind_field_layout(four);
+    check_color(compose_key_color(1, 1).note, nk_rgb(242, 116, 179));
+    // An event from a different layout segment cannot borrow this numbered slot.
+    check_color(compose_key_color(2, 1).note, compose_key_color(2).note);
+    bind_field_layout(wrong);
+    check_color(compose_key_color(1, 4).note, compose_key_color(1).note);
+    expect_theme(!select_field_scheme_for_layout("ibmsc-myo2-4k", "ibmsc-forme", wrong));
+    expect_theme(field_scheme_id() == "ibmsc-forme");
+    expect_theme(!select_field_scheme_for_layout("missing", "ibmsc-myo2-4k", wrong));
+    expect_theme(field_scheme_id() == "wormedit");
+    expect_theme(!select_field_scheme_for_layout("", "ibmsc-forme", four));
+    expect_theme(field_scheme_id() == "ibmsc-forme");
+}
+
+TEST_CASE("Ungated positional files and malformed class descriptors reject atomically", "[theme][semantic-skins]") {
+    theme_fixture_t fixture;
+    fixture.write("legacy", R"({"version":2,"name":"Legacy","keys":{"1p":{"1":{"note":"#123456"}}}})");
+    fixture.write("class", R"({"version":2,"name":"Class","lane_classes":{"purple":{"note":"#123456"}}})");
+    fixture.write("guard", R"({"version":2,"name":"Guard","numbered_layout":{"stages":[["white"]],"colors":[[]]}})");
+    fixture.write("rotate", R"({"version":2,"name":"Rotate","rotate_dp5":"yes"})");
+    diagnostic_capture_t capture;
+    load(fixture.directory);
+    expect_theme(field_schemes().size() == 1);
+    expect_theme(capture.output.str().find("ungated positional") != std::string::npos);
+    expect_theme(capture.output.str().find("guard.json") != std::string::npos);
+    expect_theme(capture.output.str().find("class.json") != std::string::npos);
+    expect_theme(capture.output.str().find("rotate.json") != std::string::npos);
+}
+
+TEST_CASE("BMSE rotation default applies to DP5 only and preserves authored lanes", "[theme][semantic-skins]") {
+    theme_fixture_t restore;
+    load(source_themes());
+    REQUIRE(select_field_scheme("ibmsc-bmse"));
+    const auto dp5 = palette_lanes(wormedit::make_bms_10k_standard_profile());
+    const auto dp7 = palette_lanes(wormedit::make_bms_14k_profile());
+    const auto sp7 = palette_lanes(wormedit::make_bms_7k_profile());
+    expect_theme(field_scratch_side(1, dp5) == false);
+    expect_theme(field_scratch_side(2, dp5) == false);
+    expect_theme(!field_scratch_side(1, dp7).has_value());
+    expect_theme(!field_scratch_side(2, dp7).has_value());
+    expect_theme(!field_scratch_side(1, sp7).has_value());
+    expect_theme(!field_scratch_side(1).has_value());
+}
+
+TEST_CASE("BMS semantic palettes color osu layouts without source-family restrictions", "[theme][semantic-skins]") {
+    theme_fixture_t restore;
+    load(source_themes());
+    const auto profile = wormedit::make_osu_mania_profile(10);
+    REQUIRE(profile.has_value());
+    const auto lanes = palette_lanes(*profile);
+    REQUIRE(select_field_scheme_for_layout("ibmsc-forme", "wormedit", lanes));
+    for (const auto& lane : lanes) {
+        const auto key = compose_key_color(lane.key_color, lane.lane_id);
+        check_color(key.note, compose_key_color(lane.key_color).note);
+        if (lane.key_color == 1) check_color(key.note, nk_rgb(170, 170, 170));
+        if (lane.key_color == 2) check_color(key.note, nk_rgb(98, 137, 255));
+    }
+}
+
+TEST_CASE("Dynamic-layout events sharing an authored ID retain their own semantic class", "[theme][semantic-skins]") {
+    theme_fixture_t restore;
+    load(source_themes());
+    REQUIRE(select_field_scheme("ibmsc-forme"));
+    const std::array current{field_lane_t{0, 1, 1, 0, 77}};
+    bind_field_layout(current);
+    check_color(compose_key_color(1, 77).note, nk_rgb(170, 170, 170));
+    check_color(compose_key_color(2, 77).note, nk_rgb(98, 137, 255));
+    const WormUiComposeNoteView white{.lane_id = 77, .key_color = 1};
+    const WormUiComposeNoteView blue{.lane_id = 77, .key_color = 2};
+    check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, white), compose_key_color(1).note);
+    check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, blue), compose_key_color(2).note);
+    const WormUiComposeHoldView white_hold{.lane_id = 77, .key_color = 1};
+    const WormUiComposeHoldView blue_hold{.lane_id = 77, .key_color = 2};
+    check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, white_hold), compose_key_color(1).hold_body);
+    check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, blue_hold), compose_key_color(2).hold_body);
 }

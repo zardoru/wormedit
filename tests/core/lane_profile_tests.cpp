@@ -771,7 +771,175 @@ TEST_CASE("osu SpecialStyle 12K and 16K use outside scratch colors with playable
         CHECK_FALSE(ordinary->layout.split_stage);
         for (std::uint32_t column = 0; column < keys; ++column)
             CHECK(ordinary->layout.lanes[column].key_color ==
-                  (column % 2 == 0 ? lane_key_color_t::white : lane_key_color_t::black));
+                  (std::min(column, keys - column - 1) % 2 == 0
+                      ? lane_key_color_t::white : lane_key_color_t::black));
     }
     CHECK(make_osu_mania_profile(10, true)->layout.profile_id == "osu-mania-10k");
+}
+
+namespace {
+void check_field_skin(bool value) { CHECK(value); }
+auto skin_class_pattern(const lane_layout_t& layout) -> std::string {
+    std::string result;
+    for (const auto* lane : visual_playable_lanes(layout)) result += field_skin_key_class(lane->key_color).front();
+    return result;
+}
+void check_osu_skin_classes(std::uint32_t keys, std::string_view expected) {
+    auto profile = make_osu_mania_profile(keys);
+    REQUIRE(profile);
+    CHECK(skin_class_pattern(profile->layout) == expected);
+    auto repaired = profile->layout;
+    for (auto& lane : repaired.lanes) lane.key_color = lane_key_color_t::generic;
+    assign_lane_key_colors(repaired);
+    CHECK(skin_class_pattern(repaired) == expected);
+    CHECK(std::ranges::all_of(repaired.lanes, [](const auto& lane) { return lane.role == lane_role_t::playable; }));
+}
+void check_layout_skin_key(const lane_input_profile_t& profile, std::string_view expected) {
+    CHECK(field_skin_layout_key(profile.layout) == expected);
+}
+void check_bmson_skin_alias(lane_input_profile_t profile, const char* bmson_id, std::string_view expected) {
+    profile.layout.profile_id = bmson_id;
+    if (std::string_view(bmson_id) == "bmson-beat-10k" ||
+        std::string_view(bmson_id) == "bmson-beat-14k") profile.layout.split_stage = false;
+    for (auto& lane : profile.layout.lanes) {
+        lane.id.value += 100000;
+        lane.bms_channels.visible.reset();
+    }
+    CHECK(field_skin_layout_key(profile.layout) == expected);
+}
+}
+
+TEST_CASE("Selected osu layouts assign stable semantic classes for every supported key count",
+          "[core][lane-profile][key-color][field-skin-layout]") {
+    constexpr std::array<std::string_view, 18> patterns{
+        "y", "ww", "wyw", "wbbw", "wbybw", "wbwwbw", "wbwywbw", "wbwbbwbw", "wbwbybwbw",
+        "wbwbgybwbw", "wbwbwywbwbw", "wbwbwbbwbwbw", "wbwbwbybwbwbw", "wbwbwbwwbwbwbw",
+        "wbwbwbwywbwbwbw", "wbwbwbwbbwbwbwbw", "wbwbwbwbybwbwbwbw", "wbwbwbwbwwbwbwbwbw"};
+    for (std::uint32_t keys = 1; keys <= patterns.size(); ++keys) check_osu_skin_classes(keys, patterns[keys - 1]);
+}
+
+TEST_CASE("Field skin classes share white blue green yellow red identities across instruments",
+          "[core][lane-profile][field-skin-layout]") {
+    using color = lane_key_color_t;
+    check_field_skin(field_skin_key_class(color::white) == field_skin_key_class(color::pms_white));
+    check_field_skin(field_skin_key_class(color::black) == field_skin_key_class(color::pms_blue));
+    check_field_skin(field_skin_key_class(color::scratch) == field_skin_key_class(color::pms_red));
+    check_field_skin(field_skin_key_class(color::pms_green) == "green");
+    check_field_skin(field_skin_key_class(color::pms_yellow) == "yellow");
+    check_field_skin(field_skin_key_class(color::foot_pedal) == "foot-pedal");
+    check_field_skin(field_skin_key_class(color::free_zone) == "free-zone");
+    check_field_skin(field_skin_key_class(static_cast<color>(999)) == "generic");
+}
+
+TEST_CASE("Beat skin layout identities normalize scratch geometry and BMS BMSON aliases",
+          "[core][lane-profile][field-skin-layout]") {
+    for (const auto scratch : {scratch_placement_t::inside, scratch_placement_t::outside}) {
+        check_layout_skin_key(make_bms_5k_standard_profile(scratch), "bms-sp5");
+        check_layout_skin_key(make_bms_7k_profile(scratch), "bms-sp7");
+        for (const auto second : {scratch_placement_t::inside, scratch_placement_t::outside}) {
+            check_layout_skin_key(make_bms_10k_standard_profile(scratch, second), "bms-dp5");
+            check_layout_skin_key(make_bms_14k_profile(scratch, second), "bms-dp7");
+        }
+    }
+    check_bmson_skin_alias(make_bms_5k_standard_profile(), "bmson-beat-5k", "bms-sp5");
+    check_bmson_skin_alias(make_bms_7k_profile(), "bmson-beat-7k", "bms-sp7");
+    check_bmson_skin_alias(make_bms_10k_standard_profile(), "bmson-beat-10k", "bms-dp5");
+    check_bmson_skin_alias(make_bms_14k_profile(), "bmson-beat-14k", "bms-dp7");
+}
+
+TEST_CASE("Skin identity retains auxiliary and selected profile semantics with stable custom fallback",
+          "[core][lane-profile][field-skin-layout]") {
+    check_layout_skin_key(make_bms_5k_free_zone_profile(), "bms-sp5-free-zone");
+    check_layout_skin_key(make_bms_5k_foot_pedal_profile(), "bms-sp5-foot-pedal");
+    check_layout_skin_key(make_bms_10k_foot_pedal_profile(), "bms-dp5-foot-pedal");
+    check_layout_skin_key(make_bms_10k_scratchless_profile(), "osu-mania-10k");
+    check_layout_skin_key(make_pms_9k_profile(), "pms-9button");
+    check_layout_skin_key(make_pms_bme_style_9k_profile(), "pms-9button");
+    check_bmson_skin_alias(make_pms_9k_profile(), "bmson-popn-9k", "pms-9button");
+    CHECK(field_skin_layout_key(make_osu_mania_profile(12, true)->layout) == "osu-mania-12k-specialstyle");
+    auto custom = make_bms_7k_profile().layout;
+    custom.profile_id = "custom-layout-one";
+    CHECK(field_skin_layout_key(custom) == "custom-layout-one");
+    custom.profile_id = "custom-layout-two";
+    CHECK(field_skin_layout_key(custom) == "custom-layout-two");
+    custom.profile_id.clear();
+    CHECK(field_skin_layout_key(custom) == "custom");
+}
+
+TEST_CASE("Visual scratch override changes geometry without changing skin layout identity",
+          "[core][lane-profile][field-skin-layout]") {
+    const auto profile = make_bms_7k_profile();
+    chart_document_t chart{.id = chart_id_t{1}, .divisions_per_standard_measure = 960};
+    chart.measures = {{.id = measure_id_t{1}}};
+    chart.bpms = {{.id = object_id_t{2}, .position = {measure_id_t{1}, 0}, .beats_per_minute = {120, 1}}};
+    chart.lane_layouts = {{.id = object_id_t{3}, .position = {measure_id_t{1}, 0}, .layout = profile.layout}};
+    const auto built = build_editor_field_scene_index(chart, 1);
+    require_bmson_condition(std::holds_alternative<editor_field_scene_index_t>(built));
+    const editor_interaction_view_model_t view{.chart = chart.id, .active_lane = profile.layout.lanes.front().id,
+        .cursor = {measure_id_t{1}, 0}, .active_snap_denominator = 4, .supported_snap_denominators = {4},
+        .document_revision = 1, .pixels_per_standard_measure = 192, .viewport_height_pixels = 640};
+    const auto& index = std::get<editor_field_scene_index_t>(built);
+    const auto left = make_editor_field_scene(chart, index, view,
+        {.field_width_pixels = 640, .scratch_on_right = {false, std::nullopt}});
+    const auto right = make_editor_field_scene(chart, index, view,
+        {.field_width_pixels = 640, .scratch_on_right = {true, std::nullopt}});
+    require_bmson_condition(left);
+    require_bmson_condition(right);
+    const auto scratch = [](const auto& scene) {
+        return std::ranges::find(scene.lanes, lane_role_t::scratch, &editor_field_lane_geometry_t::role)->bounds.left;
+    };
+    check_field_skin(scratch(*left.scene) < scratch(*right.scene));
+    check_field_skin(field_skin_layout_key(chart.lane_layouts.front().layout) == "bms-sp7");
+}
+
+namespace {
+void check_bmson_dp_scratch_pick(const chart_document_t& chart, editor_interaction_view_model_t view,
+                               lane_id_t scratch, double x) {
+    view.scratch_on_right = {false, false};
+    const auto indexed = build_editor_hit_test_index(chart, 1);
+    require_bmson_condition(std::holds_alternative<editor_hit_test_index_t>(indexed));
+    const auto y = editor_position_y_pixels(chart, view, {measure_id_t{1}, 240});
+    require_bmson_condition(y);
+    const auto hit = hit_test_editor(chart, std::get<editor_hit_test_index_t>(indexed), view,
+        {.x_pixels = x, .y_pixels = *y, .field_width_pixels = 640});
+    require_bmson_condition(hit);
+    check_field_skin(hit->lane == scratch);
+    check_field_skin(hit->note == object_id_t{4});
+}
+}
+
+TEST_CASE("BMSON DP without a gap keeps each left scratch in its own stage and pick column",
+          "[core][lane-profile][field-skin-layout][scratch-presentation]") {
+    auto profile = make_bms_10k_standard_profile();
+    profile.layout.profile_id = "bmson-beat-10k";
+    profile.layout.split_stage = false;
+    profile.layout.split_after_column.reset();
+    const auto right_scratch = std::ranges::find_if(profile.layout.lanes, [](const auto& lane) {
+        return lane.stage == stage_group_t::right && lane.role == lane_role_t::scratch;
+    })->id;
+    chart_document_t chart{.id = chart_id_t{1}, .divisions_per_standard_measure = 960};
+    chart.measures = {{.id = measure_id_t{1}, .notes = {{.id = object_id_t{4},
+        .position = {measure_id_t{1}, 240}, .lane = right_scratch}}}};
+    chart.bpms = {{.id = object_id_t{2}, .position = {measure_id_t{1}, 0}, .beats_per_minute = {120, 1}}};
+    chart.lane_layouts = {{.id = object_id_t{3}, .position = {measure_id_t{1}, 0}, .layout = profile.layout}};
+    const auto built = build_editor_field_scene_index(chart, 1);
+    require_bmson_condition(std::holds_alternative<editor_field_scene_index_t>(built));
+    const editor_interaction_view_model_t view{.chart = chart.id, .active_lane = right_scratch,
+        .cursor = {measure_id_t{1}, 0}, .active_snap_denominator = 4, .supported_snap_denominators = {4},
+        .document_revision = 1, .pixels_per_standard_measure = 192, .viewport_height_pixels = 640};
+    const auto scene = make_editor_field_scene(chart, std::get<editor_field_scene_index_t>(built), view,
+        {.field_width_pixels = 640, .scratch_on_right = {false, false}});
+    require_bmson_condition(scene);
+    const auto& lanes = scene.scene->lanes;
+    require_bmson_condition(lanes.size() == 12);
+    check_field_skin(lanes[0].role == lane_role_t::scratch && lanes[0].stage == stage_group_t::left);
+    check_field_skin(lanes[6].lane == right_scratch && lanes[6].stage == stage_group_t::right);
+    check_field_skin(std::ranges::all_of(std::span{lanes}.subspan(1, 5), [](const auto& lane) {
+        return lane.role == lane_role_t::playable && lane.stage == stage_group_t::left;
+    }));
+    check_field_skin(std::ranges::all_of(std::span{lanes}.subspan(7, 5), [](const auto& lane) {
+        return lane.role == lane_role_t::playable && lane.stage == stage_group_t::right;
+    }));
+    check_field_skin(field_skin_layout_key(chart.lane_layouts.front().layout) == "bms-dp5");
+    check_bmson_dp_scratch_pick(chart, view, right_scratch, (lanes[6].bounds.left + lanes[6].bounds.right) / 2);
 }

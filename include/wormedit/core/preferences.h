@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <map>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -15,6 +16,7 @@ namespace wormedit {
 inline constexpr std::size_t maximum_preferences_bytes = 1024 * 1024;
 inline constexpr std::size_t maximum_preferences_depth = 16;
 inline constexpr std::size_t maximum_external_players = 64;
+inline constexpr std::size_t maximum_field_scheme_overrides = 128;
 inline constexpr std::size_t maximum_preference_string_bytes = 4096;
 
 struct general_preferences_t {
@@ -51,11 +53,18 @@ struct display_preferences_t {
     std::uint32_t ui_scale_percent{}; // 0 = automatic; explicit values are 100..200.
     bool frame_timing_overlay{};
     std::string field_scheme{"wormedit"};
+    std::map<std::string, std::string, std::less<>> field_scheme_overrides;
+    // Single/P1 then P2: 0 skin default, 1 chart layout, 2 left, 3 right.
+    std::array<std::uint32_t, 2> scratch_positions{};
     bool snap_colored_grid{true};
     std::uint32_t snap_grid_opacity_percent{35};
     std::uint32_t field_waveform_opacity_percent{75};
     auto operator==(const display_preferences_t&) const -> bool = default;
 };
+[[nodiscard]] auto resolve_field_scheme(const display_preferences_t&, std::string_view layout_key)
+    -> std::string_view;
+[[nodiscard]] auto valid_field_scheme_overrides(const display_preferences_t&) -> bool;
+
 struct external_player_definition_t {
     std::string name;
     std::string path;

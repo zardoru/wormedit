@@ -1080,7 +1080,7 @@ static void draw_compose_play_lanes(const ComposePaintContext& paint) {
             continue;
         }
         const auto key = wormedit::ui::theme::compose_key_color(
-            compose_lane_key_color(lane.key_color, lane.role), lane.display_order + 1);
+            compose_lane_key_color(lane.key_color, lane.role), lane.lane_id);
         field_rect(paint, rect, 0.0f, (lane.display_order & 1U) ? key.lane_alternate : key.lane);
         field_line(paint, rect.x, rect.y, rect.x, rect.y + rect.h, 1.0f,
                        compose(ComposeColor::lane_line));
@@ -1099,7 +1099,7 @@ static void draw_compose_play_lane_titles(const ComposePaintContext& paint) {
                 const auto label_bounds = nk_rect(rect.x + 2.0f, rect.y + 2.0f,
                                                   std::min(28.0f, rect.w - 4.0f), 15.0f);
                 field_text_outlined(paint, label_bounds, label, static_cast<int>(strlen(label)),
-                                    paint.context->style.font, wormedit::ui::theme::compose_key_color(lane.key_color, lane.display_order + 1).lane_label);
+                                    paint.context->style.font, wormedit::ui::theme::compose_key_color(lane.key_color, lane.lane_id).lane_label);
             }
         }
     }
@@ -2170,7 +2170,7 @@ static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
     } else if (note.kind == 5) {
         fill = nk_rgb(236, 194, 112);
     } else if (note.tail) {
-        fill = wormedit::ui::theme::compose_key_color(note.key_color, note.display_lane_number).long_note.value_or(compose(ComposeColor::tail));
+        fill = wormedit::ui::theme::compose_key_color(note.key_color, note.lane_id).long_note.value_or(compose(ComposeColor::tail));
     }
     if (compose_note_shows_selection_outline(view, note)) {
         border = compose_selection_outline_color();
@@ -2292,8 +2292,8 @@ static void draw_compose_note_sound_label(const ComposePaintContext& paint,
     field_text(paint, text_bounds, text.c_str(), static_cast<int>(text.size()), font,
                  light_fill ? nk_rgba(0, 0, 0, 0) : nk_rgba(13, 21, 31, 220),
                  (note.kind == 1 || note.kind == 2
-                     ? wormedit::ui::theme::compose_key_color(note.key_color, note.display_lane_number).long_label
-                     : wormedit::ui::theme::compose_key_color(note.key_color, note.display_lane_number).label).value_or(
+                     ? wormedit::ui::theme::compose_key_color(note.key_color, note.lane_id).long_label
+                     : wormedit::ui::theme::compose_key_color(note.key_color, note.lane_id).label).value_or(
                      light_fill ? nk_rgb(16, 24, 36) : nk_rgb(248, 251, 255)), 2);
 }
 
@@ -3125,7 +3125,7 @@ static void bind_compose_field_layout(const WormUiComposeView& view) {
     std::vector<wormedit::ui::theme::field_lane_t> field_lanes;
     field_lanes.reserve(count);
     for (const auto& lane : std::span(lanes, count))
-        field_lanes.push_back({lane.display_order, lane.stage, lane.key_color, lane.role});
+        field_lanes.push_back({lane.display_order, lane.stage, lane.key_color, lane.role, lane.lane_id});
     wormedit::ui::theme::bind_field_layout(field_lanes);
 }
 

@@ -220,6 +220,7 @@ struct editor_field_scene_t {
 struct editor_field_scene_request_t {
     double field_left_pixels{};
     double field_width_pixels{};
+    editor_scratch_presentation_t scratch_on_right;
     double split_stage_gutter_pixels{12.0};
     double note_head_height_pixels{10.0};
     // Up scroll projects later rows toward the top of the viewport. Rectangular

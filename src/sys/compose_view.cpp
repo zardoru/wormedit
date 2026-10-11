@@ -870,6 +870,15 @@ auto append_compose_grid_row(flattened_workspace_t& flattened,
     return grid.line.push_back(line) && grid.row.push_back(row);
 }
 
+auto compose_measure_local_row(const wormedit::measure_index_t& measures,
+                               std::uint64_t row, std::uint64_t divisions) -> std::uint64_t {
+    if (row >= measures.total_rows)
+        return (row - measures.total_rows) % divisions;
+    const auto after = std::ranges::upper_bound(measures.entries, row, {},
+        &wormedit::measure_index_entry_t::absolute_begin_row);
+    return after == measures.entries.begin() ? row : row - std::prev(after)->absolute_begin_row;
+}
+
 void project_compose_grid_lines(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.flattened;
     const auto& chart = projection.chart;
@@ -917,7 +926,9 @@ void project_compose_grid_lines(const compose_scene_projection_context_t& projec
                                    : 0,
              .chart_row =
              line.chart_row.fractional_rows.numerator == 0 ? line.chart_row.whole_rows : 0,
-             .snap_class = wormedit::ui::note_snap_class(line.chart_row.whole_rows,
+             .snap_class = wormedit::ui::note_snap_class(
+                 compose_measure_local_row(projection.index.measures, line.chart_row.whole_rows,
+                                           chart.divisions_per_standard_measure),
                  line.chart_row.fractional_rows.numerator,
                  line.chart_row.fractional_rows.denominator, chart.divisions_per_standard_measure)},
              line.chart_row)) {
@@ -958,7 +969,9 @@ auto compose_endpoint_snap_class(const compose_scene_projection_context_t& proje
     const auto& source = projection.index.notes[found->second];
     bool tail = false;
     if constexpr (requires { endpoint.tail; }) tail = endpoint.tail;
-    return wormedit::ui::note_snap_class(tail ? source.end_row : source.begin_row,
+    return wormedit::ui::note_snap_class(
+        compose_measure_local_row(projection.index.measures, tail ? source.end_row : source.begin_row,
+                                  projection.chart.divisions_per_standard_measure),
                                         projection.chart.divisions_per_standard_measure);
 }
 
@@ -3045,15 +3058,7 @@ auto quantize_lane_geometry(const wormedit::editor_field_scene_layout_source_t& 
     auto [ordered, inserted] = lane_orders.try_emplace(&layout);
     auto& lanes = ordered->second;
     if (inserted) {
-        for (const auto& lane : layout.layout.lanes)
-            if (lane.role != wormedit::lane_role_t::autoplay &&
-                lane.role != wormedit::lane_role_t::invisible && lane.role != wormedit::lane_role_t::mine)
-                lanes.push_back(&lane);
-        std::ranges::sort(lanes, [split = layout.layout.split_stage](const auto* left, const auto* right) {
-            if (split && left->stage != right->stage) return left->stage < right->stage;
-            return std::tie(left->display_order, left->id.value) <
-                   std::tie(right->display_order, right->id.value);
-        });
+        lanes = wormedit::editor_presented_lanes(layout.layout, request.scratch_on_right);
     }
     const auto found = std::ranges::find(lanes, lane_id, [](const auto* lane) { return lane->id; });
     if (found == lanes.end() || lanes.empty()) return std::nullopt;
@@ -3672,6 +3677,8 @@ std::optional<wormedit::editor_interaction_view_model_t> inspect_compose_interac
     auto& retained_state = input.retained_state;
     auto& flattened = input.flattened;
     auto& view = input.view;
+    if (!editor_interaction_has_pending_gesture(*retained_state))
+        retained_state->scratch_on_right = input.application_state.scratch_on_right;
     const auto geometry_changed = retained_state->viewport_height_pixels != view.viewport_height_pixels ||
         retained_state->scroll_direction != (input.downscroll ? wormedit::editor_field_scroll_direction_t::down
                                                             : wormedit::editor_field_scroll_direction_t::up);
@@ -4057,6 +4064,7 @@ void refresh_compose_static_scene_style(compose_scene_cache_t& cache,WormUiCompo
     const auto& current_style=cache.preview_scene_request;
     if (!cache.scene_window.scene ||
         cache.static_scene_lane_legend != view.lane_key_legend_visible ||
+        previous_style.scratch_on_right != current_style.scratch_on_right ||
         previous_style.solo_semantic_layer!=current_style.solo_semantic_layer ||
         previous_style.required_semantic_layers!=current_style.required_semantic_layers ||
         previous_style.excluded_semantic_layers!=current_style.excluded_semantic_layers)
@@ -4452,6 +4460,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     cache.preview_scene_request = {
         .field_left_pixels = field_left_pixels,
         .field_width_pixels = playable_field_width,
+        .scratch_on_right = interaction_view.scratch_on_right,
         .split_stage_gutter_pixels = 14.0,
         .note_head_height_pixels = 16.0,
         .scroll_direction = downscroll
@@ -4747,7 +4756,7 @@ void populate_compose_paint_ghost(const compose_final_projection_context_t& inpu
     view.paint_ghost = {.bounds = {lane->bounds.left, top, lane->bounds.right, top + height},
         .lane_id = lane->lane_id, .display_lane_number = lane->display_order + 1,
         .key_color = lane->key_color, .glyph = lane->glyph,
-        .snap_class = wormedit::ui::note_snap_class(*row, input.chart.divisions_per_standard_measure),
+        .snap_class = wormedit::ui::note_snap_class(target->position.row, input.chart.divisions_per_standard_measure),
         .kind = static_cast<std::uint8_t>(view.armed_note_kind),
         .paint_erase_preview = occupied,
         .paint_invalid_preview = !note_kind_allowed(input.chart, input.retained_state->armed_note_kind)};

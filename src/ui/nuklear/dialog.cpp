@@ -24,12 +24,50 @@ auto dialog_window_bounds(const Dialog& dialog, const DialogOptions& options,
                           struct nk_vec2 area, bool& clamped) -> struct nk_rect {
     const auto available_w = std::max(1.0f, area.x - 2.0f * dialog_padding);
     const auto available_h = std::max(1.0f, area.y - 2.0f * dialog_padding);
-    const auto wanted_h = dialog.window_height > 0.0f ? dialog.window_height : default_window_height;
+    const auto wanted_h = options.resizable ? options.height :
+        dialog.window_height > 0.0f ? dialog.window_height : default_window_height;
     const auto width = std::min(options.width, available_w);
     const auto height = std::min(wanted_h, available_h);
     clamped = wanted_h > available_h;
     return nk_rect(std::floor((area.x - width) * 0.5f), std::floor((area.y - height) * 0.5f),
                    width, height);
+}
+
+void clamp_dialog_bounds(Dialog& dialog, const DialogOptions& options, struct nk_vec2 area) {
+    if (options.resizable) {
+        dialog.bounds.w = std::clamp(dialog.bounds.w, std::min(options.minimum_size.x, area.x), area.x);
+        dialog.bounds.h = std::clamp(dialog.bounds.h, std::min(options.minimum_size.y, area.y), area.y);
+    }
+    dialog.bounds.x = std::clamp(dialog.bounds.x, 0.0f, area.x - dialog.bounds.w);
+    dialog.bounds.y = std::clamp(dialog.bounds.y, 0.0f, area.y - dialog.bounds.h);
+}
+
+void update_dialog_drag(Dialog& dialog, nk_context* context, const DialogOptions& options) {
+    const auto& input = context->input;
+    if (!options.movable || options.no_input ||
+        nk_input_is_key_pressed(&input, NK_KEY_TEXT_RESET_MODE)) {
+        dialog.dragging = false;
+        return;
+    }
+    if (!input.mouse.buttons[NK_BUTTON_LEFT].down) dialog.dragging = false;
+    if (dialog.dragging) {
+        dialog.bounds.x = input.mouse.pos.x - dialog.drag_offset.x;
+        dialog.bounds.y = input.mouse.pos.y - dialog.drag_offset.y;
+    }
+}
+
+void retain_dialog_bounds(Dialog& dialog, nk_context* context, const char* id,
+                          const DialogOptions& options, struct nk_vec2 area) {
+    const auto* retained = nk_window_find(context, id);
+    if ((!options.resizable && !options.movable) || !retained) return;
+    if (options.resizable) dialog.bounds = retained->bounds;
+    else if (options.movable) {
+        dialog.bounds.x = retained->bounds.x;
+        dialog.bounds.y = retained->bounds.y;
+    }
+    update_dialog_drag(dialog, context, options);
+    clamp_dialog_bounds(dialog, options, area);
+    nk_window_set_bounds(context, id, dialog.bounds);
 }
 
 // The dimming backdrop swallows input for everything behind a modal dialog.
@@ -53,17 +91,35 @@ void draw_backdrop(nk_context* context, const char* id, struct nk_vec2 area) {
 }
 
 void draw_title_row(Dialog& dialog, nk_context* context, const char* title) {
-    if (!dialog.closable) {
+    if (!dialog.closable && !dialog.movable) {
         nk_layout_row_dynamic(context, dialog_title_height, 1);
         nk_label_colored(context, title, NK_TEXT_LEFT, color(UiColor::text_bright));
         return;
     }
     nk_layout_row_template_begin(context, close_row_height);
+    if (dialog.movable) nk_layout_row_template_push_static(context, 18.0f);
     nk_layout_row_template_push_variable(context, 1.0f);
-    nk_layout_row_template_push_static(context, close_row_height);
+    if (dialog.closable) nk_layout_row_template_push_static(context, close_row_height);
     nk_layout_row_template_end(context);
+    if (dialog.movable) {
+        struct nk_rect grip{};
+        nk_widget(&grip, context);
+        lucide::draw(context, grip, lucide::Glyph::grip_vertical, color(UiColor::text_muted));
+        dialog.drag_handle = grip;
+        const auto title_bounds = nk_widget_bounds(context);
+        dialog.drag_handle.w = title_bounds.x + title_bounds.w - grip.x;
+        if (nk_input_is_mouse_hovering_rect(&context->input, dialog.drag_handle))
+            nuklear::tooltip::text(context, "Drag to move window");
+        if (!(context->current->flags & (NK_WINDOW_ROM | NK_WINDOW_NO_INPUT)) &&
+            nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT) &&
+            nk_input_is_mouse_hovering_rect(&context->input, dialog.drag_handle)) {
+            dialog.dragging = true;
+            dialog.drag_offset = nk_vec2(context->input.mouse.pos.x - dialog.bounds.x,
+                                        context->input.mouse.pos.y - dialog.bounds.y);
+        }
+    }
     nk_label_colored(context, title, NK_TEXT_LEFT, color(UiColor::text_bright));
-    if (IconButton{lucide::Glyph::x, "Close"}.render(context))
+    if (dialog.closable && IconButton{lucide::Glyph::x, "Close"}.render(context))
         dialog.result = DialogResult::cancel;
 }
 
@@ -77,21 +133,27 @@ auto dialog_begin(Dialog& dialog, nk_context* context, const char* id, const cha
     dialog.closable = options.closable;
     dialog.escape_cancels = options.escape_cancels.value_or(options.modal);
     dialog.enter_confirms = options.enter_confirms.value_or(options.modal);
+    dialog.resizable = options.resizable;
+    dialog.movable = options.movable;
     dialog.enter_pending = dialog.enter_confirms && nk_input_is_key_pressed(&context->input, NK_KEY_ENTER);
     const auto area = dialog_area(options, context);
     if (options.modal) draw_backdrop(context, id, area);
     bool clamped{};
     dialog.bounds = dialog_window_bounds(dialog, options, area, clamped);
+    retain_dialog_bounds(dialog, context, id, options, area);
     auto& window = context->style.window;
     dialog.saved_padding = window.padding;
     dialog.saved_spacing = window.spacing;
     // The painted surface draws the rounded 1 px border; Nuklear's square one would leave
     // stray pixels at the corners.
     dialog.saved_border = window.border;
+    dialog.saved_minimum_size = window.min_size;
+    if (options.resizable) window.min_size = options.minimum_size;
     window.border = 0.0f;
     window.padding = nk_vec2(dialog_padding, dialog_padding);
     window.spacing = nk_vec2(dialog_spacing, dialog_spacing);
-    dialog.saved_window_flags = NK_WINDOW_BORDER | (clamped ? 0 : NK_WINDOW_NO_SCROLLBAR) |
+    dialog.saved_window_flags = NK_WINDOW_BORDER | (clamped && !options.resizable ? 0 : NK_WINDOW_NO_SCROLLBAR) |
+                                (options.resizable ? NK_WINDOW_SCALABLE : 0) |
                                 (options.no_input ? NK_WINDOW_NO_INPUT : 0);
     nk_window_show(context, id, NK_SHOWN);
     // A modal keeps focus; a tool window is focused by Nuklear when it first appears.
@@ -99,6 +161,7 @@ auto dialog_begin(Dialog& dialog, nk_context* context, const char* id, const cha
     dialog.surface = surface_window_begin(context, id, dialog.bounds, dialog.saved_window_flags, 2);
     dialog.open = dialog.surface.open;
     if (!dialog.open) return false;
+    dialog.bounds = nk_window_get_bounds(context);
     draw_title_row(dialog, context, title);
     return true;
 }
@@ -189,7 +252,8 @@ auto dialog_end(Dialog& dialog, nk_context* context) -> DialogResult {
         // Nuklear stores each row's height with the trailing row spacing included; the last
         // declared row ends at at_y + its height, and one padding closes the window.
         const auto bottom = layout->at_y + layout->row.height - dialog_spacing;
-        dialog.window_height = std::ceil(bottom - context->current->bounds.y + dialog_padding);
+        if (!dialog.resizable)
+            dialog.window_height = std::ceil(bottom - context->current->bounds.y + dialog_padding);
         dialog.has_primary = dialog.primary_drawn;
         const auto& input = context->input;
         if (dialog.result == DialogResult::none) {
@@ -201,6 +265,7 @@ auto dialog_end(Dialog& dialog, nk_context* context) -> DialogResult {
     context->style.window.padding = dialog.saved_padding;
     context->style.window.spacing = dialog.saved_spacing;
     context->style.window.border = dialog.saved_border;
+    context->style.window.min_size = dialog.saved_minimum_size;
     dialog.open = false;
     return dialog.result;
 }

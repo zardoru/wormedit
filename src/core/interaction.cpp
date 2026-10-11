@@ -386,44 +386,13 @@ auto find_active_lane(const chart_document_t& chart, const measure_index_t& inde
 }
 
 auto transition_lane(const chart_document_t& chart, const measure_index_t& index,
-                     local_position_t from, local_position_t to, lane_id_t current)
+                     local_position_t from, local_position_t to, lane_id_t current,
+                     const editor_scratch_presentation_t& sides)
     -> std::optional<lane_id_t> {
-    const auto* source_layout = effective_layout(chart, index, from);
-    const auto* target_layout = effective_layout(chart, index, to);
-    if (source_layout == nullptr || target_layout == nullptr) {
-        return std::nullopt;
-    }
-    const auto source = std::ranges::find(source_layout->lanes, current, &lane_definition_t::id);
-    if (source == source_layout->lanes.end()) {
-        return std::nullopt;
-    }
-    const auto exact_column = std::ranges::find_if(target_layout->lanes, [&](const auto& lane) {
-        return editable_lane(lane) && lane.display_order == source->display_order &&
-               lane.role == source->role;
-    });
-    if (exact_column != target_layout->lanes.end()) {
-        return exact_column->id;
-    }
-    const auto same_column = std::ranges::find_if(target_layout->lanes, [&](const auto& lane) {
-        return editable_lane(lane) && lane.display_order == source->display_order;
-    });
-    if (same_column != target_layout->lanes.end()) {
-        return same_column->id;
-    }
-    const auto same_role = std::ranges::find_if(target_layout->lanes, [&](const auto& lane) {
-        return editable_lane(lane) && lane.role == source->role;
-    });
-    if (same_role != target_layout->lanes.end()) {
-        return same_role->id;
-    }
-    const lane_definition_t* first{};
-    for (const auto& lane : target_layout->lanes) {
-        if (editable_lane(lane) &&
-            (first == nullptr || lane.display_order < first->display_order)) {
-            first = &lane;
-        }
-    }
-    return first == nullptr ? std::nullopt : std::optional{first->id};
+    const auto* source = effective_layout(chart, index, from);
+    const auto* target = effective_layout(chart, index, to);
+    return source && target ? editor_lane_across_presented_layouts(*source, *target, current, sides)
+                            : std::nullopt;
 }
 
 auto maximum_viewport_scroll(const chart_document_t& chart, const measure_index_t& index,
@@ -696,6 +665,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
                       state.active_snap_denominator;
     return editor_interaction_view_model_t{
         .chart = state.chart, .active_lane = state.active_lane,
+        .scratch_on_right = state.scratch_on_right,
         .active_lane_name = geometry.lane->name, .cursor = state.cursor,
         .virtual_bms_cursor_row = state.virtual_bms_cursor_row,
         .cursor_subrow = state.cursor_subrow,
@@ -1367,6 +1337,7 @@ struct note_move_parameters_t {
     bool preserve_lanes{};
     lane_id_t target_lane;
     std::int64_t lane_delta{};
+    editor_scratch_presentation_t scratch_on_right;
 };
 
 auto known_move_lane(const chart_document_t& chart, lane_id_t id) -> const lane_definition_t* {
@@ -1379,10 +1350,24 @@ auto known_move_lane(const chart_document_t& chart, lane_id_t id) -> const lane_
     return nullptr;
 }
 
+auto move_lane_column(const chart_document_t& chart, const measure_index_t& index,
+                      local_position_t position, const lane_definition_t& lane,
+                      const editor_scratch_presentation_t& sides) -> std::int64_t {
+    const auto* layout = effective_layout(chart, index, position);
+    const auto active_column = layout ? editor_presented_column(*layout, lane.id, sides) : -1;
+    if (active_column >= 0) return active_column;
+    for (const auto& segment : chart.lane_layouts) {
+        const auto column = editor_presented_column(segment.layout, lane.id, sides);
+        if (column >= 0) return column;
+    }
+    return lane.display_order;
+}
+
 auto resolve_note_move_parameters(const chart_document_t& chart, const measure_index_t& index,
                                   std::vector<object_id_t>& targets, object_id_t reference_id,
                                   local_position_t reference_position, lane_id_t requested_lane,
-                                  std::uint64_t snap_denominator, bool exact, bool keep_rows)
+                                  std::uint64_t snap_denominator, bool exact, bool keep_rows,
+                                  const editor_scratch_presentation_t& sides)
     -> std::variant<note_move_parameters_t, diagnostic_list_t> {
     const auto* reference = find_note(chart, reference_id);
     if (!reference || (reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold))
@@ -1422,8 +1407,10 @@ auto resolve_note_move_parameters(const chart_document_t& chart, const measure_i
     return note_move_parameters_t{.reference = reference, .snapped_position = *snapped,
         .delta = *target >= *begin ? *target - *begin : *begin - *target,
         .forward = *target >= *begin, .preserve_lanes = preserve, .target_lane = destination->id,
-        .lane_delta = preserve ? 0 : static_cast<std::int64_t>(destination->display_order) -
-                                      static_cast<std::int64_t>(source_lane->display_order)};
+        .lane_delta = preserve ? 0 :
+            move_lane_column(chart, index, *snapped, *destination, sides) -
+            move_lane_column(chart, index, reference->position, *source_lane, sides),
+        .scratch_on_right = sides};
 }
 
 struct move_destination_t {
@@ -1473,21 +1460,19 @@ struct note_move_context_t {
         if (parameters.preserve_lanes) {
             const auto* active = find_active_lane(chart, index, position, note.lane);
             return move_destination_t{note.lane,
-                                      active ? active->display_order : source->display_order,
+                                      editor_presented_column(*effective_layout(chart, index,
+                                          active ? position : note.position), note.lane, parameters.scratch_on_right),
                                       active != nullptr, columns};
         }
         const auto column =
-            static_cast<std::int64_t>(source->display_order) + parameters.lane_delta;
+            editor_presented_column(*effective_layout(chart, index, note.position),
+                source->id, parameters.scratch_on_right) + parameters.lane_delta;
         const auto* layout = effective_layout(chart, index, position);
         if (!layout)
             return move_destination_t{{}, column, false, columns};
-        const auto found = std::ranges::find_if(layout->lanes, [&](const auto& candidate) {
-            return editable_lane(candidate) &&
-                   static_cast<std::int64_t>(candidate.display_order) == column;
-        });
-        if (found == layout->lanes.end())
-            return move_destination_t{{}, column, false, columns};
-        return move_destination_t{found->id, column, true, columns};
+        const auto* found = editor_lane_at_presented_column(*layout, column, parameters.scratch_on_right);
+        return found ? move_destination_t{found->id, column, true, columns}
+                     : move_destination_t{{}, column, false, columns};
     }
 };
 
@@ -1725,11 +1710,11 @@ auto plan_note_move(const chart_document_t& chart, const measure_index_t& index,
                     std::vector<object_id_t> targets, object_id_t reference_id,
                     local_position_t reference_position, lane_id_t requested_reference_lane,
                     std::uint64_t snap_denominator, bool reference_position_is_exact = false,
-                    bool keep_rows = false)
+                    bool keep_rows = false, const editor_scratch_presentation_t& sides = {})
     -> std::variant<note_move_plan_t, diagnostic_list_t> {
     auto parameters_result = resolve_note_move_parameters(chart, index, targets, reference_id,
         reference_position, requested_reference_lane, snap_denominator,
-        reference_position_is_exact, keep_rows);
+        reference_position_is_exact, keep_rows, sides);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&parameters_result)) return *diagnostics;
     const auto parameters = std::get<note_move_parameters_t>(parameters_result);
     auto ids_result = valid_resize_ids(targets);
@@ -1814,7 +1799,7 @@ auto plan_selected_object_move(const chart_document_t& chart, const measure_inde
     const auto* reference_bgm = find_bgm_event(chart, reference);
     if (reference_note) {
         auto planned = plan_note_move(chart, index, std::move(notes), reference, position, lane,
-                                      snap, exact, state.y_lock);
+                                      snap, exact, state.y_lock, state.scratch_on_right);
         if (auto* plan = std::get_if<note_move_plan_t>(&planned)) {
             auto diagnostics = append_selected_bgm_moves(chart, index, bgm_ids, reference_note->position, *plan);
             if (!diagnostics.empty()) return diagnostics;
@@ -1835,7 +1820,7 @@ auto plan_selected_object_move(const chart_document_t& chart, const measure_inde
         const auto shifted = first && origin && destination
             ? translated_object_position(index, first->position, *origin, *destination) : std::nullopt;
         if (!shifted) return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range, "Mixed move note is outside chart geometry")};
-        auto planned = plan_note_move(chart, index, std::move(notes), first->id, *shifted, {}, 0, true, state.y_lock);
+        auto planned = plan_note_move(chart, index, std::move(notes), first->id, *shifted, {}, 0, true, state.y_lock, state.scratch_on_right);
         if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned)) return *diagnostics;
         plan = std::get<note_move_plan_t>(std::move(planned));
         plan.reference_note = reference;
@@ -2005,7 +1990,7 @@ auto proposed_playhead_cursor(const document_history_t& history,
     auto view = make_view(history, proposed, &index);
     if (std::holds_alternative<diagnostic_list_t>(view)) {
         const auto replacement = transition_lane(chart, index, state.cursor, position,
-                                                 state.active_lane);
+                                                 state.active_lane, state.scratch_on_right);
         if (replacement) {
             proposed.active_lane = *replacement;
             view = make_view(history, proposed, &index);
@@ -3173,6 +3158,27 @@ void cancel_stale_explicit_paint(editor_interaction_state_t& state) {
         state.pending_note_paint_gesture.reset();
 }
 
+auto add_measure_grid_paint_path(note_paint_context_t& context, lane_id_t lane,
+                                 std::uint64_t first, std::uint64_t last,
+                                 pending_note_paint_gesture_t& pending,
+                                 std::vector<note_paint_target_t>& additions)
+    -> std::optional<diagnostic_t> {
+    auto row = first;
+    const bool forward = last >= first;
+    const auto denominator = edit_snap_denominator(context.chart, context.state);
+    while (true) {
+        if (const auto invalid = add_paint_path_cell(context, lane, row, pending, additions))
+            return invalid;
+        if (row == last) return std::nullopt;
+        const auto next = adjacent_snap_canvas_row(context.chart, context.index, row,
+            denominator, context.index.total_rows, forward);
+        if (!next || (forward ? *next > last : *next < last))
+            return error(diagnostic_code_t::row_out_of_range,
+                         "paint path cannot reach the target grid position");
+        row = *next;
+    }
+}
+
 auto append_note_paint_target(note_paint_context_t& context, lane_id_t lane,
                               local_position_t position, bool pointer_captured)
     -> editor_interaction_result_t {
@@ -3215,14 +3221,9 @@ auto append_note_paint_target(note_paint_context_t& context, lane_id_t lane,
     std::vector<note_paint_target_t> additions;
     additions.reserve(static_cast<std::size_t>(path_cells));
     if (same_lane) {
-        const auto cell_count = row_distance / step + 1;
-        for (std::uint64_t cell = 0; cell < cell_count; ++cell) {
-            const auto offset = cell * step;
-            const auto row = *target_row >= *previous_row ? *previous_row + offset
-                                                           : *previous_row - offset;
-            if (const auto invalid = add_paint_path_cell(context, lane, row, pending, additions))
-                return diagnostic_result(context.history, state, {*invalid});
-        }
+        if (const auto invalid = add_measure_grid_paint_path(context, lane, *previous_row,
+                                                            *target_row, pending, additions))
+            return diagnostic_result(context.history, state, {*invalid});
     } else if (const auto invalid =
                    add_paint_path_cell(context, lane, *target_row, pending, additions)) {
         return diagnostic_result(context.history, state, {*invalid});
@@ -4250,18 +4251,11 @@ auto extend_virtual_chart(chart_document_t& chart, std::uint64_t measure_count)
     return std::nullopt;
 }
 
-auto snap_virtual_row(std::uint64_t row, std::uint64_t total_rows, std::uint64_t step)
-    -> std::optional<std::uint64_t> {
-    if (row >= total_rows)
-        return std::nullopt;
-    const auto remainder = row % step;
-    auto snapped = row - remainder;
-    if (remainder > step - remainder) {
-        if (step > std::numeric_limits<std::uint64_t>::max() - snapped)
-            return std::nullopt;
-        snapped += step;
-    }
-    return snapped < total_rows ? std::optional{snapped} : std::nullopt;
+auto snap_virtual_row(const virtual_note_context_t& context, const virtual_canvas_t& canvas,
+                      std::uint64_t row) -> std::optional<std::uint64_t> {
+    if (row >= canvas.total_rows) return std::nullopt;
+    return snap_canvas_row(context.chart, canvas.authored_index, row,
+                           context.state.active_snap_denominator, canvas.total_rows);
 }
 
 struct virtual_hold_rows_t {
@@ -4277,10 +4271,8 @@ auto resolve_virtual_hold_rows(const virtual_note_context_t& context,
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas))
         return *diagnostics;
     const auto& canvas = std::get<virtual_canvas_t>(built_canvas);
-    const auto step = context.chart.divisions_per_standard_measure /
-                      context.state.active_snap_denominator;
-    const auto anchor = snap_virtual_row(action.anchor_canvas_row, canvas.total_rows, step);
-    const auto end = snap_virtual_row(action.end_canvas_row, canvas.total_rows, step);
+    const auto anchor = snap_virtual_row(context, canvas, action.anchor_canvas_row);
+    const auto end = snap_virtual_row(context, canvas, action.end_canvas_row);
     const auto anchor_measure = anchor ? canvas.measure_containing(*anchor) : std::nullopt;
     const auto end_measure = end ? canvas.measure_containing(*end) : std::nullopt;
     if (!anchor_measure || !end_measure ||
@@ -4394,17 +4386,11 @@ auto resolve_virtual_tap_target(const virtual_note_context_t& context,
     if (action.canvas_row >= canvas.total_rows)
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "virtual tap lies outside #000-#999")};
-    const auto step = context.chart.divisions_per_standard_measure /
-                      context.state.active_snap_denominator;
-    const auto remainder = action.canvas_row % step;
-    auto row = action.canvas_row - remainder;
-    if (remainder > step - remainder) {
-        if (step - remainder >
-            std::numeric_limits<std::uint64_t>::max() - action.canvas_row)
-            return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
-                                           "virtual snap row overflows")};
-        row += step;
-    }
+    const auto snapped = snap_virtual_row(context, canvas, action.canvas_row);
+    if (!snapped)
+        return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
+                                       "virtual snap row is unavailable")};
+    const auto row = *snapped;
     const auto destination = canvas.measure_containing(row);
     if (!destination || destination->authored ||
         destination->number >= virtual_tail_measure_limit(context.chart) || context.index.entries.empty() ||
@@ -5081,8 +5067,6 @@ auto snapped_area_selection_row(const area_selection_context_t& context,
         std::clamp(y, 0.0, std::nextafter(view.viewport_height_pixels, 0.0)), true);
     if (!row) return std::nullopt;
     const auto denominator = edit_snap_denominator(context.chart, context.state);
-    const auto snapped = snap_absolute_row(context.chart, *row, denominator);
-    if (!snapped) return std::nullopt;
     auto total_rows = context.index.total_rows;
     if (chart_has_virtual_tail(context.chart)) {
         const auto canvas = build_virtual_canvas(context.chart);
@@ -5090,8 +5074,7 @@ auto snapped_area_selection_row(const area_selection_context_t& context,
         if (!geometry) return std::nullopt;
         total_rows = geometry->total_rows;
     }
-    const auto step = context.chart.divisions_per_standard_measure / denominator;
-    return std::min(*snapped, (total_rows - 1) / step * step);
+    return snap_canvas_row(context.chart, context.index, *row, denominator, total_rows);
 }
 
 auto retain_area_selection_range(area_selection_context_t& context,

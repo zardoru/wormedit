@@ -1178,7 +1178,7 @@ TEST_CASE("Compose area deletion removes interior BGM and preserves the ending b
     CHECK(fixture.history.undo.size() == 1);
 }
 
-TEST_CASE("Compose area edges follow absolute active grid across odd measure lengths",
+TEST_CASE("Compose area edges follow measure-local active grid across odd measure lengths",
           "[unit][sys][commands]") {
     using namespace wormedit;
     AreaFixture fixture;
@@ -1191,10 +1191,10 @@ TEST_CASE("Compose area edges follow absolute active grid across odd measure len
     fixture.action.compose_area_begin_row = 617;
     fixture.action.compose_area_end_row = 1100;
     CHECK(fixture.dispatch() == "Selected area resized.");
-    CHECK(fixture.state.retained_canvas_selection_range == canvas_row_span_t{617, 1200});
+    CHECK(fixture.state.retained_canvas_selection_range == canvas_row_span_t{617, 1080});
     REQUIRE(fixture.state.retained_selection_range);
     CHECK(fixture.state.retained_selection_range->begin == local_position_t{measure_id_t{2}, 17});
-    CHECK(fixture.state.retained_selection_range->end == local_position_t{measure_id_t{2}, 600});
+    CHECK(fixture.state.retained_selection_range->end == local_position_t{measure_id_t{2}, 480});
 }
 
 TEST_CASE("Compose area quantization rejects ambiguous identities without edits", "[unit][sys][commands]") {
@@ -1329,26 +1329,31 @@ TEST_CASE("Minimap mapping converts rates offsets snaps and chart endpoints with
     REQUIRE(timing);
     REQUIRE(std::holds_alternative<wormedit::measure_index_t>(measures));
     const auto before = wormedit::write_native_project(fixture.history.document).bytes;
-    const auto early = compose_minimap_target(0, 48001, 48000, 44100, *timing.index, 4);
+    const auto early = compose_minimap_target(0, 48001, 48000, 44100, *timing.index,
+        std::get<wormedit::measure_index_t>(measures), 4);
     REQUIRE(early);
     CHECK(early->frame == 0);
     CHECK(early->snapped_row == 0);
-    const auto at_zero = compose_minimap_target(1, 48001, 48000, 44100, *timing.index, 4);
+    const auto at_zero = compose_minimap_target(1, 48001, 48000, 44100, *timing.index,
+        std::get<wormedit::measure_index_t>(measures), 4);
     REQUIRE(at_zero);
     CHECK(at_zero->frame == 44100);
     CHECK(at_zero->snapped_row == 0);
-    const auto target = compose_minimap_target(1, 72001, 48000, 44100, *timing.index, 4);
+    const auto target = compose_minimap_target(1, 72001, 48000, 44100, *timing.index,
+        std::get<wormedit::measure_index_t>(measures), 4);
     REQUIRE(target);
     CHECK(target->frame == 66150);
     CHECK(target->snapped_row == 240);
     REQUIRE(move_compose_minimap_cursor(fixture.history, fixture.state, std::get<wormedit::measure_index_t>(measures), *timing.index, *target));
     CHECK((fixture.state.cursor == wormedit::local_position_t{wormedit::measure_id_t{1}, 240}));
     CHECK(wormedit::write_native_project(fixture.history.document).bytes == before);
-    const auto clamped = compose_minimap_target(1, 72001, 48000, 44100, *timing.index, 4, 44100);
+    const auto clamped = compose_minimap_target(1, 72001, 48000, 44100, *timing.index,
+        std::get<wormedit::measure_index_t>(measures), 4, 44100);
     REQUIRE(clamped);
     CHECK(clamped->frame == 44100);
     CHECK(clamped->snapped_row == 0);
-    CHECK_FALSE(compose_minimap_target(1.1, 72001, 48000, 44100, *timing.index, 4));
+    CHECK_FALSE(compose_minimap_target(1.1, 72001, 48000, 44100, *timing.index,
+        std::get<wormedit::measure_index_t>(measures), 4));
 }
 
 TEST_CASE("Minimap exact starts expire when the fractional cursor changes", "[unit][sys][commands]") {
@@ -1366,8 +1371,10 @@ TEST_CASE("Minimap audio-tail starts are bound to chart revision and cursor", "[
     AreaFixture fixture;
     application_command_state_t application;
     const auto timing = wormedit::build_timing_index(fixture.history.document.charts.front());
+    const auto measures = wormedit::build_measure_index(fixture.history.document.charts.front());
     REQUIRE(timing);
-    const auto target = compose_minimap_target(1, 441001, 44100, 44100, *timing.index, 4);
+    const auto target = compose_minimap_target(1, 441001, 44100, 44100, *timing.index,
+        std::get<wormedit::measure_index_t>(measures), 4);
     REQUIRE(target);
     REQUIRE(target->absolute_row == timing.index->total_rows);
     SECTION("stopped and canceled pause retain the exact frame") {
@@ -1406,7 +1413,8 @@ TEST_CASE("Minimap audio-tail starts are bound to chart revision and cursor", "[
         CHECK_FALSE(application.minimap_start_frame);
     }
     SECTION("in-range clicks use their active snapped cursor") {
-        const auto in_range = compose_minimap_target(0.1, 441001, 44100, 44100, *timing.index, 4);
+        const auto in_range = compose_minimap_target(0.1, 441001, 44100, 44100, *timing.index,
+        std::get<wormedit::measure_index_t>(measures), 4);
         REQUIRE(in_range);
         retain_compose_minimap_start(application, fixture.history, fixture.state, *in_range, *timing.index);
         CHECK_FALSE(application.minimap_start_frame);
@@ -1433,7 +1441,8 @@ TEST_CASE("Minimap view scrolling preserves floor snap and authored BMS tail cur
         const auto measures = wormedit::build_measure_index(chart);
         REQUIRE(timing);
         REQUIRE(std::holds_alternative<wormedit::measure_index_t>(measures));
-        const auto target = compose_minimap_target(1, 441001, 44100, 44100, *timing.index, 4);
+        const auto target = compose_minimap_target(1, 441001, 44100, 44100, *timing.index,
+        std::get<wormedit::measure_index_t>(measures), 4);
         REQUIRE(target);
         REQUIRE(move_compose_minimap_cursor(fixture.history, fixture.state,
             std::get<wormedit::measure_index_t>(measures), *timing.index, *target));
@@ -2256,3 +2265,34 @@ TEST_CASE("Edit menu Delete stages stem and ordinary removal atomically",
     }
 }
 #endif
+
+namespace {
+void check_measure_minimap_target(const std::optional<compose_minimap_target_t>& target,
+                                 unsigned row) {
+    REQUIRE(target);
+    CHECK(target->snapped_row == (row < 560 ? 320 : 560));
+}
+}
+
+TEST_CASE("Minimap floor snap restarts at shortened measure heads", "[unit][sys][commands]") {
+    AreaFixture fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.measures.front().definition.length = {1, 3};
+    chart.measures.front().definition.meter.reset();
+    chart.measures.front().notes.clear();
+    chart.bpms.resize(1);
+    chart.bpms.front().beats_per_minute = {120, 1};
+    const auto timing = wormedit::build_timing_index(chart);
+    const auto built = wormedit::build_measure_index(chart);
+    REQUIRE(timing);
+    REQUIRE(std::holds_alternative<wormedit::measure_index_t>(built));
+    const auto& measures = std::get<wormedit::measure_index_t>(built);
+    for (const auto row : {320U, 350U, 559U, 560U, 600U}) {
+        const auto target = compose_minimap_target(1, row * 100 + 1, 48000, 48000,
+                                                  *timing.index, measures, 4);
+        check_measure_minimap_target(target, row);
+    }
+    auto stale = measures;
+    ++stale.total_rows;
+    CHECK_FALSE(compose_minimap_target(1, 35001, 48000, 48000, *timing.index, stale, 4));
+}

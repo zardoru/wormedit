@@ -870,7 +870,7 @@ TEST_CASE("Draw BGA deleted source and Timing focus reject without undo",
     fixture.check_unchanged(revision);
     check_action(!fixture.application.bga_draw_stroke);
 }
-TEST_CASE("Draw BGA interpolation preserves absolute snap across a five eighths measure",
+TEST_CASE("Draw BGA interpolation follows measure-local snap across a five eighths measure",
           "[bga][draw][compose-input]") {
     bga_input_fixture_t fixture;
     auto& chart = fixture.history.document.charts.front();
@@ -885,7 +885,7 @@ TEST_CASE("Draw BGA interpolation preserves absolute snap across a five eighths 
     const auto& events = fixture.history.document.charts.front().bga_events;
     require_action(events.size() == 3);
     check_action(events[1].position == local_position_t{measure_id_t{1}, 480});
-    check_action(events[2].position == local_position_t{measure_id_t{2}, 120});
+    check_action(events[2].position == local_position_t{measure_id_t{2}, 0});
     require_action(undo_document_command(fixture.history));
     check_action(fixture.history.document.charts.front().bga_events.size() == 1);
 }

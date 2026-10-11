@@ -12,6 +12,8 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
+#include <cmath>
+#include <numeric>
 #include <string>
 #include <utility>
 
@@ -36,6 +38,9 @@ void publish_policy_action(WormUiWorkspaceAction* action, int file_profile, int 
 
 struct project_panel_state_t {
     project_chart_selection_t selection;
+    project_chart_drag_t drag;
+    struct nk_vec2 drag_start{};
+    bool drag_moved{};
     char author[1024]{};
     char rating_numerator[24]{"0"};
     char rating_denominator[24]{"1"};
@@ -226,10 +231,74 @@ auto shift_or_ctrl(int modifiers) -> std::pair<bool, bool> {
     return {(modifiers & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0, (modifiers & SDL_KMOD_SHIFT) != 0};
 }
 
+auto table_row_bounds(nk_context* context, const column_widths_t& widths) -> struct nk_rect {
+    auto bounds = nk_widget_bounds(context);
+    bounds.w = grip_width + checkbox_width + actions_width + std::accumulate(widths.begin(), widths.end(), 0.0f);
+    return bounds;
+}
+
+void paint_table_row(nk_context* context, struct nk_rect bounds, bool header, bool selected) {
+    using namespace wormedit::ui::chrome;
+    if (!header && !selected) return;
+    auto* canvas = nk_window_get_canvas(context);
+    nk_fill_rect(canvas, bounds, 4.0f, color(header ? UiColor::surface : UiColor::selected));
+    if (header) nk_stroke_rect(canvas, bounds, 4.0f, 1.0f, color(UiColor::border));
+}
+
+void render_chart_grip(nk_context* context, const WormUiSetupView& view, std::uint64_t id) {
+    struct nk_rect bounds{};
+    const auto widget = nk_widget(&bounds, context);
+    using namespace wormedit::ui;
+    lucide::draw(context, bounds, lucide::Glyph::grip_vertical,
+        chrome::color(project_state.drag.source == id ? chrome::UiColor::accent : chrome::UiColor::text_muted));
+    if (widget != NK_WIDGET_VALID) return;
+    const bool hovered = nk_input_is_mouse_hovering_rect(&context->input, bounds);
+    if (hovered) nuklear::tooltip::text(context, "Drag to reorder chart");
+    if (hovered && !worm_ui_nuklear_setup_popup_owns_input() &&
+        nk_input_is_mouse_pressed(&context->input, NK_BUTTON_LEFT) &&
+        worm_ui_nuklear_begin_chart_drag(project_state.drag, view, id)) {
+        project_state.drag_start = context->input.mouse.pos;
+        project_state.drag_moved = false;
+    }
+}
+
+void preview_chart_drop(nk_context* context, const WormUiSetupView& view,
+                        std::uint64_t id, struct nk_rect bounds) {
+    if (!project_state.drag.source || !project_state.drag_moved ||
+        !nk_input_is_mouse_hovering_rect(&context->input, context->current->buffer.clip) ||
+        !nk_input_is_mouse_hovering_rect(&context->input, bounds)) return;
+    const bool after = context->input.mouse.pos.y >= bounds.y + bounds.h * 0.5f;
+    worm_ui_nuklear_target_chart_drag(project_state.drag, view, id, after);
+    if (!project_state.drag.source || project_state.drag.source == id) return;
+    const auto y = after ? bounds.y + bounds.h : bounds.y;
+    nk_stroke_line(nk_window_get_canvas(context), bounds.x, y, bounds.x + bounds.w, y, 2.0f,
+        wormedit::ui::chrome::color(wormedit::ui::chrome::UiColor::accent));
+}
+
+void prepare_chart_drag(nk_context* context, const WormUiSetupView& view) {
+    worm_ui_nuklear_reconcile_chart_drag(project_state.drag, view);
+    if (nk_input_is_key_pressed(&context->input, NK_KEY_TEXT_RESET_MODE) ||
+        worm_ui_nuklear_setup_popup_owns_input()) project_state.drag = {};
+    if (!project_state.drag.source) return;
+    project_state.drag.target = 0; // Leaving the rows cancels the drop rather than retaining a target.
+    const auto mouse = context->input.mouse.pos;
+    project_state.drag_moved = project_state.drag_moved ||
+        std::hypot(mouse.x - project_state.drag_start.x, mouse.y - project_state.drag_start.y) >= 3.0f;
+}
+
+void finish_chart_drag(nk_context* context, const WormUiSetupView& view, WormUiWorkspaceAction& action) {
+    if (!project_state.drag.source || context->input.mouse.buttons[NK_BUTTON_LEFT].down) return;
+    if (project_state.drag_moved && nk_input_is_mouse_released(&context->input, NK_BUTTON_LEFT) &&
+        action.project_chart.kind == WORM_UI_PROJECT_CHART_NONE)
+        action.project_chart = worm_ui_nuklear_finish_chart_drag(project_state.drag, view);
+    project_state.drag = {};
+}
+
 void render_table_header(nk_context* context, const std::array<std::uint64_t, WORM_UI_PROJECT_CHART_CAPACITY>& shown,
     std::size_t shown_count, const column_widths_t& widths, const table_ratios_t& ratios) {
     const auto summary = worm_ui_nuklear_project_selection_summary(project_state.selection, {shown.data(), shown_count});
-    begin_table_row(context, 22, ratios);
+    begin_table_row(context, 30, ratios);
+    paint_table_row(context, table_row_bounds(context, widths), true, false);
     nk_label(context, "", NK_TEXT_LEFT);
     const auto state = summary == project_selection_summary_t::all ? wormedit::ui::chrome::CheckState::on
         : summary == project_selection_summary_t::partial ? wormedit::ui::chrome::CheckState::mixed
@@ -246,9 +315,11 @@ void render_chart_row(nk_context* context, const WormUiSetupView& view,
     const WormUiProjectChartRow& row, const std::array<std::uint64_t, WORM_UI_PROJECT_CHART_CAPACITY>& shown,
     std::size_t shown_count, const column_widths_t& widths, const table_ratios_t& ratios,
     WormUiWorkspaceAction& action) {
-    begin_table_row(context, 26, ratios);
-    nk_label(context, "", NK_TEXT_LEFT);
+    begin_table_row(context, 30, ratios);
+    const auto row_bounds = table_row_bounds(context, widths);
     const bool selected = worm_ui_nuklear_project_chart_selected(project_state.selection, row.chart_id);
+    paint_table_row(context, row_bounds, false, selected);
+    render_chart_grip(context, view, row.chart_id);
     if (wormedit::ui::chrome::Checkbox{"", selected ? wormedit::ui::chrome::CheckState::on : wormedit::ui::chrome::CheckState::off,
             "Select chart"}.render(context))
         worm_ui_nuklear_click_project_chart(project_state.selection, {shown.data(), shown_count}, row.chart_id, true, false);
@@ -262,14 +333,15 @@ void render_chart_row(nk_context* context, const WormUiSetupView& view,
     if (nk_input_mouse_clicked(&context->input, NK_BUTTON_DOUBLE, name_bounds))
         publish_chart_action(view, action, WORM_UI_PROJECT_CHART_OPEN, row.chart_id);
     nk_bool name_selected = selected;
-    const auto name = fit_cell_text(context->style.font, row.name, widths[0]);
+    const auto* label = row.name[0] ? row.name : "Untitled chart";
+    const auto name = fit_cell_text(context->style.font, label, widths[0]);
     if (nk_selectable_label(context, name.c_str(), NK_TEXT_LEFT, &name_selected)) {
         const auto modifiers = SDL_GetModState();
         const auto [ctrl, shift] = shift_or_ctrl(modifiers);
         worm_ui_nuklear_click_project_chart(project_state.selection, {shown.data(), shown_count}, row.chart_id, ctrl, shift);
     }
-    if (name != row.name && nk_widget_is_hovered(context))
-        wormedit::ui::nuklear::tooltip::text(context, row.name);
+    if (name != label && nk_widget_is_hovered(context))
+        wormedit::ui::nuklear::tooltip::text(context, label);
     text_cell(context, row.author, widths[1]);
     text_cell(context, row.rating, widths[2]);
     text_cell(context, row.mode, widths[3]);
@@ -285,6 +357,7 @@ void render_chart_row(nk_context* context, const WormUiSetupView& view,
         nk_group_end(context);
     }
     nk_style_pop_vec2(context);
+    preview_chart_drop(context, view, row.chart_id, row_bounds);
     if (row.diagnostic && row.diagnostic[0]) {
         nk_layout_row_dynamic(context, 22, 1);
         nk_label_colored(context, row.diagnostic, NK_TEXT_LEFT, nk_rgb(235, 150, 120));
@@ -322,9 +395,11 @@ void render_project_charts(nk_context* context, const WormUiSetupView& view, Wor
     const auto available = nk_widget_width(context);
     const auto widths = column_widths(available);
     const auto ratios = table_ratios(available, widths);
+    prepare_chart_drag(context, view);
     render_table_header(context, shown, shown_count, widths, ratios);
     for (size_t index = 0; index < shown_count; ++index)
         render_chart_row(context, view, view.charts[index], shown, shown_count, widths, ratios, action);
+    finish_chart_drag(context, view, action);
     render_project_batch(context, view, action);
     render_row_menu(context, view, action);
 }
@@ -348,6 +423,7 @@ void worm_ui_nuklear_sync_setup_popups(nk_context* context, const WormUiSetupVie
         project_state.row_menu = retired_menu;
     } else {
         worm_ui_nuklear_reconcile_project_selection(project_state.selection, *view);
+        worm_ui_nuklear_reconcile_chart_drag(project_state.drag, *view);
     }
 }
 
@@ -416,4 +492,8 @@ void worm_ui_nuklear_render_setup_panel(struct nk_context* context,
 void worm_ui_nuklear_render_setup_dialogs(nk_context* context, const WormUiSetupView& view,
                                          WormUiWorkspaceAction& action) {
     if (view.visible) render_delete_confirmation(context, view, action);
+}
+
+void worm_ui_nuklear_cancel_setup_drag() {
+    project_state.drag = {};
 }

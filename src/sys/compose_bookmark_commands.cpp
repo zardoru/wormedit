@@ -1,4 +1,5 @@
 #include "sys/compose_bookmark_commands.h"
+#include <wormedit/core/snap.h>
 
 #include <wormedit/audio/decoder.h>
 #include <wormedit/core/marker_editor.h>
@@ -75,22 +76,13 @@ auto local_position_for_row(const measure_index_t& index, std::uint64_t row)
     return local_position_t{measure.id, row - measure.absolute_begin_row};
 }
 
-auto nearest_snap_row(double absolute_row, std::uint64_t divisions_per_measure,
-                      std::uint64_t snap_denominator, std::uint64_t total_rows)
+auto nearest_snap_row(const chart_document_t& chart, const measure_index_t& index,
+                      double absolute_row, std::uint64_t snap_denominator)
     -> std::optional<std::uint64_t> {
-    if (total_rows == 0 || !std::isfinite(absolute_row) || snap_denominator == 0 ||
-        divisions_per_measure % snap_denominator != 0)
-        return std::nullopt;
-    const auto step = divisions_per_measure / snap_denominator;
-    if (step == 0) return std::nullopt;
-    const auto clamped = std::clamp(absolute_row, 0.0, static_cast<double>(total_rows - 1));
-    const auto lower = static_cast<std::uint64_t>(std::floor(clamped / static_cast<double>(step)));
-    const auto below = lower * step;
-    const auto above = below + step;
-    const auto distance_below = clamped - static_cast<double>(below);
-    const auto distance_above = static_cast<double>(above) - clamped;
-    // Ties go to the earlier row; a snap row past the last row is never chosen.
-    return distance_below <= distance_above || above >= total_rows ? below : above;
+    if (index.total_rows == 0 || !std::isfinite(absolute_row)) return std::nullopt;
+    const auto row = std::clamp(static_cast<long double>(absolute_row), 0.0L,
+                                static_cast<long double>(index.total_rows - 1));
+    return snap_canvas_row(chart, index, row, snap_denominator, index.total_rows);
 }
 
 auto bookmark_preview_frame(const timing_index_t& timing, const measure_index_t& measures,
@@ -265,9 +257,8 @@ auto add_beat_bookmark_here(document_history_t& history, editor_interaction_stat
             !std::holds_alternative<measure_index_t>(built))
             return fail("The playhead row is not available yet.");
         const auto& index = std::get<measure_index_t>(built);
-        const auto row = nearest_snap_row(*application.preview_playhead_absolute_row,
-                                          chart->divisions_per_standard_measure,
-                                          state.active_snap_denominator, index.total_rows);
+        const auto row = nearest_snap_row(*chart, index, *application.preview_playhead_absolute_row,
+                                          state.active_snap_denominator);
         const auto snapped = row ? local_position_for_row(index, *row) : std::nullopt;
         if (!snapped) return fail("The playhead is not on an editable row.");
         position = *snapped;

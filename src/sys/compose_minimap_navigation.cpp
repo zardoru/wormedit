@@ -1,6 +1,7 @@
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_scroll_geometry.h"
 #include <wormedit/audio/decoder.h>
+#include <wormedit/core/snap.h>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -19,9 +20,10 @@ auto row_for_time(const timing_index_t& timing, signed_rational_t seconds) -> lo
     return 0.0L;
 }
 auto target_at_frame(std::uint64_t frame, std::uint32_t preview_rate,
-    const timing_index_t& timing, std::uint64_t snap_denominator)
+    const timing_index_t& timing, const measure_index_t& measures, std::uint64_t snap_denominator)
     -> std::optional<compose_minimap_target_t> {
-    if (preview_rate == 0 || timing.total_rows == 0 ||
+    if (measures.entries.empty() || measures.total_rows != timing.total_rows ||
+        preview_rate == 0 || timing.total_rows == 0 ||
         timing.divisions_per_standard_measure == 0 ||
         frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
         return std::nullopt;
@@ -30,17 +32,23 @@ auto target_at_frame(std::uint64_t frame, std::uint32_t preview_rate,
     // The chart endpoint has no editable row; choose its last active grid row.
     snapped = std::min(snapped, timing.total_rows - 1);
     if (snap_denominator != 0) {
-        if (timing.divisions_per_standard_measure % snap_denominator != 0) return std::nullopt;
-        const auto step = timing.divisions_per_standard_measure / snap_denominator;
-        if (step == 0) return std::nullopt;
-        snapped -= snapped % step;
+        chart_document_t chart;
+        chart.divisions_per_standard_measure = timing.divisions_per_standard_measure;
+        const auto source = std::min(row, static_cast<long double>(timing.total_rows - 1));
+        auto nearest = snap_canvas_row(chart, measures, source, snap_denominator, timing.total_rows);
+        if (!nearest) return std::nullopt;
+        if (*nearest > source)
+            nearest = adjacent_snap_canvas_row(chart, measures, source, snap_denominator,
+                                              timing.total_rows, false);
+        if (!nearest) return std::nullopt;
+        snapped = *nearest;
     }
     return compose_minimap_target_t{frame, row, snapped};
 }
 }
 auto compose_minimap_target(double fraction, std::uint64_t total_frames,
     std::uint32_t waveform_rate, std::uint32_t preview_rate, const timing_index_t& timing,
-    std::uint64_t snap_denominator, std::optional<std::uint64_t> compiled_end)
+    const measure_index_t& measures, std::uint64_t snap_denominator, std::optional<std::uint64_t> compiled_end)
     -> std::optional<compose_minimap_target_t> {
     if (!std::isfinite(fraction) || fraction < 0.0 || fraction > 1.0 || total_frames == 0 ||
         waveform_rate == 0 || preview_rate == 0 || timing.divisions_per_standard_measure == 0 ||
@@ -50,7 +58,7 @@ auto compose_minimap_target(double fraction, std::uint64_t total_frames,
     if (converted > std::numeric_limits<std::int64_t>::max()) return std::nullopt;
     auto frame = static_cast<std::uint64_t>(converted);
     if (compiled_end) frame = std::min(frame, *compiled_end);
-    return target_at_frame(frame, preview_rate, timing, snap_denominator);
+    return target_at_frame(frame, preview_rate, timing, measures, snap_denominator);
 }
 auto move_compose_minimap_cursor(document_history_t& history, editor_interaction_state_t& state,
     const measure_index_t& measures, const timing_index_t& timing,
@@ -82,7 +90,7 @@ auto seek_stopped_compose_transport(document_history_t& history,
     const auto chart = std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     if (chart == history.document.charts.end()) return feedback(notification_severity_t::warning, "The selected chart is unavailable.");
     const auto target = target_at_frame(frame, audio::output_sample_rate,
-        *cache.marker_timing_index, edit_snap_denominator(*chart, state));
+        *cache.marker_timing_index, *cache.cached_measure_index, edit_snap_denominator(*chart, state));
     if (!target) return feedback(notification_severity_t::warning, "The requested chart position is unavailable.");
     const auto moved = move_compose_minimap_cursor(history, state, *cache.cached_measure_index,
         *cache.marker_timing_index, *target);

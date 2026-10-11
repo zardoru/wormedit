@@ -9,9 +9,10 @@ namespace wormedit::ui::chrome {
 
 // One shared dialog surface (see docs/chart-editor-plan/tasks/dialogs.md for the rules): an
 // elevation-2 painted surface with 16 px padding and 8 px row spacing, no Nuklear title bar
-// and no dragging, a title row, a body, and a right-aligned footer of 28 px buttons. The
+// and an optional drag handle, a title row, a body, and a right-aligned footer of 28 px buttons. The
 // height fits the content as measured on the previous frame, and the dialog is centered in
-// `area`. Modal dialogs dim and block everything behind them.
+// `area`. Settings tools may opt into retained resizing and movement. Modal dialogs dim and block
+// everything behind them.
 //
 // The caller keeps one Dialog per dialog and draws it every frame while it is open:
 //
@@ -45,6 +46,11 @@ struct DialogOptions {
     bool no_input{};
     // Enter triggers the primary button. Same default; a tool with text fields leaves it off.
     std::optional<bool> enter_confirms{};
+    // Settings tools can retain a user-resized height instead of fitting their content.
+    bool resizable{false};
+    float height{450.0f};
+    struct nk_vec2 minimum_size{640.0f, 360.0f};
+    bool movable{false}; // Opt-in tools only; alerts remain centered and immovable.
 };
 
 struct Dialog {
@@ -58,6 +64,7 @@ struct Dialog {
     SurfaceWindow surface{};
     struct nk_vec2 saved_padding{}, saved_spacing{};
     float saved_border{};
+    struct nk_vec2 saved_minimum_size{};
     nk_flags saved_window_flags{};
     bool primary_drawn{};
     bool enter_pending{};  // Enter was pressed this frame and the primary button should act.
@@ -66,6 +73,11 @@ struct Dialog {
     bool closable{};
     bool escape_cancels{};
     bool enter_confirms{};
+    bool resizable{};
+    bool movable{};
+    bool dragging{};
+    struct nk_rect drag_handle{};
+    struct nk_vec2 drag_offset{};
 };
 
 inline constexpr float dialog_padding = metrics::gap_large;

@@ -349,3 +349,180 @@ TEST_CASE("components gallery stock widgets draw inside a full-size target", "[c
     for (const auto& scissor : summary.scissors)
         verify_inside(scissor, nk_rect(0, 0, static_cast<float>(width), static_cast<float>(height)));
 }
+
+namespace {
+
+struct popup_paint_t {
+    bool opaque_fill{};
+    int visible_shadows{};
+    bool text_after_fill{};
+};
+
+auto clip_covers(struct nk_rect clip, struct nk_rect bounds) -> bool {
+    return clip.x <= bounds.x && clip.y <= bounds.y &&
+        clip.x + clip.w >= bounds.x + bounds.w &&
+        clip.y + clip.h >= bounds.y + bounds.h;
+}
+
+auto opaque_panel(const nk_command_rect_filled& fill, struct nk_rect bounds) -> bool {
+    return fill.x == bounds.x && fill.y == bounds.y && fill.w == bounds.w &&
+        fill.h == bounds.h && fill.color.a == 255;
+}
+
+auto shadow_fill(const nk_command_rect_filled& fill) -> bool {
+    return fill.color.r == 0 && fill.color.g == 0 && fill.color.b == 0 &&
+        fill.color.a > 0 && fill.color.a < 255;
+}
+
+auto popup_paint(nk_context& context, struct nk_rect bounds) -> popup_paint_t {
+    popup_paint_t result;
+    struct nk_rect clip{};
+    const nk_command* command{};
+    nk_foreach(command, &context) {
+        if (command->type == NK_COMMAND_SCISSOR) {
+            const auto& scissor = *reinterpret_cast<const nk_command_scissor*>(command);
+            clip = nk_rect(scissor.x, scissor.y, scissor.w, scissor.h);
+        } else if (command->type == NK_COMMAND_RECT_FILLED) {
+            const auto& fill = *reinterpret_cast<const nk_command_rect_filled*>(command);
+            const bool covers_panel = clip_covers(clip, bounds);
+            if (opaque_panel(fill, bounds) && covers_panel)
+                result.opaque_fill = true;
+            if (shadow_fill(fill) && covers_panel &&
+                clip.y + clip.h > bounds.y + bounds.h)
+                ++result.visible_shadows;
+        } else if (command->type == NK_COMMAND_TEXT && result.opaque_fill) {
+            result.text_after_fill = true;
+        }
+    }
+    return result;
+}
+
+void check_rect_equal(struct nk_rect actual, struct nk_rect expected) {
+    CHECK(actual.x == expected.x);
+    CHECK(actual.y == expected.y);
+    CHECK(actual.w == expected.w);
+    CHECK(actual.h == expected.h);
+}
+
+void check_style_alpha(const nk_context& context, nk_byte background, nk_byte fixed) {
+    CHECK(context.style.window.background.a == background);
+    CHECK(context.style.window.fixed_background.data.color.a == fixed);
+}
+
+void check_popup_paint(const popup_paint_t& paint) {
+    CHECK(paint.opaque_fill);
+    CHECK(paint.visible_shadows == metrics::elevation(1).steps);
+    CHECK(paint.text_after_fill);
+}
+
+} // namespace
+
+TEST_CASE("dropdown surfaces extend beyond a short host on opening and later frames",
+          "[components][dropdown-surfaces]") {
+    fixture_t fixture;
+    auto& context = fixture.context;
+    const auto target = nk_rect(0, 0, 640, 480);
+    const auto host = nk_rect(20, 20, 220, 50);
+    wormedit::ui::nuklear::tooltip::set_viewport(target);
+    const auto background = context.style.window.background;
+    const auto fixed = context.style.window.fixed_background;
+    int opened = 0;
+    const auto render = [&](const frame_input_t& input) {
+        fixture.input(input);
+        REQUIRE(nk_begin(&context, "Short popup host", host, NK_WINDOW_NO_SCROLLBAR));
+        nk_layout_row_dynamic(&context, 24, 1);
+        const bool open = chrome::safe_combo_begin_label(&context, "Choose", nk_vec2(180, 120));
+        struct nk_rect popup_bounds{};
+        if (open) {
+            popup_bounds = context.current->bounds;
+            CHECK(popup_bounds.y + popup_bounds.h > host.y + host.h);
+            nk_layout_row_dynamic(&context, 24, 1);
+            nk_combo_item_label(&context, "First", NK_TEXT_LEFT);
+            nk_combo_item_label(&context, "Second", NK_TEXT_LEFT);
+            chrome::safe_combo_end(&context);
+        }
+        nk_end(&context);
+        if (open) {
+            check_popup_paint(popup_paint(context, popup_bounds));
+            ++opened;
+        }
+        check_style_alpha(context, background.a, fixed.data.color.a);
+        nk_clear(&context);
+    };
+    render({});
+    render({50, 35, 1});
+    render({50, 35, 0});
+    render({-1, -1});
+    CHECK(opened >= 2);
+}
+
+TEST_CASE("unelevated surface fills outside its content clip and restores the clip",
+          "[components][dropdown-surfaces]") {
+    fixture_t fixture;
+    fixture.input({});
+    REQUIRE(nk_begin(&fixture.context, "Surface", nk_rect(0, 0, 400, 300),
+                     NK_WINDOW_NO_SCROLLBAR));
+    auto* canvas = nk_window_get_canvas(&fixture.context);
+    const auto bounds = nk_rect(40, 40, 180, 100);
+    const auto inset = nk_rect(60, 60, 140, 60);
+    nk_push_scissor(canvas, inset);
+    chrome::paint_surface(canvas, bounds, 0, nk_rect(0, 0, 400, 300));
+    check_rect_equal(canvas->clip, inset);
+    nk_end(&fixture.context);
+    const auto paint = popup_paint(fixture.context, bounds);
+    CHECK(paint.opaque_fill);
+    CHECK(paint.visible_shadows == 0);
+}
+
+TEST_CASE("menu surfaces use the viewport beyond a short header host",
+          "[components][dropdown-surfaces]") {
+    fixture_t fixture;
+    auto& context = fixture.context;
+    wormedit::ui::nuklear::tooltip::set_viewport(nk_rect(0, 0, 640, 480));
+    int opened = 0;
+    const auto render = [&](const frame_input_t& input) {
+        fixture.input(input);
+        REQUIRE(nk_begin(&context, "Menu header", nk_rect(20, 20, 220, 50),
+                         NK_WINDOW_NO_SCROLLBAR));
+        nk_layout_row_dynamic(&context, 24, 1);
+        const bool open = nk_menu_begin_label(&context, "Menu", NK_TEXT_LEFT,
+                                              nk_vec2(180, 120));
+        struct nk_rect bounds{};
+        if (open) {
+            bounds = context.current->bounds;
+            const auto saved = chrome::menu_surface_begin(&context);
+            nk_layout_row_dynamic(&context, 24, 1);
+            nk_menu_item_label(&context, "Action", NK_TEXT_LEFT);
+            nk_menu_end(&context);
+            chrome::menu_surface_end(&context, saved);
+        }
+        nk_end(&context);
+        if (open) {
+            check_popup_paint(popup_paint(context, bounds));
+            ++opened;
+        }
+        nk_clear(&context);
+    };
+    render({});
+    render({50, 35, 1});
+    render({50, 35, 0});
+    render({-1, -1});
+    CHECK(opened >= 2);
+}
+
+TEST_CASE("dropdown surface fallback covers the popup without a viewport",
+          "[components][dropdown-surfaces]") {
+    fixture_t fixture;
+    fixture.input({});
+    REQUIRE(nk_begin(&fixture.context, "Fallback parent", nk_rect(0, 0, 220, 50),
+                     NK_WINDOW_NO_SCROLLBAR));
+    wormedit::ui::nuklear::tooltip::set_viewport(nk_rect(0, 0, 0, 0));
+    // Exercise the shared surface with a valid popup whose parent is only a header.
+    REQUIRE(nk_popup_begin(&fixture.context, NK_POPUP_STATIC, "Fallback popup",
+                          NK_WINDOW_NO_SCROLLBAR, nk_rect(20, 30, 180, 120)));
+    const auto bounds = fixture.context.current->bounds;
+    chrome::menu_panel(&fixture.context);
+    nk_popup_end(&fixture.context);
+    nk_end(&fixture.context);
+    CHECK(popup_paint(fixture.context, bounds).opaque_fill);
+}

@@ -984,6 +984,20 @@ void color_osu_special_stage(lane_layout_t& layout, stage_group_t stage) {
     }
 }
 
+// Default osu!mania sprites alternate by distance from the nearest stage edge;
+// an odd stage uses the special/yellow sprite in its center. See upstream:
+// osu.Game.Rulesets.Mania/Skinning/Legacy/LegacyManiaColumnElement.cs and
+// osu.Game.Rulesets.Mania/Beatmaps/StageDefinition.cs in ppy/osu.
+void color_osu_stage(lane_layout_t& layout, stage_group_t stage) {
+    const auto lanes = playable_lanes_of_stage(layout, stage);
+    for (std::size_t index = 0; index < lanes.size(); ++index) {
+        const auto edge_distance = std::min(index, lanes.size() - index - 1);
+        lanes[index]->key_color = lanes.size() % 2 == 1 && index == lanes.size() / 2
+            ? lane_key_color_t::pms_yellow
+            : edge_distance % 2 == 0 ? lane_key_color_t::white : lane_key_color_t::black;
+    }
+}
+
 void color_stage(lane_layout_t& layout, stage_group_t stage, std::string_view profile) {
     const auto lanes = playable_lanes_of_stage(layout, stage);
     const auto popn = profile.starts_with("pms-") || profile.starts_with("bmson-popn-");
@@ -994,8 +1008,7 @@ void color_stage(lane_layout_t& layout, stage_group_t stage, std::string_view pr
         } else if (popn_nine) {
             lanes[index]->key_color = pms_button_colors[index];
         } else if (profile.starts_with("bms-") || profile.starts_with("bme-") ||
-                   profile.starts_with("bmson-beat-") || profile == "osu-mania-12k" ||
-                   profile == "osu-mania-16k") {
+                   profile.starts_with("bmson-beat-")) {
             lanes[index]->key_color =
                 index % 2 == 0 ? lane_key_color_t::white : lane_key_color_t::black;
         }
@@ -1019,7 +1032,74 @@ void assign_lane_key_colors(lane_layout_t& layout) {
         return;
     }
     for (const auto stage : {stage_group_t::none, stage_group_t::left, stage_group_t::right}) {
-        color_stage(layout, stage, layout.profile_id);
+        if (layout.profile_id.starts_with("osu-mania-")) color_osu_stage(layout, stage);
+        else color_stage(layout, stage, layout.profile_id);
+    }
+}
+
+namespace {
+
+auto beat_skin_family(std::string_view profile) -> bool {
+    return profile.starts_with("bms-5k-") || profile.starts_with("bms-10k-") ||
+           profile.starts_with("bme-7k-") || profile.starts_with("bme-14k-") ||
+           profile.starts_with("bmson-beat-");
+}
+
+auto canonical_beat_stages(const lane_layout_t& layout, std::ptrdiff_t keys_per_stage, bool double_play) -> bool {
+    if (!double_play) return true;
+    for (const auto stage : {stage_group_t::left, stage_group_t::right}) {
+        const auto count = [&](lane_role_t role) {
+            return std::ranges::count_if(layout.lanes, [=](const auto& lane) { return lane.stage == stage && lane.role == role; });
+        };
+        if (count(lane_role_t::playable) != keys_per_stage || count(lane_role_t::scratch) != 1) return false;
+    }
+    return true;
+}
+
+auto beat_skin_layout_key(const lane_layout_t& layout) -> std::string {
+    const auto count = [&](lane_role_t role) { return std::ranges::count(layout.lanes, role, &lane_definition_t::role); };
+    // BMSON beat-DP imports carry two semantic stage groups without split_stage.
+    const auto double_play = layout.split_stage || layout.profile_id == "bmson-beat-10k" ||
+                             layout.profile_id == "bmson-beat-14k";
+    const auto stages = double_play ? 2 : 1;
+    const auto playable = count(lane_role_t::playable);
+    if (count(lane_role_t::scratch) != stages || (playable != 5 * stages && playable != 7 * stages)) return {};
+    if (!canonical_beat_stages(layout, playable / stages, double_play)) return {};
+    auto result = std::string(double_play ? "bms-dp" : "bms-sp") + std::to_string(playable / stages);
+    if (count(lane_role_t::free_zone)) result += "-free-zone";
+    if (count(lane_role_t::foot_pedal)) result += "-foot-pedal";
+    return result;
+}
+
+} // namespace
+
+auto field_skin_layout_key(const lane_layout_t& layout) -> std::string {
+    const auto& profile = layout.profile_id;
+    if (profile == "bms-10k-scratchless") return "osu-mania-10k";
+    if (beat_skin_family(profile)) {
+        const auto beat = beat_skin_layout_key(layout);
+        if (!beat.empty()) return beat;
+    }
+    if (profile.starts_with("pms-") || profile.starts_with("bmson-popn-")) {
+        const auto keys = std::ranges::count(layout.lanes, lane_role_t::playable, &lane_definition_t::role);
+        if (keys == 5 || keys == 9 || keys == 18) return "pms-" + std::to_string(keys) + "button";
+    }
+    return profile.empty() ? "custom" : profile;
+}
+
+auto field_skin_key_class(lane_key_color_t color) -> std::string_view {
+    switch (color) {
+    case lane_key_color_t::white:
+    case lane_key_color_t::pms_white: return "white";
+    case lane_key_color_t::black:
+    case lane_key_color_t::pms_blue: return "blue";
+    case lane_key_color_t::pms_green: return "green";
+    case lane_key_color_t::pms_yellow: return "yellow";
+    case lane_key_color_t::scratch:
+    case lane_key_color_t::pms_red: return "red";
+    case lane_key_color_t::foot_pedal: return "foot-pedal";
+    case lane_key_color_t::free_zone: return "free-zone";
+    default: return "generic";
     }
 }
 

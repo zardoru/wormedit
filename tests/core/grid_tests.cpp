@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <ranges>
+#include <source_location>
 
 using namespace wormedit;
 
@@ -25,6 +26,12 @@ auto line_at(const editor_grid_result_t& result, std::uint64_t whole_row)
                line.chart_row.fractional_rows.numerator == 0;
     });
     return found == result.lines.end() ? nullptr : &*found;
+}
+
+void expect_grid(bool condition,
+                 std::source_location source = std::source_location::current()) {
+    INFO("Grid expectation at " << source.line());
+    REQUIRE(condition);
 }
 
 } // namespace
@@ -214,4 +221,72 @@ TEST_CASE("virtual BMS beats retain exact fractions when note rows are coarse",
     CHECK(beat->position.whole_rows == 0);
     CHECK(beat->position.fractional_rows == rational_t{3, 4});
     CHECK(chart.measures.size() == 1);
+}
+
+TEST_CASE("snap subdivisions restart at every short authored measure head",
+          "[unit][core][grid][measure-local-grid]") {
+    auto chart = make_chart(960, {
+        {.id = measure_id_t{1}, .definition = {{1, 16}, std::nullopt}},
+        {.id = measure_id_t{2}, .definition = {{1, 8}, std::nullopt}},
+        {.id = measure_id_t{3}},
+    });
+    const auto result = make_editor_grid_lines(chart, {
+        .visible_begin_row = 180, .visible_end_row = 1140,
+        .active_snap_denominator = 8, .density = {0.0, 0.0, 0.0}});
+    expect_grid(static_cast<bool>(result));
+    const auto* snap = line_at(result, 300);
+    expect_grid(snap);
+    expect_grid(snap->kind == editor_grid_line_kind_t::active_snap);
+    expect_grid(snap->position.measure == measure_id_t{3});
+    expect_grid(snap->position.whole_rows == 120);
+    expect_grid(!line_at(result, 240));
+    const auto* beat = line_at(result, 420);
+    expect_grid(beat);
+    expect_grid(beat->kind == editor_grid_line_kind_t::beat);
+    const auto* group = line_at(result, 660);
+    expect_grid(group);
+    expect_grid(group->kind == editor_grid_line_kind_t::group);
+    expect_grid(group->emphasis == editor_grid_emphasis_t::strong);
+}
+
+TEST_CASE("offset measure grids retain authored grouping and clipped snap phase",
+          "[unit][core][grid][measure-local-grid]") {
+    auto chart = make_chart(960, {
+        {.id = measure_id_t{1}, .definition = {{1, 16}, std::nullopt}},
+        {.id = measure_id_t{2}, .definition = {{3, 4}, meter_t{6, 8}}},
+    });
+    const auto result = make_editor_grid_lines(chart, {
+        .visible_begin_row = 121, .visible_end_row = 421,
+        .active_snap_denominator = 16, .density = {0.0, 0.0, 0.0},
+        .authored_groupings = {{.measure = measure_id_t{2}, .beat_counts = {2, 2, 2}}}});
+    expect_grid(static_cast<bool>(result));
+    const auto* snap = line_at(result, 240);
+    expect_grid(snap);
+    expect_grid(snap->position.whole_rows == 180);
+    expect_grid(snap->kind == editor_grid_line_kind_t::active_snap);
+    const auto* group = line_at(result, 300);
+    expect_grid(group);
+    expect_grid(group->kind == editor_grid_line_kind_t::group);
+    expect_grid(!line_at(result, 120));
+}
+
+TEST_CASE("virtual BMS snap phase follows the final authored measure and stays bounded",
+          "[unit][core][grid][virtual-canvas][measure-local-grid]") {
+    auto chart = make_chart(960, {{.id = measure_id_t{1},
+        .definition = {{1, 16}, std::nullopt}}});
+    chart.source_family = format_family_t::bms;
+    const auto result = make_editor_grid_lines(chart, {
+        .visible_begin_row = 958'141, .visible_end_row = 958'501,
+        .active_snap_denominator = 8, .include_virtual_bms_tail = true,
+        .density = {0.0, 0.0, 0.0}, .maximum_line_count = 32});
+    expect_grid(static_cast<bool>(result));
+    const auto* snap = line_at(result, 958'260);
+    expect_grid(snap);
+    expect_grid(snap->position.measure == measure_id_t{});
+    expect_grid(snap->position.whole_rows == 120);
+    expect_grid(result.lines.size() < 16);
+    expect_grid(!make_editor_grid_lines(chart, {
+        .visible_begin_row = 60, .visible_end_row = 1020,
+        .active_snap_denominator = 960, .include_virtual_bms_tail = true,
+        .density = {0.0, 0.0, 0.0}, .maximum_line_count = 16}));
 }

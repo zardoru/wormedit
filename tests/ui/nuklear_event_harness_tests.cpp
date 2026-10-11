@@ -798,14 +798,15 @@ TEST_CASE("Layers dock rows choose the target and send eye and lock actions for 
     view.semantic_layer_count = layers.size();
     view.semantic_layer_total_count = layers.size();
     (void)harness.frame();
-    const auto row = harness.drawn_text_center("Lead: 3 notes");
+    CHECK(harness.drawn_text().find("3 objects") != std::string::npos);
+    const auto row = harness.drawn_text_center("Lead");
     REQUIRE(row.has_value());
     const auto chosen = click_at(harness, row->first, row->second);
     check_layer_row_action(chosen.back(), WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER, 7);
     layers.front().selected = true;
     view.semantic_layer_target = layers.front();
     (void)harness.frame();
-    const auto hidden_row = harness.drawn_text_center("Hidden: 2 notes");
+    const auto hidden_row = harness.drawn_text_center("Hidden");
     REQUIRE(hidden_row.has_value());
     const auto eye = click_at(harness, 1200, hidden_row->second);
     check_layer_row_action(eye[0], WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY, 9);
@@ -826,14 +827,14 @@ TEST_CASE("Layers dock No layer row requests clear assignment without eye or loc
     view.selected_note_count = 2;
     const auto revision = view.document_revision;
     (void)harness.frame();
-    const auto no_layer = harness.drawn_text_center("No layer: 4 notes");
+    const auto no_layer = harness.drawn_text_center("No layer");
     REQUIRE(no_layer.has_value());
     const auto clicked = click_at(harness, no_layer->first, no_layer->second);
     check_layer_row_action(clicked.back(), WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER, 0);
     CHECK(view.document_revision == revision);
     view.semantic_layer_target_none = true;
     (void)harness.frame();
-    const auto no_layer_row = harness.drawn_text_center("No layer: 4 notes");
+    const auto no_layer_row = harness.drawn_text_center("No layer");
     REQUIRE(no_layer_row.has_value());
     const auto no_eye = click_at(harness, no_layer_row->first, no_layer_row->second);
     check_layer_row_action(no_eye.back(), WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER, 0);
@@ -894,7 +895,7 @@ struct layer_menu_fixture_t {
 
     void open(std::size_t index = 0) {
         const auto row =
-            harness.drawn_text_center(index == 0 ? "Lead: 3 notes" : "Locked: 2 notes");
+            harness.drawn_text_center(index == 0 ? "Lead" : "Locked");
         REQUIRE(row.has_value());
         const auto clicks = right_click_at(harness, row->first, row->second);
         check_layer_row_action(clicks.front(), WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER,

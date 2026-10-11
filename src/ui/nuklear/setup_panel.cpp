@@ -21,6 +21,13 @@
 
 namespace {
 
+void project_section_heading(nk_context* context, const char* text) {
+    using namespace wormedit::ui::chrome;
+    const auto bounds = nk_widget_bounds(context);
+    nk_fill_rect(nk_window_get_canvas(context), bounds, 4.0f, color(UiColor::surface));
+    nk_label_colored(context, text, NK_TEXT_LEFT, color(UiColor::text_bright));
+}
+
 void publish_policy_action(WormUiWorkspaceAction* action, int file_profile, int timing_syntax,
                            int implementation) {
     if (!action || action->kind != WORM_UI_WORKSPACE_ACTION_NONE)
@@ -390,7 +397,9 @@ void render_project_charts(nk_context* context, const WormUiSetupView& view, Wor
     nk_layout_row_template_push_static(context, 160);
     nk_layout_row_template_push_static(context, 32);
     nk_layout_row_template_end(context);
-    nk_labelf(context, NK_TEXT_LEFT, "Charts · %zu", view.chart_count);
+    char heading[64];
+    std::snprintf(heading, sizeof(heading), "Charts · %zu", view.chart_count);
+    project_section_heading(context, heading);
     if (wormedit::ui::chrome::Button{"Import chart…", wormedit::ui::chrome::ButtonKind::secondary,
                                      "Add difficulties from another chart file"}.render(context) &&
         action.chart_import.kind == WORM_UI_CHART_IMPORT_NONE)
@@ -458,7 +467,7 @@ void worm_ui_nuklear_render_setup_panel(struct nk_context* context,
     nk_layout_row_dynamic(context, 18, 1);
     nk_spacing(context, 1);
     nk_layout_row_dynamic(context, 26, 1);
-    nk_label(context, "StepMania export policy", NK_TEXT_LEFT);
+    project_section_heading(context, "StepMania export policy");
 
     constexpr std::array file_labels{"SM", "SSC"};
     constexpr std::array timing_labels{"Native WARPS", "Legacy negative BPM",

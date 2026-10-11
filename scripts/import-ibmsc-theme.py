@@ -61,9 +61,10 @@ def convert(path, name):
                "TSMouseOver": "timing_hover", "TSSel": "timing_selected"}
     roles = {role: argb(visual[key]) for key, role in mapping.items() if key in visual}
     # A selected or hovered note retains its scheme fill; these colors are outlines in iBMSC.
-    roles["selection_box_border"] = roles["selection_box"]
-    roles["selection_add"] = roles["selection_toggle"] = roles["selection_box"]
-    roles["selection_add_border"] = roles["selection_toggle_border"] = roles["selection_box_border"]
+    # Box-selection overlays are editor feedback, independent of skin note colors.
+    roles.update(selection_box="#65b7f222", selection_box_border="#65b7f2",
+                 selection_add="#71d6a422", selection_add_border="#71d6a4",
+                 selection_toggle="#c597f522", selection_toggle_border="#c597f5")
     roles["subgrid_emphasis"] = roles["subgrid_line"]
     roles["grid"] = roles["bgm_line"] = roles["lane_line"]
     roles["band"] = roles["band_split"] = roles["viewport"]

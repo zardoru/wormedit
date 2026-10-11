@@ -1072,6 +1072,10 @@ bool worm_ui_frontend_compose_dock_command(WormUiComposeDockCommand command,
         compose.last_document_revision != revision) return false;
     switch (command) {
     case WORM_UI_COMPOSE_DOCK_OPEN_LAYERS:
+        compose.layers_panel_visible = !compose.layers_panel_visible;
+        if (compose.layers_panel_visible && compose.compact_dock_layout)
+            compose.sounds_panel_visible = false;
+        return true;
     case WORM_UI_COMPOSE_DOCK_CREATE_LAYER:
         compose.layers_panel_visible = true;
         // Compact Compose has room for one dock; reveal the requested Layers dock.
@@ -1081,6 +1085,8 @@ bool worm_ui_frontend_compose_dock_command(WormUiComposeDockCommand command,
         return true;
     case WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS:
         compose.sounds_panel_visible = !compose.sounds_panel_visible;
+        if (compose.sounds_panel_visible && compose.compact_dock_layout)
+            compose.layers_panel_visible = false;
         compose.sounds_dock_bmson_tab = false;
         return true;
     }
@@ -2392,18 +2398,19 @@ static void render_workspace_content(const WormUiWorkspaceView& view,
         !project_dialog_active() && !g_notification_modal && !g_menu_popup_open;
     if (!metadata_interactive) worm_ui_nuklear_cancel_metadata_tag_drag();
     prepare_workspace_content_scroll(g_context, view.compose.visible);
-    // Metadata is a form; the Project chart table uses the available width.
-    const bool padded = view.metadata.visible;
+    // Project and Metadata share the form side margins.
+    const bool padded = view.metadata.visible || view.setup.visible;
     if (padded) {
         const auto padding = g_context->style.window.group_padding;
+        const auto form_margin = wormedit::ui::layout::form_side_margin(
+            static_cast<float>(g_last_window_width), static_cast<float>(g_last_window_height));
+        // The multi-column chart table needs more width than Metadata's form fields.
+        const auto margin = view.setup.visible ? std::min(form_margin, 48.0f) : form_margin;
         nk_style_push_vec2(g_context, &g_context->style.window.group_padding,
-                           nk_vec2(wormedit::ui::layout::form_side_margin(
-                                       static_cast<float>(g_last_window_width),
-                                       static_cast<float>(g_last_window_height)),
-                                   padding.y));
+                           nk_vec2(margin, padding.y));
     }
     const bool open = nk_group_begin(g_context, "workspace-content",
-                                     workspace_content_flags(view.compose.visible, padded)) != 0;
+                                     workspace_content_flags(view.compose.visible, view.metadata.visible)) != 0;
     if (padded) nk_style_pop_vec2(g_context);
     if (!open) return;
     retire_sound_picker(view, action);

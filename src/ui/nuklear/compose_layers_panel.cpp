@@ -90,26 +90,16 @@ void draw_layer_row_text(const LayersPanel& panel,
     auto* canvas = nk_window_get_canvas(context);
     const auto text_color = color(layer.selected ? UiColor::selected_text : UiColor::text);
     char label[256];
-    if (layer.assigned_bgm_count == 0) {
-        std::snprintf(label, sizeof(label), "%s: %zu notes", layer.name,
-                      layer.assigned_note_count);
-        nk_draw_text(canvas, nk_rect(bounds.x + 20, bounds.y + 10,
-                                     std::max(1.0f, bounds.w - 24), 16), label,
-                     static_cast<int>(std::strlen(label)), context->style.font,
-                     nk_rgba(0, 0, 0, 0), text_color);
-        return;
-    }
     std::snprintf(label, sizeof(label), "%s", layer.name);
     nk_draw_text(canvas, nk_rect(bounds.x + 20, bounds.y + 3,
                                  std::max(1.0f, bounds.w - 24), 15), label,
                  static_cast<int>(std::strlen(label)), context->style.font,
                  nk_rgba(0, 0, 0, 0), text_color);
-    std::snprintf(label, sizeof(label), "%zu notes · %zu BGM",
-                  layer.assigned_note_count, layer.assigned_bgm_count);
+    std::snprintf(label, sizeof(label), "%zu objects", layer.assigned_note_count + layer.assigned_bgm_count);
     nk_draw_text(canvas, nk_rect(bounds.x + 20, bounds.y + 20,
                                  std::max(1.0f, bounds.w - 24), 15), label,
                  static_cast<int>(std::strlen(label)), context->style.font,
-                 nk_rgba(0, 0, 0, 0), text_color);
+                 nk_rgba(0, 0, 0, 0), color(UiColor::text_muted));
 }
 
 void open_layer_menu(const LayersPanel& panel, const WormUiComposeSemanticLayerView& layer,
@@ -332,7 +322,7 @@ void render_row_name(const LayersPanel& panel, const WormUiComposeSemanticLayerV
     auto* canvas = nk_window_get_canvas(context);
     if (layer.selected) nk_fill_rect(canvas, bounds, 3.0f, color(UiColor::selected));
     else if (hovered) nk_fill_rect(canvas, bounds, 3.0f, color(UiColor::surface_hover));
-    nk_fill_circle(canvas, nk_rect(bounds.x + 5, bounds.y + 9, 8, 8),
+    nk_fill_circle(canvas, nk_rect(bounds.x + 5, bounds.y + (bounds.h - 8) * 0.5f, 8, 8),
                    nk_rgba(layer.red, layer.green, layer.blue, layer.alpha));
     draw_layer_row_text(panel, layer, bounds);
     if (hovered) wormedit::ui::nuklear::tooltip::text(context, layer.locked ? "Layer is locked; click to choose its target"

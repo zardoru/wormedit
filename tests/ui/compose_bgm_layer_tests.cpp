@@ -40,7 +40,7 @@ auto click_at(nuklear_event_harness_t& harness, float x, float y,
 
 } // namespace
 
-TEST_CASE("Layers dock assigns a mixed note and BGM selection with separate counts",
+TEST_CASE("Layers dock assigns a mixed note and BGM selection with a combined object count",
           "[unit][frontend-state][event-harness][semantic-layer][bgm]") {
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
@@ -60,7 +60,7 @@ TEST_CASE("Layers dock assigns a mixed note and BGM selection with separate coun
     view.selected_bgm_event_count = 2;
     (void)harness.frame();
     REQUIRE(harness.drawn_text_center("Verse").has_value());
-    const auto row = harness.drawn_text_center("3 notes · 2 BGM");
+    const auto row = harness.drawn_text_center("5 objects");
     REQUIRE(row.has_value());
     const auto clicked = click_at(harness, row->first, row->second);
     REQUIRE_FALSE(clicked.empty());
@@ -170,7 +170,7 @@ TEST_CASE("Layers row selects the brush target without assigning the selected ob
     view.selected_note_count = 1;
     view.semantic_layer_paint_mode_active = true;
     (void)harness.frame();
-    const auto row = harness.drawn_text_center("Verse: 0 notes");
+    const auto row = harness.drawn_text_center("Verse");
     require_layer_brush(row.has_value());
     const auto frames = click_at(harness, row->first, row->second);
     REQUIRE_FALSE(frames.empty());

@@ -499,3 +499,22 @@ TEST_CASE("Dynamic-layout events sharing an authored ID retain their own semanti
     check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, white_hold), compose_key_color(1).hold_body);
     check_color(compose_note_base_fill(worm_ui_nuklear_compose_color_view_t::normal, blue_hold), compose_key_color(2).hold_body);
 }
+
+TEST_CASE("Bundled selection boxes stay translucent and distinguish selection modes", "[theme][selection-feedback]") {
+    theme_fixture_t restore;
+    load(source_themes());
+    for (const auto& scheme : field_schemes()) {
+        if (!scheme.id.starts_with("ibmsc-")) continue;
+        expect_theme(select_field_scheme(scheme.id));
+        const auto replace = compose(ComposeColor::selection_box);
+        const auto add = compose(ComposeColor::selection_add);
+        const auto toggle = compose(ComposeColor::selection_toggle);
+        expect_theme(replace.a > 0 && replace.a <= 48);
+        expect_theme(add.a > 0 && add.a <= 48);
+        expect_theme(toggle.a > 0 && toggle.a <= 48);
+        expect_theme(replace.b > replace.r);
+        expect_theme(add.g > add.r);
+        expect_theme(toggle.r > toggle.g);
+        expect_theme(compose(ComposeColor::selection_box_border).a >= 192);
+    }
+}

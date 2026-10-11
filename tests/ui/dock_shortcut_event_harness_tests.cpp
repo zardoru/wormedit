@@ -56,6 +56,10 @@ TEST_CASE("Dock shortcut opens Layers in a narrow window without creating a laye
     check_dock(!worm_ui_nuklear_compose_state().sounds_panel_visible);
     check_dock(harness.drawn_text().find("Layers") != std::string::npos);
     check_dock(action.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    check_dock(press_and_dispatch(harness, SDLK_L, SDL_SCANCODE_L, SDL_KMOD_CTRL).status ==
+               command_dispatch_status_t::invoked);
+    static_cast<void>(harness.frame());
+    check_dock(!worm_ui_nuklear_compose_state().layers_panel_visible);
 }
 
 TEST_CASE("Dock shortcut creation emits one existing Add layer action with its context stamp",
@@ -154,7 +158,7 @@ TEST_CASE("Creating a layer reveals the appended target beyond the visible layer
         layers[index] = {.layer_id = 900 - index, .name = "Layer"};
     view.semantic_layers = layers.data();
     static_cast<void>(harness.frame());
-    check_dock(harness.drawn_text().find("Layer: 0 notes") != std::string::npos);
+    check_dock(harness.drawn_text().find("Layer") != std::string::npos);
 }
 
 TEST_CASE("Create layer from a closed populated dock takes priority over list projection requests",
@@ -166,4 +170,21 @@ TEST_CASE("Create layer from a closed populated dock takes priority over list pr
     require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_CREATE_LAYER, 1, 1, 1));
     check_dock(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
     check_dock(!worm_ui_nuklear_compose_state().layer_creation_request);
+}
+
+TEST_CASE("Compact dock shortcuts switch panels and close the active panel", "[frontend-state][event-harness][dock-shortcuts]") {
+    nuklear_event_harness_t harness{960, 720};
+    prepare(harness);
+    auto& state = worm_ui_nuklear_compose_state();
+    require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_OPEN_LAYERS, 1, 1, 1));
+    static_cast<void>(harness.frame());
+    check_dock(state.layers_panel_visible);
+    require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS, 1, 1, 1));
+    static_cast<void>(harness.frame());
+    check_dock(state.sounds_panel_visible);
+    check_dock(!state.layers_panel_visible);
+    require_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS, 1, 1, 1));
+    static_cast<void>(harness.frame());
+    check_dock(!state.sounds_panel_visible);
+    check_dock(!state.layers_panel_visible);
 }

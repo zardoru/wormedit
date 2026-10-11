@@ -394,12 +394,17 @@ void render_project_charts(nk_context* context, const WormUiSetupView& view, Wor
 
     nk_layout_row_template_begin(context, 32);
     nk_layout_row_template_push_dynamic(context);
+    nk_layout_row_template_push_static(context, 100);
     nk_layout_row_template_push_static(context, 160);
     nk_layout_row_template_push_static(context, 32);
     nk_layout_row_template_end(context);
     char heading[64];
     std::snprintf(heading, sizeof(heading), "Charts · %zu", view.chart_count);
     project_section_heading(context, heading);
+    if (wormedit::ui::chrome::Button{"Export…", wormedit::ui::chrome::ButtonKind::secondary,
+                                     "Export a project output group", view.chart_count != 0}.render(context) &&
+        action.menu_command_id[0] == '\0')
+        std::snprintf(action.menu_command_id, sizeof(action.menu_command_id), "%s", "document.export_output_group");
     if (wormedit::ui::chrome::Button{"Import chart…", wormedit::ui::chrome::ButtonKind::secondary,
                                      "Add difficulties from another chart file"}.render(context) &&
         action.chart_import.kind == WORM_UI_CHART_IMPORT_NONE)

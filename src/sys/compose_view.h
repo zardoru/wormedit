@@ -345,6 +345,7 @@ struct application_command_services_t {
         transport_preserve_bookmark_revision;
     std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_bookmark_chooser;
     std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_sound_picker;
+    std::function<bool(std::uint64_t, std::uint64_t, std::uint64_t)> open_project_export;
     std::function<bool(WormUiComposeDockCommand, std::uint64_t, std::uint64_t, std::uint64_t)>
         compose_dock_command;
     std::function<int()> compose_left_dock_pixels;

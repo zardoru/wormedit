@@ -3,6 +3,7 @@
 #include "sys/menu_command_projection.h"
 #include "ui/nuklear/menu_bar.h"
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <algorithm>
 #include <array>
 #include <string_view>
@@ -20,6 +21,7 @@ void require_menu(bool condition, const std::source_location location = std::sou
 
 auto click_menu(nuklear_event_harness_t& harness, std::string_view text)
     -> std::array<workspace_action_snapshot_t, 2> {
+    INFO("Menu label " << text << ", tab " << harness.view().active_tab);
     const auto location = harness.drawn_text_center(text);
     require_menu(location.has_value());
     SDL_Event motion{};
@@ -48,9 +50,15 @@ auto item(const wormedit::ui::workspace_menu_t& model, wormedit::ui::workspace_m
     return *found;
 }
 
-void check_dispatch(std::string_view menu, std::string_view label, std::string_view command) {
+void check_dispatch(std::string_view menu, std::string_view label, std::string_view command,
+                    WormUiWorkspaceTab tab = WORM_UI_WORKSPACE_TAB_COMPOSE) {
     nuklear_event_harness_t harness{1280, 900};
     require_menu(harness.ready());
+    harness.view().active_tab = tab;
+    harness.view().compose.visible = tab == WORM_UI_WORKSPACE_TAB_COMPOSE;
+    harness.view().setup.visible = tab == WORM_UI_WORKSPACE_TAB_SETUP;
+    harness.view().setup.stepmania_policy_status = "Ready";
+    harness.view().metadata.visible = tab == WORM_UI_WORKSPACE_TAB_METADATA;
     int invocations = 0;
     const auto registry = wormedit::make_default_editor_command_registry([&](const auto& invocation) {
         check_menu(invocation.command.value == command);
@@ -72,8 +80,8 @@ void check_dispatch(std::string_view menu, std::string_view label, std::string_v
         check_menu(action.clipboard == WORM_UI_CLIPBOARD_NONE);
         check_menu(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
         const auto dispatched = wormedit::invoke_command(registry, {action.menu_command_id},
-            {.workspace_active = true, .active_tab = wormedit::workspace_tab_t::compose,
-             .visible_tabs = {wormedit::workspace_tab_t::compose}});
+            {.workspace_active = true, .active_tab = static_cast<wormedit::workspace_tab_t>(tab),
+             .visible_tabs = {static_cast<wormedit::workspace_tab_t>(tab)}});
         check_menu(dispatched.status == wormedit::command_dispatch_status_t::invoked);
     }
     check_menu(invocations == 1);
@@ -437,5 +445,8 @@ TEST_CASE("File recent history scrolls within a small window and opens the last 
 }
 
 TEST_CASE("File Export dispatches the shared command", "[frontend-state][event-harness][menu-bar]") {
-    check_dispatch("File", "Export…", "document.export_output_group");
+    const auto tab = GENERATE(WORM_UI_WORKSPACE_TAB_SETUP, WORM_UI_WORKSPACE_TAB_METADATA,
+        WORM_UI_WORKSPACE_TAB_COMPOSE, WORM_UI_WORKSPACE_TAB_AUDIO_SLICES,
+        WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE);
+    check_dispatch("File", "Export…", "document.export_output_group", tab);
 }

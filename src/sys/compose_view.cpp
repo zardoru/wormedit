@@ -5054,7 +5054,9 @@ auto default_song_bar_hidden(const wormedit::song_document_t& document,
                              std::optional<wormedit::chart_id_t> chart) -> bool {
     if (!chart) return false;
     const auto selected = std::ranges::find(document.charts, *chart, &wormedit::chart_document_t::id);
-    return selected != document.charts.end() && selected->source_family == wormedit::format_family_t::bms;
+    return selected != document.charts.end() &&
+        (selected->source_family == wormedit::format_family_t::bms ||
+         selected->source_family == wormedit::format_family_t::bmson);
 }
 
 void populate_compose_view(flattened_workspace_t& flattened,

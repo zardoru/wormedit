@@ -9,6 +9,8 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 
 ## Card groups
 
+- [Scratchpad project access and Metadata scrolling](tasks/scratchpad-project-access.md)
+
 - [Scratchpad lane-key entry and stem auditions](tasks/scratchpad-lane-entry.md)
 
 - [Scratchpad inspector and lane readability](tasks/scratchpad-inspector-lanes.md)
@@ -114,7 +116,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Bookmark rename harness gesture alignment](tasks/bookmark-rename-harness.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-566.
+every number above T-570.
 
 ## Rules for whoever executes a card
 

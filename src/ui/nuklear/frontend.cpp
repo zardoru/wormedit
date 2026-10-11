@@ -92,7 +92,8 @@ static wormedit::ui::nuklear::editor_font_t g_editor_font;
 static bool g_frame_timing_visible;
 static bool g_compose_area_shortcuts_active;
 static bool g_context_invocation_allowed;
-static std::uint64_t g_context_project{}, g_context_chart{};
+static std::uint64_t g_context_project{}, g_context_chart{}, g_context_revision{};
+static bool g_project_export_available{};
 static WormUiWorkspaceTab g_context_tab{WORM_UI_WORKSPACE_TAB_METADATA};
 static bool g_save_project_requested;
 static uint64_t g_save_project_request_id;
@@ -245,7 +246,7 @@ static bool project_dialog_active() {
 }
 
 static bool nuklear_text_entry_active(void);
-static bool compose_popup_owns_input();
+static bool compose_popup_owns_input(bool include_menu = true);
 
 bool worm_ui_frontend_request_new_project(void) {
     if (project_dialog_active() || g_new_project_wizard.open || g_notification_modal ||
@@ -1015,9 +1016,9 @@ static void close_notification_history_windows() {
         nk_window_close(&g_notification_context, "Notifications");
 }
 
-static bool compose_popup_owns_input() {
+static bool compose_popup_owns_input(bool include_menu) {
     const auto& compose = worm_ui_nuklear_compose_state();
-    return g_menu_popup_open || g_menu_popup_release_pending || compose_quantize_owns_input() ||
+    return (include_menu && (g_menu_popup_open || g_menu_popup_release_pending)) || compose_quantize_owns_input() ||
            wormedit::ui::chrome::context_menu_owns_input(compose.snap_grid_menu) ||
            compose_area_menu_open() || compose_area_menu_consumed() ||
            compose_recipe_menu_open() || compose_recipe_menu_consumed() ||
@@ -1058,6 +1059,20 @@ bool worm_ui_frontend_open_sound_picker(uint64_t project_id, uint64_t chart_id, 
     return true;
 }
 
+bool worm_ui_frontend_open_project_export(uint64_t project_id, uint64_t chart_id, uint64_t revision) {
+    if (!g_context || !g_window_focused || !g_project_export_available || g_notification_modal || project_dialog_active() ||
+        g_ime_composition_active || compose_popup_owns_input(false) ||
+        !project_id || !chart_id || project_id != g_context_project || chart_id != g_context_chart ||
+        revision != g_context_revision) return false;
+    auto& compose = worm_ui_nuklear_compose_state();
+    compose.export_dialog_open = true;
+    compose.export_dialog_project_id = project_id;
+    compose.export_dialog_chart_id = chart_id;
+    compose.export_dialog_revision = revision;
+    compose.export_dialog = {};
+    return true;
+}
+
 static bool compose_dock_input_available() {
     const auto& compose = worm_ui_nuklear_compose_state();
     return g_context && g_window_focused && g_compose_area_shortcuts_active &&
@@ -1085,13 +1100,6 @@ bool worm_ui_frontend_compose_dock_command(WormUiComposeDockCommand command,
         if (compose.compact_dock_layout) compose.sounds_panel_visible = false;
         if (command == WORM_UI_COMPOSE_DOCK_CREATE_LAYER)
             compose.layer_creation_request = {project_id, chart_id, revision};
-        return true;
-    case WORM_UI_COMPOSE_DOCK_OPEN_EXPORT:
-        compose.export_dialog_open = true;
-        compose.export_dialog_project_id = project_id;
-        compose.export_dialog_chart_id = chart_id;
-        compose.export_dialog_revision = revision;
-        compose.export_dialog = {};
         return true;
     case WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS:
         compose.sounds_panel_visible = !compose.sounds_panel_visible;
@@ -3135,6 +3143,9 @@ static void remember_context_menu_scope(const WormUiWorkspaceView* view) {
     }
     g_context_project = project;
     g_context_chart = chart;
+    g_context_revision = view ? view->document_revision : 0;
+    g_project_export_available = view && view->project_loaded && !view->options.visible &&
+        !project_modal_active(*view);
     g_context_tab = tab;
 }
 
@@ -3180,13 +3191,14 @@ static void render_notification_frame(const WormUiNotificationView& view,
 }
 
 static void retire_unavailable_layer_actions(const WormUiWorkspaceView& view) {
+    if (!g_window_focused || !view.project_loaded || view.options.visible || external_project_modal_active(view))
+        worm_ui_nuklear_compose_state().export_dialog_open = false;
     if (view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && g_window_focused &&
         view.project_loaded && view.compose.visible && !view.compose.input_occluded &&
         !view.options.visible && !external_project_modal_active(view)) return;
     auto& state = worm_ui_nuklear_compose_state();
     state.layer_creation_request.reset();
     state.layer_creation_context.reset();
-    state.export_dialog_open = false;
     wormedit::ui::chrome::context_menu_abandon(state.snap_grid_menu);
     wormedit::ui::chrome::context_menu_abandon(state.layers_menu);
     abandon_compose_quantize_popup();

@@ -3648,6 +3648,37 @@ auto dispatch_compose_view_action(
     return compose_action_warning(context, compose_result_status(result, status), notification_source_t::input);
 }
 
+auto dispatch_project_export_action(
+    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+    wormedit::workspace_controller_t& workspace,
+    std::optional<wormedit::editor_interaction_state_t>& retained,
+    application_command_state_t& application, const std::filesystem::path& base,
+    wormedit::task_scheduler_t& scheduler, runtime::resource_copy_t& copies,
+    runtime::output_group_export_t& exports, bool metadata_import_busy,
+    notification_sink_t notifications) -> bool {
+    if (action.compose_action != WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP) return false;
+    const auto* chart = selected_chart(history, workspace);
+    if (!chart || action.compose_input_project_id != history.document.id.value ||
+        action.compose_input_chart_id != chart->id.value ||
+        action.compose_input_document_revision != history.document.revision) {
+        notifications.post(notification_severity_t::warning, notification_source_t::export_,
+                           "Export ignored because the selected project, chart or revision changed.");
+        return true;
+    }
+    if (application.paste_session || (retained && editor_interaction_has_pending_gesture(*retained))) {
+        notifications.post(notification_severity_t::warning, notification_source_t::export_,
+                           "Finish or cancel the active editor gesture before exporting.");
+        return true;
+    }
+    wormedit::editor_interaction_state_t state;
+    state.chart = chart->id;
+    compose_action_context_t context{action, history, workspace, state, 0, application, base,
+        scheduler, copies, exports, metadata_import_busy,
+        wormedit::editor_field_scroll_direction_t::up, notifications};
+    static_cast<void>(dispatch_compose_export_output_group_action(context));
+    return true;
+}
+
 auto dispatch_compose_workspace_action(
     const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace,
@@ -3659,6 +3690,9 @@ auto dispatch_compose_workspace_action(
     runtime::output_group_export_t& export_runtime, bool metadata_import_busy,
     metadata_drop_state_t& metadata_drop, runtime::metadata_asset_t& metadata_asset_runtime,
     notification_sink_t notifications) -> bool {
+    if (dispatch_project_export_action(action, history, workspace, interaction_state,
+            application_state, asset_base, resource_copy_scheduler, resource_copy_runtime,
+            export_runtime, metadata_import_busy, notifications)) return true;
     const auto report = [&](std::string message, notification_severity_t severity,
                             notification_source_t source) {
         post_typed_compose_feedback(notifications, severity, source, message);

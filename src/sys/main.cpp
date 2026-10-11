@@ -1744,12 +1744,19 @@ void refresh_compose_dock_commands(wormedit::command_registry_t& registry, bool 
                                     bool pending, const application_command_state_t& application) {
     const bool enabled = compose_ready && !pending && !application.compose_timing_focus &&
                          !application.paste_session;
-    for (const auto id : {"view.open_layers", "semantic_layer.create", "view.toggle_sounds", "document.export_output_group"})
+    for (const auto id : {"view.open_layers", "semantic_layer.create", "view.toggle_sounds"})
         (void)wormedit::update_command_state(registry, {id}, enabled, std::nullopt);
 }
 
 auto sound_picker_command_available(bool compose_ready, bool pending) -> bool {
     return compose_ready && !pending;
+}
+
+auto project_export_available(const wormedit::chart_document_t* chart,
+    const std::optional<wormedit::editor_interaction_state_t>& compose,
+    const application_command_state_t& application) -> bool {
+    return chart && !application.paste_session &&
+        (!compose || !editor_interaction_has_pending_gesture(*compose));
 }
 
 void refresh_application_command_states(
@@ -1810,6 +1817,7 @@ void refresh_application_command_states(
     set("navigation.next_marker", marker_navigation_available);
     set("navigation.go_to_sound", sound_picker_command_available(compose_ready, pending));
     refresh_compose_dock_commands(registry, compose_ready, pending, application_state);
+    set("document.export_output_group", project_export_available(chart, compose_state, application_state));
     refresh_quantize_commands(registry, compose_ready, pending, compose_state, history, application_state);
     set("navigation.previous_bookmark", compose_ready);
     set("navigation.next_bookmark", compose_ready);
@@ -4291,6 +4299,7 @@ int main(int argc, char** argv) {
     application_command_state.open_bookmark_chooser = worm_ui_frontend_open_bookmark_chooser;
     application_command_state.open_sound_picker = worm_ui_frontend_open_sound_picker;
     application_command_state.compose_dock_command = worm_ui_frontend_compose_dock_command;
+    application_command_state.open_project_export = worm_ui_frontend_open_project_export;
     application_command_state.compose_left_dock_pixels = worm_ui_frontend_compose_left_dock_pixels;
     application_command_state.compose_bgm_lane_width = worm_ui_frontend_compose_bgm_lane_width;
     external_player_runtime_t external_player_runtime;

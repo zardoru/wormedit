@@ -249,7 +249,7 @@ auto remaining_height(nk_context* context, float reserved) -> float {
 }
 
 void update_waveform_viewport(nk_context* context, const WormUiAudioSlicesView& view,
-                              struct nk_rect bounds) {
+                              struct nk_rect bounds, bool wheel_zoom) {
     using namespace wormedit::audio;
     const auto width = static_cast<std::uint32_t>(std::max(1.0f, bounds.w));
     auto& viewport = audio.waveform_viewport;
@@ -267,7 +267,7 @@ void update_waveform_viewport(nk_context* context, const WormUiAudioSlicesView& 
     }
     const auto& input = context->input;
     if (context->current->flags & NK_WINDOW_NO_INPUT) return;
-    if (!audio.waveform_pan_active && !audio.offset_drag_active &&
+    if (wheel_zoom && !audio.waveform_pan_active && !audio.offset_drag_active &&
         nk_input_is_mouse_hovering_rect(&input, bounds) && input.mouse.scroll_delta.y != 0.0f)
         viewport = zoom_waveform_viewport(viewport, input.mouse.pos.x - bounds.x,
                                           std::pow(1.25, input.mouse.scroll_delta.y));
@@ -284,8 +284,16 @@ void update_waveform_viewport(nk_context* context, const WormUiAudioSlicesView& 
     audio.waveform_revision = view.document_revision;
 }
 
+auto waveform_navigation_hint(bool embedded) -> const char* {
+    return embedded ? "Wheel: scroll page · Drag: pan" : "Wheel: zoom · Drag: pan";
+}
+
+auto waveform_height(nk_context* context, bool embedded) -> float {
+    return embedded ? 180.0f : remaining_height(context, 82.0f);
+}
+
 void render_waveform_column(struct nk_context* context, const WormUiAudioSlicesView* view,
-                            WormUiWorkspaceAction* action) {
+                            WormUiWorkspaceAction* action, bool embedded = false) {
     nk_layout_row_dynamic(context, 22, 1);
     if (!view->has_selected_asset) {
         nk_label(context, "Select an asset to build its waveform overview.", NK_TEXT_LEFT);
@@ -314,12 +322,12 @@ void render_waveform_column(struct nk_context* context, const WormUiAudioSlicesV
     if (nk_button_label(context, "Fit"))
         audio.waveform_viewport = wormedit::audio::fit_waveform_viewport(view->total_frames,
             audio.waveform_viewport.pixel_width);
-    nk_layout_row_dynamic(context, remaining_height(context, 82.0f), 1);
+    nk_layout_row_dynamic(context, waveform_height(context, embedded), 1);
     struct nk_rect bounds{};
     if (nk_widget(&bounds, context) == NK_WIDGET_INVALID || bounds.w <= 1.0f || bounds.h <= 1.0f) {
         return;
     }
-    update_waveform_viewport(context, *view, bounds);
+    update_waveform_viewport(context, *view, bounds, !embedded);
     update_offset_pointer_drag(context, *view, *action, bounds);
     auto* canvas = nk_window_get_canvas(context);
     if (!canvas) {
@@ -382,17 +390,17 @@ void render_waveform_column(struct nk_context* context, const WormUiAudioSlicesV
         }
     } else if (view->timing_locked) {
         nk_layout_row_dynamic(context, 20, 1);
-        nk_label(context, "Wheel: zoom · Drag: pan", NK_TEXT_LEFT);
+        nk_label(context, waveform_navigation_hint(embedded), NK_TEXT_LEFT);
         nk_layout_row_dynamic(context, 20, 1);
         nk_label(context, "Timing locked", NK_TEXT_LEFT);
     } else if (view->has_chart) {
         nk_layout_row_dynamic(context, 20, 1);
-        nk_label(context, "Wheel: zoom · Drag: pan", NK_TEXT_LEFT);
+        nk_label(context, waveform_navigation_hint(embedded), NK_TEXT_LEFT);
         nk_layout_row_dynamic(context, 20, 1);
         nk_label(context, "Shift-drag: align", NK_TEXT_LEFT);
     } else {
         nk_layout_row_dynamic(context, 20, 1);
-        nk_label(context, "Wheel: zoom · Drag: pan", NK_TEXT_LEFT);
+        nk_label(context, waveform_navigation_hint(embedded), NK_TEXT_LEFT);
     }
 }
 
@@ -840,7 +848,7 @@ void worm_ui_nuklear_render_audio_slices(struct nk_context* context,
     if (show_asset_catalog) {
         render_audio_asset_catalog(context, *view, *action);
     }
-    render_waveform_column(context, view, action);
+    render_waveform_column(context, view, action, !show_asset_catalog);
 }
 
 void worm_ui_frontend_sound_usage_request(WormUiSoundUsageRequest* request) {

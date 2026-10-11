@@ -546,6 +546,11 @@ void render_quantize_grid(const ComposeInspectorContext& i) {
     }
 }
 
+void quantize_setting_spacing(nk_context* context) {
+    nk_layout_row_dynamic(context, 9.0f, 1);
+    nk_spacing(context, 1);
+}
+
 void render_quantize_setting_fields(const ComposeInspectorContext& i) {
     const auto& v = *i.view;
     auto* c = i.context;
@@ -562,17 +567,17 @@ void render_quantize_setting_fields(const ComposeInspectorContext& i) {
     constexpr const char* ht[]{
         "Snap the head and leave the tail in place, changing the hold length.",
         "Snap both the hold head and its tail to the grid."};
-    wormedit::ui::chrome::section_separator(c);
+    quantize_setting_spacing(c);
     nk_layout_row_dynamic(c, 18, 1);
     nk_label(c, "Space", NK_TEXT_LEFT);
     const auto space = quantize_segments(c, spaces, 2, v.quantize_space, st);
-    wormedit::ui::chrome::section_separator(c);
+    quantize_setting_spacing(c);
     nk_layout_row_dynamic(c, 18, 1);
     nk_labelf(c, NK_TEXT_LEFT, "Halfway objects · %zu in selection",
               v.quantize_preview_halfway_notes);
     const auto tie =
         quantize_segments(c, ties, 3, v.quantize_tie, tt, v.quantize_preview_halfway_notes == 0);
-    wormedit::ui::chrome::section_separator(c);
+    quantize_setting_spacing(c);
     nk_layout_row_dynamic(c, 18, 1);
     nk_labelf(c, NK_TEXT_LEFT, "Hold tails · %zu %s in selection", v.quantize_preview_holds,
               v.quantize_preview_holds == 1 ? "hold" : "holds");
@@ -602,7 +607,7 @@ void render_quantize_preset_picker(const ComposeInspectorContext& i) {
     for (std::size_t x = 0; x < count; ++x)
         labels[x] = v.quantize_presets && v.quantize_presets[x].name ? v.quantize_presets[x].name
                                                                      : "(unnamed)";
-    wormedit::ui::chrome::section_separator(c);
+    quantize_setting_spacing(c);
     nk_layout_row_dynamic(c, 18, 1);
     const auto heading = nk_widget_bounds(c);
     nk_label(c, "Presets", NK_TEXT_LEFT);

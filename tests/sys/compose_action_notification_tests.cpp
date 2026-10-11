@@ -1106,6 +1106,7 @@ TEST_CASE("BMSON output export rejects missing stem before writing music or dest
 
 TEST_CASE("BMSON editor export publishes sliced audio and reports conversion losses",
           "[unit][sys][conversion][publication]") {
+    const auto tab = GENERATE(workspace_tab_t::compose, workspace_tab_t::setup, workspace_tab_t::metadata);
     const auto target = GENERATE(format_family_t::osu_mania, format_family_t::bms);
     const auto named_output = GENERATE(false, true);
     action_notification_fixture_t fixture;
@@ -1134,7 +1135,7 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
     const auto workspace = make_workspace_controller(fixture.history);
     require_action(static_cast<bool>(workspace));
     fixture.workspace = *workspace.workspace;
-    fixture.workspace.active_tab = workspace_tab_t::compose;
+    fixture.workspace.active_tab = tab;
     fixture.workspace.selected_chart = fixture.history.document.charts.front().id;
     fixture.state.chart = fixture.history.document.charts.front().id;
     fixture.state.cursor = {fixture.history.document.charts.front().measures.front().id, 0};
@@ -1144,8 +1145,8 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
     const auto wav = audio::encode_wav_pcm16(pcm, 44'100);
     std::ofstream(directory / "stem.wav", std::ios::binary).write(wav.data(), wav.size());
     const auto revision = fixture.history.document.revision;
-    require_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP)) ==
-        "Output group conversion started in the background.");
+    std::optional<editor_interaction_state_t> retained;
+    require_action(fixture.dispatch_workspace(fixture.action(WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP), retained));
     const auto completed = wait_for_slice_export(fixture);
     require_action(completed.has_value());
     check_action(completed->starts_with("Output group published"));
@@ -2124,4 +2125,24 @@ TEST_CASE("Find fitting snap rejects empty stale and gesturing selection", "[uni
     (void)f.dispatch(action);
     check_action(f.state.supported_snap_denominators==std::vector<std::uint64_t>{4});
     check_action(f.history.undo.empty());
+}
+
+TEST_CASE("Project export rejects stale stamps and reports missing paths without Compose state",
+          "[unit][sys][project-access]") {
+    const bool stale = GENERATE(false, true);
+    action_notification_fixture_t fixture;
+    fixture.workspace.active_tab = workspace_tab_t::setup;
+    std::optional<editor_interaction_state_t> state;
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP);
+    if (stale) ++action.compose_input_project_id;
+    require_action(fixture.dispatch_workspace(action, state));
+    const auto entries = fixture.entries();
+    const std::string_view expected = stale ? "project, chart or revision changed" : "saved native project";
+    INFO("Expected export rejection: " << expected);
+    check_action(std::ranges::any_of(entries, [&](const auto& entry) {
+        return entry.message.find(expected) != std::string::npos;
+    }));
+    check_action(!state);
+    check_action(fixture.history.undo.empty());
+    check_action(!fixture.export_runtime.busy());
 }

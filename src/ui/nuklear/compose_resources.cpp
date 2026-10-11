@@ -228,6 +228,4 @@ void worm_ui_nuklear_render_compose_resources(nk_context* context, const WormUiC
     WormUiWorkspaceAction* action, worm_ui_nuklear_compose_state_t* state) {
     if (!context || !view || !action || !state) return;
     update_selection_state(*view, *state);
-    nk_layout_row_dynamic(context, 28, 1);
-    if (nk_button_label(context, "Export…")) worm_ui_nuklear_open_export_dialog(*view, *state);
 }

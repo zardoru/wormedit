@@ -6555,3 +6555,24 @@ TEST_CASE("Lane-key dispatcher uses revision-bound decoded geometry for linked B
     expect_compose_test(changed.sound_channels.front().events.back().continuation);
     expect_compose_test(changed.measures.front().notes.back().sound_channel_event.has_value());
 }
+
+TEST_CASE("Song bar defaults hide BMSON and BMS while keeping manual overrides",
+          "[sys][compose][project-access]") {
+    const auto family = GENERATE(format_family_t::bms, format_family_t::bmson,
+                                  format_family_t::stepmania, format_family_t::osu_mania);
+    auto song = compose_test_song();
+    song.charts.front().source_family = family;
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.project();
+    fixture.cache.bgm_bar_audio_seen = true;
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.bgm_bar_available);
+    const bool hidden = family == format_family_t::bms || family == format_family_t::bmson;
+    expect_compose_test(fixture.flattened.view.compose.bgm_bar_reserved != hidden);
+    fixture.application.bgm_bar_hidden = false;
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.bgm_bar_reserved);
+    fixture.application.bgm_bar_hidden = true;
+    fixture.project();
+    expect_compose_test(!fixture.flattened.view.compose.bgm_bar_reserved);
+}

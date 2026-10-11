@@ -3242,11 +3242,11 @@ void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request);
 void worm_ui_frontend_bookmark_chooser_request(WormUiBookmarkChooserRequest* request);
 bool worm_ui_frontend_open_bookmark_chooser(uint64_t project_id, uint64_t chart_id, uint64_t revision);
 bool worm_ui_frontend_open_sound_picker(uint64_t project_id, uint64_t chart_id, uint64_t revision);
+bool worm_ui_frontend_open_project_export(uint64_t project_id, uint64_t chart_id, uint64_t revision);
 typedef enum WormUiComposeDockCommand {
     WORM_UI_COMPOSE_DOCK_OPEN_LAYERS,
     WORM_UI_COMPOSE_DOCK_CREATE_LAYER,
     WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS,
-    WORM_UI_COMPOSE_DOCK_OPEN_EXPORT
 } WormUiComposeDockCommand;
 bool worm_ui_frontend_compose_dock_command(WormUiComposeDockCommand command,
     uint64_t project_id, uint64_t chart_id, uint64_t revision);

@@ -649,13 +649,31 @@ auto compose_quantize_command(command_context_t& context) -> std::optional<comma
     return command_result_t{.accepted = accepted};
 }
 
+auto project_export_command(command_context_t& context) -> std::optional<command_result_t> {
+    if (context.command.kind != command_kind_t::document_export_output_group) return std::nullopt;
+    const auto* chart = selected_chart(context.history, context.workspace);
+    if (!chart || !context.application_state.open_project_export)
+        return reject_application_command(context.sink, "Export requires a selected project difficulty.",
+            notification_severity_t::warning, notification_source_t::export_);
+    if ((context.compose_state && editor_interaction_has_pending_gesture(*context.compose_state)) ||
+        context.application_state.paste_session)
+        return reject_application_command(context.sink, "Finish or cancel the active editor gesture before exporting.",
+            notification_severity_t::warning, notification_source_t::export_);
+    const bool opened = context.application_state.open_project_export(
+        context.history.document.id.value, chart->id.value, context.history.document.revision);
+    if (!opened) return reject_application_command(context.sink,
+        "Export is unavailable while another window owns input.", notification_severity_t::warning,
+        notification_source_t::export_);
+    return command_result_t{.accepted = true};
+}
+
 auto compose_auxiliary_command(command_context_t& context) -> std::optional<command_result_t> {
+    if (auto result = project_export_command(context)) return result;
     if (auto result = compose_quantize_command(context)) return result;
     if (auto result = open_sound_picker_command(context)) return result;
     WormUiComposeDockCommand dock;
     switch (context.command.kind) {
     case command_kind_t::view_open_layers: dock = WORM_UI_COMPOSE_DOCK_OPEN_LAYERS; break;
-    case command_kind_t::document_export_output_group: dock = WORM_UI_COMPOSE_DOCK_OPEN_EXPORT; break;
     case command_kind_t::semantic_layer_create: dock = WORM_UI_COMPOSE_DOCK_CREATE_LAYER; break;
     case command_kind_t::view_toggle_sounds: dock = WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS; break;
     default: return std::nullopt;

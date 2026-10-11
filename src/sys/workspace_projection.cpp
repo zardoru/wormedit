@@ -1230,7 +1230,6 @@ void populate_compose_tab(const workspace_projection_context_t& projection, cons
                 populate_compose_resources(projection);
                 populate_compose_keysounds(projection, tab.chart);
                 populate_bookmark_chooser(projection, tab.chart);
-                populate_compose_output_groups(projection, tab.chart);
                 populate_compose_branch_outline(result, outline);
                 append_workspace_format(projection, "Measures: %zu", static_cast<std::size_t>(tab.measure_count));
                 append_workspace_format(projection, "Notes: %zu", static_cast<std::size_t>(tab.note_count));
@@ -1547,6 +1546,14 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
         keysound_sort, keysound_request, sound_usage_request, bookmark_chooser_request,
         keysound_cache};
     std::visit(workspace_tab_visitor{projection}, source.tab_view);
+    // Export is project UI and must not depend on building a Compose scene.
+    const auto* compose_tab = std::get_if<workspace_compose_view_t>(&source.tab_view);
+    const auto selected = source.selected_difficulty ? source.selected_difficulty->id
+        : compose_tab ? compose_tab->chart : chart_id_t{};
+    result.view.compose.project_id = document.id.value;
+    result.view.compose.chart_id = selected.value;
+    result.view.compose.document_revision = document.revision;
+    populate_compose_output_groups(projection, selected);
     return result;
 }
 

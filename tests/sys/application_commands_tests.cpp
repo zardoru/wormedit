@@ -1883,7 +1883,7 @@ TEST_CASE("Dock commands use the active Compose context without editing history"
     fixture.application_state.compose_dock_command = [&](WormUiComposeDockCommand dock,
         std::uint64_t project, std::uint64_t chart, std::uint64_t expected_revision) {
         ++calls;
-        check_bookmark_callback(dock <= WORM_UI_COMPOSE_DOCK_OPEN_EXPORT);
+        check_bookmark_callback(dock <= WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS);
         check_bookmark_callback(project == fixture.fixture.history.document.id.value);
         check_bookmark_callback(chart == fixture.compose_state->chart.value);
         check_bookmark_callback(expected_revision == revision);
@@ -1891,8 +1891,7 @@ TEST_CASE("Dock commands use the active Compose context without editing history"
     };
     for (const auto kind : {application_command_kind_t::view_open_layers,
                             application_command_kind_t::semantic_layer_create,
-                            application_command_kind_t::view_toggle_sounds,
-                            application_command_kind_t::document_export_output_group}) {
+                            application_command_kind_t::view_toggle_sounds}) {
         require_bookmark_callback(fixture.invoke(kind).accepted);
         fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
         check_bookmark_callback(!fixture.invoke(kind).accepted);
@@ -1904,7 +1903,7 @@ TEST_CASE("Dock commands use the active Compose context without editing history"
         check_bookmark_callback(!fixture.invoke(kind).accepted);
         fixture.application_state.compose_timing_focus = false;
     }
-    check_bookmark_callback(calls == 4);
+    check_bookmark_callback(calls == 3);
     check_bookmark_callback(fixture.fixture.history.document.revision == revision);
     check_bookmark_callback(fixture.fixture.history.undo.size() == undo_size);
 }
@@ -1914,8 +1913,7 @@ TEST_CASE("Dock commands reject absent and unavailable callbacks",
     TimingInsertFixture fixture;
     for (const auto kind : {application_command_kind_t::view_open_layers,
                             application_command_kind_t::semantic_layer_create,
-                            application_command_kind_t::view_toggle_sounds,
-                            application_command_kind_t::document_export_output_group}) {
+                            application_command_kind_t::view_toggle_sounds}) {
         fixture.application_state.compose_dock_command = {};
         check_bookmark_callback(!fixture.invoke(kind).accepted);
         fixture.application_state.compose_dock_command = [](auto, auto, auto, auto) { return false; };
@@ -2351,4 +2349,33 @@ TEST_CASE("Quantize command rejects collisions with preview off and rejects timi
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::edit_toggle_quantize_preview).accepted);
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::edit_apply_quantize).accepted);
 }
+#endif
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Project export command opens from every project tab without Compose dock routing",
+          "[sys][application_commands][project-access]") {
+    TimingInsertFixture fixture;
+    unsigned calls{};
+    fixture.application_state.compose_dock_command = {};
+    fixture.application_state.open_project_export = [&](auto project, auto chart, auto revision) {
+        ++calls;
+        check_bookmark_callback(project == fixture.fixture.history.document.id.value);
+        check_bookmark_callback(chart == fixture.workspace.selected_chart->value);
+        check_bookmark_callback(revision == fixture.fixture.history.document.revision);
+        return true;
+    };
+    for (const auto tab : {wormedit::workspace_tab_t::setup, wormedit::workspace_tab_t::metadata,
+                           wormedit::workspace_tab_t::compose, wormedit::workspace_tab_t::audio_slices,
+                           wormedit::workspace_tab_t::compare_validate}) {
+        fixture.workspace.active_tab = tab;
+        require_bookmark_callback(fixture.invoke(application_command_kind_t::document_export_output_group).accepted);
+    }
+    check_bookmark_callback(calls == 5);
+    fixture.compose_state->pending_note_duration_gesture.emplace();
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::document_export_output_group).accepted);
+    fixture.compose_state->pending_note_duration_gesture.reset();
+    fixture.application_state.open_project_export = {};
+    check_bookmark_callback(!fixture.invoke(application_command_kind_t::document_export_output_group).accepted);
+}
+
 #endif

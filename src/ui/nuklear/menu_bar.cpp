@@ -14,7 +14,7 @@ void append_file(workspace_menu_t& menu, const WormUiWorkspaceView& view, bool b
     menu.push_back({"File", "Save project as...", Action::save_as, nullptr, !blocked && view.project_loaded});
     menu.push_back({"File", "Close project", Action::close, nullptr, !blocked && view.project_loaded});
     menu.push_back({"File", "Export…", Action::export_output_group, "document.export_output_group",
-                    !blocked && view.project_loaded && view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE});
+                    !blocked && view.project_loaded && view.selected_chart_id != 0});
     menu.push_back({"File", "Options...", Action::options, "workspace.options", !blocked});
     menu.push_back({"File", "Quit", Action::quit, nullptr, !blocked});
     if (view.recent_file_count) menu.push_back({"File", "", Action::none, nullptr, false});

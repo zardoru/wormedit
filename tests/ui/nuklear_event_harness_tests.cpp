@@ -6272,3 +6272,110 @@ TEST_CASE("Staged timing drags begin inside the timing lane and reject neighbori
                                                         : WORM_UI_TIMING_STAGE_MOVE));
     if (!bga_press) expect_draw(action.get().timing_object_id == 991);
 }
+
+namespace {
+void require_project_access(bool condition, std::source_location source = std::source_location::current()) {
+    INFO("Project access expectation at " << source.line());
+    REQUIRE(condition);
+}
+}
+
+TEST_CASE("Shared export dialog opens from non-Compose tabs and stamps the chosen project group",
+          "[unit][frontend-state][event-harness][project-access]") {
+    const auto tab = GENERATE(WORM_UI_WORKSPACE_TAB_SETUP, WORM_UI_WORKSPACE_TAB_METADATA,
+        WORM_UI_WORKSPACE_TAB_COMPOSE, WORM_UI_WORKSPACE_TAB_AUDIO_SLICES,
+        WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE);
+    INFO("Project tab " << tab);
+    nuklear_event_harness_t harness{1280, 900};
+    auto& view = harness.view();
+    view.active_tab = tab;
+    view.setup.visible = tab == WORM_UI_WORKSPACE_TAB_SETUP;
+    view.setup.stepmania_policy_status = "Ready";
+    view.metadata.visible = tab == WORM_UI_WORKSPACE_TAB_METADATA;
+    view.compose.visible = tab == WORM_UI_WORKSPACE_TAB_COMPOSE;
+    view.audio_slices.visible = tab == WORM_UI_WORKSPACE_TAB_AUDIO_SLICES;
+    view.compare.visible = tab == WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE;
+    const WormUiComposeOutputGroupView group{.document_index = 7, .name = "Project export",
+        .relative_output_path = "exports", .relative_asset_directory = "exports"};
+    view.compose.output_groups = &group;
+    view.compose.output_group_count = 1;
+    view.setup.chart_count = 1;
+    (void)harness.frame();
+    if (tab == WORM_UI_WORKSPACE_TAB_SETUP) {
+        const auto export_button = harness.drawn_text_center("Export…");
+        require_project_access(export_button.has_value());
+        const auto frames = click_at(harness, export_button->first, export_button->second);
+        require_project_access(std::ranges::count_if(frames, [](const auto& frame) {
+            return std::string_view{frame.get().menu_command_id} == "document.export_output_group";
+        }) == 1);
+    } else if (tab == WORM_UI_WORKSPACE_TAB_COMPOSE) {
+        require_project_access(harness.drawn_text().find("Export…") == std::string::npos);
+    }
+    require_project_access(!worm_ui_frontend_open_project_export(view.project_id + 1,
+        view.selected_chart_id, view.document_revision));
+    require_project_access(worm_ui_frontend_open_project_export(view.project_id,
+        view.selected_chart_id, view.document_revision));
+    (void)harness.frame();
+    (void)harness.frame();
+    INFO(harness.drawn_text());
+    require_project_access(harness.drawn_text().find("Project export") != std::string::npos);
+    const auto button = harness.drawn_text_center("Export group");
+    require_project_access(button.has_value());
+    const auto frames = click_at(harness, button->first, button->second);
+    const auto found = std::ranges::find_if(frames, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
+    });
+    require_project_access(found != frames.end());
+    const auto& action = found->get();
+    check_layer_menu(action.compose_output_group_index == 7);
+    check_layer_menu(action.compose_input_project_id == view.project_id);
+    check_layer_menu(action.compose_input_chart_id == view.selected_chart_id);
+    check_layer_menu(action.compose_input_document_revision == view.document_revision);
+}
+
+TEST_CASE("Metadata wheel scroll leaves its embedded waveform zoom and audio offset unchanged",
+          "[unit][frontend-state][event-harness][project-access]") {
+    nuklear_event_harness_t harness{1280, 900};
+    auto& view = harness.view();
+    view.active_tab = WORM_UI_WORKSPACE_TAB_METADATA;
+    view.compose.visible = false;
+    auto& metadata = view.metadata;
+    metadata.visible = metadata.has_chart = metadata.audio_waveform_has_selected_asset = true;
+    metadata.chart_id = metadata.document_revision = metadata.audio_waveform_selected_asset_id = 1;
+    metadata.audio_offset_denominator = 1;
+    metadata.audio_waveform_available = true;
+    metadata.audio_waveform_total_frames = 441000;
+    metadata.audio_waveform_sample_rate = 44100;
+    const std::array<WormUiAudioWaveformColumnView, 2> columns{};
+    metadata.audio_waveform_columns = columns.data();
+    metadata.audio_waveform_column_count = columns.size();
+    (void)harness.frame();
+    for (const auto heading : {"Song"}) {
+        if (const auto center = harness.drawn_text_center(heading))
+            (void)click_at(harness, center->first, center->second);
+    }
+    (void)harness.frame();
+    auto& audio = worm_ui_nuklear_audio_state();
+    const auto before = audio.waveform_viewport.frames_per_pixel;
+    require_project_access(audio.waveform_asset_id == 1);
+    require_project_access(audio.waveform_viewport.total_frames == 441000);
+    const auto labels = harness.drawn_text_bounds();
+    const auto overview = std::ranges::find_if(labels, [](const auto& label) {
+        return std::string_view{label.text}.find("Stereo overview") != std::string_view::npos;
+    });
+    require_project_access(overview != labels.end());
+    const float wheel_y = overview->y + 80.0f;
+    require_project_access(wheel_y < 840);
+    SDL_Event wheel{};
+    wheel.type = wheel.wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.y = -5;
+    wheel.wheel.mouse_x = 640;
+    wheel.wheel.mouse_y = wheel_y;
+    const std::array events{motion_event(640, wheel_y), wheel};
+    const auto frame = harness.frame(events);
+    check_layer_menu(audio.waveform_viewport.frames_per_pixel == before);
+    check_layer_menu(frame.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
+    check_layer_menu(frame.get().metadata_edit == WORM_UI_METADATA_EDIT_NONE);
+    (void)harness.frame();
+    check_layer_menu(harness.drawn_text().find("Audio and export") != std::string::npos);
+}

@@ -56,6 +56,7 @@ constexpr command_name_t command_names[]{
     {"view.toggle_sounds", application_command_kind_t::view_toggle_sounds},
     {"markers.add_bookmark", application_command_kind_t::markers_add_bookmark},
     {"view.notifications", application_command_kind_t::view_notifications},
+    {"workspace.command_menu", application_command_kind_t::workspace_command_menu},
     {"workspace.options", application_command_kind_t::workspace_options},
     {"workspace.open_setup", application_command_kind_t::workspace_open_setup},
     {"workspace.open_metadata", application_command_kind_t::workspace_open_metadata},

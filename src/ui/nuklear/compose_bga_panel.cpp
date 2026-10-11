@@ -108,17 +108,31 @@ void reveal_empty_base_lane(WormUiWorkspaceAction& action, const WormUiComposeVi
     if (!was_active && view.bga_lane_count == 0) reveal_bga_lane(action, 0);
 }
 
-void bga_lane_picker(nk_context* context, WormUiWorkspaceAction& action) {
-    nk_layout_row_dynamic(context, 25, 1);
-    if (!wormedit::ui::chrome::safe_combo_begin_label(context, "Add BGA lane", nk_vec2(150, 130))) return;
-    constexpr std::array labels{"BGA", "Layer", "Layer 2", "Poor"};
+void bga_lane_picker(nk_context* context, const WormUiComposeView& view,
+                     WormUiWorkspaceAction& action, bool blocked) {
+    if (blocked) nk_widget_disable_begin(context);
+    nk_layout_row_dynamic(context, 20, 1);
+    nk_label(context, "Show BGA lanes", NK_TEXT_LEFT);
+    constexpr std::array labels{"BGA", "Layer", "Layer 2", "Poor (miss)"};
     constexpr std::array kinds{wormedit::visual_event_kind_t::background, wormedit::visual_event_kind_t::layer,
         wormedit::visual_event_kind_t::layer2, wormedit::visual_event_kind_t::poor};
-    nk_layout_row_dynamic(context, 25, 1);
-    for (size_t index = 0; index < labels.size(); ++index)
-        if (nk_combo_item_label(context, labels[index], NK_TEXT_LEFT))
-            reveal_bga_lane(action, static_cast<std::uint8_t>(kinds[index]));
-    wormedit::ui::chrome::safe_combo_end(context);
+    constexpr std::array descriptions{
+        "Show the background image/video lane",
+        "Show the first overlay lane",
+        "Show the second overlay lane (BMS channel 0A)",
+        "Show the miss/Poor image lane; normal preview keeps its miss-only policy"};
+    nk_layout_row_dynamic(context, 25, 2);
+    for (size_t index = 0; index < labels.size(); ++index) {
+        const auto kind = static_cast<std::uint8_t>(kinds[index]);
+        const auto count = std::min<std::size_t>(view.bga_lane_count, 4);
+        const auto visible = std::ranges::find(std::span(view.bga_lane_kinds, count), kind) !=
+                             std::span(view.bga_lane_kinds, count).end();
+        if (nk_select_label(context, labels[index], NK_TEXT_CENTERED, visible))
+            reveal_bga_lane(action, kind);
+        if (!blocked && nk_widget_is_hovered(context))
+            wormedit::ui::nuklear::tooltip::text(context, descriptions[index]);
+    }
+    if (blocked) nk_widget_disable_end(context);
 }
 
 void toolbar(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear_compose_state_t& state,
@@ -314,12 +328,14 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
     import_picked(*action, *view, *state);
     sync_advance_ids(*view, *state);
     toolbar(context, *view, *state, *action);
+    bga_lane_picker(context, *view, *action, state->bga_renumber_confirmation_open ||
+                    state->bga_renumber_release_pending);
     nk_layout_row_dynamic(context, 25, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state->bga_search.data(),
         static_cast<int>(state->bga_search.size()), nk_filter_default);
     const auto region = nk_window_get_content_region(context);
     const auto height = std::max(60.0f, region.y + region.h - nk_widget_position(context).y -
-        (view->bga_ids_available ? 75.0f : 35.0f));
+        (view->bga_ids_available ? 45.0f : 5.0f));
     const auto block_list_pointer = state->bga_renumber_confirmation_open ||
                                     state->bga_renumber_release_pending;
     if (block_list_pointer) nk_widget_disable_begin(context);
@@ -355,7 +371,6 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
                       view->bga_largest_free_run);
         nk_label(context, free_run, NK_TEXT_LEFT);
     }
-    bga_lane_picker(context, *action);
     renumber_confirmation(context, *view, *state, *action);
     if (state->bga_renumber_release_pending &&
         !context->input.mouse.buttons[NK_BUTTON_LEFT].down)

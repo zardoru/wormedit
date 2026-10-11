@@ -28,6 +28,12 @@ struct project_open_result_t {
     [[nodiscard]] explicit operator bool() const noexcept { return document.has_value(); }
 };
 
+// Refreshes exact audio file availability for documents loaded through startup,
+// recovery or session replacement. Decoder support does not affect missing state;
+// aliases share the per-asset result, without changing revision/history.
+void refresh_project_audio_availability(song_document_t& document,
+                                        const std::filesystem::path& asset_base);
+
 // Applies load-time normalization and graph validation before a parsed document
 // can replace a session. Repairs change storage only; rejection clears the
 // proposed document and leaves its caller's active session untouched.

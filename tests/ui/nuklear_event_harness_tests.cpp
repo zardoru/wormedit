@@ -1479,7 +1479,7 @@ TEST_CASE("BGA dock reuses list selection and arms resources outside the drawer 
     check_bga_dock(harness.drawn_text().find("clip.png") != std::string::npos);
     check_bga_dock(harness.drawn_text().find("01  clip.png") == std::string::npos);
     INFO("BGA bounds " << state.bga_list_x << "," << state.bga_list_y << "," << state.bga_list_width << "," << state.bga_list_height);
-    (void)click_at(harness, state.bga_list_x + 70, state.bga_list_y + 112);
+    (void)click_at(harness, state.bga_list_x + 70, state.bga_list_y + 194);
     check_bga_dock(state.bga_selection.primary == 1400);
     check_bga_dock(state.armed_resource_id == 1400);
     check_bga_dock(state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::bga);
@@ -3370,7 +3370,7 @@ TEST_CASE("BGA dock row carries its source payload without enabling resource pla
     state.bga_panel_visible = true;
     (void)harness.frame();
     REQUIRE(state.bga_list_valid);
-    const auto selected = click_at(harness, state.bga_list_x + 70, state.bga_list_y + 112);
+    const auto selected = click_at(harness, state.bga_list_x + 70, state.bga_list_y + 194);
     expect_draw(has_draw_source_payload(selected, 2, 1400));
     expect_draw(!view.note_paint_mode_active);
     expect_draw(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
@@ -6010,4 +6010,49 @@ TEST_CASE("Production keyboard and Alt wheel stay on each shortened measure grid
     expect_t422(fixture.interaction->cursor == local_position_t{measure_id_t{2}, 0});
     expect_t422(fixture.history.document.revision == revision);
     expect_t422(fixture.history.undo.empty());
+}
+
+TEST_CASE("Lane-less Sounds fallback menu emits the complete captured session", "[event-harness][sound-fallback]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view().compose;
+    view.project_id = 991;
+    view.chart_id = 77;
+    view.document_revision = 23;
+    view.scene_available = false;
+    view.lanes = nullptr;
+    view.lane_count = 0;
+    const std::array<WormUiComposeKeysoundRowView, 1> rows{{
+        {.resource_id = 1400, .slot = "01", .name = "missing.wav", .missing = true}}};
+    const std::array<WormUiKeysoundFallbackView, 1> fallbacks{{
+        {.resource_id = 1400, .outcome = 2, .candidate_count = 2,
+         .candidates = {"missing.ogg", "missing.flac"}}}};
+    view.keysounds = rows.data();
+    view.keysound_count = view.keysound_total_count = rows.size();
+    view.keysounds_available = true;
+    view.keysound_fallbacks = fallbacks.data();
+    view.keysound_fallback_count = fallbacks.size();
+    (void)harness.frame();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.inspector_visible = false;
+    state.bga_panel_visible = false;
+    state.layers_panel_visible = false;
+    state.sounds_panel_visible = true;
+    (void)harness.frame();
+    const auto row = harness.drawn_text_center("missing.wav");
+    REQUIRE(row);
+    (void)right_click_at(harness, row->first, row->second);
+    (void)harness.frame();
+    const auto candidate = harness.drawn_text_center("Use missing.flac");
+    REQUIRE(candidate);
+    const auto actions = click_at(harness, candidate->first, candidate->second);
+    const auto action = std::ranges::find_if(actions, [](const auto& snapshot) {
+        return snapshot.get().compose_action == WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK;
+    });
+    REQUIRE(action != actions.end());
+    CHECK(action->get().compose_input_project_id == 991);
+    CHECK(action->get().compose_input_chart_id == 77);
+    CHECK(action->get().compose_input_document_revision == 23);
+    CHECK(action->get().compose_resource_id == 1400);
+    CHECK(action->get().compose_fallback_candidate == 1);
 }

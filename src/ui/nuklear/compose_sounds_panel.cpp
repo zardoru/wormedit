@@ -1504,6 +1504,7 @@ void render_sound_group_context_menu(const SoundsPanel& panel) {
         auto& action = *panel.action;
         if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) break;
         action.compose_action = WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK;
+        action.compose_input_project_id = panel.view->project_id;
         action.compose_resource_id = menu.stamp.object_id;
         action.compose_fallback_candidate = static_cast<std::uint32_t>(index);
         action.compose_input_chart_id = panel.view->chart_id;

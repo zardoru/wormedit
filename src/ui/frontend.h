@@ -2320,6 +2320,13 @@ typedef struct WormUiRecentFileView {
     const char* path;
 } WormUiRecentFileView;
 
+enum { WORM_UI_COMMAND_MENU_CAPACITY = 512 };
+typedef struct WormUiCommandMenuRow {
+    const char* id;
+    const char* label;
+    bool enabled;
+} WormUiCommandMenuRow;
+
 typedef struct WormUiWorkspaceView {
     size_t recent_file_count;
     WormUiRecentFileView recent_files[100];
@@ -2387,6 +2394,8 @@ typedef struct WormUiWorkspaceView {
     WormUiCompareView compare;
     WormUiPlayerPreviewView player_preview;
     struct WormUiExternalPlayerView external_player;
+    size_t command_menu_count;
+    WormUiCommandMenuRow command_menu_rows[WORM_UI_COMMAND_MENU_CAPACITY];
 } WormUiWorkspaceView;
 
 typedef struct WormUiSoundImportItem {
@@ -3048,6 +3057,8 @@ typedef struct WormUiWorkspaceAction {
     bool shortcut_ime_composition_active;
     bool shortcut_compose_lane_focused;
     uint64_t shortcut_focused_lane_id;
+    bool command_menu_invoked;
+    char command_menu_command_id[129];
 } WormUiWorkspaceAction;
 
 // Private application/frontend boundary. Implementations own all widget
@@ -3209,3 +3220,6 @@ void worm_ui_frontend_sound_slot_batch_result(bool applied, const char* message)
 bool worm_ui_frontend_stage_sound_slot_file_at(uint64_t project, uint64_t chart,
     uint64_t revision, uint16_t slot, uint64_t occupied_resource, const char* path);
 bool worm_ui_frontend_bga_list_contains(uint32_t window_id, float x, float y);
+
+// Opens the searchable registry command menu when workspace input is available.
+bool worm_ui_frontend_open_command_menu(void);

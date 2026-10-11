@@ -75,6 +75,7 @@ enum class application_command_kind_t {
     semantic_layer_toggle,
     audio_paint_hitsound,
     audio_toggle_click_audition,
+    workspace_command_menu,
 };
 
 struct application_command_t {

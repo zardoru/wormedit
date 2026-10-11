@@ -899,3 +899,20 @@ TEST_CASE("Dock shortcuts distinguish Layers creation Sounds toggle and Go to so
     check_dock_registry(!dispatch_shortcut(registry, {.chord = {shortcut_key_t::k,
         shortcut_modifier_t::control | shortcut_modifier_t::shift}}, focus_for_compose(), shortcut_primary_modifier_t::control).command);
 }
+
+TEST_CASE("Command menu defaults to primary Shift P and respects text focus",
+          "[unit][core][command-registry][command-menu]") {
+    std::vector<std::string> invoked;
+    auto registry = make_default_editor_command_registry([&](const command_invocation_context_t& context) {
+        invoked.push_back(context.command.value);
+        return command_invocation_result_t{.accepted = true};
+    });
+    const auto* command = find_command(registry, {"workspace.command_menu"});
+    REQUIRE(command);
+    REQUIRE(command->default_shortcuts.size() == 1);
+    CHECK(command->default_shortcuts[0] == shortcut_chord_t{
+        shortcut_key_t::p, shortcut_modifier_t::primary | shortcut_modifier_t::shift});
+    CHECK(invoke_command(registry, {"workspace.command_menu"}, {}).status == command_dispatch_status_t::invoked);
+    CHECK(invoke_command(registry, {"workspace.command_menu"}, {.text_entry_active = true}).status ==
+          command_dispatch_status_t::focus_consumed);
+}

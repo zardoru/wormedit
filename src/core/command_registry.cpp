@@ -783,6 +783,8 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
     add_builtin(registry, invoker, "view.notifications", "Notifications",
                 command_category_t::workspace, global,
                 {chord(shortcut_key_t::m, modified(shortcut_modifier_t::shift))});
+    add_builtin(registry, invoker, "workspace.command_menu", "Command menu", command_category_t::workspace,
+                global, {chord(shortcut_key_t::p, modified(shortcut_modifier_t::shift))});
     add_builtin(registry, invoker, "workspace.options", "Options", command_category_t::workspace,
                 global, {chord(static_cast<shortcut_key_t>(0x36), primary())});
     add_builtin(registry, invoker, "document.new_project", "New Project",

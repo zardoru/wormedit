@@ -2,6 +2,7 @@
 #include "sys/project_save_paths.h"
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/startup_session.h>
 #include <wormedit/core/workspace.h>
 
 #include <wormedit/formats/bms.h>
@@ -22,6 +23,7 @@
 #include <fstream>
 #include <optional>
 #include <span>
+#include <source_location>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -988,4 +990,106 @@ TEST_CASE("BMS visual fallback rejects traversal and drive declarations",
     require_bmson_condition(opened.warnings.size() == 2);
     check_bmson_condition(opened.warnings[0].find("Unsafe") != std::string::npos);
     check_bmson_condition(opened.warnings[1].find("Unsafe") != std::string::npos);
+}
+
+namespace {
+void check_open_audio(bool condition, std::source_location source = std::source_location::current()) {
+    INFO("Open audio check at " << source.line());
+    CHECK(condition);
+}
+void require_open_audio(bool condition, std::source_location source = std::source_location::current()) {
+    INFO("Open audio requirement at " << source.line());
+    REQUIRE(condition);
+}
+} // namespace
+
+TEST_CASE("Opening audio resources marks absent files without changing authored tokens",
+          "[unit][sys][project-open][missing-audio]") {
+    temporary_project_directory_t directory;
+    const auto path = directory.path / "missing-audio.bms";
+    std::ofstream(directory.path / "present.wav") << "present but not decodable";
+    std::ofstream(path) << "#PLAYER 1\n#TITLE Missing audio\n#BPM 120\n"
+                           "#WAV01 absent.wav\n#WAV02 present.wav\n#00111:0102\n";
+    const auto opened = wormedit::sys::open_project_file(path);
+    INFO(opened.error);
+    require_open_audio(opened.document.has_value());
+    require_open_audio(opened.document->resources.size() == 2);
+    check_open_audio(opened.document->resources[0].missing);
+    check_open_audio(!opened.document->resources[1].missing);
+    check_open_audio(opened.document->audio_assets[0].source_path == "absent.wav");
+    check_open_audio(opened.document->audio_assets[1].source_path == "present.wav");
+    check_open_audio(!wormedit::is_document_dirty(wormedit::make_document_history(*opened.document)));
+}
+
+TEST_CASE("Native audio availability refreshes saved flags and aliases without an edit",
+          "[unit][sys][project-open][missing-audio]") {
+    temporary_project_directory_t directory;
+    const auto source = directory.path / "source.bms";
+    std::ofstream(directory.path / "present.wav") << "corrupt but present";
+    std::ofstream(source) << "#PLAYER 1\n#TITLE Availability\n#BPM 120\n"
+                             "#WAV01 absent.wav\n#WAV02 present.wav\n#00111:0102\n";
+    auto imported = wormedit::sys::open_project_file(source);
+    require_open_audio(imported.document.has_value());
+    auto& document = *imported.document;
+    document.resources[0].missing = false;
+    document.resources[1].missing = true;
+    auto alias = document.resources[0];
+    alias.id = wormedit::resource_id_t{1000};
+    alias.target_identities.clear();
+    document.resources.push_back(alias);
+    const auto saved = wormedit::write_native_project(document);
+    require_open_audio(saved.bytes.has_value());
+    const auto path = directory.path / "availability.wormedit";
+    std::ofstream(path) << *saved.bytes;
+    const auto opened = wormedit::sys::open_project_file(path);
+    INFO(opened.error);
+    require_open_audio(opened.document.has_value());
+    check_open_audio(opened.document->resources[0].missing);
+    check_open_audio(!opened.document->resources[1].missing);
+    check_open_audio(opened.document->resources[2].missing);
+    check_open_audio(opened.document->revision == document.revision);
+    check_open_audio(!wormedit::is_document_dirty(wormedit::make_document_history(*opened.document)));
+}
+
+TEST_CASE("Native startup refreshes availability before creating clean saved history",
+          "[unit][sys][project-open][missing-audio][startup-session]") {
+    temporary_project_directory_t directory;
+    const auto source = directory.path / "startup.bms";
+    std::ofstream(directory.path / "present.wav") << "corrupt but present";
+    std::ofstream(source) << "#PLAYER 1\n#TITLE Startup\n#BPM 120\n"
+                             "#WAV01 absent.wav\n#WAV02 present.wav\n#00111:0102\n";
+    auto imported = wormedit::sys::open_project_file(source);
+    require_open_audio(imported.document.has_value());
+    imported.document->resources[0].missing = false;
+    imported.document->resources[1].missing = true;
+    const auto path = directory.path / "startup.wormedit";
+    require_open_audio(wormedit::publish_native_project_atomic(path, *imported.document).published);
+    auto startup = wormedit::prepare_native_project_startup({}, {.primary_path = path});
+    require_open_audio(startup.loaded_primary);
+    check_open_audio(!startup.document.resources[0].missing);
+    wormedit::sys::refresh_project_audio_availability(startup.document, directory.path);
+    check_open_audio(startup.document.resources[0].missing);
+    check_open_audio(!startup.document.resources[1].missing);
+    check_open_audio(startup.document.revision == imported.document->revision);
+    check_open_audio(startup.document.audio_assets[0].source_path == "absent.wav");
+    const auto history = wormedit::make_document_history(std::move(startup.document), 128, true);
+    check_open_audio(!wormedit::is_document_dirty(history));
+    check_open_audio(history.undo.empty());
+}
+
+TEST_CASE("Audio availability requires a base for relative sources and accepts absolute sources",
+          "[unit][sys][project-open][missing-audio]") {
+    temporary_project_directory_t directory;
+    const auto absolute = directory.path / "present.wav";
+    std::ofstream(absolute) << "corrupt but present";
+    const auto relative = std::filesystem::relative(absolute, std::filesystem::current_path());
+    wormedit::song_document_t document;
+    document.audio_assets = {{.id = wormedit::asset_id_t{1}, .source_path = relative},
+                             {.id = wormedit::asset_id_t{2}, .source_path = absolute}};
+    document.resources = {{.id = wormedit::resource_id_t{1}, .asset = wormedit::asset_id_t{1}},
+                          {.id = wormedit::resource_id_t{2}, .asset = wormedit::asset_id_t{2}}};
+    require_open_audio(std::filesystem::is_regular_file(relative));
+    wormedit::sys::refresh_project_audio_availability(document, {});
+    check_open_audio(document.resources[0].missing);
+    check_open_audio(!document.resources[1].missing);
 }

@@ -1906,6 +1906,23 @@ void consume_menu_shortcut(WormUiWorkspaceAction& action,
     action.shortcut_event_count = retained;
 }
 
+void project_command_menu(const wormedit::command_registry_t& registry, WormUiWorkspaceView& view) {
+    view.command_menu_count = std::min(registry.commands.size(),
+        static_cast<std::size_t>(WORM_UI_COMMAND_MENU_CAPACITY));
+    for (std::size_t i = 0; i < view.command_menu_count; ++i) {
+        const auto& command = registry.commands[i];
+        view.command_menu_rows[i] = {command.id.value.c_str(), command.display_name.c_str(), command.enabled};
+    }
+}
+
+auto command_menu_invoker(wormedit::command_invoker_t invoke) -> wormedit::command_invoker_t {
+    return [invoke = std::move(invoke)](const wormedit::command_invocation_context_t& invocation) {
+        if (invocation.command.value == "workspace.command_menu")
+            return wormedit::command_invocation_result_t{.accepted = worm_ui_frontend_open_command_menu()};
+        return invoke(invocation);
+    };
+}
+
 void dispatch_menu_command(WormUiWorkspaceAction& action,
                                   wormedit::command_registry_t& registry,
                                   wormedit::document_history_t& history,
@@ -1913,13 +1930,23 @@ void dispatch_menu_command(WormUiWorkspaceAction& action,
                                   const std::optional<wormedit::editor_interaction_state_t>& compose,
                                   application_command_state_t& application,
                                   wormedit::notification_sink_t& notifications) {
-    if (!action.menu_command_id[0]) return;
+    const auto* command_id = action.command_menu_invoked
+        ? action.command_menu_command_id : action.menu_command_id;
+    if (!command_id[0]) return;
+    if (action.command_menu_invoked &&
+        (!action.shortcut_window_focused || action.shortcut_ime_composition_active ||
+         action.compose_input_project_id != history.document.id.value ||
+         action.compose_input_chart_id != (workspace.selected_chart ? workspace.selected_chart->value : 0) ||
+         action.compose_input_document_revision != history.document.revision ||
+         static_cast<int>(action.tab) != static_cast<int>(workspace.active_tab))) return;
     // SDL forwards key events before AppKit invokes key equivalents. Retire that
     // same chord so a menu shortcut cannot run the registry command twice.
-    consume_menu_shortcut(action, registry);
+    if (!action.command_menu_invoked) consume_menu_shortcut(action, registry);
     refresh_application_command_states(registry, history, workspace, compose, application);
-    const auto result = wormedit::invoke_command(registry, {action.menu_command_id},
-                                                application_command_focus(action, workspace));
+    auto focus = application_command_focus(action, workspace);
+    // Activation closes the palette; its own search field must not consume the command.
+    if (action.command_menu_invoked) focus.text_entry_active = false;
+    const auto result = wormedit::invoke_command(registry, {command_id}, focus);
     if (!result.diagnostics.empty()) post_shortcut_rejection(notifications, registry, result);
 }
 
@@ -2574,6 +2601,7 @@ auto replace_project_session(Context& context, wormedit::song_document_t documen
                              std::filesystem::path native_path,
                              std::filesystem::path asset_base) -> bool {
     using namespace wormedit;
+    wormedit::sys::refresh_project_audio_availability(document, asset_base);
     auto replacement_history = make_document_history(std::move(document), 128, saved);
     auto replacement_binding = make_workspace_controller(replacement_history);
     if (!replacement_binding) {
@@ -4086,6 +4114,10 @@ int main(int argc, char** argv) {
     wormedit::sys::frontend_notification_sink_t frontend_notifications{notification_sink};
     auto& window = runtime.window;
 
+    auto asset_base =
+        startup.loaded_primary ? std::filesystem::absolute(requested_primary_path).parent_path()
+                               : std::filesystem::path{};
+    wormedit::sys::refresh_project_audio_availability(startup.document, asset_base);
     auto history = wormedit::make_document_history(std::move(startup.document), 128, true);
     auto binding = wormedit::make_workspace_controller(history);
     if (!binding) {
@@ -4124,9 +4156,6 @@ int main(int argc, char** argv) {
         startup.loaded_primary ? requested_primary_path : std::filesystem::path{};
     std::optional<wormedit::audio_offset_drag_t> audio_offset_drag;
     std::optional<wormedit::workspace_tab_t> audio_offset_drag_tab;
-    auto asset_base =
-        startup.loaded_primary ? std::filesystem::absolute(requested_primary_path).parent_path()
-                               : std::filesystem::path{};
     wormedit::task_scheduler_t resource_copy_scheduler(1, 1, wormedit::background_scheduler_options());
     resource_copy_t resource_copy_runtime{notification_sink};
     wormedit::sys::runtime::metadata_asset_t metadata_asset_runtime{notification_sink};
@@ -4279,7 +4308,7 @@ int main(int argc, char** argv) {
         return read_tap_clock(tap_clock_context);
     };
     timing_grid_state_t timing_grid;
-    auto command_registry = wormedit::make_default_editor_command_registry(
+    auto command_registry = wormedit::make_default_editor_command_registry(command_menu_invoker(
         [&](const wormedit::command_invocation_context_t& invocation) {
             return dispatch_options_or_editor_command(invocation, options_runtime,
                 program_preferences.preferences, notification_history, notifications, [&] {
@@ -4287,7 +4316,7 @@ int main(int argc, char** argv) {
                         invocation, program_preferences, history, workspace, compose_interaction_state, timing_edit.stage,
                         application_command_state, notification_sink, tap_runtime, tap_clock, tap_event_ns);
                 });
-        });
+        }));
     const auto shortcut_startup = load_preferred_shortcuts(program_preferences, command_registry);
     post_shortcut_startup_diagnostic(notification_sink, shortcut_startup);
     bool running = true;
@@ -4616,6 +4645,7 @@ int main(int argc, char** argv) {
             const auto frame_nuklear_previous = wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::nuklear);
             refresh_application_command_states(command_registry, history, workspace, compose_interaction_state, application_command_state);
             wormedit::sys::project_menu_commands(command_registry, flattened.view);
+            project_command_menu(command_registry, flattened.view);
 #if defined(WORMEDIT_HAS_MACOS_MENU)
             wormedit::sys::refresh_macos_menu_shortcuts(command_registry);
 #endif

@@ -183,12 +183,13 @@ Implementation review (2026-10-04): Panel created and eight inspector lane toggl
 
 ## T-60 Add a searchable command menu
 
-- **Status:** ready
+- **Status:** done (2026-10-11)
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
-- **Stale-plan audit (2026-10-03):** no command-menu symbol or popup exists. Registry labels/enabled state and main’s invocation path are reusable, but the only frontend frame-render owner is omitted from Files owned. An unrendered module would not satisfy the outcome. No menu implementation was started.
+- **Stale-plan audit (2026-10-11):** no searchable command menu exists at `a3d0416`; shared Dialog, autofocus search field, registry and menu-command dispatch are reusable.
+- **Historical stale-plan audit (2026-10-03):** no command-menu symbol or popup exists. Registry labels/enabled state and main’s invocation path are reusable, but the only frontend frame-render owner is omitted from Files owned. An unrendered module would not satisfy the outcome. No menu implementation was started.
 - **Outcome:** a primary-modifier+Shift+P popup lists enabled commands filtered by typed text; Enter invokes the selected one through `invoke_command`.
 - **Read first:** `include/wormedit/core/command_registry.h` (`invoke_command`), `src/sys/application_command_dispatch.cpp`, `src/ui/nuklear/frontend.cpp`.
-- **Files owned:** new `src/ui/nuklear/command_menu.cpp/.h`, `src/core/command_registry.cpp` (default chord only), `src/ui/frontend.h`, `src/sys/main.cpp`, `CMakeLists.txt`. User-approved supporting scope (2026-10-03): `src/ui/nuklear/frontend.cpp`, frontend event tests and `tests/CMakeLists.txt`.
+- **Files owned:** new `src/ui/nuklear/command_menu.cpp/.h`, `src/core/command_registry.cpp` (default chord only), `src/ui/frontend.h`, `src/sys/main.cpp`, `CMakeLists.txt`. User-approved supporting scope (2026-10-03): `src/ui/nuklear/frontend.cpp`, frontend event tests and `tests/CMakeLists.txt`. Coordinator-approved focused tests: `tests/ui/command_menu_event_harness_tests.cpp` and `tests/core/command_registry_tests.cpp`. Coordinator-approved integration fix: `src/sys/application_commands.cpp/.h` and `tests/sys/application_commands_tests.cpp` for the typed command inventory.
 - **Steps:**
   0. Scope extension approved by the user (2026-10-03).
   1. Register `workspace.command_menu` with the default chord.
@@ -196,7 +197,8 @@ Implementation review (2026-10-04): Panel created and eight inspector lane toggl
   3. Enter dispatches through the same path as shortcuts.
 - **Invariants:** disabled commands are shown greyed and cannot be invoked.
 - **Reject/failure behavior:** Escape closes without invoking.
-- **Verify:** standard build/test.
+- **Verify:** scratch-linked production event harness `[command-menu]` passed 6 cases/46 assertions (`/tmp/t60-events.log`): case-insensitive filtering beyond row 20, disabled-row navigation, activation stamps, Escape/release isolation, stale/modal/focus cancellation, all inline editor guards, IME suppression and held Enter isolation. Core chord/text-focus check passed 1 case/5 assertions (`/tmp/t60-core.log`). All changed production/test translation units compiled. Affected-file clang-tidy reports no new complexity violations; main remains its prior score 34. Coordinator verified native Primary+Shift+P → Options. Integrated suite exposed the typed-ID inventory omission; appended the stable `workspace_command_menu` application kind and mapping. Both the full builtin-ID inventory and exact/suffix mapping regression pass (2 cases/82 assertions, `/tmp/t60-typed-core.log`). Integrated full suite passes after the typed-ID correction; final batch verification is recorded in the resume checkpoint. Native Save Project activation also preserves newly placed BGA events across reopen.
+- **Implementation notes (2026-10-11):** projects all registry commands up to the shared 512-command limit and displays at most 20 filtered results. Activation revalidates project/chart/tab/revision and live enabled state through the existing `invoke_command` path. Only the palette-owned search focus is bypassed; native modal/IME/focus guards and captured key releases remain enforced.
 - **Out of scope:** fuzzy ranking.
 
 ## T-61 Copy and cut chart objects to an internal clipboard

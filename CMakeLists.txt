@@ -380,6 +380,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bookmark_label.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bookmark_chooser.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_sound_picker.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/command_menu.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bookmark_rename.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_note_label_inline.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bmson_tab.cpp"

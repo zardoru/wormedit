@@ -3429,6 +3429,12 @@ auto is_initial_layout_workspace_action(const WormUiWorkspaceAction& action) -> 
         action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE;
 }
 
+auto is_chart_only_workspace_action(const WormUiWorkspaceAction& action) -> bool {
+    return action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT ||
+        is_initial_layout_workspace_action(action) ||
+        action.compose_action == WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK;
+}
+
 auto temporary_compose_interaction_is_current(
     const WormUiWorkspaceAction& action, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace, bool initial_layout_action) -> bool {
@@ -3437,10 +3443,13 @@ auto temporary_compose_interaction_is_current(
         workspace.selected_chart && selected &&
         action.compose_input_chart_id == workspace.selected_chart->value &&
         action.compose_input_document_revision == history.document.revision &&
+        (action.compose_action != WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK ||
+         action.compose_input_project_id == history.document.id.value) &&
         (!initial_layout_action || selected->lane_layouts.empty());
 }
 
-auto temporary_compose_interaction_expired_message(bool initial_layout_action) -> const char* {
+auto temporary_compose_interaction_expired_message(bool initial_layout_action, bool sound_relink) -> const char* {
+    if (sound_relink) return "Sound relink ignored because the selected project, chart or document changed.";
     return initial_layout_action
         ? "Lane layout change ignored because the selected difficulty or document changed."
         : "BGM column count edit expired because the selected chart or document changed.";
@@ -3556,19 +3565,18 @@ auto dispatch_compose_workspace_action(
     }
 
     const bool initial_layout_action = is_initial_layout_workspace_action(action);
-    const bool temporary_bgm_interaction_action =
-        action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT || initial_layout_action;
-    if (!interaction_state && temporary_bgm_interaction_action) {
+    if (!interaction_state && is_chart_only_workspace_action(action)) {
         if (!temporary_compose_interaction_is_current(
                 action, history, workspace, initial_layout_action)) {
-            report(temporary_compose_interaction_expired_message(initial_layout_action),
+            report(temporary_compose_interaction_expired_message(initial_layout_action,
+                       action.compose_action == WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK),
                    notification_severity_t::warning, notification_source_t::edit);
             return true;
         }
-        wormedit::editor_interaction_state_t bgm_interaction;
-        bgm_interaction.chart = *workspace.selected_chart;
+        wormedit::editor_interaction_state_t chart_interaction;
+        chart_interaction.chart = *workspace.selected_chart;
         const auto status = dispatch_compose_view_action(
-            action, history, workspace, bgm_interaction, viewport_height,
+            action, history, workspace, chart_interaction, viewport_height,
             application_state, asset_base, resource_copy_scheduler, resource_copy_runtime,
             export_runtime, metadata_import_busy, notifications);
         static_cast<void>(status);

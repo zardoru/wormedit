@@ -183,14 +183,16 @@ TEST_CASE("BGA production dock placement targets Layer 2", "[bga][compose-input]
 TEST_CASE("BGA lane reveal is view-only and rejects an unsupported kind", "[bga][compose-input]") {
     bga_input_fixture_t fixture;
     const auto revision = fixture.history.document.revision;
-    auto reveal = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL, 1);
-    fixture.dispatch_input(reveal);
-    check_action(fixture.state.bga_revealed_lane_mask == 12);
-    check_action(fixture.history.document.revision == revision);
-    check_action(fixture.history.undo.empty());
-    reveal = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL, 255);
-    fixture.dispatch_input(reveal);
-    check_action(fixture.state.bga_revealed_lane_mask == 12);
+    for (const std::uint8_t kind : {0, 2, 5, 1}) {
+        auto reveal = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL, kind);
+        fixture.dispatch_input(reveal);
+        check_action(fixture.history.document.revision == revision);
+        check_action(fixture.history.undo.empty());
+    }
+    check_action(fixture.state.bga_revealed_lane_mask == 15);
+    auto invalid = fixture.input(WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL, 255);
+    fixture.dispatch_input(invalid);
+    check_action(fixture.state.bga_revealed_lane_mask == 15);
     check_action(fixture.history.undo.empty());
 }
 
@@ -1800,6 +1802,50 @@ TEST_CASE("Relinking a missing sound to a fallback candidate is one undo step",
 
     action.compose_fallback_candidate = 1;
     check_action(fixture.dispatch(action) == "Sound relinked to snare.flac.");
+    check_action(fixture.history.document.audio_assets.front().source_path == std::filesystem::path{"snare.flac"});
+    check_action_false(fixture.history.document.resources.front().missing);
+    check_action(fixture.history.undo.size() == 1);
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.audio_assets.front().source_path == std::filesystem::path{"snare.wav"});
+    check_action(fixture.history.document.resources.front().missing);
+    std::filesystem::remove_all(base, error);
+}
+
+TEST_CASE("Lane-less chart fallback relink preserves revision guards and undo",
+          "[compose-action-notifications][audio-fallback][missing-audio]") {
+    action_notification_fixture_t fixture;
+    const auto base = std::filesystem::temp_directory_path() / "wormedit-fallback-relink";
+    std::error_code error;
+    std::filesystem::remove_all(base, error);
+    std::filesystem::create_directories(base);
+    std::ofstream(base / "snare.ogg") << "x";
+    std::ofstream(base / "snare.flac") << "x";
+    fixture.asset_base = base;
+    fixture.history.document.audio_assets = {{.id = asset_id_t{5}, .source_path = "snare.wav"}};
+    fixture.history.document.resources = {{.id = resource_id_t{6}, .name = "snare", .asset = asset_id_t{5},
+                                           .missing = true}};
+    fixture.history.document.charts.front().lane_layouts.clear();
+    fixture.history.document.charts.front().input_profile.bindings.clear();
+    fixture.history = make_document_history(fixture.history.document);
+    std::optional<editor_interaction_state_t> interaction;
+    require_action(static_cast<bool>(rebind_workspace(fixture.workspace, fixture.history)));
+    auto action = fixture.action(WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK);
+    action.compose_resource_id = 6;
+    action.compose_fallback_candidate = 9;
+    const auto revision = fixture.history.document.revision;
+    (void)fixture.dispatch_workspace(action, interaction);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+
+    action.compose_fallback_candidate = 1;
+    auto stale = action;
+    ++stale.compose_input_document_revision;
+    (void)fixture.dispatch_workspace(stale, interaction);
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+    require_action(fixture.dispatch_workspace(action, interaction));
+    check_action(!interaction);
+    check_action(fixture.history.document.charts.front().lane_layouts.empty());
     check_action(fixture.history.document.audio_assets.front().source_path == std::filesystem::path{"snare.flac"});
     check_action_false(fixture.history.document.resources.front().missing);
     check_action(fixture.history.undo.size() == 1);

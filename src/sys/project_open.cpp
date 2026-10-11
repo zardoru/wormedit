@@ -242,12 +242,37 @@ auto existing_bms_asset_path(const std::filesystem::path& source,
     return std::nullopt;
 }
 
+using audio_missing_t = std::map<asset_id_t, bool>;
+
+void apply_audio_missing(song_document_t& document, const audio_missing_t& missing) {
+    for (auto& resource : document.resources) {
+        const auto found = missing.find(resource.asset);
+        if (found != missing.end()) resource.missing = found->second;
+    }
+}
+
+// Availability is file existence, not decoder support. One check per asset also
+// keeps resource aliases consistent without editing document history.
+void mark_audio_availability(song_document_t& document, const std::filesystem::path& asset_base) {
+    audio_missing_t missing;
+    for (const auto& asset : document.audio_assets) {
+        std::error_code error;
+        const auto path = asset.source_path.is_absolute() ? asset.source_path
+                                                         : asset_base / asset.source_path;
+        missing.emplace(asset.id, asset.source_path.empty() ||
+                        (!asset.source_path.is_absolute() && asset_base.empty()) ||
+                        !std::filesystem::is_regular_file(path, error));
+    }
+    apply_audio_missing(document, missing);
+}
+
 // Points an audio asset at the matching file beside the chart, preserving the authored path on
 // failure. Audio assets keep their .wav/.ogg/.flac fallback behavior.
 void resolve_audio_assets(song_document_t& document, const std::filesystem::path& asset_base,
                           std::vector<std::string>& warnings, std::string_view format = "BMS") {
     constexpr std::array<std::string_view, 3> extensions{".wav", ".ogg", ".flac"};
     bms_asset_directory_cache_t cache;
+    audio_missing_t missing;
     for (auto& asset : document.audio_assets) {
         std::string warning;
         const auto actual = existing_bms_asset_path(asset.source_path, asset_base, cache,
@@ -255,13 +280,10 @@ void resolve_audio_assets(song_document_t& document, const std::filesystem::path
         if (!warning.empty()) {
             warnings.push_back(std::move(warning));
         }
-        if (!actual || *actual == asset.source_path)
-            continue;
-        asset.source_path = *actual;
-        for (auto& resource : document.resources)
-            if (resource.asset == asset.id)
-                resource.missing = false;
+        missing.emplace(asset.id, !actual);
+        if (actual) asset.source_path = *actual;
     }
+    apply_audio_missing(document, missing);
 }
 
 void resolve_visual_assets(song_document_t& document, const std::filesystem::path& asset_base,
@@ -300,24 +322,22 @@ void resolve_stepmania_music(song_document_t& document,
                              const std::filesystem::path& asset_base,
                              std::vector<std::string>& warnings) {
     bms_asset_directory_cache_t cache;
-    for (auto& resource : document.resources) {
-        if (std::ranges::find(resource.roles, resource_role_t::music) == resource.roles.end())
-            continue;
-        const auto asset = std::ranges::find(document.audio_assets, resource.asset,
-                                             &audio_asset_t::id);
-        if (asset == document.audio_assets.end()) continue;
+    audio_missing_t missing;
+    for (const auto& resource : document.resources)
+        if (std::ranges::find(resource.roles, resource_role_t::music) != resource.roles.end())
+            missing.emplace(resource.asset, true);
+    for (auto& asset : document.audio_assets) {
+        const auto entry = missing.find(asset.id);
+        if (entry == missing.end()) continue;
         std::string warning;
         constexpr std::array<std::string_view, 3> extensions{".wav", ".ogg", ".flac"};
-        const auto actual = existing_bms_asset_path(asset->source_path, asset_base, cache,
+        const auto actual = existing_bms_asset_path(asset.source_path, asset_base, cache,
                                                     extensions, "StepMania", "audio", warning);
-        if (!warning.empty()) {
-            warnings.push_back(std::move(warning));
-        }
-        if (actual) {
-            asset->source_path = *actual;
-            resource.missing = false;
-        }
+        if (!warning.empty()) warnings.push_back(std::move(warning));
+        entry->second = !actual;
+        if (actual) asset.source_path = *actual;
     }
+    apply_audio_missing(document, missing);
 }
 
 template <typename ParseResult>
@@ -350,6 +370,7 @@ void parse_selected_file(std::string_view extension, const std::string& source,
     if (extension == ".wormedit") {
         take_parsed_document(parse_native_project(source), "Native project", result);
         result.native_project = result.document.has_value();
+        if (result.document) mark_audio_availability(*result.document, result.asset_base);
         return;
     }
     const auto bytes = std::as_bytes(std::span{source.data(), source.size()});
@@ -390,13 +411,16 @@ void parse_selected_file(std::string_view extension, const std::string& source,
         options.asset_base_directory = result.asset_base;
         take_parsed_document(parse_stepmania_bytes(bytes, std::move(options)),
                              "StepMania chart", result);
-        if (result.document)
+        if (result.document) {
+            mark_audio_availability(*result.document, result.asset_base);
             resolve_stepmania_music(*result.document, result.asset_base, result.warnings);
+        }
     } else if (extension == ".osu") {
         auto options = osu_mania_parse_options_t{};
         options.asset_base_directory = result.asset_base;
         take_parsed_document(parse_osu_mania_bytes(bytes, std::move(options)), "osu!mania chart",
                              result);
+        if (result.document) mark_audio_availability(*result.document, result.asset_base);
     }
 }
 
@@ -467,6 +491,11 @@ auto validation_error(const diagnostic_list_t& diagnostics) -> std::string {
 }
 
 } // namespace
+
+void refresh_project_audio_availability(song_document_t& document,
+                                        const std::filesystem::path& asset_base) {
+    mark_audio_availability(document, asset_base);
+}
 
 void validate_opened_document(project_open_result_t& result) {
     if (!result.document) return;

@@ -1,5 +1,6 @@
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -353,4 +354,31 @@ TEST_CASE("typed BGA deletion preserves neighboring objects across undo and redo
     REQUIRE(redo_document_command(history));
     CHECK(std::ranges::find(history.document.charts.front().bga_events, deleted.id,
           &bga_event_t::id) == history.document.charts.front().bga_events.end());
+}
+
+TEST_CASE("All discoverable BGA lane kinds survive save and reopen", "[unit][sys][bga-lane][bga-discovery]") {
+    using namespace wormedit;
+    auto history = bga_history();
+    auto& events = history.document.charts.front().bga_events;
+    constexpr std::array kinds{visual_event_kind_t::background, visual_event_kind_t::layer,
+                               visual_event_kind_t::layer2, visual_event_kind_t::poor};
+    events.clear();
+    for (std::size_t index = 0; index < kinds.size(); ++index)
+        events.push_back({.id = object_id_t{100 + index},
+            .position = {measure_id_t{1}, static_cast<std::uint32_t>(120 * index)},
+            .resource = resource_id_t{31}, .kind = kinds[index],
+            .provenance = {.family = format_family_t::bms, .source_field = "retained BGA source"}});
+    const auto serialized = write_native_project(history.document);
+    REQUIRE(serialized.bytes);
+    const auto reopened = parse_native_project(*serialized.bytes);
+    REQUIRE(reopened.song);
+    const auto& restored = reopened.song->charts.front().bga_events;
+    REQUIRE(restored.size() == kinds.size());
+    for (std::size_t index = 0; index < kinds.size(); ++index) {
+        CHECK(restored[index].kind == kinds[index]);
+        CHECK(restored[index].id == events[index].id);
+        CHECK(restored[index].position == events[index].position);
+        CHECK(restored[index].resource == events[index].resource);
+        CHECK(restored[index].provenance.source_field == events[index].provenance.source_field);
+    }
 }

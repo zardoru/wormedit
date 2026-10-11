@@ -93,6 +93,12 @@ TEST_CASE("every built-in command ID has a typed representation", "[unit][sys][c
     }
 }
 
+TEST_CASE("Command menu has a stable typed application command", "[unit][sys][commands][command-menu]") {
+    CHECK(parse_application_command("workspace.command_menu") ==
+          application_command_t{.kind = application_command_kind_t::workspace_command_menu});
+    CHECK_FALSE(parse_application_command("workspace.command_menu.extra"));
+}
+
 #endif
 
 #include "sys/compose_area_actions.h"

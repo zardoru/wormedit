@@ -772,28 +772,48 @@ TEST_CASE("Y-lock stops a selected BGA event from being dragged to another row",
     CHECK_FALSE(has_input(released, WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE, 81));
 }
 
-TEST_CASE("BGA Add lane dropdown reveals an empty Layer 2", "[event-harness][bga]") {
-    nuklear_event_harness_t harness{1600, 900};
+TEST_CASE("BGA lane controls reveal every kind without a hidden dropdown", "[event-harness][bga][bga-discovery]") {
+    nuklear_event_harness_t harness{1280, 600};
     REQUIRE(harness.ready());
     hide_compose_docks();
-    harness.view().compose.bga_lane_count = 0;
+    auto& view = harness.view().compose;
+    view.bga_lane_count = 0;
+    view.bga_ids_available = true;
     (void)harness.frame();
     worm_ui_nuklear_compose_state().bga_panel_visible = true;
     (void)harness.frame();
-    const auto picker = harness.drawn_text_center("Add BGA lane");
-    REQUIRE(picker);
-    (void)click(harness, picker->first, picker->second);
-    const auto layer2 = harness.drawn_text_center("Layer 2");
-    REQUIRE(layer2);
-    const auto actions = click(harness, layer2->first, layer2->second);
-    bool revealed{};
-    for (const auto& snapshot : actions) {
-        const auto& action = snapshot.get();
-        for (const auto& input : std::span(action.compose_inputs, action.compose_input_count))
-            revealed |= input.kind == WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL &&
-                input.bga_lane_kind_valid && input.bga_lane_kind == 5;
+    REQUIRE(harness.drawn_text_center("Show BGA lanes"));
+    constexpr std::array labels{"BGA", "Layer", "Layer 2", "Poor (miss)"};
+    constexpr std::array<std::uint8_t, 4> kinds{0, 2, 5, 1};
+    for (std::size_t index = 0; index < labels.size(); ++index) {
+        const auto control = harness.drawn_text_center(labels[index]);
+        REQUIRE(control);
+        const auto actions = click(harness, control->first, control->second);
+        const auto revealed = std::ranges::any_of(actions, [&](const auto& snapshot) {
+            const auto& action = snapshot.get();
+            return std::ranges::any_of(std::span(action.compose_inputs, action.compose_input_count),
+                [&](const auto& input) {
+                    return input.kind == WORM_UI_COMPOSE_INPUT_BGA_LANE_REVEAL &&
+                        input.bga_lane_kind_valid && input.bga_lane_kind == kinds[index];
+                });
+        });
+        check_bga(revealed);
     }
-    check_bga(revealed);
+}
+
+TEST_CASE("Populated BGA lanes retain discoverable controls", "[event-harness][bga][bga-discovery]") {
+    nuklear_event_harness_t harness{1280, 600};
+    REQUIRE(harness.ready());
+    hide_compose_docks();
+    auto& view = harness.view().compose;
+    view.bga_lane_count = 4;
+    constexpr std::array<std::uint8_t, 4> kinds{0, 2, 5, 1};
+    std::ranges::copy(kinds, view.bga_lane_kinds);
+    (void)harness.frame();
+    worm_ui_nuklear_compose_state().bga_panel_visible = true;
+    (void)harness.frame();
+    REQUIRE(harness.drawn_text_center("Layer 2"));
+    REQUIRE(harness.drawn_text_center("Poor (miss)"));
 }
 
 namespace {

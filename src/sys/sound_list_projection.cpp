@@ -673,6 +673,7 @@ struct fallback_cache_t {
     std::filesystem::path base;
     std::vector<keysound_fallback_t> entries;
     bool valid{};
+    std::vector<resource_id_t> missing_resources;
 };
 } // namespace
 
@@ -680,13 +681,16 @@ auto project_keysound_fallbacks(const song_document_t& document,
                                 const std::filesystem::path& asset_base, std::size_t limit)
     -> std::vector<keysound_fallback_t> {
     static thread_local fallback_cache_t cache;
-    if (!cache.valid || cache.song != document.id.value || cache.revision != document.revision ||
+    std::vector<resource_id_t> missing_resources;
+    for (const auto& resource : document.resources)
+        if (resource.missing) missing_resources.push_back(resource.id);
+    if (!cache.valid || cache.missing_resources != missing_resources || cache.song != document.id.value || cache.revision != document.revision ||
         cache.base != asset_base) {
-        cache = {document.id.value, document.revision, asset_base, {}, true};
+        cache = {document.id.value, document.revision, asset_base, {}, true, std::move(missing_resources)};
         audio_directory_cache_t listings;
         for (const auto& resource : document.resources) {
             const auto* asset = find_audio_asset(document, resource.asset);
-            if (!asset) continue;
+            if (!asset || !resource.missing) continue;
             auto result = resolve_audio_fallback(asset->source_path, asset_base, &listings);
             if (result.outcome == audio_fallback_outcome_t::fallback ||
                 result.outcome == audio_fallback_outcome_t::ambiguous)

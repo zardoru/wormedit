@@ -34,6 +34,7 @@
 #include "ui/nuklear/image_quad.h"
 #include "ui/nuklear/metadata_panel.h"
 #include "ui/nuklear/metadata_state.h"
+#include "ui/nuklear/command_menu.h"
 #include "ui/nuklear/player_preview.h"
 #include "ui/nuklear/setup_panel.h"
 #include "ui/nuklear/setup_state.h"
@@ -503,7 +504,7 @@ static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_la
     action->shortcut_window_focused = g_window_focused;
     action->shortcut_notification_history_focused = notification_history_focused();
     auto& compose_state = worm_ui_nuklear_compose_state();
-    action->shortcut_text_entry_active = nuklear_text_entry_active() ||
+    action->shortcut_text_entry_active = command_menu_owns_input() || nuklear_text_entry_active() ||
                                          compose_state.inline_timing_input_consumed ||
                                          compose_state.inline_offset_input_consumed ||
                                          compose_state.layers_menu_input_consumed ||
@@ -697,6 +698,7 @@ bool worm_ui_frontend_init_headless(int width, int height) {
 }
 
 void worm_ui_frontend_shutdown(void) {
+    reset_command_menu();
     wormedit::ui::chrome::context_menu_cancel_keyboard();
     g_context_invocation_allowed = false;
     shutdown_stem_resize_cursor();
@@ -1346,6 +1348,14 @@ static auto context_key(SDL_Keycode key) -> wormedit::ui::chrome::ContextMenuKey
     }
 }
 
+static bool command_menu_dialog_blocked() {
+    const auto& compose = worm_ui_nuklear_compose_state();
+    return g_new_project_wizard.open || g_help_dialog != HelpDialog::none ||
+        compose_popup_owns_input() || compose.inline_timing_open || compose.inline_offset_open ||
+        compose.go_to_measure_open || compose.bookmark_rename.active || compose.bookmark_rename.release_pending ||
+        notification_editor_gesture_active();
+}
+
 static bool context_invocation_blocked() {
     const auto& compose = worm_ui_nuklear_compose_state();
     return !g_context_invocation_allowed || !g_window_focused || nuklear_text_entry_active() || g_ime_composition_active ||
@@ -1380,6 +1390,8 @@ static bool capture_context_menu_key(const SDL_KeyboardEvent& event) {
 }
 
 static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
+        if (frontend_event_window_matches(event.windowID) &&
+            capture_command_menu_key(g_context, event, g_ime_composition_active)) return true;
         if (capture_context_menu_key(event)) return true;
         if ((g_help_dialog != HelpDialog::none)) {
             forward_modal_key(event);
@@ -1478,6 +1490,10 @@ static void track_compose_draw_pointer(const SDL_Event& event) {
 }
 
 static bool handle_frontend_text_input(const SDL_Event& event) {
+    if (capture_command_menu_text(g_context, event)) {
+        g_ime_composition_active = false;
+        return true;
+    }
     g_ime_composition_active = false;
     if (wormedit::ui::chrome::context_menu_keyboard_owned()) return true;
     queue_compose_text_hotkeys(event.text.text);
@@ -1493,6 +1509,7 @@ static bool handle_workspace_frontend_event(const SDL_Event* event) {
     if (queue_compose_pinch_event(*event)) return true;
     if (event->type == SDL_EVENT_WINDOW_FOCUS_LOST) {
         g_window_focused = false;
+        cancel_command_menu();
         wormedit::ui::chrome::context_menu_cancel_keyboard();
         g_tap_key_captured = false;
         g_tap_space_captured = false;
@@ -2677,7 +2694,7 @@ static void render_about(const WormUiWorkspaceView& view) {
 
 static nk_flags workspace_window_flags(const WormUiWorkspaceView& view) {
     const auto flags = NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND;
-    return flags | (project_modal_active(view) ? NK_WINDOW_NO_INPUT : 0);
+    return flags | ((project_modal_active(view) || command_menu_owns_input()) ? NK_WINDOW_NO_INPUT : 0);
 }
 
 static wormedit::ui::chrome::Dialog g_project_modal_dialog;
@@ -3095,6 +3112,10 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     sync_pending_audio_project(*view);
 
     const auto* validation_error = workspace_validation_error(*view);
+    prepare_command_menu(view, !validation_error && g_window_focused &&
+        !view->options.visible && !project_modal_active(*view) && !project_dialog_active() &&
+        !g_notification_modal && !command_menu_dialog_blocked() &&
+        !wormedit::ui::chrome::context_menu_keyboard_owned());
 
     int width = 0;
     int height = 0;
@@ -3136,6 +3157,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     worm_ui_nuklear_compose_state().sound_list_valid = false;
     render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
         render_auxiliary_windows(WorkspaceRenderContext{*view, action, width, height});
+        render_command_menu(g_context, *view, action, width, height);
         render_about(*view);
         render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
         expose_shortcut_input(&action);
@@ -3155,6 +3177,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     worm_ui_nuklear_compose_state().sound_list_valid = false;
     render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
     render_auxiliary_windows(WorkspaceRenderContext{*view, action, width, height});
+    render_command_menu(g_context, *view, action, width, height);
     if (action.sound_import_pick_requested && !g_headless)
         worm_ui_nuklear_sound_import_pick(g_window, *view, action.sound_import_kind);
     consume_layer_creation_request(*view, action);
@@ -3320,4 +3343,12 @@ int worm_ui_frontend_field_scratch_side(uint8_t stage) {
 
 bool worm_ui_frontend_select_field_scheme(const char* id) {
     return wormedit::ui::theme::select_field_scheme(id ? id : "");
+}
+
+bool worm_ui_frontend_open_command_menu(void) {
+    if (!g_context || !g_window_focused || nuklear_text_entry_active() ||
+        g_ime_composition_active || g_notification_modal || project_dialog_active() ||
+        command_menu_dialog_blocked() ||
+        wormedit::ui::chrome::context_menu_keyboard_owned()) return false;
+    return open_command_menu();
 }

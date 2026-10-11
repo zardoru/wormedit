@@ -152,7 +152,7 @@ TEST_CASE("BGA dock auto advance follows eligible filtered order after placement
     // actual field. The projection consumer receives the resulting order.
     click(harness, state.bga_list_x + 207,
           state.bga_list_y + 43);
-    click(harness, state.bga_list_x + 90, state.bga_list_y + 73);
+    click(harness, state.bga_list_x + 90, state.bga_list_y + 155);
     SDL_Event search_text{};
     search_text.type = SDL_EVENT_TEXT_INPUT;
     search_text.text.type = SDL_EVENT_TEXT_INPUT;

@@ -2711,7 +2711,7 @@ static const char* compose_bga_lane_label(std::uint8_t kind) {
     switch (static_cast<wormedit::visual_event_kind_t>(kind)) {
     case wormedit::visual_event_kind_t::layer: return "Layer";
     case wormedit::visual_event_kind_t::layer2: return "Layer 2";
-    case wormedit::visual_event_kind_t::poor: return "Poor";
+    case wormedit::visual_event_kind_t::poor: return "Poor (miss)";
     default: return "BGA";
     }
 }

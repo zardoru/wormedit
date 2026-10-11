@@ -6,6 +6,16 @@
 namespace wormedit::audio {
 namespace {
 
+class loop_restart_scope_t {
+  public:
+    loop_restart_scope_t(std::atomic<std::uint64_t>& slot, std::uint64_t generation) : slot_(slot) {
+        slot_.store(generation, std::memory_order_release);
+    }
+    ~loop_restart_scope_t() { slot_.store(0, std::memory_order_release); }
+  private:
+    std::atomic<std::uint64_t>& slot_;
+};
+
 auto checked_window_end(std::uint64_t timeline_frame, std::size_t lookahead_frames)
     -> std::optional<std::uint64_t> {
     if (lookahead_frames > std::numeric_limits<std::uint64_t>::max() - timeline_frame)
@@ -52,8 +62,24 @@ auto preview_session_t::seek(std::uint64_t sample_frame, preview_pump_options_t 
     return prime_started(started, sample_frame, options);
 }
 
+auto preview_session_t::restart_loop(std::uint64_t expected_generation)
+    -> preview_session_start_result_t {
+    const std::scoped_lock lock(mutex_);
+    if (generation_ != expected_generation || !token_ || !loop_region_ ||
+        timeline_frame_ < loop_region_->end_frame || !transport_.is_current(*token_))
+        return {.status = preview_session_start_status_t::bridge_failed};
+    const loop_restart_scope_t restart_scope{loop_restart_generation_, generation_};
+    const auto started = bridge_.seek(loop_region_->begin_frame);
+    if (!started) return {.status = preview_session_start_status_t::bridge_failed, .bridge = started};
+    return prime_started(started, loop_region_->begin_frame, {}, true);
+}
+
+void preview_session_t::set_output_playhead(std::uint64_t generation, std::uint64_t frame) noexcept {
+    output_playhead_.publish({.active = true, .timeline_frame = frame, .generation = generation});
+}
+
 auto preview_session_t::prime_started(preview_bridge_start_result_t started,
-                                      std::uint64_t timeline_frame, preview_pump_options_t options)
+                                      std::uint64_t timeline_frame, preview_pump_options_t options, bool loop_restart)
     -> preview_session_start_result_t {
     auto result = preview_session_start_result_t{};
     result.bridge = started;
@@ -77,8 +103,10 @@ auto preview_session_t::prime_started(preview_bridge_start_result_t started,
     token_ = started.token;
     timeline_frame_ = timeline_frame;
     start_frame_ = timeline_frame;
-    output_latency_frames_.store(0, std::memory_order_release);
-    ++generation_;
+    if (!loop_restart) {
+        output_latency_frames_.store(0, std::memory_order_release);
+        ++generation_;
+    }
     publish_playhead();
     result.status = preview_session_start_status_t::started;
     result.token = token_;
@@ -123,7 +151,8 @@ auto preview_session_t::pump(preview_pump_options_t options) -> preview_session_
     return result;
 }
 
-auto preview_session_t::render(std::span<float> interleaved_stereo)
+auto preview_session_t::render(std::span<float> interleaved_stereo,
+    std::optional<std::uint64_t> expected_generation)
     -> preview_session_render_result_t {
     std::ranges::fill(interleaved_stereo, 0.0F);
     const auto samples_per_frame = static_cast<std::size_t>(output_channel_count);
@@ -135,6 +164,8 @@ auto preview_session_t::render(std::span<float> interleaved_stereo)
     }
 
     const std::scoped_lock lock(mutex_);
+    if (expected_generation && *expected_generation != generation_)
+        return {.status = preview_session_render_status_t::stale_generation};
     if (!token_.has_value()) {
         return {.status = preview_session_render_status_t::stopped,
                 .first_timeline_frame = timeline_frame_,
@@ -200,8 +231,9 @@ auto preview_session_t::render(std::span<float> interleaved_stereo)
             .mix = mixed};
 }
 
-auto preview_session_t::stop() noexcept -> transport_stop_result_t {
+auto preview_session_t::stop(std::optional<std::uint64_t> expected_generation) noexcept -> transport_stop_result_t {
     const std::scoped_lock lock(mutex_);
+    if (expected_generation && *expected_generation != generation_) return {};
     auto stopped = bridge_.stop();
     clear_state();
     return stopped;
@@ -251,11 +283,18 @@ auto preview_session_t::set_assist_grid(bool active,
 }
 
 auto preview_session_t::playhead() const noexcept -> playhead_state_t {
-    const auto state = playhead_.read();
-    if (state.active && !transport_.is_current({state.transport_generation})) {
-        return {.generation = state.generation};
+    for (int attempt = 0; attempt < playhead_snapshot_t::maximum_read_attempts; ++attempt) {
+        const auto before = loop_restart_generation_.load(std::memory_order_acquire);
+        const auto state = playhead_.read();
+        if (!state.active || transport_.is_current({state.transport_generation}) || before == state.generation ||
+            loop_restart_generation_.load(std::memory_order_acquire) == state.generation) return state;
+        // The internal handoff may have finished since the first snapshot. A
+        // changed token needs a fresh validation; an unchanged stale token does not.
+        const auto latest = playhead_.read();
+        if (latest.generation == state.generation && latest.transport_generation == state.transport_generation)
+            return {.generation = state.generation};
     }
-    return state;
+    return {.generation = playhead_.read().generation};
 }
 
 auto preview_session_t::active() const -> bool {
@@ -264,6 +303,9 @@ auto preview_session_t::active() const -> bool {
 
 auto preview_session_t::timeline_frame() const -> std::uint64_t {
     const auto playhead = this->playhead();
+    const auto output = output_playhead_.read();
+    if (playhead.active && output.active && output.generation == playhead.generation)
+        return output.timeline_frame;
     const auto latency = output_latency_frames_.load(std::memory_order_acquire);
     const auto elapsed = playhead.timeline_frame - playhead.start_frame;
     return playhead.start_frame + (elapsed > latency ? elapsed - latency : 0);

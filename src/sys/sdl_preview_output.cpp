@@ -112,11 +112,13 @@ void sdl_preview_output_t::refill_loop(std::stop_token stop) {
     while (!stop.stop_requested()) {
         refill_ready_.wait(lock, [&] { return stop.stop_requested() || refill_enabled_; });
         if (stop.stop_requested()) return;
-        const auto generation = refill_generation_;
+        const auto generation = refill_generation_.load(std::memory_order_acquire);
         lock.unlock();
         audio::preview_session_pump_result_t result;
         try {
             result = session_.pump();
+            if (loop_enabled_.load(std::memory_order_acquire) && playing())
+                result = refill_loop_output(generation, std::move(result));
         } catch (...) {
             result.status = audio::preview_session_pump_status_t::decode_failed;
         }
@@ -125,14 +127,72 @@ void sdl_preview_output_t::refill_loop(std::stop_token stop) {
             (!refill_result_ || static_cast<bool>(*refill_result_))) {
             if (result.status == audio::preview_session_pump_status_t::not_started)
                 refill_enabled_ = false;
-            if (result.status == audio::preview_session_pump_status_t::loop_boundary)
-                refill_enabled_ = false;
             refill_result_ = std::move(result);
         }
         refill_ready_.wait_for(lock, std::chrono::milliseconds(10), [&] {
-            return stop.stop_requested() || generation != refill_generation_ || !refill_enabled_;
+            return stop.stop_requested() || generation != refill_generation_.load(std::memory_order_acquire) ||
+                   !refill_enabled_ || refill_requested_.exchange(false, std::memory_order_acq_rel);
         });
     }
+}
+
+auto sdl_preview_output_t::loop_queue_target_bytes() const noexcept -> std::uint64_t {
+    const auto frames = keep_pitch() ? callback_frames
+        : audio::source_frames_for(callback_frames, playback_rate()).value_or(callback_frames);
+    return frames * sizeof(float) * audio::output_channel_count;
+}
+
+// SDL already provides the bounded PCM queue. Only the refill worker produces
+// loop audio; the device callback consumes it and publishes the audible clock.
+// Seeks and decoder work happen outside the stream lock and outside the callback.
+auto sdl_preview_output_t::fill_loop_queue(std::uint64_t generation) -> bool {
+    audio_stream_lock_t lock{stream_};
+    if (!lock) {
+        callback_failure_.store(callback_failure_t::device, std::memory_order_release);
+        output_playing_.store(false, std::memory_order_release);
+        output_playhead_cleared_.store(true, std::memory_order_release);
+        return false;
+    }
+    if (generation != refill_generation_.load(std::memory_order_acquire) ||
+        !loop_enabled_.load(std::memory_order_acquire) || !playing()) return false;
+    const auto current = session_.playhead();
+    if (!current.active || current.generation != output_generation_) {
+        callback_failure_.store(callback_failure_t::render, std::memory_order_release);
+        output_playing_.store(false, std::memory_order_release);
+        output_playhead_cleared_.store(true, std::memory_order_release);
+        return false;
+    }
+    const auto queued = SDL_GetAudioStreamQueued(stream_);
+    const auto target = loop_queue_target_bytes();
+    if (queued < 0) {
+        callback_failure_.store(callback_failure_t::device, std::memory_order_release);
+        output_playing_.store(false, std::memory_order_release);
+        output_playhead_cleared_.store(true, std::memory_order_release);
+        return false;
+    }
+    if (static_cast<std::uint64_t>(queued) >= target || switch_ready_) return false;
+    output_transport_generation_ = current.transport_generation;
+    render_requested(stream_, static_cast<int>(target - static_cast<std::uint64_t>(queued)));
+    publish_output_playhead();
+    return session_.playhead().timeline_frame >= loop_end_frame_.load(std::memory_order_relaxed);
+}
+
+auto sdl_preview_output_t::refill_loop_output(std::uint64_t generation,
+    audio::preview_session_pump_result_t result) -> audio::preview_session_pump_result_t {
+    if (!result && result.status != audio::preview_session_pump_status_t::loop_boundary) return result;
+    const auto expected = output_playhead_.read().generation;
+    while (fill_loop_queue(generation)) {
+        const auto restarted = session_.restart_loop(expected);
+        if (!restarted) {
+            result.status = audio::preview_session_pump_status_t::materialize_failed;
+            return result;
+        }
+        result = session_.pump();
+        if (!result) return result;
+    }
+    if (result.status == audio::preview_session_pump_status_t::loop_boundary)
+        result.status = audio::preview_session_pump_status_t::ready;
+    return result;
 }
 
 auto sdl_preview_output_t::pause_device() noexcept -> bool {
@@ -214,8 +274,6 @@ auto sdl_preview_output_t::start(
 }
 
 auto sdl_preview_output_t::seek(std::uint64_t sample_frame) -> sdl_preview_start_result_t {
-    loop_restart_pending_ = false;
-    loop_disable_pending_.store(false, std::memory_order_release);
     if (stream_ == nullptr) {
         return {.status = sdl_preview_start_status_t::unavailable,
                 .session = std::nullopt,
@@ -263,31 +321,38 @@ auto sdl_preview_output_t::seek(std::uint64_t sample_frame) -> sdl_preview_start
     return finish_start(std::move(result));
 }
 
+auto sdl_preview_output_t::set_loop_output_region(
+    std::optional<audio::preview_loop_region_t> region) -> bool {
+    audio_stream_lock_t lock{stream_};
+    if (stream_ && !lock) return false;
+    if (region) {
+        loop_begin_frame_.store(region->begin_frame, std::memory_order_relaxed);
+        loop_end_frame_.store(region->end_frame, std::memory_order_relaxed);
+    }
+    loop_enabled_.store(region.has_value(), std::memory_order_release);
+    return true;
+}
+
 auto sdl_preview_output_t::set_loop_region(
     std::optional<audio::preview_loop_region_t> region) -> bool {
-    const auto was_looping = loop_enabled_.load(std::memory_order_acquire);
-    const auto old_end = loop_end_frame_.load(std::memory_order_relaxed);
-    const bool reached_boundary = !region && was_looping &&
-        rendered_source_frame_.load(std::memory_order_acquire) >= old_end;
-    const bool drain_boundary = !region && (loop_restart_pending_ || reached_boundary);
-    if (drain_boundary) loop_disable_pending_.store(true, std::memory_order_release);
+    if (region && region->begin_frame >= region->end_frame) return false;
+    const bool was_looping = loop_enabled_.load(std::memory_order_acquire);
+    const auto audible = timeline_frame();
+    const auto previous_region = session_.loop_region();
+    set_refill_enabled(false);
     if (!session_.set_loop_region(region)) {
-        loop_disable_pending_.store(false, std::memory_order_release);
+        set_refill_enabled(playing() && session_.active());
         return false;
     }
-    if (region) loop_end_frame_.store(region->end_frame, std::memory_order_relaxed);
-    if (!region) {
-        if (drain_boundary) {
-            loop_enabled_.store(false, std::memory_order_release);
-            set_refill_enabled(false);
-        } else {
-            loop_enabled_.store(false, std::memory_order_release);
-            set_refill_enabled(playing() && session_.active());
-        }
-        loop_restart_pending_ = false;
-    } else {
-        loop_enabled_.store(true, std::memory_order_release);
+    if (!set_loop_output_region(region)) {
+        static_cast<void>(session_.set_loop_region(previous_region));
+        set_refill_enabled(playing() && session_.active());
+        return false;
     }
+    // Discard prefetched repeats when disabling, and continue from the audible
+    // source position rather than from the worker's later materialization cursor.
+    if (!region && was_looping && playing()) return static_cast<bool>(seek(audible));
+    set_refill_enabled(playing() && session_.active());
     return true;
 }
 
@@ -303,31 +368,6 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
             .status = callback_failure == callback_failure_t::device
                           ? sdl_preview_service_status_t::device_failed
                           : sdl_preview_service_status_t::render_failed,
-            .pump = std::nullopt,
-            .rate_unavailable = rate_unavailable,
-            .silenced_voices = silenced_voices,
-            .silenced_music_voices = silenced_music_voices,
-        };
-    }
-    if (loop_disable_pending_.load(std::memory_order_acquire)) {
-        if (published_latency_frames() != 0) return std::nullopt;
-        loop_disable_pending_.store(false, std::memory_order_release);
-        const auto resumed = seek(loop_end_frame_.load(std::memory_order_relaxed));
-        return sdl_preview_service_result_t{
-            .status = resumed ? sdl_preview_service_status_t::ready
-                              : sdl_preview_service_status_t::pump_failed,
-            .rate_unavailable = rate_unavailable,
-            .silenced_voices = silenced_voices,
-            .silenced_music_voices = silenced_music_voices,
-        };
-    }
-    if (loop_restart_pending_) {
-        const auto restart = service_loop_restart();
-        if (restart == loop_restart_status_t::waiting_for_drain) return std::nullopt;
-        return sdl_preview_service_result_t{
-            .status = restart == loop_restart_status_t::restarted
-                          ? sdl_preview_service_status_t::ready
-                          : sdl_preview_service_status_t::pump_failed,
             .pump = std::nullopt,
             .rate_unavailable = rate_unavailable,
             .silenced_voices = silenced_voices,
@@ -361,9 +401,6 @@ auto sdl_preview_output_t::service_refill_result(
     }
     if (pumped->decode && pumped->decode->status == audio::preview_pump_status_t::stale_generation)
         return std::nullopt;
-    if (pumped->status == audio::preview_session_pump_status_t::loop_boundary)
-        return service_loop_boundary(std::move(*pumped), rate_unavailable,
-                                     silenced_voices, silenced_music_voices);
     return sdl_preview_service_result_t{
         .status = *pumped ? sdl_preview_service_status_t::ready
                          : sdl_preview_service_status_t::pump_failed,
@@ -374,42 +411,8 @@ auto sdl_preview_output_t::service_refill_result(
     };
 }
 
-auto sdl_preview_output_t::service_loop_boundary(
-    audio::preview_session_pump_result_t pumped, bool rate_unavailable,
-    std::uint64_t silenced_voices, std::uint64_t silenced_music_voices)
-    -> std::optional<sdl_preview_service_result_t> {
-    loop_restart_pending_ = true;
-    const auto restart = service_loop_restart();
-    if (restart == loop_restart_status_t::waiting_for_drain) return std::nullopt;
-    if (restart != loop_restart_status_t::restarted)
-        pumped.status = audio::preview_session_pump_status_t::materialize_failed;
-    else
-        pumped.status = audio::preview_session_pump_status_t::ready;
-    return sdl_preview_service_result_t{
-        .status = pumped ? sdl_preview_service_status_t::ready
-                         : sdl_preview_service_status_t::pump_failed,
-        .pump = std::move(pumped),
-        .rate_unavailable = rate_unavailable,
-        .silenced_voices = silenced_voices,
-        .silenced_music_voices = silenced_music_voices,
-    };
-}
-
-auto sdl_preview_output_t::service_loop_restart() -> loop_restart_status_t {
-    if (!loop_restart_pending_) return loop_restart_status_t::none;
-    if (published_latency_frames() != 0) return loop_restart_status_t::waiting_for_drain;
-    loop_restart_pending_ = false;
-    if (!playing()) return loop_restart_status_t::failed;
-    const auto loop = session_.loop_region();
-    if (!loop) return loop_restart_status_t::failed;
-    return static_cast<bool>(seek(loop->begin_frame)) ? loop_restart_status_t::restarted
-                                                       : loop_restart_status_t::failed;
-}
-
 auto sdl_preview_output_t::stop() noexcept -> audio::transport_stop_result_t {
     loop_enabled_.store(false, std::memory_order_release);
-    loop_restart_pending_ = false;
-    loop_disable_pending_.store(false, std::memory_order_release);
     set_refill_enabled(false);
     output_playing_.store(false, std::memory_order_release);
     output_playhead_cleared_.store(true, std::memory_order_release);
@@ -482,7 +485,8 @@ auto sdl_preview_output_t::read_output_playhead() const noexcept -> audio::playh
     const bool completed_tail = state.source_finished && current.generation > state.generation &&
                                current.generation - state.generation == 1;
     const bool replaced = current.active
-        ? current.transport_generation != state.transport_generation
+        ? loop_enabled_.load(std::memory_order_acquire) ? current.generation != state.generation
+            : current.transport_generation != state.transport_generation
         : !completed_tail;
     if (replaced) return {.generation = state.generation};
     if (!playing()) state.active = false;
@@ -493,11 +497,16 @@ void sdl_preview_output_t::publish_output_playhead() noexcept {
     const auto rendered = rendered_source_frame_.load(std::memory_order_acquire);
     const auto latency = source_latency_frames();
     const auto start = output_start_frame_.load(std::memory_order_acquire);
-    const auto audible = rendered > latency ? std::max(start, rendered - latency) : start;
+    auto audible = rendered > latency ? std::max(start, rendered - latency) : start;
+    const bool looping = loop_enabled_.load(std::memory_order_acquire);
+    const auto begin = loop_begin_frame_.load(std::memory_order_relaxed);
+    const auto end = loop_end_frame_.load(std::memory_order_relaxed);
+    if (looping && end > begin && audible >= begin) audible = begin + (audible - begin) % (end - begin);
     published_latency_frames_.store(latency, std::memory_order_release);
     session_.set_output_latency_frames(latency);
+    session_.set_output_playhead(output_generation_, audible);
     output_playhead_.publish({.active = playing(), .timeline_frame = audible,
-        .start_frame = start, .generation = output_generation_,
+        .start_frame = looping ? begin : start, .generation = output_generation_,
         .transport_generation = output_transport_generation_, .source_finished = source_finished_});
 }
 
@@ -588,14 +597,19 @@ void SDLCALL sdl_preview_output_t::stream_callback(void* userdata, SDL_AudioStre
             output->fade_total_ * sizeof(float) * audio::output_channel_count;
         additional_amount = static_cast<int>(std::min<long double>(bytes, std::numeric_limits<int>::max()));
     }
-    if (additional_amount > 0 && output->playing()) output->render_requested(stream, additional_amount);
+    if (additional_amount > 0 && output->playing()) {
+        if (output->loop_enabled_.load(std::memory_order_acquire)) {
+            output->refill_requested_.store(true, std::memory_order_release);
+            output->refill_ready_.notify_one();
+        } else output->render_requested(stream, additional_amount);
+    }
     output->publish_output_playhead();
 }
 
 auto sdl_preview_output_t::render_source(std::size_t frames) noexcept -> std::size_t {
-    if (loop_disable_pending_.load(std::memory_order_acquire)) return 0;
-    const auto cursor = rendered_source_frame_.load(std::memory_order_acquire);
     const auto loop_enabled = loop_enabled_.load(std::memory_order_acquire);
+    const auto cursor = loop_enabled ? session_.playhead().timeline_frame
+        : rendered_source_frame_.load(std::memory_order_acquire);
     const auto loop_end = loop_end_frame_.load(std::memory_order_relaxed);
     const auto source_end = loop_enabled ? loop_end : source_end_frame_;
     if (loop_enabled && cursor >= loop_end) return 0;
@@ -607,22 +621,23 @@ auto sdl_preview_output_t::render_source(std::size_t frames) noexcept -> std::si
         return 0;
     }
     if (count == 0) return 0;
-    const auto rendered = session_.render(std::span{source_scratch_.data(), count * 2});
+    const auto rendered = session_.render(std::span{source_scratch_.data(), count * 2}, output_generation_);
     if (rendered.status == audio::preview_session_render_status_t::priming) return 0;
     if (rendered.status == audio::preview_session_render_status_t::underrun) {
         silenced_voices_.fetch_add(rendered.mix.dropped_voices, std::memory_order_relaxed);
         silenced_music_voices_.fetch_add(rendered.mix.dropped_music_voices, std::memory_order_relaxed);
     }
-    if (rendered.status == audio::preview_session_render_status_t::transport_failed ||
+    if (count > std::numeric_limits<std::uint64_t>::max() - rendered_source_frame_.load(std::memory_order_acquire) ||
+        rendered.status == audio::preview_session_render_status_t::transport_failed ||
         rendered.status == audio::preview_session_render_status_t::stale_generation ||
         rendered.status == audio::preview_session_render_status_t::stopped) {
         callback_failure_.store(callback_failure_t::render, std::memory_order_release);
         output_playing_.store(false, std::memory_order_release);
         output_playhead_cleared_.store(true, std::memory_order_release);
-        static_cast<void>(session_.stop());
+        static_cast<void>(session_.stop(output_generation_));
         return 0;
     }
-    rendered_source_frame_.store(cursor + count, std::memory_order_release);
+    rendered_source_frame_.fetch_add(count, std::memory_order_release);
     if (rendered.status == audio::preview_session_render_status_t::complete ||
         (!loop_enabled && cursor + count == source_end_frame_))
         source_finished_ = true;
@@ -640,10 +655,6 @@ auto sdl_preview_output_t::render_block(std::size_t frames) noexcept -> std::siz
     while (written < frames) {
         const auto need = std::min(callback_frames, stretcher_.input_frames_needed(frames - written));
         const auto supplied = !source_finished_ && need != 0 ? render_source(need) : 0;
-        if (loop_enabled_.load(std::memory_order_acquire) &&
-            rendered_source_frame_.load(std::memory_order_acquire) >=
-                loop_end_frame_.load(std::memory_order_relaxed))
-            stretcher_.finish();
         const auto result = stretcher_.process(std::span{source_scratch_.data(), supplied * 2},
             std::span{scratch_.data() + written * 2, (frames - written) * 2});
         if (source_finished_) stretcher_.finish();
@@ -708,16 +719,11 @@ void sdl_preview_output_t::render_requested(SDL_AudioStream* stream,
             callback_failure_.store(callback_failure_t::device, std::memory_order_release);
             output_playing_.store(false, std::memory_order_release);
             output_playhead_cleared_.store(true, std::memory_order_release);
-            static_cast<void>(session_.stop());
+            static_cast<void>(session_.stop(output_generation_));
             return;
         }
         remaining = remaining > rendered_bytes ? remaining - rendered_bytes : 0;
-        // A finite loop iteration also ends the SDL converter input. Without
-        // flushing, reduced-rate resampling retains lookahead and never drains.
-        const bool loop_boundary = loop_enabled_.load(std::memory_order_acquire) &&
-            rendered_source_frame_.load(std::memory_order_acquire) >=
-                loop_end_frame_.load(std::memory_order_relaxed);
-        if (output_drained_.load(std::memory_order_acquire) || loop_boundary) {
+        if (output_drained_.load(std::memory_order_acquire)) {
             static_cast<void>(SDL_FlushAudioStream(stream));
             break;
         }

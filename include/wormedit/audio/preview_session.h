@@ -72,7 +72,7 @@ struct preview_loop_region_t {
     auto operator==(const preview_loop_region_t&) const -> bool = default;
 };
 
-// Owns one chart-play generation and its monotonic normalized timeline.
+// Owns one chart-play generation and its normalized sample-frame timeline.
 // start()/seek() enqueue initial work without decoding; pump() runs on the decode
 // worker (or explicitly in headless owners). render() performs only the
 // cache-resident transport mix. The immutable schedule must outlive the active
@@ -92,13 +92,22 @@ class preview_session_t {
     [[nodiscard]] auto seek(std::uint64_t sample_frame, preview_pump_options_t options = {})
         -> preview_session_start_result_t;
     [[nodiscard]] auto pump(preview_pump_options_t options = {}) -> preview_session_pump_result_t;
-    [[nodiscard]] auto render(std::span<float> interleaved_stereo)
+    // Output producers can require their owned generation; stale work emits
+    // silence and leaves a replacement session untouched.
+    [[nodiscard]] auto render(std::span<float> interleaved_stereo,
+        std::optional<std::uint64_t> expected_generation = {})
         -> preview_session_render_result_t;
-    [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
+    [[nodiscard]] auto stop(std::optional<std::uint64_t> expected_generation = {}) noexcept -> transport_stop_result_t;
 
-    // Rendering clamps at end_frame and never seeks or changes transport generations.
-    // pump() reports a loop boundary; output owners perform the seek on their control
-    // thread so device queues and their source clocks can be reset together.
+    // Rendering clamps at end_frame and never seeks. An output refill worker can
+    // prepare the next iteration while already queued PCM continues playing.
+    // The expected chart-play generation prevents a stale wrap after seek/Stop.
+    [[nodiscard]] auto restart_loop(std::uint64_t expected_generation)
+        -> preview_session_start_result_t;
+    // An output owner publishes its audible clock independently of the producer
+    // cursor. A replacement generation automatically invalidates this estimate.
+    // The output owner serializes these publications.
+    void set_output_playhead(std::uint64_t generation, std::uint64_t frame) noexcept;
     [[nodiscard]] auto set_loop_region(std::optional<preview_loop_region_t> region) -> bool;
     [[nodiscard]] auto loop_region() const -> std::optional<preview_loop_region_t>;
     // Whether a loop region is set, without the session mutex (which rendering holds for a
@@ -133,7 +142,7 @@ class preview_session_t {
 
   private:
     [[nodiscard]] auto prime_started(preview_bridge_start_result_t started,
-                                     std::uint64_t timeline_frame, preview_pump_options_t options)
+                                     std::uint64_t timeline_frame, preview_pump_options_t options, bool loop_restart = false)
         -> preview_session_start_result_t;
     void clear_state() noexcept;
     void publish_playhead() noexcept;
@@ -142,7 +151,9 @@ class preview_session_t {
     transport_t& transport_;
     preview_transport_bridge_t& bridge_;
     playhead_snapshot_t playhead_;
+    playhead_snapshot_t output_playhead_;
     std::uint64_t generation_{};
+    std::atomic<std::uint64_t> loop_restart_generation_{};
     mutable std::mutex mutex_;
     std::optional<session_token_t> token_;
     bool prime_pending_{};

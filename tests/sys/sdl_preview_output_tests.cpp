@@ -362,27 +362,22 @@ auto exercise_sdl_loop_restart(std::size_t rate_index = wormedit::audio::playbac
     }
     const bool start_clock_aligned = output.timeline_frame() == loop_begin;
     const auto initial_token = bridge.session_token();
+    const auto generation = session.playhead().generation;
     const auto deadline = SDL_GetTicks() + 2'000;
-    while (session.timeline_frame() < loop_end && SDL_GetTicks() < deadline) SDL_Delay(1);
-    if (session.timeline_frame() != loop_end) {
-        static_cast<void>(output.stop());
-        output.close();
-        return false;
+    auto previous = output.timeline_frame();
+    bool wrapped{}, bounded = true;
+    while (!wrapped && SDL_GetTicks() < deadline) {
+        const auto frame = output.timeline_frame();
+        bounded = bounded && frame >= loop_begin && frame < loop_end;
+        wrapped = frame < previous;
+        previous = frame;
+        SDL_Delay(1); // No control service is needed to prepare a wrap.
     }
-    SDL_Delay(20);
-    const bool worker_waited_for_control = session.timeline_frame() == loop_end &&
-        bridge.session_token() == initial_token;
-    bool restarted{};
-    while (!restarted && SDL_GetTicks() < deadline) {
-        const auto serviced = output.service();
-        if (serviced && !*serviced) break;
-        const auto token = bridge.session_token();
-        restarted = token && initial_token && token->generation > initial_token->generation &&
-                    session.timeline_frame() < loop_end;
-        SDL_Delay(1);
-    }
-    const bool repeated = start_clock_aligned && worker_waited_for_control && restarted &&
-        output.timeline_frame() >= loop_begin && output.timeline_frame() < loop_end && output.playing() &&
+    const auto token = bridge.session_token();
+    const auto serviced = output.service();
+    const bool repeated = start_clock_aligned && bounded && wrapped && token && initial_token &&
+        token->generation > initial_token->generation && session.playhead().generation == generation &&
+        (!serviced || static_cast<bool>(*serviced)) && output.playing() &&
         session.loop_region() == std::optional<preview_loop_region_t>{loop};
     static_cast<void>(output.stop());
     std::array<float, 32> stopped{};
@@ -482,22 +477,17 @@ auto exercise_sdl_silent_tail_loop() -> bool {
     }
     const auto initial = bridge.session_token();
     const auto deadline = SDL_GetTicks() + 2'000;
-    const bool reached_end = wait_for_session_frame(session, loop_end, deadline);
-    const bool stayed_active = session.active() && output.playing() &&
-                               session.timeline_frame() == loop_end;
-    SDL_Delay(20);
-    const bool worker_waited = bridge.session_token() == initial &&
-                               session.timeline_frame() == loop_end;
-    bool restarted{};
-    while (!restarted && SDL_GetTicks() < deadline) {
-        const auto serviced = output.service();
-        if (serviced && !*serviced) break;
-        const auto token = bridge.session_token();
-        restarted = token && initial && token->generation > initial->generation &&
-                    session.timeline_frame() < loop_end;
+    auto previous = output.timeline_frame();
+    bool wrapped{};
+    while (!wrapped && SDL_GetTicks() < deadline) {
+        const auto frame = output.timeline_frame();
+        wrapped = frame < previous;
+        previous = frame;
         SDL_Delay(1);
     }
-    const bool looped = reached_end && stayed_active && worker_waited && restarted;
+    const auto token = bridge.session_token();
+    const bool looped = wrapped && session.active() && output.playing() && token && initial &&
+        token->generation > initial->generation;
     static_cast<void>(output.stop());
     output.close();
     return looped;
@@ -534,8 +524,8 @@ auto exercise_sdl_loop_disable_at_boundary() -> bool {
         return false;
     }
     const auto deadline = SDL_GetTicks() + 2'000;
-    const auto at_boundary = wait_for_session_frame(session, loop_end, deadline);
-    SDL_Delay(20); // Let the refill worker publish its pending boundary marker.
+    while (output.timeline_frame() < loop_end - 1024 && SDL_GetTicks() < deadline) SDL_Delay(1);
+    const auto at_boundary = output.timeline_frame() >= loop_end - 1024;
     const bool disabled = output.set_loop_region(std::nullopt);
     const auto continued = service_until_after_frame(output, session, loop_end, deadline);
     INFO("boundary=" << at_boundary << " disabled=" << disabled << " continued=" << continued
@@ -986,7 +976,7 @@ TEST_CASE("SDL preview repeatedly closes idle and stopped refill workers",
     CHECK(exercise_preview_worker_closes(output, session, schedule, binding));
 }
 
-TEST_CASE("SDL loop restarts at the source tail on control service and Stop clears it",
+TEST_CASE("SDL loop wraps autonomously at the source tail and Stop clears it",
           "[integration][audio][sdl][preview][loop]") {
     REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
     REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_FREQUENCY, "44100"));
@@ -1009,7 +999,7 @@ TEST_CASE("SDL selection loops restart at every rate with either pitch mode",
     }
 }
 
-TEST_CASE("SDL loop can be disabled at a pending boundary and continue the chart",
+TEST_CASE("SDL loop can be disabled during a queued wrap and continue the chart",
           "[integration][audio][sdl][preview][loop]") {
     REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
     REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_FREQUENCY, "44100"));
@@ -1617,4 +1607,123 @@ TEST_CASE("Layer assist runtime filters stable memberships and deduplicates chor
     CHECK(preview.layer_assist_frames() == std::vector<std::uint64_t>{10,20});
     preview.layer_assist_chart = chart_id_t{8};
     CHECK(preview.layer_assist_frames().empty());
+}
+
+namespace {
+auto capture_loop_silence(std::size_t rate_index, bool preserve_pitch, std::uint64_t length)
+    -> std::size_t {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    if (!SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy") || !SDL_InitSubSystem(SDL_INIT_AUDIO)) return 999'999;
+    const preview_audio_subsystem_t audio_subsystem;
+    decoded_source_registry_t sources;
+    const auto source = sources.register_generated_source({
+        .source = {"t559-loop-continuity", "constant-v1"},
+        .interleaved_stereo = std::vector<float>(8192 * 2, 0.25F)});
+    if (!source) return 999'999;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    sys::sdl_preview_output_t output{session};
+    if (!output.open()) return 999'999;
+    device_capture_t capture{output.audio_device_id()};
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.music = preview_schedule_t::music_event_t{.resource = resource_id_t{1}, .frame_count = 8192};
+    const preview_object_source_binding_t binding{
+        .object = object_id_t{std::numeric_limits<std::uint64_t>::max()},
+        .voices = {{.source = source.binding->source, .frame_count = 8192}}};
+    if (!output.set_playback_rate(playback_rates[rate_index]) || !output.set_keep_pitch(preserve_pitch) ||
+        !output.set_loop_region(preview_loop_region_t{1024, 1024 + length}) ||
+        !output.start(schedule, std::span{&binding, 1})) return 999'999;
+    const auto deadline = SDL_GetTicks() + 2000;
+    while (capture.count.load(std::memory_order_acquire) < 44100 / 2 && SDL_GetTicks() < deadline)
+        SDL_Delay(2); // Deliberately never service the frontend across the wraps.
+    capture.detach();
+    const auto count = capture.count.load(std::memory_order_acquire);
+    static_cast<void>(output.stop());
+    output.close();
+    if (count < 44100 / 2) return 999'999;
+    std::size_t run{}, longest{};
+    for (const auto sample : std::span(capture.samples).subspan(44100 / 5, 44100 / 4)) {
+        run = std::abs(sample) < 0.01F ? run + 1 : 0;
+        longest = std::max(longest, run);
+    }
+    return longest;
+}
+} // namespace
+TEST_CASE("Loop PCM stays continuous without frontend service at every rate and pitch mode", "[integration][audio][sdl][loop-continuity][T559]") {
+    for (std::size_t rate = 0; rate < wormedit::audio::playback_rates.size(); ++rate) {
+        for (const bool preserve : {false, true}) {
+            CAPTURE(rate, preserve);
+            const auto silence = capture_loop_silence(rate, preserve, 128);
+            INFO("Longest unintended silent run: " << silence << " device frames");
+            CHECK(silence <= 2);
+        }
+    }
+}
+
+namespace {
+auto loop_clock_stays_owned() -> bool {
+    using namespace wormedit::sys;
+    t276_output_fixture_t fixture;
+    if (!fixture.ready || !fixture.output.set_loop_region(wormedit::audio::preview_loop_region_t{1024, 1152}) ||
+        !fixture.output.seek(1024)) return false;
+    const auto generation = fixture.session.playhead().generation;
+    const auto deadline = SDL_GetTicksNS() + 300'000'000ULL;
+    while (SDL_GetTicksNS() < deadline) {
+        const auto state = sdl_preview_output_test_access_t::snapshot(fixture.output);
+        if (!state.active || state.timeline_frame < 1024 || state.timeline_frame >= 1152 ||
+            state.generation != generation) return false;
+        std::this_thread::yield();
+    }
+    return true;
+}
+} // namespace
+TEST_CASE("Loop prefetch never retires the audible play generation during an internal wrap", "[integration][audio][sdl][loop-clock][T559]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    CHECK(loop_clock_stays_owned());
+}
+
+namespace {
+auto stale_loop_work_preserves_replacement() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    using access = sys::sdl_preview_output_test_access_t;
+    t276_output_fixture_t fixture;
+    if (!fixture.ready || !fixture.output.set_loop_region(preview_loop_region_t{1024, 1152}) ||
+        !fixture.output.seek(1024) || !access::lock_stream(fixture.output)) return false;
+    const auto old = fixture.session.playhead().generation;
+    const auto replaced = fixture.session.seek(1040);
+    std::array<float, 32> samples;
+    samples.fill(1.0F);
+    const auto rendered = fixture.session.render(samples, old);
+    static_cast<void>(fixture.session.stop(old));
+    const auto wrapped = fixture.session.restart_loop(old);
+    const auto hidden = access::snapshot(fixture.output);
+    const bool protected_session = replaced && !wrapped && fixture.session.active() &&
+        fixture.session.playhead().generation != old && !hidden.active && hidden.timeline_frame == 0 &&
+        rendered.status == preview_session_render_status_t::stale_generation &&
+        std::ranges::all_of(samples, [](float sample) { return sample == 0; });
+    access::unlock_stream(fixture.output);
+    SDL_Delay(30);
+    return protected_session && fixture.session.active() && fixture.output.timeline_frame() == 0;
+}
+} // namespace
+TEST_CASE("Stale loop render restart and Stop cannot mutate a replacement generation", "[integration][audio][sdl][loop-generation][T559]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    CHECK(stale_loop_work_preserves_replacement());
+}
+
+TEST_CASE("One-frame and callback-sized loops remain continuous with either pitch mode", "[integration][audio][sdl][loop-continuity][T559]") {
+    for (const auto length : {1U, 4096U}) {
+        for (const bool preserve : {false, true}) {
+            CAPTURE(length, preserve);
+            CHECK(capture_loop_silence(wormedit::audio::playback_rates.size() - 1, preserve, length) <= 2);
+        }
+    }
 }

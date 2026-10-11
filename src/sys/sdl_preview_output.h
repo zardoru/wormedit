@@ -55,8 +55,8 @@ struct sdl_preview_service_result_t {
 };
 
 // SDL3 output for an owned chart-preview timeline. The stream lock serializes
-// callback rendering with start/seek/Stop, while decoder/materialization work
-// runs on one bounded refill worker; service() reads its latest generation result.
+// rendering with start/seek/Stop. The refill worker decodes and queues loop PCM
+// ahead of the device; service() only reads its latest generation result.
 class sdl_preview_output_t {
   public:
     explicit sdl_preview_output_t(audio::preview_session_t& session) : session_(session) {}
@@ -110,16 +110,10 @@ class sdl_preview_output_t {
     [[nodiscard]] auto pause_device() noexcept -> bool;
     [[nodiscard]] auto resume_device() noexcept -> bool;
     [[nodiscard]] auto finish_start(sdl_preview_start_result_t result) -> sdl_preview_start_result_t;
-    enum class loop_restart_status_t { none, waiting_for_drain, restarted, failed };
-    [[nodiscard]] auto service_loop_restart() -> loop_restart_status_t;
     [[nodiscard]] auto service_refill_result(
         std::optional<audio::preview_session_pump_result_t> pumped,
         bool rate_unavailable, std::uint64_t silenced_voices,
         std::uint64_t silenced_music_voices)
-        -> std::optional<sdl_preview_service_result_t>;
-    [[nodiscard]] auto service_loop_boundary(
-        audio::preview_session_pump_result_t pumped, bool rate_unavailable,
-        std::uint64_t silenced_voices, std::uint64_t silenced_music_voices)
         -> std::optional<sdl_preview_service_result_t>;
     void reset_output(std::uint64_t frame) noexcept;
     [[nodiscard]] auto read_output_playhead() const noexcept -> audio::playhead_state_t;
@@ -132,6 +126,11 @@ class sdl_preview_output_t {
     void begin_fade(bool preserve, rational_t rate) noexcept;
 
     void refill_loop(std::stop_token stop);
+    [[nodiscard]] auto refill_loop_output(std::uint64_t generation,
+        audio::preview_session_pump_result_t result) -> audio::preview_session_pump_result_t;
+    [[nodiscard]] auto fill_loop_queue(std::uint64_t generation) -> bool;
+    [[nodiscard]] auto loop_queue_target_bytes() const noexcept -> std::uint64_t;
+    [[nodiscard]] auto set_loop_output_region(std::optional<audio::preview_loop_region_t> region) -> bool;
     void set_refill_enabled(bool enabled) noexcept;
     [[nodiscard]] auto take_refill_result() -> std::optional<audio::preview_session_pump_result_t>;
 
@@ -150,7 +149,8 @@ class sdl_preview_output_t {
     std::mutex refill_mutex_;
     std::condition_variable refill_ready_;
     std::jthread refill_worker_;
-    std::uint64_t refill_generation_{};
+    std::atomic<std::uint64_t> refill_generation_{};
+    std::atomic<bool> refill_requested_{};
     bool refill_enabled_{};
     std::optional<audio::preview_session_pump_result_t> refill_result_;
     SDL_AudioStream* stream_{};
@@ -174,9 +174,8 @@ class sdl_preview_output_t {
     bool source_finished_{};
     std::atomic<bool> output_drained_{};
     std::atomic<bool> loop_enabled_{};
+    std::atomic<std::uint64_t> loop_begin_frame_{};
     std::atomic<std::uint64_t> loop_end_frame_{};
-    std::atomic<bool> loop_disable_pending_{};
-    bool loop_restart_pending_{};
     std::size_t fade_remaining_{};
     std::size_t fade_total_{};
     bool have_output_{};

@@ -2420,6 +2420,22 @@ auto select_compose_timing_marker(const WormUiComposeInputAction& input,
     return std::nullopt;
 }
 
+// One policy for timing pointers: clamp to the viewport, resolve a measure-local row,
+// and reject failed snapping. Never silently publish an unsnapped edit.
+auto timing_pointer_row(compose_input_context_t& context, const wormedit::chart_document_t& chart,
+                      const wormedit::editor_interaction_view_model_t& view,
+                      const wormedit::measure_index_t& index, double y_pixels)
+    -> std::optional<std::uint64_t> {
+    if (!std::isfinite(y_pixels)) return std::nullopt;
+    const auto y = std::clamp(y_pixels, 0.0, std::max(0.0, view.viewport_height_pixels - 0.001));
+    const auto position = context.position_at_compose_y_unrestricted(chart, view, y);
+    const auto row = position ? wormedit::absolute_row(index, *position) : std::nullopt;
+    if (!row) return std::nullopt;
+    const auto snapped = wormedit::snap_absolute_row(chart, *row,
+                                                     wormedit::edit_snap_denominator(chart, context.state));
+    return snapped;
+}
+
 auto move_compose_timing_selection(const WormUiComposeInputAction& input,
                                    compose_input_context_t& context,
                                    wormedit::editor_interaction_result_t& result,
@@ -2437,15 +2453,10 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
     if (std::ranges::find(context.state.selected_objects, clicked) ==
         context.state.selected_objects.end())
         return "Select the timing marker before dragging it.";
-    const auto y = std::clamp(input.y_pixels, 0.0,
-                              std::max(0.0, view->viewport_height_pixels - 0.001));
-    const auto position = context.position_at_compose_y_unrestricted(*chart, *view, y);
     const auto measures = build_measure_index(*chart);
     const auto* index = std::get_if<measure_index_t>(&measures);
-    const auto pointer_row = position && index ? absolute_row(*index, *position) : std::nullopt;
-    const auto target_row =
-        pointer_row ? snap_absolute_row(*chart, *pointer_row, edit_snap_denominator(*chart, context.state))
-                    : std::nullopt;
+    const auto target_row = index ? timing_pointer_row(context, *chart, *view, *index, input.y_pixels)
+                                  : std::nullopt;
     const auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
     if (!target_row || input.timing_anchor_chart_row > maximum || *target_row > maximum)
         return "Timing marker move has no valid destination row.";
@@ -2471,21 +2482,6 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
     result.diagnostics = moved.diagnostics;
     accepted = "Selected timing markers moved vertically.";
     return std::nullopt;
-}
-
-// The absolute row under a pointer, clamped into the chart's rows.
-auto kiai_pointer_row(compose_input_context_t& context, const wormedit::chart_document_t& chart,
-                      const wormedit::editor_interaction_view_model_t& view,
-                      const wormedit::measure_index_t& index, double y_pixels)
-    -> std::optional<std::uint64_t> {
-    if (!std::isfinite(y_pixels)) return std::nullopt;
-    const auto y = std::clamp(y_pixels, 0.0, std::max(0.0, view.viewport_height_pixels - 0.001));
-    const auto position = context.position_at_compose_y_unrestricted(chart, view, y);
-    const auto row = position ? wormedit::absolute_row(index, *position) : std::nullopt;
-    if (!row) return std::nullopt;
-    const auto snapped = wormedit::snap_absolute_row(chart, *row,
-                                                     wormedit::edit_snap_denominator(chart, context.state));
-    return snapped ? snapped : row;
 }
 
 // The Kiai rows a drag proposes, through the shared span geometry (span_manipulation.h). Edge 2
@@ -2518,11 +2514,11 @@ auto edit_compose_kiai_span(const WormUiComposeInputAction& input,
     if (context.application_state.timing_locked) return "Timing is locked.";
     const auto measures = build_measure_index(*chart);
     const auto* index = std::get_if<measure_index_t>(&measures);
-    const auto row = index ? kiai_pointer_row(context, *chart, *view, *index, input.y_pixels)
+    const auto row = index ? timing_pointer_row(context, *chart, *view, *index, input.y_pixels)
                            : std::nullopt;
     if (!row) return "Kiai edit has no valid destination row.";
     kiai_span_edit_t edit;
-    const auto anchor = kiai_pointer_row(context, *chart, *view, *index, input.span_anchor_y_pixels);
+    const auto anchor = timing_pointer_row(context, *chart, *view, *index, input.span_anchor_y_pixels);
     // Edges 0 and 1 drag the begin and end edge, 3 the body; 2 creates a new area.
     const kiai_span_t* span = nullptr;
     std::vector<kiai_span_t> spans;
@@ -2595,7 +2591,7 @@ auto edit_compose_speed_span(const WormUiComposeInputAction& input,
     const auto* index = std::get_if<measure_index_t>(&measures);
     const auto speed = std::ranges::find(chart->speeds, object_id_t{input.object_id}, &speed_event_t::id);
     if (!index || speed == chart->speeds.end()) return "The Speed event no longer exists.";
-    const auto row = kiai_pointer_row(context, *chart, *view, *index, input.y_pixels);
+    const auto row = timing_pointer_row(context, *chart, *view, *index, input.y_pixels);
     const auto begin_row = absolute_row(*index, speed->position);
     if (!row || !begin_row) return "Speed edit has no valid destination row.";
     // The span as drawn: from the event to the end of its transition.
@@ -2604,7 +2600,7 @@ auto edit_compose_speed_span(const WormUiComposeInputAction& input,
                                 : std::vector<speed_span_t>::const_iterator{};
     if (!projected || span == projected->spans.end())
         return "The Speed span is unavailable.";
-    const auto anchor = kiai_pointer_row(context, *chart, *view, *index, input.span_anchor_y_pixels);
+    const auto anchor = timing_pointer_row(context, *chart, *view, *index, input.span_anchor_y_pixels);
     if (!anchor) return "Speed edit has no valid destination row.";
     const auto original = span_rows_t{*begin_row, std::max<std::uint64_t>(
         *begin_row, static_cast<std::uint64_t>(std::llround(span->end_row)))};
@@ -2972,7 +2968,7 @@ auto move_compose_bookmark(const WormUiComposeInputAction& input,
         return "That beat-anchored bookmark is no longer available.";
     const auto measures = build_measure_index(*chart);
     const auto* index = std::get_if<measure_index_t>(&measures);
-    const auto row = index ? kiai_pointer_row(context, *chart, *view, *index, input.y_pixels)
+    const auto row = index ? timing_pointer_row(context, *chart, *view, *index, input.y_pixels)
                            : std::nullopt;
     const auto position = row ? position_at_absolute_row(*index, *row) : std::nullopt;
     if (!position) return "Bookmark move has no valid destination row.";

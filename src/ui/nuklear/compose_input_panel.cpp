@@ -53,6 +53,7 @@ static void reset_timing_marker_drag_capture() {
     state.timing_marker_candidate_active = false;
     state.timing_marker_drag_active = false;
     state.timing_marker_object_id = 0;
+    state.timing_marker_capture.cancel();
 }
 
 static void reset_bookmark_move_capture() {
@@ -67,6 +68,7 @@ static void reset_bga_event_move_capture() {
     state.bga_event_move_candidate_active = false;
     state.bga_event_move_active = false;
     state.bga_event_move_object_id = 0;
+    state.bga_capture.cancel();
 }
 
 static void reset_overview_capture() {
@@ -101,6 +103,14 @@ static void reset_tool_chip_capture() {
     state.tool_chip_pointer_canceled |= state.tool_chip_pointer_active;
 }
 
+static void reset_stage_capture() { state.timing_stage_capture.cancel(); }
+static void reset_span_capture() { state.span_capture.cancel(); state.kiai_drag_moved = false; }
+static void reset_recipe_capture() { state.recipe_capture.cancel(); state.recipe_drag_moved = false; }
+static void reset_fit_capture() { state.fit_capture.cancel(); }
+static void reset_beat_zero_capture() {
+    if (!state.waveform_offset_cancel_pending) state.beat_zero_capture.cancel();
+}
+
 struct compose_gesture_entry_t {
     bool worm_ui_nuklear_compose_state_t::*active;
     void (*reset)(){};
@@ -127,14 +137,14 @@ static constexpr auto compose_gesture_registry = std::to_array<compose_gesture_e
     {&worm_ui_nuklear_compose_state_t::bga_event_move_candidate_active},
     {&worm_ui_nuklear_compose_state_t::bookmark_move_active, reset_bookmark_move_capture},
     {&worm_ui_nuklear_compose_state_t::bookmark_move_candidate_active},
-    {&worm_ui_nuklear_compose_state_t::timing_stage_drag_active},
-    {&worm_ui_nuklear_compose_state_t::kiai_drag_active},
-    {&worm_ui_nuklear_compose_state_t::recipe_drag_active},
+    {&worm_ui_nuklear_compose_state_t::timing_stage_drag_active, reset_stage_capture},
+    {&worm_ui_nuklear_compose_state_t::kiai_drag_active, reset_span_capture},
+    {&worm_ui_nuklear_compose_state_t::recipe_drag_active, reset_recipe_capture},
     {&worm_ui_nuklear_compose_state_t::timing_marker_drag_active, reset_timing_marker_drag_capture},
     {&worm_ui_nuklear_compose_state_t::timing_marker_candidate_active},
-    {&worm_ui_nuklear_compose_state_t::beat_fit_drag_active},
-    {&worm_ui_nuklear_compose_state_t::offset_fit_drag_active},
-    {&worm_ui_nuklear_compose_state_t::waveform_beat_zero_drag_active},
+    {&worm_ui_nuklear_compose_state_t::beat_fit_drag_active, reset_fit_capture},
+    {&worm_ui_nuklear_compose_state_t::offset_fit_drag_active, reset_fit_capture},
+    {&worm_ui_nuklear_compose_state_t::waveform_beat_zero_drag_active, reset_beat_zero_capture},
     {&worm_ui_nuklear_compose_state_t::waveform_overview_drag_active, reset_overview_capture},
     {&worm_ui_nuklear_compose_state_t::measure_resize_active, reset_measure_capture},
     {&worm_ui_nuklear_compose_state_t::stem_lane_resize_cursor_requested, reset_stem_capture},
@@ -176,15 +186,16 @@ void set_waveform_offset_drag_action(WormUiWorkspaceAction* action,
     if (!action || action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE)
         return;
     action->audio_offset_drag_action = kind;
-    action->audio_offset_drag_chart_id = state.waveform_beat_zero_drag_chart_id;
-    action->audio_offset_drag_document_revision = state.waveform_beat_zero_drag_revision;
-    action->audio_offset_drag_sample_rate = state.waveform_beat_zero_drag_sample_rate;
+    action->audio_offset_drag_chart_id = state.beat_zero_capture.chart;
+    action->audio_offset_drag_document_revision = state.beat_zero_capture.revision;
+    action->audio_offset_drag_sample_rate = state.beat_zero_capture.sample_rate;
     action->audio_offset_drag_delta_frames = delta_frames;
 }
 
 void reset_waveform_offset_drag() {
     state.waveform_beat_zero_drag_active = false;
     state.waveform_beat_zero_drag_delta_frames = 0;
+    state.beat_zero_capture.cancel();
 }
 
 void append_compose_input(
@@ -266,7 +277,7 @@ void cancel_beat_fit_drag(WormUiWorkspaceAction* action) {
     if (state.beat_fit_drag_active) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL);
         state.beat_fit_drag_active = false;
-        state.beat_fit_anchor_screen_y = 0.0f;
+        state.fit_capture.cancel();
     }
 }
 
@@ -274,7 +285,7 @@ void cancel_offset_fit_drag(WormUiWorkspaceAction* action) {
     if (!state.offset_fit_drag_active) return;
     append_compose_input(action, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_CANCEL);
     state.offset_fit_drag_active = false;
-    state.beat_fit_anchor_screen_y = 0.0f;
+    state.fit_capture.cancel();
 }
 
 void
@@ -766,10 +777,9 @@ bool process_compose_double_clicks(const ComposeDoubleClickContext& input,
 }
 
 static auto timing_marker_capture_matches(const ComposePointerEventContext& input) -> bool {
-    return input.window_focused && input.view->scene_available &&
-           input.view->chart_id == state.timing_marker_chart_id &&
-           input.view->document_revision == state.timing_marker_revision &&
-           !input.view->waveform_timing_locked && !state.action_overflowed;
+    return input.window_focused &&
+           state.timing_marker_capture.matches(*input.view, input.view->waveform_timing_locked) &&
+           !state.action_overflowed;
 }
 
 static auto update_compose_timing_marker_drag(const ComposePointerEventContext& input) -> bool {
@@ -779,6 +789,8 @@ static auto update_compose_timing_marker_drag(const ComposePointerEventContext& 
         return true;
     }
     state.timing_marker_current_y_pixels = input.pointer_y;
+    state.timing_marker_drag_active |= state.timing_marker_capture.moved_past_threshold(
+        input.context->input.mouse.pos.x, input.context->input.mouse.pos.y);
     if (input.left_released) {
         if (state.timing_marker_drag_active) {
             append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE,
@@ -786,16 +798,13 @@ static auto update_compose_timing_marker_drag(const ComposePointerEventContext& 
                                  WORM_UI_COMPOSE_SELECTION_REPLACE,
                                  WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
                                  state.timing_marker_object_id, 0, false,
-                                 state.timing_marker_lane, state.timing_marker_chart_id,
-                                 state.timing_marker_revision,
+                                 state.timing_marker_lane, state.timing_marker_capture.chart,
+                                 state.timing_marker_capture.revision,
                                  state.timing_marker_chart_row);
         }
         reset_timing_marker_drag_capture();
         return true;
     }
-    if (!state.timing_marker_drag_active &&
-        std::abs(input.context->input.mouse.pos.y - state.timing_marker_anchor_screen_y) >= 4.0f)
-        state.timing_marker_drag_active = true;
     return true;
 }
 
@@ -856,6 +865,9 @@ static auto begin_compose_timing_marker_drag(const ComposePointerEventContext& i
     // Y-lock: these objects only move vertically, so a drag would have nowhere to go.
     if (marker->fixed_initial || marker->object_id == 0 ||
         input.view->waveform_timing_locked || has_modifier || input.view->y_lock) return true;
+    const auto& press = input.context->input.mouse.buttons[NK_BUTTON_LEFT].clicked_pos;
+    if (!state.timing_marker_capture.begin(*input.view, press.x, press.y,
+                                           input.view->waveform_timing_locked)) return true;
     state.timing_marker_candidate_active = true;
     state.timing_marker_drag_active = false;
     state.timing_marker_object_id = marker->object_id;
@@ -863,9 +875,6 @@ static auto begin_compose_timing_marker_drag(const ComposePointerEventContext& i
     state.timing_marker_lane = marker->lane;
     state.timing_marker_anchor_y_pixels = input.pointer_started_y;
     state.timing_marker_current_y_pixels = input.pointer_started_y;
-    state.timing_marker_anchor_screen_y = input.context->input.mouse.pos.y;
-    state.timing_marker_chart_id = input.view->chart_id;
-    state.timing_marker_revision = input.view->document_revision;
     return true;
 }
 
@@ -1096,9 +1105,7 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
 
 static auto update_bga_event_move_capture(const ComposePointerEventContext& input) -> bool {
     if (!state.bga_event_move_candidate_active) return false;
-    const bool valid = input.window_focused && input.view->scene_available &&
-        input.view->chart_id == state.bga_event_move_chart_id &&
-        input.view->document_revision == state.bga_event_move_revision &&
+    const bool valid = input.window_focused && state.bga_capture.matches(*input.view) &&
         state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off &&
         !state.action_overflowed;
     if (!valid || (!input.left_down && !input.left_released)) {
@@ -1106,6 +1113,8 @@ static auto update_bga_event_move_capture(const ComposePointerEventContext& inpu
         return true;
     }
     state.bga_event_move_current_y_pixels = input.pointer_y;
+    state.bga_event_move_active |= state.bga_capture.moved_past_threshold(
+        input.context->input.mouse.pos.x, input.context->input.mouse.pos.y, true);
     state.bga_event_move_current_x_pixels = input.pointer_x;
     if (input.left_released) {
         if (!state.bga_event_move_active) {
@@ -1129,7 +1138,7 @@ static auto update_bga_event_move_capture(const ComposePointerEventContext& inpu
                 WORM_UI_COMPOSE_SELECTION_REPLACE,
                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
                 state.bga_event_move_object_id, 0, false, WORM_UI_TIMING_LANE_BPM,
-                state.bga_event_move_chart_id, state.bga_event_move_revision,
+                state.bga_capture.chart, state.bga_capture.revision,
                 state.bga_event_move_anchor_row);
             if (input.action->compose_input_count != 0) {
                 auto& output = input.action->compose_inputs[input.action->compose_input_count - 1];
@@ -1141,10 +1150,6 @@ static auto update_bga_event_move_capture(const ComposePointerEventContext& inpu
         reset_bga_event_move_capture();
         return true;
     }
-    if (!state.bga_event_move_active &&
-        (std::abs(input.context->input.mouse.pos.y - state.bga_event_move_anchor_screen_y) >= 4.0f ||
-         std::abs(input.context->input.mouse.pos.x - state.bga_event_move_anchor_screen_x) >= 4.0f))
-        state.bga_event_move_active = true;
     return true;
 }
 
@@ -1165,15 +1170,13 @@ static auto begin_bga_event_move_capture(const ComposePointerEventContext& input
     const auto event = std::ranges::find(events, id, &WormUiComposeBgaEventView::event_id);
     if (event == events.end() || !event->selected)
         return false;
+    const auto& press = input.context->input.mouse.buttons[NK_BUTTON_LEFT].clicked_pos;
+    if (!state.bga_capture.begin(*input.view, press.x, press.y, false)) return false;
     state.bga_event_move_candidate_active = true;
     state.bga_event_move_object_id = id;
-    state.bga_event_move_chart_id = input.view->chart_id;
-    state.bga_event_move_revision = input.view->document_revision;
     state.bga_event_move_anchor_row = event->canvas_row;
     state.bga_event_move_anchor_y_pixels = input.pointer_started_y;
     state.bga_event_move_current_y_pixels = input.pointer_started_y;
-    state.bga_event_move_anchor_screen_y = input.left_clicked_screen_y;
-    state.bga_event_move_anchor_screen_x = input.context->input.mouse.buttons[NK_BUTTON_LEFT].clicked_pos.x;
     state.bga_event_move_current_x_pixels = input.pointer_started_x;
     return true;
 }

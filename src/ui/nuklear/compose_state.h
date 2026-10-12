@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ui/frontend.h"
+#include "ui/nuklear/compose_drag_capture.h"
 #include "ui/nuklear/keysound_list_state.h"
 #include "ui/nuklear/compose_bookmark_chooser.h"
 #include "ui/nuklear/compose_sound_picker.h"
@@ -296,6 +297,8 @@ struct worm_ui_nuklear_compose_state_t {
     bool note_move_candidate_active{};
     bool note_move_select_on_release{};
     bool note_move_active{};
+    compose_drag_capture_t timing_stage_capture{}, span_capture{}, recipe_capture{};
+    compose_drag_capture_t timing_marker_capture{}, fit_capture{}, beat_zero_capture{}, bga_capture{};
     bool timing_stage_drag_active{};
     // Kiai area edge or creation drag on the canvas; y values are viewport pixels.
     bool kiai_drag_active{};
@@ -329,10 +332,7 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t timing_marker_chart_row{};
     WormUiTimingLaneKind timing_marker_lane{WORM_UI_TIMING_LANE_BPM};
     double timing_marker_anchor_y_pixels{};
-    float timing_marker_anchor_screen_y{};
     double timing_marker_current_y_pixels{};
-    std::uint64_t timing_marker_chart_id{};
-    std::uint64_t timing_marker_revision{};
     bool inline_offset_open{};
     bool inline_offset_in_inspector{};
     bool inline_offset_focus_pending{};
@@ -418,23 +418,13 @@ struct worm_ui_nuklear_compose_state_t {
     std::array<char, 80> measure_resize_label{};
     bool offset_fit_drag_active{};
     std::uint64_t beat_fit_chart_row{};
-    std::uint64_t beat_fit_chart_id{};
-    std::uint64_t beat_fit_revision{};
-    std::uint64_t beat_fit_asset_id{};
-    std::uint32_t beat_fit_sample_rate{};
-    float beat_fit_anchor_screen_y{};
     std::uint8_t beat_fit_snap_step_index{};
     bool beat_fit_ctrl_held{};
     bool beat_fit_onset_snap_held{};
-    float waveform_beat_zero_drag_anchor_x{};
     float waveform_beat_zero_drag_width{};
     float waveform_beat_zero_drag_left{};
     double waveform_beat_zero_drag_span{1.0};
     std::uint64_t waveform_beat_zero_drag_total_frames{};
-    std::uint64_t waveform_beat_zero_drag_chart_id{};
-    std::uint64_t waveform_beat_zero_drag_revision{};
-    std::uint64_t waveform_beat_zero_drag_asset_id{};
-    std::uint32_t waveform_beat_zero_drag_sample_rate{};
     std::int64_t waveform_beat_zero_drag_delta_frames{};
     double note_move_anchor_x{};
     double note_move_anchor_y{};
@@ -546,13 +536,9 @@ struct worm_ui_nuklear_compose_state_t {
     bool bga_event_move_candidate_active{};
     bool bga_event_move_active{};
     std::uint64_t bga_event_move_object_id{};
-    std::uint64_t bga_event_move_chart_id{};
-    std::uint64_t bga_event_move_revision{};
     std::uint64_t bga_event_move_anchor_row{};
     double bga_event_move_anchor_y_pixels{};
     double bga_event_move_current_y_pixels{};
-    float bga_event_move_anchor_screen_y{};
-    float bga_event_move_anchor_screen_x{};
     double bga_event_move_current_x_pixels{};
     std::uint8_t bga_stack_kind{};
     bool bga_stack_open{};

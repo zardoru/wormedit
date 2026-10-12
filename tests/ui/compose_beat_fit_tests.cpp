@@ -1,11 +1,15 @@
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/compose_timing_geometry.h"
 #include <catch2/catch_test_macros.hpp>
 #include <array>
+#include <source_location>
 #include <catch2/generators/catch_generators.hpp>
 
 namespace {
-void verify_fit_event(bool value) { REQUIRE(value); }
+void verify_fit_event(bool value, std::source_location source = std::source_location::current()) {
+    INFO("Fit expectation at " << source.line()); REQUIRE(value);
+}
 auto fit_motion(float x, float y) -> SDL_Event {
     SDL_Event e{};
     e.type = SDL_EVENT_MOUSE_MOTION;
@@ -106,4 +110,253 @@ TEST_CASE("Group beat rail handles start fitting with the same guards as other b
     if (fit) verify_fit_event(fit->object_id == 480);
     beat.chart_row = 0;
     verify_fit_event(!worm_ui_nuklear_beat_fit_line(beat));
+}
+
+namespace {
+struct timing_drag_fixture_t {
+    nuklear_event_harness_t h{1600, 900};
+    WormUiComposeKiaiSpanView kiai{};
+    WormUiComposeSpeedSpanView speed{};
+    WormUiComposeRecipeAreaView recipe{};
+    timing_drag_fixture_t() {
+        auto& v = h.view().compose;
+        v.viewport_width_pixels = 900; v.viewport_height_pixels = 600;
+        v.playable_field_left_pixels = 500; v.playable_field_right_pixels = 850;
+        v.timing_lane_visibility_mask = 255;
+        kiai.bounds = {0, 200, 0, 400}; kiai.head_object_id = 10;
+        kiai.head_visible = kiai.tail_visible = true; kiai.end_row = 960;
+        speed.bounds = {0, 200, 0, 400}; speed.object_id = 20;
+        recipe.bounds = {0, 200, 0, 400}; recipe.recipe_id = 30;
+        recipe.lane = WORM_UI_TIMING_LANE_SCROLL; recipe.label = "Test";
+        recipe.begin_visible = recipe.end_visible = true;
+        v.kiai_spans = &kiai; v.kiai_span_count = 1;
+        v.speed_spans = &speed; v.speed_span_count = 1;
+        v.recipe_areas = &recipe; v.recipe_area_count = 1;
+        auto& s = worm_ui_nuklear_compose_state();
+        s.inspector_visible = s.layers_panel_visible = s.sounds_panel_visible = false;
+        (void)h.frame();
+    }
+    auto point(WormUiTimingLaneKind lane, double row_y) -> std::pair<float, float> {
+        const auto extent = wormedit::ui::compose_timing_lane_extent(h.view().compose, lane);
+        verify_fit_event(extent.has_value());
+        WormUiTestingRect rect{};
+        verify_fit_event(worm_ui_frontend_compose_viewport_for_testing(&rect));
+        return {rect.x + static_cast<float>((extent->first + extent->second) * .5 / 900 * rect.width),
+                rect.y + static_cast<float>(row_y / 600 * rect.height)};
+    }
+    auto press(WormUiTimingLaneKind lane, double row_y) -> std::pair<float, float> {
+        const auto p = point(lane, row_y);
+        (void)h.frame(std::array{fit_motion(p.first, p.second), fit_button(p.first, p.second, true)});
+        return p;
+    }
+};
+}
+
+TEST_CASE("Timing drags respect the timing lock before capture", "[event-harness][drag-capture]") {
+    const auto lane = GENERATE(WORM_UI_TIMING_LANE_KIAI, WORM_UI_TIMING_LANE_SPEED,
+                               WORM_UI_TIMING_LANE_SCROLL, WORM_UI_TIMING_LANE_BPM);
+    timing_drag_fixture_t f;
+    auto& v = f.h.view().compose;
+    if (lane == WORM_UI_TIMING_LANE_BPM) {
+        v.timing_stage_active = true; v.timing_stage_lane = lane; v.timing_stage_y_pixels = 200;
+        auto& t = f.h.view().timing;
+        t.stage_active = true; t.stage_lane = lane; t.stage_existing_object_id = 40;
+    }
+    v.waveform_timing_locked = true;
+    (void)f.h.frame();
+    (void)f.press(lane, 200);
+    const auto& s = worm_ui_nuklear_compose_state();
+    verify_fit_event(!s.kiai_drag_active && !s.recipe_drag_active && !s.timing_stage_drag_active);
+}
+
+TEST_CASE("Span drags retire before a locked stale or occluded release",
+          "[event-harness][drag-capture]") {
+    const auto lane = GENERATE(WORM_UI_TIMING_LANE_KIAI, WORM_UI_TIMING_LANE_SPEED,
+                               WORM_UI_TIMING_LANE_SCROLL);
+    const auto interruption = GENERATE(0, 1, 2, 3);
+    timing_drag_fixture_t f;
+    auto& v = f.h.view().compose;
+    const auto p = f.press(lane, 200);
+    verify_fit_event(worm_ui_nuklear_compose_state().kiai_drag_active ||
+                     worm_ui_nuklear_compose_state().recipe_drag_active);
+    (void)f.h.frame(std::array{fit_motion(p.first, p.second + 25)});
+    switch (interruption) {
+    case 0: v.waveform_timing_locked = true; break;
+    case 1: v.input_occluded = true; break;
+    case 2: ++v.document_revision; ++f.h.view().document_revision; break;
+    case 3: ++v.project_id; ++f.h.view().project_id; break;
+    }
+    const auto end = f.h.frame(std::array{fit_button(p.first, p.second + 25, false)});
+    verify_fit_event(!find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT));
+    verify_fit_event(!find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT));
+    verify_fit_event(!find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT));
+    const auto& s = worm_ui_nuklear_compose_state();
+    verify_fit_event(!s.kiai_drag_active && !s.recipe_drag_active);
+    verify_fit_event(!s.span_capture.active && !s.recipe_capture.active);
+}
+
+TEST_CASE("Span release uses the captured stamp and a screen pixel threshold",
+          "[event-harness][drag-capture]") {
+    const auto lane = GENERATE(WORM_UI_TIMING_LANE_KIAI, WORM_UI_TIMING_LANE_SPEED,
+                               WORM_UI_TIMING_LANE_SCROLL);
+    const auto distance = GENERATE(0.0f, 3.0f, 4.0f, 20.0f);
+    timing_drag_fixture_t f;
+    const auto p = f.press(lane, 400);
+    const auto end = f.h.frame(std::array{fit_motion(p.first, p.second + distance),
+                                        fit_button(p.first, p.second + distance, false)});
+    const auto kind = lane == WORM_UI_TIMING_LANE_KIAI ? WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT
+                    : lane == WORM_UI_TIMING_LANE_SPEED ? WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT
+                                                       : WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT;
+    const auto* edit = find_fit_input(end.get(), kind);
+    verify_fit_event((edit != nullptr) == (distance >= 4));
+    if (edit) {
+        verify_fit_event(edit->timing_chart_id == 1 && edit->timing_document_revision == 1);
+        verify_fit_event(edit->span_edge == WORM_UI_SPAN_HANDLE_END);
+    }
+    const auto& s = worm_ui_nuklear_compose_state();
+    verify_fit_event(!s.span_capture.active && !s.recipe_capture.active);
+}
+
+TEST_CASE("Staged timing uses the shared lock and threshold while retaining Apply semantics",
+          "[event-harness][drag-capture]") {
+    timing_drag_fixture_t f;
+    auto& v = f.h.view().compose;
+    auto& t = f.h.view().timing;
+    v.timing_stage_active = t.stage_active = true;
+    v.timing_stage_lane = t.stage_lane = WORM_UI_TIMING_LANE_BPM;
+    v.timing_stage_y_pixels = 200; t.stage_existing_object_id = 40;
+    (void)f.h.frame();
+    const auto p = f.press(WORM_UI_TIMING_LANE_BPM, 200);
+    const auto small = f.h.frame(std::array{fit_motion(p.first, p.second + 3)});
+    verify_fit_event(small.get().timing_stage_action == WORM_UI_TIMING_STAGE_NONE);
+    const auto move = f.h.frame(std::array{fit_motion(p.first, p.second + 20)});
+    verify_fit_event(move.get().timing_stage_action == WORM_UI_TIMING_STAGE_MOVE);
+    verify_fit_event(move.get().timing_chart_id == 1 && move.get().timing_document_revision == 1);
+    const auto end = f.h.frame(std::array{fit_button(p.first, p.second + 20, false)});
+    verify_fit_event(end.get().timing_stage_action == WORM_UI_TIMING_STAGE_NONE);
+    verify_fit_event(!worm_ui_nuklear_compose_state().timing_stage_capture.active);
+}
+
+TEST_CASE("Beat and offset fit share zero movement and source change cancellation",
+          "[event-harness][drag-capture]") {
+    const auto offset = GENERATE(false, true);
+    const auto interruption = GENERATE(0, 1, 2, 3, 4, 5);
+    CAPTURE(offset, interruption);
+    nuklear_event_harness_t h{1280, 900};
+    auto& v = h.view().compose;
+    WormUiComposeWaveformRowView wave{};
+    WormUiComposeGridLineView beat{};
+    beat.chart_row = 480; beat.kind = 1; beat.y_pixels = 120;
+    v.waveform_rows = &wave; v.waveform_row_count = 1;
+    v.grid_lines = &beat; v.grid_line_count = 1;
+    v.selected_audio_asset_id = 6; v.waveform_overview_sample_rate = 44100;
+    (void)h.frame();
+    WormUiTestingRect rect{};
+    verify_fit_event(worm_ui_frontend_compose_viewport_for_testing(&rect));
+    const auto x = rect.x + static_cast<float>(32 * rect.width / v.viewport_width_pixels);
+    const auto y = rect.y + static_cast<float>(120 * rect.height / v.viewport_height_pixels);
+    const auto modifiers = offset ? SDL_KMOD_SHIFT : SDL_KMOD_NONE;
+    const auto begin = h.frame(std::array{fit_motion(x, y), fit_button(x, y, true)}, modifiers);
+    verify_fit_event(find_fit_input(begin.get(), offset ? WORM_UI_COMPOSE_INPUT_OFFSET_FIT_BEGIN
+                                                       : WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN));
+    v.offset_fit_drag_active = offset; v.beat_fit_drag_active = !offset;
+    v.waveform_overview_total_frames = 441000;
+    v.beat_fit_chart_row = 480;
+    v.beat_fit_original_bpm_denominator = v.beat_fit_proposed_bpm_denominator = 1;
+    v.beat_fit_original_bpm_numerator = v.beat_fit_proposed_bpm_numerator = 120;
+    v.beat_fit_target_y_pixels = 120;
+    const auto distance = interruption == 0 ? 0.0f : 20.0f;
+    switch (interruption) {
+    case 1: ++v.selected_audio_asset_id; break;
+    case 2: ++v.waveform_overview_sample_rate; break;
+    case 3: v.waveform_timing_locked = true; break;
+    case 4: v.input_occluded = true; break;
+    default: break;
+    }
+    const auto end = h.frame(std::array{fit_motion(x, y + distance),
+                                       fit_button(x, y + distance, false)}, modifiers);
+    const auto expected = interruption == 5
+        ? (offset ? WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE : WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE)
+        : (offset ? WORM_UI_COMPOSE_INPUT_OFFSET_FIT_CANCEL : WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL);
+    // Occlusion uses the registry's one unified cancellation instead of a verb-specific cancel.
+    verify_fit_event(find_fit_input(end.get(), expected) ||
+                     (interruption == 4 && find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE)));
+    const auto& s = worm_ui_nuklear_compose_state();
+    verify_fit_event(!s.beat_fit_drag_active && !s.offset_fit_drag_active && !s.fit_capture.active);
+}
+
+TEST_CASE("BGA drag releases under occlusion cannot submit a move",
+          "[event-harness][drag-capture]") {
+    const auto occluded = GENERATE(false, true);
+    timing_drag_fixture_t f;
+    auto& v = f.h.view().compose;
+    WormUiComposeBgaEventView bga{};
+    v.bga_lane_visible = true; v.bga_lane_bounds = {450, 0, 500, 600};
+    v.bga_lane_count = 1; v.bga_lane_rects[0] = v.bga_lane_bounds;
+    bga.bounds = {450, 195, 500, 205}; bga.event_id = 22; bga.selected = true;
+    bga.name = "BGA"; bga.bmp_id = "01";
+    v.bga_events = &bga; v.bga_event_count = 1;
+    (void)f.h.frame();
+    WormUiTestingRect rect{};
+    verify_fit_event(worm_ui_frontend_compose_viewport_for_testing(&rect));
+    const auto x = rect.x + 475.0f / 900 * rect.width;
+    const auto y = rect.y + 200.0f / 600 * rect.height;
+    (void)f.h.frame(std::array{fit_motion(x, y), fit_button(x, y, true)});
+    verify_fit_event(worm_ui_nuklear_compose_state().bga_event_move_candidate_active);
+    (void)f.h.frame(std::array{fit_motion(x, y + 20)});
+    verify_fit_event(worm_ui_nuklear_compose_state().bga_event_move_active);
+    v.input_occluded = occluded;
+    const auto end = f.h.frame(std::array{fit_button(x, y + 20, false)});
+    verify_fit_event((find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE) != nullptr) == !occluded);
+    verify_fit_event(!worm_ui_nuklear_compose_state().bga_capture.active);
+}
+
+TEST_CASE("Overview beat zero cancels clicks and commits only travelled drags",
+          "[event-harness][drag-capture]") {
+    const auto distance = GENERATE(0.0f, 3.0f, 10.0f);
+    nuklear_event_harness_t h{1280, 900};
+    auto& v = h.view().compose;
+    WormUiComposeWaveformOverviewRowView wave{};
+    v.playable_field_left_pixels = 400; v.playable_field_right_pixels = 1000;
+    v.bgm_bar_reserved = true; v.bgm_bar_rows = &wave; v.bgm_bar_row_count = 1;
+    v.bgm_bar_begin_fraction = 0; v.bgm_bar_end_fraction = 1;
+    v.selected_audio_asset_id = 12; v.waveform_overview_sample_rate = 48000;
+    v.waveform_overview_total_frames = 480000;
+    auto& s = worm_ui_nuklear_compose_state();
+    s.inspector_visible = s.sounds_panel_visible = s.layers_panel_visible = false;
+    (void)h.frame();
+    constexpr auto x = 351.0f, y = 120.0f;
+    (void)h.frame(std::array{fit_motion(x, y), fit_button(x, y, true)});
+    const auto overview = s.waveform_overview_capture;
+    verify_fit_event(overview.width > 0);
+    (void)h.frame(std::array{fit_button(x, y, false)});
+    v.waveform_proposed_audio_offset_denominator = 1;
+    v.waveform_beat_zero_visible = true;
+    v.waveform_beat_zero_fraction = (x - overview.left) / overview.width;
+    const auto start = h.frame(std::array{fit_motion(x, y), fit_button(x, y, true)});
+    verify_fit_event(start.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_BEGIN);
+    v.waveform_offset_drag_active = true;
+    const auto end = h.frame(std::array{fit_motion(x + distance, y), fit_button(x + distance, y, false)});
+    verify_fit_event(end.get().audio_offset_drag_action == (distance >= 4
+        ? WORM_UI_AUDIO_OFFSET_DRAG_COMMIT : WORM_UI_AUDIO_OFFSET_DRAG_CANCEL));
+    verify_fit_event(end.get().audio_offset_drag_chart_id == 1 &&
+                     end.get().audio_offset_drag_document_revision == 1);
+    verify_fit_event(!s.waveform_beat_zero_drag_active && !s.beat_zero_capture.active);
+}
+
+TEST_CASE("Empty timing lanes preserve their distinct creation and selection verbs",
+          "[event-harness][drag-capture]") {
+    const auto lane = GENERATE(WORM_UI_TIMING_LANE_KIAI, WORM_UI_TIMING_LANE_SPEED,
+                               WORM_UI_TIMING_LANE_SCROLL);
+    timing_drag_fixture_t f;
+    f.recipe.selected = true;
+    const auto p = f.press(lane, 500);
+    const auto& s = worm_ui_nuklear_compose_state();
+    verify_fit_event(s.kiai_drag_active == (lane == WORM_UI_TIMING_LANE_KIAI));
+    verify_fit_event(!s.recipe_drag_active);
+    if (s.kiai_drag_active) verify_fit_event(s.kiai_drag_edge == WORM_UI_SPAN_HANDLE_CREATE);
+    const auto end = f.h.frame(std::array{fit_button(p.first, p.second, false)});
+    verify_fit_event(!find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT));
+    verify_fit_event(!find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT));
+    verify_fit_event(!find_fit_input(end.get(), WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT));
 }

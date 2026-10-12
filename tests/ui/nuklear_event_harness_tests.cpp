@@ -7157,3 +7157,82 @@ TEST_CASE("Production pointer paste and note drag use the valid Stop event row",
     expect_t422(static_cast<bool>(undo_document_command(f.history)));
     expect_t422(t422_note(f.history, 101)->position == local_position_t{measure_id_t{1}, 120});
 }
+
+namespace {
+auto timing_pointer(t422_fixture_t& f, WormUiTimingLaneKind lane, std::uint64_t row,
+                    double lane_fraction = .5) -> std::pair<float, float> {
+    (void)f.harness.frame();
+    const auto viewport = compose_canvas_viewport_for_testing();
+    expect_t422(viewport.has_value());
+    const auto& view = f.harness.view().compose;
+    const auto extent = compose_timing_lane_inner_extent(view, lane);
+    expect_t422(extent.has_value());
+    const auto x = extent->first + (extent->second - extent->first) * lane_fraction;
+    const auto y = row * f.interaction->pixels_per_standard_measure / 960.0 -
+                   f.interaction->viewport_scroll_pixels;
+    return {viewport->x + static_cast<float>(x * viewport->width / view.viewport_width_pixels),
+            viewport->y + static_cast<float>((view.downscroll ? view.viewport_height_pixels - y : y) *
+                                             viewport->height / view.viewport_height_pixels)};
+}
+}
+
+TEST_CASE("Production timing span release edits once and rejected release retires capture",
+          "[frontend-state][event-harness][drag-capture]") {
+    const auto locked_at_release = GENERATE(false, true);
+    const auto downscroll = GENERATE(false, true);
+    auto song = t422_song();
+    song.charts.front().speeds.push_back({.id = object_id_t{220},
+        .position = {measure_id_t{1}, 240}, .multiplier = {2, 1}, .transition_beats = {1, 1}});
+    t422_fixture_t f{std::move(song)};
+    f.interaction->selected_objects.clear(); f.interaction->selected_notes.clear();
+    f.interaction->pixels_per_standard_measure = 768;
+    f.application.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
+    f.project();
+    const auto before = t422_native_bytes(f.history.document);
+    const auto p = timing_pointer(f, WORM_UI_TIMING_LANE_SPEED, 480);
+    placement_press(f, p);
+    expect_t422(worm_ui_nuklear_compose_state().kiai_drag_active);
+    if (locked_at_release) f.application.timing_locked = true;
+    // Do not reproject here: exercise the application's rejection after a real UI release.
+    const auto end = timing_pointer(f, WORM_UI_TIMING_LANE_SPEED, 720);
+    placement_release(f, end);
+    expect_t422(!worm_ui_nuklear_compose_state().kiai_drag_active);
+    expect_t422(!worm_ui_nuklear_compose_state().span_capture.active);
+    expect_t422(f.history.undo.size() == (locked_at_release ? 0 : 1));
+    if (locked_at_release) expect_t422(t422_native_bytes(f.history.document) == before);
+    else {
+        const auto& speed = f.history.document.charts.front().speeds.front();
+        expect_t422(speed.position == local_position_t{measure_id_t{1}, 240});
+        expect_t422(speed.transition_beats == rational_t{2, 1});
+        expect_t422(static_cast<bool>(undo_document_command(f.history)));
+        expect_t422(f.history.document.charts.front().speeds.front().transition_beats == rational_t{1, 1});
+    }
+}
+
+TEST_CASE("Speed marker heads translate while tail handles resize through production input",
+          "[frontend-state][event-harness][drag-capture]") {
+    auto song = t422_song();
+    song.charts.front().speeds.push_back({.id = object_id_t{220},
+        .position = {measure_id_t{1}, 240}, .multiplier = {2, 1}, .transition_beats = {1, 1}});
+    t422_fixture_t f{std::move(song)};
+    f.interaction->selected_objects.clear(); f.interaction->selected_notes.clear();
+    f.interaction->pixels_per_standard_measure = 768;
+    f.project();
+    const auto p = timing_pointer(f, WORM_UI_TIMING_LANE_SPEED, 240);
+    placement_press(f, p);
+    const auto& s = worm_ui_nuklear_compose_state();
+    expect_t422(s.timing_marker_candidate_active && !s.kiai_drag_active);
+    f.project();
+    const auto end_point = timing_pointer(f, WORM_UI_TIMING_LANE_SPEED, 480);
+    const auto released = f.harness.frame(std::array{motion_event(end_point.first, end_point.second),
+        button_event(false, end_point.first, end_point.second)});
+    const auto status = f.dispatch(released);
+    INFO(status);
+    CAPTURE(released.get().compose_input_count, f.interaction->selected_objects.size(),
+            s.timing_marker_candidate_active, f.history.document.revision);
+    expect_t422(f.history.undo.size() == 1);
+    const auto& speed = f.history.document.charts.front().speeds.front();
+    expect_t422(speed.position == local_position_t{measure_id_t{1}, 480});
+    expect_t422(speed.transition_beats == rational_t{1, 1});
+    expect_t422(!s.timing_marker_capture.active);
+}

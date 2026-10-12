@@ -177,10 +177,10 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     state.timing_marker_chart_row = 43;
     state.timing_marker_lane = WORM_UI_TIMING_LANE_SPEED;
     state.timing_marker_anchor_y_pixels = 12.0;
-    state.timing_marker_anchor_screen_y = 13.0f;
+    state.timing_marker_capture.anchor_y = 13.0f;
     state.timing_marker_current_y_pixels = 14.0;
-    state.timing_marker_chart_id = 15;
-    state.timing_marker_revision = 16;
+    state.timing_marker_capture.chart = 15;
+    state.timing_marker_capture.revision = 16;
     state.inline_timing_open = true;
     state.inline_timing_focus_pending = true;
     state.inline_timing_chart_id = 42;

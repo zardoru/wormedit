@@ -1711,8 +1711,8 @@ static void draw_compose_timing_preview_legend(const ComposePaintContext& paint)
 
 static void draw_compose_timing_marker_drag_ghosts(const ComposePaintContext& paint) {
     if (!state.timing_marker_drag_active ||
-        state.timing_marker_chart_id != paint.view->chart_id ||
-        state.timing_marker_revision != paint.view->document_revision) return;
+        state.timing_marker_capture.chart != paint.view->chart_id ||
+        state.timing_marker_capture.revision != paint.view->document_revision) return;
     bool selected_fixed = false;
     for (size_t index = 0; index < paint.view->timing_marker_count; ++index)
         selected_fixed |= paint.view->timing_markers[index].selected &&

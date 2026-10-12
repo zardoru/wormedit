@@ -279,75 +279,25 @@ static std::uint64_t nearest_beat_fit_row(const ComposeBeatFitInput& input) {
     return nearest_row;
 }
 
-static bool start_compose_beat_fit_drag(const ComposeBeatFitInput& input) {
-    if (!compose_beat_fit_start_allowed(input)) {
+static bool start_compose_fit_drag(const ComposeBeatFitInput& input, bool offset) {
+    if (!(offset ? compose_offset_fit_start_allowed(input) : compose_beat_fit_start_allowed(input)))
         return false;
-    }
-    const auto nearest_row = nearest_beat_fit_row(input);
-    if (nearest_row == 0) {
-        return false;
-    }
-    const auto& view = *input.view;
-    state.beat_fit_drag_active = true;
-    state.beat_fit_ctrl_held = false;
-    state.beat_fit_onset_snap_held = false;
-    state.beat_fit_chart_row = nearest_row;
-    state.beat_fit_chart_id = view.chart_id;
-    state.beat_fit_revision = view.document_revision;
-    state.beat_fit_asset_id = view.selected_audio_asset_id;
-    state.beat_fit_sample_rate = view.waveform_overview_sample_rate;
-    state.beat_fit_anchor_screen_y = input.context->input.mouse.buttons[NK_BUTTON_LEFT].clicked_pos.y;
-    append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN, 0.0,
-                         input.pointer_started_y, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                         WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, nearest_row);
-    return true;
-}
-
-static bool start_compose_offset_fit_drag(const ComposeBeatFitInput& input) {
-    if (!compose_offset_fit_start_allowed(input)) return false;
     const auto nearest_row = nearest_beat_fit_row(input);
     if (nearest_row == 0) return false;
     const auto& view = *input.view;
-    state.offset_fit_drag_active = true;
+    const auto& press = input.context->input.mouse.buttons[NK_BUTTON_LEFT].clicked_pos;
+    if (!state.fit_capture.begin(view, press.x, press.y,
+                                 view.waveform_timing_locked || (offset && view.audio_offset_locked), true))
+        return false;
+    state.beat_fit_drag_active = !offset;
+    state.offset_fit_drag_active = offset;
+    state.beat_fit_ctrl_held = state.beat_fit_onset_snap_held = false;
     state.beat_fit_chart_row = nearest_row;
-    state.beat_fit_chart_id = view.chart_id;
-    state.beat_fit_revision = view.document_revision;
-    state.beat_fit_asset_id = view.selected_audio_asset_id;
-    state.beat_fit_sample_rate = view.waveform_overview_sample_rate;
-    state.beat_fit_anchor_screen_y = input.context->input.mouse.buttons[NK_BUTTON_LEFT].clicked_pos.y;
-    append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_BEGIN, 0.0,
-                         input.pointer_started_y, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+    append_compose_input(input.action, offset ? WORM_UI_COMPOSE_INPUT_OFFSET_FIT_BEGIN
+                                             : WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN,
+                         0.0, input.pointer_started_y, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, nearest_row);
     return true;
-}
-
-static void cancel_compose_offset_fit_drag(WormUiWorkspaceAction* action) {
-    append_compose_input(action, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_CANCEL);
-    state.offset_fit_drag_active = false;
-}
-
-static void update_active_offset_fit_drag(const ComposeBeatFitInput& input) {
-    const auto& view = *input.view;
-    const bool matches = input.window_focused && view.scene_available &&
-                         view.offset_fit_drag_active && !view.waveform_timing_locked && !view.audio_offset_locked &&
-                         view.chart_id == state.beat_fit_chart_id &&
-                         view.document_revision == state.beat_fit_revision &&
-                         view.selected_audio_asset_id == state.beat_fit_asset_id &&
-                         view.waveform_overview_sample_rate == state.beat_fit_sample_rate;
-    if (!matches || (!input.left_down && !input.left_released)) {
-        cancel_compose_offset_fit_drag(input.action);
-    } else if (input.left_released) {
-        if (std::abs(input.context->input.mouse.pos.y - state.beat_fit_anchor_screen_y) < 4.0f) {
-            cancel_compose_offset_fit_drag(input.action);
-        } else {
-            append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE, 0.0,
-                                 std::clamp(input.pointer_y, 0.0, view.viewport_height_pixels));
-            state.offset_fit_drag_active = false;
-        }
-    } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input)) {
-        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_UPDATE, 0.0,
-                             std::clamp(input.pointer_y, 0.0, view.viewport_height_pixels));
-    }
 }
 
 static void cancel_unmatched_view_beat_fit(const ComposeBeatFitInput& input) {
@@ -359,50 +309,47 @@ static void cancel_unmatched_view_beat_fit(const ComposeBeatFitInput& input) {
     }
 }
 
-static void update_active_beat_fit_drag(const ComposeBeatFitInput& input) {
+static void emit_fit_motion(const ComposeBeatFitInput& input, bool offset, bool release) {
+    const auto y = std::clamp(input.pointer_y, 0.0, input.view->viewport_height_pixels);
+    state.beat_fit_ctrl_held = !offset && (input.pointer_modifiers & SDL_KMOD_CTRL) != 0;
+    state.beat_fit_onset_snap_held = state.beat_fit_ctrl_held &&
+                                    (input.pointer_modifiers & SDL_KMOD_ALT) != 0;
+    if (offset)
+        append_compose_input(input.action, release ? WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE
+                                                  : WORM_UI_COMPOSE_INPUT_OFFSET_FIT_UPDATE, 0.0, y);
+    else
+        append_beat_fit_input(input.action, release ? WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE
+                                                   : WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE,
+                             y, state.beat_fit_ctrl_held, state.beat_fit_onset_snap_held);
+}
+
+static void update_active_fit_drag(const ComposeBeatFitInput& input, bool offset) {
     const auto& view = *input.view;
-    const bool matches = input.window_focused && view.scene_available && view.beat_fit_drag_active &&
-                         !view.waveform_timing_locked && view.chart_id == state.beat_fit_chart_id &&
-                         view.document_revision == state.beat_fit_revision &&
-                         view.selected_audio_asset_id == state.beat_fit_asset_id &&
-                         view.waveform_overview_sample_rate == state.beat_fit_sample_rate;
-    if (!matches || (!input.left_down && !input.left_released)) {
-        cancel_beat_fit_drag(input.action);
-    } else if (input.left_released) {
-        if (std::abs(input.context->input.mouse.pos.y - state.beat_fit_anchor_screen_y) < 4.0f) {
-            cancel_beat_fit_drag(input.action);
-        } else {
-            append_beat_fit_input(input.action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE,
-                                  std::clamp(input.pointer_y, 0.0,
-                                             view.viewport_height_pixels),
-                                  (input.pointer_modifiers & SDL_KMOD_CTRL) != 0,
-                                  (input.pointer_modifiers & SDL_KMOD_CTRL) != 0 &&
-                                  (input.pointer_modifiers & SDL_KMOD_ALT) != 0);
-            state.beat_fit_drag_active = false;
-        }
-    } else if (const bool ctrl_held = (input.pointer_modifiers & SDL_KMOD_CTRL) != 0;
-               input.left_down && (nk_input_is_mouse_moved(&input.context->input) ||
-                                   ctrl_held != state.beat_fit_ctrl_held ||
-                                   (ctrl_held && (input.pointer_modifiers & SDL_KMOD_ALT) != 0) !=
-                                       state.beat_fit_onset_snap_held)) {
-        // Pressing or releasing Ctrl re-previews in place so the snap toggles without motion.
-        state.beat_fit_ctrl_held = ctrl_held;
-        state.beat_fit_onset_snap_held = ctrl_held &&
-                                        (input.pointer_modifiers & SDL_KMOD_ALT) != 0;
-        append_beat_fit_input(input.action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE,
-                              std::clamp(input.pointer_y, 0.0, view.viewport_height_pixels),
-                              ctrl_held, state.beat_fit_onset_snap_held);
+    const auto runtime_active = offset ? view.offset_fit_drag_active : view.beat_fit_drag_active;
+    const auto matches = input.window_focused && runtime_active && !state.action_overflowed &&
+        state.fit_capture.matches(view, view.waveform_timing_locked || (offset && view.audio_offset_locked));
+    const auto& pointer = input.context->input.mouse.pos;
+    if (!matches || (!input.left_down && !input.left_released) ||
+        (input.left_released && !state.fit_capture.moved_past_threshold(pointer.x, pointer.y))) {
+        if (offset) cancel_offset_fit_drag(input.action);
+        else cancel_beat_fit_drag(input.action);
+        return;
+    }
+    const auto ctrl = !offset && (input.pointer_modifiers & SDL_KMOD_CTRL) != 0;
+    const auto onset = ctrl && (input.pointer_modifiers & SDL_KMOD_ALT) != 0;
+    if (input.left_released || nk_input_is_mouse_moved(&input.context->input) ||
+        ctrl != state.beat_fit_ctrl_held || onset != state.beat_fit_onset_snap_held)
+        emit_fit_motion(input, offset, input.left_released);
+    if (input.left_released) {
+        state.beat_fit_drag_active = state.offset_fit_drag_active = false;
+        state.fit_capture.cancel();
     }
 }
 
 bool process_compose_beat_fit_pointer(const ComposeBeatFitInput& input) {
     if (input.view->paste_active || compose_area_pointer_consumed()) return true;
-    if (state.offset_fit_drag_active) {
-        update_active_offset_fit_drag(input);
-        return true;
-    }
-    if (state.beat_fit_drag_active) {
-        update_active_beat_fit_drag(input);
+    if (state.offset_fit_drag_active || state.beat_fit_drag_active) {
+        update_active_fit_drag(input, state.offset_fit_drag_active);
         return true;
     }
     if (input.view->beat_fit_drag_active) {
@@ -410,8 +357,7 @@ bool process_compose_beat_fit_pointer(const ComposeBeatFitInput& input) {
         return false;
     }
     if (process_compose_measure_resize_pointer(input)) return true;
-    if (compose_offset_fit_start_allowed(input)) return start_compose_offset_fit_drag(input);
-    return start_compose_beat_fit_drag(input);
+    return start_compose_fit_drag(input, (input.pointer_modifiers & SDL_KMOD_SHIFT) != 0);
 }
 
 // A zoomed overview spans only part of the song, so a pixel is fewer frames.
@@ -431,7 +377,7 @@ static std::optional<double> overview_window_x(const ComposeOverviewInput& input
 
 static std::int64_t waveform_offset_drag_delta(const ComposeOverviewInput& input) {
     return worm_ui_nuklear_overview_frame_delta(
-        input.context->input.mouse.pos.x, state.waveform_beat_zero_drag_anchor_x,
+        input.context->input.mouse.pos.x, state.beat_zero_capture.anchor_x,
         state.waveform_beat_zero_drag_width,
         overview_window_frames(state.waveform_beat_zero_drag_total_frames,
                                state.waveform_beat_zero_drag_span));
@@ -449,17 +395,14 @@ static void start_waveform_beat_zero_drag(const ComposeOverviewInput& input) {
         !zero_x || std::abs(static_cast<double>(left_button.clicked_pos.x) - *zero_x) > 7.0) {
         return;
     }
+    if (!state.beat_zero_capture.begin(view, left_button.clicked_pos.x, left_button.clicked_pos.y,
+                                       view.waveform_timing_locked || view.audio_offset_locked, true)) return;
     state.waveform_overview_drag_active = false;
     state.waveform_beat_zero_drag_active = true;
-    state.waveform_beat_zero_drag_anchor_x = left_button.clicked_pos.x;
     state.waveform_beat_zero_drag_width = input.overview.w;
     state.waveform_beat_zero_drag_left = input.overview.x;
     state.waveform_beat_zero_drag_span = input.window_end - input.window_begin;
     state.waveform_beat_zero_drag_total_frames = view.waveform_overview_total_frames;
-    state.waveform_beat_zero_drag_chart_id = view.chart_id;
-    state.waveform_beat_zero_drag_revision = view.document_revision;
-    state.waveform_beat_zero_drag_asset_id = view.selected_audio_asset_id;
-    state.waveform_beat_zero_drag_sample_rate = view.waveform_overview_sample_rate;
     state.waveform_beat_zero_drag_delta_frames = 0;
     set_waveform_offset_drag_action(input.action, WORM_UI_AUDIO_OFFSET_DRAG_BEGIN, 0);
 }
@@ -473,12 +416,10 @@ static void update_waveform_beat_zero_drag(const ComposeOverviewInput& input) {
         return;
     }
     const bool matches =
-        input.available && input.window_focused && view.scene_available &&
-        !view.waveform_timing_locked && !view.audio_offset_locked && view.chart_id == state.waveform_beat_zero_drag_chart_id &&
-        view.document_revision == state.waveform_beat_zero_drag_revision &&
-        view.selected_audio_asset_id == state.waveform_beat_zero_drag_asset_id &&
+        input.available && input.window_focused &&
+        state.beat_zero_capture.matches(view, view.waveform_timing_locked || view.audio_offset_locked) &&
         view.waveform_overview_total_frames == state.waveform_beat_zero_drag_total_frames &&
-        view.waveform_overview_sample_rate == state.waveform_beat_zero_drag_sample_rate &&
+        view.waveform_overview_sample_rate == state.beat_zero_capture.sample_rate &&
         input.overview.w == state.waveform_beat_zero_drag_width &&
         input.overview.x == state.waveform_beat_zero_drag_left &&
         (view.waveform_offset_drag_active || input.pressed);
@@ -487,7 +428,10 @@ static void update_waveform_beat_zero_drag(const ComposeOverviewInput& input) {
                                         state.waveform_beat_zero_drag_delta_frames);
         reset_waveform_offset_drag();
     } else if (released) {
-        set_waveform_offset_drag_action(input.action, WORM_UI_AUDIO_OFFSET_DRAG_COMMIT,
+        const auto moved = state.beat_zero_capture.moved_past_threshold(
+            input.context->input.mouse.pos.x, state.beat_zero_capture.anchor_y, true);
+        set_waveform_offset_drag_action(input.action, moved ? WORM_UI_AUDIO_OFFSET_DRAG_COMMIT
+                                                           : WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
                                         waveform_offset_drag_delta(input));
         reset_waveform_offset_drag();
     } else if (left_button.down && nk_input_is_mouse_moved(&input.context->input)) {

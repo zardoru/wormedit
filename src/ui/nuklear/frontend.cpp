@@ -1284,8 +1284,8 @@ void worm_ui_frontend_bga_move_preview(uint64_t* chart_id, uint64_t* document_re
                                        uint64_t* event_id, double* y_pixels) {
     const auto& state = worm_ui_nuklear_compose_state();
     const bool active = g_window_focused && state.bga_event_move_active;
-    if (chart_id) *chart_id = active ? state.bga_event_move_chart_id : 0;
-    if (document_revision) *document_revision = active ? state.bga_event_move_revision : 0;
+    if (chart_id) *chart_id = active ? state.bga_capture.chart : 0;
+    if (document_revision) *document_revision = active ? state.bga_capture.revision : 0;
     if (event_id) *event_id = active ? state.bga_event_move_object_id : 0;
     if (y_pixels) *y_pixels = active ? state.bga_event_move_current_y_pixels : 0.0;
 }

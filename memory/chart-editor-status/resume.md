@@ -1,6 +1,6 @@
 # Status: resume checklist
 
-Next: [T-584 Share drag capture and timing placement rules](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-584-share-drag-capture-and-timing-placement-rules). T-580–T-583 are complete. Continue T-584–T-590 in order. T-583 permits heads on the exact Stop/Delay event row; visual pause bands do not exclude chart rows. NV7 remains a T-506 navigation follow-up (T-587); unrelated navigation work is preserved.
+Next: [T-585 Centralize resource arming and role validation](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-585-centralize-resource-arming-and-role-validation). T-580–T-584 are complete. Continue T-585–T-590 in order. T-583 permits heads on the exact Stop/Delay event row; visual pause bands do not exclude chart rows. NV7 remains a T-506 navigation follow-up (T-587); unrelated navigation work is preserved.
 
 Completed **T-582** (2026-10-12): stamped menu commands and shared Quantize/bookmark/same-sound/BGM/loop/measure paths; orphan BGM and workspace loop paths retired. Build, **3,457/3,457** full serial CTest, **444/444** event checks, default clang-tidy with no new/increased complexity, documentation and whitespace gates pass. Isolated Xvfb Compose screenshot inspected. [Card and evidence](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-582-route-menu-verbs-through-registered-commands).
 

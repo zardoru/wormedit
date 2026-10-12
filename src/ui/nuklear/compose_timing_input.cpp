@@ -40,23 +40,27 @@
 #include "ui/nuklear/compose_timing_input.h"
 #include "ui/compose_timing_geometry.h"
 
-static constexpr double span_edge_tolerance_pixels = 6.0;
-static constexpr double kiai_drag_threshold_pixels = 4.0;
+static constexpr double span_edge_tolerance_pixels = compose_drag_capture_t::edge_tolerance_pixels;
 
 static void update_active_timing_stage_drag(const ComposePointerEventContext& input) {
     const auto& view = *input.view;
     const auto& timing = *input.timing_view;
     auto& action = *input.action;
-    if (!input.window_focused || !view.scene_available || !timing.stage_active ||
+    if (!input.window_focused || !state.timing_stage_capture.matches(view, view.waveform_timing_locked) ||
+        !timing.stage_active ||
         timing.stage_existing_object_id == 0 || (!input.left_down && !input.left_released)) {
         state.timing_stage_drag_active = false;
+        state.timing_stage_capture.cancel();
     } else if (input.left_released) {
         state.timing_stage_drag_active = false;
-    } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input) &&
+        state.timing_stage_capture.cancel();
+    } else if (input.left_down && state.timing_stage_capture.moved_past_threshold(
+                   input.context->input.mouse.pos.x, input.context->input.mouse.pos.y) &&
+               nk_input_is_mouse_moved(&input.context->input) &&
                action.timing_stage_action == WORM_UI_TIMING_STAGE_NONE) {
         action.timing_stage_action = WORM_UI_TIMING_STAGE_MOVE;
-        action.timing_chart_id = timing.chart_id;
-        action.timing_document_revision = timing.document_revision;
+        action.timing_chart_id = state.timing_stage_capture.chart;
+        action.timing_document_revision = state.timing_stage_capture.revision;
         action.timing_object_id = timing.stage_existing_object_id;
         action.timing_lane = timing.stage_lane;
         action.timing_has_target_y = true;
@@ -67,7 +71,8 @@ static void update_active_timing_stage_drag(const ComposePointerEventContext& in
 static void start_timing_stage_drag(const ComposePointerEventContext& input) {
     const auto& view = *input.view;
     const auto& timing = *input.timing_view;
-    if (!input.pointer_started_in_view || !input.left_down || !view.timing_stage_active || view.y_lock ||
+    if (!input.window_focused || !input.pointer_started_in_view || !input.left_down ||
+        !view.timing_stage_active || view.y_lock ||
         !timing.stage_active || timing.stage_existing_object_id == 0 ||
         input.shortcut_event_count != 0 ||
         (input.pointer_modifiers & input.any_pointer_modifier) != 0)
@@ -77,7 +82,9 @@ static void start_timing_stage_drag(const ComposePointerEventContext& input) {
     const auto y_tolerance = 8.0 * view.viewport_height_pixels / input.viewport.h;
     if (input.pointer_started_x >= extent->first && input.pointer_started_x < extent->second &&
         std::abs(input.pointer_started_y - view.timing_stage_y_pixels) <= y_tolerance)
-        state.timing_stage_drag_active = true;
+        state.timing_stage_drag_active = state.timing_stage_capture.begin(
+            view, input.context->input.mouse.buttons[NK_BUTTON_LEFT].clicked_pos.x,
+            input.context->input.mouse.buttons[NK_BUTTON_LEFT].clicked_pos.y, view.waveform_timing_locked);
 }
 
 void update_timing_stage_drag(const ComposePointerEventContext& input) {
@@ -94,7 +101,8 @@ void update_timing_stage_drag(const ComposePointerEventContext& input) {
 static auto kiai_gesture_blocked(const ComposePointerEventContext& input) -> bool {
     // Y-lock: Kiai and speed spans only move vertically.
     return !input.window_focused || !input.view->scene_available || input.shortcut_event_count != 0 ||
-           input.view->y_lock || (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
+           input.view->y_lock || input.view->waveform_timing_locked || input.view->input_occluded ||
+           (input.pointer_modifiers & input.any_pointer_modifier) != 0 ||
            input.timing_view->stage_active || state.timing_stage_drag_active ||
            state.inline_timing_open || state.timing_marker_candidate_active ||
            state.timing_marker_drag_active || compose_area_pointer_consumed();
@@ -102,6 +110,30 @@ static auto kiai_gesture_blocked(const ComposePointerEventContext& input) -> boo
 
 static void begin_speed_drag(const ComposePointerEventContext& input);
 static void begin_speed_stretch(const ComposePointerEventContext& input);
+
+static auto begin_span_capture(const ComposePointerEventContext& input, compose_drag_capture_t& capture)
+    -> bool {
+    const auto& press = input.context->input.mouse.buttons[NK_BUTTON_LEFT].clicked_pos;
+    return capture.begin(*input.view, press.x, press.y, input.view->waveform_timing_locked);
+}
+
+// Shared continuation policy; each verb only supplies its commit payload.
+static auto continue_span_capture(const ComposePointerEventContext& input, compose_drag_capture_t& capture,
+                                  bool& active, bool& moved, double& current_y) -> bool {
+    if (!input.window_focused || state.action_overflowed ||
+        !capture.matches(*input.view, input.view->waveform_timing_locked) ||
+        (!input.left_down && !input.left_released)) {
+        active = moved = false;
+        capture.cancel();
+        return false;
+    }
+    current_y = std::clamp(input.pointer_y, 0.0, input.view->viewport_height_pixels);
+    moved |= capture.moved_past_threshold(input.context->input.mouse.pos.x,
+                                           input.context->input.mouse.pos.y);
+    if (!input.left_released) return false;
+    active = false;
+    return moved;
+}
 
 static void begin_kiai_drag(const ComposePointerEventContext& input) {
     state.kiai_drag_speed = false;
@@ -138,7 +170,7 @@ static void begin_kiai_drag(const ComposePointerEventContext& input) {
         state.kiai_drag_edge = WORM_UI_SPAN_HANDLE_BODY;
         state.kiai_drag_head_id = body_head;
     }
-    state.kiai_drag_active = true;
+    state.kiai_drag_active = begin_span_capture(input, state.span_capture);
     state.kiai_drag_moved = false;
     state.kiai_drag_anchor_y = y;
     state.kiai_drag_current_y = y;
@@ -153,7 +185,7 @@ static void commit_kiai_drag(const ComposePointerEventContext& input) {
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.kiai_drag_head_id, 0,
                          false,
                          state.kiai_drag_speed ? WORM_UI_TIMING_LANE_SPEED : WORM_UI_TIMING_LANE_KIAI,
-                         input.timing_view->chart_id, input.timing_view->document_revision);
+                         state.span_capture.chart, state.span_capture.revision);
     if (input.action->compose_input_count == 0) return;
     auto& queued = input.action->compose_inputs[input.action->compose_input_count - 1];
     queued.span_edge = state.kiai_drag_edge;
@@ -161,19 +193,10 @@ static void commit_kiai_drag(const ComposePointerEventContext& input) {
 }
 
 static void continue_kiai_drag(const ComposePointerEventContext& input) {
-    if (!input.window_focused || (!input.left_down && !input.left_released)) {
-        state.kiai_drag_active = false;
-        state.recipe_drag_active = false;
-        return;
-    }
-    state.kiai_drag_current_y = std::clamp(input.pointer_y, 0.0, input.view->viewport_height_pixels);
-    const auto threshold = kiai_drag_threshold_pixels * input.view->viewport_height_pixels / input.viewport.h;
-    if (std::abs(state.kiai_drag_current_y - state.kiai_drag_anchor_y) > threshold)
-        state.kiai_drag_moved = true;
-    if (!input.left_released) return;
-    state.kiai_drag_active = false;
-    state.recipe_drag_active = false;
-    if (state.kiai_drag_moved) commit_kiai_drag(input);
+    if (continue_span_capture(input, state.span_capture, state.kiai_drag_active,
+                              state.kiai_drag_moved, state.kiai_drag_current_y))
+        commit_kiai_drag(input);
+    if (!state.kiai_drag_active) state.span_capture.cancel();
 }
 
 void update_kiai_span_drag(const ComposePointerEventContext& input) {
@@ -257,7 +280,7 @@ static void begin_speed_drag(const ComposePointerEventContext& input) {
                                                             : WORM_UI_SPAN_HANDLE_BEGIN;
         state.kiai_drag_head_id = span.object_id;
         state.kiai_drag_speed = true;
-        state.kiai_drag_active = true;
+        state.kiai_drag_active = begin_span_capture(input, state.span_capture);
         state.kiai_drag_moved = false;
         state.kiai_drag_anchor_y = y;
         state.kiai_drag_current_y = y;
@@ -271,7 +294,8 @@ static void begin_speed_drag(const ComposePointerEventContext& input) {
 static void begin_speed_stretch(const ComposePointerEventContext& input) {
     constexpr auto other_modifiers = SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI;
     if (state.kiai_drag_active || !input.window_focused || !input.view->scene_available ||
-        input.view->y_lock || input.shortcut_event_count != 0 || (input.pointer_modifiers & SDL_KMOD_SHIFT) == 0 ||
+        input.view->y_lock || input.view->waveform_timing_locked || input.view->input_occluded ||
+        input.shortcut_event_count != 0 || (input.pointer_modifiers & SDL_KMOD_SHIFT) == 0 ||
         (input.pointer_modifiers & other_modifiers) != 0 || input.timing_view->stage_active ||
         state.timing_stage_drag_active || state.inline_timing_open || compose_area_pointer_consumed())
         return;
@@ -283,7 +307,7 @@ static void begin_speed_stretch(const ComposePointerEventContext& input) {
     state.kiai_drag_edge = WORM_UI_SPAN_HANDLE_END;
     state.kiai_drag_head_id = marker->object_id;
     state.kiai_drag_speed = true;
-    state.kiai_drag_active = true;
+    state.kiai_drag_active = begin_span_capture(input, state.span_capture);
     state.kiai_drag_moved = false;
     state.kiai_drag_anchor_y = input.pointer_started_y;
     state.kiai_drag_current_y = input.pointer_started_y;
@@ -308,7 +332,7 @@ static void begin_recipe_drag(const ComposePointerEventContext& input) {
     append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_RECIPE_SELECT, x, y, 0, false,
                          WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, press->id);
-    state.recipe_drag_active = true;
+    state.recipe_drag_active = begin_span_capture(input, state.recipe_capture);
     state.recipe_drag_moved = false;
     state.recipe_drag_edge = press->edge;
     state.recipe_drag_id = press->id;
@@ -321,8 +345,8 @@ static void commit_recipe_drag(const ComposePointerEventContext& input) {
                          input.pointer_started_x, state.recipe_drag_current_y, 0, false,
                          WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.recipe_drag_id, 0, false,
-                         WORM_UI_TIMING_LANE_SCROLL, input.timing_view->chart_id,
-                         input.timing_view->document_revision);
+                         WORM_UI_TIMING_LANE_SCROLL, state.recipe_capture.chart,
+                         state.recipe_capture.revision);
     if (input.action->compose_input_count == 0) return;
     auto& queued = input.action->compose_inputs[input.action->compose_input_count - 1];
     queued.span_edge = state.recipe_drag_edge;
@@ -330,17 +354,10 @@ static void commit_recipe_drag(const ComposePointerEventContext& input) {
 }
 
 static void continue_recipe_drag(const ComposePointerEventContext& input) {
-    if (!input.window_focused || (!input.left_down && !input.left_released)) {
-        state.recipe_drag_active = false;
-        return;
-    }
-    state.recipe_drag_current_y = std::clamp(input.pointer_y, 0.0, input.view->viewport_height_pixels);
-    const auto threshold = kiai_drag_threshold_pixels * input.view->viewport_height_pixels / input.viewport.h;
-    if (std::abs(state.recipe_drag_current_y - state.recipe_drag_anchor_y) > threshold)
-        state.recipe_drag_moved = true;
-    if (!input.left_released) return;
-    state.recipe_drag_active = false;
-    if (state.recipe_drag_moved) commit_recipe_drag(input);
+    if (continue_span_capture(input, state.recipe_capture, state.recipe_drag_active,
+                              state.recipe_drag_moved, state.recipe_drag_current_y))
+        commit_recipe_drag(input);
+    if (!state.recipe_drag_active) state.recipe_capture.cancel();
 }
 
 void update_recipe_drag(const ComposePointerEventContext& input) {

@@ -1,5 +1,6 @@
 #include "sys/application_command_dispatch.h"
 #include "sys/compose_area_actions.h"
+#include <wormedit/core/resource_assignment.h>
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/audio_state.h"
 #include "ui/nuklear/compose_area_menu.h"
@@ -7235,4 +7236,92 @@ TEST_CASE("Speed marker heads translate while tail handles resize through produc
     expect_t422(speed.position == local_position_t{measure_id_t{1}, 480});
     expect_t422(speed.transition_beats == rational_t{1, 1});
     expect_t422(!s.timing_marker_capture.active);
+}
+
+TEST_CASE("Project switches clear dock ownership before selection re-arms a resource",
+          "[frontend-state][event-harness][resource-arming]") {
+    nuklear_event_harness_t h{1600, 900};
+    auto& v = h.view().compose;
+    const WormUiComposeKeysoundRowView row{.resource_id = 40, .slot = "01", .name = "arm.wav"};
+    const WormUiComposeResourceView resource{.resource_id = 41, .asset_id = 1,
+        .roles = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE, .audio_asset = true,
+        .target_index = "02", .name = "new.wav", .source_name = "new.wav"};
+    v.keysounds = &row; v.keysound_count = v.keysound_total_count = 1; v.keysounds_available = true;
+    v.selected_note_label_note_id = 7; v.selected_assigned_resource_id = 41;
+    v.resources = &resource; v.resource_count = v.resource_total_count = 1;
+    (void)h.frame();
+    auto& s = worm_ui_nuklear_compose_state(); s.sounds_panel_visible = true;
+    (void)h.frame();
+    const auto center = h.drawn_text_center("arm.wav");
+    expect_t422(center.has_value());
+    (void)click_at(h, center->first, center->second, true);
+    expect_t422(s.armed_resource_id == 40 && s.armed_from_sounds_dock);
+    ++h.view().project_id; ++v.project_id;
+    v.selected_note_label_note_id = 7; v.selected_assigned_resource_id = 41;
+    v.resources = &resource; v.resource_count = v.resource_total_count = 1;
+    (void)h.frame();
+    expect_t422(s.armed_resource_id == 41 && !s.armed_from_sounds_dock && !s.armed_from_bga_dock);
+}
+
+TEST_CASE("Context replacement shares pointer resource-role rejection",
+          "[frontend-state][event-harness][resource-arming]") {
+    const auto bgm_only = GENERATE(false, true);
+    auto song = t422_song();
+    song.resources.push_back({.id = resource_id_t{2}, .name = "BGM only", .asset = asset_id_t{1},
+                              .roles = {bgm_only ? resource_role_t::bgm : resource_role_t::sample}});
+    t422_fixture_t f{std::move(song)};
+    f.interaction->selected_notes = {object_id_t{101}};
+    f.interaction->selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}}};
+    f.project();
+    auto& s = worm_ui_nuklear_compose_state();
+    s.inspector_visible = s.sounds_panel_visible = s.layers_panel_visible = false;
+    (void)f.harness.frame();
+    // A BGM stem can supply this armed sound through the shared Draw source input.
+    s.draw_source_kind = 1; s.draw_source_id = 2;
+    const auto p = t422_note_screen_center(f, 101);
+    expect_t422(p.has_value());
+    (void)right_click_at(f.harness, p->first, p->second);
+    (void)f.harness.frame();
+    const auto replace = f.harness.drawn_text_center("Replace sound with current source");
+    expect_t422(replace.has_value());
+    bool emitted = false;
+    for (const auto& frame : click_at(f.harness, replace->first, replace->second)) {
+        if (frame.get().compose_action != WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION) continue;
+        emitted = true;
+        const auto& emitted_action = frame.get();
+        const auto applied = apply_resource_assignment(f.history,
+            emitted_action.compose_input_document_revision,
+            {.chart = chart_id_t{emitted_action.compose_input_chart_id},
+             .resource = resource_id_t{emitted_action.compose_resource_id},
+             .objects = f.interaction->selected_objects});
+        expect_t422(applied.applied == !bgm_only);
+        expect_t422(applied.diagnostics.empty() == !bgm_only);
+    }
+    expect_t422(emitted);
+    expect_t422(t422_note(f.history, 101)->sound == resource_id_t{bgm_only ? 1U : 2U});
+    expect_t422(f.history.undo.size() == (bgm_only ? 0 : 1));
+}
+
+TEST_CASE("BGA chart switches disarm the complete source even with its dock hidden",
+          "[frontend-state][event-harness][resource-arming]") {
+    nuklear_event_harness_t h{1600, 900};
+    auto& v = h.view().compose;
+    const std::array<std::uint64_t, 1> ids{1400};
+    const WormUiComposeBgaRowView row{.resource_id = 1400, .slot = "01", .name = "switch.png"};
+    v.bga_rows = &row; v.bga_row_count = v.bga_total_matching = 1;
+    v.bga_matching_ids = v.bga_advance_ids = ids.data(); v.bga_advance_count = 1; v.bga_search = "";
+    (void)h.frame();
+    auto& s = worm_ui_nuklear_compose_state(); s.bga_panel_visible = true;
+    (void)h.frame();
+    const auto center = h.drawn_text_center("switch.png");
+    expect_t422(center.has_value());
+    (void)click_at(h, center->first, center->second, true);
+    expect_t422(s.armed_resource_id == 1400 && s.armed_from_bga_dock && s.draw_source_kind == 2);
+    s.bga_panel_visible = false;
+    ++v.chart_id; ++h.view().selected_chart_id;
+    const auto changed = h.frame();
+    expect_t422(s.armed_resource_id == 0 && !s.armed_from_bga_dock && !s.armed_from_sounds_dock);
+    expect_t422(s.draw_source_kind == 0 && s.draw_source_id == 0);
+    const auto* cleared = find_compose_input(std::vector{changed}, WORM_UI_COMPOSE_INPUT_DRAW_SOURCE);
+    expect_t422(cleared && cleared->resource_id == 0 && cleared->resource_role == 0);
 }

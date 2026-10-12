@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_sounds_panel.h"
+#include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_bmson_tab.h"
 #include "ui/nuklear/sound_import_state.h"
@@ -881,19 +882,12 @@ void render_sound_slot_row(const SoundsPanel& panel, std::size_t index) {
     if (slot.resource_id && slot.placeable && !slot.missing) {
         const std::array resource{slot.resource_id};
         worm_ui_keysound_select_all(state.keysound_selection, resource);
-        state.armed_resource_id = slot.resource_id;
-        state.armed_from_sounds_dock = true;
-        state.armed_from_bga_dock = false;
-        state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
+        set_armed_resource(state, slot.resource_id, compose_resource_origin_t::sounds);
         worm_ui_nuklear_pick_draw_source(state, *panel.action, 1, slot.resource_id);
         if (state.sounds_preview_on_click && raise(panel, WORM_UI_COMPOSE_ACTION_AUDITION_SOUND))
             panel.action->compose_resource_id = slot.resource_id;
     } else {
         worm_ui_nuklear_pick_draw_source(state, *panel.action, 0, 0);
-        state.armed_resource_id = 0;
-        state.armed_from_sounds_dock = false;
-        state.armed_from_bga_dock = false;
-        state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     }
 }
 
@@ -1413,10 +1407,7 @@ void click_row(const SoundsPanel& panel, std::size_t shown_index, std::uint64_t 
     const bool double_click = nk_input_is_mouse_released(&panel.context->input, NK_BUTTON_DOUBLE);
     if (!primary || primary->missing || ctrl || shift) return;
     if (!double_click && !primary->stem_source_lane_id) return;
-    state.armed_resource_id = primary->resource_id;
-    state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
-    state.armed_from_sounds_dock = true;
-    state.armed_from_bga_dock = false;
+    set_armed_resource(state, primary->resource_id, compose_resource_origin_t::sounds);
     worm_ui_nuklear_pick_draw_source(state, *panel.action, 1, state.keysound_selection.primary);
 }
 

@@ -2,6 +2,7 @@
 
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/popup_lifecycle.h"
 #include <algorithm>
 #include <cstring>
@@ -25,10 +26,7 @@ void activate(const WormUiComposeView& view, WormUiWorkspaceAction& action,
     if (!id) return;
     compose.keysound_selection.selected = {id};
     compose.keysound_selection.primary = compose.keysound_selection.anchor = id;
-    compose.armed_resource_id = id;
-    compose.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
-    compose.armed_from_sounds_dock = true;
-    compose.armed_from_bga_dock = false;
+    set_armed_resource(compose, id, compose_resource_origin_t::sounds);
     action.compose_input_project_id = view.project_id;
     action.compose_input_chart_id = view.chart_id;
     action.compose_input_document_revision = view.document_revision;

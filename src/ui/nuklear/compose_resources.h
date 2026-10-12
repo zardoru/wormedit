@@ -17,3 +17,13 @@ void worm_ui_nuklear_open_layer_creation(const WormUiComposeView& view,
     worm_ui_nuklear_compose_state_t& state);
 void worm_ui_nuklear_render_compose_dialogs(nk_context* context, const WormUiComposeView& view,
     WormUiWorkspaceAction& action, worm_ui_nuklear_compose_state_t& state);
+
+enum class compose_resource_origin_t { selection, sounds, bga };
+enum class compose_resource_reset_reason_t { project_changed, chart_changed, source_cleared };
+
+// Own the complete arming state together; never clear an ID independently of its origin.
+void set_armed_resource(worm_ui_nuklear_compose_state_t& state, std::uint64_t id,
+                        compose_resource_origin_t origin);
+void reset_armed_resource(worm_ui_nuklear_compose_state_t& state,
+                          compose_resource_reset_reason_t reason);
+auto armed_resource_origin(const worm_ui_nuklear_compose_state_t& state) -> compose_resource_origin_t;

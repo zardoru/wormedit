@@ -2,6 +2,7 @@
 #include "ui/nuklear/tooltip.h"
 #include "wormedit/core/document.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include <wormedit/core/interaction.h>
 #include "ui/nuklear/chrome.h"
@@ -247,10 +248,7 @@ void select_bga_row(nk_context* context, const WormUiComposeView& view,
         (modifiers & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0, (modifiers & SDL_KMOD_SHIFT) != 0);
     if (!nk_input_is_mouse_released(&context->input, NK_BUTTON_DOUBLE) || value.missing ||
         !advance_eligible(view, state.bga_selection.primary)) return;
-    state.armed_resource_id = state.bga_selection.primary;
-    state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
-    state.armed_from_sounds_dock = false;
-    state.armed_from_bga_dock = true;
+    set_armed_resource(state, state.bga_selection.primary, compose_resource_origin_t::bga);
     worm_ui_nuklear_pick_draw_source(state, action, 2, state.bga_selection.primary);
     reveal_empty_base_lane(action, view, false);
 }
@@ -373,7 +371,7 @@ static void sync_bga_document(const WormUiComposeView* view,
                               worm_ui_nuklear_compose_state_t* state, WormUiWorkspaceAction* action) {
     if (state->bga_project_id != view->project_id || state->bga_chart_id != view->chart_id) {
         state->bga_selection = {}; state->bga_search.fill(0); state->bga_first_row = 0;
-        state->bga_advance_ids.clear(); state->armed_from_bga_dock = false;
+        state->bga_advance_ids.clear();
         state->bga_project_id = view->project_id; state->bga_chart_id = view->chart_id;
         state->bga_revision = view->document_revision;
         state->bga_use_filter = 0;

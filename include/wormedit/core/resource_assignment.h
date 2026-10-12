@@ -336,6 +336,11 @@ struct move_virtual_bms_bgm_event_action_t {
                                            const create_resource_action_t& action)
     -> document_command_result_t;
 
+// Shared catalog eligibility for placement, pointer preflight and assignment.
+// Notes require Sample; BGM accepts Sample or BGM; visual events require BGA.
+[[nodiscard]] auto validate_resource_role(const song_document_t& document, resource_id_t resource,
+    resource_role_t role, document_command_result_t& result) -> bool;
+
 // Assigns one catalog resource to an explicit typed note/BGM/BGA selection.
 // BMSON objects linked to retained sound-channel events cannot be rebound to
 // another resource without editing their source channel. A no-op adds no history.

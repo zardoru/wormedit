@@ -374,6 +374,33 @@ auto branch_source_orders(const chart_document_t& chart)
 
 } // namespace
 
+auto validate_resource_role(const song_document_t& document, resource_id_t id,
+    resource_role_t role, document_command_result_t& result) -> bool {
+    const auto resource = std::ranges::find(document.resources, id, &resource_entry_t::id);
+    if (!id || resource == document.resources.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "Resource is no longer in the catalog");
+        return false;
+    }
+    if (resource->missing) {
+        reject(result, diagnostic_code_t::dangling_resource, "Cannot use a resource with a missing source");
+        return false;
+    }
+    const auto audio_role = role == resource_role_t::sample || role == resource_role_t::bgm;
+    const auto asset_present = audio_role
+        ? std::ranges::find(document.audio_assets, resource->asset, &audio_asset_t::id) != document.audio_assets.end()
+        : role == resource_role_t::bga &&
+          std::ranges::find(document.visual_assets, resource->asset, &visual_asset_t::id) != document.visual_assets.end();
+    // Background events may play ordinary keysounds as well as BGM-only sources.
+    // This matches BGM strokes and keeps assignment/placement eligible in the same way.
+    const auto role_present = has_role(*resource, role) ||
+        (role == resource_role_t::bgm && has_role(*resource, resource_role_t::sample));
+    if (!role_present || !asset_present) {
+        reject(result, diagnostic_code_t::unsupported_feature, "Resource cannot be used in this catalog lane");
+        return false;
+    }
+    return true;
+}
+
 auto find_bms_identifier_run(const song_document_t& document, std::string_view name_space,
                              std::size_t count) -> std::optional<std::vector<std::string>> {
     if ((name_space != "WAV" && name_space != "BMP") || count == 0) return std::nullopt;
@@ -500,17 +527,6 @@ auto validate_placement_resource(const song_document_t& document,
                                  const place_resource_action_t& action,
                                  document_command_result_t& result)
     -> std::optional<resource_role_t> {
-    const auto resource = std::ranges::find(document.resources, action.resource, &resource_entry_t::id);
-    if (!action.resource || resource == document.resources.end()) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "resource placement refers to an unknown catalog resource");
-        return std::nullopt;
-    }
-    if (resource->missing) {
-        reject(result, diagnostic_code_t::dangling_resource,
-               "cannot place a resource with a missing source");
-        return std::nullopt;
-    }
     if (action.kind != resource_placement_kind_t::sample_note &&
         action.kind != resource_placement_kind_t::bgm_event &&
         action.kind != resource_placement_kind_t::bga_background) {
@@ -521,15 +537,7 @@ auto validate_placement_resource(const song_document_t& document,
     const auto role = action.kind == resource_placement_kind_t::sample_note
         ? resource_role_t::sample : action.kind == resource_placement_kind_t::bgm_event
         ? resource_role_t::bgm : resource_role_t::bga;
-    const auto audio = std::ranges::find(document.audio_assets, resource->asset, &audio_asset_t::id);
-    const auto visual = std::ranges::find(document.visual_assets, resource->asset, &visual_asset_t::id);
-    if (!has_role(*resource, role) ||
-        (role == resource_role_t::bga ? visual == document.visual_assets.end()
-                                      : audio == document.audio_assets.end())) {
-        reject(result, diagnostic_code_t::unsupported_feature,
-               "resource is incompatible with the requested placement");
-        return std::nullopt;
-    }
+    if (!validate_resource_role(document, action.resource, role, result)) return std::nullopt;
     return role;
 }
 
@@ -2258,23 +2266,6 @@ auto validate_resource_assignment_selection(const song_document_t& document,
                "resource assignment requires a bounded nonempty selection");
         return std::nullopt;
     }
-    const auto resource = std::ranges::find(document.resources, action.resource, &resource_entry_t::id);
-    if (!action.resource || resource == document.resources.end()) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "resource assignment refers to an unknown catalog resource");
-        return std::nullopt;
-    }
-    if (resource->missing) {
-        reject(result, diagnostic_code_t::dangling_resource,
-               "cannot assign a resource with a missing source");
-        return std::nullopt;
-    }
-    const auto audio = std::ranges::find(document.audio_assets, resource->asset, &audio_asset_t::id);
-    const auto visual = std::ranges::find(document.visual_assets, resource->asset, &visual_asset_t::id);
-    const bool audio_eligible = audio != document.audio_assets.end() &&
-        (has_role(*resource, resource_role_t::sample) || has_role(*resource, resource_role_t::bgm));
-    const bool visual_eligible = visual != document.visual_assets.end() &&
-                                 has_role(*resource, resource_role_t::bga);
     auto selected = action.objects;
     std::ranges::sort(selected);
     if (std::ranges::adjacent_find(selected) != selected.end()) {
@@ -2282,21 +2273,21 @@ auto validate_resource_assignment_selection(const song_document_t& document,
                "resource assignment contains a duplicate typed object");
         return std::nullopt;
     }
+    std::set<resource_role_t> required_roles;
     for (const auto& object : selected) {
         if (!object.id) {
             reject(result, diagnostic_code_t::invalid_id,
                    "resource assignment uses the reserved zero object ID");
             return std::nullopt;
         }
-        const bool compatible = object.kind == editor_selection_object_kind_t::note ||
-                object.kind == editor_selection_object_kind_t::bgm_event ? audio_eligible
-            : object.kind == editor_selection_object_kind_t::bga_event ? visual_eligible : false;
-        if (!compatible) {
-            reject(result, diagnostic_code_t::unsupported_feature,
-                   "selected object cannot use this resource type");
-            return std::nullopt;
-        }
+        const auto role = object.kind == editor_selection_object_kind_t::note ? resource_role_t::sample
+                        : object.kind == editor_selection_object_kind_t::bgm_event ? resource_role_t::bgm
+                        : object.kind == editor_selection_object_kind_t::bga_event ? resource_role_t::bga
+                                                                                : resource_role_t::music;
+        required_roles.insert(role);
     }
+    for (const auto role : required_roles)
+        if (!validate_resource_role(document, action.resource, role, result)) return std::nullopt;
     return selected;
 }
 

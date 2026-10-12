@@ -581,6 +581,21 @@ static void retain_compose_core_gesture_presence(const WormUiComposeView* view, 
     if (view && active && view->visible) state.core_gesture_active = view->editor_gesture_active;
 }
 
+static void sync_armed_resource_context(const WormUiComposeView& view, WormUiWorkspaceAction& action,
+                                        bool project_changed, bool chart_changed) {
+    if (project_changed) {
+        reset_armed_resource(state, compose_resource_reset_reason_t::project_changed);
+        state.auto_increment_on_place = false;
+        state.resource_pointer_mode =
+            worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+        state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
+        state.last_project_id = view.project_id;
+    } else if (chart_changed && state.armed_from_bga_dock && state.bga_chart_id != view.chart_id) {
+        reset_armed_resource(state, compose_resource_reset_reason_t::chart_changed);
+        worm_ui_nuklear_pick_draw_source(state, action, 0, 0);
+    }
+}
+
 void prepare_compose_panel_input(const WormUiComposeView* view, bool compose_tab_active,
                                            bool window_focused, WormUiWorkspaceAction* action) {
     retain_compose_core_gesture_presence(view, compose_tab_active);
@@ -601,16 +616,7 @@ void prepare_compose_panel_input(const WormUiComposeView* view, bool compose_tab
         const auto project_changed = state.last_project_id != view->project_id;
         const auto chart_changed = project_changed || state.last_chart_id != view->chart_id;
         const auto revision_changed = state.last_document_revision != view->document_revision;
-        if (project_changed) {
-            state.armed_resource_id = 0;
-            state.draw_source_kind = 0;
-            state.draw_source_id = 0;
-            state.auto_increment_on_place = false;
-            state.resource_pointer_mode =
-                worm_ui_nuklear_compose_resource_pointer_mode_t::off;
-            state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
-            state.last_project_id = view->project_id;
-        }
+        sync_armed_resource_context(*view, *action, project_changed, chart_changed);
         // A successful chord release refreshes surviving core holds to the new revision.
         // External edits leave their stamps stale and cancel the complete capture instead.
         if (chart_changed || (revision_changed && !view->editor_gesture_current))
@@ -714,10 +720,7 @@ static bool begin_bookmark_rename_from_double_click(const ComposeDoubleClickCont
 }
 
 static void arm_compose_stem_source(WormUiWorkspaceAction& action, std::uint64_t resource) {
-    state.armed_resource_id = resource;
-    state.armed_from_sounds_dock = true;
-    state.armed_from_bga_dock = false;
-    state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
+    set_armed_resource(state, resource, compose_resource_origin_t::sounds);
     worm_ui_nuklear_pick_draw_source(state, action, 1, resource);
 }
 

@@ -2203,3 +2203,37 @@ TEST_CASE("Invalid sound names and stale metadata reject every field without his
     check_sound_workflow(history.document.resources[0].name.empty());
     check_sound_workflow(history.undo.empty());
 }
+
+namespace {
+void require_resource_role(bool value) { REQUIRE(value); }
+}
+
+TEST_CASE("Resource role validation agrees for placement and assignment",
+          "[unit][core][resources][resource-role]") {
+    auto song = assignment_song();
+    song.resources[1].roles = {resource_role_t::sample};
+    auto assigned = make_document_history(song);
+    const auto bgm = apply_resource_assignment(assigned, assigned.document.revision,
+        {.chart = chart_id_t{2}, .resource = resource_id_t{2},
+         .objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{11}}}});
+    require_resource_role(bgm.applied);
+    auto placed = make_document_history(song);
+    require_resource_role(apply_resource_placement(placed, placed.document.revision,
+        {.chart = chart_id_t{2}, .resource = resource_id_t{2}, .position = {measure_id_t{3}, 480},
+         .kind = resource_placement_kind_t::bgm_event}).applied);
+    song.resources[1].roles = {resource_role_t::bgm};
+    auto rejected = make_document_history(song);
+    const auto revision = rejected.document.revision;
+    require_resource_role(has_code(apply_resource_assignment(rejected, revision,
+        {.chart = chart_id_t{2}, .resource = resource_id_t{2},
+         .objects = {{editor_selection_object_kind_t::bgm_event, object_id_t{11}},
+                     {editor_selection_object_kind_t::note, object_id_t{10}}}}),
+        diagnostic_code_t::unsupported_feature));
+    require_resource_role(has_code(apply_resource_placement(rejected, revision,
+        {.chart = chart_id_t{2}, .resource = resource_id_t{2}, .position = {measure_id_t{3}, 480},
+         .lane = lane_id_t{1}, .kind = resource_placement_kind_t::sample_note}),
+        diagnostic_code_t::unsupported_feature));
+    require_resource_role(rejected.document.revision == revision);
+    require_resource_role(rejected.undo.empty());
+    require_resource_role(rejected.document.charts.front().measures.front().bgm_events.front().sound == resource_id_t{1});
+}

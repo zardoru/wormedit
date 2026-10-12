@@ -43,7 +43,7 @@ void update_selection_state(const WormUiComposeView& view,
     // the advanced one.
     if (state.armed_from_sounds_dock || state.armed_from_bga_dock) return;
 
-    state.armed_resource_id = view.selected_assigned_resource_id;
+    set_armed_resource(state, view.selected_assigned_resource_id, compose_resource_origin_t::selection);
     const auto* assigned = find_resource(view, view.selected_assigned_resource_id);
     if (assigned) {
         const auto preferred = view.selected_bgm_event_id != 0

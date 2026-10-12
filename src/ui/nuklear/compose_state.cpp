@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include "ui/nuklear/theme.h"
 #include "wormedit/nuklear_config.h"
@@ -17,6 +18,39 @@
 #include <span>
 #include <string_view>
 #include <utility>
+
+void reset_armed_resource(worm_ui_nuklear_compose_state_t& state,
+                          compose_resource_reset_reason_t reason) {
+    state.armed_resource_id = 0;
+    state.armed_from_sounds_dock = state.armed_from_bga_dock = false;
+    state.draw_source_kind = 0;
+    state.draw_source_id = 0;
+    state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+    if (reason != compose_resource_reset_reason_t::source_cleared) {
+        state.resource_selection_chart_id = state.resource_selection_object_id =
+            state.resource_selection_assigned_id = 0;
+    }
+}
+
+auto armed_resource_origin(const worm_ui_nuklear_compose_state_t& state) -> compose_resource_origin_t {
+    if (state.armed_from_bga_dock) return compose_resource_origin_t::bga;
+    return state.armed_from_sounds_dock ? compose_resource_origin_t::sounds : compose_resource_origin_t::selection;
+}
+
+void set_armed_resource(worm_ui_nuklear_compose_state_t& state, std::uint64_t id,
+                        compose_resource_origin_t origin) {
+    if (!id) {
+        reset_armed_resource(state, compose_resource_reset_reason_t::source_cleared);
+        return;
+    }
+    state.armed_resource_id = id;
+    state.armed_from_sounds_dock = origin == compose_resource_origin_t::sounds;
+    state.armed_from_bga_dock = origin == compose_resource_origin_t::bga;
+    if (origin == compose_resource_origin_t::sounds)
+        state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
+    else if (origin == compose_resource_origin_t::bga)
+        state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
+}
 
 namespace {
 template<class Note>
@@ -357,7 +391,7 @@ void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
             state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
         }
         if (next_resource_id) {
-            state.armed_resource_id = next_resource_id;
+            set_armed_resource(state, next_resource_id, compose_resource_origin_t::bga);
             if (state.draw_source_kind == 2) state.draw_source_id = next_resource_id;
         }
         return;
@@ -376,7 +410,7 @@ void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
         state.auto_increment_on_place = false;
         state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     } else {
-        state.armed_resource_id = next_resource_id;
+        set_armed_resource(state, next_resource_id, armed_resource_origin(state));
         if (state.draw_source_kind == 1) state.draw_source_id = next_resource_id;
     }
 }
@@ -763,11 +797,7 @@ void worm_ui_nuklear_pick_draw_source(worm_ui_nuklear_compose_state_t& state,
     WormUiWorkspaceAction& action, uint8_t kind, uint64_t id) {
     state.draw_source_kind = id ? kind : 0;
     state.draw_source_id = id;
-    if (!id) {
-        state.armed_resource_id = 0;
-        state.armed_from_sounds_dock = state.armed_from_bga_dock = false;
-        state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
-    }
+    if (!id) reset_armed_resource(state, compose_resource_reset_reason_t::source_cleared);
     if (action.compose_input_count >= WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) return;
     action.compose_inputs[action.compose_input_count++] = {
         .kind = WORM_UI_COMPOSE_INPUT_DRAW_SOURCE,

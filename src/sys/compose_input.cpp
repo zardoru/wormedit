@@ -3054,11 +3054,9 @@ auto resource_pointer_spec(const WormUiComposeInputAction& input, compose_input_
     const auto required = kind == resource_placement_kind_t::sample_note ? resource_role_t::sample
                           : kind == resource_placement_kind_t::bgm_event ? resource_role_t::bgm
                                                                          : resource_role_t::bga;
-    const auto resource = std::ranges::find(context.history.document.resources,
-                                            resource_id_t{input.object_id}, &resource_entry_t::id);
-    if (resource == context.history.document.resources.end() ||
-        std::ranges::find(resource->roles, required) == resource->roles.end())
-        return "The armed resource cannot be used in this catalog lane.";
+    document_command_result_t validation{};
+    if (!validate_resource_role(context.history.document, resource_id_t{input.object_id}, required, validation))
+        return validation.diagnostics.front().message;
     return resource_pointer_spec_t{resource_id_t{input.object_id}, kind, required,
                                    input.kind == WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE};
 }

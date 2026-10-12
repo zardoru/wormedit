@@ -2503,11 +2503,12 @@ void tick_loaded_project_autosave(
     bool session_loaded, wormedit::native_project_autosave_loop_t& autosave_loop,
     const wormedit::document_history_t& history, bool native_project_loaded,
     const std::filesystem::path& active_project_path,
-    const std::filesystem::path& recovery_path, wormedit::notification_sink_t& notifications) {
+    const std::filesystem::path& recovery_path, wormedit::notification_sink_t& notifications,
+    const std::filesystem::path& asset_base) {
     if (!session_loaded) return;
     wormedit::sys::tick_application_autosave(
         autosave_loop, history, native_project_loaded, active_project_path,
-        recovery_path, notifications);
+        recovery_path, notifications, asset_base);
 }
 
 auto can_offer_audio_project_drop(bool session_loaded, bool fresh_blank_project,
@@ -4543,7 +4544,7 @@ int main(int argc, char** argv) {
                 wormedit::sys::compose_frame_delta_seconds(compose_viewport_last_ticks);
             tick_loaded_project_autosave(session_loaded, autosave_loop, history,
                                          native_project_loaded, active_project_path,
-                                         platform_recovery.path, notification_sink);
+                                         platform_recovery.path, notification_sink, asset_base);
         }
         wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)

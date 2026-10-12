@@ -6520,3 +6520,45 @@ TEST_CASE("Project output group rows expose worker previews and the shared expor
     require_project_access(action.compose_input_chart_id == 10);
     require_project_access(!action.compose_export_overwrite);
 }
+
+TEST_CASE("Double-clicking a stem note arms it without opening its label editor",
+          "[frontend-state][event-harness][scratchpad-stem-arm]") {
+    const auto kind = GENERATE(0, 1, 2);
+    nuklear_event_harness_t harness{1280, 900};
+    section_import_require(harness.ready());
+    auto& view = harness.view().compose;
+    const std::array motion{motion_event(300, 400)};
+    const auto hover = harness.frame(motion);
+    section_import_require(hover.get().compose_has_pointer_hover);
+    const auto x = hover.get().compose_pointer_hover_x_pixels;
+    const auto y = hover.get().compose_pointer_hover_y_pixels;
+    WormUiComposeNoteView note{};
+    note.bounds = {x - 15, y - 5, x + 15, y + 5};
+    note.note_id = 5;
+    note.lane_id = 1;
+    note.sound_resource_id = 40;
+    note.sound_label = "01";
+    note.sound_detail = "stem.wav";
+    note.sound_is_stem = kind != 0;
+    note.sound_missing = kind == 2;
+    view.note_endpoints = &note;
+    view.note_endpoint_count = 1;
+    (void)harness.frame();
+    const auto clicks = click_at(harness, 300, 400, true);
+    const auto* source = find_compose_input(clicks, WORM_UI_COMPOSE_INPUT_DRAW_SOURCE);
+    const auto* label = find_compose_input(clicks, WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK);
+    if (kind == 1) {
+        section_import_require(source != nullptr);
+        expect_draw(source->resource_id == 40);
+        expect_draw(!label);
+        view.draw_source_kind = 1;
+        view.draw_source_id = 40;
+        const auto& state = worm_ui_nuklear_compose_state();
+        expect_draw(worm_ui_nuklear_armed_dock_sound(state, view) == 40);
+        view.draw_source_missing = true;
+        expect_draw(worm_ui_nuklear_armed_dock_sound(state, view) == 0);
+    } else {
+        expect_draw(!source);
+        expect_draw(label != nullptr);
+    }
+}

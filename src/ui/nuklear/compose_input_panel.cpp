@@ -756,6 +756,21 @@ static bool begin_bookmark_rename_from_double_click(const ComposeDoubleClickCont
                                                          click_y);
 }
 
+static auto arm_double_clicked_stem(const ComposeDoubleClickContext& input, double x, double y) -> bool {
+    for (const auto& note : std::span(input.view->note_endpoints, input.view->note_endpoint_count)) {
+        const auto& bounds = note.bounds;
+        if (!note.sound_is_stem || !note.sound_resource_id || note.sound_missing || note.tail || note.proposal_ghost ||
+            x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) continue;
+        state.armed_resource_id = note.sound_resource_id;
+        state.armed_from_sounds_dock = true;
+        state.armed_from_bga_dock = false;
+        state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
+        worm_ui_nuklear_pick_draw_source(state, *input.action, 1, note.sound_resource_id);
+        return true;
+    }
+    return false;
+}
+
 bool process_compose_double_clicks(const ComposeDoubleClickContext& input,
                                           bool compose_pointer_captured,
                                           bool window_focused) {
@@ -781,6 +796,10 @@ bool process_compose_double_clicks(const ComposeDoubleClickContext& input,
             continue;
         }
         if (click_x < input.note_field_left || click_x >= input.note_field_right) continue;
+        if (arm_double_clicked_stem(input, click_x, click_y)) {
+            note_double_click_in_view = true;
+            continue;
+        }
         state.note_label_anchor_x = pointer.x;
         state.note_label_anchor_y = pointer.y;
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK, click_x,

@@ -9,6 +9,8 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 
 ## Card groups
 
+- [Remaining scratchpad feedback](tasks/scratchpad-completion.md)
+
 - [Scratchpad project access and Metadata scrolling](tasks/scratchpad-project-access.md)
 
 - [Scratchpad lane-key entry and stem auditions](tasks/scratchpad-lane-entry.md)

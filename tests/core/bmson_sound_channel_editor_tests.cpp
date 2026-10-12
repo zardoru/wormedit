@@ -1842,3 +1842,36 @@ TEST_CASE("Pointer stem drawing shares same-row reassignment with lane keys",
     expect_bmson_core(history.undo.size() == 2);
     expect_bmson_core(wormedit::validate_document(history.document).empty());
 }
+
+TEST_CASE("Stem notes return to their channel-owned BGM lane regardless of source order",
+          "[unit][core][bmson][assignment][scratchpad-stem-toggle]") {
+    auto song = fixture();
+    auto& chart = song.charts.front();
+    const auto channel = chart.sound_channels.front().id;
+    const auto owned = std::ranges::find(chart.bgm_source_lanes, std::optional{channel},
+                                       &wormedit::bgm_source_lane_t::stem_channel);
+    expect_bmson_core(owned != chart.bgm_source_lanes.end());
+    const auto owned_id = owned->id;
+    owned->source_order = 50;
+    chart.bgm_source_lanes.push_back({.id = wormedit::object_id_t{900001}, .name = "Packed",
+                                    .source_order = 0});
+    const auto chart_id = chart.id;
+    const auto bgm = chart.measures.front().notes.front();
+    const auto lane = chart.lane_layouts.front().layout.lanes[1].id;
+    auto history = wormedit::make_document_history(std::move(song));
+    require_t463_applied(wormedit::assign_bmson_sound_event(history, history.document.revision,
+        chart_id, bgm.id, std::nullopt));
+    require_t463_applied(wormedit::assign_bmson_sound_event(history, history.document.revision,
+        chart_id, bgm.id, lane));
+    require_t463_applied(wormedit::assign_bmson_sound_event(history, history.document.revision,
+        chart_id, bgm.id, std::nullopt));
+    const auto& returned = history.document.charts.front().measures.front().bgm_events;
+    const auto found = std::ranges::find(returned, bgm.id, &wormedit::bgm_event_t::id);
+    expect_bmson_core(found != returned.end());
+    expect_bmson_core(found->source_lane == owned_id);
+    expect_bmson_core(found->sound_channel_event == bgm.sound_channel_event);
+    expect_bmson_core(wormedit::validate_document(history.document).empty());
+    expect_bmson_core(static_cast<bool>(wormedit::undo_document_command(history)));
+    expect_bmson_core(std::ranges::any_of(history.document.charts.front().measures.front().notes,
+        [id = bgm.id](const auto& note) { return note.id == id; }));
+}

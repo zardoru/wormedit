@@ -808,9 +808,12 @@ auto find_linked_sound_source(const chart_document_t& chart, object_id_t source_
     return linked_sound_source_t{&*channel, &*source};
 }
 
-auto ensure_bgm_source_lane(chart_document_t& chart, std::uint64_t order,
+auto ensure_bgm_source_lane(chart_document_t& chart, object_id_t channel, std::uint64_t order,
                             std::string_view channel_name, std::uint64_t revision)
     -> std::variant<object_id_t, document_command_result_t> {
+    const auto owned = std::ranges::find(chart.bgm_source_lanes, std::optional{channel},
+                                         &bgm_source_lane_t::stem_channel);
+    if (owned != chart.bgm_source_lanes.end()) return owned->id;
     const auto found = std::ranges::find_if(chart.bgm_source_lanes,
         [&](const auto& lane) { return lane.source_order == order; });
     if (found != chart.bgm_source_lanes.end()) return found->id;
@@ -862,7 +865,8 @@ auto update_semantic_assignment(chart_document_t& chart, measure_chunk_t& measur
                       [semantic_id](const auto& item) { return item.id == semantic_id; });
         return std::nullopt;
     }
-    auto lane_result = ensure_bgm_source_lane(chart, channel_order, channel_name, revision);
+    auto lane_result = ensure_bgm_source_lane(chart, chart.sound_channels[channel_order].id,
+                                               channel_order, channel_name, revision);
     if (const auto* failure = std::get_if<document_command_result_t>(&lane_result)) return *failure;
     const auto source_lane = std::get<object_id_t>(lane_result);
     measure.bgm_events.push_back({.id = refs.note->id, .position = position,

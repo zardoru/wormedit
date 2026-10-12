@@ -6603,3 +6603,20 @@ TEST_CASE("Song bar defaults hide BMSON and BMS while keeping manual overrides",
     fixture.project();
     expect_compose_test(!fixture.flattened.view.compose.bgm_bar_reserved);
 }
+
+TEST_CASE("Compose classifies stem note heads after geometry projection and cache reuse",
+          "[sys][compose][bmson][scratchpad-stem-projection]") {
+    auto song = t463_shared_asset_song();
+    auto note = compose_test_song().charts.front().measures.front().notes.front();
+    note.sound = resource_id_t{100};
+    song.charts.front().measures.front().notes.push_back(note);
+    compose_test_fixture_t fixture(std::move(song));
+    for (int pass = 0; pass < 2; ++pass) {
+        t475_project(fixture);
+        const auto& view = fixture.flattened.view.compose;
+        t475_require(view.note_endpoint_count > 0);
+        t475_check(view.note_endpoints[0].sound_resource_id == 100);
+        t475_check(view.note_endpoints[0].sound_is_stem);
+        t475_check(!view.note_endpoints[0].sound_missing);
+    }
+}

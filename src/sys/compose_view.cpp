@@ -1059,9 +1059,10 @@ void project_compose_scene_objects(const compose_scene_projection_context_t& pro
              .lane_id = endpoint.lane.value,
              .display_lane_number = compose_note_display_lane_number(scene, endpoint),
              .key_color = compose_note_key_color(scene, endpoint),
+             .glyph = static_cast<std::uint8_t>(endpoint.glyph),
              .sound_label = sound.label,
              .sound_detail = sound.detail,
-             .glyph = static_cast<std::uint8_t>(endpoint.glyph),
+             .sound_resource_id = endpoint.sound ? endpoint.sound->value : 0,
              .snap_class = compose_endpoint_snap_class(projection, endpoint),
              .kind = static_cast<std::uint8_t>(endpoint.kind),
              .tail = endpoint.tail,
@@ -4984,6 +4985,17 @@ void populate_bgm_draw_hint(WormUiComposeView& view, const wormedit::chart_docum
     view.draw_source_label = "silent note · Pick a sound to draw BGM";
 }
 
+void populate_note_stem_sources(flattened_workspace_t& flattened, const compose_scene_cache_t& cache,
+    const wormedit::song_document_t& document) {
+    for (auto& note : flattened.compose.note) {
+        note.sound_is_stem = cache.draw_stem_sources.resource_lanes.contains(note.sound_resource_id) ||
+                            cache.draw_stem_sources.explicit_stem_resources.contains(note.sound_resource_id);
+        const auto resource = cache.draw_stem_sources.resource_indices.find(note.sound_resource_id);
+        note.sound_missing = resource == cache.draw_stem_sources.resource_indices.end() ||
+                             document.resources[resource->second].missing;
+    }
+}
+
 void populate_draw_stem_sources(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
     const wormedit::song_document_t& document, const wormedit::chart_document_t& chart) {
     prepare_draw_stem_sources(cache, document, chart);
@@ -5126,6 +5138,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
         interaction_view, measures, downscroll, timing_stage, comparison_rows,
         bga_move_preview};
     populate_compose_final_projection(final_context);
+    populate_note_stem_sources(flattened, cache, history.document);
     project_loop_selection_controls(view, application_state);
 }
 

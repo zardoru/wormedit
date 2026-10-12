@@ -787,9 +787,12 @@ typedef struct WormUiComposeNoteView {
     uint64_t lane_id;
     uint32_t display_lane_number; // 1-based chart layout order; 0 when unavailable.
     uint8_t key_color; // lane key color of the owning lane; 0 = generic.
+    bool sound_is_stem;
+    bool sound_missing;
+    uint8_t glyph;
     const char* sound_label;
     const char* sound_detail;
-    uint8_t glyph;
+    uint64_t sound_resource_id;
     uint8_t snap_class; // 4, 8, 12, 16, 24, 32, 48, 64; 0 = other.
     uint8_t kind;
     bool tail;

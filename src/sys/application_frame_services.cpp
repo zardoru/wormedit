@@ -161,9 +161,11 @@ void tick_application_autosave(native_project_autosave_loop_t& autosave_loop,
                                bool loaded_primary,
                                const std::filesystem::path& requested_primary_path,
                                const std::filesystem::path& recovery_path,
-                               notification_sink_t& notifications) {
-    const auto target = make_native_project_autosave_target(
+                               notification_sink_t& notifications,
+                               const std::filesystem::path& asset_base) {
+    auto target = make_native_project_autosave_target(
         history.document.id, loaded_primary, requested_primary_path, recovery_path);
+    target.asset_base = asset_base;
     if (const auto result = autosave_loop.tick(
             history.document, is_document_dirty(history),
             native_project_autosave_loop_t::clock_t::now(), target)) {

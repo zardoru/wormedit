@@ -14,6 +14,8 @@ struct native_project_autosave_target_t {
     std::filesystem::path backup_path;
     std::filesystem::path original_source_path;
     std::filesystem::path intended_project_path;
+    // Relative source assets are anchored to this live session directory.
+    std::filesystem::path asset_base;
 };
 
 // Saved native projects keep the backup next to the primary. Sessions without

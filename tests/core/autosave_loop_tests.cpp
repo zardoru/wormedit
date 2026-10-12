@@ -483,3 +483,35 @@ TEST_CASE("autosave queue failure posts once and missing destination stays quiet
 TEST_CASE("autosave worker failure remains contained when notification clock throws", "[unit][core][autosave][notifications]") {
     CHECK(throwing_notification_clock_does_not_change_failed_result());
 }
+
+TEST_CASE("Recovery snapshots anchor imported assets without changing the live document",
+          "[unit][core][autosave][scratchpad-recovery]") {
+    using namespace wormedit;
+    using clock_t = native_project_autosave_loop_t::clock_t;
+    temporary_directory_t directory;
+    const auto source = directory.path / "original-chart";
+    const auto recovery = directory.path / "recovery";
+    std::filesystem::create_directories(source);
+    std::filesystem::create_directories(recovery);
+    std::ofstream(source / "stem.wav") << "fixture";
+    auto document = song(71, 2);
+    document.audio_assets = {{.id = asset_id_t{1}, .source_path = "stem.wav",
+                              .waveform_cache_path = "stem.waveform"}};
+    auto target = make_native_project_autosave_target(document.id, false, {}, recovery);
+    target.asset_base = source;
+    task_scheduler_t scheduler(1, 1);
+    const auto start = clock_t::time_point{};
+    native_project_autosave_loop_t loop(start, scheduler);
+    (void)loop.tick(document, true, start + 5min, target);
+    const auto completed = wait_for_result(loop, document, start + 5min + 1ms, target);
+    require_autosave_interval(completed.has_value());
+    require_autosave_interval(completed->status == native_project_autosave_status_t::published);
+    const auto parsed = parse_native_project_recovery_snapshot(read_text(target.backup_path));
+    require_autosave_interval(parsed.snapshot.has_value());
+    const auto& asset = parsed.snapshot->song.audio_assets.front();
+    expect_autosave_interval(asset.source_path == source / "stem.wav");
+    expect_autosave_interval(std::filesystem::is_regular_file(asset.source_path));
+    expect_autosave_interval(asset.waveform_cache_path == source / "stem.waveform");
+    expect_autosave_interval(document.audio_assets.front().source_path == "stem.wav");
+    expect_autosave_interval(document.audio_assets.front().waveform_cache_path == "stem.waveform");
+}

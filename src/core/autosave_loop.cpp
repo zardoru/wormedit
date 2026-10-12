@@ -7,6 +7,25 @@
 namespace wormedit {
 namespace {
 
+void anchor_recovery_asset_paths(song_document_t& snapshot, const std::filesystem::path& base) {
+    if (base.empty()) return;
+    std::error_code error;
+    const auto absolute = std::filesystem::absolute(base, error);
+    if (error) return;
+    const auto anchor = [&](std::filesystem::path& path) {
+        if (!path.empty() && path.is_relative()) path = (absolute / path).lexically_normal();
+    };
+    const auto assets = [&](auto& rows) {
+        for (auto& row : rows) anchor(row.source_path);
+    };
+    assets(snapshot.audio_assets);
+    assets(snapshot.visual_assets);
+    assets(snapshot.midi_assets);
+    assets(snapshot.generator_recipes);
+    for (auto& asset : snapshot.audio_assets)
+        if (asset.waveform_cache_path) anchor(*asset.waveform_cache_path);
+}
+
 void post_autosave_failure(const std::optional<notification_sink_t>& notifications,
                            const native_project_autosave_result_t& result) {
     if (!notifications || result.status != native_project_autosave_status_t::failed)
@@ -111,15 +130,17 @@ auto native_project_autosave_loop_t::tick(const song_document_t& song, bool dirt
     auto snapshot = song;
     auto coordinator = coordinator_;
     const auto backup_path = target.backup_path;
+    const auto asset_base = target.asset_base;
     auto original_source_path = target.original_source_path;
     auto intended_project_path = target.intended_project_path;
     task_graph_t graph(1);
     const auto added = graph.add_task(
         {},
-        [coordinator = std::move(coordinator), snapshot = std::move(snapshot), now, backup_path,
+        [coordinator = std::move(coordinator), snapshot = std::move(snapshot), now, backup_path, asset_base,
          original_source_path = std::move(original_source_path),
          intended_project_path = std::move(intended_project_path), options = std::move(options)](
             std::span<const task_result_t>, std::stop_token) mutable -> task_result_t {
+            anchor_recovery_asset_paths(snapshot, asset_base);
             auto result = coordinator.maybe_autosave(
                 snapshot, now, backup_path, std::move(original_source_path),
                 std::move(intended_project_path), std::move(options));

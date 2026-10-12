@@ -39,7 +39,7 @@ Read `AGENTS.md` and `docs/chart-editor-plan/tasks.md` before taking a card. Exe
 
 ## T-592 Consolidate core editing context and typed dispatch
 
-- **Status:** ready
+- **Status:** done
 - **Findings closed:** EC1, EC2, EC3, EC4, EC5, EC6, CS4.
 - **Stale-plan audit:** Confirm EC5 nested dispatch rebuilds and CS4 duplicated resource index against current source; drop stale claims with evidence. Inventory all dispatch alternatives and callback contexts. Re-grep named symbols; confirm A leads before editing and record dropped claims. Do not chase rejected findings.
 - **Outcome:** Build one stack-only editor_edit_context_t and dispatch with std::visit to named free handlers; unrelated contexts and forwarding closures are never constructed.
@@ -56,9 +56,19 @@ Read `AGENTS.md` and `docs/chart-editor-plan/tasks.md` before taking a card. Exe
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source>` for every touched source, with no new/increased violations. Record exact command statuses and output tails; validate production paths with existing event/registered-command tests and relevant core/format fixtures. Claude performs the Xvfb smoke check.
 - **Out of scope:** Product semantics changes; necessary complexity and rejected audit claims; measure-index caching across nested mutation; native schema serializer redesign; god-struct grouping before T-599 approval; optional editor_ui_action_t rename without approval; unrelated work.
 
+- **Stale-plan evidence (2026-10-12):** EC5 is confirmed: nested dispatch enters the same view/index build. Keep that rebuild and remove only unused callback/context construction. CS4 is confirmed in apply_bgm_event_move: the second index build occurs before any mutation and sees the same source chart; reuse the already validated index. Current dispatcher has 42 alternatives, 33 handle lambdas plus nine gesture-family alternatives, and the unguarded index switch. Navigation/area/space snapshots will remain feature-only reference extras.
+
+- **Completion (2026-10-12):** One reference-only editor_edit_context_t/chart_scope_t per dispatch. Ten redundant context names and all forwarding std::function members are removed. Navigation, area and space selection keep only reference extras and are constructed by the selected named handler. std::visit dispatches all 42 alternatives to named free overloads; the lambda table, variant-index switch and secondary family visitors are gone. One pointer-loss cancellation helper and one outer lifecycle cancellation guard. Nested dispatch still rebuilds view/index after mutations. Entry chart lookup and confirmed unchanged BGM-move index work are deduplicated.
+- **Gate evidence (actual tails, all exit 0):**
+  - Build: `[100%] Built target wormedit` (`/tmp/type-T-592-build-verified.log`; final edit was trailing whitespace only).
+  - Full serial CTest: `100% tests passed out of 3517`; `Total Test time (real) = 298.29 sec` (`/tmp/type-T-592-ctest.log`).
+  - Event harness: `100% tests passed out of 500`; `Total Test time (real) = 41.68 sec` (`/tmp/type-T-592-events.log`).
+  - Documentation: `100% tests passed out of 1`; `Total Test time (real) = 0.14 sec` (`/tmp/type-T-592-docs.log`).
+  - Default clang-tidy on interaction.cpp, interaction_cursor.cpp and resource_assignment.cpp: all exit 0; tails respectively `50/4/8 warnings generated`, all `Suppressed ... (with check filters)`. No reported project-source violation, new/increased complexity, added type erasure or large context copy. Existing production event/command tests cover all gesture families and nested mutations. `git diff --check` passes. Xvfb remains delegated to Claude.
+
 ## T-593 Consolidate action payload vocabulary
 
-- **Status:** blocked-on T-592
+- **Status:** ready
 - **Findings closed:** AV1, AV2, AV3, AV5, TW4, TW5.
 - **Stale-plan audit:** Confirm AV3 field-edit payload equivalence and AV5 small action candidates; keep distinctions with different semantics. Re-grep the orphan toggle and command/hold shapes. Re-grep named symbols; confirm A leads before editing and record dropped claims. Do not chase rejected findings.
 - **Outcome:** Use shared update/commit payloads and membership/metadata modes, command_definition_t and one hold plan/preview shape without changing emitted behavior.

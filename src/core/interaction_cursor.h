@@ -2,23 +2,20 @@
 
 #include <wormedit/core/interaction.h>
 
-#include <functional>
+#include "interaction_context.h"
 
 namespace wormedit::interaction_detail {
 
 struct cursor_navigation_context_t {
-    document_history_t& history;
-    editor_interaction_state_t& state;
-    const chart_document_t& chart;
-    const measure_index_t& index;
-    std::uint64_t absolute;
-    std::function<bool(editor_interaction_state_t&)> keep_cursor_visible;
-    std::function<editor_interaction_result_t(std::uint64_t)> update_canvas_keyboard_holds;
-    std::function<editor_interaction_result_t(local_position_t)> update_keyboard_holds;
+    editor_edit_context_t& edit;
+    const std::uint64_t& absolute;
 };
+[[nodiscard]] auto update_keyboard_holds(editor_edit_context_t& context, local_position_t position)
+    -> editor_interaction_result_t;
+[[nodiscard]] auto update_canvas_keyboard_holds(editor_edit_context_t& context, std::uint64_t row)
+    -> editor_interaction_result_t;
 
-[[nodiscard]] auto keep_cursor_visible(const chart_document_t& chart,
-                                       const measure_index_t& index,
+[[nodiscard]] auto keep_cursor_visible(const chart_document_t& chart, const measure_index_t& index,
                                        editor_interaction_state_t& candidate) -> bool;
 [[nodiscard]] auto move_edit_cursor(cursor_navigation_context_t& context,
                                     const move_edit_cursor_action_t& action)
@@ -29,8 +26,8 @@ struct cursor_navigation_context_t {
 [[nodiscard]] auto jump_edit_cursor(cursor_navigation_context_t& context,
                                     const jump_edit_cursor_action_t& action)
     -> editor_interaction_result_t;
-[[nodiscard]] auto select_bms_canvas_measure(
-    cursor_navigation_context_t& context,
-    const select_bms_canvas_measure_action_t& action) -> editor_interaction_result_t;
+[[nodiscard]] auto select_bms_canvas_measure(cursor_navigation_context_t& context,
+                                             const select_bms_canvas_measure_action_t& action)
+    -> editor_interaction_result_t;
 
 } // namespace wormedit::interaction_detail

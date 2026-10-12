@@ -1017,9 +1017,7 @@ auto apply_bgm_event_move(document_history_t& history, std::uint64_t expected_re
     }
     std::optional<local_position_t> moved_end;
     if (original->end) {
-        const auto index = build_measure_index(*source_chart);
-        if (!std::holds_alternative<measure_index_t>(index) ||
-            !(moved_end = translate_bgm_end(std::get<measure_index_t>(index),
+        if (!(moved_end = translate_bgm_end(std::get<measure_index_t>(built),
                                             original->position, *target, *original->end))) {
             reject(result, diagnostic_code_t::row_out_of_range,
                    "BGM move would place its end outside the chart");

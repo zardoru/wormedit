@@ -1,3 +1,4 @@
+#include "interaction_context.h"
 #include "interaction_geometry.h"
 #include <wormedit/core/interaction_gestures.h>
 #include <wormedit/core/interaction.h>
@@ -17,7 +18,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <functional>
 #include <limits>
 #include <map>
 #include <memory>
@@ -2196,11 +2196,44 @@ auto recover_editor_interaction(const document_history_t& history,
     return result;
 }
 
-struct editor_delete_context_t {
-    document_history_t& history;
-    editor_interaction_state_t& state;
-    const chart_document_t& chart;
-};
+auto apply_duration_resize_plan(document_history_t&, editor_interaction_state_t&,
+                                const duration_resize_plan_t&) -> editor_interaction_result_t;
+auto apply_note_move_plan(document_history_t&, editor_interaction_state_t&, const note_move_plan_t&)
+    -> editor_interaction_result_t;
+
+auto dispatch_nested_action(editor_edit_context_t& context, const editor_ui_action_t& action)
+    -> editor_interaction_result_t {
+    return dispatch_editor_action(context.history, context.state, action);
+}
+auto cancel_pointer_gesture(editor_edit_context_t& context) -> editor_interaction_result_t {
+    return dispatch_nested_action(
+        context,
+        cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::pointer_capture_lost});
+}
+auto make_duration_plan(editor_edit_context_t& context, std::vector<object_id_t> targets,
+                        object_id_t reference, local_position_t end, bool exact_end = false)
+    -> std::variant<duration_resize_plan_t, diagnostic_list_t> {
+    return plan_duration_resize(
+        context.scope.chart, context.scope.measures, std::move(targets), reference, end,
+        edit_snap_denominator(context.scope.chart, context.state), exact_end);
+}
+auto make_move_plan(editor_edit_context_t& context, std::vector<object_id_t> targets,
+                    object_id_t reference, local_position_t position, lane_id_t lane,
+                    bool exact_position, std::optional<object_id_t> bgm_lane,
+                    std::optional<std::uint64_t> virtual_row)
+    -> std::variant<note_move_plan_t, diagnostic_list_t> {
+    return plan_move_gesture(context.history, context.state, context.scope.chart,
+                             context.scope.measures, std::move(targets), reference, position, lane,
+                             exact_position, bgm_lane, virtual_row);
+}
+auto apply_duration_plan(editor_edit_context_t& context, const duration_resize_plan_t& plan)
+    -> editor_interaction_result_t {
+    return apply_duration_resize_plan(context.history, context.state, plan);
+}
+auto apply_move_plan(editor_edit_context_t& context, const note_move_plan_t& plan)
+    -> editor_interaction_result_t {
+    return apply_note_move_plan(context.history, context.state, plan);
+}
 
 struct editor_delete_ids_t {
     std::unordered_set<std::uint64_t> notes;
@@ -2298,7 +2331,7 @@ auto inspect_delete_bgm_events(const chart_document_t& chart, const editor_delet
     return linked_bmson_event;
 }
 
-auto complete_editor_delete(editor_delete_context_t context, bool changed)
+auto complete_editor_delete(editor_edit_context_t& context, bool changed)
     -> editor_interaction_result_t {
     if (changed) {
         context.state.selected_notes.clear();
@@ -2319,12 +2352,12 @@ auto complete_editor_delete(editor_delete_context_t context, bool changed)
 
 // Delete removes playable stem points from the keys without cutting them out of the audio stem.
 // Stage this conversion alongside ordinary deletion, so a later guard cannot leave a partial edit.
-auto stage_delete_stem_points(song_document_t& proposed, const editor_delete_context_t& context,
+auto stage_delete_stem_points(song_document_t& proposed, const editor_edit_context_t& context,
                               const editor_delete_ids_t& ids)
     -> std::variant<std::size_t, diagnostic_list_t> {
-    if (context.chart.source_family != format_family_t::bmson) return std::size_t{0};
+    if (context.scope.chart.source_family != format_family_t::bmson) return std::size_t{0};
     std::vector<object_id_t> stems;
-    for (const auto& measure : context.chart.measures)
+    for (const auto& measure : context.scope.chart.measures)
         for (const auto& note : measure.notes) {
             const auto selected = ids.total() != 0 ? ids.notes.contains(note.id.value)
                 : note.position == context.state.cursor && note.lane == context.state.active_lane;
@@ -2338,14 +2371,14 @@ auto stage_delete_stem_points(song_document_t& proposed, const editor_delete_con
     return stems.size();
 }
 
-auto delete_editor_selection(editor_delete_context_t context) -> editor_interaction_result_t {
+auto delete_editor_selection(editor_edit_context_t& context) -> editor_interaction_result_t {
     auto collected = collect_delete_ids(context.state);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&collected))
         return diagnostic_result(context.history, context.state, *diagnostics);
     auto ids = std::get<editor_delete_ids_t>(std::move(collected));
-    if (const auto invalid = validate_delete_note_ids(context.chart, ids.notes))
+    if (const auto invalid = validate_delete_note_ids(context.scope.chart, ids.notes))
         return diagnostic_result(context.history, context.state, {*invalid});
-    auto inspected = inspect_delete_bgm_events(context.chart, ids);
+    auto inspected = inspect_delete_bgm_events(context.scope.chart, ids);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&inspected))
         return diagnostic_result(context.history, context.state, *diagnostics);
     const auto linked_event = std::get<std::optional<object_id_t>>(inspected);
@@ -2405,13 +2438,6 @@ auto delete_editor_selection(editor_delete_context_t context) -> editor_interact
     return complete_editor_delete(context, true);
 }
 
-struct lane_assignment_context_t {
-    document_history_t& history;
-    editor_interaction_state_t& state;
-    const chart_document_t& chart;
-    const measure_index_t& index;
-};
-
 struct assignment_candidate_t {
     const note_t* note{};
     std::uint64_t begin{};
@@ -2425,7 +2451,7 @@ struct assignment_interval_t {
     bool moving{};
 };
 
-auto collect_assignment_candidates(const lane_assignment_context_t& context)
+auto collect_assignment_candidates(const editor_edit_context_t& context)
     -> std::variant<std::vector<assignment_candidate_t>, diagnostic_list_t> {
     if (context.state.selected_notes.empty()) {
         return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
@@ -2442,12 +2468,12 @@ auto collect_assignment_candidates(const lane_assignment_context_t& context)
     }
     std::vector<assignment_candidate_t> candidates;
     candidates.reserve(selected_ids.size());
-    for (const auto& measure : context.chart.measures) {
+    for (const auto& measure : context.scope.chart.measures) {
         for (const auto& note : measure.notes) {
             if (!selected_ids.contains(note.id.value))
                 continue;
-            const auto begin = absolute_row(context.index, note.position);
-            const auto end = note.end ? absolute_row(context.index, *note.end) : begin;
+            const auto begin = absolute_row(context.scope.measures, note.position);
+            const auto end = note.end ? absolute_row(context.scope.measures, *note.end) : begin;
             if (!begin || !end) {
                 return diagnostic_list_t{error(
                     diagnostic_code_t::row_out_of_range,
@@ -2467,7 +2493,7 @@ auto collect_assignment_candidates(const lane_assignment_context_t& context)
     return candidates;
 }
 
-auto build_assignment_intervals(const lane_assignment_context_t& context,
+auto build_assignment_intervals(const editor_edit_context_t& context,
                                 std::span<const assignment_candidate_t> candidates,
                                 lane_id_t target_lane)
     -> std::variant<std::vector<assignment_interval_t>, diagnostic_list_t> {
@@ -2475,10 +2501,10 @@ auto build_assignment_intervals(const lane_assignment_context_t& context,
     assigned_ids.reserve(candidates.size());
     for (const auto& candidate : candidates) {
         assigned_ids.insert(candidate.note->id.value);
-        if (find_active_lane(context.chart, context.index, candidate.note->position,
+        if (find_active_lane(context.scope.chart, context.scope.measures, candidate.note->position,
                              target_lane) == nullptr ||
             (candidate.note->end &&
-             find_active_lane(context.chart, context.index, *candidate.note->end,
+             find_active_lane(context.scope.chart, context.scope.measures, *candidate.note->end,
                               target_lane) == nullptr)) {
             return diagnostic_list_t{error(
                 diagnostic_code_t::unknown_lane,
@@ -2486,7 +2512,7 @@ auto build_assignment_intervals(const lane_assignment_context_t& context,
         }
     }
     auto chart_note_count = std::size_t{};
-    for (const auto& measure : context.chart.measures) {
+    for (const auto& measure : context.scope.chart.measures) {
         if (measure.notes.size() > std::numeric_limits<std::size_t>::max() - chart_note_count) {
             return diagnostic_list_t{error(
                 diagnostic_code_t::invalid_resolution,
@@ -2503,12 +2529,12 @@ auto build_assignment_intervals(const lane_assignment_context_t& context,
     intervals.reserve(chart_note_count + candidates.size());
     for (const auto& candidate : candidates)
         intervals.push_back({candidate.begin, candidate.end, candidate.note->id, true});
-    for (const auto& measure : context.chart.measures) {
+    for (const auto& measure : context.scope.chart.measures) {
         for (const auto& note : measure.notes) {
             if (note.lane != target_lane || assigned_ids.contains(note.id.value))
                 continue;
-            const auto begin = absolute_row(context.index, note.position);
-            const auto end = note.end ? absolute_row(context.index, *note.end) : begin;
+            const auto begin = absolute_row(context.scope.measures, note.position);
+            const auto end = note.end ? absolute_row(context.scope.measures, *note.end) : begin;
             if (!begin || !end) {
                 return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                                "target-lane note lies outside chart geometry",
@@ -2566,7 +2592,7 @@ auto apply_note_lane_assignment_document(document_history_t& history, chart_id_t
     return commit_document_command(history, std::move(proposed), std::move(label));
 }
 
-auto assign_selected_notes_to_lane(lane_assignment_context_t context,
+auto assign_selected_notes_to_lane(editor_edit_context_t& context,
                                    const assign_selected_objects_to_lane_action_t& action)
     -> editor_interaction_result_t {
     auto collected = collect_assignment_candidates(context);
@@ -2671,11 +2697,11 @@ auto selected_lane_assignment_ids(const editor_interaction_state_t& state)
     return {std::move(targets.notes), std::move(targets.bgm_events)};
 }
 
-auto assign_selected_objects_to_lane(lane_assignment_context_t context,
+auto assign_selected_objects_to_lane(editor_edit_context_t& context,
                                      const assign_selected_objects_to_lane_action_t& action)
     -> editor_interaction_result_t {
     auto [notes, events] = selected_lane_assignment_ids(context.state);
-    const auto first = action.successive ? first_selected_lane_object(context.chart, notes, events)
+    const auto first = action.successive ? first_selected_lane_object(context.scope.chart, notes, events)
                                          : std::nullopt;
     if (action.successive && first) {
         notes = first->kind == editor_selection_object_kind_t::note
@@ -2717,27 +2743,14 @@ auto assign_selected_objects_to_lane(lane_assignment_context_t context,
     return result;
 }
 
-struct note_gesture_context_t {
-    document_history_t& history;
-    editor_interaction_state_t& state;
-    const chart_document_t& chart;
-    const measure_index_t& index;
-    std::function<std::variant<duration_resize_plan_t, diagnostic_list_t>(
-        std::vector<object_id_t>, object_id_t, local_position_t, bool)> make_duration_plan;
-    std::function<editor_interaction_result_t(const duration_resize_plan_t&)> apply_duration_plan;
-    std::function<std::variant<note_move_plan_t, diagnostic_list_t>(
-        std::vector<object_id_t>, object_id_t, local_position_t, lane_id_t, bool, std::optional<object_id_t>, std::optional<std::uint64_t>)> make_move_plan;
-    std::function<editor_interaction_result_t(const note_move_plan_t&)> apply_move_plan;
-};
-
-auto begin_note_duration_gesture(note_gesture_context_t& context, object_id_t reference_id)
+auto begin_note_duration_gesture(editor_edit_context_t& context, object_id_t reference_id)
     -> editor_interaction_result_t {
     auto& state = context.state;
     if (state.pending_hold || state.pending_note_duration_gesture || state.pending_note_move_gesture)
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "another editor gesture is already active")});
-    const auto* reference = find_note(context.chart, reference_id);
+    const auto* reference = find_note(context.scope.chart, reference_id);
     if (!reference || (reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold))
         return diagnostic_result(
             context.history, state,
@@ -2747,7 +2760,7 @@ auto begin_note_duration_gesture(note_gesture_context_t& context, object_id_t re
     if (std::ranges::find(targets, reference_id) == targets.end())
         targets = {reference_id};
     const auto initial_end = reference->end.value_or(reference->position);
-    auto planned = context.make_duration_plan(targets, reference_id, initial_end, true);
+    auto planned = make_duration_plan(context, targets, reference_id, initial_end, true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, state, *diagnostics);
     const auto& plan = std::get<duration_resize_plan_t>(planned);
@@ -2770,7 +2783,7 @@ auto begin_note_duration_gesture(note_gesture_context_t& context, object_id_t re
     };
 }
 
-auto update_note_duration_gesture(note_gesture_context_t& context,
+auto update_note_duration_gesture(editor_edit_context_t& context,
                                   local_position_t requested_end) -> editor_interaction_result_t {
     auto& state = context.state;
     if (!state.pending_note_duration_gesture)
@@ -2782,26 +2795,26 @@ auto update_note_duration_gesture(note_gesture_context_t& context,
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "duration gesture is stale after a document edit")});
-    const auto* reference = find_note(context.chart, pending.reference_note);
+    const auto* reference = find_note(context.scope.chart, pending.reference_note);
     if (!reference)
         return diagnostic_result(
             context.history, state,
             {error(diagnostic_code_t::invalid_id,
                    "duration gesture reference note no longer exists", pending.reference_note)});
-    auto snapped_end = snapped_position(context.chart, context.index, requested_end,
-                                        edit_snap_denominator(context.chart, state));
+    auto snapped_end = snapped_position(context.scope.chart, context.scope.measures, requested_end,
+                                        edit_snap_denominator(context.scope.chart, state));
     if (!snapped_end)
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::row_out_of_range,
                                         "duration gesture end cannot be snapped inside chart")});
-    const auto head = absolute_row(context.index, reference->position);
-    const auto target = absolute_row(context.index, *snapped_end);
+    const auto head = absolute_row(context.scope.measures, reference->position);
+    const auto target = absolute_row(context.scope.measures, *snapped_end);
     auto exact_head = false;
     if (head && target && *target < *head) {
         snapped_end = reference->position;
         exact_head = true;
     }
-    auto planned = context.make_duration_plan(pending.notes, pending.reference_note, *snapped_end,
+    auto planned = make_duration_plan(context, pending.notes, pending.reference_note, *snapped_end,
                                               exact_head);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, state, *diagnostics);
@@ -2820,17 +2833,17 @@ auto update_note_duration_gesture(note_gesture_context_t& context,
     };
 }
 
-auto release_note_duration_gesture(note_gesture_context_t& context,
+auto release_note_duration_gesture(editor_edit_context_t& context,
                                    local_position_t requested_end) -> editor_interaction_result_t {
     const auto updated = update_note_duration_gesture(context, requested_end);
     if (!updated)
         return updated;
     const auto pending = *context.state.pending_note_duration_gesture;
-    auto planned = context.make_duration_plan(pending.notes, pending.reference_note,
+    auto planned = make_duration_plan(context, pending.notes, pending.reference_note,
                                               pending.preview_end, true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, context.state, *diagnostics);
-    return context.apply_duration_plan(std::get<duration_resize_plan_t>(planned));
+    return apply_duration_plan(context, std::get<duration_resize_plan_t>(planned));
 }
 
 auto relocate_moved_notes(chart_document_t& chart, const note_move_plan_t& plan,
@@ -2859,12 +2872,12 @@ void prepare_rejected_bgm_preview(const chart_document_t& chart, const note_move
     }
 }
 
-void prepare_selected_bgm_preview(note_gesture_context_t& context, const note_move_plan_t& plan,
+void prepare_selected_bgm_preview(editor_edit_context_t& context, const note_move_plan_t& plan,
                                   pending_note_move_gesture_t& pending) {
     if (plan.staged_bgm_document) {
         const auto* destination = find_chart(*plan.staged_bgm_document, context.state.chart);
         for (const auto& lane : destination->bgm_source_lanes)
-            if (std::ranges::find(context.chart.bgm_source_lanes, lane.id, &bgm_source_lane_t::id) == context.chart.bgm_source_lanes.end())
+            if (std::ranges::find(context.scope.chart.bgm_source_lanes, lane.id, &bgm_source_lane_t::id) == context.scope.chart.bgm_source_lanes.end())
                 pending.new_bgm_lanes.push_back({lane.id, lane.source_order});
         return;
     }
@@ -2878,7 +2891,7 @@ void prepare_selected_bgm_preview(note_gesture_context_t& context, const note_mo
     if (!failures.empty()) pending.conflicting_notes = std::max(std::size_t{1}, pending.conflicting_notes);
 }
 
-auto prepare_bgm_move_preview(note_gesture_context_t& context, const note_move_plan_t& plan,
+auto prepare_bgm_move_preview(editor_edit_context_t& context, const note_move_plan_t& plan,
                                pending_note_move_gesture_t& pending) -> void {
     pending.bgm_preview = plan.bgm_moves;
     pending.new_bgm_lanes.clear();
@@ -2891,14 +2904,14 @@ auto prepare_bgm_move_preview(note_gesture_context_t& context, const note_move_p
     if (const auto* failures = std::get_if<diagnostic_list_t>(&staged)) {
         for (const auto& failure : *failures) pending.bgm_diagnostics.push_back(failure.message);
         pending.conflicting_notes = std::max(std::size_t{1}, pending.conflicting_notes);
-        prepare_rejected_bgm_preview(context.chart, plan, pending);
+        prepare_rejected_bgm_preview(context.scope.chart, plan, pending);
         return;
     }
     const auto& chart = *find_chart(std::get<song_document_t>(staged), context.state.chart);
     const auto& ids = pending.to_bgm ? pending.notes : plan.occupants;
     for (const auto& lane : chart.bgm_source_lanes)
-        if (std::ranges::find(context.chart.bgm_source_lanes, lane.id, &bgm_source_lane_t::id) ==
-            context.chart.bgm_source_lanes.end()) pending.new_bgm_lanes.push_back({lane.id, lane.source_order});
+        if (std::ranges::find(context.scope.chart.bgm_source_lanes, lane.id, &bgm_source_lane_t::id) ==
+            context.scope.chart.bgm_source_lanes.end()) pending.new_bgm_lanes.push_back({lane.id, lane.source_order});
     for (const auto& measure : chart.measures) {
         for (const auto& event : measure.bgm_events) {
             if (std::ranges::find(ids, event.id) == ids.end()) continue;
@@ -2915,7 +2928,7 @@ auto prepare_bgm_move_preview(note_gesture_context_t& context, const note_move_p
     }
 }
 
-auto begin_note_move_gesture(note_gesture_context_t& context, object_id_t reference_id,
+auto begin_note_move_gesture(editor_edit_context_t& context, object_id_t reference_id,
                               bool displace_to_bgm)
     -> editor_interaction_result_t {
     auto& state = context.state;
@@ -2925,8 +2938,8 @@ auto begin_note_move_gesture(note_gesture_context_t& context, object_id_t refere
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "another editor gesture is already active")});
-    const auto* reference = find_note(context.chart, reference_id);
-    const auto* bgm_reference = find_bgm_event(context.chart, reference_id);
+    const auto* reference = find_note(context.scope.chart, reference_id);
+    const auto* bgm_reference = find_bgm_event(context.scope.chart, reference_id);
     if ((!reference && !bgm_reference) ||
         (reference && reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold))
         return diagnostic_result(context.history, state,
@@ -2934,7 +2947,7 @@ auto begin_note_move_gesture(note_gesture_context_t& context, object_id_t refere
     auto targets = editor_quantize_selection(state).notes;
     if (!bgm_reference && std::ranges::find(targets, reference_id) == targets.end())
         targets = {reference_id};
-    auto planned = context.make_move_plan(targets, reference_id, reference ? reference->position : bgm_reference->position, lane_id_t{},
+    auto planned = make_move_plan(context, targets, reference_id, reference ? reference->position : bgm_reference->position, lane_id_t{},
                                           true, std::nullopt, std::nullopt);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, state, *diagnostics);
@@ -2961,7 +2974,7 @@ auto begin_note_move_gesture(note_gesture_context_t& context, object_id_t refere
     };
 }
 
-auto update_note_move_gesture(note_gesture_context_t& context,
+auto update_note_move_gesture(editor_edit_context_t& context,
                               local_position_t requested_position,
                               lane_id_t requested_lane, bool to_bgm,
                               std::optional<object_id_t> preferred_bgm_lane,
@@ -2978,7 +2991,7 @@ auto update_note_move_gesture(note_gesture_context_t& context,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "note move gesture is stale after a document edit")});
     }
-    auto planned = context.make_move_plan(pending.notes, pending.reference_note, requested_position,
+    auto planned = make_move_plan(context, pending.notes, pending.reference_note, requested_position,
                                           to_bgm ? lane_id_t{} : requested_lane, false, preferred_bgm_lane, virtual_bgm_row);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned)) {
         state.pending_note_move_gesture->bgm_preview.clear();
@@ -3008,7 +3021,7 @@ auto update_note_move_gesture(note_gesture_context_t& context,
     };
 }
 
-auto release_note_move_gesture(note_gesture_context_t& context,
+auto release_note_move_gesture(editor_edit_context_t& context,
                                local_position_t requested_position,
                                lane_id_t requested_lane, bool to_bgm,
                                std::optional<object_id_t> preferred_bgm_lane,
@@ -3025,7 +3038,7 @@ auto release_note_move_gesture(note_gesture_context_t& context,
         return context.state.pending_note_move_gesture ? reject(std::move(updated.diagnostics))
                                                        : updated;
     const auto pending = *context.state.pending_note_move_gesture;
-    auto planned = context.make_move_plan(pending.notes, pending.reference_note,
+    auto planned = make_move_plan(context, pending.notes, pending.reference_note,
                                           pending.preview_position, to_bgm ? lane_id_t{} : requested_lane, !virtual_bgm_row.has_value(), preferred_bgm_lane, virtual_bgm_row);
     if (auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return reject(std::move(*diagnostics));
@@ -3057,55 +3070,17 @@ auto release_note_move_gesture(note_gesture_context_t& context,
         warning.severity = diagnostic_severity_t::warning;
         return reject({std::move(warning)});
     }
-    return context.apply_move_plan(plan);
+    return apply_move_plan(context, plan);
 }
 
-auto dispatch_note_gesture(note_gesture_context_t& context, const editor_ui_action_t& action)
-    -> editor_interaction_result_t {
-    return std::visit(
-        [&](const auto& typed_action) -> editor_interaction_result_t {
-            using action_t = std::decay_t<decltype(typed_action)>;
-            if constexpr (std::is_same_v<action_t, begin_note_duration_gesture_action_t>)
-                return begin_note_duration_gesture(context, typed_action.reference_note);
-            else if constexpr (std::is_same_v<action_t, update_note_duration_gesture_action_t>)
-                return update_note_duration_gesture(context, typed_action.reference_end);
-            else if constexpr (std::is_same_v<action_t, release_note_duration_gesture_action_t>)
-                return release_note_duration_gesture(context, typed_action.reference_end);
-            else if constexpr (std::is_same_v<action_t, begin_note_move_gesture_action_t>)
-                return begin_note_move_gesture(context, typed_action.reference_note,
-                                               typed_action.displace_to_bgm);
-            else if constexpr (std::is_same_v<action_t, update_note_move_gesture_action_t>)
-                return update_note_move_gesture(context, typed_action.reference_position,
-                                                typed_action.reference_lane, typed_action.to_bgm,
-                                                typed_action.preferred_bgm_lane, typed_action.virtual_bgm_row);
-            else if constexpr (std::is_same_v<action_t, release_note_move_gesture_action_t>)
-                return release_note_move_gesture(context, typed_action.reference_position,
-                                                typed_action.reference_lane, typed_action.to_bgm,
-                                                typed_action.preferred_bgm_lane, typed_action.virtual_bgm_row);
-            else
-                return diagnostic_result(context.history, context.state,
-                                         {error(diagnostic_code_t::invalid_id,
-                                                "action is outside the note gesture family")});
-        },
-        action);
-}
-
-struct note_paint_context_t {
-    document_history_t& history;
-    editor_interaction_state_t& state;
-    const chart_document_t& chart;
-    const measure_index_t& index;
-    std::function<editor_interaction_result_t()> cancel_gesture;
-};
-
-auto add_paint_path_cell(const note_paint_context_t& context, lane_id_t lane,
+auto add_paint_path_cell(const editor_edit_context_t& context, lane_id_t lane,
                          std::uint64_t row, const pending_note_paint_gesture_t& pending,
                          std::vector<note_paint_target_t>& additions)
     -> std::optional<diagnostic_t> {
-    const auto position = position_at(context.index, row);
+    const auto position = position_at(context.scope.measures, row);
     if (!position)
         return error(diagnostic_code_t::row_out_of_range, "paint path leaves chart geometry");
-    if (find_active_lane(context.chart, context.index, *position, lane) == nullptr)
+    if (find_active_lane(context.scope.chart, context.scope.measures, *position, lane) == nullptr)
         return error(diagnostic_code_t::unknown_lane, "paint lane is unavailable along the drag path");
     if (pending.visited.contains({lane, row}))
         return std::nullopt;
@@ -3121,20 +3096,20 @@ void cancel_stale_explicit_paint(editor_interaction_state_t& state) {
         state.pending_note_paint_gesture.reset();
 }
 
-auto add_measure_grid_paint_path(note_paint_context_t& context, lane_id_t lane,
+auto add_measure_grid_paint_path(editor_edit_context_t& context, lane_id_t lane,
                                  std::uint64_t first, std::uint64_t last,
                                  pending_note_paint_gesture_t& pending,
                                  std::vector<note_paint_target_t>& additions)
     -> std::optional<diagnostic_t> {
     auto row = first;
     const bool forward = last >= first;
-    const auto denominator = edit_snap_denominator(context.chart, context.state);
+    const auto denominator = edit_snap_denominator(context.scope.chart, context.state);
     while (true) {
         if (const auto invalid = add_paint_path_cell(context, lane, row, pending, additions))
             return invalid;
         if (row == last) return std::nullopt;
-        const auto next = adjacent_snap_canvas_row(context.chart, context.index, row,
-            denominator, context.index.total_rows, forward);
+        const auto next = adjacent_snap_canvas_row(context.scope.chart, context.scope.measures, row,
+            denominator, context.scope.measures.total_rows, forward);
         if (!next || (forward ? *next > last : *next < last))
             return error(diagnostic_code_t::row_out_of_range,
                          "paint path cannot reach the target grid position");
@@ -3142,12 +3117,12 @@ auto add_measure_grid_paint_path(note_paint_context_t& context, lane_id_t lane,
     }
 }
 
-auto append_note_paint_target(note_paint_context_t& context, lane_id_t lane,
+auto append_note_paint_target(editor_edit_context_t& context, lane_id_t lane,
                               local_position_t position, bool pointer_captured)
     -> editor_interaction_result_t {
     auto& state = context.state;
     if (!pointer_captured)
-        return context.cancel_gesture();
+        return cancel_pointer_gesture(context);
     if (!state.pending_note_paint_gesture)
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
@@ -3159,14 +3134,14 @@ auto append_note_paint_target(note_paint_context_t& context, lane_id_t lane,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "note paint gesture is stale after a document edit")});
     }
-    const auto target = snapped_position(context.chart, context.index, position,
-                                         edit_snap_denominator(context.chart, state));
+    const auto target = snapped_position(context.scope.chart, context.scope.measures, position,
+                                         edit_snap_denominator(context.scope.chart, state));
     if (!target)
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::row_out_of_range,
                                         "paint target cannot be snapped inside chart")});
-    const auto target_row = absolute_row(context.index, *target);
-    const auto previous_row = absolute_row(context.index, pending.last_position);
+    const auto target_row = absolute_row(context.scope.measures, *target);
+    const auto previous_row = absolute_row(context.scope.measures, pending.last_position);
     if (!target_row || !previous_row)
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::row_out_of_range,
@@ -3185,7 +3160,7 @@ auto append_note_paint_target(note_paint_context_t& context, lane_id_t lane,
         auto expanded = std::make_shared<std::vector<note_paint_target_t>>(*pending.targets);
         expanded->reserve(expanded->size() + additions.size());
         for (const auto& addition : additions) {
-            const auto row = absolute_row(context.index, addition.position);
+            const auto row = absolute_row(context.scope.measures, addition.position);
             expanded->push_back(addition);
             pending.visited.insert({addition.lane, *row});
         }
@@ -3213,7 +3188,7 @@ auto is_paint_sample_resource(const song_document_t& document, resource_id_t id)
            std::ranges::find(found->roles, resource_role_t::sample) != found->roles.end();
 }
 
-auto begin_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
+auto begin_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
                               local_position_t position, bool pointer_captured,
                               std::optional<resource_id_t> sound,
                               note_paint_intent_t intent,
@@ -3243,11 +3218,11 @@ auto begin_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "another editor gesture is already active")});
-    const auto resolved = resolve_row_placement(context.chart, context.index, state, lane, position);
+    const auto resolved = resolve_row_placement(context.scope.chart, context.scope.measures, state, lane, position);
     const auto* target = std::get_if<local_position_t>(&resolved);
     if (!target)
         return diagnostic_result(context.history, state, std::get<diagnostic_list_t>(resolved));
-    const auto row = absolute_row(context.index, *target);
+    const auto row = absolute_row(context.scope.measures, *target);
     if (!row)
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::row_out_of_range,
@@ -3402,7 +3377,7 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
     return prepared;
 }
 
-auto end_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
+auto end_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
                             local_position_t position, bool pointer_captured,
                             std::optional<bmson_source_geometry_t> geometry)
     -> editor_interaction_result_t {
@@ -3423,7 +3398,7 @@ auto end_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "note paint gesture is stale after a document edit")});
     }
-    auto planned = plan_note_paint(context.chart, context.index, *pending.targets,
+    auto planned = plan_note_paint(context.scope.chart, context.scope.measures, *pending.targets,
                                    pending.kind, pending.intent);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, state, *diagnostics);
@@ -3473,39 +3448,7 @@ auto end_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
     };
 }
 
-auto dispatch_note_paint_gesture(note_paint_context_t& context, const editor_ui_action_t& action)
-    -> editor_interaction_result_t {
-    return std::visit(
-        [&](const auto& typed_action) -> editor_interaction_result_t {
-            using action_t = std::decay_t<decltype(typed_action)>;
-            if constexpr (std::is_same_v<action_t, begin_note_paint_gesture_action_t>)
-                return begin_note_paint_gesture(context, typed_action.lane, typed_action.position,
-                                                typed_action.pointer_captured, typed_action.sound,
-                                                typed_action.intent, typed_action.source_geometry);
-            else if constexpr (std::is_same_v<action_t, update_note_paint_gesture_action_t>)
-                return append_note_paint_target(context, typed_action.lane, typed_action.position,
-                                                typed_action.pointer_captured);
-            else if constexpr (std::is_same_v<action_t, end_note_paint_gesture_action_t>)
-                return end_note_paint_gesture(context, typed_action.lane, typed_action.position,
-                                              typed_action.pointer_captured, typed_action.source_geometry);
-            else
-                return diagnostic_result(context.history, context.state,
-                                         {error(diagnostic_code_t::invalid_id,
-                                                "action is outside the note paint family")});
-        },
-        action);
-}
-
-struct editor_scroll_context_t {
-    document_history_t& history;
-    editor_interaction_state_t& state;
-    const chart_document_t& chart;
-    const measure_index_t& index;
-    std::function<editor_interaction_result_t(local_position_t)> update_keyboard_holds;
-    std::function<editor_interaction_result_t(std::uint64_t)> update_canvas_keyboard_holds;
-};
-
-auto update_fixed_scroll_cursor(editor_scroll_context_t& context,
+auto update_fixed_scroll_cursor(editor_edit_context_t& context,
                                 const scroll_editor_view_action_t& action,
                                 editor_interaction_state_t& proposed)
     -> std::variant<std::monostate, diagnostic_list_t> {
@@ -3520,13 +3463,13 @@ auto update_fixed_scroll_cursor(editor_scroll_context_t& context,
                                        "fixed cursor scroll anchor is invalid")};
     }
     set_cursor_screen_anchor(proposed, anchor_y, action.direction);
-    if (!synchronize_editor_cursor_to_viewport(context.chart, context.index, proposed))
+    if (!synchronize_editor_cursor_to_viewport(context.scope.chart, context.scope.measures, proposed))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
                                        "fixed cursor scroll cannot resolve chart geometry")};
     return std::monostate{};
 }
 
-auto preserve_keyboard_hold_after_scroll(editor_scroll_context_t& context,
+auto preserve_keyboard_hold_after_scroll(editor_edit_context_t& context,
                                          const editor_interaction_state_t& proposed)
     -> std::optional<editor_interaction_result_t> {
     if (!context.state.pending_hold ||
@@ -3541,16 +3484,16 @@ auto preserve_keyboard_hold_after_scroll(editor_scroll_context_t& context,
                                  context.state.additional_keyboard_holds,
                                  [](const auto& hold) { return hold.anchor_canvas_row.has_value(); });
     const auto cursor_row = proposed.virtual_bms_cursor_row.value_or(
-        *absolute_row(context.index, proposed.cursor));
+        *absolute_row(context.scope.measures, proposed.cursor));
     context.state = proposed;
-    const auto updated = canvas_hold ? context.update_canvas_keyboard_holds(cursor_row)
-                                     : context.update_keyboard_holds(proposed.cursor);
+    const auto updated = canvas_hold ? interaction_detail::update_canvas_keyboard_holds(context, cursor_row)
+                                     : interaction_detail::update_keyboard_holds(context, proposed.cursor);
     if (!updated)
         context.state = before;
     return updated;
 }
 
-auto scroll_editor_view(editor_scroll_context_t context,
+auto scroll_editor_view(editor_edit_context_t& context,
                         const scroll_editor_view_action_t& action) -> editor_interaction_result_t {
     if (!std::isfinite(action.vertical_pixels) ||
         !std::isfinite(context.state.viewport_scroll_pixels)) {
@@ -3565,7 +3508,7 @@ auto scroll_editor_view(editor_scroll_context_t context,
                                         "viewport scroll would overflow")});
     }
     const auto maximum_scroll = maximum_viewport_scroll(
-        context.chart, context.index, context.state.pixels_per_standard_measure,
+        context.scope.chart, context.scope.measures, context.state.pixels_per_standard_measure,
         context.state.viewport_height_pixels);
     if (!maximum_scroll)
         return diagnostic_result(context.history, context.state,
@@ -3592,15 +3535,6 @@ auto scroll_editor_view(editor_scroll_context_t context,
                            : diagnostic_list_t{},
     };
 }
-
-struct hold_gesture_context_t {
-    document_history_t& history;
-    editor_interaction_state_t& state;
-    const chart_document_t& chart;
-    const measure_index_t& index;
-    std::function<bool(editor_interaction_state_t&)> keep_cursor_visible;
-    std::function<editor_interaction_result_t(const editor_ui_action_t&)> dispatch_action;
-};
 
 auto keyboard_entry_editable(const chart_document_t& chart, const note_t& note) -> bool {
     return !note.branch && std::ranges::all_of(note.semantic_layers, [&](layer_id_t id) {
@@ -3676,7 +3610,7 @@ auto place_keyboard_entry(document_history_t& scratch, editor_interaction_state_
         "The linked stem note was not published")};
 }
 
-auto stage_keyboard_entry(const hold_gesture_context_t& context, lane_id_t lane,
+auto stage_keyboard_entry(const editor_edit_context_t& context, lane_id_t lane,
     local_position_t target, const note_t* occupant, std::optional<resource_id_t> sound,
     bool displace, std::optional<object_id_t> stem, std::optional<bmson_source_geometry_t> geometry)
     -> std::variant<prepared_keyboard_entry_t, diagnostic_list_t> {
@@ -3695,17 +3629,17 @@ auto stage_keyboard_entry(const hold_gesture_context_t& context, lane_id_t lane,
     return prepared_keyboard_entry_t{std::move(scratch.document), created};
 }
 
-auto apply_keyboard_entry(hold_gesture_context_t& context, lane_id_t lane,
+auto apply_keyboard_entry(editor_edit_context_t& context, lane_id_t lane,
     local_position_t position, std::optional<resource_id_t> sound, bool displace,
     std::optional<bmson_source_geometry_t> geometry) -> std::optional<editor_interaction_result_t> {
     auto& state = context.state;
-    const auto resolved_row = resolve_row_placement(context.chart, context.index, state, lane, position);
+    const auto resolved_row = resolve_row_placement(context.scope.chart, context.scope.measures, state, lane, position);
     const auto* target = std::get_if<local_position_t>(&resolved_row);
     if (!target) return std::nullopt;
-    const auto occupied = keyboard_entry_occupant(context.chart, context.index, lane, *target);
+    const auto occupied = keyboard_entry_occupant(context.scope.chart, context.scope.measures, lane, *target);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&occupied))
         return diagnostic_result(context.history, state, *failure);
-    const auto resolved = entry_stem_channel(context.history.document, context.chart, sound);
+    const auto resolved = entry_stem_channel(context.history.document, context.scope.chart, sound);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&resolved))
         return diagnostic_result(context.history, state, *failure);
     const auto* occupant = std::get<const note_t*>(occupied);
@@ -3724,7 +3658,7 @@ auto apply_keyboard_entry(hold_gesture_context_t& context, lane_id_t lane,
     return result;
 }
 
-auto begin_hold_gesture(hold_gesture_context_t& context, lane_id_t lane,
+auto begin_hold_gesture(editor_edit_context_t& context, lane_id_t lane,
                         local_position_t position, hold_gesture_source_t source,
                         std::optional<resource_id_t> sound = std::nullopt,
                         bool displace = false,
@@ -3743,7 +3677,7 @@ auto begin_hold_gesture(hold_gesture_context_t& context, lane_id_t lane,
             {error(diagnostic_code_t::invalid_id, "paint sound is not an existing sample resource")});
     const auto before = state;
     state.active_lane = lane;
-    auto result = context.dispatch_action(begin_hold_action_t{position});
+    auto result = dispatch_nested_action(context, begin_hold_action_t{position});
     if (!result) {
         state = before;
         const auto view = make_view(context.history, state);
@@ -3768,7 +3702,7 @@ auto begin_hold_gesture(hold_gesture_context_t& context, lane_id_t lane,
     return result;
 }
 
-auto update_hold_gesture(hold_gesture_context_t& context, hold_gesture_source_t source,
+auto update_hold_gesture(editor_edit_context_t& context, hold_gesture_source_t source,
                          local_position_t position) -> editor_interaction_result_t {
     auto& state = context.state;
     const auto before = state;
@@ -3781,16 +3715,16 @@ auto update_hold_gesture(hold_gesture_context_t& context, hold_gesture_source_t 
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "pending hold gesture is stale after a document edit")});
-    const auto target = snapped_position(context.chart, context.index, position,
-                                         edit_snap_denominator(context.chart, state));
+    const auto target = snapped_position(context.scope.chart, context.scope.measures, position,
+                                         edit_snap_denominator(context.scope.chart, state));
     state.pending_hold->gesture_source.reset();
-    auto result = context.dispatch_action(update_hold_preview_action_t{target.value_or(position)});
+    auto result = dispatch_nested_action(context, update_hold_preview_action_t{target.value_or(position)});
     if (state.pending_hold)
         state.pending_hold->gesture_source = source;
     if (!result)
         return result;
     state.pending_hold->preview_canvas_row.reset();
-    if (source == hold_gesture_source_t::keyboard_lane && !context.keep_cursor_visible(state)) {
+    if (source == hold_gesture_source_t::keyboard_lane && !interaction_detail::keep_cursor_visible(context.scope.chart, context.scope.measures, state)) {
         state = before;
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_resolution,
@@ -3806,7 +3740,7 @@ auto update_hold_gesture(hold_gesture_context_t& context, hold_gesture_source_t 
     return result;
 }
 
-auto release_hold_gesture(hold_gesture_context_t& context, hold_gesture_source_t source,
+auto release_hold_gesture(editor_edit_context_t& context, hold_gesture_source_t source,
                           local_position_t position,
                           std::optional<bmson_source_geometry_t> geometry = {}) -> editor_interaction_result_t {
     auto& state = context.state;
@@ -3814,10 +3748,10 @@ auto release_hold_gesture(hold_gesture_context_t& context, hold_gesture_source_t
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "hold gesture release does not match the active input")});
-    const auto target = snapped_position(context.chart, context.index, position,
-                                         edit_snap_denominator(context.chart, state));
+    const auto target = snapped_position(context.scope.chart, context.scope.measures, position,
+                                         edit_snap_denominator(context.scope.chart, state));
     state.pending_hold->gesture_source.reset();
-    auto result = context.dispatch_action(commit_hold_action_t{target.value_or(position), geometry});
+    auto result = dispatch_nested_action(context, commit_hold_action_t{target.value_or(position), geometry});
     if (state.pending_hold)
         state.pending_hold->gesture_source = source;
     if (result) {
@@ -3836,20 +3770,20 @@ auto space_selection_view_result(
     const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& view)
     -> editor_interaction_result_t;
 
-auto begin_hold_action(hold_gesture_context_t& context, local_position_t position,
+auto begin_hold_action(editor_edit_context_t& context, local_position_t position,
                        std::optional<resource_id_t> sound = std::nullopt,
                        std::optional<bmson_source_geometry_t> geometry = {})
     -> editor_interaction_result_t {
     auto& history = context.history;
     auto& state = context.state;
-    const auto resolved = resolve_row_placement(context.chart, context.index, state, state.active_lane, position);
+    const auto resolved = resolve_row_placement(context.scope.chart, context.scope.measures, state, state.active_lane, position);
     const auto* snapped = std::get_if<local_position_t>(&resolved);
     if (!snapped)
         return diagnostic_result(context.history, state, std::get<diagnostic_list_t>(resolved));
     if (sound && !is_paint_sample_resource(history.document, *sound))
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_id, "paint sound is not an existing sample resource")});
-    const auto plan = plan_hold_placement(context.chart, context.index, state.active_lane,
+    const auto plan = plan_hold_placement(context.scope.chart, context.scope.measures, state.active_lane,
                                           *snapped, *snapped);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
         return diagnostic_result(history, state, *diagnostics);
@@ -3868,12 +3802,12 @@ auto begin_hold_action(hold_gesture_context_t& context, local_position_t positio
     return space_selection_view_result(make_view(history, state));
 }
 
-auto validate_pending_hold_start(const hold_gesture_context_t& context,
+auto validate_pending_hold_start(const editor_edit_context_t& context,
                                  const pending_hold_t& pending)
     -> std::optional<editor_interaction_result_t> {
     if (pending.document_revision == context.history.document.revision &&
-        snapped_position(context.chart, context.index, pending.position,
-                         edit_snap_denominator(context.chart, context.state)) == pending.position)
+        snapped_position(context.scope.chart, context.scope.measures, pending.position,
+                         edit_snap_denominator(context.scope.chart, context.state)) == pending.position)
         return std::nullopt;
     return diagnostic_result(
         context.history, context.state,
@@ -3881,7 +3815,7 @@ auto validate_pending_hold_start(const hold_gesture_context_t& context,
                "pending hold start is stale after a document or snap change")});
 }
 
-auto update_hold_preview(hold_gesture_context_t& context, local_position_t position)
+auto update_hold_preview(editor_edit_context_t& context, local_position_t position)
     -> editor_interaction_result_t {
     auto& history = context.history;
     auto& state = context.state;
@@ -3892,11 +3826,11 @@ auto update_hold_preview(hold_gesture_context_t& context, local_position_t posit
     const auto pending = *state.pending_hold;
     if (auto stale = validate_pending_hold_start(context, pending))
         return *stale;
-    const auto resolved = resolve_row_placement(context.chart, context.index, state, pending.lane, position);
+    const auto resolved = resolve_row_placement(context.scope.chart, context.scope.measures, state, pending.lane, position);
     const auto* snapped = std::get_if<local_position_t>(&resolved);
     if (!snapped)
         return diagnostic_result(context.history, state, std::get<diagnostic_list_t>(resolved));
-    const auto plan = plan_hold_placement(context.chart, context.index, pending.lane,
+    const auto plan = plan_hold_placement(context.scope.chart, context.scope.measures, pending.lane,
                                           pending.position, *snapped, pending.kind);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
         return diagnostic_result(history, state, *diagnostics);
@@ -3910,7 +3844,7 @@ auto update_hold_preview(hold_gesture_context_t& context, local_position_t posit
     return space_selection_view_result(make_view(history, state));
 }
 
-auto prepare_stem_hold_document(const hold_gesture_context_t& context,
+auto prepare_stem_hold_document(const editor_edit_context_t& context,
     const pending_hold_t& pending, const hold_placement_plan_t& placement,
     object_id_t channel, std::optional<bmson_source_geometry_t> geometry)
     -> std::variant<prepared_note_paint_t, diagnostic_list_t> {
@@ -3931,10 +3865,10 @@ auto prepare_stem_hold_document(const hold_gesture_context_t& context,
     return prepared;
 }
 
-auto commit_stem_hold(hold_gesture_context_t& context, const pending_hold_t& pending,
+auto commit_stem_hold(editor_edit_context_t& context, const pending_hold_t& pending,
     const hold_placement_plan_t& placement, local_position_t target,
     std::optional<bmson_source_geometry_t> geometry) -> std::optional<editor_interaction_result_t> {
-    const auto resolved = entry_stem_channel(context.history.document, context.chart, pending.sound);
+    const auto resolved = entry_stem_channel(context.history.document, context.scope.chart, pending.sound);
     const auto* channel = std::get_if<std::optional<object_id_t>>(&resolved);
     if (channel && !*channel) return std::nullopt;
     context.state.pending_hold.reset();
@@ -3955,7 +3889,7 @@ auto commit_stem_hold(hold_gesture_context_t& context, const pending_hold_t& pen
     return result;
 }
 
-auto commit_hold(hold_gesture_context_t& context, local_position_t position,
+auto commit_hold(editor_edit_context_t& context, local_position_t position,
                  std::optional<bmson_source_geometry_t> geometry)
     -> editor_interaction_result_t {
     auto& history = context.history;
@@ -3969,7 +3903,7 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position,
     if (pending.source_geometry) geometry = *pending.source_geometry;
     if (auto stale = validate_pending_hold_start(context, pending))
         return *stale;
-    const auto resolved = resolve_row_placement(context.chart, context.index, state, pending.lane, position);
+    const auto resolved = resolve_row_placement(context.scope.chart, context.scope.measures, state, pending.lane, position);
     const auto* snapped = std::get_if<local_position_t>(&resolved);
     if (!snapped)
         return diagnostic_result(context.history, state, std::get<diagnostic_list_t>(resolved));
@@ -3980,7 +3914,7 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position,
     if (pending.sound && !is_paint_sample_resource(history.document, *pending.sound))
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_id, "paint sound is not an existing sample resource")});
-    const auto plan = plan_hold_placement(context.chart, context.index, pending.lane,
+    const auto plan = plan_hold_placement(context.scope.chart, context.scope.measures, pending.lane,
                                           pending.position, *snapped, pending.kind, true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
         return diagnostic_result(history, state, *diagnostics);
@@ -4031,7 +3965,7 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position,
     return result;
 }
 
-auto update_keyboard_holds(hold_gesture_context_t& context, local_position_t position)
+auto interaction_detail::update_keyboard_holds(editor_edit_context_t& context, local_position_t position)
     -> editor_interaction_result_t {
     const auto before = context.state;
     place_cursor_at(context.state, context.state.cursor);
@@ -4049,20 +3983,20 @@ auto update_keyboard_holds(hold_gesture_context_t& context, local_position_t pos
     return update_hold_gesture(context, hold_gesture_source_t::keyboard_lane, position);
 }
 
-auto update_canvas_keyboard_holds(hold_gesture_context_t& context, std::uint64_t row)
+auto interaction_detail::update_canvas_keyboard_holds(editor_edit_context_t& context, std::uint64_t row)
     -> editor_interaction_result_t {
     auto& state = context.state;
     const auto before = state;
-    if (!state.pending_hold || !chart_has_virtual_tail(context.chart))
+    if (!state.pending_hold || !chart_has_virtual_tail(context.scope.chart))
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "canvas hold movement requires a BMS lane key")});
     state.pending_hold->preview_canvas_row = row;
     for (auto& hold : state.additional_keyboard_holds)
         hold.preview_canvas_row = row;
-    const auto authored = position_at(context.index, row);
+    const auto authored = position_at(context.scope.measures, row);
     place_cursor_on_canvas_row(state, authored, row);
-    if (!context.keep_cursor_visible(state)) {
+    if (!interaction_detail::keep_cursor_visible(context.scope.chart, context.scope.measures, state)) {
         state = before;
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_resolution,
@@ -4077,7 +4011,7 @@ auto update_canvas_keyboard_holds(hold_gesture_context_t& context, std::uint64_t
             .view = std::get<editor_interaction_view_model_t>(std::move(view))};
 }
 
-auto refresh_keyboard_hold_revisions(hold_gesture_context_t& context) -> void {
+auto refresh_keyboard_hold_revisions(editor_edit_context_t& context) -> void {
     auto& state = context.state;
     if (state.pending_hold)
         state.pending_hold->document_revision = context.history.document.revision;
@@ -4085,9 +4019,9 @@ auto refresh_keyboard_hold_revisions(hold_gesture_context_t& context) -> void {
         hold.document_revision = context.history.document.revision;
 }
 
-auto begin_lane_key_hold_gesture(hold_gesture_context_t& context, lane_id_t lane,
-                                  std::optional<resource_id_t> sound, bool displace,
-                                  std::optional<bmson_source_geometry_t> geometry)
+auto begin_lane_key_hold_gesture(editor_edit_context_t& context, lane_id_t lane,
+                                 std::optional<resource_id_t> sound, bool displace,
+                                 std::optional<bmson_source_geometry_t> geometry)
     -> editor_interaction_result_t {
     auto& state = context.state;
     const auto before = state;
@@ -4144,7 +4078,7 @@ auto begin_lane_key_hold_gesture(hold_gesture_context_t& context, lane_id_t lane
     return result;
 }
 
-auto release_lane_key_hold_gesture(hold_gesture_context_t& context, lane_id_t action_lane)
+auto release_lane_key_hold_gesture(editor_edit_context_t& context, lane_id_t action_lane)
     -> editor_interaction_result_t {
     auto& history = context.history;
     auto& state = context.state;
@@ -4166,7 +4100,7 @@ auto release_lane_key_hold_gesture(hold_gesture_context_t& context, lane_id_t ac
     if (state.pending_hold->anchor_canvas_row || state.pending_hold->preview_canvas_row) {
         const auto resolved_anchor = state.pending_hold->anchor_canvas_row
             ? state.pending_hold->anchor_canvas_row
-            : absolute_row(context.index, state.pending_hold->position);
+            : absolute_row(context.scope.measures, state.pending_hold->position);
         if (!resolved_anchor)
             return diagnostic_result(history, state,
                 {error(diagnostic_code_t::row_out_of_range, "hold anchor is unavailable")});
@@ -4175,7 +4109,7 @@ auto release_lane_key_hold_gesture(hold_gesture_context_t& context, lane_id_t ac
         const auto hold_lane = state.pending_hold->lane;
         const auto sound = state.pending_hold->sound;
         state.pending_hold->gesture_source.reset();
-        result = context.dispatch_action(
+        result = dispatch_nested_action(context,
             place_virtual_bms_hold_action_t{anchor, end, hold_lane, sound});
     } else {
         result = release_hold_gesture(context, hold_gesture_source_t::keyboard_lane, position);
@@ -4246,12 +4180,9 @@ auto combine_editor_area_selection(
 }
 
 struct space_range_selection_context_t {
-    document_history_t& history;
-    editor_interaction_state_t& state;
-    const chart_document_t& chart;
-    const measure_index_t& index;
+    editor_edit_context_t& edit;
     const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& initial_view;
-    std::uint64_t absolute;
+    const std::uint64_t& absolute;
 };
 
 auto space_selection_view_result(const std::variant<editor_interaction_view_model_t,
@@ -4271,8 +4202,8 @@ auto space_selection_view_result(const std::variant<editor_interaction_view_mode
 auto begin_space_range_selection(space_range_selection_context_t& context,
                                  const space_range_selection_action_t& action)
     -> editor_interaction_result_t {
-    auto& history = context.history;
-    auto& state = context.state;
+    auto& history = context.edit.history;
+    auto& state = context.edit.state;
     if (action.mode != editor_area_selection_mode_t::replace &&
         action.mode != editor_area_selection_mode_t::add &&
         action.mode != editor_area_selection_mode_t::toggle) {
@@ -4280,7 +4211,7 @@ auto begin_space_range_selection(space_range_selection_context_t& context,
                                  {error(diagnostic_code_t::invalid_id,
                                         "unknown Space range selection mode")});
     }
-    auto built = build_editor_hit_test_index(context.chart, history.document.revision);
+    auto built = build_editor_hit_test_index(context.edit.scope.chart, history.document.revision);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built))
         return diagnostic_result(history, state, *diagnostics);
     state.pending_space_range_selection = pending_space_range_selection_t{
@@ -4292,15 +4223,15 @@ auto begin_space_range_selection(space_range_selection_context_t& context,
         .mode = action.mode,
         .scope = action.scope,
         .minimum_span_rows = action.minimum_snap_width
-            ? context.chart.divisions_per_standard_measure / state.active_snap_denominator : 0,
+            ? context.edit.scope.chart.divisions_per_standard_measure / state.active_snap_denominator : 0,
     };
     return space_selection_view_result(make_view(history, state));
 }
 
 auto commit_space_range_selection(space_range_selection_context_t& context)
     -> editor_interaction_result_t {
-    auto& history = context.history;
-    auto& state = context.state;
+    auto& history = context.edit.history;
+    auto& state = context.edit.state;
     const auto pending = *state.pending_space_range_selection;
     if (pending.hit_index == nullptr ||
         pending.document_revision != history.document.revision ||
@@ -4324,10 +4255,10 @@ auto commit_space_range_selection(space_range_selection_context_t& context)
     state.retained_canvas_selection_range = first_row < last_row
         ? std::optional{canvas_row_span_t{first_row, last_row}}
         : std::nullopt;
-    const auto anchor_position = position_at(context.index, pending.anchor_canvas_row);
-    const auto cursor_position = position_at(context.index, context.absolute);
+    const auto anchor_position = position_at(context.edit.scope.measures, pending.anchor_canvas_row);
+    const auto cursor_position = position_at(context.edit.scope.measures, context.absolute);
     state.retained_selection_range = anchor_position && cursor_position
-        ? normalized_position_span(context.index, *anchor_position, *cursor_position)
+        ? normalized_position_span(context.edit.scope.measures, *anchor_position, *cursor_position)
         : std::nullopt;
     state.pending_space_range_selection.reset();
     return space_selection_view_result(make_view(history, state));
@@ -4336,24 +4267,17 @@ auto commit_space_range_selection(space_range_selection_context_t& context)
 auto update_space_range_selection(space_range_selection_context_t& context,
                                   const space_range_selection_action_t& action)
     -> editor_interaction_result_t {
-    return context.state.pending_space_range_selection
+    return context.edit.state.pending_space_range_selection
         ? commit_space_range_selection(context)
         : begin_space_range_selection(context, action);
 }
 
-struct virtual_note_context_t {
-    document_history_t& history;
-    editor_interaction_state_t& state;
-    const chart_document_t& chart;
-    const measure_index_t& index;
-};
-
-auto validate_virtual_note_target(const virtual_note_context_t& context, lane_id_t lane,
+auto validate_virtual_note_target(const editor_edit_context_t& context, lane_id_t lane,
                                   std::string_view description)
     -> std::optional<editor_interaction_result_t> {
-    if (chart_has_virtual_tail(context.chart) && lane &&
+    if (chart_has_virtual_tail(context.scope.chart) && lane &&
         context.state.active_snap_denominator != 0 &&
-        context.chart.divisions_per_standard_measure %
+        context.scope.chart.divisions_per_standard_measure %
                 context.state.active_snap_denominator ==
             0) {
         return std::nullopt;
@@ -4383,11 +4307,11 @@ auto extend_virtual_chart(chart_document_t& chart, std::uint64_t measure_count)
     return std::nullopt;
 }
 
-auto snap_virtual_row(const virtual_note_context_t& context, const virtual_canvas_t& canvas,
+auto snap_virtual_row(const editor_edit_context_t& context, const virtual_canvas_t& canvas,
                       std::uint64_t row) -> std::optional<std::uint64_t> {
     if (row >= canvas.total_rows) return std::nullopt;
-    return snap_canvas_row(context.chart, canvas.authored_index, row,
-                           edit_snap_denominator(context.chart, context.state), canvas.total_rows);
+    return snap_canvas_row(context.scope.chart, canvas.authored_index, row,
+                           edit_snap_denominator(context.scope.chart, context.state), canvas.total_rows);
 }
 
 struct virtual_hold_rows_t {
@@ -4396,10 +4320,10 @@ struct virtual_hold_rows_t {
     std::uint64_t measure_count{};
 };
 
-auto resolve_virtual_hold_rows(const virtual_note_context_t& context,
+auto resolve_virtual_hold_rows(const editor_edit_context_t& context,
                                const place_virtual_bms_hold_action_t& action)
     -> std::variant<virtual_hold_rows_t, diagnostic_list_t> {
-    const auto built_canvas = build_virtual_canvas(context.chart);
+    const auto built_canvas = build_virtual_canvas(context.scope.chart);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas))
         return *diagnostics;
     const auto& canvas = std::get<virtual_canvas_t>(built_canvas);
@@ -4408,8 +4332,8 @@ auto resolve_virtual_hold_rows(const virtual_note_context_t& context,
     const auto anchor_measure = anchor ? canvas.measure_containing(*anchor) : std::nullopt;
     const auto end_measure = end ? canvas.measure_containing(*end) : std::nullopt;
     if (!anchor_measure || !end_measure ||
-        anchor_measure->number >= virtual_tail_measure_limit(context.chart) ||
-        end_measure->number >= virtual_tail_measure_limit(context.chart)) {
+        anchor_measure->number >= virtual_tail_measure_limit(context.scope.chart) ||
+        end_measure->number >= virtual_tail_measure_limit(context.scope.chart)) {
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "virtual hold endpoints are unavailable")};
     }
@@ -4419,7 +4343,7 @@ auto resolve_virtual_hold_rows(const virtual_note_context_t& context,
 
 // Materialization is private preparation. Authored and virtual requests run the same
 // placement verb, then publish the prepared document as one history entry.
-auto publish_row_placement(virtual_note_context_t& context, document_history_t& scratch,
+auto publish_row_placement(editor_edit_context_t& context, document_history_t& scratch,
     const editor_interaction_state_t& staged, editor_interaction_result_t result)
     -> editor_interaction_result_t {
     if (!result) return diagnostic_result(context.history, context.state, result.diagnostics);
@@ -4436,7 +4360,7 @@ auto publish_row_placement(virtual_note_context_t& context, document_history_t& 
     return published;
 }
 
-auto commit_virtual_hold(virtual_note_context_t& context,
+auto commit_virtual_hold(editor_edit_context_t& context,
                          const place_virtual_bms_hold_action_t& action,
                          const virtual_hold_rows_t& rows)
     -> editor_interaction_result_t {
@@ -4465,12 +4389,12 @@ auto commit_virtual_hold(virtual_note_context_t& context,
     pending.anchor_canvas_row.reset();
     pending.preview_canvas_row.reset();
     pending.gesture_source.reset();
-    hold_gesture_context_t placement{scratch, staged, *chart, index, {}, {}};
+    editor_edit_context_t placement{scratch, staged, {*chart, index}};
     auto result = commit_hold(placement, *end, action.source_geometry);
     return publish_row_placement(context, scratch, staged, std::move(result));
 }
 
-auto place_virtual_bms_hold(virtual_note_context_t& context,
+auto place_virtual_bms_hold(editor_edit_context_t& context,
                             const place_virtual_bms_hold_action_t& action)
     -> editor_interaction_result_t {
     if (auto invalid = validate_virtual_note_target(context, action.lane, "virtual hold"))
@@ -4487,10 +4411,10 @@ struct virtual_tap_target_t {
     std::uint64_t measure_begin_row{};
 };
 
-auto resolve_virtual_tap_target(const virtual_note_context_t& context,
+auto resolve_virtual_tap_target(const editor_edit_context_t& context,
                                 const place_virtual_bms_tap_action_t& action)
     -> std::variant<virtual_tap_target_t, diagnostic_list_t> {
-    const auto built_canvas = build_virtual_canvas(context.chart);
+    const auto built_canvas = build_virtual_canvas(context.scope.chart);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas))
         return *diagnostics;
     const auto& canvas = std::get<virtual_canvas_t>(built_canvas);
@@ -4504,10 +4428,10 @@ auto resolve_virtual_tap_target(const virtual_note_context_t& context,
     const auto row = *snapped;
     const auto destination = canvas.measure_containing(row);
     if (!destination || destination->authored ||
-        destination->number >= virtual_tail_measure_limit(context.chart) || context.index.entries.empty() ||
-        find_active_lane(context.chart, context.index,
-                         {context.index.entries.back().id,
-                          context.index.entries.back().row_capacity - 1},
+        destination->number >= virtual_tail_measure_limit(context.scope.chart) || context.scope.measures.entries.empty() ||
+        find_active_lane(context.scope.chart, context.scope.measures,
+                         {context.scope.measures.entries.back().id,
+                          context.scope.measures.entries.back().row_capacity - 1},
                          action.lane) == nullptr) {
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "virtual tap cannot use this measure or lane")};
@@ -4515,7 +4439,7 @@ auto resolve_virtual_tap_target(const virtual_note_context_t& context,
     return virtual_tap_target_t{row, destination->number, destination->begin_row};
 }
 
-auto validate_virtual_tap_sample(const virtual_note_context_t& context,
+auto validate_virtual_tap_sample(const editor_edit_context_t& context,
                                  std::optional<resource_id_t> sample)
     -> std::optional<editor_interaction_result_t> {
     if (!sample)
@@ -4530,7 +4454,7 @@ auto validate_virtual_tap_sample(const virtual_note_context_t& context,
                                     "virtual tap sample is unavailable")});
 }
 
-auto place_virtual_bms_tap(virtual_note_context_t& context,
+auto place_virtual_bms_tap(editor_edit_context_t& context,
                            const place_virtual_bms_tap_action_t& action)
     -> editor_interaction_result_t {
     if (auto invalid = validate_virtual_note_target(context, action.lane, "virtual tap"))
@@ -4647,22 +4571,15 @@ auto adjust_editor_zoom(document_history_t& history, editor_interaction_state_t&
     return interaction_view_result(history, state, false);
 }
 
-struct tap_placement_context_t {
-    document_history_t& history;
-    editor_interaction_state_t& state;
-    const chart_document_t& chart;
-    const measure_index_t& index;
-};
-
-auto place_tap(tap_placement_context_t& context, const place_tap_action_t& action)
+auto place_tap(editor_edit_context_t& context, const place_tap_action_t& action)
     -> editor_interaction_result_t {
     auto& state = context.state;
-    const auto resolved = resolve_row_placement(context.chart, context.index, state, state.active_lane, action.position);
+    const auto resolved = resolve_row_placement(context.scope.chart, context.scope.measures, state, state.active_lane, action.position);
     const auto* target = std::get_if<local_position_t>(&resolved);
     if (!target)
         return diagnostic_result(context.history, state, std::get<diagnostic_list_t>(resolved));
     const std::array targets{note_paint_target_t{state.active_lane, *target}};
-    const auto planned = plan_note_paint(context.chart, context.index, targets,
+    const auto planned = plan_note_paint(context.scope.chart, context.scope.measures, targets,
         state.armed_note_kind, note_paint_intent_t::toggle);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, state, *failure);
@@ -4683,13 +4600,6 @@ auto place_tap(tap_placement_context_t& context, const place_tap_action_t& actio
     return result;
 }
 
-struct semantic_paint_context_t {
-    document_history_t& history;
-    editor_interaction_state_t& state;
-    const chart_document_t& chart;
-    std::function<editor_interaction_result_t()> cancel_gesture;
-};
-
 auto semantic_paint_view(document_history_t& history, editor_interaction_state_t& state)
     -> editor_interaction_result_t {
     const auto view = make_view(history, state);
@@ -4704,12 +4614,12 @@ auto semantic_paint_view(document_history_t& history, editor_interaction_state_t
     };
 }
 
-auto append_semantic_paint_note(semantic_paint_context_t& context, object_id_t note_id,
+auto append_semantic_paint_note(editor_edit_context_t& context, object_id_t note_id,
                                 bool pointer_captured) -> editor_interaction_result_t {
     auto& history = context.history;
     auto& state = context.state;
     if (!pointer_captured)
-        return context.cancel_gesture();
+        return cancel_pointer_gesture(context);
     if (!state.pending_semantic_layer_paint_gesture)
         return diagnostic_result(
             history, state,
@@ -4721,7 +4631,7 @@ auto append_semantic_paint_note(semantic_paint_context_t& context, object_id_t n
             history, state,
             {error(diagnostic_code_t::invalid_hold,
                    "semantic-layer paint gesture is stale after a document edit")});
-    if (!find_note(context.chart, note_id))
+    if (!find_note(context.scope.chart, note_id))
         return diagnostic_result(
             history, state,
             {error(diagnostic_code_t::invalid_id,
@@ -4741,11 +4651,11 @@ auto append_semantic_paint_note(semantic_paint_context_t& context, object_id_t n
     return semantic_paint_view(history, state);
 }
 
-auto append_semantic_paint_bgm_event(semantic_paint_context_t& context, object_id_t event_id,
+auto append_semantic_paint_bgm_event(editor_edit_context_t& context, object_id_t event_id,
                                      bool pointer_captured) -> editor_interaction_result_t {
     auto& history = context.history;
     auto& state = context.state;
-    if (!pointer_captured) return context.cancel_gesture();
+    if (!pointer_captured) return cancel_pointer_gesture(context);
     if (!state.pending_semantic_layer_paint_gesture)
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_hold,
@@ -4755,7 +4665,7 @@ auto append_semantic_paint_bgm_event(semantic_paint_context_t& context, object_i
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_hold,
                    "semantic-layer paint gesture is stale after a document edit")});
-    if (!find_bgm_event(context.chart, event_id))
+    if (!find_bgm_event(context.scope.chart, event_id))
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_id,
                    "semantic-layer paint target does not identify a BGM event", event_id)});
@@ -4772,7 +4682,7 @@ auto append_semantic_paint_bgm_event(semantic_paint_context_t& context, object_i
     return semantic_paint_view(history, state);
 }
 
-auto begin_semantic_paint(semantic_paint_context_t& context, layer_id_t layer_id,
+auto begin_semantic_paint(editor_edit_context_t& context, layer_id_t layer_id,
                           object_id_t note_id, std::optional<object_id_t> bgm_event,
                           bool pointer_captured,
                           bool replace_memberships, bool clear_memberships,
@@ -4792,9 +4702,9 @@ auto begin_semantic_paint(semantic_paint_context_t& context, layer_id_t layer_id
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "another editor gesture is already active")});
-    const auto layer = std::ranges::find(context.chart.semantic_layers, layer_id,
+    const auto layer = std::ranges::find(context.scope.chart.semantic_layers, layer_id,
                                          &semantic_layer_t::id);
-    if (!clear_memberships && (layer == context.chart.semantic_layers.end() || !layer->visible))
+    if (!clear_memberships && (layer == context.scope.chart.semantic_layers.end() || !layer->visible))
         return diagnostic_result(
             history, state,
             {error(diagnostic_code_t::invalid_id,
@@ -4808,8 +4718,8 @@ auto begin_semantic_paint(semantic_paint_context_t& context, layer_id_t layer_id
             history, state,
             {error(diagnostic_code_t::invalid_id,
                    "semantic-layer paint must target one note or BGM event")});
-    if ((note_id && !find_note(context.chart, note_id)) ||
-        (bgm_event && !find_bgm_event(context.chart, *bgm_event)))
+    if ((note_id && !find_note(context.scope.chart, note_id)) ||
+        (bgm_event && !find_bgm_event(context.scope.chart, *bgm_event)))
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_id,
                    "semantic-layer paint target is not in the chart", note_id ? note_id : *bgm_event)});
@@ -4832,13 +4742,13 @@ auto begin_semantic_paint(semantic_paint_context_t& context, layer_id_t layer_id
     return semantic_paint_view(history, state);
 }
 
-auto end_semantic_paint(semantic_paint_context_t& context, object_id_t note_id,
+auto end_semantic_paint(editor_edit_context_t& context, object_id_t note_id,
                         std::optional<object_id_t> bgm_event,
                         bool pointer_captured) -> editor_interaction_result_t {
     auto& history = context.history;
     auto& state = context.state;
     if (!pointer_captured)
-        return context.cancel_gesture();
+        return cancel_pointer_gesture(context);
     if (bgm_event) {
         const auto updated = append_semantic_paint_bgm_event(context, *bgm_event, true);
         if (!updated) return updated;
@@ -4858,10 +4768,10 @@ auto end_semantic_paint(semantic_paint_context_t& context, object_id_t note_id,
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "semantic-layer paint gesture is malformed or stale")});
-    const auto layer = std::ranges::find(context.chart.semantic_layers, pending.layer,
+    const auto layer = std::ranges::find(context.scope.chart.semantic_layers, pending.layer,
                                         &semantic_layer_t::id);
     if (!pending.clear_memberships &&
-        (layer == context.chart.semantic_layers.end() || !layer->visible || layer->locked))
+        (layer == context.scope.chart.semantic_layers.end() || !layer->visible || layer->locked))
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_id,
                    "semantic-layer paint requires an unlocked visible layer")});
@@ -4885,12 +4795,6 @@ auto end_semantic_paint(semantic_paint_context_t& context, object_id_t note_id,
     return result;
 }
 
-struct editor_object_selection_context_t {
-    document_history_t& history;
-    editor_interaction_state_t& state;
-    const chart_document_t& chart;
-};
-
 auto audition_selected_object(bool requested,
     const std::vector<editor_selection_object_t>& hits, const editor_interaction_state_t& state,
     std::uint64_t revision) -> std::optional<editor_object_audition_request_t> {
@@ -4900,12 +4804,12 @@ auto audition_selected_object(bool requested,
     return editor_object_audition_request_t{revision, state.chart, hits.front()};
 }
 
-auto select_editor_objects(editor_object_selection_context_t& context,
+auto select_editor_objects(editor_edit_context_t& context,
                            const select_editor_objects_action_t& action)
     -> editor_interaction_result_t {
     auto& history = context.history;
     auto& state = context.state;
-    const auto built = build_editor_hit_test_index(context.chart, history.document.revision);
+    const auto built = build_editor_hit_test_index(context.scope.chart, history.document.revision);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built))
         return diagnostic_result(history, state, *diagnostics);
     const auto& hit_index = std::get<editor_hit_test_index_t>(built);
@@ -4952,12 +4856,8 @@ auto select_editor_objects(editor_object_selection_context_t& context,
 }
 
 struct area_selection_context_t {
-    document_history_t& history;
-    editor_interaction_state_t& state;
-    const chart_document_t& chart;
-    const measure_index_t& index;
+    editor_edit_context_t& edit;
     const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& initial_view;
-    std::function<editor_interaction_result_t()> cancel_gesture;
 };
 
 auto valid_area_selection_capture(const begin_editor_area_selection_action_t& request,
@@ -4975,8 +4875,8 @@ auto valid_area_selection_capture(const begin_editor_area_selection_action_t& re
 auto begin_area_selection_gesture(area_selection_context_t& context,
                                   const begin_editor_area_selection_action_t& request)
     -> editor_interaction_result_t {
-    auto& history = context.history;
-    auto& state = context.state;
+    auto& history = context.edit.history;
+    auto& state = context.edit.state;
     if (!request.pointer_captured)
         return diagnostic_result(
             history, state,
@@ -4998,7 +4898,7 @@ auto begin_area_selection_gesture(area_selection_context_t& context,
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_id,
                                         "unknown area selection mode")});
-    auto built = build_editor_hit_test_index(context.chart, history.document.revision);
+    auto built = build_editor_hit_test_index(context.edit.scope.chart, history.document.revision);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built))
         return diagnostic_result(history, state, *diagnostics);
     auto hit_index = std::make_shared<editor_hit_test_index_t>(
@@ -5014,7 +4914,7 @@ auto begin_area_selection_gesture(area_selection_context_t& context,
     };
     area.scope = request.scope;
     area.object_geometry = request.object_geometry;
-    auto queried = editor_objects_in_area_selection(context.chart, *hit_index, view, area);
+    auto queried = editor_objects_in_area_selection(context.edit.scope.chart, *hit_index, view, area);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&queried))
         return diagnostic_result(history, state, *diagnostics);
     auto combined = combine_editor_area_selection(
@@ -5045,10 +4945,10 @@ auto begin_area_selection_gesture(area_selection_context_t& context,
 auto update_area_selection_gesture(area_selection_context_t& context, double x_pixels,
                                    double y_pixels, bool pointer_captured)
     -> editor_interaction_result_t {
-    auto& history = context.history;
-    auto& state = context.state;
+    auto& history = context.edit.history;
+    auto& state = context.edit.state;
     if (!pointer_captured)
-        return context.cancel_gesture();
+        return cancel_pointer_gesture(context.edit);
     if (!state.pending_editor_area_selection)
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
@@ -5076,7 +4976,7 @@ auto update_area_selection_gesture(area_selection_context_t& context, double x_p
     area.scope = pending.scope;
     area.object_geometry = pending.object_geometry;
     auto queried = editor_objects_in_area_selection(
-        context.chart, *pending.hit_index, view, area);
+        context.edit.scope.chart, *pending.hit_index, view, area);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&queried))
         return diagnostic_result(history, state, *diagnostics);
     auto combined = combine_editor_area_selection(
@@ -5097,18 +4997,18 @@ auto update_area_selection_gesture(area_selection_context_t& context, double x_p
 auto snapped_area_selection_row(const area_selection_context_t& context,
                                  const editor_interaction_view_model_t& view, double y)
     -> std::optional<std::uint64_t> {
-    const auto row = absolute_row_at_y_pixels(context.chart, context.index, view,
+    const auto row = absolute_row_at_y_pixels(context.edit.scope.chart, context.edit.scope.measures, view,
         std::clamp(y, 0.0, std::nextafter(view.viewport_height_pixels, 0.0)), true);
     if (!row) return std::nullopt;
-    const auto denominator = edit_snap_denominator(context.chart, context.state);
-    auto total_rows = context.index.total_rows;
-    if (chart_has_virtual_tail(context.chart)) {
-        const auto canvas = build_virtual_canvas(context.chart);
+    const auto denominator = edit_snap_denominator(context.edit.scope.chart, context.edit.state);
+    auto total_rows = context.edit.scope.measures.total_rows;
+    if (chart_has_virtual_tail(context.edit.scope.chart)) {
+        const auto canvas = build_virtual_canvas(context.edit.scope.chart);
         const auto* geometry = std::get_if<virtual_canvas_t>(&canvas);
         if (!geometry) return std::nullopt;
         total_rows = geometry->total_rows;
     }
-    return snap_canvas_row(context.chart, context.index, *row, denominator, total_rows);
+    return snap_canvas_row(context.edit.scope.chart, context.edit.scope.measures, *row, denominator, total_rows);
 }
 
 auto retain_area_selection_range(area_selection_context_t& context,
@@ -5118,11 +5018,11 @@ auto retain_area_selection_range(area_selection_context_t& context,
     const auto anchor_row = snapped_area_selection_row(context, view,
         area_selection_anchor_y(pending, view.viewport_scroll_pixels));
     const auto tail_row = snapped_area_selection_row(context, view, pending.current_y_pixels);
-    const auto anchor = anchor_row ? position_at(context.index, *anchor_row) : std::nullopt;
-    const auto tail = tail_row ? position_at(context.index, *tail_row) : std::nullopt;
-    context.state.retained_selection_range =
-        anchor && tail ? normalized_position_span(context.index, *anchor, *tail) : std::nullopt;
-    context.state.retained_canvas_selection_range = anchor_row && tail_row && *anchor_row != *tail_row
+    const auto anchor = anchor_row ? position_at(context.edit.scope.measures, *anchor_row) : std::nullopt;
+    const auto tail = tail_row ? position_at(context.edit.scope.measures, *tail_row) : std::nullopt;
+    context.edit.state.retained_selection_range =
+        anchor && tail ? normalized_position_span(context.edit.scope.measures, *anchor, *tail) : std::nullopt;
+    context.edit.state.retained_canvas_selection_range = anchor_row && tail_row && *anchor_row != *tail_row
         ? std::optional{canvas_row_span_t{std::min(*anchor_row, *tail_row),
                                           std::max(*anchor_row, *tail_row)}}
         : std::nullopt;
@@ -5133,18 +5033,18 @@ auto commit_area_selection_gesture(area_selection_context_t& context, double x_p
     -> editor_interaction_result_t {
     auto updated = update_area_selection_gesture(context, x_pixels, y_pixels,
                                                  pointer_captured);
-    if (!updated || !context.state.pending_editor_area_selection)
+    if (!updated || !context.edit.state.pending_editor_area_selection)
         return updated;
-    const auto& pending = *context.state.pending_editor_area_selection;
-    if (pending.document_revision != context.history.document.revision || !pending.objects)
+    const auto& pending = *context.edit.state.pending_editor_area_selection;
+    if (pending.document_revision != context.edit.history.document.revision || !pending.objects)
         return diagnostic_result(
-            context.history, context.state,
+            context.edit.history, context.edit.state,
             {error(diagnostic_code_t::invalid_hold,
                    "area selection gesture is stale after a document edit")});
-    set_selected_objects(context.state, *pending.objects);
+    set_selected_objects(context.edit.state, *pending.objects);
     retain_area_selection_range(context, pending);
-    context.state.pending_editor_area_selection.reset();
-    return space_selection_view_result(make_view(context.history, context.state));
+    context.edit.state.pending_editor_area_selection.reset();
+    return space_selection_view_result(make_view(context.edit.history, context.edit.state));
 }
 
 auto recovered_editor_view(document_history_t& history, editor_interaction_state_t& state)
@@ -5449,15 +5349,13 @@ auto apply_note_move_plan(document_history_t& history, editor_interaction_state_
     return result;
 }
 
-auto select_editor_notes(document_history_t& history, editor_interaction_state_t& state,
-                         const chart_document_t& chart,
+auto select_editor_notes(editor_edit_context_t& context,
                          const select_editor_notes_action_t& action)
     -> editor_interaction_result_t {
     std::vector<editor_selection_object_t> objects;
     objects.reserve(action.notes.size());
     for (const auto id : action.notes)
         objects.push_back({editor_selection_object_kind_t::note, id});
-    editor_object_selection_context_t context{history, state, chart};
     return select_editor_objects(context, {std::move(objects)});
 }
 
@@ -5521,27 +5419,29 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
 auto terminal_editor_gesture_action(const editor_interaction_state_t& state,
                                     const editor_ui_action_t& action) -> bool {
     return std::holds_alternative<commit_hold_action_t>(action) ||
-        std::holds_alternative<place_virtual_bms_hold_action_t>(action) ||
-        std::holds_alternative<release_alt_pointer_hold_gesture_action_t>(action) ||
-        std::holds_alternative<release_lane_key_hold_gesture_action_t>(action) ||
-        std::holds_alternative<release_note_duration_gesture_action_t>(action) ||
-        std::holds_alternative<release_note_move_gesture_action_t>(action) ||
-        std::holds_alternative<end_note_paint_gesture_action_t>(action) ||
-        std::holds_alternative<end_semantic_layer_paint_gesture_action_t>(action) ||
-        std::holds_alternative<update_semantic_layer_paint_gesture_action_t>(action) ||
-        std::holds_alternative<update_editor_area_selection_action_t>(action) ||
-        std::holds_alternative<commit_editor_area_selection_action_t>(action) ||
-        (state.pending_space_range_selection &&
-         std::holds_alternative<space_range_selection_action_t>(action));
+           std::holds_alternative<place_virtual_bms_hold_action_t>(action) ||
+           std::holds_alternative<release_alt_pointer_hold_gesture_action_t>(action) ||
+           std::holds_alternative<release_lane_key_hold_gesture_action_t>(action) ||
+           std::holds_alternative<release_note_duration_gesture_action_t>(action) ||
+           std::holds_alternative<release_note_move_gesture_action_t>(action) ||
+           std::holds_alternative<end_note_paint_gesture_action_t>(action) ||
+           std::holds_alternative<end_semantic_layer_paint_gesture_action_t>(action) ||
+           std::holds_alternative<update_semantic_layer_paint_gesture_action_t>(action) ||
+           std::holds_alternative<update_editor_area_selection_action_t>(action) ||
+           std::holds_alternative<commit_editor_area_selection_action_t>(action) ||
+           (state.pending_space_range_selection &&
+            std::holds_alternative<space_range_selection_action_t>(action));
 }
 
 auto dispatch_editor_action(document_history_t& history, editor_interaction_state_t& state,
                             const editor_ui_action_t& action) -> editor_interaction_result_t {
-    if (auto canceled = handle_editor_cancellation(history, state, action)) return *canceled;
+    if (auto canceled = handle_editor_cancellation(history, state, action))
+        return *canceled;
     if (editor_gestures_stale(state, history.document.revision)) {
         clear_editor_gestures(state);
         return diagnostic_result(history, state,
-            {error(diagnostic_code_t::invalid_hold, "Editor gesture is stale after a document edit.")});
+                                 {error(diagnostic_code_t::invalid_hold,
+                                        "Editor gesture is stale after a document edit.")});
     }
     auto result = dispatch_editor_action_impl(history, state, action);
     if (!result && terminal_editor_gesture_action(state, action)) {
@@ -5552,426 +5452,381 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
 }
 
 namespace {
+auto append_semantic_paint_target(editor_edit_context_t& context, object_id_t note,
+                                  std::optional<object_id_t> bgm_event, bool captured)
+    -> editor_interaction_result_t {
+    return bgm_event ? append_semantic_paint_bgm_event(context, *bgm_event, captured)
+                     : append_semantic_paint_note(context, note, captured);
+}
+
+auto handle(editor_edit_context_t& context, const move_edit_cursor_action_t& typed_action,
+            const std::uint64_t& absolute) -> editor_interaction_result_t {
+    interaction_detail::cursor_navigation_context_t cursor_navigation{context, absolute};
+    return interaction_detail::move_edit_cursor(cursor_navigation, typed_action);
+}
+
+auto handle(editor_edit_context_t& context, const page_edit_cursor_action_t& typed_action,
+            const std::uint64_t& absolute) -> editor_interaction_result_t {
+    interaction_detail::cursor_navigation_context_t cursor_navigation{context, absolute};
+    return interaction_detail::page_edit_cursor(cursor_navigation, typed_action);
+}
+
+auto handle(editor_edit_context_t& context, const jump_edit_cursor_action_t& typed_action,
+            const std::uint64_t& absolute) -> editor_interaction_result_t {
+    interaction_detail::cursor_navigation_context_t cursor_navigation{context, absolute};
+    return interaction_detail::jump_edit_cursor(cursor_navigation, typed_action);
+}
+
+auto handle(editor_edit_context_t& context, const select_bms_canvas_measure_action_t& typed_action,
+            const std::uint64_t& absolute) -> editor_interaction_result_t {
+    interaction_detail::cursor_navigation_context_t cursor_navigation{context, absolute};
+    return interaction_detail::select_bms_canvas_measure(cursor_navigation, typed_action);
+}
+
+auto handle(editor_edit_context_t& context, const cycle_edit_snap_action_t& typed_action)
+    -> editor_interaction_result_t {
+    return cycle_editor_snap(context.history, context.state, typed_action);
+}
+
+auto handle(editor_edit_context_t& context, const set_edit_snap_action_t& typed_action)
+    -> editor_interaction_result_t {
+    return set_editor_snap(context.history, context.state, typed_action);
+}
+
+auto handle(editor_edit_context_t& context, const place_virtual_bms_hold_action_t& typed_action)
+    -> editor_interaction_result_t {
+    return place_virtual_bms_hold(context, typed_action);
+}
+
+auto handle(editor_edit_context_t& context, const place_virtual_bms_tap_action_t& typed_action)
+    -> editor_interaction_result_t {
+    return place_virtual_bms_tap(context, typed_action);
+}
+
+auto handle(editor_edit_context_t& context, const place_tap_action_t& typed_action)
+    -> editor_interaction_result_t {
+    if (context.state.armed_note_kind == note_kind_t::hold ||
+        context.state.armed_note_kind == note_kind_t::roll)
+        return begin_hold_action(context, typed_action.position, typed_action.sound,
+                                 typed_action.source_geometry);
+    return place_tap(context, typed_action);
+}
+
+auto handle(editor_edit_context_t& context, const begin_hold_action_t& typed_action)
+    -> editor_interaction_result_t {
+    return begin_hold_action(context, typed_action.position);
+}
+
+auto handle(editor_edit_context_t& context, const update_hold_preview_action_t& typed_action)
+    -> editor_interaction_result_t {
+    return update_hold_preview(context, typed_action.position);
+}
+
+auto handle(editor_edit_context_t& context, const commit_hold_action_t& typed_action)
+    -> editor_interaction_result_t {
+    return commit_hold(context, typed_action.position, typed_action.source_geometry);
+}
+
+auto handle(editor_edit_context_t& context,
+            const begin_lane_key_hold_gesture_action_t& typed_action)
+    -> editor_interaction_result_t {
+    return begin_lane_key_hold_gesture(context, typed_action.lane, typed_action.sound,
+                                       typed_action.displace_to_bgm, typed_action.source_geometry);
+}
+
+auto handle(editor_edit_context_t& context,
+            const release_lane_key_hold_gesture_action_t& typed_action)
+    -> editor_interaction_result_t {
+    return release_lane_key_hold_gesture(context, typed_action.lane);
+}
+
+auto handle(editor_edit_context_t& context,
+            const begin_alt_pointer_hold_gesture_action_t& typed_action)
+    -> editor_interaction_result_t {
+
+    if (!typed_action.alt_or_option_down) {
+        return diagnostic_result(
+            context.history, context.state,
+            {error(diagnostic_code_t::invalid_hold,
+                   "Alt/Option must be held to begin a pointer hold gesture")});
+    }
+    return begin_hold_gesture(context, typed_action.lane, typed_action.position,
+                              hold_gesture_source_t::alt_pointer, typed_action.sound, false,
+                              typed_action.source_geometry);
+}
+
+auto handle(editor_edit_context_t& context,
+            const update_alt_pointer_hold_gesture_action_t& typed_action)
+    -> editor_interaction_result_t {
+
+    if (!typed_action.pointer_captured) {
+        return cancel_pointer_gesture(context);
+    }
+    if (!typed_action.alt_or_option_down) {
+        return dispatch_editor_action(
+            context.history, context.state,
+            cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::modifier_released});
+    }
+    return update_hold_gesture(context, hold_gesture_source_t::alt_pointer, typed_action.position);
+}
+
+auto handle(editor_edit_context_t& context,
+            const release_alt_pointer_hold_gesture_action_t& typed_action)
+    -> editor_interaction_result_t {
+
+    if (!typed_action.pointer_captured) {
+        return cancel_pointer_gesture(context);
+    }
+    if (!typed_action.alt_or_option_down) {
+        return dispatch_editor_action(
+            context.history, context.state,
+            cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::modifier_released});
+    }
+    return release_hold_gesture(context, hold_gesture_source_t::alt_pointer, typed_action.position,
+                                typed_action.source_geometry);
+}
+
+auto handle(editor_edit_context_t& context,
+            const begin_semantic_layer_paint_gesture_action_t& typed_action)
+    -> editor_interaction_result_t {
+
+    return begin_semantic_paint(context, typed_action.layer, typed_action.note,
+                                typed_action.bgm_event, typed_action.pointer_captured,
+                                typed_action.replace_memberships, typed_action.clear_memberships,
+                                typed_action.mode);
+}
+
+auto handle(editor_edit_context_t& context,
+            const update_semantic_layer_paint_gesture_action_t& typed_action)
+    -> editor_interaction_result_t {
+
+    return append_semantic_paint_target(context, typed_action.note, typed_action.bgm_event,
+                                        typed_action.pointer_captured);
+}
+
+auto handle(editor_edit_context_t& context,
+            const end_semantic_layer_paint_gesture_action_t& typed_action)
+    -> editor_interaction_result_t {
+
+    return end_semantic_paint(context, typed_action.note, typed_action.bgm_event,
+                              typed_action.pointer_captured);
+}
+
+auto handle(editor_edit_context_t& context,
+            const begin_editor_area_selection_action_t& typed_action,
+            const editor_initial_view_t& initial_view) -> editor_interaction_result_t {
+    area_selection_context_t area_selection{context, initial_view};
+
+    return begin_area_selection_gesture(area_selection, typed_action);
+}
+
+auto handle(editor_edit_context_t& context,
+            const update_editor_area_selection_action_t& typed_action,
+            const editor_initial_view_t& initial_view) -> editor_interaction_result_t {
+    area_selection_context_t area_selection{context, initial_view};
+
+    return update_area_selection_gesture(area_selection, typed_action.x_pixels,
+                                         typed_action.y_pixels, typed_action.pointer_captured);
+}
+
+auto handle(editor_edit_context_t& context,
+            const commit_editor_area_selection_action_t& typed_action,
+            const editor_initial_view_t& initial_view) -> editor_interaction_result_t {
+    area_selection_context_t area_selection{context, initial_view};
+
+    return commit_area_selection_gesture(area_selection, typed_action.x_pixels,
+                                         typed_action.y_pixels, typed_action.pointer_captured);
+}
+
+auto handle(editor_edit_context_t&, const cancel_editor_area_selection_action_t&)
+    -> editor_interaction_result_t {
+
+    return {};
+}
+
+auto handle(editor_edit_context_t& context, const space_range_selection_action_t& typed_action,
+            const editor_initial_view_t& initial_view, const std::uint64_t& absolute)
+    -> editor_interaction_result_t {
+    space_range_selection_context_t space_selection{context, initial_view, absolute};
+    return update_space_range_selection(space_selection, typed_action);
+}
+
+auto handle(editor_edit_context_t&, const cancel_editor_gesture_action_t&)
+    -> editor_interaction_result_t {
+
+    return {};
+}
+
+auto handle(editor_edit_context_t& context, const select_editor_notes_action_t& typed_action)
+    -> editor_interaction_result_t {
+    return select_editor_notes(context, typed_action);
+}
+
+auto handle(editor_edit_context_t& context, const select_editor_objects_action_t& typed_action)
+    -> editor_interaction_result_t {
+    return select_editor_objects(context, typed_action);
+}
+
+auto handle(editor_edit_context_t& context, const delete_editor_selection_action_t&)
+    -> editor_interaction_result_t {
+    return delete_editor_selection(context);
+}
+
+auto handle(editor_edit_context_t& context, const select_editor_lane_action_t& typed_action)
+    -> editor_interaction_result_t {
+    return select_editor_lane(context.history, context.state, context.scope.chart,
+                              context.scope.measures, typed_action.lane);
+}
+
+auto handle(editor_edit_context_t& context,
+            const assign_selected_objects_to_lane_action_t& typed_action)
+    -> editor_interaction_result_t {
+    return assign_selected_objects_to_lane(context, typed_action);
+}
+
+auto handle(editor_edit_context_t& context, const adjust_editor_zoom_action_t& typed_action,
+            const std::uint64_t& absolute) -> editor_interaction_result_t {
+    return adjust_editor_zoom(context.history, context.state, context.scope.chart,
+                              context.scope.measures, absolute, typed_action);
+}
+
+auto handle(editor_edit_context_t& context, const scroll_editor_view_action_t& typed_action)
+    -> editor_interaction_result_t {
+    return scroll_editor_view(context, typed_action);
+}
+
+auto handle(editor_edit_context_t& context, const begin_note_duration_gesture_action_t& action)
+    -> editor_interaction_result_t {
+    return begin_note_duration_gesture(context, action.reference_note);
+}
+
+auto handle(editor_edit_context_t& context, const update_note_duration_gesture_action_t& action)
+    -> editor_interaction_result_t {
+    return update_note_duration_gesture(context, action.reference_end);
+}
+
+auto handle(editor_edit_context_t& context, const release_note_duration_gesture_action_t& action)
+    -> editor_interaction_result_t {
+    return release_note_duration_gesture(context, action.reference_end);
+}
+
+auto handle(editor_edit_context_t& context, const begin_note_move_gesture_action_t& action)
+    -> editor_interaction_result_t {
+    return begin_note_move_gesture(context, action.reference_note, action.displace_to_bgm);
+}
+
+auto handle(editor_edit_context_t& context, const update_note_move_gesture_action_t& action)
+    -> editor_interaction_result_t {
+    return update_note_move_gesture(context, action.reference_position, action.reference_lane,
+                                    action.to_bgm, action.preferred_bgm_lane,
+                                    action.virtual_bgm_row);
+}
+
+auto handle(editor_edit_context_t& context, const release_note_move_gesture_action_t& action)
+    -> editor_interaction_result_t {
+    return release_note_move_gesture(context, action.reference_position, action.reference_lane,
+                                     action.to_bgm, action.preferred_bgm_lane,
+                                     action.virtual_bgm_row);
+}
+
+auto handle(editor_edit_context_t& context, const begin_note_paint_gesture_action_t& action)
+    -> editor_interaction_result_t {
+    return begin_note_paint_gesture(context, action.lane, action.position, action.pointer_captured,
+                                    action.sound, action.intent, action.source_geometry);
+}
+
+auto handle(editor_edit_context_t& context, const update_note_paint_gesture_action_t& action)
+    -> editor_interaction_result_t {
+    return append_note_paint_target(context, action.lane, action.position, action.pointer_captured);
+}
+
+auto handle(editor_edit_context_t& context, const end_note_paint_gesture_action_t& action)
+    -> editor_interaction_result_t {
+    return end_note_paint_gesture(context, action.lane, action.position, action.pointer_captured,
+                                  action.source_geometry);
+}
+
+struct editor_action_visitor_t {
+    editor_edit_context_t& context;
+    const editor_initial_view_t& initial_view;
+    const std::uint64_t& absolute;
+    template <class Action>
+    auto operator()(const Action& action) const -> editor_interaction_result_t {
+        return handle(context, action);
+    }
+    auto operator()(const move_edit_cursor_action_t& action) const -> editor_interaction_result_t {
+        return handle(context, action, absolute);
+    }
+    auto operator()(const page_edit_cursor_action_t& action) const -> editor_interaction_result_t {
+        return handle(context, action, absolute);
+    }
+    auto operator()(const jump_edit_cursor_action_t& action) const -> editor_interaction_result_t {
+        return handle(context, action, absolute);
+    }
+    auto operator()(const select_bms_canvas_measure_action_t& action) const
+        -> editor_interaction_result_t {
+        return handle(context, action, absolute);
+    }
+    auto operator()(const begin_editor_area_selection_action_t& action) const
+        -> editor_interaction_result_t {
+        return handle(context, action, initial_view);
+    }
+    auto operator()(const update_editor_area_selection_action_t& action) const
+        -> editor_interaction_result_t {
+        return handle(context, action, initial_view);
+    }
+    auto operator()(const commit_editor_area_selection_action_t& action) const
+        -> editor_interaction_result_t {
+        return handle(context, action, initial_view);
+    }
+    auto operator()(const adjust_editor_zoom_action_t& action) const
+        -> editor_interaction_result_t {
+        return handle(context, action, absolute);
+    }
+    auto operator()(const space_range_selection_action_t& action) const
+        -> editor_interaction_result_t {
+        return handle(context, action, initial_view, absolute);
+    }
+};
+
 auto dispatch_editor_action_impl(document_history_t& history, editor_interaction_state_t& state,
                                  const editor_ui_action_t& action) -> editor_interaction_result_t {
-    if (auto canceled = handle_editor_cancellation(history, state, action))
-        return *canceled;
     if (auto rejected = validate_active_gesture_action(history, state, action))
         return *rejected;
     if (auto rejected = validate_virtual_cursor_action(history, state, action))
         return *rejected;
-    const auto* kind_chart = find_chart(history.document, state.chart);
-    if (kind_chart && !note_kind_allowed(*kind_chart, state.armed_note_kind))
+    const auto* chart = find_chart(history.document, state.chart);
+    if (chart && !note_kind_allowed(*chart, state.armed_note_kind))
         state.armed_note_kind = note_kind_t::tap;
     const auto initial_view = make_view(history, state);
     if (std::holds_alternative<diagnostic_list_t>(initial_view)) {
         return diagnostic_result(history, state, std::get<diagnostic_list_t>(initial_view));
     }
-    const auto* chart = find_chart(history.document, state.chart);
     const auto built_index = build_measure_index(*chart);
     const auto& index = std::get<measure_index_t>(built_index);
     const auto absolute = state.virtual_bms_cursor_row.value_or(*absolute_row(index, state.cursor));
-    const auto keep_cursor_visible = [&](editor_interaction_state_t& candidate) {
-        return interaction_detail::keep_cursor_visible(*chart, index, candidate);
-    };
-
-    const auto make_duration_plan = [&](std::vector<object_id_t> targets, object_id_t reference,
-                                        local_position_t end, bool exact_end = false) {
-        return plan_duration_resize(*chart, index, std::move(targets), reference, end,
-                                    edit_snap_denominator(*chart, state), exact_end);
-    };
-    const auto make_move_plan = [&](std::vector<object_id_t> targets, object_id_t reference,
-                                    local_position_t position, lane_id_t lane,
-                                    bool exact_position, std::optional<object_id_t> bgm_lane,
-                                    std::optional<std::uint64_t> virtual_row) -> std::variant<note_move_plan_t, diagnostic_list_t> {
-        return plan_move_gesture(history, state, *chart, index, std::move(targets), reference,
-                                 position, lane, exact_position, bgm_lane, virtual_row);
-    };
-    const auto apply_duration_plan = [&](const duration_resize_plan_t& plan) {
-        return apply_duration_resize_plan(history, state, plan);
-    };
-    const auto apply_move_plan = [&](const note_move_plan_t& plan) {
-        return apply_note_move_plan(history, state, plan);
-    };
-
-    hold_gesture_context_t hold_gestures{
-        history, state, *chart, index, keep_cursor_visible,
-        [&](const editor_ui_action_t& nested_action) {
-            return dispatch_editor_action(history, state, nested_action);
-        }};
-    interaction_detail::cursor_navigation_context_t cursor_navigation{
-        history,
-        state,
-        *chart,
-        index,
-        absolute,
-        keep_cursor_visible,
-        [&](std::uint64_t row) { return update_canvas_keyboard_holds(hold_gestures, row); },
-        [&](local_position_t position) { return update_keyboard_holds(hold_gestures, position); }};
-    note_gesture_context_t note_gestures{history, state, *chart, index, make_duration_plan,
-                                         apply_duration_plan, make_move_plan, apply_move_plan};
-    const auto cancel_paint_gesture = [&] {
-        return dispatch_editor_action(
-            history, state,
-            cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::pointer_capture_lost});
-    };
-    note_paint_context_t note_paint{history, state, *chart, index, cancel_paint_gesture};
-
-    semantic_paint_context_t semantic_paint{
-        history, state, *chart, [&] {
-            return dispatch_editor_action(
-                history, state,
-                cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::pointer_capture_lost});
-        }};
-    const auto append_semantic_layer_paint_target =
-        [&](object_id_t note, std::optional<object_id_t> bgm_event, bool pointer_captured) {
-            return bgm_event
-                       ? append_semantic_paint_bgm_event(semantic_paint, *bgm_event, pointer_captured)
-                       : append_semantic_paint_note(semantic_paint, note, pointer_captured);
-        };
-    const auto begin_semantic_layer_paint_gesture =
-        [&](layer_id_t layer, object_id_t note, std::optional<object_id_t> bgm_event,
-            bool pointer_captured, bool replace, bool clear, semantic_layer_paint_mode_t mode) {
-            return begin_semantic_paint(semantic_paint, layer, note, bgm_event,
-                                        pointer_captured, replace, clear, mode);
-        };
-    const auto end_semantic_layer_paint_gesture =
-        [&](object_id_t note, std::optional<object_id_t> bgm_event, bool pointer_captured) {
-            return end_semantic_paint(semantic_paint, note, bgm_event, pointer_captured);
-        };
-
-    area_selection_context_t area_selection{
-        history, state, *chart, index, initial_view,
-        [&] {
-            return dispatch_editor_action(
-                history, state,
-                cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::pointer_capture_lost});
-        }};
-    const auto begin_area_selection = [&](const begin_editor_area_selection_action_t& request) {
-        return begin_area_selection_gesture(area_selection, request);
-    };
-    const auto update_area_selection = [&](double x, double y, bool captured) {
-        return update_area_selection_gesture(area_selection, x, y, captured);
-    };
-    const auto commit_area_selection = [&](double x, double y, bool captured) {
-        return commit_area_selection_gesture(area_selection, x, y, captured);
-    };
-
-    const auto handle_move_edit_cursor = [&](const move_edit_cursor_action_t& typed_action) -> editor_interaction_result_t {
-        return interaction_detail::move_edit_cursor(cursor_navigation, typed_action);
-    };
-
-    const auto handle_page_edit_cursor = [&](const page_edit_cursor_action_t& typed_action) -> editor_interaction_result_t {
-        return interaction_detail::page_edit_cursor(cursor_navigation, typed_action);
-    };
-
-    const auto handle_jump_edit_cursor = [&](const jump_edit_cursor_action_t& typed_action) {
-        return interaction_detail::jump_edit_cursor(cursor_navigation, typed_action);
-    };
-
-    const auto handle_select_bms_canvas_measure =
-        [&](const select_bms_canvas_measure_action_t& typed_action) {
-            return interaction_detail::select_bms_canvas_measure(cursor_navigation, typed_action);
-        };
-
-    const auto handle_cycle_edit_snap = [&](const cycle_edit_snap_action_t& typed_action) {
-        return cycle_editor_snap(history, state, typed_action);
-    };
-    const auto handle_set_edit_snap = [&](const set_edit_snap_action_t& typed_action) {
-        return set_editor_snap(history, state, typed_action);
-    };
-
-    virtual_note_context_t virtual_notes{history, state, *chart, index};
-    const auto handle_place_virtual_bms_hold = [&](const place_virtual_bms_hold_action_t& typed_action) -> editor_interaction_result_t {
-        return place_virtual_bms_hold(virtual_notes, typed_action);
-    };
-
-    const auto handle_place_virtual_bms_tap = [&](const place_virtual_bms_tap_action_t& typed_action) -> editor_interaction_result_t {
-        return place_virtual_bms_tap(virtual_notes, typed_action);
-    };
-
-    tap_placement_context_t tap_placement{history, state, *chart, index};
-    const auto handle_place_tap = [&](const place_tap_action_t& typed_action) -> editor_interaction_result_t {
-        if (state.armed_note_kind == note_kind_t::hold || state.armed_note_kind == note_kind_t::roll)
-            return begin_hold_action(hold_gestures, typed_action.position, typed_action.sound, typed_action.source_geometry);
-        return place_tap(tap_placement, typed_action);
-    };
-
-    const auto handle_begin_hold = [&](const begin_hold_action_t& typed_action) {
-        return begin_hold_action(hold_gestures, typed_action.position);
-    };
-    const auto handle_update_hold_preview = [&](const update_hold_preview_action_t& typed_action) {
-        return update_hold_preview(hold_gestures, typed_action.position);
-    };
-    const auto handle_commit_hold = [&](const commit_hold_action_t& typed_action) {
-        return commit_hold(hold_gestures, typed_action.position, typed_action.source_geometry);
-    };
-
-    const auto handle_begin_lane_key_hold_gesture = [&](const begin_lane_key_hold_gesture_action_t& typed_action) {
-        return begin_lane_key_hold_gesture(hold_gestures, typed_action.lane, typed_action.sound,
-                                           typed_action.displace_to_bgm, typed_action.source_geometry);
-    };
-
-    const auto handle_release_lane_key_hold_gesture = [&](const release_lane_key_hold_gesture_action_t& typed_action) {
-        return release_lane_key_hold_gesture(hold_gestures, typed_action.lane);
-    };
-
-    const auto handle_begin_alt_pointer_hold_gesture = [&](const begin_alt_pointer_hold_gesture_action_t& typed_action) -> editor_interaction_result_t {
-
-        if (!typed_action.alt_or_option_down) {
-            return diagnostic_result(
-                history, state,
-                {error(diagnostic_code_t::invalid_hold,
-                       "Alt/Option must be held to begin a pointer hold gesture")});
-        }
-        return begin_hold_gesture(hold_gestures, typed_action.lane, typed_action.position,
-                                  hold_gesture_source_t::alt_pointer, typed_action.sound, false, typed_action.source_geometry);
-
-    };
-
-    const auto handle_update_alt_pointer_hold_gesture = [&](const update_alt_pointer_hold_gesture_action_t& typed_action) -> editor_interaction_result_t {
-
-        if (!typed_action.pointer_captured) {
-            return dispatch_editor_action(
-                history, state,
-                cancel_editor_gesture_action_t{
-                    editor_gesture_cancel_reason_t::pointer_capture_lost});
-        }
-        if (!typed_action.alt_or_option_down) {
-            return dispatch_editor_action(
-                history, state,
-                cancel_editor_gesture_action_t{
-                    editor_gesture_cancel_reason_t::modifier_released});
-        }
-        return update_hold_gesture(hold_gestures, hold_gesture_source_t::alt_pointer,
-                                   typed_action.position);
-
-    };
-
-    const auto handle_release_alt_pointer_hold_gesture = [&](const release_alt_pointer_hold_gesture_action_t& typed_action) -> editor_interaction_result_t {
-
-        if (!typed_action.pointer_captured) {
-            return dispatch_editor_action(
-                history, state,
-                cancel_editor_gesture_action_t{
-                    editor_gesture_cancel_reason_t::pointer_capture_lost});
-        }
-        if (!typed_action.alt_or_option_down) {
-            return dispatch_editor_action(
-                history, state,
-                cancel_editor_gesture_action_t{
-                    editor_gesture_cancel_reason_t::modifier_released});
-        }
-        return release_hold_gesture(hold_gestures, hold_gesture_source_t::alt_pointer,
-                                    typed_action.position, typed_action.source_geometry);
-
-    };
-
-    const auto handle_begin_semantic_layer_paint_gesture = [&](const begin_semantic_layer_paint_gesture_action_t& typed_action) -> editor_interaction_result_t {
-
-        return begin_semantic_layer_paint_gesture(typed_action.layer, typed_action.note,
-                                                  typed_action.bgm_event,
-                                                  typed_action.pointer_captured, typed_action.replace_memberships,
-                                                  typed_action.clear_memberships, typed_action.mode);
-
-    };
-
-    const auto handle_update_semantic_layer_paint_gesture = [&](const update_semantic_layer_paint_gesture_action_t& typed_action) -> editor_interaction_result_t {
-
-        return append_semantic_layer_paint_target(typed_action.note, typed_action.bgm_event,
-                                                  typed_action.pointer_captured);
-
-    };
-
-    const auto handle_end_semantic_layer_paint_gesture = [&](const end_semantic_layer_paint_gesture_action_t& typed_action) -> editor_interaction_result_t {
-
-        return end_semantic_layer_paint_gesture(typed_action.note, typed_action.bgm_event,
-                                               typed_action.pointer_captured);
-
-    };
-
-    const auto handle_begin_editor_area_selection = [&](const begin_editor_area_selection_action_t& typed_action) -> editor_interaction_result_t {
-
-        return begin_area_selection(typed_action);
-
-    };
-
-    const auto handle_update_editor_area_selection = [&](const update_editor_area_selection_action_t& typed_action) -> editor_interaction_result_t {
-
-        return update_area_selection(typed_action.x_pixels, typed_action.y_pixels,
-                                     typed_action.pointer_captured);
-
-    };
-
-    const auto handle_commit_editor_area_selection = [&](const commit_editor_area_selection_action_t& typed_action) -> editor_interaction_result_t {
-
-        return commit_area_selection(typed_action.x_pixels, typed_action.y_pixels,
-                                     typed_action.pointer_captured);
-
-    };
-
-    const auto handle_cancel_editor_area_selection = [&](const cancel_editor_area_selection_action_t& typed_action) -> editor_interaction_result_t {
-
-        return {};
-
-    };
-
-    space_range_selection_context_t space_selection{
-        history, state, *chart, index, initial_view, absolute};
-    const auto handle_space_range_selection = [&](const space_range_selection_action_t& typed_action) -> editor_interaction_result_t {
-        return update_space_range_selection(space_selection, typed_action);
-    };
-
-    const auto handle_cancel_editor_gesture = [&](const cancel_editor_gesture_action_t& typed_action) -> editor_interaction_result_t {
-
-        return {};
-
-    };
-
-    const auto handle_select_editor_notes = [&](const select_editor_notes_action_t& typed_action) {
-        return select_editor_notes(history, state, *chart, typed_action);
-    };
-
-    editor_object_selection_context_t object_selection{history, state, *chart};
-    const auto handle_select_editor_objects = [&](const select_editor_objects_action_t& typed_action) -> editor_interaction_result_t {
-        return select_editor_objects(object_selection, typed_action);
-    };
-
-    const auto handle_delete_editor_selection =
-        [&](const delete_editor_selection_action_t&) -> editor_interaction_result_t {
-            return delete_editor_selection({history, state, *chart});
-        };
-
-    const auto handle_select_editor_lane = [&](const select_editor_lane_action_t& typed_action) {
-        return select_editor_lane(history, state, *chart, index, typed_action.lane);
-    };
-
-    const auto handle_assign_selected_notes_to_lane =
-        [&](const assign_selected_objects_to_lane_action_t& typed_action)
-            -> editor_interaction_result_t {
-            return assign_selected_objects_to_lane({history, state, *chart, index}, typed_action);
-        };
-
-    const auto handle_adjust_editor_zoom = [&](const adjust_editor_zoom_action_t& typed_action) {
-        return adjust_editor_zoom(history, state, *chart, index, absolute, typed_action);
-    };
-
-    const auto handle_scroll_editor_view =
-        [&](const scroll_editor_view_action_t& typed_action) -> editor_interaction_result_t {
-            return scroll_editor_view(
-                {history, state, *chart, index,
-                 [&](local_position_t position) { return update_keyboard_holds(hold_gestures, position); },
-                 [&](std::uint64_t row) { return update_canvas_keyboard_holds(hold_gestures, row); }},
-                typed_action);
-        };
-
-    switch (action.index()) {
-
-    case 0: return handle_move_edit_cursor(std::get<move_edit_cursor_action_t>(action));
-
-    case 1: return handle_page_edit_cursor(std::get<page_edit_cursor_action_t>(action));
-
-    case 2: return handle_jump_edit_cursor(std::get<jump_edit_cursor_action_t>(action));
-
-    case 3: return handle_select_bms_canvas_measure(std::get<select_bms_canvas_measure_action_t>(action));
-
-    case 4: return handle_cycle_edit_snap(std::get<cycle_edit_snap_action_t>(action));
-
-    case 7: return handle_place_virtual_bms_hold(std::get<place_virtual_bms_hold_action_t>(action));
-
-    case 6: return handle_place_virtual_bms_tap(std::get<place_virtual_bms_tap_action_t>(action));
-
-    case 5: return handle_place_tap(std::get<place_tap_action_t>(action));
-
-    case 8: return handle_begin_hold(std::get<begin_hold_action_t>(action));
-
-    case 9: return handle_update_hold_preview(std::get<update_hold_preview_action_t>(action));
-
-    case 10: return handle_commit_hold(std::get<commit_hold_action_t>(action));
-
-    case 11: return handle_begin_lane_key_hold_gesture(std::get<begin_lane_key_hold_gesture_action_t>(action));
-
-    case 12: return handle_release_lane_key_hold_gesture(std::get<release_lane_key_hold_gesture_action_t>(action));
-
-    case 13: return handle_begin_alt_pointer_hold_gesture(std::get<begin_alt_pointer_hold_gesture_action_t>(action));
-
-    case 14: return handle_update_alt_pointer_hold_gesture(std::get<update_alt_pointer_hold_gesture_action_t>(action));
-
-    case 15: return handle_release_alt_pointer_hold_gesture(std::get<release_alt_pointer_hold_gesture_action_t>(action));
-
-    case 16: return dispatch_note_gesture(note_gestures, action);
-
-    case 17: return dispatch_note_gesture(note_gestures, action);
-
-    case 18: return dispatch_note_gesture(note_gestures, action);
-
-    case 19: return dispatch_note_gesture(note_gestures, action);
-
-    case 20: return dispatch_note_gesture(note_gestures, action);
-
-    case 21: return dispatch_note_gesture(note_gestures, action);
-
-    case 22: return dispatch_note_paint_gesture(note_paint, action);
-
-    case 23: return dispatch_note_paint_gesture(note_paint, action);
-
-    case 24: return dispatch_note_paint_gesture(note_paint, action);
-
-    case 25: return handle_begin_semantic_layer_paint_gesture(std::get<begin_semantic_layer_paint_gesture_action_t>(action));
-
-    case 26: return handle_update_semantic_layer_paint_gesture(std::get<update_semantic_layer_paint_gesture_action_t>(action));
-
-    case 27: return handle_end_semantic_layer_paint_gesture(std::get<end_semantic_layer_paint_gesture_action_t>(action));
-
-    case 28: return handle_begin_editor_area_selection(std::get<begin_editor_area_selection_action_t>(action));
-
-    case 29: return handle_update_editor_area_selection(std::get<update_editor_area_selection_action_t>(action));
-
-    case 30: return handle_commit_editor_area_selection(std::get<commit_editor_area_selection_action_t>(action));
-
-    case 31: return handle_cancel_editor_area_selection(std::get<cancel_editor_area_selection_action_t>(action));
-
-    case 32: return handle_space_range_selection(std::get<space_range_selection_action_t>(action));
-
-    case 33: return handle_cancel_editor_gesture(std::get<cancel_editor_gesture_action_t>(action));
-
-    case 34: return handle_select_editor_notes(std::get<select_editor_notes_action_t>(action));
-
-    case 35: return handle_select_editor_objects(std::get<select_editor_objects_action_t>(action));
-
-    case 36: return handle_delete_editor_selection(std::get<delete_editor_selection_action_t>(action));
-
-    case 37: return handle_select_editor_lane(std::get<select_editor_lane_action_t>(action));
-
-    case 38: return handle_assign_selected_notes_to_lane(std::get<assign_selected_objects_to_lane_action_t>(action));
-
-    case 39: return handle_adjust_editor_zoom(std::get<adjust_editor_zoom_action_t>(action));
-
-    case 40: return handle_scroll_editor_view(std::get<scroll_editor_view_action_t>(action));
-
-    case 41: return handle_set_edit_snap(std::get<set_edit_snap_action_t>(action));
-
-    default:
-        return diagnostic_result(history, state,
-            {error(diagnostic_code_t::invalid_id, "unknown editor action")});
-    }
+    editor_edit_context_t context{history, state, {*chart, index}};
+    return std::visit(editor_action_visitor_t{context, initial_view, absolute}, action);
 }
 } // namespace
 
 namespace {
 auto scoped_selection(const editor_interaction_state_t& state,
-    const std::vector<editor_selection_object_t>& available, editor_selection_scope_t scope,
-    bool invert) -> std::vector<editor_selection_object_t> {
+                      const std::vector<editor_selection_object_t>& available,
+                      editor_selection_scope_t scope, bool invert)
+    -> std::vector<editor_selection_object_t> {
     const auto current = editor_selection_targets(state);
     const std::set selected(current.begin(), current.end());
     std::vector<editor_selection_object_t> result;
     for (const auto object : current)
-        if (!editor_selection_scope_accepts(scope, object.kind)) result.push_back(object);
+        if (!editor_selection_scope_accepts(scope, object.kind))
+            result.push_back(object);
     for (const auto object : available)
-        if (!invert || !selected.contains(object)) result.push_back(object);
+        if (!invert || !selected.contains(object))
+            result.push_back(object);
     return result;
 }
-}
+} // namespace
 
 auto select_editor_scope(document_history_t& history, editor_interaction_state_t& state,
     editor_selection_scope_t scope, bool invert) -> editor_interaction_result_t {
@@ -6019,8 +5874,8 @@ auto assign_note_lanes(document_history_t& history, editor_interaction_state_t& 
     auto built = build_measure_index(*chart);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built))
         return diagnostic_result(history, state, *diagnostics);
-    return assign_selected_notes_to_lane({history, state, *chart, std::get<measure_index_t>(built)},
-                                         {lane, false});
+    editor_edit_context_t context{history, state, {*chart, std::get<measure_index_t>(built)}};
+    return assign_selected_notes_to_lane(context, {lane, false});
 }
 
 auto prune_stale_selection(const chart_document_t& chart, std::uint64_t document_revision,

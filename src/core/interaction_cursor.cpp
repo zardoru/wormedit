@@ -63,32 +63,32 @@ static auto apply_cursor_navigation_target(cursor_navigation_context_t& context,
                                            std::uint64_t canvas_row,
                                            std::string_view description)
     -> editor_interaction_result_t {
-    auto& state = context.state;
+    auto& state = context.edit.state;
     if (state.pending_hold &&
         state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) {
         if (!target || state.pending_hold->anchor_canvas_row ||
             std::ranges::any_of(state.additional_keyboard_holds,
                                 [](const auto& hold) { return hold.anchor_canvas_row.has_value(); }))
-            return context.update_canvas_keyboard_holds(canvas_row);
-        return context.update_keyboard_holds(*target);
+            return update_canvas_keyboard_holds(context.edit, canvas_row);
+        return update_keyboard_holds(context.edit, *target);
     }
     auto proposed = state;
     place_cursor_on_canvas_row(proposed, target, canvas_row);
-    if (!context.keep_cursor_visible(proposed))
-        return diagnostic_result(context.history, state,
+    if (!keep_cursor_visible(context.edit.scope.chart, context.edit.scope.measures, proposed))
+        return diagnostic_result(context.edit.history, state,
             {error(diagnostic_code_t::invalid_resolution,
                    std::string(description) + " cannot keep the viewport valid")});
-    auto view = make_view(context.history, proposed);
+    auto view = make_view(context.edit.history, proposed);
     if (target && std::holds_alternative<diagnostic_list_t>(view)) {
-        const auto replacement = transition_lane(context.chart, context.index, state.cursor,
+        const auto replacement = transition_lane(context.edit.scope.chart, context.edit.scope.measures, state.cursor,
                                                  *target, state.active_lane, state.scratch_on_right);
         if (replacement) {
             proposed.active_lane = *replacement;
-            view = make_view(context.history, proposed);
+            view = make_view(context.edit.history, proposed);
         }
     }
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&view))
-        return diagnostic_result(context.history, state, *diagnostics);
+        return diagnostic_result(context.edit.history, state, *diagnostics);
     state = std::move(proposed);
     return {.accepted = true,
             .view = std::get<editor_interaction_view_model_t>(std::move(view))};
@@ -98,26 +98,26 @@ auto move_edit_cursor(cursor_navigation_context_t& context,
                       const move_edit_cursor_action_t& action) -> editor_interaction_result_t {
     if (action.direction != interaction_direction_t::backward &&
         action.direction != interaction_direction_t::forward)
-        return diagnostic_result(context.history, context.state,
+        return diagnostic_result(context.edit.history, context.edit.state,
             {error(diagnostic_code_t::invalid_id, "unknown cursor direction")});
-    auto canvas_rows = context.index.total_rows;
-    if (chart_has_virtual_tail(context.chart)) {
-        const auto canvas = build_virtual_canvas(context.chart);
+    auto canvas_rows = context.edit.scope.measures.total_rows;
+    if (chart_has_virtual_tail(context.edit.scope.chart)) {
+        const auto canvas = build_virtual_canvas(context.edit.scope.chart);
         const auto* value = std::get_if<virtual_canvas_t>(&canvas);
-        if (!value) return diagnostic_result(context.history, context.state,
+        if (!value) return diagnostic_result(context.edit.history, context.edit.state,
                                                std::get<diagnostic_list_t>(canvas));
         canvas_rows = value->total_rows;
     }
-    const auto next_row = adjacent_snap_canvas_row(context.chart, context.index,
-        static_cast<long double>(context.absolute) + context.state.cursor_subrow,
-        context.state.active_snap_denominator, canvas_rows,
+    const auto next_row = adjacent_snap_canvas_row(context.edit.scope.chart, context.edit.scope.measures,
+        static_cast<long double>(context.absolute) + context.edit.state.cursor_subrow,
+        context.edit.state.active_snap_denominator, canvas_rows,
         action.direction == interaction_direction_t::forward);
     if (!next_row)
-        return diagnostic_result(context.history, context.state,
+        return diagnostic_result(context.edit.history, context.edit.state,
             {error(diagnostic_code_t::row_out_of_range,
                    "cursor movement would leave chart geometry")});
-    const auto target = *next_row < context.index.total_rows
-        ? position_at(context.index, *next_row) : std::nullopt;
+    const auto target = *next_row < context.edit.scope.measures.total_rows
+        ? position_at(context.edit.scope.measures, *next_row) : std::nullopt;
     return apply_cursor_navigation_target(context, target, *next_row, "cursor movement");
 }
 
@@ -134,19 +134,19 @@ auto page_edit_cursor(cursor_navigation_context_t& context,
                       const page_edit_cursor_action_t& action) -> editor_interaction_result_t {
     if (action.direction != interaction_direction_t::backward &&
         action.direction != interaction_direction_t::forward)
-        return diagnostic_result(context.history, context.state,
+        return diagnostic_result(context.edit.history, context.edit.state,
             {error(diagnostic_code_t::invalid_id, "unknown cursor page direction")});
-    if (action.measure_count == 0 || context.index.entries.empty())
-        return diagnostic_result(context.history, context.state,
+    if (action.measure_count == 0 || context.edit.scope.measures.entries.empty())
+        return diagnostic_result(context.edit.history, context.edit.state,
             {error(diagnostic_code_t::invalid_resolution,
                    "cursor paging requires a positive measure count")});
-    const auto built_canvas = build_virtual_canvas(context.chart);
+    const auto built_canvas = build_virtual_canvas(context.edit.scope.chart);
     const auto* canvas = std::get_if<virtual_canvas_t>(&built_canvas);
-    if (!canvas) return diagnostic_result(context.history, context.state,
+    if (!canvas) return diagnostic_result(context.edit.history, context.edit.state,
                                             std::get<diagnostic_list_t>(built_canvas));
     const auto source = canvas->measure_containing(context.absolute);
     if (!source || source->row_capacity == 0)
-        return diagnostic_result(context.history, context.state,
+        return diagnostic_result(context.edit.history, context.edit.state,
             {error(diagnostic_code_t::row_out_of_range,
                    "cursor page source lies outside measure geometry")});
     const auto last_index = canvas->measure_count - 1;
@@ -158,7 +158,7 @@ auto page_edit_cursor(cursor_navigation_context_t& context,
         ? source->number - offset : source->number + offset;
     const auto target_measure = canvas->measure_at(target_index);
     if (!target_measure)
-        return diagnostic_result(context.history, context.state,
+        return diagnostic_result(context.edit.history, context.edit.state,
             {error(diagnostic_code_t::row_out_of_range, "cursor page target is unavailable")});
     const auto scaled = wide_math::multiply(context.absolute - source->begin_row,
                                             target_measure->row_capacity);
@@ -168,12 +168,12 @@ auto page_edit_cursor(cursor_navigation_context_t& context,
         remainder_rounds_up(division.remainder.low, source->row_capacity) ? 1U : 0U);
     if (!wide_math::fits_u64(rounded) ||
         (action.minimum_rows == 0 && rounded.low >= target_measure->row_capacity))
-        return diagnostic_result(context.history, context.state,
+        return diagnostic_result(context.edit.history, context.edit.state,
             {error(diagnostic_code_t::row_out_of_range,
                    "cursor page target cannot represent its fractional row")});
     auto row = target_measure->begin_row + std::min(rounded.low, target_measure->row_capacity - 1);
     row = apply_page_distance_floor(context.absolute, row, canvas->total_rows, action);
-    const auto target = row < context.index.total_rows ? position_at(context.index, row) : std::nullopt;
+    const auto target = row < context.edit.scope.measures.total_rows ? position_at(context.edit.scope.measures, row) : std::nullopt;
     return apply_cursor_navigation_target(context, target, row, "cursor paging");
 }
 
@@ -215,32 +215,32 @@ auto keep_cursor_visible(const chart_document_t& chart, const measure_index_t& i
 
 auto jump_edit_cursor(cursor_navigation_context_t& context,
                       const jump_edit_cursor_action_t& action) -> editor_interaction_result_t {
-    auto& state = context.state;
-    if (action.expected_document_revision != context.history.document.revision)
-        return diagnostic_result(context.history, state,
+    auto& state = context.edit.state;
+    if (action.expected_document_revision != context.edit.history.document.revision)
+        return diagnostic_result(context.edit.history, state,
             {error(diagnostic_code_t::invalid_id,
                    "cursor jump refers to a stale document revision")});
-    if (!absolute_row(context.index, action.position))
-        return diagnostic_result(context.history, state,
+    if (!absolute_row(context.edit.scope.measures, action.position))
+        return diagnostic_result(context.edit.history, state,
             {error(diagnostic_code_t::row_out_of_range,
                    "cursor jump target lies outside chart geometry")});
     auto proposed = state;
     place_cursor_on_picked_row(proposed, action.position);
-    if (!context.keep_cursor_visible(proposed))
-        return diagnostic_result(context.history, state,
+    if (!keep_cursor_visible(context.edit.scope.chart, context.edit.scope.measures, proposed))
+        return diagnostic_result(context.edit.history, state,
             {error(diagnostic_code_t::invalid_resolution,
                    "cursor jump cannot keep the viewport valid")});
-    auto view = make_view(context.history, proposed);
+    auto view = make_view(context.edit.history, proposed);
     if (std::holds_alternative<diagnostic_list_t>(view)) {
-        const auto replacement = transition_lane(context.chart, context.index, state.cursor,
+        const auto replacement = transition_lane(context.edit.scope.chart, context.edit.scope.measures, state.cursor,
                                                  action.position, state.active_lane, state.scratch_on_right);
         if (replacement) {
             proposed.active_lane = *replacement;
-            view = make_view(context.history, proposed);
+            view = make_view(context.edit.history, proposed);
         }
     }
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&view))
-        return diagnostic_result(context.history, state, *diagnostics);
+        return diagnostic_result(context.edit.history, state, *diagnostics);
     state = std::move(proposed);
     return {.accepted = true, .view = std::get<editor_interaction_view_model_t>(view)};
 }
@@ -248,20 +248,20 @@ auto jump_edit_cursor(cursor_navigation_context_t& context,
 auto select_bms_canvas_measure(cursor_navigation_context_t& context,
                                const select_bms_canvas_measure_action_t& action)
     -> editor_interaction_result_t {
-    auto& state = context.state;
-    const auto& chart = context.chart;
+    auto& state = context.edit.state;
+    const auto& chart = context.edit.scope.chart;
     if (!chart_has_virtual_tail(chart) ||
         action.number >= virtual_tail_measure_limit(chart))
-        return diagnostic_result(context.history, state,
+        return diagnostic_result(context.edit.history, state,
             {error(diagnostic_code_t::row_out_of_range,
                    "BMS measure selection is outside #000-#999")});
     const auto built = build_virtual_canvas(chart);
     const auto* canvas = std::get_if<virtual_canvas_t>(&built);
-    if (!canvas) return diagnostic_result(context.history, state,
+    if (!canvas) return diagnostic_result(context.edit.history, state,
                                             std::get<diagnostic_list_t>(built));
     const auto measure = canvas->measure_at(action.number);
     if (!measure || measure->row_capacity == 0)
-        return diagnostic_result(context.history, state,
+        return diagnostic_result(context.edit.history, state,
             {error(diagnostic_code_t::row_out_of_range,
                    "BMS measure selection has no geometry")});
     auto proposed = state;
@@ -271,35 +271,35 @@ auto select_bms_canvas_measure(cursor_navigation_context_t& context,
     proposed.selected_notes.clear();
     proposed.selected_objects.clear();
     if (measure->authored) {
-        const auto first = position_at(context.index, measure->begin_row);
-        const auto last = position_at(context.index, measure->begin_row + measure->row_capacity - 1);
+        const auto first = position_at(context.edit.scope.measures, measure->begin_row);
+        const auto last = position_at(context.edit.scope.measures, measure->begin_row + measure->row_capacity - 1);
         if (!first || !last)
-            return diagnostic_result(context.history, state,
+            return diagnostic_result(context.edit.history, state,
                 {error(diagnostic_code_t::row_out_of_range,
                        "selected measure is missing authored geometry")});
         place_cursor_on_picked_row(proposed, *first);
-        proposed.retained_selection_range = normalized_position_span(context.index, *first, *last);
+        proposed.retained_selection_range = normalized_position_span(context.edit.scope.measures, *first, *last);
     } else {
         place_cursor_on_canvas_row(proposed, std::nullopt, measure->begin_row);
         proposed.retained_selection_range.reset();
     }
-    if (!context.keep_cursor_visible(proposed))
-        return diagnostic_result(context.history, state,
+    if (!keep_cursor_visible(context.edit.scope.chart, context.edit.scope.measures, proposed))
+        return diagnostic_result(context.edit.history, state,
             {error(diagnostic_code_t::invalid_resolution,
                    "measure selection cannot keep the viewport valid")});
-    auto view = make_view(context.history, proposed);
+    auto view = make_view(context.edit.history, proposed);
     if (std::holds_alternative<diagnostic_list_t>(view)) {
         const auto target = measure->authored ? proposed.cursor : local_position_t{
-            context.index.entries.back().id, context.index.entries.back().row_capacity - 1};
-        const auto replacement = transition_lane(chart, context.index, state.cursor, target,
+            context.edit.scope.measures.entries.back().id, context.edit.scope.measures.entries.back().row_capacity - 1};
+        const auto replacement = transition_lane(chart, context.edit.scope.measures, state.cursor, target,
                                                  state.active_lane, state.scratch_on_right);
         if (replacement) {
             proposed.active_lane = *replacement;
-            view = make_view(context.history, proposed);
+            view = make_view(context.edit.history, proposed);
         }
     }
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&view))
-        return diagnostic_result(context.history, state, *diagnostics);
+        return diagnostic_result(context.edit.history, state, *diagnostics);
     state = std::move(proposed);
     return {.accepted = true, .view = std::get<editor_interaction_view_model_t>(view)};
 }

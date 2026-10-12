@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ui/nuklear/compose_panel_internal.h"
+#include "ui/nuklear/compose_pointer_chords.h"
 
 #include <array>
 

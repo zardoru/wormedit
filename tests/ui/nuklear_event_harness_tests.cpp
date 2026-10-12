@@ -6694,6 +6694,7 @@ TEST_CASE("Rejected Alt duration release retires the production gesture and pres
         button_event(true, head->first, head->second)};
     (void)f.dispatch(f.harness.frame(press, SDL_KMOD_ALT));
     section_import_require(f.interaction->pending_note_duration_gesture.has_value());
+    f.project();
     const auto move = motion_event(target->first, target->second);
     (void)f.dispatch(f.harness.frame(std::span{&move, 1}, SDL_KMOD_ALT));
     const auto release = button_event(false, target->first, target->second);
@@ -7324,4 +7325,210 @@ TEST_CASE("BGA chart switches disarm the complete source even with its dock hidd
     expect_t422(s.draw_source_kind == 0 && s.draw_source_id == 0);
     const auto* cleared = find_compose_input(std::vector{changed}, WORM_UI_COMPOSE_INPUT_DRAW_SOURCE);
     expect_t422(cleared && cleared->resource_id == 0 && cleared->resource_role == 0);
+}
+
+
+TEST_CASE("Production Ctrl Alt wheel routing has one owner", "[frontend-state][event-harness][pointer-chords]") {
+    nuklear_event_harness_t h;
+    (void)h.frame();
+    SDL_Event wheel{};
+    wheel.type = SDL_EVENT_MOUSE_WHEEL; wheel.wheel.y = 1;
+    wheel.wheel.mouse_x = 480; wheel.wheel.mouse_y = 400;
+    const auto frame = h.frame(std::span{&wheel, 1}, static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_ALT));
+    expect_t422(frame.get().compose_viewport_input_count == 1);
+    expect_t422(frame.get().compose_input_count == 0);
+    expect_t422(frame.get().compose_viewport_inputs[0].zoom_modifier);
+}
+
+TEST_CASE("Production Alt mine begin does not retain a rejected hold", "[frontend-state][event-harness][pointer-chords]") {
+    auto song = t422_song();
+    song.charts.front().measures.front().notes.front().kind = note_kind_t::mine;
+    t422_fixture_t f{std::move(song)};
+    f.project(); (void)f.harness.frame();
+    const auto p = t422_note_screen_center(f, 101);
+    expect_t422(p.has_value());
+    const auto alt = key_event(SDL_EVENT_KEY_DOWN, SDLK_LALT, SDL_SCANCODE_LALT);
+    (void)f.harness.frame(std::span{&alt, 1}, SDL_KMOD_ALT);
+    const std::array press{motion_event(p->first, p->second), button_event(true, p->first, p->second)};
+    const auto begin = f.harness.frame(press, SDL_KMOD_ALT);
+    (void)f.dispatch(begin);
+    expect_t422(!f.interaction->pending_hold && !f.interaction->pending_note_duration_gesture);
+    expect_t422(!worm_ui_nuklear_compose_state().pointer_hold_active);
+    expect_t422(worm_ui_nuklear_compose_state().pointer_hold_begin_pending);
+    f.project();
+    const auto move = motion_event(p->first, p->second + 40);
+    const auto next = f.harness.frame(std::span{&move, 1}, SDL_KMOD_ALT);
+    expect_t422(next.get().compose_input_count == 0);
+    expect_t422(!worm_ui_nuklear_compose_state().pointer_hold_begin_pending);
+    expect_t422(!worm_ui_nuklear_compose_state().pointer_hold_active);
+    expect_t422(f.history.undo.empty());
+}
+
+TEST_CASE("Production note move candidate retains release across chord changes", "[frontend-state][event-harness][pointer-chords]") {
+    t422_fixture_t f{t422_song()};
+    f.interaction->selected_notes = {object_id_t{101}};
+    f.interaction->selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}}};
+    f.project(); (void)f.harness.frame();
+    const auto p = t422_note_screen_center(f, 101);
+    expect_t422(p.has_value());
+    const std::array press{motion_event(p->first, p->second), button_event(true, p->first, p->second)};
+    (void)f.dispatch(f.harness.frame(press));
+    expect_t422(worm_ui_nuklear_compose_state().note_move_candidate_active);
+    const auto release = button_event(false, p->first, p->second);
+    const auto frame = f.harness.frame(std::span{&release, 1}, static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_ALT));
+    expect_t422(frame.get().compose_input_count == 1);
+    expect_t422(frame.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_POINTER_CLICK);
+    expect_t422(!worm_ui_nuklear_compose_state().note_move_candidate_active);
+}
+
+TEST_CASE("Production Shift Speed marker has one chord owner", "[frontend-state][event-harness][pointer-chords]") {
+    auto song = t422_song();
+    song.charts.front().speeds.push_back({.id = object_id_t{220},
+        .position = {measure_id_t{1}, 240}, .multiplier = {2, 1}, .transition_beats = {1, 1}});
+    t422_fixture_t f{std::move(song)};
+    f.interaction->pixels_per_standard_measure = 768;
+    f.project();
+    const auto p = timing_pointer(f, WORM_UI_TIMING_LANE_SPEED, 240);
+    const std::array press{motion_event(p.first, p.second), button_event(true, p.first, p.second)};
+    const auto frame = f.harness.frame(press, SDL_KMOD_SHIFT);
+    expect_t422(worm_ui_nuklear_compose_state().kiai_drag_active);
+    expect_t422(frame.get().compose_input_count == 0);
+}
+
+
+TEST_CASE("Production Shift BGM slice click keeps its restart meaning", "[frontend-state][event-harness][pointer-chords]") {
+    bgm_draw_fixture_t f{true, true};
+    auto& v = f.harness.view().compose;
+    v.note_paint_mode_active = false;
+    v.playable_field_right_pixels = f.lane_x;
+    WormUiComposeBgmEventView event{};
+    event.bounds = {f.lane_x + 2, 190, f.lane_x + 38, 206};
+    event.head_top_pixels = 190; event.head_bottom_pixels = 206;
+    event.event_id = 73; event.source_lane_id = 71; event.bmson_slice = true;
+    v.bgm_events = &event; v.bgm_event_count = 1;
+    (void)f.harness.frame();
+    const auto [x, y] = f.point(20, 198);
+    const std::array press{motion_event(x, y), button_event(true, x, y)};
+    (void)f.harness.frame(press, SDL_KMOD_SHIFT);
+    const auto up = button_event(false, x, y);
+    const auto frame = f.harness.frame(std::span{&up, 1}, SDL_KMOD_SHIFT);
+    expect_t422(frame.get().compose_input_count == 1);
+    expect_t422(frame.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE);
+}
+
+TEST_CASE("Production Alt Anchor press inserts only in timing focus", "[frontend-state][event-harness][pointer-chords]") {
+    t422_fixture_t f{t422_song()};
+    f.harness.view().compose.timing_focus = true;
+    auto& t = f.harness.view().timing;
+    t.chart_id = 1; t.initial_bpm_editable = true;
+    const auto p = timing_pointer(f, WORM_UI_TIMING_LANE_ANCHOR, 480);
+    const auto alt = key_event(SDL_EVENT_KEY_DOWN, SDLK_LALT, SDL_SCANCODE_LALT);
+    (void)f.harness.frame(std::span{&alt, 1}, SDL_KMOD_ALT);
+    const std::array press{motion_event(p.first, p.second), button_event(true, p.first, p.second)};
+    const auto frame = f.harness.frame(press, SDL_KMOD_ALT);
+    expect_t422(frame.get().timing_stage_action == WORM_UI_TIMING_STAGE_QUICK_INSERT);
+    expect_t422(frame.get().timing_lane == WORM_UI_TIMING_LANE_ANCHOR);
+    expect_t422(!worm_ui_nuklear_compose_state().pointer_hold_active);
+}
+
+TEST_CASE("Production accepted Alt hold owns its release after modifier changes",
+          "[frontend-state][event-harness][pointer-chords]") {
+    t422_fixture_t f{t422_song()};
+    f.interaction->pixels_per_standard_measure = 768;
+    f.project();
+    const auto start = placement_point(f, 240, 2);
+    const auto end = placement_point(f, 480, 2);
+    const std::array press{motion_event(start.first, start.second),
+        button_event(true, start.first, start.second)};
+    // SDL's frame snapshot is authoritative even without a separate Alt key event.
+    (void)f.dispatch(f.harness.frame(press, SDL_KMOD_ALT));
+    expect_t422(f.interaction->pending_hold.has_value());
+    expect_t422(!worm_ui_nuklear_compose_state().pointer_hold_active);
+    expect_t422(worm_ui_nuklear_compose_state().pointer_hold_begin_pending);
+    f.project();
+    expect_t422(f.harness.view().compose.editor_pointer_hold_active);
+    const auto move = motion_event(end.first, end.second);
+    (void)f.dispatch(f.harness.frame(std::span{&move, 1}, SDL_KMOD_SHIFT));
+    expect_t422(worm_ui_nuklear_compose_state().pointer_hold_active);
+    expect_t422(f.interaction->pending_hold.has_value());
+    f.project();
+    const auto up = button_event(false, end.first, end.second);
+    (void)f.dispatch(f.harness.frame(std::span{&up, 1}, SDL_KMOD_NONE));
+    expect_t422(!f.interaction->pending_hold);
+    expect_t422(!worm_ui_nuklear_compose_state().pointer_hold_active);
+    expect_t422(f.history.undo.size() == 1);
+    const auto& notes = f.history.document.charts.front().measures.front().notes;
+    const auto hold = std::ranges::find(notes, lane_id_t{2}, &note_t::lane);
+    expect_t422(hold != notes.end());
+    expect_t422(hold->kind == note_kind_t::hold);
+    expect_t422(hold->position == local_position_t{measure_id_t{1}, 240});
+    expect_t422(hold->end == local_position_t{measure_id_t{1}, 480});
+}
+
+TEST_CASE("Production same-sound press retains scope when modifiers are released",
+          "[frontend-state][event-harness][pointer-chords]") {
+    t422_fixture_t f{t422_song()};
+    f.interaction->selected_notes.clear(); f.interaction->selected_objects.clear();
+    f.project(); (void)f.harness.frame();
+    const auto p = t422_note_screen_center(f, 101);
+    expect_t422(p.has_value());
+#ifdef __APPLE__
+    const auto mods = static_cast<SDL_Keymod>(SDL_KMOD_GUI | SDL_KMOD_SHIFT);
+#else
+    const auto mods = static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_SHIFT);
+#endif
+    const std::array press{motion_event(p->first, p->second), button_event(true, p->first, p->second)};
+    (void)f.dispatch(f.harness.frame(press, mods));
+    const auto up = button_event(false, p->first, p->second);
+    const auto released = f.harness.frame(std::span{&up, 1});
+    expect_t422(released.get().compose_input_count == 1);
+    expect_t422(released.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE);
+    (void)f.dispatch(released);
+    expect_t422(!f.interaction->selected_notes.empty());
+    expect_t422(f.history.undo.empty());
+}
+
+TEST_CASE("Production Alt BGM press cannot acquire a playable pointer hold",
+          "[frontend-state][event-harness][pointer-chords]") {
+    bgm_draw_fixture_t f{true, true};
+    auto& v = f.harness.view().compose;
+    v.note_paint_mode_active = false; v.playable_field_right_pixels = f.lane_x;
+    WormUiComposeBgmEventView event{};
+    event.bounds = {f.lane_x + 2, 190, f.lane_x + 38, 206};
+    event.head_top_pixels = 190; event.head_bottom_pixels = 206;
+    event.event_id = 73; event.source_lane_id = 71; event.bmson_slice = true;
+    v.bgm_events = &event; v.bgm_event_count = 1;
+    (void)f.harness.frame();
+    const auto [x, y] = f.point(20, 198);
+    const std::array press{motion_event(x, y), button_event(true, x, y)};
+    const auto begin = f.harness.frame(press, SDL_KMOD_ALT);
+    expect_t422(begin.get().compose_input_count == 0);
+    expect_t422(!worm_ui_nuklear_compose_state().pointer_hold_begin_pending);
+    expect_t422(!worm_ui_nuklear_compose_state().pointer_hold_active);
+    const auto up = button_event(false, x, y);
+    const auto release = f.harness.frame(std::span{&up, 1}, SDL_KMOD_ALT);
+    expect_t422(release.get().compose_input_count == 1);
+    expect_t422(release.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK);
+}
+
+TEST_CASE("Production Alt drag from playable field cannot turn into Anchor insertion",
+          "[frontend-state][event-harness][pointer-chords]") {
+    t422_fixture_t f{t422_song()};
+    f.harness.view().compose.timing_focus = true;
+    f.harness.view().timing.initial_bpm_editable = true;
+    const auto anchor = timing_pointer(f, WORM_UI_TIMING_LANE_ANCHOR, 480);
+    const auto note = t422_note_screen_center(f, 101);
+    expect_t422(note.has_value());
+    const std::array press{motion_event(note->first, note->second),
+        button_event(true, note->first, note->second)};
+    const auto begin = f.harness.frame(press, SDL_KMOD_ALT);
+    expect_t422(begin.get().timing_stage_action == WORM_UI_TIMING_STAGE_NONE);
+    const auto move = motion_event(anchor.first, anchor.second);
+    const auto dragged = f.harness.frame(std::span{&move, 1}, SDL_KMOD_ALT);
+    expect_t422(dragged.get().timing_stage_action == WORM_UI_TIMING_STAGE_NONE);
+    expect_t422(!worm_ui_nuklear_compose_state().pointer_hold_begin_pending);
+    const auto up = button_event(false, anchor.first, anchor.second);
+    expect_t422(f.harness.frame(std::span{&up, 1}, SDL_KMOD_ALT).get().timing_stage_action ==
+                 WORM_UI_TIMING_STAGE_NONE);
+    expect_t422(f.history.undo.empty());
 }

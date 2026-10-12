@@ -1395,6 +1395,8 @@ typedef struct WormUiComposeView {
     bool scene_available;
     bool editor_gesture_active;
     bool editor_gesture_current;
+    // Application acknowledgement of an Alt/Option or armed Hold/Roll pointer begin.
+    bool editor_pointer_hold_active;
     // Full chart index presence, independent of viewport and visibility filters.
     bool has_bgm_events;
     // BMS charts only: the BGM source column count and whether the toolbar may change it.

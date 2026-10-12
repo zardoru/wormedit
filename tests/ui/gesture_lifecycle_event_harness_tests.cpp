@@ -149,6 +149,8 @@ struct lifecycle_fixture_t {
         const std::array press{lifecycle_motion(x, y), lifecycle_button(x, y, true,
             family == lifecycle_family::erase)};
         auto result = harness.frame(press, modifiers);
+        if (family == lifecycle_family::pointer_hold)
+            harness.view().compose.editor_pointer_hold_active = true;
         if (family == lifecycle_family::area || family == lifecycle_family::move ||
             family == lifecycle_family::erase || family == lifecycle_family::timing_marker ||
             family == lifecycle_family::bga || family == lifecycle_family::bookmark ||
@@ -293,7 +295,7 @@ struct lifecycle_fixture_t {
         case lifecycle_family::paint: return s.note_paint_pointer_active;
         case lifecycle_family::erase: return s.draw_erase_pointer_active;
         case lifecycle_family::semantic: return s.semantic_layer_paint_pointer_active;
-        case lifecycle_family::pointer_hold: return s.pointer_hold_active;
+        case lifecycle_family::pointer_hold: return s.pointer_hold_begin_pending || s.pointer_hold_active;
         case lifecycle_family::lane_hold: return s.lane_hold_active;
         case lifecycle_family::range: return s.space_range_hold_active;
         case lifecycle_family::area: return s.area_selection_active;

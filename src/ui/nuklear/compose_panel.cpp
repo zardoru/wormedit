@@ -952,7 +952,7 @@ void process_bgm_bar_view_input(struct nk_context* context, const WormUiComposeV
         append_bgm_bar_input(action, WORM_UI_COMPOSE_INPUT_BGM_BAR_PAN,
                              -static_cast<double>(input.mouse.delta.x) / geometry.bounds.w * span, 0.0);
     }
-    const bool shift = (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
+    const bool shift = (state.pointer_modifiers & SDL_KMOD_SHIFT) != 0;
     const auto wheel_x = static_cast<double>(input.mouse.scroll_delta.x);
     const auto wheel_y = static_cast<double>(input.mouse.scroll_delta.y);
     if (shift || wheel_x != 0.0) {
@@ -1189,6 +1189,15 @@ static void process_compose_canvas_tools(const ComposePointerEventContext& point
 
 }
 
+static auto capture_pointer_modifiers(const nk_context& context) -> std::uint16_t {
+    if (nk_input_is_mouse_pressed(&context.input, NK_BUTTON_LEFT))
+        state.pointer_press_modifiers = state.pointer_modifiers;
+    const auto modifiers = state.pointer_press_modifiers.value_or(state.pointer_modifiers);
+    if (!context.input.mouse.buttons[NK_BUTTON_LEFT].down)
+        state.pointer_press_modifiers.reset();
+    return modifiers;
+}
+
 // Canceled captures retain ownership until their physical release.
 static auto consume_compose_capture_release(const ComposePanelRenderContext& panel,
                                             struct nk_rect viewport, float editor_right) -> bool {
@@ -1287,12 +1296,11 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     const auto note_field_left = pointer.note_field_left;
     const auto note_field_right = pointer.note_field_right;
     const auto pointer_in_note_field = pointer.in_note_field;
-    const bool alt_down = nk_input_is_key_down(&context->input, NK_KEY_ALT) != 0;
     const bool left_down = context->input.mouse.buttons[NK_BUTTON_LEFT].down != 0;
     const bool left_released = nk_input_is_mouse_released(&context->input, NK_BUTTON_LEFT);
-    const auto pointer_modifiers = static_cast<uint16_t>(SDL_GetModState());
-    constexpr uint16_t any_pointer_modifier = SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT |
-                                              SDL_KMOD_GUI | SDL_KMOD_MODE | SDL_KMOD_LEVEL5;
+    const auto pointer_modifiers = capture_pointer_modifiers(*context);
+    const bool alt_down = compose_pointer_chord(pointer_modifiers) == compose_pointer_chord_t::hold;
+    constexpr auto any_pointer_modifier = compose_pointer_modifier_mask;
     const auto pointer_started_in_view = left_button.clicked != 0 &&
                                          left_button.clicked_pos.x >= viewport.x &&
                                          left_button.clicked_pos.x < editor_input_right &&
@@ -1324,7 +1332,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     const auto paint_pointer_y = clamp_paint_y(pointer_y);
     const ComposeBeatFitInput beat_fit_input{
         context, view, action, viewport, pointer_y, pointer_started_x, pointer_started_y,
-        pointer_modifiers, any_pointer_modifier, shortcut_event_count, window_focused,
+        state.pointer_modifiers, any_pointer_modifier, shortcut_event_count, window_focused,
         pointer_started_in_view, left_down, left_released};
     const bool beat_fit_pointer_consumed = process_compose_beat_fit_pointer(beat_fit_input);
     ComposePointerEventContext pointer_event{
@@ -1344,7 +1352,8 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         state.inline_timing_open || state.bookmark_rename.active || state.bookmark_rename.release_pending || state.note_paint_pointer_active ||
         state.bmson_razor_pointer_active ||
         state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
-        state.pointer_hold_active || state.lane_hold_active || state.note_move_active ||
+        state.pointer_hold_active || state.pointer_hold_begin_pending || state.lane_hold_active ||
+        state.note_move_active || state.note_move_candidate_active ||
         state.area_selection_active || state.timing_stage_drag_active || state.kiai_drag_active || state.recipe_drag_active ||
         state.timing_marker_candidate_active || state.timing_marker_drag_active ||
         state.waveform_beat_zero_drag_active || state.waveform_overview_drag_active ||
@@ -1373,6 +1382,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         beat_fit_pointer_consumed || resize_consumed || mix_consumed ||
         state.bmson_razor_pointer_active || state.bmson_marker_move_candidate_active ||
         state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
+        state.kiai_drag_active || state.recipe_drag_active || state.timing_stage_drag_active ||
         compose_action_has_cancel(action);
     process_compose_canvas_tools(pointer_event, paint_pointer_consumed);
 

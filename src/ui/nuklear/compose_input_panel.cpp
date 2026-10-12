@@ -119,6 +119,7 @@ struct compose_gesture_entry_t {
 
 // Candidate flags are captures too: a late release must not resurrect a cancelled press.
 static constexpr auto compose_gesture_registry = std::to_array<compose_gesture_entry_t>({
+    {&worm_ui_nuklear_compose_state_t::pointer_hold_begin_pending, reset_hold_capture},
     {&worm_ui_nuklear_compose_state_t::pointer_hold_active, reset_hold_capture},
     {&worm_ui_nuklear_compose_state_t::lane_hold_active, reset_hold_capture},
     {&worm_ui_nuklear_compose_state_t::note_paint_pointer_active, reset_draw_capture},
@@ -170,6 +171,7 @@ void cancel_compose_gestures(WormUiWorkspaceAction* action) {
         state.*entry.active = false;
     }
     state.core_gesture_active = false;
+    state.pointer_press_modifiers.reset();
     state.alt_wheel_last_event_ms.reset();
     cancel_compose_navigation(action);
     discard_compose_frame_input();
@@ -522,13 +524,7 @@ bool compose_shortcut_modifier(uint16_t modifiers) {
 }
 
 WormUiComposeSelectionMode compose_selection_mode(uint16_t modifiers) {
-    if (compose_shortcut_modifier(modifiers)) {
-        return WORM_UI_COMPOSE_SELECTION_TOGGLE;
-    }
-    if ((modifiers & SDL_KMOD_SHIFT) != 0) {
-        return WORM_UI_COMPOSE_SELECTION_ADD;
-    }
-    return WORM_UI_COMPOSE_SELECTION_REPLACE;
+    return compose_pointer_selection_mode(modifiers);
 }
 
 static void cancel_pending_compose_panel_actions(WormUiWorkspaceAction* action) {
@@ -596,8 +592,19 @@ static void sync_armed_resource_context(const WormUiComposeView& view, WormUiWor
     }
 }
 
+static void sync_pointer_hold_acceptance(const WormUiComposeView& view) {
+    if (!state.pointer_hold_begin_pending && !state.pointer_hold_active) return;
+    state.pointer_hold_begin_pending = false;
+    state.pointer_hold_active = view.editor_pointer_hold_active;
+    if (!state.pointer_hold_active) {
+        state.pointer_hold_without_alt = false;
+        state.draw_left_cancelled_until_release = true;
+    }
+}
+
 void prepare_compose_panel_input(const WormUiComposeView* view, bool compose_tab_active,
                                            bool window_focused, WormUiWorkspaceAction* action) {
+    state.pointer_modifiers = static_cast<std::uint16_t>(SDL_GetModState());
     retain_compose_core_gesture_presence(view, compose_tab_active);
     if (!action) {
         return;
@@ -640,6 +647,7 @@ void prepare_compose_panel_input(const WormUiComposeView* view, bool compose_tab
             state.last_document_revision = view->document_revision;
         }
         cancel_disabled_compose_paint_modes(view, window_focused, action);
+        sync_pointer_hold_acceptance(*view);
         return;
     }
 
@@ -1095,9 +1103,7 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
                                     });
     const auto shift_restart = event != view.bgm_events + view.bgm_event_count &&
                                event->bmson_slice &&
-                               (input.pointer_modifiers & SDL_KMOD_SHIFT) != 0 &&
-                               (input.pointer_modifiers &
-                                (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI)) == 0;
+                               compose_pointer_chord(input.pointer_modifiers) == compose_pointer_chord_t::add;
     append_compose_input(action, shift_restart ? WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE
                                                : WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK,
                          input.pointer_x, input.pointer_y, 0, false,
@@ -1198,19 +1204,15 @@ void update_compose_sound_hover(const ComposePointerEventContext& input) {
 }
 
 auto handle_same_sound_pointer(const ComposePointerEventContext& input) -> bool {
-#if defined(__APPLE__)
-    const bool primary = (input.pointer_modifiers & SDL_KMOD_GUI) != 0;
-#else
-    const bool primary = (input.pointer_modifiers & SDL_KMOD_CTRL) != 0;
-#endif
-    const bool shift = (input.pointer_modifiers & SDL_KMOD_SHIFT) != 0;
-    const bool alt = (input.pointer_modifiers & SDL_KMOD_ALT) != 0;
-    if (!primary || shift == alt || !input.window_focused || input.compose_pointer_captured ||
+    if (!compose_pointer_same_sound(input.pointer_modifiers) ||
+        !input.window_focused || input.compose_pointer_captured ||
         !input.view->scene_available || state.action_overflowed || !input.pointer_inside) return false;
     const auto object = compose_sound_object_at(*input.view, input.pointer_started_x, input.pointer_started_y);
     if (!object) return false;
     if (input.pointer_clicked)
-        append_compose_input(input.action, shift ? WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE :
+        append_compose_input(input.action,
+            compose_pointer_chord(input.pointer_modifiers) == compose_pointer_chord_t::same_visible
+                ? WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE :
             WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_CHART, input.pointer_x, input.pointer_y, 0, false,
             WORM_UI_COMPOSE_SELECTION_TOGGLE, WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, object);
     return input.left_down || input.left_released || input.pointer_clicked;

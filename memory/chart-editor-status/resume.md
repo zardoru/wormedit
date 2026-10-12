@@ -1,6 +1,6 @@
 # Status: resume checklist
 
-Next: [T-586 Centralize pointer modifiers and chord routing](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-586-centralize-pointer-modifiers-and-chord-routing). T-580–T-585 are complete. Continue T-586–T-590 in order. T-583 permits heads on the exact Stop/Delay event row; visual pause bands do not exclude chart rows. NV7 remains a T-506 navigation follow-up (T-587); unrelated navigation work is preserved.
+Next: [T-587 Unify navigation transport decisions](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-587-unify-navigation-transport-decisions). T-580–T-586 are complete. Continue T-587–T-590 in order. T-583 permits heads on the exact Stop/Delay event row; visual pause bands do not exclude chart rows. NV7 remains a T-506 navigation follow-up (T-587); unrelated navigation work is preserved.
 
 Completed **T-582** (2026-10-12): stamped menu commands and shared Quantize/bookmark/same-sound/BGM/loop/measure paths; orphan BGM and workspace loop paths retired. Build, **3,457/3,457** full serial CTest, **444/444** event checks, default clang-tidy with no new/increased complexity, documentation and whitespace gates pass. Isolated Xvfb Compose screenshot inspected. [Card and evidence](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-582-route-menu-verbs-through-registered-commands).
 

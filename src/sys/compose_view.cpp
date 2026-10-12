@@ -5111,6 +5111,13 @@ auto default_song_bar_hidden(const wormedit::song_document_t& document,
          selected->source_family == wormedit::format_family_t::bmson);
 }
 
+static auto projected_pointer_hold_active(
+    const std::optional<wormedit::editor_interaction_state_t>& state) -> bool {
+    return state && (state->pending_note_duration_gesture ||
+        (state->pending_hold && state->pending_hold->gesture_source ==
+            wormedit::hold_gesture_source_t::alt_pointer));
+}
+
 void populate_compose_view(flattened_workspace_t& flattened,
                            wormedit::document_history_t& history,
                            const wormedit::workspace_controller_t& workspace,
@@ -5134,6 +5141,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.editor_gesture_active = retained_state && has_pending_editor_gesture(*retained_state);
     view.editor_gesture_current = view.editor_gesture_active &&
         !editor_gestures_stale(*retained_state, history.document.revision);
+    view.editor_pointer_hold_active = projected_pointer_hold_active(retained_state);
     if (!workspace.selected_chart) {
         report_compose_projection(flattened, projection_feedback_kind_t::choose_chart,
             wormedit::notification_severity_t::hint, "Choose a difficulty to display its chart field.", 0,

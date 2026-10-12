@@ -242,6 +242,9 @@ struct worm_ui_nuklear_compose_state_t {
     bool core_gesture_active{};
     bool keyboard_focus{};
     bool action_overflowed{};
+    std::uint16_t pointer_modifiers{};
+    std::optional<std::uint16_t> pointer_press_modifiers;
+    bool pointer_hold_begin_pending{};
     bool pointer_hold_active{};
     // The active pointer hold is a plain press-drag with Hold/Roll armed, so it needs no Alt.
     bool pointer_hold_without_alt{};

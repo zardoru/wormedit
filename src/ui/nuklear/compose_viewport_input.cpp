@@ -10,6 +10,7 @@
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_pointer_chords.h"
 #include "ui/nuklear/compose_measure_resize_input.h"
 #include "ui/nuklear/timing_stage_editor.h"
 
@@ -130,7 +131,7 @@ static bool append_beat_fit_snap_wheel(const ComposeViewportInputContext& input,
 
 static bool append_alt_wheel_step(const ComposeViewportInputContext& input,
                                    const worm_ui_nuklear_compose_wheel_event_t& wheel) {
-    const auto alt = (wheel.modifiers & SDL_KMOD_ALT) != 0;
+    const auto alt = (wheel.modifiers & SDL_KMOD_ALT) != 0 && !compose_wheel_zooms(wheel.modifiers);
     const auto step = worm_ui_nuklear_alt_wheel_step(state, wheel.delta_y, alt, SDL_GetTicks());
     if (!alt) return false;
     if (step == 0) return true;
@@ -152,7 +153,7 @@ static void append_compose_wheel_inputs(const ComposeViewportInputContext& input
             }
             if (append_beat_fit_snap_wheel(input, wheel)) continue;
             if (append_alt_wheel_step(input, wheel)) continue;
-            const auto zoom_modifier = (wheel.modifiers & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0;
+            const auto zoom_modifier = compose_wheel_zooms(wheel.modifiers);
             if (input.action->compose_viewport_input_count >= WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY)
                 break;
             const auto visual_y = (wheel.mouse_y - input.viewport.y) * view.viewport_height_pixels /
@@ -484,7 +485,7 @@ static void update_waveform_overview_seek(const ComposeOverviewInput& input) {
         worm_ui_nuklear_overview_fraction(input.context->input.mouse.pos.x,
             input.overview.x, input.overview.w).value_or(0.0) *
         (captured_window.end - captured_window.begin);
-    const auto modifiers = SDL_GetModState();
+    const auto modifiers = state.pointer_modifiers;
     emitted.overview_shift = (modifiers & SDL_KMOD_SHIFT) != 0;
 #ifdef __APPLE__
     emitted.overview_primary = (modifiers & SDL_KMOD_GUI) != 0;
